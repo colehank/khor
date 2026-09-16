@@ -21,12 +21,13 @@ import {
   fetchGitStatus,
   openCode,
   stopCode,
+  widenWindow,
   type GitStatus,
   type SessionRow,
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconCode, IconEye, IconSessions } from "@/components/icons";
+import { IconBack, IconCode, IconEye, IconSessions } from "@/components/icons";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
@@ -48,7 +49,7 @@ import { DetailPane } from "@/views/DetailPane";
 import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
-import { heavier } from "@/views/fileRow";
+import { heavier, IGNORED } from "@/views/fileRow";
 import { FileView, rendererOf, type Draft } from "@/views/FileView";
 import type { Editor } from "@/gen/bindings/Editor";
 
@@ -65,6 +66,8 @@ export function WorkspacePane({
   closeRefused,
   arrange,
   onNewSession,
+  opened,
+  onOpenedSeen,
   narrow,
   treePane,
   listOpen,
@@ -125,6 +128,24 @@ export function WorkspacePane({
       (「这就是最早说的『加入我的工作区』」). The shell owns the sheet,
       so it owns this. */
   onNewSession: (machine: string, dir: string) => void;
+  /** The session the wizard just opened **from this column**, or `null`
+      (2026-09-16 ruling 34:「在工作区新建的 session, 直接弹到了 session
+      页面去打开, 应该是在工作区就地打开」— the user).
+   *
+   * **The shell hands it down rather than the column keeping it**,
+   * because the wizard is the shell's sheet: this pane asks for it to
+   * open and does not see it close. What arrives is an id, and what
+   * this column does with it is open the sessions and mark that row —
+   * it is this project's session, made from this project's screen, and
+   * a landing change would take somebody away from the files they were
+   * standing in. */
+  opened: string | null;
+  /** …and this column has taken it. **A one-shot, not a value that
+      stays true**: without it the id would still be sitting in the
+      shell's state the next time any workspace opened, and every one of
+      them would come up standing on somebody else's session (measured
+      on the narrow face, where it opened the wrong screen). */
+  onOpenedSeen: () => void;
   narrow: boolean;
   /** The file tree's seam, owned by the shell so the list's chevron and
       this pane fold the same column (`App`). */
@@ -148,6 +169,32 @@ export function WorkspacePane({
       that disagreed with it would be a tab pointing at another disk. */
   const [tabs, setTabs] = useState<string[]>(() => storedTabs(machine, root));
   const [file, setFile] = useState<string | null>(() => tabs[0] ?? null);
+  /** Which screen the **narrow** face is standing on (2026-09-16 ruling
+      33:「窄屏条件下,工作区几乎不可用」— the user).
+   *
+   * **A workspace is three columns, and a phone has room for one.**
+   * Until now the narrow face simply dropped two of them: the tree and
+   * the sessions were drawn only `!narrow`, so what was left was the
+   * middle column alone with no way into the tree — a person could not
+   * reach a file at all, which is what 「几乎不可用」 names. docs/UX.md
+   * has the shape for this and it is not「fit three columns in」:
+   * 「窄档是『处理一件事』:一次一屏,有退路」.
+   *
+   * So the three columns become three screens with one way between
+   * them: the tree opens a file, the file's strip carries a 「←」 back
+   * to the tree, the sessions switch goes to the sessions and that
+   * screen has a 「←」 of its own.
+   *
+   * **It opens on the tree unless a file was left open** — walking into
+   * a project is walking into its files, and a workspace that reopened
+   * on the tree with a tab already on the strip would hide the thing
+   * somebody was last reading behind a press.
+   *
+   * Wide ignores this entirely: `narrow` is what reads it, and the
+   * three columns are all on screen there. */
+  const [screen, setScreen] = useState<"tree" | "file" | "sessions">(() =>
+    tabs.length > 0 ? "file" : "tree",
+  );
   /** Which tab is the **preview**: opened by one click, and replaced by
       the next one rather than joined by it (VS Code's arrangement, and
       the user asked for VS Code's). `null` when every open tab is
@@ -191,12 +238,15 @@ export function WorkspacePane({
       with no warning; now walking away and back finds it where it was,
       and the head says how many are waiting. */
   const [drafts, setDrafts] = useState<Map<string, Draft>>(new Map());
-  /** What each file held before the last save made from this face, by
-      absolute path. **Beside the drafts and for their reason**: the
-      view is remounted on every file, and an undo that evaporates when
-      you glance at the file next door is one nobody can lean on
-      (`FileView`'s `undo`). */
-  const [undos, setUndos] = useState<Map<string, string>>(new Map());
+  /* ⚠️ **Tombstone: `undos` held what each file looked like before the
+     last save made from this face** (工作区批4 收尾 → 2026-09-16). It
+     was up here rather than in the view for the drafts' reason — the
+     view is remounted on every file — and its one reader was the
+     「回到存之前」 button on the strip over the file, which the user
+     took off:「修改文件不要显示"存好了"和"回到存之前"」. A map filled on
+     every save for a control that no longer exists is state nobody can
+     see and nobody can spend. (`FileView`'s own tombstone says what is
+     given up.) */
   // **Two seams of the workspace's own** (工作区批 收尾, 2026-09-12),
   // the same hook the list pane's seam uses — parameterised rather than
   // copied, so「drag, snap away, come back to the width it had, and the
@@ -218,12 +268,99 @@ export function WorkspacePane({
   // is declared from an effect, and an effect that flips is an effect
   // that undoes itself the second time React runs it.
   const setSessions = sidePane.show;
+  /** How many pixels this pane has grown the window by for the sessions
+      column, so closing it gives back **what it took** rather than what
+      the column happens to be wide now.
+
+      A ref and not state: nothing on the glass is derived from it, and
+      a render per press for a number only the next press reads would be
+      a render that changes nothing. */
+  const grew = useRef(0);
+  /** Open or shut the sessions column, and ask the window for the room
+      instead of taking it off the file.
+   *
+   * 「右上角的icon,都是点击后,在最右侧,拓宽窗口, 而不是挤占现有窗口」—
+   * the user, 2026-09-16.
+   *
+   * **Only this switch of the three widens, and that is the ruling read
+   * literally rather than narrowly.** 预览 changes what the middle
+   * column is showing and VS Code opens something outside khor; the
+   * sessions are the one press here that really adds a column, and a
+   * column is what needs the room.
+   *
+   * **It gives back what it took.** The width is remembered at the
+   * moment of the press rather than measured again on the way out: the
+   * seam is draggable, so the column a person closes may not be the
+   * width it opened at, and giving back the new number would walk the
+   * window sideways a few pixels per press.
+   *
+   * Narrow does none of this (33): there the column is a screen, and a
+   * window that could grow is not the situation. The web face does none
+   * of it either, one layer down — `widenWindow` is a no-op outside the
+   * app, because a browser window is not the page's to resize. */
+  const showSessions = (on: boolean) => {
+    setSessions(on);
+    if (narrow) {
+      // One screen at a time: the switch walks to the sessions and the
+      // 「←」 on that screen walks back to the file (ruling 33).
+      setScreen(on ? "sessions" : "file");
+      return;
+    }
+    if (on) {
+      grew.current = Math.round(sidePane.width);
+      void widenWindow(grew.current);
+    } else if (grew.current > 0) {
+      void widenWindow(-grew.current);
+      grew.current = 0;
+    }
+  };
+  /** What every switch at the strip's end wears (2026-09-16, rulings 26
+      and 44).
+   *
+   * **Pressed in is the rail's own 「open」 ink** (「并且,点击后要有状态.
+   * 这个icon要变成品牌绿」): `--rail-on-ink`, the same green the rail
+   * lights an open landing with, so 「this one is on」 is one colour in
+   * the whole app. **Not `--lq3` itself** — the brand green measures
+   * 2.22 against paper, under the 3.0 SC 1.4.11 asks of a graphic, and
+   * a 20px glyph that has to be told on from off is a mark in exactly
+   * that sense. The token carries a green deep enough per ground, which
+   * is the argument `RailItem` already made and this borrows whole.
+   *
+   * Off is muted, as it was: the pair has to differ in more than hue. */
+  const switchClass = (on: boolean) =>
+    cn(
+      "min-h-touch min-w-touch",
+      on
+        ? "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]"
+        : "text-muted-foreground",
+    );
   /** Which session this column is standing in, by id, or `null` for
       the list. **Dropped when the workspace changes** along with the
       tree's position and the open file: a session belongs to one
       project, and carrying it across would leave somebody looking at a
       conversation about a directory that is no longer on screen. */
   const [picked, setPicked] = useState<string | null>(null);
+  /** …and the one the wizard just made here, marked on the list until
+      somebody presses a row. **Not `picked`**: `picked` is 「this column
+      is standing in that session」 and opens its detail, while this is
+      「that one is yours, it is the new one」 — the row a person looks
+      for when the wizard closes. A fresh session has nothing in it to
+      read yet, so putting the column inside it would be a back arrow
+      over an empty conversation. */
+  const [made, setMade] = useState<string | null>(null);
+  useEffect(() => {
+    if (opened === null) return;
+    setMade(opened);
+    // The column has to be on screen for the mark to be seen — and on
+    // narrow it is a screen (33), which is the same sentence there.
+    if (sidePane.collapsed) showSessions(true);
+    else if (narrow) setScreen("sessions");
+    // Standing in some other session, the new row is behind a back
+    // arrow; the list is where it is visible.
+    setPicked(null);
+    onOpenedSeen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opened]);
   const [git, setGit] = useState<GitStatus | null>(null);
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
@@ -539,6 +676,11 @@ export function WorkspacePane({
   const open = useCallback(
     (path: string, pinned: boolean) => {
       setFile(path);
+      // …and on the narrow face, pressing a file in the tree is how you
+      // get to the file: one screen at a time, and this is the step
+      // (ruling 33). Said here rather than in the tree, because which
+      // screens exist is this pane's fact and not the tree's.
+      setScreen("file");
       // Read before the tabs move, because what happens to the preview
       // seat depends on whether this file was already on the strip.
       const known = tabs.includes(path);
@@ -584,12 +726,6 @@ export function WorkspacePane({
       });
       setPreview((was) => (was === path ? null : was));
       setDrafts((was) => {
-        if (!was.has(path)) return was;
-        const now = new Map(was);
-        now.delete(path);
-        return now;
-      });
-      setUndos((was) => {
         if (!was.has(path)) return was;
         const now = new Map(was);
         now.delete(path);
@@ -660,12 +796,17 @@ export function WorkspacePane({
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "B")) {
         e.preventDefault();
-        treePane.toggle();
+        // **On the narrow face it means「the tree」, not「fold the
+        // tree」** (2026-09-16 ruling 33): there is no column to fold
+        // there, and the key's whole job on both faces is the same one
+        // — put the tree in front of me, from wherever I am.
+        if (narrow) setScreen("tree");
+        else treePane.toggle();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [treePane]);
+  }, [treePane, narrow]);
 
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one
@@ -687,7 +828,16 @@ export function WorkspacePane({
         preview: preview === path,
         // The file's own kind on the tab too (2026-09-16:「标签页打开了,
         // 最上方也要有 icon」) — the same icon the tree drew for it.
-        glyph: <FileKindIcon name={basename(path)} />,
+        //
+        // **32, which is the two lines' own height** (2026-09-16:「标签
+        // 页上, 文件类型的icon, 过小了…可以放大一点, 和这两行对齐」). The
+        // tab is a name over a path, 18 and 14 of leading, and the glyph
+        // stands beside the pair rather than on the first line — so its
+        // box is the pair's height and Seti's shape paints about 23 of
+        // it. The size is set here because this is where the glyph is
+        // made; `TabStrip` places what it is handed and sizes nothing
+        // (its own head says so).
+        glyph: <FileKindIcon name={basename(path)} className="size-8" />,
         menu: tabMenu(path),
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -757,7 +907,7 @@ export function WorkspacePane({
       )}
 
       <div className="flex min-h-0 flex-1">
-        {tree && (
+        {(narrow ? screen === "tree" : tree) && (
           <div
             data-ws-tree
             // **A ceiling on the share, not only a width** (工作区批⑨).
@@ -768,8 +918,15 @@ export function WorkspacePane({
             // column and the pane scrolled sideways — and the first
             // thing to notice was `check-face`'s touch floor, which
             // measured a 24-wide editor.
-            className="flex max-w-[45%] shrink-0 flex-col border-r"
-            style={{ width: treePane.width }}
+            // **The whole screen on narrow, a column on wide.** A
+            // remembered column width applied to a screen would leave a
+            // phone's tree 288 wide in a 390 window with a dead strip
+            // beside it (ruling 33).
+            className={cn(
+              "flex flex-col",
+              narrow ? "min-w-0 flex-1" : "max-w-[45%] shrink-0 border-r",
+            )}
+            style={narrow ? undefined : { width: treePane.width }}
           >
             {/* **Two trees, one ruling apart** (工作区批⑦). A project
                 gets `FileTree`: rooted, expandable, with no way above
@@ -836,6 +993,7 @@ export function WorkspacePane({
             className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors outline-none hover:bg-border focus-visible:bg-ring"
           />
         )}
+        {(!narrow || screen === "file") && (
         <div className="flex min-w-0 flex-1 flex-col">
           {/* **One tab per open file, and the three switches at the far
               end of it** (工作区批⑧, the user's own layout: 「标签页的
@@ -862,6 +1020,26 @@ export function WorkspacePane({
             active={file === null ? "" : `${machine}:${file}`}
             onFocus={(id) => setFile(id.slice(machine.length + 1))}
             onClose={(id) => shut(id.slice(machine.length + 1))}
+            // **The way back to the tree, and only where the tree is
+            // off screen** (2026-09-16 ruling 33). The same control the
+            // sessions landing's narrow face draws for the same reason
+            // — one screen at a time, and every screen that is not the
+            // first has a way out of it. On wide the tree is a column
+            // away and there is nothing to go back from.
+            head={
+              narrow ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-ws-back
+                  aria-label={gui.back}
+                  onClick={() => setScreen("tree")}
+                  className="mb-1 min-h-touch min-w-touch flex-none"
+                >
+                  <IconBack />
+                </Button>
+              ) : undefined
+            }
             tail={
               <div className="flex flex-none items-center gap-0.5">
               {/* **预览, and only where there is something to render**
@@ -885,12 +1063,12 @@ export function WorkspacePane({
                   data-on={face === "preview"}
                   aria-label={gui.file_face_preview}
                   onClick={() => setFace((f) => (f === "preview" ? "source" : "preview"))}
-                  className={cn(
-                    "min-h-touch min-w-touch",
-                    face === "source" && "text-muted-foreground",
-                  )}
+                  className={switchClass(face === "preview")}
                 >
-                  <IconEye className="size-3.5" />
+                  {/* 20 of ink out of a 1024 viewbox that is filled edge
+                      to edge — see `switchClass` for the arithmetic the
+                      three of them share. */}
+                  <IconEye className="size-5" />
                 </Button>
               )}
                             {/* **Two switches now, not three** (2026-09-16). The tree's
@@ -906,20 +1084,19 @@ export function WorkspacePane({
                   aria-label={gui.workspace_sessions}
                   data-ws-sessions-switch
                   data-on={sessions}
-                  onClick={() => setSessions(!sessions)}
-                  className={cn("min-h-touch min-w-touch", !sessions && "text-muted-foreground")}
+                  onClick={() => showSessions(!sessions)}
+                  className={switchClass(sessions)}
                 >
-                  {/* The rail's glyph is 32 by birth (`RailGlyph`); at the
-                      strip's end it stands beside two 16s and wears
-                      their size (2026-09-16:「大小风格要一致」). */}
                   {/* **Equal ink, not equal boxes** (2026-09-16:「右上角的
-                      icon,明显大小不一」). Measured at a 16 box: the
-                      bubble paints 11×11, the logo 16×16, the eye 16×16
-                      — the rail glyph keeps air inside its canvas and
-                      the two filled marks fill theirs. So each is boxed
-                      to paint ~14: the bubble at 20, the other two at
-                      14. `check-face` measures the painted extents. */}
-                  <IconSessions className="size-5!" />
+                      icon,明显大小不一」), and **bigger** (「工作区右上角
+                      的四个icon过小. 浪费他们自己的空间,放大一点,但注意
+                      四个icon的大小一致性」). The rail's bubble keeps air
+                      inside its own canvas and the two filled marks fill
+                      theirs, so a box each is what makes the *painted*
+                      marks match: 28 here paints ~20, which is what 20
+                      on the other two paints. `check-face` measures the
+                      painted extents, never the class. */}
+                  <IconSessions className="size-7!" />
                 </Button>
                 {/* **Only where there is an editor to open.** A machine
                     without one, and a machine that could not be asked,
@@ -949,14 +1126,11 @@ export function WorkspacePane({
                     aria-label={codeAt === null ? gui.code_tab : gui.code_off}
                     title={code.version}
                     onClick={() => (codeAt === null ? want() : setCodeAt(null))}
-                    className={cn(
-                      "min-h-touch min-w-touch",
-                      codeAt === null && "text-muted-foreground",
-                    )}
+                    className={switchClass(codeAt !== null)}
                   >
-                    {/* 14: the logo fills its canvas (see the sessions
-                        glyph above for the arithmetic). */}
-                    <IconCode className="size-3.5" />
+                    {/* 20: the logo fills its canvas (see `switchClass`
+                        for the arithmetic). */}
+                    <IconCode className="size-5" />
                   </Button>
                 )}
               </div>
@@ -1052,18 +1226,10 @@ export function WorkspacePane({
                 // they are staying, exactly as a double click is.
                 if (d !== null) setPreview((was) => (was === file ? null : was));
               }}
-              undo={undos.get(file)}
-              onUndo={(t) =>
-                setUndos((was) => {
-                  const now = new Map(was);
-                  if (t === null) now.delete(file);
-                  else now.set(file, t);
-                  return now;
-                })
-              }
             />
           )}
         </div>
+        )}
         {sessions && !narrow && (
           <div
             data-ws-seam="sessions"
@@ -1075,7 +1241,7 @@ export function WorkspacePane({
             className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors outline-none hover:bg-border focus-visible:bg-ring"
           />
         )}
-        {sessions && (
+        {(narrow ? screen === "sessions" : sessions) && (
           <div
             data-ws-sessions
             // **Neither half scrolls this box** (工作区批⑩). It used to
@@ -1085,9 +1251,14 @@ export function WorkspacePane({
             // people stop using. So the scroller moved one level in, to
             // the rows alone. `DetailPane` was already `h-full` with a
             // scroller of its own.
-            // Capped for the tree's reason, one column over.
-            className="flex min-h-0 max-w-[45%] shrink-0 flex-col border-l"
-            style={{ width: sidePane.width }}
+            // Capped for the tree's reason, one column over — and on
+            // narrow it is the screen, for the tree's reason there too
+            // (ruling 33).
+            className={cn(
+              "flex min-h-0 flex-col",
+              narrow ? "min-w-0 flex-1" : "max-w-[45%] shrink-0 border-l",
+            )}
+            style={narrow ? undefined : { width: sidePane.width }}
           >
             {/* **A place to work, not a list of what exists**
                 (2026-09-13). Until now this column named the sessions
@@ -1106,6 +1277,25 @@ export function WorkspacePane({
                 cannot show its tabs is a switcher you have to switch
                 to. The back arrow is the way out, the shell's own
                 gesture on its narrow face. */}
+            {/* The way back to the file, for the head of the strip's
+                reason one column over (ruling 33) — and only while this
+                column is showing its list: standing **in** a session,
+                the back that matters is the one out of that session,
+                which `DetailPane` draws itself. */}
+            {narrow && picked === null && (
+              <div className="flex flex-none items-center border-b px-1 py-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-ws-back
+                  aria-label={gui.back}
+                  onClick={() => showSessions(false)}
+                  className="min-h-touch min-w-touch"
+                >
+                  <IconBack />
+                </Button>
+              </div>
+            )}
             {picked === null ? (
               // **The sessions landing's bar and the sessions landing's
               // list, both of them the real ones** (工作区批⑩:
@@ -1166,7 +1356,7 @@ export function WorkspacePane({
                     rows={mine}
                     query={query}
                     words={words}
-                    selected={picked}
+                    selected={picked ?? made}
                     onSelect={(r) => setPicked(r.id)}
                     onPin={onPin}
                     onClose={onClose}
@@ -1290,6 +1480,14 @@ function folded(root: string, git: GitStatus | null): Map<string, string> | null
   for (const r of git.rows) {
     const full = `${root}/${r.path}`;
     out.set(full, r.mark);
+    // **An ignored path is the one mark that does not travel up**
+    // (2026-09-16). The fold exists so a shut directory can say
+    // 「something under here differs」; `.gitignore` covering a file
+    // says the opposite, and a `src` whose only marked child was a
+    // build output would go grey — a claim about the directory that
+    // nothing made. The node folds the same way
+    // (`khor_node::git::fold`), so the two ends agree.
+    if (r.mark === IGNORED) continue;
     // Every step between the file and the root, exclusive of both: the
     // root itself is the head of the pane and never a row in it.
     let cut = full.lastIndexOf("/");

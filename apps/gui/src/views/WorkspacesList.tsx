@@ -33,12 +33,12 @@ import {
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconChevronRight } from "@/components/icons";
-import { Button } from "@/components/ui/button";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
 import { ago } from "@/words";
+import { IGNORED } from "@/views/fileRow";
 
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
@@ -240,11 +240,21 @@ export function WorkspacesList({
         const isOpen = selected?.device === r.device && selected.path === r.path;
         const git = marks[k];
         const at = times[k] ?? 0;
-        const changed = git ? git.rows.length : 0;
+        // **Ignored paths are rows too since 2026-09-16, and they are
+        // not changes** (`khor_node::git::IGNORED`): 「N 个文件改过」
+        // counting a build directory would be the corner reporting on
+        // things git is not even looking at.
+        const changed = git ? git.rows.filter((w) => w.mark !== IGNORED).length : 0;
         return (
           <div
             key={k}
             data-ws-line
+            // Whether this row's tree is out, said on the line rather
+            // than only drawn: the chevron is `aria-hidden` and may not
+            // be there at all (the narrow face has no column to fold),
+            // and a state nothing can read is a state a gate cannot
+            // hold (2026-09-16).
+            data-tree={isOpen && onTree !== undefined ? treeOpen : undefined}
             className={cn(
               "flex items-stretch border-b border-border/50",
               isOpen && "bg-accent",
@@ -265,7 +275,19 @@ export function WorkspacesList({
               data-ws-pinned={r.pinned}
               data-selected={isOpen}
               type="button"
-              onClick={() => onOpen(r)}
+              // **The row is the control, and pressing the open one
+              // folds its tree** (2026-09-16:「取消工作区list这个只能
+              // 点击『<』展开文件树吧. 还是点击整个工作区行都可以. 但
+              // 『<』保留为状态展示. 收起状态, 点击行来控制」— the user).
+              //
+              // The two meanings this was designed away from are still
+              // not both on one press: a row that is **not** open means
+              // 「open this workspace」 and nothing else, and it is only
+              // once a row is the one already in front that its press
+              // has anything else left to mean. So the second press is
+              // the fold, the selection never changes under it, and the
+              // middle column never moves.
+              onClick={() => (isOpen && onTree !== undefined ? onTree() : onOpen(r))}
               className={cn(
                 "flex min-h-touch min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left",
                 isOpen && "hover:bg-accent",
@@ -332,37 +354,41 @@ export function WorkspacesList({
               </span>
             </button>
           </RowMenu>
-          {/* The tree's fold, on the open row only — a closed row has
-              no tree to fold, and a chevron on every row would read as
-              「expand this row」. Turned when the tree is out, the same
-              glyph the tree's own directories turn. */}
+          {/* The tree's state, on the open row only — a closed row has
+              no tree to be about, and a chevron on every row would read
+              as 「expand this row」. Turned when the tree is out, the
+              same glyph the tree's own directories turn.
+
+              **A drawing, not a button** (2026-09-16, the ruling above):
+              「『<』保留为状态展示」. It was a control and the row was
+              not; now the row is the control and this says which way it
+              went. `aria-hidden` because it is a picture of state a
+              screen reader already has from the row's own press — and
+              the state itself is on `[data-ws-line]`'s `data-tree`,
+              where a reader of the DOM finds it whether or not this
+              glyph is drawn. */}
           {isOpen && onTree !== undefined && (
-            <Button
-              variant="ghost"
-              size="icon"
-              data-ws-tree-toggle
+            <span
+              data-ws-tree-mark
               data-on={treeOpen}
-              aria-label={gui.workspace_tree}
-              onClick={onTree}
-              // **As tall as the row, and its wash is the whole strip**
-              // (2026-09-16:「这个按钮悬浮与打开的高亮只有按钮附近一小圈,
-              // 应该是和这整个 list 等高的」): `self-stretch` with the
-              // icon variant's fixed height taken off, square corners so
-              // the strip meets the row's edges.
-              // `h-auto!` with the mark: the icon variant's `h-ctl-md` is a
-              // height tailwind-merge does not read as one (`button.tsx`
-              // measures it itself), so both classes survive and only the
-              // important one lets `self-stretch` win.
-              className="h-auto! min-w-touch flex-none self-stretch rounded-none text-muted-foreground"
+              aria-hidden="true"
+              // As tall as the row still, though nothing washes now:
+              // the glyph sits in the middle of the row's right edge
+              // whatever height the row came out at, and a box that
+              // stretched with it is how that stays true. The `min-w-touch`
+              // is not a target any more — it is the width the corner
+              // was, kept so the two rows either side of a fold do not
+              // step sideways as the glyph turns.
+              className="flex min-w-touch flex-none items-center justify-center self-stretch text-muted-foreground"
             >
               {/* **Left and right, not up and down** (2026-09-16:「收起是
                   <,打开是 >」): the tree is the column to this list's
                   right, so the glyph points at it when it is out and
                   back at this list when it is folded. */}
               <IconChevronRight
-                className={cn("transition-transform", !treeOpen && "rotate-180")}
+                className={cn("size-4 transition-transform", !treeOpen && "rotate-180")}
               />
-            </Button>
+            </span>
           )}
           </div>
         );

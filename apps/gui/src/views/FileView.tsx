@@ -131,8 +131,6 @@ export function FileView({
   path,
   face = "source",
   onSaved,
-  undo,
-  onUndo,
   draft,
   onDraft,
   saveAt = 0,
@@ -166,20 +164,16 @@ export function FileView({
       there. */
   draft?: Draft;
   onDraft?: (draft: Draft | null) => void;
-  /** What this file held **before the last save this face made**, if
-      there was one.
-
-      **Held by the pane for the same reason the draft is** (工作区批4
-      收尾): the view is remounted on every file, and a one-step undo
-      that evaporates when you glance at the file next door is an undo
-      nobody can rely on. Absent when nothing has been saved here.
-
-      **In memory, and the limit is said out loud** (`gui.file_undo`'s
-      comment): closing the workspace drops it. What it catches is the
-      「存完才发现存错了」 moment, which is a minute wide; a version
-      history is a different thing with a disk behind it. */
-  undo?: string;
-  onUndo?: (text: string | null) => void;
+  /* ⚠️ **Tombstone: `undo` / `onUndo` went with the strip**
+     (2026-09-16). What this file held before the last save was kept by
+     the pane and put back into the box by a 「回到存之前」 button — and
+     that button lived on the only row this view ever drew over the
+     file, which is the row the user had taken off:「修改文件不要显示
+     "存好了"和"回到存之前", 类似要在文件上方新增一列的东西都不要」.
+     Keeping the state with nothing to press it would be a pane
+     remembering a text for a control that is not there. **What is given
+     up is said out loud**: the 「存完才发现存错了」 minute has no khor
+     answer now; the editor's own undo stack is the whole of it. */
   /** Bumped by whoever holds this pane to ask for a save — the sheet
       that catches a tab being closed over a draft (工作区批⑧).
       **A counter and not a callback handed the other way**, because the
@@ -275,8 +269,26 @@ export function FileView({
     if (!el || !peek) return;
     const b = el.getBoundingClientRect();
     const p = peek.getBoundingClientRect();
-    if (p.top >= b.top && p.bottom <= b.bottom) return;
-    el.scrollTop += p.top - b.top - el.clientHeight / 3;
+    // **Its top edge to the scroller's top edge, every time**
+    // (2026-09-16:「点击git状态bar的时候, 如果从文件第一行开始就有此bar,
+    // 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标拖动. 应该直接跳转
+    // 到提示框的最上方」— the user).
+    //
+    // It used to scroll **only when the block was out of view**, and to
+    // a third of the way down. Both halves are what the user hit: a
+    // hunk at line 1 lays its old text *above* line 1, so scrolling to
+    // the line leaves the block off the top; and a block taller than
+    // the viewport is partly in view by any test that asks about its
+    // top edge, so 「it is already visible」 was true of a panel whose
+    // first line was above the screen. Asking nothing and always
+    // landing the same way is also the shorter rule to hold: press a
+    // bar, the old text is at the top.
+    //
+    // `--gap-row` of air above it, so the block does not start flush
+    // against the column's edge — the same gap the rows either side of
+    // it are spaced by.
+    const air = Number.parseFloat(getComputedStyle(el).getPropertyValue("--gap-row")) || 0;
+    el.scrollTop += p.top - b.top - air;
   }, [shown]);
   /** The one scroller in this view. Held so a step can bring its hunk
       into view **without `scrollIntoView`**, which walks every
@@ -685,10 +697,6 @@ export function FileView({
         // keystrokes, and the digest that came back is the digest of
         // `sent` — so the text baseline moves to `sent` and whatever
         // they typed on top of it is still unsaved.
-        // What was there a moment ago, kept before it is overwritten
-        // in state. `file.text` is khor's own last reading of the
-        // file, which is exactly the thing this save replaced.
-        onUndo?.(file?.text ?? null);
         setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
         setEdit((e) => (e === null ? e : { ...e, was: w.digest }));
         setClashes(null);
@@ -762,7 +770,6 @@ export function FileView({
     fetchFileText(machine, path)
       .then((now) => saveFileText(machine, path, now.digest, sent))
       .then((w) => {
-        onUndo?.(file?.text ?? null);
         setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
         setEdit((e) => (e === null ? e : { ...e, text: sent, was: w.digest }));
         setClashes(null);
@@ -949,7 +956,9 @@ export function FileView({
   })();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // `relative`: the one notice this view still has floats at the foot
+    // of the column rather than standing over the file (see it below).
+    <div className="relative flex min-h-0 flex-1 flex-col">
       {/* **源码 / 预览 has no strip of its own any more** (2026-09-16):
           the switch is one glyph at the far end of the tab strip, drawn
           by `WorkspacePane` beside the three column switches, and this
@@ -962,110 +971,6 @@ export function FileView({
           and unsaved — never the file on disk. That is the whole reason
           this is a face and not a kind: a rendered view lagging the
           text by one save would be showing a document nobody has. */}
-      {/* **Only while something is unsettled.** A file that is open and
-          saved says nothing at all — 「没有就不显示」, and a permanent
-          「已保存」is a label that stops being read on the second file.
-          A refusal stays until the next save, because it is the one
-          thing here a person has to act on. */}
-      {(dirty || saved !== null) && (
-        <div className="flex items-center gap-3 border-b px-3 py-1.5 text-aux text-muted-foreground">
-          {/* **A refusal outranks「未存」.** Both are true after one —
-              the file is still unsaved *and* khor knows why — and the
-              one worth naming is the one that has to be acted on. */}
-          <span
-            data-save-state={
-              typeof saved === "string" ? "refused" : dirty ? "unsaved" : "saved"
-            }
-          >
-            {typeof saved === "string" ? saved : dirty ? gui.file_unsaved : gui.file_saved}
-          </span>
-          {/* What a merge left behind, and **only while the box still
-              holds it**: it clears on the next keystroke and on the
-              save, because a count of clashes that outlived the text it
-              counted would be a number about nothing. */}
-          {clashes !== null && (
-            <span data-merged={clashes} className="text-muted-foreground">
-              {clashes === 0 ? gui.file_merged_clean : gui.file_merged_clashes(clashes)}
-            </span>
-          )}
-          {/* **Three ways out of a refusal, where there used to be
-              none** (2026-09-13). A save khor would not make left the
-              sentence 「这个文件在你编辑期间变了」 standing and nothing
-              to press — the person's only move was to copy their text
-              somewhere else by hand. Two of these throw one side away
-              and say so on the button; the third keeps both and is the
-              one a person usually wants, which is why it sits between
-              them rather than at the end. */}
-          {typeof saved === "string" && (
-            <span className="ml-auto flex shrink-0 gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                data-take-theirs
-                disabled={saving}
-                onClick={theirs}
-                className="min-h-touch min-w-touch"
-              >
-                {gui.file_take_theirs}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                data-merge
-                disabled={saving}
-                onClick={merge}
-                className="min-h-touch min-w-touch"
-              >
-                {gui.file_merge}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                data-keep-mine
-                disabled={saving}
-                onClick={mine}
-                className="min-h-touch min-w-touch"
-              >
-                {gui.file_keep_mine}
-              </Button>
-            </span>
-          )}
-          {/* **Only with nothing unsaved in the way.** Offered beside
-              未存 it would be two buttons that both change the box,
-              and the one that throws work away must not be the easy
-              one to hit. */}
-          {typeof saved !== "string" && !dirty && undo !== undefined && (
-            <Button
-              variant="outline"
-              size="sm"
-              data-undo
-              onClick={() => {
-                // **Into the box, never onto the disk.** khor writes
-                // when somebody presses 存 and at no other moment, so
-                // this puts the old text back where it can be read
-                // and changed again before it becomes a file.
-                setEdit((e) => (e === null ? e : { ...e, text: undo }));
-                onUndo?.(null);
-              }}
-              className="ml-auto min-h-touch min-w-touch"
-            >
-              {gui.file_undo}
-            </Button>
-          )}
-          {dirty && typeof saved !== "string" && (
-            <Button
-              variant="outline"
-              size="sm"
-              data-save
-              disabled={saving}
-              onClick={save}
-              className="ml-auto min-h-touch min-w-touch"
-            >
-              {gui.file_save}
-            </Button>
-          )}
-        </div>
-      )}
       {/* **The strip that counted the hunks is gone** (2026-09-16):
           「取消 git 文件上方的状态栏,比如现在的『1 处改动 第 1 处』」—
           the user. What it was for — reaching a hunk eight hundred lines
@@ -1075,9 +980,19 @@ export function FileView({
           tall and every place is on it at once. A count and a 第 N 处
           were the words that stood in for a picture nobody had drawn
           yet. */}
-      {stale && (
-        <div className="border-b px-3 py-1.5 text-aux text-muted-foreground">{gui.git_stale}</div>
-      )}
+      {/* **And so is the row that said 存好了 / 未存 / 回到存之前**
+          (2026-09-16:「修改文件不要显示"存好了"和"回到存之前", 类似要在
+          文件上方新增一列的东西都不要」— the user). Every one of those
+          three had a place that already said it — the tab's own dot,
+          ⌘S, the dot going out — and what the row cost was paid on the
+          keystroke: it appeared the moment somebody typed, and the line
+          they were typing on moved down by the height of a strip.
+
+          What is left is the refusal, and it is the one thing on this
+          screen a person **must** act on (a save khor would not make,
+          and what a merge left behind). So it stays — at the foot of
+          the column, floating over the file rather than pushing it
+          (`data-file-notice` below). */}
       {file.cut && (
         <div className="flex items-center gap-3 border-b px-3 py-1.5 text-aux text-muted-foreground">
           <span className="tabular-nums">
@@ -1259,6 +1174,94 @@ export function FileView({
       </div>
       <Ruler hunks={hunks} tops={tops} span={span} shown={shown} onGo={goTo} />
       </div>
+      )}
+      {/* **The one notice left, and it floats** (2026-09-16:「类似要在
+          文件上方新增一列的东西都不要」— the user).
+
+          Three things can land in it and all three are about a save
+          that did not simply happen: khor refused to write (the far
+          copy moved under the buffer), what a merge left behind, and
+          the gutter having gone quiet because the box no longer matches
+          the disk. The first of those is the only place in this column
+          where somebody **has** to act, which is why it is still drawn
+          at all — 「没有就不显示」 covers the rest of the day.
+
+          **`absolute`, at the foot, over the text.** Anything in the
+          flow above the file moves the line a person is typing on the
+          moment it appears; this covers the last row or two instead,
+          and the file underneath is still where it was. It is at the
+          foot rather than the head because the head is where the caret
+          usually is — a notice there would cover the thing it is about.
+
+          **It goes when the reason goes**, which is already how all
+          three of its facts behave: `clashes` clears on the next
+          keystroke and on the save, `saved` clears when the next save
+          starts, and `stale` is false the moment the box matches the
+          disk again. */}
+      {(typeof saved === "string" || clashes !== null || stale) && (
+        <div
+          data-file-notice
+          // `pointer-events-none` on the frame and back on inside it:
+          // the strip spans the column, and the part of it that is not
+          // the card must not eat presses meant for the code under it.
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-2"
+        >
+          <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-1.5 text-aux text-muted-foreground shadow-md">
+            {typeof saved === "string" && <span data-save-state="refused">{saved}</span>}
+            {clashes !== null && (
+              <span data-merged={clashes}>
+                {clashes === 0 ? gui.file_merged_clean : gui.file_merged_clashes(clashes)}
+              </span>
+            )}
+            {/* The gutter going quiet, said here rather than as a row of
+                its own: a file with no bars reads as a file that matches
+                HEAD, and that is exactly the claim khor cannot make
+                while there is something typed in the box. */}
+            {stale && typeof saved !== "string" && <span data-git-stale>{gui.git_stale}</span>}
+            {/* **Three ways out of a refusal, where there used to be
+                none** (2026-09-13). A save khor would not make left the
+                sentence 「这个文件在你编辑期间变了」 standing and nothing
+                to press — the person's only move was to copy their text
+                somewhere else by hand. Two of these throw one side away
+                and say so on the button; the third keeps both and is the
+                one a person usually wants, which is why it sits between
+                them rather than at the end. */}
+            {typeof saved === "string" && (
+              <span className="flex shrink-0 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-take-theirs
+                  disabled={saving}
+                  onClick={theirs}
+                  className="min-h-touch min-w-touch"
+                >
+                  {gui.file_take_theirs}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-merge
+                  disabled={saving}
+                  onClick={merge}
+                  className="min-h-touch min-w-touch"
+                >
+                  {gui.file_merge}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-keep-mine
+                  disabled={saving}
+                  onClick={mine}
+                  className="min-h-touch min-w-touch"
+                >
+                  {gui.file_keep_mine}
+                </Button>
+              </span>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -1706,13 +1709,18 @@ function Ruler({
               // fact rather than a control a finger hunts for, and a
               // 44-tall mark would cover a fifth of the file.
               className={cn(
-                // **Six-tenths, so the scrollbar's thumb reads through a mark**
+                // **Half, so the scrollbar's thumb reads through a mark**
                 // (2026-09-16:「文件右侧悬浮的滚动条,现在在 git 状态条上完全
-                // 看不见了」). The marks stand above the scroller for
-                // their press; an opaque mark hid the overlay thumb
-                // completely where the two crossed. VS Code's
-                // decorations are translucent for the same reason.
-                "pointer-events-auto absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs opacity-60",
+                // 看不见了」, and then again:「文件右侧的滑动按钮还是在状态
+                // 条下看不清, 透明度再低一点」). The marks stand above the
+                // scroller for their press; an opaque mark hid the
+                // overlay thumb completely where the two crossed. VS
+                // Code's decorations are translucent for the same
+                // reason. **Both sides moved on the second pass**: the
+                // mark came down from .6 and the thumb went up to half
+                // ink (`--scroll-thumb-strong`) — the thing that has to
+                // be readable is the one you drag.
+                "pointer-events-auto absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs opacity-50",
                 hunkInk(h),
               )}
               style={{

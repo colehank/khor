@@ -438,11 +438,25 @@ export default function App() {
       because what the list needs to know is 「something changed」 and
       not what: it re-reads a local table, which costs nothing. */
   const [wsAdded, setWsAdded] = useState(0);
-  const openNewSession = useCallback((machine = "", dir = "") => {
+  /** Open the wizard. `inPlace` is the workspace column's own 「+」
+      (2026-09-16 ruling 34): the session it makes belongs to the
+      project somebody is standing in, so when it opens, this shell
+      stays where it is and hands the id down instead of walking to the
+      sessions landing. Every other door keeps the old behaviour —
+      「the freshly-opened session is what the person came to see」, and
+      from those doors there is nowhere else it could be seen. */
+  const openNewSession = useCallback((machine = "", dir = "", inPlace = false) => {
     setNewSessionOn(machine);
     setNewSessionAt(dir);
+    setNewSessionInPlace(inPlace);
     setSheet("new");
   }, []);
+  /** Whether the open wizard was started from a workspace's own column,
+      and the id it left there. **Two pieces of state and not one**: the
+      first is true while the sheet is up and the second outlives it,
+      which is what the column reads. */
+  const [newSessionInPlace, setNewSessionInPlace] = useState(false);
+  const [openedInWs, setOpenedInWs] = useState<string | null>(null);
   // Settings sit behind the rail's last glyph, one level down and not on
   // any first screen (docs/UX.md 设置: 升成了也藏深). Its own state
   // rather than another `Sheet`: those three are the "+" menu's, and
@@ -1400,8 +1414,11 @@ export default function App() {
           onChoose: chooseArrange,
         }}
         // 「+」 in that column: the wizard, on this workspace's machine
-        // and in its directory (工作区批⑩).
-        onNewSession={openNewSession}
+        // and in its directory (工作区批⑩) — and what it opens stays
+        // here (2026-09-16 ruling 34).
+        onNewSession={(m, dir) => openNewSession(m, dir, true)}
+        opened={openedInWs}
+        onOpenedSeen={() => setOpenedInWs(null)}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
       />
@@ -1463,6 +1480,15 @@ export default function App() {
         // its person wants the same thing). The selection outlives the
         // poll that has not listed the row yet, by the guard above.
         onOpened={(id) => {
+          // **Made from a workspace: stay in the workspace** (ruling
+          // 34). The session is that project's, the column beside its
+          // files is where it belongs, and a landing change here was
+          // khor walking somebody out of the screen they were working
+          // on (「应该是在工作区就地打开」).
+          if (newSessionInPlace) {
+            setOpenedInWs(id);
+            return;
+          }
           setMark(false);
           setLanding("sessions");
           sessionTabs.open(id);

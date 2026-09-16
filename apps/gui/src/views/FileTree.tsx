@@ -322,9 +322,23 @@ export function FileTree({
                   key={r.full}
                   data-file={r.name}
                   data-depth={r.depth}
+                  data-open={open === r.full}
                   style={indent(r.depth)}
+                  // **The open file's whole row is washed**
+                  // (2026-09-16:「文件树中, 被选中的文件也要高亮」— the
+                  // user). It was the name going bold and nothing else,
+                  // which from across a column is not a state: bold is
+                  // read as a kind of file before it is read as
+                  // 「this one is in front」. `bg-accent` is what the
+                  // workspace list and the sessions list already mark
+                  // their front row with — one gesture, one look — and
+                  // it goes on the row rather than on the button so the
+                  // indent is inside the wash, the way VS Code paints
+                  // it. The weight stays: two marks of one state cost
+                  // nothing and the row is legible without colour.
                   className={cn(
-                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm hover:bg-muted/50",
+                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm",
+                    open === r.full ? "bg-accent" : "hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >

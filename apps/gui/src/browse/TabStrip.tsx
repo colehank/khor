@@ -134,6 +134,7 @@ export function TabStrip({
   onClose,
   onNew,
   onSwitch,
+  head,
   tail,
 }: {
   faces: TabFace[];
@@ -147,6 +148,14 @@ export function TabStrip({
       every tab** — see the file head; a landing that has no switcher to
       open leaves this out and gets the strip alone. */
   onSwitch?: () => void;
+  /** Whatever the landing pins against the **left** end of the strip.
+      One caller so far: the workspace's narrow face, where the file is
+      one screen of three and this is the way back to the tree
+      (2026-09-16 ruling 33). **Before the scroller**, for `tail`'s
+      reason — it is not about the tabs, so it must not scroll away with
+      them — and at the head because a way back belongs where a hand
+      looks for one. */
+  head?: ReactNode;
   /** Whatever the landing pins against the right end of the strip
       (工作区批⑧: the workspace puts its three switches there —
       「标签页的最右侧,显示现有的文件、session 和 vscode 切换」).
@@ -231,6 +240,7 @@ export function TabStrip({
       // showing every tab.
       className="flex flex-none items-end gap-1 bg-muted/40 px-2 pt-1"
     >
+      {head}
       <div
         ref={strip}
         data-tab-strip
@@ -281,11 +291,22 @@ export function TabStrip({
                 // around the label looked pressable and was not.
                 className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
               >
-                {/* A two-line file tab seats its glyph on the name line
-                    below, not beside the pair (2026-09-16:「标签页上的
-                    icon 也没有对齐,不和谐」— centred on two lines it
-                    hung between them). */}
+                {/* **A two-line file tab stands its glyph beside both
+                    lines** (2026-09-16:「标签页上, 文件类型的icon, 过小
+                    了. 而且上面是文件名,下面是路径. icon只和上面对齐,
+                    还对的不是很齐. 可以放大一点, 和这两行对齐」— the
+                    user).
+                    
+                    It sat on the name's line for one batch, which was
+                    the answer to 「centred on the pair it hangs between
+                    them」 — true of a 16 glyph beside 12 and 10 point
+                    text, and the wrong fix: what hung was a small mark
+                    with nothing to align *to*. Grown to the height of
+                    both lines it has the pair itself as its measure,
+                    which is where a session tab's avatar already
+                    stands. */}
                 {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-kind-mark flex-none" />}
+                {f.glyph && f.sub && <span className="flex-none">{f.glyph}</span>}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
                     arrangement the list rows keep, and for the same
@@ -313,20 +334,20 @@ export function TabStrip({
                   // fits inside the band because the band is the
                   // finger's floor (44) and two lines of 12/10 are 32.
                   <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
-                    <span className="flex min-w-0 items-center gap-1">
-                      {f.glyph && <span className="flex-none">{f.glyph}</span>}
-                      <span
-                        data-tab-name
-                        className={cn("min-w-0 truncate text-sm leading-tight", f.preview && "italic")}
-                      >
-                        {f.label}
-                      </span>
+                    <span
+                      data-tab-name
+                      className={cn("min-w-0 truncate text-sm leading-tight", f.preview && "italic")}
+                    >
+                      {f.label}
                     </span>
-                    {/* The path starts under the name's text, past the
-                        glyph, so the two lines read as one entry. */}
+                    {/* **Both lines start on one edge**, which is the
+                        glyph's right side: the icon is beside the pair
+                        now rather than inside the first line, so the
+                        `pl-5` that used to push the path under the
+                        name's text would push it past the name. */}
                     <span
                       data-tab-sub
-                      className={cn("truncate text-xs leading-tight text-muted-foreground", f.glyph && "pl-5")}
+                      className="truncate text-xs leading-tight text-muted-foreground"
                     >
                       {f.sub}
                     </span>

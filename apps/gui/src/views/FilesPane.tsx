@@ -388,8 +388,13 @@ export function FilesPane({
                   >
                     {/* The same kind icon the workspace tree draws
                         (2026-09-16): a file is the same file whichever
-                        tree it was found in. */}
-                    <FileKindIcon name={e.name} className="size-4" />
+                        tree it was found in. **20, not the tree's 24**:
+                        this pane's rows are the finger's floor rather
+                        than 28, and its text is the ordinary `text-sm`
+                        — the icon is sized to the line it sits on, and
+                        「基本占满这一行」 is the rule both are obeying,
+                        not one number carried across. */}
+                    <FileKindIcon name={e.name} className="size-5" />
                     <span className="min-w-0 truncate">{e.name}</span>
                   </button>
                   </RowMenu>

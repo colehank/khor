@@ -2229,11 +2229,16 @@ tab-close-others = "关闭其他"
 # 所以不做成一个带开关的动作。
 tab-copy-path = "复制路径"
 tab-copy-rel = "复制相对路径"
-# The two switches in a workspace's head. **Aria names, not labels** —
-# they are icons on screen (docs/UX.md: no pane wears its name where you
-# can see it), and a screen reader still has to be told which end each
-# one acts on.
-workspace-tree = "文件树"
+# The switch in a workspace's head. **An aria name, not a label** — it
+# is an icon on screen (docs/UX.md: no pane wears its name where you can
+# see it), and a screen reader still has to be told which end it acts
+# on.
+#
+# **`workspace-tree` 撤掉了**(2026-09-16):「取消工作区list这个只能点击
+# 『<』展开文件树吧. 还是点击整个工作区行都可以. 但『<』保留为状态展示」——
+# 折树的按钮没了,折树的是工作区自己那一行(它已经有名字了)和 ⌘B,那个雪佛龙
+# 变成一个 aria-hidden 的记号。一个没有控件的 aria 名字,是留给下一个人去
+# 猜「它在哪儿」的东西。
 workspace-sessions = "这里的会话"
 # Under a rendered document (工作区批6). **Says what this is not**,
 # because the thing it is not is what a person would otherwise assume:
@@ -2288,21 +2293,25 @@ git-hunk = "这一处改动"
 #
 # 「未存」rather than 「已修改」: what a person needs to know is that
 # something is still only in this window, not that they changed it —
-# they know they changed it, they were the one typing.
+# they know they changed it, they were the one typing. **Its last reader
+# is the sheet that catches a tab being closed over a draft** — the row
+# that used to say it over the file is gone (see below), and that dialog
+# is a title, not a strip over somebody's text.
 file-unsaved = "未存"
-# **`drafts-waiting` 撤掉了,没有替代键**(工作区批⑧,2026-09-15):
-# 「N 个文件未存」原来在工作区页的头上,而那一整行随标签页一起删了——
-# 「有几个文件没存」现在是每个标签自己戴的那个圆点,一个文件一个,指得出来。
-file-save = "存"
-# Said for a moment after a save lands, then it goes. **Not a
-# permanent「已保存」**: a resting file needs no word, and a label that
-# never leaves stops being read.
-file-saved = "存好了"
-# **一步,在内存里,只在这个工作区开着的时候。** 存下去之前那份内容留在这
-# 边,按一下放回框里——放回框,不是替你写盘,因为 khor 不在没人按存的时候
-# 动别人的文件。工作区关掉就没了,这条说破:它接住的是「刚存完就发现存错
-# 了」那一下,不是版本历史。
-file-undo = "回到存之前"
+# **`file-save`、`file-saved`、`file-undo` 三个键撤掉了**
+# (2026-09-16):「修改文件不要显示"存好了"和"回到存之前", 类似要在文件上方
+# 新增一列的东西都不要」—— the user.
+#
+# 那三个词住在文件正文上方的一条栏里,而那条栏一出现就把正文整体往下推:
+# 人正在打的那一行会跳一下。它们本来也各有别处说同一件事:未存是标签
+# 上那个圆点(工作区批⑧就是这么把「N 个文件未存」换掉的),「存」是 ⌘S,
+# 「存好了」是圆点消失,而「回到存之前」是一个开着的工作区里的一步内存撤销——
+# 它接住的是「刚存完就发现存错了」那一下,代价是一条永久占地方的栏,换不来。
+# **`drafts-waiting` 早在工作区批⑧就撤了**,同一条道理。
+#
+# 留下的只有「存被拒」那一条路:盘上变了、三个出口、合并的结果——那是这一页
+# 唯一一处人必须动手的地方,所以它还在,只是浮在中栏底下盖住正文,不再推它
+# (`file-take-theirs` 以下几个键)。
 # 保存被拒之后的两个出口。**不是合并**:三方合并是另一批,而一个只会说
 # 「它变了」的死胡同,是这两条要替掉的东西。
 file-take-theirs = "重新读(丢掉我改的)"

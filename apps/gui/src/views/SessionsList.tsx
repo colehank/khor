@@ -475,6 +475,13 @@ export function SessionsList({
           {open && (
           <div
           data-row={r.id}
+          // **The front row, said in the DOM and not only in a colour**
+          // (2026-09-16). It was `bg-accent` and nothing else, which a
+          // gate can only read by comparing two computed colours; the
+          // workspace list's own rows have carried this attribute since
+          // the day 「一个工作区被选中了没有任何状态」 was answered, and
+          // the two lists are one gesture.
+          data-selected={r.id === selected}
           data-mux={r.mux}
           data-word={r.word}
           data-pinned={r.pinned}

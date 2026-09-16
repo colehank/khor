@@ -590,6 +590,15 @@
    * all never reads this, and draws its own bar — dark, by then,
    * because `color-scheme` at the top of this block told it to. */
   --scroll-thumb: rgba(26, 26, 20, 0.25);
+  /* **The file column's own thumb, and it is the only scroller that
+     reads this** (2026-09-16:「文件右侧的滑动按钮还是在状态条下看不清,
+     透明度再低一点」— the user, meaning the thumb, which is what is
+     hard to see). The overview ruler is painted on that scrollbar's
+     strip, so a thumb at the app's ordinary wash disappears the moment
+     it crosses a mark. This is the wash that still reads over one, and
+     it is a token rather than a `color-mix` at the call site because
+     the number was argued once and the dark theme needs its own. */
+  --scroll-thumb-strong: rgba(26, 26, 20, 0.5);
 
   /* ── control heights: three, no fourth ────────────── */
   --ctl-sm: 24px;
@@ -663,16 +672,28 @@
      name still reads as sitting under its parent's rather than beside
      it, on the 224-wide column the tree opens at. */
   --tree-step: 12px;
-  /* The tree row's type slot: a file's kind icon at text height, a
-     directory's chevron centred in it; the indent guide hangs from the
-     slot's middle (2026-09-16:「应该和字等高」). */
-  --tree-slot: 16px;
+  /* The tree row's type slot: a file's kind icon, a directory's chevron
+     centred in it; the indent guide hangs from the slot's middle.
+     **28 — the row's own height — where this was 16** (2026-09-16:
+     「文件类型的icon仍然不够大. 试试看基本占满这一个文件显示高度」).
+
+     The box is the row and the line still breathes, because **Seti
+     keeps its air inside its own canvas**: measured, a 28 box paints
+     about 16–18 of ink. The ruling asked for 24 on the assumption that
+     a 24 box would paint 17; it paints 12–15, which is where the
+     previous size already was — the box is not what the eye reads, and
+     that is the same lesson the strip's end learned one ruling earlier
+     (44 boxes, three different marks). The chevron stays `size-3`: a
+     directory says what it is with a small turn, and 28 of chevron
+     would be a different kind of shout. */
+  --tree-slot: 28px;
   /* One row of the file tree. **28, not the 44 finger floor, on a
      screen with a pointer** (2026-09-16:「文件树的不同行间距太大了,屏幕
      空间宝贵」): the floor is for fingers, and a mouse has none
      (`check-face` section 3 walks the face with a finger emulated and
-     sees 44 below; the rest of the gate walks it with a mouse, 28). VS Code's row is 22; 28 seats a 16 icon beside 12.5px text
-     with air. A coarse pointer puts the floor back below. */
+     sees 44 below; the rest of the gate walks it with a mouse, 28). VS Code's row is 22; 28 seats the type icon
+     beside 12.5px text with air (`--tree-slot`, whose ink is ~17 of the
+     28). A coarse pointer puts the floor back below. */
   --tree-row: 28px;
   --gap-group: 18px; /* between groups that must not read as one list */
   --gap-pane: 24px;  /* a region's own breathing room, against its edge */
@@ -1327,6 +1348,9 @@
        is being held equal across the two themes is how far the thumb
        sits from the card, not how much ink is in it. */
     --scroll-thumb: rgba(238, 238, 231, 0.22);
+    /* Lower than the light theme's .5 for the same reason .22 is lower
+       than .25: the same alpha reads louder against near-black. */
+    --scroll-thumb-strong: rgba(238, 238, 231, 0.45);
   }
 }
 

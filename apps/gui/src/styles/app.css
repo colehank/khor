@@ -187,10 +187,13 @@ input[type="search"]::-webkit-search-decoration {
    The track was already transparent above. Only this scroller — the
    rest of the app keeps the thumb it measured. */
 [data-file-scroll] {
-  /* 80%, not 55%: at 55% the thumb vanished over a coloured mark
-     (2026-09-16:「滑动轮在有色的 git 状态条看不见了,不透明度可以高一点」).
-     The mark still reads through it at 80. */
-  scrollbar-color: color-mix(in srgb, var(--scroll-thumb) 80%, transparent) transparent;
+  /* **Its own ink, not a fraction of the app's** (2026-09-16:「文件右侧
+     的滑动按钮还是在状态条下看不清, 透明度再低一点」). This was 80% of
+     `--scroll-thumb`, which is α 0.2 — a wash that a coloured mark
+     underneath simply swallowed. `--scroll-thumb-strong` is half ink,
+     and the mark still reads through it because the mark is what moved
+     instead (`FileView`'s `Ruler`, opacity 50). */
+  scrollbar-color: var(--scroll-thumb-strong) transparent;
 }
 
 /* Two selectors because the two properties inherit differently:

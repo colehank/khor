@@ -45,6 +45,16 @@ export const DOT = "●";
     letter the node meant. */
 const WEIGHT: Record<string, number> = { C: 4, D: 3, M: 2, R: 2, A: 1, U: 1 };
 
+/** git's own letter for a path `.gitignore` covers (`khor_node::git`'s
+    `IGNORED`, porcelain's `!!` with one of its two characters).
+
+    **It is a letter that is never drawn.** What it has to say is said
+    by the name going grey — VS Code does the same, and a mark beside it
+    would be a second answer to a question the colour has finished. It
+    is here because the two places that decide a row's look both have to
+    recognise it: `markInk` paints it, [`Mark`] declines to draw it. */
+export const IGNORED = "!";
+
 /** The heavier of two letters. */
 export function heavier(a: string, b: string): string {
   return (WEIGHT[b] ?? 0) > (WEIGHT[a] ?? 0) ? b : a;
@@ -57,6 +67,14 @@ export function heavier(a: string, b: string): string {
     the other half to be remembered. */
 export function markInk(mark: string | undefined): string {
   switch (mark) {
+    // **Grey, and grey is the whole message** (2026-09-16:「文件树中,
+    // 被.gitignore的文件/目录名要变灰」— the user). Not one of the four
+    // git inks: those four say *how* a file differs from HEAD, and this
+    // one says git is not looking at the file at all. The muted ink is
+    // what this face already uses for 「here, and not the point」 (a
+    // dotfile row wears it), which is exactly the claim.
+    case IGNORED:
+      return "text-muted-foreground";
     case "M":
     // A rename shares 修改's ink: the file is still there and still
     // differs from HEAD, which is what the colour says; `R` is what
@@ -86,6 +104,14 @@ export function markInk(mark: string | undefined): string {
     differs」is both true and the only thing worth walking for. */
 export function Mark({ mark, dir = false }: { mark?: string; dir?: boolean }) {
   if (mark === undefined) return null;
+  // **An ignored path wears no mark at all, on a file or a directory.**
+  // Its name is already grey (`markInk`), and that is the whole of what
+  // there is to say; a dot or a `!` at the end of the row would spend a
+  // column on 「and here is that again」. VS Code gives it no badge
+  // either. **The fold above never sends one up a directory** either
+  // (`khor_node::git::fold`): a folder holding an edited file and a
+  // build output is 黄, not grey.
+  if (mark === IGNORED) return null;
   if (dir) {
     return (
       <span
