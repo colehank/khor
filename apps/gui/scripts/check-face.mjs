@@ -3330,6 +3330,58 @@ try {
         );
       }
 
+      // iii-bis) **and one click on a tab that is already pinned leaves
+      //      it pinned** (a bug found 2026-09-16). It used to hand the
+      //      preview seat back to it, which says nothing on screen and
+      //      costs the tab the next time anything in the tree is
+      //      pressed — a tab somebody kept on purpose, gone under a
+      //      gesture that is not about keeping or dropping anything.
+      //      VS Code demotes nothing, ever.
+      //
+      //      Two halves, because the first alone is a slope nobody
+      //      would see: the tab is still not drawn as a preview, **and**
+      //      the next single click elsewhere does not take its seat.
+      await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+      await wait(250);
+      open = await strip();
+      console.log(`tabs · one click on a pinned tab: ${JSON.stringify(open.map((t) => [t.name, t.slope]))}`);
+      const pinnedAgain = open.find((t) => t.name === "one.rs");
+      if (open.length !== 2 || pinnedAgain === undefined) {
+        fail(
+          `probe void: the strip holds ${JSON.stringify(open.map((t) => t.name))}, so there is no ` +
+            "pinned tab beside a preview to press",
+        );
+      } else {
+        if (pinnedAgain.slope === "italic") {
+          fail(
+            "one click on a pinned tab drew it as a preview again — nothing about a single click " +
+              "says 「stop keeping this」, and the next press in the tree would take its seat " +
+              "(src/views/WorkspacePane.tsx open)",
+          );
+        }
+        await press('[data-file-tree] [data-depth="0"][data-file="data.csv"] > button');
+        await wait(250);
+        const after = await strip();
+        console.log(`tabs · then a fresh file: ${JSON.stringify(after.map((t) => t.name))}`);
+        if (!after.some((t) => t.name === "one.rs")) {
+          fail(
+            `pressing another file after one click on a pinned tab left ${JSON.stringify(after.map((t) => t.name))} ` +
+              "— the pinned tab was eaten, which is the whole of what demoting it costs " +
+              "(src/views/WorkspacePane.tsx open)",
+          );
+        }
+        // Put the preview seat and the front tab back where the rest of
+        // this section expects them: `data.csv` took the seat `notes.md`
+        // was in, so it is closed and `notes.md` opened again.
+        const csv = page.locator('[data-ws-tab-strip] [data-tab-close]').last();
+        if ((await csv.count()) === 1) {
+          await csv.click();
+          await wait(150);
+        }
+        await press('[data-file-tree] [data-depth="1"][data-file="notes.md"] > button');
+        await wait(250);
+      }
+
       // iv) the dot: typing puts it there, a save takes it off.
       const box = await page.$("[data-edit]");
       if (box === null) {

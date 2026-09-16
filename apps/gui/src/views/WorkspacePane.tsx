@@ -506,10 +506,21 @@ export function WorkspacePane({
    * a real tab in every way but one: it is the tab the next glance is
    * allowed to take. A double click pins it, and so does typing in it —
    * both are a person saying they are staying.
+   *
+   * **A pinned tab is never taken back down to a preview** (a bug found
+   * 2026-09-16). One click on a file that is already open and already
+   * pinned used to make it the preview again, and from that moment the
+   * next file pressed in the tree would take its seat — so a tab
+   * somebody had deliberately kept disappeared under a press that says
+   * nothing about keeping or dropping anything. VS Code demotes
+   * nothing, ever; a tab leaves when it is closed.
    */
   const open = useCallback(
     (path: string, pinned: boolean) => {
       setFile(path);
+      // Read before the tabs move, because what happens to the preview
+      // seat depends on whether this file was already on the strip.
+      const known = tabs.includes(path);
       setTabs((was) => {
         if (was.includes(path)) return was;
         // The preview seat, if there is one, is where a fresh glance
@@ -521,9 +532,16 @@ export function WorkspacePane({
         remember(now);
         return now;
       });
-      setPreview((was) => (pinned ? (was === path ? null : was) : path));
+      setPreview((was) => {
+        if (pinned) return was === path ? null : was;
+        // Already on the strip and not the preview: it is pinned, and
+        // one click is not the gesture that unpins anything. The
+        // preview seat — somebody else's tab, or none — is left alone.
+        if (known && was !== path) return was;
+        return path;
+      });
     },
-    [preview, remember],
+    [tabs, preview, remember],
   );
 
   /** Take a tab off the strip. **Never asks here** — whether there is
