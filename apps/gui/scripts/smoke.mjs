@@ -937,13 +937,16 @@ for line in sys.stdin:
   const BROWSE_KIND = { browser: "page" };
   const openLanding = async (tab) => {
     // Re-clicking the open landing now collapses its list (App.tsx 再点
-    // 收起, 2026-09-02) — and only sessions/devices carry a list that
-    // toggles. This helper is「go here」, so when tab is already open,
-    // hop through the sibling first: the return is then a fresh switch,
-    // which always leaves the list expanded, and nothing here ever
-    // lands on a collapsed pane.
+    // 收起, 2026-09-02; the workspaces landing joined on 2026-09-16 —
+    // 「再次点击侧边栏工作区icon, 是收起工作区」). This helper is「go
+    // here」, so when tab is already open, hop through a sibling first:
+    // the return is then a fresh switch, which always leaves the list
+    // expanded, and nothing here ever lands on a collapsed pane. (31f
+    // went red on exactly this: back to the workspaces landing from the
+    // workspaces landing folded the list, and the row's click point was
+    // then whatever had spread into its place.)
     if (
-      (tab === "sessions" || tab === "devices") &&
+      (tab === "sessions" || tab === "devices" || tab === "workspaces") &&
       (await railItem(tab).getAttribute("data-on").catch(() => null)) === "true"
     ) {
       await railItem(tab === "sessions" ? "devices" : "sessions").click();
@@ -5280,7 +5283,21 @@ for line in sys.stdin:
   //      said focus sat, and because a button is not somewhere text
   //      could have gone by itself.
   await until("the box focused on arrival", 5_000, () =>
-    page.evaluate(() => document.activeElement?.hasAttribute("data-chat-input") === true),
+    page.evaluate(() => {
+      if (document.activeElement?.hasAttribute("data-chat-input") === true) return true;
+      // Name who has it instead, and what stands on top — the same
+      // two facts the miss below reports, because「not the box」on its
+      // own says nothing about which pane took the keys.
+      const tell = (el) =>
+        el.tagName + [...el.attributes].map((x) => `[${x.name}=${x.value.slice(0, 40)}]`).join("");
+      const a = document.activeElement;
+      const onTop = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')].map(tell);
+      throw new Error(
+        `focus is on ${a ? tell(a) : "nothing"}; on top: ${JSON.stringify(onTop)}; ` +
+          `fine pointer: ${window.matchMedia("(hover: hover) and (pointer: fine)").matches}; ` +
+          `boxes: ${document.querySelectorAll("[data-chat-input]").length}`,
+      );
+    }),
   );
   await railItem("sessions").focus();
   if (await page.evaluate(() => document.activeElement?.hasAttribute("data-chat-input"))) {
@@ -5291,6 +5308,19 @@ for line in sys.stdin:
     const landed = await page.evaluate(() => ({
       focused: document.activeElement?.hasAttribute("data-chat-input") === true,
       value: document.querySelector("[data-chat-input]")?.value ?? null,
+      // Who has the keys instead, and what is standing on top: the
+      // hook gives way to any dialog, menu or listbox in the document
+      // (`use-keys-to` ON_TOP), so a stray one left mounted by another
+      // pane is the first thing to name when this goes red.
+      active: (() => {
+        const a = document.activeElement;
+        if (!a) return null;
+        return a.tagName + [...a.attributes].map((x) => `[${x.name}=${x.value.slice(0, 40)}]`).join("");
+      })(),
+      onTop: [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')].map(
+        (el) => el.tagName + [...el.attributes].map((x) => `[${x.name}=${x.value.slice(0, 40)}]`).join(""),
+      ),
+      boxes: document.querySelectorAll("[data-chat-input]").length,
     }));
     if (!landed.focused || landed.value !== "q") {
       throw new Error(`a key typed at the rail did not land in the box: ${JSON.stringify(landed)}`);
