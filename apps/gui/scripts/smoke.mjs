@@ -7282,6 +7282,142 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
       throw new Error(`keep.txt wears ${letter} after a file changed under a busy session — git calls that M`);
     }
 
+
+    // 31j) the change bars wear git's own inks, and the overview ruler
+    //      carries the same places — on a real checkout on alpha's disk,
+    //      read over the mesh (2026-09-16).
+    //
+    //      「文件里,有改动或 git 差异的那个竖线,是要有颜色的,和现在的
+    //      git 状态颜色一致。」「右侧滑动条后方,就是全文件带颜色的 git
+    //      差异的那个竖线。」— the user.
+    //
+    //      `check-face` measures the three shapes against routed bytes.
+    //      What is only true here is that the ink comes out right on a
+    //      diff **git itself computed**, between HEAD and a file on
+    //      another machine's disk — the node's own `gix` hunks rather
+    //      than a fixture's array, which is the one thing a routed
+    //      `git_diff` can never be wrong about.
+    //
+    //      **The change is made to line 1**, so the hunk is a
+    //      modification rather than an insertion: `postprocess_lines`
+    //      slides an append down to 「a new line 2」 (`git.rs` hunks),
+    //      and 修改's ink is the one the ruling names out loud
+    //      (「黄色是已修改」, 工作区批⑦).
+    writeFileSync(wsKeep, "ONE\ntwo\n");
+    await setHiddenWs(true);
+    await setHiddenWs(false);
+    await until("keep.txt still marked after a second edit", 30_000, async () =>
+      (await page.locator('[data-file="keep.txt"] [data-git-mark]').count()) === 1,
+    );
+    await page.locator('[data-file="keep.txt"] > button').first().click();
+    await until("alpha's keep.txt on the sheet with a bar in its gutter", 30_000, async () =>
+      (await page.locator('[data-sheet] [data-line="2"]').count()) === 1 &&
+      (await page.locator("[data-gutter] [data-hunk]").count()) > 0,
+    );
+    const painted = await page.evaluate(() => {
+      // The four tokens, resolved to what a browser would paint. Read
+      // this way rather than compared as hex: a bar's own colour comes
+      // back as `rgb(...)` and a token is written as a hex literal, so
+      // the only honest comparison is two computed values.
+      const inkOf = (name) => {
+        const probe = document.createElement("div");
+        probe.style.color = `var(${name})`;
+        document.body.appendChild(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      };
+      const tokens = {
+        modified: inkOf("--git-modified"),
+        added: inkOf("--git-added"),
+        deleted: inkOf("--git-deleted"),
+        conflict: inkOf("--git-conflict"),
+        mark: inkOf("--git-mark"),
+      };
+      const letter = document.querySelector('[data-file="keep.txt"] [data-git-mark]');
+      const ruler = document.querySelector("[data-overview]");
+      const box = document.querySelector("[data-file-scroll]");
+      return {
+        tokens,
+        weight: letter?.getAttribute("data-git-weight") ?? null,
+        letterInk: letter === null ? null : getComputedStyle(letter).color,
+        bars: [...document.querySelectorAll("[data-gutter] [data-hunk]")].map((el) => ({
+          at: el.getAttribute("data-hunk"),
+          ink: getComputedStyle(el).backgroundColor,
+        })),
+        marks:
+          ruler === null
+            ? null
+            : [...ruler.querySelectorAll("[data-overview-mark]")].map((el) => ({
+                at: el.getAttribute("data-overview-mark"),
+                ink: getComputedStyle(el).backgroundColor,
+                h: Math.round(el.getBoundingClientRect().height * 10) / 10,
+              })),
+        rulerPastBox:
+          ruler === null || box === null
+            ? null
+            : Math.round((ruler.getBoundingClientRect().left - box.getBoundingClientRect().right) * 10) / 10,
+      };
+    });
+    console.log(`workspaces · git inks: ${JSON.stringify(painted)}`);
+    if (painted.bars.length === 0) {
+      throw new Error("alpha's modified file drew no change bar, so there is no ink to read");
+    }
+    if (painted.letterInk === null || painted.weight !== "M") {
+      throw new Error(
+        `the tree says keep.txt is ${painted.weight} — this claim pairs the bar against 修改's ink and ` +
+          "needs git to be calling it a modification",
+      );
+    }
+    for (const bar of painted.bars) {
+      if (bar.ink === painted.tokens.mark) {
+        throw new Error(
+          `the bar at line ${bar.at} is still ${bar.ink}, the foreground at half strength — 「要有颜色的」`,
+        );
+      }
+      if (bar.ink !== painted.letterInk) {
+        throw new Error(
+          `the bar at line ${bar.at} is ${bar.ink} while the tree draws keep.txt's M in ` +
+            `${painted.letterInk} — 「和现在的 git 状态颜色一致」`,
+        );
+      }
+      if (bar.ink !== painted.tokens.modified) {
+        throw new Error(
+          `…and neither of them is --git-modified (${painted.tokens.modified}), so the pair agrees on ` +
+            "a colour that is not git's",
+        );
+      }
+    }
+    if (painted.marks === null) {
+      throw new Error(
+        "there is no overview ruler beside the file — 「右侧滑动条后方,就是全文件带颜色的 git 差异的" +
+          "那个竖线」",
+      );
+    }
+    if (painted.marks.length !== painted.bars.length) {
+      throw new Error(
+        `the ruler carries ${painted.marks.length} mark(s) for ${painted.bars.length} bar(s) — it is the ` +
+          "same places, seen whole instead of one at a time",
+      );
+    }
+    for (const mark of painted.marks) {
+      if (mark.h <= 0) {
+        throw new Error(`the ruler's mark for line ${mark.at} has no height, so nothing is on the map`);
+      }
+      if (mark.ink !== painted.letterInk) {
+        throw new Error(
+          `the ruler's mark for line ${mark.at} is ${mark.ink} where the bar and the letter are ` +
+            `${painted.letterInk} — one file, one colour`,
+        );
+      }
+    }
+    if (painted.rulerPastBox !== null && painted.rulerPastBox < -1) {
+      throw new Error(
+        `the ruler starts ${-painted.rulerPastBox}px inside the file's own scroller — 「滑动条后方」 ` +
+          "means beside it, not over the text",
+      );
+    }
+
     //      Back to the landing, so 31f starts from the list rather than
     //      from wherever the last press left this pane.
     await openLanding("workspaces");
