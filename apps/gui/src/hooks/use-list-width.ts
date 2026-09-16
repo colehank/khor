@@ -20,8 +20,13 @@ import type React from "react";
     session list.
 
     The names are written here rather than passed as free strings, so
-    the set of seams this app has is one list somebody can read. */
-export type Seam = "list" | "ws-tree" | "ws-sessions";
+    the set of seams this app has is one list somebody can read.
+
+    `ws-code` joined them on 2026-09-16: the editor is a column of the
+    workspace now rather than a sheet laid over the file
+    (docs/WORKSPACE.md 第四轮 45), and a column that can be dragged is a
+    seam with a width of its own to remember. */
+export type Seam = "list" | "ws-tree" | "ws-sessions" | "ws-code";
 const STORE = (seam: Seam) => `khor.${seam}-width`;
 
 // Numbers live in tokens.css; these fallbacks only catch the token

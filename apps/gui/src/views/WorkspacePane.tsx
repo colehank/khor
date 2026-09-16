@@ -180,10 +180,11 @@ export function WorkspacePane({
    * has the shape for this and it is not「fit three columns in」:
    * 「窄档是『处理一件事』:一次一屏,有退路」.
    *
-   * So the three columns become three screens with one way between
-   * them: the tree opens a file, the file's strip carries a 「←」 back
-   * to the tree, the sessions switch goes to the sessions and that
-   * screen has a 「←」 of its own.
+   * So the columns become screens with one way between them: the tree
+   * opens a file, the file's strip carries a 「←」 back to the tree, and
+   * each switch at the strip's end walks to its own screen — the
+   * sessions, and (2026-09-16 ruling 45) the editor — each with a 「←」
+   * back to the file.
    *
    * **It opens on the tree unless a file was left open** — walking into
    * a project is walking into its files, and a workspace that reopened
@@ -192,7 +193,7 @@ export function WorkspacePane({
    *
    * Wide ignores this entirely: `narrow` is what reads it, and the
    * three columns are all on screen there. */
-  const [screen, setScreen] = useState<"tree" | "file" | "sessions">(() =>
+  const [screen, setScreen] = useState<"tree" | "file" | "sessions" | "code">(() =>
     tabs.length > 0 ? "file" : "tree",
   );
   /** Which tab is the **preview**: opened by one click, and replaced by
@@ -262,6 +263,12 @@ export function WorkspacePane({
   // this pane's to draw (2026-09-16). The sessions seam is still made
   // here — nothing outside this pane folds it.
   const sidePane = useListWidth(narrow, "ws-sessions", "right", "[data-ws-sessions]");
+  /** The editor's column, between the file and the sessions
+      (2026-09-16 ruling 45:「就算是网页脸不变, VSCODE点击也要单独弹出来,
+      和现在的session一样,而不是像现在这样, 显示在标签页下」— the user).
+      Its own seam because it is its own column: a width dragged for a
+      session list is not a width anybody wants for an editor. */
+  const codePane = useListWidth(narrow, "ws-code", "right", "[data-ws-code]");
   const tree = !treePane.collapsed;
   const sessions = !sidePane.collapsed;
   // **Said as a state, never as a flip** (工作区批⑨): the default below
@@ -276,6 +283,11 @@ export function WorkspacePane({
       a render per press for a number only the next press reads would be
       a render that changes nothing. */
   const grew = useRef(0);
+  /** …and the same for the editor's column, kept apart from it: two
+      columns that can be open at once are two amounts of window, and
+      one counter would give back the wrong one (ruling 45 widened 25's
+      own account to two columns). */
+  const grewCode = useRef(0);
   /** Open or shut the sessions column, and ask the window for the room
       instead of taking it off the file.
    *
@@ -414,6 +426,44 @@ export function WorkspacePane({
       has not agreed to anything yet. */
   const [asking, setAsking] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
+
+  /** Whether the editor's column is on screen.
+   *
+   * **Three things can stand in that column** and all three are the
+   * same press's business: the consent card, a refusal the far machine
+   * gave, and the editor itself. So the column is drawn when there is
+   * one of them to draw and the seam is not folded — 「没有就不显示」
+   * for the column as a whole, `collapsed` for the person who put it
+   * away. */
+  const codeOn = !codePane.collapsed && (asking || codeError !== null || codeAt !== null);
+  /** Open or shut the editor's column.
+   *
+   * **Shut keeps the page** (ruling 45:「再按:收起, VS Code 的页 webview
+   * 照旧留着」). `BrowserPane` hides its native view on unmount rather
+   * than closing it — that is the tab shell's own rule, and it is why
+   * folding this column costs a person nothing: the scroll, the open
+   * files and the extension host are all still over there. What it also
+   * means, said out loud: **the far machine goes on serving while the
+   * column is away.** It stops when this pane goes or the workspace
+   * changes (the `stopCode` effect), which is where it stopped before.
+   *
+   * The window grows and gives back exactly as the sessions column
+   * does, on its own account (25, widened to two columns by 45). */
+  const showCode = (on: boolean) => {
+    codePane.show(on);
+    if (on && codeAt === null && !asking && codeError === null) want();
+    if (narrow) {
+      setScreen(on ? "code" : "file");
+      return;
+    }
+    if (on) {
+      grewCode.current = Math.round(codePane.width);
+      void widenWindow(grewCode.current);
+    } else if (grewCode.current > 0) {
+      void widenWindow(-grewCode.current);
+      grewCode.current = 0;
+    }
+  };
 
   // **Asked once per workspace, not once per step of the tree.** The
   // answer covers the whole checkout and does not change while a person
@@ -771,11 +821,14 @@ export function WorkspacePane({
   // because one build runs on a mac app, a phone's browser and a
   // Windows desktop (`FileView`'s save shortcut says the same).
   //
-  // **Only while a file is in front.** The editor and the browsing
-  // shell are other things with other tabs, and a shortcut that fired
-  // over the top of them would close something nobody was looking at.
+  // **Only while a file is in front**, and since 2026-09-16 that is no
+  // longer the same question as 「the editor is not open」: the editor
+  // has a column of its own now (ruling 45) and the file is still on
+  // screen beside it, so the key still means what it says. A press
+  // inside the editor's own webview never reaches this page anyway —
+  // that view has the keyboard, and its ⌘W is VS Code's.
   useEffect(() => {
-    if (file === null || codeAt !== null) return;
+    if (file === null) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "w" || e.key === "W")) {
         e.preventDefault();
@@ -784,7 +837,7 @@ export function WorkspacePane({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [file, codeAt, shut]);
+  }, [file, shut]);
 
   // **`⌘B` folds and unfolds the tree** (VS Code's key for its side
   // bar), and it is the one way back that no other fold can hide: the
@@ -1121,12 +1174,17 @@ export function WorkspacePane({
                   <Button
                     variant="ghost"
                     size="icon"
-                    data-code={codeAt === null ? "off" : "on"}
-                    data-on={codeAt !== null}
-                    aria-label={codeAt === null ? gui.code_tab : gui.code_off}
+                    data-code={codeOn ? "on" : "off"}
+                    data-on={codeOn}
+                    aria-label={codeOn ? gui.code_off : gui.code_tab}
                     title={code.version}
-                    onClick={() => (codeAt === null ? want() : setCodeAt(null))}
-                    className={switchClass(codeAt !== null)}
+                    // **A column, not the middle one's other face**
+                    // (2026-09-16 ruling 45). It used to put the editor
+                    // where the file was; now it opens the column to
+                    // the file's right, and pressing it again folds
+                    // that column without closing the page inside it.
+                    onClick={() => showCode(!codeOn)}
+                    className={switchClass(codeOn)}
                   >
                     {/* 20: the logo fills its canvas (see `switchClass`
                         for the arithmetic). */}
@@ -1138,50 +1196,14 @@ export function WorkspacePane({
             }
           />
           </div>
-          {asking ? (
-            // **Two sentences and two words.** Both sentences are about
-            // what happens to the far machine; neither is about how to
-            // undo it, because a person reading a consent card is not
-            // looking for that yet (zh.toml `code-consent`).
-            <div
-              data-code-consent
-              className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
-            >
-              <span className="max-w-prose text-fact whitespace-pre-line text-foreground">
-                {gui.code_consent}
-              </span>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" data-code-no onClick={() => setAsking(false)}>
-                  {gui.code_consent_no}
-                </Button>
-                <Button size="sm" data-code-go onClick={go}>
-                  {gui.code_consent_go}
-                </Button>
-              </div>
-            </div>
-          ) : codeError !== null ? (
-            <div className="flex-1 p-4 text-aux text-muted-foreground">{codeError}</div>
-          ) : codeAt !== null ? (
-            // **A page window of khor's own, laid over this column.**
-            // Not a browsing tab: every tab in that shell names an exit
-            // machine and an editor has none (`BrowserPane`'s `direct`).
-            <BrowserPane
-              // **Keyed by the machine, not by its name.** The tab id is
-              // this page's handle on the app side and a handle has to
-              // hold still: `device` is the name the user can retype
-              // (`EditableName`), and renaming a machine with its editor
-              // open would mint a second page webview and leave the
-              // first one hidden for the life of the app.
-              tab={`code:${machine}`}
-              machine={machine}
-              device={device}
-              url={codeAt}
-              direct
-              onOpened={() => {}}
-              onWent={() => {}}
-              onPopped={() => {}}
-            />
-          ) : file === null ? (
+          {/* **The editor is a column of its own since 2026-09-16**
+              (ruling 45), so nothing about it changes what the middle
+              column draws: the file that was open stays open and stays
+              the width it was. It used to lay a whole page webview over
+              this space — 「而不是像现在这样, 显示在标签页下」 — which
+              is the file being pushed off its own screen by a control
+              that says 「open the editor as well」. */}
+          {file === null ? (
             <div className="flex-1" />
           ) : (
             <FileView
@@ -1229,6 +1251,111 @@ export function WorkspacePane({
             />
           )}
         </div>
+        )}
+        {/* ── the editor's column: file's right, sessions' left ──────
+            (2026-09-16 ruling 45). Three things can stand in it and all
+            three belong to one press: the consent card, a refusal, and
+            the editor. */}
+        {codeOn && !narrow && (
+          <div
+            data-ws-seam="code"
+            role="separator"
+            aria-orientation="vertical"
+            tabIndex={0}
+            {...codePane.aria}
+            {...codePane.handleProps}
+            className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors outline-none hover:bg-border focus-visible:bg-ring"
+          />
+        )}
+        {(narrow ? screen === "code" : codeOn) && (
+          <div
+            data-ws-code
+            // Capped and sized the way the sessions column is, one
+            // column over — and the whole screen on narrow, where it is
+            // the fourth of four (ruling 33's shape, ruling 45's
+            // column).
+            className={cn(
+              "flex min-h-0 flex-col",
+              narrow ? "min-w-0 flex-1" : "max-w-[45%] shrink-0 border-l",
+            )}
+            style={narrow ? undefined : { width: codePane.width }}
+          >
+            {/* The way back to the file, for the same reason the tree
+                and the sessions screens have one (ruling 33). */}
+            {narrow && (
+              <div className="flex flex-none items-center border-b px-1 py-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-ws-back
+                  aria-label={gui.back}
+                  onClick={() => showCode(false)}
+                  className="min-h-touch min-w-touch"
+                >
+                  <IconBack />
+                </Button>
+              </div>
+            )}
+            {asking ? (
+              // **Two sentences and two words.** Both sentences are
+              // about what happens to the far machine; neither is about
+              // how to undo it, because a person reading a consent card
+              // is not looking for that yet (zh.toml `code-consent`).
+              <div
+                data-code-consent
+                className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+              >
+                <span className="max-w-prose text-fact whitespace-pre-line text-foreground">
+                  {gui.code_consent}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-code-no
+                    // **And the column goes with the no.** It was
+                    // opened to hold this card; left standing empty it
+                    // would be a strip of nothing where a person's
+                    // file used to be, and on the app it would also
+                    // keep the window's extra width for a column with
+                    // nothing in it.
+                    onClick={() => {
+                      setAsking(false);
+                      showCode(false);
+                    }}
+                  >
+                    {gui.code_consent_no}
+                  </Button>
+                  <Button size="sm" data-code-go onClick={go}>
+                    {gui.code_consent_go}
+                  </Button>
+                </div>
+              </div>
+            ) : codeError !== null ? (
+              <div className="flex-1 p-4 text-aux text-muted-foreground">{codeError}</div>
+            ) : codeAt !== null ? (
+              // **A page window of khor's own, in this column.** Not a
+              // browsing tab: every tab in that shell names an exit
+              // machine and an editor has none (`BrowserPane`'s
+              // `direct`).
+              <BrowserPane
+                // **Keyed by the machine, not by its name.** The tab id
+                // is this page's handle on the app side and a handle
+                // has to hold still: `device` is the name the user can
+                // retype (`EditableName`), and renaming a machine with
+                // its editor open would mint a second page webview and
+                // leave the first one hidden for the life of the app.
+                tab={`code:${machine}`}
+                machine={machine}
+                device={device}
+                url={codeAt}
+                direct
+                onOpened={() => {}}
+                onWent={() => {}}
+                onPopped={() => {}}
+              />
+            ) : null}
+          </div>
         )}
         {sessions && !narrow && (
           <div

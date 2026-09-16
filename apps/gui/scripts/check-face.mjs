@@ -2171,8 +2171,8 @@ try {
     ],
     "data-ws-seam": [
       "src/views/WorkspacePane.tsx",
-      "a workspace's own seam — the one between the file tree and the file, and the one between " +
-        "the file and the sessions. **The same shape as `data-list-seam` below and the argument has " +
+      "a workspace's own seams — between the file tree and the file, between the file and the " +
+        "editor (2026-09-16 ruling 45), and between the file and the sessions. **The same shape as `data-list-seam` below and the argument has " +
         "to be made again rather than borrowed, because the two spend their width on different " +
         "things.** That one takes from a list and a detail; these take from a *file* — every pixel " +
         "the seam grows is a column of code that stops being on screen, on the one face in this app " +
@@ -6775,6 +6775,7 @@ try {
         tree: document.querySelectorAll("[data-ws-tree]").length,
         strip: document.querySelectorAll("[data-ws-tab-strip]").length,
         sessions: document.querySelectorAll("[data-ws-sessions]").length,
+        code: document.querySelectorAll("[data-ws-code]").length,
         back: document.querySelectorAll("[data-ws-back]").length,
         switches: document.querySelectorAll("[data-ws-switches] > button").length,
       }));
@@ -6856,6 +6857,32 @@ try {
             "opened from (src/views/WorkspacePane.tsx)",
         );
       }
+      // …and the editor is the fourth screen (2026-09-16 ruling 45),
+      // reached from the same strip and left the same way.
+      await press("[data-code]");
+      await wait(500);
+      const onCode = await screens();
+      console.log(`narrow workspace · the editor: ${JSON.stringify(onCode)}`);
+      if (onCode.code !== 1 || onCode.strip !== 0 || onCode.tree !== 0 || onCode.sessions !== 0) {
+        fail(
+          `the editor switch left ${JSON.stringify(onCode)} — on a phone the editor is a screen of its own, ` +
+            "not a panel under the tabs (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (onCode.back === 0) {
+        fail("the editor screen has no way back — every screen that is not the first one has one (src/views/WorkspacePane.tsx)");
+      }
+      await press("[data-ws-back]");
+      await wait(300);
+      const fromCode = await screens();
+      console.log(`narrow workspace · back from the editor: ${JSON.stringify(fromCode)}`);
+      if (fromCode.strip !== 1 || fromCode.code !== 0) {
+        fail(
+          `「←」 out of the editor left ${JSON.stringify(fromCode)} — it goes back to the file it was opened ` +
+            "from (src/views/WorkspacePane.tsx)",
+        );
+      }
+
       // v) ⌘B, from wherever.
       await page.keyboard.press("Control+b");
       await wait(300);
@@ -6884,6 +6911,12 @@ try {
   // acceptance of Microsoft's licence (「第一个,第一次是允许的.联网也要
   // 说一下」— the user, 2026-09-10).
   await atTree();
+  // **A file open in the middle column**, because ruling 45's claim is
+  // about what happens to it: the editor opens *beside* the file, and a
+  // pane with nothing in the middle could not tell that from the editor
+  // taking the middle over.
+  await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+  await until(5_000, async () => (await page.locator("[data-file-scroll]").count()) === 1);
   // **Its name, not its text** (工作区批⑧): it is a glyph now
   // (「vscode 换成 icon 显示」), so what a person is told is the label a
   // screen reader reads and a hover shows — and reading `textContent`
@@ -6926,7 +6959,92 @@ try {
     } else if (!card.go || !card.no) {
       fail("the consent card does not offer both answers — a card with one way out is not a question");
     }
-    if (card !== null) await press("[data-code-no]");
+    if (card !== null) {
+      // **…and the card stands in the editor's own column** (2026-09-16
+      // ruling 45:「就算是网页脸不变, VSCODE点击也要单独弹出来, 和现在的
+      // session一样,而不是像现在这样, 显示在标签页下」— the user). The
+      // press opens a column to the file's right; what it must never do
+      // again is take the middle column over.
+      const laid = await page.evaluate(() => {
+        const col = document.querySelector("[data-ws-code]");
+        const mid = document.querySelector("[data-file-scroll]");
+        const sessions = document.querySelector("[data-ws-sessions]");
+        const px = (el) => (el === null ? null : Math.round(el.getBoundingClientRect().width));
+        return {
+          column: document.querySelectorAll("[data-ws-code]").length,
+          cardInside: document.querySelectorAll("[data-ws-code] [data-code-consent]").length,
+          file: px(mid),
+          code: px(col),
+          // Left to right: the file, then the editor, then the
+          // sessions when that one is out too.
+          order:
+            col === null || mid === null
+              ? null
+              : [
+                  Math.round(mid.getBoundingClientRect().left),
+                  Math.round(col.getBoundingClientRect().left),
+                  sessions === null ? Infinity : Math.round(sessions.getBoundingClientRect().left),
+                ],
+        };
+      });
+      // **`Infinity` survives the call and `JSON.stringify` does not.**
+      // Playwright's own serialiser carries it across (the comparison
+      // below is right), but printing it through JSON shows `null`,
+      // which reads as 「no sessions column, so the order was not
+      // checked」 — the opposite of what happened. So it is printed as
+      // a word.
+      console.log(
+        `editor column: ${JSON.stringify({ ...laid, order: undefined })}, left to right ` +
+          `file ${laid.order?.[0]} / code ${laid.order?.[1]} / sessions ` +
+          `${laid.order?.[2] === Infinity ? "(folded)" : laid.order?.[2]}`,
+      );
+      if (laid.column !== 1) {
+        fail(
+          "pressing the editor switch opened no column of its own — 「VSCODE点击也要单独弹出来, 和现在的" +
+            "session一样」 (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (laid.cardInside !== 1) {
+        fail(
+          "the consent card is not in the editor's column — it is that press's own screen, and the " +
+            "middle column is the file's (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (laid.file === null || laid.file < 80) {
+        fail(
+          `the file column is ${laid.file}px wide with the editor open — 「而不是像现在这样, 显示在标签` +
+            "页下」: the editor stands beside the file, not over it (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (laid.order !== null && !(laid.order[0] < laid.order[1] && laid.order[1] < laid.order[2])) {
+        fail(
+          `the columns run ${JSON.stringify(laid.order)} left to right — 树 / 文件 / VS Code / 会话列 ` +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      await press("[data-code-no]");
+      await wait(300);
+      // …and saying no takes the column with it: a strip of nothing
+      // where a person's file used to be is the thing this ruling is
+      // about.
+      const afterNo = await page.evaluate(() => ({
+        column: document.querySelectorAll("[data-ws-code]").length,
+        file: document.querySelectorAll("[data-file-scroll]").length,
+      }));
+      console.log(`editor column after 不用: ${JSON.stringify(afterNo)}`);
+      if (afterNo.column !== 0) {
+        fail(
+          "the editor's column stayed after the consent card was refused — it was opened to hold that " +
+            "card (src/views/WorkspacePane.tsx showCode)",
+        );
+      }
+      if (afterNo.file !== 1) {
+        fail(
+          "the file went away with the editor's column — it was never the editor's to take " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+    }
   }
 
   // …and the branch where the card would be a lie. A machine that
