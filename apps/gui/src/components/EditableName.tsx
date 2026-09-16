@@ -61,8 +61,30 @@ import { cn } from "@/lib/utils";
  * would be papered over by this screen's stale memory of its own.
  *
  * A failed write says so where it was typed (the pin's rule): the box
- * stays open wearing the failure word, because closing it would paint
- * the exact picture a successful rename paints while nothing moved.
+ * stays open wearing the refusal, because closing it would paint the
+ * exact picture a successful rename paints while nothing moved. **The
+ * refusal is the writer's own sentence where it has one** (工作区第五轮
+ * 第 36 条: 「已有同名 → 拒绝，理由在输入框下一行，不是弹窗」) — 改不了名
+ * is what khor says when it has nothing better, and 「那个名字已经有了」
+ * is a fact only the machine holding the disk knows.
+ *
+ * # The third subject is a file, and it brought two doors with it
+ *
+ * 工作区第五轮 第 36 条 wanted this box on a tree row: rename a file in
+ * place, and type a new file's name into a row that does not exist yet.
+ * Neither fits `WRITE`, and the head above says a third subject is a
+ * line in that table — so here is why this one is not.
+ *
+ * **`write`** replaces the table for one call site. `WRITE`'s two take
+ * `(id, name)` because a session and a machine are named by an id this
+ * component can carry; a file is named by a machine **and** a path, and
+ * the machine is not this box's to know. Adding it as a prop would put
+ * a machine on every session's title for the sake of files.
+ *
+ * **`open` / `onClose`** make the editor controlled, for the row that
+ * has no resting text to double-click: a file being created is an
+ * editor and nothing else, and it goes away when it is done. Given
+ * neither, this is the uncontrolled box it has always been.
  */
 /**
  * Who to tell, by subject. **Both answer the name the row now shows**,
@@ -83,6 +105,9 @@ export function EditableName({
   inputClassName,
   nested,
   boxData,
+  write,
+  open: openFrom,
+  onClose,
 }: {
   /** Which table the id belongs to. Defaults to the first subject that
       had this, so every existing call site reads unchanged. */
@@ -113,18 +138,52 @@ export function EditableName({
    * goes quietly dead.
    */
   boxData?: Record<string, string>;
+  /** Who to tell instead of [`WRITE`], for a subject whose writer needs
+      more than an id (a file: a machine and a path). Answers the name
+      the row now shows, or `null` where only the backend can say —
+      exactly `WRITE`'s own contract, so `echo` works either way. */
+  write?: (name: string) => Promise<string | null>;
+  /** Controlled: the box is open because whoever owns the row says so,
+      which is how a name is typed for something that does not exist
+      yet. Absent leaves the double-click / F2 door as the only way in. */
+  open?: boolean;
+  /** Controlled mode's way out — Enter that took, Esc, or a click away.
+      Called on every exit, so the row that opened this can put itself
+      back however it opened. */
+  onClose?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
-  const [failed, setFailed] = useState(false);
+  /** The refusal to show under the box, or `null`. **A sentence and
+      not a flag**, so the machine's own words reach the person who
+      typed the name (工作区第五轮 第 36 条). */
+  const [refused, setRefused] = useState<string | null>(null);
   const [echo, setEcho] = useState<string | null>(null);
   // The poll caught up (or another device renamed it): the row speaks
   // for itself again.
   useEffect(() => {
     setEcho(null);
   }, [title]);
+  // **A controlled box starts on the name it is about.** The
+  // uncontrolled door seeds the draft where it opens it (`open` below);
+  // this one is opened by somebody else, and a rename that began on an
+  // empty box would make 「keep most of the name」 a retype. `title` is
+  // constant for the life of one of these, so this runs once.
+  useEffect(() => {
+    if (openFrom !== true) return;
+    setDraft(echo ?? title);
+    setRefused(null);
+    // `echo` is the bridge over one poll and must not re-seed the box
+    // under somebody's fingers when it retires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openFrom, title]);
   const shown = echo ?? (title || id);
-  if (!editing) {
+  const told = openFrom ?? editing;
+  const shut = () => {
+    setEditing(false);
+    onClose?.();
+  };
+  if (!told) {
     // Two spans on purpose: the outer one carries the layout (truncate
     // wants a block-ish box, and in the list that box is as wide as the
     // column), the inner one is exactly as wide as the text — and the
@@ -134,7 +193,7 @@ export function EditableName({
     // hot-zone probe, not by reading: the first cut hung it on the box.
     const open = () => {
       setDraft(echo ?? title);
-      setFailed(false);
+      setRefused(null);
       setEditing(true);
     };
     return (
@@ -178,15 +237,21 @@ export function EditableName({
   }
   const submit = () => {
     const name = draft.trim();
-    WRITE[kind](id, name).then(
+    (write ? write(name) : WRITE[kind](id, name)).then(
       (shown) => {
-        setEditing(false);
+        shut();
         // An emptied box falls back to a name only the backend knows,
         // so there is nothing honest to echo unless the write answered
         // one — the poll fills in the rest.
         setEcho(name === "" ? shown : name);
       },
-      () => setFailed(true),
+      // **The machine's own sentence, unwrapped.** What comes back is
+      // an `Error` carrying the node's text; `String(e)` would put
+      // 「Error: 」 in front of 「那个名字已经有了」 on the screen, which
+      // is the transport's word in the middle of khor's (the tree reads
+      // its refusals the same way).
+      (e: unknown) =>
+        setRefused(String(e instanceof Error ? e.message : e) || gui.rename_failed),
     );
   };
   return (
@@ -200,19 +265,22 @@ export function EditableName({
         onDoubleClick={(e) => e.stopPropagation()}
         onChange={(e) => {
           setDraft(e.target.value);
-          setFailed(false);
+          setRefused(null);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") submit();
-          else if (e.key === "Escape") setEditing(false);
+          else if (e.key === "Escape") shut();
         }}
-        onBlur={() => setEditing(false)}
+        onBlur={shut}
         onFocus={(e) => e.currentTarget.select()}
         className={cn("min-w-0 rounded-sm bg-secondary px-1 outline-none", inputClassName)}
       />
-      {failed && (
-        <span data-rename-failed className="flex-none text-sm text-state-failed">
-          {gui.rename_failed}
+      {refused !== null && (
+        // Under the box and not in front of it: a person who has just
+        // typed a name is looking at the box, and a dialog would take
+        // the name away to tell them about it.
+        <span data-rename-failed className="min-w-0 text-sm text-state-failed">
+          {refused}
         </span>
       )}
     </>

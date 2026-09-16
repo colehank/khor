@@ -20,11 +20,12 @@
 // Which branches are open is remembered per workspace in this face's own
 // storage, so reopening a project finds it where it was left — the same
 // class of memory as a column width, not a decision about the mesh.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchLs, type DirListing } from "@/api";
+import { fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
-import { RowMenu } from "@/components/RowMenu";
+import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -96,7 +97,10 @@ export function FileTree({
   marks,
   open,
   onOpen,
+  onDiff,
   onGone,
+  onMoved,
+  onMade,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -119,8 +123,22 @@ export function FileTree({
       keeps the tab — a double click — which is the strip's business and
       not this tree's (`WorkspacePane`, 工作区批⑧). */
   onOpen: (path: string, pinned: boolean) => void;
+  /** git's letter beside a file was pressed: open that file against
+      HEAD (工作区第五轮 第 38 条). Absent on a tree where there is
+      nowhere to open one — the letter stays a letter then. */
+  onDiff?: (path: string) => void;
   /** That path is no longer on the disk. */
   onGone: (path: string) => void;
+  /** A name moved on the disk (工作区第五轮 第 36 条). The tab strip
+      follows the file rather than losing it, and the marks are stale the
+      moment a path changes — both are the pane's business, not this
+      tree's. Absent where nothing is listening. */
+  onMoved?: (from: string, to: string) => void;
+  /** A name was made on the disk. **git has never seen it**, so the
+      marks are stale the moment it exists — a new file wears `U` and
+      the tree cannot say so until somebody asks again. The same beat a
+      save and a rename ride (`WorkspacePane`'s `gitAt`). */
+  onMade?: (path: string) => void;
 }) {
   /** Every directory this tree has an answer for. The root is asked at
       once; the rest are asked when they are opened. */
@@ -215,6 +233,95 @@ export function FileTree({
     setWant((was) => (was.has(full) ? was : new Set(was).add(full)));
   };
 
+  /** 就地输名字 (工作区第五轮 第 36 条): which row is currently a box,
+      and what it is for. `at` is the directory a new name goes into, or
+      the path being renamed — the two never overlap, because a row is
+      either the one being renamed or the parent of a new one.
+   *
+   * **VS Code's arrangement, which is what was asked for**: the row
+   * grows an input, Enter takes it, Esc puts it back. Not a dialog —
+   * a name is typed *at* a place in a tree, and a sheet takes the tree
+   * off the screen to ask about it.
+   */
+  const [naming, setNaming] = useState<
+    { at: string; kind: "file" | "dir" | "rename" } | null
+  >(null);
+
+  /** Make one, then list that directory again. **Nothing is guessed
+      into the tree**: the row appears because the machine answered, not
+      because the name was typed, so a refusal leaves the tree exactly
+      as it was (`reread`). */
+  const made = (dir: string, kind: "file" | "dir") => async (name: string) => {
+    const full = `${dir === "/" ? "" : dir}/${name.trim()}`;
+    await (kind === "dir" ? makeDir(machine, full) : makeFile(machine, full));
+    // Open the directory it went into, or the new row is made somewhere
+    // nobody can see.
+    if (!expanded.has(dir)) toggle(dir);
+    reread(dir);
+    onMade?.(full);
+    return null;
+  };
+
+  /** Rename in place: the new name replaces the last segment, so a
+      typed name is a name and never a path. Crossing directories is the
+      same verb in the node (`khor mv`) and is deliberately **not** a
+      thing this box can do — a `/` typed into a row would move a file
+      somewhere the tree is not showing. */
+  const moved = (full: string) => async (name: string) => {
+    const dir = full.slice(0, full.lastIndexOf("/")) || "/";
+    const to = `${dir === "/" ? "" : dir}/${name.trim()}`;
+    if (to !== full) {
+      await renamePath(machine, full, to);
+      onMoved?.(full, to);
+      reread(dir);
+    }
+    return null;
+  };
+
+  /** 新建文件 / 新建目录 / 重命名, on top of 删掉. **A directory offers
+      all four and a file three**: there is nothing to make inside a
+      file, and a menu item that could only refuse is worse than no
+      item. */
+  const menu = (full: string, isDir: boolean): RowAction[] => [
+    ...(isDir
+      ? [
+          {
+            key: "new-file",
+            label: gui.file_new,
+            run: () => setNaming({ at: full, kind: "file" }),
+          },
+          {
+            key: "new-dir",
+            label: gui.dir_new,
+            run: () => setNaming({ at: full, kind: "dir" }),
+          },
+        ]
+      : []),
+    {
+      key: "rename",
+      label: gui.rename,
+      run: () => setNaming({ at: full, kind: "rename" }),
+    },
+    ...actions(full, isDir),
+  ];
+
+  /** The box a row grows, whichever of the three opened it. Shares
+      `EditableName` with every other name in this app, so Enter, Esc
+      and 「the refusal goes under the box」 cannot come to mean
+      different things in two places (that component's head). */
+  const nameBox = (write: (name: string) => Promise<string | null>, was: string) => (
+    <EditableName
+      id={was}
+      title={was}
+      write={write}
+      open
+      onClose={() => setNaming(null)}
+      inputClassName="w-full text-sm"
+      className="min-w-0 flex-1"
+    />
+  );
+
+
   /** The open branches, flattened in the node's order (it sorts, this
       never re-sorts — docs/UX.md). */
   const rows = useMemo(() => {
@@ -256,11 +363,39 @@ export function FileTree({
                 {gui.empty_dir}
               </div>
             )}
+            {/* A name being typed into the root itself, which has no
+                row of its own to hang under. */}
+            {naming !== null && naming.at === root && naming.kind !== "rename" && (
+              <div
+                data-new-name={naming.kind}
+                style={indent(0)}
+                className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm"
+              >
+                {nameBox(made(root, naming.kind), "")}
+              </div>
+            )}
             {rows.map((r) => {
               const mark = marks?.get(r.full);
               const faded = r.name.startsWith(".");
               const on = expanded.has(r.full);
-              return r.dir ? (
+              // A name being typed into *this* directory sits directly
+              // under it, one level in — which is where the row it is
+              // about to become will be.
+              const adding =
+                naming !== null && naming.at === r.full && naming.kind !== "rename" ? (
+                  <div
+                    key={`${r.full} new`}
+                    data-new-name={naming.kind}
+                    style={indent(r.depth + 1)}
+                    className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm"
+                  >
+                    {nameBox(
+                      made(r.full, naming.kind === "dir" ? "dir" : "file"),
+                      "",
+                    )}
+                  </div>
+                ) : null;
+              const row = r.dir ? (
                 <div
                   key={r.full}
                   data-depth={r.depth}
@@ -285,7 +420,7 @@ export function FileTree({
                       `onPointerDown`, and a press handler on a bare
                       `<div>` is a target only a pointer can find. */}
                   <Guides depth={r.depth} />
-                  <RowMenu items={actions(r.full, true)}>
+                  <RowMenu items={menu(r.full, true)}>
                     <button
                       type="button"
                       data-dir={r.name}
@@ -312,7 +447,16 @@ export function FileTree({
                           然是原色」) — VS Code paints the folder's name
                           in the heaviest change below it, and so does
                           this. */}
-                      <span data-dir-name className={cn("min-w-0 flex-1 truncate", markInk(mark))}>{r.name}</span>
+                      {naming?.at === r.full && naming.kind === "rename" ? (
+                        nameBox(moved(r.full), r.name)
+                      ) : (
+                        <span
+                          data-dir-name
+                          className={cn("min-w-0 flex-1 truncate", markInk(mark))}
+                        >
+                          {r.name}
+                        </span>
+                      )}
                       <Mark mark={mark} dir />
                     </button>
                   </RowMenu>
@@ -343,7 +487,7 @@ export function FileTree({
                   )}
                 >
                   <Guides depth={r.depth} />
-                  <RowMenu items={actions(r.full, false)}>
+                  <RowMenu items={menu(r.full, false)}>
                     <button
                       type="button"
                       onClick={() => onOpen(r.full, false)}
@@ -377,12 +521,19 @@ export function FileTree({
                           with the file's own mark in it is VS Code's
                           picture, and the ruling that followed. */}
                       <FileKindIcon name={r.name} className="size-[var(--tree-slot)]" />
-                      <span data-file-name className="min-w-0 flex-1 truncate">
-                        {r.name}
-                      </span>
+                      {naming?.at === r.full && naming.kind === "rename" ? (
+                        nameBox(moved(r.full), r.name)
+                      ) : (
+                        <span data-file-name className="min-w-0 flex-1 truncate">
+                          {r.name}
+                        </span>
+                      )}
                     </button>
                   </RowMenu>
-                  <Mark mark={mark} />
+                  <Mark
+                    mark={mark}
+                    onPress={onDiff === undefined ? undefined : () => onDiff(r.full)}
+                  />
                   {took?.path === r.full ? (
                     <span
                       data-took={took.state}
@@ -408,6 +559,15 @@ export function FileTree({
                   )}
                 </div>
               );
+              // One row, or a row and the box being typed under it.
+              return adding === null ? (
+                row
+              ) : (
+                <Fragment key={r.full}>
+                  {row}
+                  {adding}
+                </Fragment>
+              );
             })}
             {/* A branch that refused, said where the branch is rather
                 than over the whole tree: the rest of the project is
@@ -423,6 +583,34 @@ export function FileTree({
                 </div>
               ),
             )}
+            {/* **The blank under the last row belongs to the root**
+                (工作区第五轮 第 36 条: 「空处右键 = 根目录的菜单」). A
+                tree that only answers a right-click on a row has no way
+                to make the first file in an empty project, and no way to
+                make one at the top level without picking some directory
+                and then correcting it.
+
+                A finger's height of it, so it is a place rather than
+                a hairline — and it is the last thing in the scroller,
+                so on a short project the whole stretch under the files
+                is inside it. */}
+            <RowMenu items={menu(root, true)}>
+              {/* **A button, not a bare div.** `RowMenu`'s trigger
+                  carries a press handler, and a press handler on a
+                  `<div>` is a target only a pointer can find — this
+                  file's own rule, three hundred lines up. So it is a
+                  control, and what it does when it is pressed the
+                  ordinary way is the thing people came to the blank for:
+                  a new file at the top level. The right-click still
+                  opens all four. */}
+              <button
+                type="button"
+                data-tree-blank
+                aria-label={gui.file_new}
+                onClick={() => setNaming({ at: root, kind: "file" })}
+                className="min-h-touch w-full"
+              />
+            </RowMenu>
             {/* The cap said out loud, for `Response::Dir::truncated`'s
                 reason: a listing that was cut and one that is simply
                 short look exactly the same. */}
