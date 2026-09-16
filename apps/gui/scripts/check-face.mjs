@@ -3023,7 +3023,9 @@ try {
       return { body, out };
     });
     console.log(`tree marks: body ${inks.body}, ${JSON.stringify(inks.out)}`);
-    const letters = inks.out.filter((m) => m.glyph !== "·");
+    // A directory's mark is the filled circle (`fileRow`'s `DOT`); the
+    // rest are git's letters.
+    const letters = inks.out.filter((m) => m.glyph !== "\u25cf");
     if (letters.length < 4) {
       fail(
         `probe void: ${letters.length} lettered mark(s) on screen — this section compares four inks and ` +
@@ -3057,7 +3059,7 @@ try {
     }
     // The dot, and that it is the heaviest letter below rather than the
     // first: `src` holds a `U` and a `C`, and C outranks everything.
-    const dot = inks.out.find((m) => m.glyph === "·");
+    const dot = inks.out.find((m) => m.glyph === "\u25cf");
     if (dot === undefined) {
       fail(
         "no directory wore a dot — git has no opinion about directories, and 「something under here " +
@@ -3070,6 +3072,39 @@ try {
       );
     } else if (dot.ink === inks.body) {
       fail(`the dot is painted in the body's own ink (${dot.ink}) — it carries the colour of what is below it`);
+    }
+    // **…and it is big enough to read a colour off** (「文件 list 的状态
+    // 点太小了,小到现在都看不清是什么颜色」— the user, 2026-09-16). The
+    // whole message of this mark is its hue, so its size is not a matter
+    // of taste: a `·` in the row's own font came out a few pixels of ink
+    // and the hue was unreadable at any distance a list is read from.
+    // 8 is what VS Code gives it.
+    //
+    // **And the hue is one of the four**, tied to the letter the fold
+    // chose — not merely 「not the body's」, which a grey would pass.
+    const dotBox = await page.evaluate(() => {
+      const el = document.querySelector('[data-file-tree] [data-git-mark="\u25cf"]');
+      if (el === null) return null;
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 };
+    });
+    console.log(`tree dot: ${JSON.stringify(dotBox)}`);
+    if (dotBox === null) {
+      fail("probe void: no folded mark on screen to measure (src/views/fileRow.tsx)");
+    } else if (dotBox.w < 8 || dotBox.h < 8) {
+      fail(
+        `the folded mark on a directory is ${dotBox.w}×${dotBox.h} — 「太小了,小到现在都看不清是什么` +
+          "颜色」, and the colour is the whole of what it says (src/views/fileRow.tsx DOT)",
+      );
+    }
+    if (dot !== undefined && letters.length >= 4) {
+      const conflict = letters.find((m) => m.weight === "C")?.ink ?? null;
+      if (conflict !== null && dot.ink !== conflict) {
+        fail(
+          `the dot is painted ${dot.ink} where the C it folded up is ${conflict} — the mark carries ` +
+            "git's own ink, the same one the letter under it wears (src/views/fileRow.tsx markInk)",
+        );
+      }
     }
   }
 

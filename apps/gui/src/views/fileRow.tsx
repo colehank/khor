@@ -20,8 +20,21 @@ import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 /** What a directory wears instead of a letter. Not a catalog string: it
-    is a glyph, and the catalog holds sentences a person reads. */
-export const DOT = "·";
+    is a glyph, and the catalog holds sentences a person reads.
+
+    **A filled circle since 2026-09-16, where it was a middle dot**:
+    「文件 list 的状态点太小了,小到现在都看不清是什么颜色」(the user).
+    The whole of what this mark says is its colour, and a `·` in the
+    row's own font is three or four pixels of ink — small enough that
+    the one thing it carries cannot be read off it.
+
+    **Drawn as a box rather than as a character.** How big a `·` comes
+    out is the font's decision and khor has no way to ask; a circle
+    asked for at `size-2` is 8 across wherever this face is drawn,
+    which is the size VS Code gives it. The character stays here as the
+    attribute's value, because that is what tells a folded mark from a
+    letter to anything reading the DOM. */
+export const DOT = "●";
 
 /** How heavy one letter is, for the dot a directory wears: **C > D > M
     > A/U** (docs/WORKSPACE.md 第二轮). A folder's dot can only say one
@@ -73,13 +86,32 @@ export function markInk(mark: string | undefined): string {
     differs」is both true and the only thing worth walking for. */
 export function Mark({ mark, dir = false }: { mark?: string; dir?: boolean }) {
   if (mark === undefined) return null;
+  if (dir) {
+    return (
+      <span
+        data-git-mark={DOT}
+        data-git-weight={mark}
+        // Nothing to read aloud: the colour is the whole message and a
+        // screen reader gets none of it. The letters beside it are
+        // characters and are read as themselves.
+        aria-hidden="true"
+        // **`bg-current`, so `markInk` stays one decision.** The ink is
+        // set as a text colour on this span — the same class the letter
+        // and the file's name wear — and the circle takes its fill from
+        // it. Painting the background from a second class would be the
+        // same choice written twice, and the day one moved they would
+        // disagree on one row.
+        className={cn("size-2 flex-none rounded-full bg-current", markInk(mark))}
+      />
+    );
+  }
   return (
     <span
-      data-git-mark={dir ? DOT : mark}
+      data-git-mark={mark}
       data-git-weight={mark}
       className={cn("flex-none font-mono text-xs", markInk(mark))}
     >
-      {dir ? DOT : mark}
+      {mark}
     </span>
   );
 }
