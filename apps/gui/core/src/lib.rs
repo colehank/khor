@@ -907,9 +907,11 @@ pub fn forget_device(root: &Path, machine: &str) -> Result<String, String> {
     open(root)?.forget_device(machine)
 }
 
-/// Every known machine's face, keyed the way the device table keys
-/// machines. The judgment behind each one — its own reported palette,
-/// seeded by its id — belongs to the node; this only indexes them.
+// Every known machine's face, keyed the way the device table keys
+// machines. The judgment behind each one — its own reported palette,
+// seeded by its id — belongs to the node; this only indexes them.
+// A plain comment, not a doc comment: it belongs to the tombstone
+// below, and as `///` it would document the next function instead.
 /* ⚠️ **Tombstone: `faces_by_id` is gone, 2026-09-11.** It read the
    device table to derive a face per machine, which is still what
    happens — inline in `list_sessions`, its only caller, beside the two
@@ -1376,7 +1378,7 @@ pub async fn open_term_on(root: &Path, machine: &str, title: &str, cwd: &str) ->
             d => std::path::PathBuf::from(d),
         };
         if !path.is_dir() {
-            return Err(khor_catalog::msg::no_such_dir(&path.display().to_string()));
+            return Err(khor_catalog::msg::no_such_dir(path.display().to_string()));
         }
         let id = n.open_persistent_at(&path, khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
         return Ok(id.0);

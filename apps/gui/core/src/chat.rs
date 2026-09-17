@@ -493,11 +493,10 @@ pub struct Followed {
 /// going away must not take the conversation with it.
 pub fn chat_leave(id: &str) -> Result<(), String> {
     let mut registry = chats().lock().unwrap();
-    if let Some(chat) = registry.get(id) {
-        if chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
+    if let Some(chat) = registry.get(id)
+        && chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
             registry.remove(id);
         }
-    }
     Ok(())
 }
 

@@ -324,13 +324,12 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
         empty: false,
     };
     match kind {
-        khor_node::preview::Kind::Image | khor_node::preview::Kind::Svg => {
+        khor_node::preview::Kind::Image | khor_node::preview::Kind::Svg
             // Half a picture is a broken picture, so a cut one carries
             // no bytes at all and the face says why.
-            if !cut {
+            if !cut => {
                 out.data = base64::engine::general_purpose::STANDARD.encode(&bytes);
             }
-        }
         khor_node::preview::Kind::Doc => {
             let md = khor_node::preview::markdown(path, &bytes)?;
             out.empty = md.trim().is_empty();

@@ -533,11 +533,10 @@ pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
 /// for the same double-mount reason).
 pub fn term_leave(id: &str) -> Result<(), String> {
     let mut registry = plock(terms());
-    if let Some(term) = registry.get(id) {
-        if term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
+    if let Some(term) = registry.get(id)
+        && term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
             registry.remove(id);
         }
-    }
     Ok(())
 }
 
