@@ -7708,6 +7708,38 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
       rmSync(join(wsDir, "skipped"), { recursive: true, force: true });
       rmSync(hay, { force: true });
       rmSync(buried, { force: true });
+
+      // 第 56 条: **a name hit is the path under the directory asked
+      // about, never the whole of it.** The walk runs on alpha, so this
+      // is the only place the claim can be made about a real disk — and
+      // it is the shape a person actually hits: every checkout lives
+      // under `/home/…` or `/Users/…`, and searching for that word used
+      // to answer with the entire project.
+      const homey = join(wsDir, "homestead");
+      mkdirSync(homey, { recursive: true });
+      writeFileSync(join(homey, "roof.txt"), "nothing in particular\n");
+      const bare = (out) =>
+        out
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l && !l.includes(":"));
+      const above = bare(cli(envB, "search", "-m", "alpha", homey, "home"));
+      if (above.length !== 0) {
+        throw new Error(
+          `khor search for 「home」 under ${homey} named ${JSON.stringify(above)} — the directory the ` +
+            "search is about is not part of what is being searched (第 56 条)",
+        );
+      }
+      // …and a name that really is under it still answers, so the line
+      // above is not「it stopped finding things」.
+      const inside = bare(cli(envB, "search", "-m", "alpha", homey, "roof"));
+      if (inside.length !== 1 || !inside[0].endsWith("roof.txt")) {
+        throw new Error(
+          `khor search for a name under ${homey} printed ${JSON.stringify(inside)} — one file there ` +
+            "holds it, and it is still answered absolute",
+        );
+      }
+      rmSync(homey, { recursive: true, force: true });
     }
 
     //      Back to the landing, so 31f starts from the list rather than

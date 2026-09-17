@@ -535,6 +535,12 @@ const SNIFF: usize = 8000;
 /// Everything under `dir` that holds `query` — in its name, or in one
 /// of its lines (工作区第六轮 第 47 条).
 ///
+/// **A name hit is the path *relative to `dir`* holding the words**
+/// (工作区第七轮 第 56 条), though what comes back is still absolute:
+/// the directories above a project are not part of what somebody is
+/// searching, and matching them made every query that happened to spell
+/// one of them answer with the whole checkout.
+///
 /// **Case-insensitive and never a regular expression.** What is typed
 /// into a box beside a tree is a fragment of a name, and a `.` or a `*`
 /// in it means the character rather than the pattern — a person who
@@ -602,7 +608,20 @@ pub fn search(dir: &str, query: &str) -> Result<Found, String> {
         let Some(spelled) = path.to_str() else {
             continue;
         };
-        if spelled.to_lowercase().contains(&needle) {
+        // **The name half matches the path *under* `dir`, never the
+        // whole of it** (工作区第七轮 第 56 条). A person searching a
+        // project is asking about the project, and the directories
+        // above it are an accident of where it happens to live: with
+        // the absolute path matched, somebody whose checkout sits under
+        // `/home/…` had every file in it answer a search for `home`,
+        // and the deeper the project the more of every query was spent
+        // on words nobody typed about. The satellite road matches the
+        // relative path already — it is what the far shell prints — so
+        // this is also the two roads answering one table.
+        let under = path
+            .strip_prefix(root)
+            .map_or(spelled, |r| r.to_str().unwrap_or(spelled));
+        if under.to_lowercase().contains(&needle) {
             if out.names.len() < SEARCH_NAMES {
                 out.names.push(spelled.to_owned());
             } else {
@@ -1304,6 +1323,32 @@ mod search_tests {
             "a pattern was read where a name was typed: {:?}",
             regexy.names
         );
+    }
+
+    /// **The name half is the path under `dir`, not the whole of it**
+    /// (工作区第七轮 第 56 条). The scratch directory below is built
+    /// out of the word being searched for, and nothing inside the
+    /// project holds it — so a walk that matched the absolute path
+    /// answers with every file there is.
+    #[test]
+    fn a_name_hit_is_matched_under_the_directory() {
+        let p = std::env::temp_dir().join(format!("khor-search-home-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::write(p.join("src/one.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(p.join("README.md"), "# a project\n").unwrap();
+        let dir = Scratch(p);
+        let found = search(dir.to_str().unwrap(), "khor-search-home").unwrap();
+        assert!(
+            found.names.is_empty(),
+            "the directories above a project are not part of what is being searched: {:?}",
+            found.names
+        );
+        // …and a name that really is under it still answers, so the
+        // claim above is not「it stopped answering」.
+        let real = search(dir.to_str().unwrap(), "one.rs").unwrap();
+        assert_eq!(real.names.len(), 1, "{:?}", real.names);
+        assert!(real.names[0].ends_with("src/one.rs"), "absolute, as before");
     }
 
     /// An empty box is not a refusal and not the whole project: it is
