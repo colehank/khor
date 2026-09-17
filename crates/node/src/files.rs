@@ -406,6 +406,22 @@ pub fn launcher() -> Option<String> {
 /// The variable that names this machine's opener.
 pub const LAUNCHER_ENV: &str = "KHOR_LAUNCHER";
 
+/// The whitelist [`launch`] applies, on its own so that **every road
+/// asks it before the target leaves this machine** (`Link::launch`):
+/// a satellite's opener is reached over ssh with the target quoted
+/// into a script, and a quoted `-a` is still a flag to `open` at the
+/// far end. One judgment, made once, ahead of the branch.
+pub fn openable(target: &str) -> Result<(), String> {
+    if target.starts_with('-') {
+        return Err(msg::not_openable(target));
+    }
+    let page = target.starts_with("http://") || target.starts_with("https://");
+    if !page && !std::path::Path::new(target).is_absolute() {
+        return Err(msg::not_openable(target));
+    }
+    Ok(())
+}
+
 /// Hands one path or page to this machine's opener.
 ///
 /// **What may be handed over is a whitelist**, because what reaches here
@@ -424,13 +440,7 @@ pub const LAUNCHER_ENV: &str = "KHOR_LAUNCHER";
 /// Answers as soon as the opener starts. Waiting for it would be waiting
 /// for a person to close a window.
 pub fn launch(target: &str) -> Result<(), String> {
-    if target.starts_with('-') {
-        return Err(msg::not_openable(target));
-    }
-    let page = target.starts_with("http://") || target.starts_with("https://");
-    if !page && !std::path::Path::new(target).is_absolute() {
-        return Err(msg::not_openable(target));
-    }
+    openable(target)?;
     let opener = launcher().ok_or_else(|| msg::no_launcher(LAUNCHER_ENV))?;
     std::process::Command::new(&opener)
         .arg(target)

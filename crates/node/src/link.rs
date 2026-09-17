@@ -2685,6 +2685,9 @@ impl Node {
         machine: &str,
         target: &str,
     ) -> Result<(), String> {
+        // Refused here, before the road is chosen: the satellite road
+        // hands the target to an opener khor never sees again.
+        crate::files::openable(target)?;
         let (channel, home) = self.resolve_or_here(machine)?;
         if home == self.device() {
             let t = target.to_owned();
