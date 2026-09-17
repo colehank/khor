@@ -199,6 +199,7 @@ pub fn serve() -> Result<(u16, String), String> {
             }
         }
     }
+    follow_the_system_theme();
     let token = crate::link::fresh_hex()?;
     let mut cmd = std::process::Command::new(&exe);
     cmd.arg("serve-web")
@@ -226,6 +227,98 @@ pub fn serve() -> Result<(u16, String), String> {
         child,
     });
     Ok((port, token))
+}
+
+/// The setting VS Code reads to follow the operating system's light or
+/// dark, and the file it reads it out of.
+///
+/// **khor follows the system and the web editor does not** (工作区第六轮
+/// 第 49 条:「VSCODE没有遵循app的主题, 也就是深色.反之亦然」— the user).
+/// The app's own window has `prefers-color-scheme` and turns with the
+/// desktop; `window.autoDetectColorScheme` is off by default in VS
+/// Code, so the editor stays light beside a dark khor and dark beside a
+/// light one. Setting it on both ends is what makes them one screen —
+/// and it is set on **that machine's** settings, because that is where
+/// the editor is running.
+const FOLLOW_KEY: &str = "window.autoDetectColorScheme";
+
+/// Where `code serve-web` keeps the user settings of the server it
+/// starts: `--server-data-dir`, whose default is `~/.vscode-server`,
+/// and `data/User/settings.json` under it. Checked against
+/// `code serve-web --help` and against the directory a real run leaves
+/// behind (2026-09-17).
+fn theme_settings() -> Option<PathBuf> {
+    Some(
+        std::env::home_dir()?
+            .join(".vscode-server")
+            .join("data")
+            .join("User")
+            .join("settings.json"),
+    )
+}
+
+/// Writes [`FOLLOW_KEY`] into that file — **only where the key is not
+/// there already**.
+///
+/// **A key somebody has answered is their answer.** Somebody who turned
+/// this off turned it off; khor filling in a blank is a different act
+/// from khor overruling a choice, and only the first is khor's to make.
+/// So the test is 「is the key present」, not 「is it true」.
+///
+/// **Nothing here can stop the editor from starting.** Every way this
+/// can fail — no home, a settings file with a comment in it (VS Code's
+/// own format allows them and `serde_json` does not), a directory that
+/// cannot be written — leaves the file exactly as it was and the
+/// launch going ahead. The cost of failing is that the editor comes up
+/// in the other scheme, which is where it was before this existed; the
+/// cost of being loud about it would be a refusal in front of an editor
+/// somebody asked for.
+///
+/// It is the same reach `khor hooks` takes into claude's settings
+/// (`crate::adaptor::claude::install_hooks`): parse, touch one key,
+/// write the rest back as it was. `serde_json`'s `preserve_order` is
+/// why the rest really is as it was — without it a round trip would
+/// re-alphabetise somebody's configuration and call the diff khor's.
+fn follow_the_system_theme() {
+    let Some(path) = theme_settings() else { return };
+    follow_theme_in(&path);
+}
+
+/// The judgment half of [`follow_the_system_theme`], with the file
+/// handed in.
+///
+/// **Split so it can be tested against a file built for the purpose**,
+/// exactly as [`server_under`] is: the other half reads the home
+/// directory, which a test can only change for the whole process — and
+/// a process-wide change is a test that fails when another one runs
+/// beside it.
+fn follow_theme_in(path: &Path) {
+    let mut settings = match std::fs::read_to_string(path) {
+        Ok(text) if text.trim().is_empty() => serde_json::json!({}),
+        Ok(text) => match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(v) => v,
+            // Not ours to repair. A file khor cannot parse is one
+            // somebody is in the middle of editing, or one with the
+            // comments VS Code allows — and rewriting it from khor's
+            // idea of what it held would destroy the only copy.
+            Err(_) => return,
+        },
+        Err(_) => serde_json::json!({}),
+    };
+    let Some(root) = settings.as_object_mut() else {
+        return;
+    };
+    if root.contains_key(FOLLOW_KEY) {
+        return;
+    }
+    root.insert(FOLLOW_KEY.to_owned(), serde_json::Value::Bool(true));
+    let Ok(text) = serde_json::to_string_pretty(&settings) else {
+        return;
+    };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, format!("{text}\n"));
 }
 
 /// Puts the child in a process group of its own.
@@ -405,5 +498,84 @@ mod tests {
         let base = scratch("nocommit");
         assert!(!server_under(&base, ""));
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 工作区第六轮 第 49 条, the half a person meets on a fresh
+    /// machine: no settings file at all, so khor writes the one key and
+    /// the editor comes up in the desktop's own scheme.
+    #[test]
+    fn a_machine_with_no_settings_gets_the_key() {
+        let dir = scratch("theme-fresh");
+        let at = dir.join("data").join("User").join("settings.json");
+        follow_theme_in(&at);
+        let text = std::fs::read_to_string(&at).expect("the file khor wrote");
+        let v: serde_json::Value = serde_json::from_str(&text).expect("valid json");
+        assert_eq!(v[FOLLOW_KEY], serde_json::Value::Bool(true));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// …and the half the ruling is actually about: **a key somebody has
+    /// answered is their answer.** `false` is a person saying「do not
+    /// follow」, and khor overruling that would be khor deciding
+    /// somebody's editor for them.
+    #[test]
+    fn a_key_already_answered_is_left_exactly_as_it_was() {
+        let dir = scratch("theme-answered");
+        std::fs::create_dir_all(&dir).expect("make scratch");
+        let at = dir.join("settings.json");
+        let was = "{\n  \"window.autoDetectColorScheme\": false,\n  \"editor.fontSize\": 13\n}\n";
+        std::fs::write(&at, was).expect("write settings");
+        follow_theme_in(&at);
+        assert_eq!(
+            std::fs::read_to_string(&at).expect("read back"),
+            was,
+            "khor rewrote a settings file it had nothing to add to"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The other keys survive, and so does their order — which is what
+    /// `serde_json`'s `preserve_order` is in this tree for. A round
+    /// trip that re-alphabetised somebody's configuration would be a
+    /// diff that is all khor's and says nothing khor meant.
+    #[test]
+    fn everything_else_in_the_file_comes_back_in_its_own_order() {
+        let dir = scratch("theme-order");
+        std::fs::create_dir_all(&dir).expect("make scratch");
+        let at = dir.join("settings.json");
+        std::fs::write(
+            &at,
+            "{\"zebra\": 1, \"apple\": 2, \"workbench.colorTheme\": \"Default Dark+\"}",
+        )
+        .expect("write settings");
+        follow_theme_in(&at);
+        let text = std::fs::read_to_string(&at).expect("read back");
+        let keys: Vec<&str> = text
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix('"'))
+            .filter_map(|l| l.split('"').next())
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["zebra", "apple", "workbench.colorTheme", FOLLOW_KEY],
+            "the keys came back in another order, or one of them did not come back"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file khor cannot parse is not khor's to repair. VS Code's own
+    /// settings format allows comments and `serde_json` does not, so
+    /// this is a real file on real machines — and the answer is to
+    /// leave it alone and start the editor anyway.
+    #[test]
+    fn a_settings_file_with_comments_in_it_is_left_alone() {
+        let dir = scratch("theme-jsonc");
+        std::fs::create_dir_all(&dir).expect("make scratch");
+        let at = dir.join("settings.json");
+        let was = "{\n  // mine\n  \"editor.fontSize\": 13\n}\n";
+        std::fs::write(&at, was).expect("write settings");
+        follow_theme_in(&at);
+        assert_eq!(std::fs::read_to_string(&at).expect("read back"), was);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
