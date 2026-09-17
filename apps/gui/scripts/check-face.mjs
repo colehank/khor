@@ -6047,7 +6047,24 @@ try {
           r.fulfill({ contentType: "application/json", body: JSON.stringify(born) }),
         );
         await press("[data-new-session-create]");
-        await wait(1_200);
+        // **Polled, not slept.** The column learns of the new row on
+        // its own beat (the fixture's list is re-asked, not pushed), and
+        // a fixed 1.2 s was long enough on a quiet machine and short on
+        // a busy one — the lint sweep saw this go red twice in four
+        // runs with `landed: 0` and `there: 0`, i.e. the shell had
+        // stayed put and the row simply had not arrived yet. Wait for
+        // the row or the wizard's close, whichever the decision needs,
+        // and only then read everything at once.
+        for (let i = 0; i < 40; i++) {
+          const ready = await page.evaluate(
+            (id) =>
+              document.querySelectorAll("[data-new-session-dialog]").length === 0 &&
+              document.querySelectorAll(`[data-ws-sessions] [data-row="${id}"]`).length > 0,
+            born,
+          );
+          if (ready) break;
+          await wait(200);
+        }
         const stayed = await page.evaluate((id) => ({
           wizard: document.querySelectorAll("[data-new-session-dialog]").length,
           column: document.querySelectorAll("[data-ws-sessions]").length,
