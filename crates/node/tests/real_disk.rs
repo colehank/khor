@@ -77,7 +77,7 @@ fn the_fixture_and_this_machines_claude_agree_on_the_schema() {
     // Everything the fixture claims must actually occur out there, or the
     // fixture is describing a format of its own invention.
     let real_keys: BTreeSet<String> =
-        real.iter().flat_map(|p| keys_of(p)).collect();
+        real.iter().flat_map(keys_of).collect();
     let invented: Vec<&String> = fixture_keys.difference(&real_keys).collect();
     assert!(invented.is_empty(), "fields the fixture invented: {invented:?}");
 }
@@ -416,12 +416,11 @@ fn one_spending_pass_is_timed_against_the_tree_it_walked() {
             let p = e.path();
             match e.file_type() {
                 Ok(t) if t.is_dir() => stack.push(p),
-                Ok(t) if t.is_file() => {
-                    if p.extension().and_then(|x| x.to_str()) == Some("jsonl") {
+                Ok(t) if t.is_file()
+                    && p.extension().and_then(|x| x.to_str()) == Some("jsonl") => {
                         files += 1;
                         bytes += e.metadata().map(|m| m.len()).unwrap_or(0);
                     }
-                }
                 _ => {}
             }
         }

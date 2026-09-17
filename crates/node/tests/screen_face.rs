@@ -26,7 +26,7 @@
 //! whatever this month's build draws. What is real is everything khor
 //! owns.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use khor_core::{DeviceId, SessionId, State};
@@ -45,8 +45,8 @@ draw 'Command completed successfully' '─────────────�
 sleep 6
 "#;
 
-fn read_state(root: &PathBuf, id: &SessionId) -> Option<(State, Option<Source>)> {
-    let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
+fn read_state(root: &Path, id: &SessionId) -> Option<(State, Option<Source>)> {
+    let k = LiveKind::new(root.to_path_buf(), DeviceId([1; 32]));
     let dir = k.dir_of(id)?;
     let raw = std::fs::read(dir.join("state.json")).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&raw).ok()?;
@@ -59,16 +59,15 @@ fn read_state(root: &PathBuf, id: &SessionId) -> Option<(State, Option<Source>)>
 /// fixed time: the host's own cadence and the table's debounce are both
 /// wall-clock, so a fixed sleep here would be measuring how busy the
 /// machine is (账本 "固定 sleep 的测试，测的是机器闲不闲").
-fn wait_for(root: &PathBuf, id: &SessionId, want: State) -> Option<(State, Option<Source>)> {
+fn wait_for(root: &Path, id: &SessionId, want: State) -> Option<(State, Option<Source>)> {
     let deadline = Instant::now() + Duration::from_secs(20);
     let mut last = None;
     while Instant::now() < deadline {
         last = read_state(root, id);
-        if let Some((word, _)) = &last {
-            if *word == want {
+        if let Some((word, _)) = &last
+            && *word == want {
                 return last;
             }
-        }
         std::thread::sleep(Duration::from_millis(100));
     }
     last

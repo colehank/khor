@@ -94,7 +94,7 @@ impl CpuHistory {
     /// a day.
     pub fn record(&mut self, at_ms: u64, r: Reading) {
         let idx = at_ms / BUCKET_MS;
-        let slot = self.buckets.entry(idx).or_insert(Bucket::default());
+        let slot = self.buckets.entry(idx).or_default();
         slot.cpu += f64::from(r.cpu_pct);
         slot.n += 1;
         slot.mem = Some(slot.mem.unwrap_or(0.0) + f64::from(r.mem_pct));

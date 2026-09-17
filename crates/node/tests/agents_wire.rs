@@ -30,7 +30,7 @@
 //! synchronous, and on a current-thread runtime it freezes tokio's clock
 //! so every timeout in the file silently stretches with it.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::Node;
@@ -43,7 +43,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     let path = root.join(".khor").join("endpoint.json");
     timeout(Duration::from_secs(90), async {
         while !path.exists() {

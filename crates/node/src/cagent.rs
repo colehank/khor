@@ -498,11 +498,10 @@ impl Shim {
             let reader = std::io::BufReader::new(stdout);
             for line in reader.lines() {
                 let Ok(line) = line else { break };
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
-                    if frames.send(v).is_err() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
+                    && frames.send(v).is_err() {
                         break;
                     }
-                }
             }
             // The child ended; a pending turn must not hang forever.
             let _ = frames.send(serde_json::json!({ "type": "khor_child_gone" }));
@@ -511,6 +510,11 @@ impl Shim {
     }
 
     /// One user turn onto claude's stdin.
+    // No caller today: every turn so far carries the images argument.
+    // Kept rather than deleted because it is the no-images half of a
+    // pair, and deleting it is a change to this shim's shape, not a
+    // lint fix.
+    #[allow(dead_code)]
     fn say(&self, text: &str) -> Result<(), String> {
         self.say_with(text, &[])
     }
@@ -678,11 +682,10 @@ async fn drain(
             // tell.
             Some("control_response") => {
                 let answer = &f["response"];
-                if let Some(id) = answer["request_id"].as_str() {
-                    if let Some(tx) = shim.pending.lock().unwrap().remove(id) {
+                if let Some(id) = answer["request_id"].as_str()
+                    && let Some(tx) = shim.pending.lock().unwrap().remove(id) {
                         let _ = tx.send(answer.clone());
                     }
-                }
             }
             Some("khor_child_gone") => {
                 if let Some(tx) = shim.turn.lock().unwrap().take() {
@@ -787,6 +790,334 @@ pub fn replayed(u: crate::adaptor::claude::Utterance) -> Option<SessionUpdate> {
         Utterance::Tool(block) => said(&block),
         Utterance::ToolDone(block) => settled(&block),
     }
+}
+
+/// The flags that turn this session into **the network's scheduler**
+/// (docs/AGENT.md), when the opener asked for one.
+///
+/// khor's verbs arrive as MCP tools (`khor mcp`) rather than as
+/// prose the model is told to obey: a tool is something the vendor
+/// can gate, name in a permission prompt, and report back — all of
+/// which khor already paints. `--strict-mcp-config` is not a
+/// detail: without it this session would also inherit whatever MCP
+/// servers the user has configured for their own work, which is a
+/// different set of powers than the one they agreed to here.
+///
+/// Off by default. A khor session is an ordinary agent session
+/// unless somebody asked for the other thing.
+/// One block of a claude `assistant` line, as the update it is.
+///
+/// **A function rather than a `match` inside the pump, and the reason
+/// is a test that was green while the feature was gone.** The first
+/// version of the tool-status work asserted the wire spelling by
+/// building a `ToolCall` in the test itself — which holds whether or
+/// not this shim sets anything, and did: deleting `.status(...)` from
+/// the pump left that assertion passing. Translation that only exists
+/// inside an `async fn` holding a live connection cannot be asserted
+/// on, so it was moved out here, where the claim can be "this JSON
+/// produces this update" instead of "this protocol type spells itself
+/// this way".
+fn said(block: &serde_json::Value) -> Option<SessionUpdate> {
+    match block.get("type").and_then(|t| t.as_str()) {
+        Some("text") => block["text"].as_str().map(|t| {
+            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(t.to_owned()),
+            )))
+        }),
+        Some("thinking") => block["thinking"].as_str().map(|t| {
+            SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(t.to_owned()),
+            )))
+        }),
+        Some("tool_use") => {
+            let id = block["id"].as_str().unwrap_or("tool");
+            let name = block["name"].as_str().unwrap_or("tool");
+            let input = &block["input"];
+            let mut call = ToolCall::new(id.to_owned(), titled(name, input))
+                .kind(kind_of(name))
+                // **`InProgress`, not the default.** A `ToolCall` built
+                // without a status serialises as `pending`, and claude
+                // announces a `tool_use` when it is about to run the
+                // tool, not when it is queued — so the default would
+                // draw a running tool as one that has not started. The
+                // other end of this pair is `settled`.
+                .status(ToolCallStatus::InProgress)
+                // The whole input, so a face can open a line up and
+                // show what was actually run. The title is a summary
+                // and summaries lose things; this is the thing itself.
+                .raw_input(input.clone());
+            if let Some(path) = input.get("file_path").and_then(|p| p.as_str()) {
+                call = call.locations(vec![ToolCallLocation::new(path)]);
+            }
+            // An edit carries its own before and after, so the protocol
+            // can carry the diff rather than the sentence "a file was
+            // edited". `Edit` is the only claude tool that hands over
+            // both sides; `Write` gives only the new text, which the
+            // protocol accepts (`old_text` is optional) and which reads
+            // correctly as "all of this is new".
+            if let (Some(path), Some(new_text)) = (
+                input.get("file_path").and_then(|p| p.as_str()),
+                input.get("new_string").or_else(|| input.get("content")).and_then(|t| t.as_str()),
+            ) {
+                let mut diff = Diff::new(path, new_text.to_owned());
+                if let Some(old) = input.get("old_string").and_then(|t| t.as_str()) {
+                    diff = diff.old_text(old.to_owned());
+                }
+                call = call.content(vec![ToolCallContent::Diff(diff)]);
+            }
+            Some(SessionUpdate::ToolCall(call))
+        }
+        _ => None,
+    }
+}
+
+/// One block of a claude `user` line, as the update it is — which is
+/// only ever a tool call closing.
+///
+/// claude reports a finished tool as a `tool_result` block riding a
+/// *user* line: the machine answering itself. Everything else on such a
+/// line is a person talking, and this face paints the user's own words
+/// first-hand, so nothing else here becomes an update.
+fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
+    if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+        return None;
+    }
+    let id = block["tool_use_id"].as_str()?;
+    // **Absent `is_error` means success.** claude writes the key only
+    // when the tool failed. Of the two ways to be wrong about a missing
+    // key, reading it as failure paints every healthy tool as broken,
+    // which is the louder and the more expensive one.
+    let status = if block["is_error"].as_bool().unwrap_or(false) {
+        ToolCallStatus::Failed
+    } else {
+        ToolCallStatus::Completed
+    };
+    let mut fields = ToolCallUpdateFields::new().status(status);
+    // **What the tool actually said.** A finished tool used to settle
+    // with nothing but a colour, so「跑完了」and「跑完了,输出是这个」
+    // looked identical — and for a failed one the whole of what a
+    // person needs is the message it failed with.
+    //
+    // claude writes `content` as a string most of the time and as a
+    // list of blocks the rest, so both are read. A tool that returned
+    // nothing gets no content rather than an empty block: an empty
+    // panel that opens onto nothing is worse than no panel.
+    if let Some(text) = result_text(block) {
+        fields = fields.content(vec![ToolCallContent::Content(Content::new(
+            ContentBlock::Text(TextContent::new(text)),
+        ))]);
+    }
+    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(id.to_owned(), fields)))
+}
+
+/// The text a `tool_result` block carries, in either of the two shapes
+/// claude writes it in.
+///
+/// **Bounded at 16 KiB.** A `Read` of a large file comes back whole,
+/// and every byte of it would cross khor's wire, sit in a face's memory
+/// and re-render on every poll — for a panel nobody scrolls to the
+/// bottom of. The cut is marked so a reader knows there was more; an
+/// unmarked truncation is a lie about what the tool returned.
+fn result_text(block: &serde_json::Value) -> Option<String> {
+    const MAX: usize = 16 * 1024;
+    let raw = match block.get("content")? {
+        serde_json::Value::String(t) => t.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.len() <= MAX {
+        return Some(raw.to_owned());
+    }
+    // On a char boundary: `raw` is UTF-8 and slicing mid-codepoint
+    // panics, which for a Chinese-heavy transcript is not a rare case.
+    let mut cut = MAX;
+    while cut > 0 && !raw.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    Some(format!("{}\n… {}", &raw[..cut], msg::TOOL_OUTPUT_CUT))
+}
+
+/// The tokens sitting in the context after a claude `usage` object.
+///
+/// **All four are summed, and none of them double-counts.** claude's
+/// `input_tokens` excludes the cached part — the opposite of codex,
+/// which includes it (`crate::usage` carries that difference and the
+/// readings behind it). So input, cache-read, cache-write and output
+/// are four disjoint piles, and the context is their sum.
+fn tokens_in(usage: &serde_json::Value) -> u64 {
+    let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    n("input_tokens")
+        + n("cache_read_input_tokens")
+        + n("cache_creation_input_tokens")
+        + n("output_tokens")
+}
+
+/// The context window claude reported on a `result` frame, if it did.
+///
+/// `modelUsage` is keyed by model name and this takes the largest
+/// window in it rather than picking a key: a turn can touch more than
+/// one model (a subagent on a smaller one), and of the two ways to be
+/// wrong, reporting the small window makes a half-full context look
+/// nearly full and would have people compacting a conversation that has
+/// room. Same-model turns — every ordinary one — have a single entry
+/// and the max is that entry.
+fn window_in(f: &serde_json::Value) -> Option<u64> {
+    let models = f.get("modelUsage")?.as_object()?;
+    models
+        .values()
+        .filter_map(|m| m.get("contextWindow").and_then(serde_json::Value::as_u64))
+        .max()
+        .filter(|w| *w > 0)
+}
+
+/// What a turn's `result` frame says was spent on it, in USD.
+///
+/// **Cumulative for the session, not for the turn** — claude's own
+/// field is `total_cost_usd`, and the protocol's `Cost` says the same
+/// ("total cumulative cost for session"), so the two agree and nothing
+/// here has to add anything up.
+fn cost_in(f: &serde_json::Value) -> Option<Cost> {
+    let amount = f.get("total_cost_usd").and_then(serde_json::Value::as_f64)?;
+    Some(Cost::new(amount, "USD"))
+}
+
+/// What one line about this tool call should say.
+///
+/// **The bug this exists for: a conversation full of lines reading
+/// `Bash`.** The title used to be the tool's *name*, so twenty shell
+/// commands were twenty identical lines and the one thing a reader
+/// wants — which command — was nowhere on screen.
+///
+/// The keys below are claude's own, read off this machine's transcripts
+/// (2026-08-30) rather than guessed:
+///
+/// | tool | the key carrying the information |
+/// |---|---|
+/// | `Bash`, `Monitor`, `Agent` | `description` — claude writes a short human line itself |
+/// | `Read`, `Edit`, `Write`, `NotebookEdit` | `file_path` |
+/// | `Grep`, `Glob` | `pattern` |
+/// | `WebFetch`, `WebSearch` | `url` / `query` |
+/// | `Skill` | `skill` |
+/// | `Task*`, `ListAgents` | ids or nothing, so the name stands |
+///
+/// **`description` wins wherever it exists**, because it is the agent's
+/// own sentence about what it is doing and no rule written here beats
+/// that. Everything unanticipated falls back to the bare name — the
+/// state this replaces — so a tool nobody thought of is no worse off.
+///
+/// A path shows its last two segments rather than all of them: an
+/// absolute path in a 736-wide column pushes the part that identifies
+/// the file off the end, and the tail is the half a reader recognises.
+fn titled(name: &str, input: &serde_json::Value) -> String {
+    let s = |k: &str| input.get(k).and_then(|v| v.as_str()).filter(|v| !v.trim().is_empty());
+    if let Some(d) = s("description") {
+        return d.to_owned();
+    }
+    let detail = match name {
+        "Read" | "Edit" | "Write" | "NotebookEdit" => s("file_path").map(tail_of),
+        "Grep" | "Glob" => s("pattern").map(str::to_owned),
+        "WebFetch" | "WebSearch" => s("url").or_else(|| s("query")).map(str::to_owned),
+        "Skill" => s("skill").map(str::to_owned),
+        "Bash" | "BashOutput" => s("command").map(str::to_owned),
+        _ => None,
+    };
+    match detail {
+        Some(d) => format!("{name} {d}"),
+        None => name.to_owned(),
+    }
+}
+
+/// The last two segments of a path, which is the part a reader knows.
+fn tail_of(path: &str) -> String {
+    if path.matches('/').count() < 2 {
+        return path.trim_start_matches('/').to_owned();
+    }
+    let parts: Vec<&str> = path.rsplit('/').take(2).collect();
+    format!("{}/{}", parts[1], parts[0])
+}
+
+/// Which of the protocol's tool kinds a claude tool name is.
+///
+/// **The kind is what a face can draw before it knows anything else.**
+/// A title is a string and reads as one; a kind is a small closed set,
+/// so an icon or a shape can stand for it and a reader can tell "it
+/// read a file" from "it ran something" without parsing words.
+///
+/// **What this cannot do is be right about tools it has never seen.**
+/// The names below are claude's own; an MCP tool arrives as
+/// `mcp__<server>__<tool>` and could be anything, so it lands in
+/// `Other` — which is the honest answer, not a gap. The protocol has
+/// `Other` for exactly this, and a guess from substrings ("everything
+/// containing `read`") would produce confident wrong icons on other
+/// people's tools, which is worse than a plain one.
+///
+/// **`Delete` and `Move` are deliberately unreachable here.** claude
+/// deletes and moves through `Bash`, so those two kinds would be a
+/// claim about the *contents* of a shell line, which this shim does not
+/// read. They stay `Execute`, and a `rm` shows up as something that ran
+/// rather than as a deletion. Said out loud because the alternative —
+/// grepping the command — is the kind of thing that looks like an
+/// improvement right up until it mislabels `grep -r delete`.
+fn kind_of(name: &str) -> ToolKind {
+    match name {
+        "Read" | "NotebookRead" => ToolKind::Read,
+        "Write" | "Edit" | "NotebookEdit" => ToolKind::Edit,
+        "Bash" | "BashOutput" | "KillShell" => ToolKind::Execute,
+        "Glob" | "Grep" => ToolKind::Search,
+        "WebFetch" | "WebSearch" => ToolKind::Fetch,
+        "Task" => ToolKind::Think,
+        "ExitPlanMode" => ToolKind::SwitchMode,
+        _ => ToolKind::Other,
+    }
+}
+
+fn khor_tools() -> Result<Vec<String>, String> {
+    if std::env::var(AGENT_ENV).is_err() {
+        return Ok(Vec::new());
+    }
+    let exe = crate::self_exe()?;
+    let root = crate::Node::root_from_env();
+    let config = serde_json::json!({
+        "mcpServers": {
+            "khor": {
+                "command": exe.display().to_string(),
+                "args": ["mcp"],
+                // The store is named rather than inherited: this
+                // child is spawned by a host that may itself have
+                // been started with another one, and a scheduler
+                // pointed at the wrong network is worse than one
+                // with no tools at all.
+                "env": { "KHOR_HOME": root.display().to_string() }
+            }
+        }
+    });
+    let path = std::env::temp_dir().join(format!("khor-mcp-{}.json", std::process::id()));
+    std::fs::write(&path, serde_json::to_vec(&config).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    let mut args = vec![
+        "--mcp-config".into(),
+        path.display().to_string(),
+        "--strict-mcp-config".into(),
+        "--append-system-prompt".into(),
+        msg::AGENT_BRIEF.into(),
+    ];
+    // 读免批 (docs/AGENT.md). Looking at the network is not an act, and
+    // asking permission for it teaches a person to press 允许 without
+    // reading — which is the same as having no gate on the ones that
+    // matter. The names come from the tool table itself, so a tool
+    // added on the reading side is free the day it lands and one added
+    // on the acting side is gated the day it lands.
+    args.push("--allowedTools".into());
+    args.extend(crate::mcp::free_tools());
+    Ok(args)
 }
 
 
@@ -1151,332 +1482,4 @@ mod wire_tests {
             assert_eq!(super::kind_of(name), want, "{name}");
         }
     }
-}
-
-/// The flags that turn this session into **the network's scheduler**
-/// (docs/AGENT.md), when the opener asked for one.
-///
-/// khor's verbs arrive as MCP tools (`khor mcp`) rather than as
-/// prose the model is told to obey: a tool is something the vendor
-/// can gate, name in a permission prompt, and report back — all of
-/// which khor already paints. `--strict-mcp-config` is not a
-/// detail: without it this session would also inherit whatever MCP
-/// servers the user has configured for their own work, which is a
-/// different set of powers than the one they agreed to here.
-///
-/// Off by default. A khor session is an ordinary agent session
-/// unless somebody asked for the other thing.
-/// One block of a claude `assistant` line, as the update it is.
-///
-/// **A function rather than a `match` inside the pump, and the reason
-/// is a test that was green while the feature was gone.** The first
-/// version of the tool-status work asserted the wire spelling by
-/// building a `ToolCall` in the test itself — which holds whether or
-/// not this shim sets anything, and did: deleting `.status(...)` from
-/// the pump left that assertion passing. Translation that only exists
-/// inside an `async fn` holding a live connection cannot be asserted
-/// on, so it was moved out here, where the claim can be "this JSON
-/// produces this update" instead of "this protocol type spells itself
-/// this way".
-fn said(block: &serde_json::Value) -> Option<SessionUpdate> {
-    match block.get("type").and_then(|t| t.as_str()) {
-        Some("text") => block["text"].as_str().map(|t| {
-            SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
-                TextContent::new(t.to_owned()),
-            )))
-        }),
-        Some("thinking") => block["thinking"].as_str().map(|t| {
-            SessionUpdate::AgentThoughtChunk(ContentChunk::new(ContentBlock::Text(
-                TextContent::new(t.to_owned()),
-            )))
-        }),
-        Some("tool_use") => {
-            let id = block["id"].as_str().unwrap_or("tool");
-            let name = block["name"].as_str().unwrap_or("tool");
-            let input = &block["input"];
-            let mut call = ToolCall::new(id.to_owned(), titled(name, input))
-                .kind(kind_of(name))
-                // **`InProgress`, not the default.** A `ToolCall` built
-                // without a status serialises as `pending`, and claude
-                // announces a `tool_use` when it is about to run the
-                // tool, not when it is queued — so the default would
-                // draw a running tool as one that has not started. The
-                // other end of this pair is `settled`.
-                .status(ToolCallStatus::InProgress)
-                // The whole input, so a face can open a line up and
-                // show what was actually run. The title is a summary
-                // and summaries lose things; this is the thing itself.
-                .raw_input(input.clone());
-            if let Some(path) = input.get("file_path").and_then(|p| p.as_str()) {
-                call = call.locations(vec![ToolCallLocation::new(path)]);
-            }
-            // An edit carries its own before and after, so the protocol
-            // can carry the diff rather than the sentence "a file was
-            // edited". `Edit` is the only claude tool that hands over
-            // both sides; `Write` gives only the new text, which the
-            // protocol accepts (`old_text` is optional) and which reads
-            // correctly as "all of this is new".
-            if let (Some(path), Some(new_text)) = (
-                input.get("file_path").and_then(|p| p.as_str()),
-                input.get("new_string").or_else(|| input.get("content")).and_then(|t| t.as_str()),
-            ) {
-                let mut diff = Diff::new(path, new_text.to_owned());
-                if let Some(old) = input.get("old_string").and_then(|t| t.as_str()) {
-                    diff = diff.old_text(old.to_owned());
-                }
-                call = call.content(vec![ToolCallContent::Diff(diff)]);
-            }
-            Some(SessionUpdate::ToolCall(call))
-        }
-        _ => None,
-    }
-}
-
-/// One block of a claude `user` line, as the update it is — which is
-/// only ever a tool call closing.
-///
-/// claude reports a finished tool as a `tool_result` block riding a
-/// *user* line: the machine answering itself. Everything else on such a
-/// line is a person talking, and this face paints the user's own words
-/// first-hand, so nothing else here becomes an update.
-fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
-    if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
-        return None;
-    }
-    let id = block["tool_use_id"].as_str()?;
-    // **Absent `is_error` means success.** claude writes the key only
-    // when the tool failed. Of the two ways to be wrong about a missing
-    // key, reading it as failure paints every healthy tool as broken,
-    // which is the louder and the more expensive one.
-    let status = if block["is_error"].as_bool().unwrap_or(false) {
-        ToolCallStatus::Failed
-    } else {
-        ToolCallStatus::Completed
-    };
-    let mut fields = ToolCallUpdateFields::new().status(status);
-    // **What the tool actually said.** A finished tool used to settle
-    // with nothing but a colour, so「跑完了」and「跑完了,输出是这个」
-    // looked identical — and for a failed one the whole of what a
-    // person needs is the message it failed with.
-    //
-    // claude writes `content` as a string most of the time and as a
-    // list of blocks the rest, so both are read. A tool that returned
-    // nothing gets no content rather than an empty block: an empty
-    // panel that opens onto nothing is worse than no panel.
-    if let Some(text) = result_text(block) {
-        fields = fields.content(vec![ToolCallContent::Content(Content::new(
-            ContentBlock::Text(TextContent::new(text)),
-        ))]);
-    }
-    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(id.to_owned(), fields)))
-}
-
-/// The text a `tool_result` block carries, in either of the two shapes
-/// claude writes it in.
-///
-/// **Bounded at 16 KiB.** A `Read` of a large file comes back whole,
-/// and every byte of it would cross khor's wire, sit in a face's memory
-/// and re-render on every poll — for a panel nobody scrolls to the
-/// bottom of. The cut is marked so a reader knows there was more; an
-/// unmarked truncation is a lie about what the tool returned.
-fn result_text(block: &serde_json::Value) -> Option<String> {
-    const MAX: usize = 16 * 1024;
-    let raw = match block.get("content")? {
-        serde_json::Value::String(t) => t.clone(),
-        serde_json::Value::Array(blocks) => blocks
-            .iter()
-            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => return None,
-    };
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return None;
-    }
-    if raw.len() <= MAX {
-        return Some(raw.to_owned());
-    }
-    // On a char boundary: `raw` is UTF-8 and slicing mid-codepoint
-    // panics, which for a Chinese-heavy transcript is not a rare case.
-    let mut cut = MAX;
-    while cut > 0 && !raw.is_char_boundary(cut) {
-        cut -= 1;
-    }
-    Some(format!("{}\n… {}", &raw[..cut], msg::TOOL_OUTPUT_CUT))
-}
-
-/// The tokens sitting in the context after a claude `usage` object.
-///
-/// **All four are summed, and none of them double-counts.** claude's
-/// `input_tokens` excludes the cached part — the opposite of codex,
-/// which includes it (`crate::usage` carries that difference and the
-/// readings behind it). So input, cache-read, cache-write and output
-/// are four disjoint piles, and the context is their sum.
-fn tokens_in(usage: &serde_json::Value) -> u64 {
-    let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
-    n("input_tokens")
-        + n("cache_read_input_tokens")
-        + n("cache_creation_input_tokens")
-        + n("output_tokens")
-}
-
-/// The context window claude reported on a `result` frame, if it did.
-///
-/// `modelUsage` is keyed by model name and this takes the largest
-/// window in it rather than picking a key: a turn can touch more than
-/// one model (a subagent on a smaller one), and of the two ways to be
-/// wrong, reporting the small window makes a half-full context look
-/// nearly full and would have people compacting a conversation that has
-/// room. Same-model turns — every ordinary one — have a single entry
-/// and the max is that entry.
-fn window_in(f: &serde_json::Value) -> Option<u64> {
-    let models = f.get("modelUsage")?.as_object()?;
-    models
-        .values()
-        .filter_map(|m| m.get("contextWindow").and_then(serde_json::Value::as_u64))
-        .max()
-        .filter(|w| *w > 0)
-}
-
-/// What a turn's `result` frame says was spent on it, in USD.
-///
-/// **Cumulative for the session, not for the turn** — claude's own
-/// field is `total_cost_usd`, and the protocol's `Cost` says the same
-/// ("total cumulative cost for session"), so the two agree and nothing
-/// here has to add anything up.
-fn cost_in(f: &serde_json::Value) -> Option<Cost> {
-    let amount = f.get("total_cost_usd").and_then(serde_json::Value::as_f64)?;
-    Some(Cost::new(amount, "USD"))
-}
-
-/// What one line about this tool call should say.
-///
-/// **The bug this exists for: a conversation full of lines reading
-/// `Bash`.** The title used to be the tool's *name*, so twenty shell
-/// commands were twenty identical lines and the one thing a reader
-/// wants — which command — was nowhere on screen.
-///
-/// The keys below are claude's own, read off this machine's transcripts
-/// (2026-08-30) rather than guessed:
-///
-/// | tool | the key carrying the information |
-/// |---|---|
-/// | `Bash`, `Monitor`, `Agent` | `description` — claude writes a short human line itself |
-/// | `Read`, `Edit`, `Write`, `NotebookEdit` | `file_path` |
-/// | `Grep`, `Glob` | `pattern` |
-/// | `WebFetch`, `WebSearch` | `url` / `query` |
-/// | `Skill` | `skill` |
-/// | `Task*`, `ListAgents` | ids or nothing, so the name stands |
-///
-/// **`description` wins wherever it exists**, because it is the agent's
-/// own sentence about what it is doing and no rule written here beats
-/// that. Everything unanticipated falls back to the bare name — the
-/// state this replaces — so a tool nobody thought of is no worse off.
-///
-/// A path shows its last two segments rather than all of them: an
-/// absolute path in a 736-wide column pushes the part that identifies
-/// the file off the end, and the tail is the half a reader recognises.
-fn titled(name: &str, input: &serde_json::Value) -> String {
-    let s = |k: &str| input.get(k).and_then(|v| v.as_str()).filter(|v| !v.trim().is_empty());
-    if let Some(d) = s("description") {
-        return d.to_owned();
-    }
-    let detail = match name {
-        "Read" | "Edit" | "Write" | "NotebookEdit" => s("file_path").map(tail_of),
-        "Grep" | "Glob" => s("pattern").map(str::to_owned),
-        "WebFetch" | "WebSearch" => s("url").or_else(|| s("query")).map(str::to_owned),
-        "Skill" => s("skill").map(str::to_owned),
-        "Bash" | "BashOutput" => s("command").map(str::to_owned),
-        _ => None,
-    };
-    match detail {
-        Some(d) => format!("{name} {d}"),
-        None => name.to_owned(),
-    }
-}
-
-/// The last two segments of a path, which is the part a reader knows.
-fn tail_of(path: &str) -> String {
-    if path.matches('/').count() < 2 {
-        return path.trim_start_matches('/').to_owned();
-    }
-    let parts: Vec<&str> = path.rsplit('/').take(2).collect();
-    format!("{}/{}", parts[1], parts[0])
-}
-
-/// Which of the protocol's tool kinds a claude tool name is.
-///
-/// **The kind is what a face can draw before it knows anything else.**
-/// A title is a string and reads as one; a kind is a small closed set,
-/// so an icon or a shape can stand for it and a reader can tell "it
-/// read a file" from "it ran something" without parsing words.
-///
-/// **What this cannot do is be right about tools it has never seen.**
-/// The names below are claude's own; an MCP tool arrives as
-/// `mcp__<server>__<tool>` and could be anything, so it lands in
-/// `Other` — which is the honest answer, not a gap. The protocol has
-/// `Other` for exactly this, and a guess from substrings ("everything
-/// containing `read`") would produce confident wrong icons on other
-/// people's tools, which is worse than a plain one.
-///
-/// **`Delete` and `Move` are deliberately unreachable here.** claude
-/// deletes and moves through `Bash`, so those two kinds would be a
-/// claim about the *contents* of a shell line, which this shim does not
-/// read. They stay `Execute`, and a `rm` shows up as something that ran
-/// rather than as a deletion. Said out loud because the alternative —
-/// grepping the command — is the kind of thing that looks like an
-/// improvement right up until it mislabels `grep -r delete`.
-fn kind_of(name: &str) -> ToolKind {
-    match name {
-        "Read" | "NotebookRead" => ToolKind::Read,
-        "Write" | "Edit" | "NotebookEdit" => ToolKind::Edit,
-        "Bash" | "BashOutput" | "KillShell" => ToolKind::Execute,
-        "Glob" | "Grep" => ToolKind::Search,
-        "WebFetch" | "WebSearch" => ToolKind::Fetch,
-        "Task" => ToolKind::Think,
-        "ExitPlanMode" => ToolKind::SwitchMode,
-        _ => ToolKind::Other,
-    }
-}
-
-fn khor_tools() -> Result<Vec<String>, String> {
-    if std::env::var(AGENT_ENV).is_err() {
-        return Ok(Vec::new());
-    }
-    let exe = crate::self_exe()?;
-    let root = crate::Node::root_from_env();
-    let config = serde_json::json!({
-        "mcpServers": {
-            "khor": {
-                "command": exe.display().to_string(),
-                "args": ["mcp"],
-                // The store is named rather than inherited: this
-                // child is spawned by a host that may itself have
-                // been started with another one, and a scheduler
-                // pointed at the wrong network is worse than one
-                // with no tools at all.
-                "env": { "KHOR_HOME": root.display().to_string() }
-            }
-        }
-    });
-    let path = std::env::temp_dir().join(format!("khor-mcp-{}.json", std::process::id()));
-    std::fs::write(&path, serde_json::to_vec(&config).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    let mut args = vec![
-        "--mcp-config".into(),
-        path.display().to_string(),
-        "--strict-mcp-config".into(),
-        "--append-system-prompt".into(),
-        msg::AGENT_BRIEF.into(),
-    ];
-    // 读免批 (docs/AGENT.md). Looking at the network is not an act, and
-    // asking permission for it teaches a person to press 允许 without
-    // reading — which is the same as having no gate on the ones that
-    // matter. The names come from the tool table itself, so a tool
-    // added on the reading side is free the day it lands and one added
-    // on the acting side is gated the day it lands.
-    args.push("--allowedTools".into());
-    args.extend(crate::mcp::free_tools());
-    Ok(args)
 }

@@ -51,8 +51,8 @@ async fn write_target(send: &mut SendStream, target: &str) -> Result<(), String>
     }
     send.write_all(&(bytes.len() as u16).to_be_bytes())
         .await
-        .map_err(|e| msg::tunnel_bad_handshake(e))?;
-    send.write_all(bytes).await.map_err(|e| msg::tunnel_bad_handshake(e))?;
+        .map_err(msg::tunnel_bad_handshake)?;
+    send.write_all(bytes).await.map_err(msg::tunnel_bad_handshake)?;
     Ok(())
 }
 
@@ -61,14 +61,14 @@ async fn write_target(send: &mut SendStream, target: &str) -> Result<(), String>
 /// make us buffer past the cap.
 async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
     let mut len = [0u8; 2];
-    recv.read_exact(&mut len).await.map_err(|e| msg::tunnel_bad_handshake(e))?;
+    recv.read_exact(&mut len).await.map_err(msg::tunnel_bad_handshake)?;
     let len = u16::from_be_bytes(len) as usize;
     if len > TARGET_MAX {
         return Err(msg::TUNNEL_TARGET_TOO_LONG.into());
     }
     let mut buf = vec![0u8; len];
-    recv.read_exact(&mut buf).await.map_err(|e| msg::tunnel_bad_handshake(e))?;
-    String::from_utf8(buf).map_err(|e| msg::tunnel_bad_handshake(e))
+    recv.read_exact(&mut buf).await.map_err(msg::tunnel_bad_handshake)?;
+    String::from_utf8(buf).map_err(msg::tunnel_bad_handshake)
 }
 
 /// A held tunnel to one exit: the live connection, and — for a one-shot
@@ -118,7 +118,7 @@ pub async fn dial(
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     write_target(&mut send, target).await?;
     let mut status = [0u8; 1];
-    recv.read_exact(&mut status).await.map_err(|e| msg::tunnel_bad_handshake(e))?;
+    recv.read_exact(&mut status).await.map_err(msg::tunnel_bad_handshake)?;
     match status[0] {
         OK => Ok((send, recv)),
         REFUSED => Err(msg::NOT_PAIRED.into()),

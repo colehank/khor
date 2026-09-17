@@ -8,7 +8,7 @@
 //! wants anyway.
 
 use std::net::TcpStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use khor_core::{DeviceId, SessionId, State};
@@ -31,8 +31,8 @@ fn stub_path() -> PathBuf {
     me.parent().and_then(|d| d.parent()).expect("target/debug").join("acp-stub")
 }
 
-fn read_state(root: &PathBuf, id: &SessionId) -> Option<(State, Option<Source>)> {
-    let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
+fn read_state(root: &Path, id: &SessionId) -> Option<(State, Option<Source>)> {
+    let k = LiveKind::new(root.to_path_buf(), DeviceId([1; 32]));
     let dir = k.dir_of(id)?;
     let raw = std::fs::read(dir.join("state.json")).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&raw).ok()?;
@@ -41,16 +41,15 @@ fn read_state(root: &PathBuf, id: &SessionId) -> Option<(State, Option<Source>)>
     Some((word, source))
 }
 
-fn wait_for(root: &PathBuf, id: &SessionId, want: State) -> Option<(State, Option<Source>)> {
+fn wait_for(root: &Path, id: &SessionId, want: State) -> Option<(State, Option<Source>)> {
     let deadline = Instant::now() + Duration::from_secs(20);
     let mut last = None;
     while Instant::now() < deadline {
         last = read_state(root, id);
-        if let Some((word, _)) = &last {
-            if *word == want {
+        if let Some((word, _)) = &last
+            && *word == want {
                 return last;
             }
-        }
         std::thread::sleep(Duration::from_millis(50));
     }
     last
@@ -220,7 +219,7 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
     let dir = k.dir_of(&id).unwrap();
     let hf = read_host_file(&dir).expect("a host file");
 
-    let mut attach = || -> TcpStream {
+    let attach = || -> TcpStream {
         let mut c = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
         // A read deadline before the first read, not at the first
         // `next_note`: a frame that stops arriving must make this test

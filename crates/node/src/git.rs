@@ -187,7 +187,7 @@ pub fn status(root: &Path) -> Result<Status, String> {
         }
         let path = item.location().to_str_lossy().into_owned();
         let slot = marks.entry(path).or_insert(mark);
-        *slot = fold(*slot, mark);
+        *slot = fold(slot, mark);
     }
     let rows = marks.into_iter().map(|(p, m)| (p, m.to_owned())).collect();
     let (ahead, behind) = divergence(&repo).unwrap_or((0, 0));

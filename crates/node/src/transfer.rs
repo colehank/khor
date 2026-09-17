@@ -270,11 +270,10 @@ impl TransferKind {
             } else {
                 None
             };
-            if let Some((state, at)) = pressed {
-                if best.is_none_or(|(b, _)| state.rank() < b.rank()) {
+            if let Some((state, at)) = pressed
+                && best.is_none_or(|(b, _)| state.rank() < b.rank()) {
                     best = Some((state, at));
                 }
-            }
         }
         best
     }

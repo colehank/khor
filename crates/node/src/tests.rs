@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use khor_core::State;
 use khor_sync::chat::{channel_dir, ChatDoc, Sender};
@@ -350,7 +350,7 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     // about the clock instead of about the rule.
     std::thread::sleep(std::time::Duration::from_millis(5));
     let f = khor_node_test_fileref();
-    far.send_files(&who, &[f.clone()]).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
     let block = far.changes_since(&Default::default()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
@@ -576,7 +576,7 @@ fn a_vendors_hook_places_the_row_that_khor_could_not() {
 /// number), so the row surfaces on the crash rule with the vendor's own
 /// `name` as its title — recomputed from this file each sweep, which is
 /// exactly the force a user's rename has to outlive.
-fn plant_discovered_claude(r: &PathBuf, vendor_session: &str, vendor_name: &str) {
+fn plant_discovered_claude(r: &Path, vendor_session: &str, vendor_name: &str) {
     let dir = crate::adaptor::vendor_home(r).join(".claude").join("sessions");
     fs::create_dir_all(&dir).unwrap();
     let now = std::time::SystemTime::now()
@@ -595,7 +595,7 @@ fn plant_discovered_claude(r: &PathBuf, vendor_session: &str, vendor_name: &str)
 
 /// A claude status file whose pid is **this** process — a sighting with
 /// a live pid, which is the shape the rule under test is about.
-fn plant_live_claude(r: &PathBuf, vendor_session: &str, status: &str, pid: u32) {
+fn plant_live_claude(r: &Path, vendor_session: &str, status: &str, pid: u32) {
     let dir = crate::adaptor::vendor_home(r).join(".claude").join("sessions");
     fs::create_dir_all(&dir).unwrap();
     let now = crate::live::now_ms();
@@ -1540,7 +1540,7 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
     let far = ChatDoc::new(0xFAFA).unwrap();
     let who = Sender { id: "dev-far".into(), name: "far".into() };
     let f = khor_node_test_fileref();
-    far.send_files(&who, &[f.clone()]).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
     fs::write(
         dir.join("u-000000000000fafa-00000000.loro"),
         far.changes_since(&Default::default()).unwrap(),
@@ -1623,7 +1623,7 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
     let far = ChatDoc::new(0xFAFA).unwrap();
     let who = Sender { id: "dev-far".into(), name: "far".into() };
     let f = khor_node_test_fileref();
-    far.send_files(&who, &[f.clone()]).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
     fs::write(
         dir.join("u-000000000000fafa-00000000.loro"),
         far.changes_since(&Default::default()).unwrap(),

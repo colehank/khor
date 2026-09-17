@@ -318,7 +318,7 @@ fn mac_running(pid: u32) -> Option<bool> {
     let got = unsafe {
         libc::proc_pidinfo(pid as i32, libc::PROC_PIDTASKINFO, 0, (&mut ti as *mut libc::proc_taskinfo).cast(), want)
     };
-    (got == want).then(|| ti.pti_numrunning > 0)
+    (got == want).then_some(ti.pti_numrunning > 0)
 }
 
 /// Not a question anywhere else: Linux's `/proc/[pid]/stat` state char

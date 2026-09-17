@@ -20,7 +20,7 @@
 //! clock, so every timeout in the file silently stretches with it and a
 //! real hang stops looking like one.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::{avatar, preset, AvatarSeed, AvatarStyle, FaceShape, Node};
@@ -33,7 +33,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
     // test in this directory timed out for it on 2026-08-21). On a Mac
     // operated over ssh, a freshly compiled test binary is a new face to
@@ -344,7 +344,7 @@ fn a_preview_is_the_same_picture_the_row_will_show() {
     let previewed = n.face_under(&style);
     // …then chosen, and read back the way a list reads it.
     n.restyle(
-        Some(&style.palette.colors().to_vec()),
+        Some(style.palette.colors().as_ref()),
         Some(style.variant.key()),
         Some(style.shape.key()),
     )

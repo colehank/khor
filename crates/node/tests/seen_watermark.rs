@@ -34,7 +34,7 @@
 //! not looking at one, on any seat.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_core::State;
@@ -48,7 +48,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10: on a Mac operated over ssh a freshly compiled test
     // binary is a new face to macOS, and its first network-stack touch
     // hangs 20-40s waiting on an authorization prompt nobody can ever

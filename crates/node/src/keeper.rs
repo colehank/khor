@@ -368,8 +368,8 @@ pub fn keep() -> Result<(), String> {
     let shielded = std::env::var_os(SHIELD_FROM).is_some();
     let mut source = crate::self_exe()?;
     unsafe {
-        libc::signal(libc::SIGTERM, forward as libc::sighandler_t);
-        libc::signal(libc::SIGINT, forward as libc::sighandler_t);
+        libc::signal(libc::SIGTERM, forward as *const () as libc::sighandler_t);
+        libc::signal(libc::SIGINT, forward as *const () as libc::sighandler_t);
     }
     let mut backoff = 1u64;
     let mut running = env!("CARGO_PKG_VERSION").to_owned();
@@ -394,11 +394,10 @@ pub fn keep() -> Result<(), String> {
             if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
                 break status;
             }
-            if let Some(t) = term_at {
-                if t.elapsed() >= SWAP_GRACE {
+            if let Some(t) = term_at
+                && t.elapsed() >= SWAP_GRACE {
                     let _ = child.kill();
                 }
-            }
             std::thread::sleep(CHILD_POLL);
             if swap.is_some() || last_look.elapsed() < SELF_CHECK {
                 continue;

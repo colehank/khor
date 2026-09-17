@@ -329,11 +329,10 @@ impl Meters {
         let zone = jiff::tz::TimeZone::system();
         let tree = self.shape();
         let mut cached = self.cached.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(had) = cached.as_ref() {
-            if had.tree == tree {
+        if let Some(had) = cached.as_ref()
+            && had.tree == tree {
                 return had.usage.clone();
             }
-        }
         let usage = self.tally_in(&zone);
         *cached = Some(Cached { tree, usage: usage.clone() });
         usage
@@ -563,11 +562,10 @@ fn jsonl_under(root: &Path) -> Vec<PathBuf> {
                 // make one transcript two, and every token in it count
                 // twice.
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file() => {
-                    if path.extension().and_then(|x| x.to_str()) == Some("jsonl") {
+                Ok(t) if t.is_file()
+                    && path.extension().and_then(|x| x.to_str()) == Some("jsonl") => {
                         out.push(path);
                     }
-                }
                 _ => {}
             }
         }
@@ -587,11 +585,10 @@ fn json_under(root: &Path) -> Vec<PathBuf> {
             let path = e.path();
             match e.file_type() {
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file() => {
-                    if path.extension().and_then(|x| x.to_str()) == Some("json") {
+                Ok(t) if t.is_file()
+                    && path.extension().and_then(|x| x.to_str()) == Some("json") => {
                         out.push(path);
                     }
-                }
                 _ => {}
             }
         }
@@ -615,11 +612,10 @@ fn named_under(root: &Path, name: &str) -> Vec<PathBuf> {
             let path = e.path();
             match e.file_type() {
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file() => {
-                    if path.file_name().and_then(|x| x.to_str()) == Some(name) {
+                Ok(t) if t.is_file()
+                    && path.file_name().and_then(|x| x.to_str()) == Some(name) => {
                         out.push(path);
                     }
-                }
                 _ => {}
             }
         }
@@ -845,11 +841,10 @@ impl<S> Whole<S> {
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
-            if let Some(had) = self.by_path.get(&path) {
-                if had.len == len && had.modified_ms == modified_ms {
+            if let Some(had) = self.by_path.get(&path)
+                && had.len == len && had.modified_ms == modified_ms {
                     continue;
                 }
-            }
             let (state, unreadable) = parse(&path);
             self.by_path.insert(path, WholeFile { len, modified_ms, state, unreadable });
         }
@@ -2448,11 +2443,10 @@ pub mod amp {
         let scan = |pick: &dyn Fn(usize) -> bool| {
             (from..events.len()).find(|i| pick(*i)).or_else(|| (0..from).find(|i| pick(*i)))
         };
-        if let Some(id) = message.message {
-            if let Some(i) = scan(&|i| !consumed[i] && events[i].to_message == Some(id)) {
+        if let Some(id) = message.message
+            && let Some(i) = scan(&|i| !consumed[i] && events[i].to_message == Some(id)) {
                 return Some(i);
             }
-        }
         scan(&|i| {
             !consumed[i] && events[i].model == message.model && events[i].tokens == message.tokens
         })

@@ -17,7 +17,7 @@
 //! silently stretches with it and a real hang stops looking like one.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::proto::{Request, Response};
@@ -34,7 +34,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10 (issue #73, sampled 2026-08-20; re-confirmed on this
     // machine 2026-08-21 — this file's one real-connection test timed out
     // at `sync_now` for this reason and no other). On a Mac operated over

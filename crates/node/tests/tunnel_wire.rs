@@ -22,7 +22,7 @@
 //! real hang stops looking like one.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::proto::MAX_FRAME;
@@ -40,7 +40,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
     // test in this directory timed out for it on 2026-08-21). On a Mac
     // operated over ssh, a freshly compiled test binary is a new face to
@@ -363,13 +363,11 @@ async fn connect_through(proxy: std::net::SocketAddr, target: &str) -> tokio::ne
 /// about a borrow this line was never asking about.
 async fn wait_borrow_state(node: &Node, id: &str, want: khor_core::State) -> bool {
     for _ in 0..40 {
-        if let Ok(views) = node.sessions() {
-            if let Some(v) = views.iter().find(|v| v.session.id.0 == id) {
-                if v.session.state.state == want {
+        if let Ok(views) = node.sessions()
+            && let Some(v) = views.iter().find(|v| v.session.id.0 == id)
+                && v.session.state.state == want {
                     return true;
                 }
-            }
-        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     false

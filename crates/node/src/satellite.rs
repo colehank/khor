@@ -80,7 +80,7 @@ pub fn probe(host: &str) -> Result<Probe, String> {
     let out = ssh_base(host)
         .arg("uname -s 2>/dev/null || echo unknown; command -v tmux >/dev/null 2>&1 && echo tmux-yes || echo tmux-no")
         .output()
-        .map_err(|e| msg::ssh_wont_run(e))?;
+        .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
         return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -548,7 +548,7 @@ fn parse_status(text: &str) -> Result<crate::git::Status, String> {
             break;
         }
         let slot = marks.entry(path.to_owned()).or_insert(mark);
-        *slot = crate::git::fold(*slot, mark);
+        *slot = crate::git::fold(slot, mark);
     }
     let rows = marks.into_iter().map(|(p, m)| (p, m.to_owned())).collect();
     Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
@@ -683,7 +683,7 @@ pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
     let out = ssh_base(host)
         .arg(SAMPLE_SH)
         .output()
-        .map_err(|e| msg::ssh_wont_run(e))?;
+        .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
         return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -907,7 +907,7 @@ find . -mindepth 1 -maxdepth 1 2>/dev/null | while IFS= read -r f; do
   if [ -d "$f" ]; then echo "d/$f"; else echo "f $(wc -c <"$f" 2>/dev/null | tr -d ' 	') $f"; fi
 done"#
     );
-    let out = ssh_base(host).arg(script).output().map_err(|e| msg::ssh_wont_run(e))?;
+    let out = ssh_base(host).arg(script).output().map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
         return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -925,8 +925,8 @@ done"#
             // word for it: a portable mtime needs stat, whose flags
             // differ per platform, and the browse reads names first.
             entries.push(crate::proto::DirEntry { name: name.to_owned(), size: 0, dir: true, at_ms: 0 });
-        } else if let Some(rest) = l.strip_prefix("f ") {
-            if let Some((size, name)) = rest.split_once(' ') {
+        } else if let Some(rest) = l.strip_prefix("f ")
+            && let Some((size, name)) = rest.split_once(' ') {
                 entries.push(crate::proto::DirEntry {
                     name: name.to_owned(),
                     size: size.parse().unwrap_or(0),
@@ -934,7 +934,6 @@ done"#
                     at_ms: 0,
                 });
             }
-        }
     }
     // The local listing's order, re-stated: directories first, each
     // half case-folded — the screen paints and never re-sorts.
@@ -964,7 +963,7 @@ pub fn pull_file(host: &str, path: &str, dest: &std::path::Path) -> Result<u64, 
         .arg(format!("{host}:{path}"))
         .arg(dest)
         .output()
-        .map_err(|e| msg::ssh_wont_run(e))?;
+        .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
         return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -986,7 +985,7 @@ pub fn push_file(host: &str, local: &std::path::Path) -> Result<u64, String> {
         .arg(local)
         .arg(format!("{host}:"))
         .output()
-        .map_err(|e| msg::ssh_wont_run(e))?;
+        .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
         return Err(msg::sat_cant_reach(host, String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -1003,13 +1002,11 @@ pub fn fingerprint_id(host: &str) -> Result<String, String> {
     if let Some(id) = known_host_id(host)? {
         return Ok(id);
     }
-    if let Some(real) = canonical_hostname(host) {
-        if real != host {
-            if let Some(id) = known_host_id(&real)? {
+    if let Some(real) = canonical_hostname(host)
+        && real != host
+            && let Some(id) = known_host_id(&real)? {
                 return Ok(id);
             }
-        }
-    }
     Err(msg::sat_not_in_known_hosts(host))
 }
 
@@ -1024,7 +1021,7 @@ fn known_host_id(name: &str) -> Result<Option<String>, String> {
         .arg("-F")
         .arg(name)
         .output()
-        .map_err(|e| msg::ssh_wont_run(e))?;
+        .map_err(msg::ssh_wont_run)?;
     if !found.status.success() {
         return Ok(None);
     }
@@ -1046,13 +1043,13 @@ fn known_host_id(name: &str) -> Result<Option<String>, String> {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|e| msg::ssh_wont_run(e))?;
+            .map_err(msg::ssh_wont_run)?;
         c.stdin
             .take()
             .ok_or_else(|| msg::ssh_wont_run("no stdin"))?
             .write_all(keys.as_bytes())
-            .map_err(|e| msg::ssh_wont_run(e))?;
-        let out = c.wait_with_output().map_err(|e| msg::ssh_wont_run(e))?;
+            .map_err(msg::ssh_wont_run)?;
+        let out = c.wait_with_output().map_err(msg::ssh_wont_run)?;
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
     // First fingerprint line wins: `256 SHA256:<b64> name (ED25519)`.

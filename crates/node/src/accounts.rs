@@ -1243,7 +1243,7 @@ fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
     // **`>=`, not `==`.** A gateway with a raised ceiling would answer
     // more, and「exactly a thousand」would then read as「not cut」on the
     // one build where being cut matters most.
-    let capped = (rows.len() >= NEWAPI_LOG_MAX).then(|| rows.len() as u32);
+    let capped = (rows.len() >= NEWAPI_LOG_MAX).then_some(rows.len() as u32);
     LogRead { days, model_days, model_tokens, capped }
 }
 

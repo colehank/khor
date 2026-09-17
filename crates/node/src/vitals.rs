@@ -156,11 +156,10 @@ fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if let Ok(m) = std::fs::metadata(d.mount_point()) {
-            if m.dev() != meta.dev() {
+        if let Ok(m) = std::fs::metadata(d.mount_point())
+            && m.dev() != meta.dev() {
                 return row(false, None);
             }
-        }
     }
     let total = d.total_space();
     if total == 0 {

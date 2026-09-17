@@ -15,7 +15,7 @@
 //! runtime it freezes tokio's clock, so every timeout in the file
 //! silently stretches with it and a real hang stops looking like one.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::Node;
@@ -29,7 +29,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10 (issue #73, sampled 2026-08-20; re-confirmed on this
     // machine 2026-08-21 — this file's two real-connection tests both
     // timed out at `sync_now` for this reason and no other). On a Mac operated over

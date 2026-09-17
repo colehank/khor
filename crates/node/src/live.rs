@@ -729,11 +729,10 @@ impl LiveKind {
             }
         } else {
             let (meta, state) = read_pair(&dir)?;
-            if state.exit.is_none() && pid_says_alive(&meta) {
-                if let Some(pid) = meta.pid {
+            if state.exit.is_none() && pid_says_alive(&meta)
+                && let Some(pid) = meta.pid {
                     terminate(pid);
                 }
-            }
         }
         fs::remove_dir_all(&dir).map_err(msg::cant_delete)
     }
@@ -1058,11 +1057,10 @@ impl LiveKind {
                 // transcripts said `cwd` on line 1. Read here, folded
                 // like every other source, and only as a fallback: a
                 // place already on the row is the birth fact and stands.
-                if r.place.is_none() {
-                    if let Some(cwd) = claude.recorded_cwd(&l) {
+                if r.place.is_none()
+                    && let Some(cwd) = claude.recorded_cwd(&l) {
                         r.place = place_of(Some(&cwd.display().to_string()));
                     }
-                }
                 if filed.is_none() {
                     continue;
                 }

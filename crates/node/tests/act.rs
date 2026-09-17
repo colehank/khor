@@ -10,7 +10,7 @@
 //! pinned.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_core::State;
@@ -45,7 +45,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     let path = root.join(".khor").join("endpoint.json");
     // 90s and multi-thread for the same reason as transfer.rs: a fresh
     // test binary's first network-stack touch hangs 20-40s on this

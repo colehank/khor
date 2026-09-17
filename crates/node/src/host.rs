@@ -210,7 +210,7 @@ fn last_plain_line(bytes: &[u8]) -> Option<String> {
             c => out.push(c),
         }
     }
-    out.lines().rev().find(|l| !l.trim().is_empty()).map(|l| khor_core::preview(l))
+    out.lines().rev().find(|l| !l.trim().is_empty()).map(khor_core::preview)
 }
 
 pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {

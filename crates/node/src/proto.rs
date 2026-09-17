@@ -753,6 +753,10 @@ mod tests {
     /// one nobody checked.
     #[test]
     fn an_op_an_older_peer_never_heard_of_is_refused_not_mistaken() {
+        // The fields are never read on purpose: this enum stands in for
+        // the shape an older peer knows, and the claim is about what
+        // `Deserialize` accepts, not about the values.
+        #[allow(dead_code)]
         #[derive(Debug, Deserialize)]
         enum OlderRequest {
             Pair { token: String, name: String, addrs: Vec<String> },

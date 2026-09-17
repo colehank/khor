@@ -441,7 +441,7 @@ fn spawn_ghost(
         // as a host that never came up. The ghost's stderr goes to
         // /dev/null and its exit code is not waited on; a file beside
         // the marker is the one channel that already exists here.
-        if let Ok(why) = std::fs::read_to_string(&refusal_path(&ready)) {
+        if let Ok(why) = std::fs::read_to_string(refusal_path(&ready)) {
             let _ = std::fs::remove_file(refusal_path(&ready));
             return Err(why);
         }
@@ -973,12 +973,11 @@ async fn replay_to(
     let mut fall = None;
     while let Ok(event) = events.try_recv() {
         match event {
-            khor_acp::Event::Note(n) => {
-                if loaded.is_ok() {
+            khor_acp::Event::Note(n)
+                if loaded.is_ok() => {
                     let json = serde_json::to_string(&n).unwrap_or_default();
                     fanout.send_to(who, &GuiNote::History(json));
                 }
-            }
             khor_acp::Event::Closed(err) => (fell, fall) = (true, err),
             _ => {}
         }

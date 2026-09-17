@@ -10,7 +10,7 @@
 //! transcripts under its own root. Alpha is given one number and beta
 //! another, and the assertion is that beta reports **alpha's**.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::Node;
@@ -29,7 +29,7 @@ fn root(tag: &str) -> PathBuf {
 /// that variable is one setting for the whole process and both nodes here
 /// live in it — the isolation this test rests on is the per-root one that
 /// `khor_node::adaptor::vendor_home` gives by default.
-fn spend(root: &PathBuf, id: &str, out: u64) {
+fn spend(root: &Path, id: &str, out: u64) {
     let dir = root.join(".claude/projects/p");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(
@@ -46,7 +46,7 @@ fn output_of(u: &khor_core::Usage) -> u64 {
     u.days.iter().map(|d| d.tokens.output).sum()
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
     // test in this directory timed out for it on 2026-08-21). On a Mac
     // operated over ssh, a freshly compiled test binary is a new face to

@@ -248,7 +248,7 @@ pub fn markdown(path: &str, bytes: &[u8]) -> Result<String, String> {
         return Err(msg::NOT_A_TEXT_FILE.to_owned());
     };
     let doc = office_oxide::Document::from_reader(Cursor::new(bytes.to_vec()), f)
-        .map_err(|e| msg::cant_read_document(e))?;
+        .map_err(msg::cant_read_document)?;
     Ok(doc.to_markdown())
 }
 
@@ -502,6 +502,11 @@ mod tests {
         assert_eq!(cap("a.svg"), LOOK_IMAGE);
         assert_eq!(cap("a.docx"), LOOK);
         assert_eq!(cap("a.rs"), LOOK);
-        assert!(LOOK_IMAGE > LOOK);
+        // Asserting on constants on purpose: the ordering of these two
+        // caps is the claim this test exists to hold.
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(LOOK_IMAGE > LOOK);
+        }
     }
 }

@@ -17,7 +17,7 @@
 //! real hang stops looking like one.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_core::State;
@@ -32,7 +32,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-async fn wait_for_endpoint_file(root: &PathBuf) {
+async fn wait_for_endpoint_file(root: &Path) {
     // 90s, not 10 (issue #73, sampled 2026-08-20; every real-connection
     // test in this directory timed out for it on 2026-08-21). On a Mac
     // operated over ssh, a freshly compiled test binary is a new face to

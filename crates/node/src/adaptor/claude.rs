@@ -324,7 +324,7 @@ impl Claude {
                     .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
                 newest.push((at, path));
             }
-            newest.sort_by(|a, b| b.0.cmp(&a.0));
+            newest.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
             let Some(&(at, _)) = newest.first() else { continue };
             // **The newest transcript answers, and if it cannot, the
             // one behind it does.** They are all in one directory
@@ -447,15 +447,17 @@ impl Claude {
     pub fn last_said(&self, leaf: &str) -> Option<String> {
         use std::collections::HashMap;
         use std::sync::{Mutex, OnceLock};
-        static CACHE: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Option<String>)>>> =
-            OnceLock::new();
+        /// One transcript's last line, keyed by file and stamped with the
+        /// mtime it was read at. A `type` only, to keep
+        /// `clippy::type_complexity` off the `static` below.
+        type SaidCache = OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Option<String>)>>>;
+        static CACHE: SaidCache = OnceLock::new();
         let (path, mtime) = self.transcript_path(leaf)?;
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Some((t, said)) = cache.lock().unwrap().get(&path) {
-            if *t == mtime {
+        if let Some((t, said)) = cache.lock().unwrap().get(&path)
+            && *t == mtime {
                 return said.clone();
             }
-        }
         let said = tail_said(&path);
         cache.lock().unwrap().insert(path, (mtime, said.clone()));
         said
@@ -747,7 +749,7 @@ impl Adaptor for Claude {
         // `sessionId`. Observed on this machine — two live pids, one id,
         // one of them two days stale. They are one session and one row,
         // and the freshest word is the true one.
-        seen.sort_by(|a, b| b.1.cmp(&a.1));
+        seen.sort_by_key(|(_, at, _)| std::cmp::Reverse(*at));
         let mut kept: Vec<(String, Sighting)> = Vec::new();
         for (session_id, _, sighting) in seen {
             match kept.iter_mut().find(|(sid, _)| *sid == session_id) {

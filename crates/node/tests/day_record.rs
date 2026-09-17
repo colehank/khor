@@ -15,7 +15,7 @@
 //! strip says 失败, in the same instant, from the same node.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use khor_core::{DayCell, DeviceId, SessionId, State};
 use khor_node::day;
@@ -52,8 +52,8 @@ fn newest(node: &Node, id: &str) -> DayCell {
 
 /// The word on disk in the registry, which is a different question from
 /// the word the list shows.
-fn word_on_disk(root: &PathBuf, id: &SessionId) -> State {
-    let dir = LiveKind::new(root.clone(), DeviceId([1; 32])).dir_of(id).expect("an id");
+fn word_on_disk(root: &Path, id: &SessionId) -> State {
+    let dir = LiveKind::new(root.to_path_buf(), DeviceId([1; 32])).dir_of(id).expect("an id");
     let raw = fs::read(dir.join("state.json")).expect("state.json");
     let v: serde_json::Value = serde_json::from_slice(&raw).expect("json");
     serde_json::from_value(v.get("word").expect("a word").clone()).expect("a state")

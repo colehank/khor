@@ -54,8 +54,8 @@ pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool),
     // smoke 批⑥, 2026-09-15). Only the machine holding the directory
     // can resolve its links, and this is where every far read of a
     // directory lands, so this is where the spelling is settled.
-    let dir = dir.canonicalize().map_err(|e| msg::cant_list_dir(&dir.display(), e))?;
-    let rd = std::fs::read_dir(&dir).map_err(|e| msg::cant_list_dir(&dir.display(), e))?;
+    let dir = dir.canonicalize().map_err(|e| msg::cant_list_dir(dir.display(), e))?;
+    let rd = std::fs::read_dir(&dir).map_err(|e| msg::cant_list_dir(dir.display(), e))?;
     let mut entries: Vec<DirEntry> = Vec::new();
     for e in rd.flatten() {
         let Some(name) = e.file_name().to_str().map(String::from) else {
@@ -99,7 +99,7 @@ pub fn read_slice(path: &str, offset: u64) -> Result<(u64, u64, Vec<u8>), String
     if !std::path::Path::new(path).is_absolute() {
         return Err(msg::path_not_absolute(path));
     }
-    let meta = std::fs::metadata(path).map_err(|e| msg::cant_list_dir(&path, e))?;
+    let meta = std::fs::metadata(path).map_err(|e| msg::cant_list_dir(path, e))?;
     if meta.is_dir() {
         return Err(msg::not_a_file_path(path));
     }
@@ -113,7 +113,7 @@ pub fn read_slice(path: &str, offset: u64) -> Result<(u64, u64, Vec<u8>), String
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    let mut f = std::fs::File::open(path).map_err(|e| msg::cant_list_dir(&path, e))?;
+    let mut f = std::fs::File::open(path).map_err(|e| msg::cant_list_dir(path, e))?;
     f.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
     let want = (total - offset).min(crate::proto::SLICE) as usize;
     let mut buf = vec![0u8; want];
@@ -181,7 +181,7 @@ pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String),
                 return Err(msg::file_changed_under_you(path));
             }
         }
-        Err(e) => return Err(msg::cant_list_dir(&path, e)),
+        Err(e) => return Err(msg::cant_list_dir(path, e)),
     }
     let dir = p.parent().ok_or_else(|| msg::not_a_file_path(path))?;
     let name = p.file_name().and_then(|n| n.to_str()).ok_or_else(|| msg::not_a_file_path(path))?;
@@ -300,7 +300,7 @@ pub fn remove(path: &str, trash: bool) -> Result<(), String> {
 
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn trash_it(p: &std::path::Path) -> Result<(), String> {
-    trash::delete(p).map_err(|e| msg::cant_remove(&p.display(), e))
+    trash::delete(p).map_err(|e| msg::cant_remove(p.display(), e))
 }
 
 /// Unreachable where there is no recycle bin — [`TRASH_HERE`] is false
@@ -583,7 +583,13 @@ mod remove_tests {
 
         remove(f.to_str().unwrap(), true).unwrap();
         assert!(!f.exists(), "it left the workspace");
-        assert!(TRASH_HERE, "…and this machine was asked for the bin, not the fallback");
+        // Asserting a constant on purpose: `TRASH_HERE` is decided by
+        // `cfg`, and this line is what fails if a platform ever compiles
+        // the fallback in where the bin was meant.
+        #[allow(clippy::assertions_on_constants)]
+        {
+            assert!(TRASH_HERE, "…and this machine was asked for the bin, not the fallback");
+        }
 
         #[cfg(target_os = "macos")]
         {

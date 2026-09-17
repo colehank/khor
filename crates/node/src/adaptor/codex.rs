@@ -347,8 +347,8 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                     if matches!(
                         p["type"].as_str(),
                         Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
-                    ) {
-                        if let Some(name) = p["name"].as_str() {
+                    )
+                        && let Some(name) = p["name"].as_str() {
                             // Shaped as claude's `tool_use` block so
                             // that both vendors' pasts go through the
                             // one translation (`cagent::said`). codex
@@ -367,7 +367,6 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                                         .unwrap_or(serde_json::Value::Null)),
                             })));
                         }
-                    }
                 }
                 _ => {}
             }

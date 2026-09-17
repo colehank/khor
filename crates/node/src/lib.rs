@@ -278,6 +278,24 @@ pub(crate) struct HostedBorrow {
     pub(crate) task: tokio::task::JoinHandle<()>,
 }
 
+/// What `Node::log_faced` returns: a channel's log, and one transfer
+/// face per message aligned by index. A `type` only, to keep
+/// `clippy::type_complexity` off that signature.
+pub type FacedLog = (
+    chat::ChannelLog,
+    Vec<(Option<khor_core::State>, Option<transfer::Delivery>)>,
+);
+
+/// The pipes this node is holding open, by whatever it keys them under:
+/// where the near side listens, which far port it was built for, and the
+/// task carrying it. A `type` only, to keep `clippy::type_complexity`
+/// off the two fields below that share this shape.
+pub(crate) type PipeMap<K> = Arc<
+    tokio::sync::Mutex<
+        std::collections::HashMap<K, (std::net::SocketAddr, u16, tokio::task::JoinHandle<()>)>,
+    >,
+>;
+
 pub struct Node {
     root: PathBuf,
     /// The identity key; also what the endpoint binds with. One live
@@ -336,14 +354,7 @@ pub struct Node {
     /// how every attach after such a restart piped into a closed port
     /// and reported 读不到帧: Connection reset — a sentence about a
     /// socket, for a session sitting right there. Measured on turing.
-    pub(crate) reaches: Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<
-                SessionId,
-                (std::net::SocketAddr, u16, tokio::task::JoinHandle<()>),
-            >,
-        >,
-    >,
+    pub(crate) reaches: PipeMap<SessionId>,
     /// The pipes this machine holds in front of somebody else's VS Code
     /// (工作区批5), keyed by machine.
     ///
@@ -356,14 +367,7 @@ pub struct Node {
     /// process khor is holding, answered where that child is held
     /// (`code::serve`), not by remembering a number here. One map with
     /// two meanings would have to carry both stories.
-    pub(crate) codes: Arc<
-        tokio::sync::Mutex<
-            std::collections::HashMap<
-                String,
-                (std::net::SocketAddr, u16, tokio::task::JoinHandle<()>),
-            >,
-        >,
-    >,
+    pub(crate) codes: PipeMap<String>,
     /// The live connections this node holds to other machines, by the
     /// name it reaches them under (`Node::dial_named` fills it).
     ///
@@ -591,11 +595,10 @@ fn settled_channel(root: &std::path::Path, computed: String) -> Result<String, S
         // A hand-emptied or hand-broken file falls through to settling
         // again rather than taking the store down: the worst case is
         // the behaviour khor had before this existed.
-        if let Some(ok) = khor_sync::chat::channel_of_machine(kept) {
-            if ok == kept {
+        if let Some(ok) = khor_sync::chat::channel_of_machine(kept)
+            && ok == kept {
                 return Ok(ok);
             }
-        }
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // Best effort: a store that cannot write this still works, it just
@@ -969,8 +972,8 @@ impl Node {
         // Only a fingerprint can recognise a room across a rename; with
         // none, this walk would just re-find the room named after the
         // current hostname, which is where the fallback lands anyway.
-        if fp.is_some() {
-            if let Ok(rd) = std::fs::read_dir(&hosts) {
+        if fp.is_some()
+            && let Ok(rd) = std::fs::read_dir(&hosts) {
                 let mut rooms: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
                 // Sorted so two rooms claiming one machine (a copied
                 // store) resolve the same way on every run rather than
@@ -995,7 +998,6 @@ impl Node {
                     }
                 }
             }
-        }
         hosts.join(here)
     }
 
@@ -1360,11 +1362,10 @@ impl Node {
         static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
         PATH.get_or_init(|| {
             let here = std::env::var("PATH").unwrap_or_default();
-            if let Ok(told) = std::env::var(PATH_ENV) {
-                if !told.trim().is_empty() {
+            if let Ok(told) = std::env::var(PATH_ENV)
+                && !told.trim().is_empty() {
                     return told;
                 }
-            }
             // **The shell's answer is added to, never swapped for,
             // what this process already had.** A shell that answers
             // with something short or strange must not be able to take
@@ -2364,11 +2365,10 @@ impl Node {
         let table: Option<std::collections::BTreeSet<String>> =
             self.devices().ok().map(|devs| devs.into_iter().map(|d| d.id).collect());
         for e in rd.flatten() {
-            if let Some(table) = &table {
-                if !e.file_name().to_str().is_some_and(|id| table.contains(id)) {
+            if let Some(table) = &table
+                && !e.file_name().to_str().is_some_and(|id| table.contains(id)) {
                     continue;
                 }
-            }
             let Ok(text) = fs::read_to_string(e.path()) else {
                 continue;
             };
@@ -2716,16 +2716,7 @@ impl Node {
     /// something to say (`TransferKind::message_face`). One read, one
     /// order: two calls would let a message land between them and put
     /// every face off by one.
-    pub fn log_faced(
-        &self,
-        machine: &str,
-    ) -> Result<
-        (
-            chat::ChannelLog,
-            Vec<(Option<khor_core::State>, Option<transfer::Delivery>)>,
-        ),
-        String,
-    > {
+    pub fn log_faced(&self, machine: &str) -> Result<FacedLog, String> {
         let (channel, _) = self.resolve(machine)?;
         let log = self.chat.log(&channel)?;
         let dir = khor_sync::chat::channel_dir(&self.root, &channel)
@@ -2950,6 +2941,10 @@ impl Node {
     /// nothing — and the only thing that could tell it was a hook,
     /// which a machine may simply not have installed. Naming the
     /// session up front removes the dependency instead of reporting it.
+    // Eight arguments because eight things describe the session being
+    // opened, and every caller already spells all of them. Bundling them
+    // into a struct would change a public signature for a lint's sake.
+    #[allow(clippy::too_many_arguments)]
     pub fn open_persistent_as(
         &self,
         id: &SessionId,
@@ -3034,7 +3029,7 @@ impl Node {
         // gone comes back from the child as a launch failure, and the
         // thing a person can act on is the path.
         if !cwd.is_dir() {
-            return Err(msg::no_such_dir(&cwd.display().to_string()));
+            return Err(msg::no_such_dir(cwd.display().to_string()));
         }
         // **A conversation that is running somewhere is not resumed, it
         // is joined — and this door cannot join.** `session/load` on a
@@ -3045,11 +3040,10 @@ impl Node {
         // hour because a reopen of its session said so). The takeover
         // is the door that ends the other process first; this one
         // refuses while it lives, naming it.
-        if let Some((_, pids)) = self.live.sighting_of(&adaptor::id_for(session)) {
-            if let Some(pid) = pids.first() {
+        if let Some((_, pids)) = self.live.sighting_of(&adaptor::id_for(session))
+            && let Some(pid) = pids.first() {
                 return Err(msg::resume_running_elsewhere(pid));
             }
-        }
         gui_host::spawn_gui_host_reopen(Some(cwd), title, cmd, Some(agent), session)
     }
 
@@ -3165,7 +3159,7 @@ impl Node {
             d => PathBuf::from(d),
         };
         if !path.is_dir() {
-            return Err(msg::no_such_dir(&path.display().to_string()));
+            return Err(msg::no_such_dir(path.display().to_string()));
         }
         let title = if title.trim().is_empty() {
             path.file_name()
@@ -3230,11 +3224,10 @@ impl Node {
         // vendor leaf is the bridge (`transcript_of`'s precedent).
         let leaf = self.live.vendor_leaf_of(id).unwrap_or_else(|| id_leaf.to_owned());
         let leaf = leaf.as_str();
-        if let Some((kind, _)) = self.live.on_record(id) {
-            if kind == khor_core::kind::GUI {
+        if let Some((kind, _)) = self.live.on_record(id)
+            && kind == khor_core::kind::GUI {
                 return Err(msg::already_a_chat(&id.0));
             }
-        }
         // Whose conversation is this? The store that resolves the leaf
         // answers — a vendor's transcript dir is its own registry, and
         // the protocol has no wire question for this yet (`crates/acp`'s
@@ -3788,16 +3781,14 @@ impl KindSurface for ChatKind {
             // may say which word). More pressing wins; the row's own
             // message-based word already covers 完成/未看, because a
             // file message lands like any message.
-            if let Some(dir) = channel_dir(node.root(), &d.name) {
-                if let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs) {
-                    if word.rank() < row.state.state.rank() {
+            if let Some(dir) = channel_dir(node.root(), &d.name)
+                && let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs)
+                    && word.rank() < row.state.state.rank() {
                         row.state = khor_core::StateStamp {
                             state: word,
                             at: khor_core::Millis(at.max(0) as u64),
                         };
                     }
-                }
-            }
             out.push(row);
         }
         Ok(out)

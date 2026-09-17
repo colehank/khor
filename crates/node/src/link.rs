@@ -614,6 +614,10 @@ impl Node {
     /// in the network will call it by. Asking this machine to open on
     /// itself is not an error — the sessions landing lists every
     /// machine, this one included — and then nothing touches the wire.
+    // Eight arguments because eight things describe the session being
+    // opened on the far machine. Bundling them into a struct would
+    // reshape this call path for a lint's sake.
+    #[allow(clippy::too_many_arguments)]
     async fn open_on_with(
         &self,
         ep: &iroh::Endpoint,
@@ -4575,11 +4579,10 @@ impl Node {
         };
         let mut ips: Vec<std::net::IpAddr> = Vec::new();
         for a in &file.addrs {
-            if let Ok(sock) = a.parse::<std::net::SocketAddr>() {
-                if !ips.contains(&sock.ip()) {
+            if let Ok(sock) = a.parse::<std::net::SocketAddr>()
+                && !ips.contains(&sock.ip()) {
                     ips.push(sock.ip());
                 }
-            }
         }
         Ok(Some(ips))
     }
