@@ -936,3 +936,55 @@ playwright 开全新的深色/浅色浏览器打正在跑的 serve-web）：服�
 浅色开浅色，只要 `window.autoDetectColorScheme: true` 一个键。落法照旧（键在就不碰），
 只是文件换成 Machine 的；并且每次按 VS Code 图标都写（服务器已在跑也写，machine 级是
 热更新的），不只在起服务器时。能实现，只是 builder 写到了错的一层。
+
+## 第七轮：把四条小账清掉（2026-09-18）
+
+用户看过第六轮的桌面：「app看的都实现了。现状，把前四条都解决了」。四条都是 builder
+在 handoff 里记的、没人裁过的账，这里裁：
+
+| # | 内容 |
+|---|---|
+| 54 | 会话落地页上的路径/网址也可点 |
+| 55 | 卫星那五个脚本有测试；卫星的 `search` 尊重 `.gitignore` |
+| 56 | `khor search` 名字命中只看相对路径 |
+| 57 | 网页脸上 VS Code 标签页关了，图标当场灭 |
+
+### 54 · 会话落地页也可点
+
+35 只在工作区里做了（那里有根目录让相对路径相对、有中栏开标签）。会话落地页上：
+
+- 相对路径相对于**这个会话的 cwd**（会话行本来就带着目录）；网址照旧。
+- 点路径：这台机器上有一个工作区**包含**它 → 切到工作区落地页、选中那个工作区、
+  在中栏开成预览标签（内容命中带 `:12` 滚到那一行）；没有工作区包含它 → 在宿主机器上
+  `launch`（和网址同一条路）。`⌘`+点永远 `launch`。
+- 「有没有工作区包含它」问本地那张工作区表（`ws ls`），不走网。
+- 探针：夹具会话（cwd 在夹具工作区里）的消息里 `src/main.rs:3` 是 `[data-link]`，
+  点后落地页是工作区、中栏有那个标签且滚到第 3 行；另一条 cwd 在工作区外的会话，
+  点路径后 mock 记到一次 `launch`。
+
+### 55 · 卫星脚本有测试，`search` 尊重 `.gitignore`
+
+- 五个脚本（`SEARCH_SH`、`LAUNCH_SH`、mkdir / touch / mv 那三个）都是 POSIX sh，
+  ssh 那一段（`sh_over_ssh`）早被 `git status` 那条验过；欠的是脚本本身。落法：单测里
+  用本机 `sh` 跑同一段脚本、同一套 `KHOR_*` 变量，对着 scratch 目录断言输出与副作用
+  （search 的 `name=`/`row=` 行、mv 目标已有时拒绝、touch 已有时拒绝、launch 用
+  `KHOR_LAUNCHER=/usr/bin/true` 答 `done`、没有开启器答 `none`）。不需要真卫星。
+- `SEARCH_SH` 在 `KHOR_DIR` 是 git 仓库时改走 `git ls-files -co --exclude-standard`（名字）
+  和 `git grep -n -I -i --untracked --exclude-standard`（内容）——这就是 git 自己的忽略规则，
+  不用在 sh 里重做；不是仓库时保持现在的 `find` + `grep -rI`。单测两种都跑（scratch 里
+  `git init` 一个，`.gitignore` 写 `build/`，build 里放一个命中的文件，断言它不出现）。
+
+### 56 · 名字命中只看相对路径
+
+`khor search` 名字命中匹配的是整条绝对路径，搜 `home` 命中一切。改成匹配**相对
+`<dir>` 的那一段**（本机 `ignore` 那条和卫星 `git ls-files` 那条都天然是相对的，
+只是别再把 `dir` 拼回去比）；回答里的 `path` 仍是相对路径（已经是）。单测：在
+`/tmp/khor-search-home-xxx/` 里搜 `home` 命中 0 条。
+
+### 57 · 网页脸上 VS Code 标签页关了，图标当场灭
+
+跨域的 `window` 句柄只肯答 `closed`，现在只在回到 khor 页面时问一次。落法：句柄在手
+时每秒问一次 `closed`，关了就灭图标并停问；句柄没了就不问。这是这棵树里「定时器要有
+理由」那条的理由：没有事件可听，`closed` 是那扇窗唯一肯说的话。app 那半是事件，不动。
+探针：face 里 `page.on("popup")` 拿到那页，`popup.close()` 后 2 s 内 `[data-code][data-on]`
+变成 `false`。
