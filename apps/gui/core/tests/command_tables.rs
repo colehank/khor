@@ -162,6 +162,22 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "widen",
         "grows the app's own window when a column opens; a page in a browser has no window of its own",
     ),
+    // ── the editor's own window, written down 2026-09-17 ──────────
+    //
+    // **The third fact about windows on this list, and the plainest.**
+    // 「VSCODE做成弹出式的, 弹出一个窗口显示vscode」 (the user, 第六轮
+    // 第 46 条): the app builds a second native window and points it at
+    // that machine's editor. A browser face opens a **named tab**
+    // instead — `window.open(url, "khor-code:<machine>")`, which is the
+    // same promise (one editor, one place, pressing again brings it
+    // forward) spelled in the only vocabulary a page has. So this is
+    // not a command the web face is missing: it is a command the web
+    // face has no use for, because the browser already answers it.
+    (
+        "open_code_window",
+        "opens the editor in a second native window; a browser face opens a named tab with \
+         `window.open` and never asks khor for a window",
+    ),
 ];
 
 /// **Both tables name the same commands.**

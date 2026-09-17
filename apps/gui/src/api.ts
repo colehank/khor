@@ -34,6 +34,8 @@ import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
+import type { Found } from "./gen/bindings/Found";
+import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { DirPinRow } from "./gen/bindings/DirPinRow";
 import type { RecentRow } from "./gen/bindings/RecentRow";
 import type { WebPinRow } from "./gen/bindings/WebPinRow";
@@ -82,6 +84,8 @@ export type {
   ChatBatch,
   ChatFrame,
   DirListing,
+  Found,
+  SearchHit,
   DirPinRow,
   RecentRow,
   WebPinRow,
@@ -346,6 +350,84 @@ export const openCode = (machine: string, dir: string) =>
 /** Stops it and drops this machine's pipe. Answers the same whether
     either existed. */
 export const stopCode = (machine: string) => call<void>("code_stop", { machine });
+
+/** A window of one machine's own, with that machine's editor in it
+    (工作区第六轮 第 46 条). */
+export type CodeSeat = {
+  /** Put the editor in it — the first call — or bring it to the front.
+      `url` is what `code_open` answered. */
+  raise: (url: string, title: string) => Promise<void>;
+  /** Whether the person has closed it since. */
+  gone: () => boolean;
+  /** Give it up: the node refused, and an empty window is worse than
+      none. */
+  drop: () => void;
+};
+
+/**
+ * Claim a seat for that machine's editor — **a window in the app, a
+ * named tab in a browser** (工作区第六轮 第 46 条:「VSCODE做成弹出式的,
+ * 弹出一个窗口显示vscode」— the user).
+ *
+ * **It must be called inside the press, before anything is awaited.**
+ * A browser's popup blocker allows `window.open` only from the task a
+ * person's own gesture started, and the editor's URL is not known until
+ * the node has answered — so the tab is opened blank here and pointed
+ * at the editor by [`CodeSeat.raise`] when the answer lands. The app
+ * has no such rule and builds its window in `raise`; the shape is the
+ * same on both so that the caller has one sequence rather than two.
+ *
+ * **Named, so pressing the switch twice does not make two.** The tab
+ * name and the window label are both `khor-code:<machine>`: the browser
+ * hands back the tab it already has, and the app's own command focuses
+ * the window it already built.
+ *
+ * **`gone` is the web face's question and the app's announcement.** A
+ * tab showing another origin tells this page nothing, and `closed` is
+ * the one thing it will still answer — so the browser road is asked, on
+ * the beat somebody comes back to the page. The app emits `code:closed`
+ * instead, the moment the window is destroyed, and answers `false`
+ * here: one fact, one road each.
+ */
+export function codeSeat(machine: string): CodeSeat {
+  const name = `khor-code:${machine}`;
+  if (inApp) {
+    return {
+      raise: (url, title) => call<null>("open_code_window", { machine, url, title }).then(() => {}),
+      // **The app does not answer this; it announces.** A window it
+      // built emits `code:closed` the moment it is destroyed, which the
+      // face is already listening for — asking as well would be a
+      // second road to one fact, and this one would have to guess.
+      gone: () => false,
+      drop: () => {},
+    };
+  }
+  let tab: Window | null = window.open("", name);
+  /** Whether that tab has been sent to the editor yet. **Remembered
+      here rather than read off the tab**: once it is showing the
+      editor it is another origin, and asking it where it is throws. */
+  let pointed = false;
+  return {
+    raise: async (url) => {
+      if (tab === null || tab.closed) {
+        tab = window.open(url, name);
+        pointed = true;
+      } else if (!pointed) {
+        tab.location.replace(url);
+        pointed = true;
+      }
+      // Already up and pointed: brought forward rather than navigated
+      // again, because a reload would throw away whatever the editor
+      // has open.
+      tab?.focus();
+    },
+    gone: () => tab === null || tab.closed,
+    drop: () => {
+      tab?.close();
+      tab = null;
+    },
+  };
+}
 /** `by` is a `khor_node::list::Arrange` key — the backend arranges and
     groups; this layer passes the choice through and paints the answer. */
 export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by });
@@ -720,6 +802,19 @@ export const renamePath = (machine: string, from: string, to: string) =>
     refuses everything else by name. */
 export const launchOn = (machine: string, target: string) =>
   call<null>("launch", { machine, target });
+/** Everything under `dir` on that machine that holds `query` — in a
+    name, or in a line (`khor_node::files::search`, 工作区第六轮 第 47
+    条).
+
+    **The walk happens over there.** Two lists come back rather than one
+    ranked one, because 「that is the file I meant」 and 「that is the
+    place I meant」 are two answers; `more` says a cap cut it, the rule
+    every capped answer in khor follows.
+
+    Case-insensitive, a plain substring, never a pattern. `.gitignore`
+    is honoured on the machine's own road. */
+export const searchIn = (machine: string, dir: string, query: string) =>
+  call<Found>("search", { machine, dir, query });
 /** Whether the machine khor's backend runs on has a recycle bin. Asked
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */

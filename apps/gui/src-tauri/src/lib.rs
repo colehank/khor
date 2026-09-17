@@ -494,6 +494,24 @@ async fn launch(machine: Option<String>, target: String) -> Result<(), String> {
     .await
 }
 
+/// Everything under one directory on one machine that holds the words
+/// (`files::search`) — what the box at the head of the tree asks
+/// (工作区第六轮 第 47 条).
+#[tauri::command]
+async fn search(
+    machine: Option<String>,
+    dir: String,
+    query: String,
+) -> Result<khor_gui_core::files::Found, String> {
+    khor_gui_core::files::search(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &dir,
+        &query,
+    )
+    .await
+}
+
 /// Whether this machine has a recycle bin at all.
 #[tauri::command]
 fn trash_here() -> bool {
@@ -1606,6 +1624,118 @@ fn widen(delta: i32) -> Result<(), String> {
     Ok(())
 }
 
+/// What one machine's editor window is called
+/// (工作区第六轮 第 46 条).
+///
+/// **Keyed by the machine, never by the name on the glass.** A label is
+/// this app's handle on a window and a handle has to hold still; the
+/// shown name is one a person can retype (`EditableName`), and renaming
+/// a machine with its editor open would mint a second window and leave
+/// the first one unreachable for the life of the app.
+///
+/// Tauri labels take letters, digits, `-`, `/`, `:` and `_`, so
+/// anything else in a channel name becomes `_`. Two machines whose
+/// names differ only in a punctuation mark would then share a window —
+/// which is a worse answer than refusing, and it is still the right one
+/// here: channel names are khor's own and hex.
+#[cfg(desktop)]
+fn code_label(machine: &str) -> String {
+    let kept: String = machine
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("code:{kept}")
+}
+
+/// How far the editor's window is offset from khor's own, in logical
+/// pixels. **Offset rather than stacked**: a window that opened exactly
+/// over the one that opened it reads as khor having gone away.
+#[cfg(desktop)]
+const CODE_STEP: f64 = 32.0;
+
+/// Opens that machine's VS Code in **a window of its own**, or brings
+/// the one already open to the front (工作区第六轮 第 46 条:「VSCODE做成
+/// 弹出式的, 弹出一个窗口显示vscode」— the user).
+///
+/// **It was a column until this ruling** (第四轮 第 45 条) and before
+/// that a pane under the tab strip. What both shapes cost is the thing
+/// the user measured by opening them together:「同时打开session和vscode,
+/// 排版就乱了」— an editor is a whole application, and it was being
+/// asked to live inside a third of a window beside a file tree.
+///
+/// **Not a node call, for `widen`'s reason**: `khor-gui-core` holds
+/// what the CLI can also do, and a window is not something `khor` has.
+///
+/// **An `async` command on purpose.** Building a window blocks until
+/// the event loop has made it, so it must not be called *from* the
+/// event loop — and tauri runs synchronous commands on the main thread.
+/// This one runs on the pool, where the wait is safe.
+///
+/// The size is khor's own window's, offset by [`CODE_STEP`]: an editor
+/// is the same kind of thing as the window it was opened from, so it
+/// gets the same room rather than a number chosen here.
+#[cfg(desktop)]
+#[tauri::command]
+async fn open_code_window(
+    app: tauri::AppHandle,
+    machine: String,
+    url: String,
+    title: String,
+) -> Result<(), String> {
+    use tauri::{Emitter, Manager};
+    let label = code_label(&machine);
+    // **Already open is not opened again** (「已开就不再开第二个」). A
+    // second window onto one editor would be two views of one document
+    // with no way to tell which is which.
+    if let Some(open) = app.get_webview_window(&label) {
+        let _ = open.unminimize();
+        open.show().map_err(|e| e.to_string())?;
+        open.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    let at: tauri::Url = url.parse().map_err(|e| format!("{url}: {e}"))?;
+    let mut build = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(at))
+        .title(&title);
+    if let Some(main) = app.get_webview_window("main") {
+        let scale = main.scale_factor().unwrap_or(1.0).max(0.1);
+        if let (Ok(size), Ok(pos)) = (main.outer_size(), main.outer_position()) {
+            build = build
+                .inner_size(size.width as f64 / scale, size.height as f64 / scale)
+                .position(
+                    pos.x as f64 / scale + CODE_STEP,
+                    pos.y as f64 / scale + CODE_STEP,
+                );
+        }
+    }
+    let made = build.build().map_err(|e| e.to_string())?;
+    // **The switch goes dark when the window does** (「窗口关掉 = 图标
+    // 灭」). Nothing else can tell the face: the window is not the
+    // face's to watch, and a face that polled for it would be asking a
+    // question the platform already answers.
+    let home = app.clone();
+    made.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            let _ = home.emit_to("main", "code:closed", machine.clone());
+        }
+    });
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+async fn open_code_window(machine: String, url: String, title: String) -> Result<(), String> {
+    let _ = (machine, url, title);
+    // A phone has no second window to put an editor in, and the face
+    // draws no switch there anyway (`views/WorkspacePane`).
+    Err("no windows here".into())
+}
+
 // **The mobile halves are refusals, and unlike the last one that stood
 // here they are true.** `add_child` is gated `all(desktop, feature =
 // "unstable")` and there is no mobile equivalent: a page on a phone needs a
@@ -1899,6 +2029,16 @@ pub fn run() {
                         if let Some(menu) = menu() {
                             let _ = menu.close();
                         }
+                        // **And so does every editor window** (工作区第
+                        // 六轮 第 46 条). They are windows of khor's own
+                        // with no parent, exactly as the overlay is, so
+                        // closing khor with one open would leave the
+                        // process alive behind somebody else's editor.
+                        for (label, w) in window.app_handle().webview_windows() {
+                            if label.starts_with("code:") {
+                                let _ = w.close();
+                            }
+                        }
                     }
                     // **A menu belongs to the face it hangs under, and
                     // follows it out of the room.** The overlay floats at
@@ -1939,6 +2079,8 @@ pub fn run() {
             touch,
             rename_path,
             launch,
+            search,
+            open_code_window,
             trash_here,
             pdf_here,
             read_text,
