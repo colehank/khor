@@ -161,7 +161,7 @@ const VERBS: &[Verb] = &[
     Verb { word: "send", run: send, reach: Reach::Act },
     Verb { word: "accept", run: accept, reach: Reach::Act },
     Verb { word: "log", run: log, reach: Reach::Read },
-    Verb { word: "run", run: run, reach: Reach::Act },
+    Verb { word: "run", run, reach: Reach::Act },
     Verb { word: "open", run: open, reach: Reach::Act },
     // Attaching is a keyboard on somebody's session, not a look at it.
     Verb { word: "attach", run: attach, reach: Reach::Act },
@@ -2627,8 +2627,8 @@ fn rename(rest: &[String]) -> Result<(), String> {
     // `-m`, the flag `pin` already uses for the same distinction — one
     // verb, two subjects, and the subject is named the same way in both
     // places rather than each verb inventing its own.
-    if let [flag, machine, name @ ..] = rest {
-        if flag == "-m" || flag == "--machine" {
+    if let [flag, machine, name @ ..] = rest
+        && (flag == "-m" || flag == "--machine") {
             let n = node()?;
             // Resolved to an id here, because `rename_machine` takes an
             // id on purpose: the name is the thing being changed, and
@@ -2638,7 +2638,6 @@ fn rename(rest: &[String]) -> Result<(), String> {
             println!("{}", n.rename_machine(&id.hex(), &name.join(" "))?);
             return Ok(());
         }
-    }
     let [id, name @ ..] = rest else {
         return Err(USAGE.into());
     };
@@ -2930,8 +2929,8 @@ mod web_qr_tests {
         }
         // The margin, on all four sides. A scanner needs it to find the
         // finder patterns, and it is the easiest half of this to drop.
-        for y in 0..quiet {
-            assert!(painted[y].iter().all(|d| !d), "row {y} of the quiet zone is not blank");
+        for (y, row) in painted.iter().take(quiet).enumerate() {
+            assert!(row.iter().all(|d| !d), "row {y} of the quiet zone is not blank");
         }
         for row in painted.iter().take(width + quiet).skip(quiet) {
             assert!(row[..quiet].iter().all(|d| !d), "the left margin is not blank");
@@ -3254,11 +3253,10 @@ fn agents(rest: &[String]) -> Result<(), String> {
             // is already waiting on this agent.** A failure to answer
             // is not a failure to register: the registration stands,
             // and the question can be put again later.
-            if let Ok(khor_node::AgentAnswer::Sessions { rows }) = n.refresh_agent_sessions(name) {
-                if !rows.is_empty() {
+            if let Ok(khor_node::AgentAnswer::Sessions { rows }) = n.refresh_agent_sessions(name)
+                && !rows.is_empty() {
                     println!("{}", cli::agents_sessions_asked(name, rows.len()));
                 }
-            }
             Ok(())
         }
         Some((word, tail)) if word == "rm" => {
@@ -3457,8 +3455,7 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
         std::thread::spawn(move || {
             let mut stdin = std::io::stdin();
             let mut buf = [0u8; 1024];
-            loop {
-                let Ok(nread) = stdin.read(&mut buf) else { break };
+            while let Ok(nread) = stdin.read(&mut buf) {
                 if nread == 0 {
                     break;
                 }

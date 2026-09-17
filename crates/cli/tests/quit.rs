@@ -5,7 +5,7 @@
 //! about processes, `close` is the one that deletes things.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -16,7 +16,7 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
-fn inner_pid(home: &PathBuf) -> Option<u32> {
+fn inner_pid(home: &Path) -> Option<u32> {
     let text = fs::read_to_string(home.join(".khor").join("endpoint.json")).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     v.get("pid")?.as_u64().map(|p| p as u32)

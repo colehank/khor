@@ -94,6 +94,9 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     let far_dir = far_dir.canonicalize().unwrap();
 
     // alpha: the real binary, resident, with the fake as its claude.
+    // Never `wait()`ed on purpose: `Reaper` below owns its end and signals
+    // it by pid, so the test can leave however it leaves.
+    #[allow(clippy::zombie_processes)]
     let keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("serve")
         .env("KHOR_HOME", &ra)
