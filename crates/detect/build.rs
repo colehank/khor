@@ -65,9 +65,9 @@ fn main() {
             None => "None".to_owned(),
         };
 
-        let _ = write!(
+        let _ = writeln!(
             out,
-            "    VendorTable {{ name: {name:?}, default: {default}, idle_debounce_ms: {debounce}, rules: &[\n"
+            "    VendorTable {{ name: {name:?}, default: {default}, idle_debounce_ms: {debounce}, rules: &["
         );
 
         let rules = v
@@ -134,7 +134,7 @@ fn main() {
                 other => panic!("{where_}: unknown test {other:?}"),
             };
 
-            let _ = write!(out, "        RuleSpec {{ scope: {scope}, test: {test}, then: {then} }},\n");
+            let _ = writeln!(out, "        RuleSpec {{ scope: {scope}, test: {test}, then: {then} }},");
         }
         out.push_str("    ] },\n");
     }
