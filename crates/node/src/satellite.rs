@@ -361,14 +361,19 @@ printf 'done
 exit 0
 "#;
 
-/// [`RENAME_SH`] over the user's ssh road.
-pub fn rename_path(host: &str, from: &str, to: &str) -> Result<(), String> {
-    let script = format!(
+/// [`RENAME_SH`] with its two paths in front of it ([`search_script`]'s
+/// reason).
+fn rename_script(from: &str, to: &str) -> String {
+    format!(
         "KHOR_FROM={}\nKHOR_TO={}\n{RENAME_SH}",
         sh_quote(from),
         sh_quote(to),
-    );
-    let out = sh_over_ssh(host, &script)?;
+    )
+}
+
+/// [`RENAME_SH`] over the user's ssh road.
+pub fn rename_path(host: &str, from: &str, to: &str) -> Result<(), String> {
+    let out = sh_over_ssh(host, &rename_script(from, to))?;
     let said = out
         .lines()
         .map(str::trim)
@@ -413,10 +418,15 @@ printf 'none
 exit 0
 "#;
 
+/// [`LAUNCH_SH`] with its target in front of it ([`search_script`]'s
+/// reason).
+fn launch_script(target: &str) -> String {
+    format!("KHOR_TARGET={}\n{LAUNCH_SH}", sh_quote(target))
+}
+
 /// [`LAUNCH_SH`] over the user's ssh road.
 pub fn launch(host: &str, target: &str) -> Result<(), String> {
-    let script = format!("KHOR_TARGET={}\n{LAUNCH_SH}", sh_quote(target));
-    let out = sh_over_ssh(host, &script)?;
+    let out = sh_over_ssh(host, &launch_script(target))?;
     let said = out
         .lines()
         .map(str::trim)
@@ -446,18 +456,41 @@ pub fn launch(host: &str, target: &str) -> Result<(), String> {
 /// over, which is the thing every satellite script here exists to
 /// avoid.
 ///
-/// **What this road cannot do is read `.gitignore`.** The local walk
-/// honours it and this one has nothing that could: there is no ripgrep
-/// on a satellite by assumption (`khor` itself is not there —
-/// docs/NET.md 它身上不留东西), and reimplementing git's exclude rules
-/// in `sh` would be the almost-right that goes wrong on the one project
-/// that needs it. `.git` itself is excluded, which is the bulk of it;
-/// a satellite's answer can therefore hold build output, and that is
+/// **`.gitignore` is read by asking git, in a checkout** (工作区第七轮
+/// 第 55 条). The local walk honours it and this road had nothing that
+/// could: reimplementing git's exclude rules in `sh` is the
+/// almost-right that goes wrong on the one project that needs it, so
+/// the rules are not reimplemented — `git ls-files -co
+/// --exclude-standard` and `git grep --untracked --exclude-standard`
+/// **are** those rules, and every satellite with a checkout on it has
+/// the tool that owns them. Both list what is tracked plus what is
+/// merely untracked, which is what a person sees in the tree.
+///
+/// Outside a checkout there is nothing to ask and the walk is `find` +
+/// `grep -rI`, which is what this whole script used to be. A directory
+/// with a `.gitignore` and no `.git` is therefore answered differently
+/// here than by the local walk (`crate::files::search` reads the file
+/// regardless) — the one place the two roads still part, and it is
 /// written down rather than hidden.
+///
+/// **Names are matched relative to `$KHOR_DIR`** (工作区第七轮 第 56
+/// 条): git prints them that way already, and `find`'s `./` lead is cut
+/// so the other branch agrees with it.
 const SEARCH_SH: &str = r#"
 set -u
 cd "$KHOR_DIR" || exit 3
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git ls-files -co --exclude-standard -- . 2>/dev/null |
+    grep -i -F -e "$KHOR_Q" 2>/dev/null |
+    head -n "$KHOR_NAMES" |
+    sed 's/^/name=/'
+  git --no-pager grep -n -I -i -F --no-color --untracked --exclude-standard -e "$KHOR_Q" -- . 2>/dev/null |
+    head -n "$KHOR_LINES" |
+    sed 's/^/row=/'
+  exit 0
+fi
 find . -type f -not -path '*/.git/*' 2>/dev/null |
+  sed 's|^\./||' |
   grep -i -F -e "$KHOR_Q" 2>/dev/null |
   head -n "$KHOR_NAMES" |
   sed 's/^/name=/'
@@ -467,17 +500,31 @@ grep -rnI -i -F --exclude-dir=.git -e "$KHOR_Q" . 2>/dev/null |
 exit 0
 "#;
 
-/// [`SEARCH_SH`] over the user's ssh road, in [`crate::files::Found`]'s
-/// shape.
-pub fn search(host: &str, dir: &str, query: &str) -> Result<crate::files::Found, String> {
+/// [`SEARCH_SH`] with its arguments in front of it.
+///
+/// **Split out so that verification runs the shipped text.** The one
+/// thing a test of a shell script must not do is retype it, and the
+/// assignments are as much of the script as the body is — a test that
+/// wrote its own `KHOR_DIR=` would be checking a script khor does not
+/// send (工作区第七轮 第 55 条). Every script below that takes
+/// arguments is composed by a function of its own for the same reason.
+fn search_script(dir: &str, query: &str) -> String {
     let names = crate::files::SEARCH_NAMES;
     let lines = crate::files::SEARCH_LINES;
-    let script = format!(
+    format!(
         "KHOR_DIR={}\nKHOR_Q={}\nKHOR_NAMES={names}\nKHOR_LINES={lines}\n{SEARCH_SH}",
         sh_quote(dir),
         sh_quote(query),
-    );
-    Ok(parse_found(&sh_over_ssh(host, &script)?, dir))
+    )
+}
+
+/// [`SEARCH_SH`] over the user's ssh road, in [`crate::files::Found`]'s
+/// shape.
+pub fn search(host: &str, dir: &str, query: &str) -> Result<crate::files::Found, String> {
+    Ok(parse_found(
+        &sh_over_ssh(host, &search_script(dir, query))?,
+        dir,
+    ))
 }
 
 /// `name=` and `row=` lines into an answer, with the relative paths the
@@ -732,7 +779,13 @@ fn row_mark(x: char, y: char) -> Option<&'static str> {
 /// so the assignment is written by this side into the pipe, quoted
 /// once, by code rather than by hand.
 fn sh_over_ssh_in(host: &str, root: &str, script: &str) -> Result<String, String> {
-    sh_over_ssh(host, &format!("KHOR_ROOT={}\n{script}", sh_quote(root)))
+    sh_over_ssh(host, &rooted(root, script))
+}
+
+/// That assignment and that script, as one text ([`search_script`]'s
+/// reason).
+fn rooted(root: &str, script: &str) -> String {
+    format!("KHOR_ROOT={}\n{script}", sh_quote(root))
 }
 
 /// `git diff -U0` for one file, read on a satellite.
@@ -1716,5 +1769,391 @@ row=./notes.md:11:see http://example.test/x for more
         let found = parse_found(&text, "/w");
         assert_eq!(found.lines.len(), crate::files::SEARCH_LINES);
         assert!(found.more);
+    }
+}
+
+/// The five scripts, run by the local `sh` (工作区第七轮 第 55 条).
+///
+/// # Why this is verification and not a rehearsal
+///
+/// Every one of these scripts had been read and none had been run. The
+/// ssh half is verified — `sh_over_ssh` has carried `git status` since
+/// the satellite workspace batch — so what was left unchecked is the
+/// text itself: a quoting slip, a `head` in the wrong pipe, an `exit`
+/// that answers `no` where the far machine said `taken`. A satellite is
+/// not needed to find any of those. **The same script and the same
+/// assignments** go into the local shell (`search_script`, `rooted`,
+/// the two beside them) — the composition is shared code rather than
+/// retyped here, which is the one thing a test of a shell script must
+/// not do.
+///
+/// What this does **not** verify is the road: `ssh`, the far machine's
+/// `sh` being a different `sh`, a `find` without `-not -path`. Those
+/// stay in the 还欠什么 column where they were.
+#[cfg(test)]
+mod script_tests {
+    use super::*;
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Scratch {
+        /// That path as the scripts take it: absolute, in this
+        /// machine's own spelling.
+        fn at(&self, rel: &str) -> String {
+            self.0.join(rel).to_str().expect("utf-8 scratch").to_owned()
+        }
+
+        fn spelled(&self) -> String {
+            self.0.to_str().expect("utf-8 scratch").to_owned()
+        }
+    }
+
+    fn scratch(tag: &str) -> Scratch {
+        let p = std::env::temp_dir().join(format!("khor-sat-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).expect("a scratch directory");
+        Scratch(p)
+    }
+
+    /// One script down a local `sh`'s stdin, its stdout back — the
+    /// shape [`sh_over_ssh`] has with the `ssh` taken out of it.
+    ///
+    /// **Never the user's own git config.** `git init` and `git grep`
+    /// below read whatever `~/.gitconfig` says, and a person with a
+    /// `core.excludesFile` of their own would make a green run into a
+    /// red one on somebody else's machine. The two overrides point the
+    /// child at nothing; the user's files are neither read nor written
+    /// (the ruling's own 别碰用户的 git 配置).
+    fn run_here(script: &str, path: Option<&str>) -> String {
+        use std::io::Write;
+        // **`/bin/sh` by path, because `PATH` is one of the things
+        // under test**: the opener case below hands the script a
+        // `PATH` of its own, and a shell looked up through that `PATH`
+        // is a shell that cannot be found.
+        let mut cmd = Command::new("/bin/sh");
+        cmd.env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        if let Some(p) = path {
+            cmd.env("PATH", p);
+        }
+        let mut child = cmd.spawn().expect("a shell on this machine");
+        child
+            .stdin
+            .take()
+            .expect("the shell's stdin")
+            .write_all(script.as_bytes())
+            .expect("the script down the pipe");
+        let out = child.wait_with_output().expect("the shell to finish");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// The first word the script printed — what every one of the three
+    /// name verbs reads (`mkdir`, `touch`, `rename_path` all take the
+    /// first non-empty line).
+    fn said(text: &str) -> String {
+        text.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("")
+            .to_owned()
+    }
+
+    /// `done` and the directory is there; `taken` and nothing was
+    /// touched. **The second half is the one worth a test**: `mkdir`
+    /// without `-p` refuses an existing name on its own, and the script
+    /// exists to tell that refusal apart from every other one.
+    #[test]
+    fn mkdir_makes_a_name_and_refuses_one_that_is_taken() {
+        let dir = scratch("mkdir");
+        let fresh = dir.at("made");
+        assert_eq!(said(&run_here(&rooted(&fresh, MKDIR_SH), None)), "done");
+        assert!(std::path::Path::new(&fresh).is_dir());
+        assert_eq!(said(&run_here(&rooted(&fresh, MKDIR_SH), None)), "taken");
+
+        // A file's name is taken too — the test is on the name, not on
+        // the kind, which is what `[ -e ]` says and what a person
+        // retyping a name needs to hear.
+        let file = dir.at("already.txt");
+        std::fs::write(&file, "x").unwrap();
+        assert_eq!(said(&run_here(&rooted(&file, MKDIR_SH), None)), "taken");
+
+        // …and a missing parent is the shell's own `no`, which khor
+        // turns into 「做不了」 rather than 「名字已经有了」.
+        let deep = dir.at("nowhere/under/it");
+        assert_eq!(said(&run_here(&rooted(&deep, MKDIR_SH), None)), "no");
+        assert!(!std::path::Path::new(&deep).exists());
+    }
+
+    /// `done` and the file is there and empty; `taken` and the bytes
+    /// that were in it are still in it — **the half that matters**,
+    /// because `: >` truncates, and a touch that emptied somebody's
+    /// file would be the worst answer this script could give.
+    #[test]
+    fn touch_makes_an_empty_file_and_never_empties_one() {
+        let dir = scratch("touch");
+        let fresh = dir.at("new.txt");
+        assert_eq!(said(&run_here(&rooted(&fresh, TOUCH_SH), None)), "done");
+        assert_eq!(std::fs::read_to_string(&fresh).unwrap(), "");
+
+        std::fs::write(&fresh, "somebody's work\n").unwrap();
+        assert_eq!(said(&run_here(&rooted(&fresh, TOUCH_SH), None)), "taken");
+        assert_eq!(
+            std::fs::read_to_string(&fresh).unwrap(),
+            "somebody's work\n",
+            "the refusal has to happen before the truncation, not after"
+        );
+    }
+
+    /// Moves a name; refuses to replace one; says `gone` when there was
+    /// nothing to move. **`mv` on unix replaces without a word**, which
+    /// is the whole reason the target is tested first.
+    #[test]
+    fn mv_moves_a_name_and_refuses_to_replace_one() {
+        let dir = scratch("mv");
+        let from = dir.at("one.txt");
+        let to = dir.at("two.txt");
+        std::fs::write(&from, "keeper\n").unwrap();
+        assert_eq!(said(&run_here(&rename_script(&from, &to), None)), "done");
+        assert!(!std::path::Path::new(&from).exists());
+        assert_eq!(std::fs::read_to_string(&to).unwrap(), "keeper\n");
+
+        // The source is gone now, and that is its own answer.
+        assert_eq!(said(&run_here(&rename_script(&from, &to), None)), "gone");
+
+        // …and a target that is there is refused with the bytes it had.
+        let other = dir.at("three.txt");
+        std::fs::write(&other, "mine\n").unwrap();
+        assert_eq!(said(&run_here(&rename_script(&to, &other), None)), "taken");
+        assert_eq!(std::fs::read_to_string(&other).unwrap(), "mine\n");
+        assert_eq!(std::fs::read_to_string(&to).unwrap(), "keeper\n");
+    }
+
+    /// `done` where the desktop has an opener, `none` where it has not.
+    ///
+    /// **The opener is `/usr/bin/true` on a `PATH` of this test's own**
+    /// — 绝不真弹窗. The script looks the two openers up with
+    /// `command -v`, so a directory holding one file named `open` is
+    /// the whole of a desktop as far as it is concerned, and an empty
+    /// one is a headless satellite. (`KHOR_LAUNCHER` is deliberately
+    /// not consulted by this script — see [`LAUNCH_SH`] — so the
+    /// environment variable is not what is set here; the opener it
+    /// names is.)
+    #[test]
+    fn launch_answers_done_with_an_opener_and_none_without_one() {
+        let dir = scratch("launch");
+        let bin = dir.0.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let truth = std::path::Path::new("/usr/bin/true");
+        assert!(truth.exists(), "this machine has no /usr/bin/true");
+        std::os::unix::fs::symlink(truth, bin.join("open")).unwrap();
+        let bare = dir.0.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+
+        let target = dir.at("a.txt");
+        std::fs::write(&target, "x").unwrap();
+        assert_eq!(
+            said(&run_here(
+                &launch_script(&target),
+                Some(bin.to_str().unwrap())
+            )),
+            "done"
+        );
+        assert_eq!(
+            said(&run_here(
+                &launch_script(&target),
+                Some(bare.to_str().unwrap())
+            )),
+            "none",
+            "a machine with no screen has no opener, and that is a sentence khor prints"
+        );
+    }
+
+    /// A little project, the same shape `files::search`'s own tests
+    /// use: a readme, a source file, a build output that `.gitignore`
+    /// covers, and a file of bytes.
+    fn project(tag: &str) -> Scratch {
+        let dir = scratch(tag);
+        std::fs::create_dir_all(dir.0.join("src")).unwrap();
+        std::fs::create_dir_all(dir.0.join("build")).unwrap();
+        std::fs::write(dir.0.join(".gitignore"), "build/\n").unwrap();
+        std::fs::write(
+            dir.0.join("README.md"),
+            "# a project\nit has a keeper in it\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.0.join("src/one.rs"),
+            "fn main() {\n    let keeper = 1;\n}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.0.join("build/built.rs"), "let keeper = 2;\n").unwrap();
+        std::fs::write(dir.0.join("src/shot.png"), [0x89, b'P', 0, b'N', b'G']).unwrap();
+        dir
+    }
+
+    /// Outside a checkout: `find` and `grep -rI`, and the output parses
+    /// back into the shape khor's own walk answers.
+    ///
+    /// **`build/built.rs` is in this answer and that is right**: there
+    /// is no git here to ask, and the `.gitignore` sitting beside it is
+    /// a file the shell has no rules for. The next test is the one
+    /// where it goes away.
+    #[test]
+    fn search_outside_a_checkout_walks_with_find_and_grep() {
+        let dir = project("plain");
+        let out = run_here(&search_script(&dir.spelled(), "keeper"), None);
+        let found = parse_found(&out, &dir.spelled());
+        let rows: Vec<(String, u32)> = found
+            .lines
+            .iter()
+            .map(|h| (under(&dir, &h.path), h.line))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("README.md".to_owned(), 2),
+                ("build/built.rs".to_owned(), 1),
+                ("src/one.rs".to_owned(), 2),
+            ],
+            "no git to ask, so the ignored copy is in the answer: {out}"
+        );
+        assert!(
+            found.names.is_empty(),
+            "no path here holds the word: {:?}",
+            found.names
+        );
+
+        // …and the name half, which is the other list.
+        let named = run_here(&search_script(&dir.spelled(), "one.rs"), None);
+        let hit = parse_found(&named, &dir.spelled());
+        assert_eq!(
+            hit.names.iter().map(|p| under(&dir, p)).collect::<Vec<_>>(),
+            vec!["src/one.rs".to_owned()],
+            "{named}"
+        );
+        assert!(hit.lines.is_empty(), "{:?}", hit.lines);
+    }
+
+    /// In a checkout: git's own exclude rules, which is what
+    /// 「尊重 `.gitignore`」 means on this road (第 55 条).
+    #[test]
+    fn search_in_a_checkout_leaves_out_what_gitignore_covers() {
+        let dir = project("repo");
+        git_here(&dir);
+        let out = run_here(&search_script(&dir.spelled(), "keeper"), None);
+        let found = parse_found(&out, &dir.spelled());
+        let rows: Vec<(String, u32)> = found
+            .lines
+            .iter()
+            .map(|h| (under(&dir, &h.path), h.line))
+            .collect();
+        assert_eq!(
+            rows,
+            vec![("README.md".to_owned(), 2), ("src/one.rs".to_owned(), 2)],
+            "the copy under build/ is the one that must not be here: {out}"
+        );
+
+        // The name half honours the same rules — `git ls-files -co
+        // --exclude-standard` is the one list, asked twice.
+        let named = run_here(&search_script(&dir.spelled(), "built"), None);
+        assert!(
+            parse_found(&named, &dir.spelled()).names.is_empty(),
+            "an ignored name came back by its name: {named}"
+        );
+    }
+
+    /// The name half matches **the path under the directory**, never
+    /// the whole of it (工作区第七轮 第 56 条) — the same claim
+    /// `files::search`'s own test makes about the local walk, made here
+    /// because the two roads have to answer one table.
+    #[test]
+    fn search_names_are_matched_relative_to_the_directory() {
+        let dir = project("under");
+        // The scratch path itself holds this word, because it is built
+        // out of it: `khor-sat-under-<pid>`. Nothing **inside** the
+        // project does.
+        let out = run_here(&search_script(&dir.spelled(), "khor-sat"), None);
+        let found = parse_found(&out, &dir.spelled());
+        assert!(
+            found.names.is_empty(),
+            "the directories above a project are not part of what is being searched: {:?}",
+            found.names
+        );
+        // **`./` is not part of a relative path either**, which is the
+        // half of this that `find` can get wrong: it prints its walk
+        // led by the directory it was handed, and two characters
+        // nobody typed are two characters every query is matched
+        // against.
+        let led = run_here(&search_script(&dir.spelled(), "./"), None);
+        assert!(
+            parse_found(&led, &dir.spelled()).names.is_empty(),
+            "the walk's own lead came back as a name hit: {led}"
+        );
+
+        // …and the same in a checkout, where git prints the relative
+        // path and the `./` cut does not apply.
+        git_here(&dir);
+        let again = run_here(&search_script(&dir.spelled(), "khor-sat"), None);
+        assert!(
+            parse_found(&again, &dir.spelled()).names.is_empty(),
+            "{again}"
+        );
+        let git_led = run_here(&search_script(&dir.spelled(), "./"), None);
+        assert!(
+            parse_found(&git_led, &dir.spelled()).names.is_empty(),
+            "{git_led}"
+        );
+    }
+
+    /// `git init` in a scratch directory, with the identity given on
+    /// the command line. **The user's own git config is never read or
+    /// written** (`run_here` points the child at nothing, and this
+    /// carries the same two overrides).
+    fn git_here(dir: &Scratch) {
+        let out = Command::new("git")
+            .current_dir(&dir.0)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "init",
+                "--quiet",
+            ])
+            .output()
+            .expect("git on this machine");
+        assert!(
+            out.status.success(),
+            "git init: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// One answered path, spelled relative to the scratch directory —
+    /// the absolute half is this machine's temp directory and says
+    /// nothing about the script.
+    fn under(dir: &Scratch, path: &str) -> String {
+        path.trim_start_matches(&dir.spelled())
+            .trim_start_matches('/')
+            .to_owned()
     }
 }
