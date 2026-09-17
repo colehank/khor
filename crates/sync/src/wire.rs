@@ -238,8 +238,10 @@ fn raw_len(b64: &str) -> usize {
     b64.len() / 4 * 3
 }
 
-/// The over-limit error, naming both numbers: "too big" alone doesn't
-/// tell a near miss from 10×, and the next step differs.
+// The over-limit error, naming both numbers: "too big" alone doesn't
+// tell a near miss from 10×, and the next step differs. A plain comment,
+// not a doc comment: the item it once sat above is gone, and as `///` it
+// would attach itself to the test module below.
 
 #[cfg(test)]
 mod tests {

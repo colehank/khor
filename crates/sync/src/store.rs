@@ -373,13 +373,13 @@ fn make_dir(dir: &Path) -> Result<(), String> {
         use std::os::unix::fs::DirBuilderExt;
         // .mode() applies only to directories actually created here; a
         // pre-existing 755 directory stays 755.
-        return fs::DirBuilder::new()
+        fs::DirBuilder::new()
             .recursive(true)
             .mode(OWNER_ONLY_DIR)
             .create(dir)
             .or_else(|e| {
                 if dir.is_dir() { Ok(()) } else { Err(msg::cant_make_dir(e)) }
-            });
+            })
     }
     #[cfg(not(unix))]
     fs::create_dir_all(dir).map_err(msg::cant_make_dir)
@@ -712,11 +712,10 @@ pub fn compact_piles_under(home: &Path, peer: u64) -> Vec<(PathBuf, Compacted)> 
         let Ok(inner) = fs::read_dir(&p) else { continue };
         for e in inner.flatten() {
             let q = e.path();
-            if q.is_dir() {
-                if let Ok(Some(c)) = compact_dir(&q, peer) {
+            if q.is_dir()
+                && let Ok(Some(c)) = compact_dir(&q, peer) {
                     out.push((q, c));
                 }
-            }
         }
     }
     let _ = fs::remove_file(&lease);
