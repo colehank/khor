@@ -640,6 +640,31 @@ export function WorkspacePane({
     if (hidden) return;
     if (seat.current?.gone() === true) setCodeUp(false);
   }, [hidden]);
+  // …and a beat while the tab is held (2026-09-18 ruling 57:「网页脸上
+  // VS Code 标签页关了, 图标当场灭」).
+  //
+  // **This is what a timer has to have in this tree: a reason there is
+  // no event.** A cross-origin window hands this page exactly one
+  // answer — `closed` — and no notification of any kind; the visibility
+  // beat above it is真的一拍, but it only fires when somebody comes
+  // back here, so a person who closed the editor and stayed in it saw a
+  // lit switch for as long as they stayed. One second is the reading
+  // cadence of a thing beside a pointer: faster buys nothing a person
+  // can see, slower is the lie again.
+  //
+  // **Only while there is something to ask, and only on the road that
+  // answers**: the app announces (`asks` is false there), the question
+  // stops the moment it comes back true, and a pane with no seat sets
+  // no timer at all.
+  useEffect(() => {
+    if (!codeUp) return;
+    const held = seat.current;
+    if (held === null || !held.asks) return;
+    const beat = window.setInterval(() => {
+      if (held.gone()) setCodeUp(false);
+    }, CODE_BEAT_MS);
+    return () => window.clearInterval(beat);
+  }, [codeUp]);
 
   useEffect(() => {
     let live = true;
@@ -1875,6 +1900,14 @@ export function WorkspacePane({
     quarter of a second is under the threshold where a person notices
     waiting at all. */
 const HUNT_WAIT = 300;
+
+/** How often the web face asks its editor tab whether it is still there
+    (2026-09-18 ruling 57). **A second, because the answer is drawn
+    beside a pointer**: nothing a person can see improves by asking
+    faster, and anything slower leaves a lit switch over a window that
+    is gone — which is the whole of what this ruling is about. The cost
+    is one property read of a handle this page already holds. */
+const CODE_BEAT_MS = 1_000;
 
 /** What the editor's window is called: the project, then the product.
     **The workspace first**, because a person with two of them open is

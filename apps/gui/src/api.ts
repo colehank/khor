@@ -359,6 +359,12 @@ export type CodeSeat = {
   raise: (url: string, title: string) => Promise<void>;
   /** Whether the person has closed it since. */
   gone: () => boolean;
+  /** Whether [`gone`] is a question worth asking on a beat
+      (工作区第七轮 第 57 条). True on the web face, where the tab
+      answers `closed` and nothing else; false in the app, which
+      announces `code:closed` the moment the window dies and would
+      have a timer asking a road that always answers no. */
+  asks: boolean;
   /** Give it up: the node refused, and an empty window is worse than
       none. */
   drop: () => void;
@@ -384,10 +390,10 @@ export type CodeSeat = {
  *
  * **`gone` is the web face's question and the app's announcement.** A
  * tab showing another origin tells this page nothing, and `closed` is
- * the one thing it will still answer — so the browser road is asked, on
- * the beat somebody comes back to the page. The app emits `code:closed`
- * instead, the moment the window is destroyed, and answers `false`
- * here: one fact, one road each.
+ * the one thing it will still answer — so the browser road is asked on
+ * a beat while the tab is held (`asks`, 工作区第七轮 第 57 条). The app
+ * emits `code:closed` instead, the moment the window is destroyed, and
+ * answers `false` here: one fact, one road each.
  */
 export function codeSeat(machine: string): CodeSeat {
   const name = `khor-code:${machine}`;
@@ -399,6 +405,7 @@ export function codeSeat(machine: string): CodeSeat {
       // face is already listening for — asking as well would be a
       // second road to one fact, and this one would have to guess.
       gone: () => false,
+      asks: false,
       drop: () => {},
     };
   }
@@ -422,6 +429,7 @@ export function codeSeat(machine: string): CodeSeat {
       tab?.focus();
     },
     gone: () => tab === null || tab.closed,
+    asks: true,
     drop: () => {
       tab?.close();
       tab = null;

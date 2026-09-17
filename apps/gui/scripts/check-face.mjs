@@ -8564,7 +8564,29 @@ try {
             "(已开就不再开第二个)」 (src/api.ts codeSeat)",
         );
       }
-      if (popup !== null) await popup.close();
+      // …and closing it puts the switch out **while the person is
+      // still here** (2026-09-18 ruling 57:「网页脸上 VS Code 标签页
+      // 关了, 图标当场灭」). Until this ruling the tab was asked only
+      // when somebody came back to this page, so a person who closed
+      // the editor and stayed in it read a lit switch over a window
+      // that was gone. A cross-origin tab answers `closed` and nothing
+      // else — there is no event to listen for — which is this tree's
+      // reason for a timer.
+      if (popup !== null) {
+        await popup.close();
+        const went = await until(3_000, async () =>
+          (await page.locator('[data-code][data-on="false"]').count()) === 1,
+        );
+        const lit = await page.locator("[data-code]").getAttribute("data-on");
+        console.log(`editor window · closed by hand: the switch reads ${JSON.stringify(lit)}`);
+        if (!went) {
+          fail(
+            `the editor switch still reads ${JSON.stringify(lit)} seconds after its window was closed ` +
+              "— 「图标当场灭」, and this page never leaves for the answer to arrive " +
+              "(src/views/WorkspacePane.tsx CODE_BEAT_MS)",
+          );
+        }
+      }
     }
   }
 
