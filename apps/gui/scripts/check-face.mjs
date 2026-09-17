@@ -1356,6 +1356,46 @@ try {
     renamed.push({ machine: body.machine ?? "", from: body.from ?? "", to: body.to ?? "" });
     return r.fulfill({ contentType: "application/json", body: "null" });
   });
+  // 搜索 (工作区第六轮 第 47 条). **Answers about the fixture tree**,
+  // so what the box finds is what the tree beside it holds: `notes.md`
+  // and `README.md` for a name, and one line in one file for the
+  // content half. Built from the query rather than returned whole, so
+  // a box that sent the wrong word — or sent nothing and painted a
+  // stale answer — comes back with nothing and the probe says so.
+  const searched = [];
+  await page.route("**/search", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    const dir = body.dir ?? "";
+    const q = String(body.query ?? "").toLowerCase();
+    searched.push({ machine: body.machine ?? "", dir, query: body.query ?? "" });
+    // The three files this fixture tree holds at the top level, as the
+    // `ls` route above answers them.
+    const names = ["notes.md", "one.rs", "shot.png"]
+      .filter((n) => n.toLowerCase().includes(q))
+      .map((n) => `${dir}/${n}`);
+    // One line, in `one.rs`, holding a word that is in no file's name —
+    // which is what makes 「名字命中」 and 「内容命中」 two claims.
+    const lines = "let keeper = 1;".toLowerCase().includes(q)
+      ? [{ path: `${dir}/one.rs`, line: 2, text: "    let keeper = 1;" }]
+      : [];
+    return r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ names, lines, more: false }),
+    });
+  });
+  // The editor's address, once somebody has said yes to the card
+  // (工作区第六轮 第 46 条). **`about:blank`**: this run must not load
+  // a real page in a window it opened, and what is being measured is
+  // that a window was opened at all.
+  const codeOpened = [];
+  await page.route("**/code_open", (r) => {
+    const body = r.request().postDataJSON() ?? {};
+    codeOpened.push({ machine: body.machine ?? "", dir: body.dir ?? "" });
+    return r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ url: "about:blank" }),
+    });
+  });
   // **The opener, counted and never run.** What 第 35 条 promises is
   // that khor asks *that machine* to open it; a fixture that opened
   // anything would be this gate putting a window on somebody's screen.
@@ -3845,11 +3885,37 @@ try {
             "(src/views/WorkspacePane.tsx)",
         );
       }
-      // …and the three switches are at the end of the strip.
-      const tail = await page.$$eval("[data-ws-switches] > button", (els) =>
+      // …and the two switches are **at the head of the tree**
+      // (2026-09-17 ruling 47:「在文件树的侧边上加一个搜索框…框的右侧是
+      // session和vscode icon」— the user). They were at the strip's far
+      // end for two batches, and the narrow face draws no strip until a
+      // file is open: 「窄屏进入工作区, 没有到vscode和session的按钮, 仅有
+      // 打开一个文件才能知道」.
+      const tail = await page.$$eval("[data-tree-head] [data-ws-switches] > button", (els) =>
         els.map((e) => e.getAttribute("aria-label")),
       );
-      console.log(`tab strip tail: ${JSON.stringify(tail)}`);
+      const strandedEnd = await page.evaluate(() => ({
+        head: document.querySelectorAll("[data-tree-head]").length,
+        box: document.querySelectorAll("[data-tree-head] [data-tree-search]").length,
+        onStrip: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
+        eyeOnStripEnd: document.querySelectorAll(
+          "[data-ws-tab-strip] > div > [data-file-face-switch]",
+        ).length,
+      }));
+      console.log(`tree head: ${JSON.stringify(tail)} beside ${JSON.stringify(strandedEnd)}`);
+      if (strandedEnd.head !== 1 || strandedEnd.box !== 1) {
+        fail(
+          `the tree's column drew ${strandedEnd.head} head(s) and ${strandedEnd.box} search box(es) — ` +
+            "「在文件树的侧边上加一个搜索框(可搜索文件名与内容)、框的右侧是session和vscode icon」 " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (strandedEnd.onStrip !== 0 || strandedEnd.eyeOnStripEnd !== 0) {
+        fail(
+          "the tab strip's far end still carries switches — 「而取消现在固定在标签页位置的」 " +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
       // **One size, one weight** (2026-09-16:「右上角的预览、session、vscode
       // 等 icon 的大小风格要一致。现在粗细、大小不一」): every glyph at the
       // strip's end is 14–16 tall and every button the same box.
@@ -3866,7 +3932,7 @@ try {
           el.remove();
           return got;
         };
-        const btns = [...document.querySelectorAll("[data-file-face-switch], [data-ws-switches] > button")];
+        const btns = [...document.querySelectorAll("[data-tree-head] [data-ws-switches] > button")];
         return {
           on: paint(getComputedStyle(document.documentElement).getPropertyValue("--rail-on-ink")),
           body: getComputedStyle(document.body).color,
@@ -3892,11 +3958,11 @@ try {
           }),
         };
       });
-      console.log(`tail look: ${JSON.stringify(tailLook)}`);
+      console.log(`head look: ${JSON.stringify(tailLook)}`);
       const inks = tailLook.btns.map((t) => t.ink);
       if (new Set(tailLook.btns.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
         fail(
-          `the strip's end is uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, and ` +
+          `the tree's head is uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, and ` +
             "the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
         );
       }
@@ -3906,7 +3972,7 @@ try {
       // in it were spending a third of it; what grew is the ink.
       if (inks.some((k) => k < 19 || k > 21)) {
         fail(
-          `the strip's end paints ${inks.join("/")}px of ink — 20, in a 44 box: 「过小. 浪费他们自己的空间,` +
+          `the tree's head paints ${inks.join("/")}px of ink — 20, in a 44 box: 「过小. 浪费他们自己的空间,` +
             "放大一点」 (src/views/WorkspacePane.tsx)",
         );
       }
@@ -3974,13 +4040,14 @@ try {
           fail("an open file's tab carries no kind icon — the tree's icon goes on the tab too (src/views/WorkspacePane.tsx tabFaces)");
         }
       }
-      // **Two since 2026-09-16**: the tree's switch moved onto the
-      // workspace's own row in the list (a chevron), so the strip's
-      // end keeps the sessions column and the editor.
+      // **Two, and the 预览 eye is not one of them**: it rides its own
+      // tab now (ruling 47), and what stands beside the search box is
+      // the pair that each reach something this face has no other
+      // handle on — the sessions column, and the editor's window.
       if (tail.length !== 2) {
         fail(
-          `the strip's far end carries ${tail.length} switch(es) — the tree folds from its row's chevron ` +
-            "and ⌘B now, so the end is the sessions column and VS Code, two (src/views/WorkspacePane.tsx)",
+          `the tree's head carries ${tail.length} switch(es) — 「框的右侧是session和vscode icon」, ` +
+            "two (src/views/WorkspacePane.tsx)",
         );
       }
       // **The tree folds from its own row, and from ⌘B** (2026-09-16).
@@ -5138,19 +5205,23 @@ try {
         on: one?.getAttribute("data-on") ?? null,
         switches: document.querySelectorAll("[data-file-face-switch]").length,
         // Where it stands, which is the whole of what moved
-        // (2026-09-16): on the tab strip's far end rather than in a row
-        // of its own over the file.
+        // (2026-09-17 ruling 47:「预览按钮放在标签页的标签上」— the
+        // user): on the tab it is about, rather than at the strip's far
+        // end where it sat for one batch and read as being about the
+        // strip.
         onStrip: one !== null && document.querySelector("[data-ws-tab-strip]")?.contains(one) === true,
+        onTab: one !== null && document.querySelector("[data-tab]")?.contains(one) === true,
         // A glyph and no word — the button that used to say 源码/预览
         // spelled the face out because there were two of them.
         glyph: one === null ? 0 : one.querySelectorAll("svg").length,
         word: one?.textContent?.trim() ?? "",
         // The row of two buttons, gone whole.
         oldRow: document.querySelectorAll("[data-file-face]").length,
-        // …and the three column switches are still three (they are a
-        // separate group, and this button standing in it would make a
-        // gate about them say four).
-        columns: document.querySelectorAll("[data-ws-switches] > button").length,
+        // …and the column switches are where they moved to: the head
+        // of the tree (ruling 47), never on the strip. This button
+        // standing among them would make a gate about them say three.
+        columns: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
+        onStripSwitches: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
       };
     });
     console.log(`md opens: ${JSON.stringify(asOpened)}`);
@@ -5240,9 +5311,13 @@ try {
             "has to grow is the ink (src/views/WorkspacePane.tsx tabFaces)",
         );
       }
-      // …and the 预览 switch, which is the third of the three the
-      // strip's end carries and the one 4l cannot see: it is drawn only
-      // for a file that has a second face, and 4l's strip is empty.
+      // …and the 预览 eye, **on the tab and deliberately the smaller
+      // mark** (2026-09-17 ruling 47:「在它自己那个标签的名字右边、× 左边,
+      // 画一个小眼睛(size-3.5)」— the user). It is not one of the pair
+      // in the tree's head and must not be measured against them: those
+      // two each open something this face has no other handle on, and
+      // this one changes the face of the tab it sits on. The box is
+      // still the finger's floor; what is smaller is the ink.
       const eye = await page.evaluate(() => {
         const b = document.querySelector("[data-file-face-switch]");
         const svg = b?.querySelector("svg") ?? null;
@@ -5259,10 +5334,27 @@ try {
       console.log(`the 预览 switch: ${JSON.stringify(eye)}`);
       if (eye === null) {
         fail("probe void: no 预览 switch on screen to measure (src/views/WorkspacePane.tsx)");
-      } else if (eye.ink < 19 || eye.ink > 21 || eye.box !== "44x44") {
+      } else if (eye.ink < 13 || eye.ink > 15 || eye.box !== "44x44") {
         fail(
-          `the 预览 switch is ${eye.box} around ${eye.ink}px of ink — the strip's end is three marks of 20 in ` +
-            "44 boxes, and this is the third (src/views/WorkspacePane.tsx switchClass)",
+          `the 预览 eye is ${eye.box} around ${eye.ink}px of ink — 「一个小眼睛, size-3.5」 in a box a ` +
+            "finger can land on (src/browse/TabStrip.tsx)",
+        );
+      }
+      // **And it rides the tab in front, not the strip.**
+      const eyeSeat = await page.evaluate(() => {
+        const b = document.querySelector("[data-file-face-switch]");
+        const tab = b?.closest("[data-tab]") ?? null;
+        return {
+          onTab: tab !== null,
+          onTheOpenOne: tab?.getAttribute("data-on") === "true",
+          count: document.querySelectorAll("[data-file-face-switch]").length,
+        };
+      });
+      console.log(`the 预览 eye's seat: ${JSON.stringify(eyeSeat)}`);
+      if (!eyeSeat.onTab || !eyeSeat.onTheOpenOne || eyeSeat.count !== 1) {
+        fail(
+          `the 预览 eye sits at ${JSON.stringify(eyeSeat)} — 「只在活动标签上画,非活动标签不画」 ` +
+            "(src/browse/TabStrip.tsx)",
         );
       }
       if (Math.abs(seat.nameLeft - seat.subLeft) > 1) {
@@ -5284,10 +5376,15 @@ try {
           "的按钮,放在页面的右上角那」 (src/views/FileView.tsx)",
       );
     }
-    if (asOpened.switches !== 1 || !asOpened.onStrip) {
+    // **On the tab, and on the tab in front** (2026-09-17 ruling 47:
+    // 「预览按钮放在标签页的标签上…只在活动标签上画」— the user). One
+    // eye in the whole pane, because one tab is in front; a mark on
+    // every stub would be a row of controls aimed at files nobody is
+    // looking at.
+    if (asOpened.switches !== 1 || !asOpened.onTab) {
       fail(
-        `the file's face switch: ${asOpened.switches} of them, on the tab strip=${asOpened.onStrip} — ` +
-          "one icon at the strip's far end is where the ruling put it (src/views/WorkspacePane.tsx)",
+        `the file's face switch: ${asOpened.switches} of them, on its own tab=${asOpened.onTab} — ` +
+          "「预览按钮放在标签页的标签上」 (src/browse/TabStrip.tsx)",
       );
     }
     if (asOpened.glyph !== 1 || asOpened.word !== "") {
@@ -5297,11 +5394,15 @@ try {
           "(src/components/icons.tsx IconEye)",
       );
     }
-    if (asOpened.columns !== 2) {
+    // **The strip's far end is empty** (ruling 47:「取消现在固定在标签页
+    // 位置的」). Both switches moved to the head of the tree, where the
+    // narrow face can reach them without opening a file first — which
+    // is the whole reason the ruling exists.
+    if (asOpened.columns !== 2 || asOpened.onStripSwitches !== 0) {
       fail(
-        `the strip's column switches now count ${asOpened.columns} — the face switch stands beside them, ` +
-          "not among them: those three open and shut a column and this one changes what the middle " +
-          "column shows (src/views/WorkspacePane.tsx)",
+        `the tree's head carries ${asOpened.columns} column switch(es) and the strip's end carries ` +
+          `${asOpened.onStripSwitches} group(s) — 「框的右侧是session和vscode icon」, and the strip's ` +
+          "end is empty (src/views/WorkspacePane.tsx)",
       );
     }
     if (asOpened.on !== "false") {
@@ -5506,13 +5607,13 @@ try {
     }
     // …and **a file with nothing to render grows no switch** (「如果可预
     // 览,就是一个预览的 icon」— the user, 2026-09-16). A `.rs` has no
-    // second face, so the strip's far end carries only the three column
-    // switches. The negative half of the claim 4j opened with, and it is
+    // second face, so its tab carries a name and a close and nothing
+    // else. The negative half of the claim 4j opened with, and it is
     // asserted here because this is where a file with no renderer is
     // already in front.
     const none = await page.evaluate(() => ({
       switches: document.querySelectorAll("[data-file-face-switch]").length,
-      columns: document.querySelectorAll("[data-ws-switches] > button").length,
+      columns: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
     }));
     console.log(`.rs face switch: ${JSON.stringify(none)}`);
     if (none.switches !== 0) {
@@ -5523,8 +5624,8 @@ try {
     }
     if (none.columns !== 2) {
       fail(
-        `probe void: the strip's far end carries ${none.columns} column switch(es), so 「no face ` +
-          "switch」 above may only mean the whole tail is missing",
+        `probe void: the tree's head carries ${none.columns} column switch(es), so 「no face ` +
+          "switch」 above may only mean the whole workspace is missing",
       );
     }
   }
@@ -6284,10 +6385,22 @@ try {
       // i) open one, and look at what the list says about which.
       await openWs();
       const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip]").count()) === 1);
+      // **The pointer is moved off first.** The press that opened the
+      // workspace leaves the cursor on that row, and since 2026-09-17
+      // hovering a row washes the whole line (ruling 48) — read with
+      // the pointer still there, 「the open one is marked」 would be
+      // measuring the hover.
+      await page.mouse.move(2, 2);
+      await wait(200);
       const marked = await page.evaluate(() => {
-        const rows = [...document.querySelectorAll("[data-ws-row]")];
-        const on = rows.filter((r) => r.getAttribute("data-selected") === "true");
-        const off = rows.filter((r) => r.getAttribute("data-selected") !== "true");
+        // **The line, not the button in it** (ruling 48: the wash is
+        // the line's now, and nothing inside paints a ground of its
+        // own). What a person sees at a point is what the first box
+        // above it that paints anything says.
+        const rows = [...document.querySelectorAll("[data-ws-line]")];
+        const isOn = (r) => r.querySelector('[data-ws-row][data-selected="true"]') !== null;
+        const on = rows.filter(isOn);
+        const off = rows.filter((r) => !isOn(r));
         const ground = (el) => (el === undefined ? null : getComputedStyle(el).backgroundColor);
         return {
           rows: rows.length,
@@ -7140,6 +7253,12 @@ try {
   //      way back of its own;
   //   v. and ⌘B is the way to the tree from anywhere — the key that no
   //      fold can hide, spelled for a face that has no columns to fold.
+  //
+  // **The switches are on the tree screen since 2026-09-17** (ruling
+  // 47:「窄屏进入工作区, 没有到vscode和session的按钮, 仅有打开一个文件
+  // 才能知道」— the user). They used to ride the tab strip, which the
+  // narrow face does not draw until a file is open, so the only door to
+  // the other screens was behind a file somebody had not come for.
   {
     const wide = { width: 1400, height: 900 };
     await page.setViewportSize({ width: 390, height: 844 });
@@ -7168,9 +7287,21 @@ try {
         tree: document.querySelectorAll("[data-ws-tree]").length,
         strip: document.querySelectorAll("[data-ws-tab-strip]").length,
         sessions: document.querySelectorAll("[data-ws-sessions]").length,
-        code: document.querySelectorAll("[data-ws-code]").length,
         back: document.querySelectorAll("[data-ws-back]").length,
-        switches: document.querySelectorAll("[data-ws-switches] > button").length,
+        switches: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
+        // Finger-sized, both of them: the tree screen is where a phone
+        // reaches the other two from, so these are the targets that
+        // ruling 47 is actually about (section 3's floor, asked here
+        // because this screen only exists at this width).
+        small: [...document.querySelectorAll("[data-tree-head] [data-ws-switches] > button")].filter(
+          (b) => {
+            const r = b.getBoundingClientRect();
+            const floor = Number.parseFloat(
+              getComputedStyle(document.documentElement).getPropertyValue("--touch"),
+            );
+            return r.width + 0.5 < floor || r.height + 0.5 < floor;
+          },
+        ).length,
       }));
     const first = await screens();
     console.log(`narrow workspace · on arrival: ${JSON.stringify(first)}`);
@@ -7184,6 +7315,19 @@ try {
       fail(
         `the tree screen also carries ${first.strip} strip(s) and ${first.sessions} session column(s) — ` +
           "「一次一屏」 (src/views/WorkspacePane.tsx)",
+      );
+    }
+    // **…and both doors are on it, both a finger's size** (ruling 47).
+    if (first.switches !== 2) {
+      fail(
+        `the narrow tree screen carries ${first.switches} switch(es) — 「窄档的树屏也有这一行」, and ` +
+          "without it a phone reaches neither the sessions nor the editor (src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (first.small > 0) {
+      fail(
+        `${first.small} of the tree head's switches are under the finger's floor — 「都是手指大小」 ` +
+          "(src/views/WorkspacePane.tsx)",
       );
     }
     // ii/iii) a file, and the way back.
@@ -7205,12 +7349,7 @@ try {
             "reach the tree is where this ruling started (src/views/WorkspacePane.tsx)",
         );
       }
-      if (onFile.switches === 0) {
-        fail(
-          "the file screen carries no column switches — the sessions are reached from the strip's end, " +
-            "and without them the third screen has no door (src/views/WorkspacePane.tsx)",
-        );
-      }
+
       await press("[data-ws-back]");
       await wait(300);
       const back = await screens();
@@ -7221,9 +7360,9 @@ try {
             "(src/views/WorkspacePane.tsx)",
         );
       }
-      // iv) the sessions, from the file screen's switch.
-      await press('[data-file="notes.md"] > button');
-      await wait(300);
+      // iv) the sessions, from the **tree** screen's switch — which is
+      // where the switches live now (ruling 47) and is also the screen
+      // this walk is standing on after the 「←」 above.
       await press("[data-ws-sessions-switch]");
       await wait(400);
       const onSessions = await screens();
@@ -7243,37 +7382,34 @@ try {
       await press("[data-ws-back]");
       await wait(300);
       const toFile = await screens();
-      console.log(`narrow workspace · back to the file: ${JSON.stringify(toFile)}`);
-      if (toFile.strip !== 1 || toFile.sessions !== 0) {
+      console.log(`narrow workspace · back out of the sessions: ${JSON.stringify(toFile)}`);
+      if (toFile.sessions !== 0) {
         fail(
-          `「←」 out of the sessions left ${JSON.stringify(toFile)} — it goes back to the file it was ` +
-            "opened from (src/views/WorkspacePane.tsx)",
+          `「←」 out of the sessions left ${JSON.stringify(toFile)} — it goes back to the file ` +
+            "(src/views/WorkspacePane.tsx)",
         );
       }
-      // …and the editor is the fourth screen (2026-09-16 ruling 45),
-      // reached from the same strip and left the same way.
-      await press("[data-code]");
-      await wait(500);
-      const onCode = await screens();
-      console.log(`narrow workspace · the editor: ${JSON.stringify(onCode)}`);
-      if (onCode.code !== 1 || onCode.strip !== 0 || onCode.tree !== 0 || onCode.sessions !== 0) {
-        fail(
-          `the editor switch left ${JSON.stringify(onCode)} — on a phone the editor is a screen of its own, ` +
-            "not a panel under the tabs (src/views/WorkspacePane.tsx)",
-        );
-      }
-      if (onCode.back === 0) {
-        fail("the editor screen has no way back — every screen that is not the first one has one (src/views/WorkspacePane.tsx)");
-      }
-      await press("[data-ws-back]");
-      await wait(300);
-      const fromCode = await screens();
-      console.log(`narrow workspace · back from the editor: ${JSON.stringify(fromCode)}`);
-      if (fromCode.strip !== 1 || fromCode.code !== 0) {
-        fail(
-          `「←」 out of the editor left ${JSON.stringify(fromCode)} — it goes back to the file it was opened ` +
-            "from (src/views/WorkspacePane.tsx)",
-        );
+      // **…and the editor is not a screen at all** (2026-09-17 ruling
+      // 46). It was the fourth for one batch; it is a window of its own
+      // now, so pressing its switch on a phone leaves every screen
+      // exactly where it was and opens something outside this face.
+      const doors = await page.evaluate(() => document.querySelectorAll("[data-code]").length);
+      if (doors === 1) {
+        const wasThere = await screens();
+        await press("[data-code]");
+        await wait(500);
+        const afterCode = await screens();
+        console.log(`narrow workspace · the editor's switch: ${JSON.stringify(afterCode)}`);
+        if (JSON.stringify(afterCode) !== JSON.stringify(wasThere)) {
+          fail(
+            `the editor switch moved this face from ${JSON.stringify(wasThere)} to ` +
+              `${JSON.stringify(afterCode)} — 「VSCODE做成弹出式的, 弹出一个窗口显示vscode」: it opens a ` +
+              "window, and a window is not a screen of this face (src/views/WorkspacePane.tsx)",
+          );
+        }
+        // Whatever sheet it raised is not this section's business.
+        await page.keyboard.press("Escape");
+        await wait(200);
       }
 
       // v) ⌘B, from wherever.
@@ -7779,6 +7915,492 @@ try {
     }
   }
 
+  // ── 4w) 树头那一条:搜索框找得到东西 (第六轮 第 47 条) ──────────────
+  //
+  // 「在文件树的侧边上加一个搜索框(可搜索文件名与内容)」— the user.
+  //
+  // Claims:
+  //   i. typing a name swaps the tree for a result list with that file
+  //      in it;
+  //  ii. typing a word that is only in a file's *text* finds a line,
+  //      and the row says `path:line`;
+  // iii. pressing that row opens the file in the middle column and goes
+  //      to that line — the road a path in a conversation already takes
+  //      (ruling 35);
+  //  iv. Esc puts the tree back.
+  {
+    await atTree();
+    const box = "[data-tree-head] [data-tree-search]";
+    if ((await page.locator(box).count()) !== 1) {
+      fail("probe dead: no search box at the head of the tree (src/views/WorkspacePane.tsx)");
+    } else {
+      const askedBefore = searched.length;
+      await page.locator(box).fill("notes");
+      const listed = await until(6_000, async () =>
+        (await page.locator("[data-tree-results] [data-hit-name]").count()) > 0,
+      );
+      const byName = await page.evaluate(() => ({
+        tree: document.querySelectorAll("[data-file-tree]").length,
+        results: document.querySelectorAll("[data-tree-results]").length,
+        names: [...document.querySelectorAll("[data-hit-name]")].map((e) =>
+          e.getAttribute("data-hit-name"),
+        ),
+        // The word picked out of the row, which is what makes a result
+        // readable at a glance.
+        marks: document.querySelectorAll("[data-tree-results] [data-hit-mark]").length,
+      }));
+      console.log(
+        `tree search · a name: ${JSON.stringify(byName)}, asked ${searched.length - askedBefore} time(s)`,
+      );
+      if (!listed || byName.results !== 1 || byName.tree !== 0) {
+        fail(
+          `typing a name left ${byName.results} result list(s) beside ${byName.tree} tree(s) — 「框里有字时树` +
+            "那一栏的内容换成结果列表」 (src/views/WorkspacePane.tsx Hits)",
+        );
+      }
+      if (!byName.names.some((p) => `${p}`.endsWith("notes.md"))) {
+        fail(
+          `the name search answered ${JSON.stringify(byName.names)} — 「名字命中(路径含关键字)」, and ` +
+            "this tree holds notes.md (src/views/WorkspacePane.tsx Hits)",
+        );
+      }
+      if (byName.marks === 0) {
+        fail("nothing in the results is picked out — 「关键字高亮」 (src/views/WorkspacePane.tsx marked)");
+      }
+      // **One question, not one per keystroke** (300 ms of debounce).
+      // Five characters typed as five values must not be five walks of
+      // somebody's project.
+      const asks = searched.length - askedBefore;
+      if (asks > 2) {
+        fail(
+          `typing one word asked that machine ${asks} times — 「300ms 防抖,一次一问」 ` +
+            "(src/views/WorkspacePane.tsx)",
+        );
+      }
+      // ii/iii) a word that is in no file's name.
+      await page.locator(box).fill("keeper");
+      const gotLines = await until(6_000, async () =>
+        (await page.locator("[data-tree-results] [data-hit-line]").count()) > 0,
+      );
+      const byLine = await page.evaluate(() => ({
+        names: document.querySelectorAll("[data-hit-name]").length,
+        lines: [...document.querySelectorAll("[data-hit-line]")].map((e) =>
+          e.getAttribute("data-hit-line"),
+        ),
+        where: document.querySelector("[data-hit-where]")?.textContent?.trim() ?? null,
+        text: document.querySelector("[data-hit-text]")?.textContent?.trim() ?? null,
+      }));
+      console.log(`tree search · a line: ${JSON.stringify(byLine)}`);
+      if (!gotLines) {
+        fail(
+          "a word that is only inside a file found nothing — 「内容命中(行)」 is the half of this box " +
+            "that a tree cannot do (src/views/WorkspacePane.tsx Hits)",
+        );
+      } else {
+        if (byLine.where !== "one.rs:2") {
+          fail(
+            `the line hit says ${JSON.stringify(byLine.where)} — 「显示 path:line 与那一行文字」 ` +
+              "(src/views/WorkspacePane.tsx Hits)",
+          );
+        }
+        if (byLine.names !== 0) {
+          fail(
+            `a word in no file's name still listed ${byLine.names} name hit(s) — the two lists answer two ` +
+              "different questions (scripts/check-face.mjs fixture, src/views/WorkspacePane.tsx)",
+          );
+        }
+        // iii) pressing it opens the file at that line.
+        await press("[data-hit-line]");
+        const landed = await until(6_000, async () =>
+          (await page.locator("[data-ws-tab-strip] [data-tab-open]").count()) > 0,
+        );
+        const at = await page.evaluate(() => {
+          const box = document.querySelector("[data-file-scroll]");
+          const row = document.querySelector('[data-sheet] [data-line="2"]');
+          return {
+            tabs: [...document.querySelectorAll("[data-tab-name]")].map((e) => e.textContent?.trim()),
+            // …and it went to the line, read the way ruling 35's own
+            // probe reads it: the row is inside the scroller's box.
+            inView:
+              box === null || row === null
+                ? null
+                : row.getBoundingClientRect().top >= box.getBoundingClientRect().top - 1 &&
+                  row.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom + 1,
+          };
+        });
+        console.log(`tree search · pressing a line: ${JSON.stringify(at)}`);
+        if (!landed || !at.tabs.some((t) => `${t}` === "one.rs")) {
+          fail(
+            `pressing a line hit left the strip at ${JSON.stringify(at.tabs)} — 「点一条开文件(内容命中滚到` +
+              "那一行)」 (src/views/WorkspacePane.tsx)",
+          );
+        } else if (at.inView === false) {
+          fail(
+            "the file opened and the line it was found on is off the screen — 「内容命中滚到那一行」, " +
+              "the same road a path in a conversation takes (src/views/FileView.tsx goLine)",
+          );
+        }
+      }
+      // iv) Esc, and the tree is back.
+      await page.locator(box).focus();
+      await page.keyboard.press("Escape");
+      await wait(400);
+      const back = await page.evaluate(() => ({
+        tree: document.querySelectorAll("[data-file-tree]").length,
+        results: document.querySelectorAll("[data-tree-results]").length,
+        box: document.querySelector("[data-tree-search]")?.value ?? null,
+      }));
+      console.log(`tree search · Esc: ${JSON.stringify(back)}`);
+      if (back.tree !== 1 || back.results !== 0 || back.box !== "") {
+        fail(
+          `Esc left ${JSON.stringify(back)} — 「清空或 Esc 回树」 (src/views/WorkspacePane.tsx)`,
+        );
+      }
+    }
+  }
+
+  // ── 4x) 工作区那一列:一种悬停色,一个管用的搜索框 (第 48、50 条) ────
+  //
+  // 「悬浮工作区list的时候, >符号的高亮要比别的区域深一些, 应该一致」and
+  // 「工作区list上的搜索框没有生效. 它应该针对不同机器、工作区路径可以
+  // 搜索」— the user, 2026-09-17.
+  //
+  // Claims:
+  //   i. hovering a row washes the whole line, chevron included — one
+  //      colour, because a row is one thing to a hand;
+  //  ii. the pane bar's box filters on the machine's name;
+  // iii. …and on a fragment of the path;
+  //  iv. …and a word that matches nothing leaves the column saying so
+  //      rather than empty.
+  {
+    await open("workspaces");
+    await wait(300);
+    // **The fixture this file already routes in** (`wsRows`): four
+    // workspaces on four machines at four paths, which is what makes
+    // 「机器」 and 「路径」 two claims rather than one.
+    const rows = () => page.locator("[data-ws-row]").count();
+    if (!(await until(6_000, async () => (await rows()) >= 3))) {
+      fail(`probe dead: the workspace list drew ${await rows()} rows`);
+    } else {
+      // i) the hover. **Read as what is actually painted at a point**,
+      // walking up through transparent boxes — a chevron with no ground
+      // of its own shows the line's, which is the whole of what 「一致」
+      // asks for, and a chevron that grew one would differ here.
+      const washAt = (sel) =>
+        page.evaluate((s) => {
+          const paintOf = (el) => {
+            for (let at = el; at !== null; at = at.parentElement) {
+              const c = getComputedStyle(at).backgroundColor;
+              if (c && !/rgba\(0, 0, 0, 0\)|transparent/.test(c)) return c;
+            }
+            return null;
+          };
+          const row = document.querySelector(s);
+          const mark = row?.querySelector("[data-ws-tree-mark]") ?? null;
+          const button = row?.querySelector("[data-ws-row]") ?? null;
+          return {
+            row: row === null ? null : paintOf(row),
+            mark: mark === null ? null : paintOf(mark),
+            button: button === null ? null : paintOf(button),
+            hasMark: mark !== null,
+          };
+        }, sel);
+      // A row that is **not** the open one, so what is being read is
+      // the hover and not the selection — and read **against a row that
+      // is not under the pointer**, because every box on this page
+      // stands on the pane's own ground and a reading that only walked
+      // up would find one whether or not anything washed.
+      const shut = '[data-ws-line]:not(:has([data-ws-row][data-selected="true"]))';
+      if ((await page.locator(shut).count()) < 2) {
+        fail("probe dead: fewer than two rows are not the open one, so a hover has nothing to differ from");
+      } else {
+        await page.mouse.move(2, 2);
+        await wait(200);
+        const cold = await washAt(shut);
+        await page.locator(shut).first().hover();
+        await wait(250);
+        const wash = await washAt(shut);
+        console.log(`workspace row · cold ${JSON.stringify(cold.row)} → hovered: ${JSON.stringify(wash)}`);
+        if (wash.row === cold.row) {
+          fail(
+            `hovering a workspace row left it painted ${wash.row}, which is what it paints untouched — ` +
+              "「整行一层 wash(hover:bg-accent/50 在 data-ws-line 上)」 (src/views/WorkspacesList.tsx)",
+          );
+        } else if (wash.button !== wash.row) {
+          fail(
+            `the hovered row paints ${wash.row} where the half under its name reads ${wash.button} — ` +
+              "one wash for the line (src/views/WorkspacesList.tsx)",
+          );
+        }
+      }
+      // …and the open row, which is the one with a chevron on it: the
+      // glyph's corner must read as the rest of the line.
+      const lit = '[data-ws-line]:has([data-ws-row][data-selected="true"])';
+      if ((await page.locator(`${lit} [data-ws-tree-mark]`).count()) === 1) {
+        await page.locator(lit).hover();
+        await wait(250);
+        const onOpen = await washAt(lit);
+        console.log(`workspace row · the open one, hovered: ${JSON.stringify(onOpen)}`);
+        if (onOpen.mark !== onOpen.row) {
+          fail(
+            `the chevron's corner paints ${onOpen.mark} where the row paints ${onOpen.row} — ` +
+              "「>符号的高亮要比别的区域深一些, 应该一致」 (src/views/WorkspacesList.tsx)",
+          );
+        }
+      }
+      // ii/iii/iv) the box.
+      const bar = "[data-list] [data-pane-search]";
+      const names = () =>
+        page.$$eval("[data-ws-row] [data-ws-name]", (els) => els.map((e) => e.textContent?.trim()));
+      await page.locator(bar).fill("elder");
+      await wait(400);
+      const byMachine = await names();
+      await page.locator(bar).fill("/home/gate/notes");
+      await wait(400);
+      const byPath = await names();
+      await page.locator(bar).fill("zzzz");
+      await wait(400);
+      const byNothing = await page.evaluate(() => ({
+        rows: document.querySelectorAll("[data-ws-row]").length,
+        said: document.querySelector("[data-ws-none-match]")?.textContent?.trim() ?? null,
+        // …and never the empty-table sentence, which would be khor
+        // telling somebody they have no projects while three are one
+        // backspace away.
+        empty: document.body.innerText.includes("还没有工作区"),
+      }));
+      console.log(
+        `workspace search: 「elder」→${JSON.stringify(byMachine)}, 「/home/gate/notes」→` +
+          `${JSON.stringify(byPath)}, 「zzzz」→${JSON.stringify(byNothing)}`,
+      );
+      if (byMachine.length !== 1 || byMachine[0] !== "app") {
+        fail(
+          `searching a machine's name left ${JSON.stringify(byMachine)} — 「针对不同机器…可以搜索」, and ` +
+            "`elder` holds exactly one (src/views/WorkspacesList.tsx matches)",
+        );
+      }
+      if (byPath.length !== 1 || byPath[0] !== "notes") {
+        fail(
+          `searching a path fragment left ${JSON.stringify(byPath)} — 「工作区路径可以搜索」 ` +
+            "(src/views/WorkspacesList.tsx matches)",
+        );
+      }
+      if (byNothing.rows !== 0 || byNothing.said === null || byNothing.empty) {
+        fail(
+          `a word that matches nothing left ${JSON.stringify(byNothing)} — 「剩 0 条时那一栏说『没有匹配』」 ` +
+            "(src/views/WorkspacesList.tsx)",
+        );
+      }
+      await page.locator(bar).fill("");
+      await wait(300);
+    }
+  }
+
+  // ── 4y) 开会话列时原来的栏不动 (第 51 条) ─────────────────────────
+  //
+  // 「工作区点击session icon的时候, 应该是icon所在页固定不动,右侧衍生出
+  // 的宽度给session, 而不是icon所在页也变宽」— the user, 2026-09-17.
+  //
+  // **A window is not a thing playwright can resize**, so the app's own
+  // half — the window really growing — is verified by eye (the handoff
+  // says what to look at). What is measurable here is the arithmetic
+  // the ruling rests on: **given** the room, the two columns that were
+  // already there keep every pixel they had. The viewport is widened by
+  // the column's width first, which is exactly what `widen` does on the
+  // app, and then the column is opened.
+  {
+    await atTree();
+    // The sessions column shut, so opening it is the gesture under
+    // test — and the tree out, so it has a width to hold still.
+    if ((await page.locator("[data-ws-sessions]").count()) === 1) {
+      await press("[data-ws-sessions-switch]");
+      await wait(400);
+    }
+    const widthOf = (sel) =>
+      page.evaluate((s) => {
+        const el = document.querySelector(s);
+        return el === null ? null : Math.round(el.getBoundingClientRect().width);
+      }, sel);
+    const before = { tree: await widthOf("[data-ws-tree]"), mid: await widthOf("[data-ws-mid]") };
+    // How wide the column will come out: its remembered width, which is
+    // what the app hands `widen`.
+    const want = await page.evaluate(() => {
+      try {
+        const held = JSON.parse(localStorage.getItem("khor.ws-sessions-width") ?? "null");
+        const w = held && typeof held.w === "number" ? held.w : null;
+        if (w !== null) return Math.round(w);
+      } catch {
+        /* never dragged */
+      }
+      return Math.round(
+        Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--list-w")),
+      );
+    });
+    const view = page.viewportSize();
+    // The window grows first, by **exactly** the column's width: the
+    // seam beside it overhangs its own box by its hit margin
+    // (`-mx-1 w-2`), so it costs the row nothing.
+    await page.setViewportSize({ width: view.width + want, height: view.height });
+    await wait(400);
+    await press("[data-ws-sessions-switch]");
+    await until(5_000, async () => (await page.locator("[data-ws-sessions]").count()) === 1);
+    await wait(300);
+    const after = {
+      tree: await widthOf("[data-ws-tree]"),
+      mid: await widthOf("[data-ws-mid]"),
+      sessions: await widthOf("[data-ws-sessions]"),
+    };
+    console.log(
+      `sessions column · ${JSON.stringify(before)} → ${JSON.stringify(after)} after ${want}px of room`,
+    );
+    if (after.sessions === null) {
+      fail("probe dead: the sessions column never arrived (src/views/WorkspacePane.tsx)");
+    } else if (before.mid === null || after.mid === null) {
+      fail(
+        "probe void: the middle column is not named, so 「it did not move」 was measured against nothing " +
+          "(src/views/WorkspacePane.tsx data-ws-mid)",
+      );
+    } else if (before.tree !== after.tree || Math.abs(before.mid - after.mid) > 1) {
+      fail(
+        `opening the sessions column moved the tree ${before.tree}→${after.tree} and the file ` +
+          `${before.mid}→${after.mid} — 「icon所在页固定不动,右侧衍生出的宽度给session」 ` +
+          "(src/views/WorkspacePane.tsx showSessions)",
+      );
+    }
+    await page.setViewportSize(view);
+    await wait(400);
+  }
+
+  // ── 4z) 会话列没有「一半窗口」的上限 (第 52 条) ───────────────────
+  //
+  // 「session无法再往右拖了, 似乎被固定了最大宽度, 不应该这样」— the
+  // user, 2026-09-17. The hook's own ceiling was half the window, which
+  // is the two-column answer; a workspace is three columns, so the
+  // sessions column stopped just past the middle.
+  //
+  // Claim: with the other two columns out of the way, the seam really
+  // reaches 70% of the window — which the old ceiling made impossible
+  // by construction.
+  {
+    await atTree();
+    // The tree folded (⌘B) and the list folded (the rail's own glyph),
+    // so what is left is the file and the sessions: at 1400 the ceiling
+    // is then 1400 − rail − `--ws-mid-min`, and 70% is inside it. With
+    // the old ceiling it was not.
+    if ((await page.locator("[data-ws-sessions]").count()) === 0) {
+      await press("[data-ws-sessions-switch]");
+      await wait(400);
+    }
+    await page.keyboard.press("Control+b");
+    await wait(300);
+    await press(rail("workspaces"));
+    await wait(300);
+    const room = await page.evaluate(() => {
+      const px = (sel) => {
+        const el = document.querySelector(sel);
+        return el === null ? 0 : Math.round(el.getBoundingClientRect().width);
+      };
+      return {
+        tree: px("[data-ws-tree]"),
+        list: px("[data-list]"),
+        mid: px("[data-ws-mid]"),
+        sessions: px("[data-ws-sessions]"),
+      };
+    });
+    const seam = page.locator('[data-ws-seam="sessions"]');
+    console.log(`sessions seam · the room beside it: ${JSON.stringify(room)}`);
+    if ((await seam.count()) !== 1) {
+      fail("probe dead: no sessions seam to drag (src/views/WorkspacePane.tsx)");
+    } else if (room.tree > 0 || room.list > 4) {
+      // **Said out loud rather than dragged anyway.** With the tree or
+      // the list still out there is genuinely no room for 70%, and a
+      // red about the ceiling would be a red about this walk.
+      fail(
+        `probe void: the tree is ${room.tree}px and the list ${room.list}px wide, so 70% of the window ` +
+          "was never available to drag to (scripts/check-face.mjs)",
+      );
+    } else {
+      const view = page.viewportSize();
+      const box = await seam.boundingBox();
+      const want = Math.round(view.width * 0.7);
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      // Where the seam has to end up for the column to be 70% wide: the
+      // column grows leftwards from the window's right edge.
+      await page.mouse.move(view.width - want, box.y + box.height / 2, { steps: 12 });
+      await page.mouse.up();
+      await wait(400);
+      const wide = await page.evaluate(() => {
+        const el = document.querySelector("[data-ws-sessions]");
+        return el === null ? null : Math.round(el.getBoundingClientRect().width);
+      });
+      const share = wide === null ? 0 : Math.round((wide / view.width) * 100);
+      console.log(`sessions seam · dragged to 70%: ${wide}px of ${view.width} (${share}%)`);
+      if (wide === null || share < 66) {
+        fail(
+          `the sessions column stopped at ${share}% of the window — 「似乎被固定了最大宽度, 不应该这样」: ` +
+            "the ceiling is the room beside the file, not half the window (src/hooks/use-list-width.ts)",
+        );
+      }
+      // …and back to something ordinary, so the stops after this one do
+      // not run inside a column two thirds of the way across.
+      await seam.dblclick();
+      await wait(300);
+    }
+    await page.keyboard.press("Control+b");
+    await wait(300);
+  }
+
+  // ── 4A) 折叠工作区列表不碰会话列 (第 53 条) ───────────────────────
+  //
+  // 「收起工作区list前, 没有打开session按钮, 收起再打开后, session按钮就
+  // 被打开了, 不要这样」— the user, 2026-09-17.
+  //
+  // The default 「the sessions fold when the list has a column」 was
+  // declared from an effect keyed on the list being open, which made
+  // folding the list a moment to work the default out again. Whether
+  // that column is open is a person's state; khor only gets to decide
+  // where it starts.
+  //
+  // Claims: shut is still shut after the list is folded and unfolded,
+  // and open is still open.
+  {
+    await atTree();
+    const sessionsOut = async () => (await page.locator("[data-ws-sessions]").count()) === 1;
+    const foldAndBack = async () => {
+      await press(rail("workspaces"));
+      await wait(350);
+      await press(rail("workspaces"));
+      await wait(350);
+    };
+    if (await sessionsOut()) {
+      await press("[data-ws-sessions-switch]");
+      await wait(350);
+    }
+    const shutBefore = await sessionsOut();
+    await foldAndBack();
+    const shutAfter = await sessionsOut();
+    console.log(`sessions after folding the list · was out: ${shutBefore} → ${shutAfter}`);
+    if (shutBefore || shutAfter) {
+      fail(
+        `the sessions column went from ${shutBefore} to ${shutAfter} across a fold of the workspace list — ` +
+          "「收起再打开后, session按钮就被打开了, 不要这样」 (src/views/WorkspacePane.tsx)",
+      );
+    }
+    // …and the other way: one somebody opened stays open.
+    await press("[data-ws-sessions-switch]");
+    await wait(400);
+    const openBefore = await sessionsOut();
+    await foldAndBack();
+    const openAfter = await sessionsOut();
+    console.log(`sessions after folding the list · was open: ${openBefore} → ${openAfter}`);
+    if (!openBefore || !openAfter) {
+      fail(
+        `an open sessions column went from ${openBefore} to ${openAfter} across a fold of the list — ` +
+          "a default is declared once, on arrival (src/views/WorkspacePane.tsx)",
+      );
+    }
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**
@@ -7824,6 +8446,12 @@ try {
             lines: c.innerText.trim().split("\n").filter(Boolean).length,
             go: !!document.querySelector("[data-code-go]"),
             no: !!document.querySelector("[data-code-no]"),
+            // **A sheet, not a column** (2026-09-17 ruling 46:「同意卡…
+            // 在工作区页里弹一张小 sheet」— the user). It stood in the
+            // editor's own column for one batch, which meant a person's
+            // file gave up room to hold a question about a window that
+            // did not exist yet.
+            inSheet: c.closest('[role="dialog"]') !== null,
           }
         : null;
     });
@@ -7840,90 +8468,103 @@ try {
       fail("the consent card does not offer both answers — a card with one way out is not a question");
     }
     if (card !== null) {
-      // **…and the card stands in the editor's own column** (2026-09-16
-      // ruling 45:「就算是网页脸不变, VSCODE点击也要单独弹出来, 和现在的
-      // session一样,而不是像现在这样, 显示在标签页下」— the user). The
-      // press opens a column to the file's right; what it must never do
-      // again is take the middle column over.
-      const laid = await page.evaluate(() => {
-        const col = document.querySelector("[data-ws-code]");
-        const mid = document.querySelector("[data-file-scroll]");
-        const sessions = document.querySelector("[data-ws-sessions]");
-        const px = (el) => (el === null ? null : Math.round(el.getBoundingClientRect().width));
-        return {
-          column: document.querySelectorAll("[data-ws-code]").length,
-          cardInside: document.querySelectorAll("[data-ws-code] [data-code-consent]").length,
-          file: px(mid),
-          code: px(col),
-          // Left to right: the file, then the editor, then the
-          // sessions when that one is out too.
-          order:
-            col === null || mid === null
-              ? null
-              : [
-                  Math.round(mid.getBoundingClientRect().left),
-                  Math.round(col.getBoundingClientRect().left),
-                  sessions === null ? Infinity : Math.round(sessions.getBoundingClientRect().left),
-                ],
-        };
-      });
-      // **`Infinity` survives the call and `JSON.stringify` does not.**
-      // Playwright's own serialiser carries it across (the comparison
-      // below is right), but printing it through JSON shows `null`,
-      // which reads as 「no sessions column, so the order was not
-      // checked」 — the opposite of what happened. So it is printed as
-      // a word.
-      console.log(
-        `editor column: ${JSON.stringify({ ...laid, order: undefined })}, left to right ` +
-          `file ${laid.order?.[0]} / code ${laid.order?.[1]} / sessions ` +
-          `${laid.order?.[2] === Infinity ? "(folded)" : laid.order?.[2]}`,
-      );
-      if (laid.column !== 1) {
+      if (!card.inSheet) {
         fail(
-          "pressing the editor switch opened no column of its own — 「VSCODE点击也要单独弹出来, 和现在的" +
-            "session一样」 (src/views/WorkspacePane.tsx)",
+          "the consent card is not in a sheet — 「在工作区页里弹一张小 sheet」, and the middle column " +
+            "is the file's (src/views/WorkspacePane.tsx)",
         );
       }
-      if (laid.cardInside !== 1) {
+      // **Nothing on this page gave up any room for it** (ruling 46:
+      // 「主窗口不因它变宽」, and the column is gone whole). Measured on
+      // the file's own scroller, which is what the editor used to take.
+      const laid = await page.evaluate(() => {
+        const mid = document.querySelector("[data-file-scroll]");
+        return {
+          column: document.querySelectorAll("[data-ws-code]").length,
+          seam: document.querySelectorAll('[data-ws-seam="code"]').length,
+          file: mid === null ? null : Math.round(mid.getBoundingClientRect().width),
+        };
+      });
+      console.log(`editor sheet: ${JSON.stringify(laid)}`);
+      if (laid.column !== 0 || laid.seam !== 0) {
         fail(
-          "the consent card is not in the editor's column — it is that press's own screen, and the " +
-            "middle column is the file's (src/views/WorkspacePane.tsx)",
+          `the editor still has a column of its own (${laid.column}) and a seam (${laid.seam}) — 「VSCODE做成` +
+            "弹出式的, 弹出一个窗口显示vscode」 (src/views/WorkspacePane.tsx)",
         );
       }
       if (laid.file === null || laid.file < 80) {
         fail(
-          `the file column is ${laid.file}px wide with the editor open — 「而不是像现在这样, 显示在标签` +
-            "页下」: the editor stands beside the file, not over it (src/views/WorkspacePane.tsx)",
+          `the file column is ${laid.file}px wide with the editor's card up — a sheet asks and goes, ` +
+            "it does not take a column (src/views/WorkspacePane.tsx)",
         );
       }
-      if (laid.order !== null && !(laid.order[0] < laid.order[1] && laid.order[1] < laid.order[2])) {
+      // **…and saying yes opens a window** (ruling 46). In the app that
+      // is a second native window (`open_code_window`); here it is a
+      // browser, and a browser's answer to the same promise is a named
+      // tab — caught as a popup, which is the one thing playwright can
+      // see of a window this page opened.
+      const midBefore = laid.file;
+      const popped = new Promise((r) => page.once("popup", r));
+      const askedCode = codeOpened.length;
+      await press("[data-code-go]");
+      const popup = await Promise.race([popped, wait(4_000).then(() => null)]);
+      const after = await page.evaluate(() => {
+        const mid = document.querySelector("[data-file-scroll]");
+        const b = document.querySelector("[data-code]");
+        return {
+          column: document.querySelectorAll("[data-ws-code]").length,
+          sheet: document.querySelectorAll("[data-code-sheet]").length,
+          file: mid === null ? null : Math.round(mid.getBoundingClientRect().width),
+          lit: b?.getAttribute("data-on") ?? null,
+        };
+      });
+      console.log(
+        `editor window: popup=${popup === null ? "none" : "one"}, asked ${codeOpened.length - askedCode} ` +
+          `time(s) for an address, page after: ${JSON.stringify(after)}`,
+      );
+      if (popup === null) {
         fail(
-          `the columns run ${JSON.stringify(laid.order)} left to right — 树 / 文件 / VS Code / 会话列 ` +
-            "(src/views/WorkspacePane.tsx)",
+          "saying yes to the card opened no window — 「网页脸:window.open(url, \"khor-code:<machine>\")」 " +
+            "(src/api.ts codeSeat)",
         );
       }
-      await press("[data-code-no]");
-      await wait(300);
-      // …and saying no takes the column with it: a strip of nothing
-      // where a person's file used to be is the thing this ruling is
-      // about.
-      const afterNo = await page.evaluate(() => ({
-        column: document.querySelectorAll("[data-ws-code]").length,
-        file: document.querySelectorAll("[data-file-scroll]").length,
-      }));
-      console.log(`editor column after 不用: ${JSON.stringify(afterNo)}`);
-      if (afterNo.column !== 0) {
+      if (after.column !== 0) {
         fail(
-          "the editor's column stayed after the consent card was refused — it was opened to hold that " +
-            "card (src/views/WorkspacePane.tsx showCode)",
+          `the editor took a column after all (${after.column}) — it is a window now, and this page is not ` +
+            "where it lives (src/views/WorkspacePane.tsx)",
         );
       }
-      if (afterNo.file !== 1) {
+      if (after.file !== midBefore) {
         fail(
-          "the file went away with the editor's column — it was never the editor's to take " +
-            "(src/views/WorkspacePane.tsx)",
+          `the file column went from ${midBefore} to ${after.file}px when the editor opened — 「主窗口不因它` +
+            "变宽」, and nothing on this page moves for a window (src/views/WorkspacePane.tsx)",
         );
       }
+      if (after.lit !== "true") {
+        fail(
+          `the editor switch reads ${JSON.stringify(after.lit)} with its window open — 「点击后要有状态」, ` +
+            "and the window being open is the state (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // …and pressing it again brings that one forward rather than
+      // making a second (「已开就不再开第二个」). A second `window.open`
+      // on a named tab that is already there fires no popup event.
+      //
+      // **The first window is still open while this is asked**, which
+      // is the whole premise: closed, a second press is a person asking
+      // for the editor again and opening one is right.
+      const twice = new Promise((r) => page.once("popup", r));
+      await press("[data-code]");
+      const second = await Promise.race([twice, wait(2_000).then(() => null)]);
+      console.log(`editor window · pressed again: ${second === null ? "the same one" : "a second window"}`);
+      if (second !== null) {
+        await second.close();
+        fail(
+          "pressing the editor switch again opened a second window — 「再按图标 = 把那个窗口拉到前面" +
+            "(已开就不再开第二个)」 (src/api.ts codeSeat)",
+        );
+      }
+      if (popup !== null) await popup.close();
     }
   }
 
@@ -7951,6 +8592,10 @@ try {
         "(src/views/WorkspacePane.tsx)",
     );
   } else {
+    // The window it opens instead is caught and closed: this run must
+    // not leave somebody's editor tab behind, and a page left open is a
+    // page the sections below would have to know about.
+    const straight = new Promise((r) => page.once("popup", r));
     await press("[data-code]");
     const asked = await page.locator("[data-code-consent]").count();
     console.log(`editor switch: a machine that already has the server raises ${asked} card(s)`);
@@ -7960,6 +8605,8 @@ try {
           "is about to come down, and nothing is (src/views/WorkspacePane.tsx)",
       );
     }
+    const straightWindow = await Promise.race([straight, wait(3_000).then(() => null)]);
+    if (straightWindow !== null) await straightWindow.close();
   }
   // …and the other branch: a machine with no editor draws no switch.
   // **Measured rather than reasoned**, because「draws nothing」is what

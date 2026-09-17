@@ -3711,6 +3711,28 @@ for line in sys.stdin:
   //      no `code` is a legitimate machine, and a run on one must not
   //      fail — but it must not silently skip either, so which branch
   //      ran is printed.
+  // 49) VS Code 跟随 khor 的深浅 (工作区第六轮 第 49 条). **Read and
+  //     restored around the launch below**, because the file is the
+  //     operator's own: `code serve-web` keeps its user settings at
+  //     `~/.vscode-server/data/User/settings.json` (the default
+  //     `--server-data-dir`), and khor writes one key into it the first
+  //     time it starts a server. What this section does is watch that
+  //     happen and then put the file back exactly as it was found —
+  //     including not existing, which is the common case.
+  const codeSettings = join(
+    process.env.HOME ?? "",
+    ".vscode-server",
+    "data",
+    "User",
+    "settings.json",
+  );
+  const settingsWere = existsSync(codeSettings) ? readFileSync(codeSettings, "utf8") : null;
+  const restoreSettings = () => {
+    if (settingsWere === null) rmSync(codeSettings, { force: true });
+    else writeFileSync(codeSettings, settingsWere);
+  };
+  // Start from no file at all, so 「khor wrote it」 is measurable.
+  rmSync(codeSettings, { force: true });
   let vs = null;
   try {
     vs = cli(envA, "code", "beta", gitDir);
@@ -3756,6 +3778,45 @@ for line in sys.stdin:
       throw new Error(`after --stop the editor still answered ${gone} — the process tree outlived the handle`);
     }
     console.log("vscode: --stop took the whole tree with it");
+
+    //    …and the editor was told to follow the desktop's own scheme
+    //    (第 49 条:「VSCODE没有遵循app的主题, 也就是深色.反之亦然」).
+    const wrote = existsSync(codeSettings) ? readFileSync(codeSettings, "utf8") : null;
+    if (wrote === null) {
+      restoreSettings();
+      throw new Error(
+        `khor code left no ${codeSettings} — 「只在这个键不存在时写 window.autoDetectColorScheme」`,
+      );
+    }
+    if (JSON.parse(wrote)["window.autoDetectColorScheme"] !== true) {
+      restoreSettings();
+      throw new Error(`khor code wrote ${wrote.trim()} — the key it adds is the one that follows the system`);
+    }
+    console.log("vscode: the server's settings now follow the system's light or dark");
+
+    //    **…and a key somebody has answered is their answer.** `false`
+    //    is a person saying 「do not follow」, and khor filling in a
+    //    blank is a different act from khor overruling a choice. The
+    //    second key is there so 「untouched」 can be asserted
+    //    byte-for-byte rather than as one field.
+    const mine = '{\n  "window.autoDetectColorScheme": false,\n  "editor.fontSize": 13\n}\n';
+    writeFileSync(codeSettings, mine);
+    try {
+      cli(envA, "code", "beta", gitDir);
+      const after = readFileSync(codeSettings, "utf8");
+      if (after !== mine) {
+        throw new Error(
+          `khor code rewrote a settings file that already answered: ${JSON.stringify(after)} — ` +
+            "「已有的键一律不碰(那是人的选择)」",
+        );
+      }
+      console.log("vscode: a settings file that already answered came back byte for byte");
+    } finally {
+      cli(envA, "code", "--stop", "beta");
+      restoreSettings();
+    }
+  } else {
+    restoreSettings();
   }
 
   // 24c-quinquies) documents and pictures across the wire (工作区批6).
@@ -7576,6 +7637,75 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
           );
         }
       }
+    }
+
+    // 31l) 找词,在 alpha 的真盘上 (工作区第六轮 第 47 条). **CLI only,
+    //      and for 31k's reason**: what the face gate cannot be wrong
+    //      about is the box; what only this run can answer is whether
+    //      the walk really happens on the other machine, honours that
+    //      machine's `.gitignore`, and comes back in the two lists the
+    //      face draws.
+    {
+      const hay = join(wsDir, "hay.txt");
+      const buried = join(wsDir, "sub", "buried.txt");
+      const ignored = join(wsDir, "skipped", "ignored.txt");
+      // A word in a file's **name**, a word in a file's **text**, and
+      // the same word inside a directory `.gitignore` covers — three
+      // files, because the three answers must differ.
+      writeFileSync(hay, "nothing to see\n");
+      writeFileSync(buried, "a line with cadmium in it\n");
+      mkdirSync(join(wsDir, "skipped"), { recursive: true });
+      writeFileSync(ignored, "cadmium again, where nobody asked\n");
+      writeFileSync(join(wsDir, ".gitignore"), "skipped\n");
+      // The name half: `hay.txt` is the only path holding 「hay」.
+      const byName = cli(envB, "search", "-m", "alpha", wsDir, "hay");
+      const nameRows = byName.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!nameRows.includes(hay) || nameRows.some((l) => l.includes(":"))) {
+        throw new Error(
+          `khor search for a name printed ${JSON.stringify(nameRows)} — 「名字命中只有 path」, and ` +
+            `${hay} is the one file whose name holds it`,
+        );
+      }
+      // The text half: one line, printed `path:line: text`.
+      const byText = cli(envB, "search", "-m", "alpha", wsDir, "cadmium");
+      const textRows = byText.split("\n").map((l) => l.trim()).filter(Boolean);
+      const want = `${buried}:1: a line with cadmium in it`;
+      if (!textRows.includes(want)) {
+        throw new Error(
+          `khor search for a word inside a file printed ${JSON.stringify(textRows)}, wanted ${JSON.stringify(want)} ` +
+            "— 「CLI 一行一条, path:line: text」",
+        );
+      }
+      // …**and `.gitignore` is honoured on the machine that holds the
+      // files.** This is the half no unit test can make: the walk runs
+      // over there, and a search that answered with build output would
+      // answer every query with somebody else's code.
+      if (textRows.some((l) => l.startsWith(`${ignored}:`))) {
+        throw new Error(
+          `khor search reached into a directory .gitignore covers (${ignored}) — 「本机用 ignore crate ` +
+            "走目录(尊重 .gitignore)」",
+        );
+      }
+      // A word nothing holds prints nothing at all, and does not fail:
+      // 「没找到」 is an answer.
+      const none = cli(envB, "search", "-m", "alpha", wsDir, "zzzznotawordzzzz");
+      if (none.trim() !== "") {
+        throw new Error(`khor search for a word nothing holds printed ${JSON.stringify(none)}`);
+      }
+      // The directory has to be one: a path that names nowhere over
+      // there is refused rather than answered empty.
+      const nowhere = spawnSync(KHOR, ["search", "-m", "alpha", join(wsDir, "no-such-dir"), "x"], {
+        env: envB,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      if (nowhere.status === 0) {
+        throw new Error("khor search under a directory that is not there answered instead of refusing");
+      }
+      rmSync(join(wsDir, ".gitignore"), { force: true });
+      rmSync(join(wsDir, "skipped"), { recursive: true, force: true });
+      rmSync(hay, { force: true });
+      rmSync(buried, { force: true });
     }
 
     //      Back to the landing, so 31f starts from the list rather than
