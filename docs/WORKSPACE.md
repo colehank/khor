@@ -809,3 +809,109 @@ peek 是 `Peek` 块插在 `[data-line]` 之间，textarea 盖在 pre 上，块�
 盖在那一行的上边缘（`absolute`，从那一行的 `top` 往上长，`z-10`，带底色和边），
 不再撑开正文；textarea 照常。代价：peek 盖住上面几行，这是 VS Code 也接受的
 （它的 peek 也是浮的）。探针：开着 peek 时 `[data-line]` 的 top 不变；打一个字进 textarea 落进去。
+
+## 第六轮：看过第五轮的桌面之后（2026-09-17）
+
+用户对着装好的桌面（三张截图：宽屏同时开会话列与 VS Code、窄屏工作区、会话列拖不动）
+给了七条，原话按序记下，其中两条把第四、五轮的裁决改了方向：
+
+1. 「同时打开session和vscode, 排版就乱了。」→「针对1, VSCODE做成弹出式的, 弹出一个窗口显示vscode。」
+2. 「窄屏进入工作区, 没有到vscode和session的按钮, 仅有打开一个文件才能知道。」→
+   「针对2, 我们干脆, 在文件树的侧边上加一个搜索框(可搜索文件名与内容)、框的右侧是session和vscode icon.
+   而取消现在固定在标签页位置的.预览按钮放在标签页的标签上。」
+3. 「悬浮工作区list的时候, >符号的高亮要比别的区域深一些, 应该一致。」
+4. 「VSCODE没有遵循app的主题, 也就是深色.反之亦然。」
+5. 「工作区list上的搜索框没有生效. 它应该针对不同机器、工作区路径可以搜索。」
+6. 「工作区点击session icon的时候, 应该是icon所在页固定不动,右侧衍生出的宽度给session, 而不是icon所在页也变宽。」
+7. 「在这个情况下, session无法再往右拖了, 似乎被固定了最大宽度, 不应该这样。」
+
+| # | 内容 | 改了谁 |
+|---|---|---|
+| 46 | VS Code 弹成自己的窗口 | 推翻 45（VS Code 一栏） |
+| 47 | 树头一条：搜索框（文件名与内容）+ 会话列 / VS Code 两个图标；条尾开关撤掉；预览按钮进标签 | 改 26、44 的落点 |
+| 48 | 工作区行悬停一种颜色 | 42 |
+| 49 | VS Code 跟随 khor 的深浅 | 新 |
+| 50 | 工作区列表的搜索框生效：名字、机器、路径 | 修 |
+| 51 | 开会话列时原来的栏一个像素都不动 | 修 25 |
+| 52 | 会话列没有「一半」这个上限 | `useListWidth` |
+
+### 46 · VS Code 是一个窗口
+
+- app：一个新的 Tauri 窗口（`WebviewWindowBuilder`，label `code:<machine>`，标题
+  `<workspace> — VS Code`），直接装 serve-web 那个带 token 的 URL；大小取主窗口的
+  大小，位置错开一点。再按图标 = 把那个窗口拉到前面（已开就不再开第二个）；
+  窗口关掉 = 图标灭。**主窗口不因它变宽**，`grewCode` 那一份账本随 45 一起撤。
+- 网页脸：`window.open(url, "khor-code:<machine>")`，同名就是同一个标签页。
+- 同意卡（第一次要接受 Microsoft 的条款）和「那台机器没有 `code`」的拒绝：
+  在工作区页里弹一张小 sheet（`role="dialog"`，复用现有文案），同意后才开窗。
+- `[data-ws-code]` 那一栏、它的缝、它的宽、窄档第四屏，全部撤。`BrowserPane` 的
+  `direct` 用法随之没了——留着不用的分支要删。
+- 探针：按 VS Code 图标后**没有** `[data-ws-code]`，中栏宽度不变，mock 记到一次
+  「开窗」（app 走 `open_code_window` 命令，网页脸走 `window.open`——face 里拦
+  `page.on("popup")`）。
+
+### 47 · 树头一条：搜索 + 两个图标；条尾撤空；预览进标签
+
+- 树那一栏顶上一行（`[data-tree-head]`，高 `--ctl-md`）：左边一个搜索框
+  （`gui.tree_search`「搜索文件」），右边两个图标按钮：会话列（`data-ws-sessions-switch`）
+  和 VS Code（`data-code`）。**窄档的树屏也有这一行**，这就是第 2 条要的入口：
+  按会话列 = 会话屏，按 VS Code = 开窗。图标墨迹 20px、按下 `--rail-on-ink`
+  （26、44 的规矩搬过来）。
+- 标签条尾巴上的 `data-ws-switches` 与那个眼睛整个撤掉。**预览按钮进标签**：
+  可预览的文件（md、html、图片——`FileView` 已经知道哪些有「预览」这一面）在它
+  自己那个标签的名字右边、× 左边，画一个小眼睛（`data-file-face-switch`，`size-3.5`，
+  `data-on` 时 `--rail-on-ink`）；只在活动标签上画，非活动标签不画。
+- **搜索**：框里有字时树那一栏的内容换成结果列表（`[data-tree-results]`）；清空或 Esc 回树。
+  结果两组：**名字命中**（路径含关键字，最多 50 条）在前，**内容命中**（行，最多 200 条，
+  显示 `path:line` 与那一行文字，关键字高亮）在后。点一条开文件（内容命中滚到那一行，
+  和 35 的 `:12` 同一条路）。300ms 防抖，一次一问，新问到了旧的作废。
+- 节点：新动词 `khor search [-m <machine>] <dir> <query>`，回
+  `{ names: [path…], lines: [{path, line, text}…], more: bool }`。本机用 `ignore` crate
+  走目录（尊重 `.gitignore`，跳过二进制，单文件 > 4 MB 跳过，总时长 5 s 封顶，超了
+  `more: true`）；卫星用 `grep -rnI --exclude-dir=.git` 加 `find -iname` 各一条，
+  照 `git status --porcelain` 那条的写法。大小写不敏感，不当正则（纯子串）。
+  CLI 与 GUI 等价：CLI 一行一条，`path:line: text`，名字命中只有 `path`。
+- 探针：夹具树里搜 `readme` 名字命中一条；搜某个只在文件内容里的词，内容命中一条且
+  `path:line` 对；点它中栏开标签滚到那行；Esc 回树。窄档树屏上 `[data-tree-head]`
+  的两个按钮都在、都是手指大小。
+
+### 48 · 工作区行悬停一种颜色
+
+42 把雪佛龙换成了 `span`，但它还带着按钮时代的 `hover:` 底色，悬停时比行的其它部分深。
+整行一层 wash（`hover:bg-accent/50` 在 `data-ws-line` 上），雪佛龙自己什么底色都没有。
+探针：悬停时行与雪佛龙 `background-color` 相同。
+
+### 49 · VS Code 跟随 khor 的深浅
+
+khor 跟系统（`prefers-color-scheme`），VS Code web 默认不跟（`window.autoDetectColorScheme`
+默认 false，所以 khor 深它浅）。落法：`khor code` 起 serve-web 之前，在它的用户设置
+（`code serve-web --help` 里 `--user-data-dir` 的默认位置，或 `--server-data-dir` 下的
+`data/User/settings.json`——builder 查清楚写进 handoff）里**只在这个键不存在时**写
+`"window.autoDetectColorScheme": true`；已有的键一律不碰（那是人的选择）。
+弹出的 Tauri 窗口和主窗口同一个 `theme`（都是跟系统），于是两边同深浅、反之亦然。
+smoke：alpha 上跑一次 `khor code` 后 settings.json 里有这个键；预先写了 `false` 的
+不被改。
+
+### 50 · 工作区列表的搜索框
+
+框现在不接任何东西。接上：子串、大小写不敏感，匹配**名字、机器名（显示名）、路径**
+三个字段任一；空 = 全部；列表里剩 0 条时那一栏说「没有匹配」（`gui.workspace_none_match`）。
+探针：夹具里三个工作区，搜机器名剩两条，搜路径片段剩一条，乱字剩 0 条且有那句话。
+
+### 51 · 开会话列时原来的栏不动
+
+第 6 条：窗口长的那一段全给新栏，树和中栏**一个像素都不动**。现在中栏是 `flex-1`，
+窗口先长、栏后进（两个渲染帧），第一帧中栏先吃掉了增量，第二帧再让出来——人看到的
+就是「页也变宽了」；而顶到屏幕边长不全时，中栏永久变宽。落法：**先占位后长窗**——
+栏先以目标宽出现（此时中栏被挤窄一帧）再 `widen`，或者两件事在同一帧：`widen`
+的 promise 回来后再 `setSessions(true)`。取后者：先长窗（中栏这一帧变宽是真的，
+但只有一帧、而且紧跟着被新栏吃掉），窗长完再挂栏。长不全（顶到屏幕）的那部分才挤中栏。
+面门探针（网页脸模拟）：用 `page.setViewportSize` 加宽等量后再开栏，树与中栏的
+`getBoundingClientRect().width` 前后相等。
+
+### 52 · 会话列没有「一半窗口」的上限
+
+`useListWidth` 的 `max = innerWidth / 2` 是给「列表 + 详情」两栏的；工作区页有三栏，
+一半就是会话列刚过中线就拖不动。改成：**上限 = 窗口宽 − 另外两栏的宽 − 中栏的地板**
+（`--ws-mid-min: 240px`，新记号），由调用方传 `max`（`useListWidth` 加一个可选的
+`max: () => number`），工作区页三根缝都传。探针：把会话列拖到 70% 窗宽时它真到了 70%。
