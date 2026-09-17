@@ -36,9 +36,9 @@
 //
 // **A directory is not a file.** Only files become links, because what
 // pressing one does is open a tab, and a directory has nothing to open.
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-import { fetchLs } from "@/api";
+import { fetchLs, type WorkspaceRow } from "@/api";
 
 export type LinkHome = {
   /** The machine this conversation is running on — the one that opens
@@ -56,6 +56,12 @@ export type LinkHome = {
   see: (abs: string) => void;
   /** Open it in the middle column, at that line where one was named. */
   open: (abs: string, line: number | null) => void;
+  /** Hand it to that machine's own opener instead — what `⌘`+press
+      always does (ruling 35:「`⌘`+点 或 网址→在宿主机器上打开」, and
+      2026-09-18 ruling 54 repeats it for the session landing).
+      **The same road an address takes** (`Markdown`'s `Link`), which is
+      why it is one word here rather than two behaviours. */
+  launch: (abs: string) => void;
 };
 
 const Home = createContext<LinkHome | null>(null);
@@ -99,6 +105,39 @@ export function underRoot(
   return { abs, line };
 }
 
+/** The workspace on that machine that **holds** this path, or `null`
+ * (2026-09-18 ruling 54).
+ *
+ * **Keyed by the device id, never by the name on the glass.** A
+ * workspace row carries both — `device` is the hex and `machine` is
+ * whatever that machine is currently called — and a name is a thing
+ * the user retypes (2026-09-17: 改名也进命令行). Two machines can be
+ * called the same thing for a poll; only one of them has that id.
+ *
+ * **The deepest one wins.** Somebody with a workspace at a checkout and
+ * another at a directory inside it named both on purpose, and the
+ * nearer of the two is the project the file actually belongs to.
+ *
+ * The separator is what keeps `/home/peer/workshop` out of
+ * `/home/peer/work` — the same prefix collision `WorkspacePane`'s
+ * session column names, and this repo's oldest failure by shape.
+ */
+export function holding(
+  rows: WorkspaceRow[],
+  device: string,
+  abs: string,
+): WorkspaceRow | null {
+  if (device === "") return null;
+  let best: WorkspaceRow | null = null;
+  for (const r of rows) {
+    if (r.device !== device || r.path === "") continue;
+    const under = r.path.endsWith("/") ? r.path : `${r.path}/`;
+    if (!abs.startsWith(under)) continue;
+    if (best === null || r.path.length > best.path.length) best = r;
+  }
+  return best;
+}
+
 /** Holds the answers for one workspace. The pane builds the rest of the
     context around this — which machine, which root, what opening one
     does — because those are its own facts. */
@@ -116,6 +155,24 @@ export function useKnownFiles(machine: string, root: string): {
       renders between the dial and the answer must not become two
       dials. */
   const asked = useRef(new Set<string>());
+  /** Which machine and which project these answers are about.
+   *
+   * **The workspace pane is remounted per workspace and the session
+   * landing is not** (2026-09-18 ruling 54): one shell walks from a
+   * session on one machine to a session on another without this hook
+   * ever unmounting, and an answer cached under an absolute path is an
+   * answer about whichever disk it came from. Kept rather than made a
+   * `key`, because the caller that has no key is exactly the one that
+   * needs this. */
+  const on = useRef(`${machine} ${root}`);
+  useEffect(() => {
+    const now = `${machine} ${root}`;
+    if (on.current === now) return;
+    on.current = now;
+    asked.current = new Set();
+    setFiles(new Map());
+    setDirs(new Set());
+  }, [machine, root]);
 
   const see = useCallback(
     (abs: string) => {

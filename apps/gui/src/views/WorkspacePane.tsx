@@ -21,6 +21,7 @@ import {
   fetchCodeHere,
   fetchGitStatus,
   hear,
+  launchOn,
   openCode,
   searchIn,
   stopCode,
@@ -85,6 +86,8 @@ export function WorkspacePane({
   onNewSession,
   opened,
   onOpenedSeen,
+  reveal,
+  onRevealSeen,
   narrow,
   treePane,
   listOpen,
@@ -163,6 +166,18 @@ export function WorkspacePane({
       them would come up standing on somebody else's session (measured
       on the narrow face, where it opened the wrong screen). */
   onOpenedSeen: () => void;
+  /** A file this shell was asked to show, from outside this pane
+      (2026-09-18 ruling 54: a path pressed in a conversation on the
+      **sessions** landing, whose workspace is this one). Absolute, with
+      the line the sentence named where it named one.
+
+      **Stamped, and a one-shot like `opened` above it**: pressing the
+      same path twice is two requests and the second has to move the
+      view again, and an unclaimed value would reopen that file the next
+      time any workspace mounted. */
+  reveal: { path: string; line: number | null; at: number } | null;
+  /** …and this column has taken it (`onOpenedSeen`'s reason). */
+  onRevealSeen: () => void;
   narrow: boolean;
   /** The file tree's seam, owned by the shell so the list's chevron and
       this pane fold the same column (`App`). */
@@ -1152,9 +1167,38 @@ export function WorkspacePane({
         open(abs, false);
         setGoLine(line === null ? null : { path: abs, line, at: Date.now() });
       },
+      // **`⌘`+press hands it to the machine the session is on**
+      // (ruling 35, restated by 2026-09-18 ruling 54) — the same road
+      // an address in the same sentence takes. A refusal is that
+      // machine's own (no opener, no screen) and rides back through
+      // the call; nothing here invents one.
+      launch: (abs) => {
+        void launchOn(machine, abs).catch(() => {});
+      },
     }),
     [machine, root, fileKnown, seeFile, open],
   );
+
+  // A file the shell asked for on the way in (2026-09-18 ruling 54).
+  // **The same two moves a press inside this pane makes** — a preview
+  // tab and, where a line was named, the scroll — because it is the
+  // same gesture spelled from the session landing, and a second road
+  // into the middle column would be a second arrangement of it.
+  useEffect(() => {
+    if (reveal === null) return;
+    open(reveal.path, false);
+    setGoLine(
+      reveal.line === null
+        ? null
+        : { path: reveal.path, line: reveal.line, at: reveal.at },
+    );
+    // On the narrow face the middle column is a screen, and arriving
+    // on the tree with the file open behind it is the press going
+    // nowhere (33).
+    if (narrow) setScreen("file");
+    onRevealSeen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal]);
 
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one

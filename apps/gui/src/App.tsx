@@ -5,7 +5,9 @@ import {
   fetchHooks,
   fetchSessions,
   fetchQuota,
+  fetchWorkspaces,
   installHooks,
+  launchOn,
   closeSession,
   forgetDevice,
   markSeen,
@@ -70,6 +72,7 @@ import { draftCount, watchDrafts } from "@/lib/drafts";
 import { cn } from "@/lib/utils";
 import { groupLabel, placeLabels } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
+import { holding, LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
@@ -882,6 +885,84 @@ export default function App() {
   // two rules about what may appear here.
   const status = useStatusBar(rows);
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
+
+  // 会话落地页上的路径也可点 (2026-09-18 ruling 54). Ruling 35 did this
+  // inside a workspace only, because that is where the two things it
+  // needs were: a root for a relative path to be relative to, and a
+  // middle column to open a file in. **A session row carries the
+  // first** — `place` is its own working directory — and the second is
+  // one landing away, which is the whole of this ruling.
+  //
+  // **The machine is the session's own**, so an answer about a file is
+  // an answer from the disk the conversation is happening on.
+  const sessionMachine = selectedRow?.home ?? "";
+  const sessionRoot = selectedRow?.place ?? "";
+  /** That machine's id. **The id and not the name**, because what it
+      is compared against is a workspace row's `device` — and a name is
+      a thing the user retypes (2026-09-17 改名也进命令行). */
+  const sessionDevice = devices.find((d) => d.name === sessionMachine)?.id ?? "";
+  const { known: sessionKnown, see: seeInSession } = useKnownFiles(sessionMachine, sessionRoot);
+  /** A file a press in a conversation asked this shell to show, handed
+      to whichever workspace pane opens next (`WorkspacePane`'s
+      `reveal`). */
+  const [reveal, setReveal] = useState<{
+    path: string;
+    line: number | null;
+    at: number;
+  } | null>(null);
+  const sessionHome = useMemo<LinkHome | null>(() => {
+    // **No place, no links** — a conversation nobody recorded a
+    // directory for has no root, and a relative path in it is relative
+    // to nothing. The context is null and the prose stays prose, which
+    // is `linkHome`'s own default outside a workspace.
+    if (sessionMachine === "" || sessionRoot === "") return null;
+    /** That path on the machine the session runs on — the address's
+        road, and what `⌘`+press and a workspace-less path both take. */
+    const toHost = (abs: string) => {
+      void launchOn(sessionMachine, abs).catch(() => {
+        // The machine's own refusal (no opener, no screen) — it is
+        // said where it is asked for, and a sentence about khor in the
+        // middle of a sentence about code is not an improvement.
+      });
+    };
+    return {
+      machine: sessionMachine,
+      root: sessionRoot,
+      known: sessionKnown,
+      see: seeInSession,
+      launch: toHost,
+      open: (abs, line) => {
+        // **Asked at the press, from the local table** (ruling 54:
+        // 「问本地那张工作区表(`ws ls`), 不走网」). One read of a
+        // replicated document costs nothing and is never stale, which
+        // is worth more here than a poll would be: the answer decides
+        // where somebody lands.
+        void fetchWorkspaces().then(
+          (list) => {
+            const ws = holding(list, sessionDevice, abs);
+            // Nothing on this machine declares a project around it, so
+            // there is no tree to open it in and no root to show it
+            // under — the host's own opener is the honest answer, and
+            // it is the same one an address in the same sentence gets.
+            if (ws === null) {
+              toHost(abs);
+              return;
+            }
+            setMark(false);
+            setLanding("workspaces");
+            // The id stands in where the device table has no name for
+            // it — `WorkspacesList`'s own line, for the same reason.
+            setOpenWs({ device: ws.device, machine: ws.machine || ws.device, path: ws.path });
+            setReveal({ path: abs, line, at: Date.now() });
+            setScreen("detail");
+          },
+          // A table this face could not read is a face that knows of no
+          // workspace, which is the branch above.
+          () => toHost(abs),
+        );
+      },
+    };
+  }, [sessionMachine, sessionRoot, sessionDevice, sessionKnown, seeInSession]);
   // The open row's workspace, in the same words the list's chips and
   // headings use (`placeLabels` over every row, so two checkouts that
   // share a leaf stay told apart). Resolved here because only the
@@ -1393,6 +1474,12 @@ export default function App() {
   // (Both browsing landings' starting points moved in with the shell,
   // which reads the device table itself — `BrowseLanding`.)
   const detail = sessions ? (
+    // The conversation in this pane is painted inside the workspace it
+    // is running in, as far as its paths are concerned (2026-09-18
+    // ruling 54). **Null where the row has no directory**, which is
+    // `linkHome`'s own default and leaves every path as the prose it
+    // already was.
+    <LinkHomeProvider value={sessionHome}>
     <DetailPane
       row={selectedRow}
       narrow={narrow}
@@ -1426,6 +1513,7 @@ export default function App() {
         />
       }
     />
+    </LinkHomeProvider>
   ) : landing === "workspaces" ? (
     // One workspace's files. **`FilesPane` unchanged from when it was a
     // browsing tab's body** (2026-09-11 工作区替代文件): what it does —
@@ -1489,6 +1577,23 @@ export default function App() {
         onNewSession={(m, dir) => openNewSession(m, dir, true)}
         opened={openedInWs}
         onOpenedSeen={() => setOpenedInWs(null)}
+        // A file a path in a conversation on the **sessions** landing
+        // asked for, once this is the workspace that holds it (2026-09-18
+        // ruling 54). Only where this pane is the one it named: a
+        // request for another project must not open a file here.
+        reveal={
+          reveal !== null &&
+          openWs !== null &&
+          // **A machine's home is not a workspace and takes no
+          // request.** Empty means「browse that disk」 (`openWs`'s own
+          // head), and `${""}/` is a prefix every absolute path has —
+          // so the test has to say so rather than rely on the string.
+          openWs.path !== "" &&
+          reveal.path.startsWith(`${openWs.path}/`)
+            ? reveal
+            : null
+        }
+        onRevealSeen={() => setReveal(null)}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
       />

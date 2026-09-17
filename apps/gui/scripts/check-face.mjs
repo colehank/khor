@@ -181,7 +181,13 @@ try {
     // A shell session is one of the five-question rows like any other,
     // drawn by the same component and not by a branch of its own.
     wsRow(3, "busy", "/home/peer/work/src", "shell", "在跑", "peer"),
-    wsRow(4, "idle", "/home/peer/workshop", "tui", "隔壁", "peer"),
+    // **A conversation, not a terminal, since 2026-09-18** (第 54 条):
+    // this row is the one standing *outside* every workspace, and what
+    // that half of the ruling needs is prose with a path in it. Its
+    // place and machine are untouched — 4h's claim is about which
+    // sessions belong to a workspace, and that is the pair, never the
+    // kind.
+    wsRow(4, "idle", "/home/peer/workshop", "gui", "隔壁", "peer"),
     wsRow(5, "idle", "/home/peer/work", "tui", "别的机器上的同一个路径", "elder"),
   ];
   const fill = (used, total) => ({ used, total });
@@ -8737,6 +8743,200 @@ try {
         `a heading measured ${doc.h1Size} against body text at ${doc.bodySize} — the document is ` +
           "rendered but not styled, which reads as markdown that failed to render",
       );
+    }
+  }
+
+
+  // ── 4B) 会话落地页上的路径也可点 (2026-09-18 第 54 条) ─────────────
+  //
+  // 第 35 条 did this inside a workspace, where a root and a middle
+  // column were already on screen. On the sessions landing there is
+  // neither: the root is **the row's own cwd** and the column is one
+  // landing away.
+  //
+  // Claims:
+  //   i. a conversation on the sessions landing paints the path as a
+  //      link, resolved against that session's directory;
+  //  ii. `⌘`+press hands it to the machine the session runs on and
+  //      goes nowhere — 「`⌘`+点永远 `launch`」;
+  // iii. a plain press, where a workspace on that machine **holds** the
+  //      file, lands on the workspaces landing with that workspace
+  //      open, the file on the strip, and the named line on screen;
+  //  iv. and from a session **outside** every workspace the same press
+  //      goes to the host's opener instead — there is no tree to open
+  //      it in.
+  {
+    await open("sessions");
+    const stoodIn = await press('[data-list] [data-row="gui/ws-2"] [data-row-open]');
+    const spoke = await until(8_000, async () => (await page.locator("[data-md]").count()) > 0);
+    if (!stoodIn || !spoke) {
+      fail(
+        "probe dead: the sessions landing never opened ws-session-2's conversation, so nothing below " +
+          "measured a path in prose (scripts/check-face.mjs rows / **/chat_poll)",
+      );
+    } else {
+      const links = await page.$$eval("[data-link]", (els) =>
+        els.map((e) => ({
+          at: e.getAttribute("data-link"),
+          line: e.getAttribute("data-link-line"),
+        })),
+      );
+      console.log(`links on the session landing: ${JSON.stringify(links)}`);
+      if (links.length !== 1 || links[0].at !== "/home/peer/work/src/one.rs") {
+        fail(
+          `the conversation on the sessions landing painted ${JSON.stringify(links)} — the row's own ` +
+            "cwd is what a relative path is relative to there (src/App.tsx sessionHome)",
+        );
+      } else if (links[0].line !== "3") {
+        fail(
+          `the link carries line ${JSON.stringify(links[0].line)} — the same :12 suffix the workspace ` +
+            "half reads (src/views/linkHome.tsx underRoot)",
+        );
+      } else {
+        // ii) `⌘`+press is the opener's road, and nothing moves.
+        const heldBefore = launched.length;
+        await page.locator("[data-link]").first().click({ modifiers: ["Meta"] });
+        await wait(500);
+        const stayed = await page.locator("[data-ws-tab-strip]").count();
+        console.log(
+          `⌘+pressing the path: launch=${JSON.stringify(launched.slice(heldBefore))} ` +
+            `workspace opened=${stayed > 0}`,
+        );
+        if (
+          launched.length !== heldBefore + 1 ||
+          launched[launched.length - 1].target !== "/home/peer/work/src/one.rs" ||
+          launched[launched.length - 1].machine !== "peer"
+        ) {
+          fail(
+            `⌘+pressing a path asked ${JSON.stringify(launched.slice(heldBefore))} — 「⌘+点永远 launch」, ` +
+              "on the machine the session is running on (src/components/PathLinks.tsx)",
+          );
+        }
+        if (stayed !== 0) {
+          fail(
+            "⌘+pressing a path walked to the workspace anyway — the modifier is what tells the two " +
+              "presses apart (src/components/PathLinks.tsx)",
+          );
+        }
+
+        // iii) a plain press walks to the workspace that holds it.
+        //
+        // **Which workspace that is, is itself the claim.** 4g declared
+        // `/home/peer/work/src` a workspace of its own a few stops back,
+        // so two of them hold this file and the **deeper** one is the
+        // project it belongs to. Read off what that stop actually did
+        // rather than assumed, so a 4g that was skipped makes this say
+        // what it measured instead of failing about somewhere else.
+        const nested = addedWs.some((w) => w.machine === "peer" && w.path === `${pin.path}/src`);
+        const wantWs = nested ? "src" : "work";
+        const before = launched.length;
+        await press("[data-link]");
+        const arrived = await until(
+          8_000,
+          async () => (await page.locator("[data-ws-tab-strip] [data-tab-name]").count()) > 0,
+        );
+        const there = await page.evaluate(() => {
+          const box = document.querySelector("[data-file-scroll]");
+          const row = document.querySelector('[data-sheet] [data-line="3"]');
+          const on = document.querySelector('[data-rail-item][data-landing="workspaces"]');
+          const open = document.querySelector('[data-ws-row][data-selected="true"] [data-ws-name]');
+          return {
+            landing: on?.getAttribute("data-on") ?? null,
+            workspace: open?.textContent?.trim() ?? null,
+            tabs: [...document.querySelectorAll("[data-ws-tab-strip] [data-tab-name]")].map((e) =>
+              e.textContent?.trim(),
+            ),
+            inView:
+              box === null || row === null
+                ? null
+                : row.getBoundingClientRect().top >= box.getBoundingClientRect().top - 1 &&
+                  row.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom + 1,
+          };
+        });
+        console.log(`pressing the path: arrived=${arrived} ${JSON.stringify(there)}`);
+        if (!arrived || there.inView === null) {
+          fail(
+            "pressing a path in a conversation on the sessions landing opened no file — 「切到工作区" +
+              "落地页…在中栏开成预览标签」 (src/App.tsx sessionHome, src/views/WorkspacePane.tsx reveal)",
+          );
+        } else {
+          if (there.landing !== "true") {
+            fail(
+              `the rail still says workspaces is ${JSON.stringify(there.landing)} — the press is a walk ` +
+                "to that landing, not a file opened behind this one (src/App.tsx)",
+            );
+          }
+          if (there.workspace !== wantWs) {
+            fail(
+              `the open workspace is ${JSON.stringify(there.workspace)} and the file is under ` +
+                `${JSON.stringify(wantWs)} — the workspace that holds it is the one to stand in, and ` +
+                "the deeper of two that both do (src/views/linkHome.tsx holding)",
+            );
+          }
+          if (!there.tabs.includes("one.rs")) {
+            fail(
+              `the strip holds ${JSON.stringify(there.tabs)} — the file the sentence named is what the ` +
+                "middle column opens (src/views/WorkspacePane.tsx reveal)",
+            );
+          }
+          if (!there.inView) {
+            fail(
+              "the file opened but line 3 is off the screen — the sentence named a line, and this is " +
+                "the same road the workspace's own press takes (src/views/FileView.tsx goLine)",
+            );
+          }
+          if (launched.length !== before) {
+            fail(
+              `pressing a path a workspace holds asked a machine to open it ` +
+                `(${JSON.stringify(launched.slice(before))}) — that is the answer for a file no ` +
+                "workspace holds (src/App.tsx sessionHome)",
+            );
+          }
+        }
+      }
+    }
+
+    // iv) …and the same press from a session standing outside every
+    // workspace. **`/home/peer/workshop` is the fixture's sibling** —
+    // one separator away from `/home/peer/work` and deliberately not
+    // under it, which is the prefix collision this repo keeps failing
+    // on. Nothing holds it, so the host's opener is the answer.
+    await open("sessions");
+    const outside = await press('[data-list] [data-row="gui/ws-4"] [data-row-open]');
+    const talked = await until(8_000, async () => (await page.locator("[data-link]").count()) > 0);
+    if (!outside || !talked) {
+      fail(
+        "probe dead: ws-session-4 drew no path in its prose, so 「outside every workspace」 was not " +
+          "measured (scripts/check-face.mjs rows)",
+      );
+    } else {
+      const outLinks = await page.$$eval("[data-link]", (els) =>
+        els.map((e) => e.getAttribute("data-link")),
+      );
+      const before = launched.length;
+      await press("[data-link]");
+      await wait(600);
+      const strip = await page.locator("[data-ws-tab-strip]").count();
+      console.log(
+        `outside a workspace: ${JSON.stringify(outLinks)} · ` +
+          `launch=${JSON.stringify(launched.slice(before))} · workspace opened=${strip > 0}`,
+      );
+      if (
+        launched.length !== before + 1 ||
+        launched[launched.length - 1].target !== "/home/peer/workshop/src/one.rs"
+      ) {
+        fail(
+          `pressing a path in a session outside every workspace asked ` +
+            `${JSON.stringify(launched.slice(before))} — 「没有工作区包含它 → 在宿主机器上 launch」 ` +
+            "(src/App.tsx sessionHome)",
+        );
+      }
+      if (strip !== 0) {
+        fail(
+          "…and it walked to a workspace anyway — `/home/peer/workshop` is a sibling of " +
+            "`/home/peer/work`, not a child of it (src/views/linkHome.tsx holding)",
+        );
+      }
     }
   }
 

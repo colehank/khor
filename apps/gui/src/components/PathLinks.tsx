@@ -133,7 +133,15 @@ export function PathLink({ written }: { written: string }) {
       // and one decoration meaning two things is the ambiguity that
       // rule exists to avoid.
       className={cn("cursor-pointer underline underline-offset-2")}
-      onClick={() => home.open(found.abs, found.line)}
+      // **`⌘`+press always goes to the host's own opener** (ruling 35:
+      // 「`⌘`+点 或 网址→在宿主机器上打开」; 2026-09-18 ruling 54
+      // repeats it in so many words). `ctrlKey` beside it for the same
+      // reason the save shortcut carries both: this face is a browser
+      // on Linux as often as an app on a Mac, and one gesture with two
+      // spellings is one gesture.
+      onClick={(e) =>
+        e.metaKey || e.ctrlKey ? home.launch(found.abs) : home.open(found.abs, found.line)
+      }
     >
       {written}
     </button>
