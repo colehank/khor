@@ -287,11 +287,10 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             let fresh = query_key(query).filter(|k| {
                 matches!(key::read(root), Ok(Some(real)) if key::matches(k, &real))
             });
-            if fresh.is_none() {
-                if let Err(_) = check_key(req, root) {
+            if fresh.is_none()
+                && check_key(req, root).is_err() {
                     return Reply::refused_page(msg::WEB_DOOR_SHUT);
                 }
-            }
             let mut reply = page(path);
             reply.remember = fresh;
             reply
