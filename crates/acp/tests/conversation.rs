@@ -54,7 +54,7 @@ async fn a_turn_streams_and_the_chosen_option_reaches_the_agent() {
     let Event::Ready { session } = next(&mut rx).await else {
         panic!("first event must be Ready")
     };
-    assert_eq!(format!("{session:?}").contains("stub-session-1"), true);
+    assert!(format!("{session:?}").contains("stub-session-1"));
 
     let turn = tokio::spawn({
         let handle_prompt = async move {
