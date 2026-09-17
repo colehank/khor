@@ -45,7 +45,7 @@ import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
-import { IconClose, IconPlus } from "@/components/icons";
+import { IconClose, IconEye, IconPlus } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -105,6 +105,21 @@ export type TabFace = {
       carries an `onPointerDown`, and a press handler on a bare element
       is a target only a pointer can find. */
   menu?: RowAction[];
+  /** 源码 / 预览, for a tab whose subject has two faces — a document, a
+      picture, a page (2026-09-17 ruling 47:「预览按钮放在标签页的标签
+      上」— the user).
+   *
+   * **On the tab rather than at the end of the strip**, which is where
+   * it sat until this ruling. What it switches is one tab's own face,
+   * and a control at the end of a strip reads as being about the strip;
+   * a person with four tabs open could not tell which one the eye
+   * belonged to except by knowing it was always the front one.
+   *
+   * Absent on a tab with nothing to preview, and **drawn only on the
+   * tab in front**: every other tab is a stub with room for a name and
+   * a close, and a second mark on each of them would be a row of
+   * controls aimed at files nobody is looking at. */
+  look?: { on: boolean; label: string; onToggle: () => void };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -363,6 +378,29 @@ export function TabStrip({
                 )}
               </button>
               </TabOpen>
+              {/* 预览, between the name and the ×: the order a person
+                  reads the tab in is what it is, then what to do with
+                  it. `size-3.5` against the close's own glyph — this
+                  one is about the tab's content and the × is about the
+                  tab, so it is deliberately the smaller mark. */}
+              {on && f.look && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  data-file-face-switch
+                  data-on={f.look.on}
+                  aria-label={f.look.label}
+                  onClick={() => f.look?.onToggle()}
+                  className={cn(
+                    "min-h-touch min-w-touch flex-none",
+                    f.look.on
+                      ? "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  <IconEye className="size-3.5" />
+                </Button>
+              )}
               <Button
                 size="icon"
                 variant="ghost"

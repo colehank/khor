@@ -22,11 +22,11 @@ import type React from "react";
     The names are written here rather than passed as free strings, so
     the set of seams this app has is one list somebody can read.
 
-    `ws-code` joined them on 2026-09-16: the editor is a column of the
-    workspace now rather than a sheet laid over the file
-    (docs/WORKSPACE.md 第四轮 45), and a column that can be dragged is a
-    seam with a width of its own to remember. */
-export type Seam = "list" | "ws-tree" | "ws-sessions" | "ws-code";
+    ⚠️ **`ws-code` was one of them for a day** (2026-09-16 → 2026-09-17):
+    the editor was a column of the workspace, and then a window of its
+    own (docs/WORKSPACE.md 第六轮 46). A seam with no column is a width
+    remembered about nothing. */
+export type Seam = "list" | "ws-tree" | "ws-sessions";
 const STORE = (seam: Seam) => `khor.${seam}-width`;
 
 // Numbers live in tokens.css; these fallbacks only catch the token
@@ -55,6 +55,21 @@ export function useListWidth(
   /** Which element the width is measured against. The list pane is
       `[data-list]`; the workspace's seams name their own. */
   paneSel = "[data-list]",
+  /** How wide this pane may be dragged, asked at the moment of the drag
+      (2026-09-17 ruling 52:「session无法再往右拖了, 似乎被固定了最大宽
+      度, 不应该这样」— the user).
+   *
+   * **The default ceiling is half the window, and it is the two-column
+   * answer.** A list beside a detail may fairly take half the room; a
+   * workspace is three columns, so half the window is reached while the
+   * sessions column is still barely past the middle — and the drag
+   * simply stopped, with nothing on the glass saying why.
+   *
+   * What replaces it is not a bigger ratio but a different question:
+   * how much room is there actually left. [`roomBeside`] answers it by
+   * measuring, which is why this is a function and not a number — the
+   * other columns move. */
+  max: () => number = () => Math.floor(window.innerWidth / 2),
 ) {
   const bounds = useRef<{ def: number; min: number; snap: number } | null>(null);
   if (bounds.current === null) {
@@ -140,8 +155,7 @@ export function useListWidth(
         ? { w: d.origin.w, collapsed: false }
         : { w: b.min, collapsed: false };
     } else {
-      const max = Math.floor(window.innerWidth / 2);
-      d.live = { w: Math.min(Math.max(raw, b.min), max), collapsed: false };
+      d.live = { w: Math.min(Math.max(raw, b.min), Math.max(max(), b.min)), collapsed: false };
     }
     setPref(d.live);
   };
@@ -171,8 +185,9 @@ export function useListWidth(
    * three widths that mean anything, and every one of them is already a
    * token: away (`--list-w-snap` is where the drag lets go), the floor
    * (`--list-w-min`, below which nothing fits), and the default
-   * (`--list-w`). The fourth is half the window, which the drag already
-   * treats as the ceiling. So the keys walk that ladder.
+   * (`--list-w`). The fourth is the ceiling the drag stops at, which
+   * since 2026-09-17 is `max()` rather than half the window. So the
+   * keys walk that ladder.
    *
    * **What it does not give you**: an arbitrary width. That stays a
    * pointer's to choose, and a person who wants 350 will drag for it.
@@ -180,7 +195,7 @@ export function useListWidth(
    * brought back at all, which before this it could not be.
    */
   const step = (dir: -1 | 1) => {
-    const max = Math.floor(window.innerWidth / 2);
+    const ceiling = Math.max(max(), b.min);
     // Away, floor, default, ceiling — in order, and de-duplicated in
     // case a window is narrow enough that half of it is under the
     // floor (then the ladder simply has fewer rungs).
@@ -188,7 +203,7 @@ export function useListWidth(
       { w: pref.w, collapsed: true },
       { w: b.min, collapsed: false },
       { w: b.def, collapsed: false },
-      { w: max, collapsed: false },
+      { w: ceiling, collapsed: false },
     ].filter((r, i, all) => i === 0 || r.collapsed || r.w > all[i - 1].w || all[i - 1].collapsed);
     const at = pref.collapsed
       ? 0
@@ -273,5 +288,36 @@ export function useListWidth(
       "aria-valuemin": 0,
       "aria-valuemax": Math.round(b.def),
     },
+  };
+}
+
+/**
+ * A seam's ceiling on the workspace page: **everything the middle
+ * column can spare above its floor** (2026-09-17 ruling 52).
+ *
+ * 「上限 = 窗口宽 − 另外两栏的宽 − 中栏的地板」. Written as a
+ * measurement of two boxes rather than as that subtraction, because the
+ * two are the same number and only one of them stays true when a column
+ * is added: what this pane may grow to is what it is now plus whatever
+ * the file column has over `--ws-mid-min`. Every other column on the
+ * row, the rail included, is already accounted for by the middle one's
+ * width being what it is.
+ *
+ * **It is a fixed point under the drag.** Widening this pane narrows
+ * the middle one by the same pixels, so the sum holds still, and a drag
+ * that reaches the ceiling stops there rather than oscillating.
+ *
+ * Away from a workspace there is no middle column and the old ceiling
+ * stands: half the window, which is the list-and-detail answer and
+ * right for the panes that have two columns.
+ */
+export function roomBeside(paneSel: string): () => number {
+  return () => {
+    const half = Math.floor(window.innerWidth / 2);
+    const mid = document.querySelector("[data-ws-mid]");
+    if (mid === null) return half;
+    const me = document.querySelector(paneSel);
+    const mine = me === null ? 0 : me.getBoundingClientRect().width;
+    return Math.round(mine + mid.getBoundingClientRect().width - tokenPx("--ws-mid-min", 240));
   };
 }

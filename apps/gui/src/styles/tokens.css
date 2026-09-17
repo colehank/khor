@@ -713,6 +713,15 @@
    * and lives where the drag is measured). */
   --list-w-min: 180px;
   --list-w-snap: 100px;
+  /* How narrow the file may be squeezed by a column beside it
+     (2026-09-17 ruling 52). **The floor of the thing being read**, not
+     of a control: 240 is about forty columns of the file view's mono at
+     its own size, which is where a line of code stops being one line.
+     It is what the workspace's seams subtract when they work out how
+     far they may be dragged (`use-list-width`'s `roomBeside`) — the
+     middle column has no seam of its own, so its floor has to be
+     written down rather than dragged. */
+  --ws-mid-min: 240px;
   /* A tab that is not in front, and the most the one in front may take.
    *
    * **Two widths, not a range** (2026-09-02:「标签页没有被选中的时候
