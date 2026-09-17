@@ -710,11 +710,10 @@ fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (
 
 /// Remembers where a page webview is, keeping whatever exit it is on.
 fn page_went(label: &str, to: &str) {
-    if let Ok(mut m) = page_exits().lock() {
-        if let Some(slot) = m.get_mut(label) {
+    if let Ok(mut m) = page_exits().lock()
+        && let Some(slot) = m.get_mut(label) {
             slot.1 = to.to_owned();
         }
-    }
 }
 
 /// How a browsing tab presents itself to the sites it opens.
@@ -1829,11 +1828,10 @@ pub fn run() {
                     // apps is not an answer to that question. The face
                     // asks and unasks; this only draws or stops drawing.
                     tauri::WindowEvent::Focused(here) => {
-                        if let Some(menu) = menu() {
-                            if menu_up().load(std::sync::atomic::Ordering::Relaxed) {
+                        if let Some(menu) = menu()
+                            && menu_up().load(std::sync::atomic::Ordering::Relaxed) {
                                 let _ = if *here { menu.show() } else { menu.hide() };
                             }
-                        }
                     }
                     _ => {}
                 }
