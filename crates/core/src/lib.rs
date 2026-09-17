@@ -2109,8 +2109,8 @@ fn inline(line: &str) -> String {
                     || i == 0
                     || src[i - 1].is_whitespace()
                     || !src[i - 1].is_alphanumeric());
-            if opens {
-                if let Some(close) = closing_run(&src, i + run, c, run) {
+            if opens
+                && let Some(close) = closing_run(&src, i + run, c, run) {
                     let closes = !src[close - 1].is_whitespace()
                         && (c != '_'
                             || src
@@ -2122,22 +2122,19 @@ fn inline(line: &str) -> String {
                         continue;
                     }
                 }
-            }
         }
         // [label](url) and ![alt](url) — the label is what was written
         // here; the address belongs to a face that can open it.
         if c == '[' || (c == '!' && src.get(i + 1) == Some(&'[')) {
             let open = if c == '!' { i + 1 } else { i };
-            if let Some(shut) = src[open..].iter().position(|x| *x == ']').map(|p| open + p) {
-                if src.get(shut + 1) == Some(&'(') {
-                    if let Some(end) = src[shut..].iter().position(|x| *x == ')').map(|p| shut + p)
+            if let Some(shut) = src[open..].iter().position(|x| *x == ']').map(|p| open + p)
+                && src.get(shut + 1) == Some(&'(')
+                    && let Some(end) = src[shut..].iter().position(|x| *x == ')').map(|p| shut + p)
                     {
                         out.push_str(&inline(&src[open + 1..shut].iter().collect::<String>()));
                         i = end + 1;
                         continue;
                     }
-                }
-            }
         }
         out.push(c);
         i += 1;
@@ -2456,6 +2453,26 @@ mod tests {
         }
     }
 
+    /// The wire shape of `Session`, spelled out so the test below can
+    /// deserialize into it positionally. A `type` only, to keep
+    /// `clippy::type_complexity` off the `let` — the order is the point.
+    type SessionFrame = (
+        SessionId,
+        Kind,
+        String,
+        DeviceId,
+        StateStamp,
+        u64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        bool,
+        bool,
+        bool,
+        Option<String>,
+        bool,
+    );
+
     #[test]
     fn the_session_frame_is_a_fixed_order_array_of_fourteen() {
         let session = a_session("shell");
@@ -2470,22 +2487,8 @@ mod tests {
         // always at the tail, never in the middle: a mid-frame optional
         // desyncs the array on every older end.
         assert_eq!(bytes[0], 0x9e);
-        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked, place, mux): (
-            SessionId,
-            Kind,
-            String,
-            DeviceId,
-            StateStamp,
-            u64,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            bool,
-            bool,
-            bool,
-            Option<String>,
-            bool,
-        ) = rmp_serde::from_slice(&bytes).unwrap();
+        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked, place, mux): SessionFrame =
+            rmp_serde::from_slice(&bytes).unwrap();
         // Field by field rather than as one tuple comparison: std stops
         // deriving `PartialEq` at twelve, and this frame is thirteen.
         // Deserializing into the tuple above is what pins the *order* —
