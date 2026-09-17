@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 
 import {
   ContextMenu,
@@ -76,6 +76,15 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
   // opening of this menu, and a confirm still armed the next time round
   // would turn one press into the destructive one.
   const [armed, setArmed] = useState<string | null>(null);
+  /** Whether this closing follows an action that ran. **A ref, read
+      once at close**: Radix hands focus back to the trigger when the
+      menu closes, and after an action that opened something else —
+      a takeover that turns the row into a live conversation — that
+      restore raced the new pane's own focusing of its box and won
+      about one time in three (smoke 25f, diagnosed 2026-09-18:
+      `focus is on BUTTON[data-row-open]`). A dismissal (Esc, a press
+      outside) still gives focus back: nothing else asked for it. */
+  const ran = useRef(false);
   const change = (next: boolean) => {
     setOpen(next);
     if (!next) setArmed(null);
@@ -88,7 +97,10 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
     Promise.resolve()
       .then(a.run)
       .then(
-        () => change(false),
+        () => {
+          ran.current = true;
+          change(false);
+        },
         // Stays open, and goes back to un-armed: the sentence has been
         // read and answered, and what is worth saying now is whatever
         // the caller put in `note`.
@@ -98,7 +110,14 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
   return (
     <ContextMenu open={open} onOpenChange={change}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent data-row-menu>
+      <ContextMenuContent
+        data-row-menu
+        onCloseAutoFocus={(e) => {
+          if (!ran.current) return;
+          ran.current = false;
+          e.preventDefault();
+        }}
+      >
         {items.map((a) => (
           <Fragment key={a.key}>
             {a.confirm && armed === a.key && (

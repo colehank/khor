@@ -7791,7 +7791,18 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //     closed on failure would take the only surface the sentence has
   //     with it, which is the same "started something and nothing
   //     happened" this file refuses everywhere else.
-  const failTarget = (await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row)))[0];
+  //     **The first row that is not pinned**, not the first row. Rows
+  //     pinned by the sections before this float to the top of the
+  //     list, and on a run where one had, row 0 wore the pin already —
+  //     so the item pressed here was its 取消钉住, and「the pin to
+  //     take」was waited on for a row that had just been unpinned
+  //     (seen twice on 2026-09-17/18, green on the rerun each time).
+  const failTarget = (
+    await page
+      .locator('[data-row]:not([data-pinned="true"])')
+      .evaluateAll((els) => els.map((e) => e.dataset.row))
+  )[0];
+  if (failTarget === undefined) throw new Error("probe dead: every row on the landing is pinned already");
   // **The colour is read after the item's own transitions finish**, not
   // the instant the attribute flips. A reading taken at t=0 of a
   // transition is bit-for-bit the colour it is *leaving* — which is what
