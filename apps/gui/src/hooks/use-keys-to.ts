@@ -41,9 +41,31 @@ function takesText(el: Element | null): boolean {
   return el instanceof HTMLElement && el.isContentEditable;
 }
 
-/** Anything open on top of the page. Radix unmounts these when they
-    close, so their presence in the document is the whole test. */
-const ON_TOP = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+/** Anything **open** on top of the page.
+ *
+ * ⚠️ **「Radix unmounts these when they close」 is not always true, and
+ * that sentence stood here until 2026-09-17.** A content that is
+ * animating out stays in the document wearing `data-state="closed"`,
+ * and so does one whose exit animation never got a frame — which is
+ * what a busy machine hands you. Measured in the smoke run (25f, twice
+ * in a row): a row menu that had already been dismissed was still
+ * there, `data-state="closed"`, and the key typed at the rail went
+ * nowhere because this selector counted it as something on top. The
+ * diagnostic that named it was added the round before for exactly
+ * this.
+ *
+ * So the test is what the overlay itself says about whether it is up.
+ * `closed` is radix's own word, and an element that is not radix's has
+ * no `data-state` at all and goes on matching. */
+const OPEN = ':not([data-state="closed"])';
+const ON_TOP = [
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+]
+  .map((role) => `${role}${OPEN}`)
+  .join(", ");
 
 /** A pointer that hovers — a desktop, where focusing a box does not
     slide a keyboard over the screen. */
