@@ -16,7 +16,9 @@ use std::time::{Duration, Instant};
 
 fn khor(home: &Path) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_khor"));
-    c.env("KHOR_HOME", home).env("KHOR_NAME", "box").env_remove("KHOR_SESSION");
+    c.env("KHOR_HOME", home)
+        .env("KHOR_NAME", "box")
+        .env_remove("KHOR_SESSION");
     c
 }
 
@@ -42,7 +44,10 @@ fn stub() -> PathBuf {
         .expect("cargo runs");
     assert!(status.success(), "the stub builds");
     let me = std::env::current_exe().expect("a test binary");
-    me.parent().and_then(|d| d.parent()).expect("target/debug").join("acp-stub")
+    me.parent()
+        .and_then(|d| d.parent())
+        .expect("target/debug")
+        .join("acp-stub")
 }
 
 fn home(tag: &str) -> PathBuf {
@@ -92,21 +97,32 @@ impl Drop for Closer {
 #[test]
 fn an_agent_nobody_shipped_opens_a_session_that_says_whose_it_is() {
     let home = home("open");
-    let (ok, _, err) =
-        run(&home, &["agents", "add", "zed", "--", &stub().to_string_lossy()]);
+    let (ok, _, err) = run(
+        &home,
+        &["agents", "add", "zed", "--", &stub().to_string_lossy()],
+    );
     assert!(ok, "registering: {err}");
 
     let (ok, listed, err) = run(&home, &["agents"]);
     assert!(ok, "{err}");
-    assert!(listed.contains("zed"), "the registration lists under its name: {listed}");
-    assert!(listed.contains("acp-stub"), "and spells the command back: {listed}");
+    assert!(
+        listed.contains("zed"),
+        "the registration lists under its name: {listed}"
+    );
+    assert!(
+        listed.contains("acp-stub"),
+        "and spells the command back: {listed}"
+    );
 
     let (ok, id, err) = run(&home, &["open", "--gui", "--agent", "zed"]);
     assert!(ok, "opening: {err}");
     let id = id.trim().to_owned();
     assert!(!id.is_empty(), "the id is the deliverable");
     // Handed over **before** the first assertion that could panic.
-    let _closer = Closer { home: home.clone(), id: id.clone() };
+    let _closer = Closer {
+        home: home.clone(),
+        id: id.clone(),
+    };
 
     let (ok, rows, err) = run(&home, &["sessions", "--by", "category"]);
     assert!(ok, "{err}");
@@ -136,14 +152,23 @@ fn an_agent_nobody_shipped_opens_a_session_that_says_whose_it_is() {
 #[test]
 fn a_typo_in_the_agent_name_opens_nothing() {
     let home = home("typo");
-    let (ok, _, _) = run(&home, &["agents", "add", "zed", "--", &stub().to_string_lossy()]);
+    let (ok, _, _) = run(
+        &home,
+        &["agents", "add", "zed", "--", &stub().to_string_lossy()],
+    );
     assert!(ok);
     let (ok, out, err) = run(&home, &["open", "--gui", "--agent", "zedd"]);
     assert!(!ok, "a name nobody registered opens nothing, got: {out}");
-    assert!(err.contains("zedd"), "the refusal names what was typed: {err}");
+    assert!(
+        err.contains("zedd"),
+        "the refusal names what was typed: {err}"
+    );
     assert!(err.contains("zed"), "and what is registered: {err}");
     assert!(
-        run(&home, &["sessions"]).1.lines().all(|l| !l.contains("tui/")),
+        run(&home, &["sessions"])
+            .1
+            .lines()
+            .all(|l| !l.contains("tui/")),
         "no session was opened"
     );
     let _ = std::fs::remove_dir_all(&home);
@@ -160,12 +185,27 @@ fn a_typo_in_the_agent_name_opens_nothing() {
 #[test]
 fn asking_for_a_conversation_on_another_machine_is_refused_not_ignored() {
     let home = home("on");
-    let (ok, out, err) =
-        run(&home, &["open", "--gui", "--on", "turing", "--", &stub().to_string_lossy()]);
+    let (ok, out, err) = run(
+        &home,
+        &[
+            "open",
+            "--gui",
+            "--on",
+            "turing",
+            "--",
+            &stub().to_string_lossy(),
+        ],
+    );
     assert!(!ok, "it must not quietly open one here, got: {out}");
-    assert!(err.contains("--on"), "the refusal names the flag it is about: {err}");
     assert!(
-        run(&home, &["sessions"]).1.lines().all(|l| !l.contains("tui/")),
+        err.contains("--on"),
+        "the refusal names the flag it is about: {err}"
+    );
+    assert!(
+        run(&home, &["sessions"])
+            .1
+            .lines()
+            .all(|l| !l.contains("tui/")),
         "and nothing was opened locally"
     );
     let _ = std::fs::remove_dir_all(&home);
@@ -203,7 +243,10 @@ fn an_agent_that_wants_a_login_says_so_before_any_timeout_could() {
     let began = Instant::now();
     let (ok, out, err) = run(&home, &["open", "--gui", "--", &launch]);
     let took = began.elapsed();
-    assert!(!ok, "an agent demanding a login opens no session, got: {out}");
+    assert!(
+        !ok,
+        "an agent demanding a login opens no session, got: {out}"
+    );
     assert!(err.contains("登录"), "it says what is wrong: {err}");
     assert!(
         took < Duration::from_secs(15),
@@ -219,10 +262,19 @@ fn an_agent_that_wants_a_login_says_so_before_any_timeout_could() {
 #[test]
 fn a_command_that_is_not_an_agent_gets_its_own_sentence() {
     let home = home("notagent");
-    let (ok, _, err) = run(&home, &["open", "--gui", "--", "/nonexistent/khor-no-such-agent"]);
+    let (ok, _, err) = run(
+        &home,
+        &["open", "--gui", "--", "/nonexistent/khor-no-such-agent"],
+    );
     assert!(!ok);
-    assert!(!err.contains("登录"), "a missing binary is not a login problem: {err}");
-    assert!(err.contains("ACP"), "it says what khor was expecting instead: {err}");
+    assert!(
+        !err.contains("登录"),
+        "a missing binary is not a login problem: {err}"
+    );
+    assert!(
+        err.contains("ACP"),
+        "it says what khor was expecting instead: {err}"
+    );
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -241,7 +293,10 @@ fn a_command_opened_without_a_registration_is_filed_as_unplaceable() {
     let (ok, id, err) = run(&home, &["open", "--gui", "--", &stub().to_string_lossy()]);
     assert!(ok, "opening: {err}");
     let id = id.trim().to_owned();
-    let _closer = Closer { home: home.clone(), id: id.clone() };
+    let _closer = Closer {
+        home: home.clone(),
+        id: id.clone(),
+    };
 
     let (ok, rows, err) = run(&home, &["sessions", "--by", "category"]);
     assert!(ok, "{err}");
@@ -301,7 +356,7 @@ fn a_command_opened_without_a_registration_is_filed_as_unplaceable() {
 fn a_real_third_party_agent_goes_through_the_whole_gate() {
     use khor_core::DeviceId;
     use khor_node::gui_host::{GuiNote, GuiOp};
-    use khor_node::host::{read_frame, read_host_file, write_frame, Hello, Welcome};
+    use khor_node::host::{Hello, Welcome, read_frame, read_host_file, write_frame};
     use khor_node::live::LiveKind;
     use std::net::TcpStream;
 
@@ -313,19 +368,37 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     let (ok, id, err) = run(&home, &["open", "--gui", "--agent", "zed"]);
     assert!(ok, "opening: {err}");
     let id = id.trim().to_owned();
-    let _closer = Closer { home: home.clone(), id: id.clone() };
+    let _closer = Closer {
+        home: home.clone(),
+        id: id.clone(),
+    };
     println!("session: {id}");
 
     let (ok, rows, _) = run(&home, &["sessions", "--by", "category"]);
     assert!(ok);
-    assert!(rows.contains("── zed"), "a real agent's row says whose it is too: {rows}");
+    assert!(
+        rows.contains("── zed"),
+        "a real agent's row says whose it is too: {rows}"
+    );
 
     let k = LiveKind::new(home.clone(), DeviceId([1; 32]));
-    let hf = read_host_file(&k.dir_of(&khor_core::SessionId(id.clone())).expect("a session dir"))
-        .expect("a host file");
+    let hf = read_host_file(
+        &k.dir_of(&khor_core::SessionId(id.clone()))
+            .expect("a session dir"),
+    )
+    .expect("a host file");
     let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
-    conn.set_read_timeout(Some(Duration::from_secs(120))).unwrap();
-    write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
+    conn.set_read_timeout(Some(Duration::from_secs(120)))
+        .unwrap();
+    write_frame(
+        &mut conn,
+        &Hello {
+            cookie: hf.cookie,
+            cols: 0,
+            rows: 0,
+        },
+    )
+    .unwrap();
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
 
@@ -334,8 +407,14 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     // read off something khor did not write, and a field added to the
     // note without a thought about what an agent actually reports
     // should stop here.
-    let GuiNote::Agent { name, replays, images, embeds, lists, needs_login } =
-        read_frame::<GuiNote>(&mut conn).unwrap()
+    let GuiNote::Agent {
+        name,
+        replays,
+        images,
+        embeds,
+        lists,
+        needs_login,
+    } = read_frame::<GuiNote>(&mut conn).unwrap()
     else {
         panic!("the facts come first")
     };
@@ -374,7 +453,11 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     let stop = loop {
         match read_frame::<GuiNote>(&mut conn).expect("a frame within two minutes") {
             GuiNote::Note(_) => chunks += 1,
-            GuiNote::Ask { ask, title, options } => {
+            GuiNote::Ask {
+                ask,
+                title,
+                options,
+            } => {
                 asked += 1;
                 println!("asked: {title} {options:?}");
                 let go = options.first().map(|(id, _)| id.clone());
@@ -382,7 +465,10 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
             }
             GuiNote::Answered { .. } | GuiNote::Turning => {}
             GuiNote::Turn(stop) => break stop,
-            other => panic!("unexpected frame before the turn ended: {}", kind_of(&other)),
+            other => panic!(
+                "unexpected frame before the turn ended: {}",
+                kind_of(&other)
+            ),
         }
     };
     println!("stop={stop} chunks={chunks} asks={asked}");
@@ -400,7 +486,10 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     }
     println!("replayed={played} (replays={replays})");
     if replays {
-        assert!(played > 0, "an agent that advertises replay must replay something");
+        assert!(
+            played > 0,
+            "an agent that advertises replay must replay something"
+        );
     }
 
     // The approval was answered, so the act it gated must have
@@ -408,7 +497,11 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     // bookkeeping rather than something that crossed the wire. Only
     // asserted when there *was* an ask (the agent's own policy).
     if asked > 0 {
-        assert!(target.exists(), "the allowed write really landed: {}", target.display());
+        assert!(
+            target.exists(),
+            "the allowed write really landed: {}",
+            target.display()
+        );
     }
 
     // **The control, on the same connection: a refusal must really
@@ -434,9 +527,17 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
                 // offers three (allow_always / allow / reject) and the
                 // shims offer two, so an index would be a guess about
                 // somebody else's menu.
-                let no = options.iter().find(|(id, _)| id.contains("reject") || id.contains("deny"));
-                write_frame(&mut conn, &GuiOp::Answer { ask, option: no.map(|(id, _)| id.clone()) })
-                    .unwrap();
+                let no = options
+                    .iter()
+                    .find(|(id, _)| id.contains("reject") || id.contains("deny"));
+                write_frame(
+                    &mut conn,
+                    &GuiOp::Answer {
+                        ask,
+                        option: no.map(|(id, _)| id.clone()),
+                    },
+                )
+                .unwrap();
             }
             GuiNote::Turn(stop) => {
                 println!("denied turn: stop={stop} asks={refused}");

@@ -94,7 +94,10 @@ pub fn sample(home: &Path) -> Vitals {
     s.disks.refresh(true);
     let cpu_pct = s.sys.global_cpu_usage();
     let cores = s.sys.cpus().len() as u32;
-    let mem = Fill { used: s.sys.used_memory(), total: s.sys.total_memory() };
+    let mem = Fill {
+        used: s.sys.used_memory(),
+        total: s.sys.total_memory(),
+    };
     let disk = disk_under(&s.disks, home);
     let volumes = tidy_volumes(volumes_of(&s.disks), home);
     // **Released before the GPU is asked**, and the ordering is the
@@ -140,7 +143,11 @@ pub fn watched(paths: &[String]) -> Vec<WatchedDir> {
 
 fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
     let p = Path::new(path);
-    let row = |missing: bool, volume: Option<Volume>| WatchedDir { path: path.to_owned(), missing, volume };
+    let row = |missing: bool, volume: Option<Volume>| WatchedDir {
+        path: path.to_owned(),
+        missing,
+        volume,
+    };
     let Ok(meta) = std::fs::metadata(p) else {
         return row(true, None);
     };
@@ -157,9 +164,10 @@ fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
     {
         use std::os::unix::fs::MetadataExt;
         if let Ok(m) = std::fs::metadata(d.mount_point())
-            && m.dev() != meta.dev() {
-                return row(false, None);
-            }
+            && m.dev() != meta.dev()
+        {
+            return row(false, None);
+        }
     }
     let total = d.total_space();
     if total == 0 {
@@ -169,7 +177,10 @@ fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
         false,
         Some(Volume {
             mount: d.mount_point().to_string_lossy().into_owned(),
-            fill: Fill { used: total.saturating_sub(d.available_space()), total },
+            fill: Fill {
+                used: total.saturating_sub(d.available_space()),
+                total,
+            },
         }),
     )
 }
@@ -181,7 +192,10 @@ fn sampler() -> std::sync::MutexGuard<'static, Sampler> {
             let mut sys = sysinfo::System::new();
             sys.refresh_cpu_usage();
             std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-            Mutex::new(Sampler { sys, disks: sysinfo::Disks::new_with_refreshed_list() })
+            Mutex::new(Sampler {
+                sys,
+                disks: sysinfo::Disks::new_with_refreshed_list(),
+            })
         })
         .lock()
         .unwrap_or_else(|p| p.into_inner())
@@ -245,8 +259,17 @@ pub(crate) fn keeps_volume(mount: &str) -> bool {
     if mount == "/" || mount == "/System/Volumes/Data" {
         return true;
     }
-    const NOISE: [&str; 9] =
-        ["/System/", "/private/", "/dev", "/proc", "/sys", "/run", "/boot", "/snap", "/var/lib/"];
+    const NOISE: [&str; 9] = [
+        "/System/",
+        "/private/",
+        "/dev",
+        "/proc",
+        "/sys",
+        "/run",
+        "/boot",
+        "/snap",
+        "/var/lib/",
+    ];
     !NOISE.iter().any(|p| mount.starts_with(p))
 }
 
@@ -266,7 +289,10 @@ fn volumes_of(disks: &sysinfo::Disks) -> Vec<Volume> {
                 // Used as the complement of available — `disk_under`'s
                 // APFS note is the reason, and two derivations of one
                 // number on one screen would disagree.
-                fill: Fill { used: total.saturating_sub(d.available_space()), total },
+                fill: Fill {
+                    used: total.saturating_sub(d.available_space()),
+                    total,
+                },
             })
         })
         .collect()
@@ -308,7 +334,11 @@ mod tests {
         let v = sample(Path::new("."));
         assert!(v.cores >= 1, "a machine has at least one core: {}", v.cores);
         assert!(v.mem.total > 0, "a machine has memory: {:?}", v.mem);
-        assert!(v.mem.used <= v.mem.total, "used memory cannot exceed the total: {:?}", v.mem);
+        assert!(
+            v.mem.used <= v.mem.total,
+            "used memory cannot exceed the total: {:?}",
+            v.mem
+        );
         assert!(
             (0.0..=100.0).contains(&v.cpu_pct),
             "a whole-machine percentage is a percentage: {}",
@@ -346,7 +376,11 @@ mod tests {
         let v = sample(Path::new("."));
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = spin.join();
-        assert!(v.cpu_pct > 0.0, "one core was pinned; the reading says {}", v.cpu_pct);
+        assert!(
+            v.cpu_pct > 0.0,
+            "one core was pinned; the reading says {}",
+            v.cpu_pct
+        );
     }
 
     /// A path on no filesystem at all has no disk to report, and that is
@@ -361,12 +395,21 @@ mod tests {
         let disks = sysinfo::Disks::new_with_refreshed_list();
 
         let found = disk_under(&disks, Path::new(".")).expect("this directory is on a filesystem");
-        assert!(found.total > 0, "a mounted filesystem has a size: {found:?}");
-        assert!(found.used <= found.total, "used cannot exceed the total: {found:?}");
+        assert!(
+            found.total > 0,
+            "a mounted filesystem has a size: {found:?}"
+        );
+        assert!(
+            found.used <= found.total,
+            "used cannot exceed the total: {found:?}"
+        );
 
         // Not a prefix of any mount point on any platform: mount points
         // are absolute paths, and this is not one.
-        assert_eq!(disk_under(&disks, Path::new("khor-no-such-relative-path")), None);
+        assert_eq!(
+            disk_under(&disks, Path::new("khor-no-such-relative-path")),
+            None
+        );
     }
 
     /// A watched directory that is there sits on a volume with a size;
@@ -381,8 +424,14 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].path, here);
         assert!(!rows[0].missing);
-        let vol = rows[0].volume.as_ref().expect("this directory is on a listed volume");
-        assert!(vol.fill.total > 0 && vol.fill.used <= vol.fill.total, "{vol:?}");
+        let vol = rows[0]
+            .volume
+            .as_ref()
+            .expect("this directory is on a listed volume");
+        assert!(
+            vol.fill.total > 0 && vol.fill.used <= vol.fill.total,
+            "{vol:?}"
+        );
         assert!(rows[1].missing && rows[1].volume.is_none(), "{:?}", rows[1]);
     }
 
@@ -397,7 +446,11 @@ mod tests {
     fn a_directory_on_an_unlisted_filesystem_names_no_volume_rather_than_the_root() {
         let rows = watched(&["/dev".into()]);
         assert!(!rows[0].missing, "/dev is there");
-        assert!(rows[0].volume.is_none(), "/dev came back on {:?} — the root's numbers under a pseudo mount", rows[0].volume);
+        assert!(
+            rows[0].volume.is_none(),
+            "/dev came back on {:?} — the root's numbers under a pseudo mount",
+            rows[0].volume
+        );
     }
 
     /// The predicate keeps what a person means by 「硬盘」 and drops the
@@ -405,8 +458,14 @@ mod tests {
     /// IS the person's data volume.
     #[test]
     fn a_volume_is_kept_by_what_it_means_not_where_it_mounts() {
-        for keep in ["/", "/System/Volumes/Data", "/home", "/data", "/mnt/scratch", "/Volumes/disk0"]
-        {
+        for keep in [
+            "/",
+            "/System/Volumes/Data",
+            "/home",
+            "/data",
+            "/mnt/scratch",
+            "/Volumes/disk0",
+        ] {
             assert!(keeps_volume(keep), "{keep} is a person's volume");
         }
         for noise in [

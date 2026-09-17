@@ -99,7 +99,10 @@ fn check_permissions(path: &Path) -> Result<(), String> {
             .mode()
             & 0o777;
         if mode & 0o077 != 0 {
-            return Err(msg::web_key_too_open(format_args!("{mode:o}"), path.display()));
+            return Err(msg::web_key_too_open(
+                format_args!("{mode:o}"),
+                path.display(),
+            ));
         }
     }
     #[cfg(not(unix))]

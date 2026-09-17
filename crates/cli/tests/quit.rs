@@ -44,7 +44,9 @@ fn wait_for(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
 struct Reaper(u32);
 impl Drop for Reaper {
     fn drop(&mut self) {
-        let _ = Command::new("kill").args(["-9", &self.0.to_string()]).status();
+        let _ = Command::new("kill")
+            .args(["-9", &self.0.to_string()])
+            .status();
     }
 }
 
@@ -70,7 +72,11 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
         .trim()
         .parse()
         .unwrap();
-    assert_eq!(recorded, keeper.id(), "and it must be the keeper's, not the inner's");
+    assert_eq!(
+        recorded,
+        keeper.id(),
+        "and it must be the keeper's, not the inner's"
+    );
 
     // A session host, planted the way a real one lands: a hostfile in
     // the sessions dir whose pids are a live process in its own group
@@ -120,11 +126,18 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
 
     // The stop stays stopped: no third life, ever.
     std::thread::sleep(Duration::from_secs(2));
-    assert_eq!(inner_pid(&home), Some(inner), "no new serve may appear after quit");
+    assert_eq!(
+        inner_pid(&home),
+        Some(inner),
+        "no new serve may appear after quit"
+    );
     assert!(!alive(inner));
 
     // Files survive: quit is about processes.
-    assert!(home.join(".khor/sessions/shell-quitprobe/host.json").exists());
+    assert!(
+        home.join(".khor/sessions/shell-quitprobe/host.json")
+            .exists()
+    );
 
     // Control: a second quit finds nothing and says so.
     let out = Command::new(env!("CARGO_BIN_EXE_khor"))

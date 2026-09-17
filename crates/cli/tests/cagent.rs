@@ -92,12 +92,17 @@ for line in sys.stdin:
     }
 
     let exe = env!("CARGO_BIN_EXE_khor");
-    let (handle, mut events) =
-        khor_acp::start(&format!("{exe} _cagent"), dir.join("cwd")).await.unwrap();
+    let (handle, mut events) = khor_acp::start(&format!("{exe} _cagent"), dir.join("cwd"))
+        .await
+        .unwrap();
 
     let sid = handle.session().0.to_string();
     assert_eq!(sid.len(), 36, "a minted v4 uuid, dashes and all: {sid}");
-    assert_eq!(&sid[14..15], "4", "the version nibble is set, or claude would refuse it");
+    assert_eq!(
+        &sid[14..15],
+        "4",
+        "the version nibble is set, or claude would refuse it"
+    );
 
     // Notes and asks are handled beside the turns: an ask arrives while
     // its prompt is still pending, so a serial drain would deadlock.
@@ -114,8 +119,12 @@ for line in sys.stdin:
                 khor_acp::Event::Ask(ask) => {
                     // The labels are khor's catalog words, and the ids are
                     // the shim's contract.
-                    let ids: Vec<String> =
-                        ask.request.options.iter().map(|o| o.option_id.0.to_string()).collect();
+                    let ids: Vec<String> = ask
+                        .request
+                        .options
+                        .iter()
+                        .map(|o| o.option_id.0.to_string())
+                        .collect();
                     assert_eq!(ids, vec!["allow", "deny"]);
                     ask.choose("allow");
                 }
@@ -133,8 +142,14 @@ for line in sys.stdin:
     let stop = handle.prompt("hello there").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("echo: hello there"), "the reply must stream through: {said}");
-    assert!(said.contains("available_commands_update"), "the command list must ride along");
+    assert!(
+        said.contains("echo: hello there"),
+        "the reply must stream through: {said}"
+    );
+    assert!(
+        said.contains("available_commands_update"),
+        "the command list must ride along"
+    );
     assert!(said.contains("compact"), "with claude's own words in it");
 
     // The permission round-trip: the ask surfaces as ACP, the answer
@@ -142,7 +157,10 @@ for line in sys.stdin:
     let stop = handle.prompt("please ask-permission").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("verdict:allow"), "the fake must see the allow: {said}");
+    assert!(
+        said.contains("verdict:allow"),
+        "the fake must see the allow: {said}"
+    );
 
     // Shared from here on: a cancel has to reach the handle **while a
     // prompt on it is still in flight**, which is two owners of one
@@ -169,7 +187,11 @@ for line in sys.stdin:
         .expect("a cancelled turn must end")
         .unwrap()
         .unwrap();
-    assert_eq!(format!("{stop:?}"), "Cancelled", "a stopped turn is 取消, not a refusal");
+    assert_eq!(
+        format!("{stop:?}"),
+        "Cancelled",
+        "a stopped turn is 取消, not a refusal"
+    );
     assert!(
         dir.join("cwd/fake.interrupt").exists(),
         "the cancel must reach claude as the control protocol's interrupt"
@@ -179,7 +201,10 @@ for line in sys.stdin:
     let stop = handle.prompt("after the stop").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("echo: after the stop"), "the conversation survives a stop: {said}");
+    assert!(
+        said.contains("echo: after the stop"),
+        "the conversation survives a stop: {said}"
+    );
 
     // Replay reads the vendor transcript through the same lossy leaf
     // the id wears — write one for this session and load it back.
@@ -197,32 +222,53 @@ for line in sys.stdin:
         said.contains("words from the past"),
         "the replay must surface the transcript: {said}"
     );
-    assert!(said.contains("user_message_chunk"), "in the shape history() uses");
+    assert!(
+        said.contains("user_message_chunk"),
+        "in the shape history() uses"
+    );
 
     // A dead agent must surface as a Closed the pump can break on —
     // the hang this guards against was found live: a gui host whose
     // agent died sat in its loop forever (`crates/acp`'s EOF arm).
-    let fake_pid: i32 =
-        std::fs::read_to_string(dir.join("cwd/fake.pid")).unwrap().trim().parse().unwrap();
+    let fake_pid: i32 = std::fs::read_to_string(dir.join("cwd/fake.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     unsafe { libc::kill(fake_pid, libc::SIGKILL) };
     tokio::time::timeout(std::time::Duration::from_secs(10), pump)
         .await
         .expect("the pump must end when the agent dies")
         .unwrap();
-    let why = closed.lock().unwrap().take().expect("a Closed event arrived");
-    assert!(why.is_some(), "an ending nobody asked for carries words, not None");
+    let why = closed
+        .lock()
+        .unwrap()
+        .take()
+        .expect("a Closed event arrived");
+    assert!(
+        why.is_some(),
+        "an ending nobody asked for carries words, not None"
+    );
     drop(handle);
 
     // And the other direction: dropping the client must not leave the
     // claude child running (the shim kills it as serve ends — three
     // ppid=1 leftovers taught this the hard way).
-    let (handle2, mut events2) =
-        khor_acp::start(&format!("{exe} _cagent"), dir.join("cwd")).await.unwrap();
+    let (handle2, mut events2) = khor_acp::start(&format!("{exe} _cagent"), dir.join("cwd"))
+        .await
+        .unwrap();
     let pump2 = tokio::spawn(async move { while events2.recv().await.is_some() {} });
     handle2.prompt("hello again").await.unwrap();
-    let fake_pid: i32 =
-        std::fs::read_to_string(dir.join("cwd/fake.pid")).unwrap().trim().parse().unwrap();
-    assert_eq!(unsafe { libc::kill(fake_pid, 0) }, 0, "precondition: the fake is alive");
+    let fake_pid: i32 = std::fs::read_to_string(dir.join("cwd/fake.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        unsafe { libc::kill(fake_pid, 0) },
+        0,
+        "precondition: the fake is alive"
+    );
     drop(handle2);
     let mut gone = false;
     for _ in 0..50 {
@@ -239,8 +285,14 @@ for line in sys.stdin:
     // claude as `--resume <sid>`, replay the transcript on the way up,
     // and then converse as usual.
     let (handle3, mut events3) =
-        khor_acp::start_resume(&format!("{exe} _cagent"), dir.join("cwd"), &sid).await.unwrap();
-    assert_eq!(handle3.session().0.to_string(), sid, "the resumed session keeps its id");
+        khor_acp::start_resume(&format!("{exe} _cagent"), dir.join("cwd"), &sid)
+            .await
+            .unwrap();
+    assert_eq!(
+        handle3.session().0.to_string(),
+        sid,
+        "the resumed session keeps its id"
+    );
     let notes3 = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let n3 = notes3.clone();
     let pump3 = tokio::spawn(async move {
@@ -257,7 +309,10 @@ for line in sys.stdin:
     let stop = handle3.prompt("hello resumed").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes3.lock().unwrap().join("\n");
-    assert!(said.contains("echo: hello resumed"), "the resumed session converses: {said}");
+    assert!(
+        said.contains("echo: hello resumed"),
+        "the resumed session converses: {said}"
+    );
     // Read after the round-trip — the interpreter needs a beat to write
     // the marker, and a turn proves it is long past started.
     assert_eq!(

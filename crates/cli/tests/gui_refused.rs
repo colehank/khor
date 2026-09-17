@@ -28,8 +28,8 @@ use std::net::TcpStream;
 use std::time::{Duration, Instant};
 
 use khor_core::{DeviceId, SessionId};
-use khor_node::gui_host::{gui_host_main, refused, GuiNote, GuiOp};
-use khor_node::host::{read_frame, read_host_file, write_frame, Hello, Welcome};
+use khor_node::gui_host::{GuiNote, GuiOp, gui_host_main, refused};
+use khor_node::host::{Hello, Welcome, read_frame, read_host_file, write_frame};
 use khor_node::live::LiveKind;
 
 const FAKE: &str = r#"#!/usr/bin/env python3
@@ -113,7 +113,10 @@ fn a_dropped_op_is_said_back_to_the_face_that_sent_it() {
         if let Ok(text) = std::fs::read_to_string(&ready) {
             break SessionId(text.trim().to_owned());
         }
-        assert!(Instant::now() < deadline, "the host never wrote the ready file");
+        assert!(
+            Instant::now() < deadline,
+            "the host never wrote the ready file"
+        );
         std::thread::sleep(Duration::from_millis(50));
     };
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
@@ -124,7 +127,15 @@ fn a_dropped_op_is_said_back_to_the_face_that_sent_it() {
         // A read deadline before the first read: a frame that stops
         // arriving must make this fail, not hang.
         c.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
-        write_frame(&mut c, &Hello { cookie: hf.cookie.clone(), cols: 0, rows: 0 }).unwrap();
+        write_frame(
+            &mut c,
+            &Hello {
+                cookie: hf.cookie.clone(),
+                cols: 0,
+                rows: 0,
+            },
+        )
+        .unwrap();
         let w: Welcome = read_frame(&mut c).unwrap();
         assert!(w.ok, "{}", w.why);
         let GuiNote::Agent { .. } = read_frame::<GuiNote>(&mut c).unwrap() else {
@@ -167,7 +178,11 @@ fn a_dropped_op_is_said_back_to_the_face_that_sent_it() {
             _ => continue,
         }
     };
-    assert_eq!(told, refused::TURN_IN_FLIGHT, "B is told why its line did not go in");
+    assert_eq!(
+        told,
+        refused::TURN_IN_FLIGHT,
+        "B is told why its line did not go in"
+    );
 
     // And it went to B alone: A is holding a turn and has no business
     // hearing about B's mistake.
@@ -178,7 +193,8 @@ fn a_dropped_op_is_said_back_to_the_face_that_sent_it() {
     // list, and the first spelling of this assertion read that as the
     // refusal leaking and failed. Silence would have been the wrong
     // claim: it says this face is deaf, and it is not.
-    a.set_read_timeout(Some(Duration::from_millis(400))).unwrap();
+    a.set_read_timeout(Some(Duration::from_millis(400)))
+        .unwrap();
     let mut heard = Vec::new();
     while let Ok(note) = read_frame::<GuiNote>(&mut a) {
         heard.push(kind_of(&note));

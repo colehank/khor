@@ -69,7 +69,7 @@ use khor_catalog::msg;
 use khor_core::{SessionId, State};
 use serde::{Deserialize, Serialize};
 
-use crate::host::{host_file_path, read_frame, write_frame, Hello, HostFile, Welcome};
+use crate::host::{Hello, HostFile, Welcome, host_file_path, read_frame, write_frame};
 use crate::live::{LiveKind, Source};
 
 /// What a connected face may do to the conversation.
@@ -156,7 +156,11 @@ pub enum GuiNote {
     Note(String),
     /// The agent asked permission. `options` are `(id, label)` pairs in
     /// the agent's own order; answer by number with [`GuiOp::Answer`].
-    Ask { ask: u64, title: String, options: Vec<(String, String)> },
+    Ask {
+        ask: u64,
+        title: String,
+        options: Vec<(String, String)>,
+    },
     /// The turn ended, with the protocol's stop reason as a string.
     Turn(String),
     /// The conversation is over; no more frames follow.
@@ -275,7 +279,9 @@ fn has_settings(s: &khor_acp::Settings) -> bool {
 /// that does not, the one option this face changed is moved here so
 /// the screen does not read the old value over a change that took.
 fn apply_choice(options: &mut [SessionConfigOption], id: &str, value: &Choice) {
-    let Some(option) = options.iter_mut().find(|o| o.id.to_string() == id) else { return };
+    let Some(option) = options.iter_mut().find(|o| o.id.to_string() == id) else {
+        return;
+    };
     match (&mut option.kind, value) {
         (SessionConfigKind::Select(s), Choice::Value(v)) => {
             s.current_value = v.clone().into();
@@ -288,7 +294,11 @@ fn apply_choice(options: &mut [SessionConfigOption], id: &str, value: &Choice) {
 /// What a change a face asked for came back as.
 enum Setting {
     Mode(String),
-    Options { list: Vec<SessionConfigOption>, id: String, value: Choice },
+    Options {
+        list: Vec<SessionConfigOption>,
+        id: String,
+        value: Choice,
+    },
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -496,7 +506,12 @@ impl Fanout {
 /// The detached process `_ghost` runs. Blocks until the conversation is
 /// over, then reports the ending like any host: a recorded exit, even
 /// if nobody is watching.
-pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<String>) -> Result<(), String> {
+pub fn gui_host_main(
+    root: PathBuf,
+    ready: PathBuf,
+    title: String,
+    cmd: Vec<String>,
+) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
@@ -556,7 +571,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
         // prompt nobody has typed into yet.
         live.report(&id, State::Idle, Source::Reported)?;
     }
-    let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+    let dir = live
+        .dir_of(&id)
+        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
 
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -579,7 +596,9 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
     )?;
     std::fs::write(&ready, &id.0).map_err(|e| e.to_string())?;
 
-    let fanout = Arc::new(Fanout { clients: Mutex::new(Vec::new()) });
+    let fanout = Arc::new(Fanout {
+        clients: Mutex::new(Vec::new()),
+    });
     let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp)>();
     // A face that just arrived, so the loop can hand it what is
     // outstanding. Its own channel rather than a `GuiOp`: joining is
@@ -599,15 +618,33 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
             let mut next_client: u64 = 0;
             for conn in listener.incoming().flatten() {
                 let mut conn = conn;
-                let Ok(hello) = read_frame::<Hello>(&mut conn) else { continue };
+                let Ok(hello) = read_frame::<Hello>(&mut conn) else {
+                    continue;
+                };
                 if hello.cookie != cookie {
-                    let _ = write_frame(&mut conn, &Welcome { ok: false, why: msg::WRONG_COOKIE.into() });
+                    let _ = write_frame(
+                        &mut conn,
+                        &Welcome {
+                            ok: false,
+                            why: msg::WRONG_COOKIE.into(),
+                        },
+                    );
                     continue;
                 }
-                if write_frame(&mut conn, &Welcome { ok: true, why: String::new() }).is_err() {
+                if write_frame(
+                    &mut conn,
+                    &Welcome {
+                        ok: true,
+                        why: String::new(),
+                    },
+                )
+                .is_err()
+                {
                     continue;
                 }
-                let Ok(mut readable) = conn.try_clone() else { continue };
+                let Ok(mut readable) = conn.try_clone() else {
+                    continue;
+                };
                 let who = next_client;
                 next_client += 1;
                 fanout.clients.lock().unwrap().push((who, conn));
@@ -652,7 +689,8 @@ pub fn gui_host_main(root: PathBuf, ready: PathBuf, title: String, cmd: Vec<Stri
             lists: handle.facts().lists,
             needs_login: handle.facts().needs_login,
         };
-        let (turn_tx, mut turn_rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
+        let (turn_tx, mut turn_rx) =
+            tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
         // What the session can be set to, as of opening, then moved
         // by every change that took — the agent's own updates and the
         // faces' answered ops alike. Held here so a face that attaches
@@ -973,19 +1011,14 @@ async fn replay_to(
     let mut fall = None;
     while let Ok(event) = events.try_recv() {
         match event {
-            khor_acp::Event::Note(n)
-                if loaded.is_ok() => {
-                    let json = serde_json::to_string(&n).unwrap_or_default();
-                    fanout.send_to(who, &GuiNote::History(json));
-                }
+            khor_acp::Event::Note(n) if loaded.is_ok() => {
+                let json = serde_json::to_string(&n).unwrap_or_default();
+                fanout.send_to(who, &GuiNote::History(json));
+            }
             khor_acp::Event::Closed(err) => (fell, fall) = (true, err),
             _ => {}
         }
     }
     fanout.send_to(who, &GuiNote::HistoryEnd);
-    if fell {
-        Err(fall)
-    } else {
-        Ok(())
-    }
+    if fell { Err(fall) } else { Ok(()) }
 }

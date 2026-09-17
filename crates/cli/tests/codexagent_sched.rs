@@ -45,21 +45,30 @@ for line in sys.stdin:
     }
 
     let exe = env!("CARGO_BIN_EXE_khor");
-    let (handle, _events) =
-        khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd")).await.unwrap();
+    let (handle, _events) = khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd"))
+        .await
+        .unwrap();
     assert_eq!(handle.session().0.to_string(), SID);
 
     let params: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.params")).unwrap())
             .unwrap();
     let khor = &params["config"]["mcp_servers"]["khor"];
-    assert_eq!(khor["args"], serde_json::json!(["mcp"]), "khor's verbs as tools: {params}");
+    assert_eq!(
+        khor["args"],
+        serde_json::json!(["mcp"]),
+        "khor's verbs as tools: {params}"
+    );
     assert!(
-        khor["env"]["KHOR_HOME"].as_str().is_some_and(|h| !h.is_empty()),
+        khor["env"]["KHOR_HOME"]
+            .as_str()
+            .is_some_and(|h| !h.is_empty()),
         "the store is named, not inherited: {params}"
     );
     assert!(
-        params["developerInstructions"].as_str().is_some_and(|b| !b.is_empty()),
+        params["developerInstructions"]
+            .as_str()
+            .is_some_and(|b| !b.is_empty()),
         "the brief must ride developerInstructions: {params}"
     );
     drop(handle);

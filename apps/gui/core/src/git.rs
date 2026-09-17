@@ -91,7 +91,11 @@ pub async fn status(root: &Path, machine: &str, dir: &str) -> Result<GitStatus, 
     let s = n.git_status_on(machine, dir).await?;
     Ok(GitStatus {
         branch: s.branch,
-        rows: s.rows.into_iter().map(|(path, mark)| GitRow { path, mark }).collect(),
+        rows: s
+            .rows
+            .into_iter()
+            .map(|(path, mark)| GitRow { path, mark })
+            .collect(),
         more: s.more,
         ahead: s.ahead,
         behind: s.behind,
@@ -109,7 +113,11 @@ pub async fn diff(root: &Path, machine: &str, path: &str) -> Result<GitDiff, Str
         hunks: d
             .hunks
             .into_iter()
-            .map(|h| GitHunk { at: h.at, lines: h.lines, was: h.was })
+            .map(|h| GitHunk {
+                at: h.at,
+                lines: h.lines,
+                was: h.was,
+            })
             .collect(),
         more: d.more,
     })

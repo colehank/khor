@@ -106,7 +106,11 @@ mod tests {
     fn the_same_box_hashes_the_same_and_a_different_one_does_not() {
         let a = super::hashed("one-box");
         assert_eq!(a, super::hashed("one-box"), "the same id hashes the same");
-        assert_ne!(a, super::hashed("another-box"), "a different id hashes differently");
+        assert_ne!(
+            a,
+            super::hashed("another-box"),
+            "a different id hashes differently"
+        );
         assert_eq!(a.len(), 32, "the width written into the owner file");
         assert!(!a.contains("one-box"), "the raw id is not carried through");
     }

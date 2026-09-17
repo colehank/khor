@@ -92,12 +92,21 @@ pub(crate) enum Scope {
 }
 
 pub(crate) enum TestSpec {
-    Contains { pattern: &'static str, fold: bool },
+    Contains {
+        pattern: &'static str,
+        fold: bool,
+    },
     /// Every one of them, anywhere. One rule in the whole table needs
     /// this; upstream requires both halves because either alone shows up
     /// in ordinary output.
-    ContainsAll { patterns: &'static [&'static str], fold: bool },
-    Regex { pattern: &'static str, fold: bool },
+    ContainsAll {
+        patterns: &'static [&'static str],
+        fold: bool,
+    },
+    Regex {
+        pattern: &'static str,
+        fold: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -151,7 +160,9 @@ pub struct Screen {
 
 impl Screen {
     pub fn new(rows: u16, cols: u16) -> Screen {
-        Screen { parser: vt100::Parser::new(rows, cols, 0) }
+        Screen {
+            parser: vt100::Parser::new(rows, cols, 0),
+        }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
@@ -162,7 +173,7 @@ impl Screen {
         // isolation). One bad frame must not kill the process reading it:
         // catch the panic, replace the parser at the same size, and the
         // program's next full repaint restores the picture.
-        use std::panic::{catch_unwind, AssertUnwindSafe};
+        use std::panic::{AssertUnwindSafe, catch_unwind};
         let (rows, cols) = self.parser.screen().size();
         if catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err() {
             self.parser = vt100::Parser::new(rows, cols, 0);
@@ -223,7 +234,11 @@ impl Screen {
     /// evidence available that matching the raw byte stream was never
     /// going to work.
     fn above_prompt(&self, max_lines: usize) -> String {
-        let all: Vec<String> = self.tail(max_lines).split('\n').map(str::to_owned).collect();
+        let all: Vec<String> = self
+            .tail(max_lines)
+            .split('\n')
+            .map(str::to_owned)
+            .collect();
 
         let mut lines = all.clone();
         let mut borders = 0;
@@ -263,7 +278,10 @@ impl Screen {
 
 /// A separator line: dashes, box-drawing horizontals, blanks.
 fn is_rule(trimmed: &str) -> bool {
-    !trimmed.is_empty() && trimmed.chars().all(|c| c == '-' || c == '─' || c.is_whitespace())
+    !trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|c| c == '-' || c == '─' || c.is_whitespace())
 }
 
 // ── the engine ──────────────────────────────────────────────
@@ -311,7 +329,12 @@ impl Detector {
                 _ => patterns.push(None),
             }
         }
-        Some(Detector { table, patterns, last_content: String::new(), stable_since_ms: 0 })
+        Some(Detector {
+            table,
+            patterns,
+            last_content: String::new(),
+            stable_since_ms: 0,
+        })
     }
 
     pub fn vendor(&self) -> &'static str {

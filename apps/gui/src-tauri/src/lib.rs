@@ -119,10 +119,7 @@ fn update_account(
 
 /// One file shaped for a screen (`khor_gui_core::files::preview`).
 #[tauri::command]
-async fn preview(
-    machine: String,
-    path: String,
-) -> Result<khor_gui_core::files::Preview, String> {
+async fn preview(machine: String, path: String) -> Result<khor_gui_core::files::Preview, String> {
     khor_gui_core::files::preview(&Node::root_from_env(), &machine, &path).await
 }
 
@@ -135,10 +132,7 @@ async fn code_here(machine: String) -> Result<khor_gui_core::code::Editor, Strin
 /// Where to point a webview at a machine's VS Code
 /// (`khor_gui_core::code::open`).
 #[tauri::command]
-async fn code_open(
-    machine: String,
-    dir: String,
-) -> Result<khor_gui_core::code::CodeAt, String> {
+async fn code_open(machine: String, dir: String) -> Result<khor_gui_core::code::CodeAt, String> {
     khor_gui_core::code::open(&Node::root_from_env(), &machine, &dir).await
 }
 
@@ -169,19 +163,13 @@ fn merge_text(base: String, mine: String, theirs: String) -> khor_gui_core::file
 
 /// One checkout's marks and branch (`khor_gui_core::git::status`).
 #[tauri::command]
-async fn git_status(
-    machine: String,
-    dir: String,
-) -> Result<khor_gui_core::git::GitStatus, String> {
+async fn git_status(machine: String, dir: String) -> Result<khor_gui_core::git::GitStatus, String> {
     khor_gui_core::git::status(&Node::root_from_env(), &machine, &dir).await
 }
 
 /// Where one file differs from HEAD (`khor_gui_core::git::diff`).
 #[tauri::command]
-async fn git_diff(
-    machine: String,
-    path: String,
-) -> Result<khor_gui_core::git::GitDiff, String> {
+async fn git_diff(machine: String, path: String) -> Result<khor_gui_core::git::GitDiff, String> {
     khor_gui_core::git::diff(&Node::root_from_env(), &machine, &path).await
 }
 
@@ -249,7 +237,14 @@ async fn load(
         Some("time") => khor_node::TopBy::Time,
         Some(other) => return Err(format!("no such column: {other}")),
     };
-    khor_gui_core::load(&Node::root_from_env(), &machine, top, by, desc.unwrap_or(true)).await
+    khor_gui_core::load(
+        &Node::root_from_env(),
+        &machine,
+        top,
+        by,
+        desc.unwrap_or(true),
+    )
+    .await
 }
 
 /// **Blocking, and the first call can take seconds**: reading every
@@ -394,7 +389,6 @@ fn chat_set_option(id: String, option: String, value: serde_json::Value) -> Resu
     khor_gui_core::chat::chat_set_option(&id, &option, &value)
 }
 
-
 #[tauri::command]
 fn chat_replay(id: String) -> Result<(), String> {
     khor_gui_core::chat::chat_replay(&id)
@@ -442,24 +436,36 @@ fn dir_pins() -> Result<Vec<khor_gui_core::files::DirPinRow>, String> {
 /// recycle bin; every other machine's is deleted (`files::remove`).
 #[tauri::command]
 async fn remove(machine: Option<String>, path: String) -> Result<(), String> {
-    khor_gui_core::files::remove(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &path)
-        .await
+    khor_gui_core::files::remove(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &path,
+    )
+    .await
 }
 
 /// One new directory on a machine (`files::mkdir`). One level, and a
 /// name already taken is refused.
 #[tauri::command]
 async fn mkdir(machine: Option<String>, path: String) -> Result<(), String> {
-    khor_gui_core::files::mkdir(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &path)
-        .await
+    khor_gui_core::files::mkdir(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &path,
+    )
+    .await
 }
 
 /// One new empty file on a machine (`files::touch`). A name already
 /// taken is refused and the file wearing it is not emptied.
 #[tauri::command]
 async fn touch(machine: Option<String>, path: String) -> Result<(), String> {
-    khor_gui_core::files::touch(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &path)
-        .await
+    khor_gui_core::files::touch(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &path,
+    )
+    .await
 }
 
 /// Moves a name on a machine (`files::rename_path`). Crossing
@@ -480,8 +486,12 @@ async fn rename_path(machine: Option<String>, from: String, to: String) -> Resul
 /// machine this window is running on.
 #[tauri::command]
 async fn launch(machine: Option<String>, target: String) -> Result<(), String> {
-    khor_gui_core::files::launch(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &target)
-        .await
+    khor_gui_core::files::launch(
+        &Node::root_from_env(),
+        machine.as_deref().unwrap_or(""),
+        &target,
+    )
+    .await
 }
 
 /// Whether this machine has a recycle bin at all.
@@ -645,7 +655,9 @@ struct PageBox {
 /// sides measure the window differently. Zero wherever they agree.
 #[cfg(desktop)]
 fn frame_lift(window: &tauri::Window, at: PageBox) -> f64 {
-    let Ok(inner) = window.inner_size() else { return 0.0 };
+    let Ok(inner) = window.inner_size() else {
+        return 0.0;
+    };
     let scale = window.scale_factor().unwrap_or(1.0);
     if scale <= 0.0 || at.view <= 0.0 {
         return 0.0;
@@ -711,9 +723,10 @@ fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (
 /// Remembers where a page webview is, keeping whatever exit it is on.
 fn page_went(label: &str, to: &str) {
     if let Ok(mut m) = page_exits().lock()
-        && let Some(slot) = m.get_mut(label) {
-            slot.1 = to.to_owned();
-        }
+        && let Some(slot) = m.get_mut(label)
+    {
+        slot.1 = to.to_owned();
+    }
 }
 
 /// How a browsing tab presents itself to the sites it opens.
@@ -745,7 +758,11 @@ fn as_a_browser(agent: &str) -> Option<String> {
     if agent.is_empty() || agent.contains("Safari/") {
         return None;
     }
-    let build = agent.split("AppleWebKit/").nth(1)?.split_whitespace().next()?;
+    let build = agent
+        .split("AppleWebKit/")
+        .nth(1)?
+        .split_whitespace()
+        .next()?;
     Some(format!("{agent} Safari/{build}"))
 }
 
@@ -812,7 +829,10 @@ async fn open_page(
     // editor.
     let direct = machine.is_empty();
     let borrow = if direct {
-        khor_gui_core::web::WebBorrow { session: String::new(), addr: String::new() }
+        khor_gui_core::web::WebBorrow {
+            session: String::new(),
+            addr: String::new(),
+        }
     } else {
         khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?
     };
@@ -820,7 +840,11 @@ async fn open_page(
     let proxy: Option<tauri::Url> = if direct {
         None
     } else {
-        Some(format!("http://{}", borrow.addr).parse().map_err(|e| format!("{e}"))?)
+        Some(
+            format!("http://{}", borrow.addr)
+                .parse()
+                .map_err(|e| format!("{e}"))?,
+        )
     };
     let label = page_label(&tab);
     let going_to = target.to_string();
@@ -829,8 +853,14 @@ async fn open_page(
     // Reuse only when it is the same exit. A different one means the
     // webview in front of us is wired to a proxy it can no longer be
     // talked out of, so it goes.
-    let wired = page_exits().lock().ok().and_then(|m| m.get(&label).cloned());
-    let same_exit = wired.as_ref().map(|(exit, _)| exit == &machine).unwrap_or(false);
+    let wired = page_exits()
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&label).cloned());
+    let same_exit = wired
+        .as_ref()
+        .map(|(exit, _)| exit == &machine)
+        .unwrap_or(false);
     if let Some(live) = window.app_handle().get_webview(&label) {
         if same_exit {
             // **Only navigate when it is somewhere else.** Coming back to
@@ -847,8 +877,10 @@ async fn open_page(
                 page_went(&label, target.as_str());
                 live.navigate(target).map_err(|e| e.to_string())?;
             }
-            live.set_position(LogicalPosition::new(at.x, top)).map_err(|e| e.to_string())?;
-            live.set_size(LogicalSize::new(at.w, at.h)).map_err(|e| e.to_string())?;
+            live.set_position(LogicalPosition::new(at.x, top))
+                .map_err(|e| e.to_string())?;
+            live.set_size(LogicalSize::new(at.w, at.h))
+                .map_err(|e| e.to_string())?;
             live.show().map_err(|e| e.to_string())?;
             return Ok(borrow);
         }
@@ -887,9 +919,14 @@ async fn open_page(
     }
     let builder = builder
         .on_document_title_changed(move |view, title| {
-            let _ = view
-                .app_handle()
-                .emit_to(t_face.clone(), "page:title", PageWord { tab: t_tab.clone(), text: title });
+            let _ = view.app_handle().emit_to(
+                t_face.clone(),
+                "page:title",
+                PageWord {
+                    tab: t_tab.clone(),
+                    text: title,
+                },
+            );
         })
         .on_page_load(move |view, payload| {
             let word = match payload.event() {
@@ -900,7 +937,10 @@ async fn open_page(
             let _ = app.emit_to(
                 l_face.clone(),
                 "page:load",
-                PageWord { tab: l_tab.clone(), text: word.to_owned() },
+                PageWord {
+                    tab: l_tab.clone(),
+                    text: word.to_owned(),
+                },
             );
             // **On arrival, not on departure.** This used to fire for
             // both halves of a load, so every navigation reported the
@@ -936,7 +976,10 @@ async fn open_page(
                 let _ = app.emit_to(
                     l_face.clone(),
                     "page:went",
-                    PageWord { tab: l_tab.clone(), text: at },
+                    PageWord {
+                        tab: l_tab.clone(),
+                        text: at,
+                    },
                 );
             }
         });
@@ -970,13 +1013,20 @@ async fn open_page(
         let _ = popped.emit_to(
             p_face.clone(),
             "page:popup",
-            PageWord { tab: p_tab.clone(), text: to.to_string() },
+            PageWord {
+                tab: p_tab.clone(),
+                text: to.to_string(),
+            },
         );
         tauri::webview::NewWindowResponse::Deny
     });
 
     window
-        .add_child(builder, LogicalPosition::new(at.x, top), LogicalSize::new(at.w, at.h))
+        .add_child(
+            builder,
+            LogicalPosition::new(at.x, top),
+            LogicalSize::new(at.w, at.h),
+        )
         .map_err(|e| e.to_string())?;
     if let Ok(mut m) = page_exits().lock() {
         m.insert(label, (machine, going_to));
@@ -991,10 +1041,14 @@ async fn open_page(
 #[tauri::command]
 fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), String> {
     use tauri::{LogicalPosition, LogicalSize, Manager};
-    let Some(view) = window.app_handle().get_webview(&page_label(&tab)) else { return Ok(()) };
+    let Some(view) = window.app_handle().get_webview(&page_label(&tab)) else {
+        return Ok(());
+    };
     let top = at.y + frame_lift(&window, at);
-    view.set_position(LogicalPosition::new(at.x, top)).map_err(|e| e.to_string())?;
-    view.set_size(LogicalSize::new(at.w, at.h)).map_err(|e| e.to_string())?;
+    view.set_position(LogicalPosition::new(at.x, top))
+        .map_err(|e| e.to_string())?;
+    view.set_size(LogicalSize::new(at.w, at.h))
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -1008,7 +1062,9 @@ fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), Stri
 #[tauri::command]
 fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
-    let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(()) };
+    let Some(view) = app.get_webview(&page_label(&tab)) else {
+        return Ok(());
+    };
     view.hide().map_err(|e| e.to_string())
 }
 
@@ -1023,7 +1079,9 @@ fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 #[tauri::command]
 fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
-    let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(()) };
+    let Some(view) = app.get_webview(&page_label(&tab)) else {
+        return Ok(());
+    };
     view.show().map_err(|e| e.to_string())
 }
 
@@ -1076,7 +1134,9 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 #[cfg(desktop)]
 fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
     use tauri::{Manager, Theme};
-    let Some(w) = app.get_webview_window("main") else { return };
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
     let dark = matches!(w.theme(), Ok(Theme::Dark));
     let ground = if dark {
         tauri::webview::Color(0x0f, 0x0f, 0x0e, 0xff)
@@ -1100,7 +1160,9 @@ fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
 #[tauri::command]
 fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
     use tauri::Manager;
-    let Some(view) = app.get_webview(&page_label(&tab)) else { return Ok(()) };
+    let Some(view) = app.get_webview(&page_label(&tab)) else {
+        return Ok(());
+    };
     match way.as_str() {
         "back" => view.eval("history.back()").map_err(|e| e.to_string()),
         "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
@@ -1125,7 +1187,9 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
     }
-    let Some(view) = app.get_webview(&label) else { return Ok(()) };
+    let Some(view) = app.get_webview(&label) else {
+        return Ok(());
+    };
     view.close().map_err(|e| e.to_string())
 }
 
@@ -1230,9 +1294,8 @@ fn on_screen(window: &tauri::Window, at: Spot) -> Result<(f64, f64, f64), String
 /// in the browsing tab (`open_page` says why that matters).
 #[cfg(desktop)]
 fn menu_held() -> &'static std::sync::Mutex<Option<(String, serde_json::Value)>> {
-    static HELD: std::sync::OnceLock<
-        std::sync::Mutex<Option<(String, serde_json::Value)>>,
-    > = std::sync::OnceLock::new();
+    static HELD: std::sync::OnceLock<std::sync::Mutex<Option<(String, serde_json::Value)>>> =
+        std::sync::OnceLock::new();
     HELD.get_or_init(Default::default)
 }
 
@@ -1334,7 +1397,9 @@ fn hang_menu_window(app: &tauri::AppHandle) {
 fn show_menu(window: tauri::Window, at: Spot, rows: serde_json::Value) -> Result<bool, String> {
     use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
     let app = window.app_handle().clone();
-    let Some(menu) = app.get_webview_window(MENU) else { return Ok(false) };
+    let Some(menu) = app.get_webview_window(MENU) else {
+        return Ok(false);
+    };
     let (x, y, w) = on_screen(&window, at)?;
     let face = window.label().to_string();
     if let Ok(mut held) = menu_held().lock() {
@@ -1347,9 +1412,12 @@ fn show_menu(window: tauri::Window, at: Spot, rows: serde_json::Value) -> Result
     let wide = (w.max(1.0) as u32).max(1);
     menu_wide().store(wide, std::sync::atomic::Ordering::Relaxed);
     let tall = menu.inner_size().map_err(|e| e.to_string())?.height.max(1);
-    menu.set_position(PhysicalPosition::new(x, y)).map_err(|e| e.to_string())?;
-    menu.set_size(PhysicalSize::new(wide, tall)).map_err(|e| e.to_string())?;
-    app.emit_to(MENU, "menu:rows", rows).map_err(|e| e.to_string())?;
+    menu.set_position(PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    menu.set_size(PhysicalSize::new(wide, tall))
+        .map_err(|e| e.to_string())?;
+    app.emit_to(MENU, "menu:rows", rows)
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -1365,7 +1433,9 @@ fn show_menu(window: tauri::Window, at: Spot, rows: serde_json::Value) -> Result
 #[tauri::command]
 fn size_menu(app: tauri::AppHandle, h: f64) -> Result<(), String> {
     use tauri::{Manager, PhysicalSize};
-    let Some(menu) = app.get_webview_window(MENU) else { return Ok(()) };
+    let Some(menu) = app.get_webview_window(MENU) else {
+        return Ok(());
+    };
     let scale = menu.scale_factor().map_err(|e| e.to_string())?;
     // **Not read back off the window** — see `menu_wide`, which is the
     // account of what reading it back cost.
@@ -1402,9 +1472,13 @@ fn menu_rows() -> Result<serde_json::Value, String> {
 #[tauri::command]
 fn menu_pick(app: tauri::AppHandle, key: String) -> Result<(), String> {
     use tauri::Emitter;
-    let face = menu_held().lock().ok().and_then(|h| h.as_ref().map(|(f, _)| f.clone()));
+    let face = menu_held()
+        .lock()
+        .ok()
+        .and_then(|h| h.as_ref().map(|(f, _)| f.clone()));
     let Some(face) = face else { return Ok(()) };
-    app.emit_to(face, "menu:pick", key).map_err(|e| e.to_string())
+    app.emit_to(face, "menu:pick", key)
+        .map_err(|e| e.to_string())
 }
 
 /// Takes the menu off the screen. **Hidden rather than closed**, for
@@ -1415,7 +1489,9 @@ fn menu_pick(app: tauri::AppHandle, key: String) -> Result<(), String> {
 fn hide_menu(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;
     menu_up().store(false, std::sync::atomic::Ordering::Relaxed);
-    let Some(menu) = app.get_webview_window(MENU) else { return Ok(()) };
+    let Some(menu) = app.get_webview_window(MENU) else {
+        return Ok(());
+    };
     menu.hide().map_err(|e| e.to_string())
 }
 
@@ -1625,7 +1701,11 @@ async fn open_session(
 /// The machine card's 在这台开终端 — `open --on`, through the same
 /// core call the bridge answers with (docs/KHOR.md equivalence).
 #[tauri::command]
-async fn open_on(machine: String, title: Option<String>, cwd: Option<String>) -> Result<String, String> {
+async fn open_on(
+    machine: String,
+    title: Option<String>,
+    cwd: Option<String>,
+) -> Result<String, String> {
     khor_gui_core::open_term_on(
         &Node::root_from_env(),
         &machine,
@@ -1653,7 +1733,11 @@ async fn accept_transfer(msg: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 async fn send_path(machine: String, path: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
-        khor_gui_core::send_path(&Node::root_from_env(), &machine, std::path::Path::new(&path))
+        khor_gui_core::send_path(
+            &Node::root_from_env(),
+            &machine,
+            std::path::Path::new(&path),
+        )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1829,9 +1913,10 @@ pub fn run() {
                     // asks and unasks; this only draws or stops drawing.
                     tauri::WindowEvent::Focused(here) => {
                         if let Some(menu) = menu()
-                            && menu_up().load(std::sync::atomic::Ordering::Relaxed) {
-                                let _ = if *here { menu.show() } else { menu.hide() };
-                            }
+                            && menu_up().load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            let _ = if *here { menu.show() } else { menu.hide() };
+                        }
                     }
                     _ => {}
                 }
@@ -1958,7 +2043,9 @@ mod tests {
     /// `:` and `_`. What this side mints keeps to a narrower set still,
     /// because `/` and `:` read as separators in a key.
     fn tame(label: &str) -> bool {
-        label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        label
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     }
 
     #[test]
@@ -1972,7 +2059,10 @@ mod tests {
             "",
         ] {
             let label = page_label(tab);
-            assert!(tame(&label), "label {label:?} from tab {tab:?} is not one tauri takes");
+            assert!(
+                tame(&label),
+                "label {label:?} from tab {tab:?} is not one tauri takes"
+            );
         }
     }
 
@@ -1981,7 +2071,11 @@ mod tests {
         let tabs = ["my mac", "my-mac", "my_mac", "my/mac", "my:mac", "mymac"];
         for (i, a) in tabs.iter().enumerate() {
             for b in &tabs[i + 1..] {
-                assert_ne!(page_label(a), page_label(b), "{a:?} and {b:?} share one label");
+                assert_ne!(
+                    page_label(a),
+                    page_label(b),
+                    "{a:?} and {b:?} share one label"
+                );
             }
         }
     }

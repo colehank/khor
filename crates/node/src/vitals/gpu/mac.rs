@@ -38,14 +38,14 @@
 //! divide by even if it were wanted. `None` says "there is no such
 //! number here", which is true.
 
-use core_foundation::base::{kCFAllocatorDefault, CFType, TCFType};
+use core_foundation::base::{CFType, TCFType, kCFAllocatorDefault};
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use io_kit_sys::types::{io_iterator_t, io_service_t};
 use io_kit_sys::{
-    kIOMasterPortDefault, IOIteratorNext, IOObjectRelease, IORegistryEntryCreateCFProperty,
-    IOServiceGetMatchingServices, IOServiceMatching,
+    IOIteratorNext, IOObjectRelease, IORegistryEntryCreateCFProperty, IOServiceGetMatchingServices,
+    IOServiceMatching, kIOMasterPortDefault,
 };
 
 /// The registry class every Mac GPU driver is a subclass of, so one name
@@ -90,7 +90,12 @@ pub(super) fn cards() -> Vec<khor_core::GpuCard> {
     }
     pcts.into_iter()
         .filter(|p| (0.0..=100.0).contains(p))
-        .map(|util_pct| khor_core::GpuCard { name: String::new(), util_pct, mem: None, temp_c: None })
+        .map(|util_pct| khor_core::GpuCard {
+            name: String::new(),
+            util_pct,
+            mem: None,
+            temp_c: None,
+        })
         .collect()
 }
 
@@ -394,11 +399,17 @@ mod tests {
         std::thread::sleep(SETTLE);
         let control = ioreg_utilizations();
 
-        println!("khor: {:?} over {} card(s); ioreg: {control:?}", g.util_pct, g.cards);
+        println!(
+            "khor: {:?} over {} card(s); ioreg: {control:?}",
+            g.util_pct, g.cards
+        );
 
         // The probe has to have found something, or every assertion below
         // is about an empty list agreeing with an empty list.
-        assert!(!control.is_empty(), "the control read no accelerator at all");
+        assert!(
+            !control.is_empty(),
+            "the control read no accelerator at all"
+        );
         assert_eq!(
             g.cards as usize,
             control.len(),
@@ -442,7 +453,10 @@ mod tests {
         // The line above just emptied the window. Before the re-read in
         // `sample` existed, this is where a flat zero came from.
         let g = sample().expect("every Mac has an accelerator to read");
-        println!("after the control took the window, khor read {}", g.util_pct);
+        println!(
+            "after the control took the window, khor read {}",
+            g.util_pct
+        );
         assert!(
             g.util_pct > 0.0,
             "the control was reading {control:?} a moment ago, so this zero is the window \

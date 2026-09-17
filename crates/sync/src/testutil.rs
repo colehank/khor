@@ -26,10 +26,7 @@ pub(crate) fn render(d: &ChatDoc) -> String {
 }
 
 pub(crate) fn tmpdir(tag: &str) -> PathBuf {
-    let p = std::env::temp_dir().join(format!(
-        "khor-sync-test-{tag}-{}",
-        std::process::id()
-    ));
+    let p = std::env::temp_dir().join(format!("khor-sync-test-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     p
 }

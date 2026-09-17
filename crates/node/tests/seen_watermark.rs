@@ -108,7 +108,10 @@ async fn an_offer_is_unseen_on_the_machine_it_was_offered_to() {
         .unwrap();
 
     // ── the measurement ────────────────────────────────────
-    assert!(b.transfer_is_here(&tid), "control: the summary must have reached beta");
+    assert!(
+        b.transfer_is_here(&tid),
+        "control: the summary must have reached beta"
+    );
     let r = row(&b, "chat/beta");
     assert_eq!(
         r.unread, 1,
@@ -127,7 +130,11 @@ async fn an_offer_is_unseen_on_the_machine_it_was_offered_to() {
         .expect("accept must not hang")
         .unwrap();
     let r = row(&b, "chat/beta");
-    assert_eq!(r.state.state, State::Done, "传完的文件走「新内容未看」那一档");
+    assert_eq!(
+        r.state.state,
+        State::Done,
+        "传完的文件走「新内容未看」那一档"
+    );
     assert_eq!(r.unread, 1, "…and the debt is exactly the one message");
 
     // ── control: the offering seat does not badge itself ───

@@ -18,9 +18,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use khor_core::{DayCell, DeviceId, SessionId, State};
+use khor_node::Node;
 use khor_node::day;
 use khor_node::live::LiveKind;
-use khor_node::Node;
 
 fn root(tag: &str) -> PathBuf {
     let p = std::env::temp_dir().join(format!("khor-day-{tag}-{}", std::process::id()));
@@ -46,14 +46,18 @@ fn a_dead_pid() -> u32 {
 /// band is showing right now.
 fn newest(node: &Node, id: &str) -> DayCell {
     let strips = node.day_strips(day::MINUTES).expect("strips");
-    let runs = strips.get(id).unwrap_or_else(|| panic!("{id} must have a strip"));
+    let runs = strips
+        .get(id)
+        .unwrap_or_else(|| panic!("{id} must have a strip"));
     runs.last().expect("a strip is never empty").cell
 }
 
 /// The word on disk in the registry, which is a different question from
 /// the word the list shows.
 fn word_on_disk(root: &Path, id: &SessionId) -> State {
-    let dir = LiveKind::new(root.to_path_buf(), DeviceId([1; 32])).dir_of(id).expect("an id");
+    let dir = LiveKind::new(root.to_path_buf(), DeviceId([1; 32]))
+        .dir_of(id)
+        .expect("an id");
     let raw = fs::read(dir.join("state.json")).expect("state.json");
     let v: serde_json::Value = serde_json::from_slice(&raw).expect("json");
     serde_json::from_value(v.get("word").expect("a word").clone()).expect("a state")

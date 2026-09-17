@@ -97,7 +97,10 @@ mod nvidia {
             // contexts `max`ed (see the module head), then added to
             // whatever the other cards said about the same pid.
             let mut here: HashMap<u32, u64> = HashMap::new();
-            for list in [card.running_compute_processes(), card.running_graphics_processes()] {
+            for list in [
+                card.running_compute_processes(),
+                card.running_graphics_processes(),
+            ] {
                 for p in list.unwrap_or_default() {
                     if let UsedGpuMemory::Used(bytes) = p.used_gpu_memory {
                         let slot = here.entry(p.pid).or_insert(0);

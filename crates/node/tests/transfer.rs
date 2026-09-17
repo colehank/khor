@@ -71,7 +71,10 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // updated the unit tests beside it and left the three integration
     // tests still looking for a `transfer/` row (here, `act.rs`,
     // `ipc.rs`), so all three had been red since.
-    assert!(b.transfer_is_here(&tid), "the summary must have reached beta");
+    assert!(
+        b.transfer_is_here(&tid),
+        "the summary must have reached beta"
+    );
     let rows = b.sessions().unwrap();
     let row = &rows
         .iter()
@@ -90,8 +93,8 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         "the offer must be a file message naming the file"
     );
     let files_dir = rb.join(".khor").join("chat").join("beta").join("files");
-    let payload_bytes_present = files_dir.exists()
-        && fs::read_dir(&files_dir).unwrap().next().is_some();
+    let payload_bytes_present =
+        files_dir.exists() && fs::read_dir(&files_dir).unwrap().next().is_some();
     assert!(!payload_bytes_present, "no byte may move before approval");
 
     // Approval pulls all slices, verifies, lands.
@@ -99,7 +102,11 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .await
         .expect("accept must not hang")
         .unwrap();
-    assert_eq!(moved, payload.len() as u64, "the first pull moves the whole payload");
+    assert_eq!(
+        moved,
+        payload.len() as u64,
+        "the first pull moves the whole payload"
+    );
     let dir = rb.join(".khor").join("chat").join("beta");
     let m = b
         .log("beta")
@@ -108,9 +115,15 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .into_iter()
         .find(|m| matches!(m.body, MsgBody::Files(_)))
         .expect("the file summary should be in the log");
-    let MsgBody::Files(files) = &m.body else { unreachable!() };
+    let MsgBody::Files(files) = &m.body else {
+        unreachable!()
+    };
     let f = &files[0];
-    assert_eq!(fs::read(payload_path(&dir, f)).unwrap(), payload, "bytes must be verbatim");
+    assert_eq!(
+        fs::read(payload_path(&dir, f)).unwrap(),
+        payload,
+        "bytes must be verbatim"
+    );
     assert_eq!(
         b.transfer_landing(&tid).unwrap(),
         vec![payload_path(&dir, f)],
@@ -158,7 +171,11 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .find(|v| v.session.id.0 == "chat/beta")
         .expect("the sender has the same conversation")
         .session;
-    assert_ne!(a_row.state.state, State::Blocked, "the sender's seat has nothing to approve");
+    assert_ne!(
+        a_row.state.state,
+        State::Blocked,
+        "the sender's seat has nothing to approve"
+    );
 
     // Resume: plant a partial of the first 100k — the second pull moves
     // only the missing tail, and the result is still verbatim.
@@ -168,8 +185,16 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .await
         .expect("accept must not hang")
         .unwrap();
-    assert_eq!(moved, (payload.len() - 100_000) as u64, "a resume moves only the tail");
-    assert_eq!(fs::read(payload_path(&dir, f)).unwrap(), payload, "resumed bytes verbatim");
+    assert_eq!(
+        moved,
+        (payload.len() - 100_000) as u64,
+        "a resume moves only the tail"
+    );
+    assert_eq!(
+        fs::read(payload_path(&dir, f)).unwrap(),
+        payload,
+        "resumed bytes verbatim"
+    );
 
     // ── control groups ─────────────────────────────────────
     // A poisoned partial cannot sneak through: right length, wrong bytes
@@ -187,12 +212,19 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         err.contains(probe.split('\u{0}').next().unwrap()),
         "wrong bytes must fail the digest: {err}"
     );
-    assert!(!partial_path(&dir, f).exists(), "the poisoned partial must be discarded");
+    assert!(
+        !partial_path(&dir, f).exists(),
+        "the poisoned partial must be discarded"
+    );
     let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("accept must not hang")
         .unwrap();
-    assert_eq!(moved, payload.len() as u64, "a clean retry pulls the whole payload again");
+    assert_eq!(
+        moved,
+        payload.len() as u64,
+        "a clean retry pulls the whole payload again"
+    );
 
     // A source tampered after the offer is refused before bytes move.
     let src2 = ra.join("small.bin");
@@ -207,7 +239,11 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
-    assert_eq!(err, khor_catalog::msg::OFFERED_FILE_CHANGED, "a tampered source is refused by name");
+    assert_eq!(
+        err,
+        khor_catalog::msg::OFFERED_FILE_CHANGED,
+        "a tampered source is refused by name"
+    );
 
     // A digest the offerer never recorded is refused by name: a ghost
     // summary lands in beta's copy as a raw block, claiming alpha as home.
@@ -218,8 +254,15 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         let far = ChatDoc::new(0xEE).unwrap();
         let msg_id = far
             .send_files(
-                &Sender { id: a.device_str().to_owned(), name: "alpha".into() },
-                &[FileRef { name: "ghost.bin".into(), size: 10, digest: "ee".repeat(32) }],
+                &Sender {
+                    id: a.device_str().to_owned(),
+                    name: "alpha".into(),
+                },
+                &[FileRef {
+                    name: "ghost.bin".into(),
+                    size: 10,
+                    digest: "ee".repeat(32),
+                }],
             )
             .unwrap();
         let block = far.changes_since(&Default::default()).unwrap();
@@ -229,12 +272,19 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // The plant really is visible from here — otherwise the refusal
     // below would be about a message beta never got, which is a
     // different refusal wearing the same words.
-    assert!(b.transfer_is_here(&ghost), "the ghost summary must be readable on beta");
+    assert!(
+        b.transfer_is_here(&ghost),
+        "the ghost summary must be readable on beta"
+    );
     let err = timeout(Duration::from_secs(60), b.accept(&ghost))
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
-    assert_eq!(err, khor_catalog::msg::OFFER_LOST, "an unrecorded digest is refused by name");
+    assert_eq!(
+        err,
+        khor_catalog::msg::OFFER_LOST,
+        "an unrecorded digest is refused by name"
+    );
 
     serve.abort();
     for r in [&ra, &rb] {

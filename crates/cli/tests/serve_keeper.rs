@@ -69,7 +69,9 @@ fn alive(pid: u32) -> bool {
 struct Reaper(u32);
 impl Drop for Reaper {
     fn drop(&mut self) {
-        let _ = Command::new("kill").args(["-9", &self.0.to_string()]).status();
+        let _ = Command::new("kill")
+            .args(["-9", &self.0.to_string()])
+            .status();
     }
 }
 
@@ -89,13 +91,21 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
     let keeper_pid = keeper.id();
     let _reap = Reaper(keeper_pid);
 
-    wait_for("the first serve to stand up", 20, || inner_pid(&home).is_some());
+    wait_for("the first serve to stand up", 20, || {
+        inner_pid(&home).is_some()
+    });
     let first = inner_pid(&home).unwrap();
-    assert_ne!(first, keeper_pid, "the serve must be a child, or nothing is keeping it");
+    assert_ne!(
+        first, keeper_pid,
+        "the serve must be a child, or nothing is keeping it"
+    );
 
     // The failure being reproduced: a death by signal, which writes
     // nothing of its own.
-    Command::new("kill").args(["-9", &first.to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-9", &first.to_string()])
+        .status()
+        .unwrap();
 
     wait_for("a new serve to stand up in the old one's place", 20, || {
         inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
@@ -105,7 +115,10 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
     // The death is named, from outside — the vantage point hinton's log
     // did not have.
     let mut said = String::new();
-    fs::File::open(&log).unwrap().read_to_string(&mut said).unwrap();
+    fs::File::open(&log)
+        .unwrap()
+        .read_to_string(&mut said)
+        .unwrap();
     assert!(
         said.contains(&khor_catalog::msg::died_by_signal(9)),
         "the log must say how it died: {said}"
@@ -114,7 +127,10 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
     // Control: an intentional stop stays stopped. TERM lands on the
     // keeper — the pid the installer's pid file would hold — and both
     // lives must end, with no third.
-    Command::new("kill").args(["-TERM", &keeper_pid.to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-TERM", &keeper_pid.to_string()])
+        .status()
+        .unwrap();
     // The keeper is this test's own child, so a bare `kill -0` would say
     // "alive" about its zombie forever (账本: 判 agent 死活要证据 —
     // pid_alive can't tell a zombie from a process). `try_wait` reaps.
@@ -158,12 +174,17 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         .spawn()
         .unwrap();
     let _reap = Reaper(keeper.id());
-    wait_for("the first serve to stand up", 20, || inner_pid(&home).is_some());
+    wait_for("the first serve to stand up", 20, || {
+        inner_pid(&home).is_some()
+    });
     let first = inner_pid(&home).unwrap();
 
     let read_log = || {
         let mut said = String::new();
-        fs::File::open(&log).unwrap().read_to_string(&mut said).unwrap();
+        fs::File::open(&log)
+            .unwrap()
+            .read_to_string(&mut said)
+            .unwrap();
         said
     };
 
@@ -178,13 +199,18 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         let m = khor_catalog::msg::serve_swap_refused("\u{1}", "\u{2}");
         after_stamp(m.split('\u{2}').next().unwrap(), '\u{1}')
     };
-    wait_for("the refusal to be written down", 20, || read_log().contains(&refused_line));
+    wait_for("the refusal to be written down", 20, || {
+        read_log().contains(&refused_line)
+    });
     assert_eq!(
         inner_pid(&home),
         Some(first),
         "a refused generation must not cost the running serve its life"
     );
-    assert!(alive(first), "the old serve must still be there after a refusal");
+    assert!(
+        alive(first),
+        "the old serve must still be there after a refusal"
+    );
 
     // The real thing: a healthy binary lands, the serve hands over.
     let next = home.join("next");
@@ -194,7 +220,10 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
     });
     let second = inner_pid(&home).unwrap();
-    assert!(!alive(first), "the old generation must be gone, not doubled");
+    assert!(
+        !alive(first),
+        "the old generation must be gone, not doubled"
+    );
     let v = env!("CARGO_PKG_VERSION");
     let swap_line = after_stamp(&khor_catalog::msg::serve_swapping("\u{1}", v, v), '\u{1}');
     assert!(
@@ -210,7 +239,10 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         read_log()
     );
 
-    Command::new("kill").args(["-TERM", &keeper.id().to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-TERM", &keeper.id().to_string()])
+        .status()
+        .unwrap();
     wait_for("the keeper and its serve to leave", 10, || {
         keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
     });
@@ -248,7 +280,10 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
 
     let read_log = || {
         let mut said = String::new();
-        fs::File::open(&log).unwrap().read_to_string(&mut said).unwrap();
+        fs::File::open(&log)
+            .unwrap()
+            .read_to_string(&mut said)
+            .unwrap();
         said
     };
     // The shield names itself before the exec; the stable text is what
@@ -275,7 +310,10 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
         inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
     });
     let second = inner_pid(&home).unwrap();
-    assert!(!alive(first), "the old generation must be gone, not doubled");
+    assert!(
+        !alive(first),
+        "the old generation must be gone, not doubled"
+    );
     assert!(
         !read_log().contains(&khor_catalog::msg::died_by_signal(15)),
         "a shielded handover is still a handover, not a death: {}",
@@ -285,7 +323,10 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     // The exec kept the pid: TERM at the pre-exec id must still stop
     // everything — serve.pid, `khor quit` and systemd's PIDFile all
     // point there.
-    Command::new("kill").args(["-TERM", &keeper.id().to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-TERM", &keeper.id().to_string()])
+        .status()
+        .unwrap();
     wait_for("the keeper and its serve to leave", 10, || {
         keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
     });
@@ -331,18 +372,34 @@ fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
 
     // The keeper dies the way it did in the field: no forwarding, no
     // last words — straight to KILL.
-    Command::new("kill").args(["-9", &keeper.id().to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-9", &keeper.id().to_string()])
+        .status()
+        .unwrap();
     keeper.wait().unwrap();
 
     // The inner notices on its own tick and leaves — nobody signals it.
-    wait_for("the orphaned inner to leave by itself", 15, || !alive(inner));
+    wait_for("the orphaned inner to leave by itself", 15, || {
+        !alive(inner)
+    });
     let mut said = String::new();
-    fs::File::open(home.join("serve.log")).unwrap().read_to_string(&mut said).unwrap();
+    fs::File::open(home.join("serve.log"))
+        .unwrap()
+        .read_to_string(&mut said)
+        .unwrap();
     let expected = {
         let m = khor_catalog::msg::serve_orphaned("\u{1}");
-        m.split('\u{1}').next_back().unwrap().trim_start_matches(']').trim_start().to_owned()
+        m.split('\u{1}')
+            .next_back()
+            .unwrap()
+            .trim_start_matches(']')
+            .trim_start()
+            .to_owned()
     };
-    assert!(said.contains(&expected), "the departure must be named: {said}");
+    assert!(
+        said.contains(&expected),
+        "the departure must be named: {said}"
+    );
 
     let _ = fs::remove_dir_all(&home);
 }

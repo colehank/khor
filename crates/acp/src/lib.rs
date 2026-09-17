@@ -218,9 +218,9 @@ impl Ask {
     /// Approve by picking one of the offered options, by its id.
     pub fn choose(self, id: &str) {
         let id = PermissionOptionId::new(id.to_owned());
-        let _ = self
-            .answer
-            .send(RequestPermissionOutcome::Selected(SelectedPermissionOutcome::new(id)));
+        let _ = self.answer.send(RequestPermissionOutcome::Selected(
+            SelectedPermissionOutcome::new(id),
+        ));
     }
 
     /// Refuse without picking anything.
@@ -295,8 +295,12 @@ impl Handle {
             )));
         }
         let request = PromptRequest::new(self.session.clone(), blocks);
-        let response =
-            self.conn.send_request(request).block_task().await.map_err(|e| e.to_string())?;
+        let response = self
+            .conn
+            .send_request(request)
+            .block_task()
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(response.stop_reason)
     }
 
@@ -313,7 +317,12 @@ impl Handle {
     /// with "not found" rather than replay nothing.
     pub async fn replay(&self) -> Result<(), String> {
         let request = LoadSessionRequest::new(self.session.clone(), self.cwd.clone());
-        self.conn.send_request(request).block_task().await.map(|_| ()).map_err(|e| e.to_string())
+        self.conn
+            .send_request(request)
+            .block_task()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Interrupt the current turn without ending the session.
@@ -347,8 +356,14 @@ impl Handle {
     /// answers a mode it did not list with an error, which comes back
     /// here as its words.
     pub async fn set_mode(&self, id: &str) -> Result<(), String> {
-        let request = SetSessionModeRequest::new(self.session.clone(), SessionModeId::new(id.to_owned()));
-        self.conn.send_request(request).block_task().await.map(|_| ()).map_err(|e| e.to_string())
+        let request =
+            SetSessionModeRequest::new(self.session.clone(), SessionModeId::new(id.to_owned()));
+        self.conn
+            .send_request(request)
+            .block_task()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
     }
 
     /// Sets one option (`session/set_config_option`) and answers with
@@ -362,7 +377,8 @@ impl Handle {
         id: &str,
         value: SessionConfigOptionValue,
     ) -> Result<Vec<SessionConfigOption>, String> {
-        let request = SetSessionConfigOptionRequest::new(self.session.clone(), id.to_owned(), value);
+        let request =
+            SetSessionConfigOptionRequest::new(self.session.clone(), id.to_owned(), value);
         self.conn
             .send_request(request)
             .block_task()
@@ -516,7 +532,11 @@ async fn ask_for_sessions(
     if let Some(cwd) = cwd {
         request = request.cwd(cwd);
     }
-    let answer = connection.send_request(request).block_task().await.map_err(refusal)?;
+    let answer = connection
+        .send_request(request)
+        .block_task()
+        .await
+        .map_err(refusal)?;
     Ok(Listing::Sessions(
         answer
             .sessions
@@ -564,7 +584,10 @@ async fn start_with(
                     // minutes to answer, and the event loop must keep
                     // moving `session/update`s meanwhile (module head).
                     let (tx, rx) = oneshot::channel::<RequestPermissionOutcome>();
-                    let _ = asks.send(Event::Ask(Ask { request, answer: tx }));
+                    let _ = asks.send(Event::Ask(Ask {
+                        request,
+                        answer: tx,
+                    }));
                     connection.spawn(async move {
                         // A dropped `Ask` answers `Cancelled`: the agent
                         // gets a refusal, never a hang.
@@ -619,8 +642,20 @@ async fn start_with(
     let (conn, session, facts, settings) = ready_rx
         .await
         .map_err(|_| Refusal::Wont("the agent ended before a session existed".to_owned()))??;
-    let _ = events_tx.send(Event::Ready { session: session.clone() });
-    Ok((Handle { conn, session, cwd: home, facts, settings, _close: close_tx }, events_rx))
+    let _ = events_tx.send(Event::Ready {
+        session: session.clone(),
+    });
+    Ok((
+        Handle {
+            conn,
+            session,
+            cwd: home,
+            facts,
+            settings,
+            _close: close_tx,
+        },
+        events_rx,
+    ))
 }
 
 /// The handshake and the one session, or the reason there is neither.
@@ -686,7 +721,10 @@ async fn open_one(
                 .map_err(refusal)?;
             (
                 sid,
-                Settings { modes: loaded.modes, options: loaded.config_options.unwrap_or_default() },
+                Settings {
+                    modes: loaded.modes,
+                    options: loaded.config_options.unwrap_or_default(),
+                },
             )
         }
         None => {
@@ -697,7 +735,10 @@ async fn open_one(
                 .map_err(refusal)?;
             (
                 opened.session_id,
-                Settings { modes: opened.modes, options: opened.config_options.unwrap_or_default() },
+                Settings {
+                    modes: opened.modes,
+                    options: opened.config_options.unwrap_or_default(),
+                },
             )
         }
     };

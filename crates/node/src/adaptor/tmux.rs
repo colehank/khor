@@ -141,8 +141,12 @@ pub const VENDOR: &str = "tmux";
 /// which has neither. `KHOR_TMUX` overrides the lot — that is how the
 /// tests point at a binary and how an odd install is fixed without a
 /// release.
-const CANDIDATES: [&str; 4] =
-    ["tmux", "/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"];
+const CANDIDATES: [&str; 4] = [
+    "tmux",
+    "/opt/homebrew/bin/tmux",
+    "/usr/local/bin/tmux",
+    "/usr/bin/tmux",
+];
 
 /// How long one `list-panes` may take before khor walks away from it.
 ///
@@ -207,19 +211,28 @@ pub struct Tmux {
 impl Tmux {
     /// The server `tmux` talks to with no arguments — the user's.
     pub fn default_server() -> Tmux {
-        Tmux { socket: None, binaries: Tmux::binaries() }
+        Tmux {
+            socket: None,
+            binaries: Tmux::binaries(),
+        }
     }
 
     /// A server of one's own (`tmux -L <name>`).
     pub fn on_socket(name: &str) -> Tmux {
-        Tmux { socket: Some(name.to_owned()), binaries: Tmux::binaries() }
+        Tmux {
+            socket: Some(name.to_owned()),
+            binaries: Tmux::binaries(),
+        }
     }
 
     /// This one binary and no fallbacks. How the "there is no tmux on
     /// this machine" path is exercised without uninstalling tmux — it is
     /// the same path, [`Tmux::spawn`] finding nothing to start.
     pub fn at_binary(path: &str) -> Tmux {
-        Tmux { socket: None, binaries: vec![path.to_owned()] }
+        Tmux {
+            socket: None,
+            binaries: vec![path.to_owned()],
+        }
     }
 
     /// The command a khor host runs to show this server's session
@@ -240,7 +253,12 @@ impl Tmux {
     /// (Pane selection and zoom are window-level flags the user's client
     /// shares, so neither is touched — on the ledger.)
     pub fn grouped_attach_argv(&self, target: &str, window: Option<&str>) -> Vec<String> {
-        let mut argv = vec![self.binaries.first().cloned().unwrap_or_else(|| "tmux".into())];
+        let mut argv = vec![
+            self.binaries
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "tmux".into()),
+        ];
         if let Some(sock) = &self.socket {
             argv.push("-L".into());
             argv.push(sock.clone());
@@ -266,11 +284,21 @@ impl Tmux {
     /// caller then attaches without narrowing, which shows the session's
     /// own current window — not wrong, just wider.
     pub fn window_holding(&self, target: &str, wanted: &[u32], procs: &Procs) -> Option<String> {
-        let text =
-            self.ask(&["list-panes", "-s", "-t", target, "-F", "#{window_id}|#{pane_pid}"])?;
+        let text = self.ask(&[
+            "list-panes",
+            "-s",
+            "-t",
+            target,
+            "-F",
+            "#{window_id}|#{pane_pid}",
+        ])?;
         for line in text.lines().filter(|l| !l.trim().is_empty()) {
-            let Some((window, pid)) = line.split_once('|') else { continue };
-            let Ok(pid) = pid.trim().parse::<u32>() else { continue };
+            let Some((window, pid)) = line.split_once('|') else {
+                continue;
+            };
+            let Ok(pid) = pid.trim().parse::<u32>() else {
+                continue;
+            };
             if procs.subtree(&[pid]).iter().any(|p| wanted.contains(p)) {
                 return Some(window.to_owned());
             }
@@ -315,7 +343,9 @@ impl Tmux {
             entry.absorb(&pane, procs);
         }
         for id in order {
-            let Some(g) = sessions.remove(&id) else { continue };
+            let Some(g) = sessions.remove(&id) else {
+                continue;
+            };
             match g.word {
                 Some(word) => listing.rows.push(g.into_row(word, procs)),
                 // Every pane gone from the process table: tmux still
@@ -403,9 +433,7 @@ impl Tmux {
             // the same way (`Node::user_locale`).
 
             for (name, value) in crate::Node::user_locale() {
-
                 c.env(name, value);
-
             }
             if let Some(sock) = &self.socket {
                 c.arg("-L").arg(sock);
@@ -624,12 +652,15 @@ pub fn id_of(session_id: &str, created_secs: i64) -> SessionId {
 /// in `crate::live`, not here.
 #[cfg(test)]
 pub(crate) fn fake_tmux(tag: &str, output: &str) -> String {
-    let dir =
-        std::env::temp_dir().join(format!("khor-faketmux-{tag}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("khor-faketmux-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("tmux");
-    std::fs::write(&path, format!("#!/bin/sh\ncat <<'KHOREOF'\n{output}KHOREOF\n")).unwrap();
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\ncat <<'KHOREOF'\n{output}KHOREOF\n"),
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -643,7 +674,12 @@ mod tests {
     use super::*;
 
     fn proc_named(name: &str, ppid: Option<u32>) -> Proc {
-        Proc { name: name.into(), started_ms: 0, cwd: None, ppid }
+        Proc {
+            name: name.into(),
+            started_ms: 0,
+            cwd: None,
+            ppid,
+        }
     }
 
     /// A test server of khor's own. Named after the process so two test
@@ -656,7 +692,9 @@ mod tests {
 
     impl Server {
         fn start(tag: &str) -> Server {
-            Server { socket: format!("khor-{tag}-{}", std::process::id()) }
+            Server {
+                socket: format!("khor-{tag}-{}", std::process::id()),
+            }
         }
 
         fn tmux(&self, args: &[&str]) -> Option<String> {
@@ -780,8 +818,8 @@ mod tests {
         /// [`word_of`] answers `None` there, and a row with no word is
         /// not the row this waits for.
         fn until_at_a_prompt(&self, session: &str) {
-            let marker = std::env::temp_dir()
-                .join(format!("khor-prompt-{}-{session}", std::process::id()));
+            let marker =
+                std::env::temp_dir().join(format!("khor-prompt-{}-{session}", std::process::id()));
             let _ = std::fs::remove_file(&marker);
             self.tmux(&[
                 "send-keys",
@@ -816,8 +854,12 @@ mod tests {
                         let Some(pid) = parts.next().and_then(|p| p.parse::<u32>().ok()) else {
                             return false;
                         };
-                        let Some(command) = parts.next() else { return false };
-                        procs.get(pid).is_some_and(|p| same_program(command, &p.name))
+                        let Some(command) = parts.next() else {
+                            return false;
+                        };
+                        procs
+                            .get(pid)
+                            .is_some_and(|p| same_program(command, &p.name))
                     });
                 if settled || Instant::now() >= deadline {
                     return;
@@ -840,7 +882,9 @@ mod tests {
             #[cfg(not(unix))]
             let uid = 0;
             let _ = std::fs::remove_file(
-                std::path::Path::new(&dir).join(format!("tmux-{uid}")).join(&self.socket),
+                std::path::Path::new(&dir)
+                    .join(format!("tmux-{uid}"))
+                    .join(&self.socket),
             );
         }
     }
@@ -860,8 +904,7 @@ mod tests {
     /// code path — [`Tmux::spawn`] returning `None`.
     #[test]
     fn no_tmux_is_no_rows_and_no_complaint() {
-        let listing =
-            Tmux::at_binary("/nonexistent/khor-test/tmux").sweep(&Procs::default());
+        let listing = Tmux::at_binary("/nonexistent/khor-test/tmux").sweep(&Procs::default());
         assert_eq!(listing.rows.len(), 0);
         assert_eq!(
             listing.unmapped, 0,
@@ -918,7 +961,11 @@ mod tests {
         };
         assert_eq!(listing.unmapped, 0);
         assert_eq!(word("idle"), Some(State::Idle), "a prompt is 空闲");
-        assert_eq!(word("working"), Some(State::Busy), "a command in a shell is 忙碌");
+        assert_eq!(
+            word("working"),
+            Some(State::Busy),
+            "a command in a shell is 忙碌"
+        );
         assert_eq!(
             word("cmd"),
             Some(State::Busy),
@@ -956,7 +1003,8 @@ mod tests {
             .unwrap();
         assert!(held.contains(&pane_pid), "the pane itself");
         assert!(
-            held.iter().any(|p| procs.get(*p).is_some_and(|q| q.name == "sleep")),
+            held.iter()
+                .any(|p| procs.get(*p).is_some_and(|q| q.name == "sleep")),
             "and the sleep the shell started, which is a child of the pane, not the pane"
         );
     }
@@ -1014,7 +1062,10 @@ mod tests {
             Some(State::Idle),
             "the login shell's dash is a convention, not a different program"
         );
-        assert_eq!(word_of(&pane(10, false, "cargo"), &procs), Some(State::Busy));
+        assert_eq!(
+            word_of(&pane(10, false, "cargo"), &procs),
+            Some(State::Busy)
+        );
         assert_eq!(
             word_of(&pane(11, true, "sleep"), &procs),
             Some(State::Busy),
@@ -1057,10 +1108,15 @@ mod tests {
     /// it is the last field.
     #[test]
     fn the_name_takes_the_rest_of_the_line() {
-        assert!(Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp").is_none(), "a field short");
+        assert!(
+            Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp").is_none(),
+            "a field short"
+        );
         assert!(Pane::parse("$1\x1f100\x1f100\x1fnotapid\x1f0\x1fzsh\x1f/tmp\x1falpha").is_none());
         assert_eq!(
-            Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1fhas|pipes|in|it").unwrap().session_name,
+            Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1fhas|pipes|in|it")
+                .unwrap()
+                .session_name,
             "has|pipes|in|it"
         );
     }
@@ -1087,15 +1143,21 @@ mod tests {
             (11, proc_named("-zsh", Some(1))),
         ]);
         let listing = Tmux::at_binary(&fake).sweep(&procs);
-        let mut titles: Vec<&str> =
-            listing.rows.iter().map(|m| m.found.sighting.title.as_str()).collect();
+        let mut titles: Vec<&str> = listing
+            .rows
+            .iter()
+            .map(|m| m.found.sighting.title.as_str())
+            .collect();
         titles.sort_unstable();
         assert_eq!(
             titles,
             vec!["also-readable", "readable"],
             "the ones it understood are still rows"
         );
-        assert_eq!(listing.unmapped, 1, "and the one it did not is counted, not dropped");
+        assert_eq!(
+            listing.unmapped, 1,
+            "and the one it did not is counted, not dropped"
+        );
     }
 
     /// A session whose panes have all left the process table: tmux still
@@ -1103,7 +1165,10 @@ mod tests {
     /// rather than shown with a guessed one.
     #[test]
     fn a_session_with_nothing_running_in_it_is_counted_not_guessed_at() {
-        let fake = fake_tmux("gone", "$1\x1f100\x1f100\x1f424242\x1f0\x1fzsh\x1f/tmp\x1fghost\n");
+        let fake = fake_tmux(
+            "gone",
+            "$1\x1f100\x1f100\x1f424242\x1f0\x1fzsh\x1f/tmp\x1fghost\n",
+        );
         let listing = Tmux::at_binary(&fake).sweep(&Procs::default());
         assert_eq!(listing.rows.len(), 0);
         assert_eq!(listing.unmapped, 1);

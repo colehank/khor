@@ -75,9 +75,17 @@ pub const SLICE: u64 = 256 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     /// Join: burn the one-time token, record me, hand me the network.
-    Pair { token: String, name: String, addrs: Vec<String> },
+    Pair {
+        token: String,
+        name: String,
+        addrs: Vec<String>,
+    },
     /// One sync exchange over a named doc: `devices`, or `chat/<channel>`.
-    Sync { doc: String, have: String, changes: String },
+    Sync {
+        doc: String,
+        have: String,
+        changes: String,
+    },
     /// One slice of an offered payload, content-addressed. The offerer
     /// serves bytes only after the far user approved the pull — the
     /// approval IS this request arriving (docs/SESSION.md 传输).
@@ -140,7 +148,14 @@ pub enum Request {
     /// one is what makes one.
     ///
     /// A khor that predates it answers [`Response::Refused`].
-    Open { kind: String, title: String, cwd: String, cmd: Vec<String>, cols: u16, rows: u16 },
+    Open {
+        kind: String,
+        title: String,
+        cwd: String,
+        cmd: Vec<String>,
+        cols: u16,
+        rows: u16,
+    },
     /// Where a session's terminal host is listening on the asked
     /// machine, so a tunnel stream can carry the terminal itself
     /// (docs/NET.md 借网's pipe, pointed at a loopback port instead of
@@ -186,7 +201,11 @@ pub enum Request {
     /// the staging copy — one ssh per pull, not one per slice. Answers
     /// the ordinary [`Response::PathSlice`], whose change contract
     /// (total/at_ms moving = start over) rides the staged copy.
-    SatFetchPath { sat: String, path: String, offset: u64 },
+    SatFetchPath {
+        sat: String,
+        path: String,
+        offset: u64,
+    },
     /// [`Request::Remove`], off a satellite: the sponsor takes the path
     /// off that machine's disk over ssh (`crate::satellite::remove`).
     ///
@@ -211,7 +230,11 @@ pub enum Request {
     /// name over ssh (`crate::satellite::rename_path`).
     ///
     /// A new variant for [`Request::SatLs`]'s reason.
-    SatRename { sat: String, from: String, to: String },
+    SatRename {
+        sat: String,
+        from: String,
+        to: String,
+    },
     /// [`Request::Launch`], on a satellite: the sponsor runs that
     /// machine's opener over ssh (`crate::satellite::launch`).
     ///
@@ -285,7 +308,12 @@ pub enum Request {
     /// `dir` empty (or `~`) means that machine's home. `form` is
     /// `chat` / `term` / `agent`. Answered as [`Response::Opened`]; a
     /// khor that predates it answers [`Response::Refused`].
-    OpenAgent { dir: String, title: String, form: String, agent: String },
+    OpenAgent {
+        dir: String,
+        title: String,
+        form: String,
+        agent: String,
+    },
     /// 常去的地方 on the asked machine (`crate::Node::places`): the
     /// wizard's first question, answered for wherever the session is
     /// about to be born rather than for the machine the screen is on.
@@ -445,7 +473,11 @@ pub enum Request {
     /// [`Response::Refused`], which the asker says out loud
     /// (`msg::WRITE_PREDATES`). **Never swallowed**: a save that
     /// quietly did nothing is the worst answer this file could give.
-    WritePath { path: String, was: String, bytes: serde_bytes::ByteBuf },
+    WritePath {
+        path: String,
+        was: String,
+        bytes: serde_bytes::ByteBuf,
+    },
     /// Whether that machine can run VS Code's web face, and which
     /// version (`crate::code::version`). **A probe with no side effect**
     /// — nothing is started, nothing is downloaded — so it is safe to
@@ -485,13 +517,27 @@ pub enum Response {
     /// Pairing done on the issuer's side; `devices` is its table snapshot
     /// (base64) — merging it is what makes one pairing join the whole
     /// network.
-    Paired { name: String, devices: String },
-    Synced { version: String, changes: String, items: u64 },
-    Refused { why: String },
+    Paired {
+        name: String,
+        devices: String,
+    },
+    Synced {
+        version: String,
+        changes: String,
+        items: u64,
+    },
+    Refused {
+        why: String,
+    },
     /// One slice. `total` rides on every slice so the fetcher can show
     /// progress without a separate stat round; end = offset + len == total.
-    Slice { total: u64, bytes: serde_bytes::ByteBuf },
-    SessionRows { rows: Vec<khor_core::Session> },
+    Slice {
+        total: u64,
+        bytes: serde_bytes::ByteBuf,
+    },
+    SessionRows {
+        rows: Vec<khor_core::Session>,
+    },
     /// An Act ran to completion; for accept, bytes moved and where each
     /// file landed **on the machine that ran it** — absolute, in the
     /// offer's order.
@@ -511,9 +557,13 @@ pub enum Response {
         landed: Vec<String>,
     },
     /// One reading, taken when this frame was built.
-    Vitals { vitals: khor_core::Vitals },
+    Vitals {
+        vitals: khor_core::Vitals,
+    },
     /// What that machine has spent. See [`Request::Usage`].
-    Usage { usage: khor_core::Usage },
+    Usage {
+        usage: khor_core::Usage,
+    },
     /// One directory, already ordered — directories first, each half by
     /// name — because the screen paints and never re-sorts (docs/UX.md
     /// 状态呈现). `path` is where the answer is about, absolute: the
@@ -521,7 +571,11 @@ pub enum Response {
     /// cannot spell the way down. `truncated` is the no-silent-caps
     /// rule on the wire: a directory bigger than the cap says so
     /// instead of looking whole.
-    Dir { path: String, entries: Vec<DirEntry>, truncated: bool },
+    Dir {
+        path: String,
+        entries: Vec<DirEntry>,
+        truncated: bool,
+    },
     /// One slice of a pathed file. **Not [`Response::Slice`]**: that
     /// shape is what every shipped fetcher already decodes, and a field
     /// added to it would break them mid-pull — a new variant only ever
@@ -529,39 +583,61 @@ pub enum Response {
     /// every slice as the change contract: a puller that sees either
     /// move between slices is reading two different files and must
     /// start over, because no digest guards this path.
-    PathSlice { total: u64, at_ms: u64, bytes: serde_bytes::ByteBuf },
+    PathSlice {
+        total: u64,
+        at_ms: u64,
+        bytes: serde_bytes::ByteBuf,
+    },
     /// A session was opened on the answering machine; `session` is its
     /// id there. See [`Request::Open`].
-    Opened { session: String },
+    Opened {
+        session: String,
+    },
     /// Where that session's host listens on the answering machine, and
     /// the cookie its handshake wants. See [`Request::Reach`].
-    Reached { port: u16, cookie: String },
+    Reached {
+        port: u16,
+        cookie: String,
+    },
     /// A satellite's cached reading and how old it is on the sponsor's
     /// clock. The age travels so the asker can keep the reading's true
     /// birth rather than dressing it in the arrival's freshness
     /// ([`Request::SatVitals`]; 离线轴 — a stale number must look
     /// stale).
-    SatVitals { vitals: khor_core::Vitals, age_ms: u64 },
+    SatVitals {
+        vitals: khor_core::Vitals,
+        age_ms: u64,
+    },
     /// [`Request::Watched`]'s answer: one row per path on that machine's
     /// `watch` list, in the list's order, each in one of the three
     /// shapes `khor_core::WatchedDir` keeps apart.
-    Watched { rows: Vec<khor_core::WatchedDir> },
+    Watched {
+        rows: Vec<khor_core::WatchedDir>,
+    },
     /// [`Request::Days`]'s answer: the record exactly as the answering
     /// machine keeps it on disk (`Day::to_wire`), one encoding for the
     /// file and the wire. The receiver rolls it to its own now
     /// (`Day::from_wire`), so every minute since this answer reads as
     /// nobody's.
-    Days { day: String },
+    Days {
+        day: String,
+    },
     /// [`Request::Places`]'s answer: `(path, shown, sessions, last_ms)`
     /// per place, newest first — `shown` is the path as that machine's
     /// own user reads it (`~` for *its* home), because whose home a
     /// path is under is a fact about the answering machine.
-    Places { places: Vec<(String, String, u32, i64)> },
+    Places {
+        places: Vec<(String, String, u32, i64)>,
+    },
     /// [`Request::Quotas`]'s answer: one reading per account whose key
     /// the answering machine holds, as it last read them.
-    Quotas { readings: Vec<khor_core::AccountReading> },
+    Quotas {
+        readings: Vec<khor_core::AccountReading>,
+    },
     /// [`Request::Load`]'s answer, taken when this frame was built.
-    Load { load: khor_core::Load },
+    Load {
+        load: khor_core::Load,
+    },
     /// [`Request::Remove`]'s answer: it is off that disk. Carries
     /// nothing — 「gone」 has no fields, and a path echoed back would be
     /// the asker's own argument returning as if it were news.
@@ -588,7 +664,9 @@ pub enum Response {
     /// there was nothing under that path to date — an empty directory,
     /// or one that machine could not read — which the asker paints as
     /// no time rather than as 1970.
-    Touched { at_ms: i64 },
+    Touched {
+        at_ms: i64,
+    },
     /// [`Request::GitStatus`]'s answer. `branch` is short (`main`) and
     /// **empty when there is no name to say** — detached, or no commit
     /// yet — which the asker paints as nothing rather than inventing a
@@ -622,12 +700,18 @@ pub enum Response {
     },
     /// [`Request::GitDiff`]'s answer, in file order. `more` means the
     /// list stopped early — same rule, same reason.
-    GitDiff { hunks: Vec<Hunk>, more: bool },
+    GitDiff {
+        hunks: Vec<Hunk>,
+        more: bool,
+    },
     /// [`Request::WritePath`]'s answer: the file's mtime after the
     /// rename, and the digest of what is now there — so a writer can go
     /// on editing without reading the file back, and the next save has
     /// something true to compare against.
-    Wrote { at_ms: u64, digest: String },
+    Wrote {
+        at_ms: u64,
+        digest: String,
+    },
     /// [`Request::CodeHere`]'s answer. `version` is `code --version`'s
     /// first line, and **empty means there is no editor there** — not
     /// an error, just a machine without one. `ready` says the server
@@ -650,7 +734,10 @@ pub enum Response {
     /// [`Request::CodeServe`]'s answer: a loopback port on the
     /// answering machine and the connection token every request to it
     /// must carry.
-    CodeServing { port: u16, token: String },
+    CodeServing {
+        port: u16,
+        token: String,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -728,7 +815,10 @@ mod tests {
         let back: Request = decode(&bytes).unwrap();
         match back {
             Request::Sync { doc, have, changes } => {
-                assert_eq!((doc.as_str(), have.as_str(), changes.as_str()), ("devices", "aGF2ZQ", ""));
+                assert_eq!(
+                    (doc.as_str(), have.as_str(), changes.as_str()),
+                    ("devices", "aGF2ZQ", "")
+                );
             }
             other => panic!("decoded wrong: {other:?}"),
         }
@@ -759,18 +849,43 @@ mod tests {
         #[allow(dead_code)]
         #[derive(Debug, Deserialize)]
         enum OlderRequest {
-            Pair { token: String, name: String, addrs: Vec<String> },
-            Sync { doc: String, have: String, changes: String },
-            Fetch { digest: String, offset: u64 },
+            Pair {
+                token: String,
+                name: String,
+                addrs: Vec<String>,
+            },
+            Sync {
+                doc: String,
+                have: String,
+                changes: String,
+            },
+            Fetch {
+                digest: String,
+                offset: u64,
+            },
             Sessions,
-            Act { session: String, action: String },
+            Act {
+                session: String,
+                action: String,
+            },
         }
 
         for (op, name) in [
             (Request::Vitals, &b"Vitals"[..]),
             (Request::Usage, &b"Usage"[..]),
-            (Request::Ls { path: String::new() }, &b"Ls"[..]),
-            (Request::FetchPath { path: String::new(), offset: 0 }, &b"FetchPath"[..]),
+            (
+                Request::Ls {
+                    path: String::new(),
+                },
+                &b"Ls"[..],
+            ),
+            (
+                Request::FetchPath {
+                    path: String::new(),
+                    offset: 0,
+                },
+                &b"FetchPath"[..],
+            ),
             (Request::Days, &b"Days"[..]),
             (
                 Request::OpenAgent {
@@ -783,18 +898,58 @@ mod tests {
             ),
             (Request::Places, &b"Places"[..]),
             (Request::Quotas, &b"Quotas"[..]),
-            (Request::Load { top: 8, by: khor_core::TopBy::Busiest, desc: false }, &b"Load"[..]),
-            (Request::Watched, &b"Watched"[..]),
-            (Request::Touched { path: String::new() }, &b"Touched"[..]),
-            (Request::Remove { path: String::new() }, &b"Remove"[..]),
-            (Request::Mkdir { path: String::new() }, &b"Mkdir"[..]),
             (
-                Request::RenamePath { from: String::new(), to: String::new() },
+                Request::Load {
+                    top: 8,
+                    by: khor_core::TopBy::Busiest,
+                    desc: false,
+                },
+                &b"Load"[..],
+            ),
+            (Request::Watched, &b"Watched"[..]),
+            (
+                Request::Touched {
+                    path: String::new(),
+                },
+                &b"Touched"[..],
+            ),
+            (
+                Request::Remove {
+                    path: String::new(),
+                },
+                &b"Remove"[..],
+            ),
+            (
+                Request::Mkdir {
+                    path: String::new(),
+                },
+                &b"Mkdir"[..],
+            ),
+            (
+                Request::RenamePath {
+                    from: String::new(),
+                    to: String::new(),
+                },
                 &b"RenamePath"[..],
             ),
-            (Request::Launch { target: String::new() }, &b"Launch"[..]),
-            (Request::GitStatus { root: String::new() }, &b"GitStatus"[..]),
-            (Request::GitDiff { path: String::new() }, &b"GitDiff"[..]),
+            (
+                Request::Launch {
+                    target: String::new(),
+                },
+                &b"Launch"[..],
+            ),
+            (
+                Request::GitStatus {
+                    root: String::new(),
+                },
+                &b"GitStatus"[..],
+            ),
+            (
+                Request::GitDiff {
+                    path: String::new(),
+                },
+                &b"GitDiff"[..],
+            ),
             (
                 Request::WritePath {
                     path: String::new(),
@@ -804,22 +959,44 @@ mod tests {
                 &b"WritePath"[..],
             ),
             (Request::CodeHere, &b"CodeHere"[..]),
-            (Request::CodeServe { root: String::new() }, &b"CodeServe"[..]),
-            (Request::CodeStop { root: String::new() }, &b"CodeStop"[..]),
             (
-                Request::SatTouched { sat: String::new(), path: String::new() },
+                Request::CodeServe {
+                    root: String::new(),
+                },
+                &b"CodeServe"[..],
+            ),
+            (
+                Request::CodeStop {
+                    root: String::new(),
+                },
+                &b"CodeStop"[..],
+            ),
+            (
+                Request::SatTouched {
+                    sat: String::new(),
+                    path: String::new(),
+                },
                 &b"SatTouched"[..],
             ),
             (
-                Request::SatRemove { sat: String::new(), path: String::new() },
+                Request::SatRemove {
+                    sat: String::new(),
+                    path: String::new(),
+                },
                 &b"SatRemove"[..],
             ),
             (
-                Request::SatMkdir { sat: String::new(), path: String::new() },
+                Request::SatMkdir {
+                    sat: String::new(),
+                    path: String::new(),
+                },
                 &b"SatMkdir"[..],
             ),
             (
-                Request::SatTouch { sat: String::new(), path: String::new() },
+                Request::SatTouch {
+                    sat: String::new(),
+                    path: String::new(),
+                },
                 &b"SatTouch"[..],
             ),
             (
@@ -831,15 +1008,24 @@ mod tests {
                 &b"SatRename"[..],
             ),
             (
-                Request::SatLaunch { sat: String::new(), target: String::new() },
+                Request::SatLaunch {
+                    sat: String::new(),
+                    target: String::new(),
+                },
                 &b"SatLaunch"[..],
             ),
             (
-                Request::SatGitStatus { sat: String::new(), root: String::new() },
+                Request::SatGitStatus {
+                    sat: String::new(),
+                    root: String::new(),
+                },
                 &b"SatGitStatus"[..],
             ),
             (
-                Request::SatGitDiff { sat: String::new(), path: String::new() },
+                Request::SatGitDiff {
+                    sat: String::new(),
+                    path: String::new(),
+                },
                 &b"SatGitDiff"[..],
             ),
             (
@@ -866,7 +1052,10 @@ mod tests {
         // enums having drifted apart in some other way.
         let theirs = encode(&Request::Sessions).unwrap();
         assert!(matches!(decode::<Request>(&theirs), Ok(Request::Sessions)));
-        assert!(matches!(decode::<OlderRequest>(&theirs), Ok(OlderRequest::Sessions)));
+        assert!(matches!(
+            decode::<OlderRequest>(&theirs),
+            Ok(OlderRequest::Sessions)
+        ));
     }
 
     /// The watched answer crosses the wire in all three of its shapes —
@@ -884,11 +1073,22 @@ mod tests {
                 missing: false,
                 volume: Some(khor_core::Volume {
                     mount: "/data".into(),
-                    fill: khor_core::Fill { used: 40, total: 100 },
+                    fill: khor_core::Fill {
+                        used: 40,
+                        total: 100,
+                    },
                 }),
             },
-            khor_core::WatchedDir { path: "/nope".into(), missing: true, volume: None },
-            khor_core::WatchedDir { path: "/proc/1".into(), missing: false, volume: None },
+            khor_core::WatchedDir {
+                path: "/nope".into(),
+                missing: true,
+                volume: None,
+            },
+            khor_core::WatchedDir {
+                path: "/proc/1".into(),
+                missing: false,
+                volume: None,
+            },
         ];
         let bytes = encode(&Response::Watched { rows: rows.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
@@ -936,17 +1136,33 @@ mod tests {
         match decode::<Response>(&bytes).unwrap() {
             Response::Load { load } => {
                 assert_eq!(load, sent);
-                assert_eq!(load.cpu_day.buckets[1], None, "the hole came back as a hole");
-                assert_eq!(load.cpu_day.buckets[0], Some(12.5), "…between readings that came back whole");
+                assert_eq!(
+                    load.cpu_day.buckets[1], None,
+                    "the hole came back as a hole"
+                );
+                assert_eq!(
+                    load.cpu_day.buckets[0],
+                    Some(12.5),
+                    "…between readings that came back whole"
+                );
             }
             other => panic!("decoded wrong: {other:?}"),
         }
         // The asker's own words decode too, `top` and all — a request
         // whose count was lost would size the table from nothing.
-        let ask = encode(&Request::Load { top: 8, by: khor_core::TopBy::Mem, desc: true }).unwrap();
+        let ask = encode(&Request::Load {
+            top: 8,
+            by: khor_core::TopBy::Mem,
+            desc: true,
+        })
+        .unwrap();
         assert!(matches!(
             decode::<Request>(&ask),
-            Ok(Request::Load { top: 8, by: khor_core::TopBy::Mem, desc: true })
+            Ok(Request::Load {
+                top: 8,
+                by: khor_core::TopBy::Mem,
+                desc: true
+            })
         ));
     }
 
@@ -998,7 +1214,11 @@ mod tests {
             disk: None,
             gpu: None,
             version: None,
-            gpus: vec![OldCard { name: "x".into(), util_pct: 3.0, mem: None }],
+            gpus: vec![OldCard {
+                name: "x".into(),
+                util_pct: 3.0,
+                mem: None,
+            }],
             volumes: vec![],
         })
         .unwrap();
@@ -1009,18 +1229,34 @@ mod tests {
             disk: None,
             gpu: None,
             version: None,
-            gpus: vec![khor_core::GpuCard { name: "x".into(), util_pct: 3.0, mem: None, temp_c: None }],
+            gpus: vec![khor_core::GpuCard {
+                name: "x".into(),
+                util_pct: 3.0,
+                mem: None,
+                temp_c: None,
+            }],
             volumes: vec![],
             uptime_s: 0,
         })
         .unwrap();
-        assert!(old.len() < fresh.len(), "the old frame really is shorter: it lacks the new fields");
+        assert!(
+            old.len() < fresh.len(),
+            "the old frame really is shorter: it lacks the new fields"
+        );
         let v: khor_core::Vitals = rmp_serde::from_slice(&old).unwrap();
         assert_eq!(v.uptime_s, 0);
         assert_eq!(v.gpus[0].temp_c, None);
-        let day = rmp_serde::to_vec(&OldDay { bucket_ms: 1, now_ms: 2, buckets: vec![Some(1.0)] }).unwrap();
+        let day = rmp_serde::to_vec(&OldDay {
+            bucket_ms: 1,
+            now_ms: 2,
+            buckets: vec![Some(1.0)],
+        })
+        .unwrap();
         let d: khor_core::CpuDay = rmp_serde::from_slice(&day).unwrap();
-        assert!(d.mem.is_empty(), "a day from before memory has no memory line");
+        assert!(
+            d.mem.is_empty(),
+            "a day from before memory has no memory line"
+        );
         assert_eq!(d.buckets, vec![Some(1.0)]);
         let two = rmp_serde::to_vec(&DayBeforeGpu {
             bucket_ms: 1,
@@ -1031,7 +1267,10 @@ mod tests {
         .unwrap();
         let d2: khor_core::CpuDay = rmp_serde::from_slice(&two).unwrap();
         assert_eq!(d2.mem, vec![Some(2.0)], "the series it did record survive");
-        assert!(d2.gpu.is_empty(), "and the ones it never knew are absent, not a day of zeros");
+        assert!(
+            d2.gpu.is_empty(),
+            "and the ones it never knew are absent, not a day of zeros"
+        );
         assert!(d2.disk.is_empty());
         assert!(d2.vram.is_empty());
     }
@@ -1078,11 +1317,20 @@ mod tests {
             io_bytes: None,
         })
         .unwrap();
-        assert!(old.len() < fresh.len(), "the old row really is shorter: it lacks the GPU columns");
+        assert!(
+            old.len() < fresh.len(),
+            "the old row really is shorter: it lacks the GPU columns"
+        );
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
-        assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
+        assert_eq!(
+            r.pid, 7,
+            "the fields that were always there survive the tail-append"
+        );
         assert_eq!(r.mem, 9);
-        assert_eq!(r.gpu_pct, None, "a row from a khor that could not look says nothing, not zero");
+        assert_eq!(
+            r.gpu_pct, None,
+            "a row from a khor that could not look says nothing, not zero"
+        );
         assert_eq!(r.gpu_mem, None);
     }
 
@@ -1131,10 +1379,20 @@ mod tests {
             vram: vec![Some(5.0)],
         })
         .unwrap();
-        assert_eq!(fresh[0], 0x97, "and today's is seven — the new one is really on the wire");
+        assert_eq!(
+            fresh[0], 0x97,
+            "and today's is seven — the new one is really on the wire"
+        );
         let d: khor_core::CpuDay = rmp_serde::from_slice(&old).unwrap();
-        assert_eq!(d.disk, vec![Some(4.0)], "the series it did record survive, the last one included");
-        assert!(d.vram.is_empty(), "and the one it never knew is absent, not a day of zeros");
+        assert_eq!(
+            d.disk,
+            vec![Some(4.0)],
+            "the series it did record survive, the last one included"
+        );
+        assert!(
+            d.vram.is_empty(),
+            "and the one it never knew is absent, not a day of zeros"
+        );
     }
 
     /// A process row from before **how long it has been up** and **the
@@ -1169,7 +1427,10 @@ mod tests {
             gpu_mem: Some(21_700_000_000),
         })
         .unwrap();
-        assert_eq!(old[0], 0x97, "the row a node sent yesterday is seven fields");
+        assert_eq!(
+            old[0], 0x97,
+            "the row a node sent yesterday is seven fields"
+        );
         let fresh = rmp_serde::to_vec(&khor_core::TopRow {
             pid: 7,
             name: "python3".into(),
@@ -1186,12 +1447,28 @@ mod tests {
             io_bytes: Some(1_048_576),
         })
         .unwrap();
-        assert_eq!(fresh[0], 0x9d, "and today's is thirteen — the new ones are really on the wire");
+        assert_eq!(
+            fresh[0], 0x9d,
+            "and today's is thirteen — the new ones are really on the wire"
+        );
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
-        assert_eq!(r.pid, 7, "the fields that were always there survive the tail-append");
-        assert_eq!(r.gpu_mem, Some(21_700_000_000), "including the last one before the new tail");
-        assert_eq!(r.run_secs, None, "an age nobody sent is absent — a zero would read as 刚起的");
-        assert_eq!(r.arg, None, "and an identifying word nobody sent is absent, not an empty name");
+        assert_eq!(
+            r.pid, 7,
+            "the fields that were always there survive the tail-append"
+        );
+        assert_eq!(
+            r.gpu_mem,
+            Some(21_700_000_000),
+            "including the last one before the new tail"
+        );
+        assert_eq!(
+            r.run_secs, None,
+            "an age nobody sent is absent — a zero would read as 刚起的"
+        );
+        assert_eq!(
+            r.arg, None,
+            "and an identifying word nobody sent is absent, not an empty name"
+        );
     }
 
     /// A process row from before **the parent pid** decodes with it
@@ -1234,7 +1511,10 @@ mod tests {
             arg: Some("serve".into()),
         })
         .unwrap();
-        assert_eq!(old[0], 0x99, "the row a node sent before the parent is nine fields");
+        assert_eq!(
+            old[0], 0x99,
+            "the row a node sent before the parent is nine fields"
+        );
         let fresh = rmp_serde::to_vec(&khor_core::TopRow {
             pid: 2_661_641,
             name: "tokio-rt-worker".into(),
@@ -1253,9 +1533,19 @@ mod tests {
         .unwrap();
         assert_eq!(fresh[0], 0x9d, "and today's is thirteen");
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
-        assert_eq!(r.pid, 2_661_641, "the fields that were always there survive the tail-append");
-        assert_eq!(r.arg.as_deref(), Some("serve"), "including the last one before the new tail");
-        assert_eq!(r.ppid, None, "a parent nobody sent is absent — 0 is somebody's real parent");
+        assert_eq!(
+            r.pid, 2_661_641,
+            "the fields that were always there survive the tail-append"
+        );
+        assert_eq!(
+            r.arg.as_deref(),
+            Some("serve"),
+            "including the last one before the new tail"
+        );
+        assert_eq!(
+            r.ppid, None,
+            "a parent nobody sent is absent — 0 is somebody's real parent"
+        );
     }
 
     /// A process row from before **状态 / CPU时间 / 读写** decodes with
@@ -1308,7 +1598,10 @@ mod tests {
             ppid: Some(1),
         })
         .unwrap();
-        assert_eq!(old[0], 0x9a, "the row a node sent before these three is ten fields");
+        assert_eq!(
+            old[0], 0x9a,
+            "the row a node sent before these three is ten fields"
+        );
         let fresh = rmp_serde::to_vec(&khor_core::TopRow {
             pid: 73_443,
             name: "khor".into(),
@@ -1325,13 +1618,32 @@ mod tests {
             io_bytes: Some(8_388_608),
         })
         .unwrap();
-        assert_eq!(fresh[0], 0x9d, "and today's is thirteen — the three are really on the wire");
+        assert_eq!(
+            fresh[0], 0x9d,
+            "and today's is thirteen — the three are really on the wire"
+        );
         let r: khor_core::TopRow = rmp_serde::from_slice(&old).unwrap();
-        assert_eq!(r.pid, 73_443, "the fields that were always there survive the tail-append");
-        assert_eq!(r.ppid, Some(1), "including the last one before the new tail");
-        assert_eq!(r.status, None, "a status nobody sent is absent — never the word 运行");
-        assert_eq!(r.cpu_ms, None, "an accumulated time nobody sent is absent, not 「烧了 0 毫秒」");
-        assert_eq!(r.io_bytes, None, "and an unsent disk total is absent, not 「一个字节都没动」");
+        assert_eq!(
+            r.pid, 73_443,
+            "the fields that were always there survive the tail-append"
+        );
+        assert_eq!(
+            r.ppid,
+            Some(1),
+            "including the last one before the new tail"
+        );
+        assert_eq!(
+            r.status, None,
+            "a status nobody sent is absent — never the word 运行"
+        );
+        assert_eq!(
+            r.cpu_ms, None,
+            "an accumulated time nobody sent is absent, not 「烧了 0 毫秒」"
+        );
+        assert_eq!(
+            r.io_bytes, None,
+            "and an unsent disk total is absent, not 「一个字节都没动」"
+        );
     }
 
     /// **A tail-appended field reaches an older peer one way only**, and
@@ -1379,16 +1691,36 @@ mod tests {
         /// whichever way the codec identifies a variant.
         #[derive(Debug, Serialize, Deserialize)]
         enum OlderResponse {
-            Paired { name: String, devices: String },
-            Synced { version: String, changes: String, items: u64 },
-            Refused { why: String },
-            Slice { total: u64, bytes: serde_bytes::ByteBuf },
-            SessionRows { rows: Vec<khor_core::Session> },
-            Acted { moved: u64 },
+            Paired {
+                name: String,
+                devices: String,
+            },
+            Synced {
+                version: String,
+                changes: String,
+                items: u64,
+            },
+            Refused {
+                why: String,
+            },
+            Slice {
+                total: u64,
+                bytes: serde_bytes::ByteBuf,
+            },
+            SessionRows {
+                rows: Vec<khor_core::Session>,
+            },
+            Acted {
+                moved: u64,
+            },
         }
 
         let old = encode(&OlderResponse::Acted { moved: 7 }).unwrap();
-        let new = encode(&Response::Acted { moved: 7, landed: Vec::new() }).unwrap();
+        let new = encode(&Response::Acted {
+            moved: 7,
+            landed: Vec::new(),
+        })
+        .unwrap();
         assert!(
             old.len() < new.len(),
             "the old sample must be a shorter frame, or it is not the old shape at all"
@@ -1400,7 +1732,10 @@ mod tests {
         match decode::<Response>(&old).expect("an older peer's frame must still decode") {
             Response::Acted { moved, landed } => {
                 assert_eq!(moved, 7);
-                assert!(landed.is_empty(), "a peer that said nothing must read as nothing said");
+                assert!(
+                    landed.is_empty(),
+                    "a peer that said nothing must read as nothing said"
+                );
             }
             other => panic!("decoded wrong: {other:?}"),
         }
@@ -1437,8 +1772,12 @@ mod tests {
     /// one is sent here on purpose.
     #[test]
     fn a_spending_answer_crosses_inside_its_response() {
-        let tokens =
-            khor_core::Tokens { input: 1, cached_input: 2, cache_write: 3, output: 4 };
+        let tokens = khor_core::Tokens {
+            input: 1,
+            cached_input: 2,
+            cache_write: 3,
+            output: 4,
+        };
         let sent = khor_core::Usage {
             days: vec![khor_core::UsageDay {
                 day: "2026-08-17".to_owned(),
@@ -1466,7 +1805,10 @@ mod tests {
             ],
             today: Some("2026-08-17".to_owned()),
         };
-        let bytes = encode(&Response::Usage { usage: sent.clone() }).unwrap();
+        let bytes = encode(&Response::Usage {
+            usage: sent.clone(),
+        })
+        .unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::Usage { usage } => assert_eq!(usage, sent),
             other => panic!("decoded wrong: {other:?}"),
@@ -1497,9 +1839,18 @@ mod tests {
         let day = khor_core::UsageDay {
             day: "2026-08-17".to_owned(),
             category: "claude".to_owned(),
-            tokens: khor_core::Tokens { input: 1, cached_input: 2, cache_write: 3, output: 4 },
+            tokens: khor_core::Tokens {
+                input: 1,
+                cached_input: 2,
+                cache_write: 3,
+                output: 4,
+            },
         };
-        let old = rmp_serde::to_vec(&OldUsage { days: vec![day.clone()], unreadable: 5 }).unwrap();
+        let old = rmp_serde::to_vec(&OldUsage {
+            days: vec![day.clone()],
+            unreadable: 5,
+        })
+        .unwrap();
         let fresh = rmp_serde::to_vec(&khor_core::Usage {
             days: vec![day.clone()],
             unreadable: 5,
@@ -1507,7 +1858,10 @@ mod tests {
             today: None,
         })
         .unwrap();
-        assert!(old.len() < fresh.len(), "the old frame really is shorter: it lacks the new fields");
+        assert!(
+            old.len() < fresh.len(),
+            "the old frame really is shorter: it lacks the new fields"
+        );
 
         let u: khor_core::Usage = rmp_serde::from_slice(&old).unwrap();
         assert_eq!(u.days, vec![day], "what it did record survives whole");
@@ -1516,7 +1870,10 @@ mod tests {
             u.models.is_empty(),
             "a peer that cannot cut by model says so by an empty list, not by a wrong one"
         );
-        assert_eq!(u.today, None, "and it states no day rather than a default one");
+        assert_eq!(
+            u.today, None,
+            "and it states no day rather than a default one"
+        );
     }
 
     /// The satellite pair crosses whole, age included — the age is the
@@ -1524,7 +1881,9 @@ mod tests {
     /// reading wearing its true birth (附属机器批, 离线轴).
     #[test]
     fn a_satellites_reading_crosses_with_its_age() {
-        let ask = Request::SatVitals { sat: "ab".repeat(32) };
+        let ask = Request::SatVitals {
+            sat: "ab".repeat(32),
+        };
         let bytes = encode(&ask).unwrap();
         match decode::<Request>(&bytes).unwrap() {
             Request::SatVitals { sat } => assert_eq!(sat, "ab".repeat(32)),
@@ -1541,11 +1900,18 @@ mod tests {
             volumes: vec![],
             uptime_s: 0,
         };
-        let bytes = encode(&Response::SatVitals { vitals: sent.clone(), age_ms: 38_000 }).unwrap();
+        let bytes = encode(&Response::SatVitals {
+            vitals: sent.clone(),
+            age_ms: 38_000,
+        })
+        .unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::SatVitals { vitals, age_ms } => {
                 assert_eq!(vitals, sent);
-                assert_eq!(age_ms, 38_000, "the age must survive, or staleness dresses as fresh");
+                assert_eq!(
+                    age_ms, 38_000,
+                    "the age must survive, or staleness dresses as fresh"
+                );
             }
             other => panic!("decoded wrong: {other:?}"),
         }
@@ -1561,16 +1927,28 @@ mod tests {
             cores: 10,
             mem: khor_core::Fill { used: 3, total: 4 },
             disk: Some(khor_core::Fill { used: 5, total: 6 }),
-            gpu: Some(khor_core::Gpu { util_pct: 12.0, cards: 1, mem: None }),
+            gpu: Some(khor_core::Gpu {
+                util_pct: 12.0,
+                cards: 1,
+                mem: None,
+            }),
             version: Some("9.9.9".to_owned()),
-            gpus: vec![khor_core::GpuCard { name: "A".to_owned(), util_pct: 12.0, mem: None, temp_c: None }],
+            gpus: vec![khor_core::GpuCard {
+                name: "A".to_owned(),
+                util_pct: 12.0,
+                mem: None,
+                temp_c: None,
+            }],
             volumes: vec![khor_core::Volume {
                 mount: "/".to_owned(),
                 fill: khor_core::Fill { used: 1, total: 2 },
             }],
             uptime_s: 12,
         };
-        let bytes = encode(&Response::Vitals { vitals: sent.clone() }).unwrap();
+        let bytes = encode(&Response::Vitals {
+            vitals: sent.clone(),
+        })
+        .unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::Vitals { vitals } => assert_eq!(vitals, sent),
             other => panic!("decoded wrong: {other:?}"),

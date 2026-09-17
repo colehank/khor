@@ -11,8 +11,8 @@ pub mod accounts;
 pub mod agents;
 pub mod chat;
 pub mod devices;
-mod glue;
 pub mod dirpins;
+mod glue;
 pub mod pins;
 pub mod plan;
 pub mod recents;
@@ -20,8 +20,8 @@ pub mod seen;
 pub mod store;
 pub mod titles;
 pub mod webpins;
-pub mod workspaces;
 pub mod wire;
+pub mod workspaces;
 
 #[cfg(test)]
 mod testutil;

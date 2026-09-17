@@ -51,8 +51,14 @@ pub struct Editor {
 /// next move — draw no button — and the node's own asker already folds
 /// the two (`proto::Request::CodeHere`).
 pub async fn here(root: &Path, machine: &str) -> Result<Editor, String> {
-    let e = Node::open(root.to_path_buf())?.code_here(machine).await.unwrap_or_default();
-    Ok(Editor { version: e.version, ready: e.ready })
+    let e = Node::open(root.to_path_buf())?
+        .code_here(machine)
+        .await
+        .unwrap_or_default();
+    Ok(Editor {
+        version: e.version,
+        ready: e.ready,
+    })
 }
 
 /// Starts (or reuses) that machine's web face and answers the URL to
@@ -63,8 +69,14 @@ pub async fn here(root: &Path, machine: &str) -> Result<Editor, String> {
 /// said so before calling this; there is no way to ask from here.
 pub async fn open(root: &Path, machine: &str, dir: &str) -> Result<CodeAt, String> {
     let (addr, token) = Node::open(root.to_path_buf())?.code_open(machine).await?;
-    let folder = if dir.is_empty() { String::new() } else { format!("&folder={}", enc(dir)) };
-    Ok(CodeAt { url: format!("http://{addr}/?tkn={token}{folder}") })
+    let folder = if dir.is_empty() {
+        String::new()
+    } else {
+        format!("&folder={}", enc(dir))
+    };
+    Ok(CodeAt {
+        url: format!("http://{addr}/?tkn={token}{folder}"),
+    })
 }
 
 /// Stops that machine's web face and drops this side's pipe.
@@ -110,6 +122,9 @@ mod tests {
 
     #[test]
     fn an_ordinary_path_is_left_alone() {
-        assert_eq!(enc("/Users/zgh/Desktop/working/khor"), "/Users/zgh/Desktop/working/khor");
+        assert_eq!(
+            enc("/Users/zgh/Desktop/working/khor"),
+            "/Users/zgh/Desktop/working/khor"
+        );
     }
 }

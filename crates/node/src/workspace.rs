@@ -49,7 +49,10 @@ pub struct WorkspaceInfo {
 /// does not answer with an empty name, and a path with no component at
 /// all answers with itself rather than with nothing.
 pub fn basename(path: &str) -> String {
-    path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path).to_owned()
+    path.rsplit('/')
+        .find(|s| !s.is_empty())
+        .unwrap_or(path)
+        .to_owned()
 }
 
 /// Directories [`touched`] does not walk into.
@@ -59,8 +62,15 @@ pub fn basename(path: &str) -> String {
 /// whole list re-sort while nobody edited anything. The same names are
 /// skipped by the satellite's script, which is why they are one list
 /// and not two (`crate::satellite::TOUCHED_SH`).
-pub const SKIP: [&str; 7] =
-    [".git", "node_modules", "target", ".venv", "__pycache__", "dist", "build"];
+pub const SKIP: [&str; 7] = [
+    ".git",
+    "node_modules",
+    "target",
+    ".venv",
+    "__pycache__",
+    "dist",
+    "build",
+];
 
 /// How many entries one answer is allowed to look at.
 ///
@@ -91,7 +101,9 @@ pub fn touched(dir: &Path) -> i64 {
     let mut seen = 0usize;
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in rd.flatten() {
             if seen >= MOST_ENTRIES {
                 return newest;
@@ -205,6 +217,10 @@ mod tests {
         stamp(&tmp.join("target/debug/fresh"), 9_000);
         stamp(&tmp.join("node_modules/pkg/index.js"), 8_000);
 
-        assert_eq!(touched(&tmp), 1_000_000, "the build output must not date the workspace");
+        assert_eq!(
+            touched(&tmp),
+            1_000_000,
+            "the build output must not date the workspace"
+        );
     }
 }

@@ -22,7 +22,8 @@ fn main() {
     let dir = match std::env::args().nth(1) {
         Some(given) => std::path::PathBuf::from(given),
         None => std::path::PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string()),
+            std::env::var("CARGO_MANIFEST_DIR")
+                .unwrap_or_else(|_| env!("CARGO_MANIFEST_DIR").to_string()),
         )
         .join("../src/gen/bindings"),
     };
@@ -43,8 +44,7 @@ fn main() {
     khor_gui_core::PlaceRow::export_all_to(&dir).expect("export PlaceRow");
     // The workspace landing asks per machine on its own beat; no row
     // embeds it either.
-    khor_gui_core::workspaces::WorkspaceRow::export_all_to(&dir)
-        .expect("export WorkspaceRow");
+    khor_gui_core::workspaces::WorkspaceRow::export_all_to(&dir).expect("export WorkspaceRow");
     // One file's text, asked for when a file is opened; no row embeds it.
     khor_gui_core::files::FileText::export_all_to(&dir).expect("export FileText");
     khor_gui_core::git::GitStatus::export_all_to(&dir).expect("export GitStatus");

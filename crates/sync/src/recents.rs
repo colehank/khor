@@ -127,14 +127,21 @@ pub struct RecentDoc {
 
 impl RecentDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     /// When this place was last visited; `0` = never, or forgotten. The
     /// two read the same on purpose — nothing a reader does differs
     /// between them, and the difference would have to travel.
     pub fn visited_at(&self, key: &str) -> i64 {
-        match self.inner.get_map(RECENTS).get(key).and_then(|v| v.into_value().ok()) {
+        match self
+            .inner
+            .get_map(RECENTS)
+            .get(key)
+            .and_then(|v| v.into_value().ok())
+        {
             Some(LoroValue::I64(n)) => n,
             _ => 0,
         }
@@ -242,7 +249,10 @@ mod tests {
     #[test]
     fn the_key_splits_on_its_two_boundaries_not_inside_the_place() {
         let k = key(Kind::Page, "abc123", "https://example.com:8443/a?b=c:d");
-        assert_eq!(split(&k), Some((Kind::Page, "abc123", "https://example.com:8443/a?b=c:d")));
+        assert_eq!(
+            split(&k),
+            Some((Kind::Page, "abc123", "https://example.com:8443/a?b=c:d"))
+        );
         let k = key(Kind::Dir, "abc123", "/tmp/odd:name/dir");
         assert_eq!(split(&k), Some((Kind::Dir, "abc123", "/tmp/odd:name/dir")));
     }
@@ -252,7 +262,11 @@ mod tests {
     #[test]
     fn a_kind_this_version_never_heard_of_is_skipped() {
         assert_eq!(split("gopher:abc123:/somewhere"), None);
-        assert_eq!(split("dir:abc123"), None, "a key missing a boundary is not a key");
+        assert_eq!(
+            split("dir:abc123"),
+            None,
+            "a key missing a boundary is not a key"
+        );
     }
 
     /// **The list is places, not trips.** Going back to the same
@@ -269,7 +283,8 @@ mod tests {
         assert_eq!(d.items(), 1, "three visits to one place is one place");
 
         // …and a second place is what makes it two.
-        d.visit(&key(Kind::Dir, "d1e6", "/Users/x/other"), 1_500).unwrap();
+        d.visit(&key(Kind::Dir, "d1e6", "/Users/x/other"), 1_500)
+            .unwrap();
         assert_eq!(d.items(), 2);
     }
 
@@ -300,7 +315,10 @@ mod tests {
         d.visit(&key(Kind::Dir, "d1e6", "/a"), 400).unwrap();
         assert_eq!(d.all(), d.all(), "the same data must read the same way");
         let first = d.all()[0].0.clone();
-        assert!(first.ends_with("/a"), "ties break on the key, ascending: {first}");
+        assert!(
+            first.ends_with("/a"),
+            "ties break on the key, ascending: {first}"
+        );
     }
 
     /// The promise: dig through a directory on the desk, the phone
@@ -312,8 +330,14 @@ mod tests {
         let phone = RecentDoc::new(2).unwrap();
         let k = key(Kind::Dir, "d1e6", "/Users/x/proj");
         desk.visit(&k, 4_242).unwrap();
-        phone.merge(&desk.changes_since(&Default::default()).unwrap()).unwrap();
-        assert_eq!(phone.visited_at(&k), 4_242, "a visit on the desk must reach the phone");
+        phone
+            .merge(&desk.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(
+            phone.visited_at(&k),
+            4_242,
+            "a visit on the desk must reach the phone"
+        );
     }
 
     /// Dismissing has to travel too, or the device that dismissed a
@@ -325,12 +349,17 @@ mod tests {
         let b = RecentDoc::new(2).unwrap();
         let k = key(Kind::Page, "d1e6", "https://news.example");
         a.visit(&k, 900).unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(b.visited_at(&k), 900, "control: it arrived on the list");
 
         b.forget(&k).unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
-        assert_eq!(a.visited_at(&k), 0, "the dismissal must reach the other side too");
+        assert_eq!(
+            a.visited_at(&k),
+            0,
+            "the dismissal must reach the other side too"
+        );
         assert!(a.all().is_empty(), "a forgotten place is not on the list");
         assert_eq!(a.items(), 0, "…and is not an item");
     }
@@ -374,17 +403,29 @@ mod tests {
         d.visit(&k, 900).unwrap();
         let after_visit = d.version();
         d.visit(&k, 900).unwrap();
-        assert_eq!(d.version(), after_visit, "the same instant must not create ops");
+        assert_eq!(
+            d.version(),
+            after_visit,
+            "the same instant must not create ops"
+        );
 
         d.forget(&k).unwrap();
         let after_forget = d.version();
         d.forget(&k).unwrap();
-        assert_eq!(d.version(), after_forget, "forgetting twice must not create ops");
+        assert_eq!(
+            d.version(),
+            after_forget,
+            "forgetting twice must not create ops"
+        );
 
         let fresh = RecentDoc::new(3).unwrap();
         let empty = fresh.version();
         fresh.forget(&key(Kind::Dir, "d1e6", "/never")).unwrap();
-        assert_eq!(fresh.version(), empty, "forgetting somewhere never visited writes nothing");
+        assert_eq!(
+            fresh.version(),
+            empty,
+            "forgetting somewhere never visited writes nothing"
+        );
     }
 
     /// Two devices disagreeing settle on one answer on both sides.
@@ -402,8 +443,15 @@ mod tests {
         b.forget(&k).unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
         b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
-        assert_eq!(a.visited_at(&k), b.visited_at(&k), "both sides must land on one answer");
+        assert_eq!(
+            a.visited_at(&k),
+            b.visited_at(&k),
+            "both sides must land on one answer"
+        );
         let settled = a.visited_at(&k);
-        assert!(settled == 900 || settled == 0, "the settled value must be one of the two: {settled}");
+        assert!(
+            settled == 900 || settled == 0,
+            "the settled value must be one of the two: {settled}"
+        );
     }
 }

@@ -19,9 +19,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use khor_node::Node;
 use khor_node::gui_host::{GuiNote, GuiOp};
 use khor_node::host::{connect_at, read_frame, write_frame};
-use khor_node::Node;
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -46,7 +46,9 @@ fn wait_for(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
 struct Reaper(u32);
 impl Drop for Reaper {
     fn drop(&mut self) {
-        let _ = Command::new("kill").args(["-TERM", &self.0.to_string()]).status();
+        let _ = Command::new("kill")
+            .args(["-TERM", &self.0.to_string()])
+            .status();
     }
 }
 
@@ -108,7 +110,9 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
         .spawn()
         .unwrap();
     let _reap = Reaper(keeper.id());
-    wait_for("alpha's serve to stand up", 30, || ra.join(".khor").join("endpoint.json").exists());
+    wait_for("alpha's serve to stand up", 30, || {
+        ra.join(".khor").join("endpoint.json").exists()
+    });
 
     // beta: in-process, with a resident of its own — the pairing and
     // the reach both go through it, the way the app's do.
@@ -127,7 +131,9 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     .await
     .expect("beta's serve to stand up");
     let a = Node::open_as(ra.clone(), "alpha").unwrap();
-    let ticket = a.invite().expect("alpha mints a ticket through its resident");
+    let ticket = a
+        .invite()
+        .expect("alpha mints a ticket through its resident");
     let b = Node::open_as(rb.clone(), "beta").unwrap();
     let peer = timeout(Duration::from_secs(90), b.pair(&ticket))
         .await
@@ -138,7 +144,13 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     // The wizard's four answers, carried as a name and resolved on alpha.
     let id = timeout(
         Duration::from_secs(60),
-        b.open_agent_on("alpha", &far_dir.display().to_string(), "far-one", "chat", "claude"),
+        b.open_agent_on(
+            "alpha",
+            &far_dir.display().to_string(),
+            "far-one",
+            "chat",
+            "claude",
+        ),
     )
     .await
     .expect("the far open must not hang")
@@ -150,7 +162,11 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
         .iter()
         .find(|v| v.session.id == id)
         .unwrap_or_else(|| panic!("alpha's list has no {}: {rows:?}", id.0));
-    assert_eq!(mine.session.kind.0, khor_core::kind::GUI, "born as a conversation");
+    assert_eq!(
+        mine.session.kind.0,
+        khor_core::kind::GUI,
+        "born as a conversation"
+    );
     assert_eq!(mine.session.title, "far-one");
     assert_eq!(
         mine.session.place.as_deref(),
@@ -165,7 +181,9 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
         .expect("places must not hang")
         .expect("alpha answers its places");
     assert!(
-        places.iter().any(|(path, ..)| *path == far_dir.display().to_string()),
+        places
+            .iter()
+            .any(|(path, ..)| *path == far_dir.display().to_string()),
         "alpha's places must carry the far directory: {places:?}"
     );
 
@@ -174,7 +192,13 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     // that is the sentence — not opened on some default.
     let refused = timeout(
         Duration::from_secs(30),
-        b.open_agent_on("alpha", &far_dir.display().to_string(), "x", "chat", "nobody-here"),
+        b.open_agent_on(
+            "alpha",
+            &far_dir.display().to_string(),
+            "x",
+            "chat",
+            "nobody-here",
+        ),
     )
     .await
     .expect("the refusal must not hang");
@@ -193,8 +217,11 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
         .expect("the reach must not hang")
         .expect("beta's resident pipes onto alpha's host");
     let mut conn = connect_at(&addr, &cookie, 0, 0).expect("the far host welcomes the pipe");
-    conn.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
-    let GuiNote::Agent { .. } = next_note(&mut conn) else { panic!("the facts come first") };
+    conn.set_read_timeout(Some(Duration::from_secs(30)))
+        .unwrap();
+    let GuiNote::Agent { .. } = next_note(&mut conn) else {
+        panic!("the facts come first")
+    };
     let GuiNote::Settings(_) = next_note(&mut conn) else {
         panic!("then the settings — alpha's shim lists claude's modes")
     };
@@ -210,10 +237,15 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
             _ => {}
         }
     }
-    assert!(echoed, "the fake claude's echo must come back through the pipe");
+    assert!(
+        echoed,
+        "the fake claude's echo must come back through the pipe"
+    );
 
     write_frame(&mut conn, &GuiOp::Close).unwrap();
-    let GuiNote::Gone = next_note(&mut conn) else { panic!("a goodbye") };
+    let GuiNote::Gone = next_note(&mut conn) else {
+        panic!("a goodbye")
+    };
     serve.abort();
     let _ = fs::remove_dir_all(&rb);
 }

@@ -14,14 +14,16 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use khor_node::adaptor::{claude::Claude, id_for, tmux::Tmux, Adaptor, Discovery, Procs};
+use khor_node::adaptor::{Adaptor, Discovery, Procs, claude::Claude, id_for, tmux::Tmux};
 
 fn real_home() -> PathBuf {
     std::env::home_dir().expect("a home directory")
 }
 
 fn fixture(rel: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors").join(rel)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/vendors")
+        .join(rel)
 }
 
 fn keys_of(path: &PathBuf) -> BTreeSet<String> {
@@ -76,10 +78,12 @@ fn the_fixture_and_this_machines_claude_agree_on_the_schema() {
     }
     // Everything the fixture claims must actually occur out there, or the
     // fixture is describing a format of its own invention.
-    let real_keys: BTreeSet<String> =
-        real.iter().flat_map(keys_of).collect();
+    let real_keys: BTreeSet<String> = real.iter().flat_map(keys_of).collect();
     let invented: Vec<&String> = fixture_keys.difference(&real_keys).collect();
-    assert!(invented.is_empty(), "fields the fixture invented: {invented:?}");
+    assert!(
+        invented.is_empty(),
+        "fields the fixture invented: {invented:?}"
+    );
 }
 
 /// Nothing running on this machine is a session khor cannot read.
@@ -150,8 +154,11 @@ fn khor_can_read_this_machines_tmux_and_lists_nothing_twice() {
         .with_tmux(Tmux::default_server())
         .with_procs(procs.clone())
         .sweep();
-    let claimed: Vec<u32> =
-        found.rows.iter().flat_map(|f| f.sighting.pids.iter().copied()).collect();
+    let claimed: Vec<u32> = found
+        .rows
+        .iter()
+        .flat_map(|f| f.sighting.pids.iter().copied())
+        .collect();
     println!(
         "agent rows: {}, live processes they account for: {}",
         found.rows.len(),
@@ -165,14 +172,21 @@ fn khor_can_read_this_machines_tmux_and_lists_nothing_twice() {
     let mut kept = 0;
     let mut dropped = 0;
     for m in &found.multiplexed {
-        let inside: Vec<u32> =
-            m.holds.iter().copied().filter(|p| claimed.contains(p)).collect();
+        let inside: Vec<u32> = m
+            .holds
+            .iter()
+            .copied()
+            .filter(|p| claimed.contains(p))
+            .collect();
         if inside.is_empty() {
             kept += 1;
             println!("  row   {} {:?}", m.found.id().0, m.found.sighting.word);
         } else {
             dropped += 1;
-            println!("  drop  {} — holds {inside:?}, already listed", m.found.id().0);
+            println!(
+                "  drop  {} — holds {inside:?}, already listed",
+                m.found.id().0
+            );
         }
     }
     assert!(
@@ -261,7 +275,11 @@ fn khor_can_read_every_spending_record_on_this_machine() {
     for d in &usage.days {
         println!(
             "{}\t{}\t{}\t{}\t{}\t{}",
-            d.day, d.category, d.tokens.input, d.tokens.cached_input, d.tokens.cache_write,
+            d.day,
+            d.category,
+            d.tokens.input,
+            d.tokens.cached_input,
+            d.tokens.cache_write,
             d.tokens.output
         );
     }
@@ -270,7 +288,10 @@ fn khor_can_read_every_spending_record_on_this_machine() {
     let mut per_vendor: std::collections::BTreeMap<&str, khor_core::Tokens> =
         std::collections::BTreeMap::new();
     for d in &usage.days {
-        per_vendor.entry(d.category.as_str()).or_default().add(d.tokens);
+        per_vendor
+            .entry(d.category.as_str())
+            .or_default()
+            .add(d.tokens);
     }
     for (category, t) in &per_vendor {
         println!(
@@ -361,7 +382,7 @@ fn khor_can_read_every_spending_record_on_this_machine() {
 #[test]
 #[ignore]
 fn khor_reads_this_machines_pi_sessions_if_it_has_any() {
-    use khor_node::usage::{pi, Meter};
+    use khor_node::usage::{Meter, pi};
 
     let home = real_home();
     let mut found = 0;
@@ -389,7 +410,10 @@ fn khor_reads_this_machines_pi_sessions_if_it_has_any() {
         );
         found += 1;
     }
-    assert!(found > 0, "no Pi-format agent on this machine — nothing was checked");
+    assert!(
+        found > 0,
+        "no Pi-format agent on this machine — nothing was checked"
+    );
 }
 
 /// **What one pass costs, and why the answer is not "cache it".**
@@ -411,16 +435,17 @@ fn one_spending_pass_is_timed_against_the_tree_it_walked() {
     let mut bytes = 0u64;
     let mut stack = vec![home.join(".claude/projects"), home.join(".codex/sessions")];
     while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let p = e.path();
             match e.file_type() {
                 Ok(t) if t.is_dir() => stack.push(p),
-                Ok(t) if t.is_file()
-                    && p.extension().and_then(|x| x.to_str()) == Some("jsonl") => {
-                        files += 1;
-                        bytes += e.metadata().map(|m| m.len()).unwrap_or(0);
-                    }
+                Ok(t) if t.is_file() && p.extension().and_then(|x| x.to_str()) == Some("jsonl") => {
+                    files += 1;
+                    bytes += e.metadata().map(|m| m.len()).unwrap_or(0);
+                }
                 _ => {}
             }
         }

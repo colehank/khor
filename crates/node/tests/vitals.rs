@@ -127,12 +127,20 @@ async fn a_machine_reports_its_readings_without_stalling_the_link() {
     // Under a minute, i.e. taken on this visit rather than dug out of
     // something older. Not "== 0": the cache stamps when it was written,
     // and the read happens afterwards.
-    assert!(age < 60_000, "the reading should be from this visit, not {age} ms ago");
+    assert!(
+        age < 60_000,
+        "the reading should be from this visit, not {age} ms ago"
+    );
 
     // …and beta's own reading is taken now, which is the one place
     // `age_ms` is zero. This is what tells "sampled for you" apart from
     // "remembered from a visit" at the far end, so it is asserted rather
     // than assumed.
-    let (_, mine) = beta.vitals_of(beta.device_str()).expect("this machine can always answer");
-    assert_eq!(mine, 0, "this machine samples on demand, so its reading has no age");
+    let (_, mine) = beta
+        .vitals_of(beta.device_str())
+        .expect("this machine can always answer");
+    assert_eq!(
+        mine, 0,
+        "this machine samples on demand, so its reading has no age"
+    );
 }

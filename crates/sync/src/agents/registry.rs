@@ -59,47 +59,265 @@ pub struct Known {
 /// by id. Sorted so the list a person reads never reorders itself
 /// between builds.
 pub const KNOWN: &[Known] = &[
-    Known { id: "agoragentic-acp", name: "Agoragentic", about: "Agent marketplace with 174+ AI capabilities. Browse, invoke, and pay for agent services settled in USDC on Base L2.", argv: Some(&["npx", "-y", "agoragentic-mcp@1.3.0", "--acp"]) },
-    Known { id: "auggie", name: "Auggie CLI", about: "Augment Code's powerful software agent, backed by industry-leading context engine", argv: Some(&["npx", "-y", "@augmentcode/auggie@0.36.0", "--acp"]) },
-    Known { id: "autohand", name: "Autohand Code", about: "Autohand Code - AI coding agent powered by Autohand AI", argv: Some(&["npx", "-y", "@autohandai/autohand-acp@0.2.1"]) },
-    Known { id: "claude-acp", name: "Claude Agent", about: "ACP wrapper for Anthropic's Claude", argv: Some(&["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.70.0"]) },
-    Known { id: "cline", name: "Cline", about: "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more", argv: Some(&["npx", "-y", "cline@3.0.60", "--acp"]) },
-    Known { id: "codebuddy-code", name: "Codebuddy Code", about: "Tencent Cloud's official intelligent coding tool", argv: Some(&["npx", "-y", "@tencent-ai/codebuddy-code@2.142.0", "--acp"]) },
-    Known { id: "codex-acp", name: "Codex", about: "ACP adapter for OpenAI's coding assistant", argv: Some(&["npx", "-y", "@agentclientprotocol/codex-acp@1.7.0"]) },
-    Known { id: "deepagents", name: "DeepAgents", about: "Batteries-included AI coding and general purpose agent powered by LangChain.", argv: Some(&["npx", "-y", "deepagents-acp@0.1.7"]) },
-    Known { id: "dimcode", name: "DimCode", about: "A coding agent that puts leading models at your command.", argv: Some(&["npx", "-y", "dimcode@0.3.22", "acp"]) },
-    Known { id: "dirac", name: "Dirac", about: "Reduces API costs by more than 50%, produces better and faster work. Uses Hash anchored parallel edits, AST manipulation and a whole lot of neat optimizations. Fully Open Source.", argv: Some(&["npx", "-y", "dirac-cli@0.5.1", "--acp"]) },
-    Known { id: "factory-droid", name: "Factory Droid", about: "Factory Droid - AI coding agent powered by Factory AI", argv: Some(&["npx", "-y", "droid@0.208.1", "exec", "--output-format", "acp-daemon"]) },
-    Known { id: "gemini", name: "Gemini CLI", about: "Google's official CLI for Gemini", argv: Some(&["npx", "-y", "@google/gemini-cli@0.57.0", "--acp"]) },
-    Known { id: "github-copilot", name: "GitHub Copilot", about: "GitHub's AI pair programmer", argv: Some(&["npx", "-y", "@github/copilot-language-server@1.537.0", "--acp"]) },
-    Known { id: "github-copilot-cli", name: "GitHub Copilot", about: "GitHub's AI pair programmer", argv: Some(&["npx", "-y", "@github/copilot@1.0.82", "--acp"]) },
-    Known { id: "glm-acp-agent", name: "GLM Agent", about: "ACP agent powered by Zhipu AI's GLM Coding Plan models (glm-5.1, glm-5-turbo, glm-4.7, glm-4.5-air). Supports streaming, tool calls, mid-session model switching, image input via Z.AI Coding Plan Vision MCP, and session load/fork/resume with on-disk persistence.", argv: Some(&["npx", "-y", "glm-acp-agent@1.7.0"]) },
-    Known { id: "grok-build", name: "Grok Build", about: "xAI's coding agent and CLI", argv: Some(&["npx", "-y", "@xai-official/grok@1.0.13", "agent", "stdio"]) },
-    Known { id: "kilo", name: "Kilo", about: "The open source coding agent", argv: Some(&["npx", "-y", "@kilocode/cli@7.5.6", "acp"]) },
-    Known { id: "nova", name: "Nova", about: "Nova by Compass AI - a fully-fledged software engineer at your command", argv: Some(&["npx", "-y", "@compass-ai/nova@1.1.37", "acp"]) },
-    Known { id: "pi-acp", name: "pi ACP", about: "ACP adapter for pi coding agent", argv: Some(&["npx", "-y", "pi-acp@0.0.33"]) },
-    Known { id: "qoder", name: "Qoder CLI", about: "AI coding assistant with agentic capabilities", argv: Some(&["npx", "-y", "@qoder-ai/qodercli@0.2.14", "--acp"]) },
-    Known { id: "qwen-code", name: "Qwen Code", about: "Alibaba's Qwen coding assistant", argv: Some(&["npx", "-y", "@qwen-code/qwen-code@0.22.3", "--acp", "--experimental-skills"]) },
-    Known { id: "sigit", name: "siGit Code", about: "Local-first coding agent. Runs entirely on your machine with optional on-device LLM inference via Onde.", argv: Some(&["npx", "-y", "@smbcloud/sigit@1.5.2"]) },
+    Known {
+        id: "agoragentic-acp",
+        name: "Agoragentic",
+        about: "Agent marketplace with 174+ AI capabilities. Browse, invoke, and pay for agent services settled in USDC on Base L2.",
+        argv: Some(&["npx", "-y", "agoragentic-mcp@1.3.0", "--acp"]),
+    },
+    Known {
+        id: "auggie",
+        name: "Auggie CLI",
+        about: "Augment Code's powerful software agent, backed by industry-leading context engine",
+        argv: Some(&["npx", "-y", "@augmentcode/auggie@0.36.0", "--acp"]),
+    },
+    Known {
+        id: "autohand",
+        name: "Autohand Code",
+        about: "Autohand Code - AI coding agent powered by Autohand AI",
+        argv: Some(&["npx", "-y", "@autohandai/autohand-acp@0.2.1"]),
+    },
+    Known {
+        id: "claude-acp",
+        name: "Claude Agent",
+        about: "ACP wrapper for Anthropic's Claude",
+        argv: Some(&["npx", "-y", "@agentclientprotocol/claude-agent-acp@0.70.0"]),
+    },
+    Known {
+        id: "cline",
+        name: "Cline",
+        about: "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
+        argv: Some(&["npx", "-y", "cline@3.0.60", "--acp"]),
+    },
+    Known {
+        id: "codebuddy-code",
+        name: "Codebuddy Code",
+        about: "Tencent Cloud's official intelligent coding tool",
+        argv: Some(&["npx", "-y", "@tencent-ai/codebuddy-code@2.142.0", "--acp"]),
+    },
+    Known {
+        id: "codex-acp",
+        name: "Codex",
+        about: "ACP adapter for OpenAI's coding assistant",
+        argv: Some(&["npx", "-y", "@agentclientprotocol/codex-acp@1.7.0"]),
+    },
+    Known {
+        id: "deepagents",
+        name: "DeepAgents",
+        about: "Batteries-included AI coding and general purpose agent powered by LangChain.",
+        argv: Some(&["npx", "-y", "deepagents-acp@0.1.7"]),
+    },
+    Known {
+        id: "dimcode",
+        name: "DimCode",
+        about: "A coding agent that puts leading models at your command.",
+        argv: Some(&["npx", "-y", "dimcode@0.3.22", "acp"]),
+    },
+    Known {
+        id: "dirac",
+        name: "Dirac",
+        about: "Reduces API costs by more than 50%, produces better and faster work. Uses Hash anchored parallel edits, AST manipulation and a whole lot of neat optimizations. Fully Open Source.",
+        argv: Some(&["npx", "-y", "dirac-cli@0.5.1", "--acp"]),
+    },
+    Known {
+        id: "factory-droid",
+        name: "Factory Droid",
+        about: "Factory Droid - AI coding agent powered by Factory AI",
+        argv: Some(&[
+            "npx",
+            "-y",
+            "droid@0.208.1",
+            "exec",
+            "--output-format",
+            "acp-daemon",
+        ]),
+    },
+    Known {
+        id: "gemini",
+        name: "Gemini CLI",
+        about: "Google's official CLI for Gemini",
+        argv: Some(&["npx", "-y", "@google/gemini-cli@0.57.0", "--acp"]),
+    },
+    Known {
+        id: "github-copilot",
+        name: "GitHub Copilot",
+        about: "GitHub's AI pair programmer",
+        argv: Some(&[
+            "npx",
+            "-y",
+            "@github/copilot-language-server@1.537.0",
+            "--acp",
+        ]),
+    },
+    Known {
+        id: "github-copilot-cli",
+        name: "GitHub Copilot",
+        about: "GitHub's AI pair programmer",
+        argv: Some(&["npx", "-y", "@github/copilot@1.0.82", "--acp"]),
+    },
+    Known {
+        id: "glm-acp-agent",
+        name: "GLM Agent",
+        about: "ACP agent powered by Zhipu AI's GLM Coding Plan models (glm-5.1, glm-5-turbo, glm-4.7, glm-4.5-air). Supports streaming, tool calls, mid-session model switching, image input via Z.AI Coding Plan Vision MCP, and session load/fork/resume with on-disk persistence.",
+        argv: Some(&["npx", "-y", "glm-acp-agent@1.7.0"]),
+    },
+    Known {
+        id: "grok-build",
+        name: "Grok Build",
+        about: "xAI's coding agent and CLI",
+        argv: Some(&["npx", "-y", "@xai-official/grok@1.0.13", "agent", "stdio"]),
+    },
+    Known {
+        id: "kilo",
+        name: "Kilo",
+        about: "The open source coding agent",
+        argv: Some(&["npx", "-y", "@kilocode/cli@7.5.6", "acp"]),
+    },
+    Known {
+        id: "nova",
+        name: "Nova",
+        about: "Nova by Compass AI - a fully-fledged software engineer at your command",
+        argv: Some(&["npx", "-y", "@compass-ai/nova@1.1.37", "acp"]),
+    },
+    Known {
+        id: "pi-acp",
+        name: "pi ACP",
+        about: "ACP adapter for pi coding agent",
+        argv: Some(&["npx", "-y", "pi-acp@0.0.33"]),
+    },
+    Known {
+        id: "qoder",
+        name: "Qoder CLI",
+        about: "AI coding assistant with agentic capabilities",
+        argv: Some(&["npx", "-y", "@qoder-ai/qodercli@0.2.14", "--acp"]),
+    },
+    Known {
+        id: "qwen-code",
+        name: "Qwen Code",
+        about: "Alibaba's Qwen coding assistant",
+        argv: Some(&[
+            "npx",
+            "-y",
+            "@qwen-code/qwen-code@0.22.3",
+            "--acp",
+            "--experimental-skills",
+        ]),
+    },
+    Known {
+        id: "sigit",
+        name: "siGit Code",
+        about: "Local-first coding agent. Runs entirely on your machine with optional on-device LLM inference via Onde.",
+        argv: Some(&["npx", "-y", "@smbcloud/sigit@1.5.2"]),
+    },
     // Binary and `uvx` distributions: named, not startable from here.
-    Known { id: "amp-acp", name: "Amp", about: "ACP wrapper for Amp - the frontier coding agent", argv: None },
-    Known { id: "antigravity-acp", name: "Google Antigravity", about: "Google’s AI coding agent", argv: None },
-    Known { id: "cortex-code", name: "Cortex Code", about: "Snowflake's Cortex Code coding agent", argv: None },
-    Known { id: "corust-agent", name: "Corust Agent", about: "Co-building with a seasoned Rust partner.", argv: None },
-    Known { id: "crow-cli", name: "crow-cli", about: "Minimal ACP Native Coding Agent", argv: None },
-    Known { id: "cursor", name: "Cursor", about: "Cursor's coding agent", argv: None },
-    Known { id: "devin", name: "Devin", about: "Devin CLI coding agent by Cognition", argv: None },
-    Known { id: "fast-agent", name: "fast-agent", about: "Code and build agents with comprehensive multi-provider support", argv: None },
-    Known { id: "goose", name: "goose", about: "A local, extensible, open source AI agent that automates engineering tasks", argv: None },
-    Known { id: "harn", name: "Harn", about: "Harn runs .harn agent pipelines as a native ACP coding agent over stdio.", argv: None },
-    Known { id: "junie", name: "Junie", about: "AI Coding Agent by JetBrains", argv: None },
-    Known { id: "kimi", name: "Kimi CLI", about: "Moonshot AI's coding assistant", argv: None },
-    Known { id: "minion-code", name: "Minion Code", about: "An enhanced AI code assistant built on the Minion framework with rich development tools", argv: None },
-    Known { id: "mistral-vibe", name: "Mistral Vibe", about: "Mistral's open-source coding assistant", argv: None },
-    Known { id: "opencode", name: "OpenCode", about: "The open source coding agent", argv: None },
-    Known { id: "poolside", name: "Poolside", about: "Poolside's coding agent", argv: None },
-    Known { id: "stakpak", name: "Stakpak", about: "Open-source DevOps agent in Rust with enterprise-grade security", argv: None },
-    Known { id: "vtcode", name: "VT Code", about: "An open-source coding agent with LLM-native code understanding and robust shell safety. Supports multiple LLM providers with automatic failover and efficient context management.", argv: None },
+    Known {
+        id: "amp-acp",
+        name: "Amp",
+        about: "ACP wrapper for Amp - the frontier coding agent",
+        argv: None,
+    },
+    Known {
+        id: "antigravity-acp",
+        name: "Google Antigravity",
+        about: "Google’s AI coding agent",
+        argv: None,
+    },
+    Known {
+        id: "cortex-code",
+        name: "Cortex Code",
+        about: "Snowflake's Cortex Code coding agent",
+        argv: None,
+    },
+    Known {
+        id: "corust-agent",
+        name: "Corust Agent",
+        about: "Co-building with a seasoned Rust partner.",
+        argv: None,
+    },
+    Known {
+        id: "crow-cli",
+        name: "crow-cli",
+        about: "Minimal ACP Native Coding Agent",
+        argv: None,
+    },
+    Known {
+        id: "cursor",
+        name: "Cursor",
+        about: "Cursor's coding agent",
+        argv: None,
+    },
+    Known {
+        id: "devin",
+        name: "Devin",
+        about: "Devin CLI coding agent by Cognition",
+        argv: None,
+    },
+    Known {
+        id: "fast-agent",
+        name: "fast-agent",
+        about: "Code and build agents with comprehensive multi-provider support",
+        argv: None,
+    },
+    Known {
+        id: "goose",
+        name: "goose",
+        about: "A local, extensible, open source AI agent that automates engineering tasks",
+        argv: None,
+    },
+    Known {
+        id: "harn",
+        name: "Harn",
+        about: "Harn runs .harn agent pipelines as a native ACP coding agent over stdio.",
+        argv: None,
+    },
+    Known {
+        id: "junie",
+        name: "Junie",
+        about: "AI Coding Agent by JetBrains",
+        argv: None,
+    },
+    Known {
+        id: "kimi",
+        name: "Kimi CLI",
+        about: "Moonshot AI's coding assistant",
+        argv: None,
+    },
+    Known {
+        id: "minion-code",
+        name: "Minion Code",
+        about: "An enhanced AI code assistant built on the Minion framework with rich development tools",
+        argv: None,
+    },
+    Known {
+        id: "mistral-vibe",
+        name: "Mistral Vibe",
+        about: "Mistral's open-source coding assistant",
+        argv: None,
+    },
+    Known {
+        id: "opencode",
+        name: "OpenCode",
+        about: "The open source coding agent",
+        argv: None,
+    },
+    Known {
+        id: "poolside",
+        name: "Poolside",
+        about: "Poolside's coding agent",
+        argv: None,
+    },
+    Known {
+        id: "stakpak",
+        name: "Stakpak",
+        about: "Open-source DevOps agent in Rust with enterprise-grade security",
+        argv: None,
+    },
+    Known {
+        id: "vtcode",
+        name: "VT Code",
+        about: "An open-source coding agent with LLM-native code understanding and robust shell safety. Supports multiple LLM providers with automatic failover and efficient context management.",
+        argv: None,
+    },
 ];
 
 /// How many of [`KNOWN`] khor can start on its own. Written out rather
@@ -133,7 +351,7 @@ impl Known {
 
 #[cfg(test)]
 mod tests {
-    use super::{Known, KNOWN, STARTABLE};
+    use super::{KNOWN, Known, STARTABLE};
 
     /// **Named entries, not「the table has entries」.** The weaker claim
     /// holds for a table of one, and the failure this is written
@@ -156,7 +374,15 @@ mod tests {
         let qwen = Known::find("qwen-code").expect("qwen-code");
         assert_eq!(
             qwen.argv,
-            Some(&["npx", "-y", "@qwen-code/qwen-code@0.22.3", "--acp", "--experimental-skills"][..])
+            Some(
+                &[
+                    "npx",
+                    "-y",
+                    "@qwen-code/qwen-code@0.22.3",
+                    "--acp",
+                    "--experimental-skills"
+                ][..]
+            )
         );
         let goose = Known::find("goose").expect("goose");
         assert!(

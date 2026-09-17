@@ -44,11 +44,14 @@ fn repo_file(rel: &str) -> String {
 /// What the shipped app answers: the names inside `generate_handler![…]`.
 fn tauri_commands() -> BTreeSet<String> {
     let src = repo_file("../src-tauri/src/lib.rs");
-    let open = src
-        .find("generate_handler![")
-        .expect("the tauri handler list is spelled `generate_handler![` — if it moved, fix this finder");
+    let open = src.find("generate_handler![").expect(
+        "the tauri handler list is spelled `generate_handler![` — if it moved, fix this finder",
+    );
     let start = open + "generate_handler![".len();
-    let end = start + src[start..].find(']').expect("the handler list is closed by `]`");
+    let end = start
+        + src[start..]
+            .find(']')
+            .expect("the handler list is closed by `]`");
     src[start..end]
         .split(',')
         .map(str::trim)
@@ -85,7 +88,9 @@ fn served_commands() -> BTreeSet<String> {
             head.split('|')
                 .filter_map(|piece| {
                     let p = piece.trim();
-                    p.strip_prefix('"')?.split_once('"').map(|(w, _)| w.to_owned())
+                    p.strip_prefix('"')?
+                        .split_once('"')
+                        .map(|(w, _)| w.to_owned())
                 })
                 .filter(|w| !w.is_empty())
                 .collect()
@@ -122,11 +127,26 @@ const ONE_SIDED: &[(&str, &str)] = &[
     // success at doing nothing. The account is one line each so that
     // deleting a line turns that command red, which is the point of
     // this table.
-    ("show_menu", "the menu is a second native window; a browser face draws menus in its own document"),
-    ("hide_menu", "the other half of `show_menu`, and gone for the same reason"),
-    ("size_menu", "resizes that window to its content; nothing on the web face has a window to resize"),
-    ("menu_rows", "hands the menu window the rows it should draw — there is no such window here"),
-    ("menu_pick", "carries a choice from that window back to the face that opened it"),
+    (
+        "show_menu",
+        "the menu is a second native window; a browser face draws menus in its own document",
+    ),
+    (
+        "hide_menu",
+        "the other half of `show_menu`, and gone for the same reason",
+    ),
+    (
+        "size_menu",
+        "resizes that window to its content; nothing on the web face has a window to resize",
+    ),
+    (
+        "menu_rows",
+        "hands the menu window the rows it should draw — there is no such window here",
+    ),
+    (
+        "menu_pick",
+        "carries a choice from that window back to the face that opened it",
+    ),
     // ── the window's own width, written down 2026-09-16 ───────────
     //
     // **The same fact about windows as the five above, from the other
@@ -138,7 +158,10 @@ const ONE_SIDED: &[(&str, &str)] = &[
     // here would be a command that reports success at doing nothing.
     // `api.ts`'s `widenWindow` is a no-op outside the app for that
     // reason, and `check-face` asserts the silence.
-    ("widen", "grows the app's own window when a column opens; a page in a browser has no window of its own"),
+    (
+        "widen",
+        "grows the app's own window when a column opens; a page in a browser has no window of its own",
+    ),
 ];
 
 /// **Both tables name the same commands.**
@@ -158,14 +181,28 @@ fn the_app_and_the_browser_answer_the_same_commands() {
     // distance below the real count it has always been — it catches a
     // finder that rotted, not a table that shrank. If a batch ever does
     // remove commands in bulk, this number is the thing to re-read.
-    assert!(tauri.len() > 20, "the tauri finder found {} commands — it is broken", tauri.len());
-    assert!(served.len() > 20, "the api.rs finder found {} commands — it is broken", served.len());
+    assert!(
+        tauri.len() > 20,
+        "the tauri finder found {} commands — it is broken",
+        tauri.len()
+    );
+    assert!(
+        served.len() > 20,
+        "the api.rs finder found {} commands — it is broken",
+        served.len()
+    );
 
     let excused: BTreeSet<&str> = ONE_SIDED.iter().map(|(w, _)| *w).collect();
-    let only_tauri: Vec<&str> =
-        tauri.iter().map(String::as_str).filter(|w| !served.contains(*w) && !excused.contains(w)).collect();
-    let only_served: Vec<&str> =
-        served.iter().map(String::as_str).filter(|w| !tauri.contains(*w) && !excused.contains(w)).collect();
+    let only_tauri: Vec<&str> = tauri
+        .iter()
+        .map(String::as_str)
+        .filter(|w| !served.contains(*w) && !excused.contains(w))
+        .collect();
+    let only_served: Vec<&str> = served
+        .iter()
+        .map(String::as_str)
+        .filter(|w| !tauri.contains(*w) && !excused.contains(w))
+        .collect();
 
     assert!(
         only_tauri.is_empty(),

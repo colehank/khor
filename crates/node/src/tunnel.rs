@@ -52,7 +52,9 @@ async fn write_target(send: &mut SendStream, target: &str) -> Result<(), String>
     send.write_all(&(bytes.len() as u16).to_be_bytes())
         .await
         .map_err(msg::tunnel_bad_handshake)?;
-    send.write_all(bytes).await.map_err(msg::tunnel_bad_handshake)?;
+    send.write_all(bytes)
+        .await
+        .map_err(msg::tunnel_bad_handshake)?;
     Ok(())
 }
 
@@ -61,13 +63,17 @@ async fn write_target(send: &mut SendStream, target: &str) -> Result<(), String>
 /// make us buffer past the cap.
 async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
     let mut len = [0u8; 2];
-    recv.read_exact(&mut len).await.map_err(msg::tunnel_bad_handshake)?;
+    recv.read_exact(&mut len)
+        .await
+        .map_err(msg::tunnel_bad_handshake)?;
     let len = u16::from_be_bytes(len) as usize;
     if len > TARGET_MAX {
         return Err(msg::TUNNEL_TARGET_TOO_LONG.into());
     }
     let mut buf = vec![0u8; len];
-    recv.read_exact(&mut buf).await.map_err(msg::tunnel_bad_handshake)?;
+    recv.read_exact(&mut buf)
+        .await
+        .map_err(msg::tunnel_bad_handshake)?;
     String::from_utf8(buf).map_err(msg::tunnel_bad_handshake)
 }
 
@@ -89,7 +95,10 @@ pub struct Borrow {
 impl Borrow {
     /// A borrow that owns the endpoint it dialed from (CLI/test).
     pub fn new(ep: iroh::Endpoint, conn: Connection) -> Self {
-        Borrow { _ep: Some(ep), conn }
+        Borrow {
+            _ep: Some(ep),
+            conn,
+        }
     }
 
     /// A borrow dialed on an endpoint someone else keeps alive (the
@@ -111,14 +120,13 @@ impl Borrow {
 ///
 /// The caller owns `ep`; the returned streams borrow the connection, so
 /// the caller keeps `conn` alive for as long as it splices bytes.
-pub async fn dial(
-    conn: &Connection,
-    target: &str,
-) -> Result<(SendStream, RecvStream), String> {
+pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvStream), String> {
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     write_target(&mut send, target).await?;
     let mut status = [0u8; 1];
-    recv.read_exact(&mut status).await.map_err(msg::tunnel_bad_handshake)?;
+    recv.read_exact(&mut status)
+        .await
+        .map_err(msg::tunnel_bad_handshake)?;
     match status[0] {
         OK => Ok((send, recv)),
         REFUSED => Err(msg::NOT_PAIRED.into()),
@@ -221,7 +229,9 @@ pub async fn serve_proxy(
 ) -> Result<(), String> {
     let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     loop {
-        let Ok((sock, _)) = listener.accept().await else { return Ok(()) };
+        let Ok((sock, _)) = listener.accept().await else {
+            return Ok(());
+        };
         let borrow = borrow.clone();
         let count = count.clone();
         let activity = activity.clone();
@@ -247,7 +257,9 @@ pub async fn serve_fixed(
     target: String,
 ) -> Result<(), String> {
     loop {
-        let Ok((sock, _)) = listener.accept().await else { return Ok(()) };
+        let Ok((sock, _)) = listener.accept().await else {
+            return Ok(());
+        };
         let borrow = borrow.clone();
         let target = target.clone();
         tokio::spawn(async move {
@@ -346,7 +358,9 @@ async fn proxy_one(
         }
     }
     let Some(ask) = read_ask(&head) else {
-        let _ = sock.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n").await;
+        let _ = sock
+            .write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n")
+            .await;
         return Ok(());
     };
     let target = match &ask {
@@ -394,10 +408,15 @@ fn read_ask(head: &[u8]) -> Option<ProxyAsk> {
         // A CONNECT authority is always host:port; a bare host would leave
         // the exit's TCP connect without a port and is not a thing
         // browsers send.
-        return asked.contains(':').then(|| ProxyAsk::Tunnel { target: asked.to_owned() });
+        return asked.contains(':').then(|| ProxyAsk::Tunnel {
+            target: asked.to_owned(),
+        });
     }
     let (target, host, path) = absolute_http(asked)?;
-    Some(ProxyAsk::Relay { head: origin_form(method, &path, version, &host, rest), target })
+    Some(ProxyAsk::Relay {
+        head: origin_form(method, &path, version, &host, rest),
+        target,
+    })
 }
 
 /// Splits an absolute `http` URI into the target to dial (`host:port`,
@@ -431,8 +450,11 @@ fn absolute_http(uri: &str) -> Option<(String, String, String)> {
         Some(close) => authority[close + 1..].starts_with(':'),
         None => authority.contains(':'),
     };
-    let target =
-        if has_port { authority.to_owned() } else { format!("{authority}:80") };
+    let target = if has_port {
+        authority.to_owned()
+    } else {
+        format!("{authority}:80")
+    };
     Some((target, authority.to_owned(), path.to_owned()))
 }
 

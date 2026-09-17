@@ -81,7 +81,17 @@ impl CpuHistory {
                     // whole; a keyed format would be a parser to keep.
                     let mut tail = || it.next().and_then(|m| m.parse::<f64>().ok());
                     let (mem, gpu, disk, vram) = (tail(), tail(), tail(), tail());
-                    buckets.insert(idx, Bucket { cpu: sum, n, mem, gpu, disk, vram });
+                    buckets.insert(
+                        idx,
+                        Bucket {
+                            cpu: sum,
+                            n,
+                            mem,
+                            gpu,
+                            disk,
+                            vram,
+                        },
+                    );
                 }
             }
         }
@@ -237,17 +247,35 @@ mod tests {
             // gets wrong.
             h.record(
                 t0,
-                Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: Some(96.0), vram_pct: Some(71.0) },
+                Reading {
+                    cpu_pct: 10.0,
+                    mem_pct: 40.0,
+                    gpu_pct: None,
+                    disk_pct: Some(96.0),
+                    vram_pct: Some(71.0),
+                },
             );
         }
         // A second instance, so what is asserted is what reached disk.
         let day = CpuHistory::open(&d).day(t0);
         let last = day.buckets.len() - 1;
-        assert_eq!(day.buckets[last], Some(10.0), "the reader finds what is there");
+        assert_eq!(
+            day.buckets[last],
+            Some(10.0),
+            "the reader finds what is there"
+        );
         assert_eq!(day.mem[last], Some(40.0));
         assert_eq!(day.gpu[last], None, "no card, no figure — and not a zero");
-        assert_eq!(day.disk[last], Some(96.0), "the disk was measured, so it must have survived the write");
-        assert_eq!(day.vram[last], Some(71.0), "and so must the column after it");
+        assert_eq!(
+            day.disk[last],
+            Some(96.0),
+            "the disk was measured, so it must have survived the write"
+        );
+        assert_eq!(
+            day.vram[last],
+            Some(71.0),
+            "and so must the column after it"
+        );
         let _ = std::fs::remove_dir_all(&d);
     }
 
@@ -260,14 +288,49 @@ mod tests {
         let d = dir("gap");
         let mut h = CpuHistory::open(&d);
         let t0 = 100 * BUCKET_MS;
-        h.record(t0, Reading { cpu_pct: 10.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
-        h.record(t0 + 1000, Reading { cpu_pct: 30.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
-        h.record(t0 + 2 * BUCKET_MS, Reading { cpu_pct: 50.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None }); // one whole bucket skipped
+        h.record(
+            t0,
+            Reading {
+                cpu_pct: 10.0,
+                mem_pct: 40.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        );
+        h.record(
+            t0 + 1000,
+            Reading {
+                cpu_pct: 30.0,
+                mem_pct: 40.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        );
+        h.record(
+            t0 + 2 * BUCKET_MS,
+            Reading {
+                cpu_pct: 50.0,
+                mem_pct: 40.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        ); // one whole bucket skipped
         let day = h.day(t0 + 2 * BUCKET_MS);
         let n = day.buckets.len();
         assert_eq!(n, BUCKETS);
-        assert_eq!(day.buckets[n - 3], Some(20.0), "two beats in one bucket average");
-        assert_eq!(day.buckets[n - 2], None, "the unmeasured bucket is a hole, not a bridge");
+        assert_eq!(
+            day.buckets[n - 3],
+            Some(20.0),
+            "two beats in one bucket average"
+        );
+        assert_eq!(
+            day.buckets[n - 2],
+            None,
+            "the unmeasured bucket is a hole, not a bridge"
+        );
         assert_eq!(day.buckets[n - 1], Some(50.0));
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -282,11 +345,24 @@ mod tests {
         let t0 = 500 * BUCKET_MS;
         {
             let mut h = CpuHistory::open(&d);
-            h.record(t0, Reading { cpu_pct: 42.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+            h.record(
+                t0,
+                Reading {
+                    cpu_pct: 42.0,
+                    mem_pct: 40.0,
+                    gpu_pct: None,
+                    disk_pct: None,
+                    vram_pct: None,
+                },
+            );
         }
         let again = CpuHistory::open(&d);
         let day = again.day(t0);
-        assert_eq!(day.buckets[BUCKETS - 1], Some(42.0), "the reading came back from disk");
+        assert_eq!(
+            day.buckets[BUCKETS - 1],
+            Some(42.0),
+            "the reading came back from disk"
+        );
         assert!(
             day.buckets[..BUCKETS - 1].iter().all(Option::is_none),
             "…and nothing was invented around it"
@@ -301,8 +377,26 @@ mod tests {
         let d = dir("prune");
         let t0 = 1000 * BUCKET_MS;
         let mut h = CpuHistory::open(&d);
-        h.record(t0, Reading { cpu_pct: 99.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
-        h.record(t0 + (BUCKETS as u64 + 1) * BUCKET_MS, Reading { cpu_pct: 1.0, mem_pct: 40.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+        h.record(
+            t0,
+            Reading {
+                cpu_pct: 99.0,
+                mem_pct: 40.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        );
+        h.record(
+            t0 + (BUCKETS as u64 + 1) * BUCKET_MS,
+            Reading {
+                cpu_pct: 1.0,
+                mem_pct: 40.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        );
         let reopened = CpuHistory::open(&d);
         let day = reopened.day(t0 + (BUCKETS as u64 + 1) * BUCKET_MS);
         assert_eq!(day.buckets[BUCKETS - 1], Some(1.0));
@@ -346,13 +440,35 @@ mod memory_day {
         let d = fresh_dir("avg");
         let mut h = CpuHistory::open(&d);
         let at = 10 * BUCKET_MS;
-        h.record(at, Reading { cpu_pct: 50.0, mem_pct: 30.0, gpu_pct: None, disk_pct: None, vram_pct: None });
-        h.record(at + 1_000, Reading { cpu_pct: 70.0, mem_pct: 50.0, gpu_pct: None, disk_pct: None, vram_pct: None });
+        h.record(
+            at,
+            Reading {
+                cpu_pct: 50.0,
+                mem_pct: 30.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        );
+        h.record(
+            at + 1_000,
+            Reading {
+                cpu_pct: 70.0,
+                mem_pct: 50.0,
+                gpu_pct: None,
+                disk_pct: None,
+                vram_pct: None,
+            },
+        );
         let day = h.day(at);
         let last = BUCKETS - 1;
         assert_eq!(day.buckets[last], Some(60.0), "cpu is the bucket's mean");
         assert_eq!(day.mem[last], Some(40.0), "memory is the bucket's mean too");
-        assert_eq!(day.mem.len(), day.buckets.len(), "one memory slot per cpu slot");
+        assert_eq!(
+            day.mem.len(),
+            day.buckets.len(),
+            "one memory slot per cpu slot"
+        );
         // And it comes back the same from a second instance — the file
         // carries the fourth column.
         let again = CpuHistory::open(&d).day(at);
@@ -367,7 +483,11 @@ mod memory_day {
         std::fs::write(d.join("cpu"), "10 120.0 2\n").unwrap();
         let day = CpuHistory::open(&d).day(10 * BUCKET_MS);
         let last = BUCKETS - 1;
-        assert_eq!(day.buckets[last], Some(60.0), "the old cpu reading still reads");
+        assert_eq!(
+            day.buckets[last],
+            Some(60.0),
+            "the old cpu reading still reads"
+        );
         assert_eq!(day.mem[last], None, "and its memory is a gap, not 0%");
     }
 }

@@ -111,9 +111,10 @@ pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<i
         if let Ok(sock) = road.parse::<std::net::SocketAddr>() {
             addr = addr.with_ip_addr(sock);
         } else if (road.starts_with("http://") || road.starts_with("https://"))
-            && let Ok(url) = road.parse::<iroh::RelayUrl>() {
-                addr = addr.with_relay_url(url);
-            }
+            && let Ok(url) = road.parse::<iroh::RelayUrl>()
+        {
+            addr = addr.with_relay_url(url);
+        }
     }
     Ok(addr)
 }
@@ -246,7 +247,11 @@ mod tests {
                 _ => {}
             }
         }
-        assert_eq!((ips, relays), (1, 2), "one direct road, two relay roads, no garbage");
+        assert_eq!(
+            (ips, relays),
+            (1, 2),
+            "one direct road, two relay roads, no garbage"
+        );
     }
 
     #[test]

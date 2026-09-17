@@ -114,7 +114,12 @@ fn openclaw_meter(root: &str) -> openclaw::OpenClaw {
 }
 
 fn tokens(input: u64, cached_input: u64, cache_write: u64, output: u64) -> Tokens {
-    Tokens { input, cached_input, cache_write, output }
+    Tokens {
+        input,
+        cached_input,
+        cache_write,
+        output,
+    }
 }
 
 fn day(usage: &Usage, day: &str, category: &str) -> Option<Tokens> {
@@ -142,11 +147,9 @@ fn fixture_home(tag: &str) -> PathBuf {
     std::fs::create_dir_all(&home).unwrap();
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink(fixture().join("claude/.claude"), home.join(".claude"))
-            .unwrap();
+        std::os::unix::fs::symlink(fixture().join("claude/.claude"), home.join(".claude")).unwrap();
         std::os::unix::fs::symlink(fixture().join("codex/.codex"), home.join(".codex")).unwrap();
-        std::os::unix::fs::symlink(fixture().join("gemini/.gemini"), home.join(".gemini"))
-            .unwrap();
+        std::os::unix::fs::symlink(fixture().join("gemini/.gemini"), home.join(".gemini")).unwrap();
         // The three Pi-format roots live under one fixture directory, so
         // that one home wears all of them the way a real one would.
         for dir in [".pi", ".senpi"] {
@@ -212,7 +215,10 @@ fn fixture_home(tag: &str) -> PathBuf {
 #[test]
 fn a_message_written_several_times_is_billed_once_and_kept_whole() {
     let days = claude_days();
-    let spent = days.get("2026-08-17").copied().expect("the fixture spends on this day");
+    let spent = days
+        .get("2026-08-17")
+        .copied()
+        .expect("the fixture spends on this day");
     assert_eq!(
         spent,
         tokens(26, 277, 228, 563),
@@ -220,8 +226,16 @@ fn a_message_written_several_times_is_billed_once_and_kept_whole() {
     );
     // Spelled out so the two failure modes above are nameable from the
     // message alone rather than only from the totals.
-    assert_ne!(spent.output, 563 + 5 + 50, "the partial writings of msg_A were billed too");
-    assert_ne!(spent.cache_write, 228 + 100, "msg_E's fields were maximised one by one");
+    assert_ne!(
+        spent.output,
+        563 + 5 + 50,
+        "the partial writings of msg_A were billed too"
+    );
+    assert_ne!(
+        spent.cache_write,
+        228 + 100,
+        "msg_E's fields were maximised one by one"
+    );
 }
 
 /// **A resumed session copies its history, and khor must not bill it
@@ -237,9 +251,18 @@ fn a_message_written_several_times_is_billed_once_and_kept_whole() {
 fn a_resumed_session_does_not_bill_its_history_twice() {
     let days = claude_days();
     let spent = days.get("2026-08-17").copied().unwrap();
-    assert_eq!(spent.output, 563, "msg_A's 500 counted once across the two files");
-    assert!(spent.output >= 11, "…and msg_G, which only the second file holds, still counted");
-    assert_eq!(spent.input, 26, "10 + 3 + 1 + 5 + 7 — msg_A's 10 appearing once");
+    assert_eq!(
+        spent.output, 563,
+        "msg_A's 500 counted once across the two files"
+    );
+    assert!(
+        spent.output >= 11,
+        "…and msg_G, which only the second file holds, still counted"
+    );
+    assert_eq!(
+        spent.input, 26,
+        "10 + 3 + 1 + 5 + 7 — msg_A's 10 appearing once"
+    );
 }
 
 /// **A subagent's tokens are this machine's tokens.** The ledger recorded
@@ -253,9 +276,15 @@ fn a_resumed_session_does_not_bill_its_history_twice() {
 #[test]
 fn a_subagents_transcript_is_found_and_billed() {
     let nested = jsonl_under(&fixture().join("claude/.claude/projects"));
-    assert_eq!(nested.len(), 3, "two session files and one subagent's: {nested:?}");
+    assert_eq!(
+        nested.len(),
+        3,
+        "two session files and one subagent's: {nested:?}"
+    );
     assert!(
-        nested.iter().any(|p| p.to_string_lossy().contains("subagents")),
+        nested
+            .iter()
+            .any(|p| p.to_string_lossy().contains("subagents")),
         "the walk must go below the session file's own level: {nested:?}"
     );
     let spent = claude_days().get("2026-08-17").copied().unwrap();
@@ -273,7 +302,10 @@ fn a_subagents_transcript_is_found_and_billed() {
 /// through different fields.
 #[test]
 fn a_day_is_cut_where_the_machine_stands_not_at_utc_midnight() {
-    let tallies = [("claude", claude_meter().tally()), ("codex", codex_meter().tally())];
+    let tallies = [
+        ("claude", claude_meter().tally()),
+        ("codex", codex_meter().tally()),
+    ];
     for (name, tally) in tallies {
         let east = by_day(&tally, &plus_eight());
         let utc = by_day(&tally, &TimeZone::UTC);
@@ -290,7 +322,10 @@ fn a_day_is_cut_where_the_machine_stands_not_at_utc_midnight() {
         );
         let east_total: u64 = east.values().map(|t| t.output).sum();
         let utc_total: u64 = utc.values().map(|t| t.output).sum();
-        assert_eq!(east_total, utc_total, "{name}: the zone moves a day, never a token");
+        assert_eq!(
+            east_total, utc_total,
+            "{name}: the zone moves a day, never a token"
+        );
     }
 }
 
@@ -333,9 +368,15 @@ fn a_running_total_is_not_a_sum_of_turns() {
 fn a_reading_written_twice_in_a_row_is_one_turn() {
     let days = codex_days();
     let spent = days["2026-08-17"];
-    assert_eq!(spent.output, 150, "60 + 90, each written twice and counted once");
+    assert_eq!(
+        spent.output, 150,
+        "60 + 90, each written twice and counted once"
+    );
     assert_ne!(spent.output, 300, "every line was counted");
-    assert_ne!(spent.output, 60, "the second turn was swallowed as a repeat of the first");
+    assert_ne!(
+        spent.output, 60,
+        "the second turn was swallowed as a repeat of the first"
+    );
 }
 
 /// **The vendor's own total decides whether `cached` came out of
@@ -355,13 +396,28 @@ fn the_vendors_own_total_decides_whether_cached_came_out_of_the_input() {
     let tally = gemini_meter().tally();
     let at = |stamp: &str| {
         let want: jiff::Timestamp = stamp.parse().unwrap();
-        tally.kept.iter().find(|k| k.at == want).expect("the fixture holds this record").tokens
+        tally
+            .kept
+            .iter()
+            .find(|k| k.at == want)
+            .expect("the fixture holds this record")
+            .tokens
     };
     let c = at("2026-08-17T01:00:02Z");
     let d = at("2026-08-17T01:00:03Z");
-    assert_eq!(c.input, 207, "300 less the 100 it had cached, plus 7 of tool");
-    assert_eq!(d.input, 400, "its total counted the 90 apart, so none of it is in here");
-    assert_eq!((c.cached_input, d.cached_input), (100, 90), "both keep what they had cached");
+    assert_eq!(
+        c.input, 207,
+        "300 less the 100 it had cached, plus 7 of tool"
+    );
+    assert_eq!(
+        d.input, 400,
+        "its total counted the 90 apart, so none of it is in here"
+    );
+    assert_eq!(
+        (c.cached_input, d.cached_input),
+        (100, 90),
+        "both keep what they had cached"
+    );
 }
 
 /// **Thinking is output, and it is the vendor's arithmetic that says so.**
@@ -386,7 +442,10 @@ fn thinking_is_output_and_a_tool_call_is_input() {
     );
     assert_ne!(spent.output, 155 - 47, "the thinking was dropped");
     assert_ne!(spent.input, 1007 - 7, "the tool tokens were dropped");
-    assert_eq!(spent.cache_write, 0, "gemini reports no cache creation at all");
+    assert_eq!(
+        spent.cache_write, 0,
+        "gemini reports no cache creation at all"
+    );
 }
 
 /// **One answer is billed once, and the rule spans files.**
@@ -403,8 +462,15 @@ fn thinking_is_output_and_a_tool_call_is_input() {
 fn an_answer_written_twice_is_billed_once_across_files_too() {
     let days = gemini_days();
     let spent = days["2026-08-17"];
-    assert_eq!(spent.cached_input, 990, "g-A's 800 counted once, not twice or three times");
-    assert_ne!(spent.cached_input, 990 + 800, "g-A was billed again from the nested file");
+    assert_eq!(
+        spent.cached_input, 990,
+        "g-A's 800 counted once, not twice or three times"
+    );
+    assert_ne!(
+        spent.cached_input,
+        990 + 800,
+        "g-A was billed again from the nested file"
+    );
     assert!(
         spent.output >= 10,
         "g-F sits only in the nested file and must still be read: {spent:?}"
@@ -455,8 +521,16 @@ fn the_pi_format_is_carried_across_without_arithmetic() {
         tokens(1171, 30, 5, 593),
         "A(100/30/5/20) B(50/0/0/30) C(7/0/0/1) D(10/0/0/40) E(4/0/0/2) A'(1000/0/0/500)"
     );
-    assert_ne!(spent.input, 1171 - 30, "the cache read was subtracted out of input");
-    assert_ne!(spent.output, 593 + 25, "p-D's reasoning was added to its output");
+    assert_ne!(
+        spent.input,
+        1171 - 30,
+        "the cache read was subtracted out of input"
+    );
+    assert_ne!(
+        spent.output,
+        593 + 25,
+        "p-D's reasoning was added to its output"
+    );
 }
 
 /// **One message id means one answer *within a session*, not across the
@@ -481,7 +555,10 @@ fn a_message_id_belongs_to_its_session_and_not_to_the_tree() {
         spent.input, 1071,
         "the two sessions' p-A collided on a bare id and one of them was dropped"
     );
-    assert_ne!(spent.input, 1271, "the resumed file billed p-A a second time");
+    assert_ne!(
+        spent.input, 1271,
+        "the resumed file billed p-A a second time"
+    );
     assert_eq!(spent.input, 1171);
 }
 
@@ -531,7 +608,11 @@ fn a_task_document_is_read_whole_and_its_numbers_carried_across() {
         tally.unreadable, 2,
         "the payload that is not JSON, and the one that names no token field"
     );
-    assert_eq!(tally.kept.len(), 2, "the entry that is not a request was not billed");
+    assert_eq!(
+        tally.kept.len(),
+        2,
+        "the entry that is not a request was not billed"
+    );
 }
 
 /// **Each extension is found where that extension keeps things, and the
@@ -600,8 +681,15 @@ fn a_rewritten_task_document_is_not_billed_twice() {
     // for is the one that speaks: an accumulating bookkeeper says 40 here,
     // and 40 is the number a user would watch climb.
     assert_eq!(spent, 30, "10 and 20, each once");
-    assert_ne!(spent, 40, "the first request was billed again on the second pass");
-    assert_eq!(second.kept.len(), 2, "two requests in the file, two records");
+    assert_ne!(
+        spent, 40,
+        "the first request was billed again on the second pass"
+    );
+    assert_eq!(
+        second.kept.len(),
+        2,
+        "two requests in the file, two records"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -635,8 +723,14 @@ fn the_cached_witness_travels_to_the_gemini_fork() {
         tokens(900, 990, 0, 125),
         "100 + 200 + 400 + 200 fresh; 25 + 60 + 30 + 10 out"
     );
-    assert_ne!(spent.input, 1800, "upstream's reading: no cache read ever comes out");
-    assert_ne!(spent.input, 810, "the total that counts the cache apart was overruled");
+    assert_ne!(
+        spent.input, 1800,
+        "upstream's reading: no cache read ever comes out"
+    );
+    assert_ne!(
+        spent.input, 810,
+        "the total that counts the cache apart was overruled"
+    );
 }
 
 /// **One event, several models, and every one of them billed.**
@@ -653,8 +747,15 @@ fn the_cached_witness_travels_to_the_gemini_fork() {
 fn one_junie_event_can_bill_more_than_one_model() {
     let tally = junie_meter().tally();
     let spent = by_day(&tally, &plus_eight())["2026-08-17"];
-    assert_eq!(spent, tokens(107, 0, 0, 53), "100/50 and 7/3, both rows of one event");
-    assert_ne!(spent.input, 100, "only the first row of the event was billed");
+    assert_eq!(
+        spent,
+        tokens(107, 0, 0, 53),
+        "100/50 and 7/3, both rows of one event"
+    );
+    assert_ne!(
+        spent.input, 100,
+        "only the first row of the event was billed"
+    );
     assert_eq!(tally.kept.len(), 2, "two rows, two records, one instant");
     assert_eq!(
         tally.unreadable, 2,
@@ -689,9 +790,18 @@ fn a_thread_that_wrote_its_spending_twice_is_billed_once() {
         tokens(127, 20, 5, 59),
         "thread 1: 100/20/5/50 + 7/0/0/3 + the unmatched 11/0/0/2; thread 2: 9/0/0/4"
     );
-    assert_ne!(spent.input, 234, "the ledger and the messages were both billed");
-    assert_ne!(spent.input, 116, "the message no event accounted for was dropped");
-    assert_eq!(tally.unreadable, 1, "the event that never says which model it was");
+    assert_ne!(
+        spent.input, 234,
+        "the ledger and the messages were both billed"
+    );
+    assert_ne!(
+        spent.input, 116,
+        "the message no event accounted for was dropped"
+    );
+    assert_eq!(
+        tally.unreadable, 1,
+        "the event that never says which model it was"
+    );
 }
 
 /// **A record that does not add up to its own total is counted, not
@@ -712,7 +822,10 @@ fn openclaw_checks_its_reading_against_the_total_the_vendor_wrote() {
         tally.unreadable, 2,
         "the one that does not add up, and the one with no time on it"
     );
-    assert_ne!(spent.input, 115, "the record that disagrees with its own total was billed");
+    assert_ne!(
+        spent.input, 115,
+        "the record that disagrees with its own total was billed"
+    );
 }
 
 /// **An agent that has been renamed is read under every name it shipped
@@ -791,7 +904,10 @@ fn an_empty_home_spends_nothing_and_reports_nothing_unreadable() {
     // would be asserting that an empty home does not know what day it
     // is (`khor_core::Usage::today`).
     assert!(usage.days.is_empty() && usage.models.is_empty() && usage.unreadable == 0);
-    assert!(usage.today.is_some(), "the machine knows its own day whether or not it spent");
+    assert!(
+        usage.today.is_some(),
+        "the machine knows its own day whether or not it spent"
+    );
     let _ = std::fs::remove_dir_all(&empty);
 }
 
@@ -862,7 +978,10 @@ fn the_categories_are_the_ones_the_session_list_already_spells() {
 fn the_empty_registry_reads_nothing() {
     let nothing = Meters::empty().tally_in(&plus_eight());
     assert_eq!(
-        Usage { today: None, ..nothing.clone() },
+        Usage {
+            today: None,
+            ..nothing.clone()
+        },
         Usage::default(),
         "everything the registry could have read is empty"
     );
@@ -897,13 +1016,20 @@ fn a_kept_answer_survives_until_the_tree_moves_and_not_after() {
 
     let again = meters.tally();
     assert_eq!(again, first);
-    assert_eq!(meters.passes(), after_first, "the second ask must not have re-folded anything");
+    assert_eq!(
+        meters.passes(),
+        after_first,
+        "the second ask must not have re-folded anything"
+    );
 
     // A turn is appended, the way an agent appends one.
     append(&file, &claude_line("m2", 7));
     let third = meters.tally();
     assert_eq!(out(&third), 107, "the appended turn is in the answer");
-    assert!(meters.passes() > after_first, "…and it got there by reading the file again");
+    assert!(
+        meters.passes() > after_first,
+        "…and it got there by reading the file again"
+    );
 
     let _ = std::fs::remove_dir_all(&home);
 }
@@ -930,16 +1056,28 @@ fn reading_only_the_tail_gives_the_same_answer_as_reading_it_all() {
     std::fs::write(&file, format!("{}\n", claude_line("m1", 100))).unwrap();
 
     let kept = claude::Claude::at(home.join(".claude"));
-    let fresh =
-        || by_day(&claude::Claude::at(home.join(".claude")).tally(), &TimeZone::UTC);
+    let fresh = || {
+        by_day(
+            &claude::Claude::at(home.join(".claude")).tally(),
+            &TimeZone::UTC,
+        )
+    };
     let seen = |m: &claude::Claude| by_day(&m.tally(), &TimeZone::UTC);
     let out = |d: &HashMap<String, Tokens>| d.values().map(|t| t.output).sum::<u64>();
-    assert_eq!(seen(&kept), fresh(), "the two agree before anything is appended");
+    assert_eq!(
+        seen(&kept),
+        fresh(),
+        "the two agree before anything is appended"
+    );
 
     // A line arrives whole.
     append(&file, &claude_line("m2", 7));
     assert_eq!(seen(&kept), fresh(), "and after one append");
-    assert_eq!(out(&seen(&kept)), 107, "which is 100 + 7, not 100 and not 207");
+    assert_eq!(
+        out(&seen(&kept)),
+        107,
+        "which is 100 + 7, not 100 and not 207"
+    );
 
     // Half a line arrives. Neither reader may count it, and the one that
     // has been following along must not consume it either.
@@ -953,7 +1091,11 @@ fn reading_only_the_tail_gives_the_same_answer_as_reading_it_all() {
         ),
     )
     .unwrap();
-    assert_eq!(seen(&kept), fresh(), "a half-written line is nobody's record yet");
+    assert_eq!(
+        seen(&kept),
+        fresh(),
+        "a half-written line is nobody's record yet"
+    );
     assert_eq!(out(&seen(&kept)), 107);
 
     // …and once it is finished it counts, which is what proves the
@@ -969,7 +1111,11 @@ fn reading_only_the_tail_gives_the_same_answer_as_reading_it_all() {
     )
     .unwrap();
     assert_eq!(seen(&kept), fresh());
-    assert_eq!(out(&seen(&kept)), 1107, "the finished line was picked up on the next pass");
+    assert_eq!(
+        out(&seen(&kept)),
+        1107,
+        "the finished line was picked up on the next pass"
+    );
 
     let _ = std::fs::remove_dir_all(&home);
 }
@@ -990,16 +1136,26 @@ fn a_replaced_transcript_is_read_again_and_a_deleted_one_stops_counting() {
     let file = dir.join("s.jsonl");
     let meter = claude::Claude::at(home.join(".claude"));
     let out = |m: &claude::Claude| {
-        by_day(&m.tally(), &TimeZone::UTC).values().map(|t| t.output).sum::<u64>()
+        by_day(&m.tally(), &TimeZone::UTC)
+            .values()
+            .map(|t| t.output)
+            .sum::<u64>()
     };
 
-    std::fs::write(&file, format!("{}\n{}\n", claude_line("m1", 100), claude_line("m2", 200)))
-        .unwrap();
+    std::fs::write(
+        &file,
+        format!("{}\n{}\n", claude_line("m1", 100), claude_line("m2", 200)),
+    )
+    .unwrap();
     assert_eq!(out(&meter), 300);
 
     // Rotated: shorter, and holding something else entirely.
     std::fs::write(&file, format!("{}\n", claude_line("m9", 5))).unwrap();
-    assert_eq!(out(&meter), 5, "the old contents are gone, so they are not billed");
+    assert_eq!(
+        out(&meter),
+        5,
+        "the old contents are gone, so they are not billed"
+    );
 
     std::fs::remove_file(&file).unwrap();
     assert_eq!(out(&meter), 0, "a transcript that is gone bills nothing");
@@ -1042,7 +1198,12 @@ fn a_codex_turn_read_from_the_tail_is_billed_once() {
     std::fs::write(&file, format!("{}\n", codex_line(100, 100))).unwrap();
 
     let kept = codex::Codex::at(home.join(".codex"));
-    let fresh = || by_day(&codex::Codex::at(home.join(".codex")).tally(), &TimeZone::UTC);
+    let fresh = || {
+        by_day(
+            &codex::Codex::at(home.join(".codex")).tally(),
+            &TimeZone::UTC,
+        )
+    };
     let out = |d: &HashMap<String, Tokens>| d.values().map(|t| t.output).sum::<u64>();
 
     assert_eq!(out(&by_day(&kept.tally(), &TimeZone::UTC)), 100);
@@ -1091,7 +1252,10 @@ fn a_window_of_n_days_reaches_back_n_minus_one() {
             "a window of {days} days starts {} days back",
             days - 1
         );
-        assert!(start < today, "a window of more than one day starts before today");
+        assert!(
+            start < today,
+            "a window of more than one day starts before today"
+        );
     }
     // Zero is not a window; it is treated as one day rather than given a
     // meaning of its own, and the caller refuses it before getting here.
@@ -1121,15 +1285,27 @@ fn the_model_rows_add_up_to_the_day_rows_and_none_of_them_is_orphaned() {
     // The positive half first: a suite where the fixture stopped
     // spending would satisfy every loop below by never entering it.
     assert!(!usage.days.is_empty(), "the fixture spends something");
-    assert!(!usage.models.is_empty(), "…and the breakdown is not simply absent");
+    assert!(
+        !usage.models.is_empty(),
+        "…and the breakdown is not simply absent"
+    );
     for day in &usage.days {
         let mut sum = Tokens::default();
         let mut rows = 0usize;
-        for m in usage.models.iter().filter(|m| m.day == day.day && m.category == day.category) {
+        for m in usage
+            .models
+            .iter()
+            .filter(|m| m.day == day.day && m.category == day.category)
+        {
             sum.add(m.tokens);
             rows += 1;
         }
-        assert!(rows > 0, "{} {} has a day row and no model rows", day.day, day.category);
+        assert!(
+            rows > 0,
+            "{} {} has a day row and no model rows",
+            day.day,
+            day.category
+        );
         assert_eq!(
             sum, day.tokens,
             "{} {}: the model rows must add up to the day row",
@@ -1138,7 +1314,10 @@ fn the_model_rows_add_up_to_the_day_rows_and_none_of_them_is_orphaned() {
     }
     for m in &usage.models {
         assert!(
-            usage.days.iter().any(|d| d.day == m.day && d.category == m.category),
+            usage
+                .days
+                .iter()
+                .any(|d| d.day == m.day && d.category == m.category),
             "a model row for {} {} with no day row above it",
             m.day,
             m.category
@@ -1183,10 +1362,16 @@ fn a_record_that_names_no_model_is_counted_and_gets_a_row_of_its_own() {
 
     let usage = Meters::at(&home).tally_in(&plus_eight());
     assert_eq!(usage.days.len(), 1, "one vendor, one day");
-    assert_eq!(usage.days[0].tokens.output, 20, "both records are counted, named or not");
+    assert_eq!(
+        usage.days[0].tokens.output, 20,
+        "both records are counted, named or not"
+    );
 
-    let rows: Vec<(Option<&str>, u64)> =
-        usage.models.iter().map(|m| (m.model.as_deref(), m.tokens.output)).collect();
+    let rows: Vec<(Option<&str>, u64)> = usage
+        .models
+        .iter()
+        .map(|m| (m.model.as_deref(), m.tokens.output))
+        .collect();
     assert_eq!(
         rows,
         vec![(Some("m-1"), 10), (None, 10)],
@@ -1221,7 +1406,10 @@ fn each_meter_names_the_model_where_the_sample_it_reads_has_one() {
         }
     }
     let want: std::collections::BTreeMap<&str, Vec<Option<&str>>> = [
-        ("amp", vec![Some("a-model"), Some("b-model"), Some("c-model")]),
+        (
+            "amp",
+            vec![Some("a-model"), Some("b-model"), Some("c-model")],
+        ),
         ("claude", vec![Some("a-model")]),
         ("cline", vec![None]),
         ("codex", vec![Some("a-model"), Some("b-model")]),
@@ -1274,7 +1462,11 @@ fn a_codex_turn_wears_the_model_its_turn_context_named() {
         "and the turn after the second context is not still `a-model`"
     );
     assert_eq!(
-        usage.models.iter().filter(|m| m.category == "codex").count(),
+        usage
+            .models
+            .iter()
+            .filter(|m| m.category == "codex")
+            .count(),
         2,
         "two contexts, two model rows — no third row for a name nobody wrote"
     );
@@ -1299,7 +1491,10 @@ fn a_codex_turn_wears_the_model_its_turn_context_named() {
 fn the_answer_states_the_day_in_the_same_zone_it_cut_the_rows_in() {
     let meters = Meters::at(&fixture_home("today"));
     let at = |hours: i32| {
-        meters.tally_in(&TimeZone::fixed(jiff::tz::offset(hours as i8))).today.expect("khor knows its own day")
+        meters
+            .tally_in(&TimeZone::fixed(jiff::tz::offset(hours as i8)))
+            .today
+            .expect("khor knows its own day")
     };
     let east = at(14);
     let west = at(-11);
@@ -1311,7 +1506,10 @@ fn the_answer_states_the_day_in_the_same_zone_it_cut_the_rows_in() {
     assert_ne!(east, west, "25 hours apart is never the same civil date");
     assert_eq!(
         east,
-        jiff::Timestamp::now().to_zoned(TimeZone::fixed(jiff::tz::offset(14))).date().to_string(),
+        jiff::Timestamp::now()
+            .to_zoned(TimeZone::fixed(jiff::tz::offset(14)))
+            .date()
+            .to_string(),
         "and the earlier of the two is that zone's own today"
     );
 }

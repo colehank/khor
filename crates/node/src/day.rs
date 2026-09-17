@@ -188,7 +188,11 @@ fn blank(fill: u8) -> Vec<u8> {
 impl Day {
     /// An empty record whose window ends at `now_ms`.
     pub fn empty(now_ms: i64) -> Day {
-        Day { from: minute(now_ms) - MINUTES as i64 + 1, watched: blank(UNWATCHED), rows: BTreeMap::new() }
+        Day {
+            from: minute(now_ms) - MINUTES as i64 + 1,
+            watched: blank(UNWATCHED),
+            rows: BTreeMap::new(),
+        }
     }
 
     /// Reads the record, or an empty one.
@@ -222,7 +226,11 @@ impl Day {
             }
             rows.insert(id, cells);
         }
-        Some(Day { from: s.from, watched, rows })
+        Some(Day {
+            from: s.from,
+            watched,
+            rows,
+        })
     }
 
     fn to_stored(&self) -> Stored {
@@ -268,7 +276,8 @@ impl Day {
             for cells in self.rows.values_mut() {
                 shift_left(cells, shift, ABSENT);
             }
-            self.rows.retain(|_, cells| cells.iter().any(|b| *b != ABSENT));
+            self.rows
+                .retain(|_, cells| cells.iter().any(|b| *b != ABSENT));
         }
         self.from = want;
     }
@@ -312,9 +321,7 @@ impl Day {
             let Some(stalest) = self
                 .rows
                 .iter()
-                .min_by_key(|(id, cells)| {
-                    (cells.iter().rposition(|b| *b != ABSENT), (*id).clone())
-                })
+                .min_by_key(|(id, cells)| (cells.iter().rposition(|b| *b != ABSENT), (*id).clone()))
                 .map(|(id, _)| id.clone())
             else {
                 return;
@@ -422,7 +429,10 @@ impl Day {
 /// throughout, which claims the opposite (khor watched and there was
 /// nothing).
 pub fn unwatched(cells: usize) -> Vec<Run> {
-    vec![Run { cell: DayCell::Unwatched, cells: cells.clamp(1, MINUTES) as u32 }]
+    vec![Run {
+        cell: DayCell::Unwatched,
+        cells: cells.clamp(1, MINUTES) as u32,
+    }]
 }
 
 fn push(out: &mut Vec<Run>, cell: DayCell) {
@@ -458,14 +468,25 @@ mod tests {
         let text = theirs.to_wire();
 
         let same = Day::from_wire(&text, t0).expect("the wire round-trips");
-        assert_eq!(same.strip_of("s", MINUTES), theirs.strip_of("s", MINUTES), "same instant, same strip");
+        assert_eq!(
+            same.strip_of("s", MINUTES),
+            theirs.strip_of("s", MINUTES),
+            "same instant, same strip"
+        );
 
         let later = Day::from_wire(&text, t0 + 30 * 60_000).expect("rolls");
         let runs = later.strip_of("s", MINUTES);
         let tail = runs.last().expect("a strip has a tail");
-        assert_eq!(tail.cell, DayCell::Unwatched, "the minutes since they answered are nobody's");
+        assert_eq!(
+            tail.cell,
+            DayCell::Unwatched,
+            "the minutes since they answered are nobody's"
+        );
         assert_eq!(tail.cells, 30, "exactly the thirty minutes in transit");
-        let busy = runs.iter().find(|r| r.cell == DayCell::Word(State::Busy)).expect("their word survives");
+        let busy = runs
+            .iter()
+            .find(|r| r.cell == DayCell::Word(State::Busy))
+            .expect("their word survives");
         assert_eq!(busy.cells, 1);
     }
 
@@ -548,7 +569,10 @@ mod tests {
         day.observe(at(1000) + 10_000, [("s".to_owned(), State::Blocked)]);
         day.observe(at(1000) + 20_000, [("s".to_owned(), State::Busy)]);
         let strip = day.strip_of("s", MINUTES);
-        assert_eq!(strip.last().map(|r| r.cell), Some(DayCell::Word(State::Blocked)));
+        assert_eq!(
+            strip.last().map(|r| r.cell),
+            Some(DayCell::Word(State::Blocked))
+        );
     }
 
     /// Merging down to a screen's worth of cells uses the same order.
@@ -577,7 +601,10 @@ mod tests {
         assert!(day.rows.contains_key("old"));
         // A day and a minute later.
         day.observe(at(1441), [("new".to_owned(), State::Busy)]);
-        assert!(!day.rows.contains_key("old"), "a row older than the window must fall out");
+        assert!(
+            !day.rows.contains_key("old"),
+            "a row older than the window must fall out"
+        );
         assert_eq!(day.watched.len(), MINUTES, "the window is a fixed width");
         assert_eq!(day.rows.get("new").map(Vec::len), Some(MINUTES));
         // And the strip of the row that fell out reads as never watched
@@ -595,12 +622,21 @@ mod tests {
         for m in 1..(MAX_ROWS as i64 + 20) {
             day.observe(
                 at(m),
-                [("all-day".to_owned(), State::Busy), (format!("short-{m}"), State::Idle)],
+                [
+                    ("all-day".to_owned(), State::Busy),
+                    (format!("short-{m}"), State::Idle),
+                ],
             );
         }
         assert!(day.rows.len() <= MAX_ROWS, "held {}", day.rows.len());
-        assert!(day.rows.contains_key("all-day"), "the row seen every minute must survive");
-        assert!(!day.rows.contains_key("short-1"), "the stalest short row must go");
+        assert!(
+            day.rows.contains_key("all-day"),
+            "the row seen every minute must survive"
+        );
+        assert!(
+            !day.rows.contains_key("short-1"),
+            "the stalest short row must go"
+        );
     }
 
     /// Every word has its own byte, and it survives the round trip. A
@@ -656,7 +692,10 @@ mod tests {
         assert_eq!(jittery.rows.len(), MAX_ROWS);
         let big = serde_json::to_vec(&jittery.to_stored()).unwrap().len();
         let flat = serde_json::to_vec(&calm.to_stored()).unwrap().len();
-        assert_eq!(big, flat, "a fixed-width encoding does not care how much the words jump");
+        assert_eq!(
+            big, flat,
+            "a fixed-width encoding does not care how much the words jump"
+        );
         // 512 rows × 1440 minutes = 737_280 bytes of cells, plus the
         // watched ledger, the ids and JSON's own punctuation.
         assert!(big < 780_000, "worst case grew to {big} bytes");
@@ -671,7 +710,10 @@ mod tests {
             );
         }
         let small = serde_json::to_vec(&usual.to_stored()).unwrap().len();
-        println!("worst case: {big} bytes ({} rows); twenty rows: {small} bytes", jittery.rows.len());
+        println!(
+            "worst case: {big} bytes ({} rows); twenty rows: {small} bytes",
+            jittery.rows.len()
+        );
     }
 
     /// A reported row's strip is 不知道 end to end — never [`Absent`],

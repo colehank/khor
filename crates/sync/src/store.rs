@@ -378,7 +378,11 @@ fn make_dir(dir: &Path) -> Result<(), String> {
             .mode(OWNER_ONLY_DIR)
             .create(dir)
             .or_else(|e| {
-                if dir.is_dir() { Ok(()) } else { Err(msg::cant_make_dir(e)) }
+                if dir.is_dir() {
+                    Ok(())
+                } else {
+                    Err(msg::cant_make_dir(e))
+                }
             })
     }
     #[cfg(not(unix))]
@@ -532,7 +536,10 @@ pub fn compact_dir(dir: &Path, peer: u64) -> Result<Option<Compacted>, String> {
     let loaded: Loaded<AnyDoc> = load(dir, peer)?;
     let mut store = loaded.store;
     store.compact(&loaded.doc)?;
-    Ok(Some(Compacted { before, after: blocks(dir)?.len() }))
+    Ok(Some(Compacted {
+        before,
+        after: blocks(dir)?.len(),
+    }))
 }
 
 /// The lease file that makes 「one compactor」 enforceable rather than
@@ -633,7 +640,9 @@ fn now_ms() -> u64 {
 /// listings and no writes at all.
 fn anything_piled(home: &Path) -> bool {
     let piled = |d: &Path| blocks(d).map(|b| b.len() > PILE).unwrap_or(false);
-    let Ok(top) = fs::read_dir(home) else { return false };
+    let Ok(top) = fs::read_dir(home) else {
+        return false;
+    };
     for e in top.flatten() {
         let p = e.path();
         if !p.is_dir() {
@@ -642,7 +651,9 @@ fn anything_piled(home: &Path) -> bool {
         if piled(&p) {
             return true;
         }
-        let Ok(inner) = fs::read_dir(&p) else { continue };
+        let Ok(inner) = fs::read_dir(&p) else {
+            continue;
+        };
         for e in inner.flatten() {
             let q = e.path();
             if q.is_dir() && piled(&q) {
@@ -709,13 +720,16 @@ pub fn compact_piles_under(home: &Path, peer: u64) -> Vec<(PathBuf, Compacted)> 
             // dead sync.
             Err(_) => continue,
         }
-        let Ok(inner) = fs::read_dir(&p) else { continue };
+        let Ok(inner) = fs::read_dir(&p) else {
+            continue;
+        };
         for e in inner.flatten() {
             let q = e.path();
             if q.is_dir()
-                && let Ok(Some(c)) = compact_dir(&q, peer) {
-                    out.push((q, c));
-                }
+                && let Ok(Some(c)) = compact_dir(&q, peer)
+            {
+                out.push((q, c));
+            }
         }
     }
     let _ = fs::remove_file(&lease);

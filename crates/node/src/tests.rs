@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use khor_core::State;
-use khor_sync::chat::{channel_dir, ChatDoc, Sender};
+use khor_sync::chat::{ChatDoc, Sender, channel_dir};
 /// For `SeenDoc::changes_since` — the seen document's export lives on the
 /// trait, unlike `ChatDoc`'s, which also has it inherently.
 use khor_sync::store::Doc;
@@ -20,7 +20,8 @@ fn root(tag: &str) -> PathBuf {
 fn notes_to_self_are_seen_the_moment_they_are_told() {
     let r = root("tell");
     let n = Node::open(r.clone()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "a note to self").unwrap();
+    n.tell(n.name().to_owned().as_str(), "a note to self")
+        .unwrap();
 
     let rows = n.sessions().unwrap();
     assert_eq!(rows.len(), 1);
@@ -45,8 +46,14 @@ fn a_foreign_block_raises_unread_and_seen_clears_it() {
     let n = Node::open(r.clone()).unwrap();
 
     let far = ChatDoc::new(0xF0F0).unwrap();
-    far.tell(&Sender { id: "dev-far".into(), name: "far".into() }, "from far away")
-        .unwrap();
+    far.tell(
+        &Sender {
+            id: "dev-far".into(),
+            name: "far".into(),
+        },
+        "from far away",
+    )
+    .unwrap();
     let block = far.changes_since(&Default::default()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
@@ -89,7 +96,8 @@ fn watch_receives_what_tell_emits() {
 fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
     let r = root("close");
     let n = Node::open(r.clone()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "the line that stays").unwrap();
+    n.tell(n.name().to_owned().as_str(), "the line that stays")
+        .unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     let files = dir.join("files");
     fs::create_dir_all(&files).unwrap();
@@ -112,7 +120,8 @@ fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
     // put-away watermark is the last message's clock, and a reply landing
     // in the very same millisecond would still be under it.
     std::thread::sleep(std::time::Duration::from_millis(5));
-    n.tell(n.name().to_owned().as_str(), "the line that reopens").unwrap();
+    n.tell(n.name().to_owned().as_str(), "the line that reopens")
+        .unwrap();
     let rows = n.sessions().unwrap();
     assert_eq!(rows.len(), 1, "a new message must bring the row back");
     assert_eq!(
@@ -136,7 +145,10 @@ fn a_revived_chat_owes_only_what_revived_it() {
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
     let far = ChatDoc::new(0xF0F0).unwrap();
-    let sender = Sender { id: "dev-far".into(), name: "far".into() };
+    let sender = Sender {
+        id: "dev-far".into(),
+        name: "far".into(),
+    };
     far.tell(&sender, "unread when closed").unwrap();
     fs::write(
         dir.join("u-000000000000f0f0-00000000.loro"),
@@ -188,26 +200,42 @@ fn a_forgotten_machines_rows_leave_the_list() {
     // literal, so this test does not have to know every Session field.
     let mut template = n.sessions().unwrap()[0].session.clone();
     template.id = SessionId("shell/on-keeper".into());
-    n.cache_peer_rows(&keep_id, "keeper", &[template.clone()]).unwrap();
+    n.cache_peer_rows(&keep_id, "keeper", &[template.clone()])
+        .unwrap();
     template.id = SessionId("shell/on-beta".into());
-    n.cache_peer_rows(&gone_id, "beta-probe", &[template]).unwrap();
+    n.cache_peer_rows(&gone_id, "beta-probe", &[template])
+        .unwrap();
 
     let ids = |views: &[SessionView]| -> Vec<String> {
         views.iter().map(|v| v.session.id.0.clone()).collect()
     };
     let before = ids(&n.sessions().unwrap());
-    for id in ["chat/keeper", "chat/beta-probe", "shell/on-keeper", "shell/on-beta"] {
-        assert!(before.iter().any(|i| i == id), "control: {id} is on the list before the forget");
+    for id in [
+        "chat/keeper",
+        "chat/beta-probe",
+        "shell/on-keeper",
+        "shell/on-beta",
+    ] {
+        assert!(
+            before.iter().any(|i| i == id),
+            "control: {id} is on the list before the forget"
+        );
     }
 
     n.forget_device("beta-probe").unwrap();
 
     let after = ids(&n.sessions().unwrap());
     for id in ["chat/beta-probe", "shell/on-beta"] {
-        assert!(!after.iter().any(|i| i == id), "{id} must leave with its machine");
+        assert!(
+            !after.iter().any(|i| i == id),
+            "{id} must leave with its machine"
+        );
     }
     for id in ["chat/keeper", "shell/on-keeper"] {
-        assert!(after.iter().any(|i| i == id), "{id} belongs to a machine still in the table");
+        assert!(
+            after.iter().any(|i| i == id),
+            "{id} belongs to a machine still in the table"
+        );
     }
     assert!(
         r.join(".khor").join("peers").join(&gone_id).exists(),
@@ -232,7 +260,10 @@ fn a_send_makes_a_file_message_and_no_transfer_row() {
     // To this machine's own window: sender seat, and a channel that
     // exists without pairing anybody.
     let tid = n.send(n.name().to_owned().as_str(), &payload).unwrap();
-    assert!(tid.0.starts_with("transfer/"), "the accept handle is still a transfer id");
+    assert!(
+        tid.0.starts_with("transfer/"),
+        "the accept handle is still a transfer id"
+    );
 
     let rows = n.sessions().unwrap();
     assert!(
@@ -241,7 +272,9 @@ fn a_send_makes_a_file_message_and_no_transfer_row() {
     );
     let log = n.log(n.name().to_owned().as_str()).unwrap();
     assert!(
-        log.messages.iter().any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "hello.txt")),
+        log.messages
+            .iter()
+            .any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "hello.txt")),
         "the offer must be a file message in the machine's log"
     );
     let chat = rows
@@ -283,7 +316,11 @@ fn an_offer_must_not_raise_the_seen_watermark() {
     let payload = r.join("handover.bin");
     fs::write(&payload, b"bytes").unwrap();
     n.send(&me, &payload).unwrap();
-    assert_eq!(watermark(&n), 0, "offering is not looking: no mark may be written");
+    assert_eq!(
+        watermark(&n),
+        0,
+        "offering is not looking: no mark may be written"
+    );
 
     // And the offering seat still does not badge itself for what it just
     // handed over. That answer is the seat's, derived locally
@@ -296,7 +333,10 @@ fn an_offer_must_not_raise_the_seen_watermark() {
         .find(|v| v.session.id.0 == sid)
         .expect("the machine's chat row exists")
         .session;
-    assert_eq!(row.unread, 0, "the machine that offered it has nothing to look at");
+    assert_eq!(
+        row.unread, 0,
+        "the machine that offered it has nothing to look at"
+    );
 
     // Same probe, same document, one line later.
     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -342,7 +382,10 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     // plants a text message with. A line comes first, so that the
     // watermark planted below is one a real machine leaves behind.
     let far = ChatDoc::new(0xFAFA).unwrap();
-    let who = Sender { id: "dev-far".into(), name: "far".into() };
+    let who = Sender {
+        id: "dev-far".into(),
+        name: "far".into(),
+    };
     far.tell(&who, "sending you something").unwrap();
     let said_at = far.messages().last().expect("the line is in the doc").at;
     // Distinct stamps: same-millisecond messages would put the offer at
@@ -360,7 +403,9 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     // foreign block in this node's own seen store, raised by its `tell`
     // (telling implies looking) and therefore standing below the offer.
     let far_seen = SeenDoc::new(0xFAFA).unwrap();
-    far_seen.mark(&format!("chat/{}", n.name()), said_at).unwrap();
+    far_seen
+        .mark(&format!("chat/{}", n.name()), said_at)
+        .unwrap();
     let sdir = seen_dir(&r);
     fs::create_dir_all(&sdir).unwrap();
     fs::write(
@@ -389,8 +434,16 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     fs::create_dir_all(&files).unwrap();
     fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
     let row = chat_row(&n);
-    assert_ne!(row.state.state, State::Blocked, "答了才清: the landing clears 待批");
-    assert_eq!(row.state.state, State::Done, "…to the unseen file message's own 完成");
+    assert_ne!(
+        row.state.state,
+        State::Blocked,
+        "答了才清: the landing clears 待批"
+    );
+    assert_eq!(
+        row.state.state,
+        State::Done,
+        "…to the unseen file message's own 完成"
+    );
     assert_eq!(
         row.unread, 1,
         "and 完成 here means one message nobody at this machine has looked at — \
@@ -401,7 +454,11 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
 
 /// The file ref the incoming-offer test plants.
 fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
-    khor_sync::chat::FileRef { name: "drop.bin".into(), size: 6, digest: "ef".repeat(32) }
+    khor_sync::chat::FileRef {
+        name: "drop.bin".into(),
+        size: 6,
+        digest: "ef".repeat(32),
+    }
 }
 
 /// Pinning lifts a row to the top of the list the library hands out, and
@@ -415,19 +472,35 @@ fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
     let live = n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
 
     let ids = |n: &Node| -> Vec<String> {
-        n.sessions().unwrap().into_iter().map(|v| v.session.id.0).collect()
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .map(|v| v.session.id.0)
+            .collect()
     };
     let chat_first = ids(&n);
     assert_eq!(chat_first.len(), 2);
-    assert!(chat_first[0].starts_with("chat/"), "control: {chat_first:?}");
+    assert!(
+        chat_first[0].starts_with("chat/"),
+        "control: {chat_first:?}"
+    );
 
     n.pin_session(&live, true).unwrap();
     assert_eq!(ids(&n)[0], live.0, "the pinned row must lead");
-    let pinned: Vec<bool> = n.sessions().unwrap().into_iter().map(|v| v.pinned).collect();
+    let pinned: Vec<bool> = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .map(|v| v.pinned)
+        .collect();
     assert_eq!(pinned, vec![true, false], "and only it wears the flag");
 
     n.pin_session(&live, false).unwrap();
-    assert_eq!(ids(&n), chat_first, "unpinning restores the original order exactly");
+    assert_eq!(
+        ids(&n),
+        chat_first,
+        "unpinning restores the original order exactly"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 
@@ -441,10 +514,19 @@ fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
     let n = Node::open(r.clone()).unwrap();
     n.tell(n.name().to_owned().as_str(), "a note").unwrap();
 
-    n.pin_session(&SessionId("tui/long-gone".into()), true).unwrap();
+    n.pin_session(&SessionId("tui/long-gone".into()), true)
+        .unwrap();
     let rows = n.sessions().unwrap();
-    assert_eq!(rows.len(), 1, "a pin must not conjure a row: {:?}", rows.len());
-    assert!(!rows[0].pinned, "and it must not land on somebody else's row");
+    assert_eq!(
+        rows.len(),
+        1,
+        "a pin must not conjure a row: {:?}",
+        rows.len()
+    );
+    assert!(
+        !rows[0].pinned,
+        "and it must not land on somebody else's row"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 
@@ -462,7 +544,9 @@ fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
     let n = Node::open(r.clone()).unwrap();
     n.tell(n.name().to_owned().as_str(), "a note").unwrap();
     let shell = n.open_ephemeral(khor_core::kind::SHELL, "build").unwrap();
-    let tui = n.open_ephemeral(khor_core::kind::TUI, "some agent").unwrap();
+    let tui = n
+        .open_ephemeral(khor_core::kind::TUI, "some agent")
+        .unwrap();
 
     let of = |id: &SessionId| -> Option<String> {
         n.sessions()
@@ -472,7 +556,11 @@ fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
             .and_then(|v| v.session.category)
     };
     assert_eq!(of(&shell).as_deref(), Some(khor_core::category::SHELL));
-    assert_eq!(of(&tui), None, "khor must not guess a vendor from a command line");
+    assert_eq!(
+        of(&tui),
+        None,
+        "khor must not guess a vendor from a command line"
+    );
 
     let chat = SessionId(format!("chat/{}", n.name()));
     assert_eq!(of(&chat).as_deref(), Some(khor_core::category::KHOR));
@@ -501,12 +589,19 @@ fn the_names_khor_answers_to_are_not_up_for_registration() {
     let argv = vec!["some-acp-agent".to_owned()];
     for name in ["claude", "codex", "khor", "shell"] {
         let refused = n.register_agent(name, &argv);
-        assert!(refused.is_err(), "{name} is khor's own word, it must not be registrable");
+        assert!(
+            refused.is_err(),
+            "{name} is khor's own word, it must not be registrable"
+        );
         assert!(
             refused.unwrap_err().contains(name),
             "the refusal must name the name — a person cannot guess this list"
         );
-        assert_eq!(n.agent(name).unwrap(), None, "and nothing was written under it");
+        assert_eq!(
+            n.agent(name).unwrap(),
+            None,
+            "and nothing was written under it"
+        );
     }
     // The control: without this, refusing every name on earth passes
     // every assertion above.
@@ -542,8 +637,14 @@ fn the_names_khor_answers_to_are_not_up_for_registration() {
 fn a_registration_needs_both_a_name_and_a_command() {
     let r = root("agents-blank");
     let n = Node::open(r.clone()).unwrap();
-    assert!(n.register_agent("   ", &["x".to_owned()]).is_err(), "a blank name names nothing");
-    assert!(n.register_agent("ok", &[]).is_err(), "a registration with no command starts nothing");
+    assert!(
+        n.register_agent("   ", &["x".to_owned()]).is_err(),
+        "a blank name names nothing"
+    );
+    assert!(
+        n.register_agent("ok", &[]).is_err(),
+        "a registration with no command starts nothing"
+    );
     assert!(n.agents().unwrap().is_empty(), "neither wrote anything");
     let _ = fs::remove_dir_all(&r);
 }
@@ -577,7 +678,9 @@ fn a_vendors_hook_places_the_row_that_khor_could_not() {
 /// `name` as its title — recomputed from this file each sweep, which is
 /// exactly the force a user's rename has to outlive.
 fn plant_discovered_claude(r: &Path, vendor_session: &str, vendor_name: &str) {
-    let dir = crate::adaptor::vendor_home(r).join(".claude").join("sessions");
+    let dir = crate::adaptor::vendor_home(r)
+        .join(".claude")
+        .join("sessions");
     fs::create_dir_all(&dir).unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -596,7 +699,9 @@ fn plant_discovered_claude(r: &Path, vendor_session: &str, vendor_name: &str) {
 /// A claude status file whose pid is **this** process — a sighting with
 /// a live pid, which is the shape the rule under test is about.
 fn plant_live_claude(r: &Path, vendor_session: &str, status: &str, pid: u32) {
-    let dir = crate::adaptor::vendor_home(r).join(".claude").join("sessions");
+    let dir = crate::adaptor::vendor_home(r)
+        .join(".claude")
+        .join("sessions");
     fs::create_dir_all(&dir).unwrap();
     let now = crate::live::now_ms();
     // The sweep vouches for a pid only when the file's `startedAt`
@@ -634,7 +739,10 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
     // The parent (the test harness) is another live process — a
     // reporter that is not the claude the file describes.
     let other = unsafe { libc::getppid() } as u32;
-    assert!(crate::link::pid_alive(other), "probe dead: the other reporter must be alive");
+    assert!(
+        crate::link::pid_alive(other),
+        "probe dead: the other reporter must be alive"
+    );
 
     let vendor_session = "aaaaaaa2-0000-4000-8000-00000000000a";
     plant_live_claude(&r, vendor_session, "busy", me);
@@ -647,10 +755,15 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
             .map(|v| v.session.state.state)
             .expect("the planted file surfaces as a row")
     };
-    assert_eq!(word_of(&n), State::Busy, "control: the file alone reads busy");
+    assert_eq!(
+        word_of(&n),
+        State::Busy,
+        "control: the file alone reads busy"
+    );
 
     // A reopen by another process writes 空闲 first-hand — about itself.
-    live.reopen(&id, khor_core::kind::GUI, "live-one", other).unwrap();
+    live.reopen(&id, khor_core::kind::GUI, "live-one", other)
+        .unwrap();
     assert_eq!(
         word_of(&n),
         State::Busy,
@@ -660,7 +773,8 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
     // The other arm: the same report from the very process the file
     // describes keeps its rank — this is a hook's shape, and a hook
     // must not be demoted.
-    live.reopen(&id, khor_core::kind::GUI, "live-one", me).unwrap();
+    live.reopen(&id, khor_core::kind::GUI, "live-one", me)
+        .unwrap();
     assert_eq!(
         word_of(&n),
         State::Idle,
@@ -722,10 +836,18 @@ fn a_users_rename_outlives_the_vendors_sweep() {
             .expect("the planted status file must surface as a row")
     };
     let before = row_of(&n);
-    assert_eq!(before.session.title, "vendor-name", "control: the vendor names it first");
+    assert_eq!(
+        before.session.title, "vendor-name",
+        "control: the vendor names it first"
+    );
 
-    n.rename_session(&before.session.id, "the rent job").unwrap();
-    assert_eq!(row_of(&n).session.title, "the rent job", "the user's name must win the sweep");
+    n.rename_session(&before.session.id, "the rent job")
+        .unwrap();
+    assert_eq!(
+        row_of(&n).session.title,
+        "the rent job",
+        "the user's name must win the sweep"
+    );
     assert_eq!(
         row_of(&n).session.title,
         "the rent job",
@@ -751,7 +873,10 @@ fn an_unnamed_discovered_row_keeps_the_vendors_title() {
             .into_iter()
             .find(|v| v.session.id.0.starts_with("tui/"))
             .expect("the planted status file must surface as a row");
-        assert_eq!(row.session.title, "vendor-name", "no override on record: the vendor's title stands");
+        assert_eq!(
+            row.session.title, "vendor-name",
+            "no override on record: the vendor's title stands"
+        );
     }
     let _ = fs::remove_dir_all(&r);
 }
@@ -764,7 +889,9 @@ fn an_unnamed_discovered_row_keeps_the_vendors_title() {
 fn clearing_a_rename_falls_back_to_the_opened_title() {
     let r = root("rename-clear");
     let n = Node::open(r.clone()).unwrap();
-    let id = n.open_ephemeral(khor_core::kind::TUI, "opened-title").unwrap();
+    let id = n
+        .open_ephemeral(khor_core::kind::TUI, "opened-title")
+        .unwrap();
 
     let title_of = |n: &Node| {
         n.sessions()
@@ -775,7 +902,11 @@ fn clearing_a_rename_falls_back_to_the_opened_title() {
             .session
             .title
     };
-    assert_eq!(title_of(&n), "opened-title", "control: the opening title shows first");
+    assert_eq!(
+        title_of(&n),
+        "opened-title",
+        "control: the opening title shows first"
+    );
 
     n.rename_session(&id, "my words").unwrap();
     assert_eq!(title_of(&n), "my words");
@@ -784,10 +915,18 @@ fn clearing_a_rename_falls_back_to_the_opened_title() {
     // document is what a serve restart comes back to.
     drop(n);
     let n = Node::open(r.clone()).unwrap();
-    assert_eq!(title_of(&n), "my words", "the rename must survive reopening the node");
+    assert_eq!(
+        title_of(&n),
+        "my words",
+        "the rename must survive reopening the node"
+    );
 
     n.rename_session(&id, "").unwrap();
-    assert_eq!(title_of(&n), "opened-title", "clearing must fall back to the opened title");
+    assert_eq!(
+        title_of(&n),
+        "opened-title",
+        "clearing must fall back to the opened title"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 
@@ -804,7 +943,10 @@ fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
 
     // The vendor's transcript, named by the vendor's own session id.
     let uuid = "0a9f61c2-77aa-4bde-9c01-3e5f8a7b1234";
-    let proj = crate::adaptor::vendor_home(&r).join(".claude").join("projects").join("p");
+    let proj = crate::adaptor::vendor_home(&r)
+        .join(".claude")
+        .join("projects")
+        .join("p");
     fs::create_dir_all(&proj).unwrap();
     fs::write(
         proj.join(format!("{uuid}.jsonl")),
@@ -824,11 +966,14 @@ fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
     // The hook's half, minus the env: record the vendor leaf, then the
     // same lookup lands on the vendor's file.
     let live = crate::live::LiveKind::new(r.clone(), n.device());
-    live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid)).unwrap();
+    live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid))
+        .unwrap();
     let said = n.transcript_of(&tui).unwrap();
     assert_eq!(
         said,
-        vec![crate::adaptor::claude::Utterance::User("the real words".into())],
+        vec![crate::adaptor::claude::Utterance::User(
+            "the real words".into()
+        )],
         "the vendor leaf must lead to the vendor's own file"
     );
     let _ = fs::remove_dir_all(&r);
@@ -841,7 +986,10 @@ fn pinning_a_machine_that_is_not_in_the_table_is_refused_by_name() {
     let r = root("pin-machine");
     let n = Node::open(r.clone()).unwrap();
     n.pin_device(n.name().to_owned().as_str(), true).unwrap();
-    assert!(n.devices().unwrap()[0].pinned, "this machine should be pinned now");
+    assert!(
+        n.devices().unwrap()[0].pinned,
+        "this machine should be pinned now"
+    );
 
     let e = n.pin_device("no-such-box", true).unwrap_err();
     let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
@@ -856,7 +1004,10 @@ fn telling_an_unknown_machine_is_refused_by_name() {
     let e = n.tell("no-such-box", "hi").unwrap_err();
     let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
     assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
-    assert!(e.contains(n.name()), "the error should name existing machines: {e}");
+    assert!(
+        e.contains(n.name()),
+        "the error should name existing machines: {e}"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 
@@ -865,7 +1016,10 @@ fn a_wrong_session_id_names_what_exists() {
     let r = root("badid");
     let n = Node::open(r.clone()).unwrap();
     let e = n.seen(&SessionId("chat/elsewhere".into())).unwrap_err();
-    assert!(e.contains("chat/"), "the error should carry the existing ids: {e}");
+    assert!(
+        e.contains("chat/"),
+        "the error should carry the existing ids: {e}"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 
@@ -932,7 +1086,8 @@ fn a_reported_rows_strip_comes_from_its_home_machines_day() {
     let mut template = n.sessions().unwrap()[0].session.clone();
     template.id = SessionId("shell/on-told".into());
     template.home = crate::device_id_from_hex(&told_id).unwrap();
-    n.cache_peer_rows(&told_id, "told", &[template.clone()]).unwrap();
+    n.cache_peer_rows(&told_id, "told", &[template.clone()])
+        .unwrap();
     template.id = SessionId("shell/on-mute".into());
     template.home = crate::device_id_from_hex(&mute_id).unwrap();
     n.cache_peer_rows(&mute_id, "mute", &[template]).unwrap();
@@ -947,12 +1102,14 @@ fn a_reported_rows_strip_comes_from_its_home_machines_day() {
     let strips = n.day_strips(crate::day::MINUTES).unwrap();
     let told = &strips["shell/on-told"];
     assert!(
-        told.iter().any(|run| run.cell == khor_core::DayCell::Word(State::Busy)),
+        told.iter()
+            .any(|run| run.cell == khor_core::DayCell::Word(State::Busy)),
         "the home machine's word reaches the strip: {told:?}"
     );
     let mute = &strips["shell/on-mute"];
     assert!(
-        mute.iter().all(|run| run.cell == khor_core::DayCell::Unwatched),
+        mute.iter()
+            .all(|run| run.cell == khor_core::DayCell::Unwatched),
         "a machine that never answered is still 没在看, not borrowed: {mute:?}"
     );
 }
@@ -969,7 +1126,10 @@ fn only_dead_seen_and_old_rows_are_stale() {
         kind: khor_core::Kind(khor_core::kind::SHELL.into()),
         title: "probe".into(),
         home: DeviceId([1; 32]),
-        state: khor_core::StateStamp { state: State::Failed, at: khor_core::Millis(died_at) },
+        state: khor_core::StateStamp {
+            state: State::Failed,
+            at: khor_core::Millis(died_at),
+        },
         unread,
         place: None,
         mux: false,
@@ -1011,8 +1171,12 @@ fn a_long_dead_row_is_stale_on_the_list_and_a_fresh_one_is_not() {
     let r = root("stale-rows");
     let n = Node::open(r.clone()).unwrap();
     let live = crate::live::LiveKind::new(r.clone(), n.device());
-    let old = n.open_ephemeral(khor_core::kind::SHELL, "old-probe").unwrap();
-    let fresh = n.open_ephemeral(khor_core::kind::SHELL, "fresh-probe").unwrap();
+    let old = n
+        .open_ephemeral(khor_core::kind::SHELL, "old-probe")
+        .unwrap();
+    let fresh = n
+        .open_ephemeral(khor_core::kind::SHELL, "fresh-probe")
+        .unwrap();
     live.record_exit(&old, 1).unwrap();
     live.record_exit(&fresh, 1).unwrap();
 
@@ -1051,9 +1215,15 @@ fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
     let r = root("quiet");
     let n = Node::open(r.clone()).unwrap();
     let live = crate::live::LiveKind::new(r.clone(), n.device());
-    let orphan = n.open_ephemeral(khor_core::kind::TUI, "orphan-busy").unwrap();
-    let backed = n.open_ephemeral(khor_core::kind::TUI, "backed-busy").unwrap();
-    let idle = n.open_ephemeral(khor_core::kind::TUI, "orphan-idle").unwrap();
+    let orphan = n
+        .open_ephemeral(khor_core::kind::TUI, "orphan-busy")
+        .unwrap();
+    let backed = n
+        .open_ephemeral(khor_core::kind::TUI, "backed-busy")
+        .unwrap();
+    let idle = n
+        .open_ephemeral(khor_core::kind::TUI, "orphan-idle")
+        .unwrap();
     // The hook shape: a word on record, no pid to ask (open_ephemeral
     // records the opener's pid; clear it the way a hook registration
     // never sets one — by rewriting meta with no pid).
@@ -1065,9 +1235,12 @@ fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
         fs::write(dir.join("meta.json"), serde_json::to_vec(&meta).unwrap()).unwrap();
     }
     live.set_pid(&backed, std::process::id()).unwrap();
-    live.report(&orphan, State::Busy, crate::live::Source::Reported).unwrap();
-    live.report(&backed, State::Busy, crate::live::Source::Reported).unwrap();
-    live.report(&idle, State::Idle, crate::live::Source::Reported).unwrap();
+    live.report(&orphan, State::Busy, crate::live::Source::Reported)
+        .unwrap();
+    live.report(&backed, State::Busy, crate::live::Source::Reported)
+        .unwrap();
+    live.report(&idle, State::Idle, crate::live::Source::Reported)
+        .unwrap();
     // Push all three words 25 hours into the past.
     let then = crate::live::now_ms() - 25 * 60 * 60 * 1000;
     for id in [&orphan, &backed, &idle] {
@@ -1087,7 +1260,11 @@ fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
     };
     let o = view(&orphan);
     assert!(o.quiet, "a day-silent 忙碌 nobody can vouch for must grey");
-    assert_eq!(o.session.state.state, State::Busy, "…and the word itself never changes");
+    assert_eq!(
+        o.session.state.state,
+        State::Busy,
+        "…and the word itself never changes"
+    );
     assert!(
         !view(&backed).quiet,
         "a live pid is a voucher: the row never greys however old the stamp"
@@ -1147,7 +1324,11 @@ mod store_owner_tests {
 
         // The name is a label, not the claim: renaming must not lock a
         // machine out of its own store.
-        std::fs::write(&stamp, gethostname::gethostname().to_string_lossy().to_string()).unwrap();
+        std::fs::write(
+            &stamp,
+            gethostname::gethostname().to_string_lossy().to_string(),
+        )
+        .unwrap();
         crate::Node::open_as(root.clone(), "renamed-machine").expect("a rename is not a move");
 
         let _ = std::fs::remove_dir_all(&root);
@@ -1170,11 +1351,19 @@ mod store_owner_tests {
         let here = gethostname::gethostname().to_string_lossy().to_string();
 
         // Nobody has claimed it: a plain machine with a plain home.
-        assert_eq!(crate::Node::store_under(&home), home, "an unclaimed home is the store");
+        assert_eq!(
+            crate::Node::store_under(&home),
+            home,
+            "an unclaimed home is the store"
+        );
 
         // This machine claimed it, so this machine keeps it.
         std::fs::write(home.join(".khor").join("owner"), &here).unwrap();
-        assert_eq!(crate::Node::store_under(&home), home, "the owner keeps $HOME");
+        assert_eq!(
+            crate::Node::store_under(&home),
+            home,
+            "the owner keeps $HOME"
+        );
 
         // Somebody else claimed it: this machine gets its own, and the
         // path is the one `khor_root` in scripts/onset-lib.sh computes.
@@ -1218,7 +1407,10 @@ mod store_owner_tests {
             let _ = std::fs::remove_dir_all(&root);
             return;
         };
-        assert!(text.contains(&fp), "the stamp records the box, not just the name: {text:?}");
+        assert!(
+            text.contains(&fp),
+            "the stamp records the box, not just the name: {text:?}"
+        );
 
         // Renamed: same box, a name it has never gone by.
         std::fs::write(&stamp, format!("machine {fp}\nname the-old-name\n")).unwrap();
@@ -1230,7 +1422,11 @@ mod store_owner_tests {
         );
 
         // Somebody else's box, whatever it is called.
-        std::fs::write(&stamp, "machine 00000000000000000000000000000000\nname elsewhere\n").unwrap();
+        std::fs::write(
+            &stamp,
+            "machine 00000000000000000000000000000000\nname elsewhere\n",
+        )
+        .unwrap();
         let err = match crate::Node::open(root.clone()) {
             Err(e) => e,
             Ok(_) => panic!("another box's store is still refused"),
@@ -1238,10 +1434,17 @@ mod store_owner_tests {
         assert!(err.contains("elsewhere"), "and the refusal names it: {err}");
 
         // The format every store on disk before today is in.
-        std::fs::write(&stamp, gethostname::gethostname().to_string_lossy().to_string()).unwrap();
+        std::fs::write(
+            &stamp,
+            gethostname::gethostname().to_string_lossy().to_string(),
+        )
+        .unwrap();
         crate::Node::open(root.clone()).expect("a bare-hostname stamp still opens");
         let upgraded = std::fs::read_to_string(&stamp).unwrap();
-        assert!(upgraded.contains(&fp), "and gets its fingerprint: {upgraded:?}");
+        assert!(
+            upgraded.contains(&fp),
+            "and gets its fingerprint: {upgraded:?}"
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1279,10 +1482,18 @@ mod store_owner_tests {
         // A room made before the rename, plus a decoy that is nobody's.
         let old = home.join(".khor-hosts").join("what-it-used-to-be-called");
         std::fs::create_dir_all(old.join(".khor")).unwrap();
-        std::fs::write(old.join(".khor").join("owner"), format!("machine {fp}\nname what-it-used-to-be-called\n")).unwrap();
+        std::fs::write(
+            old.join(".khor").join("owner"),
+            format!("machine {fp}\nname what-it-used-to-be-called\n"),
+        )
+        .unwrap();
         let decoy = home.join(".khor-hosts").join("aaa-somebody-else");
         std::fs::create_dir_all(decoy.join(".khor")).unwrap();
-        std::fs::write(decoy.join(".khor").join("owner"), "machine 11111111111111111111111111111111\nname other\n").unwrap();
+        std::fs::write(
+            decoy.join(".khor").join("owner"),
+            "machine 11111111111111111111111111111111\nname other\n",
+        )
+        .unwrap();
         // Sorted first of the three, and blank — the walk must not read
         // "nothing" as "yours".
         let blank = home.join(".khor-hosts").join("aaa-blank");
@@ -1333,7 +1544,11 @@ mod self_exe_tests {
     #[test]
     fn a_live_binary_answers_its_own_path() {
         let me = crate::self_exe().expect("a running test binary has a path");
-        assert!(me.exists(), "and it is a file that exists: {}", me.display());
+        assert!(
+            me.exists(),
+            "and it is a file that exists: {}",
+            me.display()
+        );
         assert!(
             !me.to_string_lossy().ends_with(" (deleted)"),
             "never the suffix Linux appends to a replaced binary"
@@ -1370,13 +1585,23 @@ mod recents_tests {
         let me = n.name().to_owned();
 
         for _ in 0..3 {
-            n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").unwrap();
+            n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
+                .unwrap();
             std::thread::sleep(std::time::Duration::from_millis(3));
         }
-        assert_eq!(n.recents(PlaceKind::Dir, 10).unwrap().len(), 1, "three trips, one place");
+        assert_eq!(
+            n.recents(PlaceKind::Dir, 10).unwrap().len(),
+            1,
+            "three trips, one place"
+        );
 
-        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/other").unwrap();
-        assert_eq!(n.recents(PlaceKind::Dir, 10).unwrap().len(), 2, "a second place is what makes it two");
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/other")
+            .unwrap();
+        assert_eq!(
+            n.recents(PlaceKind::Dir, 10).unwrap().len(),
+            2,
+            "a second place is what makes it two"
+        );
         let _ = fs::remove_dir_all(&r);
     }
 
@@ -1403,8 +1628,15 @@ mod recents_tests {
             "the clock must have moved between visits or this test is about the tiebreak: {stamps:?}"
         );
         let places: Vec<&str> = all.iter().map(|p| p.place.as_str()).collect();
-        assert_eq!(places, vec!["/third", "/second", "/first"], "most recent first");
-        assert!(all.iter().all(|p| p.machine == n.device_str()), "each place names whose disk it is on");
+        assert_eq!(
+            places,
+            vec!["/third", "/second", "/first"],
+            "most recent first"
+        );
+        assert!(
+            all.iter().all(|p| p.machine == n.device_str()),
+            "each place names whose disk it is on"
+        );
 
         let two = n.recents(PlaceKind::Dir, 2).unwrap();
         assert_eq!(
@@ -1412,7 +1644,10 @@ mod recents_tests {
             vec!["/third", "/second"],
             "the cap keeps the recent end, not the old one"
         );
-        assert!(n.recents(PlaceKind::Dir, 0).unwrap().is_empty(), "a cap of none is none");
+        assert!(
+            n.recents(PlaceKind::Dir, 0).unwrap().is_empty(),
+            "a cap of none is none"
+        );
         let _ = fs::remove_dir_all(&r);
     }
 
@@ -1426,8 +1661,10 @@ mod recents_tests {
         let n = Node::open(r.clone()).unwrap();
         let me = n.name().to_owned();
 
-        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").unwrap();
-        n.recent_visit(PlaceKind::Page, &me, "https://example.com/read").unwrap();
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
+            .unwrap();
+        n.recent_visit(PlaceKind::Page, &me, "https://example.com/read")
+            .unwrap();
 
         let dirs = n.recents(PlaceKind::Dir, 10).unwrap();
         let pages = n.recents(PlaceKind::Page, 10).unwrap();
@@ -1447,11 +1684,18 @@ mod recents_tests {
         let n = Node::open(r.clone()).unwrap();
         let me = n.name().to_owned();
 
-        n.recent_visit(PlaceKind::Page, &me, "https://news.example").unwrap();
-        n.recent_visit(PlaceKind::Page, &me, "https://kept.example").unwrap();
-        assert_eq!(n.recents(PlaceKind::Page, 10).unwrap().len(), 2, "control: both are on the list");
+        n.recent_visit(PlaceKind::Page, &me, "https://news.example")
+            .unwrap();
+        n.recent_visit(PlaceKind::Page, &me, "https://kept.example")
+            .unwrap();
+        assert_eq!(
+            n.recents(PlaceKind::Page, 10).unwrap().len(),
+            2,
+            "control: both are on the list"
+        );
 
-        n.forget_recent(PlaceKind::Page, &me, "https://news.example").unwrap();
+        n.forget_recent(PlaceKind::Page, &me, "https://news.example")
+            .unwrap();
         let left = n.recents(PlaceKind::Page, 10).unwrap();
         assert_eq!(
             left.iter().map(|p| p.place.as_str()).collect::<Vec<_>>(),
@@ -1460,7 +1704,8 @@ mod recents_tests {
         );
 
         std::thread::sleep(std::time::Duration::from_millis(3));
-        n.recent_visit(PlaceKind::Page, &me, "https://news.example").unwrap();
+        n.recent_visit(PlaceKind::Page, &me, "https://news.example")
+            .unwrap();
         assert_eq!(
             n.recents(PlaceKind::Page, 10).unwrap()[0].place,
             "https://news.example",
@@ -1477,7 +1722,8 @@ mod recents_tests {
         let r = root("recents-reopen");
         let n = Node::open(r.clone()).unwrap();
         let me = n.name().to_owned();
-        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").unwrap();
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
+            .unwrap();
         drop(n);
 
         let n = Node::open(r.clone()).unwrap();
@@ -1500,13 +1746,15 @@ mod recents_tests {
         let n = Node::open(r.clone()).unwrap();
         let me = n.name().to_owned();
 
-        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj").expect("control: an absolute path is fine");
+        n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
+            .expect("control: an absolute path is fine");
         assert!(
             n.recent_visit(PlaceKind::Dir, &me, "proj/sub").is_err(),
             "a relative directory names nowhere"
         );
         assert!(
-            n.recent_visit(PlaceKind::Dir, "no-such-machine", "/Users/x/proj").is_err(),
+            n.recent_visit(PlaceKind::Dir, "no-such-machine", "/Users/x/proj")
+                .is_err(),
             "a machine not in the table names nobody"
         );
         assert_eq!(
@@ -1538,7 +1786,10 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
     fs::create_dir_all(&dir).unwrap();
 
     let far = ChatDoc::new(0xFAFA).unwrap();
-    let who = Sender { id: "dev-far".into(), name: "far".into() };
+    let who = Sender {
+        id: "dev-far".into(),
+        name: "far".into(),
+    };
     let f = khor_node_test_fileref();
     far.send_files(&who, std::slice::from_ref(&f)).unwrap();
     fs::write(
@@ -1569,7 +1820,11 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
         0,
         "control: the row itself counts as looked at, so the chip is the only thing left to ask"
     );
-    assert_eq!(chip(&n), Some(State::Idle), "看过了 — a chip may not keep shouting 完成 forever");
+    assert_eq!(
+        chip(&n),
+        Some(State::Idle),
+        "看过了 — a chip may not keep shouting 完成 forever"
+    );
     let _ = fs::remove_dir_all(&r);
 }
 
@@ -1621,7 +1876,10 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
     fs::create_dir_all(&dir).unwrap();
 
     let far = ChatDoc::new(0xFAFA).unwrap();
-    let who = Sender { id: "dev-far".into(), name: "far".into() };
+    let who = Sender {
+        id: "dev-far".into(),
+        name: "far".into(),
+    };
     let f = khor_node_test_fileref();
     far.send_files(&who, std::slice::from_ref(&f)).unwrap();
     fs::write(
@@ -1647,7 +1905,9 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
     )
     .unwrap();
     let far_seen = SeenDoc::new(0xFAFA).unwrap();
-    far_seen.mark(&format!("chat/{}", n.name()), said_at).unwrap();
+    far_seen
+        .mark(&format!("chat/{}", n.name()), said_at)
+        .unwrap();
     let sdir = seen_dir(&r);
     fs::create_dir_all(&sdir).unwrap();
     fs::write(
@@ -1681,7 +1941,11 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
     fs::create_dir_all(dir.join("files")).unwrap();
     fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
     let chip = n.log_faced(n.name()).unwrap().1[0].0;
-    assert_eq!(chip, Some(State::Idle), "the chip reads the same watermark the row does");
+    assert_eq!(
+        chip,
+        Some(State::Idle),
+        "the chip reads the same watermark the row does"
+    );
     assert_eq!(
         n.sessions().unwrap()[0].session.state.state,
         State::Idle,
@@ -1704,7 +1968,10 @@ mod finding_the_program {
     use crate::{AgentSpec, Node};
 
     fn spec(command: &str) -> AgentSpec {
-        AgentSpec { command: command.into(), args: vec!["-y".into(), "some-acp@1.0.0".into()] }
+        AgentSpec {
+            command: command.into(),
+            args: vec!["-y".into(), "some-acp@1.0.0".into()],
+        }
     }
 
     /// The two halves in one test, because the claim is a *difference*:
@@ -1716,19 +1983,27 @@ mod finding_the_program {
         // `sh` stands in for `npx`: it is on every unix, in a directory
         // that is on the minimal PATH, so this half cannot fail for
         // being about this machine.
-        let ok = Node::launch_on(&spec("sh"), "/usr/bin:/bin")
-            .expect("sh is on /bin");
-        assert!(ok.contains("/bin/sh"), "the command is resolved, not left as a bare name: {ok}");
+        let ok = Node::launch_on(&spec("sh"), "/usr/bin:/bin").expect("sh is on /bin");
+        assert!(
+            ok.contains("/bin/sh"),
+            "the command is resolved, not left as a bare name: {ok}"
+        );
 
         let why = Node::launch_on(&spec("npx"), "/usr/bin:/bin:/usr/sbin:/sbin")
             .expect_err("launchd's PATH has no npx");
         // **The name of the program has to be in the sentence.** That
         // is the whole fix: without it the message is about the agent,
         // and a person goes and checks an agent that is not broken.
-        assert!(why.contains("npx"), "the refusal must name what was not found: {why}");
+        assert!(
+            why.contains("npx"),
+            "the refusal must name what was not found: {why}"
+        );
         // …and where khor looked, which is the other half of the next
         // step: install it, or point khor somewhere else.
-        assert!(why.contains("/usr/sbin"), "the refusal must say where it looked: {why}");
+        assert!(
+            why.contains("/usr/sbin"),
+            "the refusal must say where it looked: {why}"
+        );
     }
 
     /// The launch carries the `PATH` onward, or the child finds the
@@ -1739,7 +2014,10 @@ mod finding_the_program {
         let out = Node::launch_on(&spec("sh"), "/usr/bin:/bin").unwrap();
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["env"]["PATH"], "/usr/bin:/bin");
-        assert_eq!(v["args"][1], "some-acp@1.0.0", "the arguments survive: {out}");
+        assert_eq!(
+            v["args"][1], "some-acp@1.0.0",
+            "the arguments survive: {out}"
+        );
     }
 
     /// **Executable, not merely present.** A directory named like the
@@ -1753,8 +2031,14 @@ mod finding_the_program {
         std::fs::write(dir.join("data"), b"not a program").unwrap();
         let here = dir.display().to_string();
 
-        assert!(Node::launch_on(&spec("npx"), &here).is_err(), "a directory is not a program");
-        assert!(Node::launch_on(&spec("data"), &here).is_err(), "a data file is not a program");
+        assert!(
+            Node::launch_on(&spec("npx"), &here).is_err(),
+            "a directory is not a program"
+        );
+        assert!(
+            Node::launch_on(&spec("data"), &here).is_err(),
+            "a data file is not a program"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1820,7 +2104,10 @@ mod finding_the_program {
             "one NUL per field, so a value holding anything still parses: {said:?}"
         );
         let asked = crate::read_shell_answer(&said);
-        assert_eq!(asked.path, "/khor-test/bin", "the PATH must survive the round trip");
+        assert_eq!(
+            asked.path, "/khor-test/bin",
+            "the PATH must survive the round trip"
+        );
         assert_eq!(
             asked.locale,
             vec![("LANG", "zh_CN.UTF-8".to_owned())],
@@ -1842,7 +2129,10 @@ mod finding_the_program {
         for spelling in ["zh_CN.UTF-8", "en_US.utf8", "UTF-8"] {
             assert!(crate::says_utf8(spelling), "{spelling} names UTF-8");
         }
-        assert!(!crate::says_utf8("C"), "and a locale that does not, does not");
+        assert!(
+            !crate::says_utf8("C"),
+            "and a locale that does not, does not"
+        );
         assert!(!crate::says_utf8(""), "nor does an empty one");
     }
 
@@ -1899,7 +2189,8 @@ fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
     fs::write(&roll, line("first") + "\n").unwrap();
 
     let live = crate::live::LiveKind::new(r.clone(), n.device());
-    live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid)).unwrap();
+    live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid))
+        .unwrap();
 
     let one = n.transcript_follow(&tui, 0).unwrap();
     assert!(
@@ -1952,7 +2243,10 @@ fn a_workspace_whose_machine_left_the_table_keeps_its_row_and_comes_off_by_id() 
         let loaded = n.workspaces_loaded().unwrap();
         loaded
             .doc
-            .set(&khor_sync::workspaces::key(&ghost, path), khor_sync::workspaces::State::Yes)
+            .set(
+                &khor_sync::workspaces::key(&ghost, path),
+                khor_sync::workspaces::State::Yes,
+            )
             .unwrap();
         let mut store = loaded.store;
         store.flush(&loaded.doc).unwrap();
@@ -1961,19 +2255,36 @@ fn a_workspace_whose_machine_left_the_table_keeps_its_row_and_comes_off_by_id() 
     let rows = n.workspaces().unwrap();
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0].device, ghost);
-    assert_eq!(rows[0].machine, "", "a machine that left the table has no name to print");
-    assert_eq!(rows[0].name, "project", "…and the row is still named after its directory");
+    assert_eq!(
+        rows[0].machine, "",
+        "a machine that left the table has no name to print"
+    );
+    assert_eq!(
+        rows[0].name, "project",
+        "…and the row is still named after its directory"
+    );
 
     // The name road cannot reach it, and must not pretend to: an empty
     // name is this machine, so this writes an entirely different key.
     n.ws_rm(&n.machine_id("").unwrap(), path).unwrap();
-    assert_eq!(n.workspaces().unwrap().len(), 1, "the ghost row is not this machine's to remove");
+    assert_eq!(
+        n.workspaces().unwrap().len(),
+        1,
+        "the ghost row is not this machine's to remove"
+    );
 
     // The id road does, which is why it is the one the face and the CLI
     // both take.
-    assert_eq!(n.machine_id(&ghost).unwrap(), ghost, "an id typed for a name is taken as itself");
+    assert_eq!(
+        n.machine_id(&ghost).unwrap(),
+        ghost,
+        "an id typed for a name is taken as itself"
+    );
     n.ws_rm(&ghost, path).unwrap();
-    assert!(n.workspaces().unwrap().is_empty(), "the row it removed was the one shown");
+    assert!(
+        n.workspaces().unwrap().is_empty(),
+        "the row it removed was the one shown"
+    );
 
     let _ = fs::remove_dir_all(&r);
 }

@@ -22,7 +22,8 @@ use crate::store::{BlockStore, Doc};
 /// of text messages; the number is tunable, the criterion is not.
 pub const MAX_BYTES: usize = 256 * 1024;
 
-const B64: base64::engine::general_purpose::GeneralPurpose = base64::engine::general_purpose::STANDARD;
+const B64: base64::engine::general_purpose::GeneralPurpose =
+    base64::engine::general_purpose::STANDARD;
 
 /// Where I am; the far side computes what to send me from it.
 ///
@@ -59,9 +60,7 @@ pub fn merge_b64<D: Doc>(doc: &D, changes: &str) -> Result<(), String> {
     if changes.is_empty() {
         return Ok(());
     }
-    let bytes = B64
-        .decode(changes)
-        .map_err(msg::delta_not_base64)?;
+    let bytes = B64.decode(changes).map_err(msg::delta_not_base64)?;
     if bytes.len() > MAX_BYTES {
         return Err(msg::inbound_too_big(bytes.len() / 1024, MAX_BYTES / 1024));
     }
@@ -73,9 +72,7 @@ fn decode_version(b64: &str) -> Result<VersionVector, String> {
     if b64.is_empty() {
         return Ok(VersionVector::default());
     }
-    let bytes = B64
-        .decode(b64)
-        .map_err(msg::version_not_base64)?;
+    let bytes = B64.decode(b64).map_err(msg::version_not_base64)?;
     VersionVector::decode(&bytes).map_err(msg::version_undecodable)
 }
 
@@ -248,7 +245,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::chat::{open_channel, ChatDoc};
+    use crate::chat::{ChatDoc, open_channel};
     use crate::testutil::{me, render, tmpdir};
 
     /// An in-memory far side riding [`answer`] — the same order the real
@@ -263,7 +260,11 @@ mod tests {
         fn new(tag: &str, peer: u64) -> Self {
             let dir = tmpdir(tag);
             let loaded = open_channel(&dir, peer).unwrap();
-            Self { doc: loaded.doc, store: loaded.store, dir }
+            Self {
+                doc: loaded.doc,
+                store: loaded.store,
+                dir,
+            }
         }
 
         fn answer(&mut self, have: &str, changes: &str) -> Result<Reply, String> {
@@ -291,16 +292,27 @@ mod tests {
         far.doc.tell(&me("b"), "from that side").unwrap();
 
         let mut peer = Peer::new();
-        let r1 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert_eq!(r1.pushed, 0, "round one must not push (far version unknown yet)");
+        let r1 = peer
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
+        assert_eq!(
+            r1.pushed, 0,
+            "round one must not push (far version unknown yet)"
+        );
         assert!(r1.pulled > 0, "round one should pull the far line");
         assert_eq!(r1.items, 2, "two on my side now");
         assert_eq!(far.doc.items(), 1, "the far side has not got mine yet");
 
-        let r2 = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
+        let r2 = peer
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
         assert!(r2.pushed > 0, "round two should push mine");
         assert_eq!(far.doc.items(), 2, "the far side got it");
-        assert_eq!(render(&mine.doc), render(&far.doc), "both sides verbatim identical");
+        assert_eq!(
+            render(&mine.doc),
+            render(&far.doc),
+            "both sides verbatim identical"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -320,10 +332,17 @@ mod tests {
 
         let mut peer = Peer::new();
         for _ in 0..3 {
-            peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
+            peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+                .unwrap();
         }
-        let r = peer.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert_eq!((r.pushed, r.pulled), (0, 0), "steady state moves nothing either way, got {r:?}");
+        let r = peer
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
+        assert_eq!(
+            (r.pushed, r.pulled),
+            (0, 0),
+            "steady state moves nothing either way, got {r:?}"
+        );
         assert_eq!(r.items, 1);
 
         let _ = fs::remove_dir_all(&dir);
@@ -347,14 +366,22 @@ mod tests {
 
         // The one who remembers: pushes on round two, zero after.
         let mut good = Peer::new();
-        good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        let push = good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
+        good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
+        let push = good
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
         assert!(push.pushed > 0, "round two should push the 30 lines");
 
         // Say one more; the rememberer delivers in one round.
         mine.doc.tell(&me("a"), "a new line").unwrap();
-        let one = good.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
-        assert!(one.pushed > 0, "the far version is remembered, so this round pushes at once");
+        let one = good
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
+        assert!(
+            one.pushed > 0,
+            "the far version is remembered, so this round pushes at once"
+        );
         assert_eq!(far.doc.items(), 31, "delivered in one round");
 
         // A fresh restart: same one new line — same length as the last,
@@ -362,10 +389,18 @@ mod tests {
         // count.
         mine.doc.tell(&me("a"), "more lines").unwrap();
         let mut fresh = Peer::new();
-        let a = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
+        let a = fresh
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
         assert_eq!(a.pushed, 0, "the first round after a restart is pull-only");
-        assert_eq!(far.doc.items(), 31, "so the far side has not got it this round");
-        let b = fresh.round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c)).unwrap();
+        assert_eq!(
+            far.doc.items(),
+            31,
+            "so the far side has not got it this round"
+        );
+        let b = fresh
+            .round(&mut mine.store, &mine.doc, |h, c| far.answer(h, c))
+            .unwrap();
         assert!(b.pushed > 0);
         assert_eq!(far.doc.items(), 32, "it lands on round two");
 
@@ -395,14 +430,14 @@ mod tests {
         let e = merge_b64(&doc, &huge).unwrap_err();
         let cap = khor_catalog::msg::inbound_too_big((MAX_BYTES + 1) / 1024, MAX_BYTES / 1024);
         assert_eq!(e, cap, "the error must say the cap was exceeded");
-        assert!(e.contains("ssh"), "and it must point at a viable route: {e}");
+        assert!(
+            e.contains("ssh"),
+            "and it must point at a viable route: {e}"
+        );
 
         // Control: the same path under the cap must pass this gate —
         // without it, a reject-everything implementation is green above.
-        let ok = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            vec![0u8; 16],
-        );
+        let ok = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, vec![0u8; 16]);
         let e2 = merge_b64(&doc, &ok).unwrap_err();
         let small_cap = khor_catalog::msg::inbound_too_big(16 / 1024, MAX_BYTES / 1024);
         assert_ne!(

@@ -4,7 +4,7 @@
 #![allow(dead_code)]
 
 use khor_net::endpoint::{self, ALPN, TUNNEL_ALPN};
-use khor_node::proto::{self, Request, Response, MAX_FRAME};
+use khor_node::proto::{self, MAX_FRAME, Request, Response};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -16,16 +16,23 @@ pub async fn raw_request(
     target_addrs: &[String],
     req: &Request,
 ) -> Result<Response, String> {
-    let ep = endpoint::bind(secret, &[]).await.map_err(|e| e.to_string())?;
+    let ep = endpoint::bind(secret, &[])
+        .await
+        .map_err(|e| e.to_string())?;
     let addr = endpoint::dial_addr(target_id, target_addrs, &[]).map_err(|e| e.to_string())?;
     let conn = timeout(Duration::from_secs(10), ep.connect(addr, ALPN))
         .await
         .map_err(|_| "dial timed out".to_string())?
         .map_err(|e| e.to_string())?;
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    send.write_all(&proto::encode(req)?).await.map_err(|e| e.to_string())?;
+    send.write_all(&proto::encode(req)?)
+        .await
+        .map_err(|e| e.to_string())?;
     send.finish().map_err(|e| e.to_string())?;
-    let bytes = recv.read_to_end(MAX_FRAME).await.map_err(|e| e.to_string())?;
+    let bytes = recv
+        .read_to_end(MAX_FRAME)
+        .await
+        .map_err(|e| e.to_string())?;
     let resp = proto::decode(&bytes)?;
     ep.close().await;
     Ok(resp)
@@ -41,7 +48,9 @@ pub async fn raw_tunnel(
     target_addrs: &[String],
     dest: &str,
 ) -> Result<u8, String> {
-    let ep = endpoint::bind(secret, &[]).await.map_err(|e| e.to_string())?;
+    let ep = endpoint::bind(secret, &[])
+        .await
+        .map_err(|e| e.to_string())?;
     let addr = endpoint::dial_addr(target_id, target_addrs, &[]).map_err(|e| e.to_string())?;
     let conn = timeout(Duration::from_secs(10), ep.connect(addr, TUNNEL_ALPN))
         .await
@@ -54,7 +63,9 @@ pub async fn raw_tunnel(
         .map_err(|e| e.to_string())?;
     send.write_all(bytes).await.map_err(|e| e.to_string())?;
     let mut status = [0u8; 1];
-    recv.read_exact(&mut status).await.map_err(|e| e.to_string())?;
+    recv.read_exact(&mut status)
+        .await
+        .map_err(|e| e.to_string())?;
     ep.close().await;
     Ok(status[0])
 }

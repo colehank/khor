@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 
 use crate::live::LiveKind;
@@ -87,8 +87,8 @@ pub fn view_file_path(dir: &Path) -> PathBuf {
 
 /// The viewer's address, when a viewer is up on this session.
 pub fn read_view_file(dir: &Path) -> Result<HostFile, String> {
-    let text = std::fs::read_to_string(view_file_path(dir))
-        .map_err(|_| msg::NO_HOST.to_string())?;
+    let text =
+        std::fs::read_to_string(view_file_path(dir)).map_err(|_| msg::NO_HOST.to_string())?;
     serde_json::from_str(&text).map_err(msg::host_file_garbled)
 }
 
@@ -210,12 +210,15 @@ fn last_plain_line(bytes: &[u8]) -> Option<String> {
             c => out.push(c),
         }
     }
-    out.lines().rev().find(|l| !l.trim().is_empty()).map(khor_core::preview)
+    out.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .map(khor_core::preview)
 }
 
 pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {
-    let text = std::fs::read_to_string(host_file_path(dir))
-        .map_err(|_| msg::NO_HOST.to_string())?;
+    let text =
+        std::fs::read_to_string(host_file_path(dir)).map_err(|_| msg::NO_HOST.to_string())?;
     serde_json::from_str(&text).map_err(msg::host_file_garbled)
 }
 
@@ -286,10 +289,17 @@ fn host_args(root: &Path, rest: &[String]) -> Result<(), String> {
         return Err(msg::HOST_BAD_CONVENTION.into());
     }
     let size = (
-        cols.parse::<u16>().map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
-        rows.parse::<u16>().map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
+        cols.parse::<u16>()
+            .map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
+        rows.parse::<u16>()
+            .map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
     );
-    host_main(root.to_path_buf(), SessionId(sid.clone()), size, cmd.to_vec())
+    host_main(
+        root.to_path_buf(),
+        SessionId(sid.clone()),
+        size,
+        cmd.to_vec(),
+    )
 }
 
 fn ghost_args(root: &Path, rest: &[String]) -> Result<(), String> {
@@ -348,7 +358,14 @@ pub fn spawn_viewer_host(
     size: (u16, u16),
     made: bool,
 ) -> Result<(), String> {
-    spawn_host_with(dir, id, cmd, size, Some(if made { "made" } else { "keep" }), None)
+    spawn_host_with(
+        dir,
+        id,
+        cmd,
+        size,
+        Some(if made { "made" } else { "keep" }),
+        None,
+    )
 }
 
 /// How `_host` learns it is a viewer: env rather than argv, so the argv
@@ -415,7 +432,11 @@ fn spawn_host_with(
     // told the person the host never came — measured live 2026-09-01
     // on a conversation the person had resumed in tmux: `view.json`
     // written, viewer alive, screen saying 宿主没在 5 秒内就位.
-    let marker = if viewer.is_some() { view_file_path(dir) } else { host_file_path(dir) };
+    let marker = if viewer.is_some() {
+        view_file_path(dir)
+    } else {
+        host_file_path(dir)
+    };
     let complaint = host_error_path(dir);
     // A leftover from a previous failed spawn must never answer for
     // this one; nothing else writes this file.
@@ -465,7 +486,14 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
 /// changes.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
     let mut s = TcpStream::connect(addr).map_err(|_| msg::HOST_GONE.to_string())?;
-    write_frame(&mut s, &Hello { cookie: cookie.to_owned(), cols, rows })?;
+    write_frame(
+        &mut s,
+        &Hello {
+            cookie: cookie.to_owned(),
+            cols,
+            rows,
+        },
+    )?;
     let w: Welcome = read_frame(&mut s)?;
     if !w.ok {
         return Err(w.why);
@@ -533,11 +561,18 @@ fn state_of(word: khor_detect::Word) -> State {
 }
 
 /// The body of `khor _host` — blocks until the child ends.
-pub fn host_main(root: PathBuf, id: SessionId, size: (u16, u16), cmd: Vec<String>) -> Result<(), String> {
+pub fn host_main(
+    root: PathBuf,
+    id: SessionId,
+    size: (u16, u16),
+    cmd: Vec<String>,
+) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
-    let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+    let dir = live
+        .dir_of(&id)
+        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
     // **The host's own words, left where the opener will look.** The
     // host is spawned detached with all three streams on /dev/null, so
     // until now every reason it had for dying went nowhere and the
@@ -581,7 +616,12 @@ fn host_serving(
     }
 
     let pty = native_pty_system()
-        .openpty(PtySize { rows: size.1, cols: size.0, pixel_width: 0, pixel_height: 0 })
+        .openpty(PtySize {
+            rows: size.1,
+            cols: size.0,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
         .map_err(msg::cant_open_pty)?;
     // **The PTY's command is looked up by khor, against a `PATH` that
     // can answer** — `crate::spawn_path`. A `khor serve` under launchd
@@ -640,7 +680,11 @@ fn host_serving(
     // clearing them costs a shell nothing — and inheriting them costs a
     // claude its transcript (`CLAUDE_CODE_CHILD_SESSION` turns saving
     // off; found live through a dev bridge started inside a claude).
-    for marker in ["CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_CHILD_SESSION"] {
+    for marker in [
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_CODE_CHILD_SESSION",
+    ] {
         builder.env_remove(marker);
     }
     if let Ok(cwd) = std::env::current_dir() {
@@ -659,16 +703,23 @@ fn host_serving(
         .try_clone_reader()
         .map_err(msg::cant_read_pty)?;
     let writer = Arc::new(Mutex::new(
-        master.lock().unwrap().take_writer().map_err(msg::cant_write_pty)?,
+        master
+            .lock()
+            .unwrap()
+            .take_writer()
+            .map_err(msg::cant_write_pty)?,
     ));
 
-    let listener =
-        TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let cookie = crate::link::fresh_hex()?;
     crate::link::write_private(
         // A viewer's address goes in its own file (`view_file_path`).
-        &if viewer.is_some() { view_file_path(&dir) } else { host_file_path(&dir) },
+        &if viewer.is_some() {
+            view_file_path(&dir)
+        } else {
+            host_file_path(&dir)
+        },
         &serde_json::to_vec(&HostFile {
             port,
             cookie: cookie.clone(),
@@ -738,7 +789,11 @@ fn host_serving(
                     // what is actually on the terminal; the strip is the
                     // screenless (plain shell) approximation.
                     let line = match &screen {
-                        Some(s) => s.lock().unwrap().last_line().map(|l| khor_core::preview(&l)),
+                        Some(s) => s
+                            .lock()
+                            .unwrap()
+                            .last_line()
+                            .map(|l| khor_core::preview(&l)),
                         None => {
                             let ring = shared.ring.lock().unwrap();
                             let tail: Vec<u8> =
@@ -783,7 +838,11 @@ fn host_serving(
                 };
                 // Reported, not read off a screen: this is the kernel's
                 // answer to "who owns the terminal", not an appearance.
-                if word != last && live.report(&id, word, crate::live::Source::Reported).is_ok() {
+                if word != last
+                    && live
+                        .report(&id, word, crate::live::Source::Reported)
+                        .is_ok()
+                {
                     last = word;
                 }
             }
@@ -824,9 +883,7 @@ fn host_serving(
                     };
                     current = read;
                     let word = state_of(read);
-                    if word != last
-                        && live.report(&id, word, crate::live::Source::Screen).is_ok()
-                    {
+                    if word != last && live.report(&id, word, crate::live::Source::Screen).is_ok() {
                         last = word;
                     }
                 }
@@ -847,7 +904,13 @@ fn host_serving(
                     continue;
                 };
                 if hello.cookie != cookie {
-                    let _ = write_frame(&mut conn, &Welcome { ok: false, why: msg::WRONG_COOKIE.into() });
+                    let _ = write_frame(
+                        &mut conn,
+                        &Welcome {
+                            ok: false,
+                            why: msg::WRONG_COOKIE.into(),
+                        },
+                    );
                     continue;
                 }
                 let _ = master.lock().unwrap().resize(PtySize {
@@ -864,7 +927,15 @@ fn host_serving(
                 if let Some(screen) = &screen {
                     screen.lock().unwrap().resize(hello.rows, hello.cols);
                 }
-                if write_frame(&mut conn, &Welcome { ok: true, why: String::new() }).is_err() {
+                if write_frame(
+                    &mut conn,
+                    &Welcome {
+                        ok: true,
+                        why: String::new(),
+                    },
+                )
+                .is_err()
+                {
                     continue;
                 }
                 {
@@ -873,7 +944,9 @@ fn host_serving(
                     if conn.write_all(a).and_then(|()| conn.write_all(b)).is_err() {
                         continue;
                     }
-                    let Ok(readable) = conn.try_clone() else { continue };
+                    let Ok(readable) = conn.try_clone() else {
+                        continue;
+                    };
                     shared.clients.lock().unwrap().push(conn);
                     drop(ring);
                     let master = master.clone();
@@ -940,7 +1013,10 @@ mod tests {
     #[test]
     fn a_vendors_own_name_picks_its_table() {
         assert_eq!(table_for("claude"), Some("claude"));
-        assert_eq!(table_for("/Users/someone/.local/bin/claude"), Some("claude"));
+        assert_eq!(
+            table_for("/Users/someone/.local/bin/claude"),
+            Some("claude")
+        );
         assert_eq!(table_for("codex"), Some("codex"));
         assert_eq!(table_for("github-copilot"), Some("github-copilot"));
     }
@@ -955,11 +1031,11 @@ mod tests {
     #[test]
     fn anything_that_merely_resembles_a_vendor_picks_no_table() {
         for lie in [
-            "npx",             // the vendor is an argument, not the command
-            "my-claude",       // someone's wrapper
+            "npx",       // the vendor is an argument, not the command
+            "my-claude", // someone's wrapper
             "claude-wrapper",
-            "claude.sh",       // a script around it
-            "Claude",          // the table is lower case and so are the names
+            "claude.sh", // a script around it
+            "Claude",    // the table is lower case and so are the names
             "sh",
             "/bin/sh",
             "",
@@ -981,7 +1057,9 @@ mod tests {
 
 #[cfg(test)]
 mod last_line_tests {
-    use super::{last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last};
+    use super::{
+        last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last,
+    };
 
     /// The preview strip reads bytes the way `tail -1` would: ANSI
     /// dropped, CR dropped, the last line with visible content wins.
@@ -1023,10 +1101,18 @@ mod last_line_tests {
         let dir = std::env::temp_dir().join(format!("khor-last-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("last.txt"), r#"[khor0-1870:zsh*"" 15:04 21-Aug-25"#).unwrap();
+        std::fs::write(
+            dir.join("last.txt"),
+            r#"[khor0-1870:zsh*"" 15:04 21-Aug-25"#,
+        )
+        .unwrap();
         assert_eq!(read_last(&dir), None, "tmux chrome must read as blank");
         std::fs::write(dir.join("last.txt"), "$ cargo build").unwrap();
-        assert_eq!(read_last(&dir).as_deref(), Some("$ cargo build"), "control: real output survives");
+        assert_eq!(
+            read_last(&dir).as_deref(),
+            Some("$ cargo build"),
+            "control: real output survives"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1036,9 +1122,17 @@ mod last_line_tests {
     fn a_tmux_argv_marks_the_pty_as_a_multiplexer_client() {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
         assert!(pty_is_a_multiplexer_client(&argv(&["tmux", "attach"])));
-        assert!(pty_is_a_multiplexer_client(&argv(&["/opt/homebrew/bin/tmux", "-L", "sock"])));
+        assert!(pty_is_a_multiplexer_client(&argv(&[
+            "/opt/homebrew/bin/tmux",
+            "-L",
+            "sock"
+        ])));
         assert!(!pty_is_a_multiplexer_client(&argv(&["zsh"])));
-        assert!(!pty_is_a_multiplexer_client(&argv(&["/bin/bash", "-lc", "tmux ls"])));
+        assert!(!pty_is_a_multiplexer_client(&argv(&[
+            "/bin/bash",
+            "-lc",
+            "tmux ls"
+        ])));
         assert!(!pty_is_a_multiplexer_client(&[]));
     }
 

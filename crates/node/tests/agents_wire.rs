@@ -78,7 +78,8 @@ async fn a_registered_agent_reaches_the_other_machine() {
         .expect("pairing must not hang")
         .unwrap();
 
-    b.register_agent("gemini", &["gemini".to_owned(), "--acp".to_owned()]).unwrap();
+    b.register_agent("gemini", &["gemini".to_owned(), "--acp".to_owned()])
+        .unwrap();
     assert_eq!(
         a.agent("gemini").unwrap(),
         None,
@@ -91,7 +92,10 @@ async fn a_registered_agent_reaches_the_other_machine() {
         .expect("sync must not hang")
         .unwrap();
 
-    let landed = a.agent("gemini").unwrap().expect("the registration reached alpha");
+    let landed = a
+        .agent("gemini")
+        .unwrap()
+        .expect("the registration reached alpha");
     assert_eq!(
         landed.typed(),
         "gemini --acp",
@@ -105,7 +109,11 @@ async fn a_registered_agent_reaches_the_other_machine() {
         .await
         .expect("sync must not hang")
         .unwrap();
-    assert_eq!(a.agent("gemini").unwrap(), None, "forgetting reaches alpha too");
+    assert_eq!(
+        a.agent("gemini").unwrap(),
+        None,
+        "forgetting reaches alpha too"
+    );
 
     serve.abort();
     let _ = std::fs::remove_dir_all(&ra);

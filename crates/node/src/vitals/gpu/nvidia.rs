@@ -98,8 +98,8 @@
 use std::sync::OnceLock;
 
 use khor_core::Fill;
-use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use nvml_wrapper::Nvml;
+use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 
 /// The library handle, opened once.
 ///
@@ -164,15 +164,24 @@ pub(super) fn cards() -> Vec<khor_core::GpuCard> {
         // card keeps its utilisation and loses its memory rather than
         // shipping a bar more than full.
         let mem = match card.memory_info() {
-            Ok(info) if info.used <= info.total && info.total > 0 => {
-                Some(Fill { used: info.used, total: info.total })
-            }
+            Ok(info) if info.used <= info.total && info.total > 0 => Some(Fill {
+                used: info.used,
+                total: info.total,
+            }),
             _ => None,
         };
         // The die temperature, when the driver has one; a card that
         // answers nothing here keeps the field empty rather than 0°C.
-        let temp_c = card.temperature(TemperatureSensor::Gpu).ok().map(|t| t as f32);
-        out.push(khor_core::GpuCard { name, util_pct, mem, temp_c });
+        let temp_c = card
+            .temperature(TemperatureSensor::Gpu)
+            .ok()
+            .map(|t| t as f32);
+        out.push(khor_core::GpuCard {
+            name,
+            util_pct,
+            mem,
+            temp_c,
+        });
     }
     out
 }

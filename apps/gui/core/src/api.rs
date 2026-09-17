@@ -55,7 +55,11 @@ pub fn answer(
             None | Some(serde_json::Value::Null) => Ok(None),
             Some(serde_json::Value::Array(items)) => items
                 .iter()
-                .map(|c| c.as_str().map(str::to_owned).ok_or_else(|| "a color is not a string".to_owned()))
+                .map(|c| {
+                    c.as_str()
+                        .map(str::to_owned)
+                        .ok_or_else(|| "a color is not a string".to_owned())
+                })
                 .collect::<Result<Vec<_>, _>>()
                 .map(Some),
             Some(_) => Err("arg is not a list: colors".to_owned()),
@@ -77,9 +81,10 @@ pub fn answer(
         "day_strips" => to_json(&crate::day_strips(root, num("cells")? as u32)?),
         // `machine` absent means this one — the wizard's default; a
         // name is the machine the session is about to be born on.
-        "places" => {
-            to_json(&rt.block_on(crate::places(root, &opt_str("machine")?.unwrap_or_default()))?)
-        }
+        "places" => to_json(&rt.block_on(crate::places(
+            root,
+            &opt_str("machine")?.unwrap_or_default(),
+        ))?),
         // One read of one local table, no arguments: a workspace is a
         // decision and decisions replicate, so there is no machine to
         // ask (`workspaces` module head).
@@ -125,16 +130,12 @@ pub fn answer(
         // per file opened. Both refuse out loud rather than answering
         // empty — an empty answer is「clean」, which is the one reading
         // that must never be a guess (`crate::git`).
-        "git_status" => to_json(&rt.block_on(crate::git::status(
-            root,
-            &arg("machine")?,
-            &arg("dir")?,
-        ))?),
-        "git_diff" => to_json(&rt.block_on(crate::git::diff(
-            root,
-            &arg("machine")?,
-            &arg("path")?,
-        ))?),
+        "git_status" => {
+            to_json(&rt.block_on(crate::git::status(root, &arg("machine")?, &arg("dir")?))?)
+        }
+        "git_diff" => {
+            to_json(&rt.block_on(crate::git::diff(root, &arg("machine")?, &arg("path")?))?)
+        }
         // Saving an edit. **`was` is required even when empty** — same
         // shape and the same reason as `rename_session`'s `title`
         // above: an empty one is a real claim (「there should be no
@@ -148,11 +149,9 @@ pub fn answer(
         // image, an SVG, or a document rendered to HTML. One call,
         // because what a file turns out to be is the node's answer and
         // not a question the face can ask first.
-        "preview" => to_json(&rt.block_on(crate::files::preview(
-            root,
-            &arg("machine")?,
-            &arg("path")?,
-        ))?),
+        "preview" => {
+            to_json(&rt.block_on(crate::files::preview(root, &arg("machine")?, &arg("path")?))?)
+        }
         "code_here" => to_json(&rt.block_on(crate::code::here(root, &arg("machine")?))?),
         "code_open" => {
             to_json(&rt.block_on(crate::code::open(root, &arg("machine")?, &arg("dir")?))?)
@@ -210,7 +209,13 @@ pub fn answer(
                 Some(other) => return Err(format!("no such column: {other}")),
             };
             let desc = args.get("desc").and_then(|v| v.as_bool()).unwrap_or(true);
-            to_json(&rt.block_on(crate::load(root, &arg("machine")?, num("top")? as u32, by, desc))?)
+            to_json(&rt.block_on(crate::load(
+                root,
+                &arg("machine")?,
+                num("top")? as u32,
+                by,
+                desc,
+            ))?)
         }
         // The 额度 page: one ring per registered account, wherever its
         // key lives (`Node::quota_board`).
@@ -222,7 +227,10 @@ pub fn answer(
             // while the form said one).
             let budget = match args.get("budget") {
                 None | Some(serde_json::Value::Null) => None,
-                Some(v) => Some(v.as_f64().ok_or_else(|| "arg is not a number: budget".to_owned())?),
+                Some(v) => Some(
+                    v.as_f64()
+                        .ok_or_else(|| "arg is not a number: budget".to_owned())?,
+                ),
             };
             // `kind` is required rather than defaulted to 「bill」 for
             // `budget`'s reason one step further: a page that failed to
@@ -259,7 +267,10 @@ pub fn answer(
         "update_account" => {
             let budget = match args.get("budget") {
                 None | Some(serde_json::Value::Null) => None,
-                Some(v) => Some(v.as_f64().ok_or_else(|| "arg is not a number: budget".to_owned())?),
+                Some(v) => Some(
+                    v.as_f64()
+                        .ok_or_else(|| "arg is not a number: budget".to_owned())?,
+                ),
             };
             crate::update_account(
                 root,
@@ -321,7 +332,11 @@ pub fn answer(
             let paths: Vec<String> = match args.get("paths") {
                 Some(serde_json::Value::Array(items)) => items
                     .iter()
-                    .map(|p| p.as_str().map(str::to_owned).ok_or_else(|| "a path is not a string".to_owned()))
+                    .map(|p| {
+                        p.as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| "a path is not a string".to_owned())
+                    })
                     .collect::<Result<Vec<_>, _>>()?,
                 _ => return Err("arg is not a list: paths".to_owned()),
             };
@@ -339,7 +354,9 @@ pub fn answer(
         "history_follow" => to_json(&crate::chat::history_follow(
             root,
             &arg("id")?,
-            args.get("from").and_then(serde_json::Value::as_u64).unwrap_or(0),
+            args.get("from")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0),
         )?),
         "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
         "chat_say" => {
@@ -352,7 +369,10 @@ pub fn answer(
                     .iter()
                     .filter_map(|p| {
                         let pair = p.as_array()?;
-                        Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
+                        Some((
+                            pair.first()?.as_str()?.to_owned(),
+                            pair.get(1)?.as_str()?.to_owned(),
+                        ))
                     })
                     .collect(),
                 _ => Vec::new(),
@@ -362,7 +382,10 @@ pub fn answer(
                     .iter()
                     .filter_map(|p| {
                         let pair = p.as_array()?;
-                        Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
+                        Some((
+                            pair.first()?.as_str()?.to_owned(),
+                            pair.get(1)?.as_str()?.to_owned(),
+                        ))
                     })
                     .collect(),
                 _ => Vec::new(),
@@ -390,7 +413,9 @@ pub fn answer(
         // sorted by shape one layer down, where the two shapes are
         // named (`chat::chat_set_option`).
         "chat_set_option" => {
-            let value = args.get("value").ok_or_else(|| "missing arg: value".to_owned())?;
+            let value = args
+                .get("value")
+                .ok_or_else(|| "missing arg: value".to_owned())?;
             crate::chat::chat_set_option(&arg("id")?, &arg("option")?, value)?;
             Ok("null".to_owned())
         }
@@ -404,7 +429,9 @@ pub fn answer(
         }
         "history" => to_json(&crate::chat::history(root, &arg("id")?)?),
         "ls" => to_json(&rt.block_on(crate::files::ls(root, &arg("machine")?, &arg("path")?))?),
-        "pull" => to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?),
+        "pull" => {
+            to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
+        }
         "dir_pins" => to_json(&crate::files::dir_pins(root)?),
         // Taking a path off a disk. `machine` empty is this one, which
         // is also the only one with a recycle bin behind it.
@@ -480,7 +507,11 @@ pub fn answer(
             let paths: Vec<String> = args
                 .get("paths")
                 .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect()
+                })
                 .unwrap_or_default();
             crate::term::term_drop(root, &arg("id")?, &paths)?;
             Ok("null".to_owned())
@@ -495,7 +526,11 @@ pub fn answer(
         }
         // Where this person has been, one kind at a time — the two
         // landings never show each other's places (`crate::recents`).
-        "recents" => to_json(&crate::recents::recents(root, &arg("kind")?, num("limit")? as usize)?),
+        "recents" => to_json(&crate::recents::recents(
+            root,
+            &arg("kind")?,
+            num("limit")? as usize,
+        )?),
         "recent_visit" => {
             crate::recents::recent_visit(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
             Ok("null".to_owned())
@@ -588,9 +623,11 @@ pub fn answer(
         // Not `open_session` with a flag: a conversation that exists
         // brings its own directory and its own name, so the wizard's
         // answers do not apply to it (`agents::resume_session`).
-        "resume_session" => {
-            to_json(&crate::agents::resume_session(root, &arg("agent")?, &arg("session")?)?)
-        }
+        "resume_session" => to_json(&crate::agents::resume_session(
+            root,
+            &arg("agent")?,
+            &arg("session")?,
+        )?),
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

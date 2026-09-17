@@ -76,7 +76,9 @@ pub fn three(base: &str, mine: &str, theirs: &str) -> Merged {
         text::Options {
             conflict: text::Conflict::Keep {
                 style: STYLE,
-                marker_size: text::Conflict::DEFAULT_MARKER_SIZE.try_into().expect("7 is not zero"),
+                marker_size: text::Conflict::DEFAULT_MARKER_SIZE
+                    .try_into()
+                    .expect("7 is not zero"),
             },
             ..Default::default()
         },
@@ -99,7 +101,11 @@ pub fn three(base: &str, mine: &str, theirs: &str) -> Merged {
 /// than there are; that line cannot occur by accident in source and the
 /// alternative is a second parser for our own output.
 fn clashes(text: &str) -> u32 {
-    let head = format!("{} {}", "<".repeat(text::Conflict::DEFAULT_MARKER_SIZE as usize), msg::MERGE_MINE);
+    let head = format!(
+        "{} {}",
+        "<".repeat(text::Conflict::DEFAULT_MARKER_SIZE as usize),
+        msg::MERGE_MINE
+    );
     text.lines().filter(|l| *l == head).count() as u32
 }
 
@@ -130,7 +136,11 @@ mod tests {
         let m = three(base, mine, theirs);
         assert_eq!(m.clashes, 1);
         assert!(m.text.contains("MINE"), "my line is in there: {}", m.text);
-        assert!(m.text.contains("THEIRS"), "their line is in there: {}", m.text);
+        assert!(
+            m.text.contains("THEIRS"),
+            "their line is in there: {}",
+            m.text
+        );
         assert!(m.text.contains("<<<<<<<"), "and it is marked: {}", m.text);
     }
 
@@ -154,7 +164,11 @@ mod tests {
     /// the obvious expectation is the other one.
     #[test]
     fn two_touching_lines_clash_the_way_git_says_they_do() {
-        let m = three("one\ntwo\nthree\n", "one\nMINE\nthree\n", "one\ntwo\nTHEIRS\n");
+        let m = three(
+            "one\ntwo\nthree\n",
+            "one\nMINE\nthree\n",
+            "one\ntwo\nTHEIRS\n",
+        );
         assert_eq!(m.clashes, 1);
         assert_eq!(
             m.text,
@@ -213,7 +227,15 @@ mod tests {
     #[test]
     fn the_markers_carry_both_sides_names() {
         let m = three("a\n", "mine\n", "theirs\n");
-        assert!(m.text.contains(msg::MERGE_MINE), "mine is named: {}", m.text);
-        assert!(m.text.contains(msg::MERGE_THEIRS), "theirs is named: {}", m.text);
+        assert!(
+            m.text.contains(msg::MERGE_MINE),
+            "mine is named: {}",
+            m.text
+        );
+        assert!(
+            m.text.contains(msg::MERGE_THEIRS),
+            "theirs is named: {}",
+            m.text
+        );
     }
 }

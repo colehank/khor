@@ -244,7 +244,9 @@ pub struct DeviceDoc {
 
 impl DeviceDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     fn map(&self) -> LoroMap {
@@ -318,7 +320,12 @@ impl DeviceDoc {
     /// entry. The second write is the compatibility mirror (module
     /// head): it is what an older khor in the same network reads, and
     /// it is the half that comes out when the last of them is gone.
-    fn write_field(&self, id: &str, field: &str, v: impl Into<LoroValue> + Clone) -> Result<(), String> {
+    fn write_field(
+        &self,
+        id: &str,
+        field: &str,
+        v: impl Into<LoroValue> + Clone,
+    ) -> Result<(), String> {
         self.map()
             .insert(&fkey(id, field), v.clone())
             .map_err(|e| e.to_string())?;
@@ -510,7 +517,6 @@ impl DeviceDoc {
             // it — it is one this table no longer holds. Filtering here
             // is what makes that true everywhere at once, `get` and
             // `by_name` included, since both read through this.
-
             .map(|id| DeviceInfo {
                 name: self.str_field(&id, F_NAME).unwrap_or_default(),
                 addrs: self
@@ -529,14 +535,20 @@ impl DeviceDoc {
                     .str_field(&id, F_WATCH)
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
-                label: self.str_field(&id, F_LABEL).filter(|l| !l.trim().is_empty()),
+                label: self
+                    .str_field(&id, F_LABEL)
+                    .filter(|l| !l.trim().is_empty()),
                 id,
             })
             .collect();
         // **Ordered by the name on the glass**, not by the channel: a
         // list sorted on a name nobody can see reads as unsorted, and
         // renaming would move a row to a place with no rule behind it.
-        out.sort_by(|a, b| b.pinned.cmp(&a.pinned).then_with(|| a.shown().cmp(b.shown())));
+        out.sort_by(|a, b| {
+            b.pinned
+                .cmp(&a.pinned)
+                .then_with(|| a.shown().cmp(b.shown()))
+        });
         out
     }
 
@@ -630,14 +642,25 @@ mod tests {
         let a = DeviceDoc::new(1).unwrap();
         let b = DeviceDoc::new(2).unwrap();
         a.upsert("cc", "turing", &[]).unwrap();
-        a.set_watch("cc", &["/data/models".into(), "/scratch".into()]).unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        a.set_watch("cc", &["/data/models".into(), "/scratch".into()])
+            .unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(b.get("cc").unwrap().watch, vec!["/data/models", "/scratch"]);
-        b.upsert("cc", "turing", &["10.0.0.9:11204".into()]).unwrap();
-        assert_eq!(b.get("cc").unwrap().watch.len(), 2, "an upsert must not clear the list");
+        b.upsert("cc", "turing", &["10.0.0.9:11204".into()])
+            .unwrap();
+        assert_eq!(
+            b.get("cc").unwrap().watch.len(),
+            2,
+            "an upsert must not clear the list"
+        );
         b.set_watch("cc", &[]).unwrap();
-        a.merge(&b.changes_since(&Default::default()).unwrap()).unwrap();
-        assert!(a.get("cc").unwrap().watch.is_empty(), "clearing travels back");
+        a.merge(&b.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert!(
+            a.get("cc").unwrap().watch.is_empty(),
+            "clearing travels back"
+        );
         assert_eq!(d_items(&a), 1);
     }
 
@@ -648,7 +671,8 @@ mod tests {
     #[test]
     fn a_device_round_trips_with_name_and_addrs() {
         let d = DeviceDoc::new(1).unwrap();
-        d.upsert("aa11", "turing", &["10.0.0.2:11204".into()]).unwrap();
+        d.upsert("aa11", "turing", &["10.0.0.2:11204".into()])
+            .unwrap();
         let got = d.get("aa11").expect("should be there");
         assert_eq!(got.name, "turing");
         assert_eq!(got.addrs, vec!["10.0.0.2:11204".to_string()]);
@@ -665,12 +689,18 @@ mod tests {
         let b = DeviceDoc::new(2).unwrap();
         b.upsert("bb", "phone", &[]).unwrap();
 
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
-        a.merge(&b.changes_since(&Default::default()).unwrap()).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        a.merge(&b.changes_since(&Default::default()).unwrap())
+            .unwrap();
 
         for (who, d) in [("a", &a), ("b", &b)] {
             let names: Vec<String> = d.all().into_iter().map(|x| x.name).collect();
-            assert_eq!(names, vec!["mac", "phone"], "{who} should see the whole network");
+            assert_eq!(
+                names,
+                vec!["mac", "phone"],
+                "{who} should see the whole network"
+            );
         }
     }
 
@@ -693,7 +723,11 @@ mod tests {
         for (who, d) in [("a", &a), ("b", &b)] {
             let got = d.get("aa").unwrap();
             assert_eq!(got.name, "new-name", "{who}: the rename must survive");
-            assert_eq!(got.addrs, vec!["1.2.3.4:5".to_string()], "{who}: the address must survive");
+            assert_eq!(
+                got.addrs,
+                vec!["1.2.3.4:5".to_string()],
+                "{who}: the address must survive"
+            );
         }
     }
 
@@ -734,7 +768,8 @@ mod tests {
         );
 
         // …and it survives the round trip home
-        mine.merge(&theirs.changes_since(&mine.version()).unwrap()).unwrap();
+        mine.merge(&theirs.changes_since(&mine.version()).unwrap())
+            .unwrap();
         let back = mine.get("aa").unwrap();
         assert_eq!(back.addrs, vec!["9.9.9.9:9".to_string()]);
         assert_eq!(back.style.as_deref(), Some("{\"shape\":\"square\"}"));
@@ -764,7 +799,10 @@ mod tests {
 
         let b = DeviceDoc::new(2).unwrap();
         b.merge(&a.snapshot().unwrap()).unwrap();
-        assert!(b.get("cc").unwrap().pinned, "the pin must reach the other device");
+        assert!(
+            b.get("cc").unwrap().pinned,
+            "the pin must reach the other device"
+        );
         assert_eq!(b.all()[0].name, "gamma", "and lead there too");
 
         // Taking it back travels as well, and the order returns.
@@ -797,8 +835,12 @@ mod tests {
             "a peer's write must not drop the pin"
         );
 
-        mine.merge(&theirs.changes_since(&mine.version()).unwrap()).unwrap();
-        assert!(mine.get("aa").unwrap().pinned, "…nor on the round trip home");
+        mine.merge(&theirs.changes_since(&mine.version()).unwrap())
+            .unwrap();
+        assert!(
+            mine.get("aa").unwrap().pinned,
+            "…nor on the round trip home"
+        );
     }
 
     /// A device that never reported a style reads as `None`, not as an
@@ -850,8 +892,13 @@ mod tests {
 
         // …and it holds from the other seat too, without anyone
         // restating anything
-        alpha.merge(&beta.changes_since(&alpha.version()).unwrap()).unwrap();
-        assert_eq!(alpha.get("bb").unwrap().style.as_deref(), Some("{\"mine\":true}"));
+        alpha
+            .merge(&beta.changes_since(&alpha.version()).unwrap())
+            .unwrap();
+        assert_eq!(
+            alpha.get("bb").unwrap().style.as_deref(),
+            Some("{\"mine\":true}")
+        );
         assert_eq!(
             alpha.all().into_iter().map(|d| d.name).collect::<Vec<_>>(),
             vec!["alpha", "beta"],
@@ -907,7 +954,10 @@ mod tests {
     /// Reads the way an older khor reads: the nested container and
     /// nothing else. This is the far side of a mixed network, and what
     /// the compatibility mirror has to keep true.
-    fn read_old_shape(d: &DeviceDoc, id: &str) -> Option<(String, Vec<String>, Option<String>, bool)> {
+    fn read_old_shape(
+        d: &DeviceDoc,
+        id: &str,
+    ) -> Option<(String, Vec<String>, Option<String>, bool)> {
         let entry = d.inner.get_map(DEVICES).get(id).and_then(as_map)?;
         let s = |k: &str| match entry.get(k)?.into_value().ok()? {
             LoroValue::String(v) => Some(v.to_string()),
@@ -932,7 +982,14 @@ mod tests {
     #[test]
     fn a_row_an_older_khor_wrote_reads_back_with_every_field() {
         let d = DeviceDoc::new(1).unwrap();
-        write_old_shape(&d, "aa", "turing", &["10.0.0.2:11204"], Some("{\"v\":1}"), true);
+        write_old_shape(
+            &d,
+            "aa",
+            "turing",
+            &["10.0.0.2:11204"],
+            Some("{\"v\":1}"),
+            true,
+        );
 
         let got = d.get("aa").expect("an old row must still be a row");
         assert_eq!(got.name, "turing");
@@ -952,12 +1009,20 @@ mod tests {
     #[test]
     fn the_first_write_migrates_an_old_row_and_the_next_one_writes_nothing() {
         let d = DeviceDoc::new(1).unwrap();
-        write_old_shape(&d, "aa", "turing", &["10.0.0.2:11204"], Some("{\"v\":1}"), false);
+        write_old_shape(
+            &d,
+            "aa",
+            "turing",
+            &["10.0.0.2:11204"],
+            Some("{\"v\":1}"),
+            false,
+        );
         assert_eq!(d.flat_str("aa", F_NAME), None, "control: nothing flat yet");
 
         // Re-registering with the same values is what an upgraded
         // machine does on its next open
-        d.upsert("aa", "turing", &["10.0.0.2:11204".into()]).unwrap();
+        d.upsert("aa", "turing", &["10.0.0.2:11204".into()])
+            .unwrap();
         assert_eq!(
             d.flat_str("aa", F_NAME).as_deref(),
             Some("turing"),
@@ -965,7 +1030,8 @@ mod tests {
         );
 
         let after_migration = d.version();
-        d.upsert("aa", "turing", &["10.0.0.2:11204".into()]).unwrap();
+        d.upsert("aa", "turing", &["10.0.0.2:11204".into()])
+            .unwrap();
         assert_eq!(
             d.version(),
             after_migration,
@@ -1017,7 +1083,10 @@ mod tests {
         assert!(d.get("aa").unwrap().pinned, "control: it arrived pinned");
 
         d.set_pinned("aa", false).unwrap();
-        assert!(!d.get("aa").unwrap().pinned, "unpinning an old row must take");
+        assert!(
+            !d.get("aa").unwrap().pinned,
+            "unpinning an old row must take"
+        );
         assert!(
             !read_old_shape(&d, "aa").unwrap().3,
             "…on the old side of the network as well"
@@ -1041,17 +1110,30 @@ mod tests {
         assert!(d.get("aa").is_some(), "control: it was in the table");
 
         d.set_gone("aa", true).unwrap();
-        assert!(d.get("aa").is_none(), "shown the door means out of the table");
-        assert!(!d.all().iter().any(|x| x.id == "aa"), "…and out of every reading of it");
+        assert!(
+            d.get("aa").is_none(),
+            "shown the door means out of the table"
+        );
+        assert!(
+            !d.all().iter().any(|x| x.id == "aa"),
+            "…and out of every reading of it"
+        );
 
         // Exactly what that machine's own serve does on every start.
         d.upsert("aa", "mac", &["9.9.9.9:1".into()]).unwrap();
-        assert!(d.get("aa").is_none(), "writing its own row must not let it back in");
+        assert!(
+            d.get("aa").is_none(),
+            "writing its own row must not let it back in"
+        );
 
         // And the way back is a pairing, which is somebody else's act.
         d.set_gone("aa", false).unwrap();
         let back = d.get("aa").expect("pairing takes a machine back in");
-        assert_eq!(back.addrs, vec!["9.9.9.9:1".to_string()], "with what it last said about itself");
+        assert_eq!(
+            back.addrs,
+            vec!["9.9.9.9:1".to_string()],
+            "with what it last said about itself"
+        );
     }
 
     /// Unpinning a machine nobody pinned writes nothing — `khor unpin
@@ -1077,16 +1159,25 @@ mod tests {
     fn a_satellite_mark_replicates_and_ordinary_machines_carry_none() {
         let sponsor = DeviceDoc::new(1).unwrap();
         sponsor.upsert("aa", "mac", &[]).unwrap();
-        sponsor.upsert("5a".repeat(32).as_str(), "gpu-box", &[]).unwrap();
+        sponsor
+            .upsert("5a".repeat(32).as_str(), "gpu-box", &[])
+            .unwrap();
         sponsor
             .set_satellite("5a".repeat(32).as_str(), "aa", "gpubox", true)
             .unwrap();
 
         let far = DeviceDoc::new(2).unwrap();
-        far.merge(&sponsor.changes_since(&Default::default()).unwrap()).unwrap();
-        let sat = far.get("5a".repeat(32).as_str()).expect("the satellite crossed");
+        far.merge(&sponsor.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        let sat = far
+            .get("5a".repeat(32).as_str())
+            .expect("the satellite crossed");
         assert_eq!(sat.sponsor.as_deref(), Some("aa"), "the sponsor travels");
-        assert_eq!(sat.ssh_host.as_deref(), Some("gpubox"), "…with the ssh destination");
+        assert_eq!(
+            sat.ssh_host.as_deref(),
+            Some("gpubox"),
+            "…with the ssh destination"
+        );
         assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
         let plain = far.get("aa").expect("the sponsor itself crossed");
         assert_eq!(
@@ -1107,14 +1198,27 @@ mod tests {
     fn a_rename_survives_the_machine_re_reporting_its_own_name() {
         let d = DeviceDoc::new(1).unwrap();
         d.upsert("aa", "turing", &[]).unwrap();
-        assert_eq!(d.get("aa").unwrap().shown(), "turing", "no rename, no override");
+        assert_eq!(
+            d.get("aa").unwrap().shown(),
+            "turing",
+            "no rename, no override"
+        );
 
         d.set_label("aa", "北京服务器").unwrap();
-        assert_eq!(d.get("aa").unwrap().shown(), "北京服务器", "the rename shows");
-        assert_eq!(d.get("aa").unwrap().name, "turing", "…and the channel does not move");
+        assert_eq!(
+            d.get("aa").unwrap().shown(),
+            "北京服务器",
+            "the rename shows"
+        );
+        assert_eq!(
+            d.get("aa").unwrap().name,
+            "turing",
+            "…and the channel does not move"
+        );
 
         // The sync that would eat it.
-        d.upsert("aa", "turing", &["1.2.3.4:1".to_string()]).unwrap();
+        d.upsert("aa", "turing", &["1.2.3.4:1".to_string()])
+            .unwrap();
         assert_eq!(
             d.get("aa").unwrap().shown(),
             "北京服务器",
@@ -1123,13 +1227,24 @@ mod tests {
 
         // Both names find it, because both are names somebody may know
         // it by.
-        assert_eq!(d.by_name("北京服务器").map(|x| x.id), Some("aa".to_string()));
+        assert_eq!(
+            d.by_name("北京服务器").map(|x| x.id),
+            Some("aa".to_string())
+        );
         assert_eq!(d.by_name("turing").map(|x| x.id), Some("aa".to_string()));
 
         // Taking it back.
         d.set_label("aa", "").unwrap();
-        assert_eq!(d.get("aa").unwrap().shown(), "turing", "an emptied rename falls back");
-        assert_eq!(d.get("aa").unwrap().label, None, "…and reads as no override at all");
+        assert_eq!(
+            d.get("aa").unwrap().shown(),
+            "turing",
+            "an emptied rename falls back"
+        );
+        assert_eq!(
+            d.get("aa").unwrap().label,
+            None,
+            "…and reads as no override at all"
+        );
     }
 
     /// A rename crosses to the other machines, like `pinned` does —
@@ -1143,8 +1258,14 @@ mod tests {
 
         let there = DeviceDoc::new(2).unwrap();
         there.upsert("aa", "turing", &[]).unwrap();
-        there.merge(&here.changes_since(&Default::default()).unwrap()).unwrap();
-        assert_eq!(there.get("aa").unwrap().shown(), "北京服务器", "the rename travelled");
+        there
+            .merge(&here.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(
+            there.get("aa").unwrap().shown(),
+            "北京服务器",
+            "the rename travelled"
+        );
     }
 
     /// Sorted by the name on the glass. A list ordered on a name nobody
@@ -1156,13 +1277,19 @@ mod tests {
         d.upsert("aa", "alpha", &[]).unwrap();
         d.upsert("bb", "beta", &[]).unwrap();
         assert_eq!(
-            d.all().iter().map(|x| x.shown().to_owned()).collect::<Vec<_>>(),
+            d.all()
+                .iter()
+                .map(|x| x.shown().to_owned())
+                .collect::<Vec<_>>(),
             vec!["alpha", "beta"]
         );
         // Renamed to sort first, and the list follows what is readable.
         d.set_label("bb", "aardvark").unwrap();
         assert_eq!(
-            d.all().iter().map(|x| x.shown().to_owned()).collect::<Vec<_>>(),
+            d.all()
+                .iter()
+                .map(|x| x.shown().to_owned())
+                .collect::<Vec<_>>(),
             vec!["aardvark", "alpha"]
         );
     }

@@ -36,7 +36,9 @@ fn main() {
                 .map(|(k, v)| {
                     (
                         k.clone(),
-                        v.as_str().unwrap_or_else(|| panic!("charset {k} is not a string")).to_owned(),
+                        v.as_str()
+                            .unwrap_or_else(|| panic!("charset {k} is not a string"))
+                            .to_owned(),
                     )
                 })
                 .collect()
@@ -53,7 +55,10 @@ fn main() {
     out.push_str("pub(crate) static VENDORS: &[VendorTable] = &[\n");
 
     for v in vendors {
-        let name = v.get("name").and_then(|n| n.as_str()).expect("vendor without a name");
+        let name = v
+            .get("name")
+            .and_then(|n| n.as_str())
+            .expect("vendor without a name");
         let default = match v.get("default").and_then(|d| d.as_str()) {
             Some("idle") => "Word::Idle",
             Some("busy") => "Word::Busy",
@@ -70,11 +75,13 @@ fn main() {
             "    VendorTable {{ name: {name:?}, default: {default}, idle_debounce_ms: {debounce}, rules: &["
         );
 
-        let rules = v
-            .get("rule")
-            .and_then(|r| r.as_array())
-            .unwrap_or_else(|| panic!("{name}: a vendor with no rules answers its default forever"));
-        assert!(!rules.is_empty(), "{name}: a vendor with no rules answers its default forever");
+        let rules = v.get("rule").and_then(|r| r.as_array()).unwrap_or_else(|| {
+            panic!("{name}: a vendor with no rules answers its default forever")
+        });
+        assert!(
+            !rules.is_empty(),
+            "{name}: a vendor with no rules answers its default forever"
+        );
 
         for (i, r) in rules.iter().enumerate() {
             let where_ = format!("{name} rule #{}", i + 1);
@@ -114,12 +121,18 @@ fn main() {
                         .iter()
                         .map(|p| p.as_str().expect("pattern is not a string").to_owned())
                         .collect();
-                    assert!(ps.len() > 1, "{where_}: contains_all with one pattern is contains");
+                    assert!(
+                        ps.len() > 1,
+                        "{where_}: contains_all with one pattern is contains"
+                    );
                     for p in &ps {
                         check_folded_literal(p, fold, &where_);
                     }
-                    let joined =
-                        ps.iter().map(|p| format!("{p:?}")).collect::<Vec<_>>().join(", ");
+                    let joined = ps
+                        .iter()
+                        .map(|p| format!("{p:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     format!("TestSpec::ContainsAll {{ patterns: &[{joined}], fold: {fold} }}")
                 }
                 Some("regex") => {
@@ -134,7 +147,10 @@ fn main() {
                 other => panic!("{where_}: unknown test {other:?}"),
             };
 
-            let _ = writeln!(out, "        RuleSpec {{ scope: {scope}, test: {test}, then: {then} }},");
+            let _ = writeln!(
+                out,
+                "        RuleSpec {{ scope: {scope}, test: {test}, then: {then} }},"
+            );
         }
         out.push_str("    ] },\n");
     }
@@ -168,9 +184,9 @@ fn expand(pattern: &str, charset: &BTreeMap<String, String>, where_: &str) -> St
         // a repetition count like `{2,}` — cursor's spinner rule has one
         // — from being read as a name and rejected.
         if !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
-            let set = charset
-                .get(name)
-                .unwrap_or_else(|| panic!("{where_}: {{{name}}} is not a charset in patterns.toml"));
+            let set = charset.get(name).unwrap_or_else(|| {
+                panic!("{where_}: {{{name}}} is not a charset in patterns.toml")
+            });
             out.push_str(set);
         } else {
             out.push_str(&from_brace[..=close]);
@@ -185,6 +201,8 @@ fn expand(pattern: &str, charset: &BTreeMap<String, String>, where_: &str) -> St
 /// lowercase, or it can never match and nothing will ever say so.
 fn check_folded_literal(pattern: &str, fold: bool, where_: &str) {
     if fold && pattern.to_lowercase() != pattern {
-        panic!("{where_}: {pattern:?} is matched case-folded but is not lowercase, so it can never fire");
+        panic!(
+            "{where_}: {pattern:?} is matched case-folded but is not lowercase, so it can never fire"
+        );
     }
 }

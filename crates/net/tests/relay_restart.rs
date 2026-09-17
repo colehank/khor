@@ -22,7 +22,9 @@ const WAY_BACK: Duration = Duration::from_secs(60);
 async fn relay_on(addr: SocketAddr) -> Server {
     let mut cfg = ServerConfig::default();
     cfg.relay = Some(RelayConfig::new(addr));
-    Server::spawn(cfg).await.expect("the embedded relay should spawn")
+    Server::spawn(cfg)
+        .await
+        .expect("the embedded relay should spawn")
 }
 
 /// An endpoint that knows exactly one relay and no discovery — the
@@ -45,7 +47,12 @@ async fn bind_on(relay_url: &str) -> iroh::Endpoint {
 
 async fn wait_homed(ep: &iroh::Endpoint) {
     timeout(Duration::from_secs(20), async {
-        while !ep.addr().addrs.iter().any(|a| matches!(a, iroh::TransportAddr::Relay(_))) {
+        while !ep
+            .addr()
+            .addrs
+            .iter()
+            .any(|a| matches!(a, iroh::TransportAddr::Relay(_)))
+        {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
     })
@@ -72,12 +79,22 @@ async fn reachable_via(relay_url: &str, id: &iroh::EndpointId) -> bool {
 async fn an_endpoint_survives_its_relay_restarting() {
     // The proxy carve-out from relay.rs: a machine-wide proxy would
     // carry the relay client's HTTP and test the wrong network.
-    for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
+    for k in [
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
         unsafe { std::env::remove_var(k) };
     }
 
     let first = relay_on("127.0.0.1:0".parse().unwrap()).await;
-    let port = first.http_addr().expect("http relay must have an addr").port();
+    let port = first
+        .http_addr()
+        .expect("http relay must have an addr")
+        .port();
     let url = format!("http://127.0.0.1:{port}");
 
     let server = bind_on(&url).await;
@@ -92,7 +109,10 @@ async fn an_endpoint_survives_its_relay_restarting() {
     });
 
     // Baseline: the road works while the relay lives.
-    assert!(reachable_via(&url, &id).await, "the relay road must work before the restart");
+    assert!(
+        reachable_via(&url, &id).await,
+        "the relay road must work before the restart"
+    );
 
     // The relay dies and comes back on the same port — a reboot, not a
     // migration. Nothing tells the stranded endpoint.

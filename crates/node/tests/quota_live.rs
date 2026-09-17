@@ -76,7 +76,9 @@ async fn the_endpoint_answers_and_leaves_the_machine_a_shared_cache() {
         // These three are answers, not failures of this test: they mean
         // the machine cannot ask right now, and each names why.
         Err(QuotaTrouble::NoLogin) => println!("no Claude Code login here — nothing was asked"),
-        Err(QuotaTrouble::Stale) => println!("the stored credential is expired — nothing was asked"),
+        Err(QuotaTrouble::Stale) => {
+            println!("the stored credential is expired — nothing was asked")
+        }
         Err(QuotaTrouble::Cooling { minutes }) => {
             println!("still cooling down, {minutes} minute(s) left — nothing was asked");
         }

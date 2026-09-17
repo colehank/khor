@@ -15,7 +15,9 @@ use std::process::Command;
 
 fn khor(home: &Path) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_khor"));
-    c.env("KHOR_HOME", home).env("KHOR_NAME", "box").env_remove("KHOR_SESSION");
+    c.env("KHOR_HOME", home)
+        .env("KHOR_NAME", "box")
+        .env_remove("KHOR_SESSION");
     c
 }
 
@@ -24,7 +26,10 @@ fn khor(home: &Path) -> Command {
 /// (`agents.rs`'s helper).
 fn run(home: &Path, args: &[&str]) -> (bool, String) {
     let out = khor(home).args(args).output().expect("khor runs");
-    (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
 }
 
 /// A fake home that takes itself away.
@@ -72,7 +77,11 @@ fn a_directory_becomes_a_row_named_after_itself_and_comes_back_off() {
     std::fs::create_dir_all(&one).unwrap();
     std::fs::create_dir_all(&two).unwrap();
 
-    assert_eq!(run(&h, &["ws", "ls"]).1, "", "nothing is a workspace until somebody says so");
+    assert_eq!(
+        run(&h, &["ws", "ls"]).1,
+        "",
+        "nothing is a workspace until somebody says so"
+    );
 
     assert!(run(&h, &["ws", "add", one.to_str().unwrap()]).0);
     assert!(run(&h, &["ws", "add", two.to_str().unwrap()]).0);
@@ -87,7 +96,8 @@ fn a_directory_becomes_a_row_named_after_itself_and_comes_back_off() {
     // a Mac `temp_dir()` is itself a link (`/var` → `/private/var`).
     let two_real = std::fs::canonicalize(&two).unwrap().display().to_string();
     assert!(
-        rows[0].ends_with(&format!("box:{two_real}")) || rows[1].ends_with(&format!("box:{two_real}")),
+        rows[0].ends_with(&format!("box:{two_real}"))
+            || rows[1].ends_with(&format!("box:{two_real}")),
         "the row says which machine holds the path: {listed}"
     );
 
@@ -104,7 +114,11 @@ fn a_directory_becomes_a_row_named_after_itself_and_comes_back_off() {
     // second copy of a user-facing word is one restyle away from an
     // assertion about a sentence nobody says any more (handoff 001).
     assert!(
-        listed.lines().next().unwrap().starts_with(khor_catalog::cli::PINNED_MARK),
+        listed
+            .lines()
+            .next()
+            .unwrap()
+            .starts_with(khor_catalog::cli::PINNED_MARK),
         "and says so: {listed}"
     );
 
@@ -117,7 +131,11 @@ fn a_directory_becomes_a_row_named_after_itself_and_comes_back_off() {
         Some("other"),
         "unpinned, path order returns: {listed}"
     );
-    assert_eq!(listed.lines().count(), 2, "and it is still a workspace: {listed}");
+    assert_eq!(
+        listed.lines().count(),
+        2,
+        "and it is still a workspace: {listed}"
+    );
 
     assert!(run(&h, &["ws", "rm", one.to_str().unwrap()]).0);
     let listed = run(&h, &["ws", "ls"]).1;
@@ -141,7 +159,11 @@ fn adding_something_that_is_not_a_directory_is_refused() {
     assert!(!ok, "a directory that is not there is not a workspace");
     let (ok, _) = run(&h, &["ws", "add", file.to_str().unwrap()]);
     assert!(!ok, "a file is not a workspace either");
-    assert_eq!(run(&h, &["ws", "ls"]).1, "", "and neither left a row behind");
+    assert_eq!(
+        run(&h, &["ws", "ls"]).1,
+        "",
+        "and neither left a row behind"
+    );
 }
 
 /// `khor ws add .` is what a person types, and a relative path names a
@@ -153,15 +175,32 @@ fn a_dot_becomes_the_directory_it_was_typed_in() {
     let dir = h.join("working/here");
     std::fs::create_dir_all(&dir).unwrap();
 
-    let out = khor(&h).args(["ws", "add", "."]).current_dir(&dir).output().expect("khor runs");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = khor(&h)
+        .args(["ws", "add", "."])
+        .current_dir(&dir)
+        .output()
+        .expect("khor runs");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 
     let listed = run(&h, &["ws", "ls"]).1;
     // `canonicalize` resolves the symlinks the temp directory is
     // reached through, so the row is compared the same way.
     let want = std::fs::canonicalize(&dir).unwrap();
-    assert!(listed.trim_end().ends_with(&format!("box:{}", want.display())), "{listed}");
-    assert_eq!(listed.lines().next().unwrap().split('\t').nth(1), Some("here"), "{listed}");
+    assert!(
+        listed
+            .trim_end()
+            .ends_with(&format!("box:{}", want.display())),
+        "{listed}"
+    );
+    assert_eq!(
+        listed.lines().next().unwrap().split('\t').nth(1),
+        Some("here"),
+        "{listed}"
+    );
 }
 
 /// **Declared through a symlink, stored resolved.** A session records

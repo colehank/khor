@@ -33,14 +33,12 @@
 use std::path::PathBuf;
 
 use khor_core::{SessionId, State};
+use khor_node::Node;
 use khor_node::day;
 use khor_node::live::LiveKind;
-use khor_node::Node;
 
 fn main() -> Result<(), String> {
-    let home = PathBuf::from(
-        std::env::args().nth(1).ok_or("usage: day_fixture <home>")?,
-    );
+    let home = PathBuf::from(std::env::args().nth(1).ok_or("usage: day_fixture <home>")?);
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
 
@@ -52,7 +50,13 @@ fn main() -> Result<(), String> {
         ("tui/latecomer", "something that started six hours ago"),
     ];
     for (id, title) in rows {
-        live.register(&SessionId(id.to_owned()), "tui", title, Some(std::process::id()), None)?;
+        live.register(
+            &SessionId(id.to_owned()),
+            "tui",
+            title,
+            Some(std::process::id()),
+            None,
+        )?;
     }
 
     let now_ms = std::time::SystemTime::now()

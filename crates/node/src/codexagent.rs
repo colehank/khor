@@ -140,11 +140,12 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |new: NewSessionRequest, responder, _connection| {
-                match s_new.start_codex(&new.cwd).await {
-                    Ok(sid) => responder.respond(NewSessionResponse::new(sid)),
-                    Err(e) => responder.respond_with_internal_error(e),
-                }
+            async move |new: NewSessionRequest, responder, _connection| match s_new
+                .start_codex(&new.cwd)
+                .await
+            {
+                Ok(sid) => responder.respond(NewSessionResponse::new(sid)),
+                Err(e) => responder.respond_with_internal_error(e),
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -215,7 +216,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 match started {
                     Some(cur) if cur == sid => {}
                     Some(_) => {
-                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION)
+                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION);
                     }
                     None => {
                         // The takeover: resume the recorded thread. Its
@@ -237,9 +238,11 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     .transcript(&sid)
                     .unwrap_or_default();
                 for u in said {
-                    let Some(update) = crate::cagent::replayed(u) else { continue };
-                    let _ = connection
-                        .send_notification(SessionNotification::new(sid.clone(), update));
+                    let Some(update) = crate::cagent::replayed(u) else {
+                        continue;
+                    };
+                    let _ =
+                        connection.send_notification(SessionNotification::new(sid.clone(), update));
                 }
                 responder.respond(LoadSessionResponse::new())
             },
@@ -263,15 +266,18 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             },
             agent_client_protocol::on_receive_notification!(),
         )
-        .connect_with(Stdio::new(), move |connection: ConnectionTo<Client>| async move {
-            // The client's EOF ends the shim (`cagent`'s arm, same
-            // orphan discipline).
-            tokio::select! {
-                _ = drain(s_drain, frames_rx, &connection) => {}
-                _ = connection.incoming_closed() => {}
-            }
-            Ok(())
-        })
+        .connect_with(
+            Stdio::new(),
+            move |connection: ConnectionTo<Client>| async move {
+                // The client's EOF ends the shim (`cagent`'s arm, same
+                // orphan discipline).
+                tokio::select! {
+                    _ = drain(s_drain, frames_rx, &connection) => {}
+                    _ = connection.incoming_closed() => {}
+                }
+                Ok(())
+            },
+        )
         .await
         .map(|_| ())?;
     // However serve ended, the codex child must not outlive the shim.
@@ -314,8 +320,7 @@ impl Shim {
     ) -> Result<(), String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
-        let mut params =
-            serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() });
+        let mut params = serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() });
         scheduler_into(&mut params)?;
         let resumed = self.request("thread/resume", params).await?;
         if resumed["thread"]["id"].as_str() != Some(sid) {
@@ -353,7 +358,9 @@ impl Shim {
             let reader = std::io::BufReader::new(stdout);
             for line in reader.lines() {
                 let Ok(line) = line else { break };
-                let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+                    continue;
+                };
                 // An id without a method is an answer to something the
                 // shim asked; everything else is the server speaking.
                 let answer_to = v
@@ -375,7 +382,9 @@ impl Shim {
                 }
             }
             // The child ended; a pending turn must not hang forever.
-            let _ = shim.frames.send(serde_json::json!({ "khor_child_gone": true }));
+            let _ = shim
+                .frames
+                .send(serde_json::json!({ "khor_child_gone": true }));
         });
         Ok(())
     }
@@ -545,15 +554,14 @@ async fn drain(
             }
             "turn/completed" => {
                 let status = f["params"]["turn"]["status"].as_str().unwrap_or("");
-                let reason = if shim.interrupted.swap(false, Ordering::SeqCst)
-                    || status == "interrupted"
-                {
-                    StopReason::Cancelled
-                } else if status == "completed" {
-                    StopReason::EndTurn
-                } else {
-                    StopReason::Refusal
-                };
+                let reason =
+                    if shim.interrupted.swap(false, Ordering::SeqCst) || status == "interrupted" {
+                        StopReason::Cancelled
+                    } else if status == "completed" {
+                        StopReason::EndTurn
+                    } else {
+                        StopReason::Refusal
+                    };
                 *shim.turn_id.lock().unwrap() = None;
                 if let Some(tx) = shim.turn.lock().unwrap().take() {
                     let _ = tx.send(reason);

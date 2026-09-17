@@ -25,7 +25,10 @@ pub struct Side {
 }
 
 impl Side {
-    pub fn new(present: impl IntoIterator<Item = String>, merged: impl IntoIterator<Item = String>) -> Self {
+    pub fn new(
+        present: impl IntoIterator<Item = String>,
+        merged: impl IntoIterator<Item = String>,
+    ) -> Self {
         Self {
             present: present.into_iter().collect(),
             merged: merged.into_iter().collect(),
@@ -142,7 +145,11 @@ mod tests {
             "compacted blocks must never be re-pulled, or compaction never finishes: {:?}",
             p.pull
         );
-        assert_eq!(p.push, vec!["snap-00000002.loro"], "my snapshot should be pushed");
+        assert_eq!(
+            p.push,
+            vec!["snap-00000002.loro"],
+            "my snapshot should be pushed"
+        );
     }
 
     /// Push must honour the far side's ledger: merged means they have

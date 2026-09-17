@@ -5,8 +5,8 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::chat::{open_channel, ChatDoc};
-use crate::plan::{plan, Side};
+use crate::chat::{ChatDoc, open_channel};
+use crate::plan::{Side, plan};
 use crate::store::BlockStore;
 use crate::testutil::{me, render, tmpdir};
 
@@ -60,7 +60,11 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
     a.doc.tell(&me("mac"), "from the mac").unwrap();
     a.store.flush(&a.doc).unwrap();
     let (pull, push) = sync_with_dumb(&mut a.store, &a.doc, &dumb);
-    assert_eq!((pull, push), (0, 1), "A should push one block, nothing to pull");
+    assert_eq!(
+        (pull, push),
+        (0, 1),
+        "A should push one block, nothing to pull"
+    );
 
     let mut b = open_channel(&dir_b, 0xB).unwrap();
     let (pull, _) = sync_with_dumb(&mut b.store, &b.doc, &dumb);
@@ -71,7 +75,11 @@ fn two_machines_converge_through_a_node_that_understands_nothing() {
 
     sync_with_dumb(&mut a.store, &a.doc, &dumb);
 
-    assert_eq!(render(&a.doc), render(&b.doc), "both machines must end identical");
+    assert_eq!(
+        render(&a.doc),
+        render(&b.doc),
+        "both machines must end identical"
+    );
     assert_eq!(a.doc.messages().len(), 2, "both lines must be there");
 
     // Idempotence: another round moves nothing.
@@ -106,11 +114,21 @@ fn compacting_survives_the_next_sync() {
         .flatten()
         .filter(|e| e.file_name().to_string_lossy().ends_with(".loro"))
         .count();
-    assert_eq!(left, 1, "after compaction only the snapshot remains, got {left}");
+    assert_eq!(
+        left, 1,
+        "after compaction only the snapshot remains, got {left}"
+    );
 
     let (pull, _) = sync_with_dumb(&mut m.store, &m.doc, &dumb);
-    assert_eq!(pull, 0, "none of the five compacted blocks may be re-pulled");
-    assert_eq!(render(&m.doc), want, "the content must not change by a byte");
+    assert_eq!(
+        pull, 0,
+        "none of the five compacted blocks may be re-pulled"
+    );
+    assert_eq!(
+        render(&m.doc),
+        want,
+        "the content must not change by a byte"
+    );
 
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(&dumb.0);

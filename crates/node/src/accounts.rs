@@ -85,8 +85,8 @@ use khor_core::{AccountReading, Fill, Quota, QuotaTrouble, Strain};
 use khor_sync::accounts::{Account, AccountKind, Provider};
 use serde::{Deserialize, Serialize};
 
-use crate::link;
 use crate::Node;
+use crate::link;
 
 /// How long a reading stands before the provider is asked again.
 pub const CACHE_TTL_MS: i64 = 5 * 60 * 1000;
@@ -146,7 +146,12 @@ pub mod trouble {
 pub fn sub_provider_words() -> Vec<&'static str> {
     Provider::WORDS
         .into_iter()
-        .filter(|word| Provider::parse(word).as_ref().and_then(sub_reader).is_some())
+        .filter(|word| {
+            Provider::parse(word)
+                .as_ref()
+                .and_then(sub_reader)
+                .is_some()
+        })
         .collect()
 }
 
@@ -170,7 +175,11 @@ struct PeerQuotas {
 /// ring at 91% wears the ink a disk at 91% wears (one doctrine).
 pub fn strain_of(fill: Option<f32>) -> Option<Strain> {
     let f = fill?;
-    Fill { used: (f.clamp(0.0, 1.0) * 1000.0).round() as u64, total: 1000 }.strain()
+    Fill {
+        used: (f.clamp(0.0, 1.0) * 1000.0).round() as u64,
+        total: 1000,
+    }
+    .strain()
 }
 
 impl Node {
@@ -230,7 +239,9 @@ impl Node {
             return Err(msg::ACCOUNT_NAME_BLANK.into());
         }
         match kind {
-            AccountKind::Sub => return self.register_subscription(name, provider, base_url, key, budget),
+            AccountKind::Sub => {
+                return self.register_subscription(name, provider, base_url, key, budget);
+            }
             AccountKind::Other(word) => return Err(msg::no_such_kind(word)),
             AccountKind::Bill => {}
         }
@@ -309,7 +320,10 @@ impl Node {
             return Err(msg::ACCOUNT_SUB_TAKES_NOTHING_ELSE.into());
         }
         let Some(reader) = sub_reader(&provider) else {
-            return Err(msg::provider_has_no_sub(provider.word(), sub_provider_words().join("、")));
+            return Err(msg::provider_has_no_sub(
+                provider.word(),
+                sub_provider_words().join("、"),
+            ));
         };
         let me = self.device_str().to_owned();
         // **Before the login check, deliberately.** Both can be true at
@@ -318,7 +332,11 @@ impl Node {
         // the two answers: it names the row that already exists, where
         // the other would send somebody to log in again for a
         // registration they would still not be allowed to make.
-        if let Some(had) = self.accounts()?.into_iter().find(|a| a.kind.is_sub() && a.home == me) {
+        if let Some(had) = self
+            .accounts()?
+            .into_iter()
+            .find(|a| a.kind.is_sub() && a.home == me)
+        {
             return Err(msg::account_sub_already_here(had.name));
         }
         if !reader.logged_in() {
@@ -427,7 +445,10 @@ impl Node {
         // with the same sentences — an edit that accepted an address
         // registration refuses would be a second opinion about what a
         // gateway is.
-        let base_url = match (&account.provider, base_url.map(str::trim).filter(|u| !u.is_empty())) {
+        let base_url = match (
+            &account.provider,
+            base_url.map(str::trim).filter(|u| !u.is_empty()),
+        ) {
             (Provider::Newapi, None) => return Err(msg::ACCOUNT_NEEDS_ADDRESS.into()),
             (Provider::Newapi, Some(u)) => {
                 if !(u.starts_with("http://") || u.starts_with("https://")) {
@@ -455,7 +476,10 @@ impl Node {
         // **Blank is 「use what the endpoint said」**, not an empty
         // string: the two are one thing to a person and two to a
         // reader downstream, and `None` is the one that means it.
-        account.unit = unit.map(str::trim).filter(|u| !u.is_empty()).map(str::to_owned);
+        account.unit = unit
+            .map(str::trim)
+            .filter(|u| !u.is_empty())
+            .map(str::to_owned);
         loaded.doc.set(&account)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
@@ -467,7 +491,9 @@ impl Node {
     }
 
     fn key_of(&self, id: &str) -> Option<String> {
-        std::fs::read_to_string(self.keys_dir().join(id)).ok().map(|k| k.trim().to_owned())
+        std::fs::read_to_string(self.keys_dir().join(id))
+            .ok()
+            .map(|k| k.trim().to_owned())
     }
 
     fn cached_reading(&self, id: &str) -> Option<Cached> {
@@ -487,8 +513,11 @@ impl Node {
     /// account (module head); accounts homed elsewhere are not in it.
     pub async fn quota_readings(&self) -> Result<Vec<AccountReading>, String> {
         let me = self.device_str().to_owned();
-        let mine: Vec<Account> =
-            self.accounts()?.into_iter().filter(|a| a.home == me).collect();
+        let mine: Vec<Account> = self
+            .accounts()?
+            .into_iter()
+            .filter(|a| a.home == me)
+            .collect();
         let now = crate::live::now_ms();
         let mut out = Vec::with_capacity(mine.len());
         for account in mine {
@@ -535,16 +564,30 @@ impl Node {
         };
         match fetch(account, &key, now).await {
             Ok(reading) => {
-                self.cache_reading(&account.id, &Cached { reading: reading.clone(), failed_at_ms: None });
+                self.cache_reading(
+                    &account.id,
+                    &Cached {
+                        reading: reading.clone(),
+                        failed_at_ms: None,
+                    },
+                );
                 reading
             }
             Err(why) => {
                 // The last good reading stands, aged; the failure only
                 // starts the cooldown. With nothing to stand, the
                 // trouble is the reading.
-                let kept = cached.filter(|c| c.reading.trouble.is_none()).map(|c| c.reading);
+                let kept = cached
+                    .filter(|c| c.reading.trouble.is_none())
+                    .map(|c| c.reading);
                 let reading = kept.unwrap_or_else(|| bare(account, Some(why), now));
-                self.cache_reading(&account.id, &Cached { reading: reading.clone(), failed_at_ms: Some(now) });
+                self.cache_reading(
+                    &account.id,
+                    &Cached {
+                        reading: reading.clone(),
+                        failed_at_ms: Some(now),
+                    },
+                );
                 reading
             }
         }
@@ -561,7 +604,10 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         std::fs::create_dir_all(self.quotas_dir()).map_err(msg::cant_make_vitals_dir)?;
-        let report = PeerQuotas { at_ms: crate::live::now_ms(), readings: readings.to_vec() };
+        let report = PeerQuotas {
+            at_ms: crate::live::now_ms(),
+            readings: readings.to_vec(),
+        };
         link::write_private(
             &self.quotas_dir().join(format!("peer-{device_id}.json")),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
@@ -570,9 +616,13 @@ impl Node {
 
     fn peer_quotas(&self, device_id: &str) -> Option<(Vec<AccountReading>, u64)> {
         let text =
-            std::fs::read_to_string(self.quotas_dir().join(format!("peer-{device_id}.json"))).ok()?;
+            std::fs::read_to_string(self.quotas_dir().join(format!("peer-{device_id}.json")))
+                .ok()?;
         let report: PeerQuotas = serde_json::from_str(&text).ok()?;
-        Some((report.readings, crate::live::now_ms().saturating_sub(report.at_ms) as u64))
+        Some((
+            report.readings,
+            crate::live::now_ms().saturating_sub(report.at_ms) as u64,
+        ))
     }
 
     /// One reading per registered account, wherever it lives: this
@@ -607,9 +657,11 @@ impl Node {
                 }
                 continue;
             }
-            let carried = self
-                .peer_quotas(&account.home)
-                .and_then(|(rs, age)| rs.into_iter().find(|r| r.account == account.id).map(|r| (r, age)));
+            let carried = self.peer_quotas(&account.home).and_then(|(rs, age)| {
+                rs.into_iter()
+                    .find(|r| r.account == account.id)
+                    .map(|r| (r, age))
+            });
             let (reading, age) =
                 carried.unwrap_or_else(|| (bare(&account, Some(trouble::NO_READING), now), 0));
             out.push((relabel(reading), age));
@@ -753,7 +805,12 @@ fn bare(account: &Account, trouble: Option<&str>, now: i64) -> AccountReading {
 
 /// Spend against a registered budget: the fraction the two vendors get,
 /// since neither has a ceiling of its own to fill against.
-fn against_budget(mut r: AccountReading, spent: f64, budget: Option<f64>, currency: &str) -> AccountReading {
+fn against_budget(
+    mut r: AccountReading,
+    spent: f64,
+    budget: Option<f64>,
+    currency: &str,
+) -> AccountReading {
     r.spent = Some(spent);
     r.currency = Some(currency.to_owned());
     if let Some(b) = budget {
@@ -769,27 +826,43 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
         Provider::Claude => fetch_claude(account, key, now).await,
         Provider::Openai => fetch_openai(account, key, now).await,
         Provider::Deepseek => {
-            let j = get_json(client().get("https://api.deepseek.com/user/balance").bearer_auth(key))
-                .await?
-                .map_err(|_| trouble::UNREACHABLE)?;
+            let j = get_json(
+                client()
+                    .get("https://api.deepseek.com/user/balance")
+                    .bearer_auth(key),
+            )
+            .await?
+            .map_err(|_| trouble::UNREACHABLE)?;
             read_deepseek(account, &j, now)
         }
         Provider::Moonshot => {
-            let j = get_json(client().get("https://api.moonshot.ai/v1/users/me/balance").bearer_auth(key))
-                .await?
-                .map_err(|_| trouble::UNREACHABLE)?;
+            let j = get_json(
+                client()
+                    .get("https://api.moonshot.ai/v1/users/me/balance")
+                    .bearer_auth(key),
+            )
+            .await?
+            .map_err(|_| trouble::UNREACHABLE)?;
             read_moonshot(account, &j, now, "USD")
         }
         Provider::MoonshotCn => {
-            let j = get_json(client().get("https://api.moonshot.cn/v1/users/me/balance").bearer_auth(key))
-                .await?
-                .map_err(|_| trouble::UNREACHABLE)?;
+            let j = get_json(
+                client()
+                    .get("https://api.moonshot.cn/v1/users/me/balance")
+                    .bearer_auth(key),
+            )
+            .await?
+            .map_err(|_| trouble::UNREACHABLE)?;
             read_moonshot(account, &j, now, "CNY")
         }
         Provider::Openrouter => {
-            let j = get_json(client().get("https://openrouter.ai/api/v1/key").bearer_auth(key))
-                .await?
-                .map_err(|_| trouble::UNREACHABLE)?;
+            let j = get_json(
+                client()
+                    .get("https://openrouter.ai/api/v1/key")
+                    .bearer_auth(key),
+            )
+            .await?
+            .map_err(|_| trouble::UNREACHABLE)?;
             read_openrouter(account, &j, now)
         }
         Provider::Other(_) => Err(trouble::UNKNOWN_PROVIDER),
@@ -800,7 +873,9 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
 /// (DeepSeek spells balances as strings).
 fn decimal(v: Option<&serde_json::Value>) -> Option<f64> {
     let v = v?;
-    v.as_f64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())).filter(|n| n.is_finite())
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        .filter(|n| n.is_finite())
 }
 
 /// DeepSeek: the key's own prepaid balance (`GET /user/balance`,
@@ -816,7 +891,10 @@ fn read_deepseek(
     j: &serde_json::Value,
     now: i64,
 ) -> Result<AccountReading, &'static str> {
-    let rows = j.get("balance_infos").and_then(serde_json::Value::as_array).ok_or(trouble::UNREADABLE)?;
+    let rows = j
+        .get("balance_infos")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(trouble::UNREADABLE)?;
     let wallet = |currency: &str| {
         rows.iter()
             .find(|r| r.get("currency").and_then(serde_json::Value::as_str) == Some(currency))
@@ -894,7 +972,11 @@ fn read_openrouter(
             r.limit = Some(cap);
             r.remaining = Some(left);
             r.spent = Some(cap - left);
-            r.fill = Some(if cap > 0.0 { ((cap - left) / cap).clamp(0.0, 1.0) as f32 } else { 0.0 });
+            r.fill = Some(if cap > 0.0 {
+                ((cap - left) / cap).clamp(0.0, 1.0) as f32
+            } else {
+                0.0
+            });
             Ok(r)
         }
         None => {
@@ -911,7 +993,10 @@ fn read_openrouter(
 }
 
 fn client() -> reqwest::Client {
-    reqwest::Client::builder().timeout(HTTP_TIMEOUT).build().unwrap_or_default()
+    reqwest::Client::builder()
+        .timeout(HTTP_TIMEOUT)
+        .build()
+        .unwrap_or_default()
 }
 
 /// ⚠️ **A 200 is not a yes.**
@@ -956,8 +1041,7 @@ async fn get_json(
     match status {
         401 | 403 => Err(trouble::KEY_REFUSED),
         200..=299 => {
-            let body: serde_json::Value =
-                response.json().await.map_err(|_| trouble::UNREADABLE)?;
+            let body: serde_json::Value = response.json().await.map_err(|_| trouble::UNREADABLE)?;
             if refused_in_body(&body) {
                 return Err(trouble::KEY_REFUSED);
             }
@@ -979,14 +1063,21 @@ fn refused_in_body(body: &serde_json::Value) -> bool {
 /// a dollar (`data.quota_per_unit`, 500000 by default). The window is
 /// the token's whole life — there is no reset, only `expires_at`. An
 /// older gateway answers 404 on the token road and is said so.
-async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountReading, &'static str> {
+async fn fetch_newapi(
+    account: &Account,
+    key: &str,
+    now: i64,
+) -> Result<AccountReading, &'static str> {
     let base = account.base_url.as_deref().ok_or(trouble::UNREADABLE)?;
     let c = client();
     let per_unit = get_json(c.get(format!("{base}/api/status")))
         .await
         .ok()
         .and_then(Result::ok)
-        .and_then(|j| j.pointer("/data/quota_per_unit").and_then(serde_json::Value::as_f64))
+        .and_then(|j| {
+            j.pointer("/data/quota_per_unit")
+                .and_then(serde_json::Value::as_f64)
+        })
         .filter(|u| *u > 0.0)
         .unwrap_or(500_000.0);
     let answer = get_json(c.get(format!("{base}/api/usage/token/")).bearer_auth(key)).await?;
@@ -994,9 +1085,13 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
         Ok(j) => {
             let d = j.get("data").ok_or(trouble::UNREADABLE)?;
             (
-                d.get("total_used").and_then(serde_json::Value::as_f64).unwrap_or(0.0),
+                d.get("total_used")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0),
                 d.get("total_available").and_then(serde_json::Value::as_f64),
-                d.get("unlimited_quota").and_then(serde_json::Value::as_bool).unwrap_or(false),
+                d.get("unlimited_quota")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
                 expiry_of(d),
                 model_limits_of(d),
             )
@@ -1034,7 +1129,11 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
     if !unlimited && let Some(avail) = available {
         let total = used + avail;
         r.limit = Some(total / per_unit);
-        r.fill = Some(if total > 0.0 { (used / total).clamp(0.0, 1.0) as f32 } else { 0.0 });
+        r.fill = Some(if total > 0.0 {
+            (used / total).clamp(0.0, 1.0) as f32
+        } else {
+            0.0
+        });
     }
     Ok(r)
 }
@@ -1051,7 +1150,9 @@ async fn fetch_newapi(account: &Account, key: &str, now: i64) -> Result<AccountR
 /// timestamp at or before the epoch is not a fact about when this key
 /// stops working.
 fn expiry_of(d: &serde_json::Value) -> Option<i64> {
-    d.get("expires_at").and_then(serde_json::Value::as_i64).filter(|at| *at > 0)
+    d.get("expires_at")
+        .and_then(serde_json::Value::as_i64)
+        .filter(|at| *at > 0)
 }
 
 /// The models a new-api token is limited to, or empty for 「not
@@ -1077,7 +1178,10 @@ fn expiry_of(d: &serde_json::Value) -> Option<i64> {
 /// that one request went through, which is a different fact. A token's
 /// own group is an admin-key road, and it is not this one.
 fn model_limits_of(d: &serde_json::Value) -> Vec<String> {
-    if d.get("model_limits_enabled").and_then(serde_json::Value::as_bool) != Some(true) {
+    if d.get("model_limits_enabled")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
         return Vec::new();
     }
     let Some(map) = d.get("model_limits").and_then(serde_json::Value::as_object) else {
@@ -1192,7 +1296,10 @@ fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
         if row.get("type").and_then(serde_json::Value::as_i64) != Some(2) {
             continue;
         }
-        let Some(at) = row.get("created_at").and_then(serde_json::Value::as_i64).filter(|t| *t > 0)
+        let Some(at) = row
+            .get("created_at")
+            .and_then(serde_json::Value::as_i64)
+            .filter(|t| *t > 0)
         else {
             continue;
         };
@@ -1203,7 +1310,11 @@ fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
         else {
             continue;
         };
-        let spent = row.get("quota").and_then(serde_json::Value::as_f64).unwrap_or(0.0) / per_unit;
+        let spent = row
+            .get("quota")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(0.0)
+            / per_unit;
         *per_day.entry(start).or_default() += spent;
         let model = row
             .get("model_name")
@@ -1212,15 +1323,20 @@ fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
             .to_owned();
         *per_model.entry((start, model.clone())).or_default() += spent;
         let n = |k: &str| row.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
-        per_model_tokens.entry((start, model)).or_default().add(khor_core::Tokens {
-            input: n("prompt_tokens"),
-            cached_input: 0,
-            cache_write: 0,
-            output: n("completion_tokens"),
-        });
+        per_model_tokens
+            .entry((start, model))
+            .or_default()
+            .add(khor_core::Tokens {
+                input: n("prompt_tokens"),
+                cached_input: 0,
+                cache_write: 0,
+                output: n("completion_tokens"),
+            });
     }
-    let days =
-        per_day.into_iter().map(|(at, spent)| khor_core::DaySpend { at, spent }).collect();
+    let days = per_day
+        .into_iter()
+        .map(|(at, spent)| khor_core::DaySpend { at, spent })
+        .collect();
     let model_days = per_model
         .into_iter()
         .map(|((at, model), spent)| khor_core::ModelDay { at, model, spent })
@@ -1244,7 +1360,12 @@ fn read_log(j: &serde_json::Value, per_unit: f64) -> LogRead {
     // more, and「exactly a thousand」would then read as「not cut」on the
     // one build where being cut matters most.
     let capped = (rows.len() >= NEWAPI_LOG_MAX).then_some(rows.len() as u32);
-    LogRead { days, model_days, model_tokens, capped }
+    LogRead {
+        days,
+        model_days,
+        model_tokens,
+        capped,
+    }
 }
 
 /// What one pass over new-api's log answers: three lists cut off the
@@ -1281,7 +1402,12 @@ fn token_rows(rows: TokenRows, cache_split: bool) -> Vec<khor_core::ModelTokenDa
         // whether or not anything happened in it, and a day of zeroes
         // reads as 「this model ran and cost nothing」.
         .filter(|(_, t)| !t.is_zero())
-        .map(|((at, model), tokens)| khor_core::ModelTokenDay { at, model, tokens, cache_split })
+        .map(|((at, model), tokens)| khor_core::ModelTokenDay {
+            at,
+            model,
+            tokens,
+            cache_split,
+        })
         .collect();
     out.sort_by(|a, b| {
         a.at.cmp(&b.at)
@@ -1319,12 +1445,23 @@ fn result_model(r: &serde_json::Value) -> Option<String> {
 /// two ephemeral lifetimes** — 1 hour and 5 minutes are two prices for
 /// one act, and khor's column is the act.
 fn claude_token_page(j: &serde_json::Value, out: &mut TokenRows) {
-    for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+    for bucket in j
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         // A bucket khor cannot place in time gets no row rather than
         // one at the epoch — `instant_of`'s ruling, for the reason it
         // states: a bar at 1970 is a wrong bar, not a missing one.
-        let Some(at) = instant_of(bucket, "starting_at") else { continue };
-        for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten()
+        let Some(at) = instant_of(bucket, "starting_at") else {
+            continue;
+        };
+        for r in bucket
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
         {
             let n = |k: &str| r.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
             let ephemeral = |k: &str| {
@@ -1332,13 +1469,15 @@ fn claude_token_page(j: &serde_json::Value, out: &mut TokenRows) {
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0)
             };
-            out.entry((at, result_model(r))).or_default().add(khor_core::Tokens {
-                input: n("uncached_input_tokens"),
-                cached_input: n("cache_read_input_tokens"),
-                cache_write: ephemeral("ephemeral_1h_input_tokens")
-                    .saturating_add(ephemeral("ephemeral_5m_input_tokens")),
-                output: n("output_tokens"),
-            });
+            out.entry((at, result_model(r)))
+                .or_default()
+                .add(khor_core::Tokens {
+                    input: n("uncached_input_tokens"),
+                    cached_input: n("cache_read_input_tokens"),
+                    cache_write: ephemeral("ephemeral_1h_input_tokens")
+                        .saturating_add(ephemeral("ephemeral_5m_input_tokens")),
+                    output: n("output_tokens"),
+                });
         }
     }
 }
@@ -1368,9 +1507,20 @@ fn claude_token_page(j: &serde_json::Value, out: &mut TokenRows) {
 /// sending `input_uncached_tokens` still has the same fact spelled as
 /// `input_tokens` minus the two cache columns, per the same document.
 fn openai_token_page(j: &serde_json::Value, out: &mut TokenRows) {
-    for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
-        let Some(at) = instant_of(bucket, "start_time") else { continue };
-        for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten()
+    for bucket in j
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(at) = instant_of(bucket, "start_time") else {
+            continue;
+        };
+        for r in bucket
+            .get("results")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
         {
             let n = |k: &str| r.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
             let cached = n("input_cached_tokens");
@@ -1379,14 +1529,18 @@ fn openai_token_page(j: &serde_json::Value, out: &mut TokenRows) {
                 .get("input_uncached_tokens")
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or_else(|| {
-                    n("input_tokens").saturating_sub(cached).saturating_sub(cache_write)
+                    n("input_tokens")
+                        .saturating_sub(cached)
+                        .saturating_sub(cache_write)
                 });
-            out.entry((at, result_model(r))).or_default().add(khor_core::Tokens {
-                input: uncached,
-                cached_input: cached,
-                cache_write,
-                output: n("output_tokens"),
-            });
+            out.entry((at, result_model(r)))
+                .or_default()
+                .add(khor_core::Tokens {
+                    input: uncached,
+                    cached_input: cached,
+                    cache_write,
+                    output: n("output_tokens"),
+                });
         }
     }
 }
@@ -1408,7 +1562,11 @@ fn month_start(now_ms: i64) -> i64 {
 /// (`GET /v1/organizations/cost_report`, `x-api-key`,
 /// `anthropic-version: 2023-06-01`), summed for the month and set against
 /// the registered budget. Amounts come back in cents as decimal strings.
-async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountReading, &'static str> {
+async fn fetch_claude(
+    account: &Account,
+    key: &str,
+    now: i64,
+) -> Result<AccountReading, &'static str> {
     let start = jiff::Timestamp::from_second(month_start(now))
         .map_err(|_| trouble::UNREADABLE)?
         .to_string();
@@ -1420,24 +1578,41 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
     let c = client();
     loop {
         let j = get_json(
-            c.get(&url).header("x-api-key", key).header("anthropic-version", "2023-06-01"),
+            c.get(&url)
+                .header("x-api-key", key)
+                .header("anthropic-version", "2023-06-01"),
         )
         .await?
         .map_err(|_| trouble::UNREACHABLE)?;
-        for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        for bucket in j
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             // **The bucket's own total, kept as well as summed.** The
             // day was always in this answer — it was the loop that threw
             // it away. Amounts come back in cents as decimal strings.
             let mut in_bucket = 0.0;
-            for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten() {
+            for r in bucket
+                .get("results")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
                 if let Some(a) = r.get("amount") {
-                    in_bucket +=
-                        a.as_f64().or_else(|| a.as_str().and_then(|s| s.parse().ok())).unwrap_or(0.0);
+                    in_bucket += a
+                        .as_f64()
+                        .or_else(|| a.as_str().and_then(|s| s.parse().ok()))
+                        .unwrap_or(0.0);
                 }
             }
             cents += in_bucket;
             if let Some(at) = instant_of(bucket, "starting_at") {
-                days.push(khor_core::DaySpend { at, spent: in_bucket / 100.0 });
+                days.push(khor_core::DaySpend {
+                    at,
+                    spent: in_bucket / 100.0,
+                });
             }
         }
         match j.get("next_page").and_then(serde_json::Value::as_str) {
@@ -1449,7 +1624,12 @@ async fn fetch_claude(account: &Account, key: &str, now: i64) -> Result<AccountR
             _ => break,
         }
     }
-    let mut r = against_budget(bare(account, None, now), cents / 100.0, account.budget, "USD");
+    let mut r = against_budget(
+        bare(account, None, now),
+        cents / 100.0,
+        account.budget,
+        "USD",
+    );
     r.days = days;
     // **A second request, and it is allowed to fail on its own** — the
     // same bargain new-api's log road strikes: the money above is the
@@ -1561,33 +1741,61 @@ fn instant_of(bucket: &serde_json::Value, key: &str) -> Option<i64> {
 /// spend of its own, which is why the costs are summed here) and
 /// otherwise against the registered budget. What an unset limit answers
 /// is undocumented, so anything but a threshold is read as "none".
-async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountReading, &'static str> {
+async fn fetch_openai(
+    account: &Account,
+    key: &str,
+    now: i64,
+) -> Result<AccountReading, &'static str> {
     let start = month_start(now);
     let c = client();
-    let limit_usd = get_json(c.get("https://api.openai.com/v1/organization/spend_limit").bearer_auth(key))
-        .await
-        .ok()
-        .and_then(Result::ok)
-        .and_then(|j| {
-            let cents = j.get("threshold_amount").and_then(serde_json::Value::as_f64)?;
-            (j.get("interval").and_then(serde_json::Value::as_str) == Some("month") && cents > 0.0)
-                .then_some(cents / 100.0)
-        });
-    let mut url =
-        format!("https://api.openai.com/v1/organization/costs?start_time={start}&bucket_width=1d&limit=31");
+    let limit_usd = get_json(
+        c.get("https://api.openai.com/v1/organization/spend_limit")
+            .bearer_auth(key),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .and_then(|j| {
+        let cents = j
+            .get("threshold_amount")
+            .and_then(serde_json::Value::as_f64)?;
+        (j.get("interval").and_then(serde_json::Value::as_str) == Some("month") && cents > 0.0)
+            .then_some(cents / 100.0)
+    });
+    let mut url = format!(
+        "https://api.openai.com/v1/organization/costs?start_time={start}&bucket_width=1d&limit=31"
+    );
     let mut dollars = 0.0;
     let mut days: Vec<khor_core::DaySpend> = Vec::new();
     loop {
-        let j = get_json(c.get(&url).bearer_auth(key)).await?.map_err(|_| trouble::UNREACHABLE)?;
-        for bucket in j.get("data").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        let j = get_json(c.get(&url).bearer_auth(key))
+            .await?
+            .map_err(|_| trouble::UNREACHABLE)?;
+        for bucket in j
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let mut in_bucket = 0.0;
-            for r in bucket.get("results").and_then(serde_json::Value::as_array).into_iter().flatten() {
-                in_bucket += r.pointer("/amount/value").and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+            for r in bucket
+                .get("results")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                in_bucket += r
+                    .pointer("/amount/value")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0);
             }
             dollars += in_bucket;
             // Already dollars here, where Anthropic's are cents.
             if let Some(at) = instant_of(bucket, "start_time") {
-                days.push(khor_core::DaySpend { at, spent: in_bucket });
+                days.push(khor_core::DaySpend {
+                    at,
+                    spent: in_bucket,
+                });
             }
         }
         match j.get("next_page").and_then(serde_json::Value::as_str) {
@@ -1601,7 +1809,12 @@ async fn fetch_openai(account: &Account, key: &str, now: i64) -> Result<AccountR
     }
     // The organisation's own ceiling outranks a registered budget: it
     // is the one that actually stops requests (429 past it).
-    let mut r = against_budget(bare(account, None, now), dollars, limit_usd.or(account.budget), "USD");
+    let mut r = against_budget(
+        bare(account, None, now),
+        dollars,
+        limit_usd.or(account.budget),
+        "USD",
+    );
     r.days = days;
     // The token road, on the same terms Anthropic's is on: a layer
     // beside the reading, dropped whole if it cannot be had.
@@ -1695,7 +1908,9 @@ mod tests {
         //   configuration the test was written to catch.**
         match jiff::tz::TimeZone::get("Asia/Shanghai") {
             Ok(named) => assert_eq!(zone_name(&named).as_deref(), Some("Asia/Shanghai")),
-            Err(_) => println!("no tzdb on this build, so 「a named zone keeps its name」 was not evaluated"),
+            Err(_) => println!(
+                "no tzdb on this build, so 「a named zone keeps its name」 was not evaluated"
+            ),
         }
     }
     use super::*;
@@ -1734,10 +1949,26 @@ mod tests {
     #[test]
     fn a_never_expiring_token_gets_no_date_whichever_way_it_says_so() {
         let at = |v: serde_json::Value| expiry_of(&serde_json::json!({"expires_at": v}));
-        assert_eq!(at(serde_json::json!(0)), None, "0 is what the endpoint rewrites -1 into");
-        assert_eq!(at(serde_json::json!(-1)), None, "-1 is what the row itself stores");
-        assert_eq!(expiry_of(&serde_json::json!({})), None, "and a gateway that says nothing");
-        assert_eq!(at(serde_json::json!(1_800_000_000i64)), Some(1_800_000_000), "a real instant survives");
+        assert_eq!(
+            at(serde_json::json!(0)),
+            None,
+            "0 is what the endpoint rewrites -1 into"
+        );
+        assert_eq!(
+            at(serde_json::json!(-1)),
+            None,
+            "-1 is what the row itself stores"
+        );
+        assert_eq!(
+            expiry_of(&serde_json::json!({})),
+            None,
+            "and a gateway that says nothing"
+        );
+        assert_eq!(
+            at(serde_json::json!(1_800_000_000i64)),
+            Some(1_800_000_000),
+            "a real instant survives"
+        );
     }
 
     /// **A switched-off model limit keeps its old list, and must not be
@@ -1752,7 +1983,10 @@ mod tests {
     fn a_disabled_model_limit_is_not_a_list_of_models() {
         let full = serde_json::json!({"gpt-5": true, "claude-opus-4-6": true});
         let off = serde_json::json!({"model_limits_enabled": false, "model_limits": full});
-        assert!(model_limits_of(&off).is_empty(), "the flag is off, so the list means nothing");
+        assert!(
+            model_limits_of(&off).is_empty(),
+            "the flag is off, so the list means nothing"
+        );
         let on = serde_json::json!({"model_limits_enabled": true, "model_limits": full});
         assert_eq!(
             model_limits_of(&on),
@@ -1760,7 +1994,10 @@ mod tests {
             "the flag is on: the map's keys, sorted",
         );
         let silent = serde_json::json!({"total_used": 1});
-        assert!(model_limits_of(&silent).is_empty(), "a gateway that says neither");
+        assert!(
+            model_limits_of(&silent).is_empty(),
+            "a gateway that says neither"
+        );
     }
 
     /// **The refusal check is wired into `get_json`, not merely
@@ -1799,7 +2036,11 @@ mod tests {
         };
         let no = serve(r#"{"success":false,"message":"invalid token"}"#).await;
         let said = get_json(client().get(format!("http://127.0.0.1:{no}/"))).await;
-        assert_eq!(said.err(), Some(trouble::KEY_REFUSED), "a 200 that says no is a refusal");
+        assert_eq!(
+            said.err(),
+            Some(trouble::KEY_REFUSED),
+            "a 200 that says no is a refusal"
+        );
 
         // The control arm: the same status, the same road, a body that
         // does not say no — it must come back as an answer, or this
@@ -1822,7 +2063,10 @@ mod tests {
     #[test]
     fn a_bucket_is_placed_by_either_vendors_spelling_or_not_at_all() {
         let at = |k: &str, v: serde_json::Value| instant_of(&serde_json::json!({k: v}), k);
-        assert_eq!(at("start_time", serde_json::json!(1_757_000_000i64)), Some(1_757_000_000));
+        assert_eq!(
+            at("start_time", serde_json::json!(1_757_000_000i64)),
+            Some(1_757_000_000)
+        );
         // **The two spellings of one instant must land on one number**,
         // asserted against each other rather than against a constant.
         // The first draft wrote the epoch seconds out by hand and they
@@ -1838,10 +2082,21 @@ mod tests {
             Some(as_text),
             "an RFC 3339 instant lands on the same axis as an integer",
         );
-        assert!(as_text > 1_700_000_000, "…and it is this decade, not the epoch");
-        assert_eq!(at("start_time", serde_json::json!(0)), None, "the epoch is not a bucket");
+        assert!(
+            as_text > 1_700_000_000,
+            "…and it is this decade, not the epoch"
+        );
+        assert_eq!(
+            at("start_time", serde_json::json!(0)),
+            None,
+            "the epoch is not a bucket"
+        );
         assert_eq!(at("starting_at", serde_json::json!("not a time")), None);
-        assert_eq!(instant_of(&serde_json::json!({}), "start_time"), None, "and a silent bucket");
+        assert_eq!(
+            instant_of(&serde_json::json!({}), "start_time"),
+            None,
+            "and a silent bucket"
+        );
     }
 
     /// **OpenRouter states two periods and both survive, whichever
@@ -1860,13 +2115,21 @@ mod tests {
         let r = read_openrouter(&wallet(Provider::Openrouter, None), &capped, 0).unwrap();
         assert_eq!(r.spent_this_month, Some(15.0));
         assert_eq!(r.spent_all_time, Some(115.0));
-        assert_eq!(r.spent, Some(15.0), "and `spent` still means what the fraction is made of");
+        assert_eq!(
+            r.spent,
+            Some(15.0),
+            "and `spent` still means what the fraction is made of"
+        );
 
         let uncapped = serde_json::json!({
             "data": {"limit": null, "usage": 115.0, "usage_monthly": 15.0}
         });
         let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &uncapped, 0).unwrap();
-        assert_eq!(r.spent_this_month, Some(15.0), "the month survives the other branch too");
+        assert_eq!(
+            r.spent_this_month,
+            Some(15.0),
+            "the month survives the other branch too"
+        );
         assert_eq!(r.spent_all_time, Some(115.0), "…and so does the lifetime");
     }
 
@@ -1916,13 +2179,27 @@ mod tests {
         let (days, models) = (&log.days, &log.model_days);
 
         let total: f64 = days.iter().map(|d| d.spent).sum();
-        assert!((total - 5.0).abs() < 1e-9, "1+0.5+2+1.5 = 5 dollars, and no top-up in it: {total}");
-        assert_eq!(days.len(), 2, "two days had spending, and the epoch row is not a third");
+        assert!(
+            (total - 5.0).abs() < 1e-9,
+            "1+0.5+2+1.5 = 5 dollars, and no top-up in it: {total}"
+        );
+        assert_eq!(
+            days.len(),
+            2,
+            "two days had spending, and the epoch row is not a third"
+        );
 
         let by_day: f64 = days.iter().map(|d| d.spent).sum();
         let by_model: f64 = models.iter().map(|m| m.spent).sum();
-        assert!((by_day - by_model).abs() < 1e-9, "the two lists are one pass over one answer");
-        assert_eq!(models.len(), 3, "gpt-5 and opus on the first day, opus on the third");
+        assert!(
+            (by_day - by_model).abs() < 1e-9,
+            "the two lists are one pass over one answer"
+        );
+        assert_eq!(
+            models.len(),
+            3,
+            "gpt-5 and opus on the first day, opus on the third"
+        );
 
         assert_eq!(log.capped, None, "six rows is not a thousand");
 
@@ -1931,7 +2208,11 @@ mod tests {
         // every time zone — the day boundary is the money half's
         // business and is asserted there.
         let tok = &log.model_tokens;
-        assert_eq!(tok.len(), 3, "the same three (day, model) buckets the money made");
+        assert_eq!(
+            tok.len(),
+            3,
+            "the same three (day, model) buckets the money made"
+        );
         let input: u64 = tok.iter().map(|m| m.tokens.input).sum();
         let output: u64 = tok.iter().map(|m| m.tokens.output).sum();
         assert_eq!(
@@ -1945,7 +2226,8 @@ mod tests {
             "this gateway publishes no cache columns, and 「not reported」 is not zero"
         );
         assert!(
-            tok.iter().all(|m| m.tokens.cached_input == 0 && m.tokens.cache_write == 0),
+            tok.iter()
+                .all(|m| m.tokens.cached_input == 0 && m.tokens.cache_write == 0),
             "…so the two it does not report stay empty rather than invented"
         );
     }
@@ -1974,7 +2256,11 @@ mod tests {
         let without = log(serde_json::json!({"model_name": "m"}));
         assert_eq!(with.days.len(), 1, "both rows bill money");
         assert_eq!(without.days.len(), 1);
-        assert_eq!(with.model_tokens.len(), 1, "the one that reported tokens gets a token row");
+        assert_eq!(
+            with.model_tokens.len(),
+            1,
+            "the one that reported tokens gets a token row"
+        );
         assert_eq!(with.model_tokens[0].tokens.input, 5);
         assert!(
             without.model_tokens.is_empty(),
@@ -2001,7 +2287,11 @@ mod tests {
     fn a_log_cut_at_the_ceiling_carries_the_count() {
         let row = serde_json::json!({"type": 2, "created_at": 1_800_000_000i64, "model_name": "m", "quota": 0});
         let full = serde_json::json!({"data": vec![row.clone(); NEWAPI_LOG_MAX]});
-        assert_eq!(read_log(&full, 1.0).capped, Some(NEWAPI_LOG_MAX as u32), "at the ceiling: cut");
+        assert_eq!(
+            read_log(&full, 1.0).capped,
+            Some(NEWAPI_LOG_MAX as u32),
+            "at the ceiling: cut"
+        );
         let short = serde_json::json!({"data": vec![row; NEWAPI_LOG_MAX - 1]});
         assert_eq!(read_log(&short, 1.0).capped, None, "one under it: not cut");
     }
@@ -2044,22 +2334,52 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let n = Node::open(root.clone()).unwrap();
         let a = n
-            .register_account("gw", Provider::Newapi, AccountKind::Bill, Some("http://127.0.0.1:1"), "sk-x", None)
+            .register_account(
+                "gw",
+                Provider::Newapi,
+                AccountKind::Bill,
+                Some("http://127.0.0.1:1"),
+                "sk-x",
+                None,
+            )
             .unwrap();
         let now = crate::live::now_ms();
         let mut refused = bare(&a, Some(trouble::KEY_REFUSED), now - 1_000);
         refused.at_ms = now - 1_000;
-        n.cache_reading(&a.id, &Cached { reading: refused, failed_at_ms: Some(now - 1_000) });
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        n.cache_reading(
+            &a.id,
+            &Cached {
+                reading: refused,
+                failed_at_ms: Some(now - 1_000),
+            },
+        );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         let got = rt.block_on(n.quota_readings()).unwrap();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].trouble.as_deref(), Some(trouble::KEY_REFUSED), "the reason stands");
+        assert_eq!(
+            got[0].trouble.as_deref(),
+            Some(trouble::KEY_REFUSED),
+            "the reason stands"
+        );
 
         let mut fine = bare(&a, None, now - 1_000);
         fine.fill = Some(0.45);
-        n.cache_reading(&a.id, &Cached { reading: fine, failed_at_ms: Some(now - 1_000) });
+        n.cache_reading(
+            &a.id,
+            &Cached {
+                reading: fine,
+                failed_at_ms: Some(now - 1_000),
+            },
+        );
         let got = rt.block_on(n.quota_readings()).unwrap();
-        assert_eq!(got[0].fill, Some(0.45), "control: a good reading on record stands too");
+        assert_eq!(
+            got[0].fill,
+            Some(0.45),
+            "control: a good reading on record stands too"
+        );
         assert_eq!(got[0].trouble, None);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -2088,7 +2408,14 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let n = Node::open(root.clone()).unwrap();
         let a = n
-            .register_account("gw", Provider::Newapi, AccountKind::Bill, Some("http://127.0.0.1:1"), "sk-x", None)
+            .register_account(
+                "gw",
+                Provider::Newapi,
+                AccountKind::Bill,
+                Some("http://127.0.0.1:1"),
+                "sk-x",
+                None,
+            )
             .unwrap();
         // **Re-seeded before every read, with the identical reading.**
         // An edit drops the cached reading on purpose (the budget is a
@@ -2100,28 +2427,65 @@ mod tests {
             let mut read = bare(&a, None, crate::live::now_ms());
             read.spent = Some(123.75);
             read.currency = Some("USD".to_owned());
-            n.cache_reading(&a.id, &Cached { reading: read, failed_at_ms: None });
+            n.cache_reading(
+                &a.id,
+                &Cached {
+                    reading: read,
+                    failed_at_ms: None,
+                },
+            );
         };
         seed();
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
 
         let before = rt.block_on(n.quota_board()).unwrap();
         assert_eq!(before.len(), 1);
-        assert_eq!(before[0].0.currency.as_deref(), Some("USD"), "with no override, the endpoint's word stands");
+        assert_eq!(
+            before[0].0.currency.as_deref(),
+            Some("USD"),
+            "with no override, the endpoint's word stands"
+        );
 
-        n.update_account(&a.id, "gw", Some("http://127.0.0.1:1"), None, None, Some("RMB")).unwrap();
+        n.update_account(
+            &a.id,
+            "gw",
+            Some("http://127.0.0.1:1"),
+            None,
+            None,
+            Some("RMB"),
+        )
+        .unwrap();
         seed();
         let after = rt.block_on(n.quota_board()).unwrap();
-        assert_eq!(after[0].0.currency.as_deref(), Some("RMB"), "the person's word wins over the endpoint's");
+        assert_eq!(
+            after[0].0.currency.as_deref(),
+            Some("RMB"),
+            "the person's word wins over the endpoint's"
+        );
         assert_eq!(
             after[0].0.spent, before[0].0.spent,
             "a label changed, not a rate: the figure is the one the endpoint reported"
         );
 
-        n.update_account(&a.id, "gw", Some("http://127.0.0.1:1"), None, None, Some("   ")).unwrap();
+        n.update_account(
+            &a.id,
+            "gw",
+            Some("http://127.0.0.1:1"),
+            None,
+            None,
+            Some("   "),
+        )
+        .unwrap();
         seed();
         let cleared = rt.block_on(n.quota_board()).unwrap();
-        assert_eq!(cleared[0].0.currency.as_deref(), Some("USD"), "an emptied box hands the naming back");
+        assert_eq!(
+            cleared[0].0.currency.as_deref(),
+            Some("USD"),
+            "an emptied box hands the naming back"
+        );
         assert_eq!(
             n.accounts().unwrap()[0].unit,
             None,
@@ -2156,20 +2520,33 @@ mod tests {
             {"currency": "CNY", "total_balance": "12.50", "granted_balance": "0.00", "topped_up_balance": "12.50"},
             {"currency": "USD", "total_balance": "17.35", "granted_balance": "0.00", "topped_up_balance": "17.35"}]});
         let r = read_deepseek(&acc, &both, 0).unwrap();
-        assert_eq!((r.remaining, r.currency.as_deref(), r.spent, r.fill), (Some(17.35), Some("USD"), None, None));
+        assert_eq!(
+            (r.remaining, r.currency.as_deref(), r.spent, r.fill),
+            (Some(17.35), Some("USD"), None, None)
+        );
 
         let cny_only_has_money = serde_json::json!({"is_available": true, "balance_infos": [
             {"currency": "USD", "total_balance": "0.00"}, {"currency": "CNY", "total_balance": "3.00"}]});
         let r = read_deepseek(&acc, &cny_only_has_money, 0).unwrap();
-        assert_eq!((r.remaining, r.currency.as_deref()), (Some(3.0), Some("CNY")));
+        assert_eq!(
+            (r.remaining, r.currency.as_deref()),
+            (Some(3.0), Some("CNY"))
+        );
 
         let empty = serde_json::json!({"is_available": false, "balance_infos": [
             {"currency": "USD", "total_balance": "0.00"}, {"currency": "CNY", "total_balance": "0.00"}]});
         let r = read_deepseek(&acc, &empty, 0).unwrap();
-        assert_eq!((r.remaining, r.currency.as_deref()), (Some(0.0), Some("USD")), "empty is a reading");
+        assert_eq!(
+            (r.remaining, r.currency.as_deref()),
+            (Some(0.0), Some("USD")),
+            "empty is a reading"
+        );
 
         let none = serde_json::json!({"is_available": true, "balance_infos": []});
-        assert_eq!(read_deepseek(&acc, &none, 0).unwrap_err(), trouble::UNREADABLE);
+        assert_eq!(
+            read_deepseek(&acc, &none, 0).unwrap_err(),
+            trouble::UNREADABLE
+        );
     }
 
     /// Moonshot answers `code`/`status` around the figure; a refusal
@@ -2180,9 +2557,16 @@ mod tests {
         let j = serde_json::json!({"code": 0, "status": true, "scode": "0x0",
             "data": {"available_balance": 49.58, "voucher_balance": 40.0, "cash_balance": 9.58}});
         let r = read_moonshot(&acc, &j, 0, "CNY").unwrap();
-        assert_eq!((r.remaining, r.currency.as_deref(), r.spent), (Some(49.58), Some("CNY"), None));
-        let refused = serde_json::json!({"code": 1, "status": false, "data": {"available_balance": 49.58}});
-        assert_eq!(read_moonshot(&acc, &refused, 0, "CNY").unwrap_err(), trouble::UNREADABLE);
+        assert_eq!(
+            (r.remaining, r.currency.as_deref(), r.spent),
+            (Some(49.58), Some("CNY"), None)
+        );
+        let refused =
+            serde_json::json!({"code": 1, "status": false, "data": {"available_balance": 49.58}});
+        assert_eq!(
+            read_moonshot(&acc, &refused, 0, "CNY").unwrap_err(),
+            trouble::UNREADABLE
+        );
     }
 
     /// A capped OpenRouter key fills against its cap and the cap
@@ -2194,7 +2578,10 @@ mod tests {
         let capped = serde_json::json!({"data": {"label": "k", "limit": 20.0, "limit_remaining": 5.0,
             "usage": 115.0, "usage_monthly": 15.0, "is_free_tier": false}});
         let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &capped, 0).unwrap();
-        assert_eq!((r.limit, r.remaining, r.spent), (Some(20.0), Some(5.0), Some(15.0)));
+        assert_eq!(
+            (r.limit, r.remaining, r.spent),
+            (Some(20.0), Some(5.0), Some(15.0))
+        );
         assert_eq!(r.fill, Some(0.75));
         assert!(!r.unlimited);
 
@@ -2202,11 +2589,23 @@ mod tests {
             "usage": 115.0, "usage_monthly": 15.0}});
         let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &uncapped, 0).unwrap();
         assert!(r.unlimited);
-        assert_eq!((r.spent, r.limit, r.fill), (Some(15.0), Some(100.0), Some(0.15)));
+        assert_eq!(
+            (r.spent, r.limit, r.fill),
+            (Some(15.0), Some(100.0), Some(0.15))
+        );
 
         let all_time_only = serde_json::json!({"data": {"limit": null, "usage": 115.0}});
-        let r = read_openrouter(&wallet(Provider::Openrouter, Some(100.0)), &all_time_only, 0).unwrap();
-        assert_eq!((r.spent, r.limit, r.fill), (Some(115.0), None, None), "no fraction of two different things");
+        let r = read_openrouter(
+            &wallet(Provider::Openrouter, Some(100.0)),
+            &all_time_only,
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            (r.spent, r.limit, r.fill),
+            (Some(115.0), None, None),
+            "no fraction of two different things"
+        );
     }
 
     /// The sentence that refuses a provider word, and the usage text,
@@ -2216,8 +2615,14 @@ mod tests {
     fn every_provider_word_is_named_where_a_person_would_look() {
         let refusal = msg::no_such_provider("x");
         for w in Provider::WORDS {
-            assert!(refusal.contains(w), "no-such-provider does not name {w}: {refusal}");
-            assert!(khor_catalog::cli::USAGE.contains(w), "the usage text does not name {w}");
+            assert!(
+                refusal.contains(w),
+                "no-such-provider does not name {w}: {refusal}"
+            );
+            assert!(
+                khor_catalog::cli::USAGE.contains(w),
+                "the usage text does not name {w}"
+            );
         }
     }
 
@@ -2227,7 +2632,9 @@ mod tests {
         // 2026-09-02T00:30:00Z
         let now_ms = 1_788_309_000_000;
         let start = month_start(now_ms);
-        let z = jiff::Timestamp::from_second(start).unwrap().to_zoned(jiff::tz::TimeZone::UTC);
+        let z = jiff::Timestamp::from_second(start)
+            .unwrap()
+            .to_zoned(jiff::tz::TimeZone::UTC);
         assert_eq!((z.year(), z.month(), z.day(), z.hour()), (2026, 9, 1, 0));
     }
 
@@ -2245,7 +2652,11 @@ mod tests {
         }
     }
 
-    fn a_window(span: khor_core::QuotaWindowSpan, scope: Option<&str>, used: f32) -> khor_core::QuotaWindow {
+    fn a_window(
+        span: khor_core::QuotaWindowSpan,
+        scope: Option<&str>,
+        used: f32,
+    ) -> khor_core::QuotaWindow {
         khor_core::QuotaWindow {
             span,
             scope: scope.map(str::to_owned),
@@ -2278,7 +2689,10 @@ mod tests {
         let acc = subscription("h");
         let taken = 1_788_309_000;
         let quota = Quota {
-            windows: vec![a_window(FiveHour, None, 4.0), a_window(SevenDay, Some("Fable"), 71.0)],
+            windows: vec![
+                a_window(FiveHour, None, 4.0),
+                a_window(SevenDay, Some("Fable"), 71.0),
+            ],
             as_of: Some(taken),
             plan: Some("Max 20x".into()),
             credits: None,
@@ -2287,11 +2701,27 @@ mod tests {
         let r = subscription_reading(&acc, Ok(quota), taken * 1000 + 600_000);
         assert_eq!(r.trouble, None);
         assert_eq!(r.account, "s1");
-        assert_eq!(r.fill, Some(0.39), "the node's one fraction, not a second opinion");
-        assert_eq!(r.at_ms, taken * 1000, "the reading's own age, not the moment it was asked for");
-        assert_eq!(r.windows.len(), 2, "every window crosses, including a model's slice");
+        assert_eq!(
+            r.fill,
+            Some(0.39),
+            "the node's one fraction, not a second opinion"
+        );
+        assert_eq!(
+            r.at_ms,
+            taken * 1000,
+            "the reading's own age, not the moment it was asked for"
+        );
+        assert_eq!(
+            r.windows.len(),
+            2,
+            "every window crosses, including a model's slice"
+        );
         assert_eq!(r.plan.as_deref(), Some("Max 20x"));
-        assert_eq!((r.spent, r.limit, r.remaining), (None, None, None), "a subscription has no spend");
+        assert_eq!(
+            (r.spent, r.limit, r.remaining),
+            (None, None, None),
+            "a subscription has no spend"
+        );
     }
 
     /// **Every way a subscription can be unreadable says which way it
@@ -2346,22 +2776,42 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let n = Node::open(root.clone()).unwrap();
         let add = |p: Provider, url: Option<&str>, key: &str, budget: Option<f64>| {
-            n.register_account("s", p, AccountKind::Sub, url, key, budget).unwrap_err()
+            n.register_account("s", p, AccountKind::Sub, url, key, budget)
+                .unwrap_err()
         };
         let no_use = msg::ACCOUNT_SUB_TAKES_NOTHING_ELSE;
         assert_eq!(add(Provider::Claude, None, "sk-x", None), no_use, "a key");
-        assert_eq!(add(Provider::Claude, Some("https://gw"), "", None), no_use, "an address");
-        assert_eq!(add(Provider::Claude, None, "", Some(20.0)), no_use, "a budget");
+        assert_eq!(
+            add(Provider::Claude, Some("https://gw"), "", None),
+            no_use,
+            "an address"
+        );
+        assert_eq!(
+            add(Provider::Claude, None, "", Some(20.0)),
+            no_use,
+            "a budget"
+        );
         assert_eq!(
             add(Provider::Newapi, None, "", None),
             msg::provider_has_no_sub("newapi", sub_provider_words().join("、")),
             "a gateway has no login to read"
         );
-        assert!(n.accounts().unwrap().is_empty(), "control: a refusal registers nothing");
+        assert!(
+            n.accounts().unwrap().is_empty(),
+            "control: a refusal registers nothing"
+        );
 
         n.commit_account(subscription(n.device_str())).unwrap();
         assert_eq!(
-            n.register_account("another", Provider::Claude, AccountKind::Sub, None, "", None).unwrap_err(),
+            n.register_account(
+                "another",
+                Provider::Claude,
+                AccountKind::Sub,
+                None,
+                "",
+                None
+            )
+            .unwrap_err(),
             msg::account_sub_already_here("max"),
             "one machine holds one login, so a second row could only repeat the first"
         );
@@ -2379,13 +2829,19 @@ mod tests {
     fn only_the_vendors_whose_login_khor_reads_can_be_subscribed_to() {
         assert_eq!(sub_provider_words(), ["claude"]);
         assert!(sub_reader(&Provider::Claude).is_some());
-        assert!(sub_reader(&Provider::Openai).is_none(), "codex's credential has not been read yet");
+        assert!(
+            sub_reader(&Provider::Openai).is_none(),
+            "codex's credential has not been read yet"
+        );
         assert!(sub_reader(&Provider::Other("quantum-llm".into())).is_none());
         // Every word the refusal offers is a word `parse` accepts —
         // otherwise it would name a kind nobody can type.
         let refusal = msg::no_such_kind("x");
         for w in AccountKind::WORDS {
-            assert!(refusal.contains(w), "no-such-kind does not name {w}: {refusal}");
+            assert!(
+                refusal.contains(w),
+                "no-such-kind does not name {w}: {refusal}"
+            );
         }
     }
     /// ⚠️ **The one field on OpenAI's usage report that is a trap, and
@@ -2417,7 +2873,8 @@ mod tests {
             for (k, v) in extra.as_object().unwrap() {
                 obj.insert(k.clone(), v.clone());
             }
-            let page = serde_json::json!({"data": [{"start_time": 1_800_000_000i64, "results": [r]}]});
+            let page =
+                serde_json::json!({"data": [{"start_time": 1_800_000_000i64, "results": [r]}]});
             let mut rows = TokenRows::new();
             openai_token_page(&page, &mut rows);
             token_rows(rows, true)
@@ -2427,10 +2884,18 @@ mod tests {
         assert_eq!(stated.len(), 1);
         assert_eq!(
             stated[0].tokens,
-            khor_core::Tokens { input: 150, cached_input: 800, cache_write: 50, output: 20 },
+            khor_core::Tokens {
+                input: 150,
+                cached_input: 800,
+                cache_write: 50,
+                output: 20
+            },
             "the uncached column, never the one that includes the cache"
         );
-        assert_ne!(stated[0].tokens.input, 1000, "…and 1000 is what reading `input_tokens` gives");
+        assert_ne!(
+            stated[0].tokens.input, 1000,
+            "…and 1000 is what reading `input_tokens` gives"
+        );
 
         let derived = result(serde_json::json!({}));
         assert_eq!(
@@ -2466,10 +2931,18 @@ mod tests {
         assert_eq!(out[0].model.as_deref(), Some("claude-opus-5"));
         assert_eq!(
             out[0].tokens,
-            khor_core::Tokens { input: 11, cached_input: 22, cache_write: 344, output: 55 },
+            khor_core::Tokens {
+                input: 11,
+                cached_input: 22,
+                cache_write: 344,
+                output: 55
+            },
             "300 + 44 — not 300, not 44, and not the larger of the two"
         );
-        assert!(out[0].cache_split, "this vendor states the cache, so the two columns mean something");
+        assert!(
+            out[0].cache_split,
+            "this vendor states the cache, so the two columns mean something"
+        );
     }
 
     /// **A report that did not honour the grouping is coarser, never
@@ -2505,11 +2978,21 @@ mod tests {
         let ungrouped = bucket(serde_json::Value::Null);
         assert_eq!(ungrouped.len(), 1);
         assert_eq!(ungrouped[0].model, None, "nobody said which model");
-        assert_eq!((ungrouped[0].tokens.input, ungrouped[0].tokens.output), (7, 3),
-            "and the day's total is still the day's total");
+        assert_eq!(
+            (ungrouped[0].tokens.input, ungrouped[0].tokens.output),
+            (7, 3),
+            "and the day's total is still the day's total"
+        );
         let grouped = bucket(serde_json::json!("gpt-5"));
-        assert_eq!(grouped[0].model.as_deref(), Some("gpt-5"), "the control: a named row is named");
-        assert_eq!(grouped[0].tokens, ungrouped[0].tokens, "same tokens, one field apart");
+        assert_eq!(
+            grouped[0].model.as_deref(),
+            Some("gpt-5"),
+            "the control: a named row is named"
+        );
+        assert_eq!(
+            grouped[0].tokens, ungrouped[0].tokens,
+            "same tokens, one field apart"
+        );
     }
 
     /// **An empty bucket is not a row, and the unnamed row sorts last.**
@@ -2566,7 +3049,9 @@ mod tests {
         let port = l.local_addr().unwrap().port();
         tokio::spawn(async move {
             for _ in 0..6 {
-                let Ok((mut sock, _)) = l.accept().await else { break };
+                let Ok((mut sock, _)) = l.accept().await else {
+                    break;
+                };
                 let mut buf = [0u8; 2048];
                 let n = sock.read(&mut buf).await.unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..n]).to_string();
@@ -2589,17 +3074,33 @@ mod tests {
 
         let mut account = wallet(Provider::Newapi, None);
         account.base_url = Some(format!("http://127.0.0.1:{port}"));
-        let r = fetch_newapi(&account, "sk-x", 0).await.expect("the gateway answered");
+        let r = fetch_newapi(&account, "sk-x", 0)
+            .await
+            .expect("the gateway answered");
 
-        assert_eq!(r.days.len(), 1, "the money came off the log, as it did before");
-        assert_eq!(r.model_tokens.len(), 1, "and the tokens came off the same log");
+        assert_eq!(
+            r.days.len(),
+            1,
+            "the money came off the log, as it did before"
+        );
+        assert_eq!(
+            r.model_tokens.len(),
+            1,
+            "and the tokens came off the same log"
+        );
         assert_eq!(r.model_tokens[0].model.as_deref(), Some("gpt-5"));
         assert_eq!(
-            (r.model_tokens[0].tokens.input, r.model_tokens[0].tokens.output),
+            (
+                r.model_tokens[0].tokens.input,
+                r.model_tokens[0].tokens.output
+            ),
             (123, 45),
             "the figures the gateway actually sent, through the reader that is actually called"
         );
-        assert!(!r.model_tokens[0].cache_split, "a gateway log has no cache columns to state");
+        assert!(
+            !r.model_tokens[0].cache_split,
+            "a gateway log has no cache columns to state"
+        );
     }
 
     /// **A reading *file* written before the token report still
@@ -2619,8 +3120,8 @@ mod tests {
     /// gets there first.
     #[test]
     fn a_reading_file_written_before_the_token_report_still_parses() {
-        let r: AccountReading = serde_json::from_str(OLD_READING_JSON)
-            .expect("the file on disk still parses");
+        let r: AccountReading =
+            serde_json::from_str(OLD_READING_JSON).expect("the file on disk still parses");
         assert_eq!(r.spent, Some(1.5), "what it did record survives whole");
         assert_eq!(r.days.len(), 1);
         assert!(
@@ -2676,7 +3177,10 @@ mod tests {
         let mut want = bare(&wallet(Provider::Newapi, None), None, 7);
         want.spent = Some(1.5);
         want.currency = Some("USD".to_owned());
-        want.days = vec![khor_core::DaySpend { at: 1_800_000_000, spent: 1.5 }];
+        want.days = vec![khor_core::DaySpend {
+            at: 1_800_000_000,
+            spent: 1.5,
+        }];
 
         let old_wire = rmp_serde::to_vec(&OldReading {
             account: want.account.clone(),
@@ -2705,12 +3209,16 @@ mod tests {
         })
         .unwrap();
         let fresh = rmp_serde::to_vec(&want).unwrap();
-        assert!(old_wire.len() < fresh.len(), "the old frame really is shorter: it lacks the field");
+        assert!(
+            old_wire.len() < fresh.len(),
+            "the old frame really is shorter: it lacks the field"
+        );
 
         let back: AccountReading = rmp_serde::from_slice(&old_wire).unwrap();
-        assert!(back.model_tokens.is_empty(), "an older peer's answer carries no token list");
+        assert!(
+            back.model_tokens.is_empty(),
+            "an older peer's answer carries no token list"
+        );
         assert_eq!(back, want, "and everything it did carry arrives unchanged");
     }
-
 }
-

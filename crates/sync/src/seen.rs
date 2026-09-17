@@ -79,12 +79,19 @@ pub struct SeenDoc {
 
 impl SeenDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     /// The session's watermark; 0 = never seen.
     pub fn watermark(&self, session: &str) -> i64 {
-        match self.inner.get_map(SEEN).get(session).and_then(|v| v.into_value().ok()) {
+        match self
+            .inner
+            .get_map(SEEN)
+            .get(session)
+            .and_then(|v| v.into_value().ok())
+        {
             Some(LoroValue::I64(n)) => n,
             _ => 0,
         }
@@ -111,7 +118,12 @@ impl SeenDoc {
     /// folding that into "never closed" would make an empty row the one
     /// row that cannot be put away.
     pub fn closed_watermark(&self, session: &str) -> Option<i64> {
-        match self.inner.get_map(CLOSED).get(session).and_then(|v| v.into_value().ok()) {
+        match self
+            .inner
+            .get_map(CLOSED)
+            .get(session)
+            .and_then(|v| v.into_value().ok())
+        {
             Some(LoroValue::I64(n)) => Some(n),
             _ => None,
         }
@@ -197,8 +209,13 @@ mod tests {
         let phone = SeenDoc::new(1).unwrap();
         let desk = SeenDoc::new(2).unwrap();
         phone.mark("chat/mac", 500).unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
-        assert_eq!(desk.watermark("chat/mac"), 500, "seen on the phone must clear on the desk");
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(
+            desk.watermark("chat/mac"),
+            500,
+            "seen on the phone must clear on the desk"
+        );
     }
 
     /// `Some(0)` and `None` are different answers: an empty conversation
@@ -230,7 +247,8 @@ mod tests {
         let phone = SeenDoc::new(1).unwrap();
         let desk = SeenDoc::new(2).unwrap();
         phone.put_away("chat/mac", 500).unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(desk.closed_watermark("chat/mac"), Some(500));
     }
 
@@ -246,6 +264,9 @@ mod tests {
         b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
         let (wa, wb) = (a.watermark("chat/mac"), b.watermark("chat/mac"));
         assert_eq!(wa, wb, "both sides must converge on one value");
-        assert!(wa == 300 || wa == 700, "the settled value must be one of the marks: {wa}");
+        assert!(
+            wa == 300 || wa == 700,
+            "the settled value must be one of the marks: {wa}"
+        );
     }
 }

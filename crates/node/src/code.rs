@@ -45,7 +45,11 @@ pub fn cli() -> Option<PathBuf> {
         return Some(PathBuf::from("code"));
     }
     let bundle = Path::new(MAC_BUNDLE);
-    if bundle.is_file() { Some(bundle.to_path_buf()) } else { None }
+    if bundle.is_file() {
+        Some(bundle.to_path_buf())
+    } else {
+        None
+    }
 }
 
 /// What one machine can say about its editor without starting anything.
@@ -83,7 +87,9 @@ pub struct Editor {
 /// commit, which is `code --version`'s second line, so asking whether
 /// the server is there means having asked the version already.
 pub fn probe() -> Editor {
-    let Some(exe) = cli() else { return Editor::default() };
+    let Some(exe) = cli() else {
+        return Editor::default();
+    };
     let Ok(out) = std::process::Command::new(exe).arg("--version").output() else {
         return Editor::default();
     };
@@ -94,7 +100,10 @@ pub fn probe() -> Editor {
     let mut lines = text.lines();
     let version = lines.next().unwrap_or("").trim().to_owned();
     let commit = lines.next().unwrap_or("").trim();
-    Editor { ready: !version.is_empty() && server_is_here(commit), version }
+    Editor {
+        ready: !version.is_empty() && server_is_here(commit),
+        version,
+    }
 }
 
 /// Whether `serve-web`'s server for `commit` is already unpacked.
@@ -141,7 +150,9 @@ fn server_under(base: &Path, commit: &str) -> bool {
 /// process and a second set of rules about quoting.
 fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
+    std::env::split_paths(&path)
+        .map(|d| d.join(name))
+        .find(|p| p.is_file())
 }
 
 /// The one running web face, if any.
@@ -209,8 +220,11 @@ pub fn serve() -> Result<(u16, String), String> {
             return Err(e);
         }
     };
-    *SERVING.lock().map_err(|e| e.to_string())? =
-        Some(Serving { port, token: token.clone(), child });
+    *SERVING.lock().map_err(|e| e.to_string())? = Some(Serving {
+        port,
+        token: token.clone(),
+        child,
+    });
     Ok((port, token))
 }
 
@@ -259,7 +273,10 @@ fn end(child: &mut std::process::Child) {
 /// so — rather than handing back a port nobody is on.
 fn read_port(child: &mut std::process::Child) -> Result<u16, String> {
     use std::io::{BufRead, BufReader};
-    let out = child.stdout.take().ok_or_else(|| msg::NO_VSCODE_OUTPUT.to_owned())?;
+    let out = child
+        .stdout
+        .take()
+        .ok_or_else(|| msg::NO_VSCODE_OUTPUT.to_owned())?;
     let err = child.stderr.take();
     let (tx, rx) = std::sync::mpsc::channel();
     // ⚠️ **Both pipes are drained for the life of the child, not until
@@ -282,11 +299,14 @@ fn read_port(child: &mut std::process::Child) -> Result<u16, String> {
         }
     });
     if let Some(err) = err {
-        std::thread::spawn(move || {
-            for _ in BufReader::new(err).lines().map_while(Result::ok) {}
-        });
+        std::thread::spawn(
+            move || {
+                for _ in BufReader::new(err).lines().map_while(Result::ok) {}
+            },
+        );
     }
-    rx.recv_timeout(READY).map_err(|_| msg::VSCODE_NEVER_ANSWERED.to_owned())
+    rx.recv_timeout(READY)
+        .map_err(|_| msg::VSCODE_NEVER_ANSWERED.to_owned())
 }
 
 /// The port inside `Web UI available at http://127.0.0.1:9123?tkn=…`.
@@ -295,7 +315,9 @@ fn read_port(child: &mut std::process::Child) -> Result<u16, String> {
 fn port_in(line: &str) -> Option<u16> {
     let at = line.find("http://127.0.0.1:")? + "http://127.0.0.1:".len();
     let rest = &line[at..];
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 
@@ -351,10 +373,16 @@ mod tests {
     fn a_finished_fetch_is_seen_and_a_different_commit_is_not() {
         let base = scratch("finished");
         unpacked(&base, "645f29cc3176500b4b5762ba887cf2a7f0ffdf2c");
-        assert!(server_under(&base, "645f29cc3176500b4b5762ba887cf2a7f0ffdf2c"));
+        assert!(server_under(
+            &base,
+            "645f29cc3176500b4b5762ba887cf2a7f0ffdf2c"
+        ));
         // **An upgraded VS Code is a download ahead again.** The old
         // commit's directory is still there and answers for nothing.
-        assert!(!server_under(&base, "0000000000000000000000000000000000000000"));
+        assert!(!server_under(
+            &base,
+            "0000000000000000000000000000000000000000"
+        ));
         let _ = std::fs::remove_dir_all(&base);
     }
 

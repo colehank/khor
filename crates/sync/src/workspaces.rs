@@ -127,11 +127,18 @@ pub struct WorkspaceDoc {
 
 impl WorkspaceDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     pub fn state(&self, key: &str) -> State {
-        match self.inner.get_map(WORKSPACES).get(key).and_then(|v| v.into_value().ok()) {
+        match self
+            .inner
+            .get_map(WORKSPACES)
+            .get(key)
+            .and_then(|v| v.into_value().ok())
+        {
             Some(LoroValue::I64(n)) => State::of(n),
             _ => State::No,
         }
@@ -224,19 +231,31 @@ mod tests {
         let desk = WorkspaceDoc::new(2).unwrap();
         let k = key("d1e6", "/Users/x/working/test");
 
-        assert_eq!(phone.state(&k), State::No, "never declared = not a workspace");
+        assert_eq!(
+            phone.state(&k),
+            State::No,
+            "never declared = not a workspace"
+        );
         phone.set(&k, State::Yes).unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(desk.state(&k), State::Yes, "declaring it travels");
         assert_eq!(desk.all(), vec![(k.clone(), State::Yes)]);
 
         desk.set(&k, State::Pinned).unwrap();
-        phone.merge(&desk.changes_since(&phone.version()).unwrap()).unwrap();
+        phone
+            .merge(&desk.changes_since(&phone.version()).unwrap())
+            .unwrap();
         assert_eq!(phone.state(&k), State::Pinned, "pinning travels back");
 
         phone.set(&k, State::Yes).unwrap();
-        desk.merge(&phone.changes_since(&desk.version()).unwrap()).unwrap();
-        assert_eq!(desk.state(&k), State::Yes, "unpinning leaves it a workspace");
+        desk.merge(&phone.changes_since(&desk.version()).unwrap())
+            .unwrap();
+        assert_eq!(
+            desk.state(&k),
+            State::Yes,
+            "unpinning leaves it a workspace"
+        );
         assert_eq!(desk.items(), 1);
     }
 
@@ -254,12 +273,21 @@ mod tests {
         let b = WorkspaceDoc::new(2).unwrap();
         let k = key("beef", "/srv/thing");
         a.set(&k, State::Pinned).unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
-        assert_eq!(b.state(&k), State::Pinned, "control: it arrived a workspace");
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(
+            b.state(&k),
+            State::Pinned,
+            "control: it arrived a workspace"
+        );
 
         b.set(&k, State::No).unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
-        assert_eq!(a.state(&k), State::No, "the removal must reach the other side too");
+        assert_eq!(
+            a.state(&k),
+            State::No,
+            "the removal must reach the other side too"
+        );
         assert!(a.all().is_empty(), "a removed workspace is not a row");
         assert_eq!(a.items(), 0, "and not an item");
 
@@ -270,7 +298,11 @@ mod tests {
         b.set(&j, State::No).unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
         b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
-        assert_eq!(a.state(&j), b.state(&j), "both sides must land on one answer");
+        assert_eq!(
+            a.state(&j),
+            b.state(&j),
+            "both sides must land on one answer"
+        );
     }
 
     /// A no-change write grows nothing: this sits behind a click, and
@@ -290,6 +322,10 @@ mod tests {
         let fresh = WorkspaceDoc::new(3).unwrap();
         let empty = fresh.version();
         fresh.set(&key("cafe", "/w/never"), State::No).unwrap();
-        assert_eq!(fresh.version(), empty, "removing what was never declared writes nothing");
+        assert_eq!(
+            fresh.version(),
+            empty,
+            "removing what was never declared writes nothing"
+        );
     }
 }

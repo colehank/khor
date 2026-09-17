@@ -99,7 +99,9 @@ fn refresh(sys: &mut sysinfo::System) {
 /// created since start is the one case a stale list answers wrongly,
 /// and a miss is exactly when it shows.
 fn user_of(users: &mut sysinfo::Users, p: &sysinfo::Process) -> String {
-    let Some(uid) = p.user_id() else { return String::new() };
+    let Some(uid) = p.user_id() else {
+        return String::new();
+    };
     if let Some(u) = users.get_user_by_id(uid) {
         return u.name().to_owned();
     }
@@ -184,7 +186,11 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 // **The platform is a parameter, not a `cfg`** — see
                 // `status_token`, where the two disagreements that
                 // matter are written down.
-                status: Some(status_token(p.status(), cfg!(target_os = "macos"), mac_running(pid))),
+                status: Some(status_token(
+                    p.status(),
+                    cfg!(target_os = "macos"),
+                    mac_running(pid),
+                )),
                 // CPU-milliseconds since the process started. Comes
                 // with `with_cpu()`, which this refresh already asks
                 // for, so it costs nothing beyond the read.
@@ -193,11 +199,14 @@ pub fn sample_top(n: usize, by: khor_core::TopBy, desc: bool) -> Vec<TopRow> {
                 // the library answers an unreadable one with a zero,
                 // and a zero here is a claim about the process rather
                 // than about the permission (`io_readable`).
-                io_bytes: io_readable(mine.as_deref(), p.user_id().map(|u| u.to_string()).as_deref())
-                    .then(|| {
-                        let io = p.disk_usage();
-                        io.total_read_bytes.saturating_add(io.total_written_bytes)
-                    }),
+                io_bytes: io_readable(
+                    mine.as_deref(),
+                    p.user_id().map(|u| u.to_string()).as_deref(),
+                )
+                .then(|| {
+                    let io = p.disk_usage();
+                    io.total_read_bytes.saturating_add(io.total_written_bytes)
+                }),
             }
         })
         .collect();
@@ -316,7 +325,13 @@ fn mac_running(pid: u32) -> Option<bool> {
     // call, and the kernel writes at most that many bytes into it. A
     // short write is refused below rather than read.
     let got = unsafe {
-        libc::proc_pidinfo(pid as i32, libc::PROC_PIDTASKINFO, 0, (&mut ti as *mut libc::proc_taskinfo).cast(), want)
+        libc::proc_pidinfo(
+            pid as i32,
+            libc::PROC_PIDTASKINFO,
+            0,
+            (&mut ti as *mut libc::proc_taskinfo).cast(),
+            want,
+        )
     };
     (got == want).then_some(ti.pti_numrunning > 0)
 }
@@ -419,8 +434,14 @@ fn fill_args(sys: &mut sysinfo::System, rows: &mut [khor_core::TopRow]) {
         sysinfo::ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always),
     );
     for r in rows.iter_mut() {
-        let Some(p) = sys.process(sysinfo::Pid::from_u32(r.pid)) else { continue };
-        let argv: Vec<String> = p.cmd().iter().map(|a| a.to_string_lossy().into_owned()).collect();
+        let Some(p) = sys.process(sysinfo::Pid::from_u32(r.pid)) else {
+            continue;
+        };
+        let argv: Vec<String> = p
+            .cmd()
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
         r.arg = pick_arg(&argv);
     }
 }
@@ -456,10 +477,9 @@ fn fill_args(sys: &mut sysinfo::System, rows: &mut [khor_core::TopRow]) {
 /// after it — breaks the `-m` case above, where the word after the flag
 /// is the whole answer. This is the trade, taken deliberately.
 fn pick_arg(argv: &[String]) -> Option<String> {
-    let word = argv
-        .iter()
-        .skip(1)
-        .find(|a| !a.starts_with('-') && !a.trim().is_empty() && !a.chars().all(|c| c.is_ascii_digit()))?;
+    let word = argv.iter().skip(1).find(|a| {
+        !a.starts_with('-') && !a.trim().is_empty() && !a.chars().all(|c| c.is_ascii_digit())
+    })?;
     Some(word.chars().take(khor_core::ARG_CAP).collect())
 }
 
@@ -512,7 +532,11 @@ pub(crate) fn rank(rows: &mut [TopRow], by: khor_core::TopBy, desc: bool) {
         };
         // `Busiest` is already biggest-first; the others are read the
         // way the caller asked.
-        let order = if desc && !matches!(by, TopBy::Busiest) { order.reverse() } else { order };
+        let order = if desc && !matches!(by, TopBy::Busiest) {
+            order.reverse()
+        } else {
+            order
+        };
         order.then(a.pid.cmp(&b.pid))
     });
 }
@@ -560,11 +584,23 @@ mod tests {
         use sysinfo::ProcessStatus as S;
         // Linux `'I'`: an idle kernel thread. macOS `SIDL`: a process
         // being created by fork. Not the same fact, not the same word.
-        assert_eq!(status_token(S::Idle, false, None), "idle", "Linux's I is an idle kernel thread");
-        assert_eq!(status_token(S::Idle, true, None), "spawning", "macOS's SIDL is a process being forked");
+        assert_eq!(
+            status_token(S::Idle, false, None),
+            "idle",
+            "Linux's I is an idle kernel thread"
+        );
+        assert_eq!(
+            status_token(S::Idle, true, None),
+            "spawning",
+            "macOS's SIDL is a process being forked"
+        );
         // Linux `'X'`: finished. macOS: what sysinfo returns for a
         // thread in uninterruptible wait — which is Linux's `'D'`.
-        assert_eq!(status_token(S::Dead, false, None), "dead", "Linux's X really is finished");
+        assert_eq!(
+            status_token(S::Dead, false, None),
+            "dead",
+            "Linux's X really is finished"
+        );
         assert_eq!(
             status_token(S::Dead, true, None),
             status_token(S::UninterruptibleDiskSleep, false, None),
@@ -573,7 +609,11 @@ mod tests {
         // And the one they do agree on, so the pairs above are read as
         // a difference rather than as this function answering by
         // platform for everything.
-        assert_eq!(status_token(S::Run, true, Some(true)), status_token(S::Run, false, None), "running is running");
+        assert_eq!(
+            status_token(S::Run, true, Some(true)),
+            status_token(S::Run, false, None),
+            "running is running"
+        );
     }
 
     /// **The second opinion can tell the two apart**, which is the
@@ -634,7 +674,10 @@ mod tests {
         assert_eq!(status_token(S::Unknown(13), true, None), "unknown-13");
         // The point of keeping the number: two unknowns are two
         // different states, and one word for both would hide that.
-        assert_ne!(status_token(S::Unknown(13), false, None), status_token(S::Unknown(7), false, None));
+        assert_ne!(
+            status_token(S::Unknown(13), false, None),
+            status_token(S::Unknown(7), false, None)
+        );
     }
 
     /// **A disk figure khor is not allowed to read is absent, not
@@ -648,15 +691,33 @@ mod tests {
     /// about the permission (我看不到).
     #[test]
     fn a_process_khor_may_not_read_has_no_disk_figure_rather_than_a_zero() {
-        assert!(io_readable(Some("501"), Some("501")), "our own process is readable");
-        assert!(!io_readable(Some("501"), Some("0")), "root's is not, and a zero would be a lie");
-        assert!(!io_readable(Some("501"), Some("502")), "nor another account's");
-        assert!(io_readable(Some("0"), Some("502")), "root reads everybody's — that is the difference");
-        assert!(!io_readable(None, Some("501")), "not knowing who we are is not permission to guess");
+        assert!(
+            io_readable(Some("501"), Some("501")),
+            "our own process is readable"
+        );
+        assert!(
+            !io_readable(Some("501"), Some("0")),
+            "root's is not, and a zero would be a lie"
+        );
+        assert!(
+            !io_readable(Some("501"), Some("502")),
+            "nor another account's"
+        );
+        assert!(
+            io_readable(Some("0"), Some("502")),
+            "root reads everybody's — that is the difference"
+        );
+        assert!(
+            !io_readable(None, Some("501")),
+            "not knowing who we are is not permission to guess"
+        );
         // A process whose account the machine will not name is not
         // ours by default — the same absent-is-not-a-match rule the
         // rest of these rows follow.
-        assert!(!io_readable(Some("501"), None), "and a process with no account named is not ours");
+        assert!(
+            !io_readable(Some("501"), None),
+            "and a process with no account named is not ours"
+        );
     }
 
     /// **The clock is not an age**, and this is the reading that proved
@@ -677,13 +738,41 @@ mod tests {
         // The machine as it stood when this was measured: up five days
         // and change, with `loginwindow` running for all of it.
         let up = 447_400;
-        assert_eq!(age(0, 1_788_456_507, up), None, "the real reading that started this: unreadable start time");
-        assert_eq!(age(1, 1_788_456_507, up), None, "and the same lie with a start time that is merely wrong");
-        assert_eq!(age(1_788_000_000, 447_360, up), Some(447_360), "a process up as long as the box is fine");
-        assert_eq!(age(1_788_000_000, up, up), Some(up), "including one that has been up for exactly all of it");
-        assert_eq!(age(1_788_000_000, up + 1, up), None, "one second older than the machine cannot be true");
-        assert_eq!(age(1_788_000_000, 3, up), Some(3), "so is one that started three seconds ago");
-        assert_eq!(age(1_788_000_000, 0, up), None, "and zero is absent, not 刚起的");
+        assert_eq!(
+            age(0, 1_788_456_507, up),
+            None,
+            "the real reading that started this: unreadable start time"
+        );
+        assert_eq!(
+            age(1, 1_788_456_507, up),
+            None,
+            "and the same lie with a start time that is merely wrong"
+        );
+        assert_eq!(
+            age(1_788_000_000, 447_360, up),
+            Some(447_360),
+            "a process up as long as the box is fine"
+        );
+        assert_eq!(
+            age(1_788_000_000, up, up),
+            Some(up),
+            "including one that has been up for exactly all of it"
+        );
+        assert_eq!(
+            age(1_788_000_000, up + 1, up),
+            None,
+            "one second older than the machine cannot be true"
+        );
+        assert_eq!(
+            age(1_788_000_000, 3, up),
+            Some(3),
+            "so is one that started three seconds ago"
+        );
+        assert_eq!(
+            age(1_788_000_000, 0, up),
+            None,
+            "and zero is absent, not 刚起的"
+        );
     }
 
     /// **The identifying word actually arrives on a real reading.**
@@ -720,24 +809,58 @@ mod tests {
     fn the_identifying_word_is_the_first_argument_that_is_not_a_flag() {
         let argv = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
         let pick = |s: &str| pick_arg(&argv(s));
-        assert_eq!(pick("python -m vllm.entrypoints.openai.api_server").as_deref(), Some("vllm.entrypoints.openai.api_server"));
-        assert_eq!(pick("python train.py --config big.yaml").as_deref(), Some("train.py"));
+        assert_eq!(
+            pick("python -m vllm.entrypoints.openai.api_server").as_deref(),
+            Some("vllm.entrypoints.openai.api_server")
+        );
+        assert_eq!(
+            pick("python train.py --config big.yaml").as_deref(),
+            Some("train.py")
+        );
         assert_eq!(pick("cargo build --release").as_deref(), Some("build"));
         // argv[0] is the interpreter, and the interpreter is the word
         // `name` already said — handing it back would answer `python3`
         // for exactly the rows this is meant to separate.
-        assert_eq!(pick("python3").as_deref(), None, "an executable with no arguments identifies nothing further");
+        assert_eq!(
+            pick("python3").as_deref(),
+            None,
+            "an executable with no arguments identifies nothing further"
+        );
         assert_eq!(pick("khor serve").as_deref(), Some("serve"));
-        assert_eq!(pick("nginx -g daemon off;").as_deref(), Some("daemon"), "a flag's value counts when nothing else does");
+        assert_eq!(
+            pick("nginx -g daemon off;").as_deref(),
+            Some("daemon"),
+            "a flag's value counts when nothing else does"
+        );
         // **A bare number is never the word.** These are the real
         // readings the rule leaked before it skipped them — 44 of
         // hinton's 158 answers were one of these.
-        assert_eq!(pick("sleep 5").as_deref(), None, "「5」 says nothing about which program this is");
-        assert_eq!(pick("/lib/systemd/systemd --system --deserialize 76").as_deref(), None, "systemd, not systemd 76");
+        assert_eq!(
+            pick("sleep 5").as_deref(),
+            None,
+            "「5」 says nothing about which program this is"
+        );
+        assert_eq!(
+            pick("/lib/systemd/systemd --system --deserialize 76").as_deref(),
+            None,
+            "systemd, not systemd 76"
+        );
         assert_eq!(pick("go.d.plugin 1").as_deref(), None);
-        assert_eq!(pick("python 2to3.py").as_deref(), Some("2to3.py"), "a word that merely starts with a digit stays");
-        assert_eq!(pick_arg(&[]), None, "a kernel thread has no command line at all");
-        assert_eq!(pick_arg(&["python".into(), "--verbose".into()]).as_deref(), None, "flags only: nothing to say");
+        assert_eq!(
+            pick("python 2to3.py").as_deref(),
+            Some("2to3.py"),
+            "a word that merely starts with a digit stays"
+        );
+        assert_eq!(
+            pick_arg(&[]),
+            None,
+            "a kernel thread has no command line at all"
+        );
+        assert_eq!(
+            pick_arg(&["python".into(), "--verbose".into()]).as_deref(),
+            None,
+            "flags only: nothing to say"
+        );
         // **The rule's own limit, pinned so it is a decision rather
         // than a surprise**: a flag that takes a value is not known to
         // be one, so this lands on the value rather than the path
@@ -753,8 +876,15 @@ mod tests {
         let cap = khor_core::ARG_CAP;
         let long = format!("python /{}", "路".repeat(cap * 2));
         let got = pick(&long).unwrap();
-        assert_eq!(got.chars().count(), cap, "a very long token is cut to the cap");
-        assert!(got.chars().skip(1).all(|c| c == '路'), "and every character survived whole");
+        assert_eq!(
+            got.chars().count(),
+            cap,
+            "a very long token is cut to the cap"
+        );
+        assert!(
+            got.chars().skip(1).all(|c| c == '路'),
+            "and every character survived whole"
+        );
     }
 
     /// The age column obeys the same rule as the card columns: **a
@@ -827,17 +957,32 @@ mod tests {
         use khor_core::TopBy;
         // The busiest by CPU is not the biggest by memory — which is the
         // whole reason ranking travels to the machine.
-        let base =
-            vec![row(1, "big-mem", 1.0, 900, None), row(2, "busy", 90.0, 10, None), row(3, "mid", 50.0, 500, None)];
+        let base = vec![
+            row(1, "big-mem", 1.0, 900, None),
+            row(2, "busy", 90.0, 10, None),
+            row(3, "mid", 50.0, 500, None),
+        ];
         let ranked = |by: TopBy, desc: bool| {
             let mut r = base.clone();
             rank(&mut r, by, desc);
             r.iter().map(|x| x.pid).collect::<Vec<_>>()
         };
         assert_eq!(ranked(TopBy::Cpu, true), vec![2, 3, 1]);
-        assert_eq!(ranked(TopBy::Mem, true), vec![1, 3, 2], "memory ranks a different machine's worth of rows");
-        assert_eq!(ranked(TopBy::Busiest, true), vec![2, 3, 1], "the node's own order is CPU first");
-        assert_eq!(ranked(TopBy::Name, false), vec![1, 2, 3], "A to Z: big-mem, busy, mid");
+        assert_eq!(
+            ranked(TopBy::Mem, true),
+            vec![1, 3, 2],
+            "memory ranks a different machine's worth of rows"
+        );
+        assert_eq!(
+            ranked(TopBy::Busiest, true),
+            vec![2, 3, 1],
+            "the node's own order is CPU first"
+        );
+        assert_eq!(
+            ranked(TopBy::Name, false),
+            vec![1, 2, 3],
+            "A to Z: big-mem, busy, mid"
+        );
     }
 
     /// The three columns of 2026-09-05 rank by themselves too — and
@@ -857,8 +1002,11 @@ mod tests {
     #[test]
     fn the_status_the_cpu_time_and_the_disk_total_each_rank_by_themselves() {
         use khor_core::TopBy;
-        let mut base =
-            vec![row(1, "a", 1.0, 1, None), row(2, "b", 1.0, 1, None), row(3, "c", 1.0, 1, None)];
+        let mut base = vec![
+            row(1, "a", 1.0, 1, None),
+            row(2, "b", 1.0, 1, None),
+            row(3, "c", 1.0, 1, None),
+        ];
         // zombie < run < sleep alphabetically, so the words group in an
         // order none of the numbers below would give.
         base[0].status = Some("sleep".into());
@@ -875,11 +1023,27 @@ mod tests {
             rank(&mut r, by, desc);
             r.iter().map(|x| x.pid).collect::<Vec<_>>()
         };
-        assert_eq!(ranked(TopBy::Status, false), vec![3, 1, 2], "A to Z on the token: run, sleep, zombie");
-        assert_eq!(ranked(TopBy::Status, true), vec![2, 1, 3], "and the reader flips which clump is on top");
-        assert_eq!(ranked(TopBy::CpuTime, true), vec![3, 1, 2], "most CPU burned first");
+        assert_eq!(
+            ranked(TopBy::Status, false),
+            vec![3, 1, 2],
+            "A to Z on the token: run, sleep, zombie"
+        );
+        assert_eq!(
+            ranked(TopBy::Status, true),
+            vec![2, 1, 3],
+            "and the reader flips which clump is on top"
+        );
+        assert_eq!(
+            ranked(TopBy::CpuTime, true),
+            vec![3, 1, 2],
+            "most CPU burned first"
+        );
         assert_eq!(ranked(TopBy::CpuTime, false), vec![2, 1, 3], "least first");
-        assert_eq!(ranked(TopBy::Io, true), vec![1, 3, 2], "most bytes first, the unreadable one last");
+        assert_eq!(
+            ranked(TopBy::Io, true),
+            vec![1, 3, 2],
+            "most bytes first, the unreadable one last"
+        );
         assert_eq!(
             ranked(TopBy::Io, false),
             vec![3, 1, 2],
@@ -914,7 +1078,10 @@ mod tests {
 
         assert!(!rows.is_empty(), "a live machine runs processes");
         let me = std::process::id();
-        let mine = rows.iter().find(|r| r.pid == me).expect("this very process is on the table");
+        let mine = rows
+            .iter()
+            .find(|r| r.pid == me)
+            .expect("this very process is on the table");
         assert!(
             mine.cpu_pct > 0.0,
             "one thread was pinned for the whole window and reads {}",
@@ -925,14 +1092,22 @@ mod tests {
         // The account is this test's own, which the platform can always
         // spell — so an empty word here is the column not being asked
         // for, not a machine that would not say.
-        assert!(!mine.user.is_empty(), "this process's own account is spellable");
+        assert!(
+            !mine.user.is_empty(),
+            "this process's own account is spellable"
+        );
         assert!(
             !mine.user.chars().all(|c| c.is_ascii_digit()),
             "the account has a name, not just an id: {}",
             mine.user
         );
         for r in &rows {
-            assert!(r.cpu_pct >= 0.0, "a rate is not negative: {} on {}", r.cpu_pct, r.name);
+            assert!(
+                r.cpu_pct >= 0.0,
+                "a rate is not negative: {} on {}",
+                r.cpu_pct,
+                r.name
+            );
         }
     }
 
@@ -961,4 +1136,3 @@ mod tests {
         }
     }
 }
-

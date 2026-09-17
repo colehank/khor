@@ -51,7 +51,9 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
 
     let beta = Node::open_as(rb.clone(), "beta").unwrap();
     assert!(
-        beta.load_on("alpha", 3, TopBy::Busiest, true).await.is_err(),
+        beta.load_on("alpha", 3, TopBy::Busiest, true)
+            .await
+            .is_err(),
         "a machine beta has never met must be refused, not answered"
     );
 
@@ -62,22 +64,33 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
         .unwrap();
     khor_node::reactor::forget();
 
-    let load = timeout(Duration::from_secs(60), beta.load_on("alpha", 3, TopBy::Busiest, true))
-        .await
-        .expect("the ask must finish")
-        .expect("alpha answers its paired peer");
+    let load = timeout(
+        Duration::from_secs(60),
+        beta.load_on("alpha", 3, TopBy::Busiest, true),
+    )
+    .await
+    .expect("the ask must finish")
+    .expect("alpha answers its paired peer");
     let stalled = khor_node::reactor::worst_stall_ms();
     assert!(
         stalled < 1000,
         "the serve's reactor was unavailable for {stalled} ms — the load handler is blocking it"
     );
     assert!(!load.top.is_empty(), "a live machine runs processes");
-    assert!(load.top.len() <= 3, "three rows asked, {} answered", load.top.len());
+    assert!(
+        load.top.len() <= 3,
+        "three rows asked, {} answered",
+        load.top.len()
+    );
     for r in &load.top {
         assert!(!r.name.is_empty(), "a process has a name: {r:?}");
         assert!(r.cpu_pct >= 0.0, "a rate is not negative: {r:?}");
     }
-    assert_eq!(load.cpu_day.buckets.len(), 288, "a day of five-minute buckets");
+    assert_eq!(
+        load.cpu_day.buckets.len(),
+        288,
+        "a day of five-minute buckets"
+    );
     // The serve's recorder takes its first reading on its first beat —
     // which comes after the endpoint is bound, and in a test process
     // the first touch of the network stack is the slow part (#73) —
@@ -87,9 +100,14 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
     // how many seconds the first beat took is not the claim.
     let mut day = load.cpu_day;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-    while day.buckets.last().copied().flatten().is_none() && tokio::time::Instant::now() < deadline {
+    while day.buckets.last().copied().flatten().is_none() && tokio::time::Instant::now() < deadline
+    {
         tokio::time::sleep(Duration::from_secs(2)).await;
-        day = beta.load_on("alpha", 3, TopBy::Busiest, true).await.expect("alpha keeps answering").cpu_day;
+        day = beta
+            .load_on("alpha", 3, TopBy::Busiest, true)
+            .await
+            .expect("alpha keeps answering")
+            .cpu_day;
     }
     let file = std::fs::read_to_string(ra.join(".khor").join("history").join("cpu"));
     assert!(
@@ -148,13 +166,19 @@ async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
     wait_for_endpoint_file(&rb).await;
     khor_node::reactor::forget();
 
-    assert!(wires.names().await.is_empty(), "nothing is held before anything is asked");
+    assert!(
+        wires.names().await.is_empty(),
+        "nothing is held before anything is asked"
+    );
 
     for round in 1..=3 {
-        timeout(Duration::from_secs(60), beta.load_on("alpha", 3, TopBy::Busiest, true))
-            .await
-            .unwrap_or_else(|_| panic!("ask {round} must finish"))
-            .unwrap_or_else(|e| panic!("ask {round} must be answered: {e}"));
+        timeout(
+            Duration::from_secs(60),
+            beta.load_on("alpha", 3, TopBy::Busiest, true),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("ask {round} must finish"))
+        .unwrap_or_else(|e| panic!("ask {round} must be answered: {e}"));
         assert_eq!(
             wires.names().await,
             vec!["alpha".to_owned()],

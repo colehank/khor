@@ -27,7 +27,9 @@ fn five_peers_converge_after_random_partitions() {
 
     for round in 0..40 {
         let a = rng.upto(5);
-        docs[a].tell(&me(&format!("p{a}")), &format!("第 {round} 句")).unwrap();
+        docs[a]
+            .tell(&me(&format!("p{a}")), &format!("第 {round} 句"))
+            .unwrap();
         let (x, y) = (rng.upto(5), rng.upto(5));
         if x != y {
             let up = docs[x].changes_since(&docs[y].version()).unwrap();
@@ -56,7 +58,11 @@ fn five_peers_converge_after_random_partitions() {
     // mean render() returns the same string for everything.
     let lonely = ChatDoc::new(99).unwrap();
     lonely.tell(&me("nobody"), "talking to itself").unwrap();
-    assert_ne!(render(&lonely), first, "the unsynced one must not match the rest");
+    assert_ne!(
+        render(&lonely),
+        first,
+        "the unsynced one must not match the rest"
+    );
 }
 
 /// Merging the same block twice equals once — reconnects, replays,
@@ -80,7 +86,8 @@ fn merging_the_same_block_twice_changes_nothing() {
 fn a_huge_attachment_only_costs_its_metadata() {
     let a = ChatDoc::new(1).unwrap();
     for i in 0..200 {
-        a.tell(&me("a"), &format!("一句普通的话,第 {i} 条")).unwrap();
+        a.tell(&me("a"), &format!("一句普通的话,第 {i} 条"))
+            .unwrap();
     }
     let b = ChatDoc::new(2).unwrap();
     b.merge(&a.snapshot().unwrap()).unwrap();
@@ -134,15 +141,27 @@ fn a_dumb_node_that_only_holds_bytes_gives_the_same_result() {
     fs::write(dir.join("c.loro"), &fc).unwrap();
 
     let viafile = ChatDoc::new(7).unwrap();
-    viafile.merge(&fs::read(dir.join("a.loro")).unwrap()).unwrap();
-    viafile.merge(&fs::read(dir.join("c.loro")).unwrap()).unwrap();
+    viafile
+        .merge(&fs::read(dir.join("a.loro")).unwrap())
+        .unwrap();
+    viafile
+        .merge(&fs::read(dir.join("c.loro")).unwrap())
+        .unwrap();
 
     let direct = ChatDoc::new(8).unwrap();
     direct.merge(&fa).unwrap();
     direct.merge(&fc).unwrap();
 
-    assert_eq!(render(&viafile), render(&direct), "via file and direct must be identical");
-    assert_eq!(viafile.messages().len(), 2, "messages from both sides must be there");
+    assert_eq!(
+        render(&viafile),
+        render(&direct),
+        "via file and direct must be identical"
+    );
+    assert_eq!(
+        viafile.messages().len(),
+        2,
+        "messages from both sides must be there"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -165,8 +184,14 @@ fn undo_only_takes_back_my_own_message() {
     assert!(a.undo().unwrap(), "undo should really run");
 
     let left = render(&a);
-    assert!(left.contains("a line from someone else"), "the other's line must remain:\n{left}");
-    assert!(!left.contains("my first line"), "my own line should be gone:\n{left}");
+    assert!(
+        left.contains("a line from someone else"),
+        "the other's line must remain:\n{left}"
+    );
+    assert!(
+        !left.contains("my first line"),
+        "my own line should be gone:\n{left}"
+    );
 }
 
 /// Retraction is a soft delete: the slot stays, marked. Hard removal
@@ -181,8 +206,14 @@ fn retracting_keeps_the_slot() {
     d.retract(&id).unwrap();
     let msgs = d.messages();
     assert_eq!(msgs.len(), 3, "the slot stays, not carved out");
-    assert!(msgs[1].retracted, "the middle one should be flagged retracted");
-    assert!(!msgs[0].retracted && !msgs[2].retracted, "the others must not be dragged along");
+    assert!(
+        msgs[1].retracted,
+        "the middle one should be flagged retracted"
+    );
+    assert!(
+        !msgs[0].retracted && !msgs[2].retracted,
+        "the others must not be dragged along"
+    );
 }
 
 /// One device edits while another retracts; both must survive. This

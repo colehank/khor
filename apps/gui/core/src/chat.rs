@@ -230,14 +230,34 @@ fn frame_of(note: GuiNote) -> ChatFrame {
         GuiNote::Note(s) => ChatFrame::Note { update: parse(s) },
         GuiNote::History(s) => ChatFrame::History { update: parse(s) },
         GuiNote::HistoryEnd => ChatFrame::HistoryEnd,
-        GuiNote::Ask { ask, title, options } => ChatFrame::Ask { ask, title, options },
+        GuiNote::Ask {
+            ask,
+            title,
+            options,
+        } => ChatFrame::Ask {
+            ask,
+            title,
+            options,
+        },
         GuiNote::Answered { ask, option } => ChatFrame::Answered { ask, option },
         GuiNote::Turning => ChatFrame::Turning,
         GuiNote::Turn(stop) => ChatFrame::Turn { stop },
         GuiNote::Gone => ChatFrame::Gone,
-        GuiNote::Agent { name, replays, images, embeds, lists, needs_login } => {
-            ChatFrame::Agent { name, replays, images, embeds, lists, needs_login }
-        }
+        GuiNote::Agent {
+            name,
+            replays,
+            images,
+            embeds,
+            lists,
+            needs_login,
+        } => ChatFrame::Agent {
+            name,
+            replays,
+            images,
+            embeds,
+            lists,
+            needs_login,
+        },
         GuiNote::Refused { why } => ChatFrame::Refused { why },
         GuiNote::Settings(s) => ChatFrame::Settings { settings: parse(s) },
     }
@@ -273,7 +293,9 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             khor_node::host::connect_at(&addr, &cookie, 0, 0)?
         }
         None => {
-            let dir = n.session_dir(&sid).ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
+            let dir = n
+                .session_dir(&sid)
+                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
             connect(&dir, 0, 0)?
         }
     };
@@ -351,7 +373,14 @@ pub fn chat_say_with(
 ) -> Result<(), String> {
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::SayWith { text: text.to_owned(), images, files })
+    write_frame(
+        &mut *conn,
+        &GuiOp::SayWith {
+            text: text.to_owned(),
+            images,
+            files,
+        },
+    )
 }
 
 /// The answer to an [`ChatFrame::Ask`]: the chosen option id, or `None`
@@ -381,11 +410,21 @@ pub fn chat_set_option(id: &str, option: &str, value: &serde_json::Value) -> Res
     let value = match value {
         serde_json::Value::String(v) => Choice::Value(v.clone()),
         serde_json::Value::Bool(on) => Choice::Switch(*on),
-        other => return Err(format!("an option is set to a word or a switch, not {other}")),
+        other => {
+            return Err(format!(
+                "an option is set to a word or a switch, not {other}"
+            ));
+        }
     };
     let chat = chat_of(id)?;
     let mut conn = chat.conn.lock().unwrap();
-    write_frame(&mut *conn, &GuiOp::SetOption { id: option.to_owned(), value })
+    write_frame(
+        &mut *conn,
+        &GuiOp::SetOption {
+            id: option.to_owned(),
+            value,
+        },
+    )
 }
 
 /// Ends the running turn — not the session (`GuiOp::Stop`).
@@ -425,7 +464,9 @@ pub fn history(root: &Path, id: &str) -> Result<Vec<ChatFrame>, String> {
         .filter_map(khor_node::replayed_update)
         .map(|update| {
             let update = serde_json::to_value(&update).unwrap_or(serde_json::Value::Null);
-            ChatFrame::History { update: serde_json::json!({ "sessionId": id, "update": update }) }
+            ChatFrame::History {
+                update: serde_json::json!({ "sessionId": id, "update": update }),
+            }
         })
         .collect();
     frames.push(ChatFrame::HistoryEnd);
@@ -468,7 +509,11 @@ pub fn history_follow(root: &Path, id: &str, from: u64) -> Result<Followed, Stri
     if follow.rewound {
         frames.push(ChatFrame::HistoryEnd);
     }
-    Ok(Followed { frames, at: follow.at, following: follow.following })
+    Ok(Followed {
+        frames,
+        at: follow.at,
+        following: follow.following,
+    })
 }
 
 /// [`history_follow`]'s answer: what to paint, and where to continue.
@@ -494,9 +539,10 @@ pub struct Followed {
 pub fn chat_leave(id: &str) -> Result<(), String> {
     let mut registry = chats().lock().unwrap();
     if let Some(chat) = registry.get(id)
-        && chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
-            registry.remove(id);
-        }
+        && chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1
+    {
+        registry.remove(id);
+    }
     Ok(())
 }
 
@@ -507,7 +553,9 @@ mod frame_cap_tests {
     /// Each frame carries its own number, so an assertion can name
     /// *which* frame came back rather than only how many.
     fn numbered(n: u64) -> ChatFrame {
-        ChatFrame::Turn { stop: n.to_string() }
+        ChatFrame::Turn {
+            stop: n.to_string(),
+        }
     }
 
     fn stop_of(f: &ChatFrame) -> &str {
@@ -531,14 +579,25 @@ mod frame_cap_tests {
         for n in 0..frame_cap() as u64 + 1 {
             f.push(numbered(n));
         }
-        assert_eq!(f.dropped, (frame_cap() + 1 - frame_keep()) as u64, "one trim, one bite");
+        assert_eq!(
+            f.dropped,
+            (frame_cap() + 1 - frame_keep()) as u64,
+            "one trim, one bite"
+        );
         assert_eq!(f.held.len(), frame_keep());
 
         // A reader at the very front: what it missed is gone, and it is
         // told so rather than handed the tail as if it were the whole.
         let (from, lost) = f.since(0);
-        assert!(lost, "a cursor older than the trim must be told it lost frames");
-        assert_eq!(stop_of(&f.held[from]), f.dropped.to_string(), "and gets the oldest still held");
+        assert!(
+            lost,
+            "a cursor older than the trim must be told it lost frames"
+        );
+        assert_eq!(
+            stop_of(&f.held[from]),
+            f.dropped.to_string(),
+            "and gets the oldest still held"
+        );
 
         // A reader that kept up: no loss, and it lands exactly on the
         // frame it has not seen.
@@ -551,7 +610,11 @@ mod frame_cap_tests {
         let end = f.dropped + f.held.len() as u64;
         let (from, lost) = f.since(end);
         assert!(!lost);
-        assert_eq!(from, f.held.len(), "a cursor at the end reads an empty slice");
+        assert_eq!(
+            from,
+            f.held.len(),
+            "a cursor at the end reads an empty slice"
+        );
     }
 
     /// Below the cap nothing moves — so the test above is measuring the

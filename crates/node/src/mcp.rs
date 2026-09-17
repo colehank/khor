@@ -28,7 +28,7 @@
 //! `open`, `close` and `tell` say what they do in their titles, so the
 //! question a person is asked is a question they can answer.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::Node;
 
@@ -139,7 +139,11 @@ const TOOLS: &[Tool] = &[
 /// 看一律免批). Spelled the way the vendor names them — `mcp__<server>__
 /// <tool>` — because that is what its allowlist matches on.
 pub fn free_tools() -> Vec<String> {
-    TOOLS.iter().filter(|t| t.reads).map(|t| format!("mcp__khor__{}", t.name)).collect()
+    TOOLS
+        .iter()
+        .filter(|t| t.reads)
+        .map(|t| format!("mcp__khor__{}", t.name))
+        .collect()
 }
 
 /// Runs the server until stdin closes. One line in, one line out — the
@@ -159,7 +163,9 @@ pub fn serve_stdio(root: std::path::PathBuf) -> Result<(), String> {
         // A notification carries no id and takes no answer. Replying to
         // one is how a client ends up waiting for a response to a
         // message it never asked a question with.
-        let Some(id) = req.get("id").cloned() else { continue };
+        let Some(id) = req.get("id").cloned() else {
+            continue;
+        };
         let method = req["method"].as_str().unwrap_or("");
         let reply = match method {
             "initialize" => json!({
@@ -215,7 +221,12 @@ pub fn serve_stdio(root: std::path::PathBuf) -> Result<(), String> {
 /// in a terminal — one source for what a session row says, whoever is
 /// looking.
 fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, String> {
-    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    let s = |k: &str| {
+        args.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned()
+    };
     let n = Node::open(root.to_path_buf())?;
     match name {
         "devices" => {
@@ -225,7 +236,11 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
                 // hostname, and then the name test marks both rows
                 // 「(本机)」 — the one thing on this line a reader uses
                 // to know where they are (`khor devices` says the same).
-                let here = if d.id == n.device_str() { "(本机)" } else { "" };
+                let here = if d.id == n.device_str() {
+                    "(本机)"
+                } else {
+                    ""
+                };
                 out.push_str(&format!("{}\t{}…{here}\n", d.shown(), &d.id[..16]));
             }
             Ok(out)
@@ -233,7 +248,10 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
         "sessions" => {
             let mut out = String::new();
             for v in n.sessions()? {
-                let where_ = v.source.map(|(m, _)| m).unwrap_or_else(|| n.name().to_owned());
+                let where_ = v
+                    .source
+                    .map(|(m, _)| m)
+                    .unwrap_or_else(|| n.name().to_owned());
                 out.push_str(&format!(
                     "{}\t{}\t{}\t{}\n",
                     v.session.id.0,
@@ -263,7 +281,11 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
             if command.is_empty() {
                 return Err("open 要一条命令".into());
             }
-            let title = if s("title").is_empty() { command.clone() } else { s("title") };
+            let title = if s("title").is_empty() {
+                command.clone()
+            } else {
+                s("title")
+            };
             let rt = runtime()?;
             let id = rt.block_on(n.open_on(
                 &s("machine"),

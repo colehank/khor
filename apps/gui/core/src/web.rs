@@ -27,8 +27,7 @@ pub struct WebPinRow {
 pub fn web_pins(root: &Path) -> Result<Vec<WebPinRow>, String> {
     let n = Node::open(root.to_path_buf())?;
     let devices = n.devices()?;
-    Ok(n
-        .web_pins()?
+    Ok(n.web_pins()?
         .into_iter()
         .map(|(device, url)| WebPinRow {
             name: devices
@@ -88,7 +87,9 @@ pub struct WebBorrow {
 /// person holds by hand (`khor borrow`) is a session, because that one
 /// has no other face and nowhere else to hang its lifetime.
 pub async fn borrow_web(root: &Path, machine: &str) -> Result<WebBorrow, String> {
-    let (session, addr) = Node::open(root.to_path_buf())?.borrow_unlisted(machine).await?;
+    let (session, addr) = Node::open(root.to_path_buf())?
+        .borrow_unlisted(machine)
+        .await?;
     Ok(WebBorrow { session, addr })
 }
 

@@ -77,7 +77,10 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
 
     // The agent: a real process alpha watches. Registered blocked — the
     // word whose whole point is being seen from elsewhere.
-    let mut agent = std::process::Command::new("sleep").arg("60").spawn().unwrap();
+    let mut agent = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
     let id = SessionId("tui/agent1".to_owned());
     let ephemeral = a.open_ephemeral("tui", "the agent").unwrap();
     a.report_state(&ephemeral, State::Busy).unwrap();
@@ -86,8 +89,10 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         // wrapper uses: open, then bind the pid.
         use khor_node::live::LiveKind;
         let k = LiveKind::new(ra.clone(), a.device());
-        k.register(&id, "tui", "claude in proj", Some(agent.id()), None).unwrap();
-        k.report(&id, State::Blocked, khor_node::live::Source::Reported).unwrap();
+        k.register(&id, "tui", "claude in proj", Some(agent.id()), None)
+            .unwrap();
+        k.report(&id, State::Blocked, khor_node::live::Source::Reported)
+            .unwrap();
     }
 
     // beta is not home: its row can only be a report, and says so.
@@ -100,12 +105,21 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         .iter()
         .find(|v| v.session.id == id)
         .expect("the live row should reach the other device");
-    assert_eq!(view.session.state.state, State::Blocked, "等准许,从别的设备看得到");
+    assert_eq!(
+        view.session.state.state,
+        State::Blocked,
+        "等准许,从别的设备看得到"
+    );
     assert_eq!(view.session.title, "claude in proj");
-    let (reporter, _) = view.source.as_ref().expect("a reported row must carry its source");
+    let (reporter, _) = view
+        .source
+        .as_ref()
+        .expect("a reported row must carry its source");
     assert_eq!(reporter, "alpha");
     assert!(
-        views.iter().any(|v| v.session.id == ephemeral && v.session.state.state == State::Busy),
+        views
+            .iter()
+            .any(|v| v.session.id == ephemeral && v.session.state.state == State::Busy),
         "the ephemeral row travels too"
     );
 
@@ -138,7 +152,11 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
 
     // Remote close is not a thing yet — refused by name, pointing home.
     let err = b.close(&id).unwrap_err();
-    assert_eq!(err, khor_catalog::msg::remote_close_not_yet("alpha"), "remote close points home");
+    assert_eq!(
+        err,
+        khor_catalog::msg::remote_close_not_yet("alpha"),
+        "remote close points home"
+    );
 
     // The missing-ending rule: the agent dies, nobody records an exit,
     // the row turns 失败 — and the far side sees it.
@@ -151,7 +169,11 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         .find(|v| v.session.id == id)
         .unwrap()
         .session;
-    assert_eq!(row.state.state, State::Failed, "a dead process with no recorded ending");
+    assert_eq!(
+        row.state.state,
+        State::Failed,
+        "a dead process with no recorded ending"
+    );
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -175,7 +197,10 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
             beta_key,
             &alpha_info.id,
             &alpha_info.addrs,
-            &Request::Act { session: id.0.clone(), action: "accept".into() },
+            &Request::Act {
+                session: id.0.clone(),
+                action: "accept".into(),
+            },
         ),
     )
     .await
@@ -183,7 +208,11 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     .unwrap();
     match resp {
         Response::Refused { why } => {
-            assert_eq!(why, khor_catalog::msg::no_such_transfer(&id.0), "accept stays off live sessions")
+            assert_eq!(
+                why,
+                khor_catalog::msg::no_such_transfer(&id.0),
+                "accept stays off live sessions"
+            )
         }
         other => panic!("Act on a live session must be refused, got {other:?}"),
     }

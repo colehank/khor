@@ -51,7 +51,7 @@ use std::path::{Path, PathBuf};
 
 use khor_core::State;
 
-use super::{read_text, Adaptor, Proc, Procs, Sighting, Sweep};
+use super::{Adaptor, Proc, Procs, Sighting, Sweep, read_text};
 
 /// The process name a codex session runs under. Exact — this machine
 /// also runs `codex-code-mode-host`, which is a helper, not a session.
@@ -132,12 +132,7 @@ impl Codex {
 
     /// The rollout a process is writing: nearest start inside the
     /// window, confirmed by working directory when both are known.
-    fn rollout_of<'a>(
-        &self,
-        proc: &Proc,
-        rollouts: &'a [Rollout],
-        taken: &[&'a Path],
-    ) -> Join<'a> {
+    fn rollout_of<'a>(&self, proc: &Proc, rollouts: &'a [Rollout], taken: &[&'a Path]) -> Join<'a> {
         let mut candidates: Vec<&Rollout> = rollouts
             .iter()
             .filter(|r| !taken.contains(&r.path.as_path()))
@@ -169,7 +164,11 @@ impl Codex {
         // one that opened and named another directory is simply not
         // this process's, and a process left with only those is a
         // process that started no session of its own.
-        if unreadable { Join::Unreadable } else { Join::NoSession }
+        if unreadable {
+            Join::Unreadable
+        } else {
+            Join::NoSession
+        }
     }
 }
 
@@ -291,11 +290,7 @@ impl Codex {
     /// whole with `rewound`, because byte 400 of a new file is not byte
     /// 400 of the old one. A half-written last line is left for next
     /// time — `at` stops at the last newline.
-    pub fn transcript_since(
-        &self,
-        uuid: &str,
-        from: u64,
-    ) -> Result<super::claude::Follow, String> {
+    pub fn transcript_since(&self, uuid: &str, from: u64) -> Result<super::claude::Follow, String> {
         use super::claude::Follow;
         use std::io::{Read, Seek, SeekFrom};
         let path = self
@@ -306,17 +301,36 @@ impl Codex {
         let rewound = len < from;
         let start = if rewound { 0 } else { from };
         if len == start {
-            return Ok(Follow { said: Vec::new(), at: len, rewound, following: true });
+            return Ok(Follow {
+                said: Vec::new(),
+                at: len,
+                rewound,
+                following: true,
+            });
         }
         f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
         let mut buf = Vec::new();
-        f.take(len - start).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        f.take(len - start)
+            .read_to_end(&mut buf)
+            .map_err(|e| e.to_string())?;
         let end = match buf.iter().rposition(|b| *b == b'\n') {
             Some(i) => i + 1,
-            None => return Ok(Follow { said: Vec::new(), at: start, rewound, following: true }),
+            None => {
+                return Ok(Follow {
+                    said: Vec::new(),
+                    at: start,
+                    rewound,
+                    following: true,
+                });
+            }
         };
         let text = String::from_utf8_lossy(&buf[..end]);
-        Ok(Follow { said: utterances_of(&text), at: start + end as u64, rewound, following: true })
+        Ok(Follow {
+            said: utterances_of(&text),
+            at: start + end as u64,
+            rewound,
+            following: true,
+        })
     }
 }
 
@@ -332,13 +346,17 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
     let mut out = Vec::new();
     for line in text.lines() {
         {
-            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
             match v["type"].as_str() {
                 Some("event_msg") => {
                     let p = &v["payload"];
                     match (p["type"].as_str(), p["message"].as_str()) {
                         (Some("user_message"), Some(m)) => out.push(Utterance::User(m.to_owned())),
-                        (Some("agent_message"), Some(m)) => out.push(Utterance::Agent(m.to_owned())),
+                        (Some("agent_message"), Some(m)) => {
+                            out.push(Utterance::Agent(m.to_owned()))
+                        }
                         _ => {}
                     }
                 }
@@ -347,26 +365,26 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                     if matches!(
                         p["type"].as_str(),
                         Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
-                    )
-                        && let Some(name) = p["name"].as_str() {
-                            // Shaped as claude's `tool_use` block so
-                            // that both vendors' pasts go through the
-                            // one translation (`cagent::said`). codex
-                            // records an id and arguments under its own
-                            // names; they are carried across rather
-                            // than dropped, so an opened line shows
-                            // what was actually run here too.
-                            out.push(Utterance::Tool(serde_json::json!({
-                                "type": "tool_use",
-                                "id": p["call_id"].as_str().unwrap_or(name),
-                                "name": name,
-                                "input": p.get("arguments")
-                                    .and_then(|a| a.as_str())
-                                    .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
-                                    .unwrap_or_else(|| p.get("arguments").cloned()
-                                        .unwrap_or(serde_json::Value::Null)),
-                            })));
-                        }
+                    ) && let Some(name) = p["name"].as_str()
+                    {
+                        // Shaped as claude's `tool_use` block so
+                        // that both vendors' pasts go through the
+                        // one translation (`cagent::said`). codex
+                        // records an id and arguments under its own
+                        // names; they are carried across rather
+                        // than dropped, so an opened line shows
+                        // what was actually run here too.
+                        out.push(Utterance::Tool(serde_json::json!({
+                            "type": "tool_use",
+                            "id": p["call_id"].as_str().unwrap_or(name),
+                            "name": name,
+                            "input": p.get("arguments")
+                                .and_then(|a| a.as_str())
+                                .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
+                                .unwrap_or_else(|| p.get("arguments").cloned()
+                                    .unwrap_or(serde_json::Value::Null)),
+                        })));
+                    }
                 }
                 _ => {}
             }
@@ -519,7 +537,9 @@ fn collect(dir: &Path, out: &mut Vec<Rollout>, depth: usize) {
     if depth > 4 {
         return;
     }
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
         let path = e.path();
         let Ok(ft) = e.file_type() else { continue };
@@ -531,7 +551,10 @@ fn collect(dir: &Path, out: &mut Vec<Rollout>, depth: usize) {
             continue;
         };
         if let Some(ms) = uuid_in_name(name).and_then(uuid_v7_ms) {
-            out.push(Rollout { path, started_ms: ms });
+            out.push(Rollout {
+                path,
+                started_ms: ms,
+            });
         }
     }
 }
@@ -562,7 +585,11 @@ mod tests {
             uuid_v7_ms("019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa"),
             Some(1_786_024_158_308)
         );
-        assert_eq!(uuid_v7_ms("aaaaaaaa-bbbb-40cc-8ddd-eeeeeeeeeeee"), None, "v4");
+        assert_eq!(
+            uuid_v7_ms("aaaaaaaa-bbbb-40cc-8ddd-eeeeeeeeeeee"),
+            None,
+            "v4"
+        );
         assert_eq!(uuid_v7_ms("not-a-uuid"), None);
         assert_eq!(
             uuid_in_name("rollout-2026-08-06T21-49-18-019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa.jsonl"),
@@ -654,7 +681,10 @@ mod tests {
         let nowhere = Codex::at(PathBuf::from("/nonexistent/khor-test/.codex"));
         let sweep = nowhere.sweep(&Procs::of([(700, codex_proc(1_786_024_158_000, None))]));
         assert_eq!(sweep.rows.len(), 0);
-        assert_eq!(sweep.unmapped, 0, "not looking is not the same as not understanding");
+        assert_eq!(
+            sweep.unmapped, 0,
+            "not looking is not the same as not understanding"
+        );
     }
 
     /// The working directory decides when the clock picks wrong. This
@@ -668,7 +698,10 @@ mod tests {
         let start = 1_786_024_127_000;
         let beta = codex.sweep(&Procs::of([(700, codex_proc(start, Some("/w/beta")))]));
         assert_eq!(beta.rows.len(), 1);
-        assert_eq!(beta.rows[0].title, "beta", "not gamma, which the clock preferred");
+        assert_eq!(
+            beta.rows[0].title, "beta",
+            "not gamma, which the clock preferred"
+        );
         assert_eq!(
             beta.rows[0].word,
             State::Done,
@@ -715,7 +748,10 @@ mod tests {
             codex.full_session_id("0000000000000000000000ff").is_none(),
             "a stranger's leaf resolves nowhere — that silence IS the vendor verdict"
         );
-        assert_eq!(codex.recorded_cwd(full), Some(std::path::PathBuf::from("/somewhere/deep")));
+        assert_eq!(
+            codex.recorded_cwd(full),
+            Some(std::path::PathBuf::from("/somewhere/deep"))
+        );
         let past = codex.transcript(full).unwrap();
         use crate::adaptor::claude::Utterance;
         assert!(
@@ -730,8 +766,15 @@ mod tests {
             matches!(&past[1], Utterance::Tool(b) if b["name"] == "shell" && b["type"] == "tool_use"),
             "{past:?}"
         );
-        assert!(matches!(&past[2], Utterance::Agent(t) if t == "answered"), "{past:?}");
-        assert_eq!(past.len(), 3, "codex's bookkeeping lines must not leak into the past");
+        assert!(
+            matches!(&past[2], Utterance::Agent(t) if t == "answered"),
+            "{past:?}"
+        );
+        assert_eq!(
+            past.len(),
+            3,
+            "codex's bookkeeping lines must not leak into the past"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 }
@@ -787,7 +830,10 @@ mod following {
         // **Grow**: only what is new comes back, and the whole point is
         // that it is only what is new — the control is that "one" is
         // *not* in the second answer.
-        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         use std::io::Write;
         writeln!(f, "{}", said("two")).unwrap();
         drop(f);
@@ -826,7 +872,10 @@ mod following {
         assert_eq!(words(&first.said), ["whole"]);
 
         // Half an object, no newline yet.
-        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         use std::io::Write;
         write!(f, "{}", &said("torn")[..20]).unwrap();
         drop(f);
@@ -859,15 +908,27 @@ mod following {
         let codex = Codex::at(dir.clone());
 
         let whole = words(&codex.transcript(uuid).unwrap());
-        assert_eq!(whole, ["a", "b", "c"], "the control: the record really has three lines");
+        assert_eq!(
+            whole,
+            ["a", "b", "c"],
+            "the control: the record really has three lines"
+        );
 
         // Split at the first line's end, so this is genuinely two reads
         // of one record rather than one read and an empty one.
         let cut = std::fs::read_to_string(&path).unwrap().find('\n').unwrap() as u64 + 1;
         let head = codex.transcript_since(uuid, 0).unwrap();
         let tail = codex.transcript_since(uuid, cut).unwrap();
-        assert_eq!(words(&head.said), whole, "from zero, the follow reads it all");
-        assert_eq!(words(&tail.said), ["b", "c"], "and from a cut, only what is past it");
+        assert_eq!(
+            words(&head.said),
+            whole,
+            "from zero, the follow reads it all"
+        );
+        assert_eq!(
+            words(&tail.said),
+            ["b", "c"],
+            "and from a cut, only what is past it"
+        );
 
         let mut halves = vec!["a".to_owned()];
         halves.extend(words(&tail.said));

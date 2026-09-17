@@ -8,7 +8,7 @@
 use khor_catalog::cli::USAGE;
 use khor_catalog::{avatar, category, cli, msg, state};
 use khor_node::{
-    list, AvatarStyle, FaceShape, MsgBody, Node, SessionId, Tokens, UsageDay, Variant, PRESETS,
+    AvatarStyle, FaceShape, MsgBody, Node, PRESETS, SessionId, Tokens, UsageDay, Variant, list,
 };
 
 fn main() {
@@ -115,96 +115,340 @@ impl Reach {
 
 /// Every verb khor answers, in the order the usage text lists them.
 const VERBS: &[Verb] = &[
-    Verb { word: "id", run: id, reach: Reach::Read },
+    Verb {
+        word: "id",
+        run: id,
+        reach: Reach::Read,
+    },
     // Reads with no arguments and restyles with any, so it is an act:
     // the rule is per word, not per invocation.
-    Verb { word: "face", run: face, reach: Reach::Act },
-    Verb { word: "devices", run: devices, reach: Reach::Read },
-    Verb { word: "top", run: top, reach: Reach::Read },
-    Verb { word: "ls", run: ls, reach: Reach::Read },
+    Verb {
+        word: "face",
+        run: face,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "devices",
+        run: devices,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "top",
+        run: top,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "ls",
+        run: ls,
+        reach: Reach::Read,
+    },
     // Lands a file on this machine's disk.
-    Verb { word: "pull", run: pull, reach: Reach::Act },
+    Verb {
+        word: "pull",
+        run: pull,
+        reach: Reach::Act,
+    },
     // Reads a checkout on any machine; writes nothing there and nothing
     // here, which is why it is a read and not an act like `agents`.
-    Verb { word: "git", run: git, reach: Reach::Read },
+    Verb {
+        word: "git",
+        run: git,
+        reach: Reach::Read,
+    },
     // Replaces a file on somebody's disk. The most irreversible read-
     // and-write pair in this table, and the mirror of `pull`.
-    Verb { word: "put", run: put, reach: Reach::Act },
+    Verb {
+        word: "put",
+        run: put,
+        reach: Reach::Act,
+    },
     // Takes one off it. The only verb here that is irreversible on
     // every machine but this one, which is what its usage line says.
-    Verb { word: "rm", run: rm, reach: Reach::Act },
+    Verb {
+        word: "rm",
+        run: rm,
+        reach: Reach::Act,
+    },
     // The three that make a name where there was none, or move one.
     // Acts for `rm`'s reason from the other end: each of them changes
     // what is on somebody's disk.
-    Verb { word: "mkdir", run: mkdir, reach: Reach::Act },
-    Verb { word: "touch", run: touch, reach: Reach::Act },
-    Verb { word: "mv", run: mv, reach: Reach::Act },
+    Verb {
+        word: "mkdir",
+        run: mkdir,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "touch",
+        run: touch,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "mv",
+        run: mv,
+        reach: Reach::Act,
+    },
     // Starts a process on somebody's machine — their opener — so it is
     // an act for `code`'s reason, not a read because nothing is written.
-    Verb { word: "launch", run: launch, reach: Reach::Act },
+    Verb {
+        word: "launch",
+        run: launch,
+        reach: Reach::Act,
+    },
     // Starts a process on somebody's machine and a pipe in front of
     // it. Reading is what the editor then does; opening it is an act.
-    Verb { word: "code", run: code, reach: Reach::Act },
+    Verb {
+        word: "code",
+        run: code,
+        reach: Reach::Act,
+    },
     // Turns a document into words on this terminal. Reads only.
-    Verb { word: "read", run: read, reach: Reach::Read },
+    Verb {
+        word: "read",
+        run: read,
+        reach: Reach::Read,
+    },
     // The wizard's completion list: a read-only fold over the vendors'
     // own records.
-    Verb { word: "places", run: places, reach: Reach::Read },
+    Verb {
+        word: "places",
+        run: places,
+        reach: Reach::Read,
+    },
     // `ls` reads and the other four write the workspace table, so the
     // word is an act: the rule is per word, not per invocation (`face`
     // above).
-    Verb { word: "ws", run: ws, reach: Reach::Act },
-    Verb { word: "borrow", run: borrow, reach: Reach::Act },
-    Verb { word: "usage", run: usage, reach: Reach::Read },
-    Verb { word: "sessions", run: sessions, reach: Reach::Read },
-    Verb { word: "tell", run: tell, reach: Reach::Act },
-    Verb { word: "send", run: send, reach: Reach::Act },
-    Verb { word: "accept", run: accept, reach: Reach::Act },
-    Verb { word: "log", run: log, reach: Reach::Read },
-    Verb { word: "run", run, reach: Reach::Act },
-    Verb { word: "open", run: open, reach: Reach::Act },
+    Verb {
+        word: "ws",
+        run: ws,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "borrow",
+        run: borrow,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "usage",
+        run: usage,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "sessions",
+        run: sessions,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "tell",
+        run: tell,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "send",
+        run: send,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "accept",
+        run: accept,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "log",
+        run: log,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "run",
+        run,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "open",
+        run: open,
+        reach: Reach::Act,
+    },
     // Attaching is a keyboard on somebody's session, not a look at it.
-    Verb { word: "attach", run: attach, reach: Reach::Act },
-    Verb { word: "takeover", run: takeover, reach: Reach::Act },
+    Verb {
+        word: "attach",
+        run: attach,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "takeover",
+        run: takeover,
+        reach: Reach::Act,
+    },
     // `known`/`sessions` observe; `add`/`rm` write the registry.
-    Verb { word: "agents", run: agents, reach: Reach::Act },
+    Verb {
+        word: "agents",
+        run: agents,
+        reach: Reach::Act,
+    },
     // Listing observes; `add` is handed an API key.
-    Verb { word: "accounts", run: accounts, reach: Reach::Act },
-    Verb { word: "quota", run: quota, reach: Reach::Read },
-    Verb { word: "state", run: state, reach: Reach::Act },
-    Verb { word: "seen", run: seen, reach: Reach::Act },
-    Verb { word: "rename", run: rename, reach: Reach::Act },
-    Verb { word: "pin", run: pin, reach: Reach::Act },
-    Verb { word: "unpin", run: unpin, reach: Reach::Act },
-    Verb { word: "close", run: close, reach: Reach::Act },
-    Verb { word: "serve", run: serve, reach: Reach::Act },
+    Verb {
+        word: "accounts",
+        run: accounts,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "quota",
+        run: quota,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "state",
+        run: state,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "seen",
+        run: seen,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "rename",
+        run: rename,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "pin",
+        run: pin,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "unpin",
+        run: unpin,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "close",
+        run: close,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "serve",
+        run: serve,
+        reach: Reach::Act,
+    },
     // Prints a link with the key in it. Reading it aloud is handing
     // over the whole network, which is why printing is not a read.
-    Verb { word: "web", run: web, reach: Reach::Act },
-    Verb { word: "gui", run: gui, reach: Reach::Act },
-    Verb { word: "quit", run: quit, reach: Reach::Act },
+    Verb {
+        word: "web",
+        run: web,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "gui",
+        run: gui,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "quit",
+        run: quit,
+        reach: Reach::Act,
+    },
     // Status observes; `install`/`uninstall` write the rc files.
-    Verb { word: "hooks", run: hooks, reach: Reach::Act },
+    Verb {
+        word: "hooks",
+        run: hooks,
+        reach: Reach::Act,
+    },
     // Mints a pairing ticket: this one hands out network access.
-    Verb { word: "invite", run: invite, reach: Reach::Act },
-    Verb { word: "pair", run: pair, reach: Reach::Act },
-    Verb { word: "adopt", run: adopt, reach: Reach::Act },
-    Verb { word: "sync", run: sync, reach: Reach::Act },
-    Verb { word: "mcp", run: mcp, reach: Reach::Act },
-    Verb { word: "version", run: version, reach: Reach::Read },
-    Verb { word: "root", run: root, reach: Reach::Read },
-    Verb { word: "forget", run: forget, reach: Reach::Act },
-    Verb { word: "watch", run: watch, reach: Reach::Act },
-    Verb { word: "--version", run: version, reach: Reach::Read },
-    Verb { word: "-V", run: version, reach: Reach::Read },
-    Verb { word: "_host", run: host, reach: Reach::Inner },
-    Verb { word: "_ghost", run: ghost, reach: Reach::Inner },
-    Verb { word: "_cagent", run: cagent, reach: Reach::Inner },
-    Verb { word: "_codexagent", run: codexagent, reach: Reach::Inner },
-    Verb { word: "_verbs", run: verbs, reach: Reach::Inner },
-    Verb { word: "help", run: help, reach: Reach::Read },
-    Verb { word: "--help", run: help, reach: Reach::Read },
-    Verb { word: "-h", run: help, reach: Reach::Read },
+    Verb {
+        word: "invite",
+        run: invite,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "pair",
+        run: pair,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "adopt",
+        run: adopt,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "sync",
+        run: sync,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "mcp",
+        run: mcp,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "version",
+        run: version,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "root",
+        run: root,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "forget",
+        run: forget,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "watch",
+        run: watch,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "--version",
+        run: version,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "-V",
+        run: version,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "_host",
+        run: host,
+        reach: Reach::Inner,
+    },
+    Verb {
+        word: "_ghost",
+        run: ghost,
+        reach: Reach::Inner,
+    },
+    Verb {
+        word: "_cagent",
+        run: cagent,
+        reach: Reach::Inner,
+    },
+    Verb {
+        word: "_codexagent",
+        run: codexagent,
+        reach: Reach::Inner,
+    },
+    Verb {
+        word: "_verbs",
+        run: verbs,
+        reach: Reach::Inner,
+    },
+    Verb {
+        word: "help",
+        run: help,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "--help",
+        run: help,
+        reach: Reach::Read,
+    },
+    Verb {
+        word: "-h",
+        run: help,
+        reach: Reach::Read,
+    },
 ];
 
 /// The verbs deliberately absent from the usage text, and why each stays
@@ -221,11 +465,26 @@ const VERBS: &[Verb] = &[
 /// it does — khor itself never asks whether a verb is documented.
 #[cfg(test)]
 const NOT_IN_USAGE: &[(&str, &str)] = &[
-    ("_host", "internal: the host process `open` spawns, whose arguments are a calling convention"),
-    ("_ghost", "internal: the GUI-session host `open --gui` spawns; same convention, ACP instead of a PTY"),
-    ("_cagent", "internal: khor's own claude ACP shim; the agent a claude GUI session runs (`cagent` module head)"),
-    ("_codexagent", "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)"),
-    ("_verbs", "internal: the verb table as JSON, for the gate that decides what an agent may type (`verbs`)"),
+    (
+        "_host",
+        "internal: the host process `open` spawns, whose arguments are a calling convention",
+    ),
+    (
+        "_ghost",
+        "internal: the GUI-session host `open --gui` spawns; same convention, ACP instead of a PTY",
+    ),
+    (
+        "_cagent",
+        "internal: khor's own claude ACP shim; the agent a claude GUI session runs (`cagent` module head)",
+    ),
+    (
+        "_codexagent",
+        "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)",
+    ),
+    (
+        "_verbs",
+        "internal: the verb table as JSON, for the gate that decides what an agent may type (`verbs`)",
+    ),
     (
         "root",
         "internal: which store on this machine is khor's own, for `scripts/install.sh` — the freshly \
@@ -234,10 +493,16 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
          verb a person types: the answer is a path they cannot do anything with, and the one thing \
          they might want it for (which home am I on) is `khor id`.",
     ),
-    ("help", "prints the usage text; a list that lists itself teaches nobody anything"),
+    (
+        "help",
+        "prints the usage text; a list that lists itself teaches nobody anything",
+    ),
     ("--help", "the spelling people try before reading anything"),
     ("-h", "the short spelling of the same"),
-    ("--version", "the spelling people try before finding the verb"),
+    (
+        "--version",
+        "the spelling people try before finding the verb",
+    ),
     ("-V", "the short spelling of the same"),
 ];
 
@@ -314,7 +579,13 @@ fn id(_rest: &[String]) -> Result<(), String> {
 fn verbs(_rest: &[String]) -> Result<(), String> {
     let rows: Vec<String> = VERBS
         .iter()
-        .map(|v| format!("{{\"word\":\"{}\",\"reach\":\"{}\"}}", v.word, v.reach.word()))
+        .map(|v| {
+            format!(
+                "{{\"word\":\"{}\",\"reach\":\"{}\"}}",
+                v.word,
+                v.reach.word()
+            )
+        })
         .collect();
     println!("[{}]", rows.join(","));
     Ok(())
@@ -378,7 +649,10 @@ fn ls(rest: &[String]) -> Result<(), String> {
         }
     }
     if truncated {
-        eprintln!("{}", cli::dir_truncated(khor_node::files::MOST_ENTRIES as u64));
+        eprintln!(
+            "{}",
+            cli::dir_truncated(khor_node::files::MOST_ENTRIES as u64)
+        );
     }
     Ok(())
 }
@@ -388,7 +662,11 @@ fn ls(rest: &[String]) -> Result<(), String> {
 /// arrived somewhere unsaid is a file someone will go looking for.
 fn pull(rest: &[String]) -> Result<(), String> {
     let (machine, path, dir) = match rest {
-        [machine, path] => (machine, path, std::env::current_dir().map_err(|e| e.to_string())?),
+        [machine, path] => (
+            machine,
+            path,
+            std::env::current_dir().map_err(|e| e.to_string())?,
+        ),
         [machine, path, dir] => (machine, path, std::path::PathBuf::from(dir)),
         _ => return Err(USAGE.into()),
     };
@@ -454,7 +732,11 @@ fn ws(rest: &[String]) -> Result<(), String> {
                 // (`Node::machine_id`). The screen leaves it blank
                 // instead, which is the difference between a row you
                 // read and a row you type at.
-                let at = if w.machine.is_empty() { &w.device } else { &w.machine };
+                let at = if w.machine.is_empty() {
+                    &w.device
+                } else {
+                    &w.machine
+                };
                 // The name first because it is what a person recognises,
                 // then where it actually is — one row, the same facts
                 // the landing's row wears.
@@ -693,7 +975,13 @@ fn code(rest: &[String]) -> Result<(), String> {
     } else {
         format!("&folder={}", enc(root))
     };
-    println!("{}", cli::code_at(format_args!("http://{addr}/?tkn={token}{folder}"), editor.version));
+    println!(
+        "{}",
+        cli::code_at(
+            format_args!("http://{addr}/?tkn={token}{folder}"),
+            editor.version
+        )
+    );
     Ok(())
 }
 
@@ -1184,7 +1472,12 @@ impl Col {
             Col::Pid => r.pid.to_string(),
             // A token this build has no word for prints as the token —
             // never as a neighbour's word. See `status_word`.
-            Col::Status => r.status.as_deref().map(status_word).unwrap_or("").to_owned(),
+            Col::Status => r
+                .status
+                .as_deref()
+                .map(status_word)
+                .unwrap_or("")
+                .to_owned(),
             Col::User => r.user.clone(),
             Col::Time => r.run_secs.map(lasting).unwrap_or_default(),
             Col::CpuTime => r.cpu_ms.map(cpu_clock).unwrap_or_default(),
@@ -1193,7 +1486,10 @@ impl Col {
             // the terminal disagreed on every reading landing on a
             // half. Nobody would ever have noticed, which is the point.
             Col::Cpu => format!("{}%", r.cpu_pct.round() as i64),
-            Col::Gpu => r.gpu_pct.map(|v| format!("{}%", v.round() as i64)).unwrap_or_default(),
+            Col::Gpu => r
+                .gpu_pct
+                .map(|v| format!("{}%", v.round() as i64))
+                .unwrap_or_default(),
             Col::Mem => bytes(r.mem),
             Col::Vram => r.gpu_mem.map(bytes).unwrap_or_default(),
             Col::Io => r.io_bytes.map(bytes).unwrap_or_default(),
@@ -1408,7 +1704,11 @@ fn lay_out(rows: &[khor_node::TopRow], room: Option<usize>) -> Vec<String> {
     // (`| less`, `| head`) that guessing a width there would hand the
     // reader the very thing being fixed.
     if let (Some(room), Some(last)) = (room, cols.len().checked_sub(1)) {
-        debug_assert_eq!(cols[last], Col::Cmd, "「命令」 is never optional, so it is always last");
+        debug_assert_eq!(
+            cols[last],
+            Col::Cmd,
+            "「命令」 is never optional, so it is always last"
+        );
         let fixed: usize = w[..last].iter().sum::<usize>() + 2 * last;
         let budget = room.saturating_sub(fixed);
         // **Below its own head word, stop cutting and let the line
@@ -1467,7 +1767,8 @@ fn top(rest: &[String]) -> Result<(), String> {
         [machine] => machine.as_str(),
         _ => return Err(USAGE.into()),
     };
-    let load = rt()?.block_on(node()?.load_on(machine, TOP_ROWS, khor_node::TopBy::Busiest, true))?;
+    let load =
+        rt()?.block_on(node()?.load_on(machine, TOP_ROWS, khor_node::TopBy::Busiest, true))?;
     // **Measured, not guessed** (2026-09-08): down a pipe the ioctl
     // fails with `ENOTTY`; on a pty `script(1)` just made it succeeds
     // and answers 0×0, which `tty_size` already refuses; on a real
@@ -1504,7 +1805,10 @@ fn top(rest: &[String]) -> Result<(), String> {
 /// line — **not to truncate**, because a day band with its tail cut off
 /// still looks like a day.
 fn day_line(day: &khor_node::CpuDay) -> String {
-    const BLOCKS: [char; 8] = ['\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}', '\u{2588}'];
+    const BLOCKS: [char; 8] = [
+        '\u{2581}', '\u{2582}', '\u{2583}', '\u{2584}', '\u{2585}', '\u{2586}', '\u{2587}',
+        '\u{2588}',
+    ];
     day.buckets
         .chunks(6)
         .map(|run| {
@@ -1550,7 +1854,14 @@ mod top_table {
                 run_secs: Some(3_600),
                 cpu_ms: Some(3_600_000),
                 io_bytes: Some(1024 * 1024),
-                ..row(12_392, "khor", Some("serve"), "zgh", 70.0, 110 * 1024 * 1024)
+                ..row(
+                    12_392,
+                    "khor",
+                    Some("serve"),
+                    "zgh",
+                    70.0,
+                    110 * 1024 * 1024,
+                )
             },
             TopRow {
                 status: Some("spawning".into()),
@@ -1567,7 +1878,14 @@ mod top_table {
                 run_secs: Some(90_000),
                 cpu_ms: None,
                 io_bytes: Some(0),
-                ..row(96_042, "Google Chrome Helper", None, "", 11.0, 100 * 1024 * 1024)
+                ..row(
+                    96_042,
+                    "Google Chrome Helper",
+                    None,
+                    "",
+                    11.0,
+                    100 * 1024 * 1024,
+                )
             },
         ]
     }
@@ -1594,9 +1912,39 @@ mod top_table {
         let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
         vec![
             s(&HEAD),
-            s(&["12392", cli::TOP_ST_RUN, "zgh", &cli::age_hours(1), "1:00:00", "70%", "110.0M", "1.0M", "khor serve"]),
-            s(&["7", cli::TOP_ST_SPAWNING, "zgh", &cli::age_minutes(1), "0:00", "0%", "512B", "", "python3"]),
-            s(&["96042", "unknown-13", "", &cli::age_days(1), "", "11%", "100.0M", "0B", "Google Chrome Helper"]),
+            s(&[
+                "12392",
+                cli::TOP_ST_RUN,
+                "zgh",
+                &cli::age_hours(1),
+                "1:00:00",
+                "70%",
+                "110.0M",
+                "1.0M",
+                "khor serve",
+            ]),
+            s(&[
+                "7",
+                cli::TOP_ST_SPAWNING,
+                "zgh",
+                &cli::age_minutes(1),
+                "0:00",
+                "0%",
+                "512B",
+                "",
+                "python3",
+            ]),
+            s(&[
+                "96042",
+                "unknown-13",
+                "",
+                &cli::age_days(1),
+                "",
+                "11%",
+                "100.0M",
+                "0B",
+                "Google Chrome Helper",
+            ]),
         ]
     }
 
@@ -1605,8 +1953,9 @@ mod top_table {
     /// where `RIGHT` says, and no trailing run on the last one.
     fn want_lines(cells: &[Vec<String>]) -> Vec<String> {
         let n = cells[0].len();
-        let w: Vec<usize> =
-            (0..n).map(|i| cells.iter().map(|r| cols_of(&r[i])).max().unwrap()).collect();
+        let w: Vec<usize> = (0..n)
+            .map(|i| cells.iter().map(|r| cols_of(&r[i])).max().unwrap())
+            .collect();
         cells
             .iter()
             .map(|row| {
@@ -1669,12 +2018,21 @@ mod top_table {
         // for English ones, this fails here rather than going quietly
         // green downstairs.
         assert!(
-            cells.iter().flatten().any(|c| cols_of(c) != c.chars().count() && cols_of(c) != c.len()),
+            cells
+                .iter()
+                .flatten()
+                .any(|c| cols_of(c) != c.chars().count() && cols_of(c) != c.len()),
             "no cell in this fixture is a wide character, so the comparison below cannot tell a display-width layout from a byte-length one"
         );
         let want = want_lines(&cells);
         let got = lay_out(&fixture(), None);
-        assert_eq!(got, want, "\ngot:\n{}\nwant:\n{}\n", got.join("\n"), want.join("\n"));
+        assert_eq!(
+            got,
+            want,
+            "\ngot:\n{}\nwant:\n{}\n",
+            got.join("\n"),
+            want.join("\n")
+        );
     }
 
     /// A column no row can fill is not drawn, and the ones that are keep
@@ -1708,7 +2066,14 @@ mod top_table {
         // And a batch with nothing optional in it still draws the four
         // that are never optional — an empty `Seen` is not an empty
         // table.
-        let bare = TopRow { status: None, run_secs: None, cpu_ms: None, io_bytes: None, user: String::new(), ..fixture()[1].clone() };
+        let bare = TopRow {
+            status: None,
+            run_secs: None,
+            cpu_ms: None,
+            io_bytes: None,
+            user: String::new(),
+            ..fixture()[1].clone()
+        };
         assert_eq!(shown(&[bare]), vec![Col::Pid, Col::Cpu, Col::Mem, Col::Cmd]);
     }
 
@@ -1749,10 +2114,17 @@ mod top_table {
         // must change nothing — otherwise「it cut when I gave it a
         // width」would be true of every width, and the test below would
         // be measuring `Some` rather than the arithmetic.
-        assert_eq!(lay_out(&rows, Some(500)), loose, "a width the table already fits under must not cut anything");
+        assert_eq!(
+            lay_out(&rows, Some(500)),
+            loose,
+            "a width the table already fits under must not cut anything"
+        );
 
         let tight = lay_out(&rows, Some(70));
-        assert_ne!(tight, loose, "70 columns is narrower than this table's own command column");
+        assert_ne!(
+            tight, loose,
+            "70 columns is narrower than this table's own command column"
+        );
         // Everything left of 「命令」 is untouched — the cut takes width
         // off the last column and off no other. The head line ends in
         // 「命令」 with nothing padded after it, so the width of
@@ -1760,11 +2132,21 @@ mod top_table {
         let before = cols_of(&loose[0]) - cols_of(cli::TOP_CMD);
         for (a, b) in tight.iter().zip(&loose) {
             assert!(cols_of(a) <= cols_of(b));
-            assert_eq!(upto(a, before), upto(b, before), "the cut moved a column left of 「命令」");
+            assert_eq!(
+                upto(a, before),
+                upto(b, before),
+                "the cut moved a column left of 「命令」"
+            );
         }
-        assert!(tight.iter().skip(1).any(|l| l.ends_with('…')), "nothing was actually cut");
+        assert!(
+            tight.iter().skip(1).any(|l| l.ends_with('…')),
+            "nothing was actually cut"
+        );
         for l in tight.iter().skip(1) {
-            assert!(cols_of(l) <= 70, "a cut line is still wider than the terminal: {l:?}");
+            assert!(
+                cols_of(l) <= 70,
+                "a cut line is still wider than the terminal: {l:?}"
+            );
         }
         // Narrower than the fixed columns alone: cutting the last one
         // cannot rescue the line, so it is left whole rather than
@@ -1878,7 +2260,11 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
         // A card with no name gets the generic word, both ends' rule
         // (`khor_core::GpuCard::name`).
         for c in &v.gpus {
-            let name = if c.name.is_empty() { cli::VITALS_NAME_GPU } else { c.name.as_str() };
+            let name = if c.name.is_empty() {
+                cli::VITALS_NAME_GPU
+            } else {
+                c.name.as_str()
+            };
             parts.push(match c.mem {
                 Some(m) => cli::vitals_gpu_card_mem(
                     name,
@@ -1996,7 +2382,11 @@ fn usage(rest: &[String]) -> Result<(), String> {
     };
     let n = node()?;
     for d in n.devices()? {
-        let here = if d.id == n.device_str() { cli::THIS_MACHINE } else { "" };
+        let here = if d.id == n.device_str() {
+            cli::THIS_MACHINE
+        } else {
+            ""
+        };
         println!("{}{here}", d.shown());
         let Some((usage, age)) = n.usage_of(&d.id) else {
             println!("\t{}", cli::USAGE_NEVER);
@@ -2013,13 +2403,17 @@ fn usage(rest: &[String]) -> Result<(), String> {
         // the format being chosen so that the order a person reads and
         // the order a machine sorts are the same order.
         let from = khor_node::usage::window_start(days);
-        let recent: Vec<&UsageDay> =
-            usage.days.iter().rev().filter(|d| d.day >= from).collect();
+        let recent: Vec<&UsageDay> = usage.days.iter().rev().filter(|d| d.day >= from).collect();
         if recent.is_empty() {
             println!("\t{}", cli::USAGE_NONE);
         }
         for row in recent {
-            println!("\t{}\t{}\t{}", row.day, row.category, tokens_line(&row.tokens));
+            println!(
+                "\t{}\t{}\t{}",
+                row.day,
+                row.category,
+                tokens_line(&row.tokens)
+            );
             // The models under that day, one indent deeper. **Absent
             // rather than empty when the answering machine predates the
             // breakdown** (`khor_core::Usage::models`), which is why
@@ -2032,7 +2426,10 @@ fn usage(rest: &[String]) -> Result<(), String> {
             // reads `Usage::models`, which states its own ordering and
             // its own exhaustiveness; a face that reproduced these tabs
             // would be depending on a shape nothing keeps stable.
-            for m in usage.models.iter().filter(|m| m.day == row.day && m.category == row.category)
+            for m in usage
+                .models
+                .iter()
+                .filter(|m| m.day == row.day && m.category == row.category)
             {
                 let name = m.model.as_deref().unwrap_or(cli::USAGE_MODEL_UNNAMED);
                 println!("\t\t{}\t{}", name, tokens_line(&m.tokens));
@@ -2133,7 +2530,11 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         };
         // The order already says which rows are pinned; the mark says
         // *why* they lead, which "on top" alone cannot.
-        let pin = if v.pinned { format!("\t{}", cli::PINNED_MARK) } else { String::new() };
+        let pin = if v.pinned {
+            format!("\t{}", cli::PINNED_MARK)
+        } else {
+            String::new()
+        };
         // The quiet note (词的保鲜期批): a live word nobody can vouch
         // for, silent past the threshold — said beside the word, which
         // stands untouched. The duration is the word's own age.
@@ -2142,7 +2543,10 @@ fn sessions(rest: &[String]) -> Result<(), String> {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            format!("\t{}", cli::quiet_for(human_age(now.saturating_sub(s.state.at.0))))
+            format!(
+                "\t{}",
+                cli::quiet_for(human_age(now.saturating_sub(s.state.at.0)))
+            )
         } else {
             String::new()
         };
@@ -2314,7 +2718,11 @@ fn run(rest: &[String]) -> Result<(), String> {
         return Err(USAGE.into());
     }
     let n = node()?;
-    let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
+    let kind = if tui {
+        khor_node::kind::TUI
+    } else {
+        khor_node::kind::SHELL
+    };
     let title = title.unwrap_or_else(|| {
         std::path::Path::new(&cmd[0])
             .file_name()
@@ -2434,7 +2842,9 @@ fn open(rest: &[String]) -> Result<(), String> {
             if resume.is_some() {
                 return Err(cli::RESUME_NOT_ON_ANOTHER_MACHINE.into());
             }
-            let name = agent.as_deref().unwrap_or(khor_node::adaptor::claude::VENDOR);
+            let name = agent
+                .as_deref()
+                .unwrap_or(khor_node::adaptor::claude::VENDOR);
             let id = rt()?.block_on(n.open_agent_on(&machine, "", &title, "chat", name))?;
             println!("{}", id.0);
             return Ok(());
@@ -2473,7 +2883,11 @@ fn open(rest: &[String]) -> Result<(), String> {
         println!("{}", id.0);
         return Ok(());
     }
-    let kind = if tui { khor_node::kind::TUI } else { khor_node::kind::SHELL };
+    let kind = if tui {
+        khor_node::kind::TUI
+    } else {
+        khor_node::kind::SHELL
+    };
     let size = tty_size().unwrap_or((80, 24));
     if let Some(machine) = on {
         // Opened over there, and **defaults resolved over there** — the
@@ -2556,7 +2970,12 @@ fn host(rest: &[String]) -> Result<(), String> {
         cols.parse::<u16>().map_err(|_| USAGE.to_string())?,
         rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
     );
-    khor_node::host::host_main(Node::root_from_env(), SessionId(sid.clone()), size, cmd.to_vec())
+    khor_node::host::host_main(
+        Node::root_from_env(),
+        SessionId(sid.clone()),
+        size,
+        cmd.to_vec(),
+    )
 }
 
 /// 接管 (批C): typing the verb is the confirmation — the CLI's precedent
@@ -2628,16 +3047,17 @@ fn rename(rest: &[String]) -> Result<(), String> {
     // verb, two subjects, and the subject is named the same way in both
     // places rather than each verb inventing its own.
     if let [flag, machine, name @ ..] = rest
-        && (flag == "-m" || flag == "--machine") {
-            let n = node()?;
-            // Resolved to an id here, because `rename_machine` takes an
-            // id on purpose: the name is the thing being changed, and
-            // resolving 「rename A to B」 through a table that may
-            // already hold a B renames the wrong row.
-            let (_, id) = n.resolve_machine(machine)?;
-            println!("{}", n.rename_machine(&id.hex(), &name.join(" "))?);
-            return Ok(());
-        }
+        && (flag == "-m" || flag == "--machine")
+    {
+        let n = node()?;
+        // Resolved to an id here, because `rename_machine` takes an
+        // id on purpose: the name is the thing being changed, and
+        // resolving 「rename A to B」 through a table that may
+        // already hold a B renames the wrong row.
+        let (_, id) = n.resolve_machine(machine)?;
+        println!("{}", n.rename_machine(&id.hex(), &name.join(" "))?);
+        return Ok(());
+    }
     let [id, name @ ..] = rest else {
         return Err(USAGE.into());
     };
@@ -2659,9 +3079,7 @@ fn pinning(rest: &[String], on: bool) -> Result<(), String> {
     let n = node()?;
     match rest {
         [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
-        [flag, machine, path] if flag == "-d" || flag == "--dir" => {
-            n.pin_dir(machine, path, on)
-        }
+        [flag, machine, path] if flag == "-d" || flag == "--dir" => n.pin_dir(machine, path, on),
         [id] => n.pin_session(&SessionId(id.clone()), on),
         _ => Err(USAGE.into()),
     }
@@ -2768,7 +3186,9 @@ fn gui(rest: &[String]) -> Result<(), String> {
         return Err(USAGE.into());
     }
     let me = khor_node::self_exe()?;
-    let dir = me.parent().ok_or_else(|| msg::gui_not_installed(me.display()))?;
+    let dir = me
+        .parent()
+        .ok_or_else(|| msg::gui_not_installed(me.display()))?;
     let bin = dir.join("khor-gui");
     if !bin.is_file() {
         return Err(msg::gui_not_installed(dir.display()));
@@ -2785,7 +3205,8 @@ fn gui(rest: &[String]) -> Result<(), String> {
             Ok(())
         });
     }
-    c.spawn().map_err(|e| msg::gui_wont_start(format_args!("{e}")))?;
+    c.spawn()
+        .map_err(|e| msg::gui_wont_start(format_args!("{e}")))?;
     Ok(())
 }
 
@@ -2888,11 +3309,16 @@ mod web_qr_tests {
         for line in block.lines() {
             let (mut upper, mut lower) = (Vec::new(), Vec::new());
             for cell in line.trim_end_matches("\x1b[0m").split('\x1b').skip(1) {
-                let Some(codes) = cell.strip_prefix('[').and_then(|c| c.split_once('m')).map(|(c, _)| c)
+                let Some(codes) = cell
+                    .strip_prefix('[')
+                    .and_then(|c| c.split_once('m'))
+                    .map(|(c, _)| c)
                 else {
                     continue;
                 };
-                let Some((fg, bg)) = codes.split_once(';') else { continue };
+                let Some((fg, bg)) = codes.split_once(';') else {
+                    continue;
+                };
                 upper.push(fg == "30");
                 lower.push(bg == "40");
             }
@@ -2917,7 +3343,10 @@ mod web_qr_tests {
         let quiet = 4;
 
         let painted = read_back(&web_qr(url));
-        assert!(painted.len() >= width + quiet * 2, "the block is shorter than the symbol");
+        assert!(
+            painted.len() >= width + quiet * 2,
+            "the block is shorter than the symbol"
+        );
         for y in 0..width {
             for x in 0..width {
                 assert_eq!(
@@ -2930,11 +3359,20 @@ mod web_qr_tests {
         // The margin, on all four sides. A scanner needs it to find the
         // finder patterns, and it is the easiest half of this to drop.
         for (y, row) in painted.iter().take(quiet).enumerate() {
-            assert!(row.iter().all(|d| !d), "row {y} of the quiet zone is not blank");
+            assert!(
+                row.iter().all(|d| !d),
+                "row {y} of the quiet zone is not blank"
+            );
         }
         for row in painted.iter().take(width + quiet).skip(quiet) {
-            assert!(row[..quiet].iter().all(|d| !d), "the left margin is not blank");
-            assert!(row[width + quiet..].iter().all(|d| !d), "the right margin is not blank");
+            assert!(
+                row[..quiet].iter().all(|d| !d),
+                "the left margin is not blank"
+            );
+            assert!(
+                row[width + quiet..].iter().all(|d| !d),
+                "the right margin is not blank"
+            );
         }
     }
 
@@ -2954,7 +3392,14 @@ fn quit(rest: &[String]) -> Result<(), String> {
         return Err(USAGE.into());
     };
     let (served, hosts) = node()?.quit()?;
-    println!("{}", if served { msg::QUIT_SERVE_STOPPED } else { msg::QUIT_NO_SERVE });
+    println!(
+        "{}",
+        if served {
+            msg::QUIT_SERVE_STOPPED
+        } else {
+            msg::QUIT_NO_SERVE
+        }
+    );
     if hosts > 0 {
         println!("{}", msg::quit_hosts(hosts));
     }
@@ -2976,8 +3421,11 @@ fn accounts(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     match rest.split_first() {
         None => {
-            let names: std::collections::HashMap<String, String> =
-                n.devices()?.into_iter().map(|d| (d.id.clone(), d.shown().to_owned())).collect();
+            let names: std::collections::HashMap<String, String> = n
+                .devices()?
+                .into_iter()
+                .map(|d| (d.id.clone(), d.shown().to_owned()))
+                .collect();
             let listed = n.accounts()?;
             if listed.is_empty() {
                 println!("{}", cli::ACCOUNTS_NONE);
@@ -3017,11 +3465,17 @@ fn accounts(rest: &[String]) -> Result<(), String> {
                     "--key" => key = Some(value()?),
                     "--key-stdin" => {
                         let mut text = String::new();
-                        std::io::stdin().read_line(&mut text).map_err(|e| e.to_string())?;
+                        std::io::stdin()
+                            .read_line(&mut text)
+                            .map_err(|e| e.to_string())?;
                         key = Some(text.trim().to_owned());
                     }
                     "--budget" => {
-                        budget = Some(value()?.parse::<f64>().map_err(|_| cli::ACCOUNT_BUDGET_NUMBER.to_string())?);
+                        budget = Some(
+                            value()?
+                                .parse::<f64>()
+                                .map_err(|_| cli::ACCOUNT_BUDGET_NUMBER.to_string())?,
+                        );
                     }
                     _ => return Err(USAGE.into()),
                 }
@@ -3053,7 +3507,9 @@ fn accounts(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         Some((word, tail)) if word == "rm" => {
-            let [which] = tail else { return Err(USAGE.into()) };
+            let [which] = tail else {
+                return Err(USAGE.into());
+            };
             // By id or by name — a name is what a person remembers, and
             // it is refused when two accounts share it rather than
             // guessed between.
@@ -3061,7 +3517,8 @@ fn accounts(rest: &[String]) -> Result<(), String> {
             let id = if all.iter().any(|a| &a.id == which) {
                 which.clone()
             } else {
-                let named: Vec<&khor_node::Account> = all.iter().filter(|a| &a.name == which).collect();
+                let named: Vec<&khor_node::Account> =
+                    all.iter().filter(|a| &a.name == which).collect();
                 match named.as_slice() {
                     [one] => one.id.clone(),
                     [] => return Err(msg::no_such_account(which)),
@@ -3088,15 +3545,22 @@ fn quota(rest: &[String]) -> Result<(), String> {
         println!("{}", cli::ACCOUNTS_NONE);
     }
     for (r, age_ms) in board {
-        let home = names.get(&r.home).cloned().unwrap_or_else(|| r.home.clone());
+        let home = names
+            .get(&r.home)
+            .cloned()
+            .unwrap_or_else(|| r.home.clone());
         let currency = r.currency.clone().unwrap_or_default();
         let figure = match (&r.trouble, r.spent, r.limit, r.remaining) {
             (Some(t), _, _, _) => cli::quota_trouble(t),
             (None, Some(s), Some(l), _) => format!("{s:.2}/{l:.2} {currency}"),
-            (None, Some(s), None, _) if r.unlimited => format!("{s:.2} {currency} {}", cli::QUOTA_UNLIMITED),
+            (None, Some(s), None, _) if r.unlimited => {
+                format!("{s:.2} {currency} {}", cli::QUOTA_UNLIMITED)
+            }
             (None, Some(s), None, _) => format!("{s:.2} {currency}"),
             // A wallet says what is left and nothing about what went.
-            (None, None, _, Some(left)) => cli::quota_remaining(format_args!("{left:.2} {currency}")),
+            (None, None, _, Some(left)) => {
+                cli::quota_remaining(format_args!("{left:.2} {currency}"))
+            }
             // **A subscription has no 「spent」 at all**, so 「没有数」
             // would be false here — the number is in the next column,
             // where the share is. What goes in this seat is the plan,
@@ -3105,8 +3569,19 @@ fn quota(rest: &[String]) -> Result<(), String> {
             (None, None, _, None) if !r.windows.is_empty() => r.plan.clone().unwrap_or_default(),
             (None, None, _, None) => cli::QUOTA_NO_NUMBER.to_owned(),
         };
-        let share = r.fill.map(|f| format!("{:.0}%", f * 100.0)).unwrap_or_default();
-        println!("{}	{}	{}	{}	{}	{}s", r.name, r.provider, home, figure, share, age_ms / 1000);
+        let share = r
+            .fill
+            .map(|f| format!("{:.0}%", f * 100.0))
+            .unwrap_or_default();
+        println!(
+            "{}	{}	{}	{}	{}	{}s",
+            r.name,
+            r.provider,
+            home,
+            figure,
+            share,
+            age_ms / 1000
+        );
     }
     Ok(())
 }
@@ -3151,12 +3626,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
                         cli::AGENTS_KNOWN_STARTABLE,
                         argv.join(" ")
                     ),
-                    None => println!(
-                        "{}\t{}\t{}",
-                        k.id,
-                        k.name,
-                        cli::AGENTS_KNOWN_BYHAND
-                    ),
+                    None => println!("{}\t{}\t{}", k.id, k.name, cli::AGENTS_KNOWN_BYHAND),
                 }
             }
             Ok(())
@@ -3227,8 +3697,11 @@ fn agents(rest: &[String]) -> Result<(), String> {
             // who typed the separator should not be told they are
             // wrong for it.
             let (name, argv) = tail.split_first().ok_or_else(|| USAGE.to_string())?;
-            let argv: Vec<String> =
-                argv.iter().filter(|a| a.as_str() != "--").cloned().collect();
+            let argv: Vec<String> = argv
+                .iter()
+                .filter(|a| a.as_str() != "--")
+                .cloned()
+                .collect();
             // **`@id` expands out of the snapshot.** The sigil is what
             // keeps this from being a guess: without it, a single-word
             // argv that happens to match a registry id would be
@@ -3254,13 +3727,16 @@ fn agents(rest: &[String]) -> Result<(), String> {
             // is not a failure to register: the registration stands,
             // and the question can be put again later.
             if let Ok(khor_node::AgentAnswer::Sessions { rows }) = n.refresh_agent_sessions(name)
-                && !rows.is_empty() {
-                    println!("{}", cli::agents_sessions_asked(name, rows.len()));
-                }
+                && !rows.is_empty()
+            {
+                println!("{}", cli::agents_sessions_asked(name, rows.len()));
+            }
             Ok(())
         }
         Some((word, tail)) if word == "rm" => {
-            let [name] = tail else { return Err(USAGE.into()) };
+            let [name] = tail else {
+                return Err(USAGE.into());
+            };
             // Said before the removal, because after it the answer is
             // the same either way — and a typo that prints 「不再登记」
             // reads as a success.
@@ -3268,7 +3744,11 @@ fn agents(rest: &[String]) -> Result<(), String> {
             n.forget_agent(name)?;
             println!(
                 "{}",
-                if had { cli::agents_forgotten(name) } else { cli::agents_was_not_there(name) }
+                if had {
+                    cli::agents_forgotten(name)
+                } else {
+                    cli::agents_was_not_there(name)
+                }
             );
             Ok(())
         }
@@ -3334,7 +3814,10 @@ fn hooks(rest: &[String]) -> Result<(), String> {
             if done.removed.is_empty() {
                 println!("{}", cli::HOOKS_NONE_TO_REMOVE);
             } else {
-                println!("{}", cli::hooks_removed(done.removed.join(cli::NAME_SEPARATOR)));
+                println!(
+                    "{}",
+                    cli::hooks_removed(done.removed.join(cli::NAME_SEPARATOR))
+                );
                 println!("{}", cli::HOOKS_RESTART_CLAUDE);
             }
             Ok(())
@@ -3348,7 +3831,10 @@ fn invite(_rest: &[String]) -> Result<(), String> {
     // goes to stderr, because a window nobody is told about is a refusal
     // nobody can explain later.
     println!("{}", node()?.invite()?);
-    eprintln!("{}", cli::invite_window(khor_node::link::invite_window_minutes()));
+    eprintln!(
+        "{}",
+        cli::invite_window(khor_node::link::invite_window_minutes())
+    );
     Ok(())
 }
 
@@ -3374,7 +3860,14 @@ fn adopt(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     let (_, name, tmux) = n.adopt_satellite(host, name)?;
     println!("{}", cli::adopted(&name, n.name()));
-    println!("{}", if tmux { cli::SAT_TMUX_YES } else { cli::SAT_TMUX_NO });
+    println!(
+        "{}",
+        if tmux {
+            cli::SAT_TMUX_YES
+        } else {
+            cli::SAT_TMUX_NO
+        }
+    );
     Ok(())
 }
 
@@ -3421,7 +3914,7 @@ fn attach_to(n: &Node, id: &SessionId) -> Result<(), String> {
 /// the resident serve bound, `Node::reach`). Splitting anywhere lower
 /// than this would mean two copies of the raw-mode dance.
 fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), String> {
-    use khor_node::host::{connect_at, write_frame, ClientOp};
+    use khor_node::host::{ClientOp, connect_at, write_frame};
     use std::io::{Read, Write};
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -3482,7 +3975,13 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
                 let Some(now) = tty_size() else { continue };
                 if now != last {
                     last = now;
-                    if tx.send(ClientOp::Resize { cols: now.0, rows: now.1 }).is_err() {
+                    if tx
+                        .send(ClientOp::Resize {
+                            cols: now.0,
+                            rows: now.1,
+                        })
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -3495,7 +3994,11 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
         match stream.read(&mut buf) {
             Ok(0) | Err(_) => break,
             Ok(nread) => {
-                if out.write_all(&buf[..nread]).and_then(|()| out.flush()).is_err() {
+                if out
+                    .write_all(&buf[..nread])
+                    .and_then(|()| out.flush())
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -3506,7 +4009,11 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
         eprintln!("{}", cli::detached(&id.0));
     } else {
         // The stream ended on the host's side — say what the row says.
-        match n.sessions().ok().and_then(|v| v.into_iter().find(|v| v.session.id == *id)) {
+        match n
+            .sessions()
+            .ok()
+            .and_then(|v| v.into_iter().find(|v| v.session.id == *id))
+        {
             Some(v) => match v.session.state.state.key() {
                 key @ ("done" | "failed" | "idle") => {
                     eprintln!("{}", cli::session_settled(state::word(key)))
@@ -3576,20 +4083,41 @@ fn raw_off(saved: &libc::termios) {
 /// Keys are printed beside the words because the keys are what the flags
 /// take. A listing of words alone would be a menu you cannot order from.
 fn print_face(style: &AvatarStyle) {
-    let mark = |on: bool| if on { format!("\t{}", cli::IN_USE) } else { String::new() };
+    let mark = |on: bool| {
+        if on {
+            format!("\t{}", cli::IN_USE)
+        } else {
+            String::new()
+        }
+    };
     println!("{}", cli::group_header(avatar::AXIS_PALETTE));
     println!("{}", style.palette.colors().join("\t"));
     let worn = style.palette.preset_id();
     for p in PRESETS {
-        println!("{}\t{}{}", p.id, avatar::word(p.id), mark(worn == Some(p.id)));
+        println!(
+            "{}\t{}{}",
+            p.id,
+            avatar::word(p.id),
+            mark(worn == Some(p.id))
+        );
     }
     println!("{}", cli::group_header(avatar::AXIS_VARIANT));
     for v in Variant::ALL {
-        println!("{}\t{}{}", v.key(), avatar::word(v.key()), mark(v == style.variant));
+        println!(
+            "{}\t{}{}",
+            v.key(),
+            avatar::word(v.key()),
+            mark(v == style.variant)
+        );
     }
     println!("{}", cli::group_header(avatar::AXIS_SHAPE));
     for s in FaceShape::ALL {
-        println!("{}\t{}{}", s.key(), avatar::word(s.key()), mark(s == style.shape));
+        println!(
+            "{}\t{}{}",
+            s.key(),
+            avatar::word(s.key()),
+            mark(s == style.shape)
+        );
     }
 }
 
@@ -3613,7 +4141,10 @@ fn group_word(group: &str) -> String {
         let key = if name.is_empty() { "unknown" } else { name };
         return category::word(key).to_owned();
     }
-    group.strip_prefix(list::GROUP_DEVICE).unwrap_or(group).to_owned()
+    group
+        .strip_prefix(list::GROUP_DEVICE)
+        .unwrap_or(group)
+        .to_owned()
 }
 
 fn human_age(ms: u64) -> String {
@@ -3667,7 +4198,7 @@ fn render(m: &khor_node::Message) -> String {
 /// keeps `VERBS` the only place a verb is declared.
 #[cfg(test)]
 mod gate {
-    use super::{Reach, NOTHING_TYPED, NOT_IN_USAGE, VERBS};
+    use super::{NOT_IN_USAGE, NOTHING_TYPED, Reach, VERBS};
     use khor_catalog::cli::USAGE;
 
     /// The words the usage promises, read back out of the text a person
@@ -3763,7 +4294,11 @@ mod gate {
                 "`{}` is {:?} and {} underscored; those must agree",
                 v.word,
                 v.reach,
-                if v.word.starts_with('_') { "is" } else { "is not" }
+                if v.word.starts_with('_') {
+                    "is"
+                } else {
+                    "is not"
+                }
             );
         }
     }
@@ -3777,7 +4312,9 @@ mod gate {
     fn every_verb_can_be_written_into_json_unescaped() {
         for v in VERBS {
             assert!(
-                !v.word.contains('"') && !v.word.contains('\\') && !v.word.contains(|c: char| c.is_control()),
+                !v.word.contains('"')
+                    && !v.word.contains('\\')
+                    && !v.word.contains(|c: char| c.is_control()),
                 "`{}` needs escaping, and `verbs` does not escape",
                 v.word
             );

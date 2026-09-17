@@ -139,13 +139,15 @@ impl ChatDoc {
             let list = LoroList::new();
             for f in files {
                 let fm = LoroMap::new();
-                fm.insert("name", f.name.as_str()).map_err(|e| e.to_string())?;
+                fm.insert("name", f.name.as_str())
+                    .map_err(|e| e.to_string())?;
                 fm.insert("size", f.size).map_err(|e| e.to_string())?;
                 fm.insert("digest", f.digest.as_str())
                     .map_err(|e| e.to_string())?;
                 list.push_container(fm).map_err(|e| e.to_string())?;
             }
-            m.insert_container("files", list).map_err(|e| e.to_string())?;
+            m.insert_container("files", list)
+                .map_err(|e| e.to_string())?;
             Ok(())
         })
     }
@@ -166,9 +168,7 @@ impl ChatDoc {
             .map_err(|e| e.to_string())?;
         m.insert("kind", kind).map_err(|e| e.to_string())?;
         fill(&m)?;
-        self.msgs()
-            .push_container(m)
-            .map_err(msg::cant_append)?;
+        self.msgs().push_container(m).map_err(msg::cant_append)?;
         self.inner.commit();
         Ok(id)
     }
@@ -359,7 +359,6 @@ fn read_files(m: &LoroMap) -> Vec<FileRef> {
         })
         .collect()
 }
-
 
 #[cfg(test)]
 mod tests;

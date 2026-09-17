@@ -132,7 +132,9 @@ pub fn answers_at(addr: SocketAddr) -> bool {
     // here would get something, and the page is the first thing one
     // asks for.
     if sock
-        .write_all(format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes())
+        .write_all(
+            format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n").as_bytes(),
+        )
         .is_err()
     {
         return false;
@@ -167,8 +169,8 @@ pub fn listen(root: PathBuf, port: u16) -> Result<Face, String> {
     // where every request is refused for a reason nobody can fix.
     key::ensure(&root)?;
 
-    let server = tiny_http::Server::http(("0.0.0.0", port))
-        .map_err(|e| msg::web_cant_listen(port, e))?;
+    let server =
+        tiny_http::Server::http(("0.0.0.0", port)).map_err(|e| msg::web_cant_listen(port, e))?;
     let addr = match server.server_addr() {
         tiny_http::ListenAddr::IP(a) => a,
         other => return Err(msg::web_cant_listen(port, format_args!("{other:?}"))),
@@ -199,7 +201,8 @@ pub fn listen(root: PathBuf, port: u16) -> Result<Face, String> {
 fn serve_one(rt: &tokio::runtime::Runtime, root: &Path, mut req: tiny_http::Request) {
     // The same belt the dev bridge wears: one poisoned corner must be
     // one request's 500, not the death of everybody's face.
-    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| answer(rt, root, &mut req)));
+    let outcome =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| answer(rt, root, &mut req)));
     let reply = outcome.unwrap_or_else(|_| Reply::refused(500, "panic in handler".to_owned()));
     let _ = req.respond(reply.into_response());
 }
@@ -225,7 +228,12 @@ impl Reply {
         // one transport seam unwraps (`api.ts`); a bare sentence would
         // arrive wearing quotation marks.
         let body = serde_json::to_vec(&sentence).unwrap_or_else(|_| b"\"error\"".to_vec());
-        Reply { code, kind: "application/json", body, remember: None }
+        Reply {
+            code,
+            kind: "application/json",
+            body,
+            remember: None,
+        }
     }
 
     /// The door shut in a browser's face: text a person reads, telling
@@ -235,7 +243,12 @@ impl Reply {
         let body = format!(
             "<!doctype html><meta charset=\"utf-8\"><body style=\"font-family:system-ui;display:grid;place-items:center;height:100dvh;margin:0\"><p style=\"max-width:36em;padding:1.5em\">{sentence}</p>"
         );
-        Reply { code: 403, kind: "text/html; charset=utf-8", body: body.into_bytes(), remember: None }
+        Reply {
+            code: 403,
+            kind: "text/html; charset=utf-8",
+            body: body.into_bytes(),
+            remember: None,
+        }
     }
 
     fn into_response(self) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
@@ -284,13 +297,11 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
         // and then starves, which is what "public page, locked data"
         // used to hand a keyless visitor.
         None => {
-            let fresh = query_key(query).filter(|k| {
-                matches!(key::read(root), Ok(Some(real)) if key::matches(k, &real))
-            });
-            if fresh.is_none()
-                && check_key(req, root).is_err() {
-                    return Reply::refused_page(msg::WEB_DOOR_SHUT);
-                }
+            let fresh = query_key(query)
+                .filter(|k| matches!(key::read(root), Ok(Some(real)) if key::matches(k, &real)));
+            if fresh.is_none() && check_key(req, root).is_err() {
+                return Reply::refused_page(msg::WEB_DOOR_SHUT);
+            }
             let mut reply = page(path);
             reply.remember = fresh;
             reply
@@ -314,7 +325,9 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             if cmd == "upload" {
                 let (machine, name) = match khor_gui_core::upload_args(query) {
                     Some(pair) => pair,
-                    None => return Reply::refused(400, msg::UPLOAD_NEEDS_MACHINE_AND_NAME.to_owned()),
+                    None => {
+                        return Reply::refused(400, msg::UPLOAD_NEEDS_MACHINE_AND_NAME.to_owned());
+                    }
                 };
                 return match khor_gui_core::send_upload(root, &machine, &name, req.as_reader()) {
                     Ok(id) => Reply {
@@ -331,15 +344,20 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // no reason to pull into memory.
             let mut body = String::new();
             let _ = std::io::Read::read_to_string(req.as_reader(), &mut body);
-            let args: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
+            let args: serde_json::Value =
+                serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
             match khor_gui_core::api::answer(rt, root, cmd, &args) {
-                Ok(json) => Reply { code: 200, kind: "application/json", body: json.into_bytes(), remember: None },
+                Ok(json) => Reply {
+                    code: 200,
+                    kind: "application/json",
+                    body: json.into_bytes(),
+                    remember: None,
+                },
                 Err(sentence) => Reply::refused(400, sentence),
             }
         }
     }
 }
-
 
 /// One file out of the binary. `/` is the page; anything unnamed is a
 /// 404 rather than the page, because this app has no client-side routes
@@ -348,7 +366,12 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
 fn page(path: &str) -> Reply {
     let wanted = if path == "/" { "/index.html" } else { path };
     match assets::ASSETS.iter().find(|(p, _)| *p == wanted) {
-        Some((p, bytes)) => Reply { code: 200, kind: content_type(p), body: bytes.to_vec(), remember: None },
+        Some((p, bytes)) => Reply {
+            code: 200,
+            kind: content_type(p),
+            body: bytes.to_vec(),
+            remember: None,
+        },
         None => Reply::refused(404, msg::web_no_such_page(path)),
     }
 }
@@ -387,10 +410,12 @@ fn content_type(path: &str) -> &'static str {
 /// this machine, who has the key. That is the key's job, and neither
 /// lock covers the other's ground.
 fn check_host(host: &str) -> Result<(), String> {
-    let name = host.rsplit_once(':').map_or(host, |(h, _)| h).trim_matches(['[', ']']);
-    let acceptable = name == "localhost"
-        || name.ends_with(".local")
-        || name.parse::<std::net::IpAddr>().is_ok();
+    let name = host
+        .rsplit_once(':')
+        .map_or(host, |(h, _)| h)
+        .trim_matches(['[', ']']);
+    let acceptable =
+        name == "localhost" || name.ends_with(".local") || name.parse::<std::net::IpAddr>().is_ok();
     if acceptable {
         Ok(())
     } else {
@@ -487,8 +512,15 @@ mod tests {
             "no /index.html in the embedded table: {:?}",
             assets::ASSETS.iter().map(|(p, _)| *p).collect::<Vec<_>>()
         );
-        let (_, html) = assets::ASSETS.iter().find(|(p, _)| *p == "/index.html").unwrap();
-        assert!(html.len() > 100, "index.html is {} bytes — that is not a page", html.len());
+        let (_, html) = assets::ASSETS
+            .iter()
+            .find(|(p, _)| *p == "/index.html")
+            .unwrap();
+        assert!(
+            html.len() > 100,
+            "index.html is {} bytes — that is not a page",
+            html.len()
+        );
         assert!(
             assets::ASSETS.iter().any(|(p, _)| p.ends_with(".js")),
             "a page with no script is a page with no app"
@@ -512,7 +544,14 @@ mod tests {
 
     #[test]
     fn only_an_address_may_name_this_machine() {
-        for good in ["192.168.1.7:5467", "10.0.0.2", "127.0.0.1:5467", "localhost:5467", "macmini.local:5467", "[::1]:5467"] {
+        for good in [
+            "192.168.1.7:5467",
+            "10.0.0.2",
+            "127.0.0.1:5467",
+            "localhost:5467",
+            "macmini.local:5467",
+            "[::1]:5467",
+        ] {
             assert!(check_host(good).is_ok(), "must accept {good}");
         }
         // The rebinding shape: a name that resolves here, arriving as

@@ -14,7 +14,9 @@ fn main() {
     let mut rs = String::from("// Generated from zh.toml by build.rs - do not edit.\n");
     let mut ts = String::from("// Generated from zh.toml by khor-catalog - do not edit.\n");
     for section in ["state", "category", "hop", "avatar", "cli", "msg", "gui"] {
-        let table = doc[section].as_table().expect("each section must be a table");
+        let table = doc[section]
+            .as_table()
+            .expect("each section must be a table");
         let mut texts: BTreeMap<&str, &str> = BTreeMap::new();
         for (k, v) in table {
             let v = v.as_str().expect("every value must be a string");
@@ -37,7 +39,9 @@ fn main() {
 
 /// Placeholders are {0}..{8}, contiguous from zero.
 fn arg_count(v: &str) -> usize {
-    (0..9).take_while(|i| v.contains(&format!("{{{i}}}"))).count()
+    (0..9)
+        .take_while(|i| v.contains(&format!("{{{i}}}")))
+        .count()
 }
 
 fn gen_rust(rs: &mut String, section: &str, table: &toml::Table) {
@@ -50,8 +54,9 @@ fn gen_rust(rs: &mut String, section: &str, table: &toml::Table) {
             writeln!(rs, "    pub const {name}: &str = {v:?};").unwrap();
         } else {
             let name = k.replace('-', "_");
-            let args: Vec<String> =
-                (0..n).map(|i| format!("a{i}: impl ::std::fmt::Display")).collect();
+            let args: Vec<String> = (0..n)
+                .map(|i| format!("a{i}: impl ::std::fmt::Display"))
+                .collect();
             let mut fmt = v.replace('{', "{{").replace('}', "}}");
             for i in 0..n {
                 fmt = fmt.replace(&format!("{{{{{i}}}}}"), &format!("{{a{i}}}"));
@@ -99,7 +104,10 @@ fn gen_ts(ts: &mut String, section: &str, table: &toml::Table) {
             writeln!(ts, "  {name}: {v:?},").unwrap();
         } else {
             let args: Vec<String> = (0..n).map(|i| format!("a{i}: string | number")).collect();
-            let mut body = v.replace('\\', "\\\\").replace('`', "\\`").replace("${", "\\${");
+            let mut body = v
+                .replace('\\', "\\\\")
+                .replace('`', "\\`")
+                .replace("${", "\\${");
             for i in 0..n {
                 body = body.replace(&format!("{{{i}}}"), &format!("${{a{i}}}"));
             }

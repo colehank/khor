@@ -47,7 +47,10 @@ pub struct Seat {
 }
 
 /// The middle: where the machine you are sitting at goes.
-pub const CENTRE: Seat = Seat { left: 50.0, top: 50.0 };
+pub const CENTRE: Seat = Seat {
+    left: 50.0,
+    top: 50.0,
+};
 
 /// How far out the ring sits, as a percentage of the side.
 ///
@@ -122,7 +125,10 @@ mod tests {
         }
         let mut sides: Vec<f32> = seats.iter().map(|s| s.left).collect();
         sides.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        assert!(sides[0] < CENTRE.left && sides[1] > CENTRE.left, "one each side: {sides:?}");
+        assert!(
+            sides[0] < CENTRE.left && sides[1] > CENTRE.left,
+            "one each side: {sides:?}"
+        );
     }
 
     /// The middle is where the ring averages out — which is what "evenly

@@ -53,12 +53,17 @@ pub struct DirPinDoc {
 
 impl DirPinDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     pub fn pinned(&self, key: &str) -> bool {
         matches!(
-            self.inner.get_map(PINS).get(key).and_then(|v| v.into_value().ok()),
+            self.inner
+                .get_map(PINS)
+                .get(key)
+                .and_then(|v| v.into_value().ok()),
             Some(LoroValue::Bool(true))
         )
     }
@@ -70,7 +75,10 @@ impl DirPinDoc {
         if self.pinned(key) == on {
             return Ok(());
         }
-        self.inner.get_map(PINS).insert(key, on).map_err(|e| e.to_string())?;
+        self.inner
+            .get_map(PINS)
+            .insert(key, on)
+            .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
     }
@@ -79,8 +87,11 @@ impl DirPinDoc {
     /// the device hex being the prefix.
     pub fn all(&self) -> Vec<String> {
         let map = self.inner.get_map(PINS);
-        let mut out: Vec<String> =
-            map.keys().filter(|k| self.pinned(k)).map(|k| k.to_string()).collect();
+        let mut out: Vec<String> = map
+            .keys()
+            .filter(|k| self.pinned(k))
+            .map(|k| k.to_string())
+            .collect();
         out.sort();
         out
     }
@@ -136,10 +147,16 @@ mod tests {
         let desk = DirPinDoc::new(2).unwrap();
         let k = key("d1e6", "/Users/x/proj");
         phone.set(&k, true).unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
-        assert!(desk.pinned(&k), "a pin made on the phone must reach the desk");
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert!(
+            desk.pinned(&k),
+            "a pin made on the phone must reach the desk"
+        );
         desk.set(&k, false).unwrap();
-        phone.merge(&desk.changes_since(&Default::default()).unwrap()).unwrap();
+        phone
+            .merge(&desk.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert!(!phone.pinned(&k), "an unpin must travel back");
         assert_eq!(desk.items(), 0, "an unpinned key is not an item");
     }

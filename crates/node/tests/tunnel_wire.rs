@@ -25,9 +25,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use khor_node::Node;
 use khor_node::proto::MAX_FRAME;
 use khor_node::tunnel;
-use khor_node::Node;
 use tokio::time::timeout;
 
 mod util;
@@ -67,11 +67,15 @@ async fn wait_for_endpoint_file(root: &Path) {
 /// for a target the exit machine's network can reach. Returns its bound
 /// address; the task lives until the test process ends.
 async fn echo_server() -> String {
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     tokio::spawn(async move {
         loop {
-            let Ok((sock, _)) = listener.accept().await else { break };
+            let Ok((sock, _)) = listener.accept().await else {
+                break;
+            };
             tokio::spawn(async move {
                 let (mut r, mut w) = sock.into_split();
                 let _ = tokio::io::copy(&mut r, &mut w).await;
@@ -141,12 +145,21 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
         .expect("pairing put alpha in beta's table");
     let status = timeout(
         Duration::from_secs(60),
-        raw_tunnel(iroh::SecretKey::generate(), &alpha_info.id, &alpha_info.addrs, &echo),
+        raw_tunnel(
+            iroh::SecretKey::generate(),
+            &alpha_info.id,
+            &alpha_info.addrs,
+            &echo,
+        ),
     )
     .await
     .expect("must not hang")
     .unwrap();
-    assert_eq!(status, tunnel::REFUSED, "an unpaired tunnel dial must be refused");
+    assert_eq!(
+        status,
+        tunnel::REFUSED,
+        "an unpaired tunnel dial must be refused"
+    );
 
     serve_a.abort();
     let _ = fs::remove_dir_all(&ra);
@@ -174,12 +187,16 @@ async fn read_until(sock: &mut tokio::net::TcpStream, needle: &[u8]) -> Vec<u8> 
 /// learned this shape at all.
 async fn http_server() -> (String, tokio::sync::mpsc::UnboundedReceiver<String>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let addr = listener.local_addr().unwrap().to_string();
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async move {
         loop {
-            let Ok((mut sock, _)) = listener.accept().await else { break };
+            let Ok((mut sock, _)) = listener.accept().await else {
+                break;
+            };
             let tx = tx.clone();
             tokio::spawn(async move {
                 let mut head = Vec::new();
@@ -227,7 +244,9 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
         .await
         .expect("dialling the tunnel must not hang")
         .unwrap();
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
     let proxy_addr = listener.local_addr().unwrap();
     let idle: tunnel::Activity = std::sync::Arc::new(|_busy| {});
     tokio::spawn(async move {
@@ -261,7 +280,10 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     // and no host, so there is nothing to route it to. Somebody has
     // pointed a plain client at this port as if it were the web server.
     let mut plain = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
-    plain.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
+    plain
+        .write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+        .await
+        .unwrap();
     let refused = read_until(&mut plain, b"\r\n\r\n").await;
     assert!(
         String::from_utf8_lossy(&refused).starts_with("HTTP/1.1 405"),
@@ -308,7 +330,10 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
         got.starts_with("GET /wiki?q=1 HTTP/1.1\r\n"),
         "the request line arrives in origin form, path only: {got:?}"
     );
-    assert!(got.contains("X-Mine: yes"), "the client's own headers are kept: {got:?}");
+    assert!(
+        got.contains("X-Mine: yes"),
+        "the client's own headers are kept: {got:?}"
+    );
     assert!(
         !got.to_ascii_lowercase().contains("proxy-connection"),
         "a header addressed to the proxy is not forwarded to the server: {got:?}"
@@ -319,7 +344,10 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     // handshake; the way to an https page through here is CONNECT, which
     // is what every browser already does.
     let mut wrong = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
-    wrong.write_all(b"GET https://example.invalid/ HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
+    wrong
+        .write_all(b"GET https://example.invalid/ HTTP/1.1\r\nHost: x\r\n\r\n")
+        .await
+        .unwrap();
     let refused_tls = read_until(&mut wrong, b"\r\n\r\n").await;
     assert!(
         String::from_utf8_lossy(&refused_tls).starts_with("HTTP/1.1 405"),
@@ -365,9 +393,10 @@ async fn wait_borrow_state(node: &Node, id: &str, want: khor_core::State) -> boo
     for _ in 0..40 {
         if let Ok(views) = node.sessions()
             && let Some(v) = views.iter().find(|v| v.session.id.0 == id)
-                && v.session.state.state == want {
-                    return true;
-                }
+            && v.session.state.state == want
+        {
+            return true;
+        }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     false
@@ -418,10 +447,20 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
         .await
         .expect("a second borrow of a held machine must not hang")
         .unwrap();
-    assert_eq!(again, session, "a second borrow of one machine is the first one");
-    assert_eq!(again_addr, addr, "and it answers where the first one listens");
     assert_eq!(
-        b.sessions().unwrap().iter().filter(|v| v.session.kind.0 == "borrow").count(),
+        again, session,
+        "a second borrow of one machine is the first one"
+    );
+    assert_eq!(
+        again_addr, addr,
+        "and it answers where the first one listens"
+    );
+    assert_eq!(
+        b.sessions()
+            .unwrap()
+            .iter()
+            .filter(|v| v.session.kind.0 == "borrow")
+            .count(),
         1,
         "so the session list gains no second row"
     );
@@ -438,7 +477,10 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
     // The two kinds are not shared even on one machine, so closing the
     // row a person is looking at cannot pull the network out from under
     // a page. Both are alive right now, so the ports really must differ.
-    assert_ne!(unlisted, session, "the hand-held borrow is not handed to a page");
+    assert_ne!(
+        unlisted, session,
+        "the hand-held borrow is not handed to a page"
+    );
     assert_ne!(unlisted_addr, addr, "each holds its own proxy port");
 
     // It reuses per machine the way the listed kind does.
@@ -446,7 +488,10 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
         .await
         .expect("a second unlisted borrow must not hang")
         .unwrap();
-    assert_eq!(unlisted_again, unlisted, "one unlisted borrow per machine too");
+    assert_eq!(
+        unlisted_again, unlisted,
+        "one unlisted borrow per machine too"
+    );
 
     // Borrowing your own network is refused in words, not left to dial
     // itself and time out.
@@ -491,7 +536,11 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
             // By id, for `wait_borrow_state`'s reason: "is there any
             // borrow row" and "is this borrow's row gone" stopped being
             // the same question the day a borrow could be rowless.
-            let has = b.sessions().unwrap().iter().any(|v| v.session.id.0 == session);
+            let has = b
+                .sessions()
+                .unwrap()
+                .iter()
+                .any(|v| v.session.id.0 == session);
             if !has {
                 gone = true;
                 break;
@@ -524,7 +573,10 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
         .await
         .expect("an unlisted borrow must not hang after a tick")
         .unwrap();
-    assert_eq!(after_tick, unlisted, "a tick does not reap a borrow that has no row");
+    assert_eq!(
+        after_tick, unlisted,
+        "a tick does not reap a borrow that has no row"
+    );
 
     // **Zero rows, with a page's borrow alive.** Asserted here rather
     // than beside the hand-held one because here it can fail on its own:
@@ -533,7 +585,11 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
     // true, and proving nothing. Down here the hand-held row is closed,
     // so anything the unlisted road registers has to show up.
     assert_eq!(
-        b.sessions().unwrap().iter().filter(|v| v.session.kind.0 == "borrow").count(),
+        b.sessions()
+            .unwrap()
+            .iter()
+            .filter(|v| v.session.kind.0 == "borrow")
+            .count(),
         0,
         "a live page borrow puts nothing in the session list"
     );
@@ -548,12 +604,14 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
         .await
         .expect("borrowing after a drop must not hang")
         .unwrap();
-    assert_ne!(regrown, unlisted, "a dropped borrow is not handed back as a live one");
+    assert_ne!(
+        regrown, unlisted,
+        "a dropped borrow is not handed back as a live one"
+    );
     timeout(Duration::from_secs(10), b.drop_borrow(&regrown))
         .await
         .expect("dropping a borrow must not hang")
         .unwrap();
-
 
     // **The other arm of the reuse: it is gated on the row still being
     // claimed, not merely on the machine matching.** After a close there
@@ -566,7 +624,10 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
         .await
         .expect("borrowing again after a close must not hang")
         .unwrap();
-    assert_ne!(after, session, "a closed borrow is not handed back as a live one");
+    assert_ne!(
+        after, session,
+        "a closed borrow is not handed back as a live one"
+    );
     b.close(&khor_node::SessionId(after)).unwrap();
 
     serve_a.abort();

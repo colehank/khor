@@ -73,9 +73,7 @@ pub mod category {
 }
 
 /// Milliseconds since the Unix epoch.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Millis(pub u64);
 
 /// The six state words. There is no seventh: unreachable is a freshness
@@ -222,8 +220,13 @@ pub enum Hop {
 }
 
 impl Hop {
-    pub const ALL: [Hop; 5] =
-        [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe, Hop::Unknown];
+    pub const ALL: [Hop; 5] = [
+        Hop::Direct,
+        Hop::Relay,
+        Hop::Idle,
+        Hop::NoServe,
+        Hop::Unknown,
+    ];
 
     /// Wire and catalog key.
     pub const fn key(self) -> &'static str {
@@ -333,8 +336,16 @@ mod hop_tests {
     /// three are three — wherever each is decided.
     #[test]
     fn the_three_silences_stay_apart() {
-        assert_eq!(Hop::of(false, false, false), Hop::Idle, "nothing in use at all");
-        assert_eq!(Hop::of(false, false, true), Hop::Unknown, "a road khor has no word for");
+        assert_eq!(
+            Hop::of(false, false, false),
+            Hop::Idle,
+            "nothing in use at all"
+        );
+        assert_eq!(
+            Hop::of(false, false, true),
+            Hop::Unknown,
+            "a road khor has no word for"
+        );
         let silent = [Hop::Idle, Hop::NoServe, Hop::Unknown];
         for (i, a) in silent.iter().enumerate() {
             for b in &silent[i + 1..] {
@@ -480,8 +491,14 @@ mod day_cell_tests {
     #[test]
     fn any_word_outranks_either_nothing() {
         for word in State::ALL {
-            assert!(DayCell::Word(word).rank() < DayCell::Unwatched.rank(), "{word:?}");
-            assert!(DayCell::Word(word).rank() < DayCell::Absent.rank(), "{word:?}");
+            assert!(
+                DayCell::Word(word).rank() < DayCell::Unwatched.rank(),
+                "{word:?}"
+            );
+            assert!(
+                DayCell::Word(word).rank() < DayCell::Absent.rank(),
+                "{word:?}"
+            );
         }
     }
 
@@ -1167,9 +1184,7 @@ pub struct Load {
 /// The four are what both vendors bill separately today, spelled so that
 /// one name means one thing on every vendor (`khor_node::usage` does the
 /// per-vendor arithmetic, and says where the two disagree).
-#[derive(
-    Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS,
-)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Tokens {
     /// Input the model had to read afresh — **never including what came
     /// out of a cache**. The vendors disagree about this one: claude
@@ -2109,19 +2124,18 @@ fn inline(line: &str) -> String {
                     || i == 0
                     || src[i - 1].is_whitespace()
                     || !src[i - 1].is_alphanumeric());
-            if opens
-                && let Some(close) = closing_run(&src, i + run, c, run) {
-                    let closes = !src[close - 1].is_whitespace()
-                        && (c != '_'
-                            || src
-                                .get(close + run)
-                                .is_none_or(|n| n.is_whitespace() || !n.is_alphanumeric()));
-                    if closes {
-                        out.push_str(&inline(&src[i + run..close].iter().collect::<String>()));
-                        i = close + run;
-                        continue;
-                    }
+            if opens && let Some(close) = closing_run(&src, i + run, c, run) {
+                let closes = !src[close - 1].is_whitespace()
+                    && (c != '_'
+                        || src
+                            .get(close + run)
+                            .is_none_or(|n| n.is_whitespace() || !n.is_alphanumeric()));
+                if closes {
+                    out.push_str(&inline(&src[i + run..close].iter().collect::<String>()));
+                    i = close + run;
+                    continue;
                 }
+            }
         }
         // [label](url) and ![alt](url) — the label is what was written
         // here; the address belongs to a face that can open it.
@@ -2129,12 +2143,12 @@ fn inline(line: &str) -> String {
             let open = if c == '!' { i + 1 } else { i };
             if let Some(shut) = src[open..].iter().position(|x| *x == ']').map(|p| open + p)
                 && src.get(shut + 1) == Some(&'(')
-                    && let Some(end) = src[shut..].iter().position(|x| *x == ')').map(|p| shut + p)
-                    {
-                        out.push_str(&inline(&src[open + 1..shut].iter().collect::<String>()));
-                        i = end + 1;
-                        continue;
-                    }
+                && let Some(end) = src[shut..].iter().position(|x| *x == ')').map(|p| shut + p)
+            {
+                out.push_str(&inline(&src[open + 1..shut].iter().collect::<String>()));
+                i = end + 1;
+                continue;
+            }
         }
         out.push(c);
         i += 1;
@@ -2373,7 +2387,10 @@ mod tests {
             zone: Some("Asia/Shanghai".to_owned()),
         };
         let mut frame = serde_json::to_value(&mine).expect("a reading serialises");
-        assert!(frame.get("zone").is_some(), "this node writes the field, or the removal below proves nothing");
+        assert!(
+            frame.get("zone").is_some(),
+            "this node writes the field, or the removal below proves nothing"
+        );
         frame.as_object_mut().expect("an object").remove("zone");
         let bytes = serde_json::to_vec(&frame).expect("the older frame serialises");
         let text = String::from_utf8(bytes.clone()).expect("json is utf-8");
@@ -2381,12 +2398,25 @@ mod tests {
             !text.contains("zone"),
             "the sample still carries a zone key, so 「an older peer never sent one」 is not what this is testing: {text}",
         );
-        let back: AccountReading = serde_json::from_slice(&bytes).expect("an older peer's frame still decodes");
-        assert_eq!(back.zone, None, "a frame with no zone must read as 「nobody said」, never as a zone");
-        assert_eq!(back.spent, Some(1.5), "the fields that were there are still there");
+        let back: AccountReading =
+            serde_json::from_slice(&bytes).expect("an older peer's frame still decodes");
+        assert_eq!(
+            back.zone, None,
+            "a frame with no zone must read as 「nobody said」, never as a zone"
+        );
+        assert_eq!(
+            back.spent,
+            Some(1.5),
+            "the fields that were there are still there"
+        );
         let again: AccountReading =
-            serde_json::from_slice(&serde_json::to_vec(&mine).expect("serialises")).expect("decodes");
-        assert_eq!(again.zone.as_deref(), Some("Asia/Shanghai"), "and what this node sends survives its own round trip");
+            serde_json::from_slice(&serde_json::to_vec(&mine).expect("serialises"))
+                .expect("decodes");
+        assert_eq!(
+            again.zone.as_deref(),
+            Some("Asia/Shanghai"),
+            "and what this node sends survives its own round trip"
+        );
     }
 
     fn a_session(kind: &str) -> Session {
@@ -2395,7 +2425,10 @@ mod tests {
             kind: Kind(kind.to_owned()),
             title: "build khor".to_owned(),
             home: DeviceId([7; 32]),
-            state: StateStamp { state: State::Busy, at: Millis(1) },
+            state: StateStamp {
+                state: State::Busy,
+                at: Millis(1),
+            },
             unread: 3,
             place: None,
             mux: false,
@@ -2487,8 +2520,22 @@ mod tests {
         // always at the tail, never in the middle: a mid-frame optional
         // desyncs the array on every older end.
         assert_eq!(bytes[0], 0x9e);
-        let (id, kind, title, home, state, unread, category, last, via, term, dead, unbacked, place, mux): SessionFrame =
-            rmp_serde::from_slice(&bytes).unwrap();
+        let (
+            id,
+            kind,
+            title,
+            home,
+            state,
+            unread,
+            category,
+            last,
+            via,
+            term,
+            dead,
+            unbacked,
+            place,
+            mux,
+        ): SessionFrame = rmp_serde::from_slice(&bytes).unwrap();
         // Field by field rather than as one tuple comparison: std stops
         // deriving `PartialEq` at twelve, and this frame is thirteen.
         // Deserializing into the tuple above is what pins the *order* —
@@ -2523,7 +2570,10 @@ mod tests {
             Kind("tui".to_owned()),
             "build khor".to_owned(),
             DeviceId([7; 32]),
-            StateStamp { state: State::Busy, at: Millis(1) },
+            StateStamp {
+                state: State::Busy,
+                at: Millis(1),
+            },
             0u64,
             Some("claude".to_owned()),
             None::<String>,
@@ -2532,10 +2582,16 @@ mod tests {
             false,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x9b, "the sample must be an eleven-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x9b,
+            "the sample must be an eleven-field frame, or it proves nothing"
+        );
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
-        assert!(!row.unbacked, "an older peer said nothing about backing; nothing may fade");
+        assert!(
+            !row.unbacked,
+            "an older peer said nothing about backing; nothing may fade"
+        );
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
     }
 
@@ -2550,7 +2606,10 @@ mod tests {
             Kind("tui".to_owned()),
             "build khor".to_owned(),
             DeviceId([7; 32]),
-            StateStamp { state: State::Busy, at: Millis(1) },
+            StateStamp {
+                state: State::Busy,
+                at: Millis(1),
+            },
             0u64,
             Some("claude".to_owned()),
             None::<String>,
@@ -2561,7 +2620,10 @@ mod tests {
             None::<String>,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x9d, "the sample must be a thirteen-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x9d,
+            "the sample must be a thirteen-field frame, or it proves nothing"
+        );
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
         assert!(!row.mux, "an older peer said nothing about a multiplexer");
@@ -2584,7 +2646,10 @@ mod tests {
             Kind("tui".to_owned()),
             "build khor".to_owned(),
             DeviceId([7; 32]),
-            StateStamp { state: State::Busy, at: Millis(1) },
+            StateStamp {
+                state: State::Busy,
+                at: Millis(1),
+            },
             0u64,
             Some("claude".to_owned()),
             None::<String>,
@@ -2594,10 +2659,16 @@ mod tests {
             false,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x9c, "the sample must be a twelve-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x9c,
+            "the sample must be a twelve-field frame, or it proves nothing"
+        );
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(row.place, None, "an older peer knows of no places, and khor invents none");
+        assert_eq!(
+            row.place, None,
+            "an older peer knows of no places, and khor invents none"
+        );
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
     }
 
@@ -2615,7 +2686,10 @@ mod tests {
             Kind("shell".to_owned()),
             "build khor".to_owned(),
             DeviceId([7; 32]),
-            StateStamp { state: State::Failed, at: Millis(1) },
+            StateStamp {
+                state: State::Failed,
+                at: Millis(1),
+            },
             0u64,
             Some("shell".to_owned()),
             None::<String>,
@@ -2623,10 +2697,16 @@ mod tests {
             false,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x9a, "the sample must be a ten-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x9a,
+            "the sample must be a ten-field frame, or it proves nothing"
+        );
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
-        assert!(!row.dead, "an older peer said nothing about dead, and nothing must fold");
+        assert!(
+            !row.dead,
+            "an older peer said nothing about dead, and nothing must fold"
+        );
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
     }
 
@@ -2646,14 +2726,23 @@ mod tests {
             Kind("tui".to_owned()),
             "build khor".to_owned(),
             DeviceId([7; 32]),
-            StateStamp { state: State::Busy, at: Millis(1) },
+            StateStamp {
+                state: State::Busy,
+                at: Millis(1),
+            },
             3u64,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x96, "the sample must be a six-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x96,
+            "the sample must be a six-field frame, or it proves nothing"
+        );
 
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(row.category, None, "an older peer said nothing about category");
+        assert_eq!(
+            row.category, None,
+            "an older peer said nothing about category"
+        );
         assert_eq!(row.title, "build khor", "…and the rest of the row survived");
         assert_eq!(row.unread, 3);
     }
@@ -2689,8 +2778,18 @@ mod tests {
             None::<f64>,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x9d, "the sample must be a thirteen-field frame, or it proves nothing");
-        for absent in ["expires", "models", "days", "spent_this", "model_days", "log_capped"] {
+        assert_eq!(
+            bytes[0], 0x9d,
+            "the sample must be a thirteen-field frame, or it proves nothing"
+        );
+        for absent in [
+            "expires",
+            "models",
+            "days",
+            "spent_this",
+            "model_days",
+            "log_capped",
+        ] {
             assert!(
                 !String::from_utf8_lossy(&bytes).contains(absent),
                 "the sample must not carry {absent}, a key it predates",
@@ -2698,14 +2797,24 @@ mod tests {
         }
 
         let r: AccountReading = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(r.expires_at, None, "an older peer said nothing about expiry");
+        assert_eq!(
+            r.expires_at, None,
+            "an older peer said nothing about expiry"
+        );
         assert!(r.models.is_empty(), "…and nothing about a model limit");
-        assert!(r.days.is_empty(), "…and no day buckets, rather than a day at the epoch");
+        assert!(
+            r.days.is_empty(),
+            "…and no day buckets, rather than a day at the epoch"
+        );
         assert_eq!(r.spent_this_month, None, "…and no month figure");
         assert_eq!(r.spent_all_time, None, "…nor a lifetime one");
         assert!(r.model_days.is_empty(), "…no itemised models");
         assert_eq!(r.log_capped, None, "…and a log it never had was not cut");
-        assert_eq!(r.fill, Some(0.45), "…while the rest of the reading survived whole");
+        assert_eq!(
+            r.fill,
+            Some(0.45),
+            "…while the rest of the reading survived whole"
+        );
         assert_eq!(r.name, "gateway");
     }
 
@@ -2720,7 +2829,10 @@ mod tests {
     fn a_vitals_frame_from_an_older_peer_decodes_with_no_disk() {
         let old = (12.5f32, 10u32, Fill { used: 8, total: 32 });
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x93, "the sample must be a three-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x93,
+            "the sample must be a three-field frame, or it proves nothing"
+        );
 
         let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(v.disk, None, "an older peer said nothing about a disk");
@@ -2745,7 +2857,10 @@ mod tests {
             uptime_s: 0,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x99, "nine fields today (uptime rode the tail on 2026-09-03)");
+        assert_eq!(
+            bytes[0], 0x99,
+            "nine fields today (uptime rode the tail on 2026-09-03)"
+        );
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 
@@ -2768,10 +2883,16 @@ mod tests {
             Option::<Gpu>::None,
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x95, "the sample must be a five-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x95,
+            "the sample must be a five-field frame, or it proves nothing"
+        );
 
         let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
-        assert_eq!(v.version, None, "an older peer said nothing about its version");
+        assert_eq!(
+            v.version, None,
+            "an older peer said nothing about its version"
+        );
         assert_eq!(v.cpu_pct, 7.5, "…and the rest of the reading survived");
         assert_eq!((v.cores, v.mem.used, v.mem.total), (4, 2, 16));
         assert_eq!(v.disk, Some(Fill { used: 1, total: 4 }));
@@ -2803,9 +2924,15 @@ mod tests {
     /// full disk as a fine one.
     #[test]
     fn strain_survives_fills_near_u64_max() {
-        let full = Fill { used: u64::MAX, total: u64::MAX };
+        let full = Fill {
+            used: u64::MAX,
+            total: u64::MAX,
+        };
         assert_eq!(full.strain(), Some(Strain::Critical));
-        let fine = Fill { used: u64::MAX / 2, total: u64::MAX };
+        let fine = Fill {
+            used: u64::MAX / 2,
+            total: u64::MAX,
+        };
         assert_eq!(fine.strain(), None);
     }
 
@@ -2818,9 +2945,17 @@ mod tests {
     /// decoding it back would pass whatever the struct looked like.
     #[test]
     fn a_vitals_frame_from_an_older_peer_decodes_with_no_gpu() {
-        let old = (7.5f32, 4u32, Fill { used: 2, total: 16 }, Some(Fill { used: 5, total: 9 }));
+        let old = (
+            7.5f32,
+            4u32,
+            Fill { used: 2, total: 16 },
+            Some(Fill { used: 5, total: 9 }),
+        );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x94, "the sample must be a four-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x94,
+            "the sample must be a four-field frame, or it proves nothing"
+        );
 
         let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(v.gpu, None, "an older peer said nothing about a GPU");
@@ -2843,14 +2978,21 @@ mod tests {
                 cores: 8,
                 mem: Fill { used: 1, total: 2 },
                 disk: None,
-                gpu: Some(Gpu { util_pct: 48.0, cards: 2, mem }),
+                gpu: Some(Gpu {
+                    util_pct: 48.0,
+                    cards: 2,
+                    mem,
+                }),
                 version: None,
                 gpus: vec![],
                 volumes: vec![],
                 uptime_s: 0,
             };
             let bytes = rmp_serde::to_vec(&v).unwrap();
-            assert_eq!(bytes[0], 0x99, "nine fields today (uptime rode the tail on 2026-09-03)");
+            assert_eq!(
+                bytes[0], 0x99,
+                "nine fields today (uptime rode the tail on 2026-09-03)"
+            );
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
     }
@@ -2869,17 +3011,31 @@ mod tests {
             4u32,
             Fill { used: 2, total: 16 },
             Some(Fill { used: 5, total: 9 }),
-            Some(Gpu { util_pct: 40.0, cards: 2, mem: None }),
+            Some(Gpu {
+                util_pct: 40.0,
+                cards: 2,
+                mem: None,
+            }),
             Some("0.1.13".to_owned()),
         );
         let bytes = rmp_serde::to_vec(&old).unwrap();
-        assert_eq!(bytes[0], 0x96, "the sample must be a six-field frame, or it proves nothing");
+        assert_eq!(
+            bytes[0], 0x96,
+            "the sample must be a six-field frame, or it proves nothing"
+        );
 
         let v: Vitals = rmp_serde::from_slice(&bytes).unwrap();
         assert!(v.gpus.is_empty(), "an older peer said nothing per card");
         assert!(v.volumes.is_empty(), "…nor per volume");
         assert_eq!(v.cpu_pct, 7.5, "…and the rest of the reading survived");
-        assert_eq!(v.gpu, Some(Gpu { util_pct: 40.0, cards: 2, mem: None }));
+        assert_eq!(
+            v.gpu,
+            Some(Gpu {
+                util_pct: 40.0,
+                cards: 2,
+                mem: None
+            })
+        );
     }
 
     /// The cards and the volumes are on the wire when they are known and
@@ -2893,7 +3049,11 @@ mod tests {
             cores: 8,
             mem: Fill { used: 1, total: 2 },
             disk: Some(Fill { used: 5, total: 9 }),
-            gpu: Some(Gpu { util_pct: 25.0, cards: 2, mem: None }),
+            gpu: Some(Gpu {
+                util_pct: 25.0,
+                cards: 2,
+                mem: None,
+            }),
             version: None,
             gpus: vec![
                 GpuCard {
@@ -2902,16 +3062,30 @@ mod tests {
                     mem: Some(Fill { used: 3, total: 24 }),
                     temp_c: Some(61.0),
                 },
-                GpuCard { name: String::new(), util_pct: 0.0, mem: None, temp_c: None },
+                GpuCard {
+                    name: String::new(),
+                    util_pct: 0.0,
+                    mem: None,
+                    temp_c: None,
+                },
             ],
             volumes: vec![
-                Volume { mount: "/".to_owned(), fill: Fill { used: 5, total: 9 } },
-                Volume { mount: "/data".to_owned(), fill: Fill { used: 1, total: 4 } },
+                Volume {
+                    mount: "/".to_owned(),
+                    fill: Fill { used: 5, total: 9 },
+                },
+                Volume {
+                    mount: "/data".to_owned(),
+                    fill: Fill { used: 1, total: 4 },
+                },
             ],
             uptime_s: 86_400 * 3,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
-        assert_eq!(bytes[0], 0x99, "nine fields today (uptime rode the tail on 2026-09-03)");
+        assert_eq!(
+            bytes[0], 0x99,
+            "nine fields today (uptime rode the tail on 2026-09-03)"
+        );
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
 
@@ -2924,7 +3098,12 @@ mod tests {
         let day = UsageDay {
             day: "2026-08-17".to_owned(),
             category: "claude".to_owned(),
-            tokens: Tokens { input: 1, cached_input: 2, cache_write: 3, output: 4 },
+            tokens: Tokens {
+                input: 1,
+                cached_input: 2,
+                cache_write: 3,
+                output: 4,
+            },
         };
         let bytes = rmp_serde::to_vec(&day.tokens).unwrap();
         assert_eq!(bytes[0], 0x94, "four billing kinds today");
@@ -2976,8 +3155,14 @@ mod tests {
     #[test]
     fn an_empty_answer_and_a_blind_one_do_not_look_alike_on_the_wire() {
         let quiet = Usage::default();
-        let blind = Usage { unreadable: 2, ..Usage::default() };
-        assert_ne!(rmp_serde::to_vec(&quiet).unwrap(), rmp_serde::to_vec(&blind).unwrap());
+        let blind = Usage {
+            unreadable: 2,
+            ..Usage::default()
+        };
+        assert_ne!(
+            rmp_serde::to_vec(&quiet).unwrap(),
+            rmp_serde::to_vec(&blind).unwrap()
+        );
         for answer in [quiet, blind] {
             let bytes = rmp_serde::to_vec(&answer).unwrap();
             assert_eq!(rmp_serde::from_slice::<Usage>(&bytes).unwrap(), answer);
@@ -2989,8 +3174,18 @@ mod tests {
     /// nobody would question.
     #[test]
     fn adding_tokens_saturates_and_a_zero_day_knows_it_is_zero() {
-        let mut t = Tokens { input: u64::MAX, cached_input: 0, cache_write: 0, output: 5 };
-        t.add(Tokens { input: 10, cached_input: 0, cache_write: 0, output: 5 });
+        let mut t = Tokens {
+            input: u64::MAX,
+            cached_input: 0,
+            cache_write: 0,
+            output: 5,
+        };
+        t.add(Tokens {
+            input: 10,
+            cached_input: 0,
+            cache_write: 0,
+            output: 5,
+        });
         assert_eq!(t.input, u64::MAX);
         assert_eq!(t.output, 10);
         assert!(!t.is_zero());
@@ -3024,10 +3219,16 @@ mod plain_tests {
             "it is Nous, arXiv:2606.22030; v1 was called \"Nous\""
         );
         assert_eq!(plain("## Overview"), "Overview");
-        assert_eq!(plain("- never refuses an update"), "never refuses an update");
+        assert_eq!(
+            plain("- never refuses an update"),
+            "never refuses an update"
+        );
         assert_eq!(plain("1. the first step"), "the first step");
         assert_eq!(plain("> the quoted line"), "the quoted line");
-        assert_eq!(plain("see [khor](https://example.com) here"), "see khor here");
+        assert_eq!(
+            plain("see [khor](https://example.com) here"),
+            "see khor here"
+        );
         assert_eq!(plain("~~struck~~kept"), "struckkept");
         assert_eq!(plain("**bold with `code`**"), "bold with code");
         assert_eq!(plain("---"), "");
@@ -3039,7 +3240,10 @@ mod plain_tests {
     #[test]
     fn a_tables_grid_and_a_fences_tag_are_not_words() {
         let said = "Overview\n\n| item | count |\n|---|---:|\n| members | 16 |\n\n```python\nprint(1)\n```";
-        assert_eq!(preview(&plain(said)), "Overview item count members 16 print(1)");
+        assert_eq!(
+            preview(&plain(said)),
+            "Overview item count members 16 print(1)"
+        );
     }
 
     /// What is not certainly a mark stays as typed: a preview with a
@@ -3049,9 +3253,15 @@ mod plain_tests {
         // Not flanking: a star with space on the inside opens nothing.
         assert_eq!(plain("2 * 3 * 4 = 24"), "2 * 3 * 4 = 24");
         // Intraword underscores are identifiers, not emphasis.
-        assert_eq!(plain("run snake_case_name here"), "run snake_case_name here");
+        assert_eq!(
+            plain("run snake_case_name here"),
+            "run snake_case_name here"
+        );
         // Unclosed marks are just characters.
-        assert_eq!(plain("wrote **and forgot to close"), "wrote **and forgot to close");
+        assert_eq!(
+            plain("wrote **and forgot to close"),
+            "wrote **and forgot to close"
+        );
         assert_eq!(plain("the cost is `unclosed"), "the cost is `unclosed");
         // A dash that leads real content is a bullet; a word is not.
         assert_eq!(plain("-nospace-dash"), "-nospace-dash");

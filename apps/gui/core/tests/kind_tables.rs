@@ -55,10 +55,19 @@ fn list_after(src: &str, needle: &str) -> BTreeSet<String> {
 
 #[test]
 fn the_node_and_the_file_view_agree_about_what_an_image_is() {
-    let rust = list_after(&repo_file("../../../crates/node/src/preview.rs"), "const IMAGES");
+    let rust = list_after(
+        &repo_file("../../../crates/node/src/preview.rs"),
+        "const IMAGES",
+    );
     let ts = list_after(&repo_file("../src/views/FileView.tsx"), "const IMAGES");
-    assert!(rust.len() >= 6, "the rust finder matched {rust:?}, which is too few to be the table");
-    assert!(ts.len() >= 6, "the ts finder matched {ts:?}, which is too few to be the table");
+    assert!(
+        rust.len() >= 6,
+        "the rust finder matched {rust:?}, which is too few to be the table"
+    );
+    assert!(
+        ts.len() >= 6,
+        "the ts finder matched {ts:?}, which is too few to be the table"
+    );
     assert_eq!(
         rust, ts,
         "the node and the file view disagree about which files are pictures — the view sends one \
@@ -68,7 +77,10 @@ fn the_node_and_the_file_view_agree_about_what_an_image_is() {
 
 #[test]
 fn the_node_and_the_file_view_agree_about_what_a_document_is() {
-    let rust = list_after(&repo_file("../../../crates/node/src/preview.rs"), "const DOCS");
+    let rust = list_after(
+        &repo_file("../../../crates/node/src/preview.rs"),
+        "const DOCS",
+    );
     let ts = list_after(&repo_file("../src/views/FileView.tsx"), "const DOCS");
     // **Six, and it was eleven until 工作区批⑤.** The floor exists to
     // catch a finder that stopped matching (an empty set agrees with an
@@ -90,7 +102,13 @@ fn the_node_and_the_file_view_agree_about_what_a_document_is() {
     // no longer be written back, on the one format this repo is written
     // in.
     for text in ["md", "markdown", "csv", "tsv", "pdf"] {
-        assert!(!rust.contains(text), "{text} is back in the node's document table");
-        assert!(!ts.contains(text), "{text} is back in the file view's document table");
+        assert!(
+            !rust.contains(text),
+            "{text} is back in the node's document table"
+        );
+        assert!(
+            !ts.contains(text),
+            "{text} is back in the file view's document table"
+        );
     }
 }

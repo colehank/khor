@@ -116,7 +116,9 @@ pub fn checkout_root(dir: &Path) -> Option<PathBuf> {
 /// would say it does.
 pub fn shorten(path: &Path) -> String {
     let shown = path.display().to_string();
-    let Some(home) = std::env::home_dir() else { return shown };
+    let Some(home) = std::env::home_dir() else {
+        return shown;
+    };
     shorten_under(&shown, &home.display().to_string())
 }
 
@@ -195,7 +197,11 @@ pub fn merge(rooted: impl IntoIterator<Item = (String, u32, i64)>) -> Vec<Place>
     }
     let mut out: Vec<Place> = by
         .into_iter()
-        .map(|(path, (sessions, last_ms))| Place { path, sessions, last_ms })
+        .map(|(path, (sessions, last_ms))| Place {
+            path,
+            sessions,
+            last_ms,
+        })
         .collect();
     out.sort_by(|a, b| b.last_ms.cmp(&a.last_ms).then_with(|| a.path.cmp(&b.path)));
     out
@@ -254,9 +260,17 @@ mod tests {
         }
         let under = home.join("Downloads");
         if under.is_dir() {
-            assert_eq!(project_root(&under), under, "a plain directory under home is itself");
+            assert_eq!(
+                project_root(&under),
+                under,
+                "a plain directory under home is itself"
+            );
         }
-        assert_eq!(project_root(&home), home, "and work done in ~ still places in ~");
+        assert_eq!(
+            project_root(&home),
+            home,
+            "and work done in ~ still places in ~"
+        );
     }
 
     /// **No line is drawn here any more.** Both of these are places a
@@ -278,8 +292,15 @@ mod tests {
         assert_eq!(places.len(), 2, "{places:?}");
         let has = |p: &std::path::Path| places.iter().any(|q| q.path == p.display().to_string());
         assert!(has(&repo), "the checkout folded to its root");
-        assert!(has(&scratch), "and the directory with no marker is here too");
-        assert_eq!(checkout_root(&scratch), None, "and the walk withholds its fallback");
+        assert!(
+            has(&scratch),
+            "and the directory with no marker is here too"
+        );
+        assert_eq!(
+            checkout_root(&scratch),
+            None,
+            "and the walk withholds its fallback"
+        );
     }
 
     /// A linked worktree's `.git` is a *file*. An `is_dir` test here
@@ -290,7 +311,11 @@ mod tests {
         let tmp = root("worktree");
         let tree = tmp.join("tree");
         std::fs::create_dir_all(tree.join("src")).unwrap();
-        std::fs::write(tree.join(".git"), "gitdir: /elsewhere/.git/worktrees/tree\n").unwrap();
+        std::fs::write(
+            tree.join(".git"),
+            "gitdir: /elsewhere/.git/worktrees/tree\n",
+        )
+        .unwrap();
 
         assert_eq!(project_root(&tree.join("src")), tree);
     }
@@ -324,7 +349,11 @@ mod tests {
         let other = tmp.join("elsewhere");
         std::fs::create_dir_all(&other).unwrap();
 
-        let places = fold([(deep, 3, 100), (repo.clone(), 2, 500), (other.clone(), 1, 900)]);
+        let places = fold([
+            (deep, 3, 100),
+            (repo.clone(), 2, 500),
+            (other.clone(), 1, 900),
+        ]);
 
         // The control arm: an unrelated directory must stay its own
         // place. A fold that answered "one place" for everything would

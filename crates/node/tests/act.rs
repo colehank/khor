@@ -14,8 +14,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_core::State;
-use khor_node::proto::{Request, Response};
 use khor_node::Node;
+use khor_node::proto::{Request, Response};
 use tokio::time::timeout;
 
 mod util;
@@ -121,7 +121,10 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     //
     // So the assertion is the rule itself: gamma sees the offer, and
     // wears the ordinary unseen-content word for it.
-    assert!(g.transfer_is_here(&tid), "the offer must replicate to a third device");
+    assert!(
+        g.transfer_is_here(&tid),
+        "the offer must replicate to a third device"
+    );
     let views = g.sessions().unwrap();
     let view = views
         .iter()
@@ -147,14 +150,22 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
         .await
         .expect("a routed accept must not hang")
         .unwrap();
-    assert_eq!(moved, payload.len() as u64, "the pull should move the whole payload");
+    assert_eq!(
+        moved,
+        payload.len() as u64,
+        "the pull should move the whole payload"
+    );
     let landed = fs::read_dir(rb.join(".khor").join("chat").join("beta").join("files"))
         .unwrap()
         .flatten()
         .map(|e| e.path())
         .find(|p| !p.file_name().unwrap().to_string_lossy().starts_with('.'))
         .expect("the payload should land on beta");
-    assert_eq!(fs::read(&landed).unwrap(), payload, "bytes verbatim on the recipient");
+    assert_eq!(
+        fs::read(&landed).unwrap(),
+        payload,
+        "bytes verbatim on the recipient"
+    );
     // The path came back across two hops to a machine that has no such
     // file and no such directory — so this compares what the wire said
     // against what is on beta's disk, which is the only way to tell a
@@ -174,7 +185,10 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     // …and still says where it is. A file that arrived on an earlier
     // run is no less present, and a caller pointing something at it
     // would otherwise be told nothing on every run but the first.
-    assert_eq!(said_again, said, "an already-landed payload still names its path");
+    assert_eq!(
+        said_again, said,
+        "an already-landed payload still names its path"
+    );
 
     // **The outcome does not travel to the third device any more, and
     // that is the design rather than a loss.** This block used to sync
@@ -194,7 +208,10 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
         .expect("sync must not hang")
         .unwrap();
     assert!(
-        g.sessions().unwrap().iter().all(|v| !v.session.id.0.starts_with("transfer/")),
+        g.sessions()
+            .unwrap()
+            .iter()
+            .all(|v| !v.session.id.0.starts_with("transfer/")),
         "no transfer row may come back from a sync"
     );
 
@@ -215,7 +232,10 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
             gamma_key,
             &beta_info.id,
             &beta_info.addrs,
-            &Request::Act { session: tid.0.clone(), action: "detonate".into() },
+            &Request::Act {
+                session: tid.0.clone(),
+                action: "detonate".into(),
+            },
         ),
     )
     .await
@@ -233,7 +253,10 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
             iroh::SecretKey::generate(),
             &beta_info.id,
             &beta_info.addrs,
-            &Request::Act { session: tid.0.clone(), action: "accept".into() },
+            &Request::Act {
+                session: tid.0.clone(),
+                action: "accept".into(),
+            },
         ),
     )
     .await

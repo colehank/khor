@@ -73,8 +73,8 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use khor_core::{Tokens, Usage, UsageDay};
 
@@ -266,7 +266,11 @@ impl Meters {
         for root in openclaw::ROOTS {
             meters.push(Box::new(openclaw::OpenClaw::at(home.join(root))));
         }
-        Meters { meters, cached: Mutex::new(None), passes: AtomicU64::new(0) }
+        Meters {
+            meters,
+            cached: Mutex::new(None),
+            passes: AtomicU64::new(0),
+        }
     }
 
     /// Adds one meter. How a test names its own vendor.
@@ -330,11 +334,15 @@ impl Meters {
         let tree = self.shape();
         let mut cached = self.cached.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(had) = cached.as_ref()
-            && had.tree == tree {
-                return had.usage.clone();
-            }
+            && had.tree == tree
+        {
+            return had.usage.clone();
+        }
         let usage = self.tally_in(&zone);
-        *cached = Some(Cached { tree, usage: usage.clone() });
+        *cached = Some(Cached {
+            tree,
+            usage: usage.clone(),
+        });
         usage
     }
 
@@ -344,7 +352,9 @@ impl Meters {
         for m in &self.meters {
             let mut stack = vec![m.root()];
             while let Some(dir) = stack.pop() {
-                let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+                let Ok(rd) = std::fs::read_dir(&dir) else {
+                    continue;
+                };
                 for e in rd.flatten() {
                     match e.file_type() {
                         Ok(t) if t.is_dir() => stack.push(e.path()),
@@ -394,7 +404,9 @@ impl Meters {
             unreadable = unreadable.saturating_add(tally.unreadable);
             for k in tally.kept {
                 let day = k.at.to_zoned(zone.clone()).date().to_string();
-                rows.entry((day, m.vendor(), k.model)).or_default().add(k.tokens);
+                rows.entry((day, m.vendor(), k.model))
+                    .or_default()
+                    .add(k.tokens);
             }
         }
         let mut models: Vec<khor_core::UsageModelDay> = rows
@@ -408,12 +420,14 @@ impl Meters {
             // the same answer**: these counters are unsigned, so a sum
             // is zero exactly when every part of it is.
             .filter(|(_, tokens)| !tokens.is_zero())
-            .map(|((day, category, model), tokens)| khor_core::UsageModelDay {
-                day,
-                category: category.to_owned(),
-                model: model.map(|m| m.to_string()),
-                tokens,
-            })
+            .map(
+                |((day, category, model), tokens)| khor_core::UsageModelDay {
+                    day,
+                    category: category.to_owned(),
+                    model: model.map(|m| m.to_string()),
+                    tokens,
+                },
+            )
             .collect();
         // Oldest first, and within a day by vendor name, so that two
         // machines asked the same question answer in the same order —
@@ -447,7 +461,12 @@ impl Meters {
                 }),
             }
         }
-        Usage { days, unreadable, models, today: Some(today_in(zone).to_string()) }
+        Usage {
+            days,
+            unreadable,
+            models,
+            today: Some(today_in(zone).to_string()),
+        }
     }
 }
 
@@ -554,7 +573,9 @@ fn jsonl_under(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let path = e.path();
             match e.file_type() {
@@ -562,10 +583,12 @@ fn jsonl_under(root: &Path) -> Vec<PathBuf> {
                 // make one transcript two, and every token in it count
                 // twice.
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file()
-                    && path.extension().and_then(|x| x.to_str()) == Some("jsonl") => {
-                        out.push(path);
-                    }
+                Ok(t)
+                    if t.is_file()
+                        && path.extension().and_then(|x| x.to_str()) == Some("jsonl") =>
+                {
+                    out.push(path);
+                }
                 _ => {}
             }
         }
@@ -580,15 +603,18 @@ fn json_under(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let path = e.path();
             match e.file_type() {
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file()
-                    && path.extension().and_then(|x| x.to_str()) == Some("json") => {
-                        out.push(path);
-                    }
+                Ok(t)
+                    if t.is_file() && path.extension().and_then(|x| x.to_str()) == Some("json") =>
+                {
+                    out.push(path);
+                }
                 _ => {}
             }
         }
@@ -607,15 +633,16 @@ fn named_under(root: &Path, name: &str) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let path = e.path();
             match e.file_type() {
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file()
-                    && path.file_name().and_then(|x| x.to_str()) == Some(name) => {
-                        out.push(path);
-                    }
+                Ok(t) if t.is_file() && path.file_name().and_then(|x| x.to_str()) == Some(name) => {
+                    out.push(path);
+                }
                 _ => {}
             }
         }
@@ -663,7 +690,9 @@ struct Held<S> {
 
 impl<S: Default> Default for Files<S> {
     fn default() -> Files<S> {
-        Files { by_path: HashMap::new() }
+        Files {
+            by_path: HashMap::new(),
+        }
     }
 }
 
@@ -691,7 +720,11 @@ impl<S: Default> Files<S> {
                 state: S::default(),
             });
             if len < held.consumed {
-                *held = Held { consumed: 0, unreadable: 0, state: S::default() };
+                *held = Held {
+                    consumed: 0,
+                    unreadable: 0,
+                    state: S::default(),
+                };
             }
             if len == held.consumed {
                 continue;
@@ -818,7 +851,9 @@ struct WholeFile<S> {
 
 impl<S> Default for Whole<S> {
     fn default() -> Whole<S> {
-        Whole { by_path: HashMap::new() }
+        Whole {
+            by_path: HashMap::new(),
+        }
     }
 }
 
@@ -842,11 +877,21 @@ impl<S> Whole<S> {
                 .map(|d| d.as_millis() as i64)
                 .unwrap_or(0);
             if let Some(had) = self.by_path.get(&path)
-                && had.len == len && had.modified_ms == modified_ms {
-                    continue;
-                }
+                && had.len == len
+                && had.modified_ms == modified_ms
+            {
+                continue;
+            }
             let (state, unreadable) = parse(&path);
-            self.by_path.insert(path, WholeFile { len, modified_ms, state, unreadable });
+            self.by_path.insert(
+                path,
+                WholeFile {
+                    len,
+                    modified_ms,
+                    state,
+                    unreadable,
+                },
+            );
         }
         let mut unreadable = 0u64;
         let mut states = Vec::with_capacity(self.by_path.len());
@@ -949,7 +994,9 @@ fn cached_comes_out_of_input(
 /// No total, no check — the caller falls back to asking whether it
 /// recognised any field at all.
 fn reconciled(tokens: Tokens, total: Option<u64>) -> Option<Tokens> {
-    let Some(total) = total else { return Some(tokens) };
+    let Some(total) = total else {
+        return Some(tokens);
+    };
     let four = tokens
         .input
         .saturating_add(tokens.cached_input)
@@ -1011,7 +1058,7 @@ pub mod claude {
 
     use khor_core::Tokens;
 
-    use super::{at_of, Files, Kept, Meter, Read, Tally};
+    use super::{Files, Kept, Meter, Read, Tally, at_of};
 
     /// This vendor's name — the same string [`crate::adaptor::claude`]
     /// stamps on its rows, so a session and its tokens land in one
@@ -1029,7 +1076,10 @@ pub mod claude {
 
     impl Claude {
         pub fn at(root: PathBuf) -> Claude {
-            Claude { root, files: Mutex::new(Files::default()) }
+            Claude {
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
 
         fn projects_dir(&self) -> PathBuf {
@@ -1043,7 +1093,12 @@ pub mod claude {
     /// this vendor already reports it net of the cache, which is visible
     /// in the files as a two-digit input beside a five-digit cache read.
     fn tokens_of(usage: &serde_json::Value) -> Tokens {
-        let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        let n = |k: &str| {
+            usage
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         Tokens {
             input: n("input_tokens"),
             cached_input: n("cache_read_input_tokens"),
@@ -1057,7 +1112,9 @@ pub mod claude {
         if v.get("type").and_then(serde_json::Value::as_str) != Some("assistant") {
             return Read::Fine;
         }
-        let Some(message) = v.get("message") else { return Read::Fine };
+        let Some(message) = v.get("message") else {
+            return Read::Fine;
+        };
         let Some(usage) = message.get("usage").filter(|u| u.is_object()) else {
             return Read::Fine;
         };
@@ -1086,7 +1143,11 @@ pub mod claude {
                 // model produced them.
                 best.insert(
                     id.to_owned(),
-                    Kept { at, tokens, model: super::model_of(message, "model") },
+                    Kept {
+                        at,
+                        tokens,
+                        model: super::model_of(message, "model"),
+                    },
                 );
             }
         }
@@ -1118,7 +1179,10 @@ pub mod claude {
                     }
                 }
             }
-            Tally { kept: best.into_values().cloned().collect(), unreadable }
+            Tally {
+                kept: best.into_values().cloned().collect(),
+                unreadable,
+            }
         }
     }
 }
@@ -1183,7 +1247,7 @@ pub mod codex {
 
     use khor_core::Tokens;
 
-    use super::{at_of, Files, Kept, Meter, Read, Tally};
+    use super::{Files, Kept, Meter, Read, Tally, at_of};
 
     /// This vendor's name — the same string
     /// [`crate::adaptor::codex`] stamps on its rows.
@@ -1220,7 +1284,10 @@ pub mod codex {
 
     impl Codex {
         pub fn at(root: PathBuf) -> Codex {
-            Codex { root, files: Mutex::new(Files::default()) }
+            Codex {
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
 
         fn sessions_dir(&self) -> PathBuf {
@@ -1246,7 +1313,9 @@ pub mod codex {
     }
 
     fn fold(roll: &mut Rollout, v: &serde_json::Value) -> Read {
-        let Some(payload) = v.get("payload") else { return Read::Fine };
+        let Some(payload) = v.get("payload") else {
+            return Read::Fine;
+        };
         // A turn's context names the model the turns after it spend on.
         // **Assigned, not merged**: a `turn_context` that names no model
         // clears the one before it rather than letting it stand, because
@@ -1284,7 +1353,11 @@ pub mod codex {
             return Read::Fine;
         }
         roll.previous = Some((tokens, running));
-        roll.turns.push(Kept { at, tokens, model: roll.model.clone() });
+        roll.turns.push(Kept {
+            at,
+            tokens,
+            model: roll.model.clone(),
+        });
         Read::Fine
     }
 
@@ -1300,7 +1373,10 @@ pub mod codex {
         fn tally(&self) -> Tally {
             let mut files = self.files.lock().unwrap_or_else(|p| p.into_inner());
             let (states, unreadable) = files.refresh(&self.sessions_dir(), fold);
-            let kept = states.into_iter().flat_map(|r| r.turns.iter().cloned()).collect();
+            let kept = states
+                .into_iter()
+                .flat_map(|r| r.turns.iter().cloned())
+                .collect();
             Tally { kept, unreadable }
         }
     }
@@ -1378,7 +1454,7 @@ pub mod gemini {
 
     use khor_core::Tokens;
 
-    use super::{at_of, cached_comes_out_of_input, Files, Kept, Meter, Read, Tally};
+    use super::{Files, Kept, Meter, Read, Tally, at_of, cached_comes_out_of_input};
 
     /// This vendor's name.
     ///
@@ -1400,7 +1476,10 @@ pub mod gemini {
 
     impl Gemini {
         pub fn at(root: PathBuf) -> Gemini {
-            Gemini { root, files: Mutex::new(Files::default()) }
+            Gemini {
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
 
         fn chats_dir(&self) -> PathBuf {
@@ -1412,8 +1491,13 @@ pub mod gemini {
     /// or nothing when this is a shape khor has stopped understanding.
     fn tokens_of(t: &serde_json::Value) -> Option<Tokens> {
         let n = |k: &str| t.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
-        let (input, output, cached, thoughts, tool) =
-            (n("input"), n("output"), n("cached"), n("thoughts"), n("tool"));
+        let (input, output, cached, thoughts, tool) = (
+            n("input"),
+            n("output"),
+            n("cached"),
+            n("thoughts"),
+            n("tool"),
+        );
         let total = t.get("total").and_then(serde_json::Value::as_u64);
         let fresh = if cached_comes_out_of_input(input, output, cached, thoughts, tool, total) {
             input.saturating_sub(cached)
@@ -1466,7 +1550,11 @@ pub mod gemini {
                 // no state and cannot drift from the numbers beside it.
                 best.insert(
                     id.to_owned(),
-                    Kept { at, tokens, model: super::model_of(v, "model") },
+                    Kept {
+                        at,
+                        tokens,
+                        model: super::model_of(v, "model"),
+                    },
                 );
             }
         }
@@ -1500,7 +1588,10 @@ pub mod gemini {
                     }
                 }
             }
-            Tally { kept: best.into_values().cloned().collect(), unreadable }
+            Tally {
+                kept: best.into_values().cloned().collect(),
+                unreadable,
+            }
         }
     }
 }
@@ -1589,7 +1680,7 @@ pub mod pi {
 
     use khor_core::Tokens;
 
-    use super::{at_of, Files, Kept, Meter, Read, Tally};
+    use super::{Files, Kept, Meter, Read, Tally, at_of};
 
     /// Every agent known to write this format, and where each keeps its
     /// sessions, relative to the home khor was rooted at.
@@ -1622,7 +1713,11 @@ pub mod pi {
 
     impl PiFormat {
         pub fn at(vendor: &'static str, root: PathBuf) -> PiFormat {
-            PiFormat { vendor, root, files: Mutex::new(Files::default()) }
+            PiFormat {
+                vendor,
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
     }
 
@@ -1634,7 +1729,12 @@ pub mod pi {
     /// finding codex gives and the opposite of gemini's. Each vendor is
     /// asked rather than assumed.
     fn tokens_of(usage: &serde_json::Value) -> Option<Tokens> {
-        let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+        let n = |k: &str| {
+            usage
+                .get(k)
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+        };
         let (input, output, cache_read, cache_write) =
             (n("input"), n("output"), n("cacheRead"), n("cacheWrite"));
         // This format's `totalTokens` spans exactly these four, so the
@@ -1643,7 +1743,12 @@ pub mod pi {
         // `super::reconciled` for why that is worth more than looking for
         // known names, and for the vendor it does *not* hold on.
         super::reconciled(
-            Tokens { input, cached_input: cache_read, cache_write, output },
+            Tokens {
+                input,
+                cached_input: cache_read,
+                cache_write,
+                output,
+            },
             usage.get("totalTokens").and_then(serde_json::Value::as_u64),
         )
     }
@@ -1662,7 +1767,9 @@ pub mod pi {
             Some("message") => {}
             _ => return Read::Fine,
         }
-        let Some(message) = v.get("message") else { return Read::Fine };
+        let Some(message) = v.get("message") else {
+            return Read::Fine;
+        };
         if message.get("role").and_then(serde_json::Value::as_str) != Some("assistant") {
             return Read::Fine;
         }
@@ -1690,7 +1797,11 @@ pub mod pi {
                 // depending on which agent billed it.
                 session.best.insert(
                     id.to_owned(),
-                    Kept { at, tokens, model: super::model_of(message, "model") },
+                    Kept {
+                        at,
+                        tokens,
+                        model: super::model_of(message, "model"),
+                    },
                 );
             }
         }
@@ -1731,7 +1842,10 @@ pub mod pi {
                 }
             }
             loose.extend(best.into_values().cloned());
-            Tally { kept: loose, unreadable }
+            Tally {
+                kept: loose,
+                unreadable,
+            }
         }
     }
 }
@@ -1811,7 +1925,7 @@ pub mod roo {
 
     use khor_core::Tokens;
 
-    use super::{named_under, Kept, Meter, Tally, Whole};
+    use super::{Kept, Meter, Tally, Whole, named_under};
 
     /// The three extensions, and the id each one stores under.
     pub const EXTENSIONS: [(&str, &str); 3] = [
@@ -1856,7 +1970,11 @@ pub mod roo {
 
     impl Roo {
         pub fn at(vendor: &'static str, root: PathBuf) -> Roo {
-            Roo { vendor, root, files: Mutex::new(Whole::default()) }
+            Roo {
+                vendor,
+                root,
+                files: Mutex::new(Whole::default()),
+            }
         }
     }
 
@@ -1865,8 +1983,12 @@ pub mod roo {
     /// test here and arithmetic is elsewhere.
     fn tokens_of(payload: &serde_json::Value) -> Option<Tokens> {
         let n = |k: &str| payload.get(k).and_then(serde_json::Value::as_u64);
-        let (input, output, cache_read, cache_write) =
-            (n("tokensIn"), n("tokensOut"), n("cacheReads"), n("cacheWrites"));
+        let (input, output, cache_read, cache_write) = (
+            n("tokensIn"),
+            n("tokensOut"),
+            n("cacheReads"),
+            n("cacheWrites"),
+        );
         if input.is_none() && output.is_none() && cache_read.is_none() && cache_write.is_none() {
             return None;
         }
@@ -1915,8 +2037,8 @@ pub mod roo {
             // opposite of upstream, where a malformed payload is skipped
             // in silence. Silence is the one thing this count exists to
             // prevent.
-            let Some(payload) = say("text")
-                .and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
+            let Some(payload) =
+                say("text").and_then(|t| serde_json::from_str::<serde_json::Value>(t).ok())
             else {
                 unreadable += 1;
                 continue;
@@ -1934,7 +2056,11 @@ pub mod roo {
             // one**. So these land in the unnamed row, where they are
             // still counted and still visible. Finding the name later is
             // one line here and no change on the wire.
-            kept.push(Kept { at, tokens, model: None });
+            kept.push(Kept {
+                at,
+                tokens,
+                model: None,
+            });
         }
         (kept, unreadable)
     }
@@ -2007,7 +2133,7 @@ pub mod qwen {
 
     use khor_core::Tokens;
 
-    use super::{at_of, cached_comes_out_of_input, Files, Kept, Meter, Read, Tally};
+    use super::{Files, Kept, Meter, Read, Tally, at_of, cached_comes_out_of_input};
 
     pub const VENDOR: &str = "qwen";
 
@@ -2018,7 +2144,10 @@ pub mod qwen {
 
     impl Qwen {
         pub fn at(root: PathBuf) -> Qwen {
-            Qwen { root, files: Mutex::new(Files::default()) }
+            Qwen {
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
 
         fn projects_dir(&self) -> PathBuf {
@@ -2078,7 +2207,11 @@ pub mod qwen {
         let (Some(tokens), Some(at)) = (tokens_of(usage), at_of(v, "timestamp")) else {
             return Read::Unreadable;
         };
-        kept.push(Kept { at, tokens, model: super::model_of(v, "model") });
+        kept.push(Kept {
+            at,
+            tokens,
+            model: super::model_of(v, "model"),
+        });
         Read::Fine
     }
 
@@ -2142,7 +2275,10 @@ pub mod junie {
 
     impl Junie {
         pub fn at(root: PathBuf) -> Junie {
-            Junie { root, files: Mutex::new(Files::default()) }
+            Junie {
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
 
         fn sessions_dir(&self) -> PathBuf {
@@ -2165,9 +2301,10 @@ pub mod junie {
     }
 
     fn fold(kept: &mut Vec<Kept>, v: &serde_json::Value) -> Read {
-        let Some(event) = v.pointer("/event/agentEvent") else { return Read::Fine };
-        if event.get("kind").and_then(serde_json::Value::as_str)
-            != Some("LlmResponseMetadataEvent")
+        let Some(event) = v.pointer("/event/agentEvent") else {
+            return Read::Fine;
+        };
+        if event.get("kind").and_then(serde_json::Value::as_str) != Some("LlmResponseMetadataEvent")
         {
             return Read::Fine;
         }
@@ -2181,7 +2318,9 @@ pub mod junie {
             .get("timestampMs")
             .and_then(serde_json::Value::as_i64)
             .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok());
-        let Some(at) = at else { return Read::Unreadable };
+        let Some(at) = at else {
+            return Read::Unreadable;
+        };
         let mut missed = false;
         for row in rows {
             match tokens_of(row) {
@@ -2189,17 +2328,15 @@ pub mod junie {
                 // this format bills a list rather than a record: the
                 // event already knew which model each half went to, and
                 // that was the one thing this loop used to drop.
-                Some(tokens) => {
-                    kept.push(Kept { at, tokens, model: super::model_of(row, "model") })
-                }
+                Some(tokens) => kept.push(Kept {
+                    at,
+                    tokens,
+                    model: super::model_of(row, "model"),
+                }),
                 None => missed = true,
             }
         }
-        if missed {
-            Read::Unreadable
-        } else {
-            Read::Fine
-        }
+        if missed { Read::Unreadable } else { Read::Fine }
     }
 
     impl Meter for Junie {
@@ -2295,7 +2432,7 @@ pub mod amp {
 
     use khor_core::Tokens;
 
-    use super::{json_under, Kept, Meter, Tally, Whole};
+    use super::{Kept, Meter, Tally, Whole, json_under};
 
     pub const VENDOR: &str = "amp";
 
@@ -2306,7 +2443,10 @@ pub mod amp {
 
     impl Amp {
         pub fn at(root: PathBuf) -> Amp {
-            Amp { root, files: Mutex::new(Whole::default()) }
+            Amp {
+                root,
+                files: Mutex::new(Whole::default()),
+            }
         }
 
         fn threads_dir(&self) -> PathBuf {
@@ -2337,7 +2477,9 @@ pub mod amp {
     /// The ledger's own spelling of the four counts.
     fn ledger_tokens(t: Option<&serde_json::Value>) -> Tokens {
         let n = |k: &str| {
-            t.and_then(|t| t.get(k)).and_then(serde_json::Value::as_u64).unwrap_or(0)
+            t.and_then(|t| t.get(k))
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
         };
         Tokens {
             input: n("input"),
@@ -2410,10 +2552,14 @@ pub mod amp {
                 unreadable += 1;
                 continue;
             };
-            let id = message.get("messageId").and_then(serde_json::Value::as_i64).unwrap_or(0);
+            let id = message
+                .get("messageId")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
             // Upstream's construction: the thread's own start, plus this
             // message's place in it. Only ever used to pick a day.
-            let Some(at) = created.and_then(|c| at_of_ms(c.saturating_add(id.saturating_mul(1000))))
+            let Some(at) =
+                created.and_then(|c| at_of_ms(c.saturating_add(id.saturating_mul(1000))))
             else {
                 unreadable += 1;
                 continue;
@@ -2441,12 +2587,15 @@ pub mod amp {
         message: &Record,
     ) -> Option<usize> {
         let scan = |pick: &dyn Fn(usize) -> bool| {
-            (from..events.len()).find(|i| pick(*i)).or_else(|| (0..from).find(|i| pick(*i)))
+            (from..events.len())
+                .find(|i| pick(*i))
+                .or_else(|| (0..from).find(|i| pick(*i)))
         };
         if let Some(id) = message.message
-            && let Some(i) = scan(&|i| !consumed[i] && events[i].to_message == Some(id)) {
-                return Some(i);
-            }
+            && let Some(i) = scan(&|i| !consumed[i] && events[i].to_message == Some(id))
+        {
+            return Some(i);
+        }
         scan(&|i| {
             !consumed[i] && events[i].model == message.model && events[i].tokens == message.tokens
         })
@@ -2600,7 +2749,10 @@ pub mod openclaw {
 
     impl OpenClaw {
         pub fn at(root: PathBuf) -> OpenClaw {
-            OpenClaw { root, files: Mutex::new(Files::default()) }
+            OpenClaw {
+                root,
+                files: Mutex::new(Files::default()),
+            }
         }
     }
 
@@ -2623,7 +2775,9 @@ pub mod openclaw {
     }
 
     fn fold(kept: &mut Vec<Kept>, v: &serde_json::Value) -> Read {
-        let Some(message) = v.get("message") else { return Read::Fine };
+        let Some(message) = v.get("message") else {
+            return Read::Fine;
+        };
         if message.get("role").and_then(serde_json::Value::as_str) != Some("assistant") {
             return Read::Fine;
         }
@@ -2644,7 +2798,11 @@ pub mod openclaw {
         // format this one's numbers are spelled like *does* name a
         // model on the message, which is a reason to look again, not a
         // reason to read a field nobody has seen.
-        kept.push(Kept { at, tokens, model: None });
+        kept.push(Kept {
+            at,
+            tokens,
+            model: None,
+        });
         Read::Fine
     }
 

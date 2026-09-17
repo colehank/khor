@@ -70,8 +70,15 @@ impl Provider {
     /// The words `parse` accepts, spelled as `word` spells them — for
     /// the sentence that refuses one it does not, and for the usage
     /// text, so neither can list fewer than exist.
-    pub const WORDS: [&'static str; 7] =
-        ["newapi", "claude", "openai", "deepseek", "moonshot", "moonshot-cn", "openrouter"];
+    pub const WORDS: [&'static str; 7] = [
+        "newapi",
+        "claude",
+        "openai",
+        "deepseek",
+        "moonshot",
+        "moonshot-cn",
+        "openrouter",
+    ];
 
     pub fn parse(word: &str) -> Option<Provider> {
         match word.trim().to_ascii_lowercase().as_str() {
@@ -277,12 +284,16 @@ pub struct AccountDoc {
 
 impl AccountDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     pub fn get(&self, id: &str) -> Option<Account> {
         let value = self.inner.get_map(ACCOUNTS).get(id)?.into_value().ok()?;
-        let LoroValue::String(json) = value else { return None };
+        let LoroValue::String(json) = value else {
+            return None;
+        };
         serde_json::from_str(&json).ok()
     }
 
@@ -291,7 +302,10 @@ impl AccountDoc {
             return Ok(());
         }
         let json = serde_json::to_string(account).map_err(|e| e.to_string())?;
-        self.inner.get_map(ACCOUNTS).insert(&account.id, json).map_err(|e| e.to_string())?;
+        self.inner
+            .get_map(ACCOUNTS)
+            .insert(&account.id, json)
+            .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
     }
@@ -300,7 +314,10 @@ impl AccountDoc {
         if self.get(id).is_none() {
             return Ok(());
         }
-        self.inner.get_map(ACCOUNTS).delete(id).map_err(|e| e.to_string())?;
+        self.inner
+            .get_map(ACCOUNTS)
+            .delete(id)
+            .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
     }
@@ -316,7 +333,10 @@ impl AccountDoc {
         let map = self.inner.get_map(ACCOUNTS);
         let mut out: Vec<Account> = map.keys().filter_map(|k| self.get(&k)).collect();
         out.sort_by(|a, b| {
-            b.pinned.cmp(&a.pinned).then(a.name.cmp(&b.name)).then(a.id.cmp(&b.id))
+            b.pinned
+                .cmp(&a.pinned)
+                .then(a.name.cmp(&b.name))
+                .then(a.id.cmp(&b.id))
         });
         out
     }
@@ -386,18 +406,33 @@ mod tests {
         let old = r#"{"id":"k1","name":"gateway","provider":"newapi",
             "base_url":"https://gw.example","home":"aa"}"#;
         for absent in ["pinned", "unit", "kind"] {
-            assert!(!old.contains(absent), "the old shape must not carry {absent}, a key it predates");
+            assert!(
+                !old.contains(absent),
+                "the old shape must not carry {absent}, a key it predates"
+            );
         }
-        let account: Account = serde_json::from_str(old).expect("an older khor's account still reads");
-        assert_eq!(account, one("k1", "gateway"), "every other field survives whole");
+        let account: Account =
+            serde_json::from_str(old).expect("an older khor's account still reads");
+        assert_eq!(
+            account,
+            one("k1", "gateway"),
+            "every other field survives whole"
+        );
         assert!(!account.pinned, "absent is not pinned");
-        assert_eq!(account.unit, None, "…and absent is not a unit override either");
+        assert_eq!(
+            account.unit, None,
+            "…and absent is not a unit override either"
+        );
         // …and an account written before subscriptions existed is a
         // billed one, which every account written then was. The wrong
         // default here would not read as a wrong word: `Sub` would send
         // the reader looking for a login instead of the key that is
         // actually on disk.
-        assert_eq!(account.kind, AccountKind::Bill, "absent is a billed account");
+        assert_eq!(
+            account.kind,
+            AccountKind::Bill,
+            "absent is a billed account"
+        );
     }
 
     /// **A kind from a newer khor comes through, and goes back out
@@ -417,7 +452,11 @@ mod tests {
         let d = AccountDoc::new(1).unwrap();
         d.set(&a).unwrap();
         assert_eq!(d.all(), vec![a], "listed, not dropped");
-        assert_eq!(AccountKind::parse("team-seat"), None, "control: never registered here");
+        assert_eq!(
+            AccountKind::parse("team-seat"),
+            None,
+            "control: never registered here"
+        );
     }
 
     /// The two kinds are spelled the way they are registered, and a
@@ -429,7 +468,11 @@ mod tests {
         assert_eq!(AccountKind::parse("Bill"), Some(AccountKind::Bill));
         assert_eq!(AccountKind::parse("seat"), None);
         for w in AccountKind::WORDS {
-            assert_eq!(AccountKind::parse(w).as_ref().map(AccountKind::word), Some(w), "{w} round-trips");
+            assert_eq!(
+                AccountKind::parse(w).as_ref().map(AccountKind::word),
+                Some(w),
+                "{w} round-trips"
+            );
         }
         let mut sub = one("k", "n");
         sub.kind = AccountKind::Sub;
@@ -454,7 +497,11 @@ mod tests {
         last.pinned = true;
         doc.set(&last).unwrap();
         let names: Vec<String> = doc.all().into_iter().map(|a| a.name).collect();
-        assert_eq!(names, ["zulu", "alpha", "beta"], "pinned first, then by name");
+        assert_eq!(
+            names,
+            ["zulu", "alpha", "beta"],
+            "pinned first, then by name"
+        );
     }
 
     /// The doc carries the description and nothing else: what a merge
@@ -466,7 +513,10 @@ mod tests {
         let a = AccountDoc::new(1).unwrap();
         a.set(&one("k1", "gateway")).unwrap();
         let bytes = a.snapshot().unwrap();
-        assert!(!String::from_utf8_lossy(&bytes).contains("sk-"), "no key shape in the bytes");
+        assert!(
+            !String::from_utf8_lossy(&bytes).contains("sk-"),
+            "no key shape in the bytes"
+        );
         let b = AccountDoc::new(2).unwrap();
         b.merge(&bytes).unwrap();
         assert_eq!(b.all(), vec![one("k1", "gateway")]);
@@ -479,13 +529,20 @@ mod tests {
     fn a_provider_is_spelled_the_way_it_is_registered() {
         assert_eq!(Provider::parse("new-api"), Some(Provider::Newapi));
         assert_eq!(Provider::parse("Anthropic"), Some(Provider::Claude));
-        assert_eq!(Provider::parse("openai").as_ref().map(Provider::word), Some("openai"));
+        assert_eq!(
+            Provider::parse("openai").as_ref().map(Provider::word),
+            Some("openai")
+        );
         assert_eq!(Provider::parse("moonshotai-cn"), Some(Provider::MoonshotCn));
         assert_eq!(Provider::parse("azure"), None);
         let json = serde_json::to_string(&one("k", "n")).unwrap();
         assert!(json.contains("\"provider\":\"newapi\""), "{json}");
         for w in Provider::WORDS {
-            assert_eq!(Provider::parse(w).as_ref().map(Provider::word), Some(w), "{w} round-trips");
+            assert_eq!(
+                Provider::parse(w).as_ref().map(Provider::word),
+                Some(w),
+                "{w} round-trips"
+            );
         }
     }
 
@@ -508,6 +565,10 @@ mod tests {
         let d = AccountDoc::new(1).unwrap();
         d.set(&a).unwrap();
         assert_eq!(d.all(), vec![a], "listed, not dropped");
-        assert_eq!(Provider::parse("quantum-llm"), None, "control: never registered here");
+        assert_eq!(
+            Provider::parse("quantum-llm"),
+            None,
+            "control: never registered here"
+        );
     }
 }

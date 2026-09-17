@@ -54,7 +54,9 @@ pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool),
     // smoke 批⑥, 2026-09-15). Only the machine holding the directory
     // can resolve its links, and this is where every far read of a
     // directory lands, so this is where the spelling is settled.
-    let dir = dir.canonicalize().map_err(|e| msg::cant_list_dir(dir.display(), e))?;
+    let dir = dir
+        .canonicalize()
+        .map_err(|e| msg::cant_list_dir(dir.display(), e))?;
     let rd = std::fs::read_dir(&dir).map_err(|e| msg::cant_list_dir(dir.display(), e))?;
     let mut entries: Vec<DirEntry> = Vec::new();
     for e in rd.flatten() {
@@ -76,7 +78,12 @@ pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool),
             ),
             Err(_) => (false, 0, 0),
         };
-        entries.push(DirEntry { name, dir, size, at_ms });
+        entries.push(DirEntry {
+            name,
+            dir,
+            size,
+            at_ms,
+        });
     }
     entries.sort_by(|a, b| {
         a.name
@@ -168,7 +175,10 @@ pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String),
     // this is the wire's limit worn where the bytes land, so a path
     // that reached here another way cannot get past it either.
     if bytes.len() as u64 > crate::proto::SLICE {
-        return Err(msg::too_big_to_write(bytes.len() as u64, crate::proto::SLICE));
+        return Err(msg::too_big_to_write(
+            bytes.len() as u64,
+            crate::proto::SLICE,
+        ));
     }
     match std::fs::read(p) {
         Ok(now) => {
@@ -184,19 +194,25 @@ pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String),
         Err(e) => return Err(msg::cant_list_dir(path, e)),
     }
     let dir = p.parent().ok_or_else(|| msg::not_a_file_path(path))?;
-    let name = p.file_name().and_then(|n| n.to_str()).ok_or_else(|| msg::not_a_file_path(path))?;
+    let name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| msg::not_a_file_path(path))?;
     let part = dir.join(format!(".khor-save-{name}"));
     // Scoped so the handle is closed before the rename: on Windows a
     // rename over an open file fails, and this module is compiled for
     // five platforms.
     {
-        let mut f = std::fs::File::create(&part).map_err(|e| msg::cant_save_file(part.display(), e))?;
-        f.write_all(bytes).map_err(|e| msg::cant_save_file(part.display(), e))?;
+        let mut f =
+            std::fs::File::create(&part).map_err(|e| msg::cant_save_file(part.display(), e))?;
+        f.write_all(bytes)
+            .map_err(|e| msg::cant_save_file(part.display(), e))?;
         // **Before the rename, not after.** The rename is what makes the
         // new name point at these bytes; if the bytes are not on the
         // disk yet, a power cut between the two leaves the real name
         // pointing at nothing.
-        f.sync_all().map_err(|e| msg::cant_save_file(part.display(), e))?;
+        f.sync_all()
+            .map_err(|e| msg::cant_save_file(part.display(), e))?;
     }
     std::fs::rename(&part, p).map_err(|e| {
         let _ = std::fs::remove_file(&part);
@@ -230,7 +246,10 @@ pub fn landing(remote_path: &str, dir: &std::path::Path) -> Result<Landing, Stri
     if dest.exists() {
         return Err(msg::dest_exists(dest.display()));
     }
-    Ok(Landing { part: dir.join(format!(".khor-pull-{name}")), dest })
+    Ok(Landing {
+        part: dir.join(format!(".khor-pull-{name}")),
+        dest,
+    })
 }
 
 /// **Whether this machine has a recycle bin to put things in.**
@@ -243,8 +262,11 @@ pub fn landing(remote_path: &str, dir: &std::path::Path) -> Result<Landing, Stri
 ///
 /// The three desktops have one; iOS and Android do not, and khor ships
 /// to all five (docs/KHOR.md).
-pub const TRASH_HERE: bool =
-    cfg!(any(target_os = "macos", target_os = "windows", target_os = "linux"));
+pub const TRASH_HERE: bool = cfg!(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux"
+));
 
 /// Takes a path off this machine's disk: into the recycle bin when
 /// `trash` is asked for and this machine has one, straight off it
@@ -498,7 +520,10 @@ mod remove_tests {
         assert!(err.contains("a.rs"), "the refusal names the path: {err}");
         // …and a relative path is refused before anything is touched,
         // for the reason `Ls` demands an absolute one.
-        assert!(remove("a.rs", false).is_err(), "a relative path names nowhere");
+        assert!(
+            remove("a.rs", false).is_err(),
+            "a relative path names nowhere"
+        );
     }
 
     /// **A directory goes whole**, which is the claim the confirmation
@@ -516,7 +541,10 @@ mod remove_tests {
         std::fs::write(&keep, "x").unwrap();
 
         remove(dir.join("src").to_str().unwrap(), false).unwrap();
-        assert!(!dir.join("src").exists(), "the directory and everything under it");
+        assert!(
+            !dir.join("src").exists(),
+            "the directory and everything under it"
+        );
         assert!(keep.exists(), "and nothing beside it");
     }
 
@@ -545,7 +573,10 @@ mod remove_tests {
 
         remove(link.to_str().unwrap(), false).unwrap();
         assert!(!link.exists(), "the link is gone");
-        assert!(real.join("keep.rs").exists(), "and what it pointed at is not");
+        assert!(
+            real.join("keep.rs").exists(),
+            "and what it pointed at is not"
+        );
 
         // A link pointing at nothing: still a name, still removable.
         let dangling = dir.join("dangling");
@@ -588,12 +619,18 @@ mod remove_tests {
         // the fallback in where the bin was meant.
         #[allow(clippy::assertions_on_constants)]
         {
-            assert!(TRASH_HERE, "…and this machine was asked for the bin, not the fallback");
+            assert!(
+                TRASH_HERE,
+                "…and this machine was asked for the bin, not the fallback"
+            );
         }
 
         #[cfg(target_os = "macos")]
         {
-            let landed = std::env::home_dir().expect("a home directory").join(".Trash").join(&name);
+            let landed = std::env::home_dir()
+                .expect("a home directory")
+                .join(".Trash")
+                .join(&name);
             assert!(landed.is_file(), "it is in the bin at {}", landed.display());
             let _ = std::fs::remove_file(&landed);
         }
@@ -678,8 +715,15 @@ mod write_tests {
         // The same call again is now a writer who thinks the path is
         // free while somebody has put a file there.
         let err = write_whole(p, b"two\n", "").expect_err("not free any more");
-        assert!(err.contains("fresh.txt"), "the refusal names the path: {err}");
-        assert_eq!(std::fs::read(&path).unwrap(), b"one\n", "and nothing was written");
+        assert!(
+            err.contains("fresh.txt"),
+            "the refusal names the path: {err}"
+        );
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"one\n",
+            "and nothing was written"
+        );
     }
 
     #[test]
@@ -690,7 +734,11 @@ mod write_tests {
         let was = digest(b"fn main() {}\n");
         let (_, now) = write_whole(path.to_str().unwrap(), b"fn main() { go(); }\n", &was).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"fn main() { go(); }\n");
-        assert_eq!(now, digest(b"fn main() { go(); }\n"), "the answer is the new digest");
+        assert_eq!(
+            now,
+            digest(b"fn main() { go(); }\n"),
+            "the answer is the new digest"
+        );
     }
 
     #[test]
@@ -792,7 +840,10 @@ mod make_tests {
         let deep = dir.join("a/b/c");
         let err = mkdir(deep.to_str().unwrap()).expect_err("the parent is not there");
         assert!(err.contains("a/b/c"), "the refusal names the path: {err}");
-        assert!(!dir.join("a").exists(), "and nothing on the way to it was made either");
+        assert!(
+            !dir.join("a").exists(),
+            "and nothing on the way to it was made either"
+        );
     }
 
     /// A name already taken is refused **by the sentence a person can
@@ -814,7 +865,11 @@ mod make_tests {
                 "one sentence for both kinds: {err}",
             );
         }
-        assert_eq!(std::fs::read(&f).unwrap(), b"x", "and the file that wore the name is untouched");
+        assert_eq!(
+            std::fs::read(&f).unwrap(),
+            b"x",
+            "and the file that wore the name is untouched"
+        );
     }
 
     /// `touch` is a write of no bytes, so the promise it inherits is
@@ -827,7 +882,11 @@ mod make_tests {
         let dir = tmp("touch");
         let f = dir.join("x.md");
         touch(f.to_str().unwrap()).unwrap();
-        assert_eq!(std::fs::read(&f).unwrap(), b"", "zero bytes, and the name exists");
+        assert_eq!(
+            std::fs::read(&f).unwrap(),
+            b"",
+            "zero bytes, and the name exists"
+        );
 
         std::fs::write(&f, "words\n").unwrap();
         let err = touch(f.to_str().unwrap()).expect_err("the name is taken");
@@ -855,7 +914,10 @@ mod make_tests {
         std::fs::create_dir(&sub).unwrap();
         let c = sub.join("two.rs");
         rename_path(b.to_str().unwrap(), c.to_str().unwrap()).unwrap();
-        assert!(!b.exists() && c.exists(), "crossing a directory is the same verb");
+        assert!(
+            !b.exists() && c.exists(),
+            "crossing a directory is the same verb"
+        );
     }
 
     /// **The target is never overwritten**, and this is the assertion
@@ -870,15 +932,22 @@ mod make_tests {
         let b = dir.join("theirs.rs");
         std::fs::write(&b, "theirs\n").unwrap();
 
-        let err = rename_path(a.to_str().unwrap(), b.to_str().unwrap())
-            .expect_err("that name is taken");
-        assert!(err.contains("theirs.rs"), "the refusal names the taken name: {err}");
+        let err =
+            rename_path(a.to_str().unwrap(), b.to_str().unwrap()).expect_err("that name is taken");
+        assert!(
+            err.contains("theirs.rs"),
+            "the refusal names the taken name: {err}"
+        );
         assert_eq!(
             std::fs::read(&b).unwrap(),
             b"theirs\n",
             "the other file is still there — a refusal that moved anyway is the bug",
         );
-        assert_eq!(std::fs::read(&a).unwrap(), b"mine\n", "and so is the one being moved");
+        assert_eq!(
+            std::fs::read(&a).unwrap(),
+            b"mine\n",
+            "and so is the one being moved"
+        );
     }
 
     /// Relative paths name nowhere, for the reason `Ls` demands an
@@ -891,8 +960,14 @@ mod make_tests {
         let a = dir.join("one.rs");
         std::fs::write(&a, "x").unwrap();
         assert!(mkdir("src").is_err(), "a relative path names nowhere");
-        assert!(rename_path("one.rs", a.to_str().unwrap()).is_err(), "nor as a source");
-        assert!(rename_path(a.to_str().unwrap(), "two.rs").is_err(), "nor as a target");
+        assert!(
+            rename_path("one.rs", a.to_str().unwrap()).is_err(),
+            "nor as a source"
+        );
+        assert!(
+            rename_path(a.to_str().unwrap(), "two.rs").is_err(),
+            "nor as a target"
+        );
         assert!(a.exists(), "and nothing moved while it was being refused");
     }
 
@@ -936,10 +1011,17 @@ mod make_tests {
         unsafe { std::env::set_var(LAUNCHER_ENV, "") };
         assert_eq!(launcher(), None, "empty means this machine opens nothing");
         let err = launch("/etc/hosts").expect_err("no opener");
-        assert!(err.contains(LAUNCHER_ENV), "the refusal names the variable: {err}");
+        assert!(
+            err.contains(LAUNCHER_ENV),
+            "the refusal names the variable: {err}"
+        );
 
         unsafe { std::env::set_var(LAUNCHER_ENV, "/usr/bin/true") };
-        assert_eq!(launcher().as_deref(), Some("/usr/bin/true"), "and a named one wins");
+        assert_eq!(
+            launcher().as_deref(),
+            Some("/usr/bin/true"),
+            "and a named one wins"
+        );
         launch("/etc/hosts").expect("the opener khor was told to use");
 
         match before {

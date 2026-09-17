@@ -25,8 +25,8 @@
 
 use std::time::Instant;
 
-use khor_node::adaptor::Procs;
 use khor_node::Node;
+use khor_node::adaptor::Procs;
 
 fn ms(f: impl Fn()) -> f64 {
     let t = Instant::now();
@@ -110,7 +110,10 @@ fn what_one_poll_of_the_session_list_costs() {
     let scans = khor_node::adaptor::snapshots_taken() - before;
     runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let list = runs[runs.len() / 2];
-    println!("process-table scans       : {scans} over 12 calls = {} per list", scans / 12);
+    println!(
+        "process-table scans       : {scans} over 12 calls = {} per list",
+        scans / 12
+    );
 
     let mut snaps: Vec<f64> = (0..12)
         .map(|_| {
@@ -172,7 +175,10 @@ fn what_asking_tmux_costs() {
         runs[runs.len() - 1],
         runs.len()
     );
-    println!("at one call per 5s poll   : {:.3}% of a core", median / 5000.0 * 100.0);
+    println!(
+        "at one call per 5s poll   : {:.3}% of a core",
+        median / 5000.0 * 100.0
+    );
 }
 
 /// What one session list costs **in a home somebody actually uses**.
@@ -207,7 +213,10 @@ fn what_one_poll_costs_in_a_real_home() {
         .map(|d| d.flatten().count())
         .unwrap_or(0);
     if sessions_on_disk == 0 && channels == 0 {
-        println!("home at {} has nothing in it — this is the fixture case", root.display());
+        println!(
+            "home at {} has nothing in it — this is the fixture case",
+            root.display()
+        );
         println!("(nothing measured: a real reading needs a real home)");
         return;
     }
@@ -223,7 +232,13 @@ fn what_one_poll_costs_in_a_real_home() {
     let loads_before = khor_sync::store::loads_taken();
     let nanos_before = khor_sync::store::load_nanos();
     let scans_before = khor_node::adaptor::snapshots_taken();
-    let mut runs: Vec<f64> = (0..12).map(|_| ms(|| { let _ = n.sessions(); })).collect();
+    let mut runs: Vec<f64> = (0..12)
+        .map(|_| {
+            ms(|| {
+                let _ = n.sessions();
+            })
+        })
+        .collect();
     let loads = khor_sync::store::loads_taken() - loads_before;
     let load_ms = (khor_sync::store::load_nanos() - nanos_before) as f64 / 1e6;
     let scans = khor_node::adaptor::snapshots_taken() - scans_before;
@@ -233,16 +248,31 @@ fn what_one_poll_costs_in_a_real_home() {
     println!("home                      : {}", root.display());
     println!("sessions on disk          : {sessions_on_disk}");
     println!("chat channels             : {channels}");
-    println!("rows the list produced    : {}", n.sessions().map(|v| v.len()).unwrap_or(0));
+    println!(
+        "rows the list produced    : {}",
+        n.sessions().map(|v| v.len()).unwrap_or(0)
+    );
     println!(
         "sessions() over 12        : min {:.1} / median {median:.1} / max {:.1} ms",
         runs[0],
         runs[runs.len() - 1]
     );
-    println!("document loads            : {loads} over 12 calls = {} per list", loads / 12);
-    println!("  their total time        : {load_ms:.1} ms = {:.0}% of the 12 calls", load_ms / runs.iter().sum::<f64>() * 100.0);
-    println!("process-table scans       : {scans} over 12 calls = {} per list", scans / 12);
-    println!("at the app's 2 s beat     : {:.2}% of a core", median / 2000.0 * 100.0);
+    println!(
+        "document loads            : {loads} over 12 calls = {} per list",
+        loads / 12
+    );
+    println!(
+        "  their total time        : {load_ms:.1} ms = {:.0}% of the 12 calls",
+        load_ms / runs.iter().sum::<f64>() * 100.0
+    );
+    println!(
+        "process-table scans       : {scans} over 12 calls = {} per list",
+        scans / 12
+    );
+    println!(
+        "at the app's 2 s beat     : {:.2}% of a core",
+        median / 2000.0 * 100.0
+    );
 }
 
 /// What an **empty** document read costs — the floor under every one of
@@ -258,7 +288,7 @@ fn what_one_poll_costs_in_a_real_home() {
 #[ignore]
 fn what_an_empty_document_read_costs() {
     use khor_sync::chat::ChatDoc;
-    use khor_sync::store::{load, Loaded};
+    use khor_sync::store::{Loaded, load};
 
     let nowhere = std::env::temp_dir().join("khor-cost-no-such-channel");
     let _ = std::fs::remove_dir_all(&nowhere);
@@ -266,7 +296,11 @@ fn what_an_empty_document_read_costs() {
     let _: Loaded<ChatDoc> = load(&nowhere, 1).unwrap();
 
     let mut runs: Vec<f64> = (0..24)
-        .map(|_| ms(|| { let _: Loaded<ChatDoc> = load(&nowhere, 1).unwrap(); }))
+        .map(|_| {
+            ms(|| {
+                let _: Loaded<ChatDoc> = load(&nowhere, 1).unwrap();
+            })
+        })
         .collect();
     runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     println!(
@@ -276,7 +310,10 @@ fn what_an_empty_document_read_costs() {
         runs[runs.len() - 1],
         runs.len()
     );
-    println!("ten of these per list     : {:.1} ms", runs[runs.len() / 2] * 10.0);
+    println!(
+        "ten of these per list     : {:.1} ms",
+        runs[runs.len() / 2] * 10.0
+    );
 }
 
 /// What **compaction** would buy, measured on a copy so nothing real is
@@ -299,7 +336,7 @@ fn what_an_empty_document_read_costs() {
 #[ignore]
 fn what_compaction_would_buy() {
     use khor_sync::devices::DeviceDoc;
-    use khor_sync::store::{load, Loaded};
+    use khor_sync::store::{Loaded, load};
 
     let src = Node::root_from_env().join(".khor").join("devices");
     let Ok(rd) = std::fs::read_dir(&src) else {
@@ -318,8 +355,13 @@ fn what_compaction_would_buy() {
     println!("copied {} files from the device document", files.len());
 
     let read = |n: usize| -> f64 {
-        let mut runs: Vec<f64> =
-            (0..n).map(|_| ms(|| { let _: Loaded<DeviceDoc> = load(&dst, 1).unwrap(); })).collect();
+        let mut runs: Vec<f64> = (0..n)
+            .map(|_| {
+                ms(|| {
+                    let _: Loaded<DeviceDoc> = load(&dst, 1).unwrap();
+                })
+            })
+            .collect();
         runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
         runs[runs.len() / 2]
     };
@@ -330,12 +372,18 @@ fn what_compaction_would_buy() {
     let loaded: Loaded<DeviceDoc> = load(&dst, 1).unwrap();
     let mut store = loaded.store;
     store.compact(&loaded.doc).unwrap();
-    let left = std::fs::read_dir(&dst).map(|d| d.flatten().count()).unwrap_or(0);
+    let left = std::fs::read_dir(&dst)
+        .map(|d| d.flatten().count())
+        .unwrap_or(0);
     println!("files after compaction    : {left}");
 
     let after = read(12);
     println!("read, compacted           : {after:.1} ms");
-    println!("saved per read            : {:.1} ms ({:.0}%)", before - after, (before - after) / before * 100.0);
+    println!(
+        "saved per read            : {:.1} ms ({:.0}%)",
+        before - after,
+        (before - after) / before * 100.0
+    );
 
     let _ = std::fs::remove_dir_all(&dst);
 }
@@ -348,7 +396,7 @@ fn what_compaction_would_buy() {
 #[test]
 #[ignore]
 fn what_each_document_costs_to_read() {
-    use khor_sync::store::{load, AnyDoc, Loaded};
+    use khor_sync::store::{AnyDoc, Loaded, load};
 
     let home = Node::root_from_env().join(".khor");
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
@@ -395,19 +443,38 @@ fn what_each_document_costs_to_read() {
             })
             .unwrap_or(0);
         let bytes: u64 = std::fs::read_dir(&d)
-            .map(|r| r.flatten().filter_map(|e| e.metadata().ok()).map(|m| m.len()).sum())
+            .map(|r| {
+                r.flatten()
+                    .filter_map(|e| e.metadata().ok())
+                    .map(|m| m.len())
+                    .sum()
+            })
             .unwrap_or(0);
         let _: Loaded<AnyDoc> = load(&d, 1).unwrap();
-        let mut runs: Vec<f64> =
-            (0..8).map(|_| ms(|| { let _: Loaded<AnyDoc> = load(&d, 1).unwrap(); })).collect();
+        let mut runs: Vec<f64> = (0..8)
+            .map(|_| {
+                ms(|| {
+                    let _: Loaded<AnyDoc> = load(&d, 1).unwrap();
+                })
+            })
+            .collect();
         runs.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let name = d.strip_prefix(&home).unwrap_or(&d).display().to_string();
         rows.push((name, blocks, bytes, runs[runs.len() / 2]));
     }
     rows.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
-    println!("{:<22} {:>7} {:>10} {:>9}", "document", "blocks", "bytes", "read");
+    println!(
+        "{:<22} {:>7} {:>10} {:>9}",
+        "document", "blocks", "bytes", "read"
+    );
     for (name, blocks, bytes, t) in &rows {
         println!("{name:<22} {blocks:>7} {bytes:>10} {t:>8.1} ms");
     }
-    println!("{:<22} {:>7} {:>10} {:>8.1} ms", "— all of them —", "", "", rows.iter().map(|r| r.3).sum::<f64>());
+    println!(
+        "{:<22} {:>7} {:>10} {:>8.1} ms",
+        "— all of them —",
+        "",
+        "",
+        rows.iter().map(|r| r.3).sum::<f64>()
+    );
 }

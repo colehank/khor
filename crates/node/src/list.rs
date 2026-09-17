@@ -49,8 +49,13 @@ pub enum Arrange {
 }
 
 impl Arrange {
-    pub const ALL: [Arrange; 5] =
-        [Arrange::Recent, Arrange::Category, Arrange::Device, Arrange::State, Arrange::Place];
+    pub const ALL: [Arrange; 5] = [
+        Arrange::Recent,
+        Arrange::Category,
+        Arrange::Device,
+        Arrange::State,
+        Arrange::Place,
+    ];
 
     /// The stable key, which is also the CLI's flag value.
     pub const fn key(self) -> &'static str {
@@ -169,7 +174,10 @@ fn place_of(
         },
         Arrange::State => {
             let word = view.session.state.state;
-            (format!("{GROUP_STATE}{}", word.key()), (1 + word.rank(), String::new()))
+            (
+                format!("{GROUP_STATE}{}", word.key()),
+                (1 + word.rank(), String::new()),
+            )
         }
         Arrange::Place => match view.session.place.as_deref() {
             Some(path) if !path.is_empty() => {
@@ -199,7 +207,10 @@ mod tests {
                 kind: Kind("tui".to_owned()),
                 title: id.to_owned(),
                 home: DeviceId([home; 32]),
-                state: StateStamp { state: word, at: Millis(at) },
+                state: StateStamp {
+                    state: word,
+                    at: Millis(at),
+                },
                 unread: 0,
                 place: None,
                 mux: false,
@@ -286,14 +297,20 @@ mod tests {
         // an implementation that simply sorted by time would put it
         // first — and one that grouped on the raw string with no band
         // would too, since "" leads the alphabet.
-        assert_eq!(rows.last().map(|r| r.view.session.id.0.as_str()), Some("no-place"));
+        assert_eq!(
+            rows.last().map(|r| r.view.session.id.0.as_str()),
+            Some("no-place")
+        );
     }
 
     #[test]
     fn recent_is_freshest_first_and_groups_nothing() {
         let rows = arrange(sample(), Arrange::Recent, &names);
         assert_eq!(ids(&rows), vec!["b", "c", "d", "a"]);
-        assert!(rows.iter().all(|r| r.group.is_empty()), "recent has no groups");
+        assert!(
+            rows.iter().all(|r| r.group.is_empty()),
+            "recent has no groups"
+        );
     }
 
     /// Groups by rank — who is waiting for you — and 失败 lands last
@@ -340,8 +357,14 @@ mod tests {
         let out = arrange(rows, Arrange::Device, &names);
         assert_eq!(ids(&out), vec!["d", "a", "b", "c", "e"]);
         let groups: Vec<String> = out.iter().map(|r| r.group.clone()).collect();
-        assert_eq!(&groups[..4], &["dev:alpha", "dev:alpha", "dev:beta", "dev:beta"]);
-        assert_eq!(groups[4], format!("{GROUP_DEVICE}{}", DeviceId([9; 32]).hex()));
+        assert_eq!(
+            &groups[..4],
+            &["dev:alpha", "dev:alpha", "dev:beta", "dev:beta"]
+        );
+        assert_eq!(
+            groups[4],
+            format!("{GROUP_DEVICE}{}", DeviceId([9; 32]).hex())
+        );
     }
 
     /// **A pin leads in every mode.** The row picked here is the oldest
@@ -353,12 +376,7 @@ mod tests {
             let mut rows = sample();
             rows[2].pinned = true; // "c": 失败, and not the freshest
             let out = arrange(rows, mode, &names);
-            assert_eq!(
-                ids(&out)[0],
-                "c",
-                "{}: a pinned row must lead",
-                mode.key()
-            );
+            assert_eq!(ids(&out)[0], "c", "{}: a pinned row must lead", mode.key());
             assert_eq!(out[0].group, GROUP_PINNED);
             assert_eq!(out.len(), 4, "{}: no row lost", mode.key());
         }

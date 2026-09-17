@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::chat::{open_channel, Sender};
+use crate::chat::{Sender, open_channel};
 use crate::testutil::{me, render, tmpdir};
 
 /// Flush writes only what disk lacks. Without this, "append-only"
@@ -17,11 +17,19 @@ fn flush_writes_only_what_is_not_on_disk_yet() {
     for i in 0..50 {
         st.doc.tell(&me("a"), &format!("line {i}")).unwrap();
     }
-    let first = st.store.flush(&st.doc).unwrap().expect("should write a block");
+    let first = st
+        .store
+        .flush(&st.doc)
+        .unwrap()
+        .expect("should write a block");
     let big = fs::metadata(&first).unwrap().len();
 
     st.doc.tell(&me("a"), "another line").unwrap();
-    let second = st.store.flush(&st.doc).unwrap().expect("should write another block");
+    let second = st
+        .store
+        .flush(&st.doc)
+        .unwrap()
+        .expect("should write another block");
     let small = fs::metadata(&second).unwrap().len();
 
     assert!(
@@ -29,7 +37,10 @@ fn flush_writes_only_what_is_not_on_disk_yet() {
         "the second block should hold only that line (first {big} B, second {small} B)"
     );
     // No new content, no file — not even an empty one.
-    assert!(st.store.flush(&st.doc).unwrap().is_none(), "nothing new must write no file");
+    assert!(
+        st.store.flush(&st.doc).unwrap().is_none(),
+        "nothing new must write no file"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -57,10 +68,18 @@ fn one_broken_block_does_not_kill_the_channel() {
     let mut st = open_channel(&dir, 1).unwrap();
     st.doc.tell(&me("a"), "the good line").unwrap();
     st.store.flush(&st.doc).unwrap();
-    fs::write(dir.join("u-000000000000ffff-00000000.loro"), b"not a loro block").unwrap();
+    fs::write(
+        dir.join("u-000000000000ffff-00000000.loro"),
+        b"not a loro block",
+    )
+    .unwrap();
 
     let back = open_channel(&dir, 1).unwrap();
-    assert_eq!(back.broken.len(), 1, "broken blocks must be counted, not swallowed");
+    assert_eq!(
+        back.broken.len(),
+        1,
+        "broken blocks must be counted, not swallowed"
+    );
     assert_eq!(back.doc.messages().len(), 1, "the good line must remain");
     let _ = fs::remove_dir_all(&dir);
 }
@@ -85,11 +104,17 @@ fn compacting_keeps_every_word() {
             .count()
     };
     let before = count_blocks(&dir);
-    assert!(before >= 20, "before compaction there should be a pile of blocks, got {before}");
+    assert!(
+        before >= 20,
+        "before compaction there should be a pile of blocks, got {before}"
+    );
 
     st.store.compact(&st.doc).unwrap();
     let after = count_blocks(&dir);
-    assert_eq!(after, 1, "after compaction only the snapshot should remain, got {after}");
+    assert_eq!(
+        after, 1,
+        "after compaction only the snapshot should remain, got {after}"
+    );
 
     let back = open_channel(&dir, 1).unwrap();
     assert_eq!(render(&back.doc), want, "compaction must not lose a line");
@@ -165,7 +190,10 @@ fn opening_one_home_from_many_places_at_once_never_fails() {
                 })
             })
             .collect();
-        handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap())
+            .collect()
     });
 
     assert!(
@@ -189,25 +217,43 @@ fn what_lands_on_disk_is_readable_only_by_me() {
     let dir = tmpdir("perms").join("doc");
     let mut l = open_channel(&dir, 7).expect("an empty doc must open");
     l.doc
-        .tell(&Sender { id: "a".into(), name: "A".into() }, "a line")
+        .tell(
+            &Sender {
+                id: "a".into(),
+                name: "A".into(),
+            },
+            "a line",
+        )
         .expect("tell failed");
     l.store.flush(&l.doc).expect("flush failed");
 
     let mode = |p: &std::path::Path| {
-        std::fs::metadata(p).expect("no metadata").permissions().mode() & 0o777
+        std::fs::metadata(p)
+            .expect("no metadata")
+            .permissions()
+            .mode()
+            & 0o777
     };
     assert_eq!(mode(&dir), 0o700, "the doc dir must not let others cd in");
 
     let mut n = 0;
     for e in std::fs::read_dir(&dir).expect("cannot list the dir") {
         let p = e.expect("cannot read the entry").path();
-        assert_eq!(mode(&p), 0o600, "{} must not be readable by others", p.display());
+        assert_eq!(
+            mode(&p),
+            0o600,
+            "{} must not be readable by others",
+            p.display()
+        );
         n += 1;
     }
     // Prove the round wrote anything at all: a write-nothing
     // implementation idles through the loop above and every assertion
     // passes. At least two files: one block plus the ledger.
-    assert!(n >= 2, "this pass should write block and ledger, got only {n} files");
+    assert!(
+        n >= 2,
+        "this pass should write block and ledger, got only {n} files"
+    );
     let _ = fs::remove_dir_all(dir.parent().unwrap());
 }
 
@@ -253,8 +299,8 @@ fn what_lands_on_disk_is_readable_only_by_me() {
 /// That is the argument for one owner, and it is why this test has one.
 #[test]
 fn a_read_that_races_a_compaction_still_sees_every_line() {
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
     let dir = tmpdir("race-compact");
     // ⚠️ **The pile has to be big enough that a read is slow.** At 60
@@ -273,7 +319,10 @@ fn a_read_that_races_a_compaction_still_sees_every_line() {
     }
     let want = render(&st.doc);
     let lines = want.lines().count();
-    assert!(lines >= 600, "the fixture should have a pile of lines, got {lines}");
+    assert!(
+        lines >= 600,
+        "the fixture should have a pile of lines, got {lines}"
+    );
 
     // Readers, running while the compaction below happens under them.
     let stop = Arc::new(AtomicBool::new(false));
@@ -281,8 +330,12 @@ fn a_read_that_races_a_compaction_still_sees_every_line() {
     let reads = Arc::new(AtomicU64::new(0));
     let readers: Vec<_> = (0..3)
         .map(|k| {
-            let (dir, stop, short, reads) =
-                (dir.clone(), Arc::clone(&stop), Arc::clone(&short), Arc::clone(&reads));
+            let (dir, stop, short, reads) = (
+                dir.clone(),
+                Arc::clone(&stop),
+                Arc::clone(&short),
+                Arc::clone(&reads),
+            );
             let want = want.clone();
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Relaxed) {
@@ -315,7 +368,10 @@ fn a_read_that_races_a_compaction_still_sees_every_line() {
         .count();
     let _ = fs::remove_dir_all(&dir);
 
-    assert_eq!(left, 1, "the compaction should have left one snapshot, found {left}");
+    assert_eq!(
+        left, 1,
+        "the compaction should have left one snapshot, found {left}"
+    );
     assert_eq!(
         short, 0,
         "{short} of {reads} reads came back missing a line the document has \
@@ -361,7 +417,10 @@ fn a_read_that_learns_nothing_does_not_rewrite_the_ledger() {
     // without it, a ledger that is never written at all would pass.
     let _ = fs::remove_file(&ledger);
     let _ = open_channel(&dir, 2).unwrap();
-    assert!(ledger.exists(), "the first read should have written the ledger");
+    assert!(
+        ledger.exists(),
+        "the first read should have written the ledger"
+    );
     let after_first = fs::metadata(&ledger).unwrap().modified().unwrap();
 
     // Far enough apart that a coarse filesystem clock still separates
@@ -385,7 +444,10 @@ fn a_read_that_learns_nothing_does_not_rewrite_the_ledger() {
     let noisy = after_new > after_more;
 
     let _ = fs::remove_dir_all(&dir);
-    assert!(quiet, "five reads that learned nothing rewrote the ledger anyway");
+    assert!(
+        quiet,
+        "five reads that learned nothing rewrote the ledger anyway"
+    );
     assert!(noisy, "a read that met a new block must record it");
 }
 
@@ -427,8 +489,7 @@ fn only_one_compactor_may_run_on_one_home() {
         let gate = Arc::new(Barrier::new(2));
         let hands: Vec<_> = (0..2)
             .map(|k| {
-                let (home, gate, winners) =
-                    (home.clone(), Arc::clone(&gate), Arc::clone(&winners));
+                let (home, gate, winners) = (home.clone(), Arc::clone(&gate), Arc::clone(&winners));
                 std::thread::spawn(move || {
                     gate.wait();
                     let done = crate::store::compact_piles_under(&home, 100 + k);
@@ -441,7 +502,10 @@ fn only_one_compactor_may_run_on_one_home() {
             .collect();
         let each: Vec<usize> = hands.into_iter().map(|h| h.join().unwrap()).collect();
         let ran = each.iter().filter(|n| **n > 0).count();
-        assert!(ran <= 1, "round {round}: {ran} compactors both rewrote something");
+        assert!(
+            ran <= 1,
+            "round {round}: {ran} compactors both rewrote something"
+        );
 
         // And the document is still whole, which is the thing the rule
         // exists to protect.

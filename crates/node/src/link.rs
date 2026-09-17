@@ -10,13 +10,13 @@ use std::time::Duration;
 
 use base64::Engine;
 use khor_catalog::msg;
-use khor_net::endpoint::{self, Ticket, ALPN};
+use khor_net::endpoint::{self, ALPN, Ticket};
 use khor_sync::devices::DeviceInfo;
 use khor_sync::store::Doc;
 use khor_sync::{chat, wire};
 
-use crate::proto::{self, Request, Response, MAX_FRAME};
-use crate::{ipc, Node};
+use crate::proto::{self, MAX_FRAME, Request, Response};
+use crate::{Node, ipc};
 
 /// How often the serve loop syncs with everyone — and, on the same beat,
 /// reaps borrows whose rows are gone.
@@ -395,7 +395,9 @@ impl Node {
             .map_err(msg::handoff_unreadable)?;
         let reply = match proto::decode::<ipc::Handoff>(&bytes) {
             Ok(h) if h.cookie == cookie => self.run_handoff(ep, h.op).await,
-            Ok(_) => ipc::Reply::Refused { why: msg::HANDOFF_WRONG_COOKIE.into() },
+            Ok(_) => ipc::Reply::Refused {
+                why: msg::HANDOFF_WRONG_COOKIE.into(),
+            },
             Err(e) => ipc::Reply::Refused { why: e },
         };
         stream
@@ -435,7 +437,9 @@ impl Node {
             }
             ipc::Op::SyncNow => {
                 let _g = self.sync_gate.lock().await;
-                ipc::Reply::Synced { outcomes: self.sync_with_all(ep).await }
+                ipc::Reply::Synced {
+                    outcomes: self.sync_with_all(ep).await,
+                }
             }
             ipc::Op::Accept { session } => {
                 match self.accept_with(ep, &crate::SessionId(session)).await {
@@ -444,26 +448,38 @@ impl Node {
                 }
             }
             ipc::Op::Ls { machine, path } => match self.ls_with(ep, &machine, &path).await {
-                Ok((path, entries, truncated)) => ipc::Reply::Dir { path, entries, truncated },
+                Ok((path, entries, truncated)) => ipc::Reply::Dir {
+                    path,
+                    entries,
+                    truncated,
+                },
                 Err(why) => ipc::Reply::Refused { why },
             },
             ipc::Op::Pull { machine, path, dir } => {
-                match self.pull_path_with(ep, &machine, &path, std::path::Path::new(&dir)).await {
-                    Ok((moved, dest)) => {
-                        ipc::Reply::Pulled { moved, dest: dest.display().to_string() }
-                    }
+                match self
+                    .pull_path_with(ep, &machine, &path, std::path::Path::new(&dir))
+                    .await
+                {
+                    Ok((moved, dest)) => ipc::Reply::Pulled {
+                        moved,
+                        dest: dest.display().to_string(),
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::Borrow { machine } => match self.start_borrow(ep, &machine, true).await {
-                Ok((id, addr)) => ipc::Reply::Borrowing { session: id.0, addr: addr.to_string() },
+                Ok((id, addr)) => ipc::Reply::Borrowing {
+                    session: id.0,
+                    addr: addr.to_string(),
+                },
                 Err(why) => ipc::Reply::Refused { why },
             },
             ipc::Op::BorrowUnlisted { machine } => {
                 match self.start_borrow(ep, &machine, false).await {
-                    Ok((id, addr)) => {
-                        ipc::Reply::Borrowing { session: id.0, addr: addr.to_string() }
-                    }
+                    Ok((id, addr)) => ipc::Reply::Borrowing {
+                        session: id.0,
+                        addr: addr.to_string(),
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -471,33 +487,65 @@ impl Node {
                 // The answer does not carry whether there was one to
                 // drop: see `Op::DropBorrow`.
                 self.drop_hosted_borrow(&crate::SessionId(session)).await;
-                ipc::Reply::Accepted { moved: 0, landed: Vec::new() }
+                ipc::Reply::Accepted {
+                    moved: 0,
+                    landed: Vec::new(),
+                }
             }
-            ipc::Op::OpenOn { machine, kind, title, cwd, cmd, cols, rows } => {
-                match self.open_on_with(ep, &machine, &kind, &title, &cwd, &cmd, (cols, rows)).await
+            ipc::Op::OpenOn {
+                machine,
+                kind,
+                title,
+                cwd,
+                cmd,
+                cols,
+                rows,
+            } => {
+                match self
+                    .open_on_with(ep, &machine, &kind, &title, &cwd, &cmd, (cols, rows))
+                    .await
                 {
                     Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::CloseOn { machine, session } => {
-                match self.close_on_with(ep, &machine, &crate::SessionId(session)).await {
+                match self
+                    .close_on_with(ep, &machine, &crate::SessionId(session))
+                    .await
+                {
                     // A close borrows this reply for its "done" — no
                     // bytes and no paths, which is what both empties say.
-                    Ok(()) => ipc::Reply::Accepted { moved: 0, landed: Vec::new() },
+                    Ok(()) => ipc::Reply::Accepted {
+                        moved: 0,
+                        landed: Vec::new(),
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::ReachOn { machine, session } => {
-                match self.reach_on_with(ep, &machine, &crate::SessionId(session)).await {
-                    Ok((addr, cookie)) => {
-                        ipc::Reply::Reaching { addr: addr.to_string(), cookie }
-                    }
+                match self
+                    .reach_on_with(ep, &machine, &crate::SessionId(session))
+                    .await
+                {
+                    Ok((addr, cookie)) => ipc::Reply::Reaching {
+                        addr: addr.to_string(),
+                        cookie,
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::OpenAgentOn { machine, dir, title, form, agent } => {
-                match self.open_agent_on_with(ep, &machine, &dir, &title, &form, &agent).await {
+            ipc::Op::OpenAgentOn {
+                machine,
+                dir,
+                title,
+                form,
+                agent,
+            } => {
+                match self
+                    .open_agent_on_with(ep, &machine, &dir, &title, &form, &agent)
+                    .await
+                {
                     Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
                     Err(why) => ipc::Reply::Refused { why },
                 }
@@ -506,7 +554,12 @@ impl Node {
                 Ok(places) => ipc::Reply::Places { places },
                 Err(why) => ipc::Reply::Refused { why },
             },
-            ipc::Op::LoadOn { machine, top, by, desc } => match self.load_on_with(ep, &machine, top, by, desc).await {
+            ipc::Op::LoadOn {
+                machine,
+                top,
+                by,
+                desc,
+            } => match self.load_on_with(ep, &machine, top, by, desc).await {
                 Ok(load) => ipc::Reply::Load { load },
                 Err(why) => ipc::Reply::Refused { why },
             },
@@ -524,63 +577,83 @@ impl Node {
             }
             ipc::Op::ReadHead { machine, path } => {
                 match self.read_head_with(ep, &machine, &path).await {
-                    Ok((total, at_ms, bytes)) => {
-                        ipc::Reply::Head { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) }
-                    }
+                    Ok((total, at_ms, bytes)) => ipc::Reply::Head {
+                        total,
+                        at_ms,
+                        bytes: serde_bytes::ByteBuf::from(bytes),
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::GitStatusOn { machine, root } => {
                 match self.git_status_with(ep, &machine, &root).await {
-                    Ok(s) => {
-                        ipc::Reply::GitStatus {
-                    branch: s.branch,
-                    rows: s.rows,
-                    more: s.more,
-                    ahead: s.ahead,
-                    behind: s.behind,
-                    fetched_ms: s.fetched_ms,
-                }
-                    }
+                    Ok(s) => ipc::Reply::GitStatus {
+                        branch: s.branch,
+                        rows: s.rows,
+                        more: s.more,
+                        ahead: s.ahead,
+                        behind: s.behind,
+                        fetched_ms: s.fetched_ms,
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::GitDiffOn { machine, path } => {
                 match self.git_diff_with(ep, &machine, &path).await {
-                    Ok(d) => ipc::Reply::GitDiff { hunks: d.hunks, more: d.more },
+                    Ok(d) => ipc::Reply::GitDiff {
+                        hunks: d.hunks,
+                        more: d.more,
+                    },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::WritePathOn { machine, path, was, bytes } => {
-                match self.write_path_with(ep, &machine, &path, &was, &bytes).await {
+            ipc::Op::WritePathOn {
+                machine,
+                path,
+                was,
+                bytes,
+            } => {
+                match self
+                    .write_path_with(ep, &machine, &path, &was, &bytes)
+                    .await
+                {
                     Ok((at_ms, digest)) => ipc::Reply::Wrote { at_ms, digest },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::CodeHereOn { machine } => match self.code_here_with(ep, &machine).await {
-                Ok(e) => ipc::Reply::CodeHere { version: e.version, ready: e.ready },
+                Ok(e) => ipc::Reply::CodeHere {
+                    version: e.version,
+                    ready: e.ready,
+                },
                 Err(why) => ipc::Reply::Refused { why },
             },
-            ipc::Op::CodeOpenOn { machine, .. } => {
-                match self.code_open_with(ep, &machine).await {
-                    Ok((addr, token)) => ipc::Reply::CodeAt { addr: addr.to_string(), token },
-                    Err(why) => ipc::Reply::Refused { why },
-                }
-            }
-            ipc::Op::ReadAt { machine, path, offset } => {
-                match self.read_at_with(ep, &machine, &path, offset).await {
-                    Ok((total, at_ms, bytes)) => {
-                        ipc::Reply::Head { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) }
-                    }
-                    Err(why) => ipc::Reply::Refused { why },
-                }
-            }
-            ipc::Op::CodeStopOn { machine, .. } => {
-                match self.code_stop_with(ep, &machine).await {
-                    Ok(()) => ipc::Reply::Accepted { moved: 0, landed: Vec::new() },
-                    Err(why) => ipc::Reply::Refused { why },
-                }
-            }
+            ipc::Op::CodeOpenOn { machine, .. } => match self.code_open_with(ep, &machine).await {
+                Ok((addr, token)) => ipc::Reply::CodeAt {
+                    addr: addr.to_string(),
+                    token,
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::ReadAt {
+                machine,
+                path,
+                offset,
+            } => match self.read_at_with(ep, &machine, &path, offset).await {
+                Ok((total, at_ms, bytes)) => ipc::Reply::Head {
+                    total,
+                    at_ms,
+                    bytes: serde_bytes::ByteBuf::from(bytes),
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::CodeStopOn { machine, .. } => match self.code_stop_with(ep, &machine).await {
+                Ok(()) => ipc::Reply::Accepted {
+                    moved: 0,
+                    landed: Vec::new(),
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::MkdirOn { machine, path } => {
                 match self.mkdir_with(ep, &machine, &path).await {
                     Ok(()) => ipc::Reply::Made,
@@ -646,7 +719,10 @@ impl Node {
             .filter(|d| d.sponsor.is_some())
         {
             let sponsor_id = sat.sponsor.clone().expect("filtered on sponsor");
-            let host = sat.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+            let host = sat
+                .ssh_host
+                .clone()
+                .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
             let sponsor_name = self
                 .devices_loaded()?
                 .doc
@@ -669,12 +745,22 @@ impl Node {
                         .to_owned(),
                 );
             }
-            let title = if title.is_empty() { channel.clone() } else { title.to_owned() };
+            let title = if title.is_empty() {
+                channel.clone()
+            } else {
+                title.to_owned()
+            };
             // The sponsor is an ordinary machine and the command is
             // ordinary ssh: one recursion, zero new protocol.
-            return Box::pin(
-                self.open_on_with(ep, &sponsor_name, kind, &title, "", &ssh_cmd, size),
-            )
+            return Box::pin(self.open_on_with(
+                ep,
+                &sponsor_name,
+                kind,
+                &title,
+                "",
+                &ssh_cmd,
+                size,
+            ))
             .await;
         }
         if home == self.device() {
@@ -721,13 +807,22 @@ impl Node {
     ) -> Result<(std::net::SocketAddr, String), String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
-            let dir = self.live.dir_of(session).ok_or_else(|| msg::not_a_session_id(&session.0))?;
+            let dir = self
+                .live
+                .dir_of(session)
+                .ok_or_else(|| msg::not_a_session_id(&session.0))?;
             let hf = crate::host::read_host_file(&dir)?;
             let addr: std::net::SocketAddr = ([127, 0, 0, 1], hf.port).into();
             return Ok((addr, hf.cookie));
         }
         let (port, cookie) = match self
-            .ask(ep, &channel, &Request::Reach { session: session.0.clone() })
+            .ask(
+                ep,
+                &channel,
+                &Request::Reach {
+                    session: session.0.clone(),
+                },
+            )
             .await?
         {
             Response::Reached { port, cookie } => (port, cookie),
@@ -762,7 +857,10 @@ impl Node {
         let handle = tokio::spawn(async move {
             let _ = crate::tunnel::serve_fixed(std::sync::Arc::new(borrow), listener, target).await;
         });
-        self.reaches.lock().await.insert(session.clone(), (addr, port, handle));
+        self.reaches
+            .lock()
+            .await
+            .insert(session.clone(), (addr, port, handle));
         Ok((addr, cookie))
     }
 
@@ -799,11 +897,17 @@ impl Node {
             .doc
             .by_name(channel)
             .ok_or_else(|| msg::machine_left_table(channel))?;
-        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::machine_unreachable_timeout(channel),
-            DialFailure::Refused(why) => msg::cant_reach_named(channel, why),
-        })?;
-        self.wires.lock().await.insert(channel.to_owned(), conn.clone());
+        let conn = self
+            .dial(ep, &target.id, &target.addrs, ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::machine_unreachable_timeout(channel),
+                DialFailure::Refused(why) => msg::cant_reach_named(channel, why),
+            })?;
+        self.wires
+            .lock()
+            .await
+            .insert(channel.to_owned(), conn.clone());
         Ok(conn)
     }
 
@@ -909,7 +1013,11 @@ impl Node {
         Ok(())
     }
 
-    async fn handle(&self, conn: iroh::endpoint::Connection, ep: &iroh::Endpoint) -> Result<(), String> {
+    async fn handle(
+        &self,
+        conn: iroh::endpoint::Connection,
+        ep: &iroh::Endpoint,
+    ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             let bytes = recv
@@ -1035,7 +1143,9 @@ impl Node {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
-                Ok(Response::SessionRows { rows: self.reportable_rows()? })
+                Ok(Response::SessionRows {
+                    rows: self.reportable_rows()?,
+                })
             }
             Request::Days => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1049,7 +1159,12 @@ impl Node {
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Days { day })
             }
-            Request::OpenAgent { dir, title, form, agent } => {
+            Request::OpenAgent {
+                dir,
+                title,
+                form,
+                agent,
+            } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
@@ -1166,7 +1281,10 @@ impl Node {
                 let d = tokio::task::spawn_blocking(move || crate::git::diff(&file))
                     .await
                     .map_err(|e| e.to_string())??;
-                Ok(Response::GitDiff { hunks: d.hunks, more: d.more })
+                Ok(Response::GitDiff {
+                    hunks: d.hunks,
+                    more: d.more,
+                })
             }
             Request::WritePath { path, was, bytes } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1194,7 +1312,10 @@ impl Node {
                 let e = tokio::task::spawn_blocking(crate::code::probe)
                     .await
                     .map_err(|e| e.to_string())?;
-                Ok(Response::CodeHere { version: e.version, ready: e.ready })
+                Ok(Response::CodeHere {
+                    version: e.version,
+                    ready: e.ready,
+                })
             }
             Request::CodeServe { .. } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1217,7 +1338,10 @@ impl Node {
                 tokio::task::spawn_blocking(crate::code::stop)
                     .await
                     .map_err(|e| e.to_string())??;
-                Ok(Response::Acted { moved: 0, landed: Vec::new() })
+                Ok(Response::Acted {
+                    moved: 0,
+                    landed: Vec::new(),
+                })
             }
             Request::Quotas => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1246,9 +1370,11 @@ impl Node {
                 // the `Vitals` arm's reason (the first process-table
                 // read in a process pays a CPU window).
                 let root = self.root().to_path_buf();
-                let load = tokio::task::spawn_blocking(move || crate::Node::load(&root, top as usize, by, desc))
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let load = tokio::task::spawn_blocking(move || {
+                    crate::Node::load(&root, top as usize, by, desc)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
                 Ok(Response::Load { load })
             }
             Request::Vitals => {
@@ -1336,7 +1462,10 @@ impl Node {
                         // Nothing moved and nothing landed: closing
                         // has no files, and an empty list is the frame's
                         // own word for "nobody said a path".
-                        Ok(Response::Acted { moved: 0, landed: Vec::new() })
+                        Ok(Response::Acted {
+                            moved: 0,
+                            landed: Vec::new(),
+                        })
                     }
                     other => Err(msg::unknown_action(other)),
                 }
@@ -1353,9 +1482,20 @@ impl Node {
                     tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
                         .await
                         .map_err(|e| e.to_string())??;
-                Ok(Response::Dir { path: path.display().to_string(), entries, truncated })
+                Ok(Response::Dir {
+                    path: path.display().to_string(),
+                    entries,
+                    truncated,
+                })
             }
-            Request::Open { kind, title, cwd, cmd, cols, rows } => {
+            Request::Open {
+                kind,
+                title,
+                cwd,
+                cmd,
+                cols,
+                rows,
+            } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
@@ -1387,7 +1527,9 @@ impl Node {
                     let id = crate::SessionId(format!("{kind}/{leaf}"));
                     live.register(&id, &kind, &title, None, category)?;
                     live.learn_place(&id, &cwd)?;
-                    let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+                    let dir = live
+                        .dir_of(&id)
+                        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
                     crate::host::spawn_host_at(&cwd, &dir, &id, &cmd, (cols, rows))?;
                     Ok::<_, String>(id)
                 })
@@ -1416,7 +1558,10 @@ impl Node {
                         .await
                         .map_err(|e| e.to_string())??;
                 }
-                let dir = self.live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+                let dir = self
+                    .live
+                    .dir_of(&id)
+                    .ok_or_else(|| msg::not_a_session_id(&id.0))?;
                 let hf = crate::host::read_host_file(&dir)?;
                 // **A host file outlives its host.** Without this the
                 // asker gets an address whose far end is a closed port,
@@ -1427,7 +1572,10 @@ impl Node {
                 if !crate::link::pid_alive(hf.host_pid) {
                     return Err(msg::HOST_GONE.into());
                 }
-                Ok(Response::Reached { port: hf.port, cookie: hf.cookie })
+                Ok(Response::Reached {
+                    port: hf.port,
+                    cookie: hf.cookie,
+                })
             }
             Request::SatVitals { sat } => {
                 let doc = self.devices_loaded()?.doc;
@@ -1460,7 +1608,11 @@ impl Node {
                     tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
                         .await
                         .map_err(|e| e.to_string())??;
-                Ok(Response::Dir { path: at, entries, truncated })
+                Ok(Response::Dir {
+                    path: at,
+                    entries,
+                    truncated,
+                })
             }
             Request::SatRemove { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1534,11 +1686,10 @@ impl Node {
                     return Err(msg::NOT_PAIRED.into());
                 }
                 let host = self.my_satellite_host(&sat)?;
-                let st = tokio::task::spawn_blocking(move || {
-                    crate::satellite::git_status(&host, &root)
-                })
-                .await
-                .map_err(|e| e.to_string())??;
+                let st =
+                    tokio::task::spawn_blocking(move || crate::satellite::git_status(&host, &root))
+                        .await
+                        .map_err(|e| e.to_string())??;
                 Ok(Response::GitStatus {
                     branch: st.branch,
                     rows: st.rows,
@@ -1553,12 +1704,14 @@ impl Node {
                     return Err(msg::NOT_PAIRED.into());
                 }
                 let host = self.my_satellite_host(&sat)?;
-                let d = tokio::task::spawn_blocking(move || {
-                    crate::satellite::git_diff(&host, &path)
+                let d =
+                    tokio::task::spawn_blocking(move || crate::satellite::git_diff(&host, &path))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::GitDiff {
+                    hunks: d.hunks,
+                    more: d.more,
                 })
-                .await
-                .map_err(|e| e.to_string())??;
-                Ok(Response::GitDiff { hunks: d.hunks, more: d.more })
             }
             Request::SatFetchPath { sat, path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -1566,9 +1719,18 @@ impl Node {
                 }
                 let host = self.my_satellite_host(&sat)?;
                 let (total, at_ms, bytes) = self.sat_slice(&sat, &host, &path, offset).await?;
-                Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
+                Ok(Response::PathSlice {
+                    total,
+                    at_ms,
+                    bytes: serde_bytes::ByteBuf::from(bytes),
+                })
             }
-            Request::SatWrite { sat, path, was, bytes } => {
+            Request::SatWrite {
+                sat,
+                path,
+                was,
+                bytes,
+            } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
                 }
@@ -1585,7 +1747,11 @@ impl Node {
                     tokio::task::spawn_blocking(move || crate::files::read_slice(&path, offset))
                         .await
                         .map_err(|e| e.to_string())??;
-                Ok(Response::PathSlice { total, at_ms, bytes: serde_bytes::ByteBuf::from(bytes) })
+                Ok(Response::PathSlice {
+                    total,
+                    at_ms,
+                    bytes: serde_bytes::ByteBuf::from(bytes),
+                })
             }
         }
     }
@@ -1675,12 +1841,19 @@ impl Node {
         // everywhere else in khor and a satellite is not the place to
         // invent a second rule.
         if bytes.len() as u64 > crate::proto::SLICE {
-            return Err(msg::too_big_to_write(bytes.len() as u64, crate::proto::SLICE));
+            return Err(msg::too_big_to_write(
+                bytes.len() as u64,
+                crate::proto::SLICE,
+            ));
         }
         let staged = self.sat_staging_path(sat, path)?;
         let want = {
-            let (h, p, sp, was) =
-                (host.to_owned(), path.to_owned(), staged.clone(), was.to_owned());
+            let (h, p, sp, was) = (
+                host.to_owned(),
+                path.to_owned(),
+                staged.clone(),
+                was.to_owned(),
+            );
             tokio::task::spawn_blocking(move || -> Result<String, String> {
                 let mut now = fs::read(&sp).unwrap_or_default();
                 if now.is_empty() || crate::files::digest(&now) != was {
@@ -1696,11 +1869,10 @@ impl Node {
             .map_err(|e| e.to_string())??
         };
         let (h, p, mine) = (host.to_owned(), path.to_owned(), bytes.to_vec());
-        let at_ms = tokio::task::spawn_blocking(move || {
-            crate::satellite::write_file(&h, &p, &want, &mine)
-        })
-        .await
-        .map_err(|e| e.to_string())??;
+        let at_ms =
+            tokio::task::spawn_blocking(move || crate::satellite::write_file(&h, &p, &want, &mine))
+                .await
+                .map_err(|e| e.to_string())??;
         // The staged copy is now a copy of something nobody holds any
         // more. Written through so the next read off this sponsor
         // shows what was just saved rather than what it replaced.
@@ -1721,11 +1893,15 @@ impl Node {
         let Some(target) = doc.by_name(channel) else {
             return Err(msg::machine_left_table(channel));
         };
-        let Some(sp) = target.sponsor.clone() else { return Ok(None) };
+        let Some(sp) = target.sponsor.clone() else {
+            return Ok(None);
+        };
         if sp == self.device_str() {
             return Ok(Some((target.id.clone(), None)));
         }
-        let sponsor = doc.get(&sp).ok_or_else(|| msg::machine_left_table(channel))?;
+        let sponsor = doc
+            .get(&sp)
+            .ok_or_else(|| msg::machine_left_table(channel))?;
         Ok(Some((target.id.clone(), Some(sponsor.name.clone()))))
     }
 
@@ -1733,7 +1909,11 @@ impl Node {
         let dir = self.root().join(".khor").join("satpull");
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let digest = blake3::hash(format!("{sat}\n{path}").as_bytes()).to_hex();
-        Ok(dir.join(format!("{}-{}", &sat[..8.min(sat.len())], &digest.as_str()[..16])))
+        Ok(dir.join(format!(
+            "{}-{}",
+            &sat[..8.min(sat.len())],
+            &digest.as_str()[..16]
+        )))
     }
 
     /// One slice of an offered payload. The offer's recorded size is the
@@ -1741,8 +1921,7 @@ impl Node {
     /// silently served (the digest would fail far away, much later).
     fn serve_slice(&self, digest: &str, offset: u64) -> Result<Response, String> {
         use std::io::{Read, Seek, SeekFrom};
-        let mut offer = crate::transfer::load_offer(self.root(), digest)?
-            .ok_or(msg::OFFER_LOST)?;
+        let mut offer = crate::transfer::load_offer(self.root(), digest)?.ok_or(msg::OFFER_LOST)?;
         let meta = fs::metadata(&offer.path)
             .map_err(|e| msg::offered_file_unreadable(offer.path.display(), e))?;
         if meta.len() != offer.size {
@@ -1751,8 +1930,7 @@ impl Node {
         if offset > offer.size {
             return Err(msg::offset_out_of_range(offset, offer.size));
         }
-        let mut f = fs::File::open(&offer.path)
-            .map_err(msg::offered_file_wont_open)?;
+        let mut f = fs::File::open(&offer.path).map_err(msg::offered_file_wont_open)?;
         f.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
         let want = (offer.size - offset).min(proto::SLICE) as usize;
         let mut buf = vec![0u8; want];
@@ -1760,7 +1938,10 @@ impl Node {
         offer.started = true;
         offer.done = offset + want as u64 >= offer.size;
         crate::transfer::save_offer(self.root(), digest, &offer)?;
-        Ok(Response::Slice { total: offer.size, bytes: serde_bytes::ByteBuf::from(buf) })
+        Ok(Response::Slice {
+            total: offer.size,
+            bytes: serde_bytes::ByteBuf::from(buf),
+        })
     }
 
     /// Where a transfer's payloads land, one path per offered file.
@@ -1780,7 +1961,10 @@ impl Node {
         };
         let dir = chat::channel_dir(self.root(), &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
-        Ok(files.iter().map(|f| crate::transfer::payload_path(&dir, f)).collect())
+        Ok(files
+            .iter()
+            .map(|f| crate::transfer::payload_path(&dir, f))
+            .collect())
     }
 
     /// Approves a transfer and pulls its payload from home. Resumes from
@@ -1794,7 +1978,12 @@ impl Node {
     /// [`crate::proto::Response::Acted`] for why the paths travel
     /// instead of being worked out at this end.
     pub async fn accept(&self, id: &crate::SessionId) -> Result<(u64, Vec<String>), String> {
-        if let Some(reply) = self.via_serve(ipc::Op::Accept { session: id.0.clone() }).await {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::Accept {
+                session: id.0.clone(),
+            })
+            .await
+        {
             return match reply? {
                 ipc::Reply::Accepted { moved, landed } => Ok((moved, landed)),
                 ipc::Reply::Refused { why } => Err(why),
@@ -1836,7 +2025,9 @@ impl Node {
         ep: &iroh::Endpoint,
         machine: &str,
     ) -> Result<crate::tunnel::Borrow, String> {
-        Ok(crate::tunnel::Borrow::on_shared(self.dial_tunnel(ep, machine).await?))
+        Ok(crate::tunnel::Borrow::on_shared(
+            self.dial_tunnel(ep, machine).await?,
+        ))
     }
 
     /// Resolves a machine and opens the tunnel connection to it on `ep`.
@@ -1860,10 +2051,12 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
-        self.dial(ep, &target.id, &target.addrs, endpoint::TUNNEL_ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
-        })
+        self.dial(ep, &target.id, &target.addrs, endpoint::TUNNEL_ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+                DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+            })
     }
 
     /// Starts a borrow the serve hosts: dials the lease on `ep`, binds a
@@ -1923,7 +2116,8 @@ impl Node {
         }
         let borrow = self.tunnel_on(ep, machine).await?;
         let id = if listed {
-            let id = self.open_ephemeral(khor_core::kind::BORROW, &msg::borrowing_title(machine))?;
+            let id =
+                self.open_ephemeral(khor_core::kind::BORROW, &msg::borrowing_title(machine))?;
             // The lease starts with no pipes, so the row opens 空闲 rather
             // than the 忙碌 a fresh registration writes.
             self.report_state(&id, khor_core::State::Idle)?;
@@ -1952,16 +2146,26 @@ impl Node {
             let by = crate::live::LiveKind::new(self.root().clone(), self.device());
             let sid = id.clone();
             std::sync::Arc::new(move |busy| {
-                let word = if busy { khor_core::State::Busy } else { khor_core::State::Idle };
+                let word = if busy {
+                    khor_core::State::Busy
+                } else {
+                    khor_core::State::Idle
+                };
                 let _ = by.report(&sid, word, crate::live::Source::Reported);
             })
         } else {
             std::sync::Arc::new(|_busy| {})
         };
         let task = tokio::spawn(async move {
-            let _ = crate::tunnel::serve_proxy(std::sync::Arc::new(borrow), listener, activity).await;
+            let _ =
+                crate::tunnel::serve_proxy(std::sync::Arc::new(borrow), listener, activity).await;
         });
-        let hosted = crate::HostedBorrow { machine: machine.to_owned(), addr, listed, task };
+        let hosted = crate::HostedBorrow {
+            machine: machine.to_owned(),
+            addr,
+            listed,
+            task,
+        };
         self.borrows.lock().await.insert(id.clone(), hosted);
         Ok((id, addr))
     }
@@ -2031,7 +2235,12 @@ impl Node {
     /// again and how they end it. A face opening a page wants
     /// [`Node::borrow_unlisted`] instead — see docs/NET.md 可达性.
     pub async fn borrow(&self, machine: &str) -> Result<(String, String), String> {
-        match self.via_serve(ipc::Op::Borrow { machine: machine.to_owned() }).await {
+        match self
+            .via_serve(ipc::Op::Borrow {
+                machine: machine.to_owned(),
+            })
+            .await
+        {
             Some(reply) => match reply? {
                 ipc::Reply::Borrowing { session, addr } => Ok((session, addr)),
                 ipc::Reply::Refused { why } => Err(why),
@@ -2051,7 +2260,12 @@ impl Node {
     /// handle rather than a row — [`Node::drop_borrow`] is what ends it,
     /// because there is no row to close.
     pub async fn borrow_unlisted(&self, machine: &str) -> Result<(String, String), String> {
-        match self.via_serve(ipc::Op::BorrowUnlisted { machine: machine.to_owned() }).await {
+        match self
+            .via_serve(ipc::Op::BorrowUnlisted {
+                machine: machine.to_owned(),
+            })
+            .await
+        {
             Some(reply) => match reply? {
                 ipc::Reply::Borrowing { session, addr } => Ok((session, addr)),
                 ipc::Reply::Refused { why } => Err(why),
@@ -2070,7 +2284,12 @@ impl Node {
     /// holding a port. `borrow_unlisted` refuses in that case because
     /// there it is a real failure — it could not do the thing.
     pub async fn drop_borrow(&self, session: &str) -> Result<(), String> {
-        match self.via_serve(ipc::Op::DropBorrow { session: session.to_owned() }).await {
+        match self
+            .via_serve(ipc::Op::DropBorrow {
+                session: session.to_owned(),
+            })
+            .await
+        {
             Some(reply) => match reply? {
                 ipc::Reply::Accepted { .. } => Ok(()),
                 ipc::Reply::Refused { why } => Err(why),
@@ -2113,7 +2332,9 @@ impl Node {
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
-        let outcome = self.open_on_with(&ep, machine, kind, title, cwd, cmd, size).await;
+        let outcome = self
+            .open_on_with(&ep, machine, kind, title, cwd, cmd, size)
+            .await;
         ep.close().await;
         outcome
     }
@@ -2146,7 +2367,9 @@ impl Node {
         let ep = endpoint::bind(self.secret_key().clone(), self.relays())
             .await
             .map_err(|e| e.to_string())?;
-        let outcome = self.open_agent_on_with(&ep, machine, dir, title, form, agent).await;
+        let outcome = self
+            .open_agent_on_with(&ep, machine, dir, title, form, agent)
+            .await;
         ep.close().await;
         outcome
     }
@@ -2164,14 +2387,23 @@ impl Node {
         // A satellite has no khor of its own to host a conversation:
         // what `open_on` reaches over ssh is a shell, and an agent
         // process khor speaks a protocol to has to run beside a khor.
-        if self.devices_loaded()?.doc.by_name(&channel).is_some_and(|d| d.sponsor.is_some()) {
+        if self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .is_some_and(|d| d.sponsor.is_some())
+        {
             return Err(msg::agent_not_on_a_satellite(&channel));
         }
         if home == self.device() {
             // Off the reactor: this waits for the agent's `session/new`.
             let root = self.root().to_path_buf();
-            let (dir, title, form, agent) =
-                (dir.to_owned(), title.to_owned(), form.to_owned(), agent.to_owned());
+            let (dir, title, form, agent) = (
+                dir.to_owned(),
+                title.to_owned(),
+                form.to_owned(),
+                agent.to_owned(),
+            );
             return tokio::task::spawn_blocking(move || {
                 crate::Node::open(root)?.start_session(&dir, &title, &form, &agent)
             })
@@ -2196,11 +2428,19 @@ impl Node {
     /// machine's goes through one when there is one. An older khor over
     /// there answers with no list at all, which the caller treats as
     /// silence and not as an error — the wizard's box still takes a path.
-    pub async fn places_on(&self, machine: &str) -> Result<Vec<(String, String, u32, i64)>, String> {
+    pub async fn places_on(
+        &self,
+        machine: &str,
+    ) -> Result<Vec<(String, String, u32, i64)>, String> {
         if machine.is_empty() || machine == self.name() {
             return Ok(self.places_shown());
         }
-        if let Some(reply) = self.via_serve(ipc::Op::PlacesOn { machine: machine.to_owned() }).await {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::PlacesOn {
+                machine: machine.to_owned(),
+            })
+            .await
+        {
             return match reply? {
                 ipc::Reply::Places { places } => Ok(places),
                 ipc::Reply::Refused { why } => Err(why),
@@ -2235,7 +2475,12 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string());
         }
-        let op = ipc::Op::LoadOn { machine: machine.to_owned(), top, by, desc };
+        let op = ipc::Op::LoadOn {
+            machine: machine.to_owned(),
+            top,
+            by,
+            desc,
+        };
         if let Some(reply) = self.via_serve(op).await {
             return match reply? {
                 ipc::Reply::Load { load } => Ok(load),
@@ -2416,27 +2661,40 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = target
+                    .ssh_host
+                    .clone()
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
-                return tokio::task::spawn_blocking(move || {
-                    crate::satellite::remove(&host, &path)
-                })
-                .await
-                .map_err(|e| e.to_string())?;
+                return tokio::task::spawn_blocking(move || crate::satellite::remove(&host, &path))
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
             let sponsor = self
                 .devices_loaded()?
                 .doc
                 .get(&sp)
                 .ok_or_else(|| msg::machine_left_table(&channel))?;
-            let req = Request::SatRemove { sat, path: path.to_owned() };
+            let req = Request::SatRemove {
+                sat,
+                path: path.to_owned(),
+            };
             return match self.ask(ep, &sponsor.name, &req).await? {
                 Response::Removed => Ok(()),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        match self.ask(ep, &channel, &Request::Remove { path: path.to_owned() }).await? {
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Remove {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
+        {
             Response::Removed => Ok(()),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -2503,14 +2761,26 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())?;
             };
-            let req = Request::SatMkdir { sat, path: path.to_owned() };
+            let req = Request::SatMkdir {
+                sat,
+                path: path.to_owned(),
+            };
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::Made => Ok(()),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        match self.ask(ep, &channel, &Request::Mkdir { path: path.to_owned() }).await? {
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Mkdir {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
+        {
             Response::Made => Ok(()),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -2571,7 +2841,10 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())?;
             };
-            let req = Request::SatTouch { sat, path: path.to_owned() };
+            let req = Request::SatTouch {
+                sat,
+                path: path.to_owned(),
+            };
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::Made => Ok(()),
                 Response::Refused { why } => Err(why),
@@ -2579,7 +2852,9 @@ impl Node {
             };
         }
         // Every ordinary machine: the write it has always answered.
-        self.write_path_with(ep, &channel, path, "", b"").await.map(|_| ())
+        self.write_path_with(ep, &channel, path, "", b"")
+            .await
+            .map(|_| ())
     }
 
     /// Moves a name on whichever machine holds it — inside a directory
@@ -2633,14 +2908,21 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string())?;
             };
-            let req = Request::SatRename { sat, from: from.to_owned(), to: to.to_owned() };
+            let req = Request::SatRename {
+                sat,
+                from: from.to_owned(),
+                to: to.to_owned(),
+            };
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::Renamed => Ok(()),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        let req = Request::RenamePath { from: from.to_owned(), to: to.to_owned() };
+        let req = Request::RenamePath {
+            from: from.to_owned(),
+            to: to.to_owned(),
+        };
         match self.ask(ep, &channel, &req).await? {
             Response::Renamed => Ok(()),
             Response::Refused { why } => Err(why),
@@ -2707,14 +2989,26 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())?;
             };
-            let req = Request::SatLaunch { sat, target: target.to_owned() };
+            let req = Request::SatLaunch {
+                sat,
+                target: target.to_owned(),
+            };
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::Launched => Ok(()),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        match self.ask(ep, &channel, &Request::Launch { target: target.to_owned() }).await? {
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Launch {
+                    target: target.to_owned(),
+                },
+            )
+            .await?
+        {
             Response::Launched => Ok(()),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -2780,7 +3074,10 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = target
+                    .ssh_host
+                    .clone()
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::touched(&host, &path)
@@ -2793,14 +3090,26 @@ impl Node {
                 .doc
                 .get(&sp)
                 .ok_or_else(|| msg::machine_left_table(&channel))?;
-            let req = Request::SatTouched { sat, path: path.to_owned() };
+            let req = Request::SatTouched {
+                sat,
+                path: path.to_owned(),
+            };
             return match self.ask(ep, &sponsor.name, &req).await? {
                 Response::Touched { at_ms } => Ok(at_ms),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        match self.ask(ep, &channel, &Request::Touched { path: path.to_owned() }).await? {
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Touched {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
+        {
             Response::Touched { at_ms } => Ok(at_ms),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -2825,16 +3134,27 @@ impl Node {
     /// A satellite's file does not come through this road — the sponsor
     /// serves those off a staging copy with `SatFetchPath`, which is
     /// the account already in docs/handoff/001.md.
-    pub async fn read_head(&self, machine: &str, path: &str) -> Result<(u64, u64, Vec<u8>), String> {
+    pub async fn read_head(
+        &self,
+        machine: &str,
+        path: &str,
+    ) -> Result<(u64, u64, Vec<u8>), String> {
         if machine.is_empty() || machine == self.name() {
             return crate::files::read_slice(path, 0);
         }
         if let Some(reply) = self
-            .via_serve(ipc::Op::ReadHead { machine: machine.to_owned(), path: path.to_owned() })
+            .via_serve(ipc::Op::ReadHead {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
             .await
         {
             return match reply? {
-                ipc::Reply::Head { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+                ipc::Reply::Head {
+                    total,
+                    at_ms,
+                    bytes,
+                } => Ok((total, at_ms, bytes.into_vec())),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -2862,7 +3182,6 @@ impl Node {
         self.read_at_with(ep, machine, path, 0).await
     }
 
-
     /// What differs from HEAD in one checkout on any machine
     /// (`crate::git::status`). `root` is that machine's spelling of the
     /// directory, which is what the workspace list handed over.
@@ -2887,9 +3206,21 @@ impl Node {
             .await
         {
             return match reply? {
-                ipc::Reply::GitStatus { branch, rows, more, ahead, behind, fetched_ms } => {
-                    Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
-                }
+                ipc::Reply::GitStatus {
+                    branch,
+                    rows,
+                    more,
+                    ahead,
+                    behind,
+                    fetched_ms,
+                } => Ok(crate::git::Status {
+                    branch,
+                    rows,
+                    more,
+                    ahead,
+                    behind,
+                    fetched_ms,
+                }),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -2925,23 +3256,50 @@ impl Node {
                     .map_err(|e| e.to_string())?;
             }
             let sponsor = sponsor.expect("checked");
-            let req = Request::SatGitStatus { sat, root: root.to_owned() };
+            let req = Request::SatGitStatus {
+                sat,
+                root: root.to_owned(),
+            };
             return match self.ask(ep, &sponsor, &req).await? {
-                Response::GitStatus { branch, rows, more, ahead, behind, fetched_ms } => {
-                    Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
-                }
-                Response::Refused { why } if why.trim().is_empty() => {
-                    Err(msg::GIT_PREDATES.into())
-                }
+                Response::GitStatus {
+                    branch,
+                    rows,
+                    more,
+                    ahead,
+                    behind,
+                    fetched_ms,
+                } => Ok(crate::git::Status {
+                    branch,
+                    rows,
+                    more,
+                    ahead,
+                    behind,
+                    fetched_ms,
+                }),
+                Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
                 Response::Refused { why } => Err(msg::git_refused(why)),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        let req = Request::GitStatus { root: root.to_owned() };
+        let req = Request::GitStatus {
+            root: root.to_owned(),
+        };
         match self.ask(ep, &channel, &req).await? {
-            Response::GitStatus { branch, rows, more, ahead, behind, fetched_ms } => {
-                Ok(crate::git::Status { branch, rows, more, ahead, behind, fetched_ms })
-            }
+            Response::GitStatus {
+                branch,
+                rows,
+                more,
+                ahead,
+                behind,
+                fetched_ms,
+            } => Ok(crate::git::Status {
+                branch,
+                rows,
+                more,
+                ahead,
+                behind,
+                fetched_ms,
+            }),
             // Wordless means the op is unknown over there; words mean
             // that machine answered and its answer is the one to show
             // (the `load-*` pair's measured lesson, zh.toml).
@@ -2954,11 +3312,7 @@ impl Node {
     /// Where one file differs from HEAD on any machine
     /// (`crate::git::diff`). Refuses out loud for [`Node::git_status_on`]'s
     /// reason: no hunks means the file matches HEAD.
-    pub async fn git_diff_on(
-        &self,
-        machine: &str,
-        path: &str,
-    ) -> Result<crate::git::Diff, String> {
+    pub async fn git_diff_on(&self, machine: &str, path: &str) -> Result<crate::git::Diff, String> {
         if machine.is_empty() || machine == self.name() {
             return crate::git::diff(std::path::Path::new(path));
         }
@@ -3001,17 +3355,20 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())?;
             };
-            let req = Request::SatGitDiff { sat, path: path.to_owned() };
+            let req = Request::SatGitDiff {
+                sat,
+                path: path.to_owned(),
+            };
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
-                Response::Refused { why } if why.trim().is_empty() => {
-                    Err(msg::GIT_PREDATES.into())
-                }
+                Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
                 Response::Refused { why } => Err(msg::git_refused(why)),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        let req = Request::GitDiff { path: path.to_owned() };
+        let req = Request::GitDiff {
+            path: path.to_owned(),
+        };
         match self.ask(ep, &channel, &req).await? {
             Response::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
             Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
@@ -3140,8 +3497,11 @@ impl Node {
         if machine.is_empty() || machine == self.name() {
             return Ok(crate::code::probe());
         }
-        if let Some(reply) =
-            self.via_serve(ipc::Op::CodeHereOn { machine: machine.to_owned() }).await
+        if let Some(reply) = self
+            .via_serve(ipc::Op::CodeHereOn {
+                machine: machine.to_owned(),
+            })
+            .await
         {
             return match reply? {
                 ipc::Reply::CodeHere { version, ready } => {
@@ -3243,7 +3603,13 @@ impl Node {
             return Ok((([127, 0, 0, 1], port).into(), token));
         }
         let (port, token) = match self
-            .ask(ep, &channel, &Request::CodeServe { root: String::new() })
+            .ask(
+                ep,
+                &channel,
+                &Request::CodeServe {
+                    root: String::new(),
+                },
+            )
             .await?
         {
             Response::CodeServing { port, token } => (port, token),
@@ -3304,11 +3670,7 @@ impl Node {
         }
     }
 
-    async fn code_stop_with(
-        &self,
-        ep: &iroh::Endpoint,
-        machine: &str,
-    ) -> Result<(), String> {
+    async fn code_stop_with(&self, ep: &iroh::Endpoint, machine: &str) -> Result<(), String> {
         // This side first, and unconditionally: the pipe is this
         // machine's and giving it back must not depend on the far one
         // being reachable.
@@ -3320,7 +3682,13 @@ impl Node {
             return crate::code::stop();
         }
         match self
-            .ask(ep, &channel, &Request::CodeStop { root: String::new() })
+            .ask(
+                ep,
+                &channel,
+                &Request::CodeStop {
+                    root: String::new(),
+                },
+            )
             .await?
         {
             Response::Acted { .. } => Ok(()),
@@ -3351,7 +3719,11 @@ impl Node {
             .await
         {
             return match reply? {
-                ipc::Reply::Head { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+                ipc::Reply::Head {
+                    total,
+                    at_ms,
+                    bytes,
+                } => Ok((total, at_ms, bytes.into_vec())),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -3389,7 +3761,10 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = target
+                    .ssh_host
+                    .clone()
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 return self.sat_slice(&sat, &host, path, offset).await;
             }
             let sponsor = self
@@ -3397,20 +3772,37 @@ impl Node {
                 .doc
                 .get(&sp)
                 .ok_or_else(|| msg::machine_left_table(&channel))?;
-            let ask = Request::SatFetchPath { sat, path: path.to_owned(), offset };
+            let ask = Request::SatFetchPath {
+                sat,
+                path: path.to_owned(),
+                offset,
+            };
             return match self.ask(ep, &sponsor.name, &ask).await? {
-                Response::PathSlice { total, at_ms, bytes } => {
-                    Ok((total, at_ms, bytes.into_vec()))
-                }
+                Response::PathSlice {
+                    total,
+                    at_ms,
+                    bytes,
+                } => Ok((total, at_ms, bytes.into_vec())),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
         match self
-            .ask(ep, &channel, &Request::FetchPath { path: path.to_owned(), offset })
+            .ask(
+                ep,
+                &channel,
+                &Request::FetchPath {
+                    path: path.to_owned(),
+                    offset,
+                },
+            )
             .await?
         {
-            Response::PathSlice { total, at_ms, bytes } => Ok((total, at_ms, bytes.into_vec())),
+            Response::PathSlice {
+                total,
+                at_ms,
+                bytes,
+            } => Ok((total, at_ms, bytes.into_vec())),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -3450,8 +3842,7 @@ impl Node {
             return Ok((total, at_ms, bytes, total > cap));
         }
         while (bytes.len() as u64) < want {
-            let (now_total, now_ms, more) =
-                self.read_at(machine, path, bytes.len() as u64).await?;
+            let (now_total, now_ms, more) = self.read_at(machine, path, bytes.len() as u64).await?;
             if now_total != total || now_ms != at_ms {
                 return Err(msg::file_moved_while_reading(path));
             }
@@ -3533,7 +3924,10 @@ impl Node {
     /// The row's own machine runs it — the same rule every Act follows,
     /// so nothing bounces and the far side's refusals stay its own.
     pub async fn close_on(&self, machine: &str, session: &crate::SessionId) -> Result<(), String> {
-        let op = ipc::Op::CloseOn { machine: machine.to_owned(), session: session.0.clone() };
+        let op = ipc::Op::CloseOn {
+            machine: machine.to_owned(),
+            session: session.0.clone(),
+        };
         if let Some(reply) = self.via_serve(op).await {
             return match reply? {
                 ipc::Reply::Accepted { .. } => Ok(()),
@@ -3556,7 +3950,10 @@ impl Node {
         session: &crate::SessionId,
     ) -> Result<(), String> {
         let (channel, _) = self.resolve(machine)?;
-        let req = Request::Act { session: session.0.clone(), action: "close".into() };
+        let req = Request::Act {
+            session: session.0.clone(),
+            action: "close".into(),
+        };
         match self.ask(ep, &channel, &req).await? {
             Response::Acted { .. } => Ok(()),
             Response::Refused { why } => Err(why),
@@ -3573,11 +3970,18 @@ impl Node {
         path: &str,
     ) -> Result<(String, Vec<proto::DirEntry>, bool), String> {
         if let Some(reply) = self
-            .via_serve(ipc::Op::Ls { machine: machine.to_owned(), path: path.to_owned() })
+            .via_serve(ipc::Op::Ls {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
             .await
         {
             return match reply? {
-                ipc::Reply::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
+                ipc::Reply::Dir {
+                    path,
+                    entries,
+                    truncated,
+                } => Ok((path, entries, truncated)),
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
@@ -3625,7 +4029,10 @@ impl Node {
         // sponsor itself no wire is needed at all.
         if let Some(sp) = target.sponsor.clone() {
             if sp == self.device_str() {
-                let host = target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = target
+                    .ssh_host
+                    .clone()
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
                     .await
@@ -3636,28 +4043,51 @@ impl Node {
                 .doc
                 .get(&sp)
                 .ok_or_else(|| msg::machine_left_table(&channel))?;
-            let conn =
-                self.dial(ep, &sponsor.id, &sponsor.addrs, ALPN).await.map_err(|e| match e {
+            let conn = self
+                .dial(ep, &sponsor.id, &sponsor.addrs, ALPN)
+                .await
+                .map_err(|e| match e {
                     DialFailure::TimedOut => msg::machine_unreachable_timeout(&sponsor.name),
                     DialFailure::Refused(why) => msg::cant_reach_named(&sponsor.name, why),
                 })?;
             return match request(
                 &conn,
-                &Request::SatLs { sat: target.id.clone(), path: path.to_owned() },
+                &Request::SatLs {
+                    sat: target.id.clone(),
+                    path: path.to_owned(),
+                },
             )
             .await?
             {
-                Response::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
+                Response::Dir {
+                    path,
+                    entries,
+                    truncated,
+                } => Ok((path, entries, truncated)),
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
-        })?;
-        match request(&conn, &Request::Ls { path: path.to_owned() }).await? {
-            Response::Dir { path, entries, truncated } => Ok((path, entries, truncated)),
+        let conn = self
+            .dial(ep, &target.id, &target.addrs, ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+                DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+            })?;
+        match request(
+            &conn,
+            &Request::Ls {
+                path: path.to_owned(),
+            },
+        )
+        .await?
+        {
+            Response::Dir {
+                path,
+                entries,
+                truncated,
+            } => Ok((path, entries, truncated)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -3758,8 +4188,10 @@ impl Node {
         // (`Request::SatFetchPath`).
         let (dial_to, sat) = match target.sponsor.clone() {
             Some(sp) if sp == self.device_str() => {
-                let host =
-                    target.ssh_host.clone().ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = target
+                    .ssh_host
+                    .clone()
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let (h, p, part) = (host, path.to_owned(), fell.part.clone());
                 let moved =
                     tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &part))
@@ -3787,10 +4219,13 @@ impl Node {
             }
             None => (target, None),
         };
-        let conn = self.dial(ep, &dial_to.id, &dial_to.addrs, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::machine_unreachable_timeout(&dial_to.name),
-            DialFailure::Refused(why) => msg::cant_reach_named(&dial_to.name, why),
-        })?;
+        let conn = self
+            .dial(ep, &dial_to.id, &dial_to.addrs, ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::machine_unreachable_timeout(&dial_to.name),
+                DialFailure::Refused(why) => msg::cant_reach_named(&dial_to.name, why),
+            })?;
         let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
         // The change contract: the first slice's (total, mtime) must
         // hold for every slice after it — two readings that differ are
@@ -3804,15 +4239,22 @@ impl Node {
                     path: path.to_owned(),
                     offset,
                 },
-                None => Request::FetchPath { path: path.to_owned(), offset },
+                None => Request::FetchPath {
+                    path: path.to_owned(),
+                    offset,
+                },
             };
             let resp = request(&conn, &req).await;
             match resp {
-                Ok(Response::PathSlice { total, at_ms, bytes }) => {
+                Ok(Response::PathSlice {
+                    total,
+                    at_ms,
+                    bytes,
+                }) => {
                     match contract {
                         None => contract = Some((total, at_ms)),
                         Some(c) if c != (total, at_ms) => {
-                            break Err(msg::FILE_CHANGED_MID_PULL.into())
+                            break Err(msg::FILE_CHANGED_MID_PULL.into());
                         }
                         Some(_) => {}
                     }
@@ -3935,7 +4377,11 @@ impl Node {
         if dark.is_empty() {
             return Err(msg::transfer_absent_after_sync(&id.0));
         }
-        Err(msg::transfer_not_synced_yet(&id.0, dark.len(), dark.join("、")))
+        Err(msg::transfer_not_synced_yet(
+            &id.0,
+            dark.len(),
+            dark.join("、"),
+        ))
     }
 
     /// Accept on an endpoint the caller owns: pulls locally when this
@@ -3960,13 +4406,19 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::recipient_not_in_table(&channel))?;
-        let conn = self.dial(ep, &target.id, &target.addrs, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-            DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
-        })?;
+        let conn = self
+            .dial(ep, &target.id, &target.addrs, ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
+                DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
+            })?;
         let resp = request(
             &conn,
-            &Request::Act { session: id.0.clone(), action: "accept".into() },
+            &Request::Act {
+                session: id.0.clone(),
+                action: "accept".into(),
+            },
         )
         .await?;
         match resp {
@@ -4010,10 +4462,13 @@ impl Node {
         fs::create_dir_all(dir.join("files")).map_err(msg::cant_make_files_dir)?;
 
         let outcome = async {
-            let conn = self.dial(ep, &home.id, &home.addrs, ALPN).await.map_err(|e| match e {
-                DialFailure::TimedOut => msg::OFFERER_UNREACHABLE_TIMEOUT.to_string(),
-                DialFailure::Refused(why) => msg::offerer_unreachable(why),
-            })?;
+            let conn = self
+                .dial(ep, &home.id, &home.addrs, ALPN)
+                .await
+                .map_err(|e| match e {
+                    DialFailure::TimedOut => msg::OFFERER_UNREACHABLE_TIMEOUT.to_string(),
+                    DialFailure::Refused(why) => msg::offerer_unreachable(why),
+                })?;
             let mut moved = 0u64;
             // Where each file ends up, whether or not this run is what
             // put it there: the asker is pointing something at these
@@ -4126,9 +4581,9 @@ impl Node {
     /// moment somebody is certainly thinking about invites is the moment
     /// they ask for one.
     pub fn invite(&self) -> Result<String, String> {
-        let file = self.endpoint_file()?.ok_or(
-            msg::SERVE_NOT_RUNNING_FOR_INVITE,
-        )?;
+        let file = self
+            .endpoint_file()?
+            .ok_or(msg::SERVE_NOT_RUNNING_FOR_INVITE)?;
         let token = fresh_hex()?;
         let dir = self.root().join(".khor").join("invites");
         fs::create_dir_all(&dir).map_err(msg::cant_make_invites_dir)?;
@@ -4198,7 +4653,12 @@ impl Node {
     /// machines — pairing has no direction (docs/NET.md). Routed through
     /// the resident serve when one holds the key.
     pub async fn pair(&self, ticket: &str) -> Result<String, String> {
-        if let Some(reply) = self.via_serve(ipc::Op::Pair { ticket: ticket.to_owned() }).await {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::Pair {
+                ticket: ticket.to_owned(),
+            })
+            .await
+        {
             return match reply? {
                 ipc::Reply::Paired { name } => Ok(name),
                 ipc::Reply::Refused { why } => Err(why),
@@ -4230,10 +4690,13 @@ impl Node {
         // it did not think to advertise.
         let mut relays = t.relays.clone();
         relays.extend(self.relays().iter().cloned());
-        let conn = self.dial_with(ep, &t.id, &t.direct, &relays, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::INVITER_UNREACHABLE_TIMEOUT.to_string(),
-            DialFailure::Refused(why) => msg::inviter_unreachable(why),
-        })?;
+        let conn = self
+            .dial_with(ep, &t.id, &t.direct, &relays, ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::INVITER_UNREACHABLE_TIMEOUT.to_string(),
+                DialFailure::Refused(why) => msg::inviter_unreachable(why),
+            })?;
         let resp = request(
             &conn,
             &Request::Pair {
@@ -4245,9 +4708,7 @@ impl Node {
         .await?;
         match resp {
             Response::Paired { name, devices } => {
-                let bytes = B64
-                    .decode(devices)
-                    .map_err(msg::far_table_not_base64)?;
+                let bytes = B64.decode(devices).map_err(msg::far_table_not_base64)?;
                 let loaded = self.devices_loaded()?;
                 loaded.doc.merge(&bytes)?;
                 let mut store = loaded.store;
@@ -4333,10 +4794,13 @@ impl Node {
         if d.addrs.is_empty() {
             return Err(msg::NO_ROADS_REPORTED.into());
         }
-        let conn = self.dial(ep, &d.id, &d.addrs, ALPN).await.map_err(|e| match e {
-            DialFailure::TimedOut => msg::DIAL_TIMED_OUT.to_string(),
-            DialFailure::Refused(why) => msg::cant_reach_plain(why),
-        })?;
+        let conn = self
+            .dial(ep, &d.id, &d.addrs, ALPN)
+            .await
+            .map_err(|e| match e {
+                DialFailure::TimedOut => msg::DIAL_TIMED_OUT.to_string(),
+                DialFailure::Refused(why) => msg::cant_reach_plain(why),
+            })?;
 
         let mut moved = 0usize;
         {
@@ -4433,7 +4897,9 @@ impl Node {
             let dir = chat::channel_dir(self.root(), &ch)
                 .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
             let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
-            moved += self.rounds(&conn, &format!("chat/{ch}"), &mut loaded).await?;
+            moved += self
+                .rounds(&conn, &format!("chat/{ch}"), &mut loaded)
+                .await?;
         }
         // Remember what the far side reports about its own sessions:
         // when it goes unreachable, its last word plus the report's age
@@ -4480,9 +4946,17 @@ impl Node {
         // freshness. An older sponsor refuses the op, which reads as
         // "no reading" — the row stays on the offline axis.
         if let Ok(devs) = self.devices() {
-            for sat in devs.iter().filter(|s| s.sponsor.as_deref() == Some(d.id.as_str())) {
-                if let Ok(Response::SatVitals { vitals, age_ms }) =
-                    request(&conn, &Request::SatVitals { sat: sat.id.clone() }).await
+            for sat in devs
+                .iter()
+                .filter(|s| s.sponsor.as_deref() == Some(d.id.as_str()))
+            {
+                if let Ok(Response::SatVitals { vitals, age_ms }) = request(
+                    &conn,
+                    &Request::SatVitals {
+                        sat: sat.id.clone(),
+                    },
+                )
+                .await
                 {
                     let _ = self.cache_peer_vitals_aged(&sat.id, &vitals, age_ms);
                 }
@@ -4499,7 +4973,11 @@ impl Node {
         if let Ok(Response::Usage { usage }) = request(&conn, &Request::Usage).await {
             let _ = self.cache_peer_usage(&d.id, &usage);
         }
-        Ok(if moved == 0 { msg::NOTHING_TO_MOVE.into() } else { msg::moved_bytes(moved) })
+        Ok(if moved == 0 {
+            msg::NOTHING_TO_MOVE.into()
+        } else {
+            msg::moved_bytes(moved)
+        })
     }
 
     /// Two wire rounds: the first is pull-only by design, the second
@@ -4524,7 +5002,11 @@ impl Node {
             )
             .await?;
             let reply = match resp {
-                Response::Synced { version, changes, items } => wire::Reply {
+                Response::Synced {
+                    version,
+                    changes,
+                    items,
+                } => wire::Reply {
                     version,
                     changes,
                     items: items as usize,
@@ -4580,9 +5062,10 @@ impl Node {
         let mut ips: Vec<std::net::IpAddr> = Vec::new();
         for a in &file.addrs {
             if let Ok(sock) = a.parse::<std::net::SocketAddr>()
-                && !ips.contains(&sock.ip()) {
-                    ips.push(sock.ip());
-                }
+                && !ips.contains(&sock.ip())
+            {
+                ips.push(sock.ip());
+            }
         }
         Ok(Some(ips))
     }
@@ -4592,15 +5075,13 @@ impl Node {
         let Ok(text) = fs::read_to_string(&path) else {
             return Ok(None);
         };
-        let file: EndpointFile =
-            serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
+        let file: EndpointFile = serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
         if pid_alive(file.pid) {
             Ok(Some(file))
         } else {
             Ok(None)
         }
     }
-
 }
 
 /// 16 random bytes as hex — invite tokens, hand-off cookies, session
@@ -4686,22 +5167,13 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String>
     f.write_all(bytes).map_err(msg::cant_finish_write)
 }
 
-async fn request(
-    conn: &iroh::endpoint::Connection,
-    req: &Request,
-) -> Result<Response, String> {
-    let (mut send, mut recv) = conn
-        .open_bi()
-        .await
-        .map_err(msg::cant_open_stream)?;
+async fn request(conn: &iroh::endpoint::Connection, req: &Request) -> Result<Response, String> {
+    let (mut send, mut recv) = conn.open_bi().await.map_err(msg::cant_open_stream)?;
     send.write_all(&proto::encode(req)?)
         .await
         .map_err(msg::cant_send)?;
     send.finish().map_err(msg::cant_close_stream)?;
-    let bytes = recv
-        .read_to_end(MAX_FRAME)
-        .await
-        .map_err(msg::no_answer)?;
+    let bytes = recv.read_to_end(MAX_FRAME).await.map_err(msg::no_answer)?;
     proto::decode(&bytes)
 }
 
@@ -4740,7 +5212,14 @@ async fn pull_one(
     let expect = f.size.max(0) as u64;
     let mut moved = 0u64;
     while offset < expect {
-        let resp = request(conn, &Request::Fetch { digest: f.digest.clone(), offset }).await?;
+        let resp = request(
+            conn,
+            &Request::Fetch {
+                digest: f.digest.clone(),
+                offset,
+            },
+        )
+        .await?;
         let (total, bytes) = match resp {
             Response::Slice { total, bytes } => (total, bytes),
             Response::Refused { why } => return Err(why),
@@ -4808,7 +5287,8 @@ pub(crate) fn pid_running(pid: u32) -> bool {
         // WNOHANG: 0 = ours and still running, pid = ours and reaped
         // just now, -1 = not ours, and then the signal probe is all
         // there is to go on.
-        if unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) } == pid as libc::pid_t
+        if unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) }
+            == pid as libc::pid_t
         {
             return false;
         }
@@ -4955,12 +5435,18 @@ mod deafness {
     fn deafness_is_concluded_by_elapsed_time_and_not_before() {
         let mut w = DeafWatch::new();
         let t0 = Instant::now();
-        assert!(!w.observe_at(&all_dead(), t0), "the first failing round starts the clock");
+        assert!(
+            !w.observe_at(&all_dead(), t0),
+            "the first failing round starts the clock"
+        );
         assert!(
             !w.observe_at(&all_dead(), t0 + DEAF_AFTER - Duration::from_secs(1)),
             "one second short of the budget is not deafness"
         );
-        assert!(w.observe_at(&all_dead(), t0 + DEAF_AFTER), "the budget spent in silence is");
+        assert!(
+            w.observe_at(&all_dead(), t0 + DEAF_AFTER),
+            "the budget spent in silence is"
+        );
     }
 
     #[test]
@@ -4975,7 +5461,10 @@ mod deafness {
             "an answered round is not deafness, however late it lands"
         );
         let t1 = t0 + DEAF_AFTER * 3;
-        assert!(!w.observe_at(&all_dead(), t1), "the clock must restart after the answer");
+        assert!(
+            !w.observe_at(&all_dead(), t1),
+            "the clock must restart after the answer"
+        );
         assert!(!w.observe_at(&all_dead(), t1 + DEAF_AFTER - Duration::from_secs(1)));
         assert!(w.observe_at(&all_dead(), t1 + DEAF_AFTER));
     }
@@ -5003,7 +5492,10 @@ mod deafness {
         let t0 = Instant::now();
         for i in 0..48u32 {
             let now = t0 + DEAF_AFTER * i;
-            assert!(!w.observe_at(&roadless, now), "a device with no roads cannot count");
+            assert!(
+                !w.observe_at(&roadless, now),
+                "a device with no roads cannot count"
+            );
             assert!(!w.observe_at(&[], now), "a mesh of one has nobody to miss");
         }
     }

@@ -101,7 +101,10 @@ impl Spec {
         if command.trim().is_empty() {
             return None;
         }
-        Some(Spec { command: command.clone(), args: args.to_vec() })
+        Some(Spec {
+            command: command.clone(),
+            args: args.to_vec(),
+        })
     }
 
     /// The launch JSON, ready for the protocol crate to read.
@@ -175,7 +178,9 @@ pub struct AgentDoc {
 
 impl AgentDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     /// One registration, or `None` for a name nobody registered — and
@@ -184,7 +189,9 @@ impl AgentDoc {
     /// rule for the same situation).
     pub fn get(&self, name: &str) -> Option<Spec> {
         let value = self.inner.get_map(AGENTS).get(name)?.into_value().ok()?;
-        let LoroValue::String(json) = value else { return None };
+        let LoroValue::String(json) = value else {
+            return None;
+        };
         serde_json::from_str(&json).ok()
     }
 
@@ -210,13 +217,19 @@ impl AgentDoc {
         if self.get(name).is_none() {
             return Ok(());
         }
-        self.inner.get_map(AGENTS).delete(name).map_err(|e| e.to_string())?;
+        self.inner
+            .get_map(AGENTS)
+            .delete(name)
+            .map_err(|e| e.to_string())?;
         // And what it told us about itself. A registration that comes
         // back under the same name is a different agent as far as
         // anyone here knows, and inheriting the old one's conversations
         // would offer ids that belong to something else.
         if self.seen(name).is_some() {
-            self.inner.get_map(SEEN).delete(name).map_err(|e| e.to_string())?;
+            self.inner
+                .get_map(SEEN)
+                .delete(name)
+                .map_err(|e| e.to_string())?;
         }
         self.inner.commit();
         Ok(())
@@ -232,7 +245,9 @@ impl AgentDoc {
     /// nobody had ever put the question to.
     pub fn seen(&self, name: &str) -> Option<Answer> {
         let value = self.inner.get_map(SEEN).get(name)?.into_value().ok()?;
-        let LoroValue::String(json) = value else { return None };
+        let LoroValue::String(json) = value else {
+            return None;
+        };
         serde_json::from_str(&json).ok()
     }
 
@@ -244,7 +259,10 @@ impl AgentDoc {
             return Ok(());
         }
         let json = serde_json::to_string(answer).map_err(|e| e.to_string())?;
-        self.inner.get_map(SEEN).insert(name, json).map_err(|e| e.to_string())?;
+        self.inner
+            .get_map(SEEN)
+            .insert(name, json)
+            .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
     }
@@ -253,8 +271,10 @@ impl AgentDoc {
     /// in the same order without either of them deciding one.
     pub fn all(&self) -> Vec<(String, Spec)> {
         let map = self.inner.get_map(AGENTS);
-        let mut out: Vec<(String, Spec)> =
-            map.keys().filter_map(|k| self.get(&k).map(|s| (k.to_string(), s))).collect();
+        let mut out: Vec<(String, Spec)> = map
+            .keys()
+            .filter_map(|k| self.get(&k).map(|s| (k.to_string(), s)))
+            .collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
@@ -311,7 +331,11 @@ mod tests {
         assert_eq!(json["command"], "npx");
         assert_eq!(json["args"][0], "-y");
         assert_eq!(json["args"][1], "some-acp-agent");
-        assert_eq!(json.get("env"), None, "this document carries no environment (module head)");
+        assert_eq!(
+            json.get("env"),
+            None,
+            "this document carries no environment (module head)"
+        );
     }
 
     /// A path with a space in it survives, because argv is never
@@ -337,14 +361,17 @@ mod tests {
         let phone = AgentDoc::new(1).unwrap();
         let desk = AgentDoc::new(2).unwrap();
         phone.set("gemini", &spec("gemini", &["--acp"])).unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(
             desk.get("gemini").map(|s| s.typed()),
             Some("gemini --acp".to_owned()),
             "a registration made on the phone must reach the desk"
         );
         desk.remove("gemini").unwrap();
-        phone.merge(&desk.changes_since(&Default::default()).unwrap()).unwrap();
+        phone
+            .merge(&desk.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(phone.get("gemini"), None, "forgetting it must travel back");
         assert_eq!(desk.items(), 0, "a forgotten agent is not an item");
     }
@@ -358,7 +385,8 @@ mod tests {
         let doc = AgentDoc::new(1).unwrap();
         doc.set("zed", &spec("claude-code-acp", &[])).unwrap();
         doc.set("gemini", &spec("gemini", &["--acp"])).unwrap();
-        doc.set("mine", &spec("/usr/local/bin/my-agent", &[])).unwrap();
+        doc.set("mine", &spec("/usr/local/bin/my-agent", &[]))
+            .unwrap();
         let listed: Vec<(String, String)> =
             doc.all().into_iter().map(|(n, s)| (n, s.typed())).collect();
         assert_eq!(
@@ -380,7 +408,10 @@ mod tests {
     fn a_command_that_is_only_whitespace_is_not_a_command() {
         assert_eq!(Spec::from_argv(&[]), None);
         assert_eq!(Spec::from_argv(&["   ".to_owned()]), None);
-        assert!(Spec::from_argv(&["x".to_owned()]).is_some(), "control: a real one is accepted");
+        assert!(
+            Spec::from_argv(&["x".to_owned()]).is_some(),
+            "control: a real one is accepted"
+        );
     }
 
     /// **Four answers to「what has this agent done before」, and each is
@@ -410,7 +441,8 @@ mod tests {
         assert_ne!(doc.seen("gem"), None, "asked-and-cannot is not never-asked");
 
         // 3) It listed, and has none. Not the same as (2) either.
-        doc.set_seen("empty", &Answer::Sessions { rows: vec![] }).unwrap();
+        doc.set_seen("empty", &Answer::Sessions { rows: vec![] })
+            .unwrap();
         assert_eq!(doc.seen("empty"), Some(Answer::Sessions { rows: vec![] }));
         assert_ne!(doc.seen("empty"), doc.seen("gem"));
 
@@ -426,9 +458,15 @@ mod tests {
             },
             // No title, no time: an agent may give neither, and neither
             // may come back as an empty string on screen.
-            Seen { id: "sess-b".into(), cwd: String::new(), title: None, updated_at: None },
+            Seen {
+                id: "sess-b".into(),
+                cwd: String::new(),
+                title: None,
+                updated_at: None,
+            },
         ];
-        doc.set_seen("cacp", &Answer::Sessions { rows: rows.clone() }).unwrap();
+        doc.set_seen("cacp", &Answer::Sessions { rows: rows.clone() })
+            .unwrap();
         let Some(Answer::Sessions { rows: back }) = doc.seen("cacp") else {
             panic!("wanted sessions")
         };
@@ -445,15 +483,25 @@ mod tests {
     #[test]
     fn forgetting_an_agent_forgets_its_conversations() {
         let doc = AgentDoc::new(7).unwrap();
-        doc.set("gem", &Spec { command: "gemini".into(), args: vec!["--acp".into()] }).unwrap();
-        doc.set_seen("gem", &Answer::Sessions {
-            rows: vec![Seen {
-                id: "old".into(),
-                cwd: String::new(),
-                title: None,
-                updated_at: None,
-            }],
-        })
+        doc.set(
+            "gem",
+            &Spec {
+                command: "gemini".into(),
+                args: vec!["--acp".into()],
+            },
+        )
+        .unwrap();
+        doc.set_seen(
+            "gem",
+            &Answer::Sessions {
+                rows: vec![Seen {
+                    id: "old".into(),
+                    cwd: String::new(),
+                    title: None,
+                    updated_at: None,
+                }],
+            },
+        )
         .unwrap();
         doc.remove("gem").unwrap();
         assert_eq!(doc.get("gem"), None);

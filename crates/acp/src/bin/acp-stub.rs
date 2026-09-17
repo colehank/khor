@@ -47,19 +47,18 @@
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, ContentBlock, ContentChunk, InitializeRequest, InitializeResponse,
     ListSessionsRequest, ListSessionsResponse, LoadSessionRequest, LoadSessionResponse,
-    NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, SessionConfigBoolean, SessionConfigKind,
-    SessionConfigOption, SessionConfigOptionValue, SessionConfigSelect, SessionConfigSelectOption,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
+    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionCapabilities,
+    SessionConfigBoolean, SessionConfigKind, SessionConfigOption, SessionConfigOptionValue,
+    SessionConfigSelect, SessionConfigSelectOption, SessionInfo, SessionListCapabilities,
     SessionMode, SessionModeState, SessionNotification, SessionUpdate,
-    SessionCapabilities, SessionInfo, SessionListCapabilities, SetSessionConfigOptionRequest,
-    SetSessionConfigOptionResponse, SetSessionModeRequest, SetSessionModeResponse, StopReason,
-    TextContent, ToolCallUpdate, ToolCallUpdateFields,
+    SetSessionConfigOptionRequest, SetSessionConfigOptionResponse, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason, TextContent, ToolCallUpdate, ToolCallUpdateFields,
 };
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use agent_client_protocol::schema::ProtocolVersion;
 use agent_client_protocol::{Agent, Stdio};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 fn chunk(text: &str) -> SessionUpdate {
     SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(TextContent::new(
@@ -95,7 +94,10 @@ fn settable() -> bool {
 fn modes_of(current: &str) -> SessionModeState {
     SessionModeState::new(
         current.to_owned(),
-        vec![SessionMode::new("careful", "Careful"), SessionMode::new("bold", "Bold")],
+        vec![
+            SessionMode::new("careful", "Careful"),
+            SessionMode::new("bold", "Bold"),
+        ],
     )
 }
 
@@ -179,9 +181,8 @@ async fn main() -> agent_client_protocol::Result<()> {
                     // The real spelling: `auth_required` is a code, not
                     // a phrase, and a client that matched on words
                     // would pass this test and fail every real agent.
-                    return responder.respond_with_error(
-                        agent_client_protocol::Error::auth_required(),
-                    );
+                    return responder
+                        .respond_with_error(agent_client_protocol::Error::auth_required());
                 }
                 let mut opened = NewSessionResponse::new("stub-session-1");
                 if settable() {
@@ -232,7 +233,9 @@ async fn main() -> agent_client_protocol::Result<()> {
                             .respond_with_error(agent_client_protocol::Error::invalid_params())
                     }
                 }
-                responder.respond(SetSessionConfigOptionResponse::new(options_of(&now.0, now.1)))
+                responder.respond(SetSessionConfigOptionResponse::new(options_of(
+                    &now.0, now.1,
+                )))
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -247,8 +250,10 @@ async fn main() -> agent_client_protocol::Result<()> {
                 }
                 let session = request.session_id.clone();
                 for text in ["played back: one", "played back: two"] {
-                    connection
-                        .send_notification(SessionNotification::new(session.clone(), chunk(text)))?;
+                    connection.send_notification(SessionNotification::new(
+                        session.clone(),
+                        chunk(text),
+                    ))?;
                 }
                 responder.respond(LoadSessionResponse::new())
             },
@@ -258,8 +263,10 @@ async fn main() -> agent_client_protocol::Result<()> {
             async move |request: PromptRequest, responder, connection| {
                 let session = request.session_id.clone();
                 for text in ["thinking it over", "about to act"] {
-                    connection
-                        .send_notification(SessionNotification::new(session.clone(), chunk(text)))?;
+                    connection.send_notification(SessionNotification::new(
+                        session.clone(),
+                        chunk(text),
+                    ))?;
                 }
                 let asked = connection.send_request(RequestPermissionRequest::new(
                     session.clone(),
@@ -277,8 +284,10 @@ async fn main() -> agent_client_protocol::Result<()> {
                         RequestPermissionOutcome::Selected(s) => format!("picked:{}", s.option_id),
                         _ => "dismissed".to_owned(),
                     };
-                    connection
-                        .send_notification(SessionNotification::new(session.clone(), chunk(&word)))?;
+                    connection.send_notification(SessionNotification::new(
+                        session.clone(),
+                        chunk(&word),
+                    ))?;
                     responder.respond(PromptResponse::new(StopReason::EndTurn))
                 })
             },

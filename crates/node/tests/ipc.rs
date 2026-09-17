@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use khor_core::State;
 use khor_node::transfer::payload_path;
-use khor_node::{ipc, MsgBody, Node};
+use khor_node::{MsgBody, Node, ipc};
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -90,7 +90,11 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .unwrap();
     assert_eq!(name, "alpha");
     let names: Vec<String> = b.devices().unwrap().into_iter().map(|d| d.name).collect();
-    assert_eq!(names, vec!["alpha", "beta"], "beta's table should hold both");
+    assert_eq!(
+        names,
+        vec!["alpha", "beta"],
+        "beta's table should hold both"
+    );
 
     // A transfer end to end with BOTH serves alive: sync and accept ride
     // beta's serve; the payload comes off alpha's serve.
@@ -104,7 +108,10 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .unwrap();
     // The offer presses on the machine's chat row, not on a row of its
     // own (传输并入对话批, `419e5ad`) — see the note in `transfer.rs`.
-    assert!(b.transfer_is_here(&tid), "the summary must have reached beta");
+    assert!(
+        b.transfer_is_here(&tid),
+        "the summary must have reached beta"
+    );
     let rows = b.sessions().unwrap();
     let row = &rows
         .iter()
@@ -125,14 +132,22 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .into_iter()
         .find(|m| matches!(m.body, MsgBody::Files(_)))
         .unwrap();
-    let MsgBody::Files(files) = &m.body else { unreachable!() };
-    assert_eq!(fs::read(payload_path(&dir, &files[0])).unwrap(), payload, "bytes verbatim");
+    let MsgBody::Files(files) = &m.body else {
+        unreachable!()
+    };
+    assert_eq!(
+        fs::read(payload_path(&dir, &files[0])).unwrap(),
+        payload,
+        "bytes verbatim"
+    );
 
     // ── control groups ─────────────────────────────────────
     // A wrong cookie is refused by name: the port alone opens nothing.
     let text = fs::read_to_string(rb.join(".khor").join("endpoint.json")).unwrap();
     let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-    let port = v["ipc_port"].as_u64().expect("the file should carry the hand-off port") as u16;
+    let port = v["ipc_port"]
+        .as_u64()
+        .expect("the file should carry the hand-off port") as u16;
     let reply = timeout(
         Duration::from_secs(10),
         ipc::call(port, "not-the-cookie", ipc::Op::SyncNow),
@@ -166,7 +181,9 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .iter()
         .find(|(n, _)| n == "alpha")
         .expect("there should be an alpha entry");
-    verdict.as_ref().expect("with the key free again, the direct path should work");
+    verdict
+        .as_ref()
+        .expect("with the key free again, the direct path should work");
 
     serve_a.abort();
     for r in [&ra, &rb] {

@@ -40,38 +40,38 @@
 
 /// `0x5F..=0x7E` in the DEC Special Graphics set, in order.
 const GRAPHICS: [char; 32] = [
-    ' ',      // _ blank
-    '◆',      // `
-    '▒',      // a
+    ' ',        // _ blank
+    '◆',        // `
+    '▒',        // a
     '\u{2409}', // b HT
     '\u{240C}', // c FF
     '\u{240D}', // d CR
     '\u{240A}', // e LF
-    '°',      // f
-    '±',      // g
+    '°',        // f
+    '±',        // g
     '\u{2424}', // h NL
     '\u{240B}', // i VT
-    '┘',      // j
-    '┐',      // k
-    '┌',      // l
-    '└',      // m
-    '┼',      // n
-    '⎺',      // o
-    '⎻',      // p
-    '─',      // q
-    '⎼',      // r
-    '⎽',      // s
-    '├',      // t
-    '┤',      // u
-    '┴',      // v
-    '┬',      // w
-    '│',      // x
-    '≤',      // y
-    '≥',      // z
-    'π',      // {
-    '≠',      // |
-    '£',      // }
-    '·',      // ~
+    '┘',        // j
+    '┐',        // k
+    '┌',        // l
+    '└',        // m
+    '┼',        // n
+    '⎺',        // o
+    '⎻',        // p
+    '─',        // q
+    '⎼',        // r
+    '⎽',        // s
+    '├',        // t
+    '┤',        // u
+    '┴',        // v
+    '┬',        // w
+    '│',        // x
+    '≤',        // y
+    '≥',        // z
+    'π',        // {
+    '≠',        // |
+    '£',        // }
+    '·',        // ~
 ];
 
 #[derive(Clone, Copy, PartialEq)]
@@ -110,7 +110,11 @@ pub struct Acs {
 
 impl Default for Acs {
     fn default() -> Self {
-        Acs { at: At::Ground, graphics: [false; 4], invoked: 0 }
+        Acs {
+            at: At::Ground,
+            graphics: [false; 4],
+            invoked: 0,
+        }
     }
 }
 
@@ -234,7 +238,11 @@ mod tests {
     /// assertion and be catastrophically wrong — `q` is a letter.
     #[test]
     fn a_box_drawn_through_the_graphics_charset_becomes_a_box() {
-        assert_eq!(through(&[b"\x1b(0lqqk\x1b(B"]), "┌──┐", "the sequence draws a box");
+        assert_eq!(
+            through(&[b"\x1b(0lqqk\x1b(B"]),
+            "┌──┐",
+            "the sequence draws a box"
+        );
         assert_eq!(
             through(&[b"lqqk"]),
             "lqqk",
@@ -296,7 +304,10 @@ mod tests {
     #[test]
     fn ordinary_text_is_passed_through_without_copying() {
         let mut acs = Acs::default();
-        assert!(matches!(acs.filter(b"plain lqk text"), std::borrow::Cow::Borrowed(_)));
+        assert!(matches!(
+            acs.filter(b"plain lqk text"),
+            std::borrow::Cow::Borrowed(_)
+        ));
         assert_eq!(&*acs.filter(b"plain lqk text"), b"plain lqk text");
     }
 }

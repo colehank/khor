@@ -197,7 +197,10 @@ fn plan_from_tier(tier: &str) -> String {
     }
     match size {
         // The multiplier is only a multiplier if it looks like one.
-        Some(size) if size.ends_with('x') && size[..size.len() - 1].chars().all(|c| c.is_ascii_digit()) => {
+        Some(size)
+            if size.ends_with('x')
+                && size[..size.len() - 1].chars().all(|c| c.is_ascii_digit()) =>
+        {
             format!("{} {size}", title_case(plan))
         }
         Some(_) => tier.to_owned(),
@@ -310,7 +313,10 @@ fn write_cache_at(path: &Path, now: i64, quota: &Quota) {
     }
     // A failed write costs the next process a fetch; it does not cost
     // this caller its answer, so it is not worth failing over.
-    let _ = std::fs::write(path, serde_json::json!({ "fetched_at": now, "quota": quota }).to_string());
+    let _ = std::fs::write(
+        path,
+        serde_json::json!({ "fetched_at": now, "quota": quota }).to_string(),
+    );
 }
 
 /// The file Claude Code's statusline hook writes, if it is recent.
@@ -319,7 +325,9 @@ fn write_cache_at(path: &Path, now: i64, quota: &Quota) {
 /// is most of them — this source is a shortcut when it happens to be
 /// there, not a fallback that makes the endpoint optional.
 fn read_local_status() -> Option<Quota> {
-    let path = std::env::home_dir()?.join(".claude").join("usage-status.json");
+    let path = std::env::home_dir()?
+        .join(".claude")
+        .join("usage-status.json");
     let written = std::fs::metadata(&path).ok()?.modified().ok()?;
     if SystemTime::now().duration_since(written).ok()? > LOCAL_FRESH {
         return None;
@@ -361,7 +369,10 @@ async fn fetch() -> Result<Quota, QuotaTrouble> {
         code if !(200..300).contains(&code) => return Err(QuotaTrouble::Unreachable),
         _ => {}
     }
-    let json: Value = response.json().await.map_err(|_| QuotaTrouble::Unreadable)?;
+    let json: Value = response
+        .json()
+        .await
+        .map_err(|_| QuotaTrouble::Unreadable)?;
     let windows = parse_windows(&json).ok_or(QuotaTrouble::Unreadable)?;
     Ok(Quota {
         windows,
@@ -409,7 +420,12 @@ fn stored_credential() -> Result<String, QuotaTrouble> {
         // — it just means this store has nothing to offer and the file
         // answers instead.
         if let Ok(out) = std::process::Command::new("security")
-            .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .args([
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ])
             .output()
             && out.status.success()
         {
@@ -522,14 +538,18 @@ fn from_limits(v: &Value, now: i64) -> Vec<QuotaWindow> {
             .and_then(|m| m.get("display_name"))
             .and_then(Value::as_str)
             .map(str::to_owned);
-        let (used_pct, resets_at) = settle(used_pct, limit.get("resets_at").and_then(unix_seconds), now);
+        let (used_pct, resets_at) =
+            settle(used_pct, limit.get("resets_at").and_then(unix_seconds), now);
         out.push(QuotaWindow {
             span,
             scope,
             used_pct,
             resets_at,
             active: limit.get("is_active").and_then(Value::as_bool),
-            severity: limit.get("severity").and_then(Value::as_str).map(str::to_owned),
+            severity: limit
+                .get("severity")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         });
     }
     out
@@ -546,7 +566,11 @@ fn from_top_keys(v: &Value, now: i64) -> Vec<QuotaWindow> {
     const KEYS: &[(&str, QuotaWindowSpan, Option<&str>)] = &[
         ("five_hour", QuotaWindowSpan::FiveHour, None),
         ("seven_day", QuotaWindowSpan::SevenDay, None),
-        ("seven_day_sonnet", QuotaWindowSpan::SevenDay, Some("Sonnet")),
+        (
+            "seven_day_sonnet",
+            QuotaWindowSpan::SevenDay,
+            Some("Sonnet"),
+        ),
         ("seven_day_opus", QuotaWindowSpan::SevenDay, Some("Opus")),
     ];
     let mut out = Vec::new();
@@ -562,7 +586,11 @@ fn from_top_keys(v: &Value, now: i64) -> Vec<QuotaWindow> {
         else {
             continue;
         };
-        let (used_pct, resets_at) = settle(used_pct, window.get("resets_at").and_then(unix_seconds), now);
+        let (used_pct, resets_at) = settle(
+            used_pct,
+            window.get("resets_at").and_then(unix_seconds),
+            now,
+        );
         out.push(QuotaWindow {
             span: span.clone(),
             scope: scope.map(str::to_owned),
@@ -612,11 +640,18 @@ fn parse_credits(v: &Value) -> Option<QuotaCredits> {
         let m = block?.get(key).filter(|v| !v.is_null())?;
         // Either a bare number in the major unit, or the minor-unit
         // object `spend` uses.
-        m.as_f64()
-            .or_else(|| major(m.get("amount_minor").and_then(Value::as_f64), m.get("exponent").and_then(Value::as_i64)))
+        m.as_f64().or_else(|| {
+            major(
+                m.get("amount_minor").and_then(Value::as_f64),
+                m.get("exponent").and_then(Value::as_i64),
+            )
+        })
     };
     Some(QuotaCredits {
-        enabled: extra.get("is_enabled").and_then(Value::as_bool).unwrap_or(false),
+        enabled: extra
+            .get("is_enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         disabled_reason: extra
             .get("disabled_reason")
             .and_then(Value::as_str)
@@ -629,7 +664,13 @@ fn parse_credits(v: &Value) -> Option<QuotaCredits> {
             .get("currency")
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .or_else(|| spend?.get("used")?.get("currency")?.as_str().map(str::to_owned)),
+            .or_else(|| {
+                spend?
+                    .get("used")?
+                    .get("currency")?
+                    .as_str()
+                    .map(str::to_owned)
+            }),
         ever_enabled: extra
             .get("credits_ever_enabled")
             .and_then(Value::as_bool)
@@ -647,7 +688,11 @@ fn seat(w: &QuotaWindow) -> (u8, bool, String) {
         // does not go on the ring: there is no order to put it in.
         QuotaWindowSpan::Other(_) => 2,
     };
-    (length, w.scope.is_some(), w.scope.clone().unwrap_or_default())
+    (
+        length,
+        w.scope.is_some(),
+        w.scope.clone().unwrap_or_default(),
+    )
 }
 
 /// The windows out of either source's JSON.
@@ -668,7 +713,10 @@ fn parse_windows(v: &Value) -> Option<Vec<QuotaWindow>> {
     let now = jiff::Timestamp::now().as_second();
     let mut windows = from_limits(v, now);
     for w in from_top_keys(v, now) {
-        if !windows.iter().any(|had| had.span == w.span && had.scope == w.scope) {
+        if !windows
+            .iter()
+            .any(|had| had.span == w.span && had.scope == w.scope)
+        {
             windows.push(w);
         }
     }
@@ -748,8 +796,14 @@ mod tests {
     /// worse answer than a full one.
     #[test]
     fn the_share_stays_within_one() {
-        assert_eq!(whole_plan_fill(&[window(QuotaWindowSpan::FiveHour, None, 140.0)]), Some(1.0));
-        assert_eq!(whole_plan_fill(&[window(QuotaWindowSpan::FiveHour, None, -3.0)]), Some(0.0));
+        assert_eq!(
+            whole_plan_fill(&[window(QuotaWindowSpan::FiveHour, None, 140.0)]),
+            Some(1.0)
+        );
+        assert_eq!(
+            whole_plan_fill(&[window(QuotaWindowSpan::FiveHour, None, -3.0)]),
+            Some(0.0)
+        );
     }
 
     /// The disk cache exists to save a *request*, not a millisecond: the
@@ -776,7 +830,10 @@ mod tests {
 
     #[test]
     fn a_served_reading_carries_when_it_was_taken() {
-        assert_eq!(stamp(quota_at(1.0), 1_700_000_000).as_of, Some(1_700_000_000));
+        assert_eq!(
+            stamp(quota_at(1.0), 1_700_000_000).as_of,
+            Some(1_700_000_000)
+        );
     }
 
     #[test]
@@ -954,7 +1011,10 @@ mod tests {
     fn a_window_both_sources_report_comes_out_once_and_from_limits() {
         let windows = parse_windows(&real()).expect("windows");
         assert_eq!(
-            windows.iter().filter(|w| w.span == QuotaWindowSpan::SevenDay && w.scope.is_none()).count(),
+            windows
+                .iter()
+                .filter(|w| w.span == QuotaWindowSpan::SevenDay && w.scope.is_none())
+                .count(),
             1,
         );
         // Three, not five: the two sources overlap on the five-hour and
@@ -1008,9 +1068,18 @@ mod tests {
         // **Whole, not half.** Every one of these has a piece this
         // build recognises, and guessing from that piece would put a
         // plan name on the screen the vendor never used.
-        assert_eq!(plan_from_tier("enterprise_claude_max_20x"), "enterprise_claude_max_20x");
-        assert_eq!(plan_from_tier("default_claude_team_20x"), "default_claude_team_20x");
-        assert_eq!(plan_from_tier("default_claude_max_enormous"), "default_claude_max_enormous");
+        assert_eq!(
+            plan_from_tier("enterprise_claude_max_20x"),
+            "enterprise_claude_max_20x"
+        );
+        assert_eq!(
+            plan_from_tier("default_claude_team_20x"),
+            "default_claude_team_20x"
+        );
+        assert_eq!(
+            plan_from_tier("default_claude_max_enormous"),
+            "default_claude_max_enormous"
+        );
         assert_eq!(plan_from_tier(""), "");
     }
 
@@ -1065,8 +1134,14 @@ mod tests {
 
     #[test]
     fn instants_are_read_as_rfc3339_seconds_or_milliseconds() {
-        assert_eq!(unix_seconds(&serde_json::json!(1_700_000_000)), Some(1_700_000_000));
-        assert_eq!(unix_seconds(&serde_json::json!(1_700_000_000_000i64)), Some(1_700_000_000));
+        assert_eq!(
+            unix_seconds(&serde_json::json!(1_700_000_000)),
+            Some(1_700_000_000)
+        );
+        assert_eq!(
+            unix_seconds(&serde_json::json!(1_700_000_000_000i64)),
+            Some(1_700_000_000)
+        );
         assert_eq!(
             unix_seconds(&serde_json::json!("2023-11-14T22:13:20Z")),
             Some(1_700_000_000)

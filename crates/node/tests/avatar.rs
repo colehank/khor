@@ -23,7 +23,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use khor_node::{avatar, preset, AvatarSeed, AvatarStyle, FaceShape, Node};
+use khor_node::{AvatarSeed, AvatarStyle, FaceShape, Node, avatar, preset};
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -66,7 +66,11 @@ fn a_reported_style() -> AvatarStyle {
         "shape": "square"
     }"##;
     let s = AvatarStyle::from_json(json).expect("the fixture must parse");
-    assert_ne!(s, AvatarStyle::default(), "the fixture has to differ from the default");
+    assert_ne!(
+        s,
+        AvatarStyle::default(),
+        "the fixture has to differ from the default"
+    );
     s
 }
 
@@ -88,7 +92,11 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
 
     // alpha chooses a style before anyone can see it.
     a.set_avatar_style(&a_reported_style()).unwrap();
-    assert_eq!(a.avatar_style(), a_reported_style(), "the choice must persist locally");
+    assert_eq!(
+        a.avatar_style(),
+        a_reported_style(),
+        "the choice must persist locally"
+    );
 
     let server = Node::open_as(ra.clone(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
@@ -107,13 +115,20 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
 
     // 1) beta's table carries what alpha said about itself.
     let devices = b.devices().unwrap();
-    let alpha = devices.iter().find(|d| d.name == "alpha").expect("alpha should be in the table");
+    let alpha = devices
+        .iter()
+        .find(|d| d.name == "alpha")
+        .expect("alpha should be in the table");
     let reported = alpha
         .style
         .as_deref()
         .and_then(AvatarStyle::from_json)
         .expect("alpha's reported style should have travelled and should parse");
-    assert_eq!(reported, a_reported_style(), "the style must arrive unchanged");
+    assert_eq!(
+        reported,
+        a_reported_style(),
+        "the style must arrive unchanged"
+    );
 
     // 2) …and it reaches the paint. The control is the same face
     //    derived with the default style: equal here would mean the
@@ -126,13 +141,20 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
         avatar(&seed, &AvatarStyle::default()),
         "alpha is being painted with the default palette, not the one it reported"
     );
-    assert_eq!(face, avatar(&seed, &reported), "the painted face is the reported style's");
+    assert_eq!(
+        face,
+        avatar(&seed, &reported),
+        "the painted face is the reported style's"
+    );
 
     // 3) The point of self-reporting: on one screen, beta paints alpha
     //    in alpha's palette and itself in its own. Before this, style
     //    was stored per viewer and the same machine was two colors on
     //    two screens with neither side wrong.
-    let beta = devices.iter().find(|d| d.name == "beta").expect("beta should be in the table");
+    let beta = devices
+        .iter()
+        .find(|d| d.name == "beta")
+        .expect("beta should be in the table");
     assert_eq!(
         beta.style.as_deref().and_then(AvatarStyle::from_json),
         Some(AvatarStyle::default()),
@@ -236,7 +258,9 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
     // …and it reaches the paint, not just the field. Equal to the
     // default-styled face would mean the report arrived and was ignored.
     let seed = AvatarSeed::from_id_hex(&beta.id).unwrap();
-    let face = a.face_of(beta).expect("the inviter must be able to paint the newcomer");
+    let face = a
+        .face_of(beta)
+        .expect("the inviter must be able to paint the newcomer");
     assert_eq!(face, avatar(&seed, &a_reported_style()));
     assert_ne!(
         face,
@@ -267,10 +291,18 @@ fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
     n.set_avatar_style(&a_reported_style()).unwrap();
 
     let before = a_reported_style();
-    let after = n.restyle(None, None, Some("rounded")).expect("rounded is a shape");
+    let after = n
+        .restyle(None, None, Some("rounded"))
+        .expect("rounded is a shape");
     assert_eq!(after.shape, FaceShape::Rounded);
-    assert_eq!(after.variant, before.variant, "the variant was not named and must not move");
-    assert_eq!(after.palette, before.palette, "the palette was not named and must not move");
+    assert_eq!(
+        after.variant, before.variant,
+        "the variant was not named and must not move"
+    );
+    assert_eq!(
+        after.palette, before.palette,
+        "the palette was not named and must not move"
+    );
 
     // The table, read through the node that made the change — this
     // instance was opened *before* the restyle, so its own registration
@@ -287,7 +319,10 @@ fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
     );
 
     // …and it outlives the process, which is the other half of "chosen".
-    assert_eq!(Node::open_as(r.clone(), "solo").unwrap().avatar_style(), after);
+    assert_eq!(
+        Node::open_as(r.clone(), "solo").unwrap().avatar_style(),
+        after
+    );
 
     let _ = std::fs::remove_dir_all(&r);
 }
@@ -305,13 +340,27 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
     let n = Node::open_as(r.clone(), "solo").unwrap();
     n.set_avatar_style(&a_reported_style()).unwrap();
 
-    assert!(n.restyle(None, Some("holodeck"), None).is_err(), "an unknown variant is a variant");
-    assert!(n.restyle(None, None, Some("holodeck")).is_err(), "an unknown shape is a shape");
+    assert!(
+        n.restyle(None, Some("holodeck"), None).is_err(),
+        "an unknown variant is a variant"
+    );
+    assert!(
+        n.restyle(None, None, Some("holodeck")).is_err(),
+        "an unknown shape is a shape"
+    );
     let short = vec!["#f8f8d6".to_owned()];
-    assert!(n.restyle(Some(&short), None, None).is_err(), "one slot is a palette");
+    assert!(
+        n.restyle(Some(&short), None, None).is_err(),
+        "one slot is a palette"
+    );
 
     // The half-written case.
-    let good: Vec<String> = preset("liquid").unwrap().colors.iter().map(|c| c.to_string()).collect();
+    let good: Vec<String> = preset("liquid")
+        .unwrap()
+        .colors
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
     assert!(n.restyle(Some(&good), Some("holodeck"), None).is_err());
     assert_eq!(
         n.avatar_style(),
@@ -321,7 +370,8 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
 
     // The control: the same call with a real key does take, so the
     // refusals above are not "restyle never writes anything".
-    n.restyle(Some(&good), Some("beam"), None).expect("beam is a variant");
+    n.restyle(Some(&good), Some("beam"), None)
+        .expect("beam is a variant");
     assert_ne!(n.avatar_style(), a_reported_style());
 
     let _ = std::fs::remove_dir_all(&r);
@@ -377,7 +427,7 @@ async fn an_unreported_style_falls_back_to_the_factory_default() {
     // someone else's table.
     let quiet = "cd".repeat(32);
     {
-        use khor_sync::devices::{devices_dir, DeviceDoc};
+        use khor_sync::devices::{DeviceDoc, devices_dir};
         use khor_sync::store::load;
         let loaded = load::<DeviceDoc>(&devices_dir(&r), 0x99).unwrap();
         loaded.doc.upsert(&quiet, "quiet", &[]).unwrap();

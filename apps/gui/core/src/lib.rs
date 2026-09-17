@@ -12,8 +12,8 @@ pub mod acs;
 pub mod agents;
 pub mod api;
 pub mod chat;
-pub mod files;
 pub mod code;
+pub mod files;
 pub mod git;
 pub mod recents;
 pub mod term;
@@ -23,12 +23,10 @@ pub mod workspaces;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use khor_node::list::Arrange;
 pub use khor_core::QuotaAnswer;
 use khor_core::map::{self, Seat};
-use khor_node::{
-    Avatar, AvatarStyle, FaceShape, Node, SessionId, Usage, Variant, Vitals, PRESETS,
-};
+use khor_node::list::Arrange;
+use khor_node::{Avatar, AvatarStyle, FaceShape, Node, PRESETS, SessionId, Usage, Variant, Vitals};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -279,7 +277,11 @@ impl VitalsReading {
         VitalsReading {
             mem_strain: vitals.mem.strain(),
             disk_strain: vitals.disk.and_then(|d| d.strain()),
-            vram_strain: vitals.gpu.as_ref().and_then(|g| g.mem).and_then(|m| m.strain()),
+            vram_strain: vitals
+                .gpu
+                .as_ref()
+                .and_then(|g| g.mem)
+                .and_then(|m| m.strain()),
             volume_strains: vitals.volumes.iter().map(|v| v.fill.strain()).collect(),
             vitals,
             age_ms,
@@ -302,23 +304,38 @@ mod vitals_reading_tests {
         let v = Vitals {
             cpu_pct: 99.0, // pinned CPU carries no word, also on purpose
             cores: 8,
-            mem: Fill { used: 96, total: 100 },
-            disk: Some(Fill { used: 50, total: 100 }),
+            mem: Fill {
+                used: 96,
+                total: 100,
+            },
+            disk: Some(Fill {
+                used: 50,
+                total: 100,
+            }),
             gpu: Some(khor_core::Gpu {
                 util_pct: 99.0, // pinned GPU carries no word either
                 cards: 1,
-                mem: Some(Fill { used: 91, total: 100 }),
+                mem: Some(Fill {
+                    used: 91,
+                    total: 100,
+                }),
             }),
             version: None,
             gpus: vec![],
             volumes: vec![
                 khor_core::Volume {
                     mount: "/".to_owned(),
-                    fill: Fill { used: 96, total: 100 },
+                    fill: Fill {
+                        used: 96,
+                        total: 100,
+                    },
                 },
                 khor_core::Volume {
                     mount: "/data".to_owned(),
-                    fill: Fill { used: 50, total: 100 },
+                    fill: Fill {
+                        used: 50,
+                        total: 100,
+                    },
                 },
             ],
             uptime_s: 0,
@@ -326,7 +343,11 @@ mod vitals_reading_tests {
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));
         assert_eq!(r.disk_strain, None, "a half-full disk says nothing");
-        assert_eq!(r.vram_strain, Some(Strain::Tight), "a 91% VRAM is worth a glance");
+        assert_eq!(
+            r.vram_strain,
+            Some(Strain::Tight),
+            "a 91% VRAM is worth a glance"
+        );
         assert_eq!(
             r.volume_strains,
             vec![Some(Strain::Critical), None],
@@ -340,7 +361,10 @@ mod vitals_reading_tests {
         let v = Vitals {
             cpu_pct: 1.0,
             cores: 8,
-            mem: Fill { used: 10, total: 100 },
+            mem: Fill {
+                used: 10,
+                total: 100,
+            },
             disk: None,
             gpu: None,
             version: None,
@@ -431,21 +455,30 @@ pub fn face_choices(root: &Path) -> Result<FaceChoices, String> {
             .map(|p| PaletteChoice {
                 key: p.id.to_owned(),
                 colors: p.colors.iter().map(|c| c.to_string()).collect(),
-                face: n.face_under(&AvatarStyle { palette: p.palette(), ..now.clone() }),
+                face: n.face_under(&AvatarStyle {
+                    palette: p.palette(),
+                    ..now.clone()
+                }),
             })
             .collect(),
         variants: Variant::ALL
             .iter()
             .map(|v| FaceChoice {
                 key: v.key().to_owned(),
-                face: n.face_under(&AvatarStyle { variant: *v, ..now.clone() }),
+                face: n.face_under(&AvatarStyle {
+                    variant: *v,
+                    ..now.clone()
+                }),
             })
             .collect(),
         shapes: FaceShape::ALL
             .iter()
             .map(|s| FaceChoice {
                 key: s.key().to_owned(),
-                face: n.face_under(&AvatarStyle { shape: *s, ..now.clone() }),
+                face: n.face_under(&AvatarStyle {
+                    shape: *s,
+                    ..now.clone()
+                }),
             })
             .collect(),
     })
@@ -491,8 +524,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .iter()
         .filter_map(|d| n.face_of(d).map(|f| (d.id.clone(), f)))
         .collect();
-    let machines: BTreeMap<String, String> =
-        devices.into_iter().map(|d| (d.id, d.name)).collect();
+    let machines: BTreeMap<String, String> = devices.into_iter().map(|d| (d.id, d.name)).collect();
     Ok(n.sessions_arranged_with(mode, &machines)?
         .into_iter()
         .map(|a| {
@@ -511,31 +543,33 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             // — which reads, correctly, as "clicking this does nothing".
             let attachable = hosted || v.session.term;
             SessionRow {
-            attachable,
-            home: machines
-                .get(&v.session.home.hex())
-                .cloned()
-                .unwrap_or_else(|| v.session.home.hex()),
-            face: faces.get(&v.session.home.hex()).cloned(),
-            hosted,
-            via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
-            last: v.session.last,
-            via: v.session.via,
-            id: v.session.id.0,
-            kind: v.session.kind.0,
-            title: v.session.title,
-            word: v.session.state.state.key().to_owned(),
-            at_ms: v.session.state.at.0,
-            unread: v.session.unread,
-            source: v.source.map(|(device, age_ms)| SourceTag { device, age_ms }),
-            pinned: v.pinned,
-            stale: v.stale,
-            quiet: v.quiet,
-            category: v.session.category,
-            place: v.session.place,
-            mux: v.session.mux,
-            group,
-        }
+                attachable,
+                home: machines
+                    .get(&v.session.home.hex())
+                    .cloned()
+                    .unwrap_or_else(|| v.session.home.hex()),
+                face: faces.get(&v.session.home.hex()).cloned(),
+                hosted,
+                via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
+                last: v.session.last,
+                via: v.session.via,
+                id: v.session.id.0,
+                kind: v.session.kind.0,
+                title: v.session.title,
+                word: v.session.state.state.key().to_owned(),
+                at_ms: v.session.state.at.0,
+                unread: v.session.unread,
+                source: v
+                    .source
+                    .map(|(device, age_ms)| SourceTag { device, age_ms }),
+                pinned: v.pinned,
+                stale: v.stale,
+                quiet: v.quiet,
+                category: v.session.category,
+                place: v.session.place,
+                mux: v.session.mux,
+                group,
+            }
         })
         .collect())
 }
@@ -625,7 +659,10 @@ pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
         .map(|(reading, age_ms)| {
             let account = accounts.iter().find(|a| a.id == reading.account);
             AccountRing {
-                home_name: names.get(&reading.home).cloned().unwrap_or_else(|| reading.home.clone()),
+                home_name: names
+                    .get(&reading.home)
+                    .cloned()
+                    .unwrap_or_else(|| reading.home.clone()),
                 mine: reading.home == me,
                 strain: khor_node::accounts::strain_of(reading.fill),
                 base_url: account.and_then(|a| a.base_url.clone()),
@@ -662,9 +699,11 @@ pub fn register_account(
 ) -> Result<String, String> {
     let provider = khor_node::Provider::parse(provider)
         .ok_or_else(|| khor_catalog::msg::no_such_provider(provider))?;
-    let kind = khor_node::AccountKind::parse(kind)
-        .ok_or_else(|| khor_catalog::msg::no_such_kind(kind))?;
-    Ok(open(root)?.register_account(name, provider, kind, base_url, key, budget)?.id)
+    let kind =
+        khor_node::AccountKind::parse(kind).ok_or_else(|| khor_catalog::msg::no_such_kind(kind))?;
+    Ok(open(root)?
+        .register_account(name, provider, kind, base_url, key, budget)?
+        .id)
 }
 
 pub fn remove_account(root: &Path, id: &str) -> Result<(), String> {
@@ -707,7 +746,12 @@ pub async fn places(root: &Path, machine: &str) -> Result<Vec<PlaceRow>, String>
         .await?
         .into_iter()
         .take(PLACES_SHOWN)
-        .map(|(path, shown, sessions, last_ms)| PlaceRow { path, shown, sessions, last_ms })
+        .map(|(path, shown, sessions, last_ms)| PlaceRow {
+            path,
+            shown,
+            sessions,
+            last_ms,
+        })
         .collect())
 }
 
@@ -832,7 +876,9 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
             vitals: n
                 .vitals_of(&d.id)
                 .map(|(vitals, age_ms)| VitalsReading::of(vitals, age_ms)),
-            watched: n.watched_of(&d.id).map(|(rows, age_ms)| WatchedReading { rows, age_ms }),
+            watched: n
+                .watched_of(&d.id)
+                .map(|(rows, age_ms)| WatchedReading { rows, age_ms }),
             shown: d.shown().to_owned(),
             watch: d.watch,
             label: d.label,
@@ -913,12 +959,12 @@ pub fn forget_device(root: &Path, machine: &str) -> Result<String, String> {
 // A plain comment, not a doc comment: it belongs to the tombstone
 // below, and as `///` it would document the next function instead.
 /* ⚠️ **Tombstone: `faces_by_id` is gone, 2026-09-11.** It read the
-   device table to derive a face per machine, which is still what
-   happens — inline in `list_sessions`, its only caller, beside the two
-   other things derived from that same reading. As its own function it
-   held a hidden `Node::devices` call, and a caller who already had the
-   table had no way to say so. A helper that re-reads what the caller
-   just read is a helper that costs more than it saves. */
+device table to derive a face per machine, which is still what
+happens — inline in `list_sessions`, its only caller, beside the two
+other things derived from that same reading. As its own function it
+held a hidden `Node::devices` call, and a caller who already had the
+table had no way to say so. A helper that re-reads what the caller
+just read is a helper that costs more than it saves. */
 
 pub fn seen(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.seen(&SessionId(id.to_owned()))
@@ -978,7 +1024,9 @@ pub struct HooksState {
 fn hooks_state_of(n: &Node) -> Result<HooksState, String> {
     use khor_node::adaptor::claude::Installed;
     let report = n.hooks_report()?;
-    Ok(HooksState { installed: report.events.iter().all(|(_, s)| *s == Installed::Here) })
+    Ok(HooksState {
+        installed: report.events.iter().all(|(_, s)| *s == Installed::Here),
+    })
 }
 
 pub fn hooks_state(root: &Path) -> Result<HooksState, String> {
@@ -1056,7 +1104,10 @@ pub fn agents(root: &Path) -> Result<Vec<AgentRow>, String> {
     Ok(open(root)?
         .agents()?
         .into_iter()
-        .map(|(name, spec)| AgentRow { name, command: spec.typed() })
+        .map(|(name, spec)| AgentRow {
+            name,
+            command: spec.typed(),
+        })
         .collect())
 }
 
@@ -1081,7 +1132,9 @@ pub async fn open_session(
     if machine.is_empty() || machine == n.name() {
         return n.start_session(dir, title, form, agent).map(|id| id.0);
     }
-    n.open_agent_on(machine, dir, title, form, agent).await.map(|id| id.0)
+    n.open_agent_on(machine, dir, title, form, agent)
+        .await
+        .map(|id| id.0)
 }
 
 /// One message in a machine's conversation, shaped for painting. The
@@ -1154,7 +1207,10 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
                     None,
                     Some(
                         fs.into_iter()
-                            .map(|f| ChatFileRow { name: f.name, size: f.size })
+                            .map(|f| ChatFileRow {
+                                name: f.name,
+                                size: f.size,
+                            })
                             .collect(),
                     ),
                     None,
@@ -1176,7 +1232,10 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
             }
         })
         .collect();
-    Ok(MachineLog { messages, broken: log.broken as u64 })
+    Ok(MachineLog {
+        messages,
+        broken: log.broken as u64,
+    })
 }
 
 /// Sends a file the sender names by path — `khor send <machine> <file>`
@@ -1223,7 +1282,10 @@ pub fn save_upload(
     body: &mut dyn std::io::Read,
 ) -> Result<std::path::PathBuf, String> {
     use std::io::Write;
-    let clean: String = name.chars().filter(|c| !matches!(c, '/' | '\\' | '\0')).collect();
+    let clean: String = name
+        .chars()
+        .filter(|c| !matches!(c, '/' | '\\' | '\0'))
+        .collect();
     let clean = clean.trim_start_matches('.');
     let clean = if clean.is_empty() { "file" } else { clean };
     let dir = root.join(".khor").join("uploads");
@@ -1357,7 +1419,12 @@ pub async fn accept_transfer(root: &Path, msg: &str) -> Result<Vec<String>, Stri
 /// one (`Request::Open`'s handler), the same rule `start_session` keeps
 /// for agents: a path is expanded on the disk it names. An empty
 /// `machine` is this one, `open_session`'s reading of the same blank.
-pub async fn open_term_on(root: &Path, machine: &str, title: &str, cwd: &str) -> Result<String, String> {
+pub async fn open_term_on(
+    root: &Path,
+    machine: &str,
+    title: &str,
+    cwd: &str,
+) -> Result<String, String> {
     let n = open(root)?;
     if machine.is_empty() || machine == n.name() {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
@@ -1365,7 +1432,11 @@ pub async fn open_term_on(root: &Path, machine: &str, title: &str, cwd: &str) ->
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| shell.clone());
-        let title = if title.trim().is_empty() { shell_name } else { title.trim().to_owned() };
+        let title = if title.trim().is_empty() {
+            shell_name
+        } else {
+            title.trim().to_owned()
+        };
         let cwd = cwd.trim();
         if cwd.is_empty() {
             let id = n.open_persistent(khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
@@ -1374,7 +1445,9 @@ pub async fn open_term_on(root: &Path, machine: &str, title: &str, cwd: &str) ->
         let home = std::env::home_dir();
         let path = match cwd {
             "~" => home.ok_or_else(|| khor_catalog::msg::no_such_dir("~"))?,
-            d if d.starts_with("~/") => home.ok_or_else(|| khor_catalog::msg::no_such_dir(d))?.join(&d[2..]),
+            d if d.starts_with("~/") => home
+                .ok_or_else(|| khor_catalog::msg::no_such_dir(d))?
+                .join(&d[2..]),
             d => std::path::PathBuf::from(d),
         };
         if !path.is_dir() {
@@ -1383,13 +1456,23 @@ pub async fn open_term_on(root: &Path, machine: &str, title: &str, cwd: &str) ->
         let id = n.open_persistent_at(&path, khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
         return Ok(id.0);
     }
-    let title = if title.trim().is_empty() { "shell" } else { title.trim() };
+    let title = if title.trim().is_empty() {
+        "shell"
+    } else {
+        title.trim()
+    };
     let id = n
-        .open_on(machine, khor_node::kind::SHELL, title, cwd.trim(), &[], (80, 24))
+        .open_on(
+            machine,
+            khor_node::kind::SHELL,
+            title,
+            cwd.trim(),
+            &[],
+            (80, 24),
+        )
         .await?;
     Ok(id.0)
 }
-
 
 /// Issues a one-time pairing ticket. It carries the live endpoint's
 /// addresses, so it needs a resident serve — and both skins embed one
@@ -1450,15 +1533,20 @@ mod wizard_agent_tests {
     fn a_name_nobody_registered_is_refused_the_way_the_command_line_refuses_it() {
         let r = root("unknown");
         let n = khor_node::Node::open(r.clone()).unwrap();
-        n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
+        n.register_agent("zed", &["some-acp-agent".to_owned()])
+            .unwrap();
 
-        let why = wait(open_session(&r, "~", "", "chat", "zedd", "")).expect_err("no such registration");
+        let why =
+            wait(open_session(&r, "~", "", "chat", "zedd", "")).expect_err("no such registration");
         assert_eq!(
             why,
             n.agent_or_refuse("zedd").unwrap_err(),
             "the wizard refuses in the registry's own words, not its own"
         );
-        assert!(why.contains("zed"), "and the refusal names what is registered: {why}");
+        assert!(
+            why.contains("zed"),
+            "and the refusal names what is registered: {why}"
+        );
         let _ = std::fs::remove_dir_all(&r);
     }
 
@@ -1474,10 +1562,13 @@ mod wizard_agent_tests {
     fn a_registered_agent_is_refused_the_two_forms_it_cannot_take() {
         let r = root("forms");
         let n = khor_node::Node::open(r.clone()).unwrap();
-        n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
+        n.register_agent("zed", &["some-acp-agent".to_owned()])
+            .unwrap();
 
-        let term = wait(open_session(&r, "~", "", "term", "zed", "")).expect_err("no terminal form");
-        let sched = wait(open_session(&r, "~", "", "agent", "zed", "")).expect_err("no scheduler form");
+        let term =
+            wait(open_session(&r, "~", "", "term", "zed", "")).expect_err("no terminal form");
+        let sched =
+            wait(open_session(&r, "~", "", "agent", "zed", "")).expect_err("no scheduler form");
         assert_eq!(term, khor_catalog::msg::WIZARD_REGISTERED_NO_TERMINAL);
         assert_eq!(sched, khor_catalog::msg::WIZARD_REGISTERED_NO_SCHEDULER);
         assert_ne!(term, sched, "starting it and arming it are different walls");
@@ -1500,13 +1591,21 @@ mod wizard_agent_tests {
         // chat-only and claude is not, which is the pre-批⑥ shape and
         // must survive the open position.
         assert_eq!(
-            wait(open_session(&r, "~", "", "term", "codex", "")).expect_err("codex has no terminal form"),
+            wait(open_session(&r, "~", "", "term", "codex", ""))
+                .expect_err("codex has no terminal form"),
             khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY
         );
         // claude's `term` is not refused on the agent axis at all: it
         // gets as far as the directory, which is the next question.
-        let claude_term = wait(open_session(&r, "/nonexistent/khor-no-such-dir", "", "term", "claude", ""))
-            .expect_err("that directory does not exist");
+        let claude_term = wait(open_session(
+            &r,
+            "/nonexistent/khor-no-such-dir",
+            "",
+            "term",
+            "claude",
+            "",
+        ))
+        .expect_err("that directory does not exist");
         assert_eq!(
             claude_term,
             khor_catalog::msg::no_such_dir("/nonexistent/khor-no-such-dir"),

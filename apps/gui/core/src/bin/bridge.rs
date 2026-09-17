@@ -68,7 +68,9 @@ fn main() {
         let (cmd, query) = (cmd.to_owned(), query.to_owned());
         // Preflight: the vite origin differs from ours.
         if req.method() == &tiny_http::Method::Options {
-            let _ = req.respond(with_cors(tiny_http::Response::from_string("").with_status_code(204)));
+            let _ = req.respond(with_cors(
+                tiny_http::Response::from_string("").with_status_code(204),
+            ));
             continue;
         }
         // The raw-bytes route, before the JSON read below — a file body
@@ -83,12 +85,19 @@ fn main() {
                 });
             let (code, payload) = match outcome {
                 Ok(id) => (200, serde_json::to_string(&id).unwrap_or_default()),
-                Err(e) => (400, serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into())),
+                Err(e) => (
+                    400,
+                    serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into()),
+                ),
             };
             let _ = req.respond(with_cors(
                 tiny_http::Response::from_string(payload)
                     .with_status_code(code)
-                    .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap()),
+                    .with_header(
+                        "Content-Type: application/json"
+                            .parse::<tiny_http::Header>()
+                            .unwrap(),
+                    ),
             ));
             continue;
         }
@@ -106,19 +115,38 @@ fn main() {
         .unwrap_or_else(|_| Err("panic in handler".to_owned()));
         let (code, payload) = match outcome {
             Ok(json) => (200, json),
-            Err(e) => (400, serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into())),
+            Err(e) => (
+                400,
+                serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into()),
+            ),
         };
         let resp = with_cors(
             tiny_http::Response::from_string(payload)
                 .with_status_code(code)
-                .with_header("Content-Type: application/json".parse::<tiny_http::Header>().unwrap()),
+                .with_header(
+                    "Content-Type: application/json"
+                        .parse::<tiny_http::Header>()
+                        .unwrap(),
+                ),
         );
         let _ = req.respond(resp);
     }
 }
 
 fn with_cors<R: Read>(r: tiny_http::Response<R>) -> tiny_http::Response<R> {
-    r.with_header("Access-Control-Allow-Origin: *".parse::<tiny_http::Header>().unwrap())
-        .with_header("Access-Control-Allow-Headers: content-type".parse::<tiny_http::Header>().unwrap())
-        .with_header("Access-Control-Allow-Methods: POST, OPTIONS".parse::<tiny_http::Header>().unwrap())
+    r.with_header(
+        "Access-Control-Allow-Origin: *"
+            .parse::<tiny_http::Header>()
+            .unwrap(),
+    )
+    .with_header(
+        "Access-Control-Allow-Headers: content-type"
+            .parse::<tiny_http::Header>()
+            .unwrap(),
+    )
+    .with_header(
+        "Access-Control-Allow-Methods: POST, OPTIONS"
+            .parse::<tiny_http::Header>()
+            .unwrap(),
+    )
 }

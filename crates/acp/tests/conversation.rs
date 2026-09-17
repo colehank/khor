@@ -50,7 +50,9 @@ fn text_of(event: Event) -> String {
 
 #[tokio::test]
 async fn a_turn_streams_and_the_chosen_option_reaches_the_agent() {
-    let (handle, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let (handle, mut rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
     let Event::Ready { session } = next(&mut rx).await else {
         panic!("first event must be Ready")
     };
@@ -72,7 +74,11 @@ async fn a_turn_streams_and_the_chosen_option_reaches_the_agent() {
     let Event::Ask(ask) = next(&mut rx).await else {
         panic!("the stub asks permission after its chunks")
     };
-    assert_eq!(ask.request.options.len(), 2, "the stub offers exactly go/stop");
+    assert_eq!(
+        ask.request.options.len(),
+        2,
+        "the stub offers exactly go/stop"
+    );
     let go = ask.request.options[0].option_id.0.to_string();
     ask.choose(&go);
 
@@ -89,7 +95,9 @@ async fn a_turn_streams_and_the_chosen_option_reaches_the_agent() {
 
 #[tokio::test]
 async fn a_dismissed_ask_reaches_the_agent_as_a_refusal() {
-    let (handle, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let (handle, mut rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
     let _ready = next(&mut rx).await;
     let turn = tokio::spawn(async move {
         let stop = handle.prompt("hello").await.expect("the turn completes");
@@ -97,10 +105,14 @@ async fn a_dismissed_ask_reaches_the_agent_as_a_refusal() {
     });
     let _chunk = next(&mut rx).await;
     let _chunk = next(&mut rx).await;
-    let Event::Ask(ask) = next(&mut rx).await else { panic!("an ask") };
+    let Event::Ask(ask) = next(&mut rx).await else {
+        panic!("an ask")
+    };
     ask.dismiss();
     assert!(text_of(next(&mut rx).await).contains("dismissed"));
-    let _ = timeout(Duration::from_secs(10), turn).await.expect("the turn resolves");
+    let _ = timeout(Duration::from_secs(10), turn)
+        .await
+        .expect("the turn resolves");
 }
 
 /// Walking away without answering must read as a refusal on the agent's
@@ -108,7 +120,9 @@ async fn a_dismissed_ask_reaches_the_agent_as_a_refusal() {
 /// when the `Ask` drops (lib.rs, the event-loop section).
 #[tokio::test]
 async fn dropping_an_ask_unanswered_still_ends_the_turn() {
-    let (handle, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let (handle, mut rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
     let _ready = next(&mut rx).await;
     let turn = tokio::spawn(async move {
         let stop = handle.prompt("hello").await.expect("the turn completes");
@@ -121,7 +135,9 @@ async fn dropping_an_ask_unanswered_still_ends_the_turn() {
         other => panic!("an ask, got {other:?}"),
     }
     assert!(text_of(next(&mut rx).await).contains("dismissed"));
-    let _ = timeout(Duration::from_secs(10), turn).await.expect("the turn resolves");
+    let _ = timeout(Duration::from_secs(10), turn)
+        .await
+        .expect("the turn resolves");
 }
 
 /// The replay contract: when `replay()` resolves, every replayed update
@@ -132,7 +148,9 @@ async fn dropping_an_ask_unanswered_still_ends_the_turn() {
 /// history view into a race; this is the assertion that notices.
 #[tokio::test]
 async fn replay_is_all_there_when_the_call_answers() {
-    let (handle, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let (handle, mut rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
     let _ready = next(&mut rx).await;
     handle.replay().await.expect("the load succeeds");
     let mut played = Vec::new();
@@ -151,13 +169,18 @@ async fn replay_is_all_there_when_the_call_answers() {
 /// group, npx wrappers included — lib.rs module head).
 #[tokio::test]
 async fn dropping_the_handle_closes_the_conversation() {
-    let (handle, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
+    let (handle, mut rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
     let _ready = next(&mut rx).await;
     drop(handle);
     loop {
         match next(&mut rx).await {
             Event::Closed(err) => {
-                assert!(err.is_none(), "a close we asked for is not an error: {err:?}");
+                assert!(
+                    err.is_none(),
+                    "a close we asked for is not an error: {err:?}"
+                );
                 break;
             }
             _ => continue,
@@ -173,8 +196,13 @@ async fn dropping_the_handle_closes_the_conversation() {
 /// tell "it read the capability" from "it read nothing".
 #[tokio::test]
 async fn the_handshake_answers_what_this_agent_can_do() {
-    let (handle, _rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
-    assert!(handle.facts().replays, "the stub advertises load_session by default");
+    let (handle, _rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
+    assert!(
+        handle.facts().replays,
+        "the stub advertises load_session by default"
+    );
 }
 
 /// The other half of the same fact, from an agent that says no. Without
@@ -182,13 +210,21 @@ async fn the_handshake_answers_what_this_agent_can_do() {
 #[tokio::test]
 async fn an_agent_that_cannot_replay_says_so_before_anyone_asks() {
     let cmd = stub_with("KHOR_STUB_REPLAYS", "0");
-    let (handle, _rx) = start(&cmd, std::env::temp_dir()).await.expect("stub starts");
-    assert!(!handle.facts().replays, "this stub advertises no load_session");
+    let (handle, _rx) = start(&cmd, std::env::temp_dir())
+        .await
+        .expect("stub starts");
+    assert!(
+        !handle.facts().replays,
+        "this stub advertises no load_session"
+    );
     // And the capability is not a decoration: asking anyway really
     // fails. That is the fact a face must not swallow — a failed load
     // relays nothing, which paints exactly like a session where nothing
     // was ever said.
-    assert!(handle.replay().await.is_err(), "control: the load it did not advertise really refuses");
+    assert!(
+        handle.replay().await.is_err(),
+        "control: the load it did not advertise really refuses"
+    );
 }
 
 /// **A version this client cannot speak is refused at the handshake.**
@@ -211,7 +247,10 @@ async fn an_agent_that_speaks_another_version_is_turned_away_at_the_door() {
 #[tokio::test]
 async fn an_agent_asking_for_a_login_is_not_an_agent_that_would_not_start() {
     let refusal = refused(&stub_with("KHOR_STUB_LOGIN", "1")).await;
-    assert!(matches!(refusal, Refusal::Login(_)), "auth_required is its own kind, got {refusal:?}");
+    assert!(
+        matches!(refusal, Refusal::Login(_)),
+        "auth_required is its own kind, got {refusal:?}"
+    );
 }
 
 /// The control for the pair above: a command that genuinely cannot run
@@ -221,7 +260,10 @@ async fn an_agent_asking_for_a_login_is_not_an_agent_that_would_not_start() {
 #[tokio::test]
 async fn a_command_that_is_not_there_is_neither_a_login_nor_a_version() {
     let refusal = refused("/nonexistent/khor-no-such-agent").await;
-    assert!(matches!(refusal, Refusal::Wont(_)), "a missing binary is plain, got {refusal:?}");
+    assert!(
+        matches!(refusal, Refusal::Wont(_)),
+        "a missing binary is plain, got {refusal:?}"
+    );
 }
 
 /// The real half: one turn against whatever real ACP agent
@@ -251,8 +293,12 @@ async fn a_command_that_is_not_there_is_neither_a_login_nor_a_version() {
 #[ignore = "needs a real agent command in ACP_AGENT_CMD; costs a real turn"]
 async fn a_real_agent_answers_one_tiny_turn() {
     let cmd = std::env::var("ACP_AGENT_CMD").expect("ACP_AGENT_CMD");
-    let (handle, mut rx) = start(&cmd, std::env::temp_dir()).await.expect("agent starts");
-    let Event::Ready { session } = next(&mut rx).await else { panic!("ready first") };
+    let (handle, mut rx) = start(&cmd, std::env::temp_dir())
+        .await
+        .expect("agent starts");
+    let Event::Ready { session } = next(&mut rx).await else {
+        panic!("ready first")
+    };
     println!("session: {session:?}");
     let turn = tokio::spawn(async move {
         let stop = handle.prompt("Reply with exactly: ok").await;
@@ -308,8 +354,12 @@ async fn what_an_agent_has_done_before_has_three_answers_not_two() {
     assert_ne!(empty, plain, "「cannot」and「none」must not be one value");
 
     // 3) It lists, and has some.
-    let some = list(&stub_with("KHOR_STUB_LISTS", "1"), None).await.expect("a listing");
-    let Listing::Sessions(rows) = some else { panic!("wanted sessions, got {some:?}") };
+    let some = list(&stub_with("KHOR_STUB_LISTS", "1"), None)
+        .await
+        .expect("a listing");
+    let Listing::Sessions(rows) = some else {
+        panic!("wanted sessions, got {some:?}")
+    };
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].id, "sess-a");
     assert_eq!(rows[0].title.as_deref(), Some("先看看那个文件"));
@@ -339,9 +389,17 @@ async fn asking_what_an_agent_has_never_opens_a_session() {
         "env": { "KHOR_STUB_LISTS": "1", "KHOR_STUB_LOGIN": "1" }
     })
     .to_string();
-    let out = list(&cmd, None).await.expect("listing does not need a session");
-    let Listing::Sessions(rows) = out else { panic!("wanted sessions") };
-    assert_eq!(rows.len(), 2, "an agent that refuses session/new still lists");
+    let out = list(&cmd, None)
+        .await
+        .expect("listing does not need a session");
+    let Listing::Sessions(rows) = out else {
+        panic!("wanted sessions")
+    };
+    assert_eq!(
+        rows.len(),
+        2,
+        "an agent that refuses session/new still lists"
+    );
 }
 
 /// **A listed session can actually be reopened, and it comes back with
@@ -361,8 +419,9 @@ async fn a_session_the_agent_listed_can_be_opened_with_its_past() {
     };
     let first = &rows[0];
 
-    let (handle, mut events) =
-        start_resume(&cmd, std::env::temp_dir(), &first.id).await.expect("it reopens");
+    let (handle, mut events) = start_resume(&cmd, std::env::temp_dir(), &first.id)
+        .await
+        .expect("it reopens");
     // The id khor now holds is **the agent's**, not one khor minted —
     // which is what makes this the same conversation rather than a new
     // one that happens to know things.
@@ -397,28 +456,57 @@ async fn a_session_the_agent_listed_can_be_opened_with_its_past() {
 async fn a_session_comes_with_its_settings_and_a_change_reaches_the_agent() {
     // The control first: a plain stub lists nothing, so what the
     // assertions below read is the switch and not a default.
-    let (plain, mut rx) = start(STUB, std::env::temp_dir()).await.expect("stub starts");
-    let Event::Ready { .. } = next(&mut rx).await else { panic!("first event must be Ready") };
-    assert!(plain.settings().modes.is_none(), "a plain stub lists no modes");
+    let (plain, mut rx) = start(STUB, std::env::temp_dir())
+        .await
+        .expect("stub starts");
+    let Event::Ready { .. } = next(&mut rx).await else {
+        panic!("first event must be Ready")
+    };
+    assert!(
+        plain.settings().modes.is_none(),
+        "a plain stub lists no modes"
+    );
     assert!(plain.settings().options.is_empty(), "and no options");
     drop(plain);
 
-    let (handle, mut rx) =
-        start(&stub_with("KHOR_STUB_SETTINGS", "1"), std::env::temp_dir()).await.expect("stub starts");
-    let Event::Ready { .. } = next(&mut rx).await else { panic!("first event must be Ready") };
-    let modes = handle.settings().modes.as_ref().expect("the settable stub lists modes");
+    let (handle, mut rx) = start(&stub_with("KHOR_STUB_SETTINGS", "1"), std::env::temp_dir())
+        .await
+        .expect("stub starts");
+    let Event::Ready { .. } = next(&mut rx).await else {
+        panic!("first event must be Ready")
+    };
+    let modes = handle
+        .settings()
+        .modes
+        .as_ref()
+        .expect("the settable stub lists modes");
     assert_eq!(modes.current_mode_id.to_string(), "careful");
     assert_eq!(
-        modes.available_modes.iter().map(|m| m.id.to_string()).collect::<Vec<_>>(),
+        modes
+            .available_modes
+            .iter()
+            .map(|m| m.id.to_string())
+            .collect::<Vec<_>>(),
         ["careful", "bold"]
     );
     assert_eq!(
-        handle.settings().options.iter().map(|o| o.id.to_string()).collect::<Vec<_>>(),
+        handle
+            .settings()
+            .options
+            .iter()
+            .map(|o| o.id.to_string())
+            .collect::<Vec<_>>(),
         ["model", "fast"]
     );
 
-    handle.set_mode("bold").await.expect("a listed mode is taken");
-    assert!(text_of(next(&mut rx).await).contains("mode:bold"), "the agent's own account of it");
+    handle
+        .set_mode("bold")
+        .await
+        .expect("a listed mode is taken");
+    assert!(
+        text_of(next(&mut rx).await).contains("mode:bold"),
+        "the agent's own account of it"
+    );
     assert!(
         handle.set_mode("reckless").await.is_err(),
         "a mode the agent never listed is refused in the agent's words, not taken on this side's say-so"
@@ -428,7 +516,10 @@ async fn a_session_comes_with_its_settings_and_a_change_reaches_the_agent() {
         .set_option("model", SessionConfigOptionValue::value_id("large"))
         .await
         .expect("a listed value is taken");
-    let model = after.iter().find(|o| o.id.to_string() == "model").expect("the list comes back whole");
+    let model = after
+        .iter()
+        .find(|o| o.id.to_string() == "model")
+        .expect("the list comes back whole");
     match &model.kind {
         SessionConfigKind::Select(s) => assert_eq!(s.current_value.to_string(), "large"),
         other => panic!("model is a select, not {other:?}"),
@@ -437,7 +528,10 @@ async fn a_session_comes_with_its_settings_and_a_change_reaches_the_agent() {
         .set_option("fast", SessionConfigOptionValue::boolean(true))
         .await
         .expect("a switch is taken");
-    let fast = after.iter().find(|o| o.id.to_string() == "fast").expect("the list comes back whole");
+    let fast = after
+        .iter()
+        .find(|o| o.id.to_string() == "fast")
+        .expect("the list comes back whole");
     match &fast.kind {
         SessionConfigKind::Boolean(b) => assert!(b.current_value, "the switch is on"),
         other => panic!("fast is a switch, not {other:?}"),

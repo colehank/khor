@@ -56,14 +56,21 @@ pub struct TitleDoc {
 
 impl TitleDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     /// The user's name for this session, or `None` when the derived
     /// title stands. Empty and never-named read the same, on purpose
     /// (module head).
     pub fn title_of(&self, session: &str) -> Option<String> {
-        match self.inner.get_map(TITLES).get(session).and_then(|v| v.into_value().ok()) {
+        match self
+            .inner
+            .get_map(TITLES)
+            .get(session)
+            .and_then(|v| v.into_value().ok())
+        {
             Some(LoroValue::String(s)) if !s.is_empty() => Some(s.to_string()),
             _ => None,
         }
@@ -130,7 +137,11 @@ mod tests {
         let d = TitleDoc::new(1).unwrap();
         assert_eq!(d.title_of("tui/abc"), None, "never named = no override");
         d.set("tui/abc", "  paying the rent  ").unwrap();
-        assert_eq!(d.title_of("tui/abc").as_deref(), Some("paying the rent"), "trimmed on the way in");
+        assert_eq!(
+            d.title_of("tui/abc").as_deref(),
+            Some("paying the rent"),
+            "trimmed on the way in"
+        );
         assert_eq!(d.items(), 1);
     }
 
@@ -141,7 +152,8 @@ mod tests {
         let phone = TitleDoc::new(1).unwrap();
         let desk = TitleDoc::new(2).unwrap();
         phone.set("chat/mac", "the mac").unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert_eq!(desk.title_of("chat/mac").as_deref(), Some("the mac"));
     }
 
@@ -153,12 +165,21 @@ mod tests {
         let a = TitleDoc::new(1).unwrap();
         let b = TitleDoc::new(2).unwrap();
         a.set("tui/x", "my name").unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
-        assert_eq!(b.title_of("tui/x").as_deref(), Some("my name"), "control: it arrived named");
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(
+            b.title_of("tui/x").as_deref(),
+            Some("my name"),
+            "control: it arrived named"
+        );
 
         b.set("tui/x", "").unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
-        assert_eq!(a.title_of("tui/x"), None, "the clearing must reach the other side too");
+        assert_eq!(
+            a.title_of("tui/x"),
+            None,
+            "the clearing must reach the other side too"
+        );
         assert_eq!(a.items(), 0, "a cleared name is not an item");
     }
 
@@ -176,7 +197,11 @@ mod tests {
         b.set("tui/y", "b instead").unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
         b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
-        assert_eq!(a.title_of("tui/y"), b.title_of("tui/y"), "both sides must land on one answer");
+        assert_eq!(
+            a.title_of("tui/y"),
+            b.title_of("tui/y"),
+            "both sides must land on one answer"
+        );
         let settled = a.title_of("tui/y").unwrap();
         assert!(
             settled == "a again" || settled == "b instead",
@@ -197,6 +222,10 @@ mod tests {
         let fresh = TitleDoc::new(3).unwrap();
         let empty = fresh.version();
         fresh.set("tui/never", "").unwrap();
-        assert_eq!(fresh.version(), empty, "clearing what was never named writes nothing");
+        assert_eq!(
+            fresh.version(),
+            empty,
+            "clearing what was never named writes nothing"
+        );
     }
 }

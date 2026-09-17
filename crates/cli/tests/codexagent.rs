@@ -113,14 +113,18 @@ for line in sys.stdin:
     }
 
     let exe = env!("CARGO_BIN_EXE_khor");
-    let (handle, mut events) =
-        khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd")).await.unwrap();
+    let (handle, mut events) = khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd"))
+        .await
+        .unwrap();
 
     // An ordinary session carries no scheduler config.
     let params: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.params")).unwrap())
             .unwrap();
-    assert!(params.get("config").is_none(), "no KHOR_AGENT, no tools: {params}");
+    assert!(
+        params.get("config").is_none(),
+        "no KHOR_AGENT, no tools: {params}"
+    );
 
     // The session id is codex's own thread uuid — 同源: the rollout on
     // disk wears the same name.
@@ -137,8 +141,12 @@ for line in sys.stdin:
                     n2.lock().unwrap().push(serde_json::to_string(&n).unwrap());
                 }
                 khor_acp::Event::Ask(ask) => {
-                    let ids: Vec<String> =
-                        ask.request.options.iter().map(|o| o.option_id.0.to_string()).collect();
+                    let ids: Vec<String> = ask
+                        .request
+                        .options
+                        .iter()
+                        .map(|o| o.option_id.0.to_string())
+                        .collect();
                     assert_eq!(ids, vec!["allow", "deny"]);
                     ask.choose("allow");
                 }
@@ -155,15 +163,24 @@ for line in sys.stdin:
     let stop = handle.prompt("hello there").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("echo: hello there"), "the reply must stream through: {said}");
-    assert!(said.contains("tool_call"), "the command item must surface as a tool act: {said}");
+    assert!(
+        said.contains("echo: hello there"),
+        "the reply must stream through: {said}"
+    );
+    assert!(
+        said.contains("tool_call"),
+        "the command item must surface as a tool act: {said}"
+    );
 
     // The approval round-trip: the server request surfaces as an ACP
     // ask, and the answer lands on codex's own JSON-RPC id as accept.
     let stop = handle.prompt("please ask-permission").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("verdict:accept"), "the fake must see the accept: {said}");
+    assert!(
+        said.contains("verdict:accept"),
+        "the fake must see the accept: {said}"
+    );
 
     // A turn that will not end on its own ends when the client says so,
     // and the wire word is turn/interrupt with the running turn's id.
@@ -179,7 +196,11 @@ for line in sys.stdin:
         .expect("a cancelled turn must end")
         .unwrap()
         .unwrap();
-    assert_eq!(format!("{stop:?}"), "Cancelled", "a stopped turn is 取消, not a refusal");
+    assert_eq!(
+        format!("{stop:?}"),
+        "Cancelled",
+        "a stopped turn is 取消, not a refusal"
+    );
     assert!(
         dir.join("cwd/fake.interrupt").exists(),
         "the cancel must reach codex as turn/interrupt"
@@ -187,15 +208,23 @@ for line in sys.stdin:
     let stop = handle.prompt("after the stop").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("echo: after the stop"), "the conversation survives a stop: {said}");
+    assert!(
+        said.contains("echo: after the stop"),
+        "the conversation survives a stop: {said}"
+    );
 
     // Replay reads the rollout under the vendor home, by the thread id
     // in its name — write one and load it back.
-    let day = dir.join("home").join(".codex").join("sessions").join("2026").join("08").join("20");
+    let day = dir
+        .join("home")
+        .join(".codex")
+        .join("sessions")
+        .join("2026")
+        .join("08")
+        .join("20");
     std::fs::create_dir_all(&day).unwrap();
-    let mut f =
-        std::fs::File::create(day.join(format!("rollout-2026-08-20T00-00-00-{SID}.jsonl")))
-            .unwrap();
+    let mut f = std::fs::File::create(day.join(format!("rollout-2026-08-20T00-00-00-{SID}.jsonl")))
+        .unwrap();
     writeln!(
         f,
         r#"{{"type":"session_meta","payload":{{"session_id":"{SID}","cwd":"{}"}}}}"#,
@@ -209,29 +238,53 @@ for line in sys.stdin:
     .unwrap();
     handle.replay().await.unwrap();
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("words from the past"), "the replay must surface the rollout: {said}");
-    assert!(said.contains("user_message_chunk"), "in the shape history() uses");
+    assert!(
+        said.contains("words from the past"),
+        "the replay must surface the rollout: {said}"
+    );
+    assert!(
+        said.contains("user_message_chunk"),
+        "in the shape history() uses"
+    );
 
     // A dead agent must surface as a Closed the pump can break on.
-    let fake_pid: i32 =
-        std::fs::read_to_string(dir.join("cwd/fake.pid")).unwrap().trim().parse().unwrap();
+    let fake_pid: i32 = std::fs::read_to_string(dir.join("cwd/fake.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     unsafe { libc::kill(fake_pid, libc::SIGKILL) };
     tokio::time::timeout(std::time::Duration::from_secs(10), pump)
         .await
         .expect("the pump must end when the agent dies")
         .unwrap();
-    let why = closed.lock().unwrap().take().expect("a Closed event arrived");
-    assert!(why.is_some(), "an ending nobody asked for carries words, not None");
+    let why = closed
+        .lock()
+        .unwrap()
+        .take()
+        .expect("a Closed event arrived");
+    assert!(
+        why.is_some(),
+        "an ending nobody asked for carries words, not None"
+    );
     drop(handle);
 
     // Dropping the client must not leave the codex child running.
-    let (handle2, mut events2) =
-        khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd")).await.unwrap();
+    let (handle2, mut events2) = khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd"))
+        .await
+        .unwrap();
     let pump2 = tokio::spawn(async move { while events2.recv().await.is_some() {} });
     handle2.prompt("hello again").await.unwrap();
-    let fake_pid: i32 =
-        std::fs::read_to_string(dir.join("cwd/fake.pid")).unwrap().trim().parse().unwrap();
-    assert_eq!(unsafe { libc::kill(fake_pid, 0) }, 0, "precondition: the fake is alive");
+    let fake_pid: i32 = std::fs::read_to_string(dir.join("cwd/fake.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        unsafe { libc::kill(fake_pid, 0) },
+        0,
+        "precondition: the fake is alive"
+    );
     drop(handle2);
     let mut gone = false;
     for _ in 0..50 {
@@ -251,7 +304,11 @@ for line in sys.stdin:
         khor_acp::start_resume(&format!("{exe} _codexagent"), dir.join("cwd"), SID)
             .await
             .unwrap();
-    assert_eq!(handle3.session().0.to_string(), SID, "the resumed session keeps its id");
+    assert_eq!(
+        handle3.session().0.to_string(),
+        SID,
+        "the resumed session keeps its id"
+    );
     let notes3 = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
     let n3 = notes3.clone();
     let pump3 = tokio::spawn(async move {
@@ -268,7 +325,10 @@ for line in sys.stdin:
     let stop = handle3.prompt("hello resumed").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes3.lock().unwrap().join("\n");
-    assert!(said.contains("echo: hello resumed"), "the resumed session converses: {said}");
+    assert!(
+        said.contains("echo: hello resumed"),
+        "the resumed session converses: {said}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("cwd/fake.mode")).unwrap(),
         "resume",
@@ -300,8 +360,9 @@ async fn the_shim_answers_through_a_real_codex() {
         std::env::remove_var("KHOR_CODEX");
     }
     let exe = env!("CARGO_BIN_EXE_khor");
-    let (handle, mut events) =
-        khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd")).await.unwrap();
+    let (handle, mut events) = khor_acp::start(&format!("{exe} _codexagent"), dir.join("cwd"))
+        .await
+        .unwrap();
     let sid = handle.session().0.to_string();
     assert_eq!(sid.len(), 36, "codex's own thread uuid: {sid}");
 
@@ -327,7 +388,10 @@ async fn the_shim_answers_through_a_real_codex() {
     .unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
     let said = notes.lock().unwrap().join("\n");
-    assert!(said.contains("alive"), "the model's word must stream through: {said}");
+    assert!(
+        said.contains("alive"),
+        "the model's word must stream through: {said}"
+    );
 
     // 同源: the thread this shim opened is a rollout file wearing the
     // same uuid, where discovery and usage accounting will find it.
@@ -335,12 +399,17 @@ async fn the_shim_answers_through_a_real_codex() {
     let mut found = false;
     let mut stack = vec![sessions];
     while let Some(d) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&d) else { continue };
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
         for e in entries.flatten() {
             let p = e.path();
             if p.is_dir() {
                 stack.push(p);
-            } else if p.file_name().is_some_and(|n| n.to_string_lossy().contains(&sid)) {
+            } else if p
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().contains(&sid))
+            {
                 found = true;
             }
         }

@@ -112,7 +112,11 @@ fn aggregate(cards: &[GpuCard]) -> Option<Gpu> {
             })
         })
         .filter(|m| m.total > 0);
-    Some(Gpu { util_pct, cards: count, mem })
+    Some(Gpu {
+        util_pct,
+        cards: count,
+        mem,
+    })
 }
 
 /// The average of what the cards reported, as a percentage, with however
@@ -142,7 +146,11 @@ fn aggregate(cards: &[GpuCard]) -> Option<Gpu> {
 /// green into an absent field, which is this module's one rule.
 #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
 fn across(cards: &[f32]) -> Option<(f32, u32)> {
-    let usable: Vec<f32> = cards.iter().copied().filter(|p| (0.0..=100.0).contains(p)).collect();
+    let usable: Vec<f32> = cards
+        .iter()
+        .copied()
+        .filter(|p| (0.0..=100.0).contains(p))
+        .collect();
     if usable.is_empty() {
         return None;
     }
@@ -166,19 +174,34 @@ mod tests {
     fn a_gpu_reading_is_a_percentage_or_nothing_at_all() {
         let (agg, cards) = sample_all();
         let Some(g) = agg else {
-            assert!(cards.is_empty(), "no aggregate must mean no cards: {cards:?}");
+            assert!(
+                cards.is_empty(),
+                "no aggregate must mean no cards: {cards:?}"
+            );
             return;
         };
-        assert_eq!(g.cards as usize, cards.len(), "the ring counts the cards beside it");
+        assert_eq!(
+            g.cards as usize,
+            cards.len(),
+            "the ring counts the cards beside it"
+        );
         for c in &cards {
-            assert!((0.0..=100.0).contains(&c.util_pct), "per card too: {}", c.util_pct);
+            assert!(
+                (0.0..=100.0).contains(&c.util_pct),
+                "per card too: {}",
+                c.util_pct
+            );
         }
         assert!(
             (0.0..=100.0).contains(&g.util_pct),
             "a percentage is a percentage: {}",
             g.util_pct
         );
-        assert!(g.cards >= 1, "a reading came from at least one card: {}", g.cards);
+        assert!(
+            g.cards >= 1,
+            "a reading came from at least one card: {}",
+            g.cards
+        );
         if let Some(m) = g.mem {
             assert!(m.total > 0, "reported video memory has a size: {m:?}");
             assert!(m.used <= m.total, "used cannot exceed the total: {m:?}");
@@ -210,17 +233,33 @@ mod tests {
     /// whole while missing a member.
     #[test]
     fn the_aggregate_is_derived_from_the_cards_and_memory_is_all_or_nothing() {
-        let card = |pct, mem| GpuCard { name: String::new(), util_pct: pct, mem, temp_c: None };
+        let card = |pct, mem| GpuCard {
+            name: String::new(),
+            util_pct: pct,
+            mem,
+            temp_c: None,
+        };
         let both = [
             card(100.0, Some(Fill { used: 1, total: 4 })),
             card(0.0, Some(Fill { used: 2, total: 4 })),
         ];
         assert_eq!(
             aggregate(&both),
-            Some(Gpu { util_pct: 50.0, cards: 2, mem: Some(Fill { used: 3, total: 8 }) })
+            Some(Gpu {
+                util_pct: 50.0,
+                cards: 2,
+                mem: Some(Fill { used: 3, total: 8 })
+            })
         );
-        let one_quiet = [card(40.0, Some(Fill { used: 1, total: 4 })), card(40.0, None)];
-        assert_eq!(aggregate(&one_quiet).unwrap().mem, None, "a sum missing a card is dropped whole");
+        let one_quiet = [
+            card(40.0, Some(Fill { used: 1, total: 4 })),
+            card(40.0, None),
+        ];
+        assert_eq!(
+            aggregate(&one_quiet).unwrap().mem,
+            None,
+            "a sum missing a card is dropped whole"
+        );
         assert_eq!(aggregate(&[]), None);
     }
 

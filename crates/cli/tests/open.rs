@@ -14,13 +14,19 @@ use khor_node::host::{self, ClientOp, HostFile};
 
 fn khor(home: &Path) -> Command {
     let mut c = Command::new(env!("CARGO_BIN_EXE_khor"));
-    c.env("KHOR_HOME", home).env("KHOR_NAME", "box").env_remove("KHOR_SESSION");
+    c.env("KHOR_HOME", home)
+        .env("KHOR_NAME", "box")
+        .env_remove("KHOR_SESSION");
     c
 }
 
 fn sessions(home: &Path) -> String {
     let out = khor(home).arg("sessions").output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
@@ -63,17 +69,34 @@ fn pid_alive(pid: u32) -> bool {
 }
 
 fn open_detached(home: &Path, args: &[&str]) -> (String, PathBuf) {
-    let out = khor(home).arg("open").arg("-d").args(args).output().unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let out = khor(home)
+        .arg("open")
+        .arg("-d")
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let sid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-    let dir = home.join(".khor").join("sessions").join(sid.replace('/', "-"));
-    assert!(dir.join("host.json").exists(), "the host should have checked in");
+    let dir = home
+        .join(".khor")
+        .join("sessions")
+        .join(sid.replace('/', "-"));
+    assert!(
+        dir.join("host.json").exists(),
+        "the host should have checked in"
+    );
     (sid, dir)
 }
 
 /// Reads from the attach stream until `needle` shows up (or panics).
 fn read_until(stream: &mut std::net::TcpStream, needle: &str, secs: u64) -> String {
-    stream.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(secs);
     let mut seen = Vec::new();
     let mut buf = [0u8; 4096];
@@ -87,7 +110,10 @@ fn read_until(stream: &mut std::net::TcpStream, needle: &str, secs: u64) -> Stri
             return String::from_utf8_lossy(&seen).into_owned();
         }
     }
-    panic!("never saw {needle:?} in: {}", String::from_utf8_lossy(&seen));
+    panic!(
+        "never saw {needle:?} in: {}",
+        String::from_utf8_lossy(&seen)
+    );
 }
 
 /// **The host says what terminal it is; it does not pass one on.**
@@ -111,12 +137,26 @@ fn the_child_is_told_what_terminal_it_is_in_not_what_the_opener_had() {
     let home = std::env::temp_dir().join(format!("khor-term-{}", std::process::id()));
     let out = khor(&home)
         .env("TERM", "khor-not-a-real-terminfo-entry")
-        .args(["open", "-d", "--", "sh", "-c", "printf 'TERM=[%s]\\n' \"$TERM\"; sleep 30"])
+        .args([
+            "open",
+            "-d",
+            "--",
+            "sh",
+            "-c",
+            "printf 'TERM=[%s]\\n' \"$TERM\"; sleep 30",
+        ])
         .output()
         .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let sid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-    let dir = home.join(".khor").join("sessions").join(sid.replace('/', "-"));
+    let dir = home
+        .join(".khor")
+        .join("sessions")
+        .join(sid.replace('/', "-"));
 
     // The `sleep` outlives an assertion that panics; a Drop does not.
     let hf: HostFile =
@@ -129,7 +169,13 @@ fn the_child_is_told_what_terminal_it_is_in_not_what_the_opener_had() {
         seen.contains("TERM=[xterm-256color]"),
         "the child must be told khor's own screen model, not the opener's: {seen}"
     );
-    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    assert!(
+        khor(&home)
+            .args(["close", &sid])
+            .status()
+            .unwrap()
+            .success()
+    );
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -150,11 +196,17 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
         .args(["-o", "ppid=", "-p", &hf.host_pid.to_string()])
         .output()
         .unwrap();
-    assert_eq!(String::from_utf8_lossy(&ppid.stdout).trim(), "1", "the host must not hang off anyone");
+    assert_eq!(
+        String::from_utf8_lossy(&ppid.stdout).trim(),
+        "1",
+        "the host must not hang off anyone"
+    );
 
     // The shell reaches its prompt: no foreground job = 空闲.
     wait_until("the prompt to read as idle", 15, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("idle")))
+        sessions(&home)
+            .lines()
+            .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("idle")))
     });
 
     // Attach over the socket: type into the pty, see the output.
@@ -165,10 +217,14 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     // A foreground job flips the face to 忙碌 and back.
     host::write_frame(&mut s, &ClientOp::Input(b"sleep 3\n".to_vec())).unwrap();
     wait_until("the sleep to read as busy", 10, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("busy")))
+        sessions(&home)
+            .lines()
+            .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("busy")))
     });
     wait_until("the prompt to read as idle again", 10, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("idle")))
+        sessions(&home)
+            .lines()
+            .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("idle")))
     });
 
     // A late attacher gets the past from the replay ring without asking.
@@ -180,23 +236,39 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     let mut bad = std::net::TcpStream::connect(("127.0.0.1", hf.port)).unwrap();
     host::write_frame(
         &mut bad,
-        &host::Hello { cookie: "not-the-cookie".into(), cols: 80, rows: 24 },
+        &host::Hello {
+            cookie: "not-the-cookie".into(),
+            cols: 80,
+            rows: 24,
+        },
     )
     .unwrap();
     let w: host::Welcome = host::read_frame(&mut bad).unwrap();
-    assert!(!w.ok && w.why == khor_catalog::msg::WRONG_COOKIE, "{}", w.why);
+    assert!(
+        !w.ok && w.why == khor_catalog::msg::WRONG_COOKIE,
+        "{}",
+        w.why
+    );
 
     // The ending is recorded even with nobody attached: exit 7 = 失败,
     // the row stays (sinks), the host leaves.
     host::write_frame(&mut s, &ClientOp::Input(b"exit 7\n".to_vec())).unwrap();
     wait_until("the ending to read as failed", 10, || {
-        sessions(&home).lines().any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("failed")))
+        sessions(&home)
+            .lines()
+            .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("failed")))
     });
     wait_until("the host to leave", 10, || !pid_alive(hf.host_pid));
     assert!(dir.exists(), "a settled row stays listed until closed");
 
     // Close removes the settled row.
-    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    assert!(
+        khor(&home)
+            .args(["close", &sid])
+            .status()
+            .unwrap()
+            .success()
+    );
     assert!(!dir.exists());
     assert!(!sessions(&home).contains(&sid));
 
@@ -232,12 +304,21 @@ fn a_host_that_dies_while_its_child_lives_is_not_a_failure() {
     // Whatever happens below, this child does not outlive the test: it
     // ignores SIGHUP, so nothing else would take it away.
     let _reap = Reaper(hf.child_pid);
-    assert!(pid_alive(hf.host_pid) && pid_alive(hf.child_pid), "control: both are up");
+    assert!(
+        pid_alive(hf.host_pid) && pid_alive(hf.child_pid),
+        "control: both are up"
+    );
 
     // The host alone.
-    Command::new("kill").args(["-9", &hf.host_pid.to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-9", &hf.host_pid.to_string()])
+        .status()
+        .unwrap();
     wait_until("the host to be gone", 5, || !pid_alive(hf.host_pid));
-    assert!(pid_alive(hf.child_pid), "the child ignores SIGHUP, so it is still working");
+    assert!(
+        pid_alive(hf.child_pid),
+        "the child ignores SIGHUP, so it is still working"
+    );
 
     wait_until("the row to say 中断", 10, || {
         sessions(&home)
@@ -252,7 +333,10 @@ fn a_host_that_dies_while_its_child_lives_is_not_a_failure() {
     // The control group: now the child goes too, and the ordinary
     // missing-ending rule applies again. Without this half, a `face`
     // that simply never said 失败 would pass the assertion above.
-    Command::new("kill").args(["-9", &hf.child_pid.to_string()]).status().unwrap();
+    Command::new("kill")
+        .args(["-9", &hf.child_pid.to_string()])
+        .status()
+        .unwrap();
     wait_until("the child to be gone", 5, || !pid_alive(hf.child_pid));
     wait_until("the row to say 失败", 10, || {
         sessions(&home)
@@ -260,7 +344,13 @@ fn a_host_that_dies_while_its_child_lives_is_not_a_failure() {
             .any(|l| l.contains(&sid) && l.contains(khor_catalog::state::word("failed")))
     });
 
-    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    assert!(
+        khor(&home)
+            .args(["close", &sid])
+            .status()
+            .unwrap()
+            .success()
+    );
     let _ = std::fs::remove_dir_all(&home);
 }
 
@@ -275,7 +365,13 @@ fn closing_a_live_hosted_session_leaves_no_process_behind() {
         serde_json::from_str(&std::fs::read_to_string(dir.join("host.json")).unwrap()).unwrap();
     assert!(pid_alive(hf.host_pid) && pid_alive(hf.child_pid));
 
-    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    assert!(
+        khor(&home)
+            .args(["close", &sid])
+            .status()
+            .unwrap()
+            .success()
+    );
     assert!(!dir.exists(), "closing forgets the session");
     wait_until("the child to be gone", 5, || !pid_alive(hf.child_pid));
     wait_until("the host to be gone", 5, || !pid_alive(hf.host_pid));
@@ -366,7 +462,10 @@ fn the_same_command_starts_once_khor_is_told_where_to_look() {
         .args(["open", "-d", "--", "khor-test-only-here"])
         .output()
         .unwrap();
-    assert!(!blind.status.success(), "the control arm has to actually fail");
+    assert!(
+        !blind.status.success(),
+        "the control arm has to actually fail"
+    );
 
     let told = khor(&home)
         .env("PATH", bare)
@@ -379,10 +478,16 @@ fn the_same_command_starts_once_khor_is_told_where_to_look() {
         String::from_utf8_lossy(&told.stdout),
         String::from_utf8_lossy(&told.stderr)
     );
-    assert!(told.status.success(), "only KHOR_PATH differs, and it must now start: {said}");
+    assert!(
+        told.status.success(),
+        "only KHOR_PATH differs, and it must now start: {said}"
+    );
 
     let sid = String::from_utf8_lossy(&told.stdout).trim().to_owned();
-    let dir = home.join(".khor").join("sessions").join(sid.replace('/', "-"));
+    let dir = home
+        .join(".khor")
+        .join("sessions")
+        .join(sid.replace('/', "-"));
     let hf: HostFile =
         serde_json::from_str(&std::fs::read_to_string(dir.join("host.json")).unwrap()).unwrap();
     let _reap = Reaper(hf.child_pid);

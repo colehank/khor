@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
 
-use super::{id_for, read_text, Adaptor, Procs, Sighting, Sweep, CRASH_GRACE_MS};
+use super::{Adaptor, CRASH_GRACE_MS, Procs, Sighting, Sweep, id_for, read_text};
 
 /// The one `waitingFor` reason that is 待批.
 ///
@@ -124,7 +124,9 @@ fn word_of(status: Option<&str>, waiting_for: Option<&str>) -> Option<State> {
 
 /// A file time as the epoch milliseconds every khor stamp is in.
 fn ms_of(at: std::time::SystemTime) -> i64 {
-    at.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    at.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// The working directory a transcript records, from its head.
@@ -171,9 +173,17 @@ fn cwd_in(path: &Path) -> Option<PathBuf> {
     }
     let read = || -> Option<PathBuf> {
         let mut head = Vec::new();
-        std::fs::File::open(path).ok()?.take(64 * 1024).read_to_end(&mut head).ok()?;
+        std::fs::File::open(path)
+            .ok()?
+            .take(64 * 1024)
+            .read_to_end(&mut head)
+            .ok()?;
         String::from_utf8_lossy(&head).lines().find_map(|l| {
-            serde_json::from_str::<serde_json::Value>(l).ok()?.get("cwd")?.as_str().map(PathBuf::from)
+            serde_json::from_str::<serde_json::Value>(l)
+                .ok()?
+                .get("cwd")?
+                .as_str()
+                .map(PathBuf::from)
         })
     };
     let found = read();
@@ -209,7 +219,9 @@ impl Claude {
     /// Two files cleaning alike is a uuid-prefix collision; the newest
     /// wins, and that choice is a judgment, not a guarantee.
     pub fn transcript(&self, leaf: &str) -> Result<Vec<Utterance>, String> {
-        let (path, _) = self.transcript_path(leaf).ok_or_else(|| msg::no_such_session(leaf))?;
+        let (path, _) = self
+            .transcript_path(leaf)
+            .ok_or_else(|| msg::no_such_session(leaf))?;
         let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
         Ok(utterances_of(&text))
     }
@@ -242,30 +254,51 @@ impl Claude {
     /// there and skipping the rest would drop that utterance forever.
     pub fn transcript_since(&self, leaf: &str, from: u64) -> Result<Follow, String> {
         use std::io::{Read, Seek, SeekFrom};
-        let (path, _) = self.transcript_path(leaf).ok_or_else(|| msg::no_such_session(leaf))?;
+        let (path, _) = self
+            .transcript_path(leaf)
+            .ok_or_else(|| msg::no_such_session(leaf))?;
         let mut f = std::fs::File::open(&path).map_err(|e| e.to_string())?;
         let len = f.metadata().map_err(|e| e.to_string())?.len();
         let rewound = len < from;
         let start = if rewound { 0 } else { from };
         if len == start {
-            return Ok(Follow { said: Vec::new(), at: len, rewound, following: true });
+            return Ok(Follow {
+                said: Vec::new(),
+                at: len,
+                rewound,
+                following: true,
+            });
         }
         f.seek(SeekFrom::Start(start)).map_err(|e| e.to_string())?;
         let mut buf = Vec::new();
-        f.take(len - start).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+        f.take(len - start)
+            .read_to_end(&mut buf)
+            .map_err(|e| e.to_string())?;
         // Cut at the last newline: everything after it is a line the
         // writer has not finished.
         let end = match buf.iter().rposition(|b| *b == b'\n') {
             Some(i) => i + 1,
             // Not one whole line yet — wait rather than parse a
             // fragment.
-            None => return Ok(Follow { said: Vec::new(), at: start, rewound, following: true }),
+            None => {
+                return Ok(Follow {
+                    said: Vec::new(),
+                    at: start,
+                    rewound,
+                    following: true,
+                });
+            }
         };
         // Lossy on purpose: a byte range that begins mid-codepoint
         // cannot happen (the cut is at a newline both times), and a
         // genuinely corrupt line is one `utterances_of` already skips.
         let text = String::from_utf8_lossy(&buf[..end]);
-        Ok(Follow { said: utterances_of(&text), at: start + end as u64, rewound, following: true })
+        Ok(Follow {
+            said: utterances_of(&text),
+            at: start + end as u64,
+            rewound,
+            following: true,
+        })
     }
 
     /// The transcript file behind a leaf, with its mtime — the shared
@@ -307,9 +340,13 @@ impl Claude {
     /// to tell which. The record inside says it outright.
     pub fn places(&self) -> Vec<(PathBuf, u32, i64)> {
         let mut out = Vec::new();
-        let Ok(projects) = std::fs::read_dir(self.projects_dir()) else { return out };
+        let Ok(projects) = std::fs::read_dir(self.projects_dir()) else {
+            return out;
+        };
         for project in projects.flatten() {
-            let Ok(entries) = std::fs::read_dir(project.path()) else { continue };
+            let Ok(entries) = std::fs::read_dir(project.path()) else {
+                continue;
+            };
             let mut held = 0u32;
             let mut newest: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
             for entry in entries.flatten() {
@@ -325,7 +362,9 @@ impl Claude {
                 newest.push((at, path));
             }
             newest.sort_by_key(|(at, _)| std::cmp::Reverse(*at));
-            let Some(&(at, _)) = newest.first() else { continue };
+            let Some(&(at, _)) = newest.first() else {
+                continue;
+            };
             // **The newest transcript answers, and if it cannot, the
             // one behind it does.** They are all in one directory
             // because claude filed them under one working directory, so
@@ -334,7 +373,9 @@ impl Claude {
             // first breath) would otherwise take its whole project down
             // with it. Three tries, because the fourth would be paying
             // for a directory that is telling us it has nothing.
-            let Some(cwd) = newest.iter().take(3).find_map(|(_, p)| cwd_in(p)) else { continue };
+            let Some(cwd) = newest.iter().take(3).find_map(|(_, p)| cwd_in(p)) else {
+                continue;
+            };
             out.push((cwd, held, ms_of(at)));
         }
         out
@@ -414,13 +455,17 @@ impl Claude {
         let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
         let projects = std::fs::read_dir(self.projects_dir()).ok()?;
         for proj in projects.flatten() {
-            let Ok(rd) = std::fs::read_dir(proj.path()) else { continue };
+            let Ok(rd) = std::fs::read_dir(proj.path()) else {
+                continue;
+            };
             for e in rd.flatten() {
                 let path = e.path();
                 if path.extension().and_then(|x| x.to_str()) != Some("jsonl") {
                     continue;
                 }
-                let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+                let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
                 if crate::live::clean_leaf(stem) != leaf {
                     continue;
                 }
@@ -455,9 +500,10 @@ impl Claude {
         let (path, mtime) = self.transcript_path(leaf)?;
         let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         if let Some((t, said)) = cache.lock().unwrap().get(&path)
-            && *t == mtime {
-                return said.clone();
-            }
+            && *t == mtime
+        {
+            return said.clone();
+        }
         let said = tail_said(&path);
         cache.lock().unwrap().insert(path, (mtime, said.clone()));
         said
@@ -619,13 +665,17 @@ fn utterances_of(text: &str) -> Vec<Utterance> {
     };
     let mut out = Vec::new();
     for line in text.lines() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
         let from_user = match v.get("type").and_then(|t| t.as_str()) {
             Some("user") => true,
             Some("assistant") => false,
             _ => continue,
         };
-        let Some(content) = v.get("message").and_then(|m| m.get("content")) else { continue };
+        let Some(content) = v.get("message").and_then(|m| m.get("content")) else {
+            continue;
+        };
         match content {
             serde_json::Value::String(s) if from_user => out.extend(user_text(s)),
             serde_json::Value::String(s) => out.push(Utterance::Agent(s.clone())),
@@ -684,7 +734,9 @@ impl Adaptor for Claude {
             if path.extension().and_then(|x| x.to_str()) != Some("json") {
                 continue;
             }
-            let Some(text) = read_text(&path) else { continue };
+            let Some(text) = read_text(&path) else {
+                continue;
+            };
             let Ok(file) = serde_json::from_str::<StatusFile>(&text) else {
                 // A status file khor cannot parse at all: the vendor
                 // changed the layout. Exactly what the count is for.
@@ -736,7 +788,11 @@ impl Adaptor for Claude {
                     // still names its pid, but that number belongs to
                     // nobody now, and claiming it would let a dead
                     // claude hide the tmux session it used to sit in.
-                    pids: if word == State::Failed { vec![] } else { vec![pid] },
+                    pids: if word == State::Failed {
+                        vec![]
+                    } else {
+                        vec![pid]
+                    },
                     // The status file already carries it; nothing is
                     // read to answer this.
                     cwd: file.cwd,
@@ -794,8 +850,7 @@ pub enum Hooked {
 pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, String> {
     use khor_catalog::msg;
 
-    let v: serde_json::Value =
-        serde_json::from_str(payload).map_err(msg::hook_payload_garbled)?;
+    let v: serde_json::Value = serde_json::from_str(payload).map_err(msg::hook_payload_garbled)?;
     let event = v["hook_event_name"].as_str().unwrap_or("");
 
     let id = match std::env::var("KHOR_SESSION") {
@@ -847,7 +902,11 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
         "Stop" => Some(State::Done),
         "Notification" => {
             let msg = v["message"].as_str().unwrap_or("");
-            if msg.contains("permission") { Some(State::Blocked) } else { None }
+            if msg.contains("permission") {
+                Some(State::Blocked)
+            } else {
+                None
+            }
         }
         "SessionEnd" => {
             live.record_exit(&id, 0)?;
@@ -878,8 +937,13 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
 /// Asking for more would not make the row better and would make claude
 /// run khor more often; asking for fewer loses a word. `Stop` is the one
 /// that makes installing worth doing at all.
-pub const HOOK_EVENTS: [&str; 5] =
-    ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd"];
+pub const HOOK_EVENTS: [&str; 5] = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+    "SessionEnd",
+];
 
 /// The tail every khor hook command ends with, and the marker that says
 /// an entry in someone's settings file is khor's.
@@ -945,7 +1009,10 @@ pub struct HookInstall {
 /// may hold spaces; `'` inside it is escaped the only way POSIX allows.
 pub fn hook_command() -> Result<String, String> {
     let exe = crate::self_exe()?;
-    Ok(format!("{}{HOOK_VERB}", shell_quoted(&exe.to_string_lossy())))
+    Ok(format!(
+        "{}{HOOK_VERB}",
+        shell_quoted(&exe.to_string_lossy())
+    ))
 }
 
 fn shell_quoted(s: &str) -> String {
@@ -975,7 +1042,11 @@ pub fn hooks_report(vendor_home: &Path) -> Result<HookReport, String> {
             (*event, state)
         })
         .collect();
-    Ok(HookReport { path, settings_exist: settings.is_some(), events })
+    Ok(HookReport {
+        path,
+        settings_exist: settings.is_some(),
+        events,
+    })
 }
 
 /// Adds khor's hooks to claude's settings, leaving everything else in
@@ -999,7 +1070,10 @@ pub fn install_hooks(vendor_home: &Path) -> Result<HookInstall, String> {
     let path = settings_path(vendor_home);
     let ours = hook_command()?;
     let mut settings = read_settings(&path)?.unwrap_or_else(|| serde_json::json!({}));
-    let mut out = HookInstall { path: path.clone(), ..Default::default() };
+    let mut out = HookInstall {
+        path: path.clone(),
+        ..Default::default()
+    };
 
     let root = settings
         .as_object_mut()
@@ -1072,7 +1146,10 @@ pub struct HookUninstall {
 /// somebody is in the middle of editing.
 pub fn uninstall_hooks(vendor_home: &Path) -> Result<HookUninstall, String> {
     let path = settings_path(vendor_home);
-    let mut out = HookUninstall { path: path.clone(), ..Default::default() };
+    let mut out = HookUninstall {
+        path: path.clone(),
+        ..Default::default()
+    };
     let Some(mut settings) = read_settings(&path)? else {
         // No file at all: nothing of khor's is in it, which is the
         // answer rather than an error. Nothing is written either —
@@ -1177,7 +1254,9 @@ fn khors_command_mut(groups: &mut [serde_json::Value]) -> Option<&mut serde_json
             continue;
         };
         for e in entries {
-            let Some(slot) = e.get_mut("command") else { continue };
+            let Some(slot) = e.get_mut("command") else {
+                continue;
+            };
             if slot.as_str().is_some_and(is_khors) {
                 return Some(slot);
             }
@@ -1273,13 +1352,19 @@ mod tests {
     #[test]
     fn a_transcript_keeps_the_speech_and_drops_the_plumbing() {
         let text = concat!(
-            r#"{"type":"file-history-snapshot","messageId":"x"}"#, "\n",
-            r#"{"type":"user","message":{"role":"user","content":"look at the docs"}}"#, "\n",
-            r#"{"type":"user","message":{"role":"user","content":"<command-name>/compact</command-name>"}}"#, "\n",
-            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"reading","signature":"s"},{"type":"text","text":"here is what I found"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#, "\n",
+            r#"{"type":"file-history-snapshot","messageId":"x"}"#,
+            "\n",
+            r#"{"type":"user","message":{"role":"user","content":"look at the docs"}}"#,
+            "\n",
+            r#"{"type":"user","message":{"role":"user","content":"<command-name>/compact</command-name>"}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"reading","signature":"s"},{"type":"text","text":"here is what I found"},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}]}}"#,
+            "\n",
             "not json at all\n",
-            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"...","is_error":false}]}}"#, "\n",
-            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}"#, "\n",
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"...","is_error":false}]}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}"#,
+            "\n",
         );
         assert_eq!(
             utterances_of(text),
@@ -1287,7 +1372,9 @@ mod tests {
                 Utterance::User("look at the docs".into()),
                 Utterance::Thought("reading".into()),
                 Utterance::Agent("here is what I found".into()),
-                Utterance::Tool(serde_json::json!({"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}})),
+                Utterance::Tool(
+                    serde_json::json!({"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}})
+                ),
                 // **Tombstone: this line used to be absent, and the
                 // absence was deliberate.** A `tool_result` was
                 // classed as「vendor bookkeeping」and dropped with the
@@ -1299,7 +1386,9 @@ mod tests {
                 // name states still holds — speech in, plumbing out —
                 // and what changed is which side of that line a result
                 // sits on.
-                Utterance::ToolDone(serde_json::json!({"type":"tool_result","tool_use_id":"t1","content":"...","is_error":false})),
+                Utterance::ToolDone(
+                    serde_json::json!({"type":"tool_result","tool_use_id":"t1","content":"...","is_error":false})
+                ),
                 Utterance::Agent("done".into()),
             ]
         );
@@ -1328,7 +1417,12 @@ mod tests {
     }
 
     fn proc_of(started_ms: i64) -> Proc {
-        Proc { name: "claude".into(), started_ms, cwd: None, ppid: None }
+        Proc {
+            name: "claude".into(),
+            started_ms,
+            cwd: None,
+            ppid: None,
+        }
     }
 
     fn word_at(sweep: &Sweep, id: &str) -> Option<State> {
@@ -1374,8 +1468,14 @@ mod tests {
             Some(State::Blocked),
             "waitingFor a permission prompt is the one waiting that is 待批"
         );
-        assert_eq!(word_at(&sweep, "tui/22222222-2222-4222-8222"), Some(State::Busy));
-        assert_eq!(word_at(&sweep, "tui/33333333-3333-4333-8333"), Some(State::Idle));
+        assert_eq!(
+            word_at(&sweep, "tui/22222222-2222-4222-8222"),
+            Some(State::Busy)
+        );
+        assert_eq!(
+            word_at(&sweep, "tui/33333333-3333-4333-8333"),
+            Some(State::Idle)
+        );
     }
 
     /// Two files from the day the "6 sessions khor cannot read" were
@@ -1404,9 +1504,16 @@ mod tests {
             Some(State::Idle),
             "a person's own shell command is not the agent working"
         );
-        assert_eq!(word_at(&sweep, "tui/77777777-7777-4777-8777"), None, "no word, no row");
+        assert_eq!(
+            word_at(&sweep, "tui/77777777-7777-4777-8777"),
+            None,
+            "no word, no row"
+        );
         assert_eq!(sweep.rows.len(), 1, "{:?}", sweep.rows);
-        assert_eq!(sweep.unmapped, 1, "only the file that does not parse is counted");
+        assert_eq!(
+            sweep.unmapped, 1,
+            "only the file that does not parse is counted"
+        );
     }
 
     /// The graveyard control group, claude side: the same tree that just
@@ -1483,11 +1590,19 @@ mod tests {
             .unwrap();
         };
         write(6001, "66666666-6666-4666-8666-666666666666", now - 60_000);
-        write(6002, "aaaaaaaa-6666-4666-8666-666666666666", now - CRASH_GRACE_MS - 60_000);
+        write(
+            6002,
+            "aaaaaaaa-6666-4666-8666-666666666666",
+            now - CRASH_GRACE_MS - 60_000,
+        );
 
         // Nothing alive at all: every pid in that tree is gone.
         let sweep = Claude::at(dir.join(".claude")).sweep(&Procs::default());
-        assert_eq!(sweep.rows.len(), 1, "the week-old crash is history, not a row");
+        assert_eq!(
+            sweep.rows.len(),
+            1,
+            "the week-old crash is history, not a row"
+        );
         assert_eq!(sweep.rows[0].word, State::Failed);
         assert_eq!(
             id_for(&sweep.rows[0].vendor_session_id).0,
@@ -1611,7 +1726,10 @@ mod tests {
         //    twice.
         {
             use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&file)
+                .unwrap();
             writeln!(f, "{}", line("two")).unwrap();
         }
         let d = c.transcript_since(&leaf, b.at).unwrap();
@@ -1623,7 +1741,10 @@ mod tests {
         //    when it is whole.
         {
             use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&file)
+                .unwrap();
             write!(f, "{{\"type\":\"assist").unwrap();
         }
         let e = c.transcript_since(&leaf, d.at).unwrap();
@@ -1633,7 +1754,10 @@ mod tests {
         // …and when it is finished, it arrives.
         {
             use std::io::Write;
-            let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&file)
+                .unwrap();
             writeln!(f, "ant\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"three\"}}]}}}}").unwrap();
         }
         let f2 = c.transcript_since(&leaf, e.at).unwrap();
@@ -1684,7 +1808,13 @@ mod tests {
         let a = "aaaaaaaa-1111-2222-3333-444444444444";
         std::fs::write(
             proj.join(format!("{a}.jsonl")),
-            format!("{}\n{}\n{}\n{}\n", filler(3), title("把工具调用的状态接上"), filler(5), title("把工具调用的状态接上")),
+            format!(
+                "{}\n{}\n{}\n{}\n",
+                filler(3),
+                title("把工具调用的状态接上"),
+                filler(5),
+                title("把工具调用的状态接上")
+            ),
         )
         .unwrap();
         assert_eq!(
@@ -1756,16 +1886,30 @@ mod tests {
         let row = &k.rows(|_| 0)[0];
         assert_eq!(row.id.0, "tui/55e-fakeuuid");
         assert_eq!(row.title, "proj");
-        assert_eq!(row.state.state, State::Idle, "started, waiting for the first prompt");
+        assert_eq!(
+            row.state.state,
+            State::Idle,
+            "started, waiting for the first prompt"
+        );
 
         hook(&k, &payload("UserPromptSubmit", "")).unwrap();
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
 
-        let idle_note = payload("Notification", r#","message":"Claude is waiting for your input""#);
+        let idle_note = payload(
+            "Notification",
+            r#","message":"Claude is waiting for your input""#,
+        );
         assert!(matches!(hook(&k, &idle_note).unwrap(), Hooked::Ignored));
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy, "long-idle must not become 待批");
+        assert_eq!(
+            k.rows(|_| 0)[0].state.state,
+            State::Busy,
+            "long-idle must not become 待批"
+        );
 
-        let ask = payload("Notification", r#","message":"Claude needs your permission to use Bash""#);
+        let ask = payload(
+            "Notification",
+            r#","message":"Claude needs your permission to use Bash""#,
+        );
         hook(&k, &ask).unwrap();
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Blocked);
 
@@ -1774,7 +1918,11 @@ mod tests {
         assert_eq!((row.state.state, row.unread), (State::Done, 1));
 
         hook(&k, &payload("SessionEnd", "")).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Idle, "a clean end is idle");
+        assert_eq!(
+            k.rows(|_| 0)[0].state.state,
+            State::Idle,
+            "a clean end is idle"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1815,13 +1963,20 @@ mod tests {
 
         // A later event from elsewhere: the birthplace stands.
         hook(&k, &payload("UserPromptSubmit", &root.join("elsewhere"))).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].place, Some(repo.join("apps/gui").display().to_string()));
+        assert_eq!(
+            k.rows(|_| 0)[0].place,
+            Some(repo.join("apps/gui").display().to_string())
+        );
 
         // **The control arm**: a payload with no cwd places nothing,
         // rather than the process's own directory or the last one seen.
         let bare = r#"{"session_id":"88E-other.uuid","hook_event_name":"SessionStart"}"#;
         hook(&k, bare).unwrap();
-        let other = k.rows(|_| 0).into_iter().find(|r| r.id.0 == "tui/88e-otheruuid").unwrap();
+        let other = k
+            .rows(|_| 0)
+            .into_iter()
+            .find(|r| r.id.0 == "tui/88e-otheruuid")
+            .unwrap();
         assert_eq!(other.place, None);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1833,8 +1988,7 @@ mod tests {
     /// all the way down (`super::vendor_home`), so there is no
     /// configuration this suite could touch by accident.
     fn hook_home(tag: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("khor-hooks-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("khor-hooks-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".claude")).unwrap();
         dir
@@ -2012,8 +2166,10 @@ mod tests {
         // Nothing that existed is gone or different.
         let before_leaves = leaf_set(&original);
         let after_leaves = leaf_set(&after);
-        let lost: Vec<&(String, String)> =
-            before_leaves.iter().filter(|l| !after_leaves.contains(l)).collect();
+        let lost: Vec<&(String, String)> = before_leaves
+            .iter()
+            .filter(|l| !after_leaves.contains(l))
+            .collect();
         assert!(lost.is_empty(), "install changed or dropped: {lost:?}");
 
         // Including the order of the file's own keys — the reason
@@ -2030,12 +2186,22 @@ mod tests {
             original["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
         );
         // Khor arrived beside it, not on top of it.
-        assert_eq!(after["hooks"]["UserPromptSubmit"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            after["hooks"]["UserPromptSubmit"].as_array().unwrap().len(),
+            2
+        );
         assert!(
-            hooks_report(&home).unwrap().events.iter().all(|(_, s)| *s == Installed::Here)
+            hooks_report(&home)
+                .unwrap()
+                .events
+                .iter()
+                .all(|(_, s)| *s == Installed::Here)
         );
         // An event khor never asked for is untouched, matcher and all.
-        assert_eq!(after["hooks"]["PreToolUse"], original["hooks"]["PreToolUse"]);
+        assert_eq!(
+            after["hooks"]["PreToolUse"],
+            original["hooks"]["PreToolUse"]
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -2072,7 +2238,10 @@ mod tests {
             1,
             "corrected in place; a second entry would fire khor twice a turn"
         );
-        assert_eq!(after["hooks"]["Stop"][0]["hooks"][0]["command"], hook_command().unwrap());
+        assert_eq!(
+            after["hooks"]["Stop"][0]["hooks"][0]["command"],
+            hook_command().unwrap()
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -2114,10 +2283,17 @@ mod tests {
 
         install_hooks(&home).unwrap();
         let installed = std::fs::read_to_string(settings_path(&home)).unwrap();
-        assert_ne!(installed, USED_SETTINGS, "control: installing did change the file");
+        assert_ne!(
+            installed, USED_SETTINGS,
+            "control: installing did change the file"
+        );
 
         let gone = uninstall_hooks(&home).unwrap();
-        assert_eq!(gone.removed.len(), HOOK_EVENTS.len(), "every event khor added came out");
+        assert_eq!(
+            gone.removed.len(),
+            HOOK_EVENTS.len(),
+            "every event khor added came out"
+        );
         assert!(gone.absent.is_empty());
         assert_eq!(
             std::fs::read_to_string(settings_path(&home)).unwrap(),
@@ -2125,7 +2301,11 @@ mod tests {
             "the file is the user's again, to the byte"
         );
         assert!(
-            hooks_report(&home).unwrap().events.iter().all(|(_, s)| *s == Installed::Missing),
+            hooks_report(&home)
+                .unwrap()
+                .events
+                .iter()
+                .all(|(_, s)| *s == Installed::Missing),
             "…and khor now reports itself as not installed"
         );
         let _ = std::fs::remove_dir_all(&home);
@@ -2146,7 +2326,11 @@ mod tests {
         install_hooks(&home).unwrap();
         uninstall_hooks(&home).unwrap();
 
-        assert_eq!(leaf_set(&read_json(&settings_path(&home))), mine, "nothing else moved");
+        assert_eq!(
+            leaf_set(&read_json(&settings_path(&home))),
+            mine,
+            "nothing else moved"
+        );
         assert_eq!(
             top_level_keys(&std::fs::read_to_string(settings_path(&home)).unwrap()),
             vec!["env", "permissions", "hooks", "model"],
@@ -2169,7 +2353,11 @@ mod tests {
 
         let again = uninstall_hooks(&home).unwrap();
         assert!(again.removed.is_empty(), "nothing left to take: {again:?}");
-        assert_eq!(again.absent.len(), HOOK_EVENTS.len(), "and it says which events those were");
+        assert_eq!(
+            again.absent.len(),
+            HOOK_EVENTS.len(),
+            "and it says which events those were"
+        );
         assert_eq!(std::fs::read_to_string(settings_path(&home)).unwrap(), once);
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -2198,14 +2386,21 @@ mod tests {
         .unwrap();
         let before = hooks_report(&home).unwrap();
         assert!(
-            before.events.iter().any(|(e, s)| *e == "Stop" && *s == Installed::Elsewhere(stale.clone())),
+            before
+                .events
+                .iter()
+                .any(|(e, s)| *e == "Stop" && *s == Installed::Elsewhere(stale.clone())),
             "control: the report has to see it as another khor's first: {before:?}"
         );
 
         let gone = uninstall_hooks(&home).unwrap();
         assert_eq!(gone.removed, vec!["Stop"]);
         assert!(
-            hooks_report(&home).unwrap().events.iter().all(|(_, s)| *s == Installed::Missing),
+            hooks_report(&home)
+                .unwrap()
+                .events
+                .iter()
+                .all(|(_, s)| *s == Installed::Missing),
             "nothing of any khor is left"
         );
         // Khor made the `hooks` object empty, so khor takes it away —
@@ -2254,7 +2449,10 @@ mod tests {
         let cmd = hook_command().unwrap();
         assert!(cmd.ends_with(HOOK_VERB), "{cmd}");
         assert!(is_khors(&cmd));
-        assert!(cmd.starts_with('\''), "quoted, because a path may hold spaces: {cmd}");
+        assert!(
+            cmd.starts_with('\''),
+            "quoted, because a path may hold spaces: {cmd}"
+        );
         let exe = std::env::current_exe().unwrap();
         assert!(cmd.contains(&exe.to_string_lossy().to_string()));
         assert!(!is_khors("sh \"$HOME/.mandala/hook-report.sh\" running"));

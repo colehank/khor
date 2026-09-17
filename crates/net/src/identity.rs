@@ -90,7 +90,10 @@ mod tests {
         // The message is parameterized; its prefix up to the first
         // argument is the stable part to assert on.
         let probe = msg::identity_too_open('\u{0}', '\u{0}');
-        assert!(err.contains(probe.split('\u{0}').next().unwrap()), "got: {err}");
+        assert!(
+            err.contains(probe.split('\u{0}').next().unwrap()),
+            "got: {err}"
+        );
         // The error must say how to fix it, not just "no".
         assert!(err.contains("chmod 600"), "got: {err}");
         let _ = std::fs::remove_dir_all(&dir);

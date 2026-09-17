@@ -41,14 +41,14 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, AvailableCommand, AvailableCommandsUpdate, ContentBlock, ContentChunk,
-    InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
-    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, PromptRequest,
-    PromptCapabilities, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
-    SessionMode, SessionModeState, SessionNotification, SetSessionModeRequest,
-    SetSessionModeResponse,
-    Content, Cost, CurrentModeUpdate, Diff, EmbeddedResourceResource, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent,
-    ToolCallLocation, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
+    AgentCapabilities, AvailableCommand, AvailableCommandsUpdate, Content, ContentBlock,
+    ContentChunk, Cost, CurrentModeUpdate, Diff, EmbeddedResourceResource, InitializeRequest,
+    InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
+    NewSessionResponse, PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest,
+    PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionMode,
+    SessionModeState, SessionNotification, SessionUpdate, SetSessionModeRequest,
+    SetSessionModeResponse, StopReason, TextContent, ToolCall, ToolCallContent, ToolCallLocation,
+    ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
@@ -177,39 +177,38 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         .on_receive_request(
             async move |initialize: InitializeRequest, responder, _connection| {
                 responder.respond(
-                    InitializeResponse::new(initialize.protocol_version)
-                        .agent_capabilities(
-                            AgentCapabilities::new()
-                                .load_session(true)
-                                // **Advertised because it is now true.**
-                                // A capability advertised before it
-                                // works is worse than one missing: a
-                                // face offers the control and the turn
-                                // fails with the picture already sent.
-                                .prompt_capabilities(
-                                    PromptCapabilities::new()
-                                        .image(true)
-                                        // A file rides along as text —
-                                        // see the prompt handler for
-                                        // the translation and why it is
-                                        // written down.
-                                        .embedded_context(true),
-                                ),
-                        ),
+                    InitializeResponse::new(initialize.protocol_version).agent_capabilities(
+                        AgentCapabilities::new()
+                            .load_session(true)
+                            // **Advertised because it is now true.**
+                            // A capability advertised before it
+                            // works is worse than one missing: a
+                            // face offers the control and the turn
+                            // fails with the picture already sent.
+                            .prompt_capabilities(
+                                PromptCapabilities::new()
+                                    .image(true)
+                                    // A file rides along as text —
+                                    // see the prompt handler for
+                                    // the translation and why it is
+                                    // written down.
+                                    .embedded_context(true),
+                            ),
+                    ),
                 )
             },
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |new: NewSessionRequest, responder, _connection| {
-                match s_new.start_claude(&new.cwd) {
-                    Ok(sid) => {
-                        let mut opened = NewSessionResponse::new(sid);
-                        opened.modes = Some(modes_listed("default"));
-                        responder.respond(opened)
-                    }
-                    Err(e) => responder.respond_with_internal_error(e),
+            async move |new: NewSessionRequest, responder, _connection| match s_new
+                .start_claude(&new.cwd)
+            {
+                Ok(sid) => {
+                    let mut opened = NewSessionResponse::new(sid);
+                    opened.modes = Some(modes_listed("default"));
+                    responder.respond(opened)
                 }
+                Err(e) => responder.respond_with_internal_error(e),
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -232,9 +231,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     .prompt
                     .iter()
                     .filter_map(|b| match b {
-                        ContentBlock::Image(i) => {
-                            Some((i.mime_type.clone(), i.data.clone()))
-                        }
+                        ContentBlock::Image(i) => Some((i.mime_type.clone(), i.data.clone())),
                         _ => None,
                     })
                     .collect();
@@ -301,15 +298,14 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 match started {
                     Some(cur) if cur == sid => {}
                     Some(_) => {
-                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION)
+                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION);
                     }
                     None => {
                         // A load before any new is the takeover: resume
                         // the recorded conversation. Its world (cwd) is
                         // the transcript's own record, not the loader's
                         // — the resumer may stand anywhere.
-                        let home =
-                            crate::adaptor::vendor_home(&s_load.root).join(".claude");
+                        let home = crate::adaptor::vendor_home(&s_load.root).join(".claude");
                         let cwd = crate::adaptor::claude::Claude::at(home)
                             .recorded_cwd(&crate::live::clean_leaf(&sid))
                             .unwrap_or_else(|| load.cwd.clone());
@@ -327,8 +323,8 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     // paint; skipped rather than turned into an empty
                     // line about a tool nobody can see.
                     let Some(update) = replayed(u) else { continue };
-                    let _ = connection
-                        .send_notification(SessionNotification::new(sid.clone(), update));
+                    let _ =
+                        connection.send_notification(SessionNotification::new(sid.clone(), update));
                 }
                 let mut loaded = LoadSessionResponse::new();
                 loaded.modes = Some(modes_listed("default"));
@@ -342,9 +338,14 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 if !MODES.contains(&mode.as_str()) {
                     return responder.respond_with_internal_error(msg::cagent_unknown_mode(&mode));
                 }
-                let request_id = format!("khor-mode-{}", s_mode.asked.fetch_add(1, Ordering::SeqCst));
+                let request_id =
+                    format!("khor-mode-{}", s_mode.asked.fetch_add(1, Ordering::SeqCst));
                 let (tx, rx) = oneshot::channel::<serde_json::Value>();
-                s_mode.pending.lock().unwrap().insert(request_id.clone(), tx);
+                s_mode
+                    .pending
+                    .lock()
+                    .unwrap()
+                    .insert(request_id.clone(), tx);
                 if let Err(e) = s_mode.control(&mode_request(&request_id, &mode)) {
                     s_mode.pending.lock().unwrap().remove(&request_id);
                     return responder.respond_with_internal_error(e);
@@ -370,7 +371,10 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                             responder.respond(SetSessionModeResponse::new())
                         }
                         Ok(Ok(r)) => responder.respond_with_internal_error(
-                            r["error"].as_str().unwrap_or(msg::CAGENT_MODE_REFUSED).to_owned(),
+                            r["error"]
+                                .as_str()
+                                .unwrap_or(msg::CAGENT_MODE_REFUSED)
+                                .to_owned(),
                         ),
                         _ => {
                             shim.pending.lock().unwrap().remove(&request_id);
@@ -401,18 +405,21 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             },
             agent_client_protocol::on_receive_notification!(),
         )
-        .connect_with(Stdio::new(), move |connection: ConnectionTo<Client>| async move {
-            // The client's EOF ends the shim (the crate observes a clean
-            // EOF, it does not act on it — `connect_with`'s contract);
-            // without this arm a killed gui host left the shim, and the
-            // claude under it, alive forever (the orphan discipline's
-            // exact shape, found live as three ppid=1 leftovers).
-            tokio::select! {
-                _ = drain(s_drain, frames_rx, &connection) => {}
-                _ = connection.incoming_closed() => {}
-            }
-            Ok(())
-        })
+        .connect_with(
+            Stdio::new(),
+            move |connection: ConnectionTo<Client>| async move {
+                // The client's EOF ends the shim (the crate observes a clean
+                // EOF, it does not act on it — `connect_with`'s contract);
+                // without this arm a killed gui host left the shim, and the
+                // claude under it, alive forever (the orphan discipline's
+                // exact shape, found live as three ppid=1 leftovers).
+                tokio::select! {
+                    _ = drain(s_drain, frames_rx, &connection) => {}
+                    _ = connection.incoming_closed() => {}
+                }
+                Ok(())
+            },
+        )
         .await
         .map(|_| ())?;
     // However serve ended — client EOF, claude death, a protocol error —
@@ -441,13 +448,21 @@ impl Shim {
     /// takeover path (批C): the conversation already exists on disk, and
     /// `--resume` continues the same id into the same transcript
     /// (probed: same file, and it works across cwd).
-    fn start_claude_resume(self: &Arc<Self>, cwd: &std::path::Path, sid: &str) -> Result<(), String> {
+    fn start_claude_resume(
+        self: &Arc<Self>,
+        cwd: &std::path::Path,
+        sid: &str,
+    ) -> Result<(), String> {
         self.start_claude_with(cwd, &["--resume", sid])?;
         *self.session.lock().unwrap() = Some(sid.to_owned());
         Ok(())
     }
 
-    fn start_claude_with(self: &Arc<Self>, cwd: &std::path::Path, tail: &[&str]) -> Result<(), String> {
+    fn start_claude_with(
+        self: &Arc<Self>,
+        cwd: &std::path::Path,
+        tail: &[&str],
+    ) -> Result<(), String> {
         if self.session.lock().unwrap().is_some() {
             return Err(msg::CAGENT_ONE_SESSION.into());
         }
@@ -499,9 +514,10 @@ impl Shim {
             for line in reader.lines() {
                 let Ok(line) = line else { break };
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
-                    && frames.send(v).is_err() {
-                        break;
-                    }
+                    && frames.send(v).is_err()
+                {
+                    break;
+                }
             }
             // The child ended; a pending turn must not hang forever.
             let _ = frames.send(serde_json::json!({ "type": "khor_child_gone" }));
@@ -618,9 +634,7 @@ async fn drain(
                 if let Some(mode) = f["permissionMode"].as_str().filter(|m| !m.is_empty()) {
                     let _ = conn.send_notification(SessionNotification::new(
                         sid.clone(),
-                        SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(
-                            mode.to_owned(),
-                        )),
+                        SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(mode.to_owned())),
                     ));
                 }
                 let commands: Vec<AvailableCommand> = f["slash_commands"]
@@ -639,9 +653,7 @@ async fn drain(
                     ));
                 }
             }
-            Some("control_request")
-                if f["request"]["subtype"].as_str() == Some("can_use_tool") =>
-            {
+            Some("control_request") if f["request"]["subtype"].as_str() == Some("can_use_tool") => {
                 answer_permission(&shim, conn, &sid, &f).await;
             }
             Some("result") => {
@@ -683,9 +695,10 @@ async fn drain(
             Some("control_response") => {
                 let answer = &f["response"];
                 if let Some(id) = answer["request_id"].as_str()
-                    && let Some(tx) = shim.pending.lock().unwrap().remove(id) {
-                        let _ = tx.send(answer.clone());
-                    }
+                    && let Some(tx) = shim.pending.lock().unwrap().remove(id)
+                {
+                    let _ = tx.send(answer.clone());
+                }
             }
             Some("khor_child_gone") => {
                 if let Some(tx) = shim.turn.lock().unwrap().take() {
@@ -857,7 +870,10 @@ fn said(block: &serde_json::Value) -> Option<SessionUpdate> {
             // correctly as "all of this is new".
             if let (Some(path), Some(new_text)) = (
                 input.get("file_path").and_then(|p| p.as_str()),
-                input.get("new_string").or_else(|| input.get("content")).and_then(|t| t.as_str()),
+                input
+                    .get("new_string")
+                    .or_else(|| input.get("content"))
+                    .and_then(|t| t.as_str()),
             ) {
                 let mut diff = Diff::new(path, new_text.to_owned());
                 if let Some(old) = input.get("old_string").and_then(|t| t.as_str()) {
@@ -907,7 +923,10 @@ fn settled(block: &serde_json::Value) -> Option<SessionUpdate> {
             ContentBlock::Text(TextContent::new(text)),
         ))]);
     }
-    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(id.to_owned(), fields)))
+    Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+        id.to_owned(),
+        fields,
+    )))
 }
 
 /// The text a `tool_result` block carries, in either of the two shapes
@@ -953,7 +972,12 @@ fn result_text(block: &serde_json::Value) -> Option<String> {
 /// readings behind it). So input, cache-read, cache-write and output
 /// are four disjoint piles, and the context is their sum.
 fn tokens_in(usage: &serde_json::Value) -> u64 {
-    let n = |k: &str| usage.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+    let n = |k: &str| {
+        usage
+            .get(k)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
     n("input_tokens")
         + n("cache_read_input_tokens")
         + n("cache_creation_input_tokens")
@@ -985,7 +1009,9 @@ fn window_in(f: &serde_json::Value) -> Option<u64> {
 /// ("total cumulative cost for session"), so the two agree and nothing
 /// here has to add anything up.
 fn cost_in(f: &serde_json::Value) -> Option<Cost> {
-    let amount = f.get("total_cost_usd").and_then(serde_json::Value::as_f64)?;
+    let amount = f
+        .get("total_cost_usd")
+        .and_then(serde_json::Value::as_f64)?;
     Some(Cost::new(amount, "USD"))
 }
 
@@ -1017,7 +1043,12 @@ fn cost_in(f: &serde_json::Value) -> Option<Cost> {
 /// absolute path in a 736-wide column pushes the part that identifies
 /// the file off the end, and the tail is the half a reader recognises.
 fn titled(name: &str, input: &serde_json::Value) -> String {
-    let s = |k: &str| input.get(k).and_then(|v| v.as_str()).filter(|v| !v.trim().is_empty());
+    let s = |k: &str| {
+        input
+            .get(k)
+            .and_then(|v| v.as_str())
+            .filter(|v| !v.trim().is_empty())
+    };
     if let Some(d) = s("description") {
         return d.to_owned();
     }
@@ -1100,8 +1131,11 @@ fn khor_tools() -> Result<Vec<String>, String> {
         }
     });
     let path = std::env::temp_dir().join(format!("khor-mcp-{}.json", std::process::id()));
-    std::fs::write(&path, serde_json::to_vec(&config).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        &path,
+        serde_json::to_vec(&config).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     let mut args = vec![
         "--mcp-config".into(),
         path.display().to_string(),
@@ -1119,7 +1153,6 @@ fn khor_tools() -> Result<Vec<String>, String> {
     args.extend(crate::mcp::free_tools());
     Ok(args)
 }
-
 
 #[cfg(test)]
 mod wire_tests {
@@ -1141,7 +1174,10 @@ mod wire_tests {
         let json = serde_json::to_value(&update).unwrap();
         assert_eq!(json["sessionUpdate"], "available_commands_update");
         assert_eq!(json["availableCommands"][0]["name"], "compact");
-        assert_eq!(json["availableCommands"][0]["description"], "squeeze the context");
+        assert_eq!(
+            json["availableCommands"][0]["description"],
+            "squeeze the context"
+        );
     }
 
     /// **A tool call crosses the wire wearing both halves the face
@@ -1248,7 +1284,10 @@ mod wire_tests {
             }}
         });
         assert_eq!(super::window_in(&one), Some(1_000_000));
-        assert_eq!(super::cost_in(&one).map(|c| c.amount), Some(0.38777300000000003));
+        assert_eq!(
+            super::cost_in(&one).map(|c| c.amount),
+            Some(0.38777300000000003)
+        );
 
         let two = serde_json::json!({ "modelUsage": {
             "big": { "contextWindow": 1_000_000 },
@@ -1260,9 +1299,18 @@ mod wire_tests {
         // shim carries a learned window is that a made-up one draws a
         // gauge nobody measured; a zero would do the same while looking
         // like an answer.
-        assert_eq!(super::window_in(&serde_json::json!({ "modelUsage": {} })), None);
-        assert_eq!(super::window_in(&serde_json::json!({ "modelUsage": { "m": {} } })), None);
-        assert_eq!(super::window_in(&serde_json::json!({ "modelUsage": { "m": { "contextWindow": 0 } } })), None);
+        assert_eq!(
+            super::window_in(&serde_json::json!({ "modelUsage": {} })),
+            None
+        );
+        assert_eq!(
+            super::window_in(&serde_json::json!({ "modelUsage": { "m": {} } })),
+            None
+        );
+        assert_eq!(
+            super::window_in(&serde_json::json!({ "modelUsage": { "m": { "contextWindow": 0 } } })),
+            None
+        );
         assert_eq!(super::window_in(&serde_json::json!({})), None);
         assert!(super::cost_in(&serde_json::json!({})).is_none());
     }
@@ -1279,7 +1327,10 @@ mod wire_tests {
     fn a_tool_line_says_which_one_it_was() {
         let t = |name: &str, input: serde_json::Value| super::titled(name, &input);
         assert_eq!(
-            t("Bash", serde_json::json!({ "command": "cargo test", "description": "跑测试" })),
+            t(
+                "Bash",
+                serde_json::json!({ "command": "cargo test", "description": "跑测试" })
+            ),
             "跑测试",
             "the agent's own sentence wins"
         );
@@ -1289,18 +1340,36 @@ mod wire_tests {
             "no description, so the command is the point"
         );
         assert_eq!(
-            t("Read", serde_json::json!({ "file_path": "/Users/z/khor/crates/node/src/cagent.rs" })),
+            t(
+                "Read",
+                serde_json::json!({ "file_path": "/Users/z/khor/crates/node/src/cagent.rs" })
+            ),
             "Read src/cagent.rs",
             "the tail is the half a reader recognises"
         );
-        assert_eq!(t("Read", serde_json::json!({ "file_path": "cagent.rs" })), "Read cagent.rs");
-        assert_eq!(t("Grep", serde_json::json!({ "pattern": "kind_of" })), "Grep kind_of");
+        assert_eq!(
+            t("Read", serde_json::json!({ "file_path": "cagent.rs" })),
+            "Read cagent.rs"
+        );
+        assert_eq!(
+            t("Grep", serde_json::json!({ "pattern": "kind_of" })),
+            "Grep kind_of"
+        );
         // A tool this shim has never heard of, and one whose input says
         // nothing: both keep the bare name rather than inventing a line.
-        assert_eq!(t("SomeFutureTool", serde_json::json!({ "x": 1 })), "SomeFutureTool");
+        assert_eq!(
+            t("SomeFutureTool", serde_json::json!({ "x": 1 })),
+            "SomeFutureTool"
+        );
         assert_eq!(t("Bash", serde_json::json!({})), "Bash");
         // An empty description is not a description.
-        assert_eq!(t("Bash", serde_json::json!({ "description": "  ", "command": "id" })), "Bash id");
+        assert_eq!(
+            t(
+                "Bash",
+                serde_json::json!({ "description": "  ", "command": "id" })
+            ),
+            "Bash id"
+        );
     }
 
     /// **An edit crosses as a diff, and a call carries what it was
@@ -1351,7 +1420,8 @@ mod wire_tests {
         assert_eq!(json["content"][0]["content"]["text"], "line one\nline two");
 
         // Nothing said is no panel, not an empty one.
-        let empty = serde_json::json!({ "type": "tool_result", "tool_use_id": "t", "content": "  " });
+        let empty =
+            serde_json::json!({ "type": "tool_result", "tool_use_id": "t", "content": "  " });
         let json = serde_json::to_value(super::settled(&empty).expect("an update")).unwrap();
         assert!(json.get("content").is_none() || json["content"].is_null());
 
@@ -1363,7 +1433,10 @@ mod wire_tests {
         let json = serde_json::to_value(super::settled(&big).expect("an update")).unwrap();
         let text = json["content"][0]["content"]["text"].as_str().unwrap();
         assert!(text.len() < 17 * 1024, "cut, {} bytes", text.len());
-        assert!(text.ends_with(khor_catalog::msg::TOOL_OUTPUT_CUT), "and marked as cut");
+        assert!(
+            text.ends_with(khor_catalog::msg::TOOL_OUTPUT_CUT),
+            "and marked as cut"
+        );
     }
 
     /// **The request that moves claude's mode is spelled the way claude
@@ -1390,8 +1463,12 @@ mod wire_tests {
         opened.modes = Some(super::modes_listed("default"));
         let json = serde_json::to_value(&opened).unwrap();
         assert_eq!(json["modes"]["currentModeId"], "default");
-        let ids: Vec<&str> =
-            json["modes"]["availableModes"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
+        let ids: Vec<&str> = json["modes"]["availableModes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| m["id"].as_str().unwrap())
+            .collect();
         assert_eq!(ids, super::MODES);
     }
 
@@ -1427,9 +1504,10 @@ mod wire_tests {
             "input": { "command": "cargo test", "description": "跑测试" }
         });
         let live = serde_json::to_value(super::said(&block).expect("live")).unwrap();
-        let past =
-            serde_json::to_value(super::replayed(Utterance::Tool(block.clone())).expect("replayed"))
-                .unwrap();
+        let past = serde_json::to_value(
+            super::replayed(Utterance::Tool(block.clone())).expect("replayed"),
+        )
+        .unwrap();
         assert_eq!(live, past, "one translation, or the copies drift");
         // And it is the good answer, not merely a matching one: a test
         // that only compared the two would pass with both broken.

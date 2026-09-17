@@ -196,11 +196,12 @@ pub struct Findings {
 
 impl Findings {
     fn absorb(&mut self, vendor: &'static str, other: Sweep) {
-        self.rows.extend(other.rows.into_iter().map(|sighting| Found {
-            category: vendor,
-            kind: khor_core::kind::TUI,
-            sighting,
-        }));
+        self.rows
+            .extend(other.rows.into_iter().map(|sighting| Found {
+                category: vendor,
+                kind: khor_core::kind::TUI,
+                sighting,
+            }));
         self.unmapped += other.unmapped;
     }
 }
@@ -405,9 +406,7 @@ impl Procs {
                 ProcessRefreshKind::nothing().with_cwd(UpdateKind::Always),
             );
             for pid in wanted {
-                if let (Some(p), Some(slot)) =
-                    (sys.process(pid), by_pid.get_mut(&pid.as_u32()))
-                {
+                if let (Some(p), Some(slot)) = (sys.process(pid), by_pid.get_mut(&pid.as_u32())) {
                     slot.cwd = p.cwd().map(Path::to_path_buf);
                 }
             }
@@ -417,7 +416,9 @@ impl Procs {
 
     /// A hand-built table, for tests and for the fixture trees.
     pub fn of(procs: impl IntoIterator<Item = (u32, Proc)>) -> Procs {
-        Procs { by_pid: procs.into_iter().collect() }
+        Procs {
+            by_pid: procs.into_iter().collect(),
+        }
     }
 
     /// How many processes were seen. What [`Procs::snapshot`] costs
@@ -507,7 +508,11 @@ impl Discovery {
     /// every registry test stays closed and reading the machine's real
     /// vendor directories is an explicit decision made in one place.
     pub fn empty() -> Discovery {
-        Discovery { adaptors: Vec::new(), tmux: None, procs: None }
+        Discovery {
+            adaptors: Vec::new(),
+            tmux: None,
+            procs: None,
+        }
     }
 
     /// Sweeps against this process table instead of the OS.
@@ -663,7 +668,12 @@ mod tests {
     use super::*;
 
     fn proc_at(name: &str, started_ms: i64) -> Proc {
-        Proc { name: name.into(), started_ms, cwd: None, ppid: None }
+        Proc {
+            name: name.into(),
+            started_ms,
+            cwd: None,
+            ppid: None,
+        }
     }
 
     /// The id both paths mint must be the same string, or one session
@@ -690,12 +700,18 @@ mod tests {
     #[test]
     fn a_recycled_pid_is_not_the_process_that_wrote_the_file() {
         let procs = Procs::of([(4242, proc_at("claude", 2_000_000))]);
-        assert!(procs.alive_since(4242, 2_002_000).is_some(), "2s late is the normal case");
+        assert!(
+            procs.alive_since(4242, 2_002_000).is_some(),
+            "2s late is the normal case"
+        );
         assert!(
             procs.alive_since(4242, 1_000_000).is_none(),
             "a process that started 1000s earlier is a different one wearing the number"
         );
-        assert!(procs.alive_since(9999, 2_000_000).is_none(), "not running at all");
+        assert!(
+            procs.alive_since(9999, 2_000_000).is_none(),
+            "not running at all"
+        );
     }
 
     /// **A row's category is the adaptor that recognised it.**
@@ -766,7 +782,11 @@ mod tests {
             (2, proc_at("codex-code-mode-host", 10)),
             (3, proc_at("codex-tui", 10)),
         ]);
-        let found: Vec<u32> = procs.named("codex").into_iter().map(|(pid, _)| pid).collect();
+        let found: Vec<u32> = procs
+            .named("codex")
+            .into_iter()
+            .map(|(pid, _)| pid)
+            .collect();
         assert_eq!(found, vec![1]);
     }
 }

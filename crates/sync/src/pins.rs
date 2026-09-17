@@ -92,7 +92,9 @@ pub struct PinDoc {
 
 impl PinDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
-        Ok(Self { inner: glue::with_peer(peer)? })
+        Ok(Self {
+            inner: glue::with_peer(peer)?,
+        })
     }
 
     /// Whether this session is pinned. Never pinned and explicitly
@@ -100,7 +102,10 @@ impl PinDoc {
     /// would do differently, and the difference would have to travel.
     pub fn pinned(&self, session: &str) -> bool {
         matches!(
-            self.inner.get_map(PINS).get(session).and_then(|v| v.into_value().ok()),
+            self.inner
+                .get_map(PINS)
+                .get(session)
+                .and_then(|v| v.into_value().ok()),
             Some(LoroValue::Bool(true))
         )
     }
@@ -188,8 +193,12 @@ mod tests {
         let phone = PinDoc::new(1).unwrap();
         let desk = PinDoc::new(2).unwrap();
         phone.set("chat/mac", true).unwrap();
-        desk.merge(&phone.changes_since(&Default::default()).unwrap()).unwrap();
-        assert!(desk.pinned("chat/mac"), "a pin made on the phone must reach the desk");
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert!(
+            desk.pinned("chat/mac"),
+            "a pin made on the phone must reach the desk"
+        );
     }
 
     /// Unpinning has to travel too — a flag that could only ever rise
@@ -201,12 +210,16 @@ mod tests {
         let a = PinDoc::new(1).unwrap();
         let b = PinDoc::new(2).unwrap();
         a.set("tui/x", true).unwrap();
-        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
         assert!(b.pinned("tui/x"), "control: it arrived pinned");
 
         b.set("tui/x", false).unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
-        assert!(!a.pinned("tui/x"), "the removal must reach the other side too");
+        assert!(
+            !a.pinned("tui/x"),
+            "the removal must reach the other side too"
+        );
         assert!(a.all().is_empty(), "an unpinned session is not on the list");
     }
 
@@ -224,7 +237,11 @@ mod tests {
         b.set("tui/y", true).unwrap();
         a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
         b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
-        assert_eq!(a.pinned("tui/y"), b.pinned("tui/y"), "both sides must land on one answer");
+        assert_eq!(
+            a.pinned("tui/y"),
+            b.pinned("tui/y"),
+            "both sides must land on one answer"
+        );
     }
 
     /// A no-change write grows nothing: this sits behind a button, and a
@@ -240,7 +257,11 @@ mod tests {
         let fresh = PinDoc::new(3).unwrap();
         let empty = fresh.version();
         fresh.set("tui/never", false).unwrap();
-        assert_eq!(fresh.version(), empty, "unpinning what was never pinned writes nothing");
+        assert_eq!(
+            fresh.version(),
+            empty,
+            "unpinning what was never pinned writes nothing"
+        );
     }
 
     /// Pins are keyed by session id and nothing else — two sessions are
@@ -249,7 +270,10 @@ mod tests {
     fn each_session_carries_its_own_flag() {
         let d = PinDoc::new(1).unwrap();
         d.set("tui/one", true).unwrap();
-        assert!(!d.pinned("tui/two"), "pinning one session must not pin another");
+        assert!(
+            !d.pinned("tui/two"),
+            "pinning one session must not pin another"
+        );
         d.set("tui/two", true).unwrap();
         d.set("tui/one", false).unwrap();
         assert_eq!(d.all(), vec!["tui/two".to_string()]);

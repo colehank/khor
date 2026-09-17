@@ -226,7 +226,10 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     // one sentence is precisely the bug this batch closed, and neither
     // phase above would catch it alone: each only checks that its own
     // side reads right.
-    assert_ne!(absent, pending, "the two misses must not collapse into one word again");
+    assert_ne!(
+        absent, pending,
+        "the two misses must not collapse into one word again"
+    );
 
     serve.abort();
     for r in [&ra, &rb] {
@@ -354,7 +357,11 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
         !landing.starts_with(rg.to_str().unwrap()),
         "the payload must not land on the machine that merely asked: {landing}"
     );
-    assert_eq!(fs::read(landing).unwrap(), payload, "bytes verbatim on the recipient");
+    assert_eq!(
+        fs::read(landing).unwrap(),
+        payload,
+        "bytes verbatim on the recipient"
+    );
     let on_beta = rb.join(".khor").join("chat").join("beta").join("files");
     assert!(
         fs::read_dir(&on_beta)

@@ -113,9 +113,14 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
     // …and the second control, the one the vitals check cannot have:
     // beta's own answer is 7, so 4242 arriving later cannot be beta
     // reading its own files under another name.
-    let (mine, mine_age) = beta.usage_of(beta.device_str()).expect("a node can read its own");
+    let (mine, mine_age) = beta
+        .usage_of(beta.device_str())
+        .expect("a node can read its own");
     assert_eq!(output_of(&mine), 7, "beta's own transcript bills 7");
-    assert_eq!(mine_age, 0, "this machine reads on demand, so its answer has no age");
+    assert_eq!(
+        mine_age, 0,
+        "this machine reads on demand, so its answer has no age"
+    );
 
     let ticket = alpha.invite().unwrap();
     timeout(Duration::from_secs(60), beta.pair(&ticket))
@@ -136,15 +141,23 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
         "beta must report alpha's spending, not its own: {theirs:?}"
     );
     assert_eq!(theirs.unreadable, 0);
-    assert!(age < 60_000, "the answer should be from this visit, not {age} ms ago");
+    assert!(
+        age < 60_000,
+        "the answer should be from this visit, not {age} ms ago"
+    );
 
     // Alpha goes away. What beta shows now is the last thing it heard,
     // and it must say how old that is rather than wearing the present
     // (docs/SESSION.md 离线不是第七个词).
     serve.abort();
     tokio::time::sleep(Duration::from_millis(1200)).await;
-    let (still, older) = beta.usage_of(&alpha_id).expect("the last answer is still the answer");
-    assert_eq!(still, theirs, "not one number moved while nobody could be reached");
+    let (still, older) = beta
+        .usage_of(&alpha_id)
+        .expect("the last answer is still the answer");
+    assert_eq!(
+        still, theirs,
+        "not one number moved while nobody could be reached"
+    );
     assert!(
         older > age,
         "…and it is visibly older than it was: {age} ms then, {older} ms now"
@@ -181,8 +194,14 @@ fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
     )
     .unwrap();
 
-    let (usage, _age) = node.usage_of(&peer).expect("the file on disk is the answer");
-    assert_eq!(output_of(&usage), 4, "what the old khor did record survives whole");
+    let (usage, _age) = node
+        .usage_of(&peer)
+        .expect("the file on disk is the answer");
+    assert_eq!(
+        output_of(&usage),
+        4,
+        "what the old khor did record survives whole"
+    );
     assert_eq!(usage.unreadable, 5);
     assert!(
         usage.models.is_empty(),
@@ -219,7 +238,9 @@ fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
 fn the_network_wide_answer_states_this_machines_day_and_not_nobodys() {
     let r = root("today");
     let node = Node::open_as(r.clone(), "solo").unwrap();
-    let everywhere = node.usage_everywhere().expect("a node can sum its own network");
+    let everywhere = node
+        .usage_everywhere()
+        .expect("a node can sum its own network");
     assert!(
         everywhere.today.is_some(),
         "the machine that answered knows what day it is, spent or not"

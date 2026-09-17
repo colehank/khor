@@ -20,8 +20,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use khor_node::proto::{Request, Response};
 use khor_node::Node;
+use khor_node::proto::{Request, Response};
 use tokio::time::timeout;
 
 mod util;
@@ -89,7 +89,11 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     .expect("the listing must not hang")
     .unwrap();
     let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names, ["zoo", "apple", "Banana"], "the far disk, in the node's order");
+    assert_eq!(
+        names,
+        ["zoo", "apple", "Banana"],
+        "the far disk, in the node's order"
+    );
     assert!(rows[0].dir && rows[2].size == 2 && !truncated);
     // Resolved, because the answer is the far machine's physical
     // spelling (`files::list_dir`), and `temp_dir()` on a Mac is a link.
@@ -105,7 +109,10 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         .await
         .expect("must not hang")
         .unwrap_err();
-    assert!(err.contains("some/where"), "the refusal names the path: {err}");
+    assert!(
+        err.contains("some/where"),
+        "the refusal names the path: {err}"
+    );
 
     // The pull: a file bigger than one slice, taken whole and byte-
     // identical — the loop is what a single-slice file cannot prove.
@@ -144,13 +151,20 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     .expect("the relative pull must not hang")
     .unwrap();
     assert_eq!(rel_moved, big.len() as u64);
-    assert!(rel_dest.is_absolute(), "the landing must be told absolutely: {rel_dest:?}");
+    assert!(
+        rel_dest.is_absolute(),
+        "the landing must be told absolutely: {rel_dest:?}"
+    );
     assert_eq!(
         rel_dest,
         std::path::absolute(rel.join("dataset.bin")).unwrap(),
         "and it must be the caller's dir, not somebody else's cwd"
     );
-    assert_eq!(fs::read(&rel_dest).unwrap(), big, "same bytes at the said place");
+    assert_eq!(
+        fs::read(&rel_dest).unwrap(),
+        big,
+        "same bytes at the said place"
+    );
     fs::remove_dir_all(&rel).unwrap();
 
     // Pulling onto an existing name refuses before any byte moves —
@@ -162,8 +176,15 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     .await
     .expect("must not hang")
     .unwrap_err();
-    assert!(err.contains("dataset.bin"), "the refusal names the file: {err}");
-    assert_eq!(fs::read(&dest).unwrap(), big, "and the existing file is untouched");
+    assert!(
+        err.contains("dataset.bin"),
+        "the refusal names the file: {err}"
+    );
+    assert_eq!(
+        fs::read(&dest).unwrap(),
+        big,
+        "and the existing file is untouched"
+    );
 
     // A directory is not a file, and the refusal crosses the wire.
     let err = timeout(
@@ -174,7 +195,10 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     .expect("must not hang")
     .unwrap_err();
     assert!(!err.is_empty());
-    assert!(!dl.join(".khor-pull-zoo").exists(), "a refused pull leaves no dot-name");
+    assert!(
+        !dl.join(".khor-pull-zoo").exists(),
+        "a refused pull leaves no dot-name"
+    );
 
     // The control: an unpaired key, same op, same wire. Proved against
     // a live gate first — the paired listing above used this very
@@ -191,7 +215,9 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
             iroh::SecretKey::generate(),
             &alpha_info.id,
             &alpha_info.addrs,
-            &Request::Ls { path: browse.to_str().unwrap().to_owned() },
+            &Request::Ls {
+                path: browse.to_str().unwrap().to_owned(),
+            },
         ),
     )
     .await
@@ -232,20 +258,23 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     let pins = a.dir_pins().unwrap();
     let alpha_hex = a.device_str();
     assert!(
-        pins.iter().any(|(d, p)| d == alpha_hex && p == browse.to_str().unwrap()),
+        pins.iter()
+            .any(|(d, p)| d == alpha_hex && p == browse.to_str().unwrap()),
         "a pin made on beta must reach alpha: {pins:?}"
     );
 
     // A web page pinned against alpha as its exit travels the same pump —
     // the fourth pins table, keyed URL-and-machine (docs/NET.md 借网).
-    b.pin_web("alpha", "https://example.com/read", true).unwrap();
+    b.pin_web("alpha", "https://example.com/read", true)
+        .unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
     let webs = a.web_pins().unwrap();
     assert!(
-        webs.iter().any(|(d, u)| d == alpha_hex && u == "https://example.com/read"),
+        webs.iter()
+            .any(|(d, u)| d == alpha_hex && u == "https://example.com/read"),
         "a web pin made on beta must reach alpha: {webs:?}"
     );
 
@@ -254,18 +283,21 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     // cannot do at all: dismissing on the desk has to reach the phone,
     // or the phone keeps offering what was already waved away.
     let place = browse.to_str().unwrap();
-    b.recent_visit(khor_node::PlaceKind::Dir, "alpha", place).unwrap();
+    b.recent_visit(khor_node::PlaceKind::Dir, "alpha", place)
+        .unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
     let seen = a.recents(khor_node::PlaceKind::Dir, 10).unwrap();
     assert!(
-        seen.iter().any(|p| p.machine == alpha_hex && p.place == place),
+        seen.iter()
+            .any(|p| p.machine == alpha_hex && p.place == place),
         "a visit recorded on beta must reach alpha: {seen:?}"
     );
 
-    b.forget_recent(khor_node::PlaceKind::Dir, "alpha", place).unwrap();
+    b.forget_recent(khor_node::PlaceKind::Dir, "alpha", place)
+        .unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -291,7 +323,8 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         "control: the refusal has to be real, or this proves nothing"
     );
 
-    b.recent_visit(khor_node::PlaceKind::Page, "alpha", "https://after.example").unwrap();
+    b.recent_visit(khor_node::PlaceKind::Page, "alpha", "https://after.example")
+        .unwrap();
     b.tell("alpha", "still talking").unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await

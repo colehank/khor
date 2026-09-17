@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub use doc::{ChatDoc, FileRef, Message, MsgBody, Sender};
 
-use crate::store::{load, Loaded};
+use crate::store::{Loaded, load};
 
 /// Location relative to the home directory. Fixed rather than
 /// `config_dir()`: the writer is often on another machine (sftp) and
@@ -83,7 +83,11 @@ pub fn channel_of_machine(name: &str) -> Option<String> {
     let stem = stem.trim_end_matches(['-', '.']);
     // The fingerprint hashes the original, not the cleaned form: that is
     // what keeps two different originals with identical stems apart.
-    let out = format!("{}-{}", if stem.is_empty() { "m" } else { stem }, fingerprint(name));
+    let out = format!(
+        "{}-{}",
+        if stem.is_empty() { "m" } else { stem },
+        fingerprint(name)
+    );
     valid_channel(&out).then_some(out)
 }
 
@@ -132,11 +136,18 @@ mod tests {
     #[test]
     fn a_clean_machine_name_is_the_channel_name_unchanged() {
         for n in ["turing", "mac-mini", "gpu.01", "aliyun_2", "A1"] {
-            assert_eq!(channel_of_machine(n).as_deref(), Some(n), "{n} should pass unchanged");
+            assert_eq!(
+                channel_of_machine(n).as_deref(),
+                Some(n),
+                "{n} should pass unchanged"
+            );
         }
         // `.local` stripped: one machine self-reports both spellings
         // depending on the entry point.
-        assert_eq!(channel_of_machine("zgh-mac.local").as_deref(), Some("zgh-mac"));
+        assert_eq!(
+            channel_of_machine("zgh-mac.local").as_deref(),
+            Some("zgh-mac")
+        );
         assert_eq!(channel_of_machine("  turing  ").as_deref(), Some("turing"));
     }
 
@@ -148,15 +159,27 @@ mod tests {
     fn a_cleaned_name_never_collides_with_a_clean_one() {
         let dirty = channel_of_machine("a b").expect("should compute");
         let clean = channel_of_machine("a-b").expect("should compute");
-        assert_eq!(clean, "a-b", "a clean name must pass unchanged (control: not every name gets a suffix)");
-        assert_ne!(dirty, clean, "a cleaned name must not collide with a real one, got {dirty} vs {clean}");
-        assert!(dirty.starts_with("a-b-"), "a cleaned name should carry a fingerprint, got {dirty}");
+        assert_eq!(
+            clean, "a-b",
+            "a clean name must pass unchanged (control: not every name gets a suffix)"
+        );
+        assert_ne!(
+            dirty, clean,
+            "a cleaned name must not collide with a real one, got {dirty} vs {clean}"
+        );
+        assert!(
+            dirty.starts_with("a-b-"),
+            "a cleaned name should carry a fingerprint, got {dirty}"
+        );
 
         // Two different originals with the same cleaned stem stay apart —
         // the fingerprint hashes the original.
         let x = channel_of_machine("a b").unwrap();
         let y = channel_of_machine("a/b").unwrap();
-        assert_ne!(x, y, "different originals must not share a channel, got {x} vs {y}");
+        assert_ne!(
+            x, y,
+            "different originals must not share a channel, got {x} vs {y}"
+        );
     }
 
     /// Same original, same answer, every time.
@@ -181,7 +204,10 @@ mod tests {
         assert!(!c.is_empty());
         // Mixed names keep their readable part — people `ls` these dirs.
         let m = channel_of_machine("张三的 MacBook").expect("should compute");
-        assert!(m.contains("MacBook"), "the readable part should survive, got {m}");
+        assert!(
+            m.contains("MacBook"),
+            "the readable part should survive, got {m}"
+        );
 
         assert_eq!(channel_of_machine(""), None);
         assert_eq!(channel_of_machine("   "), None);
@@ -204,6 +230,9 @@ mod tests {
         // channels.
         let a = channel_of_machine(&format!("{}X", "a".repeat(150))).unwrap();
         let b = channel_of_machine(&format!("{}Y", "a".repeat(150))).unwrap();
-        assert_ne!(a, b, "one differing char must not merge two machines: {a} vs {b}");
+        assert_ne!(
+            a, b,
+            "one differing char must not merge two machines: {a} vs {b}"
+        );
     }
 }

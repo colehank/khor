@@ -103,7 +103,11 @@ mod tests {
             relay,
             selected,
             rtt_ms,
-            addr: if relay { "http://relay:3340".into() } else { "10.0.0.2:11204".into() },
+            addr: if relay {
+                "http://relay:3340".into()
+            } else {
+                "10.0.0.2:11204".into()
+            },
         }
     }
 
@@ -140,8 +144,17 @@ mod tests {
     /// corrupts every recorded run.
     #[test]
     fn path_kind_serializes_as_snake_case() {
-        assert_eq!(serde_json::to_string(&PathKind::Direct).unwrap(), r#""direct""#);
-        assert_eq!(serde_json::to_string(&PathKind::Relay).unwrap(), r#""relay""#);
-        assert_eq!(serde_json::to_string(&PathKind::Unknown).unwrap(), r#""unknown""#);
+        assert_eq!(
+            serde_json::to_string(&PathKind::Direct).unwrap(),
+            r#""direct""#
+        );
+        assert_eq!(
+            serde_json::to_string(&PathKind::Relay).unwrap(),
+            r#""relay""#
+        );
+        assert_eq!(
+            serde_json::to_string(&PathKind::Unknown).unwrap(),
+            r#""unknown""#
+        );
     }
 }

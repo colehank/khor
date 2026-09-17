@@ -38,7 +38,12 @@ pub async fn ls(root: &Path, machine: &str, path: &str) -> Result<DirListing, St
         path,
         entries: entries
             .into_iter()
-            .map(|e| DirRow { name: e.name, dir: e.dir, size: e.size, at_ms: e.at_ms })
+            .map(|e| DirRow {
+                name: e.name,
+                dir: e.dir,
+                size: e.size,
+                at_ms: e.at_ms,
+            })
             .collect(),
         truncated,
     })
@@ -76,8 +81,7 @@ pub struct DirPinRow {
 pub fn dir_pins(root: &Path) -> Result<Vec<DirPinRow>, String> {
     let n = Node::open(root.to_path_buf())?;
     let devices = n.devices()?;
-    Ok(n
-        .dir_pins()?
+    Ok(n.dir_pins()?
         .into_iter()
         .map(|(device, path)| DirPinRow {
             name: devices
@@ -100,7 +104,9 @@ pub fn dir_pins(root: &Path) -> Result<Vec<DirPinRow>, String> {
 /// [`trash_here`] rather than reading the platform off the browser: the
 /// same page is served to a phone looking at a desktop's face.
 pub async fn remove(root: &Path, machine: &str, path: &str) -> Result<(), String> {
-    Node::open(root.to_path_buf())?.remove_path(machine, path).await
+    Node::open(root.to_path_buf())?
+        .remove_path(machine, path)
+        .await
 }
 
 /// One new directory on whichever machine holds the parent — the call
@@ -121,7 +127,9 @@ pub async fn touch(root: &Path, machine: &str, path: &str) -> Result<(), String>
 /// makes (`khor_node::Link::rename_path`). Crossing directories is the
 /// same verb; the target is never overwritten.
 pub async fn rename_path(root: &Path, machine: &str, from: &str, to: &str) -> Result<(), String> {
-    Node::open(root.to_path_buf())?.rename_path(machine, from, to).await
+    Node::open(root.to_path_buf())?
+        .rename_path(machine, from, to)
+        .await
 }
 
 /// Opens a path or a page **on the machine that holds it** — the call
@@ -133,7 +141,9 @@ pub async fn rename_path(root: &Path, machine: &str, from: &str, to: &str) -> Re
 /// it to the machine the session ran on, which is the only machine the
 /// file in that session exists on.
 pub async fn launch(root: &Path, machine: &str, target: &str) -> Result<(), String> {
-    Node::open(root.to_path_buf())?.launch(machine, target).await
+    Node::open(root.to_path_buf())?
+        .launch(machine, target)
+        .await
 }
 
 /// Whether the browser this face runs in will draw a PDF itself
@@ -256,8 +266,19 @@ fn shape(total: u64, at_ms: u64, bytes: &[u8]) -> FileText {
     // precisely when writing it back loses nothing — so「can this be
     // saved」is never a second judgment that could disagree with this
     // one.
-    let digest = if cut { String::new() } else { khor_node::files::digest(bytes) };
-    FileText { total, at_ms, text, cut, binary: false, digest }
+    let digest = if cut {
+        String::new()
+    } else {
+        khor_node::files::digest(bytes)
+    };
+    FileText {
+        total,
+        at_ms,
+        text,
+        cut,
+        binary: false,
+        digest,
+    }
 }
 
 /// One file shaped for a screen that is not a code view.
@@ -304,8 +325,9 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
     use base64::Engine as _;
     let n = Node::open(root.to_path_buf())?;
     let kind = khor_node::preview::kind(path);
-    let (total, _, bytes, cut) =
-        n.read_all(machine, path, khor_node::preview::cap(path)).await?;
+    let (total, _, bytes, cut) = n
+        .read_all(machine, path, khor_node::preview::cap(path))
+        .await?;
     let mut out = Preview {
         kind: match kind {
             khor_node::preview::Kind::Image => "image",
@@ -407,7 +429,10 @@ pub struct Merged {
 /// with 「theirs」, and it only happens when somebody presses save.
 pub fn merge_text(base: &str, mine: &str, theirs: &str) -> Merged {
     let m = khor_node::merge::three(base, mine, theirs);
-    Merged { text: m.text, clashes: m.clashes }
+    Merged {
+        text: m.text,
+        clashes: m.clashes,
+    }
 }
 
 #[cfg(test)]
@@ -429,8 +454,15 @@ mod read_text_tests {
         let f = shape(whole.len() as u64, 0, head);
         assert!(!f.binary, "a cut character must not read as binary");
         assert!(f.cut, "and it must say it was cut");
-        assert_eq!(f.text.len(), slice - 1, "what decoded is everything before the character");
-        assert!(f.text.chars().all(|c| c == 'a'), "and no replacement character was kept");
+        assert_eq!(
+            f.text.len(),
+            slice - 1,
+            "what decoded is everything before the character"
+        );
+        assert!(
+            f.text.chars().all(|c| c == 'a'),
+            "and no replacement character was kept"
+        );
     }
 
     /// NUL is a valid UTF-8 character, so a decoder alone says yes to a
@@ -438,7 +470,10 @@ mod read_text_tests {
     #[test]
     fn nul_makes_it_binary_even_though_it_decodes() {
         let bytes = b"\x7fELF\0\0\0 and more".to_vec();
-        assert!(std::str::from_utf8(&bytes).is_ok(), "the premise: this decodes");
+        assert!(
+            std::str::from_utf8(&bytes).is_ok(),
+            "the premise: this decodes"
+        );
         let f = shape(bytes.len() as u64, 0, &bytes);
         assert!(f.binary, "the sniff is what catches it");
         assert!(f.text.is_empty(), "and nothing is handed to a code view");
@@ -463,7 +498,10 @@ mod read_text_tests {
     fn invalid_bytes_in_the_middle_are_binary() {
         let bytes = vec![b'o', b'k', 0xC3, 0x28, b'm', b'o', b'r', b'e'];
         let f = shape(bytes.len() as u64, 0, &bytes);
-        assert!(f.binary, "not a boundary — nothing that follows makes this text");
+        assert!(
+            f.binary,
+            "not a boundary — nothing that follows makes this text"
+        );
     }
 
     /// The same incomplete character as the first test, but the file
@@ -476,7 +514,10 @@ mod read_text_tests {
         let bytes = vec![b'h', b'i', 0xE4, 0xB8];
         let f = shape(bytes.len() as u64, 0, &bytes);
         assert!(!f.cut, "the premise: everything the file has is here");
-        assert!(f.binary, "and what it has is not text all the way to the end");
+        assert!(
+            f.binary,
+            "and what it has is not text all the way to the end"
+        );
         assert!(f.digest.is_empty(), "so there is nothing to offer a save");
     }
 

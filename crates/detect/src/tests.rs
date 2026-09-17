@@ -65,8 +65,14 @@ fn word_after_debounce(vendor: &str, lines: &[&str], current: Word) -> Word {
 fn a_fixture_actually_lands_on_the_screen() {
     let screen = screen_of(&["first line", "second line", "third line"]);
     let rendered = screen.tail(30);
-    assert!(rendered.contains("first line"), "top line missing: {rendered:?}");
-    assert!(rendered.contains("third line"), "bottom line missing: {rendered:?}");
+    assert!(
+        rendered.contains("first line"),
+        "top line missing: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("third line"),
+        "bottom line missing: {rendered:?}"
+    );
     assert_eq!(rendered.lines().count(), 3, "wrong row count: {rendered:?}");
 }
 
@@ -93,7 +99,10 @@ fn every_vendor_in_the_table_has_fixtures() {
     listed.sort_unstable();
     let mut expected = covered.to_vec();
     expected.sort_unstable();
-    assert_eq!(listed, expected, "a vendor in patterns.toml has no fixtures here");
+    assert_eq!(
+        listed, expected,
+        "a vendor in patterns.toml has no fixtures here"
+    );
 }
 
 #[test]
@@ -116,15 +125,24 @@ fn text_that_was_overwritten_is_not_on_the_screen_any_more() {
     let mut screen = Screen::new(4, 40);
     let bytes: &[u8] = b"working\r\nesc to interrupt\r\n";
     screen.feed(bytes);
-    assert!(screen.tail(30).contains("esc to interrupt"), "precondition: it was there");
+    assert!(
+        screen.tail(30).contains("esc to interrupt"),
+        "precondition: it was there"
+    );
 
     // Up one row, clear it, write over it — what an agent does every
     // frame it repaints its status line.
     screen.feed(b"\x1b[A\r\x1b[2Kall done");
 
     let rendered = screen.tail(30);
-    assert!(!rendered.contains("esc to interrupt"), "stale frame survived: {rendered:?}");
-    assert!(rendered.contains("all done"), "the repaint is missing: {rendered:?}");
+    assert!(
+        !rendered.contains("esc to interrupt"),
+        "stale frame survived: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("all done"),
+        "the repaint is missing: {rendered:?}"
+    );
     assert!(
         String::from_utf8_lossy(bytes).contains("esc to interrupt"),
         "the byte log still holds it — which is why the byte log is not what we match",
@@ -156,7 +174,10 @@ fn the_prompt_box_and_everything_in_it_is_out_of_scope() {
     ]);
     let above = screen.above_prompt(30);
     assert!(above.contains("real output"), "lost the output: {above:?}");
-    assert!(!above.contains("esc to interrupt"), "read inside the box: {above:?}");
+    assert!(
+        !above.contains("esc to interrupt"),
+        "read inside the box: {above:?}"
+    );
 }
 
 /// Only the newest block survives; a blank line ends it.
@@ -217,16 +238,28 @@ fn claude_is_busy_on_a_spinner_with_an_activity_label() {
 #[test]
 fn claude_is_not_busy_on_a_spinner_glyph_without_an_activity_label() {
     let with_label = ["✽ Tempering…", "❯"];
-    assert_eq!(word("claude", &with_label, Word::Idle), Word::Busy, "control");
+    assert_eq!(
+        word("claude", &with_label, Word::Idle),
+        Word::Busy,
+        "control"
+    );
 
     let without = ["✽ Some random text", "❯"];
-    assert_eq!(word_after_debounce("claude", &without, Word::Idle), Word::Idle);
+    assert_eq!(
+        word_after_debounce("claude", &without, Word::Idle),
+        Word::Idle
+    );
 }
 
 #[test]
 fn claude_is_busy_on_a_token_stats_line() {
     for stats in ["(9m 21s · ↓ 13.7k tokens)", "  ( 1m · 500 TOKENS )  "] {
-        let lines = [stats, "──────────────────────────────", "❯", "──────────────────────────────"];
+        let lines = [
+            stats,
+            "──────────────────────────────",
+            "❯",
+            "──────────────────────────────",
+        ];
         assert_eq!(word("claude", &lines, Word::Idle), Word::Busy, "{stats}");
     }
 }
@@ -242,9 +275,18 @@ fn claude_is_busy_on_a_token_stats_line() {
 #[test]
 fn claude_is_not_busy_on_parenthetical_prose_that_merely_says_tokens() {
     let boxed = |first: &'static str| {
-        [first, "──────────────────────────────", "❯", "──────────────────────────────"]
+        [
+            first,
+            "──────────────────────────────",
+            "❯",
+            "──────────────────────────────",
+        ]
     };
-    assert_eq!(word("claude", &boxed("(see 9 tokens)"), Word::Idle), Word::Busy, "control");
+    assert_eq!(
+        word("claude", &boxed("(see 9 tokens)"), Word::Idle),
+        Word::Busy,
+        "control"
+    );
     assert_eq!(
         word_after_debounce("claude", &boxed("(see tokens)"), Word::Idle),
         Word::Idle,
@@ -280,9 +322,17 @@ fn claude_is_waiting_on_a_permission_menu_with_a_numbered_deny() {
 #[test]
 fn claude_reads_a_question_inside_the_box_but_not_an_interrupt_inside_it() {
     let box_lines = |middle: &'static str| {
-        ["Some idle output", "──────────────────────────────", middle, "──────────────────────────────"]
+        [
+            "Some idle output",
+            "──────────────────────────────",
+            middle,
+            "──────────────────────────────",
+        ]
     };
-    assert_eq!(word("claude", &box_lines("esc to cancel"), Word::Idle), Word::Waiting);
+    assert_eq!(
+        word("claude", &box_lines("esc to cancel"), Word::Idle),
+        Word::Waiting
+    );
     assert_eq!(
         word_after_debounce("claude", &box_lines("esc to interrupt"), Word::Idle),
         Word::Idle,
@@ -313,7 +363,11 @@ fn claude_ignores_a_finished_turns_leftovers_further_up_the_screen() {
         "❯",
         "──────────────────────────────",
     ];
-    assert_eq!(word("claude", &fresh, Word::Idle), Word::Busy, "control: newest block counts");
+    assert_eq!(
+        word("claude", &fresh, Word::Idle),
+        Word::Busy,
+        "control: newest block counts"
+    );
 
     let stale_spinner = [
         "✻ Seasoning… (44s · ↓ 247 tokens)",
@@ -328,7 +382,10 @@ fn claude_ignores_a_finished_turns_leftovers_further_up_the_screen() {
         "❯",
         "──────────────────────────────",
     ];
-    assert_eq!(word_after_debounce("claude", &stale_spinner, Word::Busy), Word::Idle);
+    assert_eq!(
+        word_after_debounce("claude", &stale_spinner, Word::Busy),
+        Word::Idle
+    );
 
     let stale_interrupt = [
         "Press esc to interrupt",
@@ -340,7 +397,10 @@ fn claude_ignores_a_finished_turns_leftovers_further_up_the_screen() {
         "❯",
         "──────────────────────────────",
     ];
-    assert_eq!(word_after_debounce("claude", &stale_interrupt, Word::Busy), Word::Idle);
+    assert_eq!(
+        word_after_debounce("claude", &stale_interrupt, Word::Busy),
+        Word::Idle
+    );
 }
 
 /// The search overlay hides the session, so the screen stops being
@@ -350,10 +410,17 @@ fn claude_ignores_a_finished_turns_leftovers_further_up_the_screen() {
 /// really does say 忙碌, so the overlay is doing the work here.
 #[test]
 fn claudes_search_overlay_makes_it_stop_reading_the_screen() {
-    assert_eq!(word("claude", &["✽ Tempering…"], Word::Idle), Word::Busy, "control");
+    assert_eq!(
+        word("claude", &["✽ Tempering…"], Word::Idle),
+        Word::Busy,
+        "control"
+    );
 
     let overlaid = ["⌕ Search…", "✽ Tempering…"];
-    assert_eq!(word_after_debounce("claude", &overlaid, Word::Idle), Word::Idle);
+    assert_eq!(
+        word_after_debounce("claude", &overlaid, Word::Idle),
+        Word::Idle
+    );
 }
 
 #[test]
@@ -377,8 +444,16 @@ fn claude_does_not_go_idle_the_instant_a_screen_stops_moving() {
     let screen = screen_of(&["Command completed successfully", "> "]);
     let mut d = detector("claude");
     assert_eq!(d.word(&screen, Word::Busy, 0), Word::Busy);
-    assert_eq!(d.word(&screen, Word::Busy, 1499), Word::Busy, "one tick early");
-    assert_eq!(d.word(&screen, Word::Busy, 1500), Word::Idle, "the window is 1500");
+    assert_eq!(
+        d.word(&screen, Word::Busy, 1499),
+        Word::Busy,
+        "one tick early"
+    );
+    assert_eq!(
+        d.word(&screen, Word::Busy, 1500),
+        Word::Idle,
+        "the window is 1500"
+    );
 }
 
 /// The clock restarts whenever the screen changes, so a session that
@@ -390,8 +465,16 @@ fn a_screen_that_keeps_changing_restarts_claudes_idle_clock() {
     d.word(&first, Word::Busy, 0);
 
     let second = screen_of(&["Output v2", "> "]);
-    assert_eq!(d.word(&second, Word::Busy, 1400), Word::Busy, "changed at 1400");
-    assert_eq!(d.word(&second, Word::Busy, 1600), Word::Busy, "old deadline must not count");
+    assert_eq!(
+        d.word(&second, Word::Busy, 1400),
+        Word::Busy,
+        "changed at 1400"
+    );
+    assert_eq!(
+        d.word(&second, Word::Busy, 1600),
+        Word::Busy,
+        "old deadline must not count"
+    );
     assert_eq!(d.word(&second, Word::Busy, 2900), Word::Idle, "1400 + 1500");
 }
 
@@ -401,7 +484,13 @@ fn a_screen_that_keeps_changing_restarts_claudes_idle_clock() {
 /// waiting for.
 #[test]
 fn the_debounce_holds_up_idle_only() {
-    let busy = ["Processing...", "Press ESC to interrupt", "──────────────────────────────", "❯", "──────────────────────────────"];
+    let busy = [
+        "Processing...",
+        "Press ESC to interrupt",
+        "──────────────────────────────",
+        "❯",
+        "──────────────────────────────",
+    ];
     assert_eq!(word("claude", &busy, Word::Idle), Word::Busy);
     let asking = ["Do you want to continue?", "❯ 1. Yes", "  2. No"];
     assert_eq!(word("claude", &asking, Word::Idle), Word::Waiting);
@@ -424,7 +513,11 @@ fn codex_is_waiting_on_each_of_its_confirmation_wordings() {
         vec!["Some output", "Apply changes? yes (y) / no (n)"],
         vec!["Some output", "Press enter to confirm or esc to cancel"],
     ] {
-        assert_eq!(word("codex", &lines, Word::Idle), Word::Waiting, "{lines:?}");
+        assert_eq!(
+            word("codex", &lines, Word::Idle),
+            Word::Waiting,
+            "{lines:?}"
+        );
     }
 }
 
@@ -450,7 +543,10 @@ fn codex_is_waiting_on_a_numbered_command_approval() {
 /// order in the table is the whole of that rule.
 #[test]
 fn codex_reads_a_pending_question_over_a_running_turn() {
-    let lines = ["esc to interrupt", "Press enter to confirm or esc to cancel"];
+    let lines = [
+        "esc to interrupt",
+        "Press enter to confirm or esc to cancel",
+    ];
     assert_eq!(word("codex", &lines, Word::Idle), Word::Waiting);
 }
 
@@ -473,7 +569,11 @@ fn gemini_is_waiting_on_its_boxed_prompts_with_or_without_the_question_mark() {
         "│ Do you want to proceed",
     ] {
         let lines = ["Some output from Gemini", prompt, "│ > "];
-        assert_eq!(word("gemini", &lines, Word::Idle), Word::Waiting, "{prompt}");
+        assert_eq!(
+            word("gemini", &lines, Word::Idle),
+            Word::Waiting,
+            "{prompt}"
+        );
     }
 }
 
@@ -518,7 +618,11 @@ fn cursor_is_waiting_on_its_option_labels_whatever_their_case() {
         vec!["Some output", "AUTO COMPLETE (SHIFT+TAB)", "> "],
         vec!["Some prompt", "   Skip (esc or n)"],
     ] {
-        assert_eq!(word("cursor", &lines, Word::Idle), Word::Waiting, "{lines:?}");
+        assert_eq!(
+            word("cursor", &lines, Word::Idle),
+            Word::Waiting,
+            "{lines:?}"
+        );
     }
 }
 
@@ -561,13 +665,21 @@ fn cursor_reads_a_pending_option_over_a_running_turn() {
 fn copilot_is_waiting_on_a_confirm_line_however_long_the_key_name() {
     for line in ["Confirm with Y Enter", "Confirm with Shift + Y Enter"] {
         let lines = ["Some output", line];
-        assert_eq!(word("github-copilot", &lines, Word::Idle), Word::Waiting, "{line}");
+        assert_eq!(
+            word("github-copilot", &lines, Word::Idle),
+            Word::Waiting,
+            "{line}"
+        );
     }
 }
 
 #[test]
 fn copilot_is_waiting_on_a_boxed_question_in_any_case() {
-    let lines = ["Running GitHub Copilot CLI...", "│ DO YOU WANT to run this command?", "│ > "];
+    let lines = [
+        "Running GitHub Copilot CLI...",
+        "│ DO YOU WANT to run this command?",
+        "│ > ",
+    ];
     assert_eq!(word("github-copilot", &lines, Word::Idle), Word::Waiting);
 }
 
@@ -602,16 +714,30 @@ fn cline_is_waiting_when_it_asks_to_use_a_tool() {
         ],
         vec!["Some output", "LET CLINE USE THIS TOOL?", ">  Yes"],
     ] {
-        assert_eq!(word("cline", &lines, Word::Idle), Word::Waiting, "{lines:?}");
+        assert_eq!(
+            word("cline", &lines, Word::Idle),
+            Word::Waiting,
+            "{lines:?}"
+        );
     }
 }
 
 #[test]
 fn cline_is_idle_only_on_its_ready_line() {
     for lines in [
-        vec!["┃ [act mode] Cline is ready for your message...", "┃ /plan or /act to switch modes"],
-        vec!["┃ [plan mode] Cline is ready for your message...", "┃ ctrl+e to open editor"],
-        vec!["Some output", "CLINE IS READY FOR YOUR MESSAGE", "Ready to go"],
+        vec![
+            "┃ [act mode] Cline is ready for your message...",
+            "┃ /plan or /act to switch modes",
+        ],
+        vec![
+            "┃ [plan mode] Cline is ready for your message...",
+            "┃ ctrl+e to open editor",
+        ],
+        vec![
+            "Some output",
+            "CLINE IS READY FOR YOUR MESSAGE",
+            "Ready to go",
+        ],
     ] {
         assert_eq!(word("cline", &lines, Word::Idle), Word::Idle, "{lines:?}");
     }
@@ -622,9 +748,17 @@ fn cline_is_idle_only_on_its_ready_line() {
 /// upstream's choice, transcribed rather than improved.
 #[test]
 fn cline_treats_anything_it_does_not_recognise_as_a_running_turn() {
-    let working = ["Processing your request...", "Running analysis...", "Working on it..."];
+    let working = [
+        "Processing your request...",
+        "Running analysis...",
+        "Working on it...",
+    ];
     assert_eq!(word("cline", &working, Word::Idle), Word::Busy);
-    assert_eq!(word("cline", &[], Word::Idle), Word::Busy, "an empty screen too");
+    assert_eq!(
+        word("cline", &[], Word::Idle),
+        Word::Busy,
+        "an empty screen too"
+    );
 }
 
 #[test]
@@ -654,7 +788,11 @@ fn opencode_is_waiting_on_its_permission_banner() {
 
 #[test]
 fn opencode_is_busy_on_an_interrupt_line_in_any_case() {
-    for line in ["Press esc to interrupt", "PRESS ESC TO INTERRUPT", "Esc to interrupt"] {
+    for line in [
+        "Press esc to interrupt",
+        "PRESS ESC TO INTERRUPT",
+        "Esc to interrupt",
+    ] {
         let lines = ["Processing...", line];
         assert_eq!(word("opencode", &lines, Word::Idle), Word::Busy, "{line}");
     }
@@ -676,7 +814,14 @@ fn opencode_is_idle_when_nothing_matches() {
 
 #[test]
 fn kimi_is_waiting_on_its_approval_words() {
-    for line in ["Allow?", "Confirm?", "Approve?", "Proceed?", "Continue [y/n]", "Continue (y/n)"] {
+    for line in [
+        "Allow?",
+        "Confirm?",
+        "Approve?",
+        "Proceed?",
+        "Continue [y/n]",
+        "Continue (y/n)",
+    ] {
         let lines = ["Some output", line];
         assert_eq!(word("kimi", &lines, Word::Idle), Word::Waiting, "{line}");
     }
@@ -684,7 +829,13 @@ fn kimi_is_waiting_on_its_approval_words() {
 
 #[test]
 fn kimi_is_busy_on_its_progress_words() {
-    for line in ["Thinking", "Processing", "Generating", "Waiting for response", "Press ctrl+c to cancel"] {
+    for line in [
+        "Thinking",
+        "Processing",
+        "Generating",
+        "Waiting for response",
+        "Press ctrl+c to cancel",
+    ] {
         let lines = ["Some output", line];
         assert_eq!(word("kimi", &lines, Word::Idle), Word::Busy, "{line}");
     }
@@ -707,7 +858,10 @@ fn kimi_is_busy_on_its_progress_words() {
 /// obstructing one.
 #[test]
 fn kimi_calls_itself_busy_for_merely_writing_the_word_thinking() {
-    let lines = ["I've finished. My thinking here was that the cache was cold.", "> "];
+    let lines = [
+        "I've finished. My thinking here was that the cache was cold.",
+        "> ",
+    ];
     assert_eq!(
         word("kimi", &lines, Word::Idle),
         Word::Busy,
@@ -743,5 +897,9 @@ fn a_case_sensitive_rule_does_not_fire_on_the_wrong_case() {
         "the boxed prompts are matched exactly, so upper case is not that prompt",
     );
     let folded = ["Running command...", "press ESC TO CANCEL now"];
-    assert_eq!(word("gemini", &folded, Word::Idle), Word::Busy, "and this one folds");
+    assert_eq!(
+        word("gemini", &folded, Word::Idle),
+        Word::Busy,
+        "and this one folds"
+    );
 }

@@ -340,7 +340,10 @@ impl Palette {
     /// identity**, so the fallback can't make anyone misread a machine.
     pub fn parse(colors: &[String]) -> Option<Self> {
         let colors: [String; SLOTS] = <[String; SLOTS]>::try_from(
-            colors.iter().map(|c| norm_hex(c)).collect::<Option<Vec<_>>>()?,
+            colors
+                .iter()
+                .map(|c| norm_hex(c))
+                .collect::<Option<Vec<_>>>()?,
         )
         .ok()?;
         Some(Self(colors))
@@ -380,9 +383,7 @@ impl<'de> Deserialize<'de> for Palette {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let raw = Vec::<String>::deserialize(d)?;
         Palette::parse(&raw).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "a palette is exactly {SLOTS} slots of #rrggbb"
-            ))
+            serde::de::Error::custom(format!("a palette is exactly {SLOTS} slots of #rrggbb"))
         })
     }
 }
@@ -1147,15 +1148,31 @@ fn beam_props(h: i64) -> BeamProps {
         v
     };
     let jitter_x_mag = take_c(8);
-    let jitter_x = if take_c(2) == 0 { -jitter_x_mag } else { jitter_x_mag };
+    let jitter_x = if take_c(2) == 0 {
+        -jitter_x_mag
+    } else {
+        jitter_x_mag
+    };
     let jitter_y_mag = take_c(7);
-    let jitter_y = if take_c(2) == 0 { -jitter_y_mag } else { jitter_y_mag };
+    let jitter_y = if take_c(2) == 0 {
+        -jitter_y_mag
+    } else {
+        jitter_y_mag
+    };
 
     // Upstream: when the wrapper moved far (> `SIZE/6`) the features
     // follow it halfway, otherwise they jitter on their own (chain C)
     let sixth = BEAM_CANVAS / 6.0;
-    let face_dx = if wrapper_dx > sixth { wrapper_dx / 2.0 } else { jitter_x as f64 };
-    let face_dy = if wrapper_dy > sixth { wrapper_dy / 2.0 } else { jitter_y as f64 };
+    let face_dx = if wrapper_dx > sixth {
+        wrapper_dx / 2.0
+    } else {
+        jitter_x as f64
+    };
+    let face_dy = if wrapper_dy > sixth {
+        wrapper_dy / 2.0
+    } else {
+        jitter_y as f64
+    };
 
     BeamProps {
         wrapper_dx,
@@ -1390,8 +1407,7 @@ mod tests {
     /// expects 16 solutions; this prefix has 13. "Happens to collide"
     /// is not a zero-probability event, and where it panics is while
     /// painting an avatar.
-    const SEED_I32_MIN: &str =
-        "9f2c7a41be80d35e6417c0a9fd2b6e83c15470ab29de6f01b4837c50e5af670f";
+    const SEED_I32_MIN: &str = "9f2c7a41be80d35e6417c0a9fd2b6e83c15470ab29de6f01b4837c50e5af670f";
 
     /// A seed straight from a string. **Test-only on purpose**: the
     /// public constructors take a device identity ([`AvatarSeed::of`])
@@ -1450,12 +1466,8 @@ mod tests {
     fn used_colors(a: &Avatar) -> Vec<String> {
         let mut v = vec![a.background.clone()];
         match &a.paint {
-            AvatarPaint::Marble { veins, .. } => {
-                v.extend(veins.iter().map(|x| x.color.clone()))
-            }
-            AvatarPaint::Bauhaus { shapes } => {
-                v.extend(shapes.iter().map(|x| x.color.clone()))
-            }
+            AvatarPaint::Marble { veins, .. } => v.extend(veins.iter().map(|x| x.color.clone())),
+            AvatarPaint::Bauhaus { shapes } => v.extend(shapes.iter().map(|x| x.color.clone())),
             AvatarPaint::Beam { wrapper_color, .. } => v.push(wrapper_color.clone()),
         }
         v
@@ -1624,8 +1636,14 @@ mod tests {
         assert_eq!(a.canvas, b.canvas);
         assert_eq!(a.radius_ratio, b.radius_ratio);
         let (
-            AvatarPaint::Marble { veins: va, blur: ba },
-            AvatarPaint::Marble { veins: vb, blur: bb },
+            AvatarPaint::Marble {
+                veins: va,
+                blur: ba,
+            },
+            AvatarPaint::Marble {
+                veins: vb,
+                blur: bb,
+            },
         ) = (&a.paint, &b.paint)
         else {
             panic!("the golden style's variant is marble");
@@ -1641,7 +1659,10 @@ mod tests {
 
         // A different shape: only radius_ratio moves, not even a color
         for shape in [FaceShape::Circle, FaceShape::Square] {
-            let s = AvatarStyle { shape, ..golden_style() };
+            let s = AvatarStyle {
+                shape,
+                ..golden_style()
+            };
             let c = avatar(&seed, &s);
             assert_eq!(c.radius_ratio, shape.radius_ratio());
             assert_eq!(c.background, a.background);
@@ -1659,14 +1680,22 @@ mod tests {
     #[test]
     fn different_seeds_different_faces() {
         let style = golden_style();
-        assert_ne!(avatar(&seed_of("aaaa"), &style), avatar(&seed_of("bbbb"), &style));
+        assert_ne!(
+            avatar(&seed_of("aaaa"), &style),
+            avatar(&seed_of("bbbb"), &style)
+        );
 
         const N: usize = 10_000;
         for variant in [Variant::Marble, Variant::Bauhaus, Variant::Beam] {
-            let style = AvatarStyle { variant, ..golden_style() };
+            let style = AvatarStyle {
+                variant,
+                ..golden_style()
+            };
             let mut seen: HashMap<String, usize> = HashMap::new();
             for seed in seeds(N, 0x9e37_79b9_7f4a_7c15) {
-                *seen.entry(format!("{:?}", avatar(&seed, &style))).or_default() += 1;
+                *seen
+                    .entry(format!("{:?}", avatar(&seed, &style)))
+                    .or_default() += 1;
             }
             let pairs: usize = seen.values().map(|&k| k * (k - 1) / 2).sum();
             let distinct = seen.len();
@@ -1710,9 +1739,11 @@ mod tests {
     /// which is not a collapse, just one stroke fewer.
     #[test]
     fn palette_combinations() {
-        for (variant, want) in
-            [(Variant::Marble, 30), (Variant::Bauhaus, 60), (Variant::Beam, 10)]
-        {
+        for (variant, want) in [
+            (Variant::Marble, 30),
+            (Variant::Bauhaus, 60),
+            (Variant::Beam, 10),
+        ] {
             for p in PRESETS.iter() {
                 let style = AvatarStyle {
                     palette: Palette::from_preset(p),
@@ -1752,7 +1783,11 @@ mod tests {
                     .iter()
                     .map(|s| used_colors(&avatar(s, &style)))
                     .collect();
-                println!("60 seeds / {} / {variant:?} → {} palettes", p.id, combos.len());
+                println!(
+                    "60 seeds / {} / {variant:?} → {} palettes",
+                    p.id,
+                    combos.len()
+                );
                 assert!(
                     combos.len() >= 20,
                     "{} / {variant:?} only has {} palettes",
@@ -1783,7 +1818,11 @@ mod tests {
                 .iter()
                 .map(|s| used_colors(&avatar(s, &style)))
                 .collect();
-            println!("60 seeds / {} / Beam → {} palettes (of 10)", p.id, combos.len());
+            println!(
+                "60 seeds / {} / Beam → {} palettes (of 10)",
+                p.id,
+                combos.len()
+            );
             assert!(
                 combos.len() >= 9,
                 "{} / Beam only has {} palettes (of 10)",
@@ -1822,7 +1861,11 @@ mod tests {
                 );
                 // Criterion three: the strokes all differ
                 let uniq: HashSet<&String> = used.iter().collect();
-                assert_eq!(uniq.len(), used.len(), "two strokes share a color: {used:?}");
+                assert_eq!(
+                    uniq.len(),
+                    used.len(),
+                    "two strokes share a color: {used:?}"
+                );
             }
         }
     }
@@ -1922,7 +1965,10 @@ mod tests {
         // And the other way: the slate must be held out of the check by
         // the floor (its hue sits against the cyan while its ΔE00 to it
         // is further than `#5d7e62`, which passes)
-        assert!(chroma("#50595c") < CHROMA_FLOOR, "the slate was not read as near-neutral");
+        assert!(
+            chroma("#50595c") < CHROMA_FLOOR,
+            "the slate was not read as near-neutral"
+        );
         assert!(
             hue_gap(hue("#50595c"), cyan) < BLOCKED_KEEPOUT,
             "this control lost its premise: the slate's hue is supposed to sit against the cyan"
@@ -2023,8 +2069,7 @@ mod tests {
             let (a, b) = lab_ab(hex);
             (b.atan2(a).to_degrees() + 360.0) % 360.0
         };
-        let is_alarm =
-            |hex: &str| ALARM_HUE.contains(&lab_hue(hex)) && chroma(hex) > ALARM_CHROMA;
+        let is_alarm = |hex: &str| ALARM_HUE.contains(&lab_hue(hex)) && chroma(hex) > ALARM_CHROMA;
 
         println!("\nalarm-red scoreboard (palette level; render level needs the browser rig)");
         for p in PRESETS.iter() {
@@ -2046,10 +2091,19 @@ mod tests {
         // **Positive and negative controls: the ruler still measures.**
         // It gates nothing, but it may not silently break — a broken
         // ruler prints a column of "—", and that reads like good news
-        assert!(is_alarm("#fa3e3e"), "it cannot see mandala's cinnabar; the ruler is broken");
-        assert!(!is_alarm("#f92672"), "pink (Lab hue 9°) is outside the band");
+        assert!(
+            is_alarm("#fa3e3e"),
+            "it cannot see mandala's cinnabar; the ruler is broken"
+        );
+        assert!(
+            !is_alarm("#f92672"),
+            "pink (Lab hue 9°) is outside the band"
+        );
         assert!(!is_alarm("#a6e22e"), "acid green is not an alarm red");
-        assert!(!is_alarm("#eb9d8d"), "warm's terracotta is only C* 34, not saturated enough");
+        assert!(
+            !is_alarm("#eb9d8d"),
+            "warm's terracotta is only C* 34, not saturated enough"
+        );
         // The failed red itself: inside the band by hue, just under the
         // chroma threshold — which is where the threshold came from
         assert!(ALARM_HUE.contains(&lab_hue("#d4756b")));
@@ -2194,12 +2248,28 @@ mod tests {
     #[test]
     fn a_key_is_the_tag_it_travels_under() {
         for v in Variant::ALL {
-            assert_eq!(serde_json::to_string(&v).unwrap(), format!("\"{}\"", v.key()));
-            assert_eq!(Variant::from_key(v.key()), Some(v), "{} does not come back", v.key());
+            assert_eq!(
+                serde_json::to_string(&v).unwrap(),
+                format!("\"{}\"", v.key())
+            );
+            assert_eq!(
+                Variant::from_key(v.key()),
+                Some(v),
+                "{} does not come back",
+                v.key()
+            );
         }
         for s in FaceShape::ALL {
-            assert_eq!(serde_json::to_string(&s).unwrap(), format!("\"{}\"", s.key()));
-            assert_eq!(FaceShape::from_key(s.key()), Some(s), "{} does not come back", s.key());
+            assert_eq!(
+                serde_json::to_string(&s).unwrap(),
+                format!("\"{}\"", s.key())
+            );
+            assert_eq!(
+                FaceShape::from_key(s.key()),
+                Some(s),
+                "{} does not come back",
+                s.key()
+            );
         }
         // Refused by name, never defaulted: a typo must not paint marble
         // in a circle and look like the setting failed to take.
@@ -2227,7 +2297,12 @@ mod tests {
     #[test]
     fn a_palette_names_its_factory_set_and_only_that() {
         for p in PRESETS {
-            assert_eq!(p.palette().preset_id(), Some(p.id), "{} does not know itself", p.id);
+            assert_eq!(
+                p.palette().preset_id(),
+                Some(p.id),
+                "{} does not know itself",
+                p.id
+            );
         }
         // One slot off the default set, and it is nobody's set. The
         // replacement is a color no factory palette holds.
@@ -2302,13 +2377,25 @@ mod tests {
         // agreeing is 1/2. Upstream's formulas drive all three **to N**
         // (100%), so a floor between the null and 100% suffices; it
         // guards collapse, not jitter.
-        assert!(same_abs < N * 2 / 5, "|dx| and |dy| are still one number: {same_abs}/{N}");
-        assert!(same_scale < N / 2, "the two veins still share a scale: {same_scale}/{N}");
-        assert!(same_sign < N * 3 / 4, "dx and rotate still share a sign digit: {same_sign}/{N}");
+        assert!(
+            same_abs < N * 2 / 5,
+            "|dx| and |dy| are still one number: {same_abs}/{N}"
+        );
+        assert!(
+            same_scale < N / 2,
+            "the two veins still share a scale: {same_scale}/{N}"
+        );
+        assert!(
+            same_sign < N * 3 / 4,
+            "dx and rotate still share a sign digit: {same_sign}/{N}"
+        );
         // Every |dx| should have seen more than one scale — upstream's
         // version has exactly one here
         for (dx, scales) in &scale_by_dx {
-            assert!(scales.len() > 1, "|dx|={dx} maps to a single scale: {scales:?}");
+            assert!(
+                scales.len() > 1,
+                "|dx|={dx} maps to a single scale: {scales:?}"
+            );
         }
     }
 
@@ -2323,7 +2410,11 @@ mod tests {
                 // always `CANVAS`
                 assert_eq!(
                     a.canvas,
-                    if style.variant == Variant::Beam { BEAM_CANVAS } else { CANVAS }
+                    if style.variant == Variant::Beam {
+                        BEAM_CANVAS
+                    } else {
+                        CANVAS
+                    }
                 );
                 assert_eq!(a.radius_ratio, style.shape.radius_ratio());
                 match &a.paint {
@@ -2389,8 +2480,7 @@ mod tests {
                             "wrapper_scale {wrapper_scale} is not one of the three steps"
                         );
                         assert!(
-                            *wrapper_rx == BEAM_CANVAS / 2.0
-                                || *wrapper_rx == BEAM_CANVAS / 6.0,
+                            *wrapper_rx == BEAM_CANVAS / 2.0 || *wrapper_rx == BEAM_CANVAS / 6.0,
                             "wrapper_rx {wrapper_rx} is neither the circle nor the rounded step"
                         );
                         assert!(wrapper_color.starts_with('#'));
@@ -2400,7 +2490,10 @@ mod tests {
                         );
                         // Upstream ranges 5 and 3, both unsigned
                         assert!((0.0..5.0).contains(eye_spread), "eye_spread {eye_spread}");
-                        assert!((0.0..3.0).contains(mouth_spread), "mouth_spread {mouth_spread}");
+                        assert!(
+                            (0.0..3.0).contains(mouth_spread),
+                            "mouth_spread {mouth_spread}"
+                        );
                         // Upstream range 10, signed
                         assert!(face_rotate.abs() < 10.0, "face_rotate {face_rotate}");
                         // wrapper_dx/dy's tight bound is awkward because
@@ -2460,7 +2553,15 @@ mod tests {
         };
         assert_eq!(*blur, 7.0);
         let f = |v: &AvatarVein| {
-            (v.vein, v.scale, v.rotate, v.dx, v.dy, v.overlay, v.color.clone())
+            (
+                v.vein,
+                v.scale,
+                v.rotate,
+                v.dx,
+                v.dy,
+                v.overlay,
+                v.color.clone(),
+            )
         };
         assert_eq!(
             f(&veins[0]),
@@ -2475,14 +2576,27 @@ mod tests {
     /// Bauhaus's golden values. Same seed, same palette.
     #[test]
     fn golden_bauhaus_face() {
-        let style = AvatarStyle { variant: Variant::Bauhaus, ..golden_style() };
+        let style = AvatarStyle {
+            variant: Variant::Bauhaus,
+            ..golden_style()
+        };
         let a = avatar(&seed_of("abcd"), &style);
         assert_eq!(a.background, "#b7cf75");
         let AvatarPaint::Bauhaus { shapes } = &a.paint else {
             panic!("the variant should be bauhaus");
         };
         let f = |s: &AvatarShape| {
-            (s.shape, s.x, s.y, s.w, s.h, s.rotate, s.dx, s.dy, s.color.clone())
+            (
+                s.shape,
+                s.x,
+                s.y,
+                s.w,
+                s.h,
+                s.rotate,
+                s.dx,
+                s.dy,
+                s.color.clone(),
+            )
         };
         // The bar's h is 80, not 10: `get_boolean(h, 2)` on hash=2987074
         // reads the hundreds digit (0, even) as true, so on this seed the
@@ -2491,22 +2605,55 @@ mod tests {
         // the `is_square` branch unwatched
         assert_eq!(
             f(&shapes[0]),
-            (Shape::Rect, 10.0, 30.0, 80.0, 80.0, 308.0, -4.0, 4.0, "#3f4482".into())
+            (
+                Shape::Rect,
+                10.0,
+                30.0,
+                80.0,
+                80.0,
+                308.0,
+                -4.0,
+                4.0,
+                "#3f4482".into()
+            )
         );
         assert_eq!(
             f(&shapes[1]),
-            (Shape::Circle, 24.0, 24.0, 32.0, 32.0, 0.0, -18.0, -18.0, "#f2f6cb".into())
+            (
+                Shape::Circle,
+                24.0,
+                24.0,
+                32.0,
+                32.0,
+                0.0,
+                -18.0,
+                -18.0,
+                "#f2f6cb".into()
+            )
         );
         assert_eq!(
             f(&shapes[2]),
-            (Shape::Rect, 0.0, 39.0, 80.0, 2.0, 256.0, 16.0, -16.0, "#7d2540".into())
+            (
+                Shape::Rect,
+                0.0,
+                39.0,
+                80.0,
+                2.0,
+                256.0,
+                16.0,
+                -16.0,
+                "#7d2540".into()
+            )
         );
     }
 
     /// Beam's golden values. Same seed, same palette.
     #[test]
     fn golden_beam_face() {
-        let style = AvatarStyle { variant: Variant::Beam, ..golden_style() };
+        let style = AvatarStyle {
+            variant: Variant::Beam,
+            ..golden_style()
+        };
         let a = avatar(&seed_of("abcd"), &style);
         assert_eq!(a.canvas, BEAM_CANVAS, "beam's canvas is 36, not 80");
         assert_eq!(a.background, "#b7cf75");
@@ -2581,14 +2728,19 @@ mod tests {
             HashSet::from(["vein", "scale", "rotate", "dx", "dy", "overlay", "color"])
         );
 
-        let style = AvatarStyle { variant: Variant::Bauhaus, ..golden_style() };
-        let b: serde_json::Value =
-            serde_json::to_value(avatar(&seed_of("abcd"), &style)).unwrap();
+        let style = AvatarStyle {
+            variant: Variant::Bauhaus,
+            ..golden_style()
+        };
+        let b: serde_json::Value = serde_json::to_value(avatar(&seed_of("abcd"), &style)).unwrap();
         assert_eq!(b["paint"]["variant"], "bauhaus");
         // **Bauhaus carries no blur**: the two variants do not share a
         // parameter set, which is why this is a tagged union rather than
         // "leave an array empty"
-        assert!(b["paint"].get("blur").is_none(), "bauhaus should not carry blur");
+        assert!(
+            b["paint"].get("blur").is_none(),
+            "bauhaus should not carry blur"
+        );
         let shape_keys: HashSet<&str> = b["paint"]["shapes"][0]
             .as_object()
             .unwrap()
@@ -2600,7 +2752,10 @@ mod tests {
             HashSet::from(["shape", "x", "y", "w", "h", "rotate", "dx", "dy", "color"])
         );
 
-        let beam_style = AvatarStyle { variant: Variant::Beam, ..golden_style() };
+        let beam_style = AvatarStyle {
+            variant: Variant::Beam,
+            ..golden_style()
+        };
         let m: serde_json::Value =
             serde_json::to_value(avatar(&seed_of("abcd"), &beam_style)).unwrap();
         assert_eq!(m["canvas"], 36.0, "beam's canvas is 36, not 80");
@@ -2608,10 +2763,20 @@ mod tests {
         // Beam has no veins/shapes, it is a flat set of fields (see
         // `AvatarPaint::Beam`: one wrapper and one face, not a sequence
         // of primitives)
-        assert!(m["paint"].get("veins").is_none(), "beam should not carry veins");
-        assert!(m["paint"].get("shapes").is_none(), "beam should not carry shapes");
-        let beam_keys: HashSet<&str> =
-            m["paint"].as_object().unwrap().keys().map(|s| s.as_str()).collect();
+        assert!(
+            m["paint"].get("veins").is_none(),
+            "beam should not carry veins"
+        );
+        assert!(
+            m["paint"].get("shapes").is_none(),
+            "beam should not carry shapes"
+        );
+        let beam_keys: HashSet<&str> = m["paint"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.as_str())
+            .collect();
         assert_eq!(
             beam_keys,
             HashSet::from([

@@ -43,8 +43,7 @@ fn kind_of(word: &str) -> Result<PlaceKind, String> {
 pub fn recents(root: &Path, kind: &str, limit: usize) -> Result<Vec<RecentRow>, String> {
     let n = Node::open(root.to_path_buf())?;
     let devices = n.devices()?;
-    Ok(n
-        .recents(kind_of(kind)?, limit)?
+    Ok(n.recents(kind_of(kind)?, limit)?
         .into_iter()
         .map(|p| RecentRow {
             name: devices

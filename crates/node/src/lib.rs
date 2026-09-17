@@ -10,9 +10,9 @@
 pub mod accounts;
 pub mod adaptor;
 pub mod cagent;
-pub mod codexagent;
 pub mod chat;
 pub mod code;
+pub mod codexagent;
 pub mod day;
 pub mod files;
 pub mod git;
@@ -24,9 +24,9 @@ pub mod ipc;
 pub mod keeper;
 pub mod link;
 pub mod list;
+pub mod live;
 pub mod mcp;
 pub mod merge;
-pub mod live;
 pub mod place;
 pub mod preview;
 pub mod proto;
@@ -41,11 +41,11 @@ pub mod vitals;
 pub mod workspace;
 
 pub use khor_core::avatar::{
-    avatar, preset, Avatar, AvatarSeed, AvatarStyle, FaceShape, Palette, Preset, Variant, PRESETS,
+    Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    kind, CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopBy, TopRow, Usage, UsageDay,
-    Vitals,
+    CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopBy, TopRow, Usage, UsageDay,
+    Vitals, kind,
 };
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
@@ -55,28 +55,6 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-use khor_catalog::msg;
-use khor_core::{DeviceId, Event};
-use khor_sync::chat::{channel_dir, channel_of_machine, ChatDoc, Sender};
-use khor_sync::devices::{devices_dir, DeviceDoc};
-use khor_sync::accounts::{accounts_dir, AccountDoc};
-use khor_sync::agents::{agents_dir, AgentDoc};
-/// How one registered ACP agent starts (`khor_sync::agents::Spec`).
-/// Re-exported because `Node::agents` hands it out, and a type a public
-/// method returns that callers cannot name is a method they cannot use.
-pub use khor_sync::agents::Spec as AgentSpec;
-/// Re-exported for the reason `AgentSpec` is: the faces and the CLI
-/// register accounts, and they should name the account's shape without
-/// depending on the sync crate for it.
-pub use khor_sync::accounts::{Account, AccountKind, Provider};
-/// One conversation an agent said it has, as khor remembers it
-/// (`khor_sync::agents::Seen`).
-pub use khor_sync::agents::{Answer as AgentAnswer, Seen as AgentSeen};
-/// The shipped snapshot of the ACP registry (`khor_sync::agents::registry`).
-/// Re-exported here for the same reason `AgentSpec` is: the CLI talks to
-/// the node, and a second path into the sync crate would be a second
-/// place to keep in step.
-pub use khor_sync::agents::registry as agent_registry;
 /// One recorded utterance as the protocol update a face paints
 /// (`cagent::replayed`).
 ///
@@ -89,6 +67,28 @@ pub use khor_sync::agents::registry as agent_registry;
 /// an existing conversation sees almost only replayed lines, so the
 /// improvement was invisible where it mattered most.
 pub use crate::cagent::replayed as replayed_update;
+use khor_catalog::msg;
+use khor_core::{DeviceId, Event};
+/// Re-exported for the reason `AgentSpec` is: the faces and the CLI
+/// register accounts, and they should name the account's shape without
+/// depending on the sync crate for it.
+pub use khor_sync::accounts::{Account, AccountKind, Provider};
+use khor_sync::accounts::{AccountDoc, accounts_dir};
+/// How one registered ACP agent starts (`khor_sync::agents::Spec`).
+/// Re-exported because `Node::agents` hands it out, and a type a public
+/// method returns that callers cannot name is a method they cannot use.
+pub use khor_sync::agents::Spec as AgentSpec;
+/// The shipped snapshot of the ACP registry (`khor_sync::agents::registry`).
+/// Re-exported here for the same reason `AgentSpec` is: the CLI talks to
+/// the node, and a second path into the sync crate would be a second
+/// place to keep in step.
+pub use khor_sync::agents::registry as agent_registry;
+use khor_sync::agents::{AgentDoc, agents_dir};
+/// One conversation an agent said it has, as khor remembers it
+/// (`khor_sync::agents::Seen`).
+pub use khor_sync::agents::{Answer as AgentAnswer, Seen as AgentSeen};
+use khor_sync::chat::{ChatDoc, Sender, channel_dir, channel_of_machine};
+use khor_sync::devices::{DeviceDoc, devices_dir};
 
 /// What asking an agent for its sessions answered
 /// (`khor_acp::Listing`), and one of them.
@@ -97,19 +97,19 @@ pub use crate::cagent::replayed as replayed_update;
 /// CLI and the faces talk to the node, and a second path into the
 /// protocol crate is a second place to keep in step.
 pub use khor_acp::{Listing, Recorded};
-use khor_sync::dirpins::{dirpins_dir, DirPinDoc};
-use khor_sync::workspaces::{workspaces_dir, State as WsState, WorkspaceDoc};
-use khor_sync::webpins::{webpins_dir, WebPinDoc};
+use khor_sync::dirpins::{DirPinDoc, dirpins_dir};
+use khor_sync::pins::{PinDoc, pins_dir};
 /// What sort of place a recorded visit was to
 /// (`khor_sync::recents::Kind`). Re-exported because `Node::recents`
 /// takes and reports one, and a type a public method demands that
 /// callers cannot name is a method they cannot call.
 pub use khor_sync::recents::Kind as PlaceKind;
-use khor_sync::recents::{recents_dir, RecentDoc};
-use khor_sync::pins::{pins_dir, PinDoc};
-use khor_sync::seen::{seen_dir, SeenDoc};
-use khor_sync::store::{load, Loaded};
-use khor_sync::titles::{titles_dir, TitleDoc};
+use khor_sync::recents::{RecentDoc, recents_dir};
+use khor_sync::seen::{SeenDoc, seen_dir};
+use khor_sync::store::{Loaded, load};
+use khor_sync::titles::{TitleDoc, titles_dir};
+use khor_sync::webpins::{WebPinDoc, webpins_dir};
+use khor_sync::workspaces::{State as WsState, WorkspaceDoc, workspaces_dir};
 
 use crate::chat::ChatKind;
 use crate::live::LiveKind;
@@ -221,8 +221,10 @@ pub const QUIET_AFTER_MS: u64 = 24 * 60 * 60 * 1000;
 /// The word is left exactly as it was: this feeds greying and a "N 天
 /// 没消息" note, never a seventh word (docs/SESSION.md 离线).
 fn is_quiet(session: &Session, now_ms: u64) -> bool {
-    matches!(session.state.state, State::Busy | State::Blocked | State::Errored)
-        && session.unbacked
+    matches!(
+        session.state.state,
+        State::Busy | State::Blocked | State::Errored
+    ) && session.unbacked
         && now_ms.saturating_sub(session.state.at.0) >= QUIET_AFTER_MS
 }
 
@@ -410,11 +412,15 @@ pub struct Node {
 /// outside the node may send on a pipe the node is holding for its own
 /// asks.
 #[derive(Clone)]
-pub struct WireWatch(Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>);
+pub struct WireWatch(
+    Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+);
 
 impl WireWatch {
     pub(crate) fn of(
-        wires: &Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+        wires: &Arc<
+            tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>,
+        >,
     ) -> Self {
         Self(wires.clone())
     }
@@ -497,7 +503,10 @@ impl Owner {
         }
         if !text.contains('\n') && !text.starts_with("machine ") && !text.starts_with("name ") {
             // The old format: one bare hostname.
-            return Owner { machine: None, name: Some(text.to_string()) };
+            return Owner {
+                machine: None,
+                name: Some(text.to_string()),
+            };
         }
         let mut out = Owner::default();
         for line in text.lines() {
@@ -596,9 +605,10 @@ fn settled_channel(root: &std::path::Path, computed: String) -> Result<String, S
         // again rather than taking the store down: the worst case is
         // the behaviour khor had before this existed.
         if let Some(ok) = khor_sync::chat::channel_of_machine(kept)
-            && ok == kept {
-                return Ok(ok);
-            }
+            && ok == kept
+        {
+            return Ok(ok);
+        }
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     // Best effort: a store that cannot write this still works, it just
@@ -642,7 +652,10 @@ fn claim_store(root: &std::path::Path) -> Result<(), String> {
     let stamp = dir.join("owner");
     let here = gethostname::gethostname().to_string_lossy().to_string();
     let fp = hardware::fingerprint();
-    let mine = Owner { machine: fp.clone(), name: Some(here.clone()) };
+    let mine = Owner {
+        machine: fp.clone(),
+        name: Some(here.clone()),
+    };
     let Ok(text) = std::fs::read_to_string(&stamp) else {
         // Written on the way in, before the key exists: a store that
         // gets a key without a stamp is a store the next machine cannot
@@ -656,7 +669,11 @@ fn claim_store(root: &std::path::Path) -> Result<(), String> {
         // other branch is a hand-edited file, and a fingerprint stub is
         // at least something the person can compare against a file.
         let theirs = owner.name.clone().unwrap_or_else(|| {
-            owner.machine.as_deref().map(|m| m[..8.min(m.len())].to_string()).unwrap_or_default()
+            owner
+                .machine
+                .as_deref()
+                .map(|m| m[..8.min(m.len())].to_string())
+                .unwrap_or_default()
         });
         return Err(msg::store_belongs_to(&theirs, &here));
     }
@@ -697,7 +714,10 @@ impl Node {
         let name = settled_channel(&root, name)?;
         let chat = ChatKind::new(
             root.clone(),
-            Sender { id: device_str.clone(), name: name.clone() },
+            Sender {
+                id: device_str.clone(),
+                name: name.clone(),
+            },
         );
         let transfer = TransferKind::new(root.clone(), device_str.clone(), name.clone());
         // The one place khor decides to read other vendors' files. Every
@@ -768,7 +788,9 @@ impl Node {
         // A machine's face is its own palette times its id: whoever is
         // looking paints it from what it reported, so this has to be in
         // the table before anyone syncs, not at first paint.
-        loaded.doc.set_style(&self.device_str, &self.avatar_style().to_json()?)?;
+        loaded
+            .doc
+            .set_style(&self.device_str, &self.avatar_style().to_json()?)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
@@ -964,7 +986,9 @@ impl Node {
     pub fn store_under(home: &std::path::Path) -> PathBuf {
         let here = gethostname::gethostname().to_string_lossy().to_string();
         let fp = hardware::fingerprint();
-        let front = Owner::parse(&std::fs::read_to_string(home.join(".khor").join("owner")).unwrap_or_default());
+        let front = Owner::parse(
+            &std::fs::read_to_string(home.join(".khor").join("owner")).unwrap_or_default(),
+        );
         if front.is_mine(&here, fp.as_deref()) {
             return home.to_path_buf();
         }
@@ -973,31 +997,32 @@ impl Node {
         // none, this walk would just re-find the room named after the
         // current hostname, which is where the fallback lands anyway.
         if fp.is_some()
-            && let Ok(rd) = std::fs::read_dir(&hosts) {
-                let mut rooms: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
-                // Sorted so two rooms claiming one machine (a copied
-                // store) resolve the same way on every run rather than
-                // by readdir order.
-                rooms.sort();
-                for room in rooms {
-                    let stamp = room.join(".khor").join("owner");
-                    let Ok(text) = std::fs::read_to_string(&stamp) else {
-                        continue;
-                    };
-                    let stamped = Owner::parse(&text);
-                    // **A blank stamp says nothing, and `is_mine` reads
-                    // "nothing" as "yours"** — right at the front door,
-                    // where it finishes a half-made store, and wrong
-                    // here, where it would hand this machine the first
-                    // unstamped room it walked past.
-                    if stamped == Owner::default() {
-                        continue;
-                    }
-                    if stamped.is_mine(&here, fp.as_deref()) {
-                        return room;
-                    }
+            && let Ok(rd) = std::fs::read_dir(&hosts)
+        {
+            let mut rooms: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
+            // Sorted so two rooms claiming one machine (a copied
+            // store) resolve the same way on every run rather than
+            // by readdir order.
+            rooms.sort();
+            for room in rooms {
+                let stamp = room.join(".khor").join("owner");
+                let Ok(text) = std::fs::read_to_string(&stamp) else {
+                    continue;
+                };
+                let stamped = Owner::parse(&text);
+                // **A blank stamp says nothing, and `is_mine` reads
+                // "nothing" as "yours"** — right at the front door,
+                // where it finishes a half-made store, and wrong
+                // here, where it would hand this machine the first
+                // unstamped room it walked past.
+                if stamped == Owner::default() {
+                    continue;
+                }
+                if stamped.is_mine(&here, fp.as_deref()) {
+                    return room;
                 }
             }
+        }
         hosts.join(here)
     }
 
@@ -1146,7 +1171,10 @@ impl Node {
             return Err(msg::NO_AGENTS_REGISTERED.into());
         }
         let names: Vec<&str> = known.iter().map(|(n, _)| n.as_str()).collect();
-        Err(msg::no_such_agent(name, names.join(khor_catalog::cli::NAME_SEPARATOR)))
+        Err(msg::no_such_agent(
+            name,
+            names.join(khor_catalog::cli::NAME_SEPARATOR),
+        ))
     }
 
     /// Names khor answers to itself, which nobody may register on top
@@ -1269,7 +1297,9 @@ impl Node {
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(&id, &name, &[])?;
-        loaded.doc.set_satellite(&id, self.device_str(), host, probe.tmux)?;
+        loaded
+            .doc
+            .set_satellite(&id, self.device_str(), host, probe.tmux)?;
         loaded.doc.set_gone(&id, false)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
@@ -1363,9 +1393,10 @@ impl Node {
         PATH.get_or_init(|| {
             let here = std::env::var("PATH").unwrap_or_default();
             if let Ok(told) = std::env::var(PATH_ENV)
-                && !told.trim().is_empty() {
-                    return told;
-                }
+                && !told.trim().is_empty()
+            {
+                return told;
+            }
             // **The shell's answer is added to, never swapped for,
             // what this process already had.** A shell that answers
             // with something short or strange must not be able to take
@@ -1419,7 +1450,10 @@ impl Node {
         static LOCALE: std::sync::OnceLock<Vec<(&'static str, String)>> =
             std::sync::OnceLock::new();
         LOCALE.get_or_init(|| {
-            if LOCALE_VARS.iter().any(|v| says_utf8(&std::env::var(v).unwrap_or_default())) {
+            if LOCALE_VARS
+                .iter()
+                .any(|v| says_utf8(&std::env::var(v).unwrap_or_default()))
+            {
                 // This process is already speaking UTF-8; touching a
                 // child's locale here could only make it differ from
                 // the terminal khor was started from.
@@ -1568,7 +1602,10 @@ impl Node {
                 // Listed by the name on the glass: a list of channels
                 // would name machines the person cannot see anywhere.
                 let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
-                Err(msg::no_such_machine(machine, names.join(khor_catalog::cli::NAME_SEPARATOR)))
+                Err(msg::no_such_machine(
+                    machine,
+                    names.join(khor_catalog::cli::NAME_SEPARATOR),
+                ))
             }
         }
     }
@@ -1604,7 +1641,9 @@ impl Node {
     pub fn machine_id(&self, machine: &str) -> Result<String, String> {
         match self.resolve_or_here(machine) {
             Ok((_, id)) => Ok(id.hex()),
-            Err(no_such) => device_id_from_hex(machine).map(|id| id.hex()).map_err(|_| no_such),
+            Err(no_such) => device_id_from_hex(machine)
+                .map(|id| id.hex())
+                .map_err(|_| no_such),
         }
     }
 
@@ -1696,7 +1735,11 @@ impl Node {
     /// Machine names come from the device table here, once, rather than
     /// being looked up per row.
     pub fn sessions_arranged(&self, mode: list::Arrange) -> Result<Vec<list::Arranged>, String> {
-        let by_id = self.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
+        let by_id = self
+            .devices()?
+            .into_iter()
+            .map(|d| (d.id, d.name))
+            .collect();
         self.sessions_arranged_with(mode, &by_id)
     }
 
@@ -1809,7 +1852,9 @@ impl Node {
                     // (an older khor) keeps painting 没在看, which is
                     // the truth about what this one knows.
                     let home = v.session.home.hex();
-                    let day = theirs.entry(home.clone()).or_insert_with(|| self.peer_day(&home));
+                    let day = theirs
+                        .entry(home.clone())
+                        .or_insert_with(|| self.peer_day(&home));
                     match day {
                         Some(d) => d.strip_of(&v.session.id.0, cells),
                         None => day::unwatched(cells),
@@ -1868,10 +1913,9 @@ impl Node {
         let disk_pct = if v.volumes.is_empty() {
             v.disk.as_ref().and_then(pct)
         } else {
-            let (used, total) = v
-                .volumes
-                .iter()
-                .fold((0u64, 0u64), |(u, t), x| (u + x.fill.used, t + x.fill.total));
+            let (used, total) = v.volumes.iter().fold((0u64, 0u64), |(u, t), x| {
+                (u + x.fill.used, t + x.fill.total)
+            });
             pct(&khor_core::Fill { used, total })
         };
         history::CpuHistory::open(&Self::history_dir(root)).record(
@@ -2053,7 +2097,11 @@ impl Node {
     /// with three states, so this can never take a row off the list by
     /// accident (`khor_sync::workspaces` module head).
     pub fn ws_pin(&self, device_hex: &str, path: &str, on: bool) -> Result<(), String> {
-        self.ws_write(device_hex, path, if on { WsState::Pinned } else { WsState::Yes })
+        self.ws_write(
+            device_hex,
+            path,
+            if on { WsState::Pinned } else { WsState::Yes },
+        )
     }
 
     /// The one place a workspace row is written.
@@ -2089,12 +2137,16 @@ impl Node {
         // another machine is taken as given, which is what every row on
         // the screen already carries.
         let path = if id == self.device() {
-            std::fs::canonicalize(path).map(|p| p.display().to_string()).unwrap_or_else(|_| path.to_owned())
+            std::fs::canonicalize(path)
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| path.to_owned())
         } else {
             path.to_owned()
         };
         let loaded = self.workspaces_loaded()?;
-        loaded.doc.set(&khor_sync::workspaces::key(&id.hex(), &path), state)?;
+        loaded
+            .doc
+            .set(&khor_sync::workspaces::key(&id.hex(), &path), state)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }
@@ -2110,7 +2162,9 @@ impl Node {
         }
         let (_, home) = self.resolve(machine)?;
         let loaded = self.dirpins_loaded()?;
-        loaded.doc.set(&khor_sync::dirpins::key(&home.hex(), path), on)?;
+        loaded
+            .doc
+            .set(&khor_sync::dirpins::key(&home.hex(), path), on)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }
@@ -2124,9 +2178,7 @@ impl Node {
             .doc
             .all()
             .iter()
-            .filter_map(|k| {
-                khor_sync::dirpins::split(k).map(|(d, p)| (d.to_owned(), p.to_owned()))
-            })
+            .filter_map(|k| khor_sync::dirpins::split(k).map(|(d, p)| (d.to_owned(), p.to_owned())))
             .collect())
     }
 
@@ -2137,7 +2189,9 @@ impl Node {
     pub fn pin_web(&self, machine: &str, url: &str, on: bool) -> Result<(), String> {
         let (_, home) = self.resolve(machine)?;
         let loaded = self.webpins_loaded()?;
-        loaded.doc.set(&khor_sync::webpins::key(&home.hex(), url), on)?;
+        loaded
+            .doc
+            .set(&khor_sync::webpins::key(&home.hex(), url), on)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }
@@ -2151,9 +2205,7 @@ impl Node {
             .doc
             .all()
             .iter()
-            .filter_map(|k| {
-                khor_sync::webpins::split(k).map(|(d, u)| (d.to_owned(), u.to_owned()))
-            })
+            .filter_map(|k| khor_sync::webpins::split(k).map(|(d, u)| (d.to_owned(), u.to_owned())))
             .collect())
     }
 
@@ -2170,9 +2222,10 @@ impl Node {
         }
         let (_, home) = self.resolve(machine)?;
         let loaded = self.recents_loaded()?;
-        loaded
-            .doc
-            .visit(&khor_sync::recents::key(kind, &home.hex(), place), crate::live::now_ms())?;
+        loaded.doc.visit(
+            &khor_sync::recents::key(kind, &home.hex(), place),
+            crate::live::now_ms(),
+        )?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }
@@ -2183,7 +2236,9 @@ impl Node {
     pub fn forget_recent(&self, kind: PlaceKind, machine: &str, place: &str) -> Result<(), String> {
         let (_, home) = self.resolve(machine)?;
         let loaded = self.recents_loaded()?;
-        loaded.doc.forget(&khor_sync::recents::key(kind, &home.hex(), place))?;
+        loaded
+            .doc
+            .forget(&khor_sync::recents::key(kind, &home.hex(), place))?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }
@@ -2267,7 +2322,11 @@ impl Node {
         loaded.doc.set_label(device_id, label)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
-        Ok(loaded.doc.get(device_id).map(|d| d.shown().to_string()).unwrap_or_default())
+        Ok(loaded
+            .doc
+            .get(device_id)
+            .map(|d| d.shown().to_string())
+            .unwrap_or_default())
     }
 
     /// The directories a machine's row asks it to watch — the setting,
@@ -2334,7 +2393,11 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         fs::create_dir_all(self.peers_dir()).map_err(msg::cant_make_peers_dir)?;
-        let report = PeerReport { at_ms: now_ms(), name: name.to_owned(), rows: rows.to_vec() };
+        let report = PeerReport {
+            at_ms: now_ms(),
+            name: name.to_owned(),
+            rows: rows.to_vec(),
+        };
         link::write_private(
             &self.peers_dir().join(device_id),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
@@ -2362,13 +2425,16 @@ impl Node {
         // An unreadable table is a blip, not a verdict on every peer:
         // `None` skips the filter and paints what is cached, rather than
         // blanking a list the person was just looking at.
-        let table: Option<std::collections::BTreeSet<String>> =
-            self.devices().ok().map(|devs| devs.into_iter().map(|d| d.id).collect());
+        let table: Option<std::collections::BTreeSet<String>> = self
+            .devices()
+            .ok()
+            .map(|devs| devs.into_iter().map(|d| d.id).collect());
         for e in rd.flatten() {
             if let Some(table) = &table
-                && !e.file_name().to_str().is_some_and(|id| table.contains(id)) {
-                    continue;
-                }
+                && !e.file_name().to_str().is_some_and(|id| table.contains(id))
+            {
+                continue;
+            }
             let Ok(text) = fs::read_to_string(e.path()) else {
                 continue;
             };
@@ -2405,7 +2471,10 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         fs::create_dir_all(self.vitals_dir()).map_err(msg::cant_make_vitals_dir)?;
-        let report = VitalsReport { at_ms: now_ms(), vitals: v.clone() };
+        let report = VitalsReport {
+            at_ms: now_ms(),
+            vitals: v.clone(),
+        };
         link::write_private(
             &self.vitals_dir().join(device_id),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
@@ -2424,7 +2493,10 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         fs::create_dir_all(self.days_dir()).map_err(msg::cant_make_vitals_dir)?;
-        let report = DayReport { at_ms: now_ms(), day: day.to_owned() };
+        let report = DayReport {
+            at_ms: now_ms(),
+            day: day.to_owned(),
+        };
         link::write_private(
             &self.days_dir().join(device_id),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
@@ -2479,7 +2551,9 @@ impl Node {
                 if d.sponsor.as_deref() != Some(self.device_str()) {
                     continue;
                 }
-                let Some(host) = d.ssh_host.clone() else { continue };
+                let Some(host) = d.ssh_host.clone() else {
+                    continue;
+                };
                 // Off the runtime: a sample is an ssh dial plus a
                 // one-second on-host measurement.
                 let taken = tokio::task::spawn_blocking(move || satellite::sample(&host)).await;
@@ -2527,7 +2601,10 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         fs::create_dir_all(self.watched_dir()).map_err(msg::cant_make_vitals_dir)?;
-        let report = WatchedReport { at_ms: now_ms(), rows: rows.to_vec() };
+        let report = WatchedReport {
+            at_ms: now_ms(),
+            rows: rows.to_vec(),
+        };
         link::write_private(
             &self.watched_dir().join(device_id),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
@@ -2570,7 +2647,10 @@ impl Node {
             return Err(msg::not_a_machine_id(format_args!("{device_id:?}")));
         }
         fs::create_dir_all(self.usage_dir()).map_err(msg::cant_make_usage_dir)?;
-        let report = UsageReport { at_ms: now_ms(), usage: u.clone() };
+        let report = UsageReport {
+            at_ms: now_ms(),
+            usage: u.clone(),
+        };
         link::write_private(
             &self.usage_dir().join(device_id),
             &serde_json::to_vec(&report).map_err(|e| e.to_string())?,
@@ -2606,15 +2686,17 @@ impl Node {
             .map(|n| n.to_string_lossy().to_string())
             .ok_or_else(|| msg::not_a_file_path(path.display()))?;
         let (digest, size) = transfer::digest_file(path)?;
-        let f = FileRef { name: name.clone(), size: size as i64, digest: digest.clone() };
+        let f = FileRef {
+            name: name.clone(),
+            size: size as i64,
+            digest: digest.clone(),
+        };
         let told = self.chat.send_files(&channel, home, &[f])?;
         transfer::save_offer(
             &self.root,
             &digest,
             &transfer::Offer {
-                path: path
-                    .canonicalize()
-                    .map_err(msg::cant_canonicalize)?,
+                path: path.canonicalize().map_err(msg::cant_canonicalize)?,
                 name,
                 size,
                 started: false,
@@ -2727,7 +2809,10 @@ impl Node {
         // disagree about what has been looked at. Read here rather than
         // inside the loop for the reason the whole function exists —
         // one read, one order.
-        let watermark = self.seen_loaded()?.doc.watermark(&format!("chat/{channel}"));
+        let watermark = self
+            .seen_loaded()?
+            .doc
+            .watermark(&format!("chat/{channel}"));
         // Per message, both readings: the receiver's state word and the
         // sender's neutral delivery fact — at most one of the two is
         // `Some` (the seats are exclusive), and the pane paints
@@ -2868,7 +2953,8 @@ impl Node {
     pub fn open_ephemeral(&self, kind: &str, title: &str) -> Result<SessionId, String> {
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
-        self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
+        self.live
+            .register(&id, kind, title, None, Self::category_of_started(kind))?;
         Ok(id)
     }
 
@@ -2890,7 +2976,8 @@ impl Node {
     ) -> Result<SessionId, String> {
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
-        self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
+        self.live
+            .register(&id, kind, title, None, Self::category_of_started(kind))?;
         // **`khor run` happens where the person is standing**, and the
         // host inherits this process's directory — so the answer is
         // here, and asking for it as an argument would only give every
@@ -2918,7 +3005,8 @@ impl Node {
     ) -> Result<SessionId, String> {
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
-        self.live.register(&id, kind, title, None, Self::category_of_started(kind))?;
+        self.live
+            .register(&id, kind, title, None, Self::category_of_started(kind))?;
         // Where it was born, said now because now is the only moment
         // anyone knows: a shell that has `cd`ed away cannot be asked
         // (`khor_core::Session::place`).
@@ -3041,9 +3129,10 @@ impl Node {
         // is the door that ends the other process first; this one
         // refuses while it lives, naming it.
         if let Some((_, pids)) = self.live.sighting_of(&adaptor::id_for(session))
-            && let Some(pid) = pids.first() {
-                return Err(msg::resume_running_elsewhere(pid));
-            }
+            && let Some(pid) = pids.first()
+        {
+            return Err(msg::resume_running_elsewhere(pid));
+        }
         gui_host::spawn_gui_host_reopen(Some(cwd), title, cmd, Some(agent), session)
     }
 
@@ -3101,7 +3190,14 @@ impl Node {
     pub fn places_shown(&self) -> Vec<(String, String, u32, i64)> {
         self.places()
             .into_iter()
-            .map(|p| (p.path.clone(), place::shorten(Path::new(&p.path)), p.sessions, p.last_ms))
+            .map(|p| {
+                (
+                    p.path.clone(),
+                    place::shorten(Path::new(&p.path)),
+                    p.sessions,
+                    p.last_ms,
+                )
+            })
             .collect()
     }
 
@@ -3143,19 +3239,20 @@ impl Node {
             // thread/start writes no rollout to resume (probed).
             (Picked::Codex, "term") => return Err(msg::WIZARD_CODEX_CHAT_ONLY.into()),
             (Picked::Registered(..), "term") => {
-                return Err(msg::WIZARD_REGISTERED_NO_TERMINAL.into())
+                return Err(msg::WIZARD_REGISTERED_NO_TERMINAL.into());
             }
             (Picked::Registered(..), "agent") => {
-                return Err(msg::WIZARD_REGISTERED_NO_SCHEDULER.into())
+                return Err(msg::WIZARD_REGISTERED_NO_SCHEDULER.into());
             }
             _ => {}
         }
         let home = std::env::home_dir();
         let path = match dir.trim() {
             "" | "~" => home.clone().ok_or_else(|| msg::no_such_dir("~"))?,
-            d if d.starts_with("~/") => {
-                home.clone().ok_or_else(|| msg::no_such_dir(d))?.join(&d[2..])
-            }
+            d if d.starts_with("~/") => home
+                .clone()
+                .ok_or_else(|| msg::no_such_dir(d))?
+                .join(&d[2..]),
             d => PathBuf::from(d),
         };
         if !path.is_dir() {
@@ -3164,7 +3261,13 @@ impl Node {
         let title = if title.trim().is_empty() {
             path.file_name()
                 .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| if agent.is_empty() { "claude".to_owned() } else { agent.to_owned() })
+                .unwrap_or_else(|| {
+                    if agent.is_empty() {
+                        "claude".to_owned()
+                    } else {
+                        agent.to_owned()
+                    }
+                })
         } else {
             title.trim().to_owned()
         };
@@ -3216,18 +3319,21 @@ impl Node {
     /// A session with no live process is taken over by resurrection
     /// alone — nothing to kill is not an error.
     pub fn takeover(&self, id: &SessionId) -> Result<(), String> {
-        let id_leaf = id
-            .0
-            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
-            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let id_leaf =
+            id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
         // A khor-minted id names no vendor file; the hook-recorded
         // vendor leaf is the bridge (`transcript_of`'s precedent).
-        let leaf = self.live.vendor_leaf_of(id).unwrap_or_else(|| id_leaf.to_owned());
+        let leaf = self
+            .live
+            .vendor_leaf_of(id)
+            .unwrap_or_else(|| id_leaf.to_owned());
         let leaf = leaf.as_str();
         if let Some((kind, _)) = self.live.on_record(id)
-            && kind == khor_core::kind::GUI {
-                return Err(msg::already_a_chat(&id.0));
-            }
+            && kind == khor_core::kind::GUI
+        {
+            return Err(msg::already_a_chat(&id.0));
+        }
         // Whose conversation is this? The store that resolves the leaf
         // answers — a vendor's transcript dir is its own registry, and
         // the protocol has no wire question for this yet (`crates/acp`'s
@@ -3265,7 +3371,10 @@ impl Node {
             // A viewer bridged onto the person's tmux has its own file
             // (`host::view_file_path`); it is "whatever shows this
             // session now" as much as a host is, and goes first.
-            for hf in [host::read_view_file(&dir), host::read_host_file(&dir)].into_iter().flatten() {
+            for hf in [host::read_view_file(&dir), host::read_host_file(&dir)]
+                .into_iter()
+                .flatten()
+            {
                 #[cfg(unix)]
                 unsafe {
                     libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
@@ -3336,10 +3445,9 @@ impl Node {
         // A GUI row's id **is** the vendor's uuid, lossily spelled
         // (`adaptor::id_for`); the transcript's own filename is the
         // whole one.
-        let leaf = id
-            .0
-            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
-            .ok_or_else(|| msg::takeover_no_record(&id.0))?;
+        let leaf =
+            id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
+                .ok_or_else(|| msg::takeover_no_record(&id.0))?;
         // The same store-resolves-it vendor fork as `takeover`, plus
         // each vendor's own resume spelling: claude takes a flag,
         // codex a subcommand (`codex resume <uuid>`, probed 0.146.1).
@@ -3371,12 +3479,18 @@ impl Node {
             let bin = std::env::var("KHOR_CODEX").unwrap_or_else(|_| "codex".into());
             (cwd, vec![bin, "resume".into(), full])
         };
-        let dir = self.live.dir_of(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let dir = self
+            .live
+            .dir_of(id)
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
 
         // End the conversation's body. The ghost writes itself as both
         // host and child (`gui_host`), so its group is the shim and the
         // agent too.
-        for hf in [host::read_view_file(&dir), host::read_host_file(&dir)].into_iter().flatten() {
+        for hf in [host::read_view_file(&dir), host::read_host_file(&dir)]
+            .into_iter()
+            .flatten()
+        {
             #[cfg(unix)]
             unsafe {
                 libc::kill(-(hf.child_pid as i32), libc::SIGTERM);
@@ -3507,13 +3621,20 @@ impl Node {
         > = Default::default();
         let mut unreadable = 0u64;
         for d in self.devices()? {
-            let Some((u, _)) = self.usage_of(&d.id) else { continue };
+            let Some((u, _)) = self.usage_of(&d.id) else {
+                continue;
+            };
             unreadable = unreadable.saturating_add(u.unreadable);
             for day in u.days {
-                rows.entry((day.day, day.category)).or_default().add(day.tokens);
+                rows.entry((day.day, day.category))
+                    .or_default()
+                    .add(day.tokens);
             }
             for m in u.models {
-                models.entry((m.day, m.category, m.model)).or_default().add(m.tokens);
+                models
+                    .entry((m.day, m.category, m.model))
+                    .or_default()
+                    .add(m.tokens);
             }
         }
         Ok(khor_core::Usage {
@@ -3522,7 +3643,11 @@ impl Node {
             // repo keeps refusing to grow (`list`).
             days: rows
                 .into_iter()
-                .map(|((day, category), tokens)| khor_core::UsageDay { day, category, tokens })
+                .map(|((day, category), tokens)| khor_core::UsageDay {
+                    day,
+                    category,
+                    tokens,
+                })
                 .collect(),
             unreadable,
             // `BTreeMap` puts `None` **first** among the models, where a
@@ -3531,12 +3656,14 @@ impl Node {
             // orders what it draws.
             models: models
                 .into_iter()
-                .map(|((day, category, model), tokens)| khor_core::UsageModelDay {
-                    day,
-                    category,
-                    model,
-                    tokens,
-                })
+                .map(
+                    |((day, category, model), tokens)| khor_core::UsageModelDay {
+                        day,
+                        category,
+                        model,
+                        tokens,
+                    },
+                )
                 .collect(),
             // **This machine's own day, which is what the field means.**
             //
@@ -3599,19 +3726,18 @@ impl Node {
     /// the vendor's own transcript, read whole. Claude only, this
     /// batch: other vendors' records are on the ledger. Rooted through
     /// `vendor_home` like everything that reads a vendor's files.
-    pub fn transcript_of(
-        &self,
-        id: &SessionId,
-    ) -> Result<Vec<adaptor::claude::Utterance>, String> {
-        let leaf = id
-            .0
-            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
-            .ok_or_else(|| msg::no_such_session(&id.0))?;
+    pub fn transcript_of(&self, id: &SessionId) -> Result<Vec<adaptor::claude::Utterance>, String> {
+        let leaf =
+            id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
+                .ok_or_else(|| msg::no_such_session(&id.0))?;
         // A khor-opened row's own leaf is khor's mint and names no
         // vendor file; the hook-recorded vendor leaf is the bridge
         // (`live::Meta::vendor_leaf`). A discovered row has no record
         // and needs none — its leaf *is* the vendor's.
-        let leaf = self.live.vendor_leaf_of(id).unwrap_or_else(|| leaf.to_owned());
+        let leaf = self
+            .live
+            .vendor_leaf_of(id)
+            .unwrap_or_else(|| leaf.to_owned());
         let vhome = adaptor::vendor_home(&self.root);
         let claude = adaptor::claude::Claude::at(vhome.join(".claude"));
         match claude.transcript(&leaf) {
@@ -3660,21 +3786,24 @@ impl Node {
         id: &SessionId,
         from: u64,
     ) -> Result<adaptor::claude::Follow, String> {
-        let seek = id
-            .0
-            .strip_prefix(&format!("{}/", khor_core::kind::TUI))
-            .map(|leaf| self.live.vendor_leaf_of(id).unwrap_or_else(|| leaf.to_owned()))
-            .and_then(|leaf| {
-                let vhome = adaptor::vendor_home(&self.root);
-                adaptor::claude::Claude::at(vhome.join(".claude"))
-                    .transcript_since(&leaf, from)
-                    .ok()
-                    .or_else(|| {
-                        let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
-                        let full = codex.full_session_id(&leaf)?;
-                        codex.transcript_since(&full, from).ok()
-                    })
-            });
+        let seek =
+            id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
+                .map(|leaf| {
+                    self.live
+                        .vendor_leaf_of(id)
+                        .unwrap_or_else(|| leaf.to_owned())
+                })
+                .and_then(|leaf| {
+                    let vhome = adaptor::vendor_home(&self.root);
+                    adaptor::claude::Claude::at(vhome.join(".claude"))
+                        .transcript_since(&leaf, from)
+                        .ok()
+                        .or_else(|| {
+                            let codex = adaptor::codex::Codex::at(vhome.join(".codex"));
+                            let full = codex.full_session_id(&leaf)?;
+                            codex.transcript_since(&full, from).ok()
+                        })
+                });
         if let Some(follow) = seek {
             return Ok(follow);
         }
@@ -3783,12 +3912,13 @@ impl KindSurface for ChatKind {
             // file message lands like any message.
             if let Some(dir) = channel_dir(node.root(), &d.name)
                 && let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs)
-                    && word.rank() < row.state.state.rank() {
-                        row.state = khor_core::StateStamp {
-                            state: word,
-                            at: khor_core::Millis(at.max(0) as u64),
-                        };
-                    }
+                && word.rank() < row.state.state.rank()
+            {
+                row.state = khor_core::StateStamp {
+                    state: word,
+                    at: khor_core::Millis(at.max(0) as u64),
+                };
+            }
             out.push(row);
         }
         Ok(out)
@@ -3805,7 +3935,13 @@ impl KindSurface for ChatKind {
     /// list-order last (a concurrent merge can land mid-list).
     fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String> {
         let (channel, _) = node.channel_of_session(id)?;
-        Ok(self.log(&channel)?.messages.iter().map(|m| m.at).max().unwrap_or(0))
+        Ok(self
+            .log(&channel)?
+            .messages
+            .iter()
+            .map(|m| m.at)
+            .max()
+            .unwrap_or(0))
     }
 
     /// Close is putting the row away, never deletion: the history
@@ -3823,7 +3959,13 @@ impl KindSurface for ChatKind {
     /// would be a debt the person already dismissed.
     fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
         let (channel, _) = node.channel_of_session(id)?;
-        let newest = self.log(&channel)?.messages.iter().map(|m| m.at).max().unwrap_or(0);
+        let newest = self
+            .log(&channel)?
+            .messages
+            .iter()
+            .map(|m| m.at)
+            .max()
+            .unwrap_or(0);
         let loaded = node.seen_loaded()?;
         loaded.doc.mark(&id.0, newest)?;
         loaded.doc.put_away(&id.0, newest)?;
@@ -3955,10 +4097,17 @@ pub fn tidy_watch(paths: &[String]) -> Result<Vec<String>, String> {
         if !p.starts_with('/') {
             return Err(msg::watch_path_relative(p));
         }
-        if Path::new(p).components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+        if Path::new(p)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
             return Err(msg::watch_path_dotdot(p));
         }
-        let p = if p.len() > 1 { p.trim_end_matches('/') } else { p };
+        let p = if p.len() > 1 {
+            p.trim_end_matches('/')
+        } else {
+            p
+        };
         if out.iter().any(|q| q == p) {
             return Err(msg::watch_path_twice(p));
         }
@@ -3978,11 +4127,31 @@ mod watch_tests {
     #[test]
     fn a_watch_list_is_kept_tidy_and_refused_by_name() {
         let kept = tidy_watch(&[" /data/models/ ".into(), "/".into(), "/scratch".into()]).unwrap();
-        assert_eq!(kept, vec!["/data/models", "/", "/scratch"], "trimmed, and a trailing slash goes — but not the root's");
-        assert!(tidy_watch(&["models".into()]).unwrap_err().contains("绝对路径"));
-        assert!(tidy_watch(&["/data/../etc".into()]).unwrap_err().contains(".."));
-        assert!(tidy_watch(&["  ".into()]).unwrap_err().contains("不能是空的"));
-        assert!(tidy_watch(&["/data".into(), "/data/".into()]).unwrap_err().contains("两遍"));
+        assert_eq!(
+            kept,
+            vec!["/data/models", "/", "/scratch"],
+            "trimmed, and a trailing slash goes — but not the root's"
+        );
+        assert!(
+            tidy_watch(&["models".into()])
+                .unwrap_err()
+                .contains("绝对路径")
+        );
+        assert!(
+            tidy_watch(&["/data/../etc".into()])
+                .unwrap_err()
+                .contains("..")
+        );
+        assert!(
+            tidy_watch(&["  ".into()])
+                .unwrap_err()
+                .contains("不能是空的")
+        );
+        assert!(
+            tidy_watch(&["/data".into(), "/data/".into()])
+                .unwrap_err()
+                .contains("两遍")
+        );
     }
 }
 
@@ -4112,7 +4281,11 @@ pub(crate) fn asked_shell() -> &'static Asked {
 pub(crate) fn probe_script() -> String {
     format!(
         "printf '%s\\0' \"$PATH\" {}",
-        LOCALE_VARS.iter().map(|v| format!("\"${v}\"")).collect::<Vec<_>>().join(" ")
+        LOCALE_VARS
+            .iter()
+            .map(|v| format!("\"${v}\""))
+            .collect::<Vec<_>>()
+            .join(" ")
     )
 }
 
@@ -4219,7 +4392,10 @@ impl Picked {
     fn launch(&self) -> Result<(Vec<String>, String), String> {
         let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
             let exe = self_exe()?;
-            let spec = AgentSpec { command: exe.display().to_string(), args: vec![shim.to_owned()] };
+            let spec = AgentSpec {
+                command: exe.display().to_string(),
+                args: vec![shim.to_owned()],
+            };
             Ok((vec![Node::agent_launch(&spec)?], vendor.to_owned()))
         };
         match self {

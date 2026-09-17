@@ -173,9 +173,7 @@ pub fn status(root: &Path) -> Result<Status, String> {
         // khor saying git is watching a file it is not.
         // `CollapseDirectory` is what keeps that cheap: one row for a
         // whole build directory rather than one per file in it.
-        .dirwalk_options(|o| {
-            o.emit_ignored(Some(gix::dir::walk::EmissionMode::CollapseDirectory))
-        })
+        .dirwalk_options(|o| o.emit_ignored(Some(gix::dir::walk::EmissionMode::CollapseDirectory)))
         .into_iter(Vec::<BString>::new())
         .map_err(|e| e.to_string())?;
     for item in items {
@@ -191,7 +189,14 @@ pub fn status(root: &Path) -> Result<Status, String> {
     }
     let rows = marks.into_iter().map(|(p, m)| (p, m.to_owned())).collect();
     let (ahead, behind) = divergence(&repo).unwrap_or((0, 0));
-    Ok(Status { branch, rows, more, ahead, behind, fetched_ms: last_fetch(&repo) })
+    Ok(Status {
+        branch,
+        rows,
+        more,
+        ahead,
+        behind,
+        fetched_ms: last_fetch(&repo),
+    })
 }
 
 /// How far HEAD is from its remote-tracking branch, `(ahead, behind)`.
@@ -208,13 +213,27 @@ pub fn status(root: &Path) -> Result<Status, String> {
 fn divergence(repo: &gix::Repository) -> Option<(u32, u32)> {
     let head = repo.head_ref().ok()??;
     let local = head.id().detach();
-    let upstream = repo.branch_remote_tracking_ref_name(head.name(), gix::remote::Direction::Fetch)?.ok()?;
-    let remote = repo.find_reference(upstream.as_ref()).ok()?.into_fully_peeled_id().ok()?.detach();
+    let upstream = repo
+        .branch_remote_tracking_ref_name(head.name(), gix::remote::Direction::Fetch)?
+        .ok()?;
+    let remote = repo
+        .find_reference(upstream.as_ref())
+        .ok()?
+        .into_fully_peeled_id()
+        .ok()?
+        .detach();
     if local == remote {
         return Some((0, 0));
     }
     let count = |from, hide| -> Option<u32> {
-        Some(repo.rev_walk([from]).with_hidden([hide]).all().ok()?.count().min(u32::MAX as usize) as u32)
+        Some(
+            repo.rev_walk([from])
+                .with_hidden([hide])
+                .all()
+                .ok()?
+                .count()
+                .min(u32::MAX as usize) as u32,
+        )
     };
     Some((count(local, remote)?, count(remote, local)?))
 }
@@ -229,9 +248,13 @@ fn divergence(repo: &gix::Repository) -> Option<(u32, u32)> {
 /// merely old.
 fn last_fetch(repo: &gix::Repository) -> i64 {
     let at = repo.path().join("FETCH_HEAD");
-    let Ok(meta) = std::fs::metadata(at) else { return 0 };
+    let Ok(meta) = std::fs::metadata(at) else {
+        return 0;
+    };
     let Ok(at) = meta.modified() else { return 0 };
-    at.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    at.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// Which of two marks for one path survives.
@@ -329,9 +352,13 @@ pub fn diff(path: &Path) -> Result<Diff, String> {
 /// What HEAD has at `rel`, or empty bytes when it has nothing there —
 /// a file that is new, or a repository with no commit yet.
 fn head_blob(repo: &gix::Repository, rel: &str) -> Result<Vec<u8>, String> {
-    let Ok(tree) = repo.head_tree() else { return Ok(Vec::new()) };
+    let Ok(tree) = repo.head_tree() else {
+        return Ok(Vec::new());
+    };
     let found = tree.lookup_entry_by_path(rel).map_err(|e| e.to_string())?;
-    let Some(entry) = found else { return Ok(Vec::new()) };
+    let Some(entry) = found else {
+        return Ok(Vec::new());
+    };
     let obj = entry.object().map_err(|e| e.to_string())?;
     Ok(obj.data.clone())
 }
@@ -381,7 +408,11 @@ fn hunks(old: &[u8], new: &[u8]) -> Diff {
             })
             .collect();
         spent += was.iter().map(|s| s.len() + 1).sum::<usize>();
-        out.push(Hunk { at: h.after.start + 1, lines: h.after.end - h.after.start, was });
+        out.push(Hunk {
+            at: h.after.start + 1,
+            lines: h.after.end - h.after.start,
+            was,
+        });
     }
     // A pure deletion has no current line to sit on, so `at` names the
     // line it follows — one below what the loop above wrote, which
@@ -416,7 +447,10 @@ mod hunk_tests {
     #[test]
     fn a_changed_line_carries_what_head_had() {
         // The one shape the expansion exists for: both halves present.
-        assert_eq!(shape("a\nb\nc\n", "a\nB\nc\n"), vec![(2, 1, vec!["b".to_owned()])]);
+        assert_eq!(
+            shape("a\nb\nc\n", "a\nB\nc\n"),
+            vec![(2, 1, vec!["b".to_owned()])]
+        );
     }
 
     #[test]
@@ -424,7 +458,10 @@ mod hunk_tests {
         // There is no current line to point at, so `at` is the line
         // above and `lines` is 0 — which is also how the consumer tells
         // a deletion from the other two.
-        assert_eq!(shape("a\nb\nc\n", "a\nc\n"), vec![(1, 0, vec!["b".to_owned()])]);
+        assert_eq!(
+            shape("a\nb\nc\n", "a\nc\n"),
+            vec![(1, 0, vec!["b".to_owned()])]
+        );
     }
 
     #[test]
@@ -471,8 +508,10 @@ mod status_tests {
         let s = status(&here()).expect("status");
         for (path, mark) in &s.rows {
             assert!(
-                [MODIFIED, ADDED, DELETED, UNTRACKED, CONFLICT, RENAMED, IGNORED]
-                    .contains(&mark.as_str()),
+                [
+                    MODIFIED, ADDED, DELETED, UNTRACKED, CONFLICT, RENAMED, IGNORED
+                ]
+                .contains(&mark.as_str()),
                 "{path} got {mark}"
             );
         }
@@ -487,8 +526,12 @@ mod status_tests {
     #[test]
     fn an_ignored_directory_arrives_as_one_row() {
         let s = status(&here()).expect("status");
-        let ignored: Vec<&str> =
-            s.rows.iter().filter(|(_, m)| m == IGNORED).map(|(p, _)| p.as_str()).collect();
+        let ignored: Vec<&str> = s
+            .rows
+            .iter()
+            .filter(|(_, m)| m == IGNORED)
+            .map(|(p, _)| p.as_str())
+            .collect();
         for path in &ignored {
             assert!(
                 !path.contains("target/"),

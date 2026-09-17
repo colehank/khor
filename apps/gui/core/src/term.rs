@@ -38,7 +38,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::Engine;
-use khor_node::host::{connect, write_frame, ClientOp};
+use khor_node::host::{ClientOp, connect, write_frame};
 use khor_node::{Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
@@ -137,7 +137,11 @@ fn terms() -> &'static Mutex<HashMap<String, Arc<Term>>> {
 /// async — and a tauri command is — at which point it panics rather than
 /// returning an error anybody can read. A thread costs one click's worth
 /// of nothing and cannot be wrong about where it is.
-pub(crate) fn reach_blocking(root: &Path, machine: &str, id: &SessionId) -> Result<(String, String), String> {
+pub(crate) fn reach_blocking(
+    root: &Path,
+    machine: &str,
+    id: &SessionId,
+) -> Result<(String, String), String> {
     let (root, machine, id) = (root.to_path_buf(), machine.to_owned(), id.clone());
     std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -230,9 +234,13 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
             match reading.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    if let Some((cols, rows)) =
-                        paint(&reader.acs, &reader.parser, &reader.feed, &reader.fed, &buf[..n])
-                    {
+                    if let Some((cols, rows)) = paint(
+                        &reader.acs,
+                        &reader.parser,
+                        &reader.feed,
+                        &reader.fed,
+                        &buf[..n],
+                    ) {
                         let mut conn = plock(&reader.conn);
                         let _ = write_frame(&mut *conn, &ClientOp::Resize { cols, rows });
                     }
@@ -263,7 +271,7 @@ fn paint(
     fed: &AtomicU64,
     bytes: &[u8],
 ) -> Option<(u16, u16)> {
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     // DEC Special Graphics before either consumer sees it: `vt100` does
     // not implement SCS (`crate::acs`), and xterm.js gets the same
     // translation so the mode oracle and the picture can never disagree
@@ -310,11 +318,7 @@ fn take_all(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64) -> (Vec<u8>, u64) {
 /// trimmed head or from another life (a re-made `Term` counts from
 /// zero again, so a stale cursor can be *bigger* than anything this
 /// feed ever counted), the whole feed with `reset` raised.
-fn take_since(
-    feed: &Mutex<VecDeque<u8>>,
-    fed: &AtomicU64,
-    since: u64,
-) -> (Vec<u8>, u64, bool) {
+fn take_since(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64, since: u64) -> (Vec<u8>, u64, bool) {
     let g = plock(feed);
     let end = fed.load(Ordering::Relaxed);
     let start = end - g.len() as u64;
@@ -341,7 +345,10 @@ fn term_of(id: &str) -> Result<Arc<Term>, String> {
 pub fn term_attach(id: &str) -> Result<TermStart, String> {
     let term = term_of(id)?;
     let (bytes, seq) = take_all(&term.feed, &term.fed);
-    Ok(TermStart { bytes: B64.encode(bytes), seq })
+    Ok(TermStart {
+        bytes: B64.encode(bytes),
+        seq,
+    })
 }
 
 /// The bytes since `since` — see [`TermChunk`] for the two flags.
@@ -515,7 +522,11 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String]) -> Result<(), String> 
         Some(machine) => deliver_blocking(root, &machine, paths)?,
         None => paths.to_vec(),
     };
-    let text = here.iter().map(|p| shell_quote(p)).collect::<Vec<_>>().join(" ");
+    let text = here
+        .iter()
+        .map(|p| shell_quote(p))
+        .collect::<Vec<_>>()
+        .join(" ");
     term_paste(id, &text)
 }
 
@@ -534,9 +545,10 @@ pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
 pub fn term_leave(id: &str) -> Result<(), String> {
     let mut registry = plock(terms());
     if let Some(term) = registry.get(id)
-        && term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
-            registry.remove(id);
-        }
+        && term.holds.fetch_sub(1, Ordering::Relaxed) <= 1
+    {
+        registry.remove(id);
+    }
     Ok(())
 }
 
@@ -557,7 +569,10 @@ mod tests {
             panic!("poison it");
         })
         .join();
-        assert!(m.lock().is_err(), "the control: the mutex really is poisoned");
+        assert!(
+            m.lock().is_err(),
+            "the control: the mutex really is poisoned"
+        );
         assert_eq!(*plock(&m), 7, "plock answers with the value regardless");
     }
 
@@ -582,10 +597,20 @@ mod tests {
         assert_eq!(paint(&acs, &parser, &feed, &fed, b"\x1b(0"), None);
         assert_eq!(paint(&acs, &parser, &feed, &fed, b"lqqqk"), None);
         let (bytes, seq) = take_all(&feed, &fed);
-        assert!(!bytes.is_empty(), "an empty feed is the un-called feed this test exists for");
-        assert_eq!(seq, bytes.len() as u64, "the cursor counts what the feed holds");
+        assert!(
+            !bytes.is_empty(),
+            "an empty feed is the un-called feed this test exists for"
+        );
+        assert_eq!(
+            seq,
+            bytes.len() as u64,
+            "the cursor counts what the feed holds"
+        );
         let text = String::from_utf8_lossy(&bytes);
-        assert!(text.contains("┌───┐"), "the feed carries the filtered border: {text:?}");
+        assert!(
+            text.contains("┌───┐"),
+            "the feed carries the filtered border: {text:?}"
+        );
         assert!(
             plock(&parser).screen().contents().contains('┌'),
             "…and the parser ate the same bytes"
@@ -618,7 +643,10 @@ mod tests {
         assert_eq!([first, rest].concat(), b"hello world");
         assert_eq!(end, 11);
         let (idle, still, reset) = take_since(&feed, &fed, end);
-        assert!(idle.is_empty() && still == end && !reset, "idle is empty at the same cursor");
+        assert!(
+            idle.is_empty() && still == end && !reset,
+            "idle is empty at the same cursor"
+        );
     }
 
     /// Past the cap the head is trimmed, and a cursor that fell off it
@@ -637,13 +665,20 @@ mod tests {
         assert_eq!(plock(&feed).len(), FEED_CAP, "the feed is capped");
         let (bytes, end, reset) = take_since(&feed, &fed, 0);
         assert!(reset, "cursor 0 fell off the trimmed head");
-        assert_eq!(bytes.len(), FEED_CAP, "…and the answer is everything still held");
+        assert_eq!(
+            bytes.len(),
+            FEED_CAP,
+            "…and the answer is everything still held"
+        );
         assert_eq!(end, 600 * 1024);
         let (tail, _, reset) = take_since(&feed, &fed, held);
         assert!(!reset, "a cursor still on the feed streams on");
         assert_eq!(tail.len(), 400 * 1024);
         let (_, _, reset) = take_since(&feed, &fed, end + 1);
-        assert!(reset, "another life's cursor is a restart, not a backwards stream");
+        assert!(
+            reset,
+            "another life's cursor is a restart, not a backwards stream"
+        );
     }
 
     /// The public doors over a real registry entry: attach hands back
@@ -748,13 +783,21 @@ mod quoting_tests {
     /// Several files are several arguments, not one run-on word.
     #[test]
     fn each_dropped_path_is_its_own_argument() {
-        let quoted: Vec<String> =
-            ["/tmp/a b.txt", "/tmp/c.txt"].iter().map(|p| shell_quote(p)).collect();
+        let quoted: Vec<String> = ["/tmp/a b.txt", "/tmp/c.txt"]
+            .iter()
+            .map(|p| shell_quote(p))
+            .collect();
         let out = std::process::Command::new("sh")
             .arg("-c")
-            .arg(format!("for a in {}; do printf '[%s]' \"$a\"; done", quoted.join(" ")))
+            .arg(format!(
+                "for a in {}; do printf '[%s]' \"$a\"; done",
+                quoted.join(" ")
+            ))
             .output()
             .expect("sh must run");
-        assert_eq!(String::from_utf8_lossy(&out.stdout), "[/tmp/a b.txt][/tmp/c.txt]");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "[/tmp/a b.txt][/tmp/c.txt]"
+        );
     }
 }

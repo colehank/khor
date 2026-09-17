@@ -64,7 +64,9 @@ fn request_full(addr: SocketAddr, path: &str, headers: &[(&str, &str)]) -> (u16,
     if !has_host {
         req.push_str(&format!("Host: {addr}\r\n"));
     }
-    req.push_str("Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}");
+    req.push_str(
+        "Content-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}",
+    );
     sock.write_all(req.as_bytes()).expect("sending");
 
     // **Read to `Content-Length`, never to EOF.** `read_to_end` waits
@@ -111,7 +113,9 @@ fn face(tag: &str) -> (Home, SocketAddr, String) {
     // Port 0: the OS picks a free one, so two of these can run at once
     // and neither can collide with a developer's own face.
     let face = khor_web::listen(home.0.clone(), 0).expect("the face starts");
-    let key = khor_web::key::read(&home.0).expect("readable").expect("minted at listen");
+    let key = khor_web::key::read(&home.0)
+        .expect("readable")
+        .expect("minted at listen");
     let addr = SocketAddr::from(([127, 0, 0, 1], face.addr.port()));
     (home, addr, key)
 }
@@ -126,7 +130,10 @@ fn bearer(key: &str) -> String {
 #[test]
 fn a_listening_face_answers_and_a_closed_port_does_not() {
     let (_home, addr, _key) = face("reach");
-    assert!(khor_web::answers_at(addr), "a face that is listening must answer at {addr}");
+    assert!(
+        khor_web::answers_at(addr),
+        "a face that is listening must answer at {addr}"
+    );
 
     // A port with nothing on it. Bound and dropped, so it is a port
     // that was free a moment ago rather than a number picked by hand
@@ -134,7 +141,10 @@ fn a_listening_face_answers_and_a_closed_port_does_not() {
     let closed = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let dead = closed.local_addr().unwrap();
     drop(closed);
-    assert!(!khor_web::answers_at(dead), "nothing is listening at {dead}");
+    assert!(
+        !khor_web::answers_at(dead),
+        "nothing is listening at {dead}"
+    );
 }
 
 /// The page takes the key once and remembers the browser (记住一次批,
@@ -154,17 +164,26 @@ fn the_page_takes_a_key_once_and_remembers_the_browser() {
     // outside `zh.toml` that reads that word, and it is here rather
     // than checking for「a 403 body」 because a refusal with no words a
     // person can act on is the failure it was written for.
-    assert!(body.contains("密钥"), "…with words a person can act on: {body:.120}");
+    assert!(
+        body.contains("密钥"),
+        "…with words a person can act on: {body:.120}"
+    );
 
     // The printed link: page served, credential planted.
     let (code, head, body) = request_full(addr, &format!("/?k={key}"), &[]);
     assert_eq!(code, 200, "the printed link must open the page");
-    assert!(body.contains("<div id=\"root\">"), "that was not the app's page: {body:.120}");
+    assert!(
+        body.contains("<div id=\"root\">"),
+        "that was not the app's page: {body:.120}"
+    );
     let cookie = head
         .lines()
         .find(|l| l.to_ascii_lowercase().starts_with("set-cookie:"))
         .expect("the ?k= visit must plant the remembered key");
-    assert!(cookie.contains("khor_key="), "the cookie must carry the credential: {cookie}");
+    assert!(
+        cookie.contains("khor_key="),
+        "the cookie must carry the credential: {cookie}"
+    );
     assert!(
         cookie.contains("SameSite=Strict") && cookie.contains("HttpOnly"),
         "…wearing both locks: {cookie}"
@@ -199,7 +218,10 @@ fn a_wrong_key_is_refused_and_the_right_one_is_not() {
     let wrong = "0".repeat(key.len());
     let (code, body) = request(addr, "/api/devices", &[("Authorization", &bearer(&wrong))]);
     assert_eq!(code, 401, "a wrong key opened the door");
-    assert!(!body.trim().is_empty(), "a refusal with nothing in it tells the person nothing");
+    assert!(
+        !body.trim().is_empty(),
+        "a refusal with nothing in it tells the person nothing"
+    );
 
     let (code, _) = request(addr, "/api/devices", &[("Authorization", &bearer(&key))]);
     assert_eq!(code, 200);
@@ -218,8 +240,15 @@ fn another_page_is_refused_even_holding_the_key() {
     assert_eq!(code, 403, "a foreign page with the key got through");
 
     let ours = format!("http://{addr}");
-    let (code, _) = request(addr, "/api/devices", &[("Authorization", &auth), ("Origin", &ours)]);
-    assert_eq!(code, 200, "our own page must still be served — else the 403 proves nothing");
+    let (code, _) = request(
+        addr,
+        "/api/devices",
+        &[("Authorization", &auth), ("Origin", &ours)],
+    );
+    assert_eq!(
+        code, 200,
+        "our own page must still be served — else the 403 proves nothing"
+    );
 }
 
 /// The rebinding lock. The request carries a real key and a name that
@@ -228,11 +257,19 @@ fn another_page_is_refused_even_holding_the_key() {
 fn a_name_that_is_not_an_address_is_refused() {
     let (_home, addr, key) = face("host");
     let auth = bearer(&key);
-    let (code, _) = request(addr, "/api/devices", &[("Authorization", &auth), ("Host", "evil.example")]);
+    let (code, _) = request(
+        addr,
+        "/api/devices",
+        &[("Authorization", &auth), ("Host", "evil.example")],
+    );
     assert_eq!(code, 403, "a rebound name with the key got through");
 
     let real = addr.to_string();
-    let (code, _) = request(addr, "/api/devices", &[("Authorization", &auth), ("Host", &real)]);
+    let (code, _) = request(
+        addr,
+        "/api/devices",
+        &[("Authorization", &auth), ("Host", &real)],
+    );
     assert_eq!(code, 200);
 }
 
@@ -252,7 +289,10 @@ fn a_new_key_retires_the_old_one_without_a_restart() {
     let (code, _) = request(addr, "/api/devices", &[("Authorization", &bearer(&old))]);
     assert_eq!(code, 401, "the old link still opens — nothing was revoked");
     let (code, _) = request(addr, "/api/devices", &[("Authorization", &bearer(&new))]);
-    assert_eq!(code, 200, "the new key must work, or this test would pass on a dead face");
+    assert_eq!(
+        code, 200,
+        "the new key must work, or this test would pass on a dead face"
+    );
 }
 
 /// The key never lands anywhere that travels. Every document khor syncs
@@ -291,6 +331,8 @@ fn the_key_is_nowhere_that_syncs() {
     }
     // Without this the test passes on an empty home, which is exactly
     // what it would find if `listen` had failed to write anything.
-    assert!(checked > 0, "no other files under the home — this search proved nothing");
+    assert!(
+        checked > 0,
+        "no other files under the home — this search proved nothing"
+    );
 }
-

@@ -29,9 +29,16 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    let dist: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "apps", "gui", "dist"]
-        .iter()
-        .collect();
+    let dist: PathBuf = [
+        env!("CARGO_MANIFEST_DIR"),
+        "..",
+        "..",
+        "apps",
+        "gui",
+        "dist",
+    ]
+    .iter()
+    .collect();
     println!("cargo::rerun-if-changed={}", dist.display());
 
     // The entry point specifically, not the directory: a `dist` left
@@ -52,7 +59,12 @@ fn main() {
     let mut rs = String::from("// Generated from apps/gui/dist by build.rs - do not edit.\n");
     rs.push_str("pub static ASSETS: &[(&str, &[u8])] = &[\n");
     for (web_path, disk) in &files {
-        writeln!(rs, "    ({web_path:?}, include_bytes!({:?})),", disk.display()).unwrap();
+        writeln!(
+            rs,
+            "    ({web_path:?}, include_bytes!({:?})),",
+            disk.display()
+        )
+        .unwrap();
     }
     rs.push_str("];\n");
 
@@ -62,7 +74,8 @@ fn main() {
 
 /// Every file under `dir`, keyed by the path a browser asks for.
 fn collect(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
-    let listing = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
+    let listing =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("reading {}: {e}", dir.display()));
     for entry in listing {
         let path = entry.expect("a directory entry").path();
         if path.is_dir() {

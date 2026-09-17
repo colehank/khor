@@ -211,19 +211,25 @@ fn local_copy(watched: &std::path::Path) -> Result<std::path::PathBuf, String> {
 /// is not a reason to refuse to start.
 fn sweep_abandoned(mine: &std::path::Path) {
     let Some(parent) = mine.parent() else { return };
-    let Ok(entries) = std::fs::read_dir(parent) else { return };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
     for e in entries.flatten() {
         let path = e.path();
         if path == mine || !path.is_dir() {
             continue;
         }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         // Ours by name, and only ours: `temp_dir()` is shared with
         // every other program on the machine.
         if !name.starts_with("khor-shield-") {
             continue;
         }
-        let Ok(inside) = std::fs::read_dir(&path) else { continue };
+        let Ok(inside) = std::fs::read_dir(&path) else {
+            continue;
+        };
         let mut all_stale = true;
         for f in inside.flatten() {
             if stale(&f.path()) {
@@ -283,7 +289,11 @@ fn take_generation(
     watched: &std::path::Path,
     shielded: bool,
 ) -> Result<(String, std::path::PathBuf), String> {
-    let from = if shielded { local_copy(watched)? } else { watched.to_path_buf() };
+    let from = if shielded {
+        local_copy(watched)?
+    } else {
+        watched.to_path_buf()
+    };
     let version = preflight(&from)?;
     Ok((version, from))
 }
@@ -395,9 +405,10 @@ pub fn keep() -> Result<(), String> {
                 break status;
             }
             if let Some(t) = term_at
-                && t.elapsed() >= SWAP_GRACE {
-                    let _ = child.kill();
-                }
+                && t.elapsed() >= SWAP_GRACE
+            {
+                let _ = child.kill();
+            }
             std::thread::sleep(CHILD_POLL);
             if swap.is_some() || last_look.elapsed() < SELF_CHECK {
                 continue;
@@ -503,7 +514,8 @@ mod tests {
     fn aged(path: &std::path::Path, days: u64) {
         let mut f = std::fs::File::create(path).unwrap();
         f.write_all(b"not really a binary").unwrap();
-        f.set_modified(SystemTime::now() - Duration::from_secs(days * 24 * 3600)).unwrap();
+        f.set_modified(SystemTime::now() - Duration::from_secs(days * 24 * 3600))
+            .unwrap();
     }
 
     /// The bug this sweep exists for, in one directory tree: a shield
@@ -533,9 +545,15 @@ mod tests {
 
         sweep_abandoned(&mine);
 
-        assert!(!gone.exists(), "a week-old copy nobody will come back for is gone");
+        assert!(
+            !gone.exists(),
+            "a week-old copy nobody will come back for is gone"
+        );
         assert!(!empty.exists(), "and so is the empty shell of one");
-        assert!(busy.join("khor-new").exists(), "yesterday's copy is left alone");
+        assert!(
+            busy.join("khor-new").exists(),
+            "yesterday's copy is left alone"
+        );
         assert!(
             mine.join("khor-old").exists(),
             "**never the directory this call is about to write into** — the caller sweeps that one \

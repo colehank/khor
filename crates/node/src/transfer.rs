@@ -70,7 +70,9 @@ pub fn digest_file(path: &Path) -> Result<(String, u64), String> {
     let mut buf = vec![0u8; 1 << 20];
     let mut size = 0u64;
     loop {
-        let n = f.read(&mut buf).map_err(|e| msg::cant_finish_reading(path.display(), e))?;
+        let n = f
+            .read(&mut buf)
+            .map_err(|e| msg::cant_finish_reading(path.display(), e))?;
         if n == 0 {
             break;
         }
@@ -83,15 +85,21 @@ pub fn digest_file(path: &Path) -> Result<(String, u64), String> {
 // ── payload locations inside a channel dir ──────────────────
 
 pub fn payload_path(channel_dir: &Path, f: &FileRef) -> PathBuf {
-    channel_dir.join("files").join(format!("{}-{}", digest8(f), safe_name(&f.name)))
+    channel_dir
+        .join("files")
+        .join(format!("{}-{}", digest8(f), safe_name(&f.name)))
 }
 
 pub fn partial_path(channel_dir: &Path, f: &FileRef) -> PathBuf {
-    channel_dir.join("files").join(format!(".partial-{}-{}", digest8(f), safe_name(&f.name)))
+    channel_dir
+        .join("files")
+        .join(format!(".partial-{}-{}", digest8(f), safe_name(&f.name)))
 }
 
 pub fn pulling_marker(channel_dir: &Path, f: &FileRef) -> PathBuf {
-    channel_dir.join("files").join(format!(".pulling-{}", digest8(f)))
+    channel_dir
+        .join("files")
+        .join(format!(".pulling-{}", digest8(f)))
 }
 
 fn digest8(f: &FileRef) -> String {
@@ -108,7 +116,11 @@ fn safe_name(name: &str) -> String {
         .filter(|c| !matches!(c, '/' | '\\' | '\0'))
         .collect();
     let cleaned = cleaned.trim_start_matches('.').to_string();
-    if cleaned.is_empty() { "file".into() } else { cleaned }
+    if cleaned.is_empty() {
+        "file".into()
+    } else {
+        cleaned
+    }
 }
 
 // ── the row ─────────────────────────────────────────────────
@@ -144,7 +156,11 @@ pub struct TransferKind {
 
 impl TransferKind {
     pub fn new(root: PathBuf, device_str: String, name: String) -> TransferKind {
-        TransferKind { root, device_str, name }
+        TransferKind {
+            root,
+            device_str,
+            name,
+        }
     }
 
     pub fn session_id(msg_id: &str) -> SessionId {
@@ -180,7 +196,9 @@ impl TransferKind {
         m: &Message,
         watermark: i64,
     ) -> Option<State> {
-        let MsgBody::Files(files) = &m.body else { return None };
+        let MsgBody::Files(files) = &m.body else {
+            return None;
+        };
         if m.retracted || files.is_empty() {
             return None;
         }
@@ -201,15 +219,19 @@ impl TransferKind {
     /// the row-level 忙碌 while bytes flow also stays `urgency`'s).
     /// `None` for every seat but the sender's.
     pub fn message_delivery(&self, m: &Message) -> Option<Delivery> {
-        let MsgBody::Files(files) = &m.body else { return None };
+        let MsgBody::Files(files) = &m.body else {
+            return None;
+        };
         if m.retracted || files.is_empty() || m.from.id != self.device_str {
             return None;
         }
-        Some(match load_offer(&self.root, &files[0].digest).ok().flatten() {
-            Some(o) if o.done => Delivery::Served,
-            Some(o) if o.started => Delivery::Fetching,
-            _ => Delivery::Waiting,
-        })
+        Some(
+            match load_offer(&self.root, &files[0].digest).ok().flatten() {
+                Some(o) if o.done => Delivery::Served,
+                Some(o) if o.started => Delivery::Fetching,
+                _ => Delivery::Waiting,
+            },
+        )
     }
 
     /// The most pressing live word among one channel's file messages,
@@ -245,7 +267,9 @@ impl TransferKind {
     ) -> Option<(State, i64)> {
         let mut best: Option<(State, i64)> = None;
         for m in msgs {
-            let MsgBody::Files(files) = &m.body else { continue };
+            let MsgBody::Files(files) = &m.body else {
+                continue;
+            };
             if m.retracted || files.is_empty() {
                 continue;
             }
@@ -271,9 +295,10 @@ impl TransferKind {
                 None
             };
             if let Some((state, at)) = pressed
-                && best.is_none_or(|(b, _)| state.rank() < b.rank()) {
-                    best = Some((state, at));
-                }
+                && best.is_none_or(|(b, _)| state.rank() < b.rank())
+            {
+                best = Some((state, at));
+            }
         }
         best
     }
@@ -306,7 +331,11 @@ impl TransferKind {
         let done = payload_path(channel_dir, f);
         if done.exists() {
             let at = mtime_ms(&done).unwrap_or(msg_at);
-            let state = if msg_at > watermark { State::Done } else { State::Idle };
+            let state = if msg_at > watermark {
+                State::Done
+            } else {
+                State::Idle
+            };
             return (state, at);
         }
         let partial = partial_path(channel_dir, f);
@@ -371,7 +400,10 @@ mod tests {
         Message {
             id: id.into(),
             at: 1000,
-            from: Sender { id: from.into(), name: "x".into() },
+            from: Sender {
+                id: from.into(),
+                name: "x".into(),
+            },
             body: MsgBody::Files(vec![f]),
             retracted: false,
             edited: false,
@@ -405,18 +437,30 @@ mod tests {
         let m = [msg("m1", "far", f.clone())];
 
         let word = |k: &TransferKind| k.urgency("mybox", &ch, &m).map(|(w, _)| w);
-        assert_eq!(word(&k), Some(State::Blocked), "no payload = waiting for THIS machine");
+        assert_eq!(
+            word(&k),
+            Some(State::Blocked),
+            "no payload = waiting for THIS machine"
+        );
 
         fs::write(partial_path(&ch, &f), b"he").unwrap();
         fs::write(pulling_marker(&ch, &f), format!("{}", std::process::id())).unwrap();
         assert_eq!(word(&k), Some(State::Busy), "a live pull (this pid) = busy");
 
         fs::remove_file(pulling_marker(&ch, &f)).unwrap();
-        assert_eq!(word(&k), Some(State::Errored), "a partial with no live pull = resumable");
+        assert_eq!(
+            word(&k),
+            Some(State::Errored),
+            "a partial with no live pull = resumable"
+        );
 
         fs::remove_file(partial_path(&ch, &f)).unwrap();
         fs::write(payload_path(&ch, &f), b"hello").unwrap();
-        assert_eq!(word(&k), None, "a landed payload presses nothing; the message itself is the news");
+        assert_eq!(
+            word(&k),
+            None,
+            "a landed payload presses nothing; the message itself is the news"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -442,20 +486,44 @@ mod tests {
             "an unanswered offer is the far side's 待批, never the sender's"
         );
 
-        save_offer(&root, &f.digest, &Offer {
-            path: "/tmp/x".into(), name: f.name.clone(), size: 5,
-            started: true, done: false,
-        }).unwrap();
-        assert_eq!(word(&k, &mine), Some(State::Busy), "bytes flowing = busy on the sender too");
+        save_offer(
+            &root,
+            &f.digest,
+            &Offer {
+                path: "/tmp/x".into(),
+                name: f.name.clone(),
+                size: 5,
+                started: true,
+                done: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            word(&k, &mine),
+            Some(State::Busy),
+            "bytes flowing = busy on the sender too"
+        );
 
-        save_offer(&root, &f.digest, &Offer {
-            path: "/tmp/x".into(), name: f.name.clone(), size: 5,
-            started: true, done: true,
-        }).unwrap();
+        save_offer(
+            &root,
+            &f.digest,
+            &Offer {
+                path: "/tmp/x".into(),
+                name: f.name.clone(),
+                size: 5,
+                started: true,
+                done: true,
+            },
+        )
+        .unwrap();
         assert_eq!(word(&k, &mine), None, "a served offer presses nothing");
 
         let theirs = [msg("m2", "someone-else", f.clone())];
-        assert_eq!(word(&k, &theirs), None, "neither sender nor recipient = no pressure");
+        assert_eq!(
+            word(&k, &theirs),
+            None,
+            "neither sender nor recipient = no pressure"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -464,7 +532,11 @@ mod tests {
     fn a_hostile_file_name_cannot_escape_the_payload_dir() {
         let ch = PathBuf::from("/home/x/.khor/chat/box");
         for bad in ["../../etc/passwd", "/etc/passwd", ".hidden", "a/b"] {
-            let f = FileRef { name: bad.into(), size: 1, digest: "cd".repeat(32) };
+            let f = FileRef {
+                name: bad.into(),
+                size: 1,
+                digest: "cd".repeat(32),
+            };
             let p = payload_path(&ch, &f);
             assert!(
                 p.parent().unwrap().ends_with("files"),

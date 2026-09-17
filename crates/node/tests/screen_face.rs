@@ -51,7 +51,9 @@ fn read_state(root: &Path, id: &SessionId) -> Option<(State, Option<Source>)> {
     let raw = std::fs::read(dir.join("state.json")).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&raw).ok()?;
     let word: State = serde_json::from_value(v.get("word")?.clone()).ok()?;
-    let source = v.get("source").and_then(|s| serde_json::from_value(s.clone()).ok());
+    let source = v
+        .get("source")
+        .and_then(|s| serde_json::from_value(s.clone()).ok());
     Some((word, source))
 }
 
@@ -65,9 +67,10 @@ fn wait_for(root: &Path, id: &SessionId, want: State) -> Option<(State, Option<S
     while Instant::now() < deadline {
         last = read_state(root, id);
         if let Some((word, _)) = &last
-            && *word == want {
-                return last;
-            }
+            && *word == want
+        {
+            return last;
+        }
         std::thread::sleep(Duration::from_millis(100));
     }
     last

@@ -222,8 +222,11 @@ pub fn kind(path: &str) -> Kind {
 /// viewer** and Android's WebView does not either — there the words are
 /// what khor can honestly show, and the face says so out loud rather
 /// than drawing an empty frame.
-pub const PDF_HERE: bool =
-    cfg!(any(target_os = "macos", target_os = "ios", target_os = "windows"));
+pub const PDF_HERE: bool = cfg!(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows"
+));
 
 /// A file's bytes as markdown, whatever it started as.
 ///
@@ -272,8 +275,8 @@ pub fn markdown(path: &str, bytes: &[u8]) -> Result<String, String> {
 /// pages hold ten JPEGs and no font object at all (which Spotlight
 /// also reads as empty). Nothing failed.
 fn pdf(bytes: &[u8]) -> Result<String, String> {
-    let doc = pdfboss_core::document::Document::load(bytes.to_vec())
-        .map_err(msg::cant_read_document)?;
+    let doc =
+        pdfboss_core::document::Document::load(bytes.to_vec()).map_err(msg::cant_read_document)?;
     // Geometric rather than Content: a PDF's content stream emits text
     // in whatever order it was drawn, which for a two-column paper is
     // not the order anybody reads it in.
@@ -350,7 +353,11 @@ mod tests {
         assert_eq!(kind("/a/b.tsv"), Kind::Text);
         assert_eq!(kind("/a/b.rs"), Kind::Text);
         assert_eq!(kind("/a/Makefile"), Kind::Text, "no extension at all");
-        assert_eq!(kind("/a/.gitignore"), Kind::Text, "a leading dot is not one either");
+        assert_eq!(
+            kind("/a/.gitignore"),
+            Kind::Text,
+            "a leading dot is not one either"
+        );
     }
 
     #[test]
@@ -376,7 +383,10 @@ mod tests {
         // The whole of khor's sanitiser story, asserted.
         let out = html("hi <script>alert(1)</script>\n");
         assert!(!out.contains("<script"), "a script tag survived: {out}");
-        assert!(out.contains("&lt;script"), "and it must still be readable as text: {out}");
+        assert!(
+            out.contains("&lt;script"),
+            "and it must still be readable as text: {out}"
+        );
     }
 
     /// **A text file comes back as itself**, whichever of the three it
@@ -386,7 +396,10 @@ mod tests {
     #[test]
     fn the_text_formats_come_back_as_themselves() {
         assert_eq!(markdown("/a/b.md", b"# hi\n").unwrap(), "# hi\n");
-        assert_eq!(markdown("/a/b.csv", b"one,two\n1,2\n").unwrap(), "one,two\n1,2\n");
+        assert_eq!(
+            markdown("/a/b.csv", b"one,two\n1,2\n").unwrap(),
+            "one,two\n1,2\n"
+        );
         assert_eq!(markdown("/a/b.tsv", b"one\ttwo\n").unwrap(), "one\ttwo\n");
     }
 
@@ -414,8 +427,11 @@ mod tests {
         // an empty document and the fixture proved the opposite of what
         // it was for.
         let content_obj = if with_font { 5 } else { 4 };
-        let resources =
-            if with_font { "/Resources<</Font<</F1 4 0 R>>>>" } else { "/Resources<<>>" };
+        let resources = if with_font {
+            "/Resources<</Font<</F1 4 0 R>>>>"
+        } else {
+            "/Resources<<>>"
+        };
         let mut objs: Vec<String> = vec![
             "<</Type/Catalog/Pages 2 0 R>>".to_owned(),
             "<</Type/Pages/Kids[3 0 R]/Count 1>>".to_owned(),

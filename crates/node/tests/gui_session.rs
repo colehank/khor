@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use khor_core::{DeviceId, SessionId, State};
-use khor_node::gui_host::{gui_host_main, refused, Choice, GuiNote, GuiOp};
-use khor_node::host::{read_frame, read_host_file, write_frame, Hello, Welcome};
+use khor_node::gui_host::{Choice, GuiNote, GuiOp, gui_host_main, refused};
+use khor_node::host::{Hello, Welcome, read_frame, read_host_file, write_frame};
 use khor_node::live::{LiveKind, Source};
 
 /// The stub is another crate's binary, which `CARGO_BIN_EXE_` cannot
@@ -28,7 +28,10 @@ fn stub_path() -> PathBuf {
         .expect("cargo runs");
     assert!(status.success(), "the stub builds");
     let me = std::env::current_exe().expect("a test binary");
-    me.parent().and_then(|d| d.parent()).expect("target/debug").join("acp-stub")
+    me.parent()
+        .and_then(|d| d.parent())
+        .expect("target/debug")
+        .join("acp-stub")
 }
 
 fn read_state(root: &Path, id: &SessionId) -> Option<(State, Option<Source>)> {
@@ -37,7 +40,9 @@ fn read_state(root: &Path, id: &SessionId) -> Option<(State, Option<Source>)> {
     let raw = std::fs::read(dir.join("state.json")).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&raw).ok()?;
     let word: State = serde_json::from_value(v.get("word")?.clone()).ok()?;
-    let source = v.get("source").and_then(|s| serde_json::from_value(s.clone()).ok());
+    let source = v
+        .get("source")
+        .and_then(|s| serde_json::from_value(s.clone()).ok());
     Some((word, source))
 }
 
@@ -47,9 +52,10 @@ fn wait_for(root: &Path, id: &SessionId, want: State) -> Option<(State, Option<S
     while Instant::now() < deadline {
         last = read_state(root, id);
         if let Some((word, _)) = &last
-            && *word == want {
-                return last;
-            }
+            && *word == want
+        {
+            return last;
+        }
         std::thread::sleep(Duration::from_millis(50));
     }
     last
@@ -63,13 +69,17 @@ fn wait_for_ready(ready: &std::path::Path) -> SessionId {
         if let Ok(text) = std::fs::read_to_string(ready) {
             return SessionId(text.trim().to_owned());
         }
-        assert!(Instant::now() < deadline, "the host never wrote the ready file");
+        assert!(
+            Instant::now() < deadline,
+            "the host never wrote the ready file"
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
 }
 
 fn next_note(conn: &mut TcpStream) -> GuiNote {
-    conn.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
+    conn.set_read_timeout(Some(Duration::from_secs(15)))
+        .unwrap();
     read_frame::<GuiNote>(conn).expect("a frame within fifteen seconds")
 }
 
@@ -95,16 +105,25 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
         if let Ok(text) = std::fs::read_to_string(&ready) {
             break SessionId(text.trim().to_owned());
         }
-        assert!(Instant::now() < deadline, "the host never wrote the ready file");
+        assert!(
+            Instant::now() < deadline,
+            "the host never wrote the ready file"
+        );
         std::thread::sleep(Duration::from_millis(50));
     };
-    assert_eq!(id.0, "tui/stub-session-1", "the row lives at the vendor-session agreement");
+    assert_eq!(
+        id.0, "tui/stub-session-1",
+        "the row lives at the vendor-session agreement"
+    );
 
     // Behaviour follows Meta::kind, and that says gui.
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
-    let meta =
-        std::fs::read_to_string(k.dir_of(&id).unwrap().join("meta.json")).expect("a registered row");
-    assert!(meta.contains("\"gui\""), "kind is gui, not the id's tui spelling: {meta}");
+    let meta = std::fs::read_to_string(k.dir_of(&id).unwrap().join("meta.json"))
+        .expect("a registered row");
+    assert!(
+        meta.contains("\"gui\""),
+        "kind is gui, not the id's tui spelling: {meta}"
+    );
 
     // …and the row is IN THE LIST. This line was owed from the start:
     // everything below reads the row through `dir_of`, which kept
@@ -124,7 +143,15 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
     let dir = k.dir_of(&id).unwrap();
     let hf = read_host_file(&dir).expect("a host file");
     let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
-    write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
+    write_frame(
+        &mut conn,
+        &Hello {
+            cookie: hf.cookie,
+            cols: 0,
+            rows: 0,
+        },
+    )
+    .unwrap();
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
 
@@ -147,42 +174,76 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
     // is the same line of code either way.
     write_frame(&mut conn, &GuiOp::Say("hello".into())).unwrap();
 
-    let GuiNote::Note(first) = next_note(&mut conn) else { panic!("a first chunk") };
+    let GuiNote::Note(first) = next_note(&mut conn) else {
+        panic!("a first chunk")
+    };
     assert!(first.contains("thinking it over"), "{first}");
-    let GuiNote::Note(_second) = next_note(&mut conn) else { panic!("a second chunk") };
+    let GuiNote::Note(_second) = next_note(&mut conn) else {
+        panic!("a second chunk")
+    };
 
     let GuiNote::Ask { ask, options, .. } = next_note(&mut conn) else {
         panic!("the stub asks permission")
     };
     assert_eq!(options.len(), 2);
-    assert!(matches!(wait_for(&root, &id, State::Blocked), Some((State::Blocked, Some(Source::Reported)))));
+    assert!(matches!(
+        wait_for(&root, &id, State::Blocked),
+        Some((State::Blocked, Some(Source::Reported)))
+    ));
 
-    write_frame(&mut conn, &GuiOp::Answer { ask, option: Some(options[0].0.clone()) }).unwrap();
+    write_frame(
+        &mut conn,
+        &GuiOp::Answer {
+            ask,
+            option: Some(options[0].0.clone()),
+        },
+    )
+    .unwrap();
     // (No 忙碌 wait here — see the anchor note above.)
 
     // The answer comes back as a frame of its own, to every face:
     // "answered" is a fact about the conversation, not a memory in
     // whichever face happened to press the button (`gui_host`).
-    let GuiNote::Answered { ask: answered, option } = next_note(&mut conn) else {
+    let GuiNote::Answered {
+        ask: answered,
+        option,
+    } = next_note(&mut conn)
+    else {
         panic!("the answer is announced")
     };
     assert_eq!(answered, ask, "it names the ask it settles");
-    assert_eq!(option.as_deref(), Some(options[0].0.as_str()), "and what was chosen");
+    assert_eq!(
+        option.as_deref(),
+        Some(options[0].0.as_str()),
+        "and what was chosen"
+    );
 
     // The stub's own account of what crossed the wire, relayed whole.
-    let GuiNote::Note(echo) = next_note(&mut conn) else { panic!("the echo chunk") };
+    let GuiNote::Note(echo) = next_note(&mut conn) else {
+        panic!("the echo chunk")
+    };
     assert!(echo.contains("picked:go"), "{echo}");
 
-    let GuiNote::Turn(stop) = next_note(&mut conn) else { panic!("the turn ends") };
+    let GuiNote::Turn(stop) = next_note(&mut conn) else {
+        panic!("the turn ends")
+    };
     assert_eq!(stop, "EndTurn");
-    assert!(matches!(wait_for(&root, &id, State::Done), Some((State::Done, Some(Source::Reported)))));
+    assert!(matches!(
+        wait_for(&root, &id, State::Done),
+        Some((State::Done, Some(Source::Reported)))
+    ));
 
     // Close is an op, and the ending is recorded like any host's.
     write_frame(&mut conn, &GuiOp::Close).unwrap();
-    let GuiNote::Gone = next_note(&mut conn) else { panic!("a goodbye") };
+    let GuiNote::Gone = next_note(&mut conn) else {
+        panic!("a goodbye")
+    };
     host.join().expect("the host thread ends").expect("cleanly");
     let state = std::fs::read_to_string(dir.join("state.json")).unwrap_or_default();
-    assert!(state.contains("\"exit\":0"), "a close the user asked for exits clean: {state}");
+    assert!(
+        state.contains("\"exit\":0"),
+        "a close the user asked for exits clean: {state}"
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -212,7 +273,10 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
         if let Ok(text) = std::fs::read_to_string(&ready) {
             break SessionId(text.trim().to_owned());
         }
-        assert!(Instant::now() < deadline, "the host never wrote the ready file");
+        assert!(
+            Instant::now() < deadline,
+            "the host never wrote the ready file"
+        );
         std::thread::sleep(Duration::from_millis(50));
     };
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
@@ -229,7 +293,15 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
         // loop. Found by tearing the announcement out to check this
         // suite noticed: it did not fail, it stopped.
         c.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
-        write_frame(&mut c, &Hello { cookie: hf.cookie.clone(), cols: 0, rows: 0 }).unwrap();
+        write_frame(
+            &mut c,
+            &Hello {
+                cookie: hf.cookie.clone(),
+                cols: 0,
+                rows: 0,
+            },
+        )
+        .unwrap();
         let w: Welcome = read_frame(&mut c).unwrap();
         assert!(w.ok, "{}", w.why);
         // Every face gets the agent's facts first (the test above pins
@@ -256,8 +328,14 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
     loop {
         match next_note(&mut asker) {
             GuiNote::Ask { ask, options, .. } => {
-                write_frame(&mut asker, &GuiOp::Answer { ask, option: Some(options[0].0.clone()) })
-                    .unwrap();
+                write_frame(
+                    &mut asker,
+                    &GuiOp::Answer {
+                        ask,
+                        option: Some(options[0].0.clone()),
+                    },
+                )
+                .unwrap();
             }
             GuiNote::Turn(stop) => {
                 assert_eq!(stop, "EndTurn");
@@ -295,7 +373,9 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
 
     // The bystander proved its read path on the turn above; the same
     // read now finds silence where broadcast history would be.
-    bystander.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+    bystander
+        .set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
     assert!(
         read_frame::<GuiNote>(&mut bystander).is_err(),
         "history frames must never be broadcast"
@@ -327,11 +407,13 @@ fn kind_of(n: &GuiNote) -> &'static str {
 /// crate reads a leading `{` as launch JSON — which is the only way to
 /// hand a child an environment through a command *string*.
 fn stub_with(key: &str, value: &str) -> Vec<String> {
-    vec![serde_json::json!({
-        "command": stub_path().to_string_lossy(),
-        "env": { key: value },
-    })
-    .to_string()]
+    vec![
+        serde_json::json!({
+            "command": stub_path().to_string_lossy(),
+            "env": { key: value },
+        })
+        .to_string(),
+    ]
 }
 
 /// **An agent that cannot replay says so, and its empty history stays
@@ -357,21 +439,35 @@ fn an_agent_that_cannot_replay_is_not_a_conversation_with_nothing_in_it() {
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
     let hf = read_host_file(&k.dir_of(&id).unwrap()).expect("a host file");
     let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
-    write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
+    write_frame(
+        &mut conn,
+        &Hello {
+            cookie: hf.cookie,
+            cols: 0,
+            rows: 0,
+        },
+    )
+    .unwrap();
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
 
     let GuiNote::Agent { replays, .. } = next_note(&mut conn) else {
         panic!("the facts come first")
     };
-    assert!(!replays, "this stub advertises no load_session, and the face must be told");
+    assert!(
+        !replays,
+        "this stub advertises no load_session, and the face must be told"
+    );
 
     // Asking anyway closes the bracket rather than hanging — a face
     // that asks before reading the fact must not be left waiting.
     write_frame(&mut conn, &GuiOp::Replay).unwrap();
     match next_note(&mut conn) {
         GuiNote::HistoryEnd => {}
-        other => panic!("an unanswerable replay still closes its bracket, got {}", kind_of(&other)),
+        other => panic!(
+            "an unanswerable replay still closes its bracket, got {}",
+            kind_of(&other)
+        ),
     }
 
     write_frame(&mut conn, &GuiOp::Close).unwrap();
@@ -402,13 +498,19 @@ fn an_agent_that_wants_a_login_says_so_where_the_opener_is_looking() {
         .expect_err("an agent demanding a login opens no session");
 
     let expected = khor_catalog::msg::agent_wants_a_login("Authentication required");
-    assert_eq!(why, expected, "the login refusal gets its own sentence, not a generic one");
+    assert_eq!(
+        why, expected,
+        "the login refusal gets its own sentence, not a generic one"
+    );
     assert_eq!(
         std::fs::read_to_string(root.join("ready.why")).ok(),
         Some(expected),
         "and it is on disk beside the marker, which is all the opener can read"
     );
-    assert!(!ready.exists(), "no session id was written: there is no session");
+    assert!(
+        !ready.exists(),
+        "no session id was written: there is no session"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -462,7 +564,9 @@ fn a_generic_agents_conversation_says_it_has_no_terminal_form() {
     let id = wait_for_ready(&ready);
 
     let node = khor_node::Node::open(root.clone()).expect("a node on this store");
-    let why = node.takeover_term(&id).expect_err("a stub has no terminal form");
+    let why = node
+        .takeover_term(&id)
+        .expect_err("a stub has no terminal form");
     assert_eq!(
         why,
         khor_catalog::msg::no_terminal_form(&id.0),
@@ -480,8 +584,17 @@ fn a_generic_agents_conversation_says_it_has_no_terminal_form() {
     let k = LiveKind::new(root.clone(), DeviceId([1; 32]));
     let hf = read_host_file(&k.dir_of(&id).unwrap()).expect("the host is still there");
     let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host still listens");
-    conn.set_read_timeout(Some(Duration::from_secs(15))).unwrap();
-    write_frame(&mut conn, &Hello { cookie: hf.cookie, cols: 0, rows: 0 }).unwrap();
+    conn.set_read_timeout(Some(Duration::from_secs(15)))
+        .unwrap();
+    write_frame(
+        &mut conn,
+        &Hello {
+            cookie: hf.cookie,
+            cols: 0,
+            rows: 0,
+        },
+    )
+    .unwrap();
     let w: Welcome = read_frame(&mut conn).unwrap();
     assert!(w.ok, "{}", w.why);
     write_frame(&mut conn, &GuiOp::Close).unwrap();
@@ -514,14 +627,27 @@ fn settings_reach_a_face_and_a_change_goes_round() {
     let hf = read_host_file(&k.dir_of(&id).unwrap()).expect("a host file");
     let attach = || {
         let mut conn = TcpStream::connect(("127.0.0.1", hf.port)).expect("the host listens");
-        write_frame(&mut conn, &Hello { cookie: hf.cookie.clone(), cols: 0, rows: 0 }).unwrap();
+        write_frame(
+            &mut conn,
+            &Hello {
+                cookie: hf.cookie.clone(),
+                cols: 0,
+                rows: 0,
+            },
+        )
+        .unwrap();
         let w: Welcome = read_frame(&mut conn).unwrap();
         assert!(w.ok, "{}", w.why);
-        let GuiNote::Agent { .. } = next_note(&mut conn) else { panic!("the facts come first") };
+        let GuiNote::Agent { .. } = next_note(&mut conn) else {
+            panic!("the facts come first")
+        };
         let GuiNote::Settings(json) = next_note(&mut conn) else {
             panic!("then what can be set, before anything else")
         };
-        (conn, serde_json::from_str::<serde_json::Value>(&json).expect("the protocol's own JSON"))
+        (
+            conn,
+            serde_json::from_str::<serde_json::Value>(&json).expect("the protocol's own JSON"),
+        )
     };
     let (mut conn, s) = attach();
     assert_eq!(s["modes"]["currentModeId"], "careful");
@@ -532,9 +658,13 @@ fn settings_reach_a_face_and_a_change_goes_round() {
     write_frame(&mut conn, &GuiOp::SetMode("bold".into())).unwrap();
     // The agent's own word first (events before answers in the loop),
     // then the host telling every face.
-    let GuiNote::Note(chunk) = next_note(&mut conn) else { panic!("the agent names the mode") };
+    let GuiNote::Note(chunk) = next_note(&mut conn) else {
+        panic!("the agent names the mode")
+    };
     assert!(chunk.contains("mode:bold"), "{chunk}");
-    let GuiNote::Settings(json) = next_note(&mut conn) else { panic!("every face learns it") };
+    let GuiNote::Settings(json) = next_note(&mut conn) else {
+        panic!("every face learns it")
+    };
     let s: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(s["modes"]["currentModeId"], "bold");
 
@@ -544,18 +674,42 @@ fn settings_reach_a_face_and_a_change_goes_round() {
     };
     assert_eq!(why, refused::SETTING_REFUSED);
 
-    write_frame(&mut conn, &GuiOp::SetOption { id: "fast".into(), value: Choice::Switch(true) })
-        .unwrap();
-    let GuiNote::Settings(json) = next_note(&mut conn) else { panic!("the list as the agent has it") };
+    write_frame(
+        &mut conn,
+        &GuiOp::SetOption {
+            id: "fast".into(),
+            value: Choice::Switch(true),
+        },
+    )
+    .unwrap();
+    let GuiNote::Settings(json) = next_note(&mut conn) else {
+        panic!("the list as the agent has it")
+    };
     let s: serde_json::Value = serde_json::from_str(&json).unwrap();
-    let fast = s["options"].as_array().unwrap().iter().find(|o| o["id"] == "fast").unwrap();
+    let fast = s["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["id"] == "fast")
+        .unwrap();
     assert_eq!(fast["currentValue"], true);
-    assert_eq!(s["modes"]["currentModeId"], "bold", "the earlier change is still there");
+    assert_eq!(
+        s["modes"]["currentModeId"], "bold",
+        "the earlier change is still there"
+    );
 
     // A face arriving now.
     let (_late, s) = attach();
-    assert_eq!(s["modes"]["currentModeId"], "bold", "told where things stand, not where they started");
-    let fast = s["options"].as_array().unwrap().iter().find(|o| o["id"] == "fast").unwrap();
+    assert_eq!(
+        s["modes"]["currentModeId"], "bold",
+        "told where things stand, not where they started"
+    );
+    let fast = s["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|o| o["id"] == "fast")
+        .unwrap();
     assert_eq!(fast["currentValue"], true);
 
     write_frame(&mut conn, &GuiOp::Close).unwrap();

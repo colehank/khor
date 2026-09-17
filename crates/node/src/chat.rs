@@ -7,8 +7,8 @@
 use std::path::PathBuf;
 
 use khor_catalog::msg;
-use khor_core::{kind, DeviceId, Event, Kind, Millis, Session, SessionId, State, StateStamp};
-use khor_sync::chat::{channel_dir, open_channel, ChatDoc, Message, Sender};
+use khor_core::{DeviceId, Event, Kind, Millis, Session, SessionId, State, StateStamp, kind};
+use khor_sync::chat::{ChatDoc, Message, Sender, channel_dir, open_channel};
 use khor_sync::store::Loaded;
 
 /// One channel's readout.
@@ -51,7 +51,8 @@ impl ChatKind {
     }
 
     fn dir(&self, channel: &str) -> Result<PathBuf, String> {
-        channel_dir(&self.root, channel).ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))
+        channel_dir(&self.root, channel)
+            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))
     }
 
     fn load(&self, channel: &str) -> Result<Loaded<ChatDoc>, String> {
@@ -122,13 +123,20 @@ impl ChatKind {
             // retracted one is skipped (its slot stays, its words must
             // not); a kind this version cannot read previews as nothing
             // rather than as blank text (MsgBody::Unknown's rule).
-            last: msgs.iter().rev().filter(|m| !m.retracted).find_map(|m| match &m.body {
-                khor_sync::chat::MsgBody::Text(t) => Some(khor_core::preview(t)),
-                khor_sync::chat::MsgBody::Files(fs) => Some(khor_core::preview(
-                    &fs.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(" "),
-                )),
-                khor_sync::chat::MsgBody::Unknown(_) => None,
-            }),
+            last: msgs
+                .iter()
+                .rev()
+                .filter(|m| !m.retracted)
+                .find_map(|m| match &m.body {
+                    khor_sync::chat::MsgBody::Text(t) => Some(khor_core::preview(t)),
+                    khor_sync::chat::MsgBody::Files(fs) => Some(khor_core::preview(
+                        &fs.iter()
+                            .map(|f| f.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" "),
+                    )),
+                    khor_sync::chat::MsgBody::Unknown(_) => None,
+                }),
             via: None,
             term: false,
             // **No place, and that is not a gap.** A conversation with
@@ -145,7 +153,12 @@ impl ChatKind {
     /// told or a file offered — where one channel is read once and the
     /// messages are not wanted afterwards.
     pub fn row(&self, channel: &str, home: DeviceId, watermark: i64) -> Result<Session, String> {
-        Ok(self.row_from(channel, home, &self.load(channel)?.doc.messages(), watermark))
+        Ok(self.row_from(
+            channel,
+            home,
+            &self.load(channel)?.doc.messages(),
+            watermark,
+        ))
     }
 
     /// The row **and** the messages behind it, from one read of the
@@ -171,11 +184,22 @@ impl ChatKind {
         let loaded = self.load(channel)?;
         let messages = loaded.doc.messages();
         let row = self.row_from(channel, home, &messages, watermark);
-        Ok((row, ChannelLog { messages, broken: loaded.broken.len() }))
+        Ok((
+            row,
+            ChannelLog {
+                messages,
+                broken: loaded.broken.len(),
+            },
+        ))
     }
 
     pub fn tell(&self, channel: &str, home: DeviceId, text: &str) -> Result<Told, String> {
-        self.push(channel, home, |doc| doc.tell(&self.me, text), serde_json::json!({ "text": text, "from": self.me.name }))
+        self.push(
+            channel,
+            home,
+            |doc| doc.tell(&self.me, text),
+            serde_json::json!({ "text": text, "from": self.me.name }),
+        )
     }
 
     /// Sends file summaries — names, sizes, digests. The bytes never
@@ -187,7 +211,12 @@ impl ChatKind {
         files: &[khor_sync::chat::FileRef],
     ) -> Result<Told, String> {
         let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
-        self.push(channel, home, |doc| doc.send_files(&self.me, files), serde_json::json!({ "files": names, "from": self.me.name }))
+        self.push(
+            channel,
+            home,
+            |doc| doc.send_files(&self.me, files),
+            serde_json::json!({ "files": names, "from": self.me.name }),
+        )
     }
 
     fn push(
@@ -216,7 +245,12 @@ impl ChatKind {
             at: row.state.at,
             payload: serde_json::to_vec(&payload).map_err(|e| e.to_string())?,
         };
-        Ok(Told { msg_id, at, row, event })
+        Ok(Told {
+            msg_id,
+            at,
+            row,
+            event,
+        })
     }
 
     pub fn log(&self, channel: &str) -> Result<ChannelLog, String> {
@@ -226,5 +260,4 @@ impl ChatKind {
             broken: loaded.broken.len(),
         })
     }
-
 }

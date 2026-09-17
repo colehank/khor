@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use khor_node::Node;
-use khor_sync::chat::{channel_dir, ChatDoc, Sender};
+use khor_sync::chat::{ChatDoc, Sender, channel_dir};
 use tokio::time::timeout;
 
 fn root(tag: &str) -> PathBuf {
@@ -77,9 +77,17 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // Pairing has no direction: both tables hold both machines; one
     // side alone means pairing is incomplete.
     let b_names: Vec<String> = b.devices().unwrap().into_iter().map(|d| d.name).collect();
-    assert_eq!(b_names, vec!["alpha", "beta"], "beta's table should hold both");
+    assert_eq!(
+        b_names,
+        vec!["alpha", "beta"],
+        "beta's table should hold both"
+    );
     let a_names: Vec<String> = a.devices().unwrap().into_iter().map(|d| d.name).collect();
-    assert_eq!(a_names, vec!["alpha", "beta"], "alpha's table should hold both");
+    assert_eq!(
+        a_names,
+        vec!["alpha", "beta"],
+        "alpha's table should hold both"
+    );
 
     // beta writes into alpha's window and pushes; alpha's serve merges.
     b.tell("alpha", "from beta").unwrap();
@@ -87,7 +95,10 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .await
         .expect("sync must not hang")
         .unwrap();
-    let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("there should be an alpha entry");
+    let (_, verdict) = outcomes
+        .iter()
+        .find(|(n, _)| n == "alpha")
+        .expect("there should be an alpha entry");
     verdict.as_ref().expect("the sync to alpha should succeed");
 
     let a_log = a.log("alpha").unwrap();
@@ -122,22 +133,37 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // telling implies looking — so once the seen watermark syncs, nothing
     // counts as unread on any device.
     let rows = b.sessions().unwrap();
-    let alpha_row = rows.iter().find(|v| v.session.title == "alpha").expect("there should be an alpha row");
-    assert_eq!(alpha_row.session.unread, 0, "own words never count as unread, on any device");
+    let alpha_row = rows
+        .iter()
+        .find(|v| v.session.title == "alpha")
+        .expect("there should be an alpha row");
+    assert_eq!(
+        alpha_row.session.unread, 0,
+        "own words never count as unread, on any device"
+    );
 
     // A line nobody here typed (an agent's, say): lands as a raw block in
     // beta's copy of alpha's window, with no seen state riding along.
     {
         let far = ChatDoc::new(0xFA).unwrap();
-        far.tell(&Sender { id: "dev-far".into(), name: "far".into() }, "an outside line")
-            .unwrap();
+        far.tell(
+            &Sender {
+                id: "dev-far".into(),
+                name: "far".into(),
+            },
+            "an outside line",
+        )
+        .unwrap();
         let block = far.changes_since(&Default::default()).unwrap();
         let dir = channel_dir(&rb, "alpha").unwrap();
         std::fs::write(dir.join("u-00000000000000fa-00000000.loro"), &block).unwrap();
     }
     let rows = b.sessions().unwrap();
     let row_b = rows.iter().find(|v| v.session.title == "alpha").unwrap();
-    assert!(row_b.session.unread > 0, "the outside line should count as unread on beta");
+    assert!(
+        row_b.session.unread > 0,
+        "the outside line should count as unread on beta"
+    );
 
     // It syncs over and is unread on alpha too (control for the clear).
     timeout(Duration::from_secs(60), b.sync_now())
@@ -146,7 +172,10 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .unwrap();
     let rows = a.sessions().unwrap();
     let row_a = rows.iter().find(|v| v.session.title == "alpha").unwrap();
-    assert!(row_a.session.unread > 0, "the outside line should be unread on alpha too");
+    assert!(
+        row_a.session.unread > 0,
+        "the outside line should be unread on alpha too"
+    );
 
     // Seen is a decision that travels: beta looks, and alpha's badge
     // clears without anyone touching alpha.
@@ -167,17 +196,33 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .await
         .expect("refusal must not hang either")
         .unwrap_err();
-    assert_eq!(err, khor_catalog::msg::BAD_INVITE, "a replay is refused by name");
-    assert_eq!(c.devices().unwrap().len(), 1, "gamma's table should hold only itself");
+    assert_eq!(
+        err,
+        khor_catalog::msg::BAD_INVITE,
+        "a replay is refused by name"
+    );
+    assert_eq!(
+        c.devices().unwrap().len(),
+        1,
+        "gamma's table should hold only itself"
+    );
 
     // An unpaired device syncs nothing — even knowing the address.
     // gamma copies alpha's entry into its own table by hand…
     {
         use khor_sync::devices::devices_dir;
         use khor_sync::store::load;
-        let alpha = a.devices().unwrap().into_iter().find(|d| d.name == "alpha").unwrap();
+        let alpha = a
+            .devices()
+            .unwrap()
+            .into_iter()
+            .find(|d| d.name == "alpha")
+            .unwrap();
         let loaded = load::<khor_sync::devices::DeviceDoc>(&devices_dir(&rc), 0x77).unwrap();
-        loaded.doc.upsert(&alpha.id, &alpha.name, &alpha.addrs).unwrap();
+        loaded
+            .doc
+            .upsert(&alpha.id, &alpha.name, &alpha.addrs)
+            .unwrap();
         let mut store = loaded.store;
         store.flush(&loaded.doc).unwrap();
     }
@@ -186,9 +231,16 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .await
         .expect("refusal must not hang either")
         .unwrap();
-    let (_, verdict) = outcomes.iter().find(|(n, _)| n == "alpha").expect("there should be an alpha entry");
+    let (_, verdict) = outcomes
+        .iter()
+        .find(|(n, _)| n == "alpha")
+        .expect("there should be an alpha entry");
     let err = verdict.as_ref().unwrap_err();
-    assert_eq!(err, khor_catalog::msg::NOT_PAIRED, "an unpaired sync is refused by name");
+    assert_eq!(
+        err,
+        khor_catalog::msg::NOT_PAIRED,
+        "an unpaired sync is refused by name"
+    );
 
     serve.abort();
     for r in [&ra, &rb, &rc] {
@@ -239,9 +291,20 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
         khor_catalog::msg::invite_expired(khor_node::link::INVITE_WINDOW_MS / 60_000),
         "expired is its own word"
     );
-    assert_ne!(err, khor_catalog::msg::BAD_INVITE, "and not the wrong-code one");
-    assert_eq!(b.devices().unwrap().len(), 1, "beta's table should hold only itself");
-    assert!(!record.exists(), "an expired ticket is dropped, not left to be re-refused");
+    assert_ne!(
+        err,
+        khor_catalog::msg::BAD_INVITE,
+        "and not the wrong-code one"
+    );
+    assert_eq!(
+        b.devices().unwrap().len(),
+        1,
+        "beta's table should hold only itself"
+    );
+    assert!(
+        !record.exists(),
+        "an expired ticket is dropped, not left to be re-refused"
+    );
 
     // The control: a fresh ticket, same machines, same link.
     let fresh = a.invite().unwrap();
@@ -250,7 +313,11 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
         .expect("pairing must not hang")
         .unwrap();
     assert_eq!(name, "alpha");
-    assert_eq!(b.devices().unwrap().len(), 2, "the fresh one really did pair");
+    assert_eq!(
+        b.devices().unwrap().len(),
+        2,
+        "the fresh one really did pair"
+    );
 
     serve.abort();
     for r in [&ra, &rb] {
@@ -268,7 +335,11 @@ fn minting_a_ticket_sweeps_the_ones_that_expired() {
     std::fs::create_dir_all(&dir).unwrap();
     let old = dir.join("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let empty = dir.join("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
-    std::fs::write(&old, (now_ms() - khor_node::link::INVITE_WINDOW_MS - 1).to_string()).unwrap();
+    std::fs::write(
+        &old,
+        (now_ms() - khor_node::link::INVITE_WINDOW_MS - 1).to_string(),
+    )
+    .unwrap();
     // What a khor from before this rule left behind: no mint instant at
     // all. "I cannot tell how old this is" has one safe reading.
     std::fs::write(&empty, b"").unwrap();

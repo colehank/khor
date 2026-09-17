@@ -3,7 +3,7 @@
 //! unknown keys render instead of panicking, and the TS face really
 //! generates.
 
-use khor_core::avatar::{FaceShape, Variant, PRESETS};
+use khor_core::avatar::{FaceShape, PRESETS, Variant};
 use khor_core::{Hop, State};
 
 #[test]
@@ -67,7 +67,11 @@ fn every_face_option_has_a_word_and_every_word_names_an_option() {
     for key in &options {
         // `word` echoes what it does not know, so an echo *is* the
         // missing entry.
-        assert_ne!(khor_catalog::avatar::word(key), *key, "{key} must map to a word, not echo");
+        assert_ne!(
+            khor_catalog::avatar::word(key),
+            *key,
+            "{key} must map to a word, not echo"
+        );
     }
     for key in khor_catalog::avatar::KEYS {
         if key.starts_with("axis-") {
@@ -88,5 +92,8 @@ fn the_ts_face_is_generated_alongside() {
     assert!(ts.contains("export const cli"));
     assert!(ts.contains("export const msg"));
     assert!(ts.contains("export const avatar"));
-    assert!(ts.contains("${a0}"), "placeholders must become template args");
+    assert!(
+        ts.contains("${a0}"),
+        "placeholders must become template args"
+    );
 }

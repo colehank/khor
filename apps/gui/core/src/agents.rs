@@ -190,7 +190,11 @@ pub fn agent_ask(root: &std::path::Path, name: &str) -> Result<AgentSaid, String
 /// has no address to open at, so it is refused by name rather than
 /// opened at some default — the failure mode being avoided is a fresh
 /// conversation that gets called the old one.
-pub fn resume_session(root: &std::path::Path, agent: &str, session: &str) -> Result<String, String> {
+pub fn resume_session(
+    root: &std::path::Path,
+    agent: &str,
+    session: &str,
+) -> Result<String, String> {
     let n = Node::open(root.to_path_buf())?;
     // The same refusal the CLI and the wizard give (`agent_or_refuse`),
     // for the same reason: one judgment, or it grows two.
@@ -243,21 +247,21 @@ mod tests {
         let unasked = serde_json::to_string(&AgentSaid::from(None)).unwrap();
         let cannot =
             serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Cannot))).unwrap();
-        let none = serde_json::to_string(&AgentSaid::from(Some(
-            khor_node::AgentAnswer::Sessions { rows: vec![] },
-        )))
-        .unwrap();
-        let some = serde_json::to_string(&AgentSaid::from(Some(
-            khor_node::AgentAnswer::Sessions {
+        let none =
+            serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+                rows: vec![],
+            })))
+            .unwrap();
+        let some =
+            serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
                 rows: vec![khor_node::AgentSeen {
                     id: "sess-1".into(),
                     cwd: "/w/khor".into(),
                     title: Some("接上注册表".into()),
                     updated_at: Some("2026-08-30T10:00:00Z".into()),
                 }],
-            },
-        )))
-        .unwrap();
+            })))
+            .unwrap();
 
         assert!(unasked.contains(r#""said":"unasked""#), "{unasked}");
         assert!(cannot.contains(r#""said":"cannot""#), "{cannot}");
@@ -275,10 +279,16 @@ mod tests {
         // **`rows` exists on the listing and nowhere else.** This is
         // the whole design: a face cannot reach for a list on an
         // answer that is not one.
-        assert!(!unasked.contains("rows"), "unasked carried a list: {unasked}");
+        assert!(
+            !unasked.contains("rows"),
+            "unasked carried a list: {unasked}"
+        );
         assert!(!cannot.contains("rows"), "cannot carried a list: {cannot}");
         assert!(none.contains(r#""rows":[]"#), "{none}");
-        assert!(some.contains("sess-1") && some.contains("/w/khor"), "{some}");
+        assert!(
+            some.contains("sess-1") && some.contains("/w/khor"),
+            "{some}"
+        );
     }
 
     /// **A conversation's cwd survives the trip to the face.** It is
@@ -295,7 +305,9 @@ mod tests {
                 updated_at: None,
             }],
         }));
-        let AgentSaid::Sessions { rows } = said else { panic!("a listing") };
+        let AgentSaid::Sessions { rows } = said else {
+            panic!("a listing")
+        };
         assert_eq!(rows[0].cwd, "/w/khor");
         // A conversation nobody named stays unnamed rather than
         // becoming an empty string on screen.
@@ -317,7 +329,10 @@ mod tests {
         assert_eq!(rows.len(), all);
         assert_eq!(rows.iter().filter(|r| r.argv.is_some()).count(), startable);
         assert_eq!(rows.len() - startable, 18);
-        assert!(taken.starts_with("2026-"), "the snapshot says when: {taken}");
+        assert!(
+            taken.starts_with("2026-"),
+            "the snapshot says when: {taken}"
+        );
 
         let gemini = rows.iter().find(|r| r.id == "gemini").expect("gemini");
         assert_eq!(
@@ -326,7 +341,10 @@ mod tests {
             "the command is spelled out, or「khor 起得来」is taken on trust"
         );
         let goose = rows.iter().find(|r| r.id == "goose").expect("goose");
-        assert_eq!(goose.argv, None, "goose ships a binary; an argv here would be invented");
+        assert_eq!(
+            goose.argv, None,
+            "goose ships a binary; an argv here would be invented"
+        );
     }
 
     /// **Registering by id spawns nothing and names the agent by its
@@ -361,15 +379,19 @@ mod tests {
     fn resuming_a_conversation_nobody_recorded_is_refused_by_name() {
         let r = root("resume");
         let n = Node::open(r.clone()).unwrap();
-        n.register_agent("zed", &["some-acp-agent".to_owned()]).unwrap();
+        n.register_agent("zed", &["some-acp-agent".to_owned()])
+            .unwrap();
 
         let unrecorded =
             resume_session(&r, "zed", "sess-nobody-listed").expect_err("never recorded");
         assert!(unrecorded.contains("sess-nobody-listed"), "{unrecorded}");
-        assert!(unrecorded.contains("zed"), "and it says who to ask: {unrecorded}");
+        assert!(
+            unrecorded.contains("zed"),
+            "and it says who to ask: {unrecorded}"
+        );
 
-        let unregistered = resume_session(&r, "zedd", "sess-nobody-listed")
-            .expect_err("no such registration");
+        let unregistered =
+            resume_session(&r, "zedd", "sess-nobody-listed").expect_err("no such registration");
         assert_eq!(
             unregistered,
             n.agent_or_refuse("zedd").unwrap_err(),
