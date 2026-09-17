@@ -429,6 +429,104 @@ pub fn launch(host: &str, target: &str) -> Result<(), String> {
     }
 }
 
+/// Names and lines under one directory on a satellite (工作区第六轮
+/// 第 47 条).
+///
+/// **Two commands, one for each half of the answer**, because the two
+/// halves are two questions: `find` walks names and `grep -rnI` walks
+/// text, and a single tool that did both would be one of them doing the
+/// other badly. Both are piped through `head`, so the caps are the far
+/// machine's own work rather than this side reading a million rows and
+/// throwing them away.
+///
+/// **`grep -F` and `find | grep -F`, never `-iname`.** khor's own walk
+/// matches a plain substring (`crate::files::search`), and `-iname`
+/// would read a `*` in somebody's query as a glob — the same repository
+/// answering two different tables depending on which road it was asked
+/// over, which is the thing every satellite script here exists to
+/// avoid.
+///
+/// **What this road cannot do is read `.gitignore`.** The local walk
+/// honours it and this one has nothing that could: there is no ripgrep
+/// on a satellite by assumption (`khor` itself is not there —
+/// docs/NET.md 它身上不留东西), and reimplementing git's exclude rules
+/// in `sh` would be the almost-right that goes wrong on the one project
+/// that needs it. `.git` itself is excluded, which is the bulk of it;
+/// a satellite's answer can therefore hold build output, and that is
+/// written down rather than hidden.
+const SEARCH_SH: &str = r#"
+set -u
+cd "$KHOR_DIR" || exit 3
+find . -type f -not -path '*/.git/*' 2>/dev/null |
+  grep -i -F -e "$KHOR_Q" 2>/dev/null |
+  head -n "$KHOR_NAMES" |
+  sed 's/^/name=/'
+grep -rnI -i -F --exclude-dir=.git -e "$KHOR_Q" . 2>/dev/null |
+  head -n "$KHOR_LINES" |
+  sed 's/^/row=/'
+exit 0
+"#;
+
+/// [`SEARCH_SH`] over the user's ssh road, in [`crate::files::Found`]'s
+/// shape.
+pub fn search(host: &str, dir: &str, query: &str) -> Result<crate::files::Found, String> {
+    let names = crate::files::SEARCH_NAMES;
+    let lines = crate::files::SEARCH_LINES;
+    let script = format!(
+        "KHOR_DIR={}\nKHOR_Q={}\nKHOR_NAMES={names}\nKHOR_LINES={lines}\n{SEARCH_SH}",
+        sh_quote(dir),
+        sh_quote(query),
+    );
+    Ok(parse_found(&sh_over_ssh(host, &script)?, dir))
+}
+
+/// `name=` and `row=` lines into an answer, with the relative paths the
+/// far shell printed made absolute again.
+///
+/// **A row is `path:line:text` and the path is what the `find` printed**
+/// — `./src/a.rs` — so the two colons that matter are the first one
+/// followed by digits. A path with a colon in it would be read one
+/// segment short; it is the one shape this parse cannot tell apart, and
+/// it is left that way rather than adding a second output format for a
+/// name nobody on a unix machine has typed on purpose.
+fn parse_found(text: &str, dir: &str) -> crate::files::Found {
+    let root = dir.trim_end_matches('/');
+    let absolute = |rel: &str| format!("{root}/{}", rel.trim_start_matches("./"));
+    let mut out = crate::files::Found::default();
+    for line in text.lines() {
+        if let Some(rel) = line.strip_prefix("name=") {
+            out.names.push(absolute(rel.trim_end()));
+            continue;
+        }
+        let Some(row) = line.strip_prefix("row=") else {
+            continue;
+        };
+        // The first `:` whose next field is a number: everything before
+        // it is the path, everything after that field is the line.
+        let mut cut = 0;
+        while let Some(at) = row[cut..].find(':') {
+            let at = cut + at;
+            let rest = &row[at + 1..];
+            let Some(end) = rest.find(':') else { break };
+            if let Ok(n) = rest[..end].parse::<u32>() {
+                out.lines.push(crate::files::Hit {
+                    path: absolute(&row[..at]),
+                    line: n,
+                    text: rest[end + 1..].to_owned(),
+                });
+                break;
+            }
+            cut = at + 1;
+        }
+    }
+    // The caps are `head`'s, so a list that came back exactly full is a
+    // list that was cut — the no-silent-caps rule, read off the shape
+    // of the answer because the far shell has no other way to say it.
+    out.more = out.names.len() >= crate::files::SEARCH_NAMES
+        || out.lines.len() >= crate::files::SEARCH_LINES;
+    out
+}
+
 /// [`TOUCHED_SH`] over the user's ssh road, in ms since the epoch —
 /// `0` where there was nothing to date.
 pub fn touched(host: &str, path: &str) -> Result<i64, String> {
@@ -1562,5 +1660,61 @@ d=+f
                 .hunks
                 .is_empty()
         );
+    }
+
+    /// What [`SEARCH_SH`] prints, parsed back into the same shape khor's
+    /// own walk answers (工作区第六轮 第 47 条). **The two colons are
+    /// the fragile part**: `grep -n` writes `path:line:text` and the
+    /// text may hold colons of its own, so the line number is the first
+    /// field that parses as one — and a path printed relative by the
+    /// far shell comes back absolute.
+    #[test]
+    fn a_satellites_grep_reads_back_as_names_and_lines() {
+        let text = "\
+name=./src/one.rs
+name=./README.md
+row=./src/one.rs:2:    let keeper = 1;
+row=./notes.md:11:see http://example.test/x for more
+";
+        let found = parse_found(text, "/home/peer/w/paper/");
+        assert_eq!(
+            found.names,
+            vec![
+                "/home/peer/w/paper/src/one.rs".to_owned(),
+                "/home/peer/w/paper/README.md".to_owned(),
+            ]
+        );
+        assert_eq!(
+            found.lines,
+            vec![
+                crate::files::Hit {
+                    path: "/home/peer/w/paper/src/one.rs".to_owned(),
+                    line: 2,
+                    text: "    let keeper = 1;".to_owned(),
+                },
+                crate::files::Hit {
+                    path: "/home/peer/w/paper/notes.md".to_owned(),
+                    line: 11,
+                    // The address keeps both of its colons: only the
+                    // first field that is a number is the line.
+                    text: "see http://example.test/x for more".to_owned(),
+                },
+            ]
+        );
+        assert!(!found.more, "neither list reached its cap");
+    }
+
+    /// A list that came back exactly full was cut by `head`, and the
+    /// far shell has no other way to say so — the no-silent-caps rule
+    /// read off the shape of the answer.
+    #[test]
+    fn a_full_list_is_reported_as_cut() {
+        let mut text = String::new();
+        for n in 0..crate::files::SEARCH_LINES {
+            text.push_str(&format!("row=./a.txt:{}:keeper\n", n + 1));
+        }
+        let found = parse_found(&text, "/w");
+        assert_eq!(found.lines.len(), crate::files::SEARCH_LINES);
+        assert!(found.more);
     }
 }

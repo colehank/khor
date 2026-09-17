@@ -474,6 +474,187 @@ pub fn launch(target: &str) -> Result<(), String> {
         .map_err(|e| msg::cant_launch(target, e))
 }
 
+/// One line that holds what somebody typed (工作区第六轮 第 47 条).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Hit {
+    /// Absolute, in the answering machine's own spelling.
+    pub path: String,
+    /// 1-based, the way every line number a person reads is.
+    pub line: u32,
+    /// That line, with its ends trimmed of nothing but its terminator —
+    /// capped at [`SEARCH_COLUMNS`] characters, because a minified
+    /// bundle is one line of two megabytes and a result row has room
+    /// for one line of prose.
+    pub text: String,
+}
+
+/// What one search answers.
+///
+/// **Two lists rather than one ranked one.** A file whose *name* holds
+/// the words is a different kind of answer from a line that does — the
+/// first is 「that is the file I meant」 and the second is 「that is the
+/// place I meant」 — and a single list ordered by some score would make
+/// the face responsible for a judgment nothing here can defend.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Found {
+    /// Paths whose own text holds the words, absolute.
+    pub names: Vec<String>,
+    pub lines: Vec<Hit>,
+    /// A cap or the clock stopped the walk: there is more down there.
+    /// The no-silent-caps rule [`crate::proto::Response::Dir`] already
+    /// carries.
+    pub more: bool,
+}
+
+/// How many name hits and line hits one answer carries.
+///
+/// **Caps rather than a page**, because what is being answered is a
+/// person typing in a box: they are looking for one file, and the
+/// answer to 「there are nine hundred」 is to type more, not to page
+/// through them. The face says so out loud when `more` is set.
+pub const SEARCH_NAMES: usize = 50;
+pub const SEARCH_LINES: usize = 200;
+/// A file this side of the line is read; anything bigger is skipped
+/// whole. The same 4 MB [`crate::preview`] reads up to, and for the
+/// same reason: past it a file is not a thing somebody is reading.
+pub const SEARCH_FILE_MAX: u64 = 4 * 1024 * 1024;
+/// How much of one line travels.
+pub const SEARCH_COLUMNS: usize = 400;
+/// How long a whole walk may take. **A ceiling on somebody's attention,
+/// not on their disk**: five seconds is already long for a box that
+/// answers while you type, and a repository that cannot be walked in
+/// five is one where the answer would have arrived after the question
+/// changed.
+pub const SEARCH_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+/// How much of a file is sniffed for the NUL that means binary. git's
+/// own number, borrowed for `khor_gui_core::files`'s reason: 「is this
+/// text」 has no true answer, only a convention, and a convention
+/// people already share beats a fresh judgment call.
+const SNIFF: usize = 8000;
+
+/// Everything under `dir` that holds `query` — in its name, or in one
+/// of its lines (工作区第六轮 第 47 条).
+///
+/// **Case-insensitive and never a regular expression.** What is typed
+/// into a box beside a tree is a fragment of a name, and a `.` or a `*`
+/// in it means the character rather than the pattern — a person who
+/// types `main.rs` is not asking for `mainXrs`, and a box that quietly
+/// read one as the other would answer questions nobody asked.
+///
+/// **`.gitignore` is honoured**, which is the whole reason this walk is
+/// the `ignore` crate's rather than a hand-rolled one: a project's
+/// `target/` or `node_modules/` holds more text than everything a
+/// person wrote, and a search that returned it would answer every query
+/// with somebody else's code.
+///
+/// Binary files are skipped by the NUL that [`crate::preview`] sniffs
+/// for, and so are files past [`SEARCH_FILE_MAX`]. The walk stops at
+/// [`SEARCH_BUDGET`] or at either cap, and says so with `more`.
+pub fn search(dir: &str, query: &str) -> Result<Found, String> {
+    let needle = query.trim().to_lowercase();
+    let root = std::path::Path::new(dir);
+    if !root.is_absolute() {
+        return Err(msg::path_not_absolute(dir));
+    }
+    if !root.is_dir() {
+        return Err(msg::no_such_dir(dir));
+    }
+    let mut out = Found::default();
+    // **Nothing typed is nothing found, and it is not a refusal.** The
+    // box is emptied by backspacing, and a sentence appearing under an
+    // empty field would be khor telling somebody off for undoing.
+    if needle.is_empty() {
+        return Ok(out);
+    }
+    let began = std::time::Instant::now();
+    // Sorted so that two machines answering about one checkout answer
+    // in one order: the walk is otherwise the directory's own, which is
+    // the filesystem's and not a fact anybody chose (docs/UX.md 状态呈现
+    // — the node orders, the face never re-sorts).
+    let walk = ignore::WalkBuilder::new(root)
+        // **`.gitignore` is read whether or not there is a `.git`**, and
+        // the default is the other way round. A workspace in khor is a
+        // directory somebody declared (docs/WORKSPACE.md), not
+        // necessarily a checkout — and a directory with a `.gitignore`
+        // in it has said what does not belong to it whichever it is.
+        .require_git(false)
+        // **Dotfiles are searched and `.git` is not.** The first is
+        // where a project's workflows, its `.gitignore` and its
+        // `.env.example` live, and a search that could not find them
+        // would be wrong about files a person can see in the tree. The
+        // second is a database: every object in it is bytes nobody
+        // wrote by hand, and walking it is seconds of the budget spent
+        // on nothing.
+        .hidden(false)
+        .filter_entry(|e| e.file_name() != ".git")
+        .sort_by_file_path(std::path::Path::cmp)
+        .build();
+    for found in walk {
+        if began.elapsed() >= SEARCH_BUDGET {
+            out.more = true;
+            break;
+        }
+        let Ok(entry) = found else { continue };
+        if entry.file_type().is_none_or(|t| !t.is_file()) {
+            continue;
+        }
+        let path = entry.path();
+        let Some(spelled) = path.to_str() else {
+            continue;
+        };
+        if spelled.to_lowercase().contains(&needle) {
+            if out.names.len() < SEARCH_NAMES {
+                out.names.push(spelled.to_owned());
+            } else {
+                out.more = true;
+            }
+        }
+        if out.lines.len() >= SEARCH_LINES {
+            out.more = true;
+            continue;
+        }
+        if entry.metadata().is_ok_and(|m| m.len() > SEARCH_FILE_MAX) {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(path) else {
+            // A file this walk can see and cannot read is one line of
+            // somebody's permissions, not an answer to give back.
+            continue;
+        };
+        if bytes.iter().take(SNIFF).any(|b| *b == 0) {
+            continue;
+        }
+        // Lossy on purpose: a file that is text with one bad byte in it
+        // is still text, and refusing to look at it would hide the very
+        // line somebody is hunting.
+        for (n, line) in String::from_utf8_lossy(&bytes).lines().enumerate() {
+            if !line.to_lowercase().contains(&needle) {
+                continue;
+            }
+            if out.lines.len() >= SEARCH_LINES {
+                out.more = true;
+                break;
+            }
+            out.lines.push(Hit {
+                path: spelled.to_owned(),
+                line: n as u32 + 1,
+                text: clip(line, SEARCH_COLUMNS),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The first `columns` characters of a line. **Characters, not bytes**:
+/// cutting a UTF-8 sequence in half would put a replacement mark in
+/// somebody's own words.
+fn clip(line: &str, columns: usize) -> String {
+    match line.char_indices().nth(columns) {
+        Some((at, _)) => line[..at].to_owned(),
+        None => line.to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod remove_tests {
     use super::*;
@@ -1028,5 +1209,140 @@ mod make_tests {
             Some(v) => unsafe { std::env::set_var(LAUNCHER_ENV, v) },
             None => unsafe { std::env::remove_var(LAUNCHER_ENV) },
         }
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    /// A little project: a readme, a source file, one build output that
+    /// `.gitignore` covers, and one file of bytes.
+    fn project(tag: &str) -> Scratch {
+        let p = std::env::temp_dir().join(format!("khor-search-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(p.join("src")).unwrap();
+        std::fs::create_dir_all(p.join("target")).unwrap();
+        std::fs::write(p.join(".gitignore"), "target\n").unwrap();
+        std::fs::write(p.join("README.md"), "# a project\nit has a keeper in it\n").unwrap();
+        std::fs::write(
+            p.join("src/one.rs"),
+            "fn main() {\n    let keeper = 1;\n}\n",
+        )
+        .unwrap();
+        std::fs::write(p.join("target/built.rs"), "let keeper = 2;\n").unwrap();
+        std::fs::write(p.join("src/shot.png"), [0x89, b'P', 0, b'N', b'G']).unwrap();
+        Scratch(p)
+    }
+
+    /// The two halves of one answer, and the two things that must stay
+    /// out of it: **the ignored directory and the binary file**.
+    #[test]
+    fn names_and_lines_are_two_lists_and_gitignore_is_honoured() {
+        let dir = project("both");
+        let found = search(dir.to_str().unwrap(), "keeper").unwrap();
+        assert!(
+            found.names.is_empty(),
+            "no path here has the word in it: {:?}",
+            found.names
+        );
+        let lines: Vec<(String, u32)> = found
+            .lines
+            .iter()
+            .map(|h| {
+                (
+                    h.path
+                        .trim_start_matches(dir.to_str().unwrap())
+                        .trim_start_matches('/')
+                        .to_owned(),
+                    h.line,
+                )
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            vec![("README.md".to_owned(), 2), ("src/one.rs".to_owned(), 2)],
+            "the ignored copy under target/ is the one that must not be here"
+        );
+        assert!(!found.more, "nothing was cut");
+
+        // …and a name hit is the other list, with no line in it.
+        let named = search(dir.to_str().unwrap(), "one.rs").unwrap();
+        assert_eq!(named.names.len(), 1, "{:?}", named.names);
+        assert!(named.names[0].ends_with("src/one.rs"));
+    }
+
+    /// **Case-insensitive and a plain substring**, both halves: `README`
+    /// is found by `readme`, and a `.` means the character rather than
+    ///「any character」.
+    #[test]
+    fn case_is_ignored_and_a_dot_is_a_dot() {
+        let dir = project("case");
+        let hit = search(dir.to_str().unwrap(), "README").unwrap();
+        assert_eq!(hit.names.len(), 1, "{:?}", hit.names);
+        let dotted = search(dir.to_str().unwrap(), "one.rs").unwrap();
+        let regexy = search(dir.to_str().unwrap(), "oneXrs").unwrap();
+        assert_eq!(dotted.names.len(), 1);
+        assert!(
+            regexy.names.is_empty(),
+            "a pattern was read where a name was typed: {:?}",
+            regexy.names
+        );
+    }
+
+    /// An empty box is not a refusal and not the whole project: it is
+    /// nothing found, which is what the face paints as「back to the
+    /// tree」.
+    #[test]
+    fn nothing_typed_finds_nothing() {
+        let dir = project("empty");
+        let found = search(dir.to_str().unwrap(), "   ").unwrap();
+        assert!(found.names.is_empty() && found.lines.is_empty() && !found.more);
+    }
+
+    /// A directory that is not there is refused out loud, and a
+    /// relative path names nowhere — `Ls`'s rule, which this walk is
+    /// the deep version of.
+    #[test]
+    fn a_path_that_names_nowhere_is_refused() {
+        let dir = project("refuse");
+        assert!(search("src", "x").is_err(), "relative names nowhere");
+        let gone = dir.join("nope");
+        assert!(search(gone.to_str().unwrap(), "x").is_err());
+    }
+
+    /// The cap is said out loud. **A list that was cut and a list that
+    /// is short look exactly alike**, which is why `more` exists at all
+    /// (`Response::Dir::truncated`'s rule).
+    #[test]
+    fn a_cut_list_says_so() {
+        let p = std::env::temp_dir().join(format!("khor-search-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        let dir = Scratch(p);
+        let mut line = String::new();
+        for n in 0..(SEARCH_LINES + 10) {
+            line.push_str(&format!("keeper {n}\n"));
+        }
+        std::fs::write(dir.join("many.txt"), line).unwrap();
+        let found = search(dir.to_str().unwrap(), "keeper").unwrap();
+        assert_eq!(found.lines.len(), SEARCH_LINES);
+        assert!(found.more, "the cap cut it and nothing said so");
     }
 }

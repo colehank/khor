@@ -146,6 +146,52 @@ pub async fn launch(root: &Path, machine: &str, target: &str) -> Result<(), Stri
         .await
 }
 
+/// One line of one file that holds the words somebody typed
+/// (工作区第六轮 第 47 条). Renamed for TS and nothing else; every
+/// judgment — the caps, `.gitignore`, what counts as binary — is
+/// `khor_node::files::search`'s.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct SearchHit {
+    pub path: String,
+    #[ts(type = "number")]
+    pub line: u32,
+    pub text: String,
+}
+
+/// What one search answers: the names, then the lines, then whether a
+/// cap cut it short.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct Found {
+    pub names: Vec<String>,
+    pub lines: Vec<SearchHit>,
+    pub more: bool,
+}
+
+/// Everything under one directory on one machine that holds `query` —
+/// the call `khor search` makes (`khor_node::Link::search`).
+///
+/// **The walk happens on the machine that holds the files.** A face
+/// that listed the tree and matched here would move a whole project
+/// across the wire to look for one word, which is the shape this layer
+/// refuses for the git marks and for `touched` as well.
+pub async fn search(root: &Path, machine: &str, dir: &str, query: &str) -> Result<Found, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let found = n.search(machine, dir, query).await?;
+    Ok(Found {
+        names: found.names,
+        lines: found
+            .lines
+            .into_iter()
+            .map(|h| SearchHit {
+                path: h.path,
+                line: h.line,
+                text: h.text,
+            })
+            .collect(),
+        more: found.more,
+    })
+}
+
 /// Whether the browser this face runs in will draw a PDF itself
 /// (`khor_node::preview::PDF_HERE`). False on Linux (WebKitGTK ships no
 /// viewer) and Android, where khor shows the PDF's words instead and

@@ -194,6 +194,14 @@ const VERBS: &[Verb] = &[
         run: launch,
         reach: Reach::Act,
     },
+    // Walks a directory on somebody's machine and reads the text files
+    // in it. Nothing is written anywhere, here or there, so it is a
+    // read — the same class as `ls` and `git status`.
+    Verb {
+        word: "search",
+        run: search,
+        reach: Reach::Read,
+    },
     // Starts a process on somebody's machine and a pipe in front of
     // it. Reading is what the editor then does; opening it is an act.
     Verb {
@@ -848,6 +856,43 @@ fn launch(rest: &[String]) -> Result<(), String> {
         _ => return Err(USAGE.into()),
     };
     rt()?.block_on(node()?.launch(&machine, &target))
+}
+
+/// Looks for words under one directory on a machine (工作区第六轮
+/// 第 47 条).
+///
+/// **Two kinds of hit and one order**, printed exactly as the face
+/// draws them: every name first, then every line as `path:line: text`.
+/// The pair is what grep and `find` are separately, and the reason they
+/// are one verb here is that a person hunting a file does not know yet
+/// which of the two they are doing.
+///
+/// A name hit prints its path alone — there is no line to name — so a
+/// bare path and a `path:line:` row are the two shapes, and nothing has
+/// to be parsed to tell them apart.
+///
+/// Prints nothing when nothing matched. **`more` is said out loud**:
+/// a list that was cut and a list that is short look identical, which
+/// is the rule every capped answer in khor follows.
+fn search(rest: &[String]) -> Result<(), String> {
+    let (machine, dir, query) = match rest {
+        [flag, machine, dir, query] if flag == "-m" || flag == "--machine" => {
+            (machine.clone(), here(dir)?, query.clone())
+        }
+        [dir, query] => (String::new(), here(dir)?, query.clone()),
+        _ => return Err(USAGE.into()),
+    };
+    let found = rt()?.block_on(node()?.search(&machine, &dir, &query))?;
+    for path in &found.names {
+        println!("{path}");
+    }
+    for hit in &found.lines {
+        println!("{}:{}: {}", hit.path, hit.line, hit.text);
+    }
+    if found.more {
+        eprintln!("{}", cli::SEARCH_MORE);
+    }
+    Ok(())
 }
 
 /// `-m <机器> <路径>` or a bare `<路径>`, which is this machine — the

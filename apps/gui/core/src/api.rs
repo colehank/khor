@@ -483,6 +483,14 @@ pub fn answer(
             ))?;
             Ok("null".to_owned())
         }
+        // Looking for words under one directory on one machine. A read:
+        // it walks that machine's project and writes nothing anywhere.
+        "search" => to_json(&rt.block_on(crate::files::search(
+            root,
+            &opt_str("machine")?.unwrap_or_default(),
+            &arg("dir")?,
+            &arg("query")?,
+        ))?),
         // Whether this machine has a bin at all — asked rather than
         // guessed from the browser (`files::trash_here`).
         "trash_here" => to_json(&crate::files::trash_here()),

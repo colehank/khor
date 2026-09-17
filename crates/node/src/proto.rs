@@ -510,6 +510,28 @@ pub enum Request {
     /// wanted it gone, and a refusal would only name a race they cannot
     /// act on.
     CodeStop { root: String },
+    /// Everything under `dir` on that machine that holds `query` — in a
+    /// name or in a line (`crate::files::search`, 工作区第六轮 第 47 条).
+    /// `dir` is absolute over there.
+    ///
+    /// **The walk happens where the files are.** The other road is to
+    /// list the tree across the wire and match here, which is every
+    /// byte of somebody's project moving so that one word can be
+    /// looked for — and khor already refuses that shape for git marks
+    /// and for `touched`.
+    ///
+    /// Answered as [`Response::Found`]; a khor that predates it answers
+    /// [`Response::Refused`], which the face shows as it came.
+    Search { dir: String, query: String },
+    /// [`Request::Search`], on a satellite: the sponsor greps over ssh
+    /// (`crate::satellite::search`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason.
+    SatSearch {
+        sat: String,
+        dir: String,
+        query: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -737,6 +759,17 @@ pub enum Response {
     CodeServing {
         port: u16,
         token: String,
+    },
+    /// [`Request::Search`]'s and [`Request::SatSearch`]'s answer: the
+    /// names and the lines that hold the words, in the answering
+    /// machine's own spelling (`crate::files::Found`).
+    ///
+    /// **One answer for both roads** — a satellite's grep and khor's
+    /// own walk are two ways of asking one question, and a face that
+    /// had to tell them apart would be a face deciding which machine
+    /// somebody's project is on.
+    Found {
+        found: crate::files::Found,
     },
 }
 
@@ -1013,6 +1046,21 @@ mod tests {
                     target: String::new(),
                 },
                 &b"SatLaunch"[..],
+            ),
+            (
+                Request::Search {
+                    dir: String::new(),
+                    query: String::new(),
+                },
+                &b"Search"[..],
+            ),
+            (
+                Request::SatSearch {
+                    sat: String::new(),
+                    dir: String::new(),
+                    query: String::new(),
+                },
+                &b"SatSearch"[..],
             ),
             (
                 Request::SatGitStatus {

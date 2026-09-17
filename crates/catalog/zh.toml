@@ -141,6 +141,13 @@ usage = """
                         另一个)。**开在那台机器上,不是你面前这台**;
                         只收绝对路径和 http/https 网址。`open` 是「在那台
                         机器上开一个 session」,不是这一条
+  search [-m 机器] <目录> <词>
+                        在那台机器的那个目录下面找这个词:先是名字里带它的
+                        文件(一行一个路径),再是内容里带它的行
+                        (`路径:行号: 那一行`)。不区分大小写,当纯子串,
+                        不是正则;本机这条路尊重 .gitignore,卫星那条
+                        只跳过 .git。最多 50 个名字、200 行、跑 5 秒,
+                        到顶了在 stderr 上说一句
   read <机器> <文件>      把文档读成文字打出来:md/csv/tsv 原样(它们本来
                         就是文本),docx/xlsx/pptx 和它们的旧格式
                         (doc/xls/ppt)、pdf 转成 markdown。读的是文字和
@@ -729,6 +736,14 @@ code-fetching = "那台机器上还没有服务端,先下一份(约 640 MB,从�
 # sections is two sentences to keep in step. Said at all because
 # `Response::Dir::truncated` 's rule holds here too — a list that was cut
 # and a list that was short look exactly alike.
+# The search cap, and it is [cli] beside the two below for their own
+# reason: both faces carry it. **A cap on the answer, not on the disk**
+# — `khor search` stops at 50 names, 200 lines or five seconds
+# (`khor_node::files::search`), and a person who typed two letters into
+# a box gets a page of the project rather than the file they meant. The
+# sentence says what to do about it, because 「还有更多」 with no next
+# move is a sentence that only worries people.
+search-more = "还有更多没列出来,词写得更具体一点"
 git-more = "改动太多,下面的没画出来"
 git-status-more = "改动太多,有些文件没标出来"
 # **The pair and its age are one sentence, never two.** khor never
@@ -2337,6 +2352,21 @@ tab-copy-rel = "复制相对路径"
 # 变成一个 aria-hidden 的记号。一个没有控件的 aria 名字,是留给下一个人去
 # 猜「它在哪儿」的东西。
 workspace-sessions = "这里的会话"
+# 树那一栏顶上那个框(工作区第六轮 第 47 条:「在文件树的侧边上加一个搜索框
+# (可搜索文件名与内容)」)。**它真的找得到文件**,所以这里可以叫「文件」——
+# 而 `search-devices` 底下那句话说的是另一回事:那两栏列的是机器,一个写着
+# 「搜索文件」的框在那儿会指着一件它做不到的事。
+tree-search = "搜索文件"
+# 框里有字、两头都没有命中。**说的是「这儿没有」,不是「没找到」**:后者
+# 听起来像 khor 找失败了,而实际情况是这个工作区里确实没有这几个字。
+search-none = "这里没有"
+# 工作区列表那个框筛完剩 0 条(工作区第六轮 第 50 条)。和 `search-none`
+# 分开两句:那一句说的是一个项目里的文件,这一句说的是你声明过的工作区,
+# 两个列表空掉的原因不一样,下一步也不一样。
+workspace-none-match = "没有匹配的工作区"
+# 工作区那一栏的搜索框。**名字、机器、路径三样都搜**(第 50 条:「它应该
+# 针对不同机器、工作区路径可以搜索」),所以名字不能只说其中一样。
+search-workspaces = "搜索工作区"
 # Under a rendered document (工作区批6). **Says what this is not**,
 # because the thing it is not is what a person would otherwise assume:
 # a Word file on screen looks like a Word file, and this is its words
@@ -2355,11 +2385,12 @@ look-too-big = "这个文件 {0},太大了,看不了。取下来再打开"
 # in their dock, and a translated one would be khor naming somebody
 # else's program.
 code-tab = "VS Code"
-# Back to khor's own file view. Its pair, so the head reads as one
-# switch with two sides rather than a button that only goes one way.
-code-off = "文件页"
-code-opening = "正在开 {0} 的 VS Code"
-code-opened = "{0} 的 VS Code"
+# ⚠️ **`code-off`、`code-opening`、`code-opened` 三个键 2026-09-17 撤了**
+# (第六轮 第 46 条:「VSCODE做成弹出式的, 弹出一个窗口显示vscode」)。
+# `code-off`(「文件页」)是编辑器铺在中栏那会儿的另一半——按一下过去,
+# 再按一下回来;现在按一下开一扇窗,再按一下把那扇窗拉到前面,两次都是
+# 「VS Code」,没有第二个名字可说。另外两句是 `BrowserPane` 在自己那一栏
+# 里报的进度,而那一栏没有了:窗口自己会说它在装什么。
 # Asked once per machine, before anything is started. **Two sentences,
 # and both of them are things that happen to somebody else's machine**:
 # a download from Microsoft onto it, and their licence accepted on it.

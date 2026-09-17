@@ -27,6 +27,15 @@ sysinfo.workspace = true
 jiff.workspace = true
 reqwest.workspace = true
 gix = { version = "0.87.1", default-features = false, features = ["status", "blob-diff", "revision", "sha1", "max-performance-safe", "merge"] }
+# The walk behind `khor search` (工作区第六轮 第 47 条). It is ripgrep's
+# own directory walker, and what khor is buying is one thing it will not
+# write twice: **`.gitignore` read the way git reads it** — nested
+# files, negations, the global one, `.git/info/exclude`. A search that
+# returned `target/` and `node_modules/` would answer every query with
+# somebody else's code, and a hand-rolled ignore reader is the kind of
+# almost-right that goes wrong on the one project that needs it.
+# License: MIT OR Unlicense.
+ignore = "0.4"
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 office_oxide = "0.1.11"
 pdfboss-output = "2.4.0"

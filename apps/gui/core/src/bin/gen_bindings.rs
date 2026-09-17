@@ -55,6 +55,9 @@ fn main() {
     khor_gui_core::code::CodeAt::export_all_to(&dir).expect("export CodeAt");
     khor_gui_core::code::Editor::export_all_to(&dir).expect("export Editor");
     khor_gui_core::files::Preview::export_all_to(&dir).expect("export Preview");
+    // What the box at the head of the tree gets back (工作区第六轮 第 47
+    // 条); nothing embeds it, and it walks into `SearchHit` from here.
+    khor_gui_core::files::Found::export_all_to(&dir).expect("export Found");
     // The 额度 page asks for its rings on its own beat; no row embeds
     // them. Walks into `AccountReading` and `Strain` from here.
     khor_gui_core::AccountRing::export_all_to(&dir).expect("export AccountRing");

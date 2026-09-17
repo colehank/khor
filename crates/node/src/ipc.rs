@@ -226,6 +226,14 @@ pub enum Op {
         machine: String,
         target: String,
     },
+    /// Tail-appended: [`crate::proto::Request::Search`] through the
+    /// resident — names and lines under one directory on whichever
+    /// machine holds it (工作区第六轮 第 47 条).
+    SearchOn {
+        machine: String,
+        dir: String,
+        query: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -374,6 +382,11 @@ pub enum Reply {
     /// it. Not a promise that a window appeared ([`crate::proto::
     /// Response::Launched`]).
     Launched,
+    /// Tail-appended with [`Op::SearchOn`]: what that machine found
+    /// (`crate::files::Found`).
+    Found {
+        found: crate::files::Found,
+    },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

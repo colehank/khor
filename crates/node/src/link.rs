@@ -678,6 +678,14 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::SearchOn {
+                machine,
+                dir,
+                query,
+            } => match self.search_with(ep, &machine, &dir, &query).await {
+                Ok(found) => ipc::Reply::Found { found },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -1239,6 +1247,18 @@ impl Node {
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Launched)
             }
+            Request::Search { dir, query } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                // Off the reactor with `Touched` below, for its reason
+                // and more of it: this walks a project's files and
+                // reads every text file in it.
+                let found = tokio::task::spawn_blocking(move || crate::files::search(&dir, &query))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Found { found })
+            }
             Request::Touched { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::NOT_PAIRED.into());
@@ -1667,6 +1687,20 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Launched)
+            }
+            Request::SatSearch { sat, dir, query } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::NOT_PAIRED.into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                // Off the reactor with SatLs, for SatLs's reason: one
+                // ssh dial and a walk of that machine's disk.
+                let found = tokio::task::spawn_blocking(move || {
+                    crate::satellite::search(&host, &dir, &query)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Found { found })
             }
             Request::SatTouched { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -3010,6 +3044,87 @@ impl Node {
             .await?
         {
             Response::Launched => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Everything under one directory on any machine that holds the
+    /// words — in a name, or in a line (工作区第六轮 第 47 条).
+    ///
+    /// **The walk happens where the files are**, on every road: this
+    /// machine walks its own disk, a peer walks its own, and a
+    /// satellite's sponsor greps over ssh. Nothing about a project
+    /// crosses the wire but the answer.
+    pub async fn search(
+        &self,
+        machine: &str,
+        dir: &str,
+        query: &str,
+    ) -> Result<crate::files::Found, String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::SearchOn {
+                machine: machine.to_owned(),
+                dir: dir.to_owned(),
+                query: query.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Found { found } => Ok(found),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.search_with(&ep, machine, dir, query).await;
+        ep.close().await;
+        out
+    }
+
+    async fn search_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        dir: &str,
+        query: &str,
+    ) -> Result<crate::files::Found, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let (d, q) = (dir.to_owned(), query.to_owned());
+            return tokio::task::spawn_blocking(move || crate::files::search(&d, &q))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some((sat, sponsor)) = self.sat_and_sponsor(&channel)? {
+            let Some(sponsor) = sponsor else {
+                let host = self.sponsored_host(&channel)?;
+                let (d, q) = (dir.to_owned(), query.to_owned());
+                return tokio::task::spawn_blocking(move || {
+                    crate::satellite::search(&host, &d, &q)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            };
+            let req = Request::SatSearch {
+                sat,
+                dir: dir.to_owned(),
+                query: query.to_owned(),
+            };
+            return match self.ask(ep, &sponsor, &req).await? {
+                Response::Found { found } => Ok(found),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let req = Request::Search {
+            dir: dir.to_owned(),
+            query: query.to_owned(),
+        };
+        match self.ask(ep, &channel, &req).await? {
+            Response::Found { found } => Ok(found),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
