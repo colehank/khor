@@ -110,11 +110,10 @@ pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<i
     for road in direct.iter().chain(relays) {
         if let Ok(sock) = road.parse::<std::net::SocketAddr>() {
             addr = addr.with_ip_addr(sock);
-        } else if road.starts_with("http://") || road.starts_with("https://") {
-            if let Ok(url) = road.parse::<iroh::RelayUrl>() {
+        } else if (road.starts_with("http://") || road.starts_with("https://"))
+            && let Ok(url) = road.parse::<iroh::RelayUrl>() {
                 addr = addr.with_relay_url(url);
             }
-        }
     }
     Ok(addr)
 }
