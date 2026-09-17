@@ -40,6 +40,28 @@ import { cn } from "@/lib/utils";
 import { ago } from "@/words";
 import { IGNORED } from "@/views/fileRow";
 
+/** Whether a row answers what is typed in the box (2026-09-17 ruling
+    50).
+ *
+ * **The three things the row says out loud**: its name, the machine it
+ * is on, and its path. Nothing hidden — a box that matched a field
+ * nobody can see would leave a person staring at a row wondering what
+ * it has to do with the word they typed (`visibleQuota`'s rule, one
+ * landing over).
+ *
+ * `machine` is the **shown** name, because that is the one on the glass
+ * — a row whose machine has left the device table carries an empty one
+ * and is then findable by its name and its path, which is all it says.
+ *
+ * Case-insensitive, a plain substring, any one of the three: the same
+ * reading `khor search` gives a typed word, and the same reading every
+ * other box in this app gives one. */
+function matches(r: WorkspaceRow, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (q === "") return true;
+  return [r.name, r.machine, r.path].some((s) => s.toLowerCase().includes(q));
+}
+
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
     Joined on `\u0000`, written as an escape rather than as itself
@@ -51,6 +73,7 @@ function keyOf(r: { device: string; path: string }): string {
 
 export function WorkspacesList({
   devices,
+  query = "",
   reloadAt = 0,
   selected,
   onOpen,
@@ -61,6 +84,11 @@ export function WorkspacesList({
       device table is where faces live. The list itself comes from the
       workspace table and not from here. */
   devices: DeviceRow[];
+  /** What is typed in the pane bar's box (2026-09-17 ruling 50:「工作区
+      list上的搜索框没有生效. 它应该针对不同机器、工作区路径可以搜索」—
+      the user). Matched against the three things a row says out loud;
+      see `matches`. */
+  query?: string;
   /** Bumped by the shell when **it** has changed the table — the pane
       bar's 「+」 lives up there (`App`). Every other read this list
       makes is its own; this is the one change it has no way to
@@ -168,7 +196,7 @@ export function WorkspacesList({
   // first; a row with no time sinks to the foot (0 and 「not answered」
   // are one answer here, `marks`' note). Ties by path, so two machines
   // holding the same tree print in one order.
-  const rows = [...list].sort((a, b) => {
+  const rows = [...list].filter((r) => matches(r, query)).sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     const ta = times[keyOf(a)] ?? 0;
     const tb = times[keyOf(b)] ?? 0;
@@ -223,6 +251,21 @@ export function WorkspacesList({
 
   if (rows.length === 0) {
     if (!read) return <div className="flex min-h-0 flex-1 flex-col" />;
+    // **A list emptied by the box is not an empty list** (ruling 50).
+    // 「还没有工作区」 under a typed word would be khor telling somebody
+    // they have no projects while three of them are one backspace away.
+    if (query.trim() !== "" && list.length > 0) {
+      return (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div
+            data-ws-none-match
+            className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center text-fact text-muted-foreground"
+          >
+            {gui.workspace_none_match}
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
@@ -255,9 +298,17 @@ export function WorkspacesList({
             // and a state nothing can read is a state a gate cannot
             // hold (2026-09-16).
             data-tree={isOpen && onTree !== undefined ? treeOpen : undefined}
+            // **One wash for the whole line** (2026-09-17 ruling 48:
+            // 「悬浮工作区list的时候, >符号的高亮要比别的区域深一些,
+            // 应该一致」— the user). The row is two boxes — the button
+            // and the chevron beside it — and the hover used to be the
+            // button's, so the part of the line under the chevron did
+            // not change while the rest did. A row is one thing to a
+            // hand, so it lights as one: the wash is here, and nothing
+            // inside paints a ground of its own.
             className={cn(
               "flex items-stretch border-b border-border/50",
-              isOpen && "bg-accent",
+              isOpen ? "bg-accent" : "hover:bg-accent/50",
             )}
           >
           <RowMenu items={actions(r)}>
@@ -288,10 +339,7 @@ export function WorkspacesList({
               // the fold, the selection never changes under it, and the
               // middle column never moves.
               onClick={() => (isOpen && onTree !== undefined ? onTree() : onOpen(r))}
-              className={cn(
-                "flex min-h-touch min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left",
-                isOpen && "hover:bg-accent",
-              )}
+              className="flex min-h-touch min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left"
             >
               <span className="flex w-full items-center gap-1.5">
                 <MachineAvatar

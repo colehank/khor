@@ -53,7 +53,7 @@ import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
-import { useListWidth } from "@/hooks/use-list-width";
+import { roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
@@ -397,7 +397,12 @@ export default function App() {
     return watchDrafts((n) => setQuitting(n === 0 ? null : n));
   }, [quitting]);
 
-  const listPane = useListWidth(narrow);
+  // **The workspace page's three seams all ask the same question**
+  // (2026-09-17 ruling 52): how much room is there beside the file,
+  // rather than 「is this half the window yet」. Away from a workspace
+  // `roomBeside` finds no middle column and answers the old ceiling, so
+  // the list pane on every other landing is unchanged.
+  const listPane = useListWidth(narrow, "list", "left", "[data-list]", roomBeside("[data-list]"));
   /** The workspace's file tree, as a seam of its own — **held here
       rather than in the pane**, because the control that folds it now
       sits on the workspace's row in the list (2026-09-16:「再次点击工作
@@ -405,7 +410,13 @@ export default function App() {
       chevron on the open row after the two-meanings trap was talked
       through), and the list and the pane are siblings: the one thing
       both can reach is this. */
-  const treePane = useListWidth(narrow, "ws-tree", "left", "[data-ws-tree]");
+  const treePane = useListWidth(
+    narrow,
+    "ws-tree",
+    "left",
+    "[data-ws-tree]",
+    roomBeside("[data-ws-tree]"),
+  );
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
@@ -1261,7 +1272,17 @@ export default function App() {
         // Files and browser search machines, because machines are what
         // they list — so they borrow the machine pane's label rather
         // than growing one that names a thing the box cannot find.
-        searchLabel={sessions ? gui.search_sessions : gui.search_devices}
+        // **Three labels, because three panes list three things**
+        // (2026-09-17 ruling 50). The workspace pane's box searches
+        // names, machines and paths, so it cannot borrow the machine
+        // pane's word any more than it could borrow the sessions'.
+        searchLabel={
+          sessions
+            ? gui.search_sessions
+            : landing === "workspaces"
+              ? gui.search_workspaces
+              : gui.search_devices
+        }
         query={queries[landing]}
         onQuery={setQuery}
         filterLabel={sessions ? gui.filter : undefined}
@@ -1318,6 +1339,7 @@ export default function App() {
         ) : landing === "workspaces" ? (
           <WorkspacesList
             devices={devices}
+            query={queries.workspaces}
             reloadAt={wsAdded}
             selected={openWs}
             // The chevron on the open row. **Not on the narrow face**:
