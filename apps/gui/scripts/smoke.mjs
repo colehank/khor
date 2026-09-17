@@ -3713,17 +3713,19 @@ for line in sys.stdin:
   //      ran is printed.
   // 49) VS Code 跟随 khor 的深浅 (工作区第六轮 第 49 条). **Read and
   //     restored around the launch below**, because the file is the
-  //     operator's own: `code serve-web` keeps its user settings at
-  //     `~/.vscode-server/data/User/settings.json` (the default
-  //     `--server-data-dir`), and khor writes one key into it the first
-  //     time it starts a server. What this section does is watch that
+  //     operator's own: the web editor asks the server for its
+  //     *machine* scope, `~/.vscode-server/data/Machine/settings.json`
+  //     (the default `--server-data-dir`), and khor writes one key
+  //     into it on every press (`code.rs` says why not `User`: the
+  //     page keeps user settings in the browser and never reads that
+  //     file). What this section does is watch that
   //     happen and then put the file back exactly as it was found —
   //     including not existing, which is the common case.
   const codeSettings = join(
     process.env.HOME ?? "",
     ".vscode-server",
     "data",
-    "User",
+    "Machine",
     "settings.json",
   );
   const settingsWere = existsSync(codeSettings) ? readFileSync(codeSettings, "utf8") : null;

@@ -925,3 +925,14 @@ smoke：alpha 上跑一次 `khor code` 后 settings.json 里有这个键；预�
 落法：会话列开不开是**人的状态**，只在这个 pane 挂上时定一次默认（列表开着 → 关，
 列表收着 → 开），之后列表怎么折都不动它；窄档另算（33 的三屏）。探针：关掉会话列，
 按侧栏图标折列表再按一次展开，`[data-ws-sessions]` 仍不在；反过来开着的折展后仍在。
+
+### 49 · 第二次：写错了一层
+
+装好后用户：「vscode还是没有和主题一致. 是不是无法实现?」实验（2026-09-17 晚，
+playwright 开全新的深色/浅色浏览器打正在跑的 serve-web）：服务器的
+`data/User/settings.json` 里有键，深色浏览器仍然开出浅色——**网页版 VS Code 的用户设置
+存在浏览器那一侧**（IndexedDB `vscode-web-db`，按站点存），服务器的 User 文件它不读。
+换成 **`data/Machine/settings.json`**（machine 级，页面会向服务器要）再试：深色开深色、
+浅色开浅色，只要 `window.autoDetectColorScheme: true` 一个键。落法照旧（键在就不碰），
+只是文件换成 Machine 的；并且每次按 VS Code 图标都写（服务器已在跑也写，machine 级是
+热更新的），不只在起服务器时。能实现，只是 builder 写到了错的一层。

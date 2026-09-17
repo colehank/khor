@@ -187,6 +187,10 @@ const READY: std::time::Duration = std::time::Duration::from_secs(600);
 /// binding, and `serve-web` prints the one it actually got.
 pub fn serve() -> Result<(u16, String), String> {
     let exe = cli().ok_or_else(|| msg::NO_VSCODE.to_owned())?;
+    // Before the running-server shortcut, not after it: the machine
+    // scope is watched live by the page, so a server already up gets
+    // the key on the next press too, rather than on its next restart.
+    follow_the_system_theme();
     {
         let mut held = SERVING.lock().map_err(|e| e.to_string())?;
         if let Some(s) = held.as_mut() {
@@ -199,7 +203,6 @@ pub fn serve() -> Result<(u16, String), String> {
             }
         }
     }
-    follow_the_system_theme();
     let token = crate::link::fresh_hex()?;
     let mut cmd = std::process::Command::new(&exe);
     cmd.arg("serve-web")
@@ -242,17 +245,25 @@ pub fn serve() -> Result<(u16, String), String> {
 /// the editor is running.
 const FOLLOW_KEY: &str = "window.autoDetectColorScheme";
 
-/// Where `code serve-web` keeps the user settings of the server it
-/// starts: `--server-data-dir`, whose default is `~/.vscode-server`,
-/// and `data/User/settings.json` under it. Checked against
-/// `code serve-web --help` and against the directory a real run leaves
-/// behind (2026-09-17).
+/// Where the web editor reads a setting **from the server side**:
+/// `--server-data-dir` (default `~/.vscode-server`) and
+/// `data/Machine/settings.json` under it — the *machine* scope.
+///
+/// **Not `data/User/settings.json`, and that was a wrong turn on the
+/// first try (2026-09-17).** VS Code for the Web — which is what
+/// `serve-web` serves — keeps its *user* settings in the browser
+/// (an IndexedDB named `vscode-web-db`, per origin), so a key written
+/// to the server's `User` file is never read by the page: a fresh
+/// dark browser against a server with that file still came up light.
+/// The machine scope is the one the page asks the server for, and a
+/// fresh dark browser came up dark and a fresh light one light with
+/// the same key there. Measured, not read off a help text.
 fn theme_settings() -> Option<PathBuf> {
     Some(
         std::env::home_dir()?
             .join(".vscode-server")
             .join("data")
-            .join("User")
+            .join("Machine")
             .join("settings.json"),
     )
 }
@@ -506,7 +517,7 @@ mod tests {
     #[test]
     fn a_machine_with_no_settings_gets_the_key() {
         let dir = scratch("theme-fresh");
-        let at = dir.join("data").join("User").join("settings.json");
+        let at = dir.join("data").join("Machine").join("settings.json");
         follow_theme_in(&at);
         let text = std::fs::read_to_string(&at).expect("the file khor wrote");
         let v: serde_json::Value = serde_json::from_str(&text).expect("valid json");
