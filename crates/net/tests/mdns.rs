@@ -53,13 +53,38 @@ use tokio::time::timeout;
 ///   culprit). So not macOS's local-network permission, not a dead
 ///   multicast stack.
 ///
-/// **The leading guess, and it is only that: both endpoints are on one
-/// host**, so they advertise the *same three IPs* and differ only by
-/// port. A dialer that drops discovered candidates matching a local
-/// interface — an ordinary guard against dialing yourself — would
-/// produce every line above. **Nobody has read iroh's dial path to
-/// check**, and if it is true then this test cannot pass on one machine
-/// and the thing to write instead needs two.
+/// **Two explanations were written down and both are now disproved, by
+/// me, hours apart — they are kept here because the next person will
+/// think of them too:**
+///
+/// - ~~「the dialer never consults the lookup」~~ (the reason in commit
+///   `a233fe4`). False. With `iroh=debug` the dial logs `connecting …
+///   ip_addresses=[]` and then, **4ms later**, the mdns service logs
+///   `sending AddressLookupItem` with B's addresses and
+///   `provenance: "mdns"`. The addresses reach iroh during the dial.
+/// - ~~「both endpoints are on one host, so a self-address guard drops
+///   the candidates」~~. False. The guard is real
+///   (`socket/remote_map/remote_state.rs`, 「not sending datagram to our
+///   own address」) and it compares the **whole socket address** — A and
+///   B share three IPs but differ by port, so nothing is dropped.
+///
+/// Also ruled out: the proxy's `198.18.0.1` candidate. khor's bind now
+/// filters it before publishing, and the dial times out exactly the
+/// same.
+///
+/// **So the question is narrow and it is upstream**: iroh 1.0.3 is
+/// handed the right addresses a few milliseconds into the dial and then
+/// does nothing observable with them — no path, no holepunch, no error,
+/// until the caller's timeout. Whoever picks this up starts by reading
+/// what the remote-state actor does with an `AddressLookupItem` that
+/// arrives *after* `connect` began (that file's TODO points at
+/// n0-computer/iroh#4280), or by trying it on two real machines, which
+/// is the case this test is a stand-in for.
+///
+/// **And there is a khor-side way out if upstream is slow**: khor
+/// already supplies its own dial candidates (`dial_addr`, from the
+/// device table). Subscribing to the mdns event stream and merging what
+/// it finds into those hints would not need iroh to change at all.
 ///
 /// Until one of those happens, nothing in this file is evidence that
 /// khor's mDNS resolves a peer anywhere.
