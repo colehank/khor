@@ -40,8 +40,8 @@ export function NetSettings({ open }: { open: boolean }) {
       .then((r) => {
         if (alive) setChoices(r);
       })
-      .catch((e) => {
-        if (alive) setError(String(e));
+      .catch((e: unknown) => {
+        if (alive) setError(String(e instanceof Error ? e.message : e));
       });
     return () => {
       alive = false;
@@ -60,8 +60,10 @@ export function NetSettings({ open }: { open: boolean }) {
     } catch (e) {
       // The node's own sentence, which names the entry it refused. A
       // message invented here would be a second opinion about a rule
-      // this layer does not hold.
-      setError(String(e));
+      // this layer does not hold — unwrapped the way every other
+      // surface in this app unwraps one, because `String(someError)`
+      // puts an English 「Error: 」 in front of a Chinese sentence.
+      setError(String(e instanceof Error ? e.message : e));
       return false;
     }
   }, []);
@@ -134,8 +136,17 @@ export function NetSettings({ open }: { open: boolean }) {
         data-on={choices.only_mine}
         aria-pressed={choices.only_mine}
         className={cn(
-          "min-h-touch self-start px-2 text-xs text-muted-foreground",
-          choices.only_mine && "text-primary ring-2 ring-primary",
+          // **A ring in both states, not only when it is on.** Off is
+          // the state this control ships in and the state somebody has
+          // to discover it in — and measured on the glass (2026-09-18),
+          // a ghost button with no edge reads as one more line of prose
+          // between the input and the note under it. The ring is what
+          // says「按得动」; its weight and ink are what say which way it
+          // is set.
+          "min-h-touch self-start rounded-md px-2 text-xs",
+          choices.only_mine
+            ? "text-primary ring-2 ring-primary"
+            : "text-muted-foreground ring-1 ring-border",
         )}
         onClick={() => write(choices.mine, !choices.only_mine)}
       >

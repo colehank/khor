@@ -332,12 +332,19 @@ export function FaceSettings({
               </div>
             </Axis>
 
-            {/* Not a face axis — the machine's own relays. It sits under
-                them because it is the rarer errand, and inside this
-                dialog because 设置 is one door (the head of this file). */}
-            <NetSettings open={open} />
           </div>
         )}
+        {/* Not a face axis — the machine's own relays. It sits under
+            them because it is the rarer errand, and inside this dialog
+            because 设置 is one door (the head of this file).
+
+            **Outside the `choices &&` above, and that is not tidiness.**
+            Inside it, a face-choices call that failed took the network
+            section down with it — a relay list that disappears because
+            the avatar palette could not be read, with nothing on screen
+            saying so. The two halves of this dialog fail separately
+            because they are two questions. */}
+        <NetSettings open={open} />
       </DialogContent>
     </Dialog>
   );
