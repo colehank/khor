@@ -1111,6 +1111,77 @@ export function quitNow(): void {
     });
 }
 
+/**
+ * Whether this face has the window's own three buttons floating over
+ * its top-left corner (工作区第八轮 第 58 条).
+ *
+ * **macOS and the app, and neither half is negotiable.**
+ * `titleBarStyle: Overlay` is a macOS-only key in `tauri.conf.json` —
+ * Linux and Windows read it and keep their system title bar, so there
+ * is nothing over their corner to leave room for. The web face has no
+ * window of its own at all.
+ *
+ * `navigator.platform` is deprecated and still the only thing that
+ * answers this without asking the backend: the user agent of a
+ * WKWebView on macOS says Macintosh too, so the fallback agrees with
+ * the reading rather than widening it. A wrong answer here costs 28
+ * blank pixels at the head of the rail, not a broken face — which is
+ * why a guess is allowed to stand in for a round trip.
+ */
+export const trafficLights =
+  inApp && /mac/i.test(navigator.platform || navigator.userAgent);
+
+/**
+ * Whether the window is full screen, now and whenever that changes.
+ *
+ * **The window's, not the page's.** macOS full screen hands the window
+ * to its own space and hides the three buttons with the title bar; the
+ * Fullscreen API — the one `:fullscreen` and `document.fullscreenElement`
+ * answer for — is a different thing that nothing in this app ever asks
+ * for. So the answer has to come from tauri.
+ *
+ * **On the resize, not on a timer.** Entering and leaving full screen
+ * resizes the window, and this repo's rule is that a timer has to have
+ * a reason (第七轮 第 57 条 is the one that does). `onResized` fires
+ * more often than the answer changes, which is the harmless direction:
+ * the caller sets a boolean it already holds.
+ *
+ * Silent outside the app: there is no window to ask, and `false` is the
+ * truthful answer for a page in somebody's browser tab.
+ */
+export function onFullscreen(tell: (full: boolean) => void): () => void {
+  if (!inApp) return () => {};
+  let drop: (() => void) | null = null;
+  let gone = false;
+  void import("@tauri-apps/api/window")
+    .then(async ({ getCurrentWindow }) => {
+      const win = getCurrentWindow();
+      const say = () => {
+        void win
+          .isFullscreen()
+          .then((full) => {
+            if (!gone) tell(full);
+          })
+          .catch((e: unknown) => {
+            console.error("khor: cannot ask the window about full screen", e);
+          });
+      };
+      // The answer now, before any resize — a window that started full
+      // screen never resizes and would otherwise never be asked.
+      say();
+      const un = await win.onResized(say);
+      if (gone) un();
+      else drop = un;
+    })
+    .catch((e: unknown) => {
+      console.error("khor: cannot watch the window's size", e);
+    });
+  return () => {
+    gone = true;
+    drop?.();
+  };
+}
+
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match. */
 export const termOpen = (id: string, cols: number, rows: number) =>

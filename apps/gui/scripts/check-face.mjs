@@ -16375,6 +16375,64 @@ try {
     await wait(300);
   }
 
+  // ── 窗顶那一条:这张脸上没有空位 ──────────────────────────
+  //
+  // 第八轮 第 58 条. **What this gate can reach is the web face**, and
+  // that is the claim rather than a limitation: the app grows a corner
+  // for the window's own three buttons, and the promise made alongside
+  // it is that a page in somebody's browser changes in no way at all.
+  // The app half — three buttons sitting on the rail, the gap collapsing
+  // in full screen — is in `docs/handoff/001.md` under 人眼验什么,
+  // because a tauri window is not a thing playwright can hold.
+  {
+    await open("sessions");
+    // 58. The token exists (so this is not measuring a name nothing
+    // declares) and resolves to nothing here, and nothing stands between
+    // the rail's own padding and its first glyph.
+    const room = await page.evaluate(() => {
+      const root = document.documentElement;
+      const nav = document.querySelector("[data-rail]");
+      const first = nav && nav.querySelector("[data-rail-item]");
+      if (!nav || !first) return null;
+      const pad = parseFloat(getComputedStyle(nav).paddingTop);
+      return {
+        token: getComputedStyle(root).getPropertyValue("--traffic").trim(),
+        stamped: root.hasAttribute("data-traffic"),
+        blank: +(first.getBoundingClientRect().top - (nav.getBoundingClientRect().top + pad)).toFixed(2),
+      };
+    });
+    if (!room) {
+      fail("probe dead: no [data-rail] with a [data-rail-item] in it — the rail is what 第 58 条 opens a gap at the head of");
+    } else if (room.token === "") {
+      fail("probe dead: --traffic resolves to nothing at all, so 「on this face it is zero」 is a claim about a token that does not exist");
+    } else if (room.token !== "0px" || room.stamped || room.blank !== 0) {
+      fail(
+        `the web face kept ${room.blank} of blank above the rail's first glyph (--traffic=${room.token}, data-traffic=${room.stamped}) — ` +
+          `「网页脸 [data-rail] 顶上没有空位」: a page in a browser has no window buttons of its own to leave room for`,
+      );
+    } else {
+      console.log(`rail head: --traffic=${room.token}, no blank above the first glyph`);
+    }
+
+    // Narrow puts the rail along the bottom, so the corner moves to the
+    // head of the screen column — and it is zero here for 58's reason.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(400);
+    const phone = await page.evaluate(() => {
+      const box = document.querySelector("[data-traffic-room]");
+      return box ? +box.getBoundingClientRect().height.toFixed(2) : null;
+    });
+    if (phone === null) {
+      fail("probe dead: narrow drew no [data-traffic-room] — that is where 第 58 条's gap goes when the rail is a bottom bar");
+    } else if (phone !== 0) {
+      fail(`narrow kept ${phone} of blank at the head of the screen — a browser has no window buttons to leave room for on either face`);
+    } else {
+      console.log("narrow head: no blank above the screen");
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+  }
+
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
       "face gate: three pressures, numbers in columns, every stop's targets a finger's size, a dense pane that leads, the machine surfaces bare of subscription arcs, the \u989d\u5ea6 rows in all three shapes with the subscription among them and its bar narrowing them, and narrow's session tabs switching for real",

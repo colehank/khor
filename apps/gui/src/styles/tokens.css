@@ -703,6 +703,26 @@
      15px of air, and the glyphs read as crowded before anyone got as
      far as their colour. */
   --rail-w: 64px;
+  /* The corner the window's own three buttons stand in — **zero here,
+     and only the macOS app face ever turns it on** (the rule right
+     under this block, stamped from `App.tsx`).
+     工作区第八轮 第 58 条:「界面不应该有最上面一层的Khor标题, 关闭、
+     最小、最大的三个按钮, 属于侧边栏。目标是减少无效面积」. With
+     `titleBarStyle: Overlay` the title bar stops being a band of its own
+     and the three buttons float over the page's top-left corner, which
+     is the head of the rail — so the rail opens a gap of exactly their
+     height and its first glyph starts under it.
+     28 is the standard macOS title bar's height, and the buttons sit
+     inside it: 12 across, centres 20 apart from x=20, so the trio spans
+     roughly 14 to 66 across and 8 to 20 down. Two of those overhang the
+     64-wide rail, which is why this is a height and not also a width —
+     what has to be kept clear is the row, and the rail is the only
+     column whose ground reaches it.
+     Zero on every other face, and that is the whole of「不改行为」for
+     this one: the web face and the two platforms that keep a system
+     title bar get no gap at all, because there is nothing floating over
+     their corner to leave room for. */
+  --traffic: 0px;
   --list-w: 288px;
   /* The list pane's drag bounds. The floor is where the PaneBar stops
    * being usable — below ~180 the search field is a slit before the
@@ -1199,6 +1219,25 @@
   --dur-420: 420ms;
 }
 
+/* **The one face that keeps a corner for the window's buttons.**
+ * `App.tsx` stamps `data-traffic` on the root when this is the app on
+ * macOS and the window is not full screen, the same arrangement
+ * `data-narrow` uses — a fact JavaScript owns, published once on the
+ * root, read from CSS by name instead of re-derived.
+ *
+ * **Why an attribute and not a media query.** Neither half of the
+ * condition is something CSS can ask. 「是不是 app」 is tauri's IPC
+ * global; 「全屏了没有」 is the *window's* full screen, which on macOS
+ * is not the Fullscreen API — `:fullscreen` matches an element the page
+ * asked to expand, and nothing here ever asks. The window's own answer
+ * comes from tauri, and it comes with the resize that carries it.
+ *
+ * Unlayered, beside `:root` itself: `@layer base` would lose to the
+ * declaration above however specific this selector is. */
+:root[data-traffic] {
+  --traffic: 28px;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0f0f0e;
@@ -1414,6 +1453,7 @@
   --spacing-ctl-lg: var(--ctl-lg);
   --spacing-touch: var(--touch);
   --spacing-rail: var(--rail-w);
+  --spacing-traffic: var(--traffic);
   --spacing-list: var(--list-w);
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);

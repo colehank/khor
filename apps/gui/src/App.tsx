@@ -11,10 +11,12 @@ import {
   closeSession,
   forgetDevice,
   markSeen,
+  onFullscreen,
   onQuitRequested,
   pinDevice,
   quitNow,
   pinSession,
+  trafficLights,
   uninstallHooks,
   wsAdd,
   type DeviceRow,
@@ -356,6 +358,23 @@ export default function App() {
     if (narrow) root.setAttribute("data-narrow", "");
     else root.removeAttribute("data-narrow");
   }, [narrow]);
+  // **The corner the window's own three buttons stand in** (第八轮 第 58
+  // 条). Published on the root exactly the way the breakpoint above is,
+  // and for the same reason: CSS cannot ask either question, so the one
+  // side that can answer says it once and `tokens.css` reads it by name
+  // (`--traffic`).
+  //
+  // **Full screen takes the gap back.** macOS hides the three buttons
+  // with the title bar when the window goes full screen, and a gap left
+  // behind for buttons that are not there is the 无效面积 this whole
+  // condition exists to remove.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => onFullscreen(setFullscreen), []);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (trafficLights && !fullscreen) root.setAttribute("data-traffic", "");
+    else root.removeAttribute("data-traffic");
+  }, [fullscreen]);
   // 退出时还有草稿要拦 (工作区第五轮 第 39 条). Two roads, one
   // condition, and the condition is `lib/drafts`'s register.
   //
@@ -1088,6 +1107,10 @@ export default function App() {
   const foldedOn = !mark && LANDINGS.slice(NARROW_SHOWN).some((l) => l.key === landing);
   const rail = (
     <nav
+      // **Named, because two things now ask for it by name**: the gate
+      // that measures the gap at its head (第 58 条) and this attribute
+      // right below it (第 59 条).
+      data-rail
       className={cn(
         "flex items-center select-none",
         // Two gaps, one per face. The column rail holds its items a
@@ -1108,11 +1131,23 @@ export default function App() {
         narrow ? "flex-row justify-around gap-1 border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
-      {(narrow ? LANDINGS.slice(0, NARROW_SHOWN) : LANDINGS).map((l) => (
+      {(narrow ? LANDINGS.slice(0, NARROW_SHOWN) : LANDINGS).map((l, i) => (
         <RailItem
           key={l.key}
           label={l.name}
           tab={l.key}
+          // **The gap the window's three buttons stand in** (第 58 条),
+          // and it is a margin on the first glyph rather than a spacer
+          // element above it. A spacer would be a flex child, so the
+          // rail's own `gap-row` would sit under it — a row-gap of blank
+          // on every face that has no buttons to leave room for, which
+          // is the one thing this ruling promised not to change. A
+          // margin of zero is nothing at all.
+          //
+          // Wide only: narrow puts this rail along the *bottom* of the
+          // window, where the corner in question is not. Narrow's gap is
+          // at the head of the screen column instead (the shell below).
+          className={!narrow && i === 0 ? "mt-traffic" : undefined}
           // **Not lit while the mark's place is up.** A landing is still
           // remembered — coming back out of the mesh returns to it — but
           // remembering it and being the thing on screen are two facts,
@@ -1787,6 +1822,17 @@ export default function App() {
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
+          {/* **Narrow's corner for the window's three buttons** (第 58
+              条). The rail is along the bottom here, so the gap cannot
+              be at its head — it goes at the head of the screen column,
+              which is what the buttons actually float over once the
+              window is under 719 wide (the app's own floor is 400, so
+              this posture is reachable by dragging an edge).
+
+              Zero tall and inert on every face without those buttons —
+              this column has no gap, so an empty box in it costs
+              nothing. */}
+          <div data-traffic-room className="h-traffic flex-none" />
           {/* `key` is what makes the arrival visible: a CSS animation
               runs when an element is inserted, and without a changing
               key React would reuse this box and the new screen would
