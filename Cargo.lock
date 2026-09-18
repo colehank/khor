@@ -4366,6 +4366,7 @@ dependencies = [
  "khor-gui-core",
  "khor-node",
  "khor-web",
+ "objc2",
  "serde",
  "serde_json",
  "tauri",

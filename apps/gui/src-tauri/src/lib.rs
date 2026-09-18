@@ -1653,6 +1653,45 @@ fn code_label(machine: &str) -> String {
     format!("code:{kept}")
 }
 
+/// Gives one NSWindow the appearance NSApp currently resolves to — the
+/// desktop's, since khor never sets NSApp's own (`open_code_window`).
+#[cfg(target_os = "macos")]
+fn wear_the_apps_appearance(win: *mut std::ffi::c_void) {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    unsafe {
+        let nsapp: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        let effective: *mut AnyObject = msg_send![nsapp, effectiveAppearance];
+        if effective.is_null() {
+            return;
+        }
+        let w = win as *mut AnyObject;
+        let _: () = msg_send![w, setAppearance: effective];
+    }
+}
+
+/// Gives one NSWindow the named appearance for a theme — what the main
+/// window's `ThemeChanged` hands on, because a window with an appearance
+/// of its own no longer follows the desktop by itself.
+#[cfg(target_os = "macos")]
+fn wear_appearance(win: *mut std::ffi::c_void, theme: tauri::Theme) {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    let name = match theme {
+        tauri::Theme::Dark => c"NSAppearanceNameDarkAqua",
+        _ => c"NSAppearanceNameAqua",
+    };
+    unsafe {
+        let ns: *mut AnyObject = msg_send![class!(NSString), stringWithUTF8String: name.as_ptr()];
+        let appearance: *mut AnyObject = msg_send![class!(NSAppearance), appearanceNamed: ns];
+        if appearance.is_null() {
+            return;
+        }
+        let w = win as *mut AnyObject;
+        let _: () = msg_send![w, setAppearance: appearance];
+    }
+}
+
 /// How far the editor's window is offset from khor's own, in logical
 /// pixels. **Offset rather than stacked**: a window that opened exactly
 /// over the one that opened it reads as khor having gone away.
@@ -1703,18 +1742,6 @@ async fn open_code_window(
     let mut build = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(at))
         .title(&title);
     if let Some(main) = app.get_webview_window("main") {
-        // **The title bar wears khor's own light or dark** (2026-09-18:
-        // 「弹出的vscode, 页面的标题和实际颜色模式不一, 比如这里是深色,
-        // 但弹出是浅色」— the user). The page inside follows the system
-        // through the server's machine settings (`khor_node::code`),
-        // but a window built with no theme got the platform's default
-        // chrome, which came up light over a dark page. The main
-        // window's theme is the system's — khor never sets its own —
-        // so handing it on is following the system, one window later.
-        // `ThemeChanged` below keeps it following.
-        if let Ok(theme) = main.theme() {
-            build = build.theme(Some(theme));
-        }
         let scale = main.scale_factor().unwrap_or(1.0).max(0.1);
         if let (Ok(size), Ok(pos)) = (main.outer_size(), main.outer_position()) {
             build = build
@@ -1726,6 +1753,25 @@ async fn open_code_window(
         }
     }
     let made = build.build().map_err(|e| e.to_string())?;
+    // **The title bar wears khor's own light or dark** (2026-09-18:
+    // 「弹出的vscode, 页面的标题和实际颜色模式不一, 比如这里是深色, 但弹出
+    // 是浅色」— the user). The page inside follows the system through
+    // the server's machine settings (`khor_node::code`); the window's
+    // chrome did not. Measured, not reasoned: a window built here with
+    // no appearance of its own came up with a light title bar over a
+    // dark page while `effectiveAppearance` on it answered DarkAqua —
+    // AppKit resolves a window's appearance lazily, and this one was
+    // drawn before it had been. Setting the appearance outright is the
+    // deterministic form of what merely reading it happened to do.
+    //
+    // **Per window, not through tauri's `theme`.** On macOS that call
+    // sets NSApp's appearance for every window, and an app with an
+    // appearance of its own stops following the desktop — khor's whole
+    // face would have frozen in the scheme it had at that moment.
+    #[cfg(target_os = "macos")]
+    if let Ok(win) = made.ns_window() {
+        wear_the_apps_appearance(win);
+    }
     // **The switch goes dark when the window does** (「窗口关掉 = 图标
     // 灭」). Nothing else can tell the face: the window is not the
     // face's to watch, and a face that polled for it would be asking a
@@ -2072,7 +2118,12 @@ pub fn run() {
                     tauri::WindowEvent::ThemeChanged(theme) => {
                         for (label, w) in window.app_handle().webview_windows() {
                             if label.starts_with("code:") {
-                                let _ = w.set_theme(Some(*theme));
+                                #[cfg(target_os = "macos")]
+                                if let Ok(win) = w.ns_window() {
+                                    wear_appearance(win, *theme);
+                                }
+                                #[cfg(not(target_os = "macos"))]
+                                let _ = (w, theme);
                             }
                         }
                     }
