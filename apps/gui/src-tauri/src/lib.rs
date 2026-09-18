@@ -288,6 +288,16 @@ fn rename_machine(id: String, name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn relays() -> Result<khor_gui_core::RelayChoices, String> {
+    khor_gui_core::relays(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn set_relays(urls: Vec<String>) -> Result<khor_gui_core::RelayChoices, String> {
+    khor_gui_core::set_relays(&Node::root_from_env(), &urls)
+}
+
+#[tauri::command]
 fn tell(machine: String, text: String) -> Result<(), String> {
     khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
 }
@@ -2181,6 +2191,8 @@ pub fn run() {
             close_session,
             rename_session,
             rename_machine,
+            relays,
+            set_relays,
             tell,
             pin_session,
             pin_device,

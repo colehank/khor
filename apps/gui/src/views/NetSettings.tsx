@@ -1,0 +1,138 @@
+// The machine's own relays — the settings screen's second section.
+//
+// **Two lists, and they are not the same kind of thing.** 自己的中继 is
+// what the user typed here and the only part anything on this screen can
+// remove. 在用 is every relay the machine actually binds with, the
+// built-in tier included — shown because a screen that lists only what
+// you typed is blank on a fresh machine and says nothing about the relay
+// the connection is really standing on, and shown *without* controls
+// because a delete button that refuses is worse than no button.
+//
+// The screen holds no relay state of its own: every write goes through
+// `setRelays` and paints the answer, the same rule the face axes above
+// run on. "Did it take" is never a question this layer answers from
+// memory.
+//
+// ⚠️ **The one thing here that is not visible in the data:** the list is
+// read when a node opens. The app opens one per call so it sees a change
+// at once, but a running `khor serve` and every standing connection keep
+// the list they started with. That is what `gui.relays_after_restart`
+// is for, and it is not decoration — without it the screen shows a
+// change that took and a network that did not move, with nothing
+// connecting the two.
+import { useCallback, useEffect, useState } from "react";
+
+import { fetchRelays, setRelays, type RelayChoices } from "@/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { gui } from "@/gen/catalog";
+
+export function NetSettings({ open }: { open: boolean }) {
+  const [choices, setChoices] = useState<RelayChoices | null>(null);
+  const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    fetchRelays()
+      .then((r) => {
+        if (alive) setChoices(r);
+      })
+      .catch((e) => {
+        if (alive) setError(String(e));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  // One door for every change — add and remove both send the whole list,
+  // because that is the shape the node takes (`Node::set_relays`
+  // replaces). Two paths that could disagree about what the list is
+  // would be two paths to disagree about.
+  const write = useCallback(async (next: string[]) => {
+    setError(null);
+    try {
+      setChoices(await setRelays(next));
+      return true;
+    } catch (e) {
+      // The node's own sentence, which names the entry it refused. A
+      // message invented here would be a second opinion about a rule
+      // this layer does not hold.
+      setError(String(e));
+      return false;
+    }
+  }, []);
+
+  if (!choices) {
+    return error ? (
+      <div data-relays-error className="text-sm text-destructive">
+        {error}
+      </div>
+    ) : null;
+  }
+
+  return (
+    <div data-net-settings className="flex flex-col gap-2">
+      <h2 className="text-sm font-label text-muted-foreground">{gui.relays_mine}</h2>
+
+      {choices.mine.map((url) => (
+        <div key={url} data-relay-mine className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate font-mono text-sm">{url}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="min-h-touch"
+            onClick={() => write(choices.mine.filter((u) => u !== url))}
+          >
+            {gui.remove}
+          </Button>
+        </div>
+      ))}
+
+      <form
+        className="flex items-center gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const url = typed.trim();
+          if (!url) return;
+          // Cleared only on success: a refused address stays in the box
+          // next to the sentence saying why, so the fix is an edit and
+          // not a retype.
+          if (await write([...choices.mine, url])) setTyped("");
+        }}
+      >
+        <Input
+          data-relay-add
+          className="min-w-0 flex-1 font-mono"
+          placeholder={gui.relays_hint}
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+        />
+        <Button type="submit" size="sm" className="min-h-touch" disabled={!typed.trim()}>
+          {gui.relays_add}
+        </Button>
+      </form>
+
+      {error && (
+        <div data-relays-error className="text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <p data-relays-note className="text-xs text-muted-foreground">
+        {gui.relays_after_restart}
+      </p>
+
+      <h2 className="mt-2 text-sm font-label text-muted-foreground">{gui.relays_in_use}</h2>
+      <ul data-relays-in-use className="flex flex-col gap-1">
+        {choices.in_use.map((url) => (
+          <li key={url} className="truncate font-mono text-xs text-muted-foreground">
+            {url}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

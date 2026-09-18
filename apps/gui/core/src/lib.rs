@@ -160,6 +160,22 @@ pub struct WatchedReading {
     pub age_ms: u64,
 }
 
+/// The relay screen's whole answer: what this machine uses, and which
+/// part of it the user put there.
+///
+/// **Two lists rather than one, and the split is the point.** `in_use`
+/// is what the machine binds with — the built-in tier, `KHOR_RELAY`, and
+/// the user's own, merged. `mine` is the only part a control can remove.
+/// A screen given just `in_use` shows rows whose delete button has to be
+/// greyed out with no explanation; a screen given just `mine` is empty
+/// on a fresh machine and says nothing about the relay the connection is
+/// actually standing on.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct RelayChoices {
+    pub mine: Vec<String>,
+    pub in_use: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct DeviceRow {
     pub id: String,
@@ -987,6 +1003,31 @@ pub fn rename_session(root: &Path, id: &str, title: &str) -> Result<(), String> 
 /// come to mean different things.
 pub fn rename_machine(root: &Path, id: &str, name: &str) -> Result<String, String> {
     open(root)?.rename_machine(id, name)
+}
+
+/// This machine's relays, both halves (see [`RelayChoices`]).
+pub fn relays(root: &Path) -> Result<RelayChoices, String> {
+    let node = open(root)?;
+    Ok(RelayChoices {
+        mine: node.relay_choices(),
+        in_use: node.relays().to_vec(),
+    })
+}
+
+/// Replaces the user's own relays and answers with both halves again,
+/// so the screen paints what the node says rather than what it just
+/// sent — the same rule the face settings screen runs on.
+///
+/// ⚠️ `in_use` here is what the **next** node will bind with. A running
+/// `khor serve` and every connection already standing keep the list they
+/// opened with; the screen has to say so, because nothing else will.
+pub fn set_relays(root: &Path, urls: &[String]) -> Result<RelayChoices, String> {
+    let node = open(root)?;
+    let in_use = node.set_relays(urls)?;
+    Ok(RelayChoices {
+        mine: node.relay_choices(),
+        in_use,
+    })
 }
 
 pub fn close_session(root: &Path, id: &str) -> Result<(), String> {

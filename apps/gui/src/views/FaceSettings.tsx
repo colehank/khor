@@ -1,4 +1,12 @@
-// What this machine looks like to everybody else.
+// The app's settings screen. Mostly: what this machine looks like to
+// everybody else.
+//
+// **It has a second section now that is not about faces** — the
+// machine's own relays (`NetSettings`) — and the file kept its name
+// rather than growing a sibling dialog, because the rail has exactly one
+// 设置 and a second entry point would have to be invented to explain a
+// second screen. Everything below this paragraph is still about faces
+// only; the network section holds its own reasoning in its own file.
 //
 // **Nothing here derives a face.** Every swatch on this screen is an
 // `Avatar` the node painted (`khor_gui_core::face_choices`, one call for
@@ -30,6 +38,8 @@ import type { Avatar } from "@/gen/bindings/Avatar";
 import { avatar, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { faceWord } from "@/words";
+
+import { NetSettings } from "@/views/NetSettings";
 
 /**
  * One axis and its heading. The heading names the choice; it does not
@@ -321,6 +331,11 @@ export function FaceSettings({
                 ))}
               </div>
             </Axis>
+
+            {/* Not a face axis — the machine's own relays. It sits under
+                them because it is the rarer errand, and inside this
+                dialog because 设置 is one door (the head of this file). */}
+            <NetSettings open={open} />
           </div>
         )}
       </DialogContent>

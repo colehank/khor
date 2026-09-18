@@ -27,6 +27,7 @@ import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { DayRun } from "./gen/bindings/DayRun";
 import type { DayMark } from "./gen/bindings/DayMark";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
+import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { Usage } from "./gen/bindings/Usage";
@@ -77,6 +78,7 @@ export type {
   DayRun,
   DayMark,
   FaceChoices,
+  RelayChoices,
   HooksState,
   Ticket,
   Usage,
@@ -685,6 +687,16 @@ export const restyle = (change: {
   variant?: string;
   shape?: string;
 }) => call<null>("restyle", change);
+/** This machine's relays, both halves: `mine` is what the user typed
+    here and the only part a control can remove, `in_use` is everything
+    the machine actually binds with (the built-in tier included). */
+export const fetchRelays = () => call<RelayChoices>("relays");
+/** Replaces the user's own relays and answers with both halves again.
+    An entry that is not a relay url is refused whole — nothing is
+    written and the message names it. ⚠️ `in_use` describes the **next**
+    node to open: a running `khor serve` keeps the list it started with. */
+export const setRelays = (urls: string[]) =>
+  call<RelayChoices>("set_relays", { urls });
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to

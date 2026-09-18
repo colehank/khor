@@ -342,6 +342,26 @@ pub fn answer(
             };
             to_json(&crate::set_watch(root, &arg("machine")?, &paths)?)
         }
+        "relays" => to_json(&crate::relays(root)?),
+        "set_relays" => {
+            // Read by position and refused by name, the same as `paths`
+            // above and for a sharper version of the same reason: a
+            // relay is only consulted after a hole punch has already
+            // failed, so an entry dropped on the way in shows up weeks
+            // later as「有时候连不上」and points at the network.
+            let urls: Vec<String> = match args.get("urls") {
+                Some(serde_json::Value::Array(items)) => items
+                    .iter()
+                    .map(|u| {
+                        u.as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(|| "a relay is not a string".to_owned())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => return Err("arg is not a list: urls".to_owned()),
+            };
+            to_json(&crate::set_relays(root, &urls)?)
+        }
         "face_choices" => to_json(&crate::face_choices(root)?),
         "restyle" => {
             crate::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;

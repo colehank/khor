@@ -34,6 +34,7 @@ fn main() {
     // `DayMark` from here.
     khor_gui_core::DayRun::export_all_to(&dir).expect("export DayRun");
     khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
+    khor_gui_core::RelayChoices::export_all_to(&dir).expect("export RelayChoices");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     // Not reachable through any row above: the wizard asks for the

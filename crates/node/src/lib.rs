@@ -692,6 +692,68 @@ fn claim_store(root: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Where this machine's own relays are kept. A local preference file,
+/// beside the avatar's and for the same reason: **the choice is made
+/// here and only travels outward**, through the device table and the
+/// pairing ticket. No other machine can point this one at a relay.
+fn relay_prefs_path(root: &std::path::Path) -> PathBuf {
+    root.join(".khor").join("relays.json")
+}
+
+/// The relays the user typed on this machine, or none.
+///
+/// An object rather than a bare array on disk (`{"relays": [...]}`)
+/// **because the question this setting does not answer yet has a shape**:
+/// today the list is added to the built-in tier and n0's, and a user who
+/// wants *only* their own relay cannot say so. That is a flag next to
+/// the list when somebody asks for it, and an array on disk would have
+/// made it a migration.
+///
+/// Unreadable, unparseable and half-parseable all yield what they can
+/// and no error — reaching this path means somebody edited the file by
+/// hand, since [`Node::set_relays`] validates before it writes. An entry
+/// that does not parse is dropped here rather than at bind, matching
+/// `endpoint::dial_addr`: one typo must not cost the machine the relays
+/// it typed correctly.
+fn chosen_relays(root: &std::path::Path) -> Vec<String> {
+    let Ok(text) = fs::read_to_string(relay_prefs_path(root)) else {
+        return Vec::new();
+    };
+    let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    doc.get("relays")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && s.parse::<iroh::RelayUrl>().is_ok())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Every relay a node on this home should bind with: the built-in tier,
+/// `KHOR_RELAY`, and the user's own — deduplicated, order kept.
+///
+/// **Added to the others, never in place of them**, which is the same
+/// ruling the relay tier already made for itself: iroh probes them all
+/// and homes on the closest that answers, so one more entry can only
+/// widen the set of networks this machine is reachable on. The cost is
+/// the one named on [`chosen_relays`] — 「只用我自己那台」is not
+/// sayable yet.
+fn relays_under(root: &std::path::Path) -> Vec<String> {
+    let mut out = khor_net::endpoint::configured_relays();
+    for url in chosen_relays(root) {
+        if !out.iter().any(|have| have == &url) {
+            out.push(url);
+        }
+    }
+    out
+}
+
 impl Node {
     /// Opens the node rooted at `root`, named after the hostname (or
     /// `KHOR_NAME` when set — tests and same-machine dual instances).
@@ -736,6 +798,10 @@ impl Node {
         // be a cold one every time — and cold is eighteen seconds
         // (`usage::meters_for`).
         let usage = usage::meters_for(&adaptor::vendor_home(&root));
+        // Read before `root` moves into the struct, not after — the
+        // list is settled once, when the node opens, and every caller
+        // that wants a changed list gets it by opening another node.
+        let relays = relays_under(&root);
         let node = Node {
             root,
             key,
@@ -743,7 +809,7 @@ impl Node {
             device_str,
             name,
             peer: ChatDoc::fresh_peer(),
-            relays: khor_net::endpoint::configured_relays(),
+            relays,
             chat,
             transfer,
             live,
@@ -836,6 +902,49 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
+    }
+
+    /// This machine's own relays, as the user typed them.
+    ///
+    /// The stored list only — not the built-in tier and not `KHOR_RELAY`.
+    /// A settings screen has to be able to show what it will edit, and
+    /// the merged list ([`Node::relays`]) has entries in it that no
+    /// control on that screen can remove.
+    pub fn relay_choices(&self) -> Vec<String> {
+        chosen_relays(&self.root)
+    }
+
+    /// Sets this machine's own relays, replacing whatever was stored.
+    /// Returns the merged list that the next node on this home will
+    /// bind with.
+    ///
+    /// **Validated before it is written, and rejected whole.** Each
+    /// entry has to parse as an [`iroh::RelayUrl`]; one that does not
+    /// fails the call and names itself. Writing a bad entry and letting
+    /// the reader skip it would put the machine in the state this whole
+    /// setting exists to end — a relay the user believes is configured
+    /// and nothing anywhere saying it is not.
+    ///
+    /// ⚠️ **It does not move a running endpoint.** The relays a node
+    /// binds with are read once, when the node opens. The GUI opens a
+    /// node per call so it sees this immediately; a live `khor serve`
+    /// and every connection already standing keep the list they started
+    /// with until they are restarted. That is a sentence the screen has
+    /// to say out loud — a setting that visibly took and changes nothing
+    /// until a restart nobody mentioned is the same silence as no
+    /// setting at all.
+    pub fn set_relays(&self, urls: &[String]) -> Result<Vec<String>, String> {
+        let mut kept: Vec<String> = Vec::new();
+        for url in urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
+            url.parse::<iroh::RelayUrl>()
+                .map_err(|_| msg::not_a_relay_url(url))?;
+            if !kept.iter().any(|have| have == url) {
+                kept.push(url.to_string());
+            }
+        }
+        let doc = serde_json::json!({ "relays": kept });
+        link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
+        Ok(relays_under(&self.root))
     }
 
     /// Changes the axes it is handed and leaves the rest where they are
@@ -1052,7 +1161,19 @@ impl Node {
         &self.key
     }
 
-    pub(crate) fn relays(&self) -> &[String] {
+    /// Every relay this node binds with and advertises: the built-in
+    /// tier, `KHOR_RELAY`, and whatever the user typed here.
+    ///
+    /// **Not the same list as [`Node::relay_choices`], and a screen
+    /// showing relays needs both.** This one is what the machine
+    /// actually uses; that one is the part a control can remove. Offer
+    /// only this one and the user is looking at rows that ignore the
+    /// delete key; offer only that one and the screen is silent about
+    /// the relay the connection is really standing on.
+    ///
+    /// Settled when the node opened — see [`Node::set_relays`] for what
+    /// that means for a change made while something is running.
+    pub fn relays(&self) -> &[String] {
         &self.relays
     }
 

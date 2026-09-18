@@ -885,6 +885,14 @@ watch-path-dotdot = "关注的目录里不能有 ..: {0}"
 watch-path-empty = "关注的目录不能是空的"
 watch-path-twice = "同一个目录写了两遍: {0}"
 
+# ── the machine's own relays (自己的中继) ──
+# Refused at the one write entry (`Node::set_relays`) rather than skipped
+# at read time. A relay list is only consulted when a hole punch has
+# already failed, so a typo that is quietly dropped shows up as「有时候
+# 连不上」weeks later, pointing at the network — and the user is looking
+# at a screen that still lists the relay they typed.
+not-a-relay-url = "不是一个中继地址: {0}"
+
 # ── cli ──
 runtime-wont-start = "起不了运行时: {0}"
 which-session = "不知道汇报给哪个 session:设 KHOR_SESSION 或用 --session"
@@ -2473,6 +2481,25 @@ git-stale = "存了才知道改在哪儿"
 # 否则按下去开出来的是个空格子。
 git-added = "HEAD 里没有这几行"
 settings = "设置"
+# ── the machine's own relays, on the settings screen ──
+# 「中继」 alone is already taken by the path word (直连/中继 on a row),
+# and it has to stay that — this heading is about the *list*, not about
+# which road a connection took, so it says whose list it is.
+relays-mine = "自己的中继"
+relays-add = "加一台"
+# The placeholder is the answer to「这一格要填什么」, which a label
+# cannot give without becoming an explanation (docs/UX.md 文案).
+relays-hint = "http://地址:端口"
+# ⚠️ **Not decoration.** The list is read when a node opens, so a running
+# `khor serve` and every standing connection keep the one they started
+# with. Without this line the screen shows a change that took and a
+# network that did not move, and nothing anywhere connects the two.
+relays-after-restart = "新加的要等 khor serve 重起才用上"
+# What the machine is dialling on right now, the built-in tier included.
+# Separate from the list above because nothing here can be removed — a
+# row with a dead delete button and no reason next to it is worse than
+# no row.
+relays-in-use = "在用"
 back = "返回"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —
