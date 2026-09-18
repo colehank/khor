@@ -2,24 +2,59 @@
 //! segment should find each other without asking a server across the
 //! internet where the other one is.
 //!
-//! **Three tests, and they are three different claims.** One is green
-//! and two are red, and which is which is the useful part:
+//! **Three tests. One passes here; the other two cannot pass on this
+//! machine at all, and the reason is the firewall, not the code.**
+//!
+//! Measured 2026-09-19, one variable between the arms — same binary,
+//! same peer, same port, only the destination address differs, each
+//! round a fresh pair of endpoints in a fresh process:
+//!
+//! ```text
+//! 127.0.0.1        -> 连上了  连上了
+//! 172.23.250.213   -> 超时    超时     (this machine's own LAN address)
+//! 100.103.22.1     -> 超时    超时     (its tailnet address)
+//! both of the above-> 超时    超时
+//! ```
+//!
+//! `socketfilterfw` says the firewall is **enabled** and auto-allows
+//! **signed** software only. A `cargo test` binary is unsigned, so
+//! inbound UDP to it is dropped on every address except loopback — and
+//! iroh publishes loopback only when there is no other interface, so
+//! nothing mDNS ever announces is reachable from here.
+//!
+//! **This is the thing I twice announced I had ruled out.** The first
+//! "not the firewall" came from a probe that dialled `127.0.0.1` first
+//! and then called the next two dials green — they were reusing the
+//! path the loopback dial had already opened. A control arm contaminated
+//! by the arm before it, which is this repo's oldest false green wearing
+//! a new hat.
+//!
+//! So:
 //!
 //! - [`what_mdns_hears_becomes_a_dial_candidate`] — **green**, and it is
 //!   the half khor owns: what the wire answers ends up in the list khor
-//!   dials from, at the port that machine is listening on. No connection
-//!   is attempted, so nothing in it rests on the two below.
-//! - [`local_lookup_alone_carries_a_dial_and_its_absence_does_not`] —
-//!   red. Asks whether **iroh** resolves a bare key from mDNS.
-//! - [`khor_dials_a_machine_it_only_heard_on_the_wire`] — red. Asks
-//!   whether a dial carrying those candidates arrives.
+//!   dials from, at the port that machine is listening on. It opens no
+//!   connection, which is why the firewall cannot reach it.
+//! - [`local_lookup_alone_carries_a_dial_and_its_absence_does_not`] and
+//!   [`khor_dials_a_machine_it_only_heard_on_the_wire`] — **red here and
+//!   unprovable here.** Both end in a connection over an address this
+//!   host will not accept a packet on. Run them on two machines, or on
+//!   one with the firewall off, and they are answering a real question;
+//!   run them here and they answer the firewall's.
 //!
-//! **There was a fourth, "did the registration take", and it was deleted
-//! on 2026-09-18 rather than kept**: once the service moved onto the
-//! builder, the only thing that assertion could read was a flag set to
-//! `true` right after a successful bind. No edit anywhere makes such a
-//! gate red, so it was not a gate — it was a green line in a list of
-//! green lines, which is the expensive kind of nothing.
+//! ⚠️ **And this is a product finding, not only a test one.** The same
+//! block stands between two real Macs: khor's own binary is unsigned
+//! too, so a direct connection needs the「是否允许接受传入连接」dialog
+//! to have been accepted on the receiving side. Nobody can click it over
+//! ssh. `zh.toml`'s `web-face-down` already describes exactly this
+//! failure — 「握手连得上,数据一个字节也不给」 — from the other end of
+//! the same rope.
+//!
+//! **There was a fourth test, "did the registration take", deleted on
+//! 2026-09-18 rather than kept**: once the service moved onto the
+//! builder, the only thing it could read was a flag set to `true` right
+//! after a successful bind. No edit anywhere makes such a gate red, so
+//! it was not a gate — it was a green line in a list of green lines.
 
 use std::time::Duration;
 
@@ -121,10 +156,13 @@ async fn what_mdns_hears_becomes_a_dial_candidate() {
 /// and a green here would be indistinguishable from n0's pkarr doing
 /// the work.
 ///
-/// ⚠️ **Red as of 2026-09-18. Every piece of the chain was measured
-/// working and the chain still does not close**, so what follows is
-/// evidence rather than a guess — start from what nobody has checked,
-/// do not redo these:
+/// ⚠️ **Red here, and the file head says why: nothing mDNS announces is
+/// an address this host will accept a packet on.** Not a khor fault and
+/// not an iroh fault — run it on two machines.
+///
+/// What was measured along the way is worth keeping, because it says
+/// the chain is sound right up to the wire and nobody should re-derive
+/// it:
 ///
 /// - **Discovery works.** With tracing on, A sees B's announcement on
 ///   `_irohv1._udp.local` within a second and logs「adding endpoint to
@@ -132,20 +170,11 @@ async fn what_mdns_hears_becomes_a_dial_candidate() {
 /// - **Resolution works, and iroh is told.** The dial logs `connecting …
 ///   ip_addresses=[]` and **4ms later** the service logs `sending
 ///   AddressLookupItem` with those addresses, `provenance: "mdns"`.
-/// - **Those addresses are dialable.** Connecting to each of them
-///   explicitly — loopback, the LAN address, the tailnet address, even
-///   the proxy's `198.18.0.1` — connects, on `Minimal` and on khor's
-///   own bind alike.
-/// - **Dialing by key alone times out** in every combination tried.
-/// - Not the environment: raw multicast on this host sends 3 and
-///   receives 3, **on port 5353 and 15353 alike** (one variable between
-///   the arms, which is the only reason that sentence is worth anything
-///   — an earlier pair differed in port *and* in whether anything was
-///   transmitting, and it pointed at the wrong culprit). So not macOS's
-///   local-network permission, not a dead multicast stack.
+/// - Multicast on this host is fine: send 3, receive 3, on port 5353
+///   and 15353 alike.
 ///
-/// **Two explanations were written down and both are disproved, by me,
-/// hours apart. They are kept because the next person will think of
+/// **Two explanations were written down before the firewall was found,
+/// and both are disproved. Kept, because the next person will think of
 /// them too:**
 ///
 /// - ~~「the dialer never consults the lookup」~~ — false, see the 4ms
@@ -156,13 +185,10 @@ async fn what_mdns_hears_becomes_a_dial_candidate() {
 ///   own address」) and it compares the **whole socket address**; A and
 ///   B share IPs but differ by port, so nothing is dropped.
 ///
-/// So the question is narrow and upstream: iroh 1.0.3 is handed the
-/// right addresses a few milliseconds into the dial and does nothing
-/// observable with them — no path, no holepunch, no error, until the
-/// caller's timeout. Whoever picks this up reads what the remote-state
-/// actor does with an item that arrives *after* `connect` began (that
-/// file's TODO points at n0-computer/iroh#4280), or tries it on two
-/// real machines — the case this test stands in for.
+/// There is still one open question underneath the firewall, and it
+/// needs a host that can answer its own packets before anyone can ask
+/// it: does iroh act on an `AddressLookupItem` that lands *after*
+/// `connect` began? (That file's TODO points at n0-computer/iroh#4280.)
 #[tokio::test]
 #[ignore = "要真多播,受本机网络环境影响——手动跑"]
 async fn local_lookup_alone_carries_a_dial_and_its_absence_does_not() {
@@ -212,13 +238,12 @@ async fn local_lookup_alone_carries_a_dial_and_its_absence_does_not() {
 /// differ — and today they do not: this is red as well, which is itself
 /// the finding.
 ///
-/// ⚠️ **Everything up to the connection is green**, and the test at the
-/// head of this file proves that as its own claim: the address is in the
-/// dial, at the right port, with no relay road. The dial still times
-/// out, and so do single-candidate dials made from the same pair of
-/// endpoints — **while the same shape of dial from a freshly bound pair
-/// connects**. That inconsistency is not explained and it is the thread
-/// to pull.
+/// ⚠️ **Everything up to the connection is green** — the test at the
+/// head of this file proves that as its own claim: the address is in
+/// the dial, at the right port, with no relay road. The connection then
+/// fails for the reason in the file head, which is the firewall and not
+/// this code. On two machines this is the test that says whether the
+/// merge was worth making.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "要真多播,受本机网络环境影响——手动跑"]
 async fn khor_dials_a_machine_it_only_heard_on_the_wire() {
