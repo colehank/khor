@@ -1703,6 +1703,18 @@ async fn open_code_window(
     let mut build = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(at))
         .title(&title);
     if let Some(main) = app.get_webview_window("main") {
+        // **The title bar wears khor's own light or dark** (2026-09-18:
+        // 「弹出的vscode, 页面的标题和实际颜色模式不一, 比如这里是深色,
+        // 但弹出是浅色」— the user). The page inside follows the system
+        // through the server's machine settings (`khor_node::code`),
+        // but a window built with no theme got the platform's default
+        // chrome, which came up light over a dark page. The main
+        // window's theme is the system's — khor never sets its own —
+        // so handing it on is following the system, one window later.
+        // `ThemeChanged` below keeps it following.
+        if let Ok(theme) = main.theme() {
+            build = build.theme(Some(theme));
+        }
         let scale = main.scale_factor().unwrap_or(1.0).max(0.1);
         if let (Ok(size), Ok(pos)) = (main.outer_size(), main.outer_position()) {
             build = build
@@ -2051,6 +2063,19 @@ pub fn run() {
                     // whether anybody still *wants* a menu, and switching
                     // apps is not an answer to that question. The face
                     // asks and unasks; this only draws or stops drawing.
+                    // **The editor windows change with the desktop.**
+                    // Each was built wearing the theme khor had at the
+                    // time (`open_code_window`), and a theme set on a
+                    // window stops following the system on its own —
+                    // so the main window, which does follow, passes
+                    // every change on.
+                    tauri::WindowEvent::ThemeChanged(theme) => {
+                        for (label, w) in window.app_handle().webview_windows() {
+                            if label.starts_with("code:") {
+                                let _ = w.set_theme(Some(*theme));
+                            }
+                        }
+                    }
                     tauri::WindowEvent::Focused(here) => {
                         if let Some(menu) = menu()
                             && menu_up().load(std::sync::atomic::Ordering::Relaxed)
