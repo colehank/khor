@@ -56,6 +56,19 @@ loro = "1.13"
 base64 = "0.22"
 sha2 = "0.10"
 iroh = "1.0"
+# Local-network address lookup, **added alongside the N0 preset and not
+# in place of it**. The preset's lookup is n0's DNS/pkarr: two machines
+# on one router ask a server across the internet where the other one is,
+# and if the hole punch does not land the bytes go the same way out and
+# back. mDNS answers that question on the wire both machines are already
+# on, with no server of anybody's in the path.
+#
+# It does not make a LAN reachable — same-segment machines could always
+# reach each other; it removes the server from *finding out where*. And
+# it goes silent, not wrong, where multicast does not pass (AP isolation,
+# client isolation, separate VLANs) — which is why it joins the preset
+# rather than replacing it.
+iroh-mdns-address-lookup = "0.5"
 # The only outbound HTTP khor makes: Anthropic's usage endpoint, read
 # with the credential Claude Code already stored (crates/node/src/quota.rs).
 # rustls rather than the platform stack because iroh already brings

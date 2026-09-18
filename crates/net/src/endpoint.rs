@@ -33,6 +33,35 @@ pub fn configured_relays() -> Vec<String> {
     out
 }
 
+/// Whether the last [`bind`] on this process got local-network address
+/// lookup running.
+///
+/// **A flag rather than a return value, and that is a trade made on
+/// purpose.** `bind` has twenty-odd call sites, nearly all of them
+/// tests; widening its signature to carry one advisory bool would put
+/// every one of them in the red window for a fact none of them reads.
+/// The cost is that a process holding two endpoints gets one answer for
+/// both — nothing does that today, and when something does, this
+/// becomes a per-endpoint query and the flag goes away.
+///
+/// It exists because the alternative is silence. mDNS failing to start
+/// (multicast blocked, a sandbox that will not join the group) does not
+/// break anything: the N0 preset's lookup was never removed and answers
+/// exactly as it did before. So the failure has **no symptom** — the
+/// machine just keeps paying a round trip to a server to find the
+/// machine on the other side of the room, which is the thing this was
+/// added to stop. Something has to be able to say it did not happen.
+static MDNS_LIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Did local-network address lookup come up on the last [`bind`]?
+///
+/// False also means "nothing has bound yet" — the two are not
+/// distinguished, because the only caller is a screen that has an
+/// endpoint.
+pub fn mdns_live() -> bool {
+    MDNS_LIVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Binds this machine's endpoint. One live endpoint per key — a second
 /// bind with the same key knocks the first off the relay, and both stop
 /// working (learned in production).
@@ -94,7 +123,48 @@ pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<ir
             relays.into_iter().collect(),
         ));
     }
-    Ok(builder.bind().await?)
+    let endpoint = builder.bind().await?;
+    MDNS_LIVE.store(
+        local_lookup(&endpoint),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    Ok(endpoint)
+}
+
+/// Adds local-network address lookup to a bound endpoint. Reports
+/// whether it took.
+///
+/// **Added to the preset's lookup, never in place of it.** Both answer
+/// the same question — where is the machine with this key — and they
+/// answer it on different wires: mDNS on the segment both machines are
+/// already sitting on, n0's DNS/pkarr from across the internet. Where
+/// multicast does not pass (AP isolation, client isolation, machines on
+/// separate VLANs) mDNS does not answer wrong, it does not answer at
+/// all, and the other one carries the dial exactly as it did before
+/// this function existed.
+///
+/// **What it does not do is make a LAN reachable.** Two machines on one
+/// router could always reach each other; what they could not do is find
+/// out where the other one was without asking a server on the far side
+/// of the internet — and, when the hole punch did not land, send every
+/// byte out there and back. This removes the server from the finding.
+/// Whether the bytes then go direct is the hole punch's business, not
+/// this one's.
+///
+/// Every failure path returns false rather than erroring: an endpoint
+/// that cannot do local lookup is the endpoint khor shipped until now,
+/// and refusing to bind over it would trade a working machine for a
+/// faster one.
+fn local_lookup(endpoint: &iroh::Endpoint) -> bool {
+    let Ok(mdns) = iroh_mdns_address_lookup::MdnsAddressLookup::builder().build(endpoint.id())
+    else {
+        return false;
+    };
+    let Ok(services) = endpoint.address_lookup() else {
+        return false;
+    };
+    services.add(mdns);
+    true
 }
 
 /// A dial address: identity plus every road we know. iroh probes them in
