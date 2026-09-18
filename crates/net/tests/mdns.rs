@@ -2,8 +2,8 @@
 //! segment should find each other without asking a server across the
 //! internet where the other one is.
 //!
-//! **Three tests. One passes here; the other two cannot pass on this
-//! machine at all, and the reason is the firewall, not the code.**
+//! **Four tests: two pass here, two cannot pass here at all — and the
+//! reason the last two cannot is the firewall, not the code.**
 //!
 //! Measured 2026-09-19, one variable between the arms — same binary,
 //! same peer, same port, only the destination address differs, each
@@ -31,10 +31,15 @@
 //!
 //! So:
 //!
-//! - [`what_mdns_hears_becomes_a_dial_candidate`] — **green**, and it is
-//!   the half khor owns: what the wire answers ends up in the list khor
-//!   dials from, at the port that machine is listening on. It opens no
+//! - [`what_mdns_hears_becomes_a_dial_candidate`] — **green**, the half
+//!   khor owns: what the wire answers ends up in the list khor dials
+//!   from, at the port that machine is listening on. It opens no
 //!   connection, which is why the firewall cannot reach it.
+//! - [`a_machine_heard_on_the_wire_answers_on_the_port_it_announced`] —
+//!   **green**, and it closes the chain as far as this host allows:
+//!   announce → hear → candidate list → dial → echo. It dials the
+//!   announced **port** at loopback, because the announced *address* is
+//!   the half the firewall eats; its own doc says what that costs.
 //! - [`local_lookup_alone_carries_a_dial_and_its_absence_does_not`] and
 //!   [`khor_dials_a_machine_it_only_heard_on_the_wire`] — **red here and
 //!   unprovable here.** Both end in a connection over an address this
@@ -228,6 +233,109 @@ async fn local_lookup_alone_carries_a_dial_and_its_absence_does_not() {
     );
     deaf_client.close().await;
     deaf_server.close().await;
+}
+
+/// **A machine heard on the wire answers on the port it announced.**
+///
+/// The chain end to end: announce → hear → into khor's candidate list →
+/// dial → echo. Everything the merge exists for.
+///
+/// ⚠️ **One substitution, and it is the firewall's fault, not a
+/// convenience.** The dial is made to the *port* mDNS announced, at
+/// `127.0.0.1` rather than at the address it was announced on. The file
+/// head has the measurement: on this host, inbound packets to an
+/// unsigned binary are dropped on every address but loopback, so a dial
+/// to the announced address cannot arrive no matter what khor does. The
+/// port is the half that came off the wire and it is the half this test
+/// is about — a wrong port, a stale announcement, a machine that has
+/// since rebound, all still red it.
+///
+/// **What it therefore does not prove**: that a packet crosses a real
+/// segment to another machine. Nothing runnable on one host proves
+/// that, and [`khor_dials_a_machine_it_only_heard_on_the_wire`] is
+/// where it gets proved the day there are two.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "要真多播,受本机网络环境影响——手动跑"]
+async fn a_machine_heard_on_the_wire_answers_on_the_port_it_announced() {
+    let server = endpoint::bind(iroh::SecretKey::generate(), &[])
+        .await
+        .expect("bind should succeed");
+    let client = endpoint::bind(iroh::SecretKey::generate(), &[])
+        .await
+        .expect("bind should succeed");
+    let server_id = server.id();
+    // The ports this machine is really listening on, read before the
+    // wire is consulted — the assertion below is that what came off the
+    // wire is one of these, so it cannot be taken from the wire.
+    let listening: Vec<u16> = server
+        .addr()
+        .addrs
+        .iter()
+        .filter_map(|t| match t {
+            iroh::TransportAddr::Ip(sa) => Some(sa.port()),
+            _ => None,
+        })
+        .collect();
+
+    let echo = tokio::spawn(async move {
+        while let Some(incoming) = server.accept().await {
+            let Ok(conn) = incoming.await else { continue };
+            let Ok((mut send, mut recv)) = conn.accept_bi().await else {
+                continue;
+            };
+            let msg = recv.read_to_end(1024).await.unwrap_or_default();
+            let _ = send.write_all(&msg).await;
+            let _ = send.finish();
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+    });
+
+    let heard = timeout(Duration::from_secs(20), async {
+        loop {
+            if !endpoint::nearby(&server_id).is_empty() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    })
+    .await
+    .unwrap_or(false);
+    assert!(heard, "mdns should have put the server on the segment map");
+
+    // Straight out of khor's own candidate list — no stored hint, no
+    // relay, nothing but what the wire said.
+    let from_the_wire = endpoint::dial_addr(&server_id.to_string(), &[], &[])
+        .expect("the id should parse")
+        .ip_addrs()
+        .next()
+        .copied()
+        .expect("the dial should carry what mdns heard");
+    assert!(
+        listening.contains(&from_the_wire.port()),
+        "{from_the_wire} is not a port this machine listens on ({listening:?})"
+    );
+    assert!(
+        !from_the_wire.ip().is_loopback(),
+        "the announcement should be a real address — a loopback one would make \
+         the substitution below a no-op and this test a tautology"
+    );
+
+    let addr = iroh::EndpointAddr::new(server_id).with_ip_addr(std::net::SocketAddr::from((
+        std::net::Ipv4Addr::LOCALHOST,
+        from_the_wire.port(),
+    )));
+    let conn = timeout(Duration::from_secs(20), client.connect(addr, ALPN))
+        .await
+        .expect("a dial on the announced port must not hang")
+        .expect("the machine that announced that port should answer on it");
+    let (mut send, mut recv) = conn.open_bi().await.unwrap();
+    send.write_all(b"found you on the wire").await.unwrap();
+    send.finish().unwrap();
+    let back = recv.read_to_end(1024).await.unwrap();
+    assert_eq!(back, b"found you on the wire", "the echo should come back");
+
+    echo.abort();
+    client.close().await;
 }
 
 /// **A dial reaches a machine khor only ever heard about on the wire.**
