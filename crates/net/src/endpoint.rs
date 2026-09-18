@@ -33,6 +33,105 @@ pub fn configured_relays() -> Vec<String> {
     out
 }
 
+/// Machines mDNS has seen on this segment, and where it saw them.
+///
+/// **khor keeps its own copy of what the lookup found, and that is not
+/// redundancy.** iroh is handed the same answer — measured, four
+/// milliseconds into a dial, tagged `provenance: "mdns"` — and on
+/// iroh 1.0.3 it does nothing observable with one that arrives after
+/// `connect` began (the whole account is on `tests/mdns.rs`). khor does
+/// not have to wait for that: every dial it makes already carries
+/// candidates it supplies itself, from the device table. This map is
+/// one more source for that list, so a machine found on the wire is
+/// dialled the same way a machine read out of the table is.
+///
+/// Process-global because the map describes **the segment**, not an
+/// endpoint: two endpoints in one process are on the same wire and see
+/// the same neighbours. It is a cache of something that expires on its
+/// own — an entry outliving the machine that announced it costs one
+/// dead candidate in a list that already tolerates them
+/// ([`dial_addr`]), which is why nothing here has a timer.
+static NEARBY: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<iroh::EndpointId, Vec<std::net::SocketAddr>>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// Where mDNS last saw this machine, as dial hints. Empty when it has
+/// not been seen — which is the ordinary case off a shared segment.
+pub fn nearby(id: &iroh::EndpointId) -> Vec<String> {
+    NEARBY
+        .lock()
+        .map(|m| {
+            m.get(id)
+                .map(|v| v.iter().map(|s| s.to_string()).collect())
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
+}
+
+/// Hands an already-built lookup service to [`iroh::endpoint::Builder`].
+///
+/// The builder is the door that reaches the dialer, and it wants a
+/// *builder*; khor needs the built service too, to read its event
+/// stream. This passes the one it made rather than letting iroh make a
+/// second one — two mdns services on one endpoint would announce the
+/// same key twice on the same wire.
+#[derive(Debug)]
+struct Prebuilt(iroh_mdns_address_lookup::MdnsAddressLookup);
+
+impl iroh::address_lookup::AddressLookupBuilder for Prebuilt {
+    fn into_address_lookup(
+        self,
+        _endpoint: &iroh::Endpoint,
+    ) -> Result<impl iroh::address_lookup::AddressLookup, iroh::address_lookup::AddressLookupBuilderError>
+    {
+        Ok(self.0)
+    }
+}
+
+/// Keeps [`NEARBY`] current from one service's event stream.
+///
+/// Discovered replaces rather than merges: the announcement is the whole
+/// truth about where that machine is *now*, and a union would keep a
+/// port it has since moved off. Expired removes — a neighbour that left
+/// the wire should stop being dialled as if it were on it.
+fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
+    tokio::spawn(async move {
+        use n0_future::StreamExt;
+        let mut events = mdns.subscribe().await;
+        while let Some(event) = events.next().await {
+            let Ok(mut map) = NEARBY.lock() else { return };
+            match event {
+                iroh_mdns_address_lookup::DiscoveryEvent::Discovered { endpoint_info, .. } => {
+                    let seen: Vec<std::net::SocketAddr> = endpoint_info
+                        .data
+                        .addrs()
+                        .filter_map(|a| match a {
+                            iroh::TransportAddr::Ip(sa) => Some(*sa),
+                            _ => None,
+                        })
+                        .filter(|sa| !unroutable(&iroh::TransportAddr::Ip(*sa)))
+                        .collect();
+                    if seen.is_empty() {
+                        map.remove(&endpoint_info.endpoint_id);
+                    } else {
+                        map.insert(endpoint_info.endpoint_id, seen);
+                    }
+                }
+                iroh_mdns_address_lookup::DiscoveryEvent::Expired { endpoint_id } => {
+                    map.remove(&endpoint_id);
+                }
+                // `DiscoveryEvent` is `#[non_exhaustive]`. An event this
+                // build has never heard of leaves the map as it is —
+                // the entries in it were put there by events this build
+                // does understand, and dropping them on a word we
+                // cannot read would be forgetting a neighbour because
+                // somebody added a sentence.
+                _ => {}
+            }
+        }
+    });
+}
+
 /// Binds this machine's endpoint. One live endpoint per key — a second
 /// bind with the same key knocks the first off the relay, and both stop
 /// working (learned in production).
@@ -65,6 +164,12 @@ pub async fn bind_with(
     extra_relays: &[String],
     exclusive: bool,
 ) -> Result<iroh::Endpoint> {
+    // Built here rather than by iroh so that `follow` can read what it
+    // finds; registered on the builder all the same (`Prebuilt`).
+    let mdns = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
+        .build(secret.public())
+        .context(msg::NO_LOCAL_LOOKUP)?;
+    follow(mdns.clone());
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
         // Compiled-in Mozilla roots instead of the operating system's:
@@ -108,7 +213,7 @@ pub async fn bind_with(
         // three addresses with provenance "mdns", dialling B by key
         // alone timed out, and dialling the very same addresses by hand
         // connected. Every piece worked and the chain did not.
-        .address_lookup(iroh_mdns_address_lookup::MdnsAddressLookup::builder())
+        .address_lookup(Prebuilt(mdns.clone()))
         // Same door, same reason: the filter that keeps this machine
         // from publishing an address nobody can route to belongs where
         // the services are assembled.
@@ -198,7 +303,17 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
 pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<iroh::EndpointAddr> {
     let id: iroh::EndpointId = id_hex.parse().context(msg::NOT_A_MACHINE_ID_SHORT)?;
     let mut addr = iroh::EndpointAddr::new(id);
-    for road in direct.iter().chain(relays) {
+    // **What mDNS saw goes in beside the stored hints, not instead of
+    // them.** A machine on this segment is usually also in the device
+    // table, at an address that was true the last time it wrote one
+    // down; the announcement is where it is now. iroh probes the whole
+    // list in parallel and keeps the one that answers first, so a stale
+    // entry costs a probe and a fresh one wins the dial.
+    //
+    // It is merged **here**, at the one door every khor dial goes
+    // through, so「我在同一个网段里」needs no caller to remember it.
+    let nearby = nearby(&id);
+    for road in direct.iter().chain(relays).chain(nearby.iter()) {
         if let Ok(sock) = road.parse::<std::net::SocketAddr>() {
             addr = addr.with_ip_addr(sock);
         } else if (road.starts_with("http://") || road.starts_with("https://"))

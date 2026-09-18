@@ -7,6 +7,9 @@ edition.workspace = true
 khor-catalog.workspace = true
 iroh.workspace = true
 iroh-mdns-address-lookup.workspace = true
+# Reading the mdns service's event stream, which is a `Stream` and needs
+# a `StreamExt` to consume. iroh's own, so no new version in the tree.
+n0-future = "0.3"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

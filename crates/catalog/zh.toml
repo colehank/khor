@@ -892,6 +892,9 @@ watch-path-twice = "同一个目录写了两遍: {0}"
 # 连不上」weeks later, pointing at the network — and the user is looking
 # at a screen that still lists the relay they typed.
 not-a-relay-url = "不是一个中继地址: {0}"
+# 局域网发现起不来。不致命——n0 那套照常答,只是找隔壁那台还要走一趟
+# 跨洋往返;而它起不来时没有任何症状,所以这句是唯一会说话的东西。
+no-local-lookup = "局域网发现起不来"
 # 「只用我自己那台」和一张空名单合起来是唯一一种「看着像选择、其实不是」
 # 的组合:它把机器留在没有任何中继的状态,只有打洞成了才连得上。拒绝,
 # 而不是悄悄把开关拨回去——一个会自己关掉的开关,是屏幕在谎报状态。
