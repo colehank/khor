@@ -202,6 +202,16 @@ export function TabStrip({
   return (
     <div
       data-tab-bar
+      // **The stretch of the strip with no tab on it moves the window** (第八轮
+      // 第 59 条:「窗口的可拖动部分是顶部空白区域、侧边栏空白区域」).
+      // The band is the top row of a browsing landing and of a workspace's
+      // file column, so it is that landing's 顶部空白.
+      //
+      // Said twice, here and on the scroller inside, because the blank
+      // after the last tab belongs to the scroller and tauri drags only
+      // from the element it is written on. Tabs, the "+" and the head
+      // are children of one or the other and keep every press.
+      data-tauri-drag-region
       // **The band is darker and the open tab is the page's own
       // colour**, which is the whole of how a tab says it is in front:
       // its bottom edge has no edge, so it reads as continuous with what
@@ -259,6 +269,8 @@ export function TabStrip({
       <div
         ref={strip}
         data-tab-strip
+        // The blank after the last tab (第八轮 第 59 条) — see the band.
+        data-tauri-drag-region
         className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto"
       >
         {faces.map((f) => {

@@ -214,7 +214,13 @@ export function DetailPane({
           lights up would be cut off, which is the one thing the floor's
           own rule forbids ("按下的底色要画在扩后的盒上"). So the bar is
           the height of the tallest thing a finger must land on. */}
-      <header data-detail-header className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3">
+      {/* The pane's top row, so its blank moves the window (第八轮 第 59
+          条). Every control in here is a child and keeps its press. */}
+      <header
+        data-detail-header
+        data-tauri-drag-region
+        className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
+      >
         {/* The back button exists only on the narrow face: there the
             list is genuinely off-screen, so "back" has somewhere to go.
             Wide keeps the list on screen — nothing to go back from.

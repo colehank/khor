@@ -122,6 +122,18 @@ export function PaneBar({
   return (
     <div
       data-pane-bar
+      // **The blank of this bar moves the window** (第八轮 第 59 条:
+      // 「窗口的可拖动部分是顶部空白区域、侧边栏空白区域」). This is the
+      // top row of every list pane, so on the landings that have one it
+      // *is* the 顶部空白 — the strip of it the search box and the
+      // menus do not occupy.
+      //
+      // Declared on the bar rather than on a cut-out strip beside the
+      // controls, because tauri drags only when the element carrying
+      // the attribute is itself the one pressed: the box, the filter
+      // menu and the "+" are children and keep every press they had.
+      // Inert on the web face, which reads no such attribute.
+      data-tauri-drag-region
       // `min-h`, not `h`: chips make the box taller than one row, and a
       // bar with a fixed height would clip them or squeeze the list.
       className="flex min-h-ctl-lg flex-none items-center gap-1 border-b px-2"

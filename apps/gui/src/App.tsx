@@ -1111,6 +1111,20 @@ export default function App() {
       // that measures the gap at its head (第 58 条) and this attribute
       // right below it (第 59 条).
       data-rail
+      // 「窗口的可拖动部分是顶部空白区域、侧边栏空白区域」 — the user,
+      // 第八轮 第 59 条. With the title bar gone there is no band left
+      // to drag the window by, so the blank of the rail becomes one.
+      //
+      // **The attribute is on this element and nothing inherits it.**
+      // Tauri drags when the element *carrying* the attribute is the
+      // one pressed, so every glyph, tooltip trigger and menu in here
+      // keeps its press — which is the whole reason the drag can be
+      // declared this broadly instead of on a hand-cut strip.
+      //
+      // Inert on the web face and on the two platforms that kept their
+      // system title bar: nothing there reads the attribute, so the
+      // rail behaves exactly as it did.
+      data-tauri-drag-region
       className={cn(
         "flex items-center select-none",
         // Two gaps, one per face. The column rail holds its items a
@@ -1829,10 +1843,12 @@ export default function App() {
               window is under 719 wide (the app's own floor is 400, so
               this posture is reachable by dragging an edge).
 
-              Zero tall and inert on every face without those buttons —
-              this column has no gap, so an empty box in it costs
-              nothing. */}
-          <div data-traffic-room className="h-traffic flex-none" />
+              It is a drag region too: on this face the head of the
+              screen is the 顶部空白 the ruling names, and the screens
+              under it draw their own heads. Zero tall and inert on
+              every face without those buttons — this column has no gap,
+              so an empty box in it costs nothing. */}
+          <div data-traffic-room data-tauri-drag-region className="h-traffic flex-none" />
           {/* `key` is what makes the arrival visible: a CSS animation
               runs when an element is inserted, and without a changing
               key React would reuse this box and the new screen would

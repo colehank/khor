@@ -1382,7 +1382,13 @@ export function WorkspacePane({
           that face keeps a bar with the machine's name and its crumbs,
           and a project gets none. */}
       {root === "" && (
-        <div className="flex items-center gap-2 border-b px-3 py-2">
+        <div
+          // The browsing face's own top row: its blank moves the window
+          // (第八轮 第 59 条). The crumbs are buttons and keep their
+          // presses — they are children of this box, not this box.
+          data-tauri-drag-region
+          className="flex items-center gap-2 border-b px-3 py-2"
+        >
           <span className="shrink-0 truncate text-fact font-title text-foreground">
             {machine}
           </span>
@@ -1442,6 +1448,10 @@ export function WorkspacePane({
                 which is the first one. */}
             <div
               data-tree-head
+              // The tree column's top row, so its blank moves the window
+              // (第八轮 第 59 条). Same shape as `PaneBar`'s: the box and
+              // the two switches are children and keep their presses.
+              data-tauri-drag-region
               // **A finger's height, not `--ctl-md`.** The ruling wrote
               // 「高 --ctl-md」 and the two switches beside the box are
               // the floor themselves (44), so a 30-tall row would have

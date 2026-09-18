@@ -16375,15 +16375,16 @@ try {
     await wait(300);
   }
 
-  // ── 窗顶那一条:这张脸上没有空位 ──────────────────────────
+  // ── 窗顶那一条:这张脸上没有空位,而拖区盖到了每个落地页的头一行 ──
   //
-  // 第八轮 第 58 条. **What this gate can reach is the web face**, and
-  // that is the claim rather than a limitation: the app grows a corner
-  // for the window's own three buttons, and the promise made alongside
-  // it is that a page in somebody's browser changes in no way at all.
-  // The app half — three buttons sitting on the rail, the gap collapsing
-  // in full screen — is in `docs/handoff/001.md` under 人眼验什么,
-  // because a tauri window is not a thing playwright can hold.
+  // 第八轮 第 58、59 条. **Both halves of what this gate can reach are
+  // about the web face**, and that is the claim rather than a
+  // limitation: the app grows a corner for the window's own three
+  // buttons and a window to drag by, and the promise made alongside it
+  // is that a page in somebody's browser changes in no way at all. The
+  // app half — three buttons sitting on the rail, the gap collapsing in
+  // full screen, a real drag — is in `docs/handoff/001.md` under 人眼验
+  // 什么, because a tauri window is not a thing playwright can hold.
   {
     await open("sessions");
     // 58. The token exists (so this is not measuring a name nothing
@@ -16413,6 +16414,58 @@ try {
     } else {
       console.log(`rail head: --traffic=${room.token}, no blank above the first glyph`);
     }
+
+    // 59. Nothing pressable carries the drag, anywhere on the page.
+    // This is the whole of 「按钮、输入框、标签本身不能拖」 that can be
+    // asked statically, and it is the half that could rot silently: the
+    // attribute is inert in a browser, so a drag region written onto a
+    // button would look and behave exactly right here and swallow that
+    // button's press in the app.
+    const dragging = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-tauri-drag-region]")]
+        .filter((el) => el.matches("button, input, textarea, a, select, [role=button], [role=tab], [data-tab]"))
+        .map((el) => `${el.tagName.toLowerCase()}${el.getAttribute("aria-label") ? `[${el.getAttribute("aria-label")}]` : ""}`),
+    );
+    if (dragging.length) {
+      fail(`these controls carry the window drag and would stop answering a press in the app: ${dragging.join(", ")}`);
+    }
+
+    // …and the drag reaches the rail and the head of every landing.
+    // **Asked at a pixel, not at a selector**, because that is the
+    // question tauri answers: it drags when the element *under the
+    // pointer* is the one carrying the attribute, so an ancestor with it
+    // buys nothing. The top row is walked across its whole width and
+    // every hit is named by the marker it wears.
+    const MARKS = ["data-rail", "data-pane-bar", "data-tab-bar", "data-tab-strip", "data-detail-header", "data-tree-head", "data-traffic-room"];
+    const topRow = (marks) =>
+      page.evaluate((names) => {
+        const seen = new Set();
+        for (let x = 2; x < window.innerWidth; x += 4) {
+          const el = document.elementFromPoint(x, 6);
+          if (!el || !el.hasAttribute("data-tauri-drag-region")) continue;
+          seen.add(names.find((n) => el.hasAttribute(n)) ?? el.tagName.toLowerCase());
+        }
+        return [...seen];
+      }, marks);
+    const heads = [];
+    for (const tab of ["sessions", "devices", "workspaces", "quota", "browser"]) {
+      if (!(await open(tab))) {
+        fail(`probe dead: the ${tab} landing is not on the rail`);
+        continue;
+      }
+      const hit = await topRow(MARKS);
+      heads.push(`${tab}:${hit.join("+") || "none"}`);
+      if (!hit.includes("data-rail")) {
+        fail(`on the ${tab} landing the rail's own column does not drag the window — 「侧边栏空白区域」 is every landing's, not one's`);
+      }
+      if (hit.filter((m) => m !== "data-rail").length === 0) {
+        fail(
+          `on the ${tab} landing nothing in the top row drags the window (${hit.join("+") || "nothing at all"}) — ` +
+            `「顶部空白区域」: the row where the title bar used to be is this landing's head, and its blank is what moves the window`,
+        );
+      }
+    }
+    console.log(`drag regions: ${heads.join(" · ")}`);
 
     // Narrow puts the rail along the bottom, so the corner moves to the
     // head of the screen column — and it is zero here for 58's reason.
