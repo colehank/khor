@@ -50,7 +50,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     let before = node.relays().len();
     assert!(before > 0, "the built-in relay tier should still be present");
 
-    let merged = node.set_relays(&[MINE.to_string()]).expect("a real relay url should be accepted");
+    let merged = node.set_relays(&[MINE.to_string()], false).expect("a real relay url should be accepted");
     assert!(
         merged.iter().any(|r| r == MINE),
         "the call should report the list the next node will use"
@@ -79,7 +79,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     // Refused, and refused **without touching what was already stored**.
     // A validation that clears the list on its way to saying no would be
     // worse than one that never checked.
-    let refused = reopened.set_relays(&["这不是一个地址".to_string()]);
+    let refused = reopened.set_relays(&["这不是一个地址".to_string()], false);
     assert!(refused.is_err(), "a string that is not a relay url must not be stored");
     assert_eq!(
         reopened.relay_choices(),
@@ -89,7 +89,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
 
     // And the list can be emptied — the delete key has to reach the
     // thing the add button wrote.
-    reopened.set_relays(&[]).expect("clearing should be allowed");
+    reopened.set_relays(&[], false).expect("clearing should be allowed");
     assert!(
         reopened.relay_choices().is_empty(),
         "clearing should remove the user's own entries"
@@ -98,6 +98,62 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     assert!(
         !bare.relays().iter().any(|r| r == MINE),
         "and the cleared address should be gone from the list a node binds with"
+    );
+
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// 「只用我自己那台」replaces the list instead of joining it — and it
+/// cannot be turned on with nothing to replace it with.
+///
+/// **The first assertion is again the arm that gives the rest meaning.**
+/// "the list is exactly my relay" is also true of a machine whose
+/// built-in tier happened to be empty, so the default case is measured
+/// first: more than one entry, and mine is not the only one.
+#[test]
+fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
+    let root = root("onlymine");
+    let node = Node::open(root.clone()).expect("a fresh home should open");
+
+    // Refused before anything is stored: there is nothing to be the
+    // only one. The switch must not come on by itself either.
+    assert!(
+        node.set_relays(&[], true).is_err(),
+        "「only mine」with no relay of my own must be refused, not silently downgraded"
+    );
+    assert!(!node.relays_only_mine(), "and the refusal must not have stored it");
+
+    // Added: mine plus the built-in tier. This is the control for the
+    // exclusive case below — without it, "the list is just mine" could
+    // mean the tier was never there.
+    let joined = node
+        .set_relays(&[MINE.to_string()], false)
+        .expect("a real relay url should be accepted");
+    assert!(joined.len() > 1, "added means the built-in tier is still in the list");
+
+    // Exclusive: the same one address, and now it is the whole map.
+    let alone = node
+        .set_relays(&[MINE.to_string()], true)
+        .expect("one relay of my own is enough to be the only one");
+    assert_eq!(
+        alone,
+        vec![MINE.to_string()],
+        "「only mine」must replace the built-in tier, not sit on top of it"
+    );
+
+    let reopened = Node::open(root.clone()).expect("the home should reopen");
+    assert!(reopened.relays_only_mine(), "the switch should survive a reopen");
+    assert_eq!(
+        reopened.relays(),
+        [MINE.to_string()],
+        "and so should the list it makes"
+    );
+
+    // Clearing the list while exclusive is on is the same forbidden
+    // state arriving by a different door.
+    assert!(
+        reopened.set_relays(&[], true).is_err(),
+        "emptying the list must not be a way into「only mine, and none」"
     );
 
     let _ = std::fs::remove_dir_all(&root);

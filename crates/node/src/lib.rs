@@ -313,6 +313,10 @@ pub struct Node {
     /// Relay roads this machine binds with and offers to others: the
     /// Khor tier plus `KHOR_RELAY` (docs/NET.md 中继).
     relays: Vec<String>,
+    /// Whether `relays` is the user's own list *instead of* the built-in
+    /// tier rather than on top of it — the bind needs to know, because
+    /// n0's servers are added by iroh unless it is told not to.
+    relays_only_mine: bool,
     chat: ChatKind,
     transfer: TransferKind,
     live: LiveKind,
@@ -700,14 +704,21 @@ fn relay_prefs_path(root: &std::path::Path) -> PathBuf {
     root.join(".khor").join("relays.json")
 }
 
-/// The relays the user typed on this machine, or none.
+/// What this machine's relay file says: the list the user typed, and
+/// whether it is meant to be the whole story.
+#[derive(Debug, Default, Clone)]
+pub(crate) struct RelayPlan {
+    pub(crate) mine: Vec<String>,
+    /// Use `mine` **instead of** the built-in tier and n0's, rather than
+    /// alongside them.
+    pub(crate) only_mine: bool,
+}
+
+/// Reads the relay file, or gives an empty plan.
 ///
-/// An object rather than a bare array on disk (`{"relays": [...]}`)
-/// **because the question this setting does not answer yet has a shape**:
-/// today the list is added to the built-in tier and n0's, and a user who
-/// wants *only* their own relay cannot say so. That is a flag next to
-/// the list when somebody asks for it, and an array on disk would have
-/// made it a migration.
+/// An object on disk rather than a bare array, and this flag is why —
+/// it was the question the first version could not answer, and adding
+/// it here cost a key instead of a migration.
 ///
 /// Unreadable, unparseable and half-parseable all yield what they can
 /// and no error — reaching this path means somebody edited the file by
@@ -715,14 +726,21 @@ fn relay_prefs_path(root: &std::path::Path) -> PathBuf {
 /// that does not parse is dropped here rather than at bind, matching
 /// `endpoint::dial_addr`: one typo must not cost the machine the relays
 /// it typed correctly.
-fn chosen_relays(root: &std::path::Path) -> Vec<String> {
+///
+/// ⚠️ **`only_mine` is forced back off when the list ends up empty.**
+/// Otherwise a hand-edited file could leave this machine with no relay
+/// at all — reachable only where a hole punch lands — which is not
+/// something anybody chooses by deleting the last row. The write door
+/// refuses that combination outright; this is the second net.
+fn chosen_relays(root: &std::path::Path) -> RelayPlan {
     let Ok(text) = fs::read_to_string(relay_prefs_path(root)) else {
-        return Vec::new();
+        return RelayPlan::default();
     };
     let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return Vec::new();
+        return RelayPlan::default();
     };
-    doc.get("relays")
+    let mine: Vec<String> = doc
+        .get("relays")
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
@@ -732,26 +750,35 @@ fn chosen_relays(root: &std::path::Path) -> Vec<String> {
                 .map(str::to_string)
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let only_mine = !mine.is_empty()
+        && doc
+            .get("only_mine")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
+    RelayPlan { mine, only_mine }
 }
 
-/// Every relay a node on this home should bind with: the built-in tier,
-/// `KHOR_RELAY`, and the user's own — deduplicated, order kept.
+/// Every relay a node on this home should bind with.
 ///
-/// **Added to the others, never in place of them**, which is the same
-/// ruling the relay tier already made for itself: iroh probes them all
+/// Two shapes, and the flag picks between them: **added** to the
+/// built-in tier and `KHOR_RELAY` (the default — iroh probes them all
 /// and homes on the closest that answers, so one more entry can only
-/// widen the set of networks this machine is reachable on. The cost is
-/// the one named on [`chosen_relays`] — 「只用我自己那台」is not
-/// sayable yet.
-fn relays_under(root: &std::path::Path) -> Vec<String> {
+/// widen the set of networks this machine is reachable on), or
+/// **instead of** them, which is the point of the whole setting for
+/// somebody who does not want khor touching n0 at all.
+fn relays_under(root: &std::path::Path) -> (Vec<String>, bool) {
+    let plan = chosen_relays(root);
+    if plan.only_mine {
+        return (plan.mine, true);
+    }
     let mut out = khor_net::endpoint::configured_relays();
-    for url in chosen_relays(root) {
+    for url in plan.mine {
         if !out.iter().any(|have| have == &url) {
             out.push(url);
         }
     }
-    out
+    (out, false)
 }
 
 impl Node {
@@ -801,7 +828,7 @@ impl Node {
         // Read before `root` moves into the struct, not after — the
         // list is settled once, when the node opens, and every caller
         // that wants a changed list gets it by opening another node.
-        let relays = relays_under(&root);
+        let (relays, relays_only_mine) = relays_under(&root);
         let node = Node {
             root,
             key,
@@ -810,6 +837,7 @@ impl Node {
             name,
             peer: ChatDoc::fresh_peer(),
             relays,
+            relays_only_mine,
             chat,
             transfer,
             live,
@@ -911,7 +939,12 @@ impl Node {
     /// the merged list ([`Node::relays`]) has entries in it that no
     /// control on that screen can remove.
     pub fn relay_choices(&self) -> Vec<String> {
-        chosen_relays(&self.root)
+        chosen_relays(&self.root).mine
+    }
+
+    /// Whether this machine is set to use only the relays typed here.
+    pub fn relays_only_mine(&self) -> bool {
+        self.relays_only_mine
     }
 
     /// Sets this machine's own relays, replacing whatever was stored.
@@ -933,7 +966,7 @@ impl Node {
     /// to say out loud — a setting that visibly took and changes nothing
     /// until a restart nobody mentioned is the same silence as no
     /// setting at all.
-    pub fn set_relays(&self, urls: &[String]) -> Result<Vec<String>, String> {
+    pub fn set_relays(&self, urls: &[String], only_mine: bool) -> Result<Vec<String>, String> {
         let mut kept: Vec<String> = Vec::new();
         for url in urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
             url.parse::<iroh::RelayUrl>()
@@ -942,9 +975,17 @@ impl Node {
                 kept.push(url.to_string());
             }
         }
-        let doc = serde_json::json!({ "relays": kept });
+        // 「只用我自己那台」with no 自己那台 is the one combination that
+        // reads like a choice and is not one: it leaves the machine with
+        // no relay at all, reachable only where a hole punch lands.
+        // Refused here rather than quietly downgraded, because a switch
+        // that turns itself back off is a screen lying about its state.
+        if only_mine && kept.is_empty() {
+            return Err(msg::RELAYS_ONLY_MINE_NEEDS_ONE.to_string());
+        }
+        let doc = serde_json::json!({ "relays": kept, "only_mine": only_mine });
         link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
-        Ok(relays_under(&self.root))
+        Ok(relays_under(&self.root).0)
     }
 
     /// Changes the axes it is handed and leaves the rest where they are

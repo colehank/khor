@@ -72,6 +72,28 @@ pub fn mdns_live() -> bool {
 /// that answers. Self-hosted relays are assumed to run no QUIC address
 /// discovery — assuming it costs a dead-port wait on every connection.
 pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<iroh::Endpoint> {
+    bind_with(secret, extra_relays, false).await
+}
+
+/// [`bind`], plus the switch that makes `extra_relays` the **whole**
+/// relay map instead of an addition to n0's.
+///
+/// A separate entry point rather than a third parameter on `bind`:
+/// `bind` has twenty-odd call sites and all but one of them want the
+/// default, so widening it would put every test in this workspace in a
+/// red window to spell out `false`.
+///
+/// **`exclusive` with an empty list is ignored, not honoured.** Honouring
+/// it means [`iroh::endpoint::RelayMode::Disabled`] — a machine with no
+/// relay at all, reachable only where a hole punch lands, which is the
+/// one outcome nobody asks for by leaving a box empty. The refusal that
+/// makes this unreachable lives at the write door (`Node::set_relays`);
+/// this line is the second net, for a hand-edited file.
+pub async fn bind_with(
+    secret: iroh::SecretKey,
+    extra_relays: &[String],
+    exclusive: bool,
+) -> Result<iroh::Endpoint> {
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
         // Compiled-in Mozilla roots instead of the operating system's:
@@ -116,19 +138,90 @@ pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<ir
         })
         .collect();
     if !extras.is_empty() {
-        let mut relays: Vec<std::sync::Arc<iroh::RelayConfig>> =
-            iroh::defaults::prod::default_relay_map().relays();
+        // Exclusive means the user's list *is* the map — n0's servers
+        // are not in it and this machine stops touching them for relay.
+        // (Their DNS/pkarr lookup is a different service and is still
+        // on; taking that out is its own switch and nobody has asked.)
+        let mut relays: Vec<std::sync::Arc<iroh::RelayConfig>> = if exclusive {
+            Vec::new()
+        } else {
+            iroh::defaults::prod::default_relay_map().relays()
+        };
         relays.extend(extras.into_iter().map(std::sync::Arc::new));
         builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(
             relays.into_iter().collect(),
         ));
     }
     let endpoint = builder.bind().await?;
+    hide_unroutable(&endpoint);
     MDNS_LIVE.store(
         local_lookup(&endpoint),
         std::sync::atomic::Ordering::Relaxed,
     );
     Ok(endpoint)
+}
+
+/// Is this an address no peer could ever reach us on?
+///
+/// **One range, and it is here because it was measured, not because it
+/// looked suspect.** On 2026-09-18 this machine's endpoint advertised
+/// `198.18.0.1` alongside its real addresses: that is 198.18.0.0/15,
+/// which RFC 2544 reserves for benchmarking and which local proxy tools
+/// hand out as fake-IP on a tun interface. It is never a host another
+/// machine can route to, so every peer that reads it spends probes on a
+/// road that cannot exist — and worse, a peer that happens to run the
+/// same proxy has a `198.18.0.1` of its own, so the probe does not go
+/// nowhere, it goes to the wrong place.
+///
+/// **What is deliberately still published**, because each of these is a
+/// road that does work somewhere:
+/// - `100.64.0.0/10` — CGNAT, and also Tailscale's range. A peer on the
+///   same tailnet reaches us there, and it is the best road when it is
+///   available.
+/// - `169.254.0.0/16` / `fe80::/10` — link-local, which is exactly the
+///   same segment this machine might share with another.
+/// - Every RFC 1918 private range — that is what a LAN looks like.
+///
+/// Loopback is left alone too: iroh already decides what to do with it,
+/// and a second opinion here would be a rule nobody could find.
+fn unroutable(addr: &iroh::TransportAddr) -> bool {
+    match addr {
+        iroh::TransportAddr::Ip(sa) => match sa.ip() {
+            std::net::IpAddr::V4(v4) => {
+                let o = v4.octets();
+                o[0] == 198 && (o[1] == 18 || o[1] == 19)
+            }
+            std::net::IpAddr::V6(_) => false,
+        },
+        iroh::TransportAddr::Relay(_) => false,
+        // `TransportAddr` is `#[non_exhaustive]`. A kind of road this
+        // build has never heard of gets published, not hidden: the cost
+        // of publishing one nobody can use is some wasted probes, and
+        // the cost of hiding one that works is a machine that silently
+        // stops being reachable the way it used to be.
+        _ => false,
+    }
+}
+
+/// Stops this machine from telling anybody about addresses they cannot
+/// use. Filters what is **published** — pkarr, the DHT, mDNS — in one
+/// place, before it reaches any of the lookup services.
+///
+/// It does not filter what khor *dials*: candidates handed to us come
+/// from the device table and pairing tickets, and those are khor's own
+/// records. Cleaning the source is what this does; a second filter on
+/// the way in would be a rule in two places that can disagree.
+fn hide_unroutable(endpoint: &iroh::Endpoint) {
+    let Ok(services) = endpoint.address_lookup() else {
+        return;
+    };
+    services.set_addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
+        if addrs.iter().any(unroutable) {
+            std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
+        } else {
+            std::borrow::Cow::Borrowed(addrs)
+        }
+    }));
 }
 
 /// Adds local-network address lookup to a bound endpoint. Reports
@@ -342,5 +435,45 @@ mod tests {
             e.contains(msg::NOT_A_TICKET_CONTENT) || e.contains(msg::NOT_A_TICKET_BASE64),
             "{e}"
         );
+    }
+
+    /// The publish filter drops the road nobody can take and keeps every
+    /// road that works somewhere.
+    ///
+    /// **The keep list is the half that matters.** "198.18 is dropped"
+    /// is satisfied by a filter that drops everything, and a machine
+    /// that publishes no addresses at all still connects — over a relay
+    /// — so nothing else in this codebase would have gone red. The
+    /// neighbours are named one by one because each of them is a real
+    /// road: a tailnet, a LAN, the same segment.
+    #[test]
+    fn only_the_unroutable_range_is_hidden() {
+        let ip = |s: &str| iroh::TransportAddr::Ip(s.parse().unwrap());
+        for road in [
+            // Tailscale / CGNAT — this machine really is reachable here.
+            ip("100.103.22.1:41641"),
+            // A LAN.
+            ip("172.23.250.213:53181"),
+            ip("192.168.1.9:53181"),
+            ip("10.0.0.4:53181"),
+            // Link-local: the same segment, which is the case mDNS is
+            // for.
+            ip("169.254.7.7:53181"),
+            // A public address.
+            ip("48.47.144.30:40217"),
+            // Relays are not IPs and are never this filter's business.
+            iroh::TransportAddr::Relay("http://39.97.7.248:3340".parse().unwrap()),
+        ] {
+            assert!(!unroutable(&road), "{road:?} is a road that works somewhere");
+        }
+        // 198.18.0.0/15 — RFC 2544 benchmarking, handed out by local
+        // proxies on a tun interface. Both halves of the /15.
+        for road in [ip("198.18.0.1:53181"), ip("198.19.255.254:53181")] {
+            assert!(unroutable(&road), "{road:?} can never be another machine");
+        }
+        // The edges, so the /15 is a /15 and not a /16 or a /14.
+        for road in [ip("198.17.255.255:1"), ip("198.20.0.0:1")] {
+            assert!(!unroutable(&road), "{road:?} is outside the range");
+        }
     }
 }

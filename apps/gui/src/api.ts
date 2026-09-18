@@ -693,10 +693,12 @@ export const restyle = (change: {
 export const fetchRelays = () => call<RelayChoices>("relays");
 /** Replaces the user's own relays and answers with both halves again.
     An entry that is not a relay url is refused whole — nothing is
-    written and the message names it. ⚠️ `in_use` describes the **next**
-    node to open: a running `khor serve` keeps the list it started with. */
-export const setRelays = (urls: string[]) =>
-  call<RelayChoices>("set_relays", { urls });
+    written and the message names it, and so is `onlyMine` with an empty
+    list (that combination leaves the machine with no relay at all).
+    ⚠️ `in_use` describes the **next** node to open: a running
+    `khor serve` keeps the list it started with. */
+export const setRelays = (urls: string[], onlyMine: boolean) =>
+  call<RelayChoices>("set_relays", { urls, only_mine: onlyMine });
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to

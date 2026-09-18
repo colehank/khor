@@ -196,9 +196,17 @@ impl Node {
     /// the live endpoint and the hand-off port.
     pub async fn serve(self) -> Result<(), String> {
         let ep = std::sync::Arc::new(
-            endpoint::bind(self.secret_key().clone(), self.relays())
-                .await
-                .map_err(|e| e.to_string())?,
+            // The one bind that serves this machine, and the only
+            // caller that passes the exclusive switch — every other
+            // `bind` in this file is a test standing up a throwaway
+            // endpoint, and none of them has a relay file to read.
+            endpoint::bind_with(
+                self.secret_key().clone(),
+                self.relays(),
+                self.relays_only_mine(),
+            )
+            .await
+            .map_err(|e| e.to_string())?,
         );
         let addrs = endpoint::local_addrs(&ep);
         // Own dialing hints go into the table so the snapshot handed to a

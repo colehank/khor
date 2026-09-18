@@ -26,6 +26,7 @@ import { fetchRelays, setRelays, type RelayChoices } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 
 export function NetSettings({ open }: { open: boolean }) {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
@@ -51,10 +52,10 @@ export function NetSettings({ open }: { open: boolean }) {
   // because that is the shape the node takes (`Node::set_relays`
   // replaces). Two paths that could disagree about what the list is
   // would be two paths to disagree about.
-  const write = useCallback(async (next: string[]) => {
+  const write = useCallback(async (next: string[], onlyMine: boolean) => {
     setError(null);
     try {
-      setChoices(await setRelays(next));
+      setChoices(await setRelays(next, onlyMine));
       return true;
     } catch (e) {
       // The node's own sentence, which names the entry it refused. A
@@ -84,7 +85,7 @@ export function NetSettings({ open }: { open: boolean }) {
             variant="ghost"
             size="sm"
             className="min-h-touch"
-            onClick={() => write(choices.mine.filter((u) => u !== url))}
+            onClick={() => write(choices.mine.filter((u) => u !== url), choices.only_mine)}
           >
             {gui.remove}
           </Button>
@@ -100,7 +101,7 @@ export function NetSettings({ open }: { open: boolean }) {
           // Cleared only on success: a refused address stays in the box
           // next to the sentence saying why, so the fix is an edit and
           // not a retype.
-          if (await write([...choices.mine, url])) setTyped("");
+          if (await write([...choices.mine, url], choices.only_mine)) setTyped("");
         }}
       >
         <Input
@@ -120,6 +121,26 @@ export function NetSettings({ open }: { open: boolean }) {
           {error}
         </div>
       )}
+
+      {/* The switch, under the list it governs rather than above it:
+          it is an answer to「加了这台之后原来那些还在不在」, and that
+          question does not exist until there is a row. Pressed-state on
+          a `Button` because this app has one control family and no
+          checkbox in it — the same reason the face options are buttons. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        data-relays-only-mine
+        data-on={choices.only_mine}
+        aria-pressed={choices.only_mine}
+        className={cn(
+          "min-h-touch self-start px-2 text-xs text-muted-foreground",
+          choices.only_mine && "text-primary ring-2 ring-primary",
+        )}
+        onClick={() => write(choices.mine, !choices.only_mine)}
+      >
+        {gui.relays_only_mine}
+      </Button>
 
       <p data-relays-note className="text-xs text-muted-foreground">
         {gui.relays_after_restart}

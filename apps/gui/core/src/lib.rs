@@ -174,6 +174,11 @@ pub struct WatchedReading {
 pub struct RelayChoices {
     pub mine: Vec<String>,
     pub in_use: Vec<String>,
+    /// Whether `mine` is being used **instead of** the built-in tier and
+    /// n0's rather than on top of them. When this is on, `in_use` is
+    /// `mine` — which is the only way the screen can show that the
+    /// switch did something.
+    pub only_mine: bool,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -1011,6 +1016,7 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
     Ok(RelayChoices {
         mine: node.relay_choices(),
         in_use: node.relays().to_vec(),
+        only_mine: node.relays_only_mine(),
     })
 }
 
@@ -1021,12 +1027,16 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
 /// ⚠️ `in_use` here is what the **next** node will bind with. A running
 /// `khor serve` and every connection already standing keep the list they
 /// opened with; the screen has to say so, because nothing else will.
-pub fn set_relays(root: &Path, urls: &[String]) -> Result<RelayChoices, String> {
+pub fn set_relays(root: &Path, urls: &[String], only_mine: bool) -> Result<RelayChoices, String> {
     let node = open(root)?;
-    let in_use = node.set_relays(urls)?;
+    let in_use = node.set_relays(urls, only_mine)?;
     Ok(RelayChoices {
         mine: node.relay_choices(),
         in_use,
+        // Read back rather than echoed: the node is allowed to refuse
+        // the combination, and a screen painting what it sent would show
+        // a switch that is on while the file says off.
+        only_mine: node.relays_only_mine(),
     })
 }
 

@@ -892,6 +892,10 @@ watch-path-twice = "同一个目录写了两遍: {0}"
 # 连不上」weeks later, pointing at the network — and the user is looking
 # at a screen that still lists the relay they typed.
 not-a-relay-url = "不是一个中继地址: {0}"
+# 「只用我自己那台」和一张空名单合起来是唯一一种「看着像选择、其实不是」
+# 的组合:它把机器留在没有任何中继的状态,只有打洞成了才连得上。拒绝,
+# 而不是悄悄把开关拨回去——一个会自己关掉的开关,是屏幕在谎报状态。
+relays-only-mine-needs-one = "要先加一台自己的中继,才能只用自己的"
 
 # ── cli ──
 runtime-wont-start = "起不了运行时: {0}"
@@ -2500,6 +2504,11 @@ relays-after-restart = "新加的要等 khor serve 重起才用上"
 # row with a dead delete button and no reason next to it is worse than
 # no row.
 relays-in-use = "在用"
+# The exclusive switch. It reads as a sentence rather than a label
+# because what it does is not guessable from a noun: 「中继」 alone would
+# leave「加了这台之后原来那些还在不在」unanswered, which is the only
+# question this control exists to answer.
+relays-only-mine = "只用自己的"
 back = "返回"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —

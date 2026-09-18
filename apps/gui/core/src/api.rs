@@ -360,7 +360,7 @@ pub fn answer(
                     .collect::<Result<Vec<_>, _>>()?,
                 _ => return Err("arg is not a list: urls".to_owned()),
             };
-            to_json(&crate::set_relays(root, &urls)?)
+            to_json(&crate::set_relays(root, &urls, flag("only_mine")?)?)
         }
         "face_choices" => to_json(&crate::face_choices(root)?),
         "restyle" => {

@@ -293,8 +293,8 @@ fn relays() -> Result<khor_gui_core::RelayChoices, String> {
 }
 
 #[tauri::command]
-fn set_relays(urls: Vec<String>) -> Result<khor_gui_core::RelayChoices, String> {
-    khor_gui_core::set_relays(&Node::root_from_env(), &urls)
+fn set_relays(urls: Vec<String>, only_mine: bool) -> Result<khor_gui_core::RelayChoices, String> {
+    khor_gui_core::set_relays(&Node::root_from_env(), &urls, only_mine)
 }
 
 #[tauri::command]
