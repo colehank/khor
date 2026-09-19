@@ -55,6 +55,9 @@ tauri = { version = "2", features = ["macos-proxy"] }
 # NSAppearance (`open_code_window`), which tauri's own `theme` cannot do
 # per window on macOS (it sets NSApp's).
 objc2 = "0.6"
+# Its NSPoint / NSRect: the frames of the three window buttons
+# (`squeeze_the_window_buttons`).
+objc2-foundation = "0.3"
 
 [features]
 # **On by default, and that is the whole fix for the white window.**

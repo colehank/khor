@@ -1159,6 +1159,47 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 /// runs.** The page follows that on its own (`prefers-color-scheme`),
 /// and this ground is only ever seen at launch, so the cost of being
 /// stale is a colour nobody is looking at.
+/// Puts the three window buttons where an older macOS put them: 14 wide
+/// at x = 7, 25, 43 — the trio ends at 57, inside the 64-wide rail with
+/// room on both sides.
+///
+/// 工作区第八轮 第 58 条, second look (2026-09-19):「左上角按钮没有变小,
+/// 还超过侧边栏了」— the user, pointing at WeChat. **Their size is the
+/// SDK's, not khor's, and it cannot be changed**: an app linked against
+/// the macOS 26 SDK gets the new 14-wide buttons 23 apart (measured on
+/// every title-bar style this SDK offers — plain, transparent, every
+/// toolbar style — all 14 and 23); WeChat is linked against 15.2 and
+/// gets the old 12-wide ones 18 apart. What can be moved is where each
+/// one sits, and 18 apart is what the old spacing was.
+///
+/// **Not tauri's `trafficLightPosition`.** That keeps the system spacing
+/// and re-asserts it on every draw (tao's `draw_rect`), so it would undo
+/// this on the next frame. Instead the frames are set here and set
+/// again whenever AppKit lays the title bar out afresh — a resize, a
+/// focus, a theme change — which is when it would put them back.
+#[cfg(target_os = "macos")]
+fn squeeze_the_window_buttons(window: &tauri::WebviewWindow) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{NSPoint, NSRect};
+    let Ok(win) = window.ns_window() else { return };
+    let w = win as *mut AnyObject;
+    // NSWindowButton: closeButton = 0, miniaturizeButton = 1, zoomButton = 2.
+    for (i, x) in [7.0f64, 25.0, 43.0].into_iter().enumerate() {
+        unsafe {
+            let button: *mut AnyObject = msg_send![w, standardWindowButton: i];
+            if button.is_null() {
+                continue;
+            }
+            let frame: NSRect = msg_send![button, frame];
+            if frame.origin.x == x {
+                continue;
+            }
+            let _: () = msg_send![button, setFrameOrigin: NSPoint::new(x, frame.origin.y)];
+        }
+    }
+}
+
 #[cfg(desktop)]
 fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
     use tauri::{Manager, Theme};
@@ -2072,6 +2113,10 @@ pub fn run() {
             hang_menu_window(app.handle());
             #[cfg(desktop)]
             paint_the_window_before_the_page(app.handle());
+            #[cfg(target_os = "macos")]
+            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                squeeze_the_window_buttons(&main);
+            }
             #[cfg(not(desktop))]
             let _ = app;
             Ok(())
@@ -2125,7 +2170,21 @@ pub fn run() {
                     // window stops following the system on its own —
                     // so the main window, which does follow, passes
                     // every change on.
+                    // AppKit lays the title bar out again on a resize
+                    // (full screen in and out included) and the buttons
+                    // go back to the SDK's spacing; put them back
+                    // (`squeeze_the_window_buttons`).
+                    tauri::WindowEvent::Resized(_) => {
+                        #[cfg(target_os = "macos")]
+                        if let Some(main) = window.app_handle().get_webview_window("main") {
+                            squeeze_the_window_buttons(&main);
+                        }
+                    }
                     tauri::WindowEvent::ThemeChanged(theme) => {
+                        #[cfg(target_os = "macos")]
+                        if let Some(main) = window.app_handle().get_webview_window("main") {
+                            squeeze_the_window_buttons(&main);
+                        }
                         for (label, w) in window.app_handle().webview_windows() {
                             if label.starts_with("code:") {
                                 #[cfg(target_os = "macos")]
