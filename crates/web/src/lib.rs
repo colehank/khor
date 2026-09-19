@@ -300,7 +300,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             let fresh = query_key(query)
                 .filter(|k| matches!(key::read(root), Ok(Some(real)) if key::matches(k, &real)));
             if fresh.is_none() && check_key(req, root).is_err() {
-                return Reply::refused_page(msg::WEB_DOOR_SHUT);
+                return Reply::refused_page(msg::web_door_shut());
             }
             let mut reply = page(path);
             reply.remember = fresh;
@@ -326,7 +326,10 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                 let (machine, name) = match khor_gui_core::upload_args(query) {
                     Some(pair) => pair,
                     None => {
-                        return Reply::refused(400, msg::UPLOAD_NEEDS_MACHINE_AND_NAME.to_owned());
+                        return Reply::refused(
+                            400,
+                            msg::upload_needs_machine_and_name().to_owned(),
+                        );
                     }
                 };
                 return match khor_gui_core::send_upload(root, &machine, &name, req.as_reader()) {
@@ -453,19 +456,19 @@ fn check_origin(req: &tiny_http::Request, host: &str) -> Result<(), String> {
 fn check_key(req: &tiny_http::Request, root: &Path) -> Result<(), String> {
     let real = match key::read(root)? {
         Some(k) => k,
-        None => return Err(msg::WEB_NO_KEY_YET.to_owned()),
+        None => return Err(msg::web_no_key_yet().to_owned()),
     };
     let presented = header_of(req, "authorization")
         .and_then(|h| h.strip_prefix("Bearer ").map(str::to_owned))
         .or_else(|| cookie_key(req))
         .unwrap_or_default();
     if presented.is_empty() {
-        return Err(msg::WEB_NO_KEY.to_owned());
+        return Err(msg::web_no_key().to_owned());
     }
     if key::matches(&presented, &real) {
         Ok(())
     } else {
-        Err(msg::WEB_WRONG_KEY.to_owned())
+        Err(msg::web_wrong_key().to_owned())
     }
 }
 

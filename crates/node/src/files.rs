@@ -40,7 +40,7 @@ pub const MOST_ENTRIES: usize = 4096;
 /// and hiding would make a real file unpinnable.
 pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool), String> {
     let dir = if path.is_empty() {
-        std::env::home_dir().ok_or(msg::NO_HOME_DIR)?
+        std::env::home_dir().ok_or(msg::no_home_dir())?
     } else if std::path::Path::new(path).is_absolute() {
         std::path::PathBuf::from(path)
     } else {

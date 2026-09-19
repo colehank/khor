@@ -112,6 +112,7 @@ square = "方形"
 #
 # 节:设置页和安全页把这些行分成几堆。
 appearance = "外观"
+language = "语言"
 session = "会话"
 workspace = "工作区"
 # 这一节在**安全页**上,不在设置页(docs/MORE.md 把它写在安全那一条下面),
@@ -120,6 +121,7 @@ confirm = "危险动作二次确认"
 
 # 设置项。名字说的是**这一项管什么**,不是它现在是什么。
 theme = "深浅"
+lang = "界面语言"
 session-form = "新会话默认开成"
 files-click = "单击文件"
 confirm-takeover = "接管会话"
@@ -133,6 +135,10 @@ confirm-ws-remove = "移出工作区"
 auto = "跟系统"
 light = "浅色"
 dark = "深色"
+# 两个语言的名字**各用各自的语言写**,而且两份 toml 里一模一样:一个看不懂
+# 当前界面的人,正是要靠这两个词找到出路——「English」写成「英语」对他没用。
+zh = "中文"
+en = "English"
 chat = "对话"
 term = "终端"
 # 预览位上的标签是斜体的那一个,下一次单击会顶掉它;双击照旧钉住,

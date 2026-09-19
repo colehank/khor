@@ -484,7 +484,7 @@ impl LiveKind {
     /// compiler ask.
     pub fn report(&self, id: &SessionId, word: State, source: Source) -> Result<(), String> {
         if word == State::Failed {
-            return Err(msg::FAILED_IS_NOT_REPORTABLE.into());
+            return Err(msg::failed_is_not_reportable().into());
         }
         let dir = self.existing_dir(id)?;
         let (meta, state) = read_pair(&dir)?;
@@ -2028,7 +2028,7 @@ mod tests {
         k.register(&id, "tui", "x", None, None).unwrap();
         assert_eq!(
             k.report(&id, State::Failed, Source::Reported).unwrap_err(),
-            msg::FAILED_IS_NOT_REPORTABLE
+            msg::failed_is_not_reportable()
         );
         k.record_exit(&id, 0).unwrap();
         assert_eq!(

@@ -500,7 +500,7 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
         .expect("a self-borrow must answer fast, not dial")
         .unwrap_err();
     assert!(
-        err.contains(khor_catalog::msg::BORROW_SELF),
+        err.contains(khor_catalog::msg::borrow_self()),
         "borrowing this machine is refused: {err}"
     );
 

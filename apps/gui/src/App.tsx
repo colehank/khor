@@ -67,11 +67,12 @@ import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
 import { SettingsProvider } from "@/settings";
+import { speakLang, type LangPref } from "@/lang";
 import { wearTheme, type ThemePref } from "@/theme";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import {
-  ARRANGE,
+  arrange,
   rememberArrange,
   rememberWords,
   sessionAxes as axesOf,
@@ -89,7 +90,7 @@ import { DevicesList } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList } from "@/views/WorkspacesList";
 import { LockScreen } from "@/views/LockScreen";
-import { MORE_NAMES, type MorePage } from "@/views/more/MorePage";
+import { moreName, type MorePage } from "@/views/more/MorePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { IdentityPage } from "@/views/more/IdentityPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
@@ -199,7 +200,14 @@ function storedWordsAll(): Record<Landing, string[]> {
 // In the order the user set on 2026-09-02 —「分别是会话、机器、文件、
 // 用量、浏览器」— which is also the fold order: the narrow bar shows
 // the first `NARROW_SHOWN` and folds the rest behind「…」.
-const LANDINGS: { key: Landing; name: string; glyph: ReactNode }[] = [
+//
+// ⚠️ **A function, not a `const`** (批 D3). The names are catalog reads,
+// and a module-level constant would capture whichever language the page
+// happened to load in and keep it for the life of the tab — the one
+// failure a language switch has, and an invisible one, because the rest
+// of the screen would have changed around it. `check-type` refuses the
+// shape.
+const landings = (): { key: Landing; name: string; glyph: ReactNode }[] => [
   { key: "sessions", name: gui.sessions_tab, glyph: <IconSessions /> },
   { key: "devices", name: gui.devices_tab, glyph: <IconDevices /> },
   // 2026-09-11 user ruling:「工作区替代文件」. The glyph is still
@@ -384,6 +392,20 @@ export default function App() {
   // call, which is why it happens here rather than inside 设置: a
   // machine that comes up dark must dress its title bar without
   // anybody opening a page.
+  // 语言 (批 D3). **Resolved during the render, not in an effect**, and
+  // that is the one thing about this that is not like 外观 above: a
+  // theme is CSS and an attribute set afterwards repaints on its own,
+  // but every word on screen is a property read off the catalog, taken
+  // while this tree renders. An effect runs *after* the render that
+  // would have used the new language, and nothing would render a second
+  // time — the page would sit there in the old one until something else
+  // happened to move.
+  //
+  // Idempotent, which is what makes it safe here: it sets a module
+  // variable, `<html lang>` and a mirror, all to the same values on a
+  // second call (StrictMode's double render does exactly that).
+  speakLang((settings.rows?.find((r) => r.name === "lang")?.value ?? null) as LangPref | null);
+
   const themePref = settings.rows?.find((r) => r.name === "theme")?.value ?? null;
   useEffect(() => {
     if (themePref !== null) wearTheme(themePref as ThemePref);
@@ -1169,7 +1191,7 @@ export default function App() {
   // fourth (身份) is behind the avatar and lights that one instead.
   const foldedOn =
     (morePage !== null && morePage !== "identity") ||
-    (!mark && narrow && LANDINGS.slice(NARROW_SHOWN).some((l) => l.key === landing));
+    (!mark && narrow && landings().slice(NARROW_SHOWN).some((l) => l.key === landing));
   /**
    * The three doors 「…」 opens, in the order docs/MORE.md lists them.
    *
@@ -1195,7 +1217,7 @@ export default function App() {
           bring their own rail glyph, and two icon sizes in one list
           read as two families (`components/icons`). */}
       <span className="size-5! [&_svg]:size-full">{p.glyph}</span>
-      {MORE_NAMES[p.key]}
+      {moreName(p.key)}
     </DropdownMenuItem>
   ));
   const rail = (
@@ -1238,7 +1260,7 @@ export default function App() {
         narrow ? "flex-row justify-around gap-1 border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
-      {(narrow ? LANDINGS.slice(0, NARROW_SHOWN) : LANDINGS).map((l, i) => (
+      {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l, i) => (
         <RailItem
           key={l.key}
           label={l.name}
@@ -1347,7 +1369,7 @@ export default function App() {
             the side the rail is not against, either way. */}
         <DropdownMenuContent side={narrow ? "top" : "right"} data-rail-more-menu>
           {narrow &&
-            LANDINGS.slice(NARROW_SHOWN).map((l) => (
+            landings().slice(NARROW_SHOWN).map((l) => (
               <DropdownMenuItem
                 key={l.key}
                 data-more-landing={l.key}
@@ -1498,7 +1520,7 @@ export default function App() {
       onClose={sessionTabs.close}
     />
   );
-  const paneName = LANDINGS.find((l) => l.key === landing)!.name;
+  const paneName = landings().find((l) => l.key === landing)!.name;
 
   // No pane wears its name where you can see it (docs/UX.md). The name
   // rides the region's aria-label — read aloud, taking no room — and the
@@ -1546,7 +1568,7 @@ export default function App() {
           sessions
             ? {
                 label: gui.arrange,
-                options: ARRANGE.map((a) => ({ key: a.key, label: a.label })),
+                options: arrange().map((a) => ({ key: a.key, label: a.label })),
                 chosen: arrangeBy,
                 onChoose: chooseArrange,
               }
@@ -1735,7 +1757,7 @@ export default function App() {
         // re-deriving a judgment the backend already made.
         arrange={{
           label: gui.arrange,
-          options: ARRANGE,
+          options: arrange(),
           chosen: arrangeBy,
           onChoose: chooseArrange,
         }}

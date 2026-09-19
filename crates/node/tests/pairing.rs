@@ -198,7 +198,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .unwrap_err();
     assert_eq!(
         err,
-        khor_catalog::msg::BAD_INVITE,
+        khor_catalog::msg::bad_invite(),
         "a replay is refused by name"
     );
     assert_eq!(
@@ -238,7 +238,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     let err = verdict.as_ref().unwrap_err();
     assert_eq!(
         err,
-        khor_catalog::msg::NOT_PAIRED,
+        khor_catalog::msg::not_paired(),
         "an unpaired sync is refused by name"
     );
 
@@ -293,7 +293,7 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     );
     assert_ne!(
         err,
-        khor_catalog::msg::BAD_INVITE,
+        khor_catalog::msg::bad_invite(),
         "and not the wrong-code one"
     );
     assert_eq!(

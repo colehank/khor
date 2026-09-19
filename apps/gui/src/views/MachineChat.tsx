@@ -332,11 +332,13 @@ function MsgLine({
 /** The sender's neutral facts, by delivery key (发端中性词批) — an
     unknown key echoes itself, the catalog's own rule for words this
     build has not met. */
-const DELIVERY_WORDS: Record<string, string> = {
+// ⚠️ **A function, not a `const`** (批 D3): catalog reads taken at
+// module level would pin one language for the life of the tab.
+const deliveryWords = (): Record<string, string> => ({
   waiting: gui.file_not_taken,
   fetching: gui.file_being_taken,
   served: gui.file_taken,
-};
+});
 
 /**
  * A file message: the summary that travelled the conversation. The
@@ -382,7 +384,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
       ))}
       {m.delivery && (
         <span data-file-delivery={m.delivery} className="text-xs text-muted-foreground">
-          {DELIVERY_WORDS[m.delivery] ?? m.delivery}
+          {deliveryWords()[m.delivery] ?? m.delivery}
         </span>
       )}
       {m.word && (

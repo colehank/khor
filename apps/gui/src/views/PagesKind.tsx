@@ -193,14 +193,33 @@ export const PAGES: BrowseKind = {
   // keyed by — which is what keeps this landing's tabs and the files
   // landing's out of each other's storage.
   kind: "page",
+  // ⚠️ **Getters, not plain properties** (批 D3). This descriptor is
+  // built once and must stay stable for the life of the landing (the
+  // type's own note says why), so a word read here would be read once —
+  // and would then keep whichever language the page loaded in while the
+  // rest of the screen changed around it. A getter keeps every call
+  // site (`kind.words.address`) exactly as it was and moves the read to
+  // the moment it is painted.
   words: {
-    address: gui.address_page,
-    segment: gui.browser_tab,
-    pinned: gui.pinned_webs,
+    get address() {
+      return gui.address_page;
+    },
+    get segment() {
+      return gui.browser_tab;
+    },
+    get pinned() {
+      return gui.pinned_webs;
+    },
     // The one heading both landings share — see `recent-places`.
-    recent: gui.recent_places,
-    empty: gui.no_pinned_webs,
-    go: gui.pick_exit,
+    get recent() {
+      return gui.recent_places;
+    },
+    get empty() {
+      return gui.no_pinned_webs;
+    },
+    get go() {
+      return gui.pick_exit;
+    },
   },
   pins: async () => {
     const rows = await fetchWebPins();

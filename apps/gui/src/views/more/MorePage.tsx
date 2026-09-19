@@ -33,13 +33,19 @@ import { cn } from "@/lib/utils";
 export type MorePage = "settings" | "security" | "doctor" | "identity";
 
 /** The four names, in one place, so the menu item and the page head
-    cannot come to call the same page two things. */
-export const MORE_NAMES: Record<MorePage, string> = {
-  settings: gui.settings,
-  security: gui.security,
-  doctor: gui.doctor,
-  identity: gui.identity,
-};
+    cannot come to call the same page two things.
+
+    ⚠️ **A function, not a `const`** (批 D3): these are catalog reads,
+    and a module-level record would keep whichever language the page
+    loaded in for the life of the tab — while the menu that opens these
+    pages, one file over, had already changed. */
+export const moreName = (page: MorePage): string =>
+  ({
+    settings: gui.settings,
+    security: gui.security,
+    doctor: gui.doctor,
+    identity: gui.identity,
+  })[page];
 
 /**
  * The frame: a head with the page's name and its way out, and a column
@@ -69,7 +75,7 @@ export function MoreFrame({
   return (
     <section
       data-more-page={page}
-      aria-label={MORE_NAMES[page]}
+      aria-label={moreName(page)}
       className="flex h-full min-h-0 flex-col bg-card"
     >
       {/* The head row, so its blank moves the window — the rule every
@@ -81,7 +87,7 @@ export function MoreFrame({
         data-tauri-drag-region="deep"
         className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
       >
-        <h1 className="min-w-0 flex-1 truncate text-title font-title">{MORE_NAMES[page]}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-title font-title">{moreName(page)}</h1>
         <Button
           variant="ghost"
           size="icon"

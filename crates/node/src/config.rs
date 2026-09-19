@@ -57,6 +57,12 @@ pub const SECTIONS: &[Section] = &[
         name: "appearance",
         page: "settings",
     },
+    // 语言, under 外观: the two are what this whole page is written in,
+    // and a person looking for either is looking at the top of it.
+    Section {
+        name: "language",
+        page: "settings",
+    },
     // 会话: what a new one starts out as; 工作区 under it.
     Section {
         name: "session",
@@ -116,6 +122,24 @@ pub const KEYS: &[Key] = &[
         name: "theme",
         section: "appearance",
         values: &["auto", "light", "dark"],
+        default: "auto",
+    },
+    // ── 语言 ──────────────────────────────────────────────────────
+    //
+    // 「自动跟随系统语言，我们支持英语与中文。失败会退英文」 (the user,
+    // 2026-09-19). The fallback is not a rung on this ladder: it is what
+    // `auto` resolves to when the machine says something that is not
+    // zh*, and 「says nothing at all」 is that same case
+    // (`khor_catalog::lang::from_env`).
+    //
+    // **Stored as the choice, `auto` included**, for `theme`'s reason
+    // one step sharper: a store holding 「en」 because somebody was on an
+    // English machine that week is a laptop that stops speaking Chinese
+    // when it goes home.
+    Key {
+        name: "lang",
+        section: "language",
+        values: &["auto", "zh", "en"],
         default: "auto",
     },
     // ── 会话 ──────────────────────────────────────────────────────
@@ -237,7 +261,7 @@ pub fn set(root: &Path, name: &str, value: &str) -> Result<&'static str, String>
         msg::config_no_such_value(
             name,
             value,
-            k.values.join(khor_catalog::cli::NAME_SEPARATOR),
+            k.values.join(khor_catalog::cli::name_separator()),
         )
     })?;
     let mut map = stored(root);
@@ -254,6 +278,29 @@ pub fn set(root: &Path, name: &str, value: &str) -> Result<&'static str, String>
 pub fn list(root: &Path) -> Vec<(&'static Key, &'static str)> {
     let map = stored(root);
     KEYS.iter().map(|k| (k, value_of(&map, k))).collect()
+}
+
+/// Resolves 语言 and tells the catalog, for **this whole process**
+/// (docs/MORE.md 语言).
+///
+/// **The one place the store and the wording meet.** `khor_catalog` has
+/// no dependencies and cannot read a config file; this crate can, and
+/// every binary — the CLI, the app, the bridge, the resident — calls
+/// this once at startup so that the first word it prints is already in
+/// the right language.
+///
+/// A stored choice wins; `auto` and a store that cannot be read both
+/// fall through to the environment, which falls through to English.
+/// That chain is the ruling 「显式设过 lang 的以它为准 … 读不到回退英文」
+/// with nothing in between for anybody to get wrong.
+pub fn apply_lang(root: &Path) {
+    use khor_catalog::lang::Lang;
+    let chosen = match get(root, "lang") {
+        Ok("zh") => Lang::Zh,
+        Ok("en") => Lang::En,
+        _ => khor_catalog::lang::from_env(),
+    };
+    khor_catalog::lang::set(chosen);
 }
 
 /// Whether a switch-shaped key is on. The two `confirm-*` keys' readers

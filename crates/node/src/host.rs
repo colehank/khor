@@ -88,7 +88,7 @@ pub fn view_file_path(dir: &Path) -> PathBuf {
 /// The viewer's address, when a viewer is up on this session.
 pub fn read_view_file(dir: &Path) -> Result<HostFile, String> {
     let text =
-        std::fs::read_to_string(view_file_path(dir)).map_err(|_| msg::NO_HOST.to_string())?;
+        std::fs::read_to_string(view_file_path(dir)).map_err(|_| msg::no_host().to_string())?;
     serde_json::from_str(&text).map_err(msg::host_file_garbled)
 }
 
@@ -218,7 +218,7 @@ fn last_plain_line(bytes: &[u8]) -> Option<String> {
 
 pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {
     let text =
-        std::fs::read_to_string(host_file_path(dir)).map_err(|_| msg::NO_HOST.to_string())?;
+        std::fs::read_to_string(host_file_path(dir)).map_err(|_| msg::no_host().to_string())?;
     serde_json::from_str(&text).map_err(msg::host_file_garbled)
 }
 
@@ -280,19 +280,19 @@ pub fn main_if_host(root: std::path::PathBuf) {
 fn host_args(root: &Path, rest: &[String]) -> Result<(), String> {
     let (head, cmd) = match rest.iter().position(|a| a == "--") {
         Some(i) => (&rest[..i], &rest[i + 1..]),
-        None => return Err(msg::HOST_BAD_CONVENTION.into()),
+        None => return Err(msg::host_bad_convention().into()),
     };
     let [sid, cols, rows] = head else {
-        return Err(msg::HOST_BAD_CONVENTION.into());
+        return Err(msg::host_bad_convention().into());
     };
     if cmd.is_empty() {
-        return Err(msg::HOST_BAD_CONVENTION.into());
+        return Err(msg::host_bad_convention().into());
     }
     let size = (
         cols.parse::<u16>()
-            .map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
+            .map_err(|_| msg::host_bad_convention().to_string())?,
         rows.parse::<u16>()
-            .map_err(|_| msg::HOST_BAD_CONVENTION.to_string())?,
+            .map_err(|_| msg::host_bad_convention().to_string())?,
     );
     host_main(
         root.to_path_buf(),
@@ -305,10 +305,10 @@ fn host_args(root: &Path, rest: &[String]) -> Result<(), String> {
 fn ghost_args(root: &Path, rest: &[String]) -> Result<(), String> {
     let (head, cmd) = match rest.iter().position(|a| a == "--") {
         Some(i) => (&rest[..i], &rest[i + 1..]),
-        None => return Err(msg::HOST_BAD_CONVENTION.into()),
+        None => return Err(msg::host_bad_convention().into()),
     };
     let [ready, title] = head else {
-        return Err(msg::HOST_BAD_CONVENTION.into());
+        return Err(msg::host_bad_convention().into());
     };
     crate::gui_host::gui_host_main(
         root.to_path_buf(),
@@ -461,12 +461,12 @@ fn spawn_host_with(
         if matches!(child.try_wait(), Ok(Some(_))) && !marker.exists() {
             return Err(match std::fs::read_to_string(&complaint) {
                 Ok(why) if !why.trim().is_empty() => why.trim().to_owned(),
-                _ => msg::HOST_DIED_MUTE.to_string(),
+                _ => msg::host_died_mute().to_string(),
             });
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    Err(msg::HOST_NEVER_READY.into())
+    Err(msg::host_never_ready().into())
 }
 
 /// Connects and completes the handshake; on return the stream carries
@@ -485,7 +485,7 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
 /// there is a network under it, which is why nothing else in this file
 /// changes.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
-    let mut s = TcpStream::connect(addr).map_err(|_| msg::HOST_GONE.to_string())?;
+    let mut s = TcpStream::connect(addr).map_err(|_| msg::host_gone().to_string())?;
     write_frame(
         &mut s,
         &Hello {
@@ -695,7 +695,7 @@ fn host_serving(
         .spawn_command(builder)
         .map_err(|e| msg::wont_start(&cmd[0], e))?;
     drop(pty.slave);
-    let child_pid = child.process_id().ok_or(msg::CHILD_HAS_NO_PID)?;
+    let child_pid = child.process_id().ok_or(msg::child_has_no_pid())?;
     let master = Arc::new(Mutex::new(pty.master));
     let mut reader = master
         .lock()
@@ -908,7 +908,7 @@ fn host_serving(
                         &mut conn,
                         &Welcome {
                             ok: false,
-                            why: msg::WRONG_COOKIE.into(),
+                            why: msg::wrong_cookie().into(),
                         },
                     );
                     continue;

@@ -566,7 +566,7 @@ fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
 
 /// What khor says a row belongs to when khor itself started it.
 ///
-/// A wrapped command is 命令 (`category::SHELL`) — the user started it,
+/// A wrapped command is 命令 (`category::shell()`) — the user started it,
 /// and that is a real answer. **A tui khor cannot attribute carries no
 /// category at all**, and the point of enumerating both here is that
 /// filing the tui under `shell` would be the neighbour trap: it reads as
@@ -2502,7 +2502,7 @@ fn a_machine_with_no_peers_says_that_instead_of_listing_none() {
         .find(|c| c.key == "peers")
         .unwrap();
     assert_eq!(row.state, doctor::Health::Ok, "{row:?}");
-    assert_eq!(row.said, khor_catalog::cli::DOCTOR_PEERS_ALONE);
+    assert_eq!(row.said, khor_catalog::cli::doctor_peers_alone());
 }
 
 // ── `khor lock` (docs/MORE.md 安全) ─────────────────────────────────

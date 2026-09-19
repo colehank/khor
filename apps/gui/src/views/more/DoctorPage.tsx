@@ -45,12 +45,14 @@ const INK: Record<string, string> = {
 };
 
 /** The word, from the catalog by the wire key — never spelled here. */
-const WORD: Record<string, string> = {
+// ⚠️ **A function, not a `const`** (批 D3): catalog reads taken at
+// module level keep one language for the life of the tab.
+const stateWord = (): Record<string, string> => ({
   ok: cli.doctor_ok,
   warn: cli.doctor_warn,
   fail: cli.doctor_fail,
   unmeasured: cli.doctor_unmeasured,
-};
+});
 
 export function DoctorPage({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<DoctorRow[] | null>(null);
@@ -133,7 +135,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
                 data-doctor-word
                 className={cn("flex-none tabular-nums", INK[r.state] ?? "text-muted-foreground")}
               >
-                {WORD[r.state] ?? r.state}
+                {stateWord()[r.state] ?? r.state}
               </span>
               <span data-doctor-said className="min-w-0 flex-1 break-all text-muted-foreground">
                 {fixed[r.key] ?? r.said}

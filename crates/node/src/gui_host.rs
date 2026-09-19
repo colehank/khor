@@ -457,7 +457,7 @@ fn spawn_ghost(
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    Err(msg::GHOST_NEVER_READY.into())
+    Err(msg::ghost_never_ready().into())
 }
 
 /// Where the ghost writes why it will never be ready. Beside the marker
@@ -626,7 +626,7 @@ pub fn gui_host_main(
                         &mut conn,
                         &Welcome {
                             ok: false,
-                            why: msg::WRONG_COOKIE.into(),
+                            why: msg::wrong_cookie().into(),
                         },
                     );
                     continue;

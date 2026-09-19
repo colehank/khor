@@ -341,12 +341,12 @@ fn preflight(exe: &std::path::Path) -> Result<String, String> {
     if !out.status.success() {
         return Err(match out.status.code() {
             Some(code) => msg::died_with_code(code),
-            None => msg::DIED_UNREADABLY.to_owned(),
+            None => msg::died_unreadably().to_owned(),
         });
     }
     let version = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     if version.is_empty() {
-        return Err(msg::SWAP_NO_ANSWER.to_owned());
+        return Err(msg::swap_no_answer().to_owned());
     }
     Ok(version)
 }
@@ -487,7 +487,7 @@ pub fn keep() -> Result<(), String> {
             match (status.code(), status.signal()) {
                 (Some(code), _) => msg::died_with_code(code),
                 (None, Some(sig)) => msg::died_by_signal(sig),
-                (None, None) => msg::DIED_UNREADABLY.to_owned(),
+                (None, None) => msg::died_unreadably().to_owned(),
             }
         };
         if born.elapsed() >= LIVED {

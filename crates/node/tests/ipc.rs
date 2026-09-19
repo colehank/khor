@@ -156,7 +156,7 @@ async fn one_shot_verbs_ride_the_resident_serve() {
     .expect("a refused hand-off must not hang")
     .unwrap();
     match reply {
-        ipc::Reply::Refused { why } => assert_eq!(why, khor_catalog::msg::HANDOFF_WRONG_COOKIE),
+        ipc::Reply::Refused { why } => assert_eq!(why, khor_catalog::msg::handoff_wrong_cookie()),
         other => panic!("a wrong cookie must be refused, got {other:?}"),
     }
 

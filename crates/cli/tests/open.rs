@@ -245,7 +245,7 @@ fn a_hosted_session_outlives_its_opener_and_walks_the_shell_face() {
     .unwrap();
     let w: host::Welcome = host::read_frame(&mut bad).unwrap();
     assert!(
-        !w.ok && w.why == khor_catalog::msg::WRONG_COOKIE,
+        !w.ok && w.why == khor_catalog::msg::wrong_cookie(),
         "{}",
         w.why
     );

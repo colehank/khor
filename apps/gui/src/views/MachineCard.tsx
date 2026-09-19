@@ -1570,7 +1570,10 @@ const SEEN_NONE: Seen = { status: false, user: false, time: false, cputime: fals
  *  goes to some trouble not to say that word wrongly
  *  (`khor_node::top::status_token`), and a lookup with a default would
  *  undo all of it here. */
-const STATUS_WORD: Record<string, string> = {
+// ⚠️ **A function, not a `const`** (批 D3): these are catalog reads, and
+// a module-level record would keep whichever language the page loaded in
+// for the life of the tab.
+const statusWord = (): Record<string, string> => ({
   run: cli.top_st_run,
   sleep: cli.top_st_sleep,
   idle: cli.top_st_idle,
@@ -1586,7 +1589,7 @@ const STATUS_WORD: Record<string, string> = {
   suspended: cli.top_st_suspended,
   lockblocked: cli.top_st_lockblocked,
   unclear: cli.top_st_unclear,
-};
+});
 
 /**
  * Accumulated CPU as a **stopwatch**, where 时长 next to it is a
@@ -2048,9 +2051,9 @@ function cellOf(k: Exclude<SortCol, "name">, r: Load["top"][number]): string {
     case "pid":
       return String(r.pid);
     // A token this build has no word for prints as the token — never
-    // as a neighbour's word. See `STATUS_WORD`.
+    // as a neighbour's word. See `statusWord`.
     case "status":
-      return r.status === null ? "" : (STATUS_WORD[r.status] ?? r.status);
+      return r.status === null ? "" : (statusWord()[r.status] ?? r.status);
     case "user":
       return r.user;
     case "time":

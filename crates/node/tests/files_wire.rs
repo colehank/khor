@@ -224,7 +224,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     .expect("must not hang")
     .unwrap();
     match resp {
-        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::NOT_PAIRED),
+        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::not_paired()),
         other => panic!("an unpaired ls must be refused, got {other:?}"),
     }
     let resp = timeout(
@@ -243,7 +243,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     .expect("must not hang")
     .unwrap();
     match resp {
-        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::NOT_PAIRED),
+        Response::Refused { why } => assert_eq!(why, khor_catalog::msg::not_paired()),
         other => panic!("an unpaired fetch-path must be refused, got {other:?}"),
     }
 

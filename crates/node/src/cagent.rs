@@ -269,7 +269,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 {
                     let mut turn = s_prompt.turn.lock().unwrap();
                     if turn.is_some() {
-                        return responder.respond_with_internal_error(msg::CAGENT_ONE_TURN);
+                        return responder.respond_with_internal_error(msg::cagent_one_turn());
                     }
                     *turn = Some(tx);
                 }
@@ -298,7 +298,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 match started {
                     Some(cur) if cur == sid => {}
                     Some(_) => {
-                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION);
+                        return responder.respond_with_internal_error(msg::cagent_one_session());
                     }
                     None => {
                         // A load before any new is the takeover: resume
@@ -373,12 +373,12 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         Ok(Ok(r)) => responder.respond_with_internal_error(
                             r["error"]
                                 .as_str()
-                                .unwrap_or(msg::CAGENT_MODE_REFUSED)
+                                .unwrap_or(msg::cagent_mode_refused())
                                 .to_owned(),
                         ),
                         _ => {
                             shim.pending.lock().unwrap().remove(&request_id);
-                            responder.respond_with_internal_error(msg::CAGENT_MODE_UNANSWERED)
+                            responder.respond_with_internal_error(msg::cagent_mode_unanswered())
                         }
                     }
                 })
@@ -464,7 +464,7 @@ impl Shim {
         tail: &[&str],
     ) -> Result<(), String> {
         if self.session.lock().unwrap().is_some() {
-            return Err(msg::CAGENT_ONE_SESSION.into());
+            return Err(msg::cagent_one_session().into());
         }
         let named = std::env::var(CLAUDE_ENV).unwrap_or_else(|_| "claude".into());
         // Looked up by khor rather than left to the spawn, so a missing
@@ -505,7 +505,7 @@ impl Shim {
         // child sessions.
         .env_remove("CLAUDE_CODE_CHILD_SESSION");
         let mut child = c.spawn().map_err(|e| msg::wont_start(&bin, e))?;
-        let stdout = child.stdout.take().ok_or(msg::CAGENT_NO_PIPE)?;
+        let stdout = child.stdout.take().ok_or(msg::cagent_no_pipe())?;
         *self.child_pid.lock().unwrap() = Some(child.id());
         *self.stdin.lock().unwrap() = child.stdin.take();
         let frames = self.frames.clone();
@@ -568,7 +568,7 @@ impl Shim {
 
     fn write_line(&self, v: &serde_json::Value) -> Result<(), String> {
         let mut guard = self.stdin.lock().unwrap();
-        let stdin = guard.as_mut().ok_or(msg::CAGENT_NOT_STARTED)?;
+        let stdin = guard.as_mut().ok_or(msg::cagent_not_started())?;
         writeln!(stdin, "{v}").map_err(|e| e.to_string())
     }
 }
@@ -742,8 +742,12 @@ async fn answer_permission(
             ToolCallUpdateFields::new().title(title),
         ),
         vec![
-            PermissionOption::new("allow", msg::CAGENT_ALLOW, PermissionOptionKind::AllowOnce),
-            PermissionOption::new("deny", msg::CAGENT_DENY, PermissionOptionKind::RejectOnce),
+            PermissionOption::new(
+                "allow",
+                msg::cagent_allow(),
+                PermissionOptionKind::AllowOnce,
+            ),
+            PermissionOption::new("deny", msg::cagent_deny(), PermissionOptionKind::RejectOnce),
         ],
     );
     let outcome = match conn.send_request(ask).block_task().await {
@@ -757,7 +761,7 @@ async fn answer_permission(
     let response = if allowed {
         serde_json::json!({ "behavior": "allow", "updatedInput": req["input"] })
     } else {
-        serde_json::json!({ "behavior": "deny", "message": msg::CAGENT_DENIED })
+        serde_json::json!({ "behavior": "deny", "message": msg::cagent_denied() })
     };
     let _ = shim.control(&serde_json::json!({
         "type": "control_response",
@@ -961,7 +965,7 @@ fn result_text(block: &serde_json::Value) -> Option<String> {
     while cut > 0 && !raw.is_char_boundary(cut) {
         cut -= 1;
     }
-    Some(format!("{}\n… {}", &raw[..cut], msg::TOOL_OUTPUT_CUT))
+    Some(format!("{}\n… {}", &raw[..cut], msg::tool_output_cut()))
 }
 
 /// The tokens sitting in the context after a claude `usage` object.
@@ -1141,7 +1145,7 @@ fn khor_tools() -> Result<Vec<String>, String> {
         path.display().to_string(),
         "--strict-mcp-config".into(),
         "--append-system-prompt".into(),
-        msg::AGENT_BRIEF.into(),
+        msg::agent_brief().into(),
     ];
     // 读免批 (docs/AGENT.md). Looking at the network is not an act, and
     // asking permission for it teaches a person to press 允许 without
@@ -1434,7 +1438,7 @@ mod wire_tests {
         let text = json["content"][0]["content"]["text"].as_str().unwrap();
         assert!(text.len() < 17 * 1024, "cut, {} bytes", text.len());
         assert!(
-            text.ends_with(khor_catalog::msg::TOOL_OUTPUT_CUT),
+            text.ends_with(khor_catalog::msg::tool_output_cut()),
             "and marked as cut"
         );
     }

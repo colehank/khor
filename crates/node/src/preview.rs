@@ -242,13 +242,13 @@ pub fn markdown(path: &str, bytes: &[u8]) -> Result<String, String> {
     // buffer it is showing, which is the only copy that can be half
     // typed (`views/FileView`). `khor read` prints the file.
     if e == "md" || e == "markdown" || e == "csv" || e == "tsv" {
-        return String::from_utf8(bytes.to_vec()).map_err(|_| msg::NOT_A_TEXT_FILE.to_owned());
+        return String::from_utf8(bytes.to_vec()).map_err(|_| msg::not_a_text_file().to_owned());
     }
     if e == "pdf" {
         return pdf(bytes);
     }
     let Some(f) = office_oxide::DocumentFormat::from_extension(&e) else {
-        return Err(msg::NOT_A_TEXT_FILE.to_owned());
+        return Err(msg::not_a_text_file().to_owned());
     };
     let doc = office_oxide::Document::from_reader(Cursor::new(bytes.to_vec()), f)
         .map_err(msg::cant_read_document)?;
@@ -283,7 +283,7 @@ fn pdf(bytes: &[u8]) -> Result<String, String> {
     let md = pdfboss_output::extract_markdown(&doc, pdfboss_output::ReadingOrder::Geometric)
         .map_err(msg::cant_read_document)?;
     if md.trim().is_empty() && !has_font(bytes) {
-        return Err(msg::PDF_IS_PICTURES.to_owned());
+        return Err(msg::pdf_is_pictures().to_owned());
     }
     Ok(md)
 }
@@ -485,7 +485,7 @@ mod tests {
         // 内容」 about a twenty-page handbook is a flat lie, so the two
         // readings are told apart by whether the file names a font.
         let err = markdown("a.pdf", &tiny_pdf(false)).expect_err("no text to read");
-        assert_eq!(err, msg::PDF_IS_PICTURES);
+        assert_eq!(err, msg::pdf_is_pictures());
     }
 
     /// The kind decides which screen opens before anything is read.
@@ -508,7 +508,7 @@ mod tests {
     fn something_that_is_not_a_pdf_at_all_is_refused_in_words() {
         let err = markdown("a.pdf", b"this is not a pdf").expect_err("refuses");
         assert!(!err.is_empty());
-        assert_ne!(err, msg::PDF_IS_PICTURES, "a broken file is not a scan");
+        assert_ne!(err, msg::pdf_is_pictures(), "a broken file is not a scan");
     }
 
     #[test]

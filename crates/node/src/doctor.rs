@@ -77,10 +77,10 @@ impl Health {
     /// The word a person reads.
     pub fn word(self) -> &'static str {
         match self {
-            Health::Ok => cli::DOCTOR_OK,
-            Health::Warn => cli::DOCTOR_WARN,
-            Health::Fail => cli::DOCTOR_FAIL,
-            Health::Unmeasured => cli::DOCTOR_UNMEASURED,
+            Health::Ok => cli::doctor_ok(),
+            Health::Warn => cli::doctor_warn(),
+            Health::Fail => cli::doctor_fail(),
+            Health::Unmeasured => cli::doctor_unmeasured(),
         }
     }
 }
@@ -122,18 +122,18 @@ pub const KEYS: &[&str] = &[
 /// walks them against each other.
 pub fn name(key: &str) -> &str {
     match key {
-        "version" => cli::DOCTOR_NAME_VERSION,
-        "identity" => cli::DOCTOR_NAME_IDENTITY,
-        "store" => cli::DOCTOR_NAME_STORE,
-        "serve" => cli::DOCTOR_NAME_SERVE,
-        "web" => cli::DOCTOR_NAME_WEB,
-        "relays" => cli::DOCTOR_NAME_RELAYS,
-        "peers" => cli::DOCTOR_NAME_PEERS,
-        "hooks" => cli::DOCTOR_NAME_HOOKS,
-        "agents" => cli::DOCTOR_NAME_AGENTS,
-        "vscode" => cli::DOCTOR_NAME_VSCODE,
-        "disk" => cli::DOCTOR_NAME_DISK,
-        "launcher" => cli::DOCTOR_NAME_LAUNCHER,
+        "version" => cli::doctor_name_version(),
+        "identity" => cli::doctor_name_identity(),
+        "store" => cli::doctor_name_store(),
+        "serve" => cli::doctor_name_serve(),
+        "web" => cli::doctor_name_web(),
+        "relays" => cli::doctor_name_relays(),
+        "peers" => cli::doctor_name_peers(),
+        "hooks" => cli::doctor_name_hooks(),
+        "agents" => cli::doctor_name_agents(),
+        "vscode" => cli::doctor_name_vscode(),
+        "disk" => cli::doctor_name_disk(),
+        "launcher" => cli::doctor_name_launcher(),
         other => other,
     }
 }
@@ -211,7 +211,7 @@ async fn timed(key: &str, work: impl Future<Output = (Health, String, Option<Str
 async fn check_version() -> (Health, String, Option<String>) {
     let mine = crate::VERSION.to_owned();
     let Some(exe) = khor_cli_binary() else {
-        return (Health::Warn, cli::DOCTOR_VERSION_NO_CLI.to_owned(), None);
+        return (Health::Warn, cli::doctor_version_no_cli().to_owned(), None);
     };
     // `spawn_blocking` with `std::process`, not `tokio::process`: the
     // workspace's tokio is built without the `process` feature, and one
@@ -222,11 +222,11 @@ async fn check_version() -> (Health, String, Option<String>) {
     })
     .await;
     let Ok(Ok(out)) = out else {
-        return (Health::Warn, cli::DOCTOR_VERSION_NO_CLI.to_owned(), None);
+        return (Health::Warn, cli::doctor_version_no_cli().to_owned(), None);
     };
     let theirs = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     if theirs.is_empty() {
-        return (Health::Warn, cli::DOCTOR_VERSION_NO_CLI.to_owned(), None);
+        return (Health::Warn, cli::doctor_version_no_cli().to_owned(), None);
     }
     if theirs == mine {
         (Health::Ok, mine, None)
@@ -266,7 +266,7 @@ async fn check_identity(root: PathBuf) -> (Health, String, Option<String>) {
     }
     #[cfg(not(unix))]
     let _ = meta;
-    (Health::Ok, cli::DOCTOR_IDENTITY_OK.to_owned(), None)
+    (Health::Ok, cli::doctor_identity_ok().to_owned(), None)
 }
 
 /// The store: it opens, it takes a write, and this is how much of the
@@ -295,7 +295,7 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
     let Some(pid) = node.serve_pid() else {
         return (
             Health::Fail,
-            cli::DOCTOR_SERVE_NONE.to_owned(),
+            cli::doctor_serve_none().to_owned(),
             Some("serve".to_owned()),
         );
     };
@@ -339,7 +339,7 @@ async fn check_web(root: PathBuf) -> (Health, String, Option<String>) {
 /// Every relay this machine would bind with: reachable, and how far.
 async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
     if urls.is_empty() {
-        return (Health::Warn, cli::DOCTOR_RELAYS_NONE.to_owned(), None);
+        return (Health::Warn, cli::doctor_relays_none().to_owned(), None);
     }
     let mut said: Vec<String> = Vec::new();
     let mut reached = 0usize;
@@ -359,7 +359,7 @@ async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
     } else {
         Health::Warn
     };
-    (state, said.join(cli::NAME_SEPARATOR), None)
+    (state, said.join(cli::name_separator()), None)
 }
 
 /// Every paired machine: which road, and which khor.
@@ -375,7 +375,7 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
     let Ok(devices) = node.devices() else {
         return (
             Health::Unmeasured,
-            cli::DOCTOR_PEERS_UNREAD.to_owned(),
+            cli::doctor_peers_unread().to_owned(),
             None,
         );
     };
@@ -384,7 +384,7 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
         .filter(|d| d.id != node.device_str())
         .collect();
     if others.is_empty() {
-        return (Health::Ok, cli::DOCTOR_PEERS_ALONE.to_owned(), None);
+        return (Health::Ok, cli::doctor_peers_alone().to_owned(), None);
     }
     let mut said = Vec::new();
     let mut worst = Health::Ok;
@@ -407,7 +407,7 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
             }
         }
     }
-    (worst, said.join(cli::NAME_SEPARATOR), None)
+    (worst, said.join(cli::name_separator()), None)
 }
 
 /// Whether claude on this machine tells khor what it is doing.
@@ -416,7 +416,7 @@ async fn check_hooks(node: &Node) -> (Health, String, Option<String>) {
     let Ok(report) = node.hooks_report() else {
         return (
             Health::Unmeasured,
-            cli::DOCTOR_HOOKS_UNREAD.to_owned(),
+            cli::doctor_hooks_unread().to_owned(),
             None,
         );
     };
@@ -426,7 +426,7 @@ async fn check_hooks(node: &Node) -> (Health, String, Option<String>) {
         .filter(|(_, s)| *s != Installed::Here)
         .count();
     if missing == 0 {
-        (Health::Ok, cli::DOCTOR_HOOKS_OK.to_owned(), None)
+        (Health::Ok, cli::doctor_hooks_ok().to_owned(), None)
     } else {
         (
             Health::Warn,
@@ -442,12 +442,12 @@ async fn check_agents(node: &Node) -> (Health, String, Option<String>) {
     let Ok(rows) = node.agents() else {
         return (
             Health::Unmeasured,
-            cli::DOCTOR_AGENTS_UNREAD.to_owned(),
+            cli::doctor_agents_unread().to_owned(),
             None,
         );
     };
     if rows.is_empty() {
-        return (Health::Ok, cli::DOCTOR_AGENTS_NONE.to_owned(), None);
+        return (Health::Ok, cli::doctor_agents_none().to_owned(), None);
     }
     let path = Node::user_path();
     let missing: Vec<String> = rows
@@ -460,7 +460,7 @@ async fn check_agents(node: &Node) -> (Health, String, Option<String>) {
     } else {
         (
             Health::Warn,
-            cli::doctor_agents_missing(missing.join(cli::NAME_SEPARATOR)),
+            cli::doctor_agents_missing(missing.join(cli::name_separator())),
             None,
         )
     }
@@ -478,7 +478,7 @@ async fn check_vscode() -> (Health, String, Option<String>) {
         .await
         .unwrap_or_default();
     if editor.version.is_empty() {
-        (Health::Ok, cli::DOCTOR_VSCODE_NONE.to_owned(), None)
+        (Health::Ok, cli::doctor_vscode_none().to_owned(), None)
     } else if editor.ready {
         (Health::Ok, cli::doctor_vscode_ready(&editor.version), None)
     } else {
@@ -492,21 +492,21 @@ async fn check_disk(root: PathBuf) -> (Health, String, Option<String>) {
     let Ok(v) = v else {
         return (
             Health::Unmeasured,
-            cli::DOCTOR_DISK_UNKNOWN.to_owned(),
+            cli::doctor_disk_unknown().to_owned(),
             None,
         );
     };
     let Some(disk) = v.disk else {
         return (
             Health::Unmeasured,
-            cli::DOCTOR_DISK_UNKNOWN.to_owned(),
+            cli::doctor_disk_unknown().to_owned(),
             None,
         );
     };
     if disk.total == 0 {
         return (
             Health::Unmeasured,
-            cli::DOCTOR_DISK_UNKNOWN.to_owned(),
+            cli::doctor_disk_unknown().to_owned(),
             None,
         );
     }
@@ -529,7 +529,7 @@ async fn check_disk(root: PathBuf) -> (Health, String, Option<String>) {
 /// The opener this machine hands a path or a page to.
 async fn check_launcher() -> (Health, String, Option<String>) {
     let Some(opener) = crate::files::launcher() else {
-        return (Health::Warn, cli::DOCTOR_LAUNCHER_NONE.to_owned(), None);
+        return (Health::Warn, cli::doctor_launcher_none().to_owned(), None);
     };
     if find_program(&opener, Node::user_path()).is_some() {
         (Health::Ok, cli::doctor_launcher_ok(&opener), None)
@@ -555,7 +555,7 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
                 use std::os::unix::fs::PermissionsExt;
                 std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))
                     .map_err(|e| khor_catalog::msg::cant_write(p.display(), e))?;
-                Ok(cli::DOCTOR_FIXED_CHMOD.to_owned())
+                Ok(cli::doctor_fixed_chmod().to_owned())
             }
             #[cfg(not(unix))]
             {
@@ -565,10 +565,10 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
         }
         "hooks" => {
             node.install_hooks()?;
-            Ok(cli::DOCTOR_FIXED_HOOKS.to_owned())
+            Ok(cli::doctor_fixed_hooks().to_owned())
         }
         "serve" => {
-            let exe = khor_cli_binary().ok_or_else(|| cli::DOCTOR_VERSION_NO_CLI.to_owned())?;
+            let exe = khor_cli_binary().ok_or_else(|| cli::doctor_version_no_cli().to_owned())?;
             // Detached, stdio null: this starts a resident, and a
             // resident wired to this terminal dies with it — which is
             // the opposite of what 「起它」 means.
@@ -579,7 +579,7 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
                 .stderr(std::process::Stdio::null())
                 .spawn()
                 .map_err(|e| khor_catalog::msg::cant_launch(exe.display(), e))?;
-            Ok(cli::DOCTOR_FIXED_SERVE.to_owned())
+            Ok(cli::doctor_fixed_serve().to_owned())
         }
         other => Err(cli::doctor_no_fix(other)),
     }

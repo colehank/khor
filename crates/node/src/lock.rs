@@ -132,7 +132,7 @@ pub fn state(root: &Path) -> LockState {
 pub fn set_on(root: &Path, on: bool) -> Result<LockState, String> {
     let mut s = stored(root);
     if on && s.pin.is_none() {
-        return Err(msg::LOCK_NEEDS_A_PIN.to_owned());
+        return Err(msg::lock_needs_a_pin().to_owned());
     }
     s.on = on;
     save(root, &s)?;
@@ -197,7 +197,7 @@ pub fn set_timeout(root: &Path, minutes: u32) -> Result<LockState, String> {
                 .iter()
                 .map(u32::to_string)
                 .collect::<Vec<_>>()
-                .join(khor_catalog::cli::NAME_SEPARATOR),
+                .join(khor_catalog::cli::name_separator()),
         ));
     }
     let mut s = stored(root);

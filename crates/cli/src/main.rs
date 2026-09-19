@@ -5,13 +5,27 @@
 //! Stable keys are the wire truth; every word a person reads comes from
 //! the catalog at print time (docs/UX.md 文案).
 
-use khor_catalog::cli::USAGE;
+// **Aliased**, because this file already has a verb called `usage`
+// (`khor usage`, what each machine spent). The catalog's is the help
+// text; 批 D3 turned it from a const into a function, which is when the
+// two names met.
+use khor_catalog::cli::usage as usage_text;
 use khor_catalog::{avatar, category, cli, msg, state};
 use khor_node::{
     AvatarStyle, FaceShape, MsgBody, Node, PRESETS, SessionId, Tokens, UsageDay, Variant, list,
 };
 
 fn main() {
+    // 语言, before the first word this process can print (docs/MORE.md
+    // 语言). A stored choice wins, `auto` reads the environment, and
+    // anything that is not zh* — 「read nothing at all」 included — is
+    // English (`khor_node::config::apply_lang`).
+    //
+    // **No node is opened**: the preference is read straight off the
+    // store, so this costs one file read and works on a machine whose
+    // store refuses — which is exactly when khor most needs to be able
+    // to say why.
+    khor_node::config::apply_lang(&Node::root_from_env());
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Err(e) = dispatch(&args) {
         eprintln!("{e}");
@@ -550,7 +564,7 @@ fn dispatch(args: &[String]) -> Result<(), String> {
     let rest = &args[args.len().min(1)..];
     match VERBS.iter().find(|v| v.word == word) {
         Some(v) => (v.run)(rest),
-        None => Err(format!("{}\n{USAGE}", msg::unknown_verb(word))),
+        None => Err(format!("{}\n{}", msg::unknown_verb(word), usage_text())),
     }
 }
 
@@ -602,10 +616,10 @@ fn id(rest: &[String]) -> Result<(), String> {
             let root = Node::root_from_env();
             let name = node()?.name().to_owned();
             khor_node::lock::reset_identity(&root, typed, &name)?;
-            println!("{}", cli::IDENTITY_RESET);
+            println!("{}", cli::identity_reset());
             Ok(())
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -624,14 +638,18 @@ fn lock(rest: &[String]) -> Result<(), String> {
     let say = |s: khor_node::lock::LockState| {
         println!(
             "{}\t{}\t{}",
-            if s.on { cli::LOCK_ON } else { cli::LOCK_OFF },
-            if s.has_pin {
-                cli::LOCK_PIN_SET
+            if s.on {
+                cli::lock_on()
             } else {
-                cli::LOCK_PIN_NONE
+                cli::lock_off()
+            },
+            if s.has_pin {
+                cli::lock_pin_set()
+            } else {
+                cli::lock_pin_none()
             },
             if s.timeout_min == 0 {
-                cli::LOCK_IDLE_NEVER.to_owned()
+                cli::lock_idle_never().to_owned()
             } else {
                 cli::lock_idle_after(s.timeout_min)
             }
@@ -661,11 +679,11 @@ fn lock(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         [word, minutes] if word == "timeout" => {
-            let m: u32 = minutes.parse().map_err(|_| USAGE.to_string())?;
+            let m: u32 = minutes.parse().map_err(|_| usage_text().to_string())?;
             say(khor_node::lock::set_timeout(&root, m)?);
             Ok(())
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -710,7 +728,7 @@ fn config(rest: &[String]) -> Result<(), String> {
             println!("{}", khor_node::config::set(&root, name, value)?);
             Ok(())
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -764,7 +782,7 @@ fn face(rest: &[String]) -> Result<(), String> {
     let mut shape: Option<String> = None;
     let mut it = rest.iter();
     while let Some(flag) = it.next() {
-        let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
+        let mut value = || it.next().ok_or_else(|| usage_text().to_string()).cloned();
         match flag.as_str() {
             // A factory set by name. Resolved here rather than inside
             // `restyle`, so that the library has exactly one way to be
@@ -773,7 +791,7 @@ fn face(rest: &[String]) -> Result<(), String> {
                 let id = value()?;
                 let p = khor_node::preset(&id).ok_or_else(|| {
                     let all: Vec<&str> = PRESETS.iter().map(|p| p.id).collect();
-                    msg::no_such_palette(&id, all.join(cli::NAME_SEPARATOR))
+                    msg::no_such_palette(&id, all.join(cli::name_separator()))
                 })?;
                 colors = Some(p.colors.iter().map(|c| c.to_string()).collect());
             }
@@ -782,7 +800,7 @@ fn face(rest: &[String]) -> Result<(), String> {
             }
             "--variant" => variant = Some(value()?),
             "--shape" => shape = Some(value()?),
-            _ => return Err(USAGE.into()),
+            _ => return Err(usage_text().into()),
         }
     }
     let n = node()?;
@@ -801,7 +819,7 @@ fn ls(rest: &[String]) -> Result<(), String> {
     let (machine, path) = match rest {
         [machine] => (machine, ""),
         [machine, path] => (machine, path.as_str()),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let (_, entries, truncated) = rt()?.block_on(node()?.ls_of(machine, path))?;
     for e in &entries {
@@ -831,7 +849,7 @@ fn pull(rest: &[String]) -> Result<(), String> {
             std::env::current_dir().map_err(|e| e.to_string())?,
         ),
         [machine, path, dir] => (machine, path, std::path::PathBuf::from(dir)),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let (moved, dest) = rt()?.block_on(node()?.pull_path(machine, path, &dir))?;
     println!("{}", cli::pulled_to(moved, dest.display()));
@@ -849,7 +867,7 @@ fn places(rest: &[String]) -> Result<(), String> {
     let machine = match rest {
         [] => "",
         [machine] => machine.as_str(),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     for (path, shown, sessions, _) in rt()?.block_on(node()?.places_on(machine))? {
         // The machine's own spelling first, the real path after: `~` is
@@ -873,7 +891,9 @@ fn places(rest: &[String]) -> Result<(), String> {
 /// distinction — one verb, several subjects, and the subject is named
 /// the same way everywhere rather than each verb inventing its own.
 fn ws(rest: &[String]) -> Result<(), String> {
-    let (verb, rest) = rest.split_first().ok_or_else(|| String::from(USAGE))?;
+    let (verb, rest) = rest
+        .split_first()
+        .ok_or_else(|| String::from(usage_text()))?;
     // `-m <机器> <目录>` or a bare `<目录>`, which is this machine.
     let target = |rest: &[String]| -> Result<(String, String), String> {
         match rest {
@@ -881,14 +901,14 @@ fn ws(rest: &[String]) -> Result<(), String> {
                 Ok((machine.clone(), here(dir)?))
             }
             [dir] => Ok((String::new(), here(dir)?)),
-            _ => Err(USAGE.into()),
+            _ => Err(usage_text().into()),
         }
     };
     let n = node()?;
     match (verb.as_str(), rest) {
         ("ls", []) => {
             for w in n.workspaces()? {
-                let pin = if w.pinned { cli::PINNED_MARK } else { "" };
+                let pin = if w.pinned { cli::pinned_mark() } else { "" };
                 // **The id stands in where the machine has no name** —
                 // it has left the device table, and this column has to
                 // stay something a person can paste back into `ws rm`
@@ -926,7 +946,7 @@ fn ws(rest: &[String]) -> Result<(), String> {
             let (machine, dir) = target(rest)?;
             n.ws_pin(&n.machine_id(&machine)?, &dir, false)
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -948,7 +968,7 @@ fn rm(rest: &[String]) -> Result<(), String> {
             (machine.clone(), here(path)?)
         }
         [path] => (String::new(), here(path)?),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     rt()?.block_on(node()?.remove_path(&machine, &path))
 }
@@ -986,7 +1006,7 @@ fn mv(rest: &[String]) -> Result<(), String> {
             (machine.clone(), here(from)?, here(to)?)
         }
         [from, to] => (String::new(), here(from)?, here(to)?),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     rt()?.block_on(node()?.rename_path(&machine, &from, &to))
 }
@@ -1008,7 +1028,7 @@ fn launch(rest: &[String]) -> Result<(), String> {
             (machine.clone(), target.clone())
         }
         [target] => (String::new(), target.clone()),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     rt()?.block_on(node()?.launch(&machine, &target))
 }
@@ -1035,7 +1055,7 @@ fn search(rest: &[String]) -> Result<(), String> {
             (machine.clone(), here(dir)?, query.clone())
         }
         [dir, query] => (String::new(), here(dir)?, query.clone()),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let found = rt()?.block_on(node()?.search(&machine, &dir, &query))?;
     for path in &found.names {
@@ -1045,7 +1065,7 @@ fn search(rest: &[String]) -> Result<(), String> {
         println!("{}:{}: {}", hit.path, hit.line, hit.text);
     }
     if found.more {
-        eprintln!("{}", cli::SEARCH_MORE);
+        eprintln!("{}", cli::search_more());
     }
     Ok(())
 }
@@ -1058,7 +1078,7 @@ fn one_path(rest: &[String]) -> Result<(String, String), String> {
             Ok((machine.clone(), here(path)?))
         }
         [path] => Ok((String::new(), here(path)?)),
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -1096,7 +1116,7 @@ fn here(dir: &str) -> Result<String, String> {
 /// the pipeline, not the document's.
 fn read(rest: &[String]) -> Result<(), String> {
     let [machine, path] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     // The same ceiling the app looks through, and **the same
     // function** — the constant lived in two places for a day, and the
@@ -1109,7 +1129,7 @@ fn read(rest: &[String]) -> Result<(), String> {
         // A real answer, not a failure: a blank template parses
         // perfectly and holds nothing. Said on stderr so a pipe gets
         // the empty document it asked for.
-        eprintln!("{}", cli::READ_EMPTY);
+        eprintln!("{}", cli::read_empty());
         return Ok(());
     }
     print!("{md}");
@@ -1140,7 +1160,7 @@ fn code(rest: &[String]) -> Result<(), String> {
     let (machine, root) = match rest {
         [machine] => (machine, ""),
         [machine, root] => (machine, root.as_str()),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let rt = rt()?;
     let n = node()?;
@@ -1154,7 +1174,7 @@ fn code(rest: &[String]) -> Result<(), String> {
     // going to happen.
     let editor = rt.block_on(n.code_here(machine))?;
     if editor.version.is_empty() {
-        return Err(msg::NO_VSCODE.into());
+        return Err(msg::no_vscode().into());
     }
     // **Said before the wait rather than after it.** This does not ask:
     // the CLI's precedent is `forget` and `takeover`, where typing the
@@ -1163,7 +1183,7 @@ fn code(rest: &[String]) -> Result<(), String> {
     // no way to tell that from a hang — nor that 640 MB is moving and a
     // licence is being accepted on that machine's behalf.
     if !editor.ready {
-        println!("{}", cli::CODE_FETCHING);
+        println!("{}", cli::code_fetching());
     }
     let (addr, token) = rt.block_on(n.code_open(machine))?;
     // **The folder rides in the link, not in the launch.** One server
@@ -1239,10 +1259,10 @@ fn put(rest: &[String]) -> Result<(), String> {
     // Two claims about the same path that cannot both be true: 「there
     // is nothing there」 and 「there is the copy I started from」.
     if fresh && base.is_some() {
-        return Err(cli::PUT_NEW_AND_BASE.into());
+        return Err(cli::put_new_and_base().into());
     }
     let [machine, src, dest] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let bytes = std::fs::read(src).map_err(|e| msg::cant_read(src, e))?;
     let rt = rt()?;
@@ -1390,7 +1410,7 @@ fn git(rest: &[String]) -> Result<(), String> {
                 println!("{mark}\t{path}");
             }
             if s.more {
-                eprintln!("{}", cli::GIT_STATUS_MORE);
+                eprintln!("{}", cli::git_status_more());
             }
             Ok(())
         }
@@ -1409,11 +1429,11 @@ fn git(rest: &[String]) -> Result<(), String> {
                 }
             }
             if d.more {
-                eprintln!("{}", cli::GIT_MORE);
+                eprintln!("{}", cli::git_more());
             }
             Ok(())
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -1428,7 +1448,7 @@ fn git(rest: &[String]) -> Result<(), String> {
 /// (docs/NET.md 可达性).
 fn borrow(rest: &[String]) -> Result<(), String> {
     let [machine] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let (session, addr) = rt()?.block_on(node()?.borrow(machine))?;
     println!("{}", cli::borrowing(machine, addr, session));
@@ -1442,7 +1462,7 @@ fn borrow(rest: &[String]) -> Result<(), String> {
 /// confirmation, and a `--yes` would only teach people to type it.
 fn forget(rest: &[String]) -> Result<(), String> {
     let [machine] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let name = node()?.forget_device(machine)?;
     println!("{}", msg::forgot(&name));
@@ -1455,7 +1475,7 @@ fn forget(rest: &[String]) -> Result<(), String> {
 /// of refusal for both.
 fn watch(rest: &[String]) -> Result<(), String> {
     let [machine, paths @ ..] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let n = node()?;
     let kept = n.set_watch(machine, paths)?;
@@ -1505,8 +1525,8 @@ fn devices(_rest: &[String]) -> Result<(), String> {
         // Seen live while adding the road reading (2026-08-21): a
         // second home on this Mac made every row claim to be home.
         let me = d.id == n.device_str();
-        let here = if me { cli::THIS_MACHINE } else { "" };
-        let pin = if d.pinned { cli::PINNED_MARK } else { "" };
+        let here = if me { cli::this_machine() } else { "" };
+        let pin = if d.pinned { cli::pinned_mark() } else { "" };
         let hop = hops
             .iter()
             .find(|(id, _)| *id == d.id)
@@ -1603,17 +1623,17 @@ impl Col {
     /// lowercase, which is not a word `zh.toml` has.)
     fn head(self) -> &'static str {
         match self {
-            Col::Pid => cli::TOP_PID,
-            Col::Status => cli::TOP_STATUS,
-            Col::User => cli::TOP_USER,
-            Col::Time => cli::TOP_TIME,
-            Col::CpuTime => cli::TOP_CPUTIME,
-            Col::Cpu => cli::VITALS_NAME_CPU,
-            Col::Gpu => cli::VITALS_NAME_GPU,
-            Col::Mem => cli::VITALS_NAME_MEM,
-            Col::Vram => cli::VITALS_NAME_VRAM,
-            Col::Io => cli::TOP_IO,
-            Col::Cmd => cli::TOP_CMD,
+            Col::Pid => cli::top_pid(),
+            Col::Status => cli::top_status(),
+            Col::User => cli::top_user(),
+            Col::Time => cli::top_time(),
+            Col::CpuTime => cli::top_cputime(),
+            Col::Cpu => cli::vitals_name_cpu(),
+            Col::Gpu => cli::vitals_name_gpu(),
+            Col::Mem => cli::vitals_name_mem(),
+            Col::Vram => cli::vitals_name_vram(),
+            Col::Io => cli::top_io(),
+            Col::Cmd => cli::top_cmd(),
         }
     }
 
@@ -1733,21 +1753,21 @@ fn cmd_text(r: &khor_node::TopRow) -> String {
 /// undo all of it here.
 fn status_word(token: &str) -> &str {
     match token {
-        "run" => cli::TOP_ST_RUN,
-        "sleep" => cli::TOP_ST_SLEEP,
-        "idle" => cli::TOP_ST_IDLE,
-        "spawning" => cli::TOP_ST_SPAWNING,
-        "diskwait" => cli::TOP_ST_DISKWAIT,
-        "dead" => cli::TOP_ST_DEAD,
-        "zombie" => cli::TOP_ST_ZOMBIE,
-        "stopped" => cli::TOP_ST_STOPPED,
-        "tracing" => cli::TOP_ST_TRACING,
-        "parked" => cli::TOP_ST_PARKED,
-        "wakekill" => cli::TOP_ST_WAKEKILL,
-        "waking" => cli::TOP_ST_WAKING,
-        "suspended" => cli::TOP_ST_SUSPENDED,
-        "lockblocked" => cli::TOP_ST_LOCKBLOCKED,
-        "unclear" => cli::TOP_ST_UNCLEAR,
+        "run" => cli::top_st_run(),
+        "sleep" => cli::top_st_sleep(),
+        "idle" => cli::top_st_idle(),
+        "spawning" => cli::top_st_spawning(),
+        "diskwait" => cli::top_st_diskwait(),
+        "dead" => cli::top_st_dead(),
+        "zombie" => cli::top_st_zombie(),
+        "stopped" => cli::top_st_stopped(),
+        "tracing" => cli::top_st_tracing(),
+        "parked" => cli::top_st_parked(),
+        "wakekill" => cli::top_st_wakekill(),
+        "waking" => cli::top_st_waking(),
+        "suspended" => cli::top_st_suspended(),
+        "lockblocked" => cli::top_st_lockblocked(),
+        "unclear" => cli::top_st_unclear(),
         other => other,
     }
 }
@@ -1969,7 +1989,7 @@ fn top(rest: &[String]) -> Result<(), String> {
     let machine = match rest {
         [] => "",
         [machine] => machine.as_str(),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let load =
         rt()?.block_on(node()?.load_on(machine, TOP_ROWS, khor_node::TopBy::Busiest, true))?;
@@ -1983,7 +2003,7 @@ fn top(rest: &[String]) -> Result<(), String> {
     for line in lay_out(&load.top, room) {
         println!("{line}");
     }
-    println!("{}  {}", cli::TOP_DAY, day_line(&load.cpu_day));
+    println!("{}  {}", cli::top_day(), day_line(&load.cpu_day));
     Ok(())
 }
 
@@ -2096,17 +2116,22 @@ mod top_table {
 
     /// Every cell the fixture should produce, written out here rather
     /// than asked of the code that produces them.
-    const HEAD: [&str; 9] = [
-        cli::TOP_PID,
-        cli::TOP_STATUS,
-        cli::TOP_USER,
-        cli::TOP_TIME,
-        cli::TOP_CPUTIME,
-        cli::VITALS_NAME_CPU,
-        cli::VITALS_NAME_MEM,
-        cli::TOP_IO,
-        cli::TOP_CMD,
-    ];
+    ///
+    /// **A function, not a `const`** since 批 D3: a word depends on the
+    /// language now, so it cannot be computed before the program runs.
+    fn head() -> [&'static str; 9] {
+        [
+            cli::top_pid(),
+            cli::top_status(),
+            cli::top_user(),
+            cli::top_time(),
+            cli::top_cputime(),
+            cli::vitals_name_cpu(),
+            cli::vitals_name_mem(),
+            cli::top_io(),
+            cli::top_cmd(),
+        ]
+    }
     /// Quantities right, words left — written out here too, so a column
     /// that quietly changed sides would go red rather than be agreed
     /// with.
@@ -2115,10 +2140,10 @@ mod top_table {
     fn want_cells() -> Vec<Vec<String>> {
         let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
         vec![
-            s(&HEAD),
+            s(&head()),
             s(&[
                 "12392",
-                cli::TOP_ST_RUN,
+                cli::top_st_run(),
                 "zgh",
                 &cli::age_hours(1),
                 "1:00:00",
@@ -2129,7 +2154,7 @@ mod top_table {
             ]),
             s(&[
                 "7",
-                cli::TOP_ST_SPAWNING,
+                cli::top_st_spawning(),
                 "zgh",
                 &cli::age_minutes(1),
                 "0:00",
@@ -2333,7 +2358,7 @@ mod top_table {
         // off the last column and off no other. The head line ends in
         // 「命令」 with nothing padded after it, so the width of
         // everything before it is that line's width less that word's.
-        let before = cols_of(&loose[0]) - cols_of(cli::TOP_CMD);
+        let before = cols_of(&loose[0]) - cols_of(cli::top_cmd());
         for (a, b) in tight.iter().zip(&loose) {
             assert!(cols_of(a) <= cols_of(b));
             assert_eq!(
@@ -2368,21 +2393,21 @@ mod top_table {
     #[test]
     fn every_status_token_has_its_own_word() {
         let pairs = [
-            ("run", cli::TOP_ST_RUN),
-            ("sleep", cli::TOP_ST_SLEEP),
-            ("idle", cli::TOP_ST_IDLE),
-            ("spawning", cli::TOP_ST_SPAWNING),
-            ("diskwait", cli::TOP_ST_DISKWAIT),
-            ("dead", cli::TOP_ST_DEAD),
-            ("zombie", cli::TOP_ST_ZOMBIE),
-            ("stopped", cli::TOP_ST_STOPPED),
-            ("tracing", cli::TOP_ST_TRACING),
-            ("parked", cli::TOP_ST_PARKED),
-            ("wakekill", cli::TOP_ST_WAKEKILL),
-            ("waking", cli::TOP_ST_WAKING),
-            ("suspended", cli::TOP_ST_SUSPENDED),
-            ("lockblocked", cli::TOP_ST_LOCKBLOCKED),
-            ("unclear", cli::TOP_ST_UNCLEAR),
+            ("run", cli::top_st_run()),
+            ("sleep", cli::top_st_sleep()),
+            ("idle", cli::top_st_idle()),
+            ("spawning", cli::top_st_spawning()),
+            ("diskwait", cli::top_st_diskwait()),
+            ("dead", cli::top_st_dead()),
+            ("zombie", cli::top_st_zombie()),
+            ("stopped", cli::top_st_stopped()),
+            ("tracing", cli::top_st_tracing()),
+            ("parked", cli::top_st_parked()),
+            ("wakekill", cli::top_st_wakekill()),
+            ("waking", cli::top_st_waking()),
+            ("suspended", cli::top_st_suspended()),
+            ("lockblocked", cli::top_st_lockblocked()),
+            ("unclear", cli::top_st_unclear()),
         ];
         for (token, word) in pairs {
             assert_eq!(status_word(token), word, "{token}");
@@ -2418,7 +2443,7 @@ fn hop_word(hop: khor_node::Hop, is_me: bool) -> &'static str {
 /// terminal (docs/KHOR.md: CLI equals GUI).
 fn vitals_line(n: &Node, device_id: &str) -> String {
     let Some((v, age)) = n.vitals_of(device_id) else {
-        return cli::VITALS_NEVER.to_owned();
+        return cli::vitals_never().to_owned();
     };
     let mut parts = vec![
         cli::vitals_cpu(format_args!("{:.0}", v.cpu_pct), v.cores),
@@ -2432,7 +2457,7 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
     if v.volumes.is_empty() {
         parts.push(match v.disk {
             Some(d) => cli::vitals_disk(bytes(d.used), bytes(d.total)),
-            None => cli::VITALS_DISK_UNKNOWN.to_owned(),
+            None => cli::vitals_disk_unknown().to_owned(),
         });
     } else {
         for vol in &v.volumes {
@@ -2465,7 +2490,7 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
         // (`khor_core::GpuCard::name`).
         for c in &v.gpus {
             let name = if c.name.is_empty() {
-                cli::VITALS_NAME_GPU
+                cli::vitals_name_gpu()
             } else {
                 c.name.as_str()
             };
@@ -2580,20 +2605,20 @@ fn usage(rest: &[String]) -> Result<(), String> {
         // that has spent nothing.
         [flag, n] if flag == "--days" => match n.parse::<usize>() {
             Ok(n) if n > 0 => n,
-            _ => return Err(USAGE.into()),
+            _ => return Err(usage_text().into()),
         },
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let n = node()?;
     for d in n.devices()? {
         let here = if d.id == n.device_str() {
-            cli::THIS_MACHINE
+            cli::this_machine()
         } else {
             ""
         };
         println!("{}{here}", d.shown());
         let Some((usage, age)) = n.usage_of(&d.id) else {
-            println!("\t{}", cli::USAGE_NEVER);
+            println!("\t{}", cli::usage_never());
             continue;
         };
         // Newest first here, and oldest first on the wire. The order a
@@ -2609,7 +2634,7 @@ fn usage(rest: &[String]) -> Result<(), String> {
         let from = khor_node::usage::window_start(days);
         let recent: Vec<&UsageDay> = usage.days.iter().rev().filter(|d| d.day >= from).collect();
         if recent.is_empty() {
-            println!("\t{}", cli::USAGE_NONE);
+            println!("\t{}", cli::usage_none());
         }
         for row in recent {
             println!(
@@ -2635,7 +2660,7 @@ fn usage(rest: &[String]) -> Result<(), String> {
                 .iter()
                 .filter(|m| m.day == row.day && m.category == row.category)
             {
-                let name = m.model.as_deref().unwrap_or(cli::USAGE_MODEL_UNNAMED);
+                let name = m.model.as_deref().unwrap_or(cli::usage_model_unnamed());
                 println!("\t\t{}\t{}", name, tokens_line(&m.tokens));
             }
         }
@@ -2694,13 +2719,13 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         match flag.as_str() {
             "--all" => all = true,
             "--by" => {
-                let key = it.next().ok_or_else(|| USAGE.to_string())?;
+                let key = it.next().ok_or_else(|| usage_text().to_string())?;
                 mode = list::Arrange::from_key(key).ok_or_else(|| {
                     let keys: Vec<&str> = list::Arrange::ALL.iter().map(|a| a.key()).collect();
-                    msg::not_a_way_to_arrange(key, keys.join(cli::NAME_SEPARATOR))
+                    msg::not_a_way_to_arrange(key, keys.join(cli::name_separator()))
                 })?;
             }
-            _ => return Err(USAGE.into()),
+            _ => return Err(usage_text().into()),
         }
     }
     let n = node()?;
@@ -2735,7 +2760,7 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         // The order already says which rows are pinned; the mark says
         // *why* they lead, which "on top" alone cannot.
         let pin = if v.pinned {
-            format!("\t{}", cli::PINNED_MARK)
+            format!("\t{}", cli::pinned_mark())
         } else {
             String::new()
         };
@@ -2779,10 +2804,10 @@ fn sessions(rest: &[String]) -> Result<(), String> {
 
 fn tell(rest: &[String]) -> Result<(), String> {
     let [machine, text @ ..] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     if text.is_empty() {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     }
     let id = node()?.tell(machine, &text.join(" "))?;
     println!("{id}");
@@ -2803,10 +2828,10 @@ fn tell(rest: &[String]) -> Result<(), String> {
 /// quoting tricks here.
 fn send(rest: &[String]) -> Result<(), String> {
     let [machine, tail @ ..] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     if tail.is_empty() {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     }
     let candidate = std::path::Path::new(&tail[0]);
     if tail.len() == 1 && candidate.is_file() {
@@ -2834,7 +2859,7 @@ fn send(rest: &[String]) -> Result<(), String> {
 /// is a file someone will go looking for.
 fn accept(rest: &[String]) -> Result<(), String> {
     let [id] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let n = node()?;
     let sid = SessionId(id.clone());
@@ -2891,7 +2916,7 @@ fn accept(rest: &[String]) -> Result<(), String> {
 
 fn log(rest: &[String]) -> Result<(), String> {
     let [machine] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let log = node()?.log(machine)?;
     if log.broken > 0 {
@@ -2912,14 +2937,14 @@ fn run(rest: &[String]) -> Result<(), String> {
         match a.as_str() {
             "--tui" if cmd.is_empty() => tui = true,
             "--title" if cmd.is_empty() => {
-                title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                title = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone());
             }
             "--" if cmd.is_empty() => {}
             _ => cmd.push(a.clone()),
         }
     }
     if cmd.is_empty() {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     }
     let n = node()?;
     let kind = if tui {
@@ -2957,14 +2982,14 @@ fn open(rest: &[String]) -> Result<(), String> {
             "--gui" if cmd.is_empty() => gui = true,
             "-d" if cmd.is_empty() => detached = true,
             "--on" if cmd.is_empty() => {
-                on = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                on = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone());
             }
             // A registered ACP agent, by the name its owner gave it
             // (批⑥). Implies `--gui`: a registration says how to start
             // something that speaks the protocol, and there is no other
             // channel for it.
             "--agent" if cmd.is_empty() => {
-                agent = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                agent = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone());
                 gui = true;
             }
             // A conversation the agent already has, by the id it gave
@@ -2972,10 +2997,10 @@ fn open(rest: &[String]) -> Result<(), String> {
             // opening a fresh one, so the row that appears is the same
             // conversation rather than a new one beside it.
             "--resume" if cmd.is_empty() => {
-                resume = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                resume = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone());
             }
             "--title" if cmd.is_empty() => {
-                title = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone());
+                title = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone());
             }
             "--" if cmd.is_empty() => {}
             _ => cmd.push(a.clone()),
@@ -3041,10 +3066,10 @@ fn open(rest: &[String]) -> Result<(), String> {
         // two.
         if let Some(machine) = on {
             if named_cmd {
-                return Err(cli::GUI_NOT_ON_ANOTHER_MACHINE.into());
+                return Err(cli::gui_not_on_another_machine().into());
             }
             if resume.is_some() {
-                return Err(cli::RESUME_NOT_ON_ANOTHER_MACHINE.into());
+                return Err(cli::resume_not_on_another_machine().into());
             }
             let name = agent
                 .as_deref()
@@ -3060,7 +3085,7 @@ fn open(rest: &[String]) -> Result<(), String> {
         // fresh conversation on some default and calling it the one
         // that was asked for.
         if resume.is_some() && vendor.is_none() {
-            return Err(cli::RESUME_NEEDS_AGENT.into());
+            return Err(cli::resume_needs_agent().into());
         }
         // No terminal exists to attach to; the id is the deliverable.
         let id = match (&vendor, &resume) {
@@ -3117,7 +3142,7 @@ fn open(rest: &[String]) -> Result<(), String> {
 
 fn attach(rest: &[String]) -> Result<(), String> {
     let [sid] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let n = node()?;
     let id = SessionId(sid.clone());
@@ -3146,10 +3171,10 @@ fn attach(rest: &[String]) -> Result<(), String> {
 fn ghost(rest: &[String]) -> Result<(), String> {
     let (head, cmd) = match rest.iter().position(|a| a == "--") {
         Some(i) => (&rest[..i], &rest[i + 1..]),
-        None => return Err(USAGE.into()),
+        None => return Err(usage_text().into()),
     };
     let [ready, title] = head else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     khor_node::gui_host::gui_host_main(
         khor_node::Node::root_from_env(),
@@ -3162,17 +3187,17 @@ fn ghost(rest: &[String]) -> Result<(), String> {
 fn host(rest: &[String]) -> Result<(), String> {
     let (head, cmd) = match rest.iter().position(|a| a == "--") {
         Some(i) => (&rest[..i], &rest[i + 1..]),
-        None => return Err(USAGE.into()),
+        None => return Err(usage_text().into()),
     };
     let [sid, cols, rows] = head else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     if cmd.is_empty() {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     }
     let size = (
-        cols.parse::<u16>().map_err(|_| USAGE.to_string())?,
-        rows.parse::<u16>().map_err(|_| USAGE.to_string())?,
+        cols.parse::<u16>().map_err(|_| usage_text().to_string())?,
+        rows.parse::<u16>().map_err(|_| usage_text().to_string())?,
     );
     khor_node::host::host_main(
         Node::root_from_env(),
@@ -3187,7 +3212,7 @@ fn host(rest: &[String]) -> Result<(), String> {
 /// click is cheap enough to deserve a second look.
 fn takeover(rest: &[String]) -> Result<(), String> {
     let [sid] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let n = node()?;
     let id = SessionId(sid.clone());
@@ -3217,7 +3242,8 @@ fn state(rest: &[String]) -> Result<(), String> {
             Ok(())
         }
         [word] => {
-            let sid = std::env::var("KHOR_SESSION").map_err(|_| msg::WHICH_SESSION.to_string())?;
+            let sid =
+                std::env::var("KHOR_SESSION").map_err(|_| msg::which_session().to_string())?;
             let word = khor_node::State::try_from(word.clone())
                 .map_err(|_| msg::not_a_state_word(word))?;
             n.report_state(&SessionId(sid), word)
@@ -3227,13 +3253,13 @@ fn state(rest: &[String]) -> Result<(), String> {
                 .map_err(|_| msg::not_a_state_word(word))?;
             n.report_state(&SessionId(sid.clone()), word)
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
 fn seen(rest: &[String]) -> Result<(), String> {
     let [id] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     node()?.seen(&SessionId(id.clone()))
 }
@@ -3263,7 +3289,7 @@ fn rename(rest: &[String]) -> Result<(), String> {
         return Ok(());
     }
     let [id, name @ ..] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     node()?.rename_session(&SessionId(id.clone()), &name.join(" "))
 }
@@ -3285,13 +3311,13 @@ fn pinning(rest: &[String], on: bool) -> Result<(), String> {
         [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
         [flag, machine, path] if flag == "-d" || flag == "--dir" => n.pin_dir(machine, path, on),
         [id] => n.pin_session(&SessionId(id.clone()), on),
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
 fn close(rest: &[String]) -> Result<(), String> {
     let [id] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     // Routed like `attach`: the row says which machine it lives on, and
     // the person types the same word either way.
@@ -3387,7 +3413,7 @@ fn start_web_face(root: &std::path::Path) {
 /// CLI itself and call it a window.
 fn gui(rest: &[String]) -> Result<(), String> {
     if !rest.is_empty() {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     }
     let me = khor_node::self_exe()?;
     let dir = me
@@ -3418,7 +3444,7 @@ fn web(rest: &[String]) -> Result<(), String> {
     let fresh = match rest {
         [] => false,
         [flag] if flag == "--new" => true,
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let root = Node::root_from_env();
     let key = if fresh {
@@ -3427,16 +3453,16 @@ fn web(rest: &[String]) -> Result<(), String> {
         khor_web::key::ensure(&root)?
     };
     if fresh {
-        println!("{}", msg::WEB_FACE_ROTATED);
+        println!("{}", msg::web_face_rotated());
     }
     // Rotating is a local act and has already happened; only the
     // printing of an address depends on somebody being up to answer it.
     let port = khor_web::port();
     let Some(ips) = node()?.local_ips()? else {
-        return Err(msg::WEB_FACE_NOT_SERVING.to_owned());
+        return Err(msg::web_face_not_serving().to_owned());
     };
     let Some(ip) = khor_web::best_address(&ips) else {
-        return Err(msg::WEB_FACE_NOT_SERVING.to_owned());
+        return Err(msg::web_face_not_serving().to_owned());
     };
     // **The address about to be printed is the address that gets
     // probed.** Checking loopback instead would pass on a Mac whose
@@ -3447,10 +3473,10 @@ fn web(rest: &[String]) -> Result<(), String> {
         return Err(msg::web_face_down(std::net::SocketAddr::new(ip, port)));
     }
     let url = khor_web::link(ip, port, &key);
-    println!("{}", msg::WEB_FACE_HERE);
+    println!("{}", msg::web_face_here());
     println!("  {url}");
     print!("{}", web_qr(&url));
-    println!("{}", msg::WEB_FACE_KEY_NOTE);
+    println!("{}", msg::web_face_key_note());
     Ok(())
 }
 
@@ -3593,15 +3619,15 @@ mod web_qr_tests {
 /// `khor serve` (or the guardian's next boot) brings everything back.
 fn quit(rest: &[String]) -> Result<(), String> {
     let [] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let (served, hosts) = node()?.quit()?;
     println!(
         "{}",
         if served {
-            msg::QUIT_SERVE_STOPPED
+            msg::quit_serve_stopped()
         } else {
-            msg::QUIT_NO_SERVE
+            msg::quit_no_serve()
         }
     );
     if hosts > 0 {
@@ -3632,7 +3658,7 @@ fn accounts(rest: &[String]) -> Result<(), String> {
                 .collect();
             let listed = n.accounts()?;
             if listed.is_empty() {
-                println!("{}", cli::ACCOUNTS_NONE);
+                println!("{}", cli::accounts_none());
             }
             for a in listed {
                 // The kind rides beside the provider because together
@@ -3654,14 +3680,14 @@ fn accounts(rest: &[String]) -> Result<(), String> {
         }
         Some((word, tail)) if word == "add" => {
             let mut it = tail.iter();
-            let name = it.next().ok_or_else(|| USAGE.to_string())?.clone();
+            let name = it.next().ok_or_else(|| usage_text().to_string())?.clone();
             let mut provider: Option<String> = None;
             let mut base_url: Option<String> = None;
             let mut key: Option<String> = None;
             let mut budget: Option<f64> = None;
             let mut kind: Option<String> = None;
             while let Some(flag) = it.next() {
-                let mut value = || it.next().ok_or_else(|| USAGE.to_string()).cloned();
+                let mut value = || it.next().ok_or_else(|| usage_text().to_string()).cloned();
                 match flag.as_str() {
                     "--provider" => provider = Some(value()?),
                     "--kind" => kind = Some(value()?),
@@ -3678,13 +3704,13 @@ fn accounts(rest: &[String]) -> Result<(), String> {
                         budget = Some(
                             value()?
                                 .parse::<f64>()
-                                .map_err(|_| cli::ACCOUNT_BUDGET_NUMBER.to_string())?,
+                                .map_err(|_| cli::account_budget_number().to_string())?,
                         );
                     }
-                    _ => return Err(USAGE.into()),
+                    _ => return Err(usage_text().into()),
                 }
             }
-            let provider = provider.ok_or_else(|| USAGE.to_string())?;
+            let provider = provider.ok_or_else(|| usage_text().to_string())?;
             let provider = khor_node::Provider::parse(&provider)
                 .ok_or_else(|| msg::no_such_provider(&provider))?;
             // **Absent is 「bill」, and a word that is present is
@@ -3704,7 +3730,7 @@ fn accounts(rest: &[String]) -> Result<(), String> {
             let key = match key {
                 Some(key) => key,
                 None if kind.is_sub() => String::new(),
-                None => return Err(USAGE.into()),
+                None => return Err(usage_text().into()),
             };
             let a = n.register_account(&name, provider, kind, base_url.as_deref(), &key, budget)?;
             println!("{}", a.id);
@@ -3712,7 +3738,7 @@ fn accounts(rest: &[String]) -> Result<(), String> {
         }
         Some((word, tail)) if word == "rm" => {
             let [which] = tail else {
-                return Err(USAGE.into());
+                return Err(usage_text().into());
             };
             // By id or by name — a name is what a person remembers, and
             // it is refused when two accounts share it rather than
@@ -3731,7 +3757,7 @@ fn accounts(rest: &[String]) -> Result<(), String> {
             };
             n.remove_account(&id)
         }
-        Some(_) => Err(USAGE.into()),
+        Some(_) => Err(usage_text().into()),
     }
 }
 
@@ -3739,14 +3765,14 @@ fn accounts(rest: &[String]) -> Result<(), String> {
 /// read now and the others' as last carried here (`Node::quota_board`).
 fn quota(rest: &[String]) -> Result<(), String> {
     if !rest.is_empty() {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     }
     let n = node()?;
     let names: std::collections::HashMap<String, String> =
         n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
     let board = rt()?.block_on(n.quota_board())?;
     if board.is_empty() {
-        println!("{}", cli::ACCOUNTS_NONE);
+        println!("{}", cli::accounts_none());
     }
     for (r, age_ms) in board {
         let home = names
@@ -3758,7 +3784,7 @@ fn quota(rest: &[String]) -> Result<(), String> {
             (Some(t), _, _, _) => cli::quota_trouble(t),
             (None, Some(s), Some(l), _) => format!("{s:.2}/{l:.2} {currency}"),
             (None, Some(s), None, _) if r.unlimited => {
-                format!("{s:.2} {currency} {}", cli::QUOTA_UNLIMITED)
+                format!("{s:.2} {currency} {}", cli::quota_unlimited())
             }
             (None, Some(s), None, _) => format!("{s:.2} {currency}"),
             // A wallet says what is left and nothing about what went.
@@ -3771,7 +3797,7 @@ fn quota(rest: &[String]) -> Result<(), String> {
             // the one fact this row has that a billed account has not
             // (empty when the credential did not name one).
             (None, None, _, None) if !r.windows.is_empty() => r.plan.clone().unwrap_or_default(),
-            (None, None, _, None) => cli::QUOTA_NO_NUMBER.to_owned(),
+            (None, None, _, None) => cli::quota_no_number().to_owned(),
         };
         let share = r
             .fill
@@ -3799,7 +3825,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
                 // An empty registry and a broken one look identical;
                 // this line is the difference, and it is also the one
                 // thing a person cannot guess.
-                println!("{}", cli::AGENTS_NONE);
+                println!("{}", cli::agents_none());
             }
             for (name, spec) in listed {
                 println!("{name}\t{}", spec.typed());
@@ -3813,7 +3839,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
         // this person has never used beside the ones they run daily.
         Some((word, tail)) if word == "known" => {
             if !tail.is_empty() {
-                return Err(USAGE.into());
+                return Err(usage_text().into());
             }
             use khor_node::agent_registry::{KNOWN, STARTABLE, TAKEN};
             println!("{}", cli::agents_known_head(TAKEN, KNOWN.len(), STARTABLE));
@@ -3827,10 +3853,10 @@ fn agents(rest: &[String]) -> Result<(), String> {
                         "{}\t{}\t{}\t{}",
                         k.id,
                         k.name,
-                        cli::AGENTS_KNOWN_STARTABLE,
+                        cli::agents_known_startable(),
                         argv.join(" ")
                     ),
-                    None => println!("{}\t{}\t{}", k.id, k.name, cli::AGENTS_KNOWN_BYHAND),
+                    None => println!("{}\t{}\t{}", k.id, k.name, cli::agents_known_byhand()),
                 }
             }
             Ok(())
@@ -3847,7 +3873,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
             let (name, ask) = match tail {
                 [name] => (name, false),
                 [name, flag] if flag == "--ask" => (name, true),
-                _ => return Err(USAGE.into()),
+                _ => return Err(usage_text().into()),
             };
             let seen = if ask {
                 Some(n.refresh_agent_sessions(name)?)
@@ -3900,7 +3926,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
             // after the name is the command either way, and a person
             // who typed the separator should not be told they are
             // wrong for it.
-            let (name, argv) = tail.split_first().ok_or_else(|| USAGE.to_string())?;
+            let (name, argv) = tail.split_first().ok_or_else(|| usage_text().to_string())?;
             let argv: Vec<String> = argv
                 .iter()
                 .filter(|a| a.as_str() != "--")
@@ -3939,7 +3965,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
         }
         Some((word, tail)) if word == "rm" => {
             let [name] = tail else {
-                return Err(USAGE.into());
+                return Err(usage_text().into());
             };
             // Said before the removal, because after it the answer is
             // the same either way — and a typo that prints 「不再登记」
@@ -3956,7 +3982,7 @@ fn agents(rest: &[String]) -> Result<(), String> {
             );
             Ok(())
         }
-        Some(_) => Err(USAGE.into()),
+        Some(_) => Err(usage_text().into()),
     }
 }
 
@@ -3983,8 +4009,8 @@ fn doctor(rest: &[String]) -> Result<(), String> {
     while let Some(word) = it.next() {
         match word.as_str() {
             "--json" => json = true,
-            "--fix" => fix = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone()),
-            _ => return Err(USAGE.into()),
+            "--fix" => fix = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone()),
+            _ => return Err(usage_text().into()),
         }
     }
     if let Some(key) = fix {
@@ -4027,10 +4053,10 @@ fn hooks(rest: &[String]) -> Result<(), String> {
             let mut incomplete = false;
             for (event, state) in &report.events {
                 let said = match state {
-                    khor_node::adaptor::claude::Installed::Here => cli::HOOK_HERE.to_owned(),
+                    khor_node::adaptor::claude::Installed::Here => cli::hook_here().to_owned(),
                     khor_node::adaptor::claude::Installed::Missing => {
                         incomplete = true;
-                        cli::HOOK_MISSING.to_owned()
+                        cli::hook_missing().to_owned()
                     }
                     khor_node::adaptor::claude::Installed::Elsewhere(cmd) => {
                         incomplete = true;
@@ -4040,14 +4066,14 @@ fn hooks(rest: &[String]) -> Result<(), String> {
                 println!("{event}\t{said}");
             }
             if incomplete {
-                println!("{}", cli::HOOKS_WORTH_INSTALLING);
+                println!("{}", cli::hooks_worth_installing());
             }
             Ok(())
         }
         [word] if word == "install" => {
             let done = n.install_hooks()?;
             println!("{}", cli::hooks_file(done.path.display()));
-            let list = |v: &[&str]| v.join(cli::NAME_SEPARATOR);
+            let list = |v: &[&str]| v.join(cli::name_separator());
             if !done.added.is_empty() {
                 println!("{}", cli::hooks_added(list(&done.added)));
             }
@@ -4058,7 +4084,7 @@ fn hooks(rest: &[String]) -> Result<(), String> {
                 println!("{}", cli::hooks_already(list(&done.unchanged)));
             }
             if !done.added.is_empty() || !done.repointed.is_empty() {
-                println!("{}", cli::HOOKS_RESTART_CLAUDE);
+                println!("{}", cli::hooks_restart_claude());
             }
             Ok(())
         }
@@ -4070,17 +4096,17 @@ fn hooks(rest: &[String]) -> Result<(), String> {
             // hand, and a second run that printed the same thing as the
             // first would be the only way to see that twice equals once.
             if done.removed.is_empty() {
-                println!("{}", cli::HOOKS_NONE_TO_REMOVE);
+                println!("{}", cli::hooks_none_to_remove());
             } else {
                 println!(
                     "{}",
-                    cli::hooks_removed(done.removed.join(cli::NAME_SEPARATOR))
+                    cli::hooks_removed(done.removed.join(cli::name_separator()))
                 );
-                println!("{}", cli::HOOKS_RESTART_CLAUDE);
+                println!("{}", cli::hooks_restart_claude());
             }
             Ok(())
         }
-        _ => Err(USAGE.into()),
+        _ => Err(usage_text().into()),
     }
 }
 
@@ -4098,7 +4124,7 @@ fn invite(_rest: &[String]) -> Result<(), String> {
 
 fn pair(rest: &[String]) -> Result<(), String> {
     let [ticket] = rest else {
-        return Err(USAGE.into());
+        return Err(usage_text().into());
     };
     let name = rt()?.block_on(node()?.pair(ticket))?;
     println!("{}", cli::paired_ok(name));
@@ -4113,7 +4139,7 @@ fn adopt(rest: &[String]) -> Result<(), String> {
     let (host, name) = match rest {
         [host] => (host, None),
         [host, name] => (host, Some(name.as_str())),
-        _ => return Err(USAGE.into()),
+        _ => return Err(usage_text().into()),
     };
     let n = node()?;
     let (_, name, tmux) = n.adopt_satellite(host, name)?;
@@ -4121,9 +4147,9 @@ fn adopt(rest: &[String]) -> Result<(), String> {
     println!(
         "{}",
         if tmux {
-            cli::SAT_TMUX_YES
+            cli::sat_tmux_yes()
         } else {
-            cli::SAT_TMUX_NO
+            cli::sat_tmux_no()
         }
     );
     Ok(())
@@ -4132,7 +4158,7 @@ fn adopt(rest: &[String]) -> Result<(), String> {
 fn sync(_rest: &[String]) -> Result<(), String> {
     let outcomes = rt()?.block_on(node()?.sync_now())?;
     if outcomes.is_empty() {
-        println!("{}", cli::NOTHING_TO_SYNC);
+        println!("{}", cli::nothing_to_sync());
     }
     for (name, verdict) in outcomes {
         match verdict {
@@ -4144,7 +4170,7 @@ fn sync(_rest: &[String]) -> Result<(), String> {
 }
 
 fn help(_rest: &[String]) -> Result<(), String> {
-    println!("{USAGE}");
+    println!("{}", usage_text());
     Ok(())
 }
 
@@ -4180,7 +4206,7 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
     // a pty freshly made by script(1) or a GUI reports 0×0, which is a
     // default-worthy size, not a disqualification.
     if unsafe { libc::isatty(0) } != 1 {
-        return Err(msg::ATTACH_NEEDS_TTY.into());
+        return Err(msg::attach_needs_tty().into());
     }
     let (cols, rows) = tty_size().unwrap_or((80, 24));
     let mut stream = connect_at(addr, cookie, cols, rows)?;
@@ -4278,7 +4304,7 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
                 }
                 key => eprintln!("{}", cli::link_dropped(state::word(key), &id.0)),
             },
-            None => eprintln!("{}", cli::SESSION_CLOSED),
+            None => eprintln!("{}", cli::session_closed()),
         }
     }
     // The stdin thread may still be blocked on read(2); leaving is how
@@ -4288,7 +4314,7 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
 
 #[cfg(not(unix))]
 fn attach_to(_n: &Node, _id: &SessionId) -> Result<(), String> {
-    Err(msg::ATTACH_WINDOWS_LATER.into())
+    Err(msg::attach_windows_later().into())
 }
 
 #[cfg(unix)]
@@ -4313,12 +4339,12 @@ fn raw_on() -> Result<libc::termios, String> {
     unsafe {
         let mut t: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(0, &mut t) != 0 {
-            return Err(msg::NO_TERMIOS.into());
+            return Err(msg::no_termios().into());
         }
         let saved = t;
         libc::cfmakeraw(&mut t);
         if libc::tcsetattr(0, libc::TCSANOW, &t) != 0 {
-            return Err(msg::NO_RAW_MODE.into());
+            return Err(msg::no_raw_mode().into());
         }
         Ok(saved)
     }
@@ -4343,12 +4369,12 @@ fn raw_off(saved: &libc::termios) {
 fn print_face(style: &AvatarStyle) {
     let mark = |on: bool| {
         if on {
-            format!("\t{}", cli::IN_USE)
+            format!("\t{}", cli::in_use())
         } else {
             String::new()
         }
     };
-    println!("{}", cli::group_header(avatar::AXIS_PALETTE));
+    println!("{}", cli::group_header(avatar::axis_palette()));
     println!("{}", style.palette.colors().join("\t"));
     let worn = style.palette.preset_id();
     for p in PRESETS {
@@ -4359,7 +4385,7 @@ fn print_face(style: &AvatarStyle) {
             mark(worn == Some(p.id))
         );
     }
-    println!("{}", cli::group_header(avatar::AXIS_VARIANT));
+    println!("{}", cli::group_header(avatar::axis_variant()));
     for v in Variant::ALL {
         println!(
             "{}\t{}{}",
@@ -4368,7 +4394,7 @@ fn print_face(style: &AvatarStyle) {
             mark(v == style.variant)
         );
     }
-    println!("{}", cli::group_header(avatar::AXIS_SHAPE));
+    println!("{}", cli::group_header(avatar::axis_shape()));
     for s in FaceShape::ALL {
         println!(
             "{}\t{}{}",
@@ -4387,7 +4413,7 @@ fn print_face(style: &AvatarStyle) {
 /// Without the prefixes a machine called `busy` would come out 忙碌.
 fn group_word(group: &str) -> String {
     if group == list::GROUP_PINNED {
-        return cli::GROUP_PINNED.to_owned();
+        return cli::group_pinned().to_owned();
     }
     if let Some(key) = group.strip_prefix(list::GROUP_STATE) {
         return state::word(key).to_owned();
@@ -4420,7 +4446,7 @@ fn human_age(ms: u64) -> String {
 
 fn render(m: &khor_node::Message) -> String {
     if m.retracted {
-        return cli::RETRACTED.into();
+        return cli::retracted().into();
     }
     match &m.body {
         MsgBody::Text(t) => t.clone(),
@@ -4457,7 +4483,11 @@ fn render(m: &khor_node::Message) -> String {
 #[cfg(test)]
 mod gate {
     use super::{NOT_IN_USAGE, NOTHING_TYPED, Reach, VERBS};
-    use khor_catalog::cli::USAGE;
+    // **Aliased**, because this file already has a verb called `usage`
+    // (`khor usage`, what each machine spent). The catalog's is the help
+    // text; 批 D3 turned it from a const into a function, which is when the
+    // two names met.
+    use khor_catalog::cli::usage as usage_text;
 
     /// The words the usage promises, read back out of the text a person
     /// reads.
@@ -4468,7 +4498,7 @@ mod gate {
     /// only prove the two lists agree, and the text somebody actually
     /// reads could still say anything.
     fn promised() -> Vec<&'static str> {
-        USAGE
+        usage_text()
             .lines()
             .filter_map(|l| l.strip_prefix("  "))
             .filter(|l| !l.starts_with(' '))

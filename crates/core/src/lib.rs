@@ -2200,8 +2200,8 @@ pub struct Session {
     /// Events not yet seen. Seen state replicates, so clearing it on one
     /// device clears it everywhere.
     pub unread: u64,
-    /// **Whose** session this is (`claude`, `codex`, [`category::KHOR`],
-    /// [`category::SHELL`]) — a different question from [`Session::kind`],
+    /// **Whose** session this is (`claude`, `codex`, [`category::khor()`],
+    /// [`category::shell()`]) — a different question from [`Session::kind`],
     /// which is what *shape* it is (a tui, a chat, a transfer). One
     /// machine's list is mostly tui rows, and the useful cut across them
     /// is which agent they belong to.
@@ -2214,7 +2214,7 @@ pub struct Session {
     ///
     /// `None` means nobody could place it, and it stays `None`: a row
     /// khor started as a tui but cannot attribute to any vendor is not
-    /// [`category::SHELL`] — filing it under a neighbour would be a
+    /// [`category::shell()`] — filing it under a neighbour would be a
     /// confident wrong answer where an honest gap belongs (docs/SESSION.md
     /// 认不出就不落词, the same rule the state words follow).
     ///

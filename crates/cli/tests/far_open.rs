@@ -204,7 +204,7 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     .expect("the refusal must not hang");
     assert_eq!(
         refused.as_ref().err().map(String::as_str),
-        Some(khor_catalog::msg::NO_AGENTS_REGISTERED),
+        Some(khor_catalog::msg::no_agents_registered()),
         "an unregistered name must come back as alpha's own refusal: {refused:?}"
     );
 

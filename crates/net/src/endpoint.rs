@@ -170,7 +170,7 @@ pub async fn bind_with(
     // finds; registered on the builder all the same (`Prebuilt`).
     let mdns = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
         .build(secret.public())
-        .context(msg::NO_LOCAL_LOOKUP)?;
+        .context(msg::no_local_lookup())?;
     follow(mdns.clone());
     let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
         .secret_key(secret)
@@ -303,7 +303,7 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
 /// they come from tickets and stored hints, and one typo must not kill
 /// the dial.
 pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<iroh::EndpointAddr> {
-    let id: iroh::EndpointId = id_hex.parse().context(msg::NOT_A_MACHINE_ID_SHORT)?;
+    let id: iroh::EndpointId = id_hex.parse().context(msg::not_a_machine_id_short())?;
     let mut addr = iroh::EndpointAddr::new(id);
     // **What mDNS saw goes in beside the stored hints, not instead of
     // them.** A machine on this segment is usually also in the device
@@ -423,8 +423,8 @@ impl Ticket {
         use base64::Engine;
         let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(text.trim())
-            .context(msg::NOT_A_TICKET_BASE64)?;
-        serde_json::from_slice(&bytes).context(msg::NOT_A_TICKET_CONTENT)
+            .context(msg::not_a_ticket_base64())?;
+        serde_json::from_slice(&bytes).context(msg::not_a_ticket_content())
     }
 }
 
@@ -477,7 +477,7 @@ mod tests {
         // at the content gate; either refusal is the ticket wording.
         let e = Ticket::decode("not-a-ticket").unwrap_err().to_string();
         assert!(
-            e.contains(msg::NOT_A_TICKET_CONTENT) || e.contains(msg::NOT_A_TICKET_BASE64),
+            e.contains(msg::not_a_ticket_content()) || e.contains(msg::not_a_ticket_base64()),
             "{e}"
         );
     }

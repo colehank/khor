@@ -16,7 +16,7 @@ use khor_catalog::msg;
 pub fn load_or_create(path: &Path) -> Result<iroh::SecretKey> {
     if path.exists() {
         check_private_permissions(path)?;
-        let raw = std::fs::read(path).context(msg::IDENTITY_UNREADABLE)?;
+        let raw = std::fs::read(path).context(msg::identity_unreadable())?;
         let bytes: [u8; 32] = raw
             .as_slice()
             .try_into()
@@ -38,7 +38,7 @@ fn write_private(path: &Path, data: &[u8]) -> Result<()> {
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-            .context(msg::CANT_SET_PERMISSIONS)?;
+            .context(msg::cant_set_permissions())?;
     }
     Ok(())
 }

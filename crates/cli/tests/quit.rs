@@ -106,7 +106,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
     let said = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "quit must exit 0: {said}");
     assert!(
-        said.contains(khor_catalog::msg::QUIT_SERVE_STOPPED),
+        said.contains(khor_catalog::msg::quit_serve_stopped()),
         "quit must say the serve stopped: {said}"
     );
     assert!(
@@ -149,7 +149,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
     let said = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success());
     assert!(
-        said.contains(khor_catalog::msg::QUIT_NO_SERVE),
+        said.contains(khor_catalog::msg::quit_no_serve()),
         "a quit with nothing to stop must say so: {said}"
     );
 

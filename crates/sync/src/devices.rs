@@ -469,7 +469,7 @@ impl DeviceDoc {
     ///
     /// **Leaving is expressed as "not in the table", which is why this
     /// needs no new gate.** Every door already refuses a machine the
-    /// table does not hold (`msg::NOT_PAIRED`), and [`DeviceDoc::all`]
+    /// table does not hold (`msg::not_paired()`), and [`DeviceDoc::all`]
     /// — the only way anything reads this doc — skips a machine that is
     /// `gone`. So the whole of "it can no longer act here" falls out of
     /// one bit, rather than out of a list of places that must each

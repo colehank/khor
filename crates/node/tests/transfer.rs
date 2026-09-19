@@ -241,7 +241,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .unwrap_err();
     assert_eq!(
         err,
-        khor_catalog::msg::OFFERED_FILE_CHANGED,
+        khor_catalog::msg::offered_file_changed(),
         "a tampered source is refused by name"
     );
 
@@ -282,7 +282,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .unwrap_err();
     assert_eq!(
         err,
-        khor_catalog::msg::OFFER_LOST,
+        khor_catalog::msg::offer_lost(),
         "an unrecorded digest is refused by name"
     );
 

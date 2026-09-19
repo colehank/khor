@@ -997,7 +997,7 @@ impl Node {
         // Refused here rather than quietly downgraded, because a switch
         // that turns itself back off is a screen lying about its state.
         if only_mine && kept.is_empty() {
-            return Err(msg::RELAYS_ONLY_MINE_NEEDS_ONE.to_string());
+            return Err(msg::relays_only_mine_needs_one().to_string());
         }
         let doc = serde_json::json!({ "relays": kept, "only_mine": only_mine });
         link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
@@ -1030,19 +1030,19 @@ impl Node {
         let mut style = self.avatar_style();
         if let Some(colors) = colors {
             style.palette = Palette::parse(colors).ok_or_else(|| {
-                msg::not_a_palette(colors.join(khor_catalog::cli::NAME_SEPARATOR))
+                msg::not_a_palette(colors.join(khor_catalog::cli::name_separator()))
             })?;
         }
         if let Some(key) = variant {
             style.variant = Variant::from_key(key).ok_or_else(|| {
                 let all: Vec<&str> = Variant::ALL.iter().map(|v| v.key()).collect();
-                msg::not_a_variant(key, all.join(khor_catalog::cli::NAME_SEPARATOR))
+                msg::not_a_variant(key, all.join(khor_catalog::cli::name_separator()))
             })?;
         }
         if let Some(key) = shape {
             style.shape = FaceShape::from_key(key).ok_or_else(|| {
                 let all: Vec<&str> = FaceShape::ALL.iter().map(|s| s.key()).collect();
-                msg::not_a_face_shape(key, all.join(khor_catalog::cli::NAME_SEPARATOR))
+                msg::not_a_face_shape(key, all.join(khor_catalog::cli::name_separator()))
             })?;
         }
         self.set_avatar_style(&style)?;
@@ -1346,12 +1346,12 @@ impl Node {
         }
         let known = loaded.doc.all();
         if known.is_empty() {
-            return Err(msg::NO_AGENTS_REGISTERED.into());
+            return Err(msg::no_agents_registered().into());
         }
         let names: Vec<&str> = known.iter().map(|(n, _)| n.as_str()).collect();
         Err(msg::no_such_agent(
             name,
-            names.join(khor_catalog::cli::NAME_SEPARATOR),
+            names.join(khor_catalog::cli::name_separator()),
         ))
     }
 
@@ -1390,12 +1390,12 @@ impl Node {
     pub fn register_agent(&self, name: &str, argv: &[String]) -> Result<(), String> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(msg::AGENT_NAME_BLANK.into());
+            return Err(msg::agent_name_blank().into());
         }
         if Self::RESERVED_AGENT_NAMES.contains(&name) {
             return Err(msg::agent_name_reserved(name));
         }
-        let spec = AgentSpec::from_argv(argv).ok_or(msg::AGENT_NEEDS_A_COMMAND)?;
+        let spec = AgentSpec::from_argv(argv).ok_or(msg::agent_needs_a_command())?;
         let loaded = self.agents_loaded()?;
         loaded.doc.set(name, &spec)?;
         let mut store = loaded.store;
@@ -1782,7 +1782,7 @@ impl Node {
                 let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
                 Err(msg::no_such_machine(
                     machine,
-                    names.join(khor_catalog::cli::NAME_SEPARATOR),
+                    names.join(khor_catalog::cli::name_separator()),
                 ))
             }
         }
@@ -2531,7 +2531,7 @@ impl Node {
     pub fn forget_device(&self, machine: &str) -> Result<String, String> {
         let (name, home) = self.resolve(machine)?;
         if home == self.device() {
-            return Err(msg::CANT_FORGET_SELF.into());
+            return Err(msg::cant_forget_self().into());
         }
         let loaded = self.devices_loaded()?;
         loaded.doc.set_gone(&home.hex(), true)?;
@@ -3415,12 +3415,12 @@ impl Node {
         match (&picked, form) {
             // The TUI form needs a pre-nameable session, and a bare
             // thread/start writes no rollout to resume (probed).
-            (Picked::Codex, "term") => return Err(msg::WIZARD_CODEX_CHAT_ONLY.into()),
+            (Picked::Codex, "term") => return Err(msg::wizard_codex_chat_only().into()),
             (Picked::Registered(..), "term") => {
-                return Err(msg::WIZARD_REGISTERED_NO_TERMINAL.into());
+                return Err(msg::wizard_registered_no_terminal().into());
             }
             (Picked::Registered(..), "agent") => {
-                return Err(msg::WIZARD_REGISTERED_NO_SCHEDULER.into());
+                return Err(msg::wizard_registered_no_scheduler().into());
             }
             _ => {}
         }
@@ -4270,7 +4270,7 @@ pub fn tidy_watch(paths: &[String]) -> Result<Vec<String>, String> {
     for raw in paths {
         let p = raw.trim();
         if p.is_empty() {
-            return Err(msg::WATCH_PATH_EMPTY.into());
+            return Err(msg::watch_path_empty().into());
         }
         if !p.starts_with('/') {
             return Err(msg::watch_path_relative(p));

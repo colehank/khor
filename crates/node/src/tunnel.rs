@@ -47,7 +47,7 @@ const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 async fn write_target(send: &mut SendStream, target: &str) -> Result<(), String> {
     let bytes = target.as_bytes();
     if bytes.len() > TARGET_MAX {
-        return Err(msg::TUNNEL_TARGET_TOO_LONG.into());
+        return Err(msg::tunnel_target_too_long().into());
     }
     send.write_all(&(bytes.len() as u16).to_be_bytes())
         .await
@@ -68,7 +68,7 @@ async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
         .map_err(msg::tunnel_bad_handshake)?;
     let len = u16::from_be_bytes(len) as usize;
     if len > TARGET_MAX {
-        return Err(msg::TUNNEL_TARGET_TOO_LONG.into());
+        return Err(msg::tunnel_target_too_long().into());
     }
     let mut buf = vec![0u8; len];
     recv.read_exact(&mut buf)
@@ -129,7 +129,7 @@ pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvSt
         .map_err(msg::tunnel_bad_handshake)?;
     match status[0] {
         OK => Ok((send, recv)),
-        REFUSED => Err(msg::NOT_PAIRED.into()),
+        REFUSED => Err(msg::not_paired().into()),
         NO_ROUTE => Err(msg::tunnel_no_route(target)),
         other => Err(msg::tunnel_bad_status(other)),
     }

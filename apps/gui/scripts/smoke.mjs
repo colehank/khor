@@ -8339,6 +8339,104 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     rmSync(CONF_HOME, { recursive: true, force: true });
   }
 
+  // 35) 语言 on a real home, through the real binary (docs/MORE.md 语言).
+  //
+  //      **The same command, twice, with one environment variable
+  //      different.** That is the whole of 「自动跟随系统语言」, and it
+  //      is the one thing no in-process test can check: `khor_catalog`'s
+  //      switch is process-wide, so proving it follows the environment
+  //      means starting two processes.
+  //
+  //      A scratch home of its own, §33's reason: this one writes a
+  //      preference.
+  {
+    const LANG_HOME = join(SCRATCH, "lang-home");
+    rmSync(LANG_HOME, { recursive: true, force: true });
+    mkdirSync(LANG_HOME, { recursive: true });
+    const base = homeEnv(LANG_HOME, "langbox");
+    // **Every locale variable set together**, because POSIX reads them
+    // in order and a leftover `LC_ALL` in the developer's shell would
+    // silently answer for both runs.
+    const withLocale = (tag) => ({ ...base, LC_ALL: tag, LC_MESSAGES: tag, LANG: tag });
+    // `khor config get` is the shortest command that prints a word khor
+    // owns… but its answer is a *key*, which does not translate. So the
+    // reading is taken off a **refusal**, which is a sentence: the same
+    // wrong value, refused twice.
+    const refusedIn = (env) => {
+      try {
+        execFileSync(KHOR, ["config", "set", "session-form", "holodeck"], {
+          env,
+          encoding: "utf8",
+          timeout: 30_000,
+        });
+        return null;
+      } catch (e) {
+        return String(e.stderr || e).trim();
+      }
+    };
+
+    const inZh = refusedIn(withLocale("zh_CN.UTF-8"));
+    const inEn = refusedIn(withLocale("en_US.UTF-8"));
+    if (!inZh || !inEn) {
+      throw new Error(`probe dead: the refusal printed nothing (${inZh} / ${inEn})`);
+    }
+    if (inZh === inEn) {
+      throw new Error(`the same refusal in both locales: ${JSON.stringify(inZh)}`);
+    }
+    // **Asked as 「does this sentence have Chinese in it」**, never by
+    // matching a sentence: the words are the catalog's, and a gate that
+    // spelled one out here would be reading the catalog to check the
+    // catalog.
+    //
+    // ⚠️ Not「is it ascii」, which is what this said first and what went
+    // red on its own first run: khor's English is typeset English — the
+    // refusal above carries an em dash and curly quotes, none of them
+    // ascii. What tells the two apart is Han characters.
+    const hasHan = (t) => /[\u3400-\u9FFF]/.test(t);
+    if (!hasHan(inZh)) {
+      throw new Error(`LANG=zh_CN.UTF-8 answered with no Chinese in it: ${JSON.stringify(inZh)}`);
+    }
+    if (hasHan(inEn)) {
+      throw new Error(`LANG=en_US.UTF-8 answered with Chinese in it: ${JSON.stringify(inEn)}`);
+    }
+    // …and a locale khor has no words for is English, never the source
+    // language: 「非 zh* 一律英文」.
+    const inJa = refusedIn(withLocale("ja_JP.UTF-8"));
+    if (inJa !== inEn) {
+      throw new Error(`an unsupported locale did not fall back to English: ${JSON.stringify(inJa)}`);
+    }
+
+    // **A stored choice beats the environment**, which is the other half
+    // of the ruling — and it is checked against the *opposite* locale,
+    // the only arrangement that tells 「the store was read」 apart from
+    // 「the environment happened to agree」.
+    cli(withLocale("en_US.UTF-8"), "config", "set", "lang", "zh");
+    const storedZh = refusedIn(withLocale("en_US.UTF-8"));
+    if (storedZh !== inZh) {
+      throw new Error(
+        `\`khor config set lang zh\` on an English machine still answered ${JSON.stringify(storedZh)}`,
+      );
+    }
+    cli(withLocale("zh_CN.UTF-8"), "config", "set", "lang", "en");
+    const storedEn = refusedIn(withLocale("zh_CN.UTF-8"));
+    if (storedEn !== inEn) {
+      throw new Error(
+        `\`khor config set lang en\` on a Chinese machine still answered ${JSON.stringify(storedEn)}`,
+      );
+    }
+    // Back to 跟系统, and the environment wins again.
+    cli(withLocale("zh_CN.UTF-8"), "config", "set", "lang", "auto");
+    if (refusedIn(withLocale("en_US.UTF-8")) !== inEn) {
+      throw new Error("`lang auto` did not hand the answer back to the environment");
+    }
+
+    console.log(
+      "lang: the same refusal came back Chinese under zh_CN and English under en_US, an " +
+        "unsupported locale fell back to English, and a stored `lang` beat the environment both ways",
+    );
+    rmSync(LANG_HOME, { recursive: true, force: true });
+  }
+
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 

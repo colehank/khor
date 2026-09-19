@@ -63,8 +63,8 @@ pub fn three(base: &str, mine: &str, theirs: &str) -> Merged {
     let mut input = gix::diff::blob::InternedInput::default();
     let labels = text::Labels {
         ancestor: None,
-        current: Some(msg::MERGE_MINE.into()),
-        other: Some(msg::MERGE_THEIRS.into()),
+        current: Some(msg::merge_mine().into()),
+        other: Some(msg::merge_theirs().into()),
     };
     builtin_driver::text(
         &mut out,
@@ -104,7 +104,7 @@ fn clashes(text: &str) -> u32 {
     let head = format!(
         "{} {}",
         "<".repeat(text::Conflict::DEFAULT_MARKER_SIZE as usize),
-        msg::MERGE_MINE
+        msg::merge_mine()
     );
     text.lines().filter(|l| *l == head).count() as u32
 }
@@ -174,8 +174,8 @@ mod tests {
             m.text,
             format!(
                 "one\n<<<<<<< {}\nMINE\nthree\n=======\ntwo\nTHEIRS\n>>>>>>> {}\n",
-                msg::MERGE_MINE,
-                msg::MERGE_THEIRS
+                msg::merge_mine(),
+                msg::merge_theirs()
             )
         );
     }
@@ -228,12 +228,12 @@ mod tests {
     fn the_markers_carry_both_sides_names() {
         let m = three("a\n", "mine\n", "theirs\n");
         assert!(
-            m.text.contains(msg::MERGE_MINE),
+            m.text.contains(msg::merge_mine()),
             "mine is named: {}",
             m.text
         );
         assert!(
-            m.text.contains(msg::MERGE_THEIRS),
+            m.text.contains(msg::merge_theirs()),
             "theirs is named: {}",
             m.text
         );

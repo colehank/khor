@@ -236,7 +236,7 @@ impl Node {
     ) -> Result<Account, String> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(msg::ACCOUNT_NAME_BLANK.into());
+            return Err(msg::account_name_blank().into());
         }
         match kind {
             AccountKind::Sub => {
@@ -247,10 +247,10 @@ impl Node {
         }
         let key = key.trim();
         if key.is_empty() {
-            return Err(msg::ACCOUNT_KEY_BLANK.into());
+            return Err(msg::account_key_blank().into());
         }
         let base_url = match (&provider, base_url.map(str::trim).filter(|u| !u.is_empty())) {
-            (Provider::Newapi, None) => return Err(msg::ACCOUNT_NEEDS_ADDRESS.into()),
+            (Provider::Newapi, None) => return Err(msg::account_needs_address().into()),
             (Provider::Newapi, Some(u)) => {
                 if !(u.starts_with("http://") || u.starts_with("https://")) {
                     return Err(msg::account_address_bad(u));
@@ -264,7 +264,7 @@ impl Node {
         if let Some(b) = budget
             && !(b.is_finite() && b > 0.0)
         {
-            return Err(msg::ACCOUNT_BUDGET_BAD.into());
+            return Err(msg::account_budget_bad().into());
         }
         let account = Account {
             id: link::fresh_hex()?,
@@ -317,7 +317,7 @@ impl Node {
     ) -> Result<Account, String> {
         let given_address = base_url.map(str::trim).is_some_and(|u| !u.is_empty());
         if !key.trim().is_empty() || given_address || budget.is_some() {
-            return Err(msg::ACCOUNT_SUB_TAKES_NOTHING_ELSE.into());
+            return Err(msg::account_sub_takes_nothing_else().into());
         }
         let Some(reader) = sub_reader(&provider) else {
             return Err(msg::provider_has_no_sub(
@@ -340,7 +340,7 @@ impl Node {
             return Err(msg::account_sub_already_here(had.name));
         }
         if !reader.logged_in() {
-            return Err(msg::ACCOUNT_SUB_NO_LOGIN.into());
+            return Err(msg::account_sub_no_login().into());
         }
         self.commit_account(Account {
             id: link::fresh_hex()?,
@@ -439,7 +439,7 @@ impl Node {
         let mut account = loaded.doc.get(id).ok_or_else(|| msg::no_such_account(id))?;
         let name = name.trim();
         if name.is_empty() {
-            return Err(msg::ACCOUNT_NAME_BLANK.into());
+            return Err(msg::account_name_blank().into());
         }
         // The same two checks registration makes, in the same order and
         // with the same sentences — an edit that accepted an address
@@ -449,7 +449,7 @@ impl Node {
             &account.provider,
             base_url.map(str::trim).filter(|u| !u.is_empty()),
         ) {
-            (Provider::Newapi, None) => return Err(msg::ACCOUNT_NEEDS_ADDRESS.into()),
+            (Provider::Newapi, None) => return Err(msg::account_needs_address().into()),
             (Provider::Newapi, Some(u)) => {
                 if !(u.starts_with("http://") || u.starts_with("https://")) {
                     return Err(msg::account_address_bad(u));
@@ -461,7 +461,7 @@ impl Node {
         if let Some(b) = budget
             && !(b.is_finite() && b > 0.0)
         {
-            return Err(msg::ACCOUNT_BUDGET_BAD.into());
+            return Err(msg::account_budget_bad().into());
         }
         if let Some(key) = key.map(str::trim).filter(|k| !k.is_empty()) {
             if account.home != self.device_str() {
@@ -2620,7 +2620,7 @@ mod tests {
                 "no-such-provider does not name {w}: {refusal}"
             );
             assert!(
-                khor_catalog::cli::USAGE.contains(w),
+                khor_catalog::cli::usage().contains(w),
                 "the usage text does not name {w}"
             );
         }
@@ -2779,7 +2779,7 @@ mod tests {
             n.register_account("s", p, AccountKind::Sub, url, key, budget)
                 .unwrap_err()
         };
-        let no_use = msg::ACCOUNT_SUB_TAKES_NOTHING_ELSE;
+        let no_use = msg::account_sub_takes_nothing_else();
         assert_eq!(add(Provider::Claude, None, "sk-x", None), no_use, "a key");
         assert_eq!(
             add(Provider::Claude, Some("https://gw"), "", None),

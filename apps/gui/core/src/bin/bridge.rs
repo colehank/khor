@@ -30,6 +30,10 @@ fn main() {
     // bridge, and terminals waited forever (host.rs `main_if_host`).
     khor_node::host::main_if_host(khor_node::Node::root_from_env());
     let root = Node::root_from_env();
+    // 语言 (docs/MORE.md), the same call every other binary makes at
+    // startup: the browser face resolves its own, and this is the Rust
+    // half behind it — refusals and 自检 rows cross back as text.
+    khor_node::config::apply_lang(&root);
     let port: u16 = std::env::var("BRIDGE_PORT")
         .ok()
         .and_then(|p| p.parse().ok())

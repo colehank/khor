@@ -118,7 +118,7 @@ fn a_directory_becomes_a_row_named_after_itself_and_comes_back_off() {
             .lines()
             .next()
             .unwrap()
-            .starts_with(khor_catalog::cli::PINNED_MARK),
+            .starts_with(khor_catalog::cli::pinned_mark()),
         "and says so: {listed}"
     );
 

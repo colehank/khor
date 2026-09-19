@@ -61,11 +61,13 @@ square = "Square"
 # names and value names all cross the wire, so these are data with the
 # same shape as the state words and the face options.
 appearance = "Appearance"
+language = "Language"
 session = "Sessions"
 workspace = "Workspace"
 confirm = "Ask before"
 
 theme = "Light or dark"
+lang = "Interface language"
 session-form = "New sessions open as"
 files-click = "Single click"
 # Under "Ask before", so each key names the act rather than repeating
@@ -78,6 +80,10 @@ confirm-ws-remove = "Removing a workspace"
 auto = "Match system"
 light = "Light"
 dark = "Dark"
+# Each language names itself, identically in both files: somebody who
+# cannot read the interface finds the way out by these two words.
+zh = "中文"
+en = "English"
 chat = "Chat"
 term = "Terminal"
 preview = "Preview"

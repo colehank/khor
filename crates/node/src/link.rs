@@ -74,7 +74,7 @@ impl DeafWatch {
         let mut failures = 0u32;
         for (_, verdict) in outcomes {
             match verdict {
-                Err(why) if why == msg::NO_ROADS_REPORTED => continue,
+                Err(why) if why == msg::no_roads_reported() => continue,
                 Err(_) => {
                     candidates += 1;
                     failures += 1;
@@ -404,7 +404,7 @@ impl Node {
         let reply = match proto::decode::<ipc::Handoff>(&bytes) {
             Ok(h) if h.cookie == cookie => self.run_handoff(ep, h.op).await,
             Ok(_) => ipc::Reply::Refused {
-                why: msg::HANDOFF_WRONG_COOKIE.into(),
+                why: msg::handoff_wrong_cookie().into(),
             },
             Err(e) => ipc::Reply::Refused { why: e },
         };
@@ -1069,7 +1069,7 @@ impl Node {
             Request::Pair { token, name, addrs } => {
                 let path = self.invite_path(&token)?;
                 if !path.exists() {
-                    return Err(msg::BAD_INVITE.into());
+                    return Err(msg::bad_invite().into());
                 }
                 // **Expired is its own answer, not "wrong code".** The
                 // two have different fixes: a wrong or spent code means
@@ -1103,7 +1103,7 @@ impl Node {
             }
             Request::Sync { doc, have, changes } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let reply = if doc == "devices" {
                     let mut loaded = self.devices_loaded()?;
@@ -1151,13 +1151,13 @@ impl Node {
             }
             Request::Fetch { digest, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 self.serve_slice(&digest, offset)
             }
             Request::Sessions => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 Ok(Response::SessionRows {
                     rows: self.reportable_rows()?,
@@ -1165,7 +1165,7 @@ impl Node {
             }
             Request::Days => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // A file read, off the reactor for the reason every
                 // registry read is (the `Ls` arm's note).
@@ -1182,7 +1182,7 @@ impl Node {
                 agent,
             } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // The wizard's own call, on the machine that will run
                 // it — off the reactor for the `Open` arm's reason, and
@@ -1198,7 +1198,7 @@ impl Node {
             }
             Request::Places => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Reads every vendor's records (the `Ls` arm's note).
                 let root = self.root().to_path_buf();
@@ -1211,7 +1211,7 @@ impl Node {
             }
             Request::Remove { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor: a directory going whole is a walk,
                 // and `write` already holds that line for its own
@@ -1226,7 +1226,7 @@ impl Node {
             }
             Request::Mkdir { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor with `Remove`, for `Remove`'s reason.
                 tokio::task::spawn_blocking(move || crate::files::mkdir(&path))
@@ -1236,7 +1236,7 @@ impl Node {
             }
             Request::RenamePath { from, to } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 tokio::task::spawn_blocking(move || crate::files::rename_path(&from, &to))
                     .await
@@ -1245,7 +1245,7 @@ impl Node {
             }
             Request::Launch { target } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor: starting a process is a fork, and a
                 // fork on the reactor is the one thing that stops every
@@ -1257,7 +1257,7 @@ impl Node {
             }
             Request::Search { dir, query } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor with `Touched` below, for its reason
                 // and more of it: this walks a project's files and
@@ -1269,7 +1269,7 @@ impl Node {
             }
             Request::Touched { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor: a walk of somebody's project tree is
                 // thousands of stat() calls, and the cap is 20_000 of
@@ -1282,7 +1282,7 @@ impl Node {
             }
             Request::GitStatus { root } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Blocking on purpose and off the reactor: the walk is
                 // three threads of stat() and object reads, measured at
@@ -1303,7 +1303,7 @@ impl Node {
             }
             Request::GitDiff { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let file = std::path::PathBuf::from(path);
                 let d = tokio::task::spawn_blocking(move || crate::git::diff(&file))
@@ -1316,7 +1316,7 @@ impl Node {
             }
             Request::WritePath { path, was, bytes } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Blocking: a read of the file, a write of a temporary,
                 // an fsync and a rename. The fsync is the one that can
@@ -1332,7 +1332,7 @@ impl Node {
             }
             Request::CodeHere => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // One spawn of `code --version`, ~70 ms measured. Off
                 // the reactor for the same reason every other spawn in
@@ -1347,7 +1347,7 @@ impl Node {
             }
             Request::CodeServe { .. } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // **This is the one op in this file that can take
                 // minutes.** A first run fetches 643 MB from Microsoft
@@ -1361,7 +1361,7 @@ impl Node {
             }
             Request::CodeStop { .. } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 tokio::task::spawn_blocking(crate::code::stop)
                     .await
@@ -1373,7 +1373,7 @@ impl Node {
             }
             Request::Quotas => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Reads the providers when the cache has aged out —
                 // seconds of HTTP, off the reactor for the `Vitals`
@@ -1392,7 +1392,7 @@ impl Node {
             }
             Request::Load { top, by, desc } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // A process table and a file read, off the reactor for
                 // the `Vitals` arm's reason (the first process-table
@@ -1407,7 +1407,7 @@ impl Node {
             }
             Request::Vitals => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Taken here, now — the answer is only ever about the
                 // moment the asker gets it (`khor_core::Vitals`).
@@ -1428,7 +1428,7 @@ impl Node {
             }
             Request::Watched => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // The list is this machine's own row in the table — the
                 // asker wrote it there, and it arrived on the sync round
@@ -1443,7 +1443,7 @@ impl Node {
             }
             Request::Usage => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // **Off the reactor, for the reason vitals is** — the
                 // rule this codebase settled on is "how long does it
@@ -1465,7 +1465,7 @@ impl Node {
             }
             Request::Act { session, action } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 match action.as_str() {
                     "accept" => {
@@ -1500,7 +1500,7 @@ impl Node {
             }
             Request::Ls { path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor for the standing reason ("how long
                 // does it block", 坑节): a directory on a network mount
@@ -1525,7 +1525,7 @@ impl Node {
                 rows,
             } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Defaults are resolved **here**, on the machine that
                 // will run it: the asker's home and the asker's `$SHELL`
@@ -1567,7 +1567,7 @@ impl Node {
             }
             Request::Reach { session } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let id = crate::SessionId(session);
                 // The same door a click opens locally: a row with a
@@ -1598,7 +1598,7 @@ impl Node {
                 // socket, for a session that simply ended. Measured
                 // (the probe's `sleep` ran out mid-test).
                 if !crate::link::pid_alive(hf.host_pid) {
-                    return Err(msg::HOST_GONE.into());
+                    return Err(msg::host_gone().into());
                 }
                 Ok(Response::Reached {
                     port: hf.port,
@@ -1608,7 +1608,7 @@ impl Node {
             Request::SatVitals { sat } => {
                 let doc = self.devices_loaded()?.doc;
                 if doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Only a satellite this machine sponsors — answering
                 // for someone else's would put a second, staler voice
@@ -1623,12 +1623,12 @@ impl Node {
                 match self.vitals_of(&sat) {
                     Some((vitals, age_ms)) => Ok(Response::SatVitals { vitals, age_ms }),
                     // Not sampled yet: an honest gap, never zeros.
-                    None => Err(msg::SAT_NOT_SAMPLED_YET.into()),
+                    None => Err(msg::sat_not_sampled_yet().into()),
                 }
             }
             Request::SatLs { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 // Off the reactor: an ssh dial plus a per-entry stat.
@@ -1644,7 +1644,7 @@ impl Node {
             }
             Request::SatRemove { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 // Off the reactor with SatLs, for SatLs's reason.
@@ -1655,7 +1655,7 @@ impl Node {
             }
             Request::SatTouch { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 tokio::task::spawn_blocking(move || crate::satellite::touch(&host, &path))
@@ -1665,7 +1665,7 @@ impl Node {
             }
             Request::SatMkdir { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 // Off the reactor with SatLs, for SatLs's reason.
@@ -1676,7 +1676,7 @@ impl Node {
             }
             Request::SatRename { sat, from, to } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 tokio::task::spawn_blocking(move || {
@@ -1688,7 +1688,7 @@ impl Node {
             }
             Request::SatLaunch { sat, target } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 tokio::task::spawn_blocking(move || crate::satellite::launch(&host, &target))
@@ -1698,7 +1698,7 @@ impl Node {
             }
             Request::SatSearch { sat, dir, query } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 // Off the reactor with SatLs, for SatLs's reason: one
@@ -1712,7 +1712,7 @@ impl Node {
             }
             Request::SatTouched { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 // Off the reactor with SatLs, for SatLs's reason: one
@@ -1725,7 +1725,7 @@ impl Node {
             }
             Request::SatGitStatus { sat, root } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 let st =
@@ -1743,7 +1743,7 @@ impl Node {
             }
             Request::SatGitDiff { sat, path } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 let d =
@@ -1757,7 +1757,7 @@ impl Node {
             }
             Request::SatFetchPath { sat, path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 let (total, at_ms, bytes) = self.sat_slice(&sat, &host, &path, offset).await?;
@@ -1774,7 +1774,7 @@ impl Node {
                 bytes,
             } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 let host = self.my_satellite_host(&sat)?;
                 let (at_ms, digest) = self.sat_write(&sat, &host, &path, &was, &bytes).await?;
@@ -1782,7 +1782,7 @@ impl Node {
             }
             Request::FetchPath { path, offset } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
-                    return Err(msg::NOT_PAIRED.into());
+                    return Err(msg::not_paired().into());
                 }
                 // Off the reactor with Ls, for Ls's reason.
                 let (total, at_ms, bytes) =
@@ -1963,11 +1963,12 @@ impl Node {
     /// silently served (the digest would fail far away, much later).
     fn serve_slice(&self, digest: &str, offset: u64) -> Result<Response, String> {
         use std::io::{Read, Seek, SeekFrom};
-        let mut offer = crate::transfer::load_offer(self.root(), digest)?.ok_or(msg::OFFER_LOST)?;
+        let mut offer =
+            crate::transfer::load_offer(self.root(), digest)?.ok_or(msg::offer_lost())?;
         let meta = fs::metadata(&offer.path)
             .map_err(|e| msg::offered_file_unreadable(offer.path.display(), e))?;
         if meta.len() != offer.size {
-            return Err(msg::OFFERED_FILE_CHANGED.into());
+            return Err(msg::offered_file_changed().into());
         }
         if offset > offer.size {
             return Err(msg::offset_out_of_range(offset, offer.size));
@@ -2086,7 +2087,7 @@ impl Node {
         // (Direct browsing from this machine, with no exit, is its own
         // thing and on the ledger.)
         if home == self.device() {
-            return Err(msg::BORROW_SELF.into());
+            return Err(msg::borrow_self().into());
         }
         let target = self
             .devices_loaded()?
@@ -2288,7 +2289,7 @@ impl Node {
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
-            None => Err(msg::BORROW_NEEDS_SERVE.into()),
+            None => Err(msg::borrow_needs_serve().into()),
         }
     }
 
@@ -2313,7 +2314,7 @@ impl Node {
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
-            None => Err(msg::BORROW_NEEDS_SERVE.into()),
+            None => Err(msg::borrow_needs_serve().into()),
         }
     }
 
@@ -2585,7 +2586,7 @@ impl Node {
             // on screen. The guess is kept only for a refusal that
             // arrived empty-handed, which is the one case where there
             // is nothing to say but what we can infer.
-            Response::Refused { why } if why.trim().is_empty() => Err(msg::LOAD_PREDATES.into()),
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::load_predates().into()),
             Response::Refused { why } => Err(msg::load_refused(why)),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -3399,7 +3400,9 @@ impl Node {
                     behind,
                     fetched_ms,
                 }),
-                Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
+                Response::Refused { why } if why.trim().is_empty() => {
+                    Err(msg::git_predates().into())
+                }
                 Response::Refused { why } => Err(msg::git_refused(why)),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
@@ -3426,7 +3429,7 @@ impl Node {
             // Wordless means the op is unknown over there; words mean
             // that machine answered and its answer is the one to show
             // (the `load-*` pair's measured lesson, zh.toml).
-            Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::git_predates().into()),
             Response::Refused { why } => Err(msg::git_refused(why)),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -3484,7 +3487,9 @@ impl Node {
             };
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
-                Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
+                Response::Refused { why } if why.trim().is_empty() => {
+                    Err(msg::git_predates().into())
+                }
                 Response::Refused { why } => Err(msg::git_refused(why)),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
@@ -3494,7 +3499,7 @@ impl Node {
         };
         match self.ask(ep, &channel, &req).await? {
             Response::GitDiff { hunks, more } => Ok(crate::git::Diff { hunks, more }),
-            Response::Refused { why } if why.trim().is_empty() => Err(msg::GIT_PREDATES.into()),
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::git_predates().into()),
             Response::Refused { why } => Err(msg::git_refused(why)),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -3582,7 +3587,7 @@ impl Node {
             return match self.ask(ep, &sponsor, &req).await? {
                 Response::Wrote { at_ms, digest } => Ok((at_ms, digest)),
                 Response::Refused { why } if why.trim().is_empty() => {
-                    Err(msg::WRITE_PREDATES.into())
+                    Err(msg::write_predates().into())
                 }
                 Response::Refused { why } => Err(why),
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -3599,7 +3604,7 @@ impl Node {
             // version fact and never as「saved」**: the file view's next
             // move depends on it, and an old khor that cannot write is
             // not the same as a file it refused.
-            Response::Refused { why } if why.trim().is_empty() => Err(msg::WRITE_PREDATES.into()),
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::write_predates().into()),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -3709,7 +3714,7 @@ impl Node {
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
-            None => Err(msg::REACH_NEEDS_SERVE.into()),
+            None => Err(msg::reach_needs_serve().into()),
         }
     }
 
@@ -3737,7 +3742,7 @@ impl Node {
         {
             Response::CodeServing { port, token } => (port, token),
             Response::Refused { why } if why.trim().is_empty() => {
-                return Err(msg::CODE_PREDATES.into());
+                return Err(msg::code_predates().into());
             }
             Response::Refused { why } => return Err(why),
             other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
@@ -3789,7 +3794,7 @@ impl Node {
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
-            None => Err(msg::REACH_NEEDS_SERVE.into()),
+            None => Err(msg::reach_needs_serve().into()),
         }
     }
 
@@ -4039,7 +4044,7 @@ impl Node {
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
-            None => Err(msg::REACH_NEEDS_SERVE.into()),
+            None => Err(msg::reach_needs_serve().into()),
         }
     }
 
@@ -4377,12 +4382,12 @@ impl Node {
                     match contract {
                         None => contract = Some((total, at_ms)),
                         Some(c) if c != (total, at_ms) => {
-                            break Err(msg::FILE_CHANGED_MID_PULL.into());
+                            break Err(msg::file_changed_mid_pull().into());
                         }
                         Some(_) => {}
                     }
                     if bytes.is_empty() && total > 0 {
-                        break Err(msg::EMPTY_SLICE.into());
+                        break Err(msg::empty_slice().into());
                     }
                     if let Err(e) = out.write_all(&bytes) {
                         break Err(e.to_string());
@@ -4579,7 +4584,7 @@ impl Node {
             .devices_loaded()?
             .doc
             .get(&m.from.id)
-            .ok_or(msg::OFFERER_LEFT_TABLE)?;
+            .ok_or(msg::offerer_left_table())?;
         let dir = chat::channel_dir(self.root(), &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
         fs::create_dir_all(dir.join("files")).map_err(msg::cant_make_files_dir)?;
@@ -4589,7 +4594,7 @@ impl Node {
                 .dial(ep, &home.id, &home.addrs, ALPN)
                 .await
                 .map_err(|e| match e {
-                    DialFailure::TimedOut => msg::OFFERER_UNREACHABLE_TIMEOUT.to_string(),
+                    DialFailure::TimedOut => msg::offerer_unreachable_timeout().to_string(),
                     DialFailure::Refused(why) => msg::offerer_unreachable(why),
                 })?;
             let mut moved = 0u64;
@@ -4706,7 +4711,7 @@ impl Node {
     pub fn invite(&self) -> Result<String, String> {
         let file = self
             .endpoint_file()?
-            .ok_or(msg::SERVE_NOT_RUNNING_FOR_INVITE)?;
+            .ok_or(msg::serve_not_running_for_invite())?;
         let token = fresh_hex()?;
         let dir = self.root().join(".khor").join("invites");
         fs::create_dir_all(&dir).map_err(msg::cant_make_invites_dir)?;
@@ -4732,7 +4737,7 @@ impl Node {
     fn invite_path(&self, token: &str) -> Result<std::path::PathBuf, String> {
         // The token lands in a filename; only our own hex survives.
         if token.is_empty() || token.len() > 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err(msg::BAD_INVITE.into());
+            return Err(msg::bad_invite().into());
         }
         Ok(self.root().join(".khor").join("invites").join(token))
     }
@@ -4817,7 +4822,7 @@ impl Node {
             .dial_with(ep, &t.id, &t.direct, &relays, ALPN)
             .await
             .map_err(|e| match e {
-                DialFailure::TimedOut => msg::INVITER_UNREACHABLE_TIMEOUT.to_string(),
+                DialFailure::TimedOut => msg::inviter_unreachable_timeout().to_string(),
                 DialFailure::Refused(why) => msg::inviter_unreachable(why),
             })?;
         let resp = request(
@@ -4915,13 +4920,13 @@ impl Node {
         // be dialed, only dial us — probing it burns a full DIAL_TIMEOUT
         // per pump for nothing.
         if d.addrs.is_empty() {
-            return Err(msg::NO_ROADS_REPORTED.into());
+            return Err(msg::no_roads_reported().into());
         }
         let conn = self
             .dial(ep, &d.id, &d.addrs, ALPN)
             .await
             .map_err(|e| match e {
-                DialFailure::TimedOut => msg::DIAL_TIMED_OUT.to_string(),
+                DialFailure::TimedOut => msg::dial_timed_out().to_string(),
                 DialFailure::Refused(why) => msg::cant_reach_plain(why),
             })?;
 
@@ -5097,7 +5102,7 @@ impl Node {
             let _ = self.cache_peer_usage(&d.id, &usage);
         }
         Ok(if moved == 0 {
-            msg::NOTHING_TO_MOVE.into()
+            msg::nothing_to_move().into()
         } else {
             msg::moved_bytes(moved)
         })
@@ -5363,7 +5368,7 @@ async fn pull_one(
             return Err(msg::size_mismatch(total, expect));
         }
         if bytes.is_empty() {
-            return Err(msg::EMPTY_SLICE.into());
+            return Err(msg::empty_slice().into());
         }
         out.write_all(&bytes).map_err(msg::cant_write_slice)?;
         hasher.update(&bytes);
@@ -5622,7 +5627,7 @@ mod deafness {
     fn roadless_devices_and_empty_meshes_never_read_as_deafness() {
         let mut w = DeafWatch::new();
         let roadless: Vec<(String, Result<String, String>)> =
-            vec![("ghost".into(), Err(msg::NO_ROADS_REPORTED.into()))];
+            vec![("ghost".into(), Err(msg::no_roads_reported().into()))];
         let t0 = Instant::now();
         for i in 0..48u32 {
             let now = t0 + DEAF_AFTER * i;

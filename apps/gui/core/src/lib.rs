@@ -526,7 +526,7 @@ pub fn restyle(
 pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
     let mode = Arrange::from_key(by).ok_or_else(|| {
         let all: Vec<&str> = Arrange::ALL.iter().map(|a| a.key()).collect();
-        khor_catalog::msg::not_a_way_to_arrange(by, all.join(khor_catalog::cli::NAME_SEPARATOR))
+        khor_catalog::msg::not_a_way_to_arrange(by, all.join(khor_catalog::cli::name_separator()))
     })?;
     let n = open(root)?;
     // ⚠️ **One reading of the device table, three things derived from
@@ -1217,6 +1217,15 @@ pub fn config_rows(root: &Path) -> Vec<ConfigRow> {
 /// draw from.
 pub fn set_config(root: &Path, name: &str, value: &str) -> Result<Vec<ConfigRow>, String> {
     khor_node::config::set(root, name, value)?;
+    // **语言 takes effect without a restart** (docs/MORE.md 语言). Every
+    // binary resolves this once at startup, which is right for a CLI
+    // that lives for one command and wrong for an app somebody is
+    // standing in front of: the rows this very call is about to answer
+    // with would still be in the old language. The face re-stamps its
+    // own side from the same key (`src/lang.ts`).
+    if name == "lang" {
+        khor_node::config::apply_lang(root);
+    }
     Ok(config_rows(root))
 }
 
@@ -1864,12 +1873,12 @@ mod wizard_agent_tests {
             wait(open_session(&r, "~", "", "term", "zed", "")).expect_err("no terminal form");
         let sched =
             wait(open_session(&r, "~", "", "agent", "zed", "")).expect_err("no scheduler form");
-        assert_eq!(term, khor_catalog::msg::WIZARD_REGISTERED_NO_TERMINAL);
-        assert_eq!(sched, khor_catalog::msg::WIZARD_REGISTERED_NO_SCHEDULER);
+        assert_eq!(term, khor_catalog::msg::wizard_registered_no_terminal());
+        assert_eq!(sched, khor_catalog::msg::wizard_registered_no_scheduler());
         assert_ne!(term, sched, "starting it and arming it are different walls");
         assert_ne!(
             term,
-            khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY,
+            khor_catalog::msg::wizard_codex_chat_only(),
             "and neither of them is codex's refusal, which is about a different limit"
         );
         let _ = std::fs::remove_dir_all(&r);
@@ -1888,7 +1897,7 @@ mod wizard_agent_tests {
         assert_eq!(
             wait(open_session(&r, "~", "", "term", "codex", ""))
                 .expect_err("codex has no terminal form"),
-            khor_catalog::msg::WIZARD_CODEX_CHAT_ONLY
+            khor_catalog::msg::wizard_codex_chat_only()
         );
         // claude's `term` is not refused on the agent axis at all: it
         // gets as far as the directory, which is the next question.

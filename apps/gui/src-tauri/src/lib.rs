@@ -1974,7 +1974,7 @@ async fn open_page(
     agent: String,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
     let _ = (tab, machine, url, at, agent);
-    Err(khor_catalog::msg::PAGE_NEEDS_DESKTOP.into())
+    Err(khor_catalog::msg::page_needs_desktop().into())
 }
 
 #[cfg(not(desktop))]
@@ -2306,6 +2306,11 @@ async fn pair(ticket: String) -> Result<String, String> {
 }
 
 pub fn run() {
+    // 语言, before anything is drawn or printed (docs/MORE.md 语言).
+    // The face resolves its own (`src/lang.ts`, from the same key); this
+    // is the Rust half — every sentence that crosses back as text, a
+    // refusal or a 自检 row, is written in it.
+    khor_node::config::apply_lang(&Node::root_from_env());
     // If this process was re-exec'd as a session host, be one — the app
     // spawns hosts through its own binary (`host.rs main_if_host`).
     khor_node::host::main_if_host(Node::root_from_env());

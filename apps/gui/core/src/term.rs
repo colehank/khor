@@ -152,7 +152,7 @@ pub(crate) fn reach_blocking(
         rt.block_on(n.reach(&machine, &id))
     })
     .join()
-    .map_err(|_| khor_catalog::msg::REACH_THREAD_DIED.to_string())?
+    .map_err(|_| khor_catalog::msg::reach_thread_died().to_string())?
 }
 
 /// Attaches to the session's host at `cols`×`rows`, idempotently (an
@@ -493,14 +493,14 @@ fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<
                 // nothing into the terminal is the 做了但没变化 failure,
                 // and a guessed path would be worse — it would be a
                 // path that does not exist over there.
-                return Err(khor_catalog::msg::LANDED_UNSAID.to_owned());
+                return Err(khor_catalog::msg::landed_unsaid().to_owned());
             }
             landed.extend(where_it_is);
         }
         Ok(landed)
     })
     .join()
-    .map_err(|_| khor_catalog::msg::DELIVER_THREAD_DIED.to_owned())?
+    .map_err(|_| khor_catalog::msg::deliver_thread_died().to_owned())?
 }
 
 /// Files dropped onto a terminal: their paths, quoted, as one paste.

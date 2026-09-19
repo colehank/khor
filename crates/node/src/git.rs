@@ -339,7 +339,7 @@ fn mark_of(item: &gix::status::Item) -> Option<&'static str> {
 /// answer: the gutter for a new file is a bar down the whole of it,
 /// which is what every editor draws.
 pub fn diff(path: &Path) -> Result<Diff, String> {
-    let root = repo_root(path).ok_or_else(|| khor_catalog::msg::NO_CHECKOUT.to_owned())?;
+    let root = repo_root(path).ok_or_else(|| khor_catalog::msg::no_checkout().to_owned())?;
     let repo = gix::open(&root).map_err(|e| e.to_string())?;
     let rel = path.strip_prefix(&root).map_err(|e| e.to_string())?;
     let rel = rel.to_string_lossy().replace('\\', "/");
@@ -572,6 +572,6 @@ mod status_tests {
     #[test]
     fn a_file_outside_any_checkout_says_so_rather_than_failing_to_open() {
         let err = diff(Path::new("/etc/hosts")).expect_err("no checkout above /etc");
-        assert_eq!(err, khor_catalog::msg::NO_CHECKOUT);
+        assert_eq!(err, khor_catalog::msg::no_checkout());
     }
 }

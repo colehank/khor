@@ -335,7 +335,7 @@ pub enum Request {
     /// a process table nobody is looking at is a table nobody is
     /// paying for. Answered as [`Response::Load`]; a khor that predates
     /// it answers [`Response::Refused`], which the asker says out loud
-    /// (`msg::LOAD_PREDATES`) rather than painting an empty table: an
+    /// (`msg::load_predates()`) rather than painting an empty table: an
     /// empty table reads as an idle machine.
     /// `by`/`desc` rank the table **over there**, before the cut: a
     /// shared box runs ten thousand processes, and the alternative to
@@ -436,7 +436,7 @@ pub enum Request {
     ///
     /// Answered as [`Response::GitStatus`]; a khor that predates it
     /// answers [`Response::Refused`], which the asker says out loud
-    /// (`msg::GIT_PREDATES`) in the one place that has room for it —
+    /// (`msg::git_predates()`) in the one place that has room for it —
     /// where the branch would have been. **Never painted as「clean」**:
     /// a tree with no marks and a tree khor could not read look the
     /// same, and only one of them is safe to edit.
@@ -471,7 +471,7 @@ pub enum Request {
     ///
     /// Answered as [`Response::Wrote`]; a khor that predates it answers
     /// [`Response::Refused`], which the asker says out loud
-    /// (`msg::WRITE_PREDATES`). **Never swallowed**: a save that
+    /// (`msg::write_predates()`). **Never swallowed**: a save that
     /// quietly did nothing is the worst answer this file could give.
     WritePath {
         path: String,

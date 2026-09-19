@@ -874,7 +874,7 @@ pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, Strin
         _ => {
             let raw = v["session_id"].as_str().unwrap_or("");
             if raw.is_empty() {
-                return Err(msg::HOOK_PAYLOAD_NO_SESSION.into());
+                return Err(msg::hook_payload_no_session().into());
             }
             let title = v["cwd"]
                 .as_str()

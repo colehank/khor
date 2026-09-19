@@ -164,7 +164,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 {
                     let mut turn = s_prompt.turn.lock().unwrap();
                     if turn.is_some() {
-                        return responder.respond_with_internal_error(msg::CAGENT_ONE_TURN);
+                        return responder.respond_with_internal_error(msg::cagent_one_turn());
                     }
                     *turn = Some(tx);
                 }
@@ -216,7 +216,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 match started {
                     Some(cur) if cur == sid => {}
                     Some(_) => {
-                        return responder.respond_with_internal_error(msg::CAGENT_ONE_SESSION);
+                        return responder.respond_with_internal_error(msg::cagent_one_session());
                     }
                     None => {
                         // The takeover: resume the recorded thread. Its
@@ -332,7 +332,7 @@ impl Shim {
 
     fn start_appserver(self: &Arc<Self>, cwd: &std::path::Path) -> Result<(), String> {
         if self.session.lock().unwrap().is_some() {
-            return Err(msg::CAGENT_ONE_SESSION.into());
+            return Err(msg::cagent_one_session().into());
         }
         let named = std::env::var(CODEX_ENV).unwrap_or_else(|_| "codex".into());
         // Looked up by khor rather than left to the spawn, so a missing
@@ -350,7 +350,7 @@ impl Shim {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
         let mut child = c.spawn().map_err(|e| msg::wont_start(&bin, e))?;
-        let stdout = child.stdout.take().ok_or(msg::CODEXAGENT_NO_PIPE)?;
+        let stdout = child.stdout.take().ok_or(msg::codexagent_no_pipe())?;
         *self.child_pid.lock().unwrap() = Some(child.id());
         *self.stdin.lock().unwrap() = child.stdin.take();
         let shim = self.clone();
@@ -446,7 +446,7 @@ impl Shim {
 
     fn write_line(&self, v: &serde_json::Value) -> Result<(), String> {
         let mut guard = self.stdin.lock().unwrap();
-        let stdin = guard.as_mut().ok_or(msg::CAGENT_NOT_STARTED)?;
+        let stdin = guard.as_mut().ok_or(msg::cagent_not_started())?;
         writeln!(stdin, "{v}").map_err(|e| e.to_string())
     }
 }
@@ -484,7 +484,7 @@ fn scheduler_into(params: &mut serde_json::Value) -> Result<(), String> {
             }
         }
     });
-    params["developerInstructions"] = serde_json::Value::String(msg::AGENT_BRIEF.to_owned());
+    params["developerInstructions"] = serde_json::Value::String(msg::agent_brief().to_owned());
     Ok(())
 }
 
@@ -596,8 +596,12 @@ async fn answer_permission(
             ToolCallUpdateFields::new().title(title),
         ),
         vec![
-            PermissionOption::new("allow", msg::CAGENT_ALLOW, PermissionOptionKind::AllowOnce),
-            PermissionOption::new("deny", msg::CAGENT_DENY, PermissionOptionKind::RejectOnce),
+            PermissionOption::new(
+                "allow",
+                msg::cagent_allow(),
+                PermissionOptionKind::AllowOnce,
+            ),
+            PermissionOption::new("deny", msg::cagent_deny(), PermissionOptionKind::RejectOnce),
         ],
     );
     let outcome = match conn.send_request(ask).block_task().await {

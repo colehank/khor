@@ -23,13 +23,21 @@ import { AXES, type Axis, axisOf, groupLabel, placeLabels, valueOf, word } from 
  * once there, echoed here, so the two faces cannot drift into different
  * vocabularies for one setting.
  */
-export const ARRANGE = [
-  { key: "recent", label: gui.by_recent },
-  { key: "category", label: gui.by_category },
-  { key: "device", label: gui.by_device },
-  { key: "state", label: gui.by_state },
-  { key: "place", label: gui.by_place },
-] as const;
+/// ⚠️ **A function, not a `const`** (批 D3): the labels are catalog
+/// reads, and a module-level constant would keep whichever language the
+/// page loaded in for the life of the tab.
+export const arrange = () =>
+  [
+    { key: "recent", label: gui.by_recent },
+    { key: "category", label: gui.by_category },
+    { key: "device", label: gui.by_device },
+    { key: "state", label: gui.by_state },
+    { key: "place", label: gui.by_place },
+  ] as const;
+
+/** The keys on their own, for everything that does not paint a label.
+    Separate so a lookup by key costs no wording at all. */
+export const ARRANGE_KEYS = ["recent", "category", "device", "state", "place"] as const;
 
 /** WeChat's opening: the thing you touched last is the thing you want. */
 export const ARRANGE_DEFAULT = "recent";
@@ -51,7 +59,7 @@ const ARRANGE_KEY = "khor.sessions.arrange";
 export function storedArrange(): string {
   try {
     const saved = window.localStorage.getItem(ARRANGE_KEY);
-    return ARRANGE.some((a) => a.key === saved) ? saved! : ARRANGE_DEFAULT;
+    return ARRANGE_KEYS.some((k) => k === saved) ? saved! : ARRANGE_DEFAULT;
   } catch {
     return ARRANGE_DEFAULT;
   }

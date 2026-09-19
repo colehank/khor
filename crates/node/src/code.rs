@@ -186,7 +186,7 @@ const READY: std::time::Duration = std::time::Duration::from_secs(600);
 /// here: a port khor chose could be taken between the choosing and the
 /// binding, and `serve-web` prints the one it actually got.
 pub fn serve() -> Result<(u16, String), String> {
-    let exe = cli().ok_or_else(|| msg::NO_VSCODE.to_owned())?;
+    let exe = cli().ok_or_else(|| msg::no_vscode().to_owned())?;
     // Before the running-server shortcut, not after it: the machine
     // scope is watched live by the page, so a server already up gets
     // the key on the next press too, rather than on its next restart.
@@ -380,7 +380,7 @@ fn read_port(child: &mut std::process::Child) -> Result<u16, String> {
     let out = child
         .stdout
         .take()
-        .ok_or_else(|| msg::NO_VSCODE_OUTPUT.to_owned())?;
+        .ok_or_else(|| msg::no_vscode_output().to_owned())?;
     let err = child.stderr.take();
     let (tx, rx) = std::sync::mpsc::channel();
     // ⚠️ **Both pipes are drained for the life of the child, not until
@@ -410,7 +410,7 @@ fn read_port(child: &mut std::process::Child) -> Result<u16, String> {
         );
     }
     rx.recv_timeout(READY)
-        .map_err(|_| msg::VSCODE_NEVER_ANSWERED.to_owned())
+        .map_err(|_| msg::vscode_never_answered().to_owned())
 }
 
 /// The port inside `Web UI available at http://127.0.0.1:9123?tkn=…`.

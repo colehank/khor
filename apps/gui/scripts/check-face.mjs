@@ -1719,15 +1719,16 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { theme: "auto", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
+  const configValues = { theme: "auto", lang: "auto", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
   const CONFIG_SHAPE = [
     ["theme", "appearance", "settings", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
+    ["lang", "language", "settings", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
     ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
     ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "钉住"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-ws-remove", "confirm", "security", "移出工作区", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { appearance: "外观", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
+  const SECTION_WORD = { appearance: "外观", language: "语言", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices]) => ({
       name,
@@ -9622,7 +9623,7 @@ try {
       // The sections MORE.md names, by the node's own section keys —
       // never by their words, which would be reading the catalog to
       // check the catalog.
-      for (const want of ["face", "appearance", "session", "workspace", "store", "about"]) {
+      for (const want of ["face", "appearance", "language", "session", "workspace", "store", "about"]) {
         if (!drew.sections.includes(want)) {
           fail(`设置 has no 「${want}」 section — it drew ${JSON.stringify(drew.sections)}`);
         }
@@ -9731,6 +9732,87 @@ try {
       await until(5_000, async () =>
         (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light",
       );
+
+      // ── 语言: 跟随系统 / 中文 / English ────────────────────────
+      //
+      // **The assertion is a word on screen, and deliberately one that
+      // used to be frozen.** Every word here is a property read off the
+      // generated catalog, and a property read is not reactive — ten
+      // module-level constants captured one language for the life of
+      // the tab until 批 D3 turned them into functions. The rail's
+      // landing names were one of those (`App.tsx`'s `landings()`), so
+      // that is what is read back: a page that switched everywhere
+      // except the rail would pass a check that only looked at 设置.
+      //
+      // Armed: the Chinese word is read first and asserted to be
+      // non-ascii, so 「ascii afterwards」 cannot be a label that was
+      // English all along.
+      const speaks = () =>
+        page.evaluate(() => ({
+          rail:
+            document
+              .querySelector('[data-rail-item][data-landing="sessions"]')
+              ?.getAttribute("aria-label") ?? null,
+          head:
+            document.querySelector('[data-more-page="settings"] h1')?.textContent?.trim() ?? null,
+          html: document.documentElement.lang,
+        }));
+      const inZh = await speaks();
+      console.log(`config · 语言 before: ${JSON.stringify(inZh)}`);
+      if (!inZh.rail || !inZh.head) {
+        fail(`probe dead: read no rail name or page head (${JSON.stringify(inZh)})`);
+      } else if (!/[\u3400-\u9FFF]/.test(inZh.rail + inZh.head)) {
+        fail(
+          `the face opens in ${JSON.stringify(inZh)} — this fixture's browser is zh, so both ` +
+            "should be Chinese, and an assertion about switching away from English proves nothing",
+        );
+      }
+
+      await press('[data-config-choice="lang:en"]');
+      const spoke = await until(5_000, async () =>
+        (await page.locator('[data-config-row="lang"][data-value="en"]').count()) === 1,
+      );
+      if (!spoke) fail("pressing English left the 语言 row on its old value");
+      const inEn = await speaks();
+      console.log(`config · 语言 after English: ${JSON.stringify(inEn)}`);
+      if (inEn.html !== "en") {
+        fail(
+          `<html lang> is ${JSON.stringify(inEn.html)} — it is what picks a browser's CJK ` +
+            "fallback font and how a screen reader pronounces the page (src/lang.ts)",
+        );
+      }
+      if (inEn.rail === inZh.rail) {
+        fail(
+          `设置 says English and the rail still says ${JSON.stringify(inEn.rail)} — the landing ` +
+            "names were a module-level constant until 批 D3, which is the exact shape that " +
+            "switches everywhere but one place (src/App.tsx landings())",
+        );
+      }
+      if (inEn.head === inZh.head) {
+        fail(`the page's own head did not change: ${JSON.stringify(inEn.head)}`);
+      }
+      // **Asked as 「is there Chinese left in it」, not 「is it ascii」**:
+      // khor's English is typeset English — em dashes and curly quotes
+      // are not ascii either, and smoke's own copy of this test went red
+      // on exactly that.
+      for (const [what, word] of Object.entries({ rail: inEn.rail, head: inEn.head })) {
+        if (/[\u3400-\u9FFF]/.test(word ?? "")) {
+          fail(`English was chosen and the ${what} still reads ${JSON.stringify(word)}`);
+        }
+      }
+
+      // Back to 跟系统, and this browser's own language wins again —
+      // the other direction, which is what says this is a choice
+      // rather than a one-way door.
+      await press('[data-config-choice="lang:auto"]');
+      await until(5_000, async () =>
+        (await page.locator('[data-config-row="lang"][data-value="auto"]').count()) === 1,
+      );
+      const spokenBack = await speaks();
+      console.log(`config · 语言 back to 跟系统: ${JSON.stringify(spokenBack)}`);
+      if (spokenBack.rail !== inZh.rail || spokenBack.head !== inZh.head) {
+        fail(`跟系统 did not hand the face back to the browser's own language: ${JSON.stringify(spokenBack)}`);
+      }
 
       // Set it, and wait for the **store's** answer to come back round
       // through the shell: the page paints from the re-read, never from
