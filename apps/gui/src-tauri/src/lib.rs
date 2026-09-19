@@ -1206,7 +1206,16 @@ fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
-    let dark = matches!(w.theme(), Ok(Theme::Dark));
+    // **The store's choice, not the desktop's answer** (批 D2). This is
+    // the one reader of `theme` on the Rust side, and it has to be: the
+    // window is painted before any HTML exists, so the page cannot do
+    // it. `auto` — and a store this process cannot read — is the
+    // desktop, which is what khor did before the key existed.
+    let dark = match khor_node::config::get(&Node::root_from_env(), "theme") {
+        Ok("dark") => true,
+        Ok("light") => false,
+        _ => matches!(w.theme(), Ok(Theme::Dark)),
+    };
     let ground = if dark {
         tauri::webview::Color(0x0f, 0x0f, 0x0e, 0xff)
     } else {
@@ -2230,6 +2239,48 @@ fn about() -> khor_gui_core::About {
 
 /// Every setting and its value (`khor_gui_core::config_rows`). No node
 /// is opened, so this answers before anything has been drawn.
+/// The theme the face has resolved, worn by **the window** — which is
+/// not the page (批 D2, `src/theme.ts`).
+///
+/// Three things on screen are AppKit's rather than the document's: the
+/// ground behind the webview, the title bar, and every editor window
+/// khor has opened. None of them follows `data-theme`, and a window
+/// that kept the desktop's appearance while the page went light is the
+/// half-and-half screen this whole key exists to avoid.
+///
+/// **Takes the resolved theme, never the choice**: `auto` is a question
+/// only `matchMedia` can answer, and answering it a second time here
+/// would be two resolvers that disagree the moment one of them is late.
+#[tauri::command]
+fn set_window_theme(app: tauri::AppHandle, theme: String) {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Manager;
+        let wanted = if theme == "dark" {
+            tauri::Theme::Dark
+        } else {
+            tauri::Theme::Light
+        };
+        for (label, w) in app.webview_windows() {
+            if label != "main" && !label.starts_with("code:") {
+                continue;
+            }
+            if let Ok(win) = w.ns_window() {
+                wear_appearance(win, wanted);
+            }
+            // AppKit lays the title bar out again when a window changes
+            // appearance, and the buttons go back to the SDK's spacing
+            // (`squeeze_the_window_buttons`, the same reason a resize
+            // needs it).
+            if label == "main" {
+                squeeze_the_window_buttons(&w);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, theme);
+}
+
 #[tauri::command]
 fn config() -> Vec<khor_gui_core::ConfigRow> {
     khor_gui_core::config_rows(&Node::root_from_env())
@@ -2369,14 +2420,27 @@ pub fn run() {
                         if let Some(main) = window.app_handle().get_webview_window("main") {
                             squeeze_the_window_buttons(&main);
                         }
+                        // **The desktop changed; what khor wears is
+                        // still the choice** (批 D2). Passing `*theme`
+                        // on unconditionally would make a machine set
+                        // to 浅色 grow a dark title bar the moment the
+                        // desktop turned, which is the half-and-half
+                        // screen the key exists to prevent. `auto` — and
+                        // a store this process cannot read — is the
+                        // desktop, unchanged from before the key.
+                        let wanted = match khor_node::config::get(&Node::root_from_env(), "theme") {
+                            Ok("dark") => tauri::Theme::Dark,
+                            Ok("light") => tauri::Theme::Light,
+                            _ => *theme,
+                        };
                         for (label, w) in window.app_handle().webview_windows() {
                             if label.starts_with("code:") {
                                 #[cfg(target_os = "macos")]
                                 if let Ok(win) = w.ns_window() {
-                                    wear_appearance(win, *theme);
+                                    wear_appearance(win, wanted);
                                 }
                                 #[cfg(not(target_os = "macos"))]
-                                let _ = (w, theme);
+                                let _ = (w, wanted);
                             }
                         }
                     }
@@ -2513,6 +2577,7 @@ pub fn run() {
             doctor,
             doctor_fix,
             about,
+            set_window_theme,
             config,
             set_config,
             invite,

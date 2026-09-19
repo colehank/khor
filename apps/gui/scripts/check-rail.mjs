@@ -213,6 +213,42 @@ function measure(read) {
   };
 }
 
+/**
+ * Flips the desktop's scheme **and waits for the face to wear it**.
+ *
+ * ⚠️ 批 D2 put the dark palette under `:root[data-theme="dark"]` rather
+ * than a media query (`tokens.css` says why: the alternative was a
+ * second copy of the whole palette). So the stamp is one JS hop behind
+ * the emulation — `src/theme.ts`'s matchMedia listener re-stamping the
+ * root — and a colour read straight after `emulateMedia` is the theme
+ * being *left*.
+ *
+ * **This waits for the stamp and nothing else.** The settle each caller
+ * keeps afterwards is a different wait for a different thing: these
+ * glyphs have colour transitions, and a reading taken the instant the
+ * palette changes is bit-for-bit the colour it is leaving (the same
+ * lesson `smoke` §26 wrote down about an animating menu item). Folding
+ * the two into one wait is how this gate went red measuring ink at 1.08
+ * against a ground that had already turned.
+ */
+async function flipTheme(page, scheme) {
+  await page.emulateMedia({ colorScheme: scheme });
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const worn = await page.evaluate(() =>
+      document.documentElement.getAttribute("data-theme"),
+    );
+    if (worn === scheme) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `the face never wore the ${scheme} scheme (data-theme=${JSON.stringify(worn)}) — ` +
+          "批 D2's stamp is what repaints, and without it every colour below is the other theme's",
+      );
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const say = (n) => n.toFixed(2);
 
@@ -264,7 +300,7 @@ try {
 
   // ── 1) legibility, both themes ────────────────────────────────────
   for (const scheme of ["light", "dark"]) {
-    await page.emulateMedia({ colorScheme: scheme });
+    await flipTheme(page, scheme);
     await wait(400);
 
     // The probe, before any assertion. An empty rail reads exactly like
@@ -302,7 +338,7 @@ try {
       fail(`${scheme}: body ${say(m.body)} is not lighter than line ${say(m.line)} — the two densities are gone`);
     }
   }
-  await page.emulateMedia({ colorScheme: "light" });
+  await flipTheme(page, "light");
 
   // ── 2) the way into the mesh is its own group, at the foot ────────
   //
@@ -443,7 +479,7 @@ try {
   const away = () => page.mouse.move(1200, 800);
 
   for (const scheme of ["light", "dark"]) {
-    await page.emulateMedia({ colorScheme: scheme });
+    await flipTheme(page, scheme);
     await away();
     await wait(400);
 
@@ -568,7 +604,7 @@ try {
     }
     await away();
   }
-  await page.emulateMedia({ colorScheme: "light" });
+  await flipTheme(page, "light");
 
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
   if (!process.exitCode) console.log("rail gate: legible, grouped, and one way of being open");

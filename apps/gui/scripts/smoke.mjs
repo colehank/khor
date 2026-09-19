@@ -466,6 +466,34 @@ async function until(what, ms, f, step = 400) {
 // from `since: 0` is a pure read of an append-only list and takes
 // nothing from the app's own cursor, so asking costs nothing and
 // disturbs nothing.
+/**
+ * Flips the desktop's scheme **and waits for the face to wear it**.
+ *
+ * ⚠️ 批 D2 put the dark palette under `:root[data-theme="dark"]` instead
+ * of a media query (`tokens.css` has the argument: the alternative was a
+ * second copy of a hundred and sixty lines of colour). So the repaint is
+ * no longer the emulation itself — it is one JS hop behind it, the
+ * `matchMedia` listener in `src/theme.ts` re-stamping the root. Reading
+ * a colour straight after `emulateMedia` reads the theme being *left*.
+ *
+ * Waited on by the thing itself rather than by a sleep: the stamp has to
+ * agree with what the page now reports the desktop to be. `null` resets
+ * to this machine's own scheme, which is why the wanted value is asked
+ * of the page rather than passed in.
+ *
+ * Assumes the stored choice is 跟系统, which is what every home this
+ * file stands up has — `khor config set theme` is §34's business.
+ */
+async function flipTheme(page, scheme) {
+  await page.emulateMedia({ colorScheme: scheme });
+  await until(`the face to wear the ${scheme ?? "desktop's own"} scheme`, 5_000, () =>
+    page.evaluate(() => {
+      const want = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      return document.documentElement.getAttribute("data-theme") === want;
+    }),
+  );
+}
+
 async function frameKinds(page, id) {
   return page.evaluate(
     async ([port, sid]) => {
@@ -1670,10 +1698,10 @@ for line in sys.stdin:
             .join("\n"),
       };
     });
-  await page.emulateMedia({ colorScheme: "light" });
+  await flipTheme(page, "light");
   const lightFace = await faceOf(betaRow);
   const light = await themeProbe();
-  await page.emulateMedia({ colorScheme: "dark" });
+  await flipTheme(page, "dark");
   const darkFace = await faceOf(betaRow);
   const dark = await themeProbe();
   if (light.body === dark.body) throw new Error("probe dead: the theme flip changed no ground color");
@@ -1683,7 +1711,7 @@ for line in sys.stdin:
   if (!light.paint) throw new Error("probe dead: read no computed paint off the face");
   if (lightFace !== darkFace) throw new Error("the face's markup changed when the theme did");
   if (light.paint !== dark.paint) throw new Error("the face's computed paint changed when the theme did");
-  await page.emulateMedia({ colorScheme: null });
+  await flipTheme(page, null);
 
   // 11) the rail's names. The deadline is the assertion: Radix's stock
   //     delay is 700ms, so a window well under that is what separates
@@ -3073,13 +3101,13 @@ for line in sys.stdin:
   //     ground proves the flip took, the way it does above.
   const chosen = await faceOf(railFace);
   const groundOf = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  await page.emulateMedia({ colorScheme: "light" });
+  await flipTheme(page, "light");
   const lightGround = await groundOf();
   const lightChosen = await faceOf(railFace);
-  await page.emulateMedia({ colorScheme: "dark" });
+  await flipTheme(page, "dark");
   if ((await groundOf()) === lightGround) throw new Error("probe dead: the theme flip changed no ground");
   if ((await faceOf(railFace)) !== lightChosen) throw new Error("a chosen face followed the theme");
-  await page.emulateMedia({ colorScheme: null });
+  await flipTheme(page, null);
 
   //     h. and it outlives a reload — the choice lives in the node, not
   //     on this screen.

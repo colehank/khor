@@ -60,10 +60,12 @@ square = "Square"
 # The `khor config` key table (docs/MORE.md 设置). Section names, key
 # names and value names all cross the wire, so these are data with the
 # same shape as the state words and the face options.
+appearance = "Appearance"
 session = "Sessions"
 workspace = "Workspace"
 confirm = "Ask before"
 
+theme = "Light or dark"
 session-form = "New sessions open as"
 files-click = "Single click"
 # Under "Ask before", so each key names the act rather than repeating
@@ -71,6 +73,11 @@ files-click = "Single click"
 confirm-takeover = "Taking over a session"
 confirm-ws-remove = "Removing a workspace"
 
+# What is stored is the choice, `auto` included — never the theme it
+# resolves to today.
+auto = "Match system"
+light = "Light"
+dark = "Dark"
 chat = "Chat"
 term = "Terminal"
 preview = "Preview"

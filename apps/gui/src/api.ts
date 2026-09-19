@@ -727,6 +727,25 @@ export const pair = (ticket: string) => call<string>("pair", { ticket });
     what another machine is running is `khor doctor`'s question, asked
     over the wire, never a field on the device table. */
 export const fetchAbout = () => call<About>("about");
+/**
+ * 外观 (批 D2): hands the app's **window** the theme the face resolved.
+ *
+ * **A no-op outside the app, and that is the whole seam.** Three things
+ * on an app screen are not the document — the ground painted from Rust
+ * before any HTML exists, the macOS title bar, and every editor window
+ * khor opened — and none of them follows `data-theme`. A page in a
+ * browser has none of the three: the window it sits in was placed by
+ * somebody else. So there is no HTTP arm for this (`command_tables`'s
+ * `ONE_SIDED` carries the reason from the other end), and calling it
+ * anywhere but the app silently does nothing rather than throwing — the
+ * same shape `widenWindow` has.
+ *
+ * Takes the **resolved** theme, never the choice: `auto` is a question
+ * only `matchMedia` can answer, and a second resolver on the Rust side
+ * would be two answers that disagree whenever one is late.
+ */
+export const setWindowTheme = (theme: "light" | "dark") =>
+  inApp ? call<null>("set_window_theme", { theme }) : Promise.resolve(null);
 /** 自检 (docs/MORE.md): twelve checks, each with a three-second budget
     of its own, so the whole call is bounded at that — a relay that
     swallows packets costs one row, never the page. */

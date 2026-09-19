@@ -4,6 +4,43 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Khor</title>
+    <!--
+      **The theme, stamped before the first pixel** (批 D2).
+
+      Everything below and every stylesheet keys off `data-theme` now,
+      because 「显式选浅色」 has to beat a dark desktop and the only
+      alternative was a second copy of the palette (tokens.css says
+      why). An unstamped root paints light — so without this line, a
+      dark-desktop machine would flash white for the quarter second
+      this frame exists, which is the very thing this frame was added
+      to prevent.
+
+      ⚠️ **This script cannot ask khor what the setting is**: the store
+      is behind an async call and this runs before the bundle. So it
+      reads the mirror the face keeps in `localStorage`
+      (`src/theme.ts`, same key, and `check-boot` asserts the two agree)
+      and falls back to the desktop. The mirror is a cache of a stored
+      preference, never the preference — `khor config` is still the one
+      place it lives, and a browser that refuses storage simply follows
+      the desktop, which is what khor did before the key existed.
+
+      The cost of being wrong here is one quarter-second flash, once,
+      on the first launch after somebody changes the setting.
+    -->
+    <script>
+      (function () {
+        var t = null;
+        try {
+          t = localStorage.getItem("khor.theme");
+        } catch (e) {
+          // Private window, blocked site data. Fall through.
+        }
+        if (t !== "light" && t !== "dark") {
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
   </head>
   <body>
     <!--
@@ -57,14 +94,12 @@
       #root:not(:empty) ~ #boot {
         display: none;
       }
-      @media (prefers-color-scheme: dark) {
-        body,
-        #boot i:first-child {
-          background: #0f0f0e;
-        }
-        #boot i:last-child {
-          background: #191917;
-        }
+      :root[data-theme="dark"] body,
+      :root[data-theme="dark"] #boot i:first-child {
+        background: #0f0f0e;
+      }
+      :root[data-theme="dark"] #boot i:last-child {
+        background: #191917;
       }
     </style>
     <div id="root"></div>

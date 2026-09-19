@@ -62,14 +62,21 @@
    * theme: the scrollbar came back byte for byte the same pixels as in
    * the light theme.
    *
-   * `light dark` rather than `dark`: dark follows the system and there
-   * is no toggle (docs/UX.md 设置), so this says which two the page
-   * has, not which one it is in.
+   * `light dark` rather than `dark`: this says which two the page has,
+   * not which one it is in. **There is a toggle now** (批 D2), and the
+   * pair of rules under it is the half that names the one — this line
+   * is what answers before either of them matches.
    *
    * **What it does not fix**: how much room the scrollbar takes. That
    * belongs to the platform; the rule in `app.css` is the half that
    * answers it, and neither half can do the other's job. */
   color-scheme: light dark;
+  /* …and once a theme is stamped, the engine is told which **one** this
+     page is in. Without this pair the scrollbars, the caret, `<select>`
+     and the check in a checkbox follow the *desktop* while the palette
+     follows the choice — two halves of one screen each answering a
+     different question. The line above stays as the answer for the
+     frame before the stamp lands, and for any face that never stamps. */
 
   /* ── shadcn scheme, mandala light values ─────────── */
   --background: #f4f4ef;
@@ -1238,168 +1245,190 @@
   --traffic: 28px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0f0f0e;
-    --foreground: rgba(238, 238, 231, 0.96);
-    --card: #191917;
-    --card-foreground: rgba(238, 238, 231, 0.96);
-    --popover: #191917;
-    --popover-foreground: rgba(238, 238, 231, 0.96);
-    /* Paper, the mirror of light's ink: an ink button cannot be seen on a
-       dark ground, so this is the one thing in the palette whose two
-       themes are opposites rather than shades. Measures 16.46. */
-    --primary: #eeeee7;
-    --primary-foreground: #0f0f0e;
-    --secondary: rgba(244, 244, 239, 0.07);
-    --secondary-foreground: rgba(238, 238, 231, 0.72);
-    --muted: rgba(244, 244, 239, 0.07);
-    /* .60, up from .55.
-       **Tombstone: the reason this number is .60 expired on 2026-08-30.**
-       It read「this move was forced by the six words, not chosen for
-       secondary text: 忙碌 *is* this token, so it sets the ceiling 空闲
-       has to sit under」— and that stopped being true the moment 忙碌
-       got a colour of its own (`--state-busy` above). This token no
-       longer sets any word's ceiling.
-       What holds it at .60 now is the second half of that old note,
-       which was true on its own: secondary text on this theme was
-       sitting on the floor at .55. **Whether .55 is available again is
-       an open question and was not asked here** — the words that used to
-       depend on it no longer do, but every piece of secondary text in
-       the app does, and that is a different measurement from the one
-       that set this. */
-    --muted-foreground: rgba(238, 238, 231, 0.6);
-    /* 12.23 against this theme's ground, against the light theme's
-       12.07 — the pair is the point, and the reasoning is on the light
-       value. This theme is the one that was out of band: `--foreground`
-       measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
-       has, which is where a dark page starts to glare. */
-    --read-ink: rgba(238, 238, 231, 0.86);
-    --accent: rgba(183, 207, 117, 0.14);
-    --accent-foreground: rgba(238, 238, 231, 0.96);
-    --destructive: #d4756b;
-    --destructive-foreground: #1a1a14;
-    --border: rgba(238, 238, 231, 0.08);
-    --input: rgba(238, 238, 231, 0.08);
-    --ring: #eeeee7;
+/* ── Dark, once, hung on an attribute rather than on a media query ──
+ *
+ * **Not one colour below is written twice, and that is the whole reason
+ * this block looks like this.** 「跟系统 / 浅 / 深」 needs an explicit
+ * 浅色 to beat a dark desktop, and CSS offers exactly two roads: copy
+ * these hundred and sixty lines under an attribute selector — which
+ * breaks docs/KHOR.md's 一个事实一个出处 and has nothing watching it —
+ * or move the block under the attribute and let the face resolve `auto`
+ * itself and stamp the answer. Moved.
+ *
+ * The stamp is `src/theme.ts`, set synchronously before `createRoot`
+ * (`main.tsx`), and it listens to `matchMedia`'s `change`. **That
+ * listener is the premise of four gates, not a nicety**: `check-day`,
+ * `check-palette`, `check-rail` and `smoke` all flip the theme with
+ * `emulateMedia({colorScheme})` and read colours back — what turns that
+ * into a repaint is the change event re-stamping this attribute.
+ *
+ * `:root[data-theme="dark"]` is (0,2,0) and the `:root` above is
+ * (0,1,0), so dark beating light does not depend on source order. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
 
-    --lq1: #f2f6cb;
-    --lq2: #dce9a6;
-    --lq3: #b7cf75;
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0f0f0e;
+  --foreground: rgba(238, 238, 231, 0.96);
+  --card: #191917;
+  --card-foreground: rgba(238, 238, 231, 0.96);
+  --popover: #191917;
+  --popover-foreground: rgba(238, 238, 231, 0.96);
+  /* Paper, the mirror of light's ink: an ink button cannot be seen on a
+     dark ground, so this is the one thing in the palette whose two
+     themes are opposites rather than shades. Measures 16.46. */
+  --primary: #eeeee7;
+  --primary-foreground: #0f0f0e;
+  --secondary: rgba(244, 244, 239, 0.07);
+  --secondary-foreground: rgba(238, 238, 231, 0.72);
+  --muted: rgba(244, 244, 239, 0.07);
+  /* .60, up from .55.
+     **Tombstone: the reason this number is .60 expired on 2026-08-30.**
+     It read「this move was forced by the six words, not chosen for
+     secondary text: 忙碌 *is* this token, so it sets the ceiling 空闲
+     has to sit under」— and that stopped being true the moment 忙碌
+     got a colour of its own (`--state-busy` above). This token no
+     longer sets any word's ceiling.
+     What holds it at .60 now is the second half of that old note,
+     which was true on its own: secondary text on this theme was
+     sitting on the floor at .55. **Whether .55 is available again is
+     an open question and was not asked here** — the words that used to
+     depend on it no longer do, but every piece of secondary text in
+     the app does, and that is a different measurement from the one
+     that set this. */
+  --muted-foreground: rgba(238, 238, 231, 0.6);
+  /* 12.23 against this theme's ground, against the light theme's
+     12.07 — the pair is the point, and the reasoning is on the light
+     value. This theme is the one that was out of band: `--foreground`
+     measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
+     has, which is where a dark page starts to glare. */
+  --read-ink: rgba(238, 238, 231, 0.86);
+  --accent: rgba(183, 207, 117, 0.14);
+  --accent-foreground: rgba(238, 238, 231, 0.96);
+  --destructive: #d4756b;
+  --destructive-foreground: #1a1a14;
+  --border: rgba(238, 238, 231, 0.08);
+  --input: rgba(238, 238, 231, 0.08);
+  --ring: #eeeee7;
 
-    /* ── the same separation as light, arrived at from the other side ──
-     * The light theme pushed the four that call you *down* in lightness
-     * because its floor was the 4.5 a word answers to. Here the loud
-     * four go *up*, for the mirror reason — on a dark ground more
-     * contrast is lighter, not darker.
-     *
-     * **What was wrong here was not the range, it was the order.** These
-     * six spanned 4.55–9.11, which reads as plenty; but 忙碌 — a word
-     * that asks nothing — sat *brighter* than both 失败 and 待批, and
-     * the two groups were interleaved rather than separated (group gap
-     * −3.1). A wide range hid it.
-     *
-     * Same target as light, 8 in L*, and the same reason it is stated in
-     * L* rather than in contrast: L* is near enough perceptually uniform
-     * that one threshold means the same thing at both ends of the scale,
-     * which is exactly what a contrast ratio does not do. Measured: 8.4.
-     *
-     * **The four are packed tightly on purpose.** Two points of lightness
-     * between them is enough because they are not telling each other
-     * apart by lightness — that is the hue's job, and the hues are
-     * doctrine. Lightness here is doing one job only: separating the two
-     * that ask for nothing from the four that do.
-     *
-     * 失败 pays for this: at L* 81 sRGB cannot hold a saturated red, so
-     * its chroma drops about a fifth and it lands a lighter coral. That
-     * is a gamut fact rather than a choice — the alternative was leaving
-     * it dimmer than 忙碌, which is the bug. */
-    /* The same hue from the other side, at the same loudness: card /
-       paper / selected row **6.90 / 7.52 / 5.11**, against 空闲's 4.55
-       and the four loud ones' 6.62–7.89; ΔL* 8.4 — every one of those
-       is the number it was before this word had a hue at all.
+  --lq1: #f2f6cb;
+  --lq2: #dce9a6;
+  --lq3: #b7cf75;
 
-       **Chroma .14, and this theme is the one where that is a
-       judgment.** The light theme could climb to its own ceiling for
-       free (失败 is already .158 there); this theme's other words top
-       out at .120, so .14 makes 忙碌 the most saturated word on it by
-       .02. Held to .120 the dark theme would have gained almost nothing
-       from this pass — .116 to .120 — while the complaint that started
-       it was「it does not read apart from the grey」, and grey is .007.
-       Measured, the cost of .14 is zero: contrast and ΔL* are unmoved.
-       The cost starts at .15 (4.97 on a selected row) and by .158 it is
-       4.72, which is why it stops here rather than at the gamut's edge.
+  /* ── the same separation as light, arrived at from the other side ──
+   * The light theme pushed the four that call you *down* in lightness
+   * because its floor was the 4.5 a word answers to. Here the loud
+   * four go *up*, for the mirror reason — on a dark ground more
+   * contrast is lighter, not darker.
+   *
+   * **What was wrong here was not the range, it was the order.** These
+   * six spanned 4.55–9.11, which reads as plenty; but 忙碌 — a word
+   * that asks nothing — sat *brighter* than both 失败 and 待批, and
+   * the two groups were interleaved rather than separated (group gap
+   * −3.1). A wide range hid it.
+   *
+   * Same target as light, 8 in L*, and the same reason it is stated in
+   * L* rather than in contrast: L* is near enough perceptually uniform
+   * that one threshold means the same thing at both ends of the scale,
+   * which is exactly what a contrast ratio does not do. Measured: 8.4.
+   *
+   * **The four are packed tightly on purpose.** Two points of lightness
+   * between them is enough because they are not telling each other
+   * apart by lightness — that is the hue's job, and the hues are
+   * doctrine. Lightness here is doing one job only: separating the two
+   * that ask for nothing from the four that do.
+   *
+   * 失败 pays for this: at L* 81 sRGB cannot hold a saturated red, so
+   * its chroma drops about a fifth and it lands a lighter coral. That
+   * is a gamut fact rather than a choice — the alternative was leaving
+   * it dimmer than 忙碌, which is the bug. */
+  /* The same hue from the other side, at the same loudness: card /
+     paper / selected row **6.90 / 7.52 / 5.11**, against 空闲's 4.55
+     and the four loud ones' 6.62–7.89; ΔL* 8.4 — every one of those
+     is the number it was before this word had a hue at all.
 
-       **What .02 of chroma is not**: a rank. Lightness carries whether
-       a word wants you, and this one's lightness did not move. */
-    --state-busy: #8a9cfb;
-    --state-blocked: #4fd4f0;
-    --state-done: #b6c671;
-    --state-errored: #d7b55f;
-    /* Lightened from #d4756b, which measured **4.07** on a selected
-       row — under the 4.5 a word answers to, and nobody had reported
-       it: the halo work only ever measured these against the card,
-       where it reads 5.50. Ten percent toward paper, which keeps it the
-       same red and clears the floor at 4.62. */
-    --state-failed: #ffb8ad;
-    /* .55 against 忙碌's .55 — see the light block; on this theme the
-       ceiling is 待批 at 4.70 rather than 忙碌, so this sits under it. */
-    --state-idle: rgba(238, 238, 231, 0.55);
+     **Chroma .14, and this theme is the one where that is a
+     judgment.** The light theme could climb to its own ceiling for
+     free (失败 is already .158 there); this theme's other words top
+     out at .120, so .14 makes 忙碌 the most saturated word on it by
+     .02. Held to .120 the dark theme would have gained almost nothing
+     from this pass — .116 to .120 — while the complaint that started
+     it was「it does not read apart from the grey」, and grey is .007.
+     Measured, the cost of .14 is zero: contrast and ΔL* are unmoved.
+     The cost starts at .15 (4.97 on a selected row) and by .158 it is
+     4.72, which is why it stops here rather than at the gamut's edge.
 
-    /* The four git letters lifted for near-black, the same way the five
-       hues below are: each one raised on its own against this theme's
-       card rather than the light values put through a filter. VS Code's
-       own dark values are the starting point and two of them are it
-       exactly (修改 #e2c08d, 添加 #73c991); 删除 and 冲突 are its hues
-       lifted until they clear 4.5 here. */
-    --git-modified: #e2c08d;
-    --git-added: #73c991;
-    --git-deleted: #ef8a76;
-    --git-conflict: #ff8a8a;
+     **What .02 of chroma is not**: a rank. Lightness carries whether
+     a word wants you, and this one's lightness did not move. */
+  --state-busy: #8a9cfb;
+  --state-blocked: #4fd4f0;
+  --state-done: #b6c671;
+  --state-errored: #d7b55f;
+  /* Lightened from #d4756b, which measured **4.07** on a selected
+     row — under the 4.5 a word answers to, and nobody had reported
+     it: the halo work only ever measured these against the card,
+     where it reads 5.50. Ten percent toward paper, which keeps it the
+     same red and clears the floor at 4.62. */
+  --state-failed: #ffb8ad;
+  /* .55 against 忙碌's .55 — see the light block; on this theme the
+     ceiling is 待批 at 4.70 rather than 忙碌, so this sits under it. */
+  --state-idle: rgba(238, 238, 231, 0.55);
 
-    --strain: #d59ab8;
+  /* The four git letters lifted for near-black, the same way the five
+     hues below are: each one raised on its own against this theme's
+     card rather than the light values put through a filter. VS Code's
+     own dark values are the starting point and two of them are it
+     exactly (修改 #e2c08d, 添加 #73c991); 删除 and 冲突 are its hues
+     lifted until they clear 4.5 here. */
+  --git-modified: #e2c08d;
+  --git-added: #73c991;
+  --git-deleted: #ef8a76;
+  --git-conflict: #ff8a8a;
 
-    /* The same five hues lifted for near-black. **Not the light values
-       with a filter on them**: on this theme a band has to sit *above*
-       the card rather than below the paper, so each is lifted on its
-       own and the hue re-checked (closest pair here is fable/haiku at
-       44.4°, closest to 待批 is spare at 39.7°).
+  --strain: #d59ab8;
 
-       The older generations still mix toward `--background`, which is
-       this theme's near-black — so an older model fades *down* here and
-       *up* on the light theme, and either way 「fainter」 means 「older」
-       against the page it is drawn on. */
-    --model-opus: #7a7ea4;
-    --model-fable: #a8bd6f;
-    --model-sonnet: #a36979;
-    --model-haiku: #e0a15a;
-    --model-spare: #51b983;
-    --model-tail: #6d6d69;
+  /* The same five hues lifted for near-black. **Not the light values
+     with a filter on them**: on this theme a band has to sit *above*
+     the card rather than below the paper, so each is lifted on its
+     own and the hue re-checked (closest pair here is fable/haiku at
+     44.4°, closest to 待批 is spare at 39.7°).
 
-    --badge: #d4756b;
-    --badge-foreground: #1a1a14;
+     The older generations still mix toward `--background`, which is
+     this theme's near-black — so an older model fades *down* here and
+     *up* on the light theme, and either way 「fainter」 means 「older」
+     against the page it is drawn on. */
+  --model-opus: #7a7ea4;
+  --model-fable: #a8bd6f;
+  --model-sonnet: #a36979;
+  --model-haiku: #e0a15a;
+  --model-spare: #51b983;
+  --model-tail: #6d6d69;
 
-    --avatar-edge: rgba(238, 238, 231, 0.22);
+  --badge: #d4756b;
+  --badge-foreground: #1a1a14;
 
-    /* Only the ink flips; `--icon-body` is a ratio and stays one number
-       for both themes — see the light block for why that is the point. */
-    --rail-ink: rgba(238, 238, 231, 0.72);
-    /* Night has room for the brand green itself: this is `--lq3`'s dark
-     * value, the same green the faces are drawn from. */
-    --rail-on-ink: #dce9a6;
-    /* (`--rail-on`'s dark half went with the light one on 2026-08-31 —
-       the rail has no block any more. The tombstone, with both
-       percentages and why they differed, is on the light theme's side.) */
+  --avatar-edge: rgba(238, 238, 231, 0.22);
 
-    /* Lower than the light theme's .25 on purpose — see the light
-       block: the same alpha reads louder against near-black, and what
-       is being held equal across the two themes is how far the thumb
-       sits from the card, not how much ink is in it. */
-    --scroll-thumb: rgba(238, 238, 231, 0.22);
-    /* Lower than the light theme's .5 for the same reason .22 is lower
-       than .25: the same alpha reads louder against near-black. */
-    --scroll-thumb-strong: rgba(238, 238, 231, 0.45);
-  }
+  /* Only the ink flips; `--icon-body` is a ratio and stays one number
+     for both themes — see the light block for why that is the point. */
+  --rail-ink: rgba(238, 238, 231, 0.72);
+  /* Night has room for the brand green itself: this is `--lq3`'s dark
+   * value, the same green the faces are drawn from. */
+  --rail-on-ink: #dce9a6;
+  /* (`--rail-on`'s dark half went with the light one on 2026-08-31 —
+     the rail has no block any more. The tombstone, with both
+     percentages and why they differed, is on the light theme's side.) */
+
+  /* Lower than the light theme's .25 on purpose — see the light
+     block: the same alpha reads louder against near-black, and what
+     is being held equal across the two themes is how far the thumb
+     sits from the card, not how much ink is in it. */
+  --scroll-thumb: rgba(238, 238, 231, 0.22);
+  /* Lower than the light theme's .5 for the same reason .22 is lower
+     than .25: the same alpha reads louder against near-black. */
+  --scroll-thumb-strong: rgba(238, 238, 231, 0.45);
 }
 
 @theme inline {

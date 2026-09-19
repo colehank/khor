@@ -89,6 +89,42 @@ const BRIDGE = join(repo, "target/debug/bridge");
 const FIXTURE = join(repo, "target/debug/examples/day_fixture");
 
 const problems = [];
+/**
+ * Flips the desktop's scheme **and waits for the face to wear it**.
+ *
+ * ⚠️ 批 D2 put the dark palette under `:root[data-theme="dark"]` rather
+ * than a media query (`tokens.css` says why: the alternative was a
+ * second copy of the whole palette). So the stamp is one JS hop behind
+ * the emulation — `src/theme.ts`'s matchMedia listener re-stamping the
+ * root — and a colour read straight after `emulateMedia` is the theme
+ * being *left*.
+ *
+ * **This waits for the stamp and nothing else.** The settle each caller
+ * keeps afterwards is a different wait for a different thing: these
+ * glyphs have colour transitions, and a reading taken the instant the
+ * palette changes is bit-for-bit the colour it is leaving (the same
+ * lesson `smoke` §26 wrote down about an animating menu item). Folding
+ * the two into one wait is how this gate went red measuring ink at 1.08
+ * against a ground that had already turned.
+ */
+async function flipTheme(page, scheme) {
+  await page.emulateMedia({ colorScheme: scheme });
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const worn = await page.evaluate(() =>
+      document.documentElement.getAttribute("data-theme"),
+    );
+    if (worn === scheme) return;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `the face never wore the ${scheme} scheme (data-theme=${JSON.stringify(worn)}) — ` +
+          "批 D2's stamp is what repaints, and without it every colour below is the other theme's",
+      );
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 const fail = (m) => problems.push(m);
 
 for (const [what, path] of [["the bridge", BRIDGE], ["the fixture", FIXTURE]]) {
@@ -353,11 +389,11 @@ try {
   // and well outside what a nudge toward 空闲 would leave.
   const INK_GAP = 2.0;
   for (const scheme of ["light", "dark"]) {
-    await page.emulateMedia({ colorScheme: scheme });
-    // Its own call and a frame: computed style read in the same task as
-    // the change comes back as it was before the change. The `dark`
-    // read-back is the probe — this measurement was wrong twice while
-    // both columns quietly came back identical.
+    await flipTheme(page, scheme);
+    // …and then the transitions, which is a different wait: a computed
+    // style read the instant the palette turns is the colour it is
+    // leaving. This measurement came back with both columns identical
+    // twice before it was here.
     await new Promise((r) => setTimeout(r, 500));
     const isDark = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches);
     if (isDark !== (scheme === "dark")) {
@@ -444,7 +480,7 @@ try {
       `ink ${scheme}: 不知道 ${ink.hair} (floor ${INK_FLOOR}) vs faintest word ${ink.faintestWord} — ×${gap} lighter (need ×${INK_GAP})`,
     );
   }
-  await page.emulateMedia({ colorScheme: "light" });
+  await flipTheme(page, "light");
 
   // ── 3) one axis ───────────────────────────────────────────────────
   //

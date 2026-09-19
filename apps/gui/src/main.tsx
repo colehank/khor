@@ -5,6 +5,26 @@ import { isMenuFace } from "./api";
 import { MenuFace } from "./components/OmniMenu";
 import "./styles/tokens.css";
 import "./styles/app.css";
+import { followSystemTheme, mirroredPref, wearTheme } from "./theme";
+
+// **The theme is stamped before React is asked for a frame** (批 D2).
+//
+// Every stylesheet keys its dark half off `:root[data-theme]` now
+// (tokens.css says why: the alternative was a second copy of the
+// palette), so an unstamped root paints light — and a dark-desktop
+// machine would show one white frame before the first answer arrived.
+//
+// It is stamped from the **mirror** here, not from the store: the store
+// is behind an async call and this has to be synchronous to be worth
+// anything. `index.html` has already done exactly this before the
+// bundle loaded; doing it again costs one attribute write and is what
+// keeps this file honest when that frame is not there (the web face
+// served from a different document, a test harness mounting the app).
+// The real answer replaces it the moment `khor config` answers
+// (`App.tsx`), and the two agree on every launch but the first after a
+// change.
+wearTheme(mirroredPref());
+followSystemTheme();
 
 // The keyless screen this file used to paint is the server's job now
 // (记住一次批): the page itself sits behind the key, so a browser with

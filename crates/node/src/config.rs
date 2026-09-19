@@ -51,6 +51,12 @@ pub struct Section {
 /// heading wherever the section changes between neighbouring rows and
 /// never needs a list of its own.
 pub const SECTIONS: &[Section] = &[
+    // 外观. First, because it is the one setting on this page a person
+    // sees the effect of before they have finished reading the row.
+    Section {
+        name: "appearance",
+        page: "settings",
+    },
     // 会话: what a new one starts out as; 工作区 under it.
     Section {
         name: "session",
@@ -92,6 +98,26 @@ pub struct Key {
 /// where a key with no reader is worse than a greyed switch: it stores
 /// an answer, reports it back, and changes nothing.
 pub const KEYS: &[Key] = &[
+    // ── 外观 ──────────────────────────────────────────────────────
+    //
+    // 「现在只跟系统——加一个覆盖」(docs/MORE.md 设置). `auto` is what
+    // khor did before this key existed, so the default is the behaviour
+    // rather than a new opinion about it.
+    //
+    // **Nobody reads this on the Rust side except the window's own
+    // ground** (`src-tauri`'s `paint_the_window_before_the_page`): the
+    // palette is CSS, and the face resolves `auto` itself against
+    // `matchMedia` because that is the only place the question can be
+    // asked. Which is also why the value stored here is the *choice*
+    // (`auto` included) and never the resolved theme — a store holding
+    // 「dark」 because the desktop was dark that evening is a machine
+    // that stops following the desktop without anybody having said so.
+    Key {
+        name: "theme",
+        section: "appearance",
+        values: &["auto", "light", "dark"],
+        default: "auto",
+    },
     // ── 会话 ──────────────────────────────────────────────────────
     //
     // Which of the two forms the new-session wizard starts on

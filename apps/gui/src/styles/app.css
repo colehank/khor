@@ -428,15 +428,15 @@ input[type="search"]::-webkit-search-decoration {
    paint: a rendered turn and the file sheet. */
 /* File-kind icons (`components/FileKindIcon`): Seti's colour for the
    theme the page is in, the two values carried on the icon itself the
-   way a painted token carries its two. Same switch, same media query,
-   no colour chosen here. */
+   way a painted token carries its two. **Same switch as the palette's**
+   — `:root[data-theme]`, stamped by the face (批 D2, `src/theme.ts`),
+   which is what keeps 「显式选了浅色」 from leaving these two rules
+   still asking the desktop. No colour chosen here. */
 [data-file-kind] {
   color: var(--kind-light);
 }
-@media (prefers-color-scheme: dark) {
-  [data-file-kind] {
-    color: var(--kind-dark);
-  }
+:root[data-theme="dark"] [data-file-kind] {
+  color: var(--kind-dark);
 }
 
 [data-md] span[style*="--shiki"],
@@ -456,16 +456,14 @@ input[type="search"]::-webkit-search-decoration {
   font-weight: var(--shiki-light-font-weight, inherit);
 }
 
-@media (prefers-color-scheme: dark) {
-  [data-md] span[style*="--shiki"],
-  [data-sheet] span[style*="--shiki"] {
-    color: var(--shiki-dark);
-    text-decoration: var(--shiki-dark-text-decoration, inherit);
-  }
-  [data-md] span[style*="--shiki"] {
-    font-style: var(--shiki-dark-font-style, inherit);
-    font-weight: var(--shiki-dark-font-weight, inherit);
-  }
+:root[data-theme="dark"] [data-md] span[style*="--shiki"],
+:root[data-theme="dark"] [data-sheet] span[style*="--shiki"] {
+  color: var(--shiki-dark);
+  text-decoration: var(--shiki-dark-text-decoration, inherit);
+}
+:root[data-theme="dark"] [data-md] span[style*="--shiki"] {
+  font-style: var(--shiki-dark-font-style, inherit);
+  font-weight: var(--shiki-dark-font-weight, inherit);
 }
 
 /* The parts under a dial: one grid for every row in the drawer, so the

@@ -1719,14 +1719,15 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
+  const configValues = { theme: "auto", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
   const CONFIG_SHAPE = [
+    ["theme", "appearance", "settings", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
     ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
     ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "钉住"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-ws-remove", "confirm", "security", "移出工作区", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
+  const SECTION_WORD = { appearance: "外观", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices]) => ({
       name,
@@ -9621,7 +9622,7 @@ try {
       // The sections MORE.md names, by the node's own section keys —
       // never by their words, which would be reading the catalog to
       // check the catalog.
-      for (const want of ["face", "session", "workspace", "store", "about"]) {
+      for (const want of ["face", "appearance", "session", "workspace", "store", "about"]) {
         if (!drew.sections.includes(want)) {
           fail(`设置 has no 「${want}」 section — it drew ${JSON.stringify(drew.sections)}`);
         }
@@ -9646,6 +9647,90 @@ try {
             "both sections come off one `about` answer and neither is drawn without it",
         );
       }
+
+      // ── 外观: 「现在只跟系统——加一个覆盖」 ─────────────────────
+      //
+      // **The assertion is the colour on screen, not the row.** A row
+      // saying 浅色 over a page still painted dark is exactly the shape
+      // this file has been burned by; what the ruling promises is that
+      // an explicit choice **beats the desktop**, so the desktop is
+      // emulated dark for the whole of this and the ground is read back
+      // off `<body>`.
+      //
+      // Armed: dark is read first, with the choice still 跟系统, so
+      // 「light afterwards」 cannot be a page that was light all along.
+      // **Waited on by the thing itself, never by a sleep.** 批 D2 put
+      // the palette under `:root[data-theme]`, so the repaint is one JS
+      // hop behind the emulation (`src/theme.ts`'s matchMedia
+      // listener); a reading taken straight after `emulateMedia` is the
+      // theme being left. smoke's `flipTheme` is the same wait.
+      await page.emulateMedia({ colorScheme: "dark" });
+      await until(5_000, async () =>
+        (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark",
+      );
+      const ground = () =>
+        page.evaluate(() => ({
+          stamp: document.documentElement.getAttribute("data-theme"),
+          body: getComputedStyle(document.body).backgroundColor,
+          scheme: getComputedStyle(document.documentElement).colorScheme,
+        }));
+      const following = await ground();
+      console.log(`config · 外观 following the desktop: ${JSON.stringify(following)}`);
+      if (following.stamp !== "dark") {
+        fail(
+          `the desktop is dark and 跟系统 stamped ${JSON.stringify(following.stamp)} — ` +
+            "the matchMedia listener is what four gates flip the theme through (src/theme.ts)",
+        );
+      }
+
+      await press('[data-config-choice="theme:light"]');
+      const lit = await until(5_000, async () =>
+        (await page.locator('[data-config-row="theme"][data-value="light"]').count()) === 1,
+      );
+      if (!lit) fail("pressing 浅色 left the 外观 row on its old value");
+      await until(5_000, async () =>
+        (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light",
+      );
+      const chosen = await ground();
+      console.log(`config · 外观 after choosing 浅色: ${JSON.stringify(chosen)}`);
+      if (chosen.stamp !== "light") {
+        fail(`浅色 was chosen and the root still says ${JSON.stringify(chosen.stamp)}`);
+      }
+      if (chosen.body === following.body) {
+        fail(
+          `the desktop is dark, 浅色 was chosen, and the page is still painted ` +
+            `${chosen.body} — 「显式选浅色压过系统的深色」 is the whole of this key ` +
+            "(src/styles/tokens.css keys the palette on data-theme)",
+        );
+      }
+      // …and the engine was told too, so the scrollbars and the caret
+      // are not left following the desktop while the palette follows
+      // the choice (tokens.css `color-scheme`).
+      if (chosen.scheme !== "light") {
+        fail(
+          `the palette is light and color-scheme computes ${JSON.stringify(chosen.scheme)} — ` +
+            "the scrollbar, the caret and the check in a checkbox would stay dark",
+        );
+      }
+      // Back to 跟系统, and the desktop wins again — the other
+      // direction, which is what says this is a choice rather than a
+      // one-way door.
+      await press('[data-config-choice="theme:auto"]');
+      await until(5_000, async () =>
+        (await page.locator('[data-config-row="theme"][data-value="auto"]').count()) === 1,
+      );
+      await until(5_000, async () =>
+        (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark",
+      );
+      const back = await ground();
+      console.log(`config · 外观 back to 跟系统: ${JSON.stringify(back)}`);
+      if (back.stamp !== "dark" || back.body !== following.body) {
+        fail(`跟系统 did not hand the page back to the dark desktop: ${JSON.stringify(back)}`);
+      }
+      await page.emulateMedia({ colorScheme: "light" });
+      await until(5_000, async () =>
+        (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light",
+      );
 
       // Set it, and wait for the **store's** answer to come back round
       // through the shell: the page paints from the re-read, never from

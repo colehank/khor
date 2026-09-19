@@ -192,6 +192,22 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "puts up the system's own Touch ID / login-password sheet (LocalAuthentication); \
          a browser has nothing to ask, and the PIN is the key every face has",
     ),
+    // ── the window's own appearance, written down 2026-09-20 ─────
+    //
+    // **The fourth fact about windows on this list.** 外观 (批 D2) keys
+    // every stylesheet off `:root[data-theme]`, which covers the
+    // document and nothing else: the ground behind the webview is
+    // painted from Rust before any HTML exists, the title bar is
+    // AppKit's, and each editor window is khor's own. A browser face
+    // has none of the three — the page it is in was placed by somebody
+    // else — so an HTTP arm here could only report success at doing
+    // nothing, and `api.ts` makes it a no-op outside the app for
+    // `widen`'s reason.
+    (
+        "set_window_theme",
+        "gives the app's own window and its title bar the resolved theme; a page in a browser \
+         has no window, no title bar and no editor windows of its own",
+    ),
     (
         "open_code_window",
         "opens the editor in a second native window; a browser face opens a named tab with \

@@ -67,6 +67,7 @@ import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
 import { SettingsProvider } from "@/settings";
+import { wearTheme, type ThemePref } from "@/theme";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import {
@@ -376,6 +377,17 @@ export default function App() {
   // context: the four keys this batch lands are read on four screens
   // that are not each other's children (`src/settings.ts`).
   const settings = useStoredSettings();
+  // 外观 (批 D2). **The store's answer replaces the mirror's guess**,
+  // and `wearTheme` is idempotent — on every launch but the first after
+  // somebody changed the setting, this stamps exactly what `main.tsx`
+  // already stamped. The window's own appearance rides on the same
+  // call, which is why it happens here rather than inside 设置: a
+  // machine that comes up dark must dress its title bar without
+  // anybody opening a page.
+  const themePref = settings.rows?.find((r) => r.name === "theme")?.value ?? null;
+  useEffect(() => {
+    if (themePref !== null) wearTheme(themePref as ThemePref);
+  }, [themePref]);
   // **The breakpoint, published once.** `use-narrow` owns the number
   // and stylesheets need it too (the machine card's part rows drop
   // their shared grid narrow) — so the shell stamps the answer on the

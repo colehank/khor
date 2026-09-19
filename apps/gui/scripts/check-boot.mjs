@@ -106,10 +106,65 @@ if (painted.length !== 2) {
   }
 }
 
+// ── and the stamp that decides which of the two the frame wears ────
+//
+// 批 D2 moved every dark rule off `prefers-color-scheme` and onto
+// `:root[data-theme="dark"]`, so the frame above paints light unless
+// something stamps first. `index.html` does it in a script that runs
+// before the bundle exists — which means it cannot ask khor, and reads
+// a mirror of the setting out of `localStorage` instead.
+//
+// **That mirror's key is written in two places by necessity**, exactly
+// like the four colours: one copy in a script that must run before any
+// module, one in the module that keeps it (`src/theme.ts`). Drift is
+// silent in the worst direction — the frame quietly stops following the
+// setting and flashes the other theme on every cold launch, with no
+// error anywhere. So the two spellings are compared, and so is the
+// attribute, since the stylesheets key off that name too.
+const theme = readFileSync(join(here, "..", "src", "theme.ts"), "utf8");
+
+const mirrorInTs = theme.match(/THEME_MIRROR = "([^"]+)"/)?.[1] ?? null;
+const mirrorInHtml = html.match(/localStorage\.getItem\("([^"]+)"\)/)?.[1] ?? null;
+if (mirrorInTs === null || mirrorInHtml === null) {
+  fail(
+    `cannot find the theme mirror key (theme.ts: ${JSON.stringify(mirrorInTs)}, ` +
+      `index.html: ${JSON.stringify(mirrorInHtml)}) — if either moved, this check is now blind`,
+  );
+} else if (mirrorInTs !== mirrorInHtml) {
+  fail(
+    `the boot script reads ${JSON.stringify(mirrorInHtml)} and src/theme.ts writes ` +
+      `${JSON.stringify(mirrorInTs)} — the first frame would stop following the setting, silently`,
+  );
+}
+
+// The attribute itself, in all three places that spell it: the frame's
+// own rules, the module that stamps it, and the palette it selects.
+const STAMP = 'data-theme';
+for (const [what, text] of [
+  ["index.html", html],
+  ["src/theme.ts", theme],
+  ["src/styles/tokens.css", css],
+]) {
+  if (!text.includes(STAMP)) {
+    fail(`${what} never mentions ${STAMP} — the theme stamp is not reaching it`);
+  }
+}
+// …and that the frame is keyed on the stamp rather than back on the
+// media query it came from. A frame that asked the desktop again would
+// be right for everybody except the person who set the other one.
+if (/@media\s*\(prefers-color-scheme/.test(html)) {
+  fail(
+    "the boot frame still asks prefers-color-scheme — 批 D2 keys it on data-theme so an " +
+      "explicit 浅色 beats a dark desktop before the first paint",
+  );
+}
+
 if (bad) {
-  console.error(`boot gate: ${bad} colour(s) no longer match tokens.css`);
+  console.error(`boot gate: ${bad} thing(s) no longer line up`);
   process.exit(1);
 }
 console.log(
-  `boot gate: the first frame's 5 colours and the window's 2 grounds all match --background and --card`,
+  `boot gate: the first frame's 5 colours and the window's 2 grounds all match --background and ` +
+    `--card, and the theme stamp (${STAMP}, mirror ${JSON.stringify(mirrorInTs)}) is spelled the ` +
+    `same in the frame, the module and the palette`,
 );
