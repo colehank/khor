@@ -31,6 +31,7 @@ import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { About } from "./gen/bindings/About";
+import type { DoctorRow } from "./gen/bindings/DoctorRow";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
@@ -83,6 +84,7 @@ export type {
   HooksState,
   Ticket,
   About,
+  DoctorRow,
   Usage,
   Strain,
   ChatBatch,
@@ -719,6 +721,13 @@ export const pair = (ticket: string) => call<string>("pair", { ticket });
     what another machine is running is `khor doctor`'s question, asked
     over the wire, never a field on the device table. */
 export const fetchAbout = () => call<About>("about");
+/** 自检 (docs/MORE.md): twelve checks, each with a three-second budget
+    of its own, so the whole call is bounded at that — a relay that
+    swallows packets costs one row, never the page. */
+export const fetchDoctor = () => call<DoctorRow[]>("doctor");
+/** One check's remedy, by the check's own key — and the sentence saying
+    what it did. Refused by name for a key with no remedy. */
+export const doctorFix = (key: string) => call<string>("doctor_fix", { key });
 /** The chat six: an attachment registry in gui-core holds the socket
     (a webview cannot), a reader thread collects frames, and the poll
     answers instantly from a cursor — nothing is lost between polls.

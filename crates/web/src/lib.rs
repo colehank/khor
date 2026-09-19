@@ -37,11 +37,14 @@ use khor_catalog::msg;
 
 /// Where the face listens unless `KHOR_WEB_PORT` says otherwise.
 ///
-/// KHOR on a phone keypad. Chosen far from the development cluster on
-/// purpose — 1430 is vite, 1431 the dev bridge, 1442/1443 the smoke run
-/// — because a product port that a development tool can shadow is a
-/// fault nobody diagnoses twice.
-pub const DEFAULT_PORT: u16 = 5467;
+/// **The number itself lives in `khor_node::doctor`**, and the reason is
+/// the dependency graph rather than a preference: `khor doctor` has to
+/// probe this port, `khor_web` depends on `khor_node`, so a doctor that
+/// asked this crate would be a cycle. It is an installation fact — like
+/// the store's own path — rather than a fact about the server that binds
+/// it, so it sits with the other installation facts and is re-exported
+/// here, where every caller already looks for it.
+pub use khor_node::doctor::WEB_DEFAULT_PORT as DEFAULT_PORT;
 
 /// How many requests the face answers at once.
 ///
@@ -69,10 +72,7 @@ pub struct Face {
 /// two disagreeing would produce a link that is wrong in the one way
 /// nobody checks — it looks exactly like a link that is right.
 pub fn port() -> u16 {
-    std::env::var("KHOR_WEB_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(DEFAULT_PORT)
+    khor_node::doctor::web_port()
 }
 
 /// The address to hand to another device, key included.

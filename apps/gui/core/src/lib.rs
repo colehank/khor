@@ -1132,6 +1132,54 @@ pub fn about(root: &Path) -> About {
     }
 }
 
+/// One row of 自检 (docs/MORE.md), as the page draws it.
+///
+/// **Not `khor_node::doctor::Check` itself**, and the reason is where
+/// the words are: the node answers a key and a sentence, and the page
+/// also needs the check's *name* — which is a catalog lookup the node
+/// already owns (`doctor::name`). Doing it here means the two faces read
+/// one answer; doing it in TS would be a second match on the same keys,
+/// one restyle away from a page with a row called `launcher`.
+///
+/// `state` travels as its wire spelling (`ok` / `warn` / `fail` /
+/// `unmeasured`) rather than as a boolean pair — 未量 is a state of its
+/// own and must not be paintable as ok.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DoctorRow {
+    pub key: String,
+    pub name: String,
+    pub state: String,
+    pub said: String,
+    /// The key to hand back to `doctor_fix`, when khor can mend this.
+    pub fix: Option<String>,
+}
+
+/// The whole checklist. Each check under its own timeout, concurrently —
+/// see `khor_node::doctor`.
+pub async fn doctor(root: &Path) -> Result<Vec<DoctorRow>, String> {
+    let n = open(root)?;
+    Ok(khor_node::doctor::doctor(&n)
+        .await
+        .into_iter()
+        .map(|c| DoctorRow {
+            name: khor_node::doctor::name(&c.key).to_owned(),
+            key: c.key,
+            state: c.state.key().to_owned(),
+            said: c.said,
+            fix: c.fix,
+        })
+        .collect())
+}
+
+/// Runs one check's remedy and answers what it did, in words. Refused by
+/// name for a key with no remedy — a button that reported success at
+/// doing nothing is the shape where somebody believes a thing was
+/// mended.
+pub fn doctor_fix(root: &Path, key: &str) -> Result<String, String> {
+    khor_node::doctor::fix(&open(root)?, key)
+}
+
 /// A freshly minted ticket, and how long it is good for.
 ///
 /// **The window travels with the ticket instead of being written into

@@ -2058,6 +2058,20 @@ fn resume_session(agent: String, session: String) -> Result<String, String> {
     khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
 }
 
+/// 自检's checklist (`khor_gui_core::doctor`). Async: each check has a
+/// three-second budget of its own, and a blocking command would hold the
+/// window for however long the slowest one takes.
+#[tauri::command]
+async fn doctor() -> Result<Vec<khor_gui_core::DoctorRow>, String> {
+    khor_gui_core::doctor(&Node::root_from_env()).await
+}
+
+/// One check's remedy, by the check's own key.
+#[tauri::command]
+fn doctor_fix(key: String) -> Result<String, String> {
+    khor_gui_core::doctor_fix(&Node::root_from_env(), &key)
+}
+
 /// Which khor this is, and which store it is talking to
 /// (`khor_gui_core::about`) — the identity card's foot.
 #[tauri::command]
@@ -2324,6 +2338,8 @@ pub fn run() {
             resume_session,
             takeover,
             takeover_term,
+            doctor,
+            doctor_fix,
             about,
             invite,
             pair

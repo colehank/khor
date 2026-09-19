@@ -231,6 +231,12 @@ usage = """
   hooks [install|uninstall]
                         看钩子装没装;install 装上、uninstall 卸掉(都只碰
                         khor 自己那几条,做两遍=做一遍)
+  doctor [--json] [--fix 项]
+                        自检:一行一项,名字、状态(好/留意/坏了/未量)、
+                        一句话。**「未量」不是「好」**——它是没量到。
+                        每项各自 3 秒超时,一项卡住不拖累别项。
+                        --json 出原样(GUI 那一页读的是同一份);
+                        --fix 跑那一项的修法(能修的项在行尾写着怎么跑)
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网(卫星):身份从你的
@@ -263,6 +269,89 @@ group-header = "── {0}"
 # heading rather than as a tag on one row.
 group-pinned = "置顶"
 name-separator = "、"
+
+# ── `khor doctor` 的一张清单 (docs/MORE.md 自检) ──────────────────────
+# 每一项:名字、状态、一句人话,能修的带一个动作。**句子在节点这一侧写成**
+# ——一行说的不是一个有固定形状的事实(「钥匙别人也读得了」和
+# 「端口 54670 没人听」没有共同的形状可建模),所以挑词这一步下沉,词本身
+# 还在这儿。CLI 和 GUI 两边读同一份。
+doctor-name-version = "版本"
+doctor-name-identity = "身份钥匙"
+doctor-name-store = "本机数据"
+doctor-name-serve = "常驻"
+doctor-name-web = "网页脸"
+doctor-name-relays = "中继"
+doctor-name-peers = "别的机器"
+doctor-name-hooks = "钩子"
+doctor-name-agents = "智能体"
+doctor-name-vscode = "VS Code"
+doctor-name-disk = "磁盘余量"
+doctor-name-launcher = "开启器"
+# 四个状态词。**「未量」不是 ok**:一行绿着的意思是有人看过了,而没看过是
+# 另一件事(docs/SESSION.md 认不出就不落词,落在读数上的那一版)。
+doctor-ok = "好"
+doctor-warn = "留意"
+doctor-fail = "坏了"
+doctor-unmeasured = "未量"
+# 一项自己超时了。名字带着,因为一行消失会读成一切正常。
+doctor-timed-out = "{0} 秒没答上来"
+# 修法按下去之后那一句。
+doctor-fixed-chmod = "钥匙的权限改回只有你读得了"
+doctor-fixed-hooks = "钩子重装了"
+doctor-fixed-serve = "起了一个常驻"
+doctor-no-fix = "这一项 khor 修不了: {0}"
+# 一行后面那个提示:这一项 khor 能修,而且怎么修。**报的是这一项自己的键**,
+# 因为 `--fix` 收的就是它;印修法自己的键会是一个这条命令不认的词。
+doctor-fixable = "khor doctor --fix {0}"
+# GUI 那一页上的两个动作。**CLI 没有这两个词**:再查一遍在命令行上就是
+# 再敲一遍,而修法在命令行上是行尾印出来的那一句(`doctor-fixable`)。
+# 放在 [cli] 是因为这一节的词两边共用,而这两条只有一边画得出来。
+doctor-again = "再查一遍"
+doctor-mend = "修"
+# ── 各项的话 ──
+# 版本:桌面上是两个二进制(app 是 khor-gui,命令行是 khor),
+# 只升了一个的时候,从哪一边都看不出来。
+doctor-version-split = "命令行是 {0},这一份是 {1}"
+doctor-version-no-cli = "这台机器上找不到 khor 命令"
+doctor-identity-ok = "在,只有你读得了"
+doctor-identity-loose = "别人也读得了(权限 {0})"
+doctor-identity-gone = "不在: {0}"
+doctor-identity-unreadable = "读不了: {0}"
+doctor-store-ok = "打得开、写得进,占 {0}"
+doctor-store-shut = "写不进去: {0}"
+# 常驻:文件里记着一个活着的 pid、而且那个 socket 真答话——两半分开报,
+# 因为它们会分开坏,而「没在跑」会把人支使去再起一个。
+doctor-serve-ok = "在跑(pid {0})"
+doctor-serve-none = "没在跑"
+doctor-serve-deaf = "记着 pid {0},可是不答话"
+doctor-web-ok = "端口 {0} 在听,钥匙在"
+doctor-web-nokey = "端口 {0} 在听,可是钥匙文件不在"
+doctor-web-quiet = "端口 {0} 没人听"
+doctor-relay-ms = "{0} {1}ms"
+doctor-relay-quiet = "{0} 够不着"
+doctor-relays-none = "一台中继都没有"
+# 对端的版本从读数上来(`khor_core::Vitals::version`),不另问一趟——
+# 所以一台没联系上的机器在这儿没有版本,而那是答案,不是缺口。
+doctor-peer = "{0} {1} {2}"
+doctor-peer-behind = "{0} {1} {2},和这台不一样"
+doctor-peer-mute = "{0} {1},版本说不上"
+doctor-peers-alone = "还没和别的机器配对"
+doctor-peers-unread = "读不了机器表"
+doctor-hooks-ok = "claude 的钩子都装着"
+doctor-hooks-part = "{0} 个事件的钩子没装,或者指着另一个 khor"
+doctor-hooks-unread = "读不了 claude 的设置"
+doctor-agents-ok = "登记的 {0} 个命令都找得到"
+doctor-agents-missing = "找不到命令: {0}"
+doctor-agents-none = "没登记过智能体"
+doctor-agents-unread = "读不了智能体登记表"
+doctor-vscode-ready = "{0},服务端下好了"
+doctor-vscode-fetch = "{0},服务端还没下(第一次开会下)"
+doctor-vscode-none = "这台没有 code"
+doctor-disk = "{0} / {1},还剩 {2}"
+doctor-disk-unknown = "说不上这个盘还剩多少"
+doctor-launcher-ok = "用 {0}"
+doctor-launcher-missing = "{0} 不在 PATH 上"
+doctor-launcher-none = "这台机器没有开启器"
 unread = "未读 {0}"
 unreachable-for = "{0}没联系上"
 # The quiet note (词的保鲜期批): a live word nobody can vouch for has

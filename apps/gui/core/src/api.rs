@@ -656,6 +656,11 @@ pub fn answer(
             &arg("agent")?,
             &arg("session")?,
         )?),
+        // 自检 (docs/MORE.md). Twelve checks, each under its own
+        // timeout — so this arm can take three seconds and never more.
+        "doctor" => to_json(&rt.block_on(crate::doctor(root))?),
+        // …and one check's remedy, by the check's own key.
+        "doctor_fix" => to_json(&crate::doctor_fix(root, &arg("key")?)?),
         // Which khor this is and which store it is talking to. No node
         // is opened (`crate::about`), which is why it answers on a
         // machine whose store refuses — the moment the answer matters

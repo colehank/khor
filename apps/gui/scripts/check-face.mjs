@@ -1627,6 +1627,30 @@ try {
       }),
     }),
   );
+  // 自检's checklist (docs/MORE.md). **All four states are routed**,
+  // because the one thing this page must never do is paint 未量 as ok —
+  // and a fixture with only healthy rows could not tell the two apart.
+  // `asked` counts the calls: 「再查一遍」 and a mend are both an ask,
+  // and a button that reports a repair without re-measuring is the
+  // failure this page is most exposed to.
+  const doctorAsked = [];
+  const doctorFixed = [];
+  const DOCTOR_ROWS = [
+    { key: "version", name: "版本", state: "ok", said: "0.0.0-gate", fix: null },
+    { key: "identity", name: "身份钥匙", state: "warn", said: "别人也读得了(权限 644)", fix: "chmod" },
+    { key: "store", name: "本机数据", state: "ok", said: "打得开、写得进,占 761B", fix: null },
+    { key: "serve", name: "常驻", state: "fail", said: "没在跑", fix: "serve" },
+    { key: "relays", name: "中继", state: "unmeasured", said: "3 秒没答上来", fix: null },
+    { key: "launcher", name: "开启器", state: "ok", said: "用 open", fix: null },
+  ];
+  await page.route("**/doctor", (r) => {
+    doctorAsked.push(Date.now());
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(DOCTOR_ROWS) });
+  });
+  await page.route("**/doctor_fix", (r) => {
+    doctorFixed.push(JSON.parse(r.request().postData() || "{}").key);
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("钥匙的权限改回只有你读得了") });
+  });
   // Which khor this is, for the identity card's foot (docs/MORE.md 头像).
   // The version string is this fixture's own and deliberately not the
   // workspace's: what the card has to prove is that it prints what the
@@ -2222,8 +2246,10 @@ try {
       },
     },
     {
+      // The list, not the frame: a page that drew its head and threw on
+      // the way to its rows would still satisfy the frame.
       name: "doctor",
-      anchor: '[data-more-page="doctor"] [data-more-close]',
+      anchor: "[data-doctor-list] [data-doctor-row]",
       go: async () => (await press("[data-rail-more]")) && press('[data-more-open="doctor"]'),
       after: async () => {
         await press("[data-more-close]");
@@ -9175,6 +9201,128 @@ try {
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
+  }
+
+  // ── 4D) 自检那一页 (docs/MORE.md 自检) ────────────────────────────
+  //
+  // 「自检是对app自身状态全面自检查」 — the user, 2026-09-18. The page is
+  // the node's checklist and 「再查一遍」; every judgment on it is
+  // `khor_node::doctor`'s.
+  //
+  // **What this section is really guarding is 未量.** 「每项独立超时
+  // (3 s),一项卡住不拖累别项;『未量』不是 ok」 — a row nobody could
+  // take must not wear the word of a row that passed, and that is one
+  // lookup away from being true by accident (an `INK` map with no entry
+  // for it falls back to the same muted ink ok wears, which is *fine*;
+  // a `WORD` map with no entry would print the wire key, which is not).
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+    const before = doctorAsked.length;
+    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="doctor"]'))) {
+      fail("probe dead: 「…」 → 自检 did not open");
+    } else {
+      await until(5_000, async () => (await page.locator("[data-doctor-row]").count()) > 0);
+      const list = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll("[data-doctor-row]")];
+        return {
+          keys: rows.map((e) => e.getAttribute("data-doctor-row")),
+          states: rows.map((e) => e.getAttribute("data-doctor-state")),
+          words: rows.map((e) => e.querySelector("[data-doctor-word]")?.textContent?.trim() ?? null),
+          saids: rows.map((e) => e.querySelector("[data-doctor-said]")?.textContent?.trim() ?? null),
+          fixes: rows.map((e) => !!e.querySelector("[data-doctor-fix]")),
+          again: document.querySelectorAll("[data-doctor-again]").length,
+        };
+      });
+      console.log(`doctor: ${JSON.stringify(list)}`);
+      // One row per check, in the node's order. A page that sorted or
+      // filtered would be deciding what was checked.
+      const wanted = DOCTOR_ROWS.map((r) => r.key);
+      if (list.keys.join(",") !== wanted.join(",")) {
+        fail(
+          `自检 drew ${JSON.stringify(list.keys)} against the node's ${JSON.stringify(wanted)} — ` +
+            "the page paints the checklist, it does not choose it (src/views/more/DoctorPage.tsx)",
+        );
+      }
+      if (list.states.join(",") !== DOCTOR_ROWS.map((r) => r.state).join(",")) {
+        fail(`自检 painted states ${JSON.stringify(list.states)}`);
+      }
+      // **The four words are four.** 未量 sharing ok's word is the one
+      // way this page can lie, and it is the sentence 「未量不是 ok」 is
+      // written against.
+      const ok = list.words[list.states.indexOf("ok")];
+      const unmeasured = list.words[list.states.indexOf("unmeasured")];
+      const spoken = new Set(list.words);
+      if (!ok || !unmeasured || ok === unmeasured) {
+        fail(
+          `自检 says ${JSON.stringify(ok)} for a check that passed and ${JSON.stringify(unmeasured)} ` +
+            "for one nobody could take — 「『未量』不是 ok」 (docs/MORE.md 自检)",
+        );
+      }
+      if (spoken.size !== new Set(list.states).size) {
+        fail(`自检 spells ${list.states.length} states with ${spoken.size} word(s): ${JSON.stringify([...spoken])}`);
+      }
+      // A row khor can mend carries the door, and one it cannot does not
+      // — a button that refuses is worse than no button.
+      const wantedFixes = DOCTOR_ROWS.map((r) => r.fix !== null);
+      if (list.fixes.join(",") !== wantedFixes.join(",")) {
+        fail(
+          `自检 offered a remedy on ${JSON.stringify(list.fixes)} against the node's ` +
+            `${JSON.stringify(wantedFixes)} — 「能修的带一个动作」, and only those`,
+        );
+      }
+      if (list.again !== 1) fail(`自检 draws ${list.again} 「再查一遍」`);
+      // **Asked on arrival, and then left alone.** The count on arrival
+      // is 1 or 2 rather than exactly 1, and the 2 is this gate's own
+      // environment: vite serves the dev build, `main.tsx` wraps the app
+      // in `React.StrictMode`, and StrictMode runs a mount effect twice
+      // on purpose. Pinning 1 here would be pinning a build nobody
+      // ships. What the product actually promises is the line under
+      // this one.
+      const onArrival = doctorAsked.length - before;
+      if (onArrival < 1 || onArrival > 2) {
+        fail(`opening 自检 asked the node ${onArrival} time(s) — it is asked when the page opens`);
+      }
+      // **Not polled**, and this is the half that is a product claim: a
+      // checklist spawns processes, dials relays and walks the store, so
+      // a beat would do all of that to a machine nobody is looking at.
+      // Measured over more than the longest beat anything else in this
+      // app runs on (`POLL_MS` is 2 s).
+      const settled = doctorAsked.length;
+      await wait(2_600);
+      if (doctorAsked.length !== settled) {
+        fail(
+          `自检 asked ${doctorAsked.length - settled} more time(s) while nobody pressed anything — ` +
+            "a checklist is asked for, never polled (src/views/more/DoctorPage.tsx)",
+        );
+      }
+
+      // 再查一遍 asks again.
+      await press("[data-doctor-again]");
+      await wait(600);
+      if (doctorAsked.length !== settled + 1) {
+        fail(`「再查一遍」 asked the node ${doctorAsked.length - settled} time(s)`);
+      }
+
+      // Pressing a remedy runs **that check's** key and re-measures.
+      // A repair that reported success without asking again is the
+      // shape where somebody believes a thing was mended.
+      const fixesBefore = doctorFixed.length;
+      const asksBefore = doctorAsked.length;
+      await press('[data-doctor-fix="identity"]');
+      await until(5_000, async () => doctorAsked.length > asksBefore);
+      console.log(`doctor · mend: fixed=${JSON.stringify(doctorFixed)} asked again=${doctorAsked.length > asksBefore}`);
+      if (doctorFixed.length !== fixesBefore + 1 || doctorFixed[doctorFixed.length - 1] !== "identity") {
+        fail(
+          `pressing 修 on the 身份钥匙 row sent ${JSON.stringify(doctorFixed.slice(fixesBefore))} — ` +
+            "the check's own key is what `--fix` takes (src/views/more/DoctorPage.tsx mend)",
+        );
+      }
+      if (doctorAsked.length <= asksBefore) {
+        fail("a remedy that took did not re-measure — the row would go on showing what it said before");
+      }
+    }
+    await press("[data-more-close]");
   }
 
   // ── 5) a dense screen has a reading order ─────────────────────────

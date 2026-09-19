@@ -14,6 +14,7 @@ pub mod chat;
 pub mod code;
 pub mod codexagent;
 pub mod day;
+pub mod doctor;
 pub mod files;
 pub mod git;
 pub mod gui_host;

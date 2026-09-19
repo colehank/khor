@@ -7998,6 +7998,110 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   await closeRowMenu();
 
 
+  // 32) `khor doctor` on a real home, through the real node (docs/MORE.md
+  //      自检).
+  //
+  //      **The checklist is the one thing on this page that cannot be
+  //      driven by a fixture at all.** `check-face` routes six rows and
+  //      proves the page paints what it was handed; nothing there says a
+  //      relay was dialled, a store was written, a resident answered or a
+  //      peer's version came off its readings. That is this section.
+  //
+  //      Read off `--json` rather than the printed table: the GUI page
+  //      draws the same rows, so asserting the JSON is asserting both
+  //      faces at once — and a tab-separated line cannot be walked for
+  //      「every key is present」 without re-deriving the order here.
+  {
+    const rows = JSON.parse(cli(envA, "doctor", "--json"));
+    const keys = rows.map((r) => r.key);
+    console.log(`doctor: ${rows.map((r) => `${r.key}=${r.state}`).join(" ")}`);
+    //    a. every key is there. **Enumerated rather than counted**: two
+    //    lists of twelve can still disagree, and a count would call that
+    //    a match.
+    const WANTED = [
+      "version", "identity", "store", "serve", "web", "relays",
+      "peers", "hooks", "agents", "vscode", "disk", "launcher",
+    ];
+    for (const key of WANTED) {
+      if (!keys.includes(key)) {
+        throw new Error(`khor doctor left out ${key}: ${JSON.stringify(keys)}`);
+      }
+    }
+    if (keys.length !== WANTED.length) {
+      throw new Error(`khor doctor answered ${keys.length} rows: ${JSON.stringify(keys)}`);
+    }
+    //    b. every row said something, and said it in one of the four
+    //    states. A row with an empty sentence is a row nobody can act
+    //    on, and a state outside the four is a word the page would
+    //    print raw.
+    const STATES = ["ok", "warn", "fail", "unmeasured"];
+    for (const r of rows) {
+      if (!r.said) throw new Error(`khor doctor's ${r.key} row said nothing`);
+      if (!STATES.includes(r.state)) {
+        throw new Error(`khor doctor's ${r.key} row is ${JSON.stringify(r.state)}`);
+      }
+    }
+    //    c. **beta is in the peers row, by the name a person reads.**
+    //    This is the one assertion here that needs a second machine, and
+    //    it is what says the row is built from the device table and the
+    //    readings rather than from nothing.
+    const peers = rows.find((r) => r.key === "peers");
+    if (!peers.said.includes("beta")) {
+      throw new Error(`khor doctor on alpha does not see beta: ${JSON.stringify(peers.said)}`);
+    }
+    //    d. alpha's store opens and takes a write — it has been written
+    //    to all run — and its identity key is nobody else's to read.
+    for (const key of ["store", "identity"]) {
+      const row = rows.find((r) => r.key === key);
+      if (row.state !== "ok") {
+        throw new Error(`khor doctor says ${key} is ${row.state}: ${JSON.stringify(row.said)}`);
+      }
+    }
+    //    e. alpha's resident is up — this run started one — so the serve
+    //    row is green and offers no remedy. **The negative half is the
+    //    load-bearing one**: a fix offered on a check that passed is a
+    //    button that would start a second resident.
+    const serve = rows.find((r) => r.key === "serve");
+    if (serve.state !== "ok" || serve.fix !== null) {
+      throw new Error(`khor doctor's serve row on a live serve: ${JSON.stringify(serve)}`);
+    }
+    //    f. `--fix` on a check with no remedy is refused by name, and
+    //    the refusal names the key. A `--fix` that quietly did nothing
+    //    is the shape where somebody believes a thing was mended.
+    //    **`execFileSync` directly, not the `cli` helper**: that one
+    //    retries five times on a non-zero exit, which is right for a
+    //    flaky dial and wrong for a refusal that is the assertion — it
+    //    would run the refused command five times and print it five
+    //    times in the log.
+    let refused = null;
+    try {
+      execFileSync(KHOR, ["doctor", "--fix", "relays"], {
+        env: envA,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+    } catch (e) {
+      refused = String(e.stderr || e);
+    }
+    if (refused === null || !refused.includes("relays")) {
+      throw new Error(`khor doctor --fix relays was not refused by name: ${refused}`);
+    }
+    //    g. the printed table is the same twelve rows, one per line, with
+    //    the name and the state word on them. Read structurally — the
+    //    words belong to the catalog, not to this script.
+    const printed = cli(envA, "doctor").trim().split("\n");
+    if (printed.length !== WANTED.length) {
+      throw new Error(`khor doctor printed ${printed.length} lines for ${WANTED.length} checks`);
+    }
+    if (printed.some((l) => l.split("\t").length < 3)) {
+      throw new Error(`khor doctor printed a line with fewer than three fields: ${JSON.stringify(printed)}`);
+    }
+    console.log(
+      `doctor: ${WANTED.length} checks on alpha, beta in the peers row, ` +
+        `serve ok with no remedy, --fix relays refused by name`,
+    );
+  }
+
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 

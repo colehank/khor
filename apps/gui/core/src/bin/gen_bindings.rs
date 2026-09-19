@@ -39,6 +39,8 @@ fn main() {
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     // The identity card's foot: asked for on its own, embedded in no row.
     khor_gui_core::About::export_all_to(&dir).expect("export About");
+    // 自检's rows: asked on their own beat, embedded in nothing.
+    khor_gui_core::DoctorRow::export_all_to(&dir).expect("export DoctorRow");
     // Not reachable through any row above: the wizard asks for the
     // agent list on its own, so nothing embeds it.
     khor_gui_core::AgentRow::export_all_to(&dir).expect("export AgentRow");

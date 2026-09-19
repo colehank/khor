@@ -24,8 +24,13 @@ use std::path::{Path, PathBuf};
 use khor_catalog::msg;
 
 /// Where this machine keeps its key.
+///
+/// **The spelling lives in `khor_node::doctor`**, beside the port and
+/// for the same reason: `khor doctor` reports whether this file is
+/// there, and `khor_web` depends on `khor_node` rather than the other
+/// way round. One spelling either way.
 pub fn path(root: &Path) -> PathBuf {
-    root.join(".khor").join("web.key")
+    khor_node::doctor::web_key_path(root)
 }
 
 /// The key, minting one if this machine has never had a face.

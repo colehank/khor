@@ -2288,3 +2288,191 @@ fn a_workspace_whose_machine_left_the_table_keeps_its_row_and_comes_off_by_id() 
 
     let _ = fs::remove_dir_all(&r);
 }
+
+// ── `khor doctor` (docs/MORE.md 自检) ───────────────────────────────
+
+/// **Every key the list names has a word, and every word names a key.**
+///
+/// The second direction is the one that goes silent: a word for a check
+/// khor no longer runs is invisible — the page looks complete while that
+/// row can never appear — which is the same failure the hop table's gate
+/// is written against (`crates/catalog/tests/gate.rs`).
+#[test]
+fn every_doctor_check_has_a_word_and_every_word_names_a_check() {
+    for key in doctor::KEYS {
+        let w = doctor::name(key);
+        assert_ne!(w, *key, "doctor.{key} must map to a word, not echo");
+    }
+    assert_eq!(
+        doctor::name("holodeck"),
+        "holodeck",
+        "an unknown key echoes rather than borrowing a neighbour's word"
+    );
+}
+
+/// **The four states are four, and 未量 is not ok.**
+///
+/// Pinned because the whole value of the page rests on it: a check that
+/// could not be taken must not be paintable as one that passed, and the
+/// two are one `match` arm apart.
+#[test]
+fn the_four_doctor_states_keep_their_keys_and_their_words_apart() {
+    use doctor::Health;
+    let all = [Health::Ok, Health::Warn, Health::Fail, Health::Unmeasured];
+    let keys: Vec<&str> = all.iter().map(|h| h.key()).collect();
+    assert_eq!(keys, ["ok", "warn", "fail", "unmeasured"]);
+    let words: std::collections::BTreeSet<&str> = all.iter().map(|h| h.word()).collect();
+    assert_eq!(words.len(), 4, "two states share a word: {words:?}");
+    assert_eq!(
+        serde_json::to_string(&Health::Unmeasured).unwrap(),
+        r#""unmeasured""#,
+        "the wire spelling is what a face keys off"
+    );
+}
+
+/// **The list is the whole list, in the order the page draws it** — and
+/// nothing is dropped for having failed. A row that vanished would read
+/// as a clean bill (`doctor::timed`'s own reason).
+#[test]
+fn doctor_answers_one_row_per_key_in_order() {
+    let r = root("doctor-rows");
+    let n = Node::open(r.clone()).unwrap();
+    let rows = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(doctor::doctor(&n));
+    let keys: Vec<&str> = rows.iter().map(|c| c.key.as_str()).collect();
+    assert_eq!(keys, doctor::KEYS);
+    for c in &rows {
+        assert!(!c.said.is_empty(), "{} said nothing at all", c.key);
+    }
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A fresh store is a store this machine can write**, and the identity
+/// key it just minted is nobody else's to read.
+///
+/// Two rows rather than the whole page, because these two are the only
+/// ones whose answer a temp directory fully determines — the rest depend
+/// on what is installed on the machine running the test.
+#[test]
+fn a_fresh_store_and_its_key_come_back_healthy() {
+    let r = root("doctor-store");
+    let n = Node::open(r.clone()).unwrap();
+    let rows = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(doctor::doctor(&n));
+    let of = |key: &str| rows.iter().find(|c| c.key == key).unwrap().clone();
+    assert_eq!(of("store").state, doctor::Health::Ok, "{:?}", of("store"));
+    assert_eq!(
+        of("identity").state,
+        doctor::Health::Ok,
+        "{:?}",
+        of("identity")
+    );
+    // The store row states what it is holding, and a store that has just
+    // been created is holding something.
+    assert!(
+        doctor::store_bytes(&r) > 0,
+        "a store with an identity key in it cannot be zero bytes"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A key anybody can read is a warning with a remedy, and the remedy
+/// takes.**
+///
+/// The one check on this page khor can actually mend, so it is the one
+/// worth driving end to end: loosen the mode, see the row change its
+/// mind, run the fix, see it change back.
+#[cfg(unix)]
+#[test]
+fn a_world_readable_identity_key_warns_and_the_fix_tightens_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let r = root("doctor-chmod");
+    let n = Node::open(r.clone()).unwrap();
+    let key = doctor::identity_path(&r);
+    fs::set_permissions(&key, fs::Permissions::from_mode(0o644)).unwrap();
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let row = |rt: &tokio::runtime::Runtime| {
+        rt.block_on(doctor::doctor(&n))
+            .into_iter()
+            .find(|c| c.key == "identity")
+            .unwrap()
+    };
+    let loose = row(&rt);
+    assert_eq!(loose.state, doctor::Health::Warn, "{loose:?}");
+    assert_eq!(loose.fix.as_deref(), Some("chmod"));
+
+    doctor::fix(&n, "identity").unwrap();
+    assert_eq!(
+        fs::metadata(&key).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let tight = row(&rt);
+    assert_eq!(tight.state, doctor::Health::Ok, "{tight:?}");
+    assert_eq!(tight.fix, None);
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A key that has no remedy is refused by name**, never answered with
+/// a cheerful nothing: a `--fix` that quietly did nothing is the shape
+/// where somebody believes a thing was mended.
+#[test]
+fn fixing_a_check_that_has_no_remedy_refuses_and_names_it() {
+    let r = root("doctor-nofix");
+    let n = Node::open(r.clone()).unwrap();
+    let why = doctor::fix(&n, "relays").unwrap_err();
+    assert!(why.contains("relays"), "{why}");
+    let why = doctor::fix(&n, "holodeck").unwrap_err();
+    assert!(why.contains("holodeck"), "{why}");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **With no resident holding the key, the serve row fails and offers to
+/// start one** — and it is a `fail` rather than a warning because every
+/// road out of this machine runs through that process.
+#[test]
+fn a_store_with_no_resident_says_so_and_offers_to_start_one() {
+    let r = root("doctor-serve");
+    let n = Node::open(r.clone()).unwrap();
+    let row = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(doctor::doctor(&n))
+        .into_iter()
+        .find(|c| c.key == "serve")
+        .unwrap();
+    assert_eq!(row.state, doctor::Health::Fail, "{row:?}");
+    assert_eq!(row.fix.as_deref(), Some("serve"));
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A machine that has paired with nobody says so rather than passing
+/// an empty list off as health.** The row is green — nothing is wrong —
+/// and it says why, which is what keeps「0 peers」from reading as「0
+/// peers reachable」.
+#[test]
+fn a_machine_with_no_peers_says_that_instead_of_listing_none() {
+    let r = root("doctor-alone");
+    let n = Node::open(r.clone()).unwrap();
+    let row = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(doctor::doctor(&n))
+        .into_iter()
+        .find(|c| c.key == "peers")
+        .unwrap();
+    assert_eq!(row.state, doctor::Health::Ok, "{row:?}");
+    assert_eq!(row.said, khor_catalog::cli::DOCTOR_PEERS_ALONE);
+    let _ = fs::remove_dir_all(&r);
+}

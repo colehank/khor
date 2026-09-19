@@ -49,16 +49,24 @@
 | serve | `khor serve` 在跑、IPC 答话 | 起它 |
 | web | 网页脸端口在听、钥匙文件在 | — |
 | relays | 每个中继可达 + RTT | — |
-| peers | 每台已配对机器：可达、RTT、直连还是中继、对端版本；版本不一致 warn | — |
-| hooks | claude / codex 的 hooks 装没装、指向的 khor 还在不在 | `khor hooks` 重装 |
+| peers | 每台已配对机器：可达、直连还是中继、对端版本；版本不一致 warn | — |
+| hooks | claude 的 hooks 装没装、指向的 khor 还在不在 | `khor hooks` 重装 |
 | agents | 登记的智能体命令各自找不找得到 | — |
 | vscode | 这台有没有 `code`、serve-web 服务端下好没 | — |
 | disk | store 所在盘余量（< 5% fail，< 10% warn） | — |
-| clock | 与各对端的时钟差（> 60 s warn） | — |
 | launcher | 开启器（`open` / `xdg-open` / `KHOR_LAUNCHER`）在不在 | — |
-| perms（仅 macOS app） | 辅助功能等系统权限（app 自己需要的那些）| 打开系统设置对应页 |
 
 已有的探测（`devices`、`top`、relays、hooks 的检查）复用，不重写。
+
+> 2026-09-19 批 B 落地时改了三处表，都是「现有探测里问不出来」：
+> - **peers 的 RTT 撤了。** 可达和直连/中继来自 `hops()`（常驻那一份读数），对端版本来自
+>   `Vitals::version`（它本来就跟着读数走）。**RTT 只有常驻自己那条连接看得见**，
+>   要一个新的 IPC op 才拿得到——不在这一批，写在 handoff 的「还欠什么」里。
+> - **clock 整行撤了。** 对端的钟在现有任何一份答案里都没有：`Vitals` 不带时间戳，
+>   `vitals_of` 的第二个数是**本机收到它的时刻**。要一个新的线上问法才量得到。
+> - **perms 撤了。** khor 自己不要辅助功能之类的系统权限（截图脚本要，khor 不要），
+>   没有可查的项；等哪天真需要了再加一行。
+> - hooks 只有 claude：树里只有 `adaptor::claude` 一套钩子，`khor hooks` 也只装它。
 
 ## 安全 · `khor lock`
 

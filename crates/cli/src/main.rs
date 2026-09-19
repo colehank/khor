@@ -361,6 +361,14 @@ const VERBS: &[Verb] = &[
         run: hooks,
         reach: Reach::Act,
     },
+    // Reads twelve things and writes nothing — **until `--fix`**, which
+    // chmods a key, rewrites claude's settings or starts a resident.
+    // The rule is per word, not per invocation (`face` above).
+    Verb {
+        word: "doctor",
+        run: doctor,
+        reach: Reach::Act,
+    },
     // Mints a pairing ticket: this one hands out network access.
     Verb {
         word: "invite",
@@ -3809,6 +3817,60 @@ fn agents(rest: &[String]) -> Result<(), String> {
 /// one, and both writes have to be typed. `khor hooks` alone is also how
 /// somebody checks what `install` or `uninstall` just did — a write
 /// nobody can verify afterwards is a write on trust.
+/// `khor doctor [--json] [--fix <key>]` — the checklist
+/// (docs/MORE.md 自检).
+///
+/// **One line per check, tab-separated**, which is the shape every other
+/// listing verb here prints: name, state word, sentence. The `--fix`
+/// hint rides a fourth field rather than a line of its own, so a row
+/// stays a row for anything reading this with `cut`.
+///
+/// `--json` prints the node's answer verbatim — the same rows the GUI
+/// page draws, so the two faces cannot come to disagree about what was
+/// checked.
+fn doctor(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    let mut json = false;
+    let mut fix: Option<String> = None;
+    let mut it = rest.iter();
+    while let Some(word) = it.next() {
+        match word.as_str() {
+            "--json" => json = true,
+            "--fix" => fix = Some(it.next().ok_or_else(|| USAGE.to_string())?.clone()),
+            _ => return Err(USAGE.into()),
+        }
+    }
+    if let Some(key) = fix {
+        println!("{}", khor_node::doctor::fix(&n, &key)?);
+        return Ok(());
+    }
+    let rows = rt()?.block_on(khor_node::doctor::doctor(&n));
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&rows).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+    for c in &rows {
+        // The fix is named by its **check's** key, because that is what
+        // `--fix` takes — printing the remedy's own key would be a word
+        // this verb does not answer to.
+        let fixable = if c.fix.is_some() {
+            format!("\t{}", cli::doctor_fixable(&c.key))
+        } else {
+            String::new()
+        };
+        println!(
+            "{}\t{}\t{}{fixable}",
+            khor_node::doctor::name(&c.key),
+            c.state.word(),
+            c.said
+        );
+    }
+    Ok(())
+}
+
 fn hooks(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     match rest {

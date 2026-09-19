@@ -15,6 +15,14 @@ khor-catalog.workspace = true
 # the face cannot be a thing only the app can raise.
 khor-web = { path = "../web" }
 tokio.workspace = true
+# `khor doctor --json` prints the node's rows verbatim, so the GUI page
+# and this verb cannot come to disagree about what was checked. Hand-built
+# JSON is what `_verbs` does (its rows are two known words); a check's
+# sentence is a person's language and needs real escaping.
+#
+# **Not a new package**: it was already a dev-dependency of this crate and
+# a dependency of khor-node, so the lock file does not move.
+serde_json.workspace = true
 # The link as a picture, because the alternative is a person typing 32
 # hex digits into a phone. That is not a nicety: a key nobody can enter
 # is a face nobody opens, so the code is part of the door working.
@@ -35,7 +43,6 @@ unicode-width.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
 # The real-agent gate reaches into the session store to find the host
 # socket, the way a face does (`tests/agents.rs`).
 khor-core.workspace = true

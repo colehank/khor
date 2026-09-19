@@ -5193,6 +5193,17 @@ impl Node {
         Ok(Some(ips))
     }
 
+    /// The pid of the resident `khor serve` holding this key, or `None`
+    /// when nothing is.
+    ///
+    /// **Half an answer on purpose.** A live pid is not a serve that
+    /// answers — the socket can be wedged while the process is alive —
+    /// and `khor doctor` reports the two apart (`doctor::check_serve`).
+    /// This side only says whether anything claims the key.
+    pub fn serve_pid(&self) -> Option<u32> {
+        self.endpoint_file().ok().flatten().map(|f| f.pid)
+    }
+
     fn endpoint_file(&self) -> Result<Option<EndpointFile>, String> {
         let path = self.root().join(".khor").join("endpoint.json");
         let Ok(text) = fs::read_to_string(&path) else {
