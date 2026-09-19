@@ -312,6 +312,88 @@ pinned-mark = "(pinned)"
 group-header = "── {0}"
 group-pinned = "pinned"
 name-separator = ", "
+
+# ── `khor doctor`'s checklist (docs/MORE.md 自检) ─────────────────────
+# One row per check: a name, a state, one sentence for a person, and a
+# remedy where khor has one. **The sentence is chosen on the node side**
+# — what a row says has no one shape to model — so what lives here is
+# the wording, not the choosing. CLI and GUI read the same entries.
+doctor-name-version = "Version"
+doctor-name-identity = "Identity key"
+doctor-name-store = "Local data"
+doctor-name-serve = "Resident"
+doctor-name-web = "Web face"
+doctor-name-relays = "Relays"
+doctor-name-peers = "Other machines"
+doctor-name-hooks = "Hooks"
+doctor-name-agents = "Agents"
+doctor-name-vscode = "VS Code"
+doctor-name-disk = "Disk headroom"
+doctor-name-launcher = "Opener"
+# The four states. **Untaken is not ok**: a green row means somebody
+# looked, and not having looked is a different fact.
+doctor-ok = "Good"
+doctor-warn = "Look"
+doctor-fail = "Broken"
+doctor-unmeasured = "Untaken"
+# One check overran its own budget. The name rides along: a row that
+# vanished would read as a clean bill.
+doctor-timed-out = "no answer in {0}s"
+# What a remedy says it did.
+doctor-fixed-chmod = "the key is readable by you alone again"
+doctor-fixed-hooks = "hooks reinstalled"
+doctor-fixed-serve = "a resident was started"
+doctor-no-fix = "khor cannot mend this one: {0}"
+# The hint at the end of a mendable row. **It names the check's own
+# key**, because that is what `--fix` takes.
+doctor-fixable = "khor doctor --fix {0}"
+# The GUI page's two actions. The CLI has neither: checking again is
+# typing it again, and the remedy is printed at the end of the row.
+doctor-again = "Check again"
+doctor-mend = "Mend"
+# ── what each check says ──
+doctor-version-split = "the command line is {0}, this one is {1}"
+doctor-version-no-cli = "no khor command on this machine"
+doctor-identity-ok = "there, readable by you alone"
+doctor-identity-loose = "others can read it too (mode {0})"
+doctor-identity-gone = "not there: {0}"
+doctor-identity-unreadable = "cannot read it: {0}"
+doctor-store-ok = "opens, takes a write, holding {0}"
+doctor-store-shut = "cannot write to it: {0}"
+# Two halves, told apart: a live pid on file and a socket that answers
+# fail separately, and "not running" would send somebody to start a
+# second one.
+doctor-serve-ok = "running (pid {0})"
+doctor-serve-none = "not running"
+doctor-serve-deaf = "pid {0} on file, but it does not answer"
+doctor-web-ok = "port {0} is listening, key is there"
+doctor-web-nokey = "port {0} is listening, but the key file is missing"
+doctor-web-quiet = "nothing is listening on port {0}"
+doctor-relay-ms = "{0} {1}ms"
+doctor-relay-quiet = "{0} out of reach"
+doctor-relays-none = "no relay at all"
+# A peer's version comes off its readings, never a question of its own,
+# so a machine khor has not heard from has none — an answer, not a gap.
+doctor-peer = "{0} {1} {2}"
+doctor-peer-behind = "{0} {1} {2}, not what this one runs"
+doctor-peer-mute = "{0} {1}, version unknown"
+doctor-peers-alone = "not paired with any machine yet"
+doctor-peers-unread = "cannot read the machine table"
+doctor-hooks-ok = "every claude hook is installed"
+doctor-hooks-part = "{0} event hook(s) missing, or pointing at another khor"
+doctor-hooks-unread = "cannot read claude's settings"
+doctor-agents-ok = "all {0} registered command(s) found"
+doctor-agents-missing = "command not found: {0}"
+doctor-agents-none = "no agent registered"
+doctor-agents-unread = "cannot read the agent registry"
+doctor-vscode-ready = "{0}, server already fetched"
+doctor-vscode-fetch = "{0}, server not fetched yet (the first open fetches it)"
+doctor-vscode-none = "no code on this machine"
+doctor-disk = "{0} / {1}, {2} left"
+doctor-disk-unknown = "cannot say how much is left on this volume"
+doctor-launcher-ok = "uses {0}"
+doctor-launcher-missing = "{0} is not on PATH"
+doctor-launcher-none = "this machine has no opener"
 unread = "unread {0}"
 unreachable-for = "unreachable for {0}"
 quiet-for = "quiet for {0}"
