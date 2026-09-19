@@ -16,6 +16,40 @@ fn root(tag: &str) -> PathBuf {
     p
 }
 
+/// A scratch tree that takes itself away, **however the test leaves**
+/// (工作区批①'s `Scratch`, and `files.rs` keeps its own copy).
+///
+/// ⚠️ **The reason this exists beside [`root`] rather than replacing
+/// it.** A cleanup written at the end of a test is skipped by the
+/// assertion that fails — so a red run leaves a directory in `$TMPDIR`
+/// every time it is red, and those accumulate until a disk fills.
+/// Measured 2026-09-19: 8389 of them, 724 MB, on the machine this
+/// repo is built on.
+///
+/// The tests above still call `root` and still leak on a panic; that is
+/// a standing account somebody is clearing separately. **Everything
+/// written from here down takes this instead**, so the account stops
+/// growing.
+struct Scratch(PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = Path;
+
+    fn deref(&self) -> &Path {
+        &self.0
+    }
+}
+
+fn scratch(tag: &str) -> Scratch {
+    Scratch(root(tag))
+}
+
 #[test]
 fn notes_to_self_are_seen_the_moment_they_are_told() {
     let r = root("tell");
@@ -2335,8 +2369,8 @@ fn the_four_doctor_states_keep_their_keys_and_their_words_apart() {
 /// as a clean bill (`doctor::timed`'s own reason).
 #[test]
 fn doctor_answers_one_row_per_key_in_order() {
-    let r = root("doctor-rows");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("doctor-rows");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let rows = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -2347,7 +2381,6 @@ fn doctor_answers_one_row_per_key_in_order() {
     for c in &rows {
         assert!(!c.said.is_empty(), "{} said nothing at all", c.key);
     }
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A fresh store is a store this machine can write**, and the identity
@@ -2358,8 +2391,8 @@ fn doctor_answers_one_row_per_key_in_order() {
 /// on what is installed on the machine running the test.
 #[test]
 fn a_fresh_store_and_its_key_come_back_healthy() {
-    let r = root("doctor-store");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("doctor-store");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let rows = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -2379,7 +2412,6 @@ fn a_fresh_store_and_its_key_come_back_healthy() {
         doctor::store_bytes(&r) > 0,
         "a store with an identity key in it cannot be zero bytes"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A key anybody can read is a warning with a remedy, and the remedy
@@ -2392,8 +2424,8 @@ fn a_fresh_store_and_its_key_come_back_healthy() {
 #[test]
 fn a_world_readable_identity_key_warns_and_the_fix_tightens_it() {
     use std::os::unix::fs::PermissionsExt;
-    let r = root("doctor-chmod");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("doctor-chmod");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let key = doctor::identity_path(&r);
     fs::set_permissions(&key, fs::Permissions::from_mode(0o644)).unwrap();
 
@@ -2419,7 +2451,6 @@ fn a_world_readable_identity_key_warns_and_the_fix_tightens_it() {
     let tight = row(&rt);
     assert_eq!(tight.state, doctor::Health::Ok, "{tight:?}");
     assert_eq!(tight.fix, None);
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A key that has no remedy is refused by name**, never answered with
@@ -2427,13 +2458,12 @@ fn a_world_readable_identity_key_warns_and_the_fix_tightens_it() {
 /// where somebody believes a thing was mended.
 #[test]
 fn fixing_a_check_that_has_no_remedy_refuses_and_names_it() {
-    let r = root("doctor-nofix");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("doctor-nofix");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let why = doctor::fix(&n, "relays").unwrap_err();
     assert!(why.contains("relays"), "{why}");
     let why = doctor::fix(&n, "holodeck").unwrap_err();
     assert!(why.contains("holodeck"), "{why}");
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **With no resident holding the key, the serve row fails and offers to
@@ -2441,8 +2471,8 @@ fn fixing_a_check_that_has_no_remedy_refuses_and_names_it() {
 /// road out of this machine runs through that process.
 #[test]
 fn a_store_with_no_resident_says_so_and_offers_to_start_one() {
-    let r = root("doctor-serve");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("doctor-serve");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let row = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -2453,7 +2483,6 @@ fn a_store_with_no_resident_says_so_and_offers_to_start_one() {
         .unwrap();
     assert_eq!(row.state, doctor::Health::Fail, "{row:?}");
     assert_eq!(row.fix.as_deref(), Some("serve"));
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A machine that has paired with nobody says so rather than passing
@@ -2462,8 +2491,8 @@ fn a_store_with_no_resident_says_so_and_offers_to_start_one() {
 /// peers reachable」.
 #[test]
 fn a_machine_with_no_peers_says_that_instead_of_listing_none() {
-    let r = root("doctor-alone");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("doctor-alone");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let row = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -2474,7 +2503,6 @@ fn a_machine_with_no_peers_says_that_instead_of_listing_none() {
         .unwrap();
     assert_eq!(row.state, doctor::Health::Ok, "{row:?}");
     assert_eq!(row.said, khor_catalog::cli::DOCTOR_PEERS_ALONE);
-    let _ = fs::remove_dir_all(&r);
 }
 
 // ── `khor lock` (docs/MORE.md 安全) ─────────────────────────────────
@@ -2484,12 +2512,11 @@ fn a_machine_with_no_peers_says_that_instead_of_listing_none() {
 /// second one.
 #[test]
 fn a_machine_nobody_has_locked_says_so_on_both_counts() {
-    let r = root("lock-fresh");
+    let r = scratch("lock-fresh");
     let s = lock::state(&r);
     assert!(!s.on);
     assert!(!s.has_pin);
     assert_eq!(s.timeout_min, 0, "永不 is the shape a machine ships in");
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **The lock cannot be turned on without a PIN**, and the refusal is a
@@ -2500,7 +2527,7 @@ fn a_machine_nobody_has_locked_says_so_on_both_counts() {
 /// machine shuts people out of the others.
 #[test]
 fn the_lock_refuses_to_come_on_without_a_key_to_it() {
-    let r = root("lock-nopin");
+    let r = scratch("lock-nopin");
     let why = lock::set_on(&r, true).unwrap_err();
     assert!(!why.is_empty(), "the refusal must be a sentence");
     assert!(!lock::state(&r).on, "a refused switch must not have moved");
@@ -2508,7 +2535,6 @@ fn the_lock_refuses_to_come_on_without_a_key_to_it() {
     lock::set_pin(&r, "123456").unwrap();
     let s = lock::set_on(&r, true).unwrap();
     assert!(s.on && s.has_pin);
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **The PIN is stored as an Argon2id hash and never as itself**, and
@@ -2516,7 +2542,7 @@ fn the_lock_refuses_to_come_on_without_a_key_to_it() {
 /// what is on a disk somebody else can open.
 #[test]
 fn the_pin_never_reaches_the_disk_in_a_readable_form() {
-    let r = root("lock-hash");
+    let r = scratch("lock-hash");
     lock::set_pin(&r, "hunter2!").unwrap();
     let text = fs::read_to_string(r.join(".khor").join("lock.json")).unwrap();
     assert!(
@@ -2527,14 +2553,13 @@ fn the_pin_never_reaches_the_disk_in_a_readable_form() {
         text.contains("$argon2id$"),
         "what is stored is not an Argon2id hash: {text}"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **The right PIN opens it, a wrong one does not, and neither is an
 /// error.** A wrong PIN is an ordinary event a face says 「不对」 to.
 #[test]
 fn the_pin_opens_only_to_itself() {
-    let r = root("lock-check");
+    let r = scratch("lock-check");
     lock::set_pin(&r, "123456").unwrap();
     assert!(lock::check_pin(&r, "123456").unwrap());
     assert!(!lock::check_pin(&r, "123457").unwrap());
@@ -2543,17 +2568,15 @@ fn the_pin_opens_only_to_itself() {
         !lock::check_pin(&r, "12345").unwrap(),
         "a prefix is not the PIN"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A PIN shorter than the floor is refused and nothing is written** —
 /// the state a refused call leaves behind is the state it started in.
 #[test]
 fn a_short_pin_is_refused_and_leaves_the_machine_as_it_was() {
-    let r = root("lock-short");
+    let r = scratch("lock-short");
     lock::set_pin(&r, "12345").unwrap_err();
     assert!(!lock::state(&r).has_pin);
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **Clearing the PIN turns the lock off in the same move.** Splitting
@@ -2561,13 +2584,12 @@ fn a_short_pin_is_refused_and_leaves_the_machine_as_it_was() {
 /// it.
 #[test]
 fn clearing_the_pin_takes_the_lock_with_it() {
-    let r = root("lock-clear");
+    let r = scratch("lock-clear");
     lock::set_pin(&r, "123456").unwrap();
     lock::set_on(&r, true).unwrap();
     let s = lock::set_pin(&r, "").unwrap();
     assert!(!s.on && !s.has_pin);
     assert!(!lock::state(&r).on, "and it stays off when re-read");
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A file that says「locked」with no hash in it reads as unlocked.**
@@ -2578,7 +2600,7 @@ fn clearing_the_pin_takes_the_lock_with_it() {
 /// feature must never wear.
 #[test]
 fn a_lock_with_no_key_in_the_file_reads_as_open() {
-    let r = root("lock-handedited");
+    let r = scratch("lock-handedited");
     fs::create_dir_all(r.join(".khor")).unwrap();
     fs::write(
         r.join(".khor").join("lock.json"),
@@ -2589,18 +2611,16 @@ fn a_lock_with_no_key_in_the_file_reads_as_open() {
     assert!(!s.on, "a lock with no key to it must not be honoured");
     assert!(!s.has_pin);
     assert_eq!(s.timeout_min, 5, "the rest of the file is still read");
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A garbled file falls back to「no lock」**, never to「locked」 — the
 /// direction is chosen, not inherited.
 #[test]
 fn a_garbled_lock_file_leaves_the_machine_open() {
-    let r = root("lock-garbled");
+    let r = scratch("lock-garbled");
     fs::create_dir_all(r.join(".khor")).unwrap();
     fs::write(r.join(".khor").join("lock.json"), b"{not json").unwrap();
     assert!(!lock::state(&r).on);
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **The timeout ladder is the node's**, so the CLI and the page cannot
@@ -2608,7 +2628,7 @@ fn a_garbled_lock_file_leaves_the_machine_open() {
 /// name rather than kept as a setting nothing draws.
 #[test]
 fn the_idle_timeout_takes_only_the_rungs_the_faces_draw() {
-    let r = root("lock-timeout");
+    let r = scratch("lock-timeout");
     for m in lock::TIMEOUTS {
         assert_eq!(lock::set_timeout(&r, *m).unwrap().timeout_min, *m);
     }
@@ -2619,7 +2639,6 @@ fn the_idle_timeout_takes_only_the_rungs_the_faces_draw() {
         *lock::TIMEOUTS.last().unwrap(),
         "a refused rung must not have moved the setting"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **重置身份 takes the machine's own name and nothing else**, and the
@@ -2627,8 +2646,8 @@ fn the_idle_timeout_takes_only_the_rungs_the_faces_draw() {
 /// about one irreversible act.
 #[test]
 fn resetting_an_identity_wants_the_machine_name_typed_out() {
-    let r = root("lock-reset");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("lock-reset");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let name = n.name().to_owned();
     let key = doctor::identity_path(&r);
     assert!(key.is_file(), "probe dead: a fresh node minted no key");
@@ -2645,9 +2664,8 @@ fn resetting_an_identity_wants_the_machine_name_typed_out() {
     // this is another computer.
     let was = n.device_str().to_owned();
     drop(n);
-    let fresh = Node::open(r.clone()).unwrap();
+    let fresh = Node::open(r.to_path_buf()).unwrap();
     assert_ne!(fresh.device_str(), was);
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **Resetting twice is resetting once.** The caller wanted the key not
@@ -2655,11 +2673,10 @@ fn resetting_an_identity_wants_the_machine_name_typed_out() {
 /// is not there.
 #[test]
 fn resetting_an_identity_that_is_already_gone_is_not_an_error() {
-    let r = root("lock-reset-twice");
-    let n = Node::open(r.clone()).unwrap();
+    let r = scratch("lock-reset-twice");
+    let n = Node::open(r.to_path_buf()).unwrap();
     let name = n.name().to_owned();
     drop(n);
     lock::reset_identity(&r, &name, &name).unwrap();
     lock::reset_identity(&r, &name, &name).unwrap();
-    let _ = fs::remove_dir_all(&r);
 }
