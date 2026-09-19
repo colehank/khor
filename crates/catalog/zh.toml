@@ -103,7 +103,10 @@ square = "方形"
 [cli]
 usage = """
 用法: khor <动词>
-  id                    本机身份
+  id [--reset 机器名]    本机身份;--reset 把身份钥匙删了重新铸一把——
+                        **对全网来说这就是换了一台机器**,别的机器还认着
+                        旧的、不认新的,要回去得重新配对。所以它要你把
+                        这台机器的名字原样打一遍
   face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
                         本机的脸;不带参数看现在是什么、有哪些可选
   devices               网里的机器
@@ -231,6 +234,14 @@ usage = """
   hooks [install|uninstall]
                         看钩子装没装;install 装上、uninstall 卸掉(都只碰
                         khor 自己那几条,做两遍=做一遍)
+  lock [status|on|off|pin|timeout 分钟]
+                        屏幕上那几张脸的打开密码(app 窗口和网页脸)。
+                        **不锁命令行**——`khor` 后面站着的人已经登进这台
+                        机器了。不带参数=看现在什么样;pin 从标准输入读
+                        一行(不进 argv,也就不进 shell 历史和 ps),
+                        打一行空的=撤掉 PIN,锁也跟着关;timeout 收
+                        0/1/5/15/60(0 是永不)。macOS 的 app 上还能用
+                        Touch ID 开,那是额外的一把:PIN 是每张脸都有的那把
   doctor [--json] [--fix 项]
                         自检:一行一项,名字、状态(好/留意/坏了/未量)、
                         一句话。**「未量」不是「好」**——它是没量到。
@@ -308,6 +319,16 @@ doctor-fixable = "khor doctor --fix {0}"
 # 放在 [cli] 是因为这一节的词两边共用,而这两条只有一边画得出来。
 doctor-again = "再查一遍"
 doctor-mend = "修"
+# ── `khor lock` 印出来的几个词 (docs/MORE.md 安全) ─────────────────
+# 一行三段:锁开着没有、有没有钥匙、闲置多久自己锁上。**锁的是屏幕上的
+# 那几张脸,不是这个终端**——`khor` 后面站着的人已经登进这台机器了。
+lock-on = "锁着"
+lock-off = "没锁"
+lock-pin-set = "PIN 设过了"
+lock-pin-none = "还没设 PIN"
+lock-idle-never = "闲置不自己锁"
+lock-idle-after = "闲置 {0} 分钟自己锁"
+identity-reset = "身份钥匙删了;下次开 khor 会铸一把新的,对全网来说这是另一台机器"
 # ── 各项的话 ──
 # 版本:桌面上是两个二进制(app 是 khor-gui,命令行是 khor),
 # 只升了一个的时候,从哪一边都看不出来。
@@ -988,6 +1009,26 @@ no-local-lookup = "局域网发现起不来"
 # 的组合:它把机器留在没有任何中继的状态,只有打洞成了才连得上。拒绝,
 # 而不是悄悄把开关拨回去——一个会自己关掉的开关,是屏幕在谎报状态。
 relays-only-mine-needs-one = "要先加一台自己的中继,才能只用自己的"
+
+# ── 打开密码 (docs/MORE.md 安全) ──────────────────────────────────
+# **PIN 是每张脸都有的那把钥匙**,所以没有 PIN 就开不了锁:手机打开的
+# 网页脸没有 Touch ID 可退,一把只长在一台机器上的钥匙会把人关在别的
+# 脸外面。拒绝,而不是悄悄把开关拨回去——上面那条中继的理由,同一条。
+lock-needs-a-pin = "先设一个 PIN,才能打开这个锁"
+# 「位」说的是字符,不是数字:一个更长的口令被挡在外面,挡掉的是更强的
+# 那个答案。六是四位数的习惯要跨过去的那道坎。
+lock-pin-too-short = "PIN 至少 {0} 位"
+# 哈希本身读不出来 = khor 坏了,**不是「PIN 不对」**。合成一个词,人会
+# 拿着一个对的 PIN 一直重敲。
+lock-cant-hash = "这台机器的 PIN 记录读不了: {0}"
+lock-no-such-timeout = "没有这一档: {0}(有 {1})"
+# 重置身份要输机器名,而这一句由节点说、不由屏幕说:一个命令行标志加一个
+# 对话框,就是同一件不可逆的事有两套规矩,而漂掉的那一套正是没人跑的那一套。
+reset-wants-the-machine-name = "要重置身份,把机器名原样打一遍: {0}"
+cant-read-stdin = "读不了标准输入: {0}"
+# 系统那张验证面板上写的那句话——**它是系统画的,不是 khor 画的**,
+# 所以它得自己说清楚是谁在问。
+lock-system-reason = "解锁 khor"
 
 # ── cli ──
 runtime-wont-start = "起不了运行时: {0}"
@@ -2595,6 +2636,50 @@ identity-alone = "还没和别的机器配对过"
 # 设置页里脸那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
 settings-face = "这台机器的脸"
+# ── 安全那一页,和锁屏 (docs/MORE.md 安全) ─────────────────────────
+# 锁屏上只有三样:这台机器的脸、它的名字、一个输入框。**别的什么都没有**
+# ——等你的有几条、谁刚说了话,那些是内容,而内容正是被锁住的东西。
+lock-pin = "PIN"
+lock-open = "解锁"
+lock-wrong = "不对"
+# macOS 的 app 上多的那把钥匙。网页脸上这个按钮整个不画:浏览器里没有这
+# 回事,而一个按下去会拒绝的按钮比没有按钮更糟。
+lock-system = "用系统验证"
+# ── 安全页的各节 ──
+lock-section = "打开密码"
+# 开关那一行的名字。**说的是「锁不锁这几张脸」,不是「现在锁没锁」**:
+# 后者是每张脸自己的事,一个设置项答不了。
+lock-switch = "锁上这台机器的脸"
+lock-switch-note = "锁的是 app 窗口和网页脸,不锁命令行"
+lock-set-pin = "设一个 PIN"
+lock-change-pin = "换一个 PIN"
+lock-pin-floor = "至少 {0} 位"
+lock-pin-save = "存下"
+lock-pin-clear = "撤掉 PIN"
+lock-idle = "闲置多久自己锁"
+lock-idle-never-pick = "永不"
+lock-idle-pick = "{0} 分钟"
+lock-now = "现在锁上"
+# 网页脸的钥匙那一节。**默认遮住**:这一页可能正被人看着,或者正在被录屏。
+web-key-section = "网页脸钥匙"
+web-key-show = "显示"
+web-key-hide = "遮住"
+web-key-rotate = "换一把"
+web-key-none = "这台机器还没开过网页脸"
+# 换钥匙之后那一句。不是装饰:之前发出去的每一条链接从这一刻起全都打不开,
+# 而那正是这个动作的全部意思。
+web-key-rotated = "换好了;之前发出去的链接全都作废了"
+# 配对过的机器那一节:这里能做的事只有一件,把一台请出去。
+forget-section = "配对的机器"
+# 这一节的动作只有一件。**按钮的词和机器行菜单里那个不共用**:那边是
+# 「删除」(一张列表里的一行),这边是「请出去」(一台机器和这张网的关系),
+# 而按下去之后的那一句两边共用(`forget-machine-confirm`),因为那是同一件事。
+forget-put-out = "请出去"
+# 重置身份。红字、输机器名——这一页上唯一一件撤不回来的事。
+reset-section = "重置身份"
+reset-warn = "删掉这台机器的身份钥匙、重新铸一把。**对全网来说这就是换了一台机器**:别的机器还认着旧的、不认新的,要回去得重新配对。"
+reset-type-name = "把机器名原样打一遍"
+reset-do = "确认重置"
 # ── the machine's own relays, on the settings screen ──
 # 「中继」 alone is already taken by the path word (直连/中继 on a row),
 # and it has to stay that — this heading is about the *list*, not about

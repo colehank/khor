@@ -394,6 +394,18 @@ doctor-disk-unknown = "cannot say how much is left on this volume"
 doctor-launcher-ok = "uses {0}"
 doctor-launcher-missing = "{0} is not on PATH"
 doctor-launcher-none = "this machine has no opener"
+
+# ── what `khor lock` prints (docs/MORE.md 安全) ───────────────────────
+# One line, three fields: whether the faces lock, whether there is a key,
+# and how long idle before one locks itself. **It locks the screens, not
+# this terminal** — behind `khor` there is already somebody logged in.
+lock-on = "Locked"
+lock-off = "Unlocked"
+lock-pin-set = "PIN set"
+lock-pin-none = "no PIN yet"
+lock-idle-never = "never locks on idle"
+lock-idle-after = "locks after {0} idle minutes"
+identity-reset = "the identity key is gone; the next khor mints a new one, and to the network that is another machine"
 unread = "unread {0}"
 unreachable-for = "unreachable for {0}"
 quiet-for = "quiet for {0}"
@@ -577,6 +589,27 @@ watch-path-twice = "Same directory listed twice: {0}"
 not-a-relay-url = "Not a relay address: {0}"
 no-local-lookup = "Local network discovery won't start"
 relays-only-mine-needs-one = "Add one of your own relays first — then you can use only your own"
+
+# ── the app lock (docs/MORE.md 安全) ─────────────────────────────────
+# **The PIN is the key every face has**, so the lock cannot come on
+# without one: a phone opening the web face has no Touch ID to fall back
+# on. Refused rather than quietly switched back off — a switch that turns
+# itself off is a screen lying about its own state.
+lock-needs-a-pin = "set a PIN first, then the lock can come on"
+# Characters, not digits: refusing a longer passphrase for having letters
+# in it would be refusing the stronger answer.
+lock-pin-too-short = "a PIN is at least {0} characters"
+# An unreadable hash is khor being broken, **not a wrong PIN**. Folded
+# into one word, somebody retypes a correct PIN forever.
+lock-cant-hash = "this machine's PIN record cannot be read: {0}"
+lock-no-such-timeout = "no such step: {0} (there are {1})"
+# The reset wants the machine's own name, and the node is what checks it:
+# a flag and a dialog would be two rules about one irreversible act.
+reset-wants-the-machine-name = "to reset the identity, type the machine name exactly: {0}"
+cant-read-stdin = "cannot read standard input: {0}"
+# What the system's own verification sheet says. **The system draws it,
+# not khor**, so it has to say who is asking.
+lock-system-reason = "Unlock khor"
 
 # ── cli ──
 runtime-wont-start = "Runtime won't start: {0}"
@@ -1129,6 +1162,53 @@ identity-paired = "Paired machines"
 identity-alone = "Not paired with any machine yet"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "This machine's face"
+
+# ── 安全 and the lock screen (docs/MORE.md 安全) ──────────────────────
+# The lock screen carries three things: this machine's face, its name,
+# and one box. **Nothing else** — how many are waiting and who just spoke
+# are the contents, and the contents are what is locked.
+lock-pin = "PIN"
+lock-open = "Unlock"
+lock-wrong = "Wrong"
+# The app's other key on macOS. The web face draws no such button: a
+# browser has nothing to ask, and a button that refuses is worse than
+# none.
+lock-system = "Use system verification"
+lock-section = "Screen lock"
+# The switch says **whether these faces lock**, not whether one is locked
+# right now — that is each face's own, and no setting can answer it.
+lock-switch = "Lock this machine's faces"
+lock-switch-note = "Locks the app window and the web face, never the command line"
+lock-set-pin = "Set a PIN"
+lock-change-pin = "Change the PIN"
+lock-pin-floor = "at least {0} characters"
+lock-pin-save = "Save the PIN"
+lock-pin-clear = "Remove the PIN"
+lock-idle = "Lock after idling"
+lock-idle-never-pick = "Never"
+lock-idle-pick = "{0} minutes"
+lock-now = "Lock now"
+# The web face's key. **Masked by default**: this page may be on a screen
+# somebody else is looking at, or in a recording.
+web-key-section = "Web face key"
+web-key-show = "Show"
+web-key-hide = "Hide"
+web-key-rotate = "New key"
+web-key-none = "this machine has never raised a web face"
+# Not decoration: every link handed out before this stops working, and
+# that is the whole meaning of the act.
+web-key-rotated = "Done; every link handed out before this one is dead"
+forget-section = "Machines paired with this one"
+# **Not the row menu's word.** That one is 「delete」, a row leaving a
+# list; this is a machine leaving the network. The sentence after the
+# press is shared, because that is one act.
+forget-put-out = "Show it out"
+# The one thing on this page that cannot be undone: red, and it wants the
+# machine's name typed out.
+reset-section = "Reset identity"
+reset-warn = "Deletes this machine's identity key and mints a new one. **To the network this is another machine**: every paired machine still knows the old one and will not know the new one, and getting back means pairing again."
+reset-type-name = "Type the machine name exactly"
+reset-do = "Confirm reset"
 relays-mine = "My relays"
 relays-add = "Add one"
 relays-hint = "http://address:port"

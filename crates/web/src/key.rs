@@ -21,98 +21,33 @@
 
 use std::path::{Path, PathBuf};
 
-use khor_catalog::msg;
-
 /// Where this machine keeps its key.
 ///
-/// **The spelling lives in `khor_node::doctor`**, beside the port and
-/// for the same reason: `khor doctor` reports whether this file is
-/// there, and `khor_web` depends on `khor_node` rather than the other
-/// way round. One spelling either way.
+/// **The whole of「where the key is and how it is minted」lives in
+/// `khor_node::face`**, and the dependency graph is the reason: `khor
+/// doctor` reports whether this file is there, 安全 shows the key and
+/// rotates it, and both of those are the node's — while this crate
+/// depends on the node rather than the other way round. What stays here
+/// is the serving: the request loop above, and [`matches`] below.
 pub fn path(root: &Path) -> PathBuf {
-    khor_node::doctor::web_key_path(root)
+    khor_node::face::web_key_path(root)
 }
 
 /// The key, minting one if this machine has never had a face.
 pub fn ensure(root: &Path) -> Result<String, String> {
-    match read(root) {
-        Ok(Some(key)) => Ok(key),
-        Ok(None) => mint(root),
-        Err(e) => Err(e),
-    }
+    khor_node::face::web_key_ensure(root)
 }
 
-/// A new key, replacing whatever was there. Every link printed before
-/// this call stops working — that is the whole point of the verb, so it
-/// is not softened with a grace period: a key you can still use after
-/// revoking it is not revoked.
+/// A new key, replacing whatever was there.
 pub fn rotate(root: &Path) -> Result<String, String> {
-    mint(root)
+    khor_node::face::web_key_rotate(root)
 }
 
 /// The key as it is on disk right now, or `None` if this machine has no
-/// face yet.
-///
-/// **Read on every request rather than cached.** It costs one 32-byte
-/// read against a request whose own work is measured in milliseconds,
-/// and it buys the thing the verb promises: `khor web --new` takes
-/// effect on the next request, with no message to send to a running
-/// serve and no window where the old link still opens.
+/// face yet. Read on every request rather than cached — see
+/// `khor_node::face`.
 pub fn read(root: &Path) -> Result<Option<String>, String> {
-    let p = path(root);
-    match std::fs::read_to_string(&p) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(msg::cant_read(p.display(), e)),
-        Ok(text) => {
-            check_permissions(&p)?;
-            let key = text.trim();
-            // **An empty file is not a key.** A truncated write leaves
-            // one, and [`matches`] is an honest comparison: it would
-            // say yes to a request that presented nothing, which is
-            // every request. Refusing here rather than in the caller
-            // keeps the hole closed for callers that have not been
-            // written yet.
-            if key.is_empty() {
-                return Err(msg::web_key_empty(p.display()));
-            }
-            Ok(Some(key.to_owned()))
-        }
-    }
-}
-
-fn mint(root: &Path) -> Result<String, String> {
-    let dot = root.join(".khor");
-    std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
-    let key = khor_node::link::fresh_hex()?;
-    khor_node::link::write_private(&path(root), key.as_bytes())?;
-    Ok(key)
-}
-
-/// A loose key refuses to answer, the way a loose identity refuses to
-/// start (`khor_net::identity`). On the machines this is for — shared
-/// university boxes where every account can reach 127.0.0.1 — the mode
-/// bits *are* the boundary between "my face" and "everyone's face", and
-/// a key somebody else can read is one they can use silently, from
-/// inside, forever.
-fn check_permissions(path: &Path) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(path)
-            .map_err(|e| msg::cant_read(path.display(), e))?
-            .permissions()
-            .mode()
-            & 0o777;
-        if mode & 0o077 != 0 {
-            return Err(msg::web_key_too_open(
-                format_args!("{mode:o}"),
-                path.display(),
-            ));
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = path;
-    Ok(())
+    khor_node::face::web_key_read(root)
 }
 
 /// Whether a presented key is the real one, without leaking where two

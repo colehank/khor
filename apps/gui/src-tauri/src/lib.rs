@@ -1704,6 +1704,109 @@ fn code_label(machine: &str) -> String {
     format!("code:{kept}")
 }
 
+/// 「系统验证」on the lock screen: Touch ID, the watch, or the login
+/// password — whatever this Mac is set up to accept (docs/MORE.md 安全).
+///
+/// **The one door that is the app's alone**, and it is an *extra* rather
+/// than the key: a PIN must be set before the lock can come on at all
+/// (`khor_node::lock`), because a phone opening the web face has no
+/// LocalAuthentication to fall back on. So a browser does not answer
+/// this command and does not draw its button (`command_tables`'s
+/// `ONE_SIDED`).
+///
+/// # Raw `objc2`, and what that buys
+///
+/// `LAContext`'s check is asynchronous — it puts a sheet on the screen
+/// and calls back — so the reply block signals a semaphore this side
+/// waits on, inside `spawn_blocking`. **Never on the event loop**: that
+/// is the thread AppKit draws the sheet from, and waiting there is the
+/// deadlock `open_code_window` already carries a note about.
+///
+/// `objc2` and `block2` are both already in the tree (tao/wry bring
+/// them), so this adds no package — `objc2-local-authentication` would
+/// have, for one class and two selectors.
+///
+/// **A refusal is `false`, never an error.** Cancelling the sheet, a Mac
+/// with no biometry, a policy the machine will not evaluate — all of
+/// them mean「not opened」, and a lock screen that told them apart would
+/// be telling somebody about the security hardware of a machine they
+/// have not unlocked.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+async fn system_unlock(reason: String) -> bool {
+    tokio::task::spawn_blocking(move || unsafe {
+        use objc2::rc::Retained;
+        use objc2::runtime::AnyObject;
+        use objc2::{class, msg_send};
+        use objc2_foundation::NSString;
+
+        let ctx: *mut AnyObject = msg_send![class!(LAContext), new];
+        if ctx.is_null() {
+            return false;
+        }
+        let ctx: Retained<AnyObject> = Retained::from_raw(ctx).unwrap();
+        // `deviceOwnerAuthentication` (2), not `…WithBiometrics` (1):
+        // the first falls back to the login password, which is what
+        // 「系统验证」 says and what a desktop Mac with no sensor has.
+        const OWNER_AUTHENTICATION: isize = 2;
+        let why = NSString::from_str(&reason);
+
+        // The block signals; this thread waits. A channel would need the
+        // block to own a Rust value across the ObjC boundary, and a
+        // semaphore is the shape Apple's own samples use.
+        let sem: *mut AnyObject = msg_send![class!(NSObject), alloc];
+        let _ = sem;
+        let done = std::sync::Arc::new((
+            std::sync::Mutex::new(None::<bool>),
+            std::sync::Condvar::new(),
+        ));
+        let theirs = done.clone();
+        let reply = block2::RcBlock::new(move |ok: objc2::runtime::Bool, _err: *mut AnyObject| {
+            let (lock, cv) = &*theirs;
+            *lock.lock().unwrap() = Some(ok.as_bool());
+            cv.notify_all();
+        });
+        let _: () = msg_send![
+            &*ctx,
+            evaluatePolicy: OWNER_AUTHENTICATION,
+            localizedReason: &*why,
+            reply: &*reply,
+        ];
+
+        // **Bounded.** A sheet nobody answers must not hold a blocking
+        // thread for the life of the app; the timeout reads as「not
+        // opened」, which is the same thing every other refusal reads as.
+        let (mutex, cv) = &*done;
+        let mut got = mutex.lock().unwrap();
+        while got.is_none() {
+            let (next, timed_out) = cv
+                .wait_timeout(got, std::time::Duration::from_secs(60))
+                .unwrap();
+            got = next;
+            if timed_out.timed_out() {
+                break;
+            }
+        }
+        got.unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// Every platform that has no LocalAuthentication answers 「not opened」.
+///
+/// **A stub rather than a cfg'd handler list**: `generate_handler!` is
+/// one macro call and a list that differed per platform would be a
+/// second table of commands, which is the thing `command_tables` exists
+/// to prevent. The face does not draw the button here anyway — it asks
+/// whether this is the app, and the app is macOS-only for this one door.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+async fn system_unlock(reason: String) -> bool {
+    let _ = reason;
+    false
+}
+
 /// Gives one NSWindow the appearance NSApp currently resolves to — the
 /// desktop's, since khor never sets NSApp's own (`open_code_window`).
 #[cfg(target_os = "macos")]
@@ -2058,6 +2161,50 @@ fn resume_session(agent: String, session: String) -> Result<String, String> {
     khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
 }
 
+// ── 安全 (docs/MORE.md) ─────────────────────────────────────────────
+
+/// How this machine's faces are set to lock (`khor_gui_core::lock_state`).
+#[tauri::command]
+fn lock_state() -> khor_gui_core::LockFacts {
+    khor_gui_core::lock_state(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn set_lock(on: bool) -> Result<khor_gui_core::LockFacts, String> {
+    khor_gui_core::set_lock(&Node::root_from_env(), on)
+}
+
+#[tauri::command]
+fn set_lock_pin(pin: String) -> Result<khor_gui_core::LockFacts, String> {
+    khor_gui_core::set_lock_pin(&Node::root_from_env(), &pin)
+}
+
+#[tauri::command]
+fn set_lock_timeout(minutes: u32) -> Result<khor_gui_core::LockFacts, String> {
+    khor_gui_core::set_lock_timeout(&Node::root_from_env(), minutes)
+}
+
+/// Whether this is the PIN. `false` is a wrong PIN, not a failure.
+#[tauri::command]
+fn unlock(pin: String) -> Result<bool, String> {
+    khor_gui_core::unlock(&Node::root_from_env(), &pin)
+}
+
+#[tauri::command]
+fn web_key() -> Result<Option<String>, String> {
+    khor_gui_core::web_key(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn rotate_web_key() -> Result<String, String> {
+    khor_gui_core::rotate_web_key(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn reset_identity(name: String) -> Result<(), String> {
+    khor_gui_core::reset_identity(&Node::root_from_env(), &name)
+}
+
 /// 自检's checklist (`khor_gui_core::doctor`). Async: each check has a
 /// three-second budget of its own, and a blocking command would hold the
 /// window for however long the slowest one takes.
@@ -2338,6 +2485,15 @@ pub fn run() {
             resume_session,
             takeover,
             takeover_term,
+            system_unlock,
+            lock_state,
+            set_lock,
+            set_lock_pin,
+            set_lock_timeout,
+            unlock,
+            web_key,
+            rotate_web_key,
+            reset_identity,
             doctor,
             doctor_fix,
             about,

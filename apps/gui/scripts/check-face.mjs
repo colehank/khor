@@ -1627,6 +1627,52 @@ try {
       }),
     }),
   );
+  // 安全 (docs/MORE.md). **The shell asks this before it draws
+  // anything**, so the route has to exist or every walk below waits on
+  // a blank ground — which is itself the assertion section 4E turns
+  // around: with the lock on, a face draws the lock screen and nothing
+  // else.
+  let lockOn = false;
+  const lockFacts = () => ({
+    on: lockOn,
+    has_pin: true,
+    timeout_min: 5,
+    timeouts: [0, 1, 5, 15, 60],
+    pin_min: 6,
+  });
+  const unlockTried = [];
+  await page.route("**/lock_state", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) }),
+  );
+  await page.route("**/unlock", (r) => {
+    const pin = JSON.parse(r.request().postData() || "{}").pin;
+    unlockTried.push(pin);
+    // The node's own contract: a wrong PIN is `false`, never a refusal.
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(pin === "123456") });
+  });
+  await page.route("**/set_lock", (r) => {
+    lockOn = JSON.parse(r.request().postData() || "{}").on;
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) });
+  });
+  await page.route("**/set_lock_pin", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) }),
+  );
+  await page.route("**/set_lock_timeout", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) }),
+  );
+  await page.route("**/web_key", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("f".repeat(32)) }),
+  );
+  const rotated = [];
+  await page.route("**/rotate_web_key", (r) => {
+    rotated.push(1);
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("a".repeat(32)) });
+  });
+  const resetTried = [];
+  await page.route("**/reset_identity", (r) => {
+    resetTried.push(JSON.parse(r.request().postData() || "{}").name);
+    r.fulfill({ contentType: "application/json", body: "null" });
+  });
   // 自检's checklist (docs/MORE.md). **All four states are routed**,
   // because the one thing this page must never do is paint 未量 as ok —
   // and a fixture with only healthy rows could not tell the two apart.
@@ -2233,12 +2279,10 @@ try {
       },
     },
     {
-      // 安全 and 自检 are a head and a way out until batches C and B
-      // fill them, and a stop each is what keeps that head measured —
-      // the close button is the only control on either, and on the
-      // narrow face it is the only way off the page.
+      // The lock section's own switch: a page that drew its head and
+      // threw on the way to its body would still satisfy the frame.
       name: "security",
-      anchor: '[data-more-page="security"] [data-more-close]',
+      anchor: '[data-security-switch="lock"]',
       go: async () =>
         (await press("[data-rail-more]")) && press('[data-more-open="security"]'),
       after: async () => {
@@ -9323,6 +9367,137 @@ try {
       }
     }
     await press("[data-more-close]");
+  }
+
+  // ── 4E) 锁住时页面里不留任何会话内容 (docs/MORE.md 安全) ───────────
+  //
+  // 「锁住时：整窗一张锁屏（脸 + 名字 + 解锁），**页面里不留任何会话内容**
+  // （不是盖一层——卸掉，解锁后再挂）」 — the ruling, 2026-09-19.
+  //
+  // **This is the one assertion in this file that is about what is
+  // *absent*, and it is the whole feature.** A cover satisfies every
+  // screenshot; what it does not satisfy is a `querySelectorAll` — and
+  // a cover is exactly what a lock screen becomes the day somebody
+  // reaches for `position: fixed` instead of a return statement.
+  //
+  // So the probe is the negative one, and it is armed: the same three
+  // selectors are counted **before** the lock goes on, so a zero after
+  // it cannot be a selector that stopped matching (the `.nav-badge`
+  // shape — an empty result reading as「this does not exist」 when it
+  // means「I looked in the wrong place」).
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+    await open("sessions");
+    await press("[data-list] [data-row-open]");
+    await wait(400);
+    const CONTENT = "[data-row], [data-chat-input], [data-sheet]";
+    const before = await page.evaluate((sel) => document.querySelectorAll(sel).length, CONTENT);
+    console.log(`lock · before: ${before} piece(s) of session content on screen`);
+    if (before === 0) {
+      fail(
+        "probe dead: nothing matched [data-row], [data-chat-input] or [data-sheet] with a session " +
+          "open — a zero after the lock would then prove nothing",
+      );
+    } else {
+      // The switch first — the fixture ships the lock off, and neither
+      // 现在锁上 nor ⌘L does anything until it is on (`khor_node::lock`
+      // refuses a lock with no key, and a ⌘L that silently did nothing
+      // would be worse than one that is absent).
+      if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="security"]'))) {
+        fail("probe dead: 「…」 → 安全 did not open");
+      } else {
+        await press('[data-security-switch="lock"]');
+        await wait(400);
+        if ((await page.locator("[data-security-lock-now]").count()) === 0) {
+          fail(
+            "turning the lock on drew no 「现在锁上」 — the manual lock is one of the three ways " +
+              "in the ruling names (docs/MORE.md 安全)",
+          );
+        }
+        // **Back to the session, and locked with ⌘L.** Locking from 安全
+        // would put the lock screen over a page that had already
+        // replaced the list — and then 「no session content」 would be
+        // true of a screen that had none to begin with, which is an
+        // assertion about nothing. This is also the way the ruling
+        // names first (「手动『现在锁上』(⌘L)」).
+        await press("[data-more-close]");
+        await until(5_000, async () => (await page.locator("[data-row]").count()) > 0);
+        await page.keyboard.press(process.platform === "darwin" ? "Meta+l" : "Control+l");
+        await until(5_000, async () => (await page.locator("[data-lock-screen]").count()) === 1);
+
+        const locked = await page.evaluate((sel) => {
+          const screen = document.querySelector("[data-lock-screen]");
+          return {
+            screen: !!screen,
+            // **The whole document**, not the part outside the lock
+            // screen: the claim is that none of it is in the page.
+            content: document.querySelectorAll(sel).length,
+            rail: document.querySelectorAll("[data-rail-item]").length,
+            list: document.querySelectorAll("[data-list]").length,
+            box: document.querySelectorAll("[data-lock-pin]").length,
+            name: screen?.querySelector("[data-lock-name]")?.textContent?.trim() ?? null,
+            face: screen?.querySelectorAll("[data-face], [data-face-blank]").length ?? 0,
+          };
+        }, CONTENT);
+        console.log(`lock · locked: ${JSON.stringify(locked)}`);
+        if (!locked.screen) {
+          fail("现在锁上 drew no lock screen");
+        }
+        if (locked.content !== 0) {
+          fail(
+            `a locked face still holds ${locked.content} piece(s) of session content — ` +
+              "「页面里不留任何会话内容(不是盖一层——卸掉)」 (src/App.tsx, the early return)",
+          );
+        }
+        if (locked.rail !== 0 || locked.list !== 0) {
+          fail(
+            `a locked face still draws the shell (${locked.rail} rail item(s), ${locked.list} list ` +
+              "pane(s)) — the lock screen replaces it rather than covering it",
+          );
+        }
+        // …and it says which machine this is, which is the question
+        // somebody walking up to a screen has. Nothing else.
+        if (!locked.name || locked.face !== 1) {
+          fail(`the lock screen names ${JSON.stringify(locked.name)} and wears ${locked.face} face(s)`);
+        }
+        if (locked.box !== 1) fail(`the lock screen offers ${locked.box} way(s) in`);
+
+        // A wrong PIN says so and stays locked; the right one lets the
+        // shell back. **`false` is not an error** — the node's contract,
+        // and what keeps 「不对」 from reading as khor being broken.
+        await page.locator("[data-lock-pin]").fill("000000");
+        await press("[data-lock-open]");
+        await wait(500);
+        const wrong = await page.evaluate(() => ({
+          said: document.querySelectorAll("[data-lock-wrong]").length,
+          still: document.querySelectorAll("[data-lock-screen]").length,
+        }));
+        console.log(`lock · a wrong PIN: ${JSON.stringify(wrong)}`);
+        if (wrong.said !== 1 || wrong.still !== 1) {
+          fail(`a wrong PIN left ${JSON.stringify(wrong)} — it says 「不对」 and stays shut`);
+        }
+        await page.locator("[data-lock-pin]").fill("123456");
+        await press("[data-lock-open]");
+        if (!(await until(5_000, async () => (await page.locator("[data-rail-item]").count()) > 0))) {
+          fail("the right PIN did not open it");
+        }
+        console.log(`lock · tried: ${JSON.stringify(unlockTried)}`);
+        // Put the fixture back: every stop after this one runs on an
+        // unlocked face.
+        await press("[data-rail-more]");
+        await press('[data-more-open="security"]');
+        await press('[data-security-switch="lock"]');
+        await wait(300);
+        await press("[data-more-close]");
+        // The shell comes back whole — the rows were unmounted, not
+        // hidden, so this is a remount rather than a reveal, and the
+        // poll that was stopped while locked has started again.
+        if (!(await until(8_000, async () => (await page.locator("[data-row]").count()) > 0))) {
+          fail("the session list did not come back after unlocking — 「解锁后再挂」");
+        }
+      }
+    }
   }
 
   // ── 5) a dense screen has a reading order ─────────────────────────

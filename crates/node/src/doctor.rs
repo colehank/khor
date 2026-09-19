@@ -324,8 +324,8 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
 
 /// The web face: something listening on its port, and a key on the door.
 async fn check_web(root: PathBuf) -> (Health, String, Option<String>) {
-    let port = web_port();
-    let has_key = web_key_path(&root).is_file();
+    let port = crate::face::web_port();
+    let has_key = crate::face::web_key_path(&root).is_file();
     let listening = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .is_ok();
@@ -591,33 +591,6 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
 /// [`Node::open_as`] and this file must not drift about it.
 pub fn identity_path(root: &Path) -> PathBuf {
     root.join(".khor").join("identity.key")
-}
-
-/// Where the web face keeps its key, and the port it binds.
-///
-/// **These live here rather than in `khor_web`, and the dependency
-/// graph is the whole reason.** `khor_web` depends on this crate, so a
-/// check that asked it would be a cycle — and the two facts are about
-/// the *installation* (a file in this store, a port an environment
-/// variable may move), not about the server that happens to bind them.
-/// `khor_web` reads both from here, so there is still exactly one
-/// spelling of each.
-pub fn web_key_path(root: &Path) -> PathBuf {
-    root.join(".khor").join("web.key")
-}
-
-/// KHOR on a phone keypad. Far from the development cluster's own range
-/// on purpose — 1430 is vite, 1431 the dev bridge, 1442/1443 the smoke
-/// run — because a product port a development tool can shadow is a
-/// fault nobody diagnoses twice.
-pub const WEB_DEFAULT_PORT: u16 = 5467;
-
-/// The port the face uses, `KHOR_WEB_PORT` overriding the default.
-pub fn web_port() -> u16 {
-    std::env::var("KHOR_WEB_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(WEB_DEFAULT_PORT)
 }
 
 /// The `khor` a terminal on this machine would run.

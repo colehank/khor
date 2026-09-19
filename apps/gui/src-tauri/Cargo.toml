@@ -56,8 +56,14 @@ tauri = { version = "2", features = ["macos-proxy"] }
 # per window on macOS (it sets NSApp's).
 objc2 = "0.6"
 # Its NSPoint / NSRect: the frames of the three window buttons
-# (`squeeze_the_window_buttons`).
+# (`squeeze_the_window_buttons`), and its NSString for the sentence the
+# Touch ID sheet shows (`system_unlock`).
 objc2-foundation = "0.3"
+# `LAContext`'s check calls back, so the reply is an ObjC block
+# (`system_unlock`). **Already in the tree under tao/wry** — naming it
+# here costs no package, and `objc2-local-authentication` would have
+# added one for a single class and two selectors.
+block2 = "0.6"
 
 [features]
 # **On by default, and that is the whole fix for the white window.**

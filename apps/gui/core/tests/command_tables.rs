@@ -173,6 +173,25 @@ const ONE_SIDED: &[(&str, &str)] = &[
     // forward) spelled in the only vocabulary a page has. So this is
     // not a command the web face is missing: it is a command the web
     // face has no use for, because the browser already answers it.
+    // ── the lock screen's other key, written down 2026-09-19 ──────
+    //
+    // **A fact about the machine, not about windows** — the first entry
+    // on this list that is not. 「macOS app：系统验证（Touch ID / 登录
+    // 密码，`LocalAuthentication`）」 (docs/MORE.md 安全): the app puts
+    // the system's own sheet up and is told yes or no. A browser has no
+    // such thing to ask, and an HTTP arm here could only ever answer
+    // `false` — a command that reports failure at a thing it never
+    // attempted.
+    //
+    // It is deliberately an *extra*: `khor_node::lock` refuses to turn
+    // the lock on until a PIN is set, because the PIN is the key every
+    // face has and a phone opening the web face has nothing else. So
+    // this being app-only costs nobody a way in.
+    (
+        "system_unlock",
+        "puts up the system's own Touch ID / login-password sheet (LocalAuthentication); \
+         a browser has nothing to ask, and the PIN is the key every face has",
+    ),
     (
         "open_code_window",
         "opens the editor in a second native window; a browser face opens a named tab with \

@@ -8102,6 +8102,129 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     );
   }
 
+  // 33) `khor lock` on a real home (docs/MORE.md 安全).
+  //
+  //      **A scratch home, never alpha or beta.** Every other section
+  //      here works the two homes this run stood up; this one sets a
+  //      PIN and turns a lock on, and doing that to a home the rest of
+  //      the file is still driving would lock a face mid-walk. A third
+  //      home costs one directory and takes that whole class of
+  //      interference off the table.
+  {
+    const LOCK_HOME = join(SCRATCH, "lock-home");
+    rmSync(LOCK_HOME, { recursive: true, force: true });
+    mkdirSync(LOCK_HOME, { recursive: true });
+    const envL = homeEnv(LOCK_HOME, "lockbox");
+    const line = (...args) => cli(envL, ...args).trim();
+    const fields = (l) => l.split("\t");
+
+    //    a. a machine nobody has locked says so on both counts — the
+    //    lock and the key are two facts, and the page that offers 「设一
+    //    个 PIN」 reads the second.
+    const fresh = fields(line("lock"));
+    if (fresh.length !== 3) throw new Error(`khor lock printed ${JSON.stringify(fresh)}`);
+
+    //    b. **it refuses to come on without a key to it**, and the
+    //    refusal is a refusal rather than a switch that quietly stays
+    //    off. This is the one rule that keeps a phone from being shut
+    //    out of the web face by a Touch ID somebody set on a laptop.
+    let refused = null;
+    try {
+      execFileSync(KHOR, ["lock", "on"], { env: envL, encoding: "utf8", timeout: 30_000 });
+    } catch (e) {
+      refused = String(e.stderr || e);
+    }
+    if (refused === null) throw new Error("khor lock on was accepted with no PIN set");
+    if (fields(line("lock"))[0] !== fresh[0]) {
+      throw new Error("a refused `lock on` moved the switch anyway");
+    }
+
+    //    c. the PIN is read from **stdin**, never argv — it must not
+    //    land in shell history, in `ps`, or in an agent's transcript.
+    execFileSync(KHOR, ["lock", "pin"], {
+      env: envL,
+      input: "123456\n",
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    //    …and what reaches the disk is an Argon2id hash, not the PIN.
+    const onDisk = readFileSync(join(LOCK_HOME, ".khor", "lock.json"), "utf8");
+    if (onDisk.includes("123456")) throw new Error(`the PIN itself is on the disk: ${onDisk}`);
+    if (!onDisk.includes("$argon2id$")) throw new Error(`not an Argon2id hash: ${onDisk}`);
+
+    //    d. now it comes on, and the idle ladder takes only its own
+    //    rungs — a number the faces do not draw would be a setting
+    //    reachable from here and never seen again.
+    line("lock", "on");
+    line("lock", "timeout", "5");
+    let refusedRung = null;
+    try {
+      execFileSync(KHOR, ["lock", "timeout", "7"], { env: envL, encoding: "utf8", timeout: 30_000 });
+    } catch (e) {
+      refusedRung = String(e.stderr || e);
+    }
+    if (refusedRung === null || !refusedRung.includes("7")) {
+      throw new Error(`khor lock timeout 7 was not refused by name: ${refusedRung}`);
+    }
+    const armed = fields(line("lock"));
+    //    Read structurally: the words are the catalog's, so what is
+    //    asserted is that the three fields all moved off their fresh
+    //    values — locked, keyed, and idling after something.
+    if (armed[0] === fresh[0] || armed[1] === fresh[1] || armed[2] === fresh[2]) {
+      throw new Error(`khor lock still says ${JSON.stringify(armed)} after on/pin/timeout`);
+    }
+
+    //    e. **clearing the PIN takes the lock with it.** Splitting those
+    //    is how a machine claims to be locked with no key to it.
+    execFileSync(KHOR, ["lock", "pin"], {
+      env: envL,
+      input: "\n",
+      encoding: "utf8",
+      timeout: 30_000,
+    });
+    const cleared = fields(line("lock"));
+    if (cleared[0] !== fresh[0] || cleared[1] !== fresh[1]) {
+      throw new Error(`clearing the PIN left ${JSON.stringify(cleared)}`);
+    }
+
+    //    f. 重置身份 wants this machine's own name typed out, and a
+    //    refused one does not touch the key.
+    //    **`khor id` first, and that is a fact about the lock rather
+    //    than about this script**: nothing in `khor lock` opens a node
+    //    (the lock file is read and written straight off the store), so
+    //    a home that has only ever been locked has no identity key yet.
+    //    Asking for the id is what mints one.
+    const wasId = line("id").split(/\s+/)[0];
+    const keyFile = join(LOCK_HOME, ".khor", "identity.key");
+    if (!existsSync(keyFile)) throw new Error("probe dead: the scratch home minted no identity key");
+    let refusedReset = null;
+    try {
+      execFileSync(KHOR, ["id", "--reset", "not-the-name"], {
+        env: envL,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+    } catch (e) {
+      refusedReset = String(e.stderr || e);
+    }
+    if (refusedReset === null || !refusedReset.includes("lockbox")) {
+      throw new Error(`khor id --reset took a wrong name: ${refusedReset}`);
+    }
+    if (!existsSync(keyFile)) throw new Error("a refused reset deleted the key anyway");
+    //    …and the right one throws the identity away, so the next node
+    //    on this home is another machine as far as the network goes.
+    line("id", "--reset", "lockbox");
+    if (existsSync(keyFile)) throw new Error("the key survived its own reset");
+    const nowId = line("id").split(/\s+/)[0];
+    if (nowId === wasId) throw new Error("the reset minted the same id again");
+
+    console.log(
+      "lock: refused with no PIN, PIN via stdin as an argon2id hash, on + timeout took, " +
+        "7 refused by name, clearing the PIN turned it off, and --reset wanted the machine's name",
+    );
+    rmSync(LOCK_HOME, { recursive: true, force: true });
+  }
+
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 

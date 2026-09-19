@@ -36,6 +36,12 @@ gix = { version = "0.87.1", default-features = false, features = ["status", "blo
 # almost-right that goes wrong on the one project that needs it.
 # License: MIT OR Unlicense.
 ignore = "0.4"
+# The app lock's PIN, hashed rather than kept (`crates/node/src/lock.rs`).
+# Argon2id at the crate's own defaults, which are the OWASP ones — the
+# parameters are a judgment this repo has no business re-deriving, and a
+# hand-rolled KDF for a screen lock would be the worst kind of homework.
+# License: MIT OR Apache-2.0 (checked before use, not after).
+argon2 = "0.5"
 pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
 office_oxide = "0.1.11"
 pdfboss-output = "2.4.0"

@@ -32,6 +32,7 @@ import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { About } from "./gen/bindings/About";
 import type { DoctorRow } from "./gen/bindings/DoctorRow";
+import type { LockFacts } from "./gen/bindings/LockFacts";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
@@ -85,6 +86,7 @@ export type {
   Ticket,
   About,
   DoctorRow,
+  LockFacts,
   Usage,
   Strain,
   ChatBatch,
@@ -728,6 +730,51 @@ export const fetchDoctor = () => call<DoctorRow[]>("doctor");
 /** One check's remedy, by the check's own key — and the sentence saying
     what it did. Refused by name for a key with no remedy. */
 export const doctorFix = (key: string) => call<string>("doctor_fix", { key });
+/** 安全 (docs/MORE.md): how this machine's faces are set to lock. **No
+    node is opened on the other side** — the lock file is read straight
+    off the store — so the shell can ask this before it draws anything,
+    which is what lets a locked face come up locked rather than flashing
+    a conversation first. */
+export const fetchLock = () => call<LockFacts>("lock_state");
+export const setLock = (on: boolean) => call<LockFacts>("set_lock", { on });
+/** An empty PIN clears it, and clearing turns the lock off in the same
+    move — splitting those is how a machine claims to be locked with no
+    key to it. */
+export const setLockPin = (pin: string) => call<LockFacts>("set_lock_pin", { pin });
+export const setLockTimeout = (minutes: number) =>
+  call<LockFacts>("set_lock_timeout", { minutes });
+/** Whether this is the PIN. **`false` is a wrong PIN, not a failure**:
+    only khor being unable to read its own record rejects. */
+export const unlock = (pin: string) => call<boolean>("unlock", { pin });
+/** The web face's key as it is on disk, `null` on a machine that has
+    never raised a face. Shown masked; revealed on a press. */
+export const fetchWebKey = () => call<string | null>("web_key");
+/** A new key — the same call `khor web --new` makes. Every link printed
+    before it stops working, which is the whole point. */
+export const rotateWebKey = () => call<string>("rotate_web_key");
+/** 重置身份. The machine's own name is the confirmation and **the node
+    is what checks it**, so this dialog and `khor id --reset` cannot come
+    to disagree about one irreversible act. */
+export const resetIdentity = (name: string) => call<null>("reset_identity", { name });
+/**
+ * 「系统验证」 on the lock screen — Touch ID, the watch, or the login
+ * password, whichever this Mac accepts.
+ *
+ * **`null` outside the app, and that is the whole seam**: a browser has
+ * no LocalAuthentication to ask, so the lock screen draws no button
+ * rather than drawing one that refuses (`command_tables`'s `ONE_SIDED`
+ * carries the same reasoning from the other end). It is an extra key,
+ * never the key — `khor lock` will not come on until a PIN is set,
+ * because the PIN is the one every face has.
+ *
+ * Answers whether it opened. A cancelled sheet, a Mac with no sensor and
+ * a policy that will not evaluate are all `false`: telling them apart
+ * would be telling somebody about the security hardware of a machine
+ * they have not unlocked.
+ */
+export const systemUnlock: ((reason?: string) => Promise<boolean>) | null = inApp
+  ? (reason = msg.lock_system_reason) => call<boolean>("system_unlock", { reason })
+  : null;
 /** The chat six: an attachment registry in gui-core holds the socket
     (a webview cannot), a reader thread collects frames, and the poll
     answers instantly from a cursor — nothing is lost between polls.

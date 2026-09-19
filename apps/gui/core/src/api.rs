@@ -656,6 +656,22 @@ pub fn answer(
             &arg("agent")?,
             &arg("session")?,
         )?),
+        // 安全 (docs/MORE.md). The lock is a local preference read
+        // straight off the store, so none of these opens a node except
+        // the reset, which needs this machine's name.
+        "lock_state" => to_json(&crate::lock_state(root)),
+        "set_lock" => to_json(&crate::set_lock(root, flag("on")?)?),
+        "set_lock_pin" => to_json(&crate::set_lock_pin(root, &arg("pin")?)?),
+        "set_lock_timeout" => to_json(&crate::set_lock_timeout(root, num("minutes")? as u32)?),
+        // **A wrong PIN answers `false`, not an error.** Only khor being
+        // unable to read its own record is a refusal.
+        "unlock" => to_json(&crate::unlock(root, &arg("pin")?)?),
+        "web_key" => to_json(&crate::web_key(root)?),
+        "rotate_web_key" => to_json(&crate::rotate_web_key(root)?),
+        "reset_identity" => {
+            crate::reset_identity(root, &arg("name")?)?;
+            Ok("null".to_owned())
+        }
         // 自检 (docs/MORE.md). Twelve checks, each under its own
         // timeout — so this arm can take three seconds and never more.
         "doctor" => to_json(&rt.block_on(crate::doctor(root))?),

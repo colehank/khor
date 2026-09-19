@@ -16,6 +16,7 @@ import {
   pinDevice,
   quitNow,
   pinSession,
+  systemUnlock,
   trafficLights,
   uninstallHooks,
   wsAdd,
@@ -63,6 +64,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
+import { useLock } from "@/hooks/use-lock";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import {
@@ -83,6 +85,7 @@ import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList } from "@/views/WorkspacesList";
+import { LockScreen } from "@/views/LockScreen";
 import { MORE_NAMES, type MorePage } from "@/views/more/MorePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { IdentityPage } from "@/views/more/IdentityPage";
@@ -355,6 +358,18 @@ function RailItem({
 
 export default function App() {
   const narrow = useNarrow();
+  /**
+   * The app lock (docs/MORE.md 安全).
+   *
+   * **Held at the very top of the shell because of what a lock has to
+   * be able to do**: return the lock screen *instead of* everything
+   * below, so a locked face has no list, no conversation and no sheet
+   * in its document at all (「卸掉不是盖住」). Every hook in this
+   * component still runs — the early return is at the foot of the
+   * function, where React can survive it — but nothing any of them
+   * fetched is drawn.
+   */
+  const lock = useLock();
   // **The breakpoint, published once.** `use-narrow` owns the number
   // and stylesheets need it too (the machine card's part rows drop
   // their shared grid narrow) — so the shell stamps the answer on the
@@ -597,6 +612,12 @@ export default function App() {
 
   // **The session rows, and nothing else, are the app's heartbeat.**
   useEffect(() => {
+    // …and it stops while this face is locked. Nothing draws these, so
+    // the poll would be a locked window asking a node for conversations
+    // every two seconds — the cost this app already paid once for
+    // answers nobody was looking at (`UNWATCHED_MS`), plus the one thing
+    // a lock is for.
+    if (lock.locked) return;
     let live = true;
     const tick = () => {
       fetchSessions(arrangeBy)
@@ -627,7 +648,7 @@ export default function App() {
     // is the one that notices first. **A road that could break for
     // `devices` alone would go unsaid here** — if one ever exists, the
     // sentence belongs where the failure is, not on the busiest caller.
-  }, [arrangeBy, hidden]);
+  }, [arrangeBy, hidden, lock.locked]);
 
   // **The machines, at the pace of whichever screen is up.** The vitals
   // in a row move every few seconds and the machines landing draws them;
@@ -1855,7 +1876,17 @@ export default function App() {
         }}
       />
     ) : morePage === "security" ? (
-      <SecurityPage onClose={() => setMorePage(null)} />
+      <SecurityPage
+        onClose={() => setMorePage(null)}
+        lock={lock.facts}
+        onLockChanged={lock.reread}
+        onLockNow={lock.now}
+        devices={devices}
+        onForgot={() => {
+          refresh().catch(() => {});
+          lock.reread();
+        }}
+      />
     ) : morePage === "doctor" ? (
       <DoctorPage onClose={() => setMorePage(null)} />
     ) : (
@@ -1938,6 +1969,43 @@ export default function App() {
       narrow={narrow}
     />
   );
+
+  /**
+   * Locked, and therefore **the only thing in this document**
+   * (docs/MORE.md 安全: 「页面里不留任何会话内容——不是盖一层,卸掉」).
+   *
+   * Two returns rather than one, and the first is not caution about a
+   * flash: `useLock` starts locked (the safe direction — a face that
+   * came up open and locked a frame later has already shown what it was
+   * meant to hide), so a shell that drew the lock screen before the
+   * store answered would flash one on every ordinary launch. A blank
+   * ground for that one frame says nothing about anybody's session.
+   */
+  if (!lock.settled) return <div data-lock-wait className="h-dvh bg-background" />;
+  if (lock.locked) {
+    // Bound to a local first: TypeScript will not narrow an imported
+    // binding inside a closure, and the `null` here is the seam itself
+    // (`api.ts` systemUnlock) rather than a value that might arrive.
+    const ask = systemUnlock;
+    const systemDoor =
+      ask === null
+        ? undefined
+        : () => {
+            void ask().then((took) => {
+              if (took) lock.opened();
+            });
+          };
+    return (
+      <LockScreen
+        me={devices.find((d) => d.me) ?? null}
+        onOpen={lock.open}
+        // The app's other key, and **only where there is one**: a
+        // browser has no LocalAuthentication, and a button that refuses
+        // is worse than no button (`api.ts` systemUnlock).
+        systemUnlock={systemDoor}
+      />
+    );
+  }
 
   // One shell, two width classes: wide is rail|list|detail all at once,
   // narrow is one screen at a time with the rail as a bottom bar. The

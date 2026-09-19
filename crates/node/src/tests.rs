@@ -2476,3 +2476,190 @@ fn a_machine_with_no_peers_says_that_instead_of_listing_none() {
     assert_eq!(row.said, khor_catalog::cli::DOCTOR_PEERS_ALONE);
     let _ = fs::remove_dir_all(&r);
 }
+
+// ── `khor lock` (docs/MORE.md 安全) ─────────────────────────────────
+
+/// **A fresh machine is not locked and has no key**, and the two are
+/// separate facts: the screen that offers 「设一个 PIN」 reads the
+/// second one.
+#[test]
+fn a_machine_nobody_has_locked_says_so_on_both_counts() {
+    let r = root("lock-fresh");
+    let s = lock::state(&r);
+    assert!(!s.on);
+    assert!(!s.has_pin);
+    assert_eq!(s.timeout_min, 0, "永不 is the shape a machine ships in");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **The lock cannot be turned on without a PIN**, and the refusal is a
+/// refusal rather than a switch that quietly stays off.
+///
+/// The PIN is the key *every* face has: a phone opening the web face has
+/// no Touch ID to fall back on, so a lock whose only key lives on one
+/// machine shuts people out of the others.
+#[test]
+fn the_lock_refuses_to_come_on_without_a_key_to_it() {
+    let r = root("lock-nopin");
+    let why = lock::set_on(&r, true).unwrap_err();
+    assert!(!why.is_empty(), "the refusal must be a sentence");
+    assert!(!lock::state(&r).on, "a refused switch must not have moved");
+
+    lock::set_pin(&r, "123456").unwrap();
+    let s = lock::set_on(&r, true).unwrap();
+    assert!(s.on && s.has_pin);
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **The PIN is stored as an Argon2id hash and never as itself**, and
+/// this reads the file rather than the API: the whole claim is about
+/// what is on a disk somebody else can open.
+#[test]
+fn the_pin_never_reaches_the_disk_in_a_readable_form() {
+    let r = root("lock-hash");
+    lock::set_pin(&r, "hunter2!").unwrap();
+    let text = fs::read_to_string(r.join(".khor").join("lock.json")).unwrap();
+    assert!(
+        !text.contains("hunter2!"),
+        "the PIN itself is on the disk: {text}"
+    );
+    assert!(
+        text.contains("$argon2id$"),
+        "what is stored is not an Argon2id hash: {text}"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **The right PIN opens it, a wrong one does not, and neither is an
+/// error.** A wrong PIN is an ordinary event a face says 「不对」 to.
+#[test]
+fn the_pin_opens_only_to_itself() {
+    let r = root("lock-check");
+    lock::set_pin(&r, "123456").unwrap();
+    assert!(lock::check_pin(&r, "123456").unwrap());
+    assert!(!lock::check_pin(&r, "123457").unwrap());
+    assert!(!lock::check_pin(&r, "").unwrap());
+    assert!(
+        !lock::check_pin(&r, "12345").unwrap(),
+        "a prefix is not the PIN"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A PIN shorter than the floor is refused and nothing is written** —
+/// the state a refused call leaves behind is the state it started in.
+#[test]
+fn a_short_pin_is_refused_and_leaves_the_machine_as_it_was() {
+    let r = root("lock-short");
+    lock::set_pin(&r, "12345").unwrap_err();
+    assert!(!lock::state(&r).has_pin);
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **Clearing the PIN turns the lock off in the same move.** Splitting
+/// those is how a machine ends up claiming to be locked with no key to
+/// it.
+#[test]
+fn clearing_the_pin_takes_the_lock_with_it() {
+    let r = root("lock-clear");
+    lock::set_pin(&r, "123456").unwrap();
+    lock::set_on(&r, true).unwrap();
+    let s = lock::set_pin(&r, "").unwrap();
+    assert!(!s.on && !s.has_pin);
+    assert!(!lock::state(&r).on, "and it stays off when re-read");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A file that says「locked」with no hash in it reads as unlocked.**
+///
+/// The only way to reach that state is editing the file by hand, and
+/// honouring it would be a machine nobody can unlock — mended only by
+/// deleting a file from a terminal, which is exactly the face this
+/// feature must never wear.
+#[test]
+fn a_lock_with_no_key_in_the_file_reads_as_open() {
+    let r = root("lock-handedited");
+    fs::create_dir_all(r.join(".khor")).unwrap();
+    fs::write(
+        r.join(".khor").join("lock.json"),
+        br#"{"on":true,"pin":null,"timeout_min":5}"#,
+    )
+    .unwrap();
+    let s = lock::state(&r);
+    assert!(!s.on, "a lock with no key to it must not be honoured");
+    assert!(!s.has_pin);
+    assert_eq!(s.timeout_min, 5, "the rest of the file is still read");
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **A garbled file falls back to「no lock」**, never to「locked」 — the
+/// direction is chosen, not inherited.
+#[test]
+fn a_garbled_lock_file_leaves_the_machine_open() {
+    let r = root("lock-garbled");
+    fs::create_dir_all(r.join(".khor")).unwrap();
+    fs::write(r.join(".khor").join("lock.json"), b"{not json").unwrap();
+    assert!(!lock::state(&r).on);
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **The timeout ladder is the node's**, so the CLI and the page cannot
+/// offer different rungs — and a rung that is not on it is refused by
+/// name rather than kept as a setting nothing draws.
+#[test]
+fn the_idle_timeout_takes_only_the_rungs_the_faces_draw() {
+    let r = root("lock-timeout");
+    for m in lock::TIMEOUTS {
+        assert_eq!(lock::set_timeout(&r, *m).unwrap().timeout_min, *m);
+    }
+    let why = lock::set_timeout(&r, 7).unwrap_err();
+    assert!(why.contains('7'), "{why}");
+    assert_eq!(
+        lock::state(&r).timeout_min,
+        *lock::TIMEOUTS.last().unwrap(),
+        "a refused rung must not have moved the setting"
+    );
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **重置身份 takes the machine's own name and nothing else**, and the
+/// check is the node's so a flag and a dialog cannot come to disagree
+/// about one irreversible act.
+#[test]
+fn resetting_an_identity_wants_the_machine_name_typed_out() {
+    let r = root("lock-reset");
+    let n = Node::open(r.clone()).unwrap();
+    let name = n.name().to_owned();
+    let key = doctor::identity_path(&r);
+    assert!(key.is_file(), "probe dead: a fresh node minted no key");
+
+    let why = lock::reset_identity(&r, "", &name).unwrap_err();
+    assert!(why.contains(&name), "the refusal names what to type: {why}");
+    lock::reset_identity(&r, "not-the-name", &name).unwrap_err();
+    assert!(key.is_file(), "a refused reset must not have deleted it");
+
+    lock::reset_identity(&r, &format!("  {name} "), &name).unwrap();
+    assert!(!key.exists(), "the key is gone");
+    // …and the next node on this home mints a different one, which is
+    // the whole meaning of the act: as far as the network is concerned
+    // this is another computer.
+    let was = n.device_str().to_owned();
+    drop(n);
+    let fresh = Node::open(r.clone()).unwrap();
+    assert_ne!(fresh.device_str(), was);
+    let _ = fs::remove_dir_all(&r);
+}
+
+/// **Resetting twice is resetting once.** The caller wanted the key not
+/// to exist; a refusal would only send somebody looking for a file that
+/// is not there.
+#[test]
+fn resetting_an_identity_that_is_already_gone_is_not_an_error() {
+    let r = root("lock-reset-twice");
+    let n = Node::open(r.clone()).unwrap();
+    let name = n.name().to_owned();
+    drop(n);
+    lock::reset_identity(&r, &name, &name).unwrap();
+    lock::reset_identity(&r, &name, &name).unwrap();
+    let _ = fs::remove_dir_all(&r);
+}

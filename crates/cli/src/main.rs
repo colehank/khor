@@ -115,10 +115,13 @@ impl Reach {
 
 /// Every verb khor answers, in the order the usage text lists them.
 const VERBS: &[Verb] = &[
+    // Prints with no arguments and **deletes this machine's identity**
+    // with `--reset`, which is the most irreversible thing in this
+    // table. The rule is per word, not per invocation (`face` below).
     Verb {
         word: "id",
         run: id,
-        reach: Reach::Read,
+        reach: Reach::Act,
     },
     // Reads with no arguments and restyles with any, so it is an act:
     // the rule is per word, not per invocation.
@@ -369,6 +372,13 @@ const VERBS: &[Verb] = &[
         run: doctor,
         reach: Reach::Act,
     },
+    // `status` observes and the other four write the lock file, so the
+    // word is an act: the rule is per word, not per invocation.
+    Verb {
+        word: "lock",
+        run: lock,
+        reach: Reach::Act,
+    },
     // Mints a pairing ticket: this one hands out network access.
     Verb {
         word: "invite",
@@ -561,10 +571,94 @@ fn root(_rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn id(_rest: &[String]) -> Result<(), String> {
-    let n = node()?;
-    println!("{}  {}", n.device_str(), n.name());
-    Ok(())
+/// `khor id` — this machine's key and name — and `khor id --reset <名字>`,
+/// which throws both away (docs/MORE.md 重置身份).
+///
+/// **The reset is the same thing as replacing the computer.** Every
+/// paired machine goes on knowing the old id and will not know the new
+/// one, so this side stops being reachable and pairing has to be done
+/// again from a machine that still has a table. Nothing is sent to
+/// anybody — there is no longer a key to sign it with.
+///
+/// The machine's own name is the confirmation, and the check lives in
+/// the node (`lock::reset_identity`): a flag here and a dialog over
+/// there would be two rules about one irreversible act.
+fn id(rest: &[String]) -> Result<(), String> {
+    match rest {
+        [] => {
+            let n = node()?;
+            println!("{}  {}", n.device_str(), n.name());
+            Ok(())
+        }
+        [flag, typed] if flag == "--reset" => {
+            let root = Node::root_from_env();
+            let name = node()?.name().to_owned();
+            khor_node::lock::reset_identity(&root, typed, &name)?;
+            println!("{}", cli::IDENTITY_RESET);
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+/// `khor lock status|on|off|pin|timeout <分钟>` (docs/MORE.md 安全).
+///
+/// **It locks the screens, never this terminal.** Behind `khor` there is
+/// already somebody logged into this machine; a prompt here would be
+/// theatre in front of a shell that can read `.khor/` directly.
+///
+/// `pin` reads one line from **standard input** rather than taking an
+/// argument: an argument lands in shell history, in `ps`, and in every
+/// agent transcript that ran the command. An empty line clears the PIN,
+/// which turns the lock off with it.
+fn lock(rest: &[String]) -> Result<(), String> {
+    let root = Node::root_from_env();
+    let say = |s: khor_node::lock::LockState| {
+        println!(
+            "{}\t{}\t{}",
+            if s.on { cli::LOCK_ON } else { cli::LOCK_OFF },
+            if s.has_pin {
+                cli::LOCK_PIN_SET
+            } else {
+                cli::LOCK_PIN_NONE
+            },
+            if s.timeout_min == 0 {
+                cli::LOCK_IDLE_NEVER.to_owned()
+            } else {
+                cli::lock_idle_after(s.timeout_min)
+            }
+        );
+    };
+    match rest {
+        [] | [_] if rest.first().map(String::as_str) == Some("status") || rest.is_empty() => {
+            say(khor_node::lock::state(&root));
+            Ok(())
+        }
+        [word] if word == "on" => {
+            say(khor_node::lock::set_on(&root, true)?);
+            Ok(())
+        }
+        [word] if word == "off" => {
+            say(khor_node::lock::set_on(&root, false)?);
+            Ok(())
+        }
+        [word] if word == "pin" => {
+            let mut typed = String::new();
+            std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut typed)
+                .map_err(msg::cant_read_stdin)?;
+            say(khor_node::lock::set_pin(
+                &root,
+                typed.trim_end_matches(['\n', '\r']),
+            )?);
+            Ok(())
+        }
+        [word, minutes] if word == "timeout" => {
+            let m: u32 = minutes.parse().map_err(|_| USAGE.to_string())?;
+            say(khor_node::lock::set_timeout(&root, m)?);
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
 }
 
 /// The verb table, for whatever is about to gate an agent that types

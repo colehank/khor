@@ -1180,6 +1180,84 @@ pub fn doctor_fix(root: &Path, key: &str) -> Result<String, String> {
     khor_node::doctor::fix(&open(root)?, key)
 }
 
+/// 安全 (docs/MORE.md), as the page and the lock screen read it.
+///
+/// **The Argon2id hash is not on it** — a screen has no use for one, and
+/// a value that crosses a wire is a value that ends up in a log.
+/// `timeouts` rides along so the page's ladder is the node's rather than
+/// a second copy of it (`khor_node::lock::TIMEOUTS`).
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct LockFacts {
+    pub on: bool,
+    pub has_pin: bool,
+    pub timeout_min: u32,
+    pub timeouts: Vec<u32>,
+    /// The PIN floor, so the box can refuse before a round trip and say
+    /// the same number the node would (`khor_node::lock::PIN_MIN`).
+    pub pin_min: u32,
+}
+
+fn lock_facts(state: khor_node::lock::LockState) -> LockFacts {
+    LockFacts {
+        on: state.on,
+        has_pin: state.has_pin,
+        timeout_min: state.timeout_min,
+        timeouts: khor_node::lock::TIMEOUTS.to_vec(),
+        pin_min: khor_node::lock::PIN_MIN as u32,
+    }
+}
+
+/// How this machine's faces are set to lock. **No node is opened**: the
+/// lock file is read straight off the store, so a face can ask this
+/// before it has drawn anything at all.
+pub fn lock_state(root: &Path) -> LockFacts {
+    lock_facts(khor_node::lock::state(root))
+}
+
+/// Turns the lock on or off. Refused by name with no PIN set.
+pub fn set_lock(root: &Path, on: bool) -> Result<LockFacts, String> {
+    khor_node::lock::set_on(root, on).map(lock_facts)
+}
+
+/// Sets the PIN, or clears it when handed an empty one — which turns
+/// the lock off in the same move.
+pub fn set_lock_pin(root: &Path, pin: &str) -> Result<LockFacts, String> {
+    khor_node::lock::set_pin(root, pin).map(lock_facts)
+}
+
+pub fn set_lock_timeout(root: &Path, minutes: u32) -> Result<LockFacts, String> {
+    khor_node::lock::set_timeout(root, minutes).map(lock_facts)
+}
+
+/// Whether this is the PIN. **`false` is not an error**: a wrong PIN is
+/// an ordinary event the lock screen says 「不对」 to, and only khor
+/// being unable to read its own record is a refusal.
+pub fn unlock(root: &Path, pin: &str) -> Result<bool, String> {
+    khor_node::lock::check_pin(root, pin)
+}
+
+/// The web face's key as it is on disk, or `None` on a machine that has
+/// never raised a face. Shown masked; the page reveals it on a press.
+pub fn web_key(root: &Path) -> Result<Option<String>, String> {
+    khor_node::face::web_key_read(root)
+}
+
+/// A new key, replacing whatever was there — the same call `khor web
+/// --new` makes. Every link printed before it stops working, which is
+/// the whole point of the verb.
+pub fn rotate_web_key(root: &Path) -> Result<String, String> {
+    khor_node::face::web_key_rotate(root)
+}
+
+/// 重置身份: throws this machine's key away. The machine's own name is
+/// the confirmation and the node is what checks it — a dialog with its
+/// own rule would be a second rule about one irreversible act.
+pub fn reset_identity(root: &Path, name_typed: &str) -> Result<(), String> {
+    let name = open(root)?.name().to_owned();
+    khor_node::lock::reset_identity(root, name_typed, &name)
+}
+
 /// A freshly minted ticket, and how long it is good for.
 ///
 /// **The window travels with the ticket instead of being written into
