@@ -74,6 +74,19 @@
 `khor config get|set|list`，键值存 store；GUI 页按节排：
 
 - **外观**：跟系统 / 深 / 浅（现在只跟系统——加一个覆盖）；密度（舒适 / 紧凑）；代码字号。
+- **语言**（用户 2026-09-19：「这个语言是可以在设置里设置的，自动跟随系统语言，我们支持英语与
+  中文。失败会退英文」）：跟随系统（默认）/ 中文 / English。`khor config set lang auto|zh|en`。
+  - 文案两份：`crates/catalog/zh.toml`（原文，唯一的真源）与 `crates/catalog/en.toml`（译文，
+    由一个 sonnet 译者先译出来，键、节、`{0}` 占位与 zh 逐一对应）。
+  - **回退是英文**：系统语言不是 zh* 的一律英文；`en.toml` 里缺的键回退到……也是英文——所以
+    **缺键是编译错**：`build.rs` 在编译期对齐两份的键集与每条的占位符集合，对不上不给过。
+    zh 里新加一条而不加 en，树就不编译。
+  - 「同一节里两个键不许共用一句话」那条规矩两份都守。
+  - 取系统语言：CLI 读 `LC_ALL` / `LC_MESSAGES` / `LANG`（macOS 上再问 `AppleLanguages`）；
+    脸读 `navigator.language`。显式设了 `lang` 的以它为准，CLI 与两张脸同一个键。
+  - 线上传的是键不是字（现状），所以两台机器语言不同互不影响。
+  - 六个状态词、git 的字母、专有名词的规矩不变：状态词有英文（Busy / Blocked / Done /
+    Errored / Failed / Idle），git 字母与 claude / codex / VS Code 原样。
 - **这台机器的脸**、**中继**：现有 `FaceSettings` 两节原样搬来。
 - **会话**：默认智能体、默认启动目录、新会话默认是对话还是终端。
 - **工作区**：VS Code 开在弹窗还是系统浏览器；单击是预览标签（现状）还是直接钉住。
