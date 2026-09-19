@@ -218,7 +218,7 @@ export function DetailPane({
           条). Every control in here is a child and keeps its press. */}
       <header
         data-detail-header
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
         className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
       >
         {/* The back button exists only on the narrow face: there the

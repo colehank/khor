@@ -133,7 +133,7 @@ export function PaneBar({
       // the attribute is itself the one pressed: the box, the filter
       // menu and the "+" are children and keep every press they had.
       // Inert on the web face, which reads no such attribute.
-      data-tauri-drag-region
+      data-tauri-drag-region="deep"
       // `min-h`, not `h`: chips make the box taller than one row, and a
       // bar with a fixed height would clip them or squeeze the list.
       className="flex min-h-ctl-lg flex-none items-center gap-1 border-b px-2"

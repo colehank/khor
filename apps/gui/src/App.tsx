@@ -1124,7 +1124,7 @@ export default function App() {
       // Inert on the web face and on the two platforms that kept their
       // system title bar: nothing there reads the attribute, so the
       // rail behaves exactly as it did.
-      data-tauri-drag-region
+      data-tauri-drag-region="deep"
       className={cn(
         "flex items-center select-none",
         // Two gaps, one per face. The column rail holds its items a
@@ -1848,7 +1848,7 @@ export default function App() {
               under it draw their own heads. Zero tall and inert on
               every face without those buttons — this column has no gap,
               so an empty box in it costs nothing. */}
-          <div data-traffic-room data-tauri-drag-region className="h-traffic flex-none" />
+          <div data-traffic-room data-tauri-drag-region="deep" className="h-traffic flex-none" />
           {/* `key` is what makes the arrival visible: a CSS animation
               runs when an element is inserted, and without a changing
               key React would reuse this box and the new screen would

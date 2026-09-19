@@ -1821,7 +1821,7 @@ export function QuotaLanding({
               data-detail-header
               // The screen's top row (第八轮 第 59 条), like every other
               // `data-detail-header`.
-              data-tauri-drag-region
+              data-tauri-drag-region="deep"
               className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
             >
               {/* **The only exit from this screen**, so it carries the
