@@ -990,6 +990,25 @@ for line in sys.stdin:
     );
   };
 
+  /**
+   * The mark's place, in the two presses it takes since 2026-09-19
+   * (docs/MORE.md 头像): the avatar opens this machine's identity card,
+   * and the card carries the way into the picture.
+   *
+   * **The door did not go away, it moved one press deeper.** The avatar
+   * now answers 「我是谁」 first, which is the sentence that seat was
+   * already saying; the mesh is what it used to answer instead. Written
+   * once here so the three sites that walk to the mesh cannot drift the
+   * day it moves again.
+   */
+  const toMesh = async () => {
+    await page.locator("[data-rail-mark]").click();
+    await until("the identity card", 10_000, async () =>
+      (await page.locator('[data-more-page="identity"]').count()) === 1,
+    );
+    await page.locator("[data-identity-mesh]").click();
+  };
+
   // The open machine card's full id.
   //
   // **Through the copy button, because the id is not written on the card
@@ -2843,32 +2862,67 @@ for line in sys.stdin:
 
   // The rail's last glyph is the one that opens no landing — and there
   // being exactly one such glyph is itself the check that this is still
-  // the settings one and not something added beside it.
+  // the「…」one and not something added beside it.
   //
   // **The mark is excluded by name rather than by luck.** It is a rail
-  // item now and it opens no landing either (it opens the mesh), so
-  // without this the count would be two and the probe would report
-  // itself dead. Excluding it keeps the original guard doing its job: a
-  // *third* landing-less glyph still trips this.
+  // item now and it opens no landing either (it opens the identity
+  // card), so without this the count would be two and the probe would
+  // report itself dead. Excluding it keeps the original guard doing its
+  // job: a *third* landing-less glyph still trips this.
   const settingsGlyph = page.locator(
     "[data-rail-item]:not([data-landing]):not(:has([data-rail-mark]))",
   );
   if ((await settingsGlyph.count()) !== 1) {
     throw new Error("probe dead: the rail does not have exactly one glyph that opens no landing");
   }
-  await settingsGlyph.click();
   const sheet = page.locator("[data-face-settings]");
-  await until("the settings sheet", 10_000, async () => (await sheet.count()) === 1);
-  // The sheet's frame mounts before its answer arrives — it asks the
-  // node when it opens, and paints nothing but its title until then. So
-  // wait for the options, not for the box: waiting on the box read the
-  // empty frame and reported "the settings screen offers []", which
-  // reads like the screen being broken rather than like arriving early.
-  // (It passed on three runs before it failed on the fourth, which is
-  // the whole signature of waiting for the wrong thing.)
-  await until("the options to arrive", 10_000, async () =>
-    (await sheet.locator("[data-face-option]").count()) > 0,
-  );
+  // **Two presses since 2026-09-19** (docs/MORE.md): that glyph opens a
+  // menu of three pages and 设置 is the first row of it, where it used
+  // to open a dialog outright.
+  const openSettings = async () => {
+    await settingsGlyph.click();
+    await page.locator('[data-more-open="settings"]').click();
+    await until("the settings page", 10_000, async () => (await sheet.count()) === 1);
+    await until("the options to arrive", 10_000, async () =>
+      (await sheet.locator("[data-face-option]").count()) > 0,
+    );
+  };
+  const closeSettings = async () => {
+    await page.locator("[data-more-close]").click();
+    await until("the settings page closed", 10_000, async () => (await sheet.count()) === 0);
+    await until("rows behind it", 15_000, async () => (await page.locator("[data-row]").count()) > 0);
+  };
+
+  //     **Counted before the page is open, and that is the change.**
+  //     设置 was a dialog floating over the landing, so every face on
+  //     the list stayed on screen while it was up; a page *replaces*
+  //     the region beside the rail, so with it open the only face left
+  //     outside it is the rail's own — and「it moved everywhere at
+  //     once」cannot be measured on a screen showing one place. So the
+  //     premise is established here, the change is made on the page,
+  //     and the count is taken again once the page is closed.
+  //
+  //     Scoped to #root and **outside any 「…」 page**: the settings
+  //     page's own swatches change too, and they are the screen making
+  //     its offer rather than this machine wearing a face.
+  const wearing = async (want) =>
+    (
+      await page
+        .locator("#root [data-face]")
+        .evaluateAll((els) => els.filter((e) => !e.closest("[data-more-page]")).map((e) => e.innerHTML))
+    ).filter((h) => h.replace(/av-blur-[^"')\s]+/g, "BLUR") === want).length;
+  const placesBefore = await wearing(await faceOf(railFace));
+  if (placesBefore < 2) {
+    throw new Error(`this machine's face is in ${placesBefore} place(s); the premise is more than one`);
+  }
+  await openSettings();
+  // (The wait for the options to arrive is inside `openSettings`: the
+  // section mounts before its answer does — it asks the node when it
+  // opens — and waiting on the box instead read the empty frame and
+  // reported "the settings screen offers []", which reads like the
+  // screen being broken rather than like arriving early. It passed on
+  // three runs before it failed on the fourth, which is the whole
+  // signature of waiting for the wrong thing.)
 
   //     a. three axes, and every option on all of them painted by the
   //     real brush. Stated positively for the same reason the row faces
@@ -2915,13 +2969,6 @@ for line in sys.stdin:
   //     before and requires the same number to wear the new one after,
   //     and none to be left wearing the old. Scoped to #root so the
   //     sheet's own swatches — which change too — stay out of it.
-  const wearing = async (want) =>
-    (await page.locator("#root [data-face]").evaluateAll((els) => els.map((e) => e.innerHTML)))
-      .filter((h) => h.replace(/av-blur-[^"')\s]+/g, "BLUR") === want).length;
-  const places = await wearing(worn);
-  if (places < 2) {
-    throw new Error(`this machine's face is in ${places} place(s); the premise is more than one`);
-  }
   const otherPalette = (
     await sheet
       .locator('[data-face-axis="palette"] [data-face-option]')
@@ -2929,13 +2976,17 @@ for line in sys.stdin:
   )[0];
   if (!otherPalette) throw new Error("probe dead: every palette is already the chosen one");
   await sheet.locator(`[data-face-option="${otherPalette}"][data-axis="palette"]`).click();
-  await until("this machine repainted everywhere", 15_000, async () => {
-    const now = await faceOf(railFace);
-    return now !== worn && (await wearing(now)) === places;
-  });
+  await until("this machine's own face repainted", 15_000, async () => (await faceOf(railFace)) !== worn);
   const wasWorn = worn;
   worn = await faceOf(railFace);
+  //     …and「everywhere」is read with the page out of the way, on the
+  //     landing that has the faces on it (see the premise above).
+  await closeSettings();
+  await until("this machine repainted everywhere", 15_000, async () =>
+    (await wearing(worn)) === placesBefore,
+  );
   if ((await wearing(wasWorn)) !== 0) throw new Error("somewhere is still painting the old face");
+  await openSettings();
 
   //     d. a variant reaches the canvas the core ships. beam's canvas
   //     is 36 where the other two are 80, so switching to it and back
@@ -2967,10 +3018,17 @@ for line in sys.stdin:
     el.dispatchEvent(new Event("input", { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  await until("the hand-picked color everywhere", 15_000, async () => {
-    const now = await faceOf(railFace);
-    return now !== worn && (await wearing(now)) === places;
-  });
+  await until("the hand-picked color on this machine", 15_000, async () =>
+    (await faceOf(railFace)) !== worn,
+  );
+  //     …and everywhere, read once the page is out of the way — the
+  //     same two-step the palette above takes, and for the same reason.
+  const handPicked = await faceOf(railFace);
+  await closeSettings();
+  await until("the hand-picked color everywhere", 15_000, async () =>
+    (await wearing(handPicked)) === placesBefore,
+  );
+  await openSettings();
   const afterHand = await markedFaces();
   if (afterHand.length !== 2) {
     throw new Error(`${afterHand.length} options marked after a hand-picked color; no palette is one`);
@@ -3025,8 +3083,9 @@ for line in sys.stdin:
 
   //     h. and it outlives a reload — the choice lives in the node, not
   //     on this screen.
-  await page.keyboard.press("Escape");
-  await until("the sheet closed", 10_000, async () => (await sheet.count()) === 0);
+  //     Closed by its own button: a page is not a dialog and Escape is
+  //     not one of its exits (docs/MORE.md 「页头一行：名字 + 关闭」).
+  await closeSettings();
   await page.reload();
   await until("rows after the reload", 20_000, async () => (await page.locator("[data-row]").count()) > 0);
   if ((await faceOf(railFace)) !== chosen) throw new Error("the chosen face did not survive a reload");
@@ -4021,7 +4080,7 @@ for line in sys.stdin:
   //     the independent witness, and **no number is written in this
   //     file**: both sides are read and set against each other.
   await page.setViewportSize({ width: 390, height: 720 });
-  await page.locator("[data-rail-mark]").click();
+  await toMesh();
   await until("the mesh on the narrow face", 15_000, async () =>
     (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
   );
@@ -4053,7 +4112,7 @@ for line in sys.stdin:
   }
 
   await page.setViewportSize({ width: 1080, height: 720 });
-  await page.locator("[data-rail-mark]").click();
+  await toMesh();
   await until("the mesh on the wide face", 15_000, async () =>
     (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
   );
@@ -6619,7 +6678,7 @@ for line in sys.stdin:
   if (!waitingHome) {
     throw new Error("probe dead: the waiting row does not say which machine it is on");
   }
-  await page.locator("[data-rail-mark]").click();
+  await toMesh();
   await until("the mark's place", 15_000, async () =>
     (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
   );

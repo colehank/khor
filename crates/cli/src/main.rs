@@ -1322,7 +1322,11 @@ fn watch(rest: &[String]) -> Result<(), String> {
 /// because a person on a machine still has to be able to ask it, and
 /// because `--version` is the first thing anybody types.
 fn version(_rest: &[String]) -> Result<(), String> {
-    println!("{}", env!("CARGO_PKG_VERSION"));
+    // The library's constant, not this crate's own `env!`: the identity
+    // card prints the same one (`khor_gui_core::about`), and two
+    // spellings of「哪一版」is exactly the drift a version number exists
+    // to reveal (`khor_node::VERSION`).
+    println!("{}", khor_node::VERSION);
     Ok(())
 }
 

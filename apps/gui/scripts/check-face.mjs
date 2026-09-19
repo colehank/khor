@@ -1627,6 +1627,16 @@ try {
       }),
     }),
   );
+  // Which khor this is, for the identity card's foot (docs/MORE.md 头像).
+  // The version string is this fixture's own and deliberately not the
+  // workspace's: what the card has to prove is that it prints what the
+  // node answered, not that it can read a Cargo file.
+  await page.route("**/about", (r) =>
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ version: "0.0.0-gate", root: "/gate/khor" }),
+    }),
+  );
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
 
@@ -1941,6 +1951,16 @@ try {
     return true;
   };
   const press = (sel) => pressNth(sel, 0);
+  /**
+   * The mark's place, in the two presses it takes since 2026-09-19
+   * (docs/MORE.md): the avatar opens this machine's identity card, and
+   * the card carries the way into the picture.
+   *
+   * **Written once rather than at each site**, because「the mesh moved
+   * one press deeper」 is one fact — two copies of the walk is two
+   * places to forget the day it moves again.
+   */
+  const toMesh = async () => (await press("[data-rail-mark]")) && press("[data-identity-mesh]");
   // Reach a landing as a *switch*, never a re-click. Pressing the open
   // landing's own glyph now collapses its list (App.tsx 再点收起,
   // 2026-09-02), and this walk re-opens the same landing across
@@ -2165,7 +2185,50 @@ try {
         return press('[data-quota-row="sub:local"]');
       },
     },
-    { name: "the mark's place", anchor: "[data-mark-place]", go: () => press("[data-rail-mark]") },
+    {
+      // The mesh is **two presses from the rail now** (docs/MORE.md):
+      // the avatar opens this machine's identity card, and the card
+      // carries the way into the picture. The door did not disappear,
+      // it moved one press deeper — so this stop grew a press rather
+      // than being deleted, which is also the assertion that the move
+      // kept the picture reachable at all.
+      name: "the mark's place",
+      anchor: "[data-mark-place]",
+      go: async () => (await press("[data-rail-mark]")) && press("[data-identity-mesh]"),
+    },
+    {
+      // …and the card itself, which is what the avatar actually opens.
+      // The anchor is a fact on it rather than the frame: a page that
+      // drew its head and threw on the way to its body would still
+      // satisfy the frame.
+      name: "identity",
+      anchor: '[data-more-page="identity"] [data-more-fact="version"]',
+      go: () => press("[data-rail-mark]"),
+      after: async () => {
+        await press("[data-more-close]");
+      },
+    },
+    {
+      // 安全 and 自检 are a head and a way out until batches C and B
+      // fill them, and a stop each is what keeps that head measured —
+      // the close button is the only control on either, and on the
+      // narrow face it is the only way off the page.
+      name: "security",
+      anchor: '[data-more-page="security"] [data-more-close]',
+      go: async () =>
+        (await press("[data-rail-more]")) && press('[data-more-open="security"]'),
+      after: async () => {
+        await press("[data-more-close]");
+      },
+    },
+    {
+      name: "doctor",
+      anchor: '[data-more-page="doctor"] [data-more-close]',
+      go: async () => (await press("[data-rail-more]")) && press('[data-more-open="doctor"]'),
+      after: async () => {
+        await press("[data-more-close]");
+      },
+    },
     {
       // The body, not the frame. **This stop used to be named
       // 「settings (frame only)」and judged one control** — the dialog's
@@ -2183,20 +2246,20 @@ try {
       // both say *probe dead* here rather than passing.
       name: "settings",
       anchor: '[data-face-axis="shape"] [data-face-option]',
-      // On the wide column 设置 is its own rail item — the one that
-      // opens no landing and is not the mark, so it is named by what it
-      // is not. On the narrow bar it moved inside the「…」fold
-      // (2026-09-02 `NARROW_SHOWN`), so there it is two presses: open
-      // the fold, then its own row. The direct press is tried first, so
-      // a renamed wide glyph still says probe-dead rather than being
-      // masked by the fold path.
+      // **Two presses on both faces since 2026-09-19** (docs/MORE.md):
+      // 设置 stopped being the one thing behind 「…」 — it is one of
+      // three — so the wide rail's own glyph opens the same menu the
+      // narrow bar's fold does, and the page is the row under it. The
+      // old wide path (a rail item that opens no landing and is not the
+      // mark) pressed straight through to a dialog; there is no dialog
+      // any more.
       go: async () =>
-        (await press(
-          "[data-rail-item]:not([data-landing]):not([data-rail-more]):not(:has([data-rail-mark]))",
-        )) || ((await press("[data-rail-more]")) && press("[data-more-settings]")),
+        (await press("[data-rail-more]")) && press('[data-more-open="settings"]'),
+      // Closed by its own button rather than Escape: a page is not a
+      // dialog and does not answer that key, and leaving it open would
+      // hand the next stop a full-region surface over its landing.
       after: async () => {
-        await page.keyboard.press("Escape");
-        await wait(300);
+        await press("[data-more-close]");
       },
     },
   ];
@@ -8940,6 +9003,180 @@ try {
     }
   }
 
+  // ── 4C) 「…」的就地菜单,和它开出来的四张独立页 (docs/MORE.md) ────
+  //
+  // 「点击..., 显示设置、安全、自检, 网络, 点击后是就地的菜单栏, 进一步点击
+  // 都是独立的界面」 — the user, 2026-09-18. 网络 was ruled out of this
+  // batch (「先不整网络吧, 有点复杂了. 可以是宏图」), so three rows, not
+  // four, and the fourth page is the avatar's.
+  //
+  // **What this section adds over the walk above is the shape, not the
+  // existence.** Every one of the four already has a stop in section 3,
+  // so「it drew」is covered; what no stop can say is that the menu holds
+  // exactly these rows in this order, that a page *replaces* the landing
+  // instead of floating over it, and that closing puts the landing back.
+  {
+    for (const posture of ["wide", "narrow"]) {
+      await page.setViewportSize(
+        posture === "wide" ? { width: 1400, height: 900 } : { width: 390, height: 844 },
+      );
+      await wait(400);
+      await open("sessions");
+      if (!(await press("[data-rail-more]"))) {
+        fail(`probe dead: ${posture} has no 「…」 in the rail to press`);
+        continue;
+      }
+      const menu = await page.evaluate(() => {
+        const box = document.querySelector("[data-rail-more-menu]");
+        if (!box) return null;
+        return {
+          pages: [...box.querySelectorAll("[data-more-open]")].map((e) => e.getAttribute("data-more-open")),
+          landings: [...box.querySelectorAll("[data-more-landing]")].map((e) =>
+            e.getAttribute("data-more-landing"),
+          ),
+          rule: box.querySelectorAll("[data-more-rule]").length,
+        };
+      });
+      if (!menu) {
+        fail(`probe dead: ${posture} · pressing 「…」 opened no menu`);
+        continue;
+      }
+      console.log(`「…」 ${posture}: pages ${JSON.stringify(menu.pages)} landings ${JSON.stringify(menu.landings)} rule ${menu.rule}`);
+      if (menu.pages.join(",") !== "settings,security,doctor") {
+        fail(
+          `${posture}: 「…」 offers ${JSON.stringify(menu.pages)} — 「显示设置、安全、自检」, ` +
+            "in that order (src/App.tsx morePages)",
+        );
+      }
+      // The folded landings are the narrow bar's alone, and the rule
+      // between them and the pages is what says the two are not one
+      // list: a landing is where you are, a page is opened over it.
+      if (posture === "narrow" && (menu.landings.length === 0 || menu.rule !== 1)) {
+        fail(
+          `narrow: the fold carries ${menu.landings.length} landing(s) and ${menu.rule} rule(s) — ` +
+            "the landings past the fourth belong above the three pages, with a rule between " +
+            "(App.tsx NARROW_SHOWN)",
+        );
+      }
+      if (posture === "wide" && (menu.landings.length !== 0 || menu.rule !== 0)) {
+        fail(
+          `wide: the 「…」 menu carries ${menu.landings.length} landing(s) and ${menu.rule} rule(s) — ` +
+            "every landing has a seat on this rail, so there is nothing folded to separate",
+        );
+      }
+      await page.keyboard.press("Escape");
+      await wait(300);
+
+      // Each page, opened and closed: what it replaces, what its head
+      // carries, and that the landing under it is still the one that was
+      // open when it was.
+      for (const key of ["settings", "security", "doctor"]) {
+        if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
+          fail(`probe dead: ${posture} · 「…」 → ${key} did not open`);
+          continue;
+        }
+        const up = await page.evaluate((k) => {
+          const pageEl = document.querySelector(`[data-more-page="${k}"]`);
+          const head = pageEl?.querySelector("[data-more-head]") ?? null;
+          return {
+            drew: !!pageEl,
+            // A landing's list pane, and the 「…」 glyph's own lit state.
+            list: document.querySelectorAll("[data-list]").length,
+            drag: head?.getAttribute("data-tauri-drag-region") ?? null,
+            close: pageEl?.querySelectorAll("[data-more-close]").length ?? 0,
+            lit: document.querySelector("[data-rail-more]")?.getAttribute("data-on") ?? null,
+          };
+        }, key);
+        console.log(`page ${posture} · ${key}: ${JSON.stringify(up)}`);
+        if (!up.drew) {
+          fail(`${posture}: 「…」 → ${key} drew no [data-more-page="${key}"] — 「进一步点击都是独立的界面」`);
+          continue;
+        }
+        if (up.list !== 0) {
+          fail(
+            `${posture}: ${key} left ${up.list} list pane(s) on screen — a page takes the whole ` +
+              "region beside the rail, it does not float over the landing (src/App.tsx morePageEl)",
+          );
+        }
+        if (up.drag !== "deep") {
+          fail(
+            `${posture}: ${key}'s head carries data-tauri-drag-region=${JSON.stringify(up.drag)} — ` +
+              "第八轮 第 59 条: every landing's top row moves the window, and so does a page's",
+          );
+        }
+        if (up.close !== 1) {
+          fail(`${posture}: ${key} draws ${up.close} way(s) out — 「页头一行：名字 + 关闭」`);
+        }
+        if (up.lit !== "true") {
+          fail(`${posture}: 「…」 does not light while ${key} is open — the rail must answer 我在哪一页`);
+        }
+        await press("[data-more-close]");
+        const back = await page.evaluate(() => ({
+          page: document.querySelectorAll("[data-more-page]").length,
+          landing:
+            document.querySelector('[data-rail-item][data-landing="sessions"]')?.getAttribute("data-on") ??
+            null,
+        }));
+        if (back.page !== 0 || back.landing !== "true") {
+          fail(
+            `${posture}: closing ${key} left ${JSON.stringify(back)} — the landing it was opened ` +
+              "over comes back as it was (src/App.tsx morePage is held apart from landing)",
+          );
+        }
+      }
+
+      // …and the avatar's own page, which is the fourth and is not on
+      // that menu: it is what pressing this machine's face opens now.
+      if (!(await press("[data-rail-mark]"))) {
+        fail(`probe dead: ${posture} has no face at the foot of the rail`);
+        continue;
+      }
+      const card = await page.evaluate(() => {
+        const el = document.querySelector('[data-more-page="identity"]');
+        if (!el) return null;
+        return {
+          version: el.querySelector('[data-more-fact="version"]')?.textContent?.trim() ?? null,
+          id: el.querySelector('[data-more-fact="id"]')?.textContent?.trim() ?? null,
+          paired: el.querySelectorAll("[data-paired-machine]").length,
+          mesh: el.querySelectorAll("[data-identity-mesh]").length,
+          tickets: el.querySelectorAll("[data-identity-invite], [data-identity-join]").length,
+        };
+      });
+      console.log(`identity ${posture}: ${JSON.stringify(card)}`);
+      if (!card) {
+        fail(`${posture}: pressing this machine's face opened no identity card (docs/MORE.md 头像)`);
+      } else {
+        // A version that is the empty string is the `about` call not
+        // having answered — which on this fixture is the bridge
+        // answering, so it is a real assertion and not a race: the
+        // stop above waited for this very element.
+        if (!card.version) {
+          fail(`${posture}: the identity card states no khor version — 「本机的脸、名字、id、khor 版本」`);
+        }
+        if (!card.id) fail(`${posture}: the identity card states no machine id`);
+        // The fixture routes two machines and one of them is this one.
+        // Against the fixture rather than a number written here: the
+        // card lists every machine that is not this one, and the
+        // routed table is what「every machine」means on this page.
+        const wanted = devs.filter((d) => !d.me).length;
+        if (card.paired !== wanted) {
+          fail(
+            `${posture}: the identity card lists ${card.paired} paired machine(s) of the ${wanted} routed`,
+          );
+        }
+        if (card.tickets !== 2) {
+          fail(`${posture}: the identity card offers ${card.tickets} pairing door(s) — 「邀请」 and 「接入」`);
+        }
+        if (card.mesh !== 1) {
+          fail(`${posture}: the identity card carries no way into 网里的机器 — the avatar was the mesh's only door`);
+        }
+      }
+      await press("[data-more-close]");
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+  }
+
   // ── 5) a dense screen has a reading order ─────────────────────────
   // **What sections 2 and 3 cannot see.** Section 2 asks whether the
   // three weights exist *somewhere on the page*, which the rail and the
@@ -8959,7 +9196,7 @@ try {
   // number under it passes. It blocks the flat one, which is the shape
   // that was actually shipped.
   await page.setViewportSize({ width: 1120, height: 1000 });
-  await page.locator("[data-rail-mark]").click();
+  await toMesh();
   await wait(900);
   const DENSE = 24;
   const STEP = 1.25;
@@ -9274,7 +9511,7 @@ try {
       console.log(`dials: arcs ${JSON.stringify(dials.arcW)} across, ${JSON.stringify(dials.toWord)} above their words, gaps ${JSON.stringify(dials.gaps)}, 100%@card ${fit ? fit.widest : "?"} vs inner ${fit ? fit.inner : "?"}`);
     }
   }
-  await page.locator("[data-rail-mark]").click();
+  await toMesh();
   await wait(400);
   await page.locator('[data-seat][data-seat-me="true"]').click();
   const mineNode = await arcsOn("[data-node-card]");

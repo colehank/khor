@@ -28,13 +28,19 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
-export function NetSettings({ open }: { open: boolean }) {
+/**
+ * **Mounting is opening, since 2026-09-19.** This took an `open` prop
+ * while the settings screen was a dialog that stayed mounted with its
+ * body hidden; the settings **page** is drawn only while it is the
+ * thing on screen, so the mount is the event and a prop repeating it
+ * would be a second answer to one question.
+ */
+export function NetSettings() {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!open) return;
     let alive = true;
     fetchRelays()
       .then((r) => {
@@ -46,7 +52,7 @@ export function NetSettings({ open }: { open: boolean }) {
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, []);
 
   // One door for every change — add and remove both send the whole list,
   // because that is the shape the node takes (`Node::set_relays`

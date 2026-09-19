@@ -2058,6 +2058,13 @@ fn resume_session(agent: String, session: String) -> Result<String, String> {
     khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
 }
 
+/// Which khor this is, and which store it is talking to
+/// (`khor_gui_core::about`) — the identity card's foot.
+#[tauri::command]
+fn about() -> khor_gui_core::About {
+    khor_gui_core::about(&Node::root_from_env())
+}
+
 #[tauri::command]
 fn invite() -> Result<khor_gui_core::Ticket, String> {
     khor_gui_core::invite(&Node::root_from_env())
@@ -2317,6 +2324,7 @@ pub fn run() {
             resume_session,
             takeover,
             takeover_term,
+            about,
             invite,
             pair
         ])

@@ -30,6 +30,7 @@ import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
+import type { About } from "./gen/bindings/About";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
@@ -81,6 +82,7 @@ export type {
   RelayChoices,
   HooksState,
   Ticket,
+  About,
   Usage,
   Strain,
   ChatBatch,
@@ -712,6 +714,11 @@ export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
     copy of a number only `link::INVITE_WINDOW_MS` decides. */
 export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });
+/** Which khor this is and which store it is talking to — the identity
+    card's foot (docs/MORE.md 头像). A fact about **this** installation:
+    what another machine is running is `khor doctor`'s question, asked
+    over the wire, never a field on the device table. */
+export const fetchAbout = () => call<About>("about");
 /** The chat six: an attachment registry in gui-core holds the socket
     (a webview cannot), a reader thread collects frames, and the poll
     answers instantly from a cursor — nothing is lost between polls.

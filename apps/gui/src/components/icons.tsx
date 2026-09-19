@@ -209,6 +209,54 @@ export function IconMore({ className }: IconProps) {
 }
 
 /**
+ * The three doors behind 「…」 (docs/MORE.md), as 24-canvas rail glyphs.
+ *
+ * They are drawn at rail size although they only ever appear in a menu:
+ * the「…」menu on the narrow bar already puts a landing's own rail glyph
+ * beside its name, and three marks at a second size in one list would be
+ * the「two typefaces in one paragraph」this file's head is about. The
+ * menu sizes them down from the outside.
+ *
+ * None of the three carries a `data-body` piece. That rule paints the
+ * *open* landing solid, and none of these is a landing — a page behind
+ * 「…」 is opened and closed, never「where you are」 in the rail's sense.
+ */
+
+/** 设置 = a gear. Eight teeth as one dashed ring, so the tooth pitch is
+    the dash pattern rather than eight hand-placed paths that can drift. */
+export function IconGear({ className }: IconProps) {
+  return (
+    <RailGlyph className={className}>
+      <circle cx="12" cy="12" r="8.6" strokeDasharray="1.9 2.85" />
+      <circle cx="12" cy="12" r="6.4" />
+      <circle cx="12" cy="12" r="2.6" />
+    </RailGlyph>
+  );
+}
+
+/** 安全 = a shield. The plate a lock hangs on everywhere else, and the
+    one mark of the three that says「kept out」 rather than「looked at」. */
+export function IconShield({ className }: IconProps) {
+  return (
+    <RailGlyph className={className}>
+      <path d="M12 3.2 4.6 6.1v5.3c0 4.2 3 7.6 7.4 9.4 4.4-1.8 7.4-5.2 7.4-9.4V6.1Z" />
+      <path d="M12 10.4v3.4" />
+    </RailGlyph>
+  );
+}
+
+/** 自检 = a pulse across a frame: a list of readings taken, which is what
+    the page is. Not a stethoscope — khor checks itself, nobody holds it. */
+export function IconPulse({ className }: IconProps) {
+  return (
+    <RailGlyph className={className}>
+      <rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2.6" />
+      <path d="M6.6 12h2.8l1.7-3.6 2.4 7.2 1.5-3.6h2.4" />
+    </RailGlyph>
+  );
+}
+
+/**
  * The 16-canvas marks' common plate. Canvas and stroke are written once
  * here for the same reason `RailGlyph` writes them once: a width spelled
  * out per icon drifts, and mandala ended up with six of them, each right

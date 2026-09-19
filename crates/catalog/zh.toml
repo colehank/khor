@@ -2488,6 +2488,24 @@ git-stale = "存了才知道改在哪儿"
 # 否则按下去开出来的是个空格子。
 git-added = "HEAD 里没有这几行"
 settings = "设置"
+# ── 「…」的三个门,和头像的那一张卡 (docs/MORE.md) ─────────────────
+# 「…」按下是就地菜单,三项各开一整页(`data-more-page`),不是对话框:
+# 一页是一个地方,对话框是「这件事办完就回去」。设置借上面那个 `settings`。
+security = "安全"
+doctor = "自检"
+# 头像开的那一页。**不叫「我」**——khor 里没有账号,一台机器就是一个身份,
+# 页名说的就是这台机器自己。
+identity = "这台机器"
+identity-id = "机器 id"
+identity-version = "khor 版本"
+# 身份卡下半张:配对过的机器。**和 `devices-tab`(机器)、`mesh-map`
+# (网里的机器)不是一个词**:那两个是落地页和地图,这一节答的是
+# 「这台机器和谁配过对」——一张清单,不是一个去处。
+identity-paired = "配对过的机器"
+identity-alone = "还没和别的机器配对过"
+# 设置页里脸那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
+# 它们上面还缺一个「这一节是什么」。
+settings-face = "这台机器的脸"
 # ── the machine's own relays, on the settings screen ──
 # 「中继」 alone is already taken by the path word (直连/中继 on a row),
 # and it has to stay that — this heading is about the *list*, not about

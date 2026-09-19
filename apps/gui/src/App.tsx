@@ -29,9 +29,12 @@ import {
   IconBrowser,
   IconDevices,
   IconFiles,
+  IconGear,
   IconMore,
+  IconPulse,
   IconQuota,
   IconSessions,
+  IconShield,
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
@@ -43,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -79,7 +83,11 @@ import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList } from "@/views/WorkspacesList";
-import { FaceSettings } from "@/views/FaceSettings";
+import { MORE_NAMES, type MorePage } from "@/views/more/MorePage";
+import { DoctorPage } from "@/views/more/DoctorPage";
+import { IdentityPage } from "@/views/more/IdentityPage";
+import { SecurityPage } from "@/views/more/SecurityPage";
+import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
@@ -538,11 +546,22 @@ export default function App() {
       which is what the column reads. */
   const [newSessionInPlace, setNewSessionInPlace] = useState(false);
   const [openedInWs, setOpenedInWs] = useState<string | null>(null);
-  // Settings sit behind the rail's last glyph, one level down and not on
-  // any first screen (docs/UX.md 设置: 升成了也藏深). Its own state
-  // rather than another `Sheet`: those three are the "+" menu's, and
-  // this one does not belong to any pane.
-  const [settings, setSettings] = useState(false);
+  /**
+   * Which page behind 「…」 or the avatar is open, if any (docs/MORE.md).
+   *
+   * **One value for four pages, and it is not a `Sheet`.** Those three
+   * are the "+" menu's dialogs and belong to a pane; these are places
+   * that take the whole region beside the rail. It is also not a
+   * `Landing`, for the reason `Mark` gives about itself: a landing is a
+   * list beside a detail and is where you are, and one of these is
+   * opened over wherever you were and closed back to it — which is why
+   * the landing underneath is never overwritten.
+   *
+   * 设置 used to be a boolean here (`settings`) opening a dialog. Four
+   * pages behind one menu is what replaced it (「点击...,显示设置、安全、
+   * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
+   */
+  const [morePage, setMorePage] = useState<MorePage | null>(null);
   // Whether the mark's place is showing. See `Mark`.
   const [mark, setMark] = useState<Mark>(false);
   // **What the agents have cost is no longer asked for here at all.**
@@ -967,6 +986,7 @@ export default function App() {
               toHost(abs);
               return;
             }
+            setMorePage(null);
             setMark(false);
             setLanding("workspaces");
             // The id stands in where the device table has no name for
@@ -1104,7 +1124,41 @@ export default function App() {
   // Whether the open landing is one the narrow bar folded away — the
   // 「…」trigger lights for it, because the rail must always answer
   // 我在哪一页, even for a page whose own glyph is off the bar.
-  const foldedOn = !mark && LANDINGS.slice(NARROW_SHOWN).some((l) => l.key === landing);
+  //
+  // **…or one of the three pages it opens** (docs/MORE.md). Three of
+  // the four 「…」 pages are behind this one glyph on both faces; the
+  // fourth (身份) is behind the avatar and lights that one instead.
+  const foldedOn =
+    (morePage !== null && morePage !== "identity") ||
+    (!mark && narrow && LANDINGS.slice(NARROW_SHOWN).some((l) => l.key === landing));
+  /**
+   * The three doors 「…」 opens, in the order docs/MORE.md lists them.
+   *
+   * Built once and drawn by both faces: the wide rail's own menu and
+   * the narrow bar's fold are the same three rows, under the folded
+   * landings on narrow and alone on wide. A second spelling per face is
+   * how one press comes to mean two things.
+   */
+  const morePages: { key: MorePage; glyph: ReactNode }[] = [
+    { key: "settings", glyph: <IconGear /> },
+    { key: "security", glyph: <IconShield /> },
+    { key: "doctor", glyph: <IconPulse /> },
+  ];
+  const moreItems = morePages.map((p) => (
+    <DropdownMenuItem
+      key={p.key}
+      data-more-open={p.key}
+      data-on={morePage === p.key}
+      className="min-h-touch gap-2"
+      onSelect={() => setMorePage(p.key)}
+    >
+      {/* Rail glyphs at a menu's size: the folded landings above these
+          bring their own rail glyph, and two icon sizes in one list
+          read as two families (`components/icons`). */}
+      <span className="size-5! [&_svg]:size-full">{p.glyph}</span>
+      {MORE_NAMES[p.key]}
+    </DropdownMenuItem>
+  ));
   const rail = (
     <nav
       // **Named, because two things now ask for it by name**: the gate
@@ -1182,7 +1236,11 @@ export default function App() {
             // put away (the two inbox landings) and only wide: narrow
             // shows one screen, so there is nothing beside the list to
             // give its room to.
-            const again = !mark && landing === l.key;
+            const again = !mark && morePage === null && landing === l.key;
+            // A 「…」 page is open over this landing, so pressing a rail
+            // glyph has to close it — otherwise the one press that
+            // always answers 「带我回去」 would do nothing visible.
+            setMorePage(null);
             setMark(false);
             setLanding(l.key);
             setScreen("list");
@@ -1209,38 +1267,55 @@ export default function App() {
         </RailItem>
       ))}
       {!narrow && <span className="flex-1" />}
-      {narrow ? (
-        // The rest of the rail, folded (2026-09-02:「窄屏的时候,下面的
-        // 侧边栏最多只显示四个icon,多余的折叠为...」): the landings past
-        // the fourth, and 设置 — which already answered to this same
-        // glyph, so the two「…」s merged instead of standing side by
-        // side. The trigger's classes mirror `RailItem`'s button (one
-        // look for every rail seat; the reasons live there).
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              aria-label={gui.rail_more}
-              data-rail-item
-              data-rail-more
-              data-on={foldedOn}
-              className={cn(
-                "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
-                "hover:text-rail-ink",
-                foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
-              )}
-            >
-              <IconMore />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top" data-rail-more-menu>
-            {LANDINGS.slice(NARROW_SHOWN).map((l) => (
+      {/* 「…」, and it is **one glyph with one menu on both faces now**
+          (docs/MORE.md 入口:「按下是就地菜单」).
+
+          It used to be two different controls: a menu on the narrow bar
+          (the landings past the fourth, plus 设置) and a plain button on
+          the wide rail that opened the settings dialog. 设置 stopped
+          being one thing behind that press — it is three — so the wide
+          side grew the same menu rather than a second way of choosing
+          between three pages.
+
+          What still differs per face is what is *above* the three: the
+          narrow bar folds the landings it has no room for (2026-09-02:
+          「窄屏的时候,下面的侧边栏最多只显示四个icon,多余的折叠为...」)
+          and a rule separates them from the pages, because a landing and
+          a page are not the same kind of destination. The wide rail
+          seats every landing, so there is nothing to fold and the menu
+          is the three rows alone.
+
+          The trigger's classes mirror `RailItem`'s button — one look for
+          every rail seat; the reasons live there. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            aria-label={gui.rail_more}
+            data-rail-item
+            data-rail-more
+            data-on={foldedOn}
+            className={cn(
+              "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+              "hover:text-rail-ink",
+              foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
+            )}
+          >
+            <IconMore />
+          </Button>
+        </DropdownMenuTrigger>
+        {/* Up from the bottom bar, out to the side of the column rail —
+            the side the rail is not against, either way. */}
+        <DropdownMenuContent side={narrow ? "top" : "right"} data-rail-more-menu>
+          {narrow &&
+            LANDINGS.slice(NARROW_SHOWN).map((l) => (
               <DropdownMenuItem
                 key={l.key}
                 data-more-landing={l.key}
-                data-on={!mark && landing === l.key}
+                data-on={!mark && morePage === null && landing === l.key}
                 className="min-h-touch gap-2"
                 onSelect={() => {
+                  setMorePage(null);
                   setMark(false);
                   setLanding(l.key);
                   setScreen("list");
@@ -1252,21 +1327,10 @@ export default function App() {
                 {l.name}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuItem
-              data-more-settings
-              className="min-h-touch gap-2"
-              onSelect={() => setSettings(true)}
-            >
-              <IconMore />
-              {gui.settings}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <RailItem label={gui.settings} narrow={narrow} onClick={() => setSettings(true)}>
-          <IconMore />
-        </RailItem>
-      )}
+          {narrow && <DropdownMenuSeparator data-more-rule />}
+          {moreItems}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {/* This machine, at the foot of the rail — **and it is the way
           into the mesh now**.
           「不要右上角的 icon 了吧。取而代之,用左下角的点击作为原来的
@@ -1294,13 +1358,29 @@ export default function App() {
           Drawn on both faces, unlike before. The face used to be
           wide-only because it was decoration and a phone's rail has no
           room for decoration; it is the only door to the mesh now, and
-          a door cannot be wide-only. */}
+          a door cannot be wide-only.
+
+          # It opens the identity card now, and the mesh is one press further
+
+          「点击左下角头像, 是选择接入已有khor网络...」 — the user,
+          2026-09-18, and the ruling that followed (docs/MORE.md) kept the
+          half that needs no hypergraph: **this machine, as a card**.
+          Pressing your own face to be told who you are is the sentence
+          this seat was already saying; pressing it to be shown a picture
+          of everybody was the nearest thing available at the time.
+
+          **The mesh did not lose its door, it moved behind this one**
+          (`IdentityPage`'s 网里的机器). That is a ruling I made rather
+          than one docs/MORE.md wrote down, and it is in the handoff: the
+          alternative was retiring `MarkPlace` in a batch that is not
+          about the network, and the network page 「等这张宏图」 is where
+          that picture is going to be re-decided anyway. */}
       <RailItem
-        label={gui.mesh_map}
-        on={mark}
+        label={gui.identity}
+        on={mark || morePage === "identity"}
         narrow={narrow}
         onClick={() => {
-          setMark(true);
+          setMorePage("identity");
           setScreen("list");
           setSwitchingTabs(false);
         }}
@@ -1670,6 +1750,7 @@ export default function App() {
       // place the person did not ask to leave (`useBrowseTabs.open` says
       // the same from the other side).
       onBrowseFiles={(row) => {
+        setMorePage(null);
         setMark(false);
         setLanding("workspaces");
         // Home, not a workspace: this machine may have no checkouts at
@@ -1683,6 +1764,7 @@ export default function App() {
       // the same judgment as the disk above it, and the address bar is
       // what an empty place opens to (docs/NET.md 借网).
       onBorrowWeb={(row) => {
+        setMorePage(null);
         setMark(false);
         setLanding("browser");
         pageTabs.open(row.id, "");
@@ -1726,6 +1808,7 @@ export default function App() {
             setOpenedInWs(id);
             return;
           }
+          setMorePage(null);
           setMark(false);
           setLanding("sessions");
           sessionTabs.open(id);
@@ -1748,20 +1831,47 @@ export default function App() {
       />
       <InviteDialog open={sheet === "invite"} onOpenChange={(o) => setSheet(o ? "invite" : null)} />
       <JoinDialog open={sheet === "join"} onOpenChange={(o) => setSheet(o ? "join" : null)} />
-      {/* A restyle repaints this machine everywhere at once, because
-          `refresh` fetches rows and devices together and every face on
-          screen — the rail's, the device row's, each session row's —
-          is painted from that one answer. There is no path by which
-          two of them could be showing different styles. */}
-      <FaceSettings
-        open={settings}
-        onOpenChange={setSettings}
+      {/* (设置 was the fourth thing here — a dialog — until 2026-09-19.
+          It is a page now, drawn beside the rail with its three
+          siblings; see `morePage`.) */}
+    </>
+  );
+
+  /**
+   * The open page behind 「…」 or the avatar, or `null`.
+   *
+   * **A restyle repaints this machine everywhere at once**, because
+   * `refresh` fetches rows and devices together and every face on screen
+   * — the rail's, the device row's, each session row's — is painted from
+   * that one answer. There is no path by which two of them could be
+   * showing different styles.
+   */
+  const morePageEl =
+    morePage === null ? null : morePage === "settings" ? (
+      <SettingsPage
+        onClose={() => setMorePage(null)}
         onChanged={() => {
           refresh().catch(() => {});
         }}
       />
-    </>
-  );
+    ) : morePage === "security" ? (
+      <SecurityPage onClose={() => setMorePage(null)} />
+    ) : morePage === "doctor" ? (
+      <DoctorPage onClose={() => setMorePage(null)} />
+    ) : (
+      <IdentityPage
+        devices={devices}
+        onClose={() => setMorePage(null)}
+        onMesh={() => {
+          setMorePage(null);
+          setMark(true);
+          setScreen("list");
+          setSwitchingTabs(false);
+        }}
+        onInvite={() => setSheet("invite")}
+        onJoin={() => setSheet("join")}
+      />
+    );
 
   // Its own file: this surface and the session list get reshaped by
   // different people at the same time, and while it lived here those
@@ -1771,6 +1881,7 @@ export default function App() {
       rows={rows}
       devices={devices}
       onPickWaiting={(row) => {
+        setMorePage(null);
         setMark(false);
         setLanding("sessions");
         onSelect(row);
@@ -1858,15 +1969,23 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div
-            key={mark ? "mark" : browses ? landing : screen}
-            data-screen={mark ? "mark" : browses ? landing : screen}
+            key={morePage ? `more:${morePage}` : mark ? "mark" : browses ? landing : screen}
+            data-screen={morePage ? "more" : mark ? "mark" : browses ? landing : screen}
             ref={detailBox}
             className="min-h-0 flex-1 overflow-hidden"
           >
             {/* A browsing landing is one screen either way — it has no
                 list screen to be the other half of a pair, so `screen`
-                says nothing about it and it is keyed on its own. */}
-            {mark
+                says nothing about it and it is keyed on its own.
+
+                A 「…」 page is one screen too, and its own `data-screen`
+                word — **not "detail"**: the slide in `app.css` says
+                「你往里走了一层」, and these do not sit inside anything.
+                They are opened over the whole region, the way the mark's
+                place is, and take the same silence. */}
+            {morePage
+              ? morePageEl
+              : mark
               ? markPlace
               : quotas
                 ? (
@@ -1904,7 +2023,14 @@ export default function App() {
       ) : (
         <div className="flex h-dvh">
           {rail}
-          {mark ? (
+          {/* A 「…」 page takes the whole region beside the rail, the way
+              the mark's place does and for the same structural reason:
+              it is neither half of the list-and-detail pair. The landing
+              under it keeps its state — closing the page puts it back
+              exactly as it was. */}
+          {morePage ? (
+            <div className="min-w-0 flex-1">{morePageEl}</div>
+          ) : mark ? (
             <div className="min-w-0 flex-1">{markPlace}</div>
           ) : quotas ? (
             <div className="min-w-0 flex-1">

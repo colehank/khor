@@ -1102,6 +1102,36 @@ pub fn uninstall_hooks(root: &Path) -> Result<HooksState, String> {
     hooks_state_of(&n)
 }
 
+/// What this installation of khor is, for the identity card's foot
+/// (docs/MORE.md 头像) and for 设置's 关于 section.
+///
+/// **The version is this binary's, never a claim about the network.**
+/// A device row carries no version (`khor_sync::devices::DeviceInfo`),
+/// and inventing one here would put a number on every machine's card
+/// that nothing ever measured. What another machine is running is a
+/// question `khor doctor` asks over the wire, not a field on a table.
+///
+/// `root` is the store this face is talking to — the answer to
+/// 「这一份 khor 住在哪儿」, which on a machine with two homes
+/// (`KHOR_HOME`) is the only way to tell them apart.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct About {
+    pub version: String,
+    pub root: String,
+}
+
+/// Neither half opens a node: the version is a compile-time constant and
+/// the root is read off the environment. **That is what makes this
+/// callable from a machine whose store refuses to open** — which is the
+/// one moment a person most needs to be told which store that is.
+pub fn about(root: &Path) -> About {
+    About {
+        version: khor_node::VERSION.to_owned(),
+        root: root.display().to_string(),
+    }
+}
+
 /// A freshly minted ticket, and how long it is good for.
 ///
 /// **The window travels with the ticket instead of being written into

@@ -468,6 +468,18 @@ impl WireWatch {
 /// alternative (a deleted inode) cannot be spawned at all. When nothing
 /// is there any more, the error says the binary moved rather than
 /// blaming the session.
+/// Which khor this is.
+///
+/// **Published here rather than read with `env!` at each caller**, and
+/// the reason is the thing the number exists to answer: 「哪台落后了」.
+/// Every crate in this workspace carries `version.workspace = true`, so
+/// `env!("CARGO_PKG_VERSION")` in the CLI, in the GUI shell and in the
+/// library are three spellings of one value **today** — and the day a
+/// crate is published on its own, they stop being. One of the three
+/// would then print a different number than the other two, and nothing
+/// would say which was the one a person installed.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 pub fn self_exe() -> Result<PathBuf, String> {
     let raw = std::env::current_exe().map_err(msg::cant_find_self)?;
     let text = raw.to_string_lossy();

@@ -1,12 +1,20 @@
-// The app's settings screen. Mostly: what this machine looks like to
-// everybody else.
+// What this machine looks like to everybody else — the 设置 page's first
+// section (docs/MORE.md 设置: 「**这台机器的脸**、**中继**：现有
+// `FaceSettings` 两节原样搬来」).
 //
-// **It has a second section now that is not about faces** — the
-// machine's own relays (`NetSettings`) — and the file kept its name
-// rather than growing a sibling dialog, because the rail has exactly one
-// 设置 and a second entry point would have to be invented to explain a
-// second screen. Everything below this paragraph is still about faces
-// only; the network section holds its own reasoning in its own file.
+// **This was the whole settings screen, and it was a dialog.** It is a
+// section of a page now (`views/more/SettingsPage`), and what that
+// changed is the frame and nothing else: the axes, the wells, the
+// no-state-of-its-own rule and the network section under it are
+// untouched. The head of the dialog it used to be said the rail has
+// exactly one 设置 and a second entry point would have to be invented —
+// that is still true, and the door is now a menu item rather than a
+// rail seat.
+//
+// **Mounting is opening.** The dialog stayed mounted with `open` false
+// and re-read on every opening; the page is drawn only while it is on
+// screen, so the mount *is* the opening and the prop that said so is
+// gone (`NetSettings` did the same, one file over).
 //
 // **Nothing here derives a face.** Every swatch on this screen is an
 // `Avatar` the node painted (`khor_gui_core::face_choices`, one call for
@@ -28,14 +36,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { fetchFaceChoices, restyle, type FaceChoices } from "@/api";
 import { AvatarFace } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { avatar, gui } from "@/gen/catalog";
+import { avatar } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { faceWord } from "@/words";
 
@@ -197,12 +199,8 @@ function ColorWell({
 }
 
 export function FaceSettings({
-  open,
-  onOpenChange,
   onChanged,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   /** Called after a change took, so the faces elsewhere in the app come
       from the node's new answer rather than from this screen. */
   onChanged: () => void;
@@ -218,19 +216,13 @@ export function FaceSettings({
     [],
   );
 
-  // Read on every opening, not once on mounting: this machine's style
-  // can have been changed from a terminal since the last look.
-  //
-  // **The last answer is kept while the new one is fetched** — measured
-  // at 9ms on the first open of a session and 0 after, so clearing it
-  // would buy a flash of empty box in exchange for nothing. Acting on a
-  // stale option is harmless here: a press sends the colors or the key
-  // it is showing, so what you clicked is what you get either way.
+  // Read on every opening — which is every mount now that this is a
+  // page: this machine's style can have been changed from a terminal
+  // since the last look.
   useEffect(() => {
-    if (!open) return;
     setError(null);
     void load();
-  }, [open, load]);
+  }, [load]);
 
   // Two-argument `then`, not `.then().catch()`: the rejection handler
   // must see the restyle failing and nothing else. Chained, a re-read
@@ -264,17 +256,13 @@ export function FaceSettings({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-face-settings>
-        <DialogHeader>
-          <DialogTitle>{gui.settings}</DialogTitle>
-        </DialogHeader>
-        {error && (
-          <div data-dialog-error className="text-sm text-destructive">
-            {error}
-          </div>
-        )}
-        {choices && (
+    <div data-face-settings className="flex flex-col gap-group">
+      {error && (
+        <div data-dialog-error className="text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      {choices && (
           <div className="flex flex-col gap-5">
             <Axis name="palette" label={avatar.axis_palette}>
               <div className="flex flex-wrap gap-1">
@@ -333,19 +321,18 @@ export function FaceSettings({
             </Axis>
 
           </div>
-        )}
-        {/* Not a face axis — the machine's own relays. It sits under
-            them because it is the rarer errand, and inside this dialog
-            because 设置 is one door (the head of this file).
+      )}
+      {/* Not a face axis — the machine's own relays. It sits under them
+          because it is the rarer errand, and on this page because 设置
+          is one door (the head of this file).
 
-            **Outside the `choices &&` above, and that is not tidiness.**
-            Inside it, a face-choices call that failed took the network
-            section down with it — a relay list that disappears because
-            the avatar palette could not be read, with nothing on screen
-            saying so. The two halves of this dialog fail separately
-            because they are two questions. */}
-        <NetSettings open={open} />
-      </DialogContent>
-    </Dialog>
+          **Outside the `choices &&` above, and that is not tidiness.**
+          Inside it, a face-choices call that failed took the network
+          section down with it — a relay list that disappears because
+          the avatar palette could not be read, with nothing on screen
+          saying so. The two halves fail separately because they are two
+          questions. */}
+      <NetSettings />
+    </div>
   );
 }

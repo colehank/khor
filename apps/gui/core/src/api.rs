@@ -656,6 +656,11 @@ pub fn answer(
             &arg("agent")?,
             &arg("session")?,
         )?),
+        // Which khor this is and which store it is talking to. No node
+        // is opened (`crate::about`), which is why it answers on a
+        // machine whose store refuses — the moment the answer matters
+        // most.
+        "about" => to_json(&crate::about(root)),
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),
