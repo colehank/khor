@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>sheet</title>
+<style>
+  /* The file view's one trick, reduced to what WebKit lays out: a
+     painted <pre> and a transparent <textarea> over it, in the same
+     font, size, leading and wrapping (FileView.tsx `WRAP`). The two
+     numbers come from tokens.css at run time — the gate injects them —
+     so this page measures khor's leading, not a number of its own. */
+  html, body { margin: 0; }
+  #box { position: relative; width: 320px; }
+  #sheet, #edit, .edit {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: var(--text-code);
+    line-height: var(--text-code--line-height);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 0 12px;
+    margin: 0;
+    box-sizing: border-box;
+    width: 100%;
+    border: 0;
+  }
+  #edit, .edit { position: absolute; inset: 0; resize: none; overflow: hidden; background: transparent; color: transparent; }
+</style>
+<body>
+  <div id="box"><pre id="sheet"></pre><textarea id="edit" wrap="soft"></textarea></div>
+  <script>
+    // Called by the probe with the two token values and a text. Lays
+    // the text out on both layers and reports the first screen row at
+    // which the editor's height stops matching the painted line tops —
+    // the row from which the caret sits on a neighbour's letter.
+    window.__measure = (size, leading, text) => {
+      const root = document.documentElement.style;
+      root.setProperty("--text-code", size);
+      root.setProperty("--text-code--line-height", leading);
+      const sheet = document.getElementById("sheet");
+      const edit = document.getElementById("edit");
+      const lines = text.split("\n");
+      sheet.replaceChildren(...lines.map((l) => { const d = document.createElement("div"); d.dataset.line = "1"; d.style.minHeight = leading; d.textContent = l; return d; }));
+      edit.value = text;
+      const tops = [...sheet.children].map((d) => d.getBoundingClientRect());
+      const base = tops[0].top;
+      const m = edit.cloneNode(); m.id = ""; m.className = "edit"; m.style.height = "1px"; m.style.visibility = "hidden"; edit.parentElement.appendChild(m);
+      let first = null;
+      for (let k = 1; k <= lines.length; k++) {
+        m.value = lines.slice(0, k).join("\n");
+        const editH = m.scrollHeight; const sheetH = tops[k - 1].bottom - base;
+        if (Math.abs(editH - sheetH) > 0.5) { first = { row: k, editH, sheetH }; break; }
+      }
+      m.remove();
+      return JSON.stringify({ leading: getComputedStyle(edit).lineHeight, sheetLeading: getComputedStyle(sheet).lineHeight, rows: lines.length, sheetH: sheet.scrollHeight, editH: edit.scrollHeight, first });
+    };
+  </script>
+</body>

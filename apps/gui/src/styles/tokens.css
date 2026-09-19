@@ -1561,15 +1561,21 @@
    * than re-derive it — the two halves have different evidence behind
    * them and only one of them is a transcription.
    *
-   * The leading is 1.5, the same ratio prose runs at above (24/16), so
-   * that a code line and a prose line sit on the same rhythm when they
-   * alternate. It is not measured: the reference's inline leading is
-   * 14.4 — a 1.0 that says only "inline leading does not lay anything
-   * out", which is true of ours too and answers nothing about blocks. */
+   * The leading was 1.5 (21.6), the ratio prose runs at above (24/16),
+   * so that a code line and a prose line sit on the same rhythm when
+   * they alternate. **It is 22 now, and the reason is an engine's, not
+   * a designer's** (2026-09-18): WebKit snaps a <textarea>'s rows to
+   * whole pixels and leaves a <pre>'s alone, so 21.6 was 21 on the
+   * editor and 21.6 on the sheet under it — the caret walked off its
+   * letter one row in thirty, on the app and in Safari, and Chrome
+   * (where `check-face` measures) never showed it. `check-wk` lays the
+   * pair out on WebKit and goes red on any leading that is not a whole
+   * number of pixels; 22 over 14.4 is 1.53, the nearest whole one
+   * above 1.5. The prose rhythm loses 0.4px a row to it. */
   --text-read: 16px;
   --text-read--line-height: 24px;
   --text-code: 14.4px;
-  --text-code--line-height: 21.6px;
+  --text-code--line-height: 22px;
 
   /* ── ink weights ─────────────────────────────────────
    * Three pressures of the same pen, named for what a line *does* —

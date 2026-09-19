@@ -253,5 +253,42 @@ func pdfProbe() -> String {
   return "{\"frame\":\(quoted(said)),\"dark\":\(quoted(darkness(web)))}"
 }
 
+/// The file view's editor over its painted sheet, on this WebKit.
+///
+/// **A leading that is not a whole number of pixels is two leadings
+/// here.** Chrome lays a <pre> and a <textarea> out at 21.6 alike; this
+/// engine keeps the <pre> at 21.6 and snaps the <textarea>'s rows to 21,
+/// so the caret drifts 0.6px a row and sits on a neighbour's letter
+/// after thirty (2026-09-18:「光标就是不对, 拖动选择的时候也不对」— the
+/// user, on the app, which draws on this engine). The token values are
+/// handed in by the gate, read out of tokens.css, so what is measured
+/// is khor's own leading.
+func sheetProbe(size: String, leading: String) -> String {
+  let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 900))
+  let w = Waiter()
+  web.navigationDelegate = w
+  web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/sheet.html")!))
+  spin({ w.done }, seconds: 20)
+  if let t = w.trouble { return "{\"loadFailed\":\(quoted(t))}" }
+  if !w.done { return "{\"loadFailed\":\"never finished\"}" }
+  // Forty rows of mixed width, a few wide enough to wrap, a few empty:
+  // the shape a real file has, and enough rows for a 0.6px drift to
+  // become a whole one.
+  var lines: [String] = []
+  for i in 1...40 {
+    switch i % 5 {
+    case 0: lines.append("")
+    case 1: lines.append("fn line_\(i)() -> usize { \(i) }")
+    case 2: lines.append(String(repeating: "x", count: 90))
+    default: lines.append("    let v = vec![\(i); \(i)];")
+    }
+  }
+  let text = lines.joined(separator: "\n")
+  return ask(web, "return window.__measure(s, l, t);", async: true, args: ["s": size, "l": leading, "t": text])
+}
+
+let codeSize = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "14.4px"
+let codeLeading = CommandLine.arguments.count > 4 ? CommandLine.arguments[4] : "21.6px"
+
 print(
-  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe())}")
+  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading))}")

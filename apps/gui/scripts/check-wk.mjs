@@ -68,6 +68,7 @@ const pages = {
   "/page.html": readFileSync(join(PROBE, "page.html")),
   "/kid.html": readFileSync(join(PROBE, "kid.html")),
   "/pdf.html": readFileSync(join(PROBE, "pdf.html")),
+  "/sheet.html": readFileSync(join(PROBE, "sheet.html")),
 };
 const server = createServer((req, res) => {
   const body = pages[req.url];
@@ -80,6 +81,22 @@ const server = createServer((req, res) => {
 await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
 const port = server.address().port;
 
+// The code face's two typographic tokens, read out of tokens.css so the
+// sheet arm measures khor's leading and not a number of its own. A
+// token that cannot be found is a failure, not a default: the arm would
+// otherwise pass on whatever it happened to be handed.
+const TOKENS = readFileSync(join(here, "..", "src", "styles", "tokens.css"), "utf8");
+const token = (name) => {
+  const m = TOKENS.match(new RegExp(`^\\s*${name.replace(/[-]/g, "\\-")}:\\s*([^;]+);`, "m"));
+  if (!m) {
+    console.error(`wk gate: ${name} is not in tokens.css — the sheet arm has nothing to measure`);
+    process.exit(1);
+  }
+  return m[1].trim();
+};
+const codeSize = token("--text-code");
+const codeLeading = token("--text-code--line-height");
+
 // **Spawned, not `spawnSync`.** The probe fetches its pages from the
 // server above, and a synchronous spawn blocks this process's event
 // loop — the server would never answer, and the probe would report a
@@ -88,7 +105,7 @@ const port = server.address().port;
 let raw;
 try {
   const ran = await new Promise((done) => {
-    const child = spawn("swift", [join(PROBE, "probe.swift"), SHIM, String(port)], {
+    const child = spawn("swift", [join(PROBE, "probe.swift"), SHIM, String(port), codeSize, codeLeading], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -204,6 +221,29 @@ if (said.pdf?.loadFailed) {
   }
 }
 
+// ── The editor over the sheet: one leading, not two ─────────────────
+// WebKit snaps a <textarea>'s rows to whole pixels and leaves a <pre>'s
+// alone, so a leading of 21.6px is 21 on one layer and 21.6 on the
+// other, and the caret walks off its letter one row in thirty. Chrome
+// does not, which is why `check-face` never saw it (2026-09-18).
+{
+  const sh = said.sheet ?? {};
+  if (sh.loadFailed) {
+    fail(`the sheet page did not load: ${sh.loadFailed}`);
+  } else if (sh.first) {
+    fail(
+      `on this WebKit the editor's rows stop matching the painted sheet at row ${sh.first.row} ` +
+        `(editor ${sh.first.editH}px, sheet ${sh.first.sheetH}px, leading ${codeLeading}) — ` +
+        "the caret sits on a neighbour's letter from there; a leading that is not a whole " +
+        "number of pixels is two leadings here (tokens.css --text-code--line-height)",
+    );
+  } else if (sh.sheetH !== sh.editH) {
+    fail(`sheet ${sh.sheetH}px against editor ${sh.editH}px over ${sh.rows} rows — the two layers do not agree`);
+  } else {
+    console.log(`wk: sheet       ${sh.rows} rows at ${sh.leading}: editor and sheet both ${sh.sheetH}px`);
+  }
+}
+
 // ── Printed, not asserted: the two ways out that are still open ──────
 console.log(`wk: bare        ${JSON.stringify(said.bare)}`);
 console.log(`wk: shimmed     ${JSON.stringify(said.shimmed)}`);
@@ -218,7 +258,8 @@ console.log(
 if (!bad) {
   console.log(
     "wk gate: on this WebKit the delete takes, and the script reaches the page, both parsed frames, " +
-      "a scripted blank frame and a srcdoc frame once loaded — and a blob: PDF in an iframe really paints",
+      "a scripted blank frame and a srcdoc frame once loaded — a blob: PDF in an iframe really paints, " +
+      "and the editor's rows sit on the sheet's",
   );
 }
 process.exitCode = bad ? 1 : 0;
