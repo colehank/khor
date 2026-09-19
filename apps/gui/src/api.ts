@@ -33,6 +33,8 @@ import type { Ticket } from "./gen/bindings/Ticket";
 import type { About } from "./gen/bindings/About";
 import type { DoctorRow } from "./gen/bindings/DoctorRow";
 import type { LockFacts } from "./gen/bindings/LockFacts";
+import type { ConfigRow } from "./gen/bindings/ConfigRow";
+import type { ConfigChoice } from "./gen/bindings/ConfigChoice";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
@@ -87,6 +89,8 @@ export type {
   About,
   DoctorRow,
   LockFacts,
+  ConfigRow,
+  ConfigChoice,
   Usage,
   Strain,
   ChatBatch,
@@ -730,6 +734,20 @@ export const fetchDoctor = () => call<DoctorRow[]>("doctor");
 /** One check's remedy, by the check's own key — and the sentence saying
     what it did. Refused by name for a key with no remedy. */
 export const doctorFix = (key: string) => call<string>("doctor_fix", { key });
+/** 设置 (docs/MORE.md): every setting and the value it has now. **No
+    node is opened on the other side** — the preferences file is read
+    straight off the store — so the shell can ask this in the same breath
+    as the lock, before anything is drawn.
+
+    Every key comes back, never only the ones somebody has set: a row
+    missing from this answer would be a switch the page simply does not
+    draw, which is indistinguishable from a switch khor does not have. */
+export const fetchConfig = () => call<ConfigRow[]>("config");
+/** Sets one, and answers **the whole list again** so no page ever paints
+    from a copy it patched itself. Refused by name for an unknown key,
+    and by a second sentence for a value outside that key's ladder. */
+export const setConfig = (name: string, value: string) =>
+  call<ConfigRow[]>("set_config", { name, value });
 /** 安全 (docs/MORE.md): how this machine's faces are set to lock. **No
     node is opened on the other side** — the lock file is read straight
     off the store — so the shell can ask this before it draws anything,

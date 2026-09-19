@@ -100,6 +100,39 @@ circle = "圆形"
 rounded = "圆角"
 square = "方形"
 
+[config]
+# ── `khor config` 的键表 (docs/MORE.md 设置) ──────────────────────────
+# 这一节里的名字是**数据**,和状态词、脸的选项同一类:节的名字、设置项的
+# 名字、每个取值的名字都要跨线(`khor config set <项> <值>`),词在最后
+# 一刻才查。所以它和那三节一样生成 `word()` 与 `KEYS`,两个方向都有门
+# (`crates/node/src/tests.rs`):每个键有词,每个词名着一个真存在的东西。
+#
+# ⚠️ **名字里只许字母、数字和减号**——生成器拿它造 Rust 标识符,一个点
+# 会造出 `SESSION.FORM` 这种编译不过的东西。
+#
+# 节:设置页和安全页把这些行分成几堆。
+session = "会话"
+workspace = "工作区"
+# 这一节在**安全页**上,不在设置页(docs/MORE.md 把它写在安全那一条下面),
+# 理由是它旁边那几节都是「按下去要付出点什么」的事。
+confirm = "危险动作二次确认"
+
+# 设置项。名字说的是**这一项管什么**,不是它现在是什么。
+session-form = "新会话默认开成"
+files-click = "单击文件"
+confirm-takeover = "接管会话"
+confirm-ws-remove = "移出工作区"
+
+# 取值。
+chat = "对话"
+term = "终端"
+# 预览位上的标签是斜体的那一个,下一次单击会顶掉它;双击照旧钉住,
+# 所以「预览」不是一条没有出口的路。
+preview = "预览"
+pin = "钉住"
+on = "开"
+off = "关"
+
 [cli]
 usage = """
 用法: khor <动词>
@@ -242,6 +275,11 @@ usage = """
                         打一行空的=撤掉 PIN,锁也跟着关;timeout 收
                         0/1/5/15/60(0 是永不)。macOS 的 app 上还能用
                         Touch ID 开,那是额外的一把:PIN 是每张脸都有的那把
+  config [list | get <项> | set <项> <值>]
+                        这台机器自己的偏好(不跟着网走)。不带参数=list,
+                        每行一个设置项和它现在的值——**列的是全部,不是
+                        设过的那几个**;没有这个项、或者这个项不收这个值,
+                        都按名字拒绝,拒绝里带着它收的那几个值
   doctor [--json] [--fix 项]
                         自检:一行一项,名字、状态(好/留意/坏了/未量)、
                         一句话。**「未量」不是「好」**——它是没量到。
@@ -1827,6 +1865,12 @@ cant-start-vscode = "起不了 VS Code 的网页脸: {0}"
 # quiet is usually the first run still fetching 640 MB.
 no-vscode-output = "VS Code 起来了但读不到它的输出"
 vscode-never-answered = "VS Code 一直没说它听在哪儿"
+# `khor config` 的两种拒绝 (docs/MORE.md 设置)。**分成两句,因为它们把人
+# 送去两个地方**:第一句是「没有这一项」,下一步是去看有哪些项;第二句是
+# 「这一项不收这个值」,下一步是从它自己那几个值里挑一个。合成一句的话,
+# 打错值的人会以为整个设置项都不存在。
+config-no-such-key = "没有这个设置项: {0}(khor config list 列全部)"
+config-no-such-value = "{0} 收不了「{1}」,它收 {2}"
 
 [gui]
 sessions-tab = "会话"
@@ -2322,6 +2366,11 @@ ws-add = "加一个工作区"
 # directory is not touched (user, 2026-09-14), and 删除 beside a
 # directory name is the one word that must not be a guess.
 ws-remove = "移出工作区"
+# 这一行的二次确认,只在 `khor config set confirm-ws-remove on` 之后才问
+# (docs/MORE.md 危险动作二次确认)。**默认不问**:这一下什么都没毁掉,
+# 目录一个字节都不动,一条 `khor ws add` 就回来——问一句的代价大于这一下
+# 的代价。开关留着,是给「我还是想被问一声」的人。
+ws-remove-confirm = "只是从这张表上拿掉,目录本身不动"
 # The workspace row's git corner, beside the branch: how many files
 # differ from HEAD on that machine. **Files and not hunks** — 处 is the
 # word for a place inside one file, and this counts the files. There
@@ -2636,6 +2685,20 @@ identity-alone = "还没和别的机器配对过"
 # 设置页里脸那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
 settings-face = "这台机器的脸"
+# ── 设置页里只读的两节 (docs/MORE.md 设置:存储 / 关于) ─────────────
+# 两节都不判断任何事:路径和占用是 `doctor::store_bytes` 已经在量的,
+# 版本是编译期常量。**所以一台 store 打不开的机器上它们照样答得出来**
+# ——而那正是人最需要知道「这一份 khor 是哪一版、住在哪」的时刻。
+settings-store = "存储"
+settings-about = "关于"
+store-path = "store 在哪儿"
+store-size = "占用"
+# 打开 store 所在的目录,走各平台自己的开启器(mac 上就是访达)。
+# **不叫「在访达中显示」**:同一个按钮在 Linux 上开的是别的东西,
+# 而一个按钮不该在半数机器上说错自己做了什么。
+store-open = "打开这个目录"
+# `About` 里的版本,在设置页上借身份卡那一行的词(`identity-version`):
+# 同一个事实,同一个名字。
 # ── 安全那一页,和锁屏 (docs/MORE.md 安全) ─────────────────────────
 # 锁屏上只有三样:这台机器的脸、它的名字、一个输入框。**别的什么都没有**
 # ——等你的有几条、谁刚说了话,那些是内容,而内容正是被锁住的东西。

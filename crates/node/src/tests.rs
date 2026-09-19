@@ -2680,3 +2680,151 @@ fn resetting_an_identity_that_is_already_gone_is_not_an_error() {
     lock::reset_identity(&r, &name, &name).unwrap();
     lock::reset_identity(&r, &name, &name).unwrap();
 }
+
+// ── 设置 · `khor config` (docs/MORE.md 设置) ─────────────────────────
+
+/// **A fresh store answers every key, and answers it with the default.**
+///
+/// The half that matters is 「every」: `khor config list` reading the
+/// file back would print nothing on a machine nobody has configured,
+/// and a command that prints an empty page is a command that looks
+/// broken. The other half is that the defaults are today's behaviour —
+/// so installing this batch changes nothing anybody can see until
+/// somebody sets something.
+#[test]
+fn every_key_answers_its_default_on_a_store_nobody_has_touched() {
+    let r = scratch("config-fresh");
+    let listed = config::list(&r);
+    assert_eq!(
+        listed.len(),
+        config::KEYS.len(),
+        "list must answer for every key, not only the ones on disk"
+    );
+    for (k, v) in &listed {
+        assert_eq!(*v, k.default, "{} came back as {v}", k.name);
+        assert_eq!(config::get(&r, k.name).unwrap(), k.default);
+    }
+    assert!(
+        !config::path_for_tests(&r).exists(),
+        "reading must not write a file; nobody has set anything"
+    );
+}
+
+/// **A value survives the round trip, and only the value that was set
+/// moves.**
+#[test]
+fn a_set_key_reads_back_and_leaves_the_others_alone() {
+    let r = scratch("config-roundtrip");
+    assert_eq!(config::get(&r, "session-form").unwrap(), "chat");
+    assert_eq!(config::set(&r, "session-form", "term").unwrap(), "term");
+    assert_eq!(config::get(&r, "session-form").unwrap(), "term");
+    assert_eq!(
+        config::get(&r, "files-click").unwrap(),
+        "preview",
+        "setting one key must not disturb another"
+    );
+}
+
+/// **An unknown key and an unknown value are refused by name, and they
+/// are two different sentences.**
+///
+/// One sentence for both would send somebody who mistyped a *value* off
+/// looking for a setting that is in fact right there — `lock::set_timeout`
+/// makes the same distinction between a rung and the ladder.
+#[test]
+fn an_unknown_key_and_an_unknown_value_are_each_refused_by_name() {
+    let r = scratch("config-refuse");
+    let why = config::set(&r, "holodeck", "on").unwrap_err();
+    assert!(why.contains("holodeck"), "{why}");
+    let why = config::get(&r, "holodeck").unwrap_err();
+    assert!(why.contains("holodeck"), "{why}");
+
+    let why = config::set(&r, "session-form", "holodeck").unwrap_err();
+    assert!(why.contains("holodeck"), "the value is named: {why}");
+    assert!(why.contains("session-form"), "so is the key: {why}");
+    // …and the rungs it does take, so the next move is on screen.
+    assert!(why.contains("chat") && why.contains("term"), "{why}");
+    assert_eq!(
+        config::get(&r, "session-form").unwrap(),
+        "chat",
+        "a refused set writes nothing"
+    );
+}
+
+/// **A value this build no longer takes reads as unset**, never as
+/// itself.
+///
+/// A store written by a newer khor — or edited by hand — can hold
+/// `session-form = "holodeck"`. Handing that back would put a value on
+/// screen that no face can draw and no `set` would accept; the default
+/// is a state every face already knows how to paint.
+#[test]
+fn a_value_this_build_does_not_know_reads_as_the_default() {
+    let r = scratch("config-stranger");
+    config::set(&r, "session-form", "term").unwrap();
+    let p = config::path_for_tests(&r);
+    fs::write(&p, br#"{"session-form":"holodeck"}"#).unwrap();
+    assert_eq!(config::get(&r, "session-form").unwrap(), "chat");
+
+    // An unreadable file is the same answer, for `lock::stored`'s
+    // reason: the defaults are what khor did before these keys existed,
+    // so a file nobody can parse costs preferences and never a machine.
+    fs::write(&p, b"{not json").unwrap();
+    assert_eq!(config::get(&r, "session-form").unwrap(), "chat");
+}
+
+/// **Every name in the config table has a word, and every word in the
+/// config section names something that exists.**
+///
+/// The two directions fail differently and only one of them is visible.
+/// A missing word paints the bare key on a row — `files-click` where a
+/// sentence belongs — which is ugly enough that somebody reports it. A
+/// word for a key or a value the code no longer offers is **invisible**:
+/// the settings page looks complete while that row can never appear, and
+/// the wording file goes on describing a setting khor does not have.
+/// This is the shape `khor_catalog`'s own gate keeps for the face
+/// options, one crate up because the table lives here.
+#[test]
+fn every_config_name_has_a_word_and_every_word_names_something() {
+    let mut named: Vec<&str> = config::SECTIONS.iter().map(|s| s.name).collect();
+    for k in config::KEYS {
+        named.push(k.name);
+        named.extend(k.values.iter().copied());
+        assert!(
+            config::section(k.section).is_some(),
+            "{} sits in section {}, which no page draws",
+            k.name,
+            k.section
+        );
+    }
+    // **The table is grouped**, which is what lets a page start a new
+    // heading wherever the section changes and never keep a list of
+    // sections of its own. Ungrouped, that page would draw 会话 twice.
+    let mut seen: Vec<&str> = Vec::new();
+    for k in config::KEYS {
+        if seen.last() != Some(&k.section) {
+            assert!(
+                !seen.contains(&k.section),
+                "{} puts section {} back after it was left — KEYS must stay grouped",
+                k.name,
+                k.section
+            );
+            seen.push(k.section);
+        }
+    }
+    for name in &named {
+        // `word` echoes what it does not know, so an echo *is* the
+        // missing entry.
+        assert_ne!(
+            khor_catalog::config::word(name),
+            *name,
+            "config.{name} must map to a word, not echo"
+        );
+    }
+    for key in khor_catalog::config::KEYS {
+        assert!(
+            named.contains(&key),
+            "config.{key} has a word but names no section, key or value anybody can reach"
+        );
+    }
+}

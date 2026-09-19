@@ -56,6 +56,28 @@ circle = "Circle"
 rounded = "Rounded"
 square = "Square"
 
+[config]
+# The `khor config` key table (docs/MORE.md 设置). Section names, key
+# names and value names all cross the wire, so these are data with the
+# same shape as the state words and the face options.
+session = "Sessions"
+workspace = "Workspace"
+confirm = "Ask before"
+
+session-form = "New sessions open as"
+files-click = "Single click"
+# Under "Ask before", so each key names the act rather than repeating
+# the question.
+confirm-takeover = "Taking over a session"
+confirm-ws-remove = "Removing a workspace"
+
+chat = "Chat"
+term = "Terminal"
+preview = "Preview"
+pin = "Pin"
+on = "On"
+off = "Off"
+
 [cli]
 usage = """
 usage: khor <verb>
@@ -278,6 +300,36 @@ usage: khor <verb>
                         adds them, uninstall removes them (both only
                         touch khor's own entries; doing it twice is
                         the same as doing it once)
+  lock [status|on|off|pin|timeout minutes]
+                        the password on the screens (the app window and
+                        the web face). It does NOT lock this terminal —
+                        whoever types khor is already logged in here.
+                        No arguments shows the current state; pin reads
+                        one line from standard input (so it stays out of
+                        argv, shell history and ps), and an empty line
+                        clears the PIN, which turns the lock off with it;
+                        timeout takes 0/1/5/15/60 (0 is never). The
+                        macOS app can also open with Touch ID — an extra
+                        key, never the key: the PIN is the one every
+                        face has
+  config [list | get <key> | set <key> <value>]
+                        this machine's own preferences (they don't
+                        travel the network). No arguments is list, one
+                        line per setting with the value it has now —
+                        every setting, not only the ones that were set.
+                        An unknown key, and a value a key doesn't take,
+                        are each refused by name; the refusal for a
+                        value names the ones it does take
+  doctor [--json] [--fix <check>]
+                        checks this machine over: one line per check —
+                        name, state (ok / warn / failed / not measured)
+                        and a sentence. Not measured is NOT ok — it
+                        means nothing was read. Each check has three
+                        seconds of its own, so one that hangs doesn't
+                        hold up the rest. --json prints it raw (the GUI
+                        page reads the same answer); --fix runs one
+                        check's remedy (checks that have one say so at
+                        the end of their line)
   invite                issues a one-time pairing ticket (requires
                         serve running)
   pair <ticket>         joins the network with a ticket
@@ -959,6 +1011,10 @@ code-predates = "That machine's khor is too old — it can't open VS Code"
 cant-start-vscode = "Can't start VS Code's web face: {0}"
 no-vscode-output = "VS Code started but its output can't be read"
 vscode-never-answered = "VS Code never said where it's listening"
+# Two refusals, not one: an unknown key sends someone to the list of
+# keys, an unknown value to that key's own ladder.
+config-no-such-key = "No such setting: {0} — khor config list shows them all"
+config-no-such-value = "{0} doesn't take \"{1}\" — it takes {2}"
 
 [gui]
 sessions-tab = "Sessions"
@@ -1086,6 +1142,9 @@ ws-add = "Add a workspace"
 # "Remove workspace", not "Delete" — mirrors the source's 移出/删除
 # distinction: this takes the row off the list, the directory is untouched.
 ws-remove = "Remove workspace"
+# Only asked once `khor config set confirm-ws-remove on` — off by
+# default, because nothing is destroyed here.
+ws-remove-confirm = "Takes it off this list; the directory itself is untouched"
 ws-marked = "{0} files changed"
 dir-picker = "Pick a directory"
 dir-picker-take = "Use this directory"
@@ -1162,6 +1221,15 @@ identity-paired = "Paired machines"
 identity-alone = "Not paired with any machine yet"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "This machine's face"
+# 存储 / 关于: read-only, and neither opens a node — which is why they
+# still answer on a machine whose store won't open.
+settings-store = "Storage"
+settings-about = "About"
+store-path = "Store location"
+store-size = "Size on disk"
+# Not "Show in Finder": the same button opens something else on Linux,
+# and a button shouldn't misname what it does on half the machines.
+store-open = "Open folder"
 
 # ── 安全 and the lock screen (docs/MORE.md 安全) ──────────────────────
 # The lock screen carries three things: this machine's face, its name,

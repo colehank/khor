@@ -379,6 +379,14 @@ const VERBS: &[Verb] = &[
         run: lock,
         reach: Reach::Act,
     },
+    // `get`/`list` observe and `set` writes the preferences file, so the
+    // word is an act — the rule is per word, not per invocation (`face`
+    // above).
+    Verb {
+        word: "config",
+        run: config,
+        reach: Reach::Act,
+    },
     // Mints a pairing ticket: this one hands out network access.
     Verb {
         word: "invite",
@@ -655,6 +663,51 @@ fn lock(rest: &[String]) -> Result<(), String> {
         [word, minutes] if word == "timeout" => {
             let m: u32 = minutes.parse().map_err(|_| USAGE.to_string())?;
             say(khor_node::lock::set_timeout(&root, m)?);
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
+    }
+}
+
+/// `khor config get|set|list` (docs/MORE.md 设置).
+///
+/// **No arguments is `list`**, because the first question anybody has
+/// about a settings command is 「有哪些」 — and because a bare verb that
+/// printed usage would answer it with a page of syntax.
+///
+/// `list` prints **every** key and the value it currently has, never
+/// only the ones somebody has touched: a listing of the file would be
+/// empty on a fresh machine, which reads as the command being broken
+/// rather than as nothing having been set.
+///
+/// Both refusals name what was wrong — an unknown key and a value
+/// outside that key's ladder are different sentences, because they send
+/// a person to two different places (`config::set`).
+fn config(rest: &[String]) -> Result<(), String> {
+    let root = Node::root_from_env();
+    let list = || {
+        for (k, v) in khor_node::config::list(&root) {
+            println!("{}\t{}", k.name, v);
+        }
+    };
+    match rest {
+        [] => {
+            list();
+            Ok(())
+        }
+        [word] if word == "list" => {
+            list();
+            Ok(())
+        }
+        [word, name] if word == "get" => {
+            println!("{}", khor_node::config::get(&root, name)?);
+            Ok(())
+        }
+        // Echoes the value that took, the way `lock` echoes the state it
+        // reached: 「存下了」 with nothing after it is a claim nobody can
+        // check without a second command.
+        [word, name, value] if word == "set" => {
+            println!("{}", khor_node::config::set(&root, name, value)?);
             Ok(())
         }
         _ => Err(USAGE.into()),

@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 
 /**
  * Which of the four is open. `null` is none — the landing underneath is
@@ -128,6 +129,54 @@ export function MoreSection({
       <h2 className="text-sm font-label text-muted-foreground">{label}</h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * One toggle in this app's one control family: a `Button` wearing its
+ * own state, the way the relay switch and the face options do. There is
+ * no checkbox in `ui/`, and this is not the place to start a second
+ * family.
+ *
+ * **`mark` rather than a `name` prop**, because the two callers are read
+ * by two different gates under two different attributes — the lock
+ * switch answers to `data-security-switch` (check-face has pressed it
+ * since 批 C) and a settings choice to `data-config-choice`. One
+ * attribute for both would have meant renaming one of them on a page
+ * nothing else about this change touches.
+ */
+export function MoreSwitch({
+  mark,
+  label,
+  on,
+  onPress,
+}: {
+  mark: Record<string, string>;
+  label: string;
+  on: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      {...mark}
+      data-on={on}
+      aria-pressed={on}
+      onClick={onPress}
+      className={cn(
+        // A ring in both states: off is the state this ships in and the
+        // state somebody has to discover it in (`NetSettings`'s own
+        // measurement, 2026-09-18).
+        // Both axes: 「永不」 is two characters, and `px-2` around them
+        // is 38 wide — under the floor on the axis nobody thinks to
+        // check (the 修 button on 自检 learned the same thing).
+        "min-h-touch min-w-touch self-start rounded-md px-2 text-xs",
+        on ? "text-primary ring-2 ring-primary" : "text-muted-foreground ring-1 ring-border",
+      )}
+    >
+      {label}
+    </Button>
   );
 }
 

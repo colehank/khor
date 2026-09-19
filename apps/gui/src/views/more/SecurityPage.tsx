@@ -1,19 +1,22 @@
 // 安全 (docs/MORE.md 安全).
 //
-// **Four sections, and every one of them is a thing khor already does.**
-// The lock is `khor lock`, the web key is `khor web --new`, showing a
-// machine the door is `khor forget`, and the reset is `khor id --reset`.
+// **Five sections, and every one of them is a thing khor already does.**
+// The lock is `khor lock`, the two 二次确认 switches are `khor config`,
+// the web key is `khor web --new`, showing a machine the door is
+// `khor forget`, and the reset is `khor id --reset`.
 // Nothing here decides anything: the floor on a PIN, the ladder of idle
 // timeouts, the refusal to switch the lock on with no key to it and the
 // machine-name confirmation are all the node's, so this page and the
 // terminal cannot come to mean different things by the same act.
 //
-// **What is not here yet**: 危险动作二次确认 (删除文件 / 接管会话 /
-// 移出工作区). Those three are config keys — a stored preference the
-// three call sites read — and they land with `khor config` in batch D,
-// where the rest of the stored settings are. Drawing three switches over
-// a store that has no such keys would be the 灰着的开关 docs/MORE.md
-// refuses.
+// **危险动作二次确认 is two switches, not the three docs/MORE.md lists.**
+// 删除文件 already has a 「不再提醒」 tick of its own, kept per face in
+// `localStorage` because it is 「一个习惯,不是一个关于网络的决定」
+// (`RemoveDialog`), and the verification side ruled on 2026-09-20 that it
+// stays there: a config key would turn one browser's habit into one
+// answer a phone and a desktop share. The other two are `khor config`
+// keys and are drawn from the node's own table (`ConfigSections`), which
+// is also why their section heading is not spelled here.
 import { useCallback, useEffect, useState } from "react";
 
 import {
@@ -31,53 +34,15 @@ import { MachineAvatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { cn } from "@/lib/utils";
-import { MoreFrame, MoreSection } from "@/views/more/MorePage";
-
-/** One toggle in this app's one control family: a `Button` wearing its
-    own state, the way the relay switch and the face options do. There is
-    no checkbox in `ui/`, and this is not the place to start a second
-    family. */
-function Switch({
-  name,
-  label,
-  on,
-  onPress,
-}: {
-  name: string;
-  label: string;
-  on: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      data-security-switch={name}
-      data-on={on}
-      aria-pressed={on}
-      onClick={onPress}
-      className={cn(
-        // A ring in both states: off is the state this ships in and the
-        // state somebody has to discover it in (`NetSettings`'s own
-        // measurement, 2026-09-18).
-        // Both axes: 「永不」 is two characters, and `px-2` around them
-        // is 38 wide — under the floor on the axis nobody thinks to
-        // check (the 修 button on 自检 learned the same thing).
-        "min-h-touch min-w-touch self-start rounded-md px-2 text-xs",
-        on ? "text-primary ring-2 ring-primary" : "text-muted-foreground ring-1 ring-border",
-      )}
-    >
-      {label}
-    </Button>
-  );
-}
+import { ConfigSections } from "@/views/more/ConfigRows";
+import { MoreFrame, MoreSection, MoreSwitch } from "@/views/more/MorePage";
 
 export function SecurityPage({
   onClose,
   lock,
   onLockChanged,
   onLockNow,
+  onSettingChanged,
   devices,
   onForgot,
 }: {
@@ -90,6 +55,9 @@ export function SecurityPage({
       node says rather than what this page just sent. */
   onLockChanged: () => void;
   onLockNow: () => void;
+  /** A 二次确认 switch changed: the shell re-reads, and the rows that
+      read those keys are drawn from that answer. */
+  onSettingChanged: () => void;
   devices: DeviceRow[];
   onForgot: () => void;
 }) {
@@ -140,8 +108,8 @@ export function SecurityPage({
           <p className="text-sm text-muted-foreground">{gui.backend_unreachable}</p>
         ) : (
           <>
-            <Switch
-              name="lock"
+            <MoreSwitch
+              mark={{ "data-security-switch": "lock" }}
               label={gui.lock_switch}
               on={lock.on}
               onPress={() => after(setLock(!lock.on))}
@@ -193,9 +161,9 @@ export function SecurityPage({
             <h3 className="mt-2 text-sm font-label text-muted-foreground">{gui.lock_idle}</h3>
             <div className="flex flex-wrap gap-1">
               {lock.timeouts.map((m) => (
-                <Switch
+                <MoreSwitch
                   key={m}
-                  name={`timeout-${m}`}
+                  mark={{ "data-security-switch": `timeout-${m}` }}
                   label={m === 0 ? gui.lock_idle_never_pick : gui.lock_idle_pick(m)}
                   on={lock.timeout_min === m}
                   onPress={() => after(setLockTimeout(m))}
@@ -216,6 +184,11 @@ export function SecurityPage({
           </>
         )}
       </MoreSection>
+
+      {/* Which section this is, and which keys are in it, are the
+          node's answer — 安全 asks for the rows that say they belong to
+          it (`khor_node::config::SECTIONS`). */}
+      <ConfigSections page="security" onChanged={onSettingChanged} />
 
       <MoreSection name="web-key" label={gui.web_key_section}>
         {key === null ? (

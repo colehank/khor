@@ -7,6 +7,7 @@ import { SessionFace } from "@/components/SessionFace";
 import { EditableName } from "@/components/EditableName";
 import { IconBack } from "@/components/icons";
 import { gui } from "@/gen/catalog";
+import { useSetting } from "@/settings";
 import { cn } from "@/lib/utils";
 import { closeWarning } from "@/views/DetailPane";
 import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf, word } from "@/words";
@@ -282,6 +283,14 @@ export function SessionsList({
    * reader, a person wiring this session up from another machine,
    * finds it here beside the other things done *to* a row.
    */
+  // 危险动作二次确认 · 接管会话 (docs/MORE.md 安全, the key lands in
+  // `khor_node::config`). **Only an explicit 「off」 takes the question
+  // away.** `useSetting` answers `null` while khor has not said — and
+  // that has to read as 「ask」, which is what this key's default is:
+  // a guard that vanished because an answer was late would be the one
+  // failure this switch must not have.
+  const askTakeover = useSetting("confirm-takeover") !== "off";
+
   /**
    * Changing what a session **is**: the same act both ways round, and
    * the row's menu is where it belongs.
@@ -315,7 +324,11 @@ export function SessionsList({
         {
           key: "to-a-terminal",
           label: gui.to_a_terminal,
-          confirm: r.word === "busy" ? gui.takeover_term_busy : gui.takeover_term,
+          confirm: !askTakeover
+            ? undefined
+            : r.word === "busy"
+              ? gui.takeover_term_busy
+              : gui.takeover_term,
           note: refused,
           run: async () => {
             try {
@@ -336,7 +349,7 @@ export function SessionsList({
       {
         key: "to-a-chat",
         label: gui.to_a_chat,
-        confirm: r.word === "busy" ? gui.takeover_busy : gui.takeover_calm,
+        confirm: !askTakeover ? undefined : r.word === "busy" ? gui.takeover_busy : gui.takeover_calm,
         note: refused,
         run: async () => {
           try {

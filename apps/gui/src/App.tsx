@@ -65,6 +65,8 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useLock } from "@/hooks/use-lock";
+import { useStoredSettings } from "@/hooks/use-settings";
+import { SettingsProvider } from "@/settings";
 import { useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import {
@@ -370,6 +372,10 @@ export default function App() {
    * fetched is drawn.
    */
   const lock = useLock();
+  // 设置 (docs/MORE.md), read once here and handed down through a
+  // context: the four keys this batch lands are read on four screens
+  // that are not each other's children (`src/settings.ts`).
+  const settings = useStoredSettings();
   // **The breakpoint, published once.** `use-narrow` owns the number
   // and stylesheets need it too (the machine card's part rows drop
   // their shared grid narrow) — so the shell stamps the answer on the
@@ -1874,6 +1880,7 @@ export default function App() {
         onChanged={() => {
           refresh().catch(() => {});
         }}
+        onSettingChanged={settings.reread}
       />
     ) : morePage === "security" ? (
       <SecurityPage
@@ -1881,6 +1888,7 @@ export default function App() {
         lock={lock.facts}
         onLockChanged={lock.reread}
         onLockNow={lock.now}
+        onSettingChanged={settings.reread}
         devices={devices}
         onForgot={() => {
           refresh().catch(() => {});
@@ -2012,6 +2020,7 @@ export default function App() {
   // mark's place is neither half of that pair, so it takes the whole of
   // what is left of the window beside the rail (see `Mark`).
   return (
+    <SettingsProvider value={settings.rows}>
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
@@ -2185,5 +2194,6 @@ export default function App() {
         </div>
       )}
     </TooltipProvider>
+    </SettingsProvider>
   );
 }

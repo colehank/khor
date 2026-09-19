@@ -37,6 +37,7 @@ import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
+import { useSetting } from "@/settings";
 import { ago } from "@/words";
 import { IGNORED } from "@/views/fileRow";
 
@@ -206,6 +207,9 @@ export function WorkspacesList({
   const said = (k: string, e: unknown) =>
     setRefused((m) => new Map(m).set(k, String(e instanceof Error ? e.message : e)));
 
+  // 危险动作二次确认 · 移出工作区 (`khor_node::config`).
+  const askRemove = useSetting("confirm-ws-remove") === "on";
+
   const actions = (r: WorkspaceRow): RowAction[] => {
     const k = keyOf(r);
     const run = (go: () => Promise<unknown>) => async () => {
@@ -240,9 +244,17 @@ export function WorkspacesList({
       },
       {
         key: "remove",
-        // No confirm: nothing is destroyed. The directory is untouched
-        // (user, 2026-09-14) and the row comes back with one `ws add`.
+        // **Off by default, and that is the ruling rather than an
+        // omission**: nothing is destroyed here, the directory is
+        // untouched (user, 2026-09-14) and the row comes back with one
+        // `ws add`. `khor config set confirm-ws-remove on` asks anyway,
+        // for somebody who wants the question — and only an explicit
+        // 「on」 does, so an answer that has not arrived reads as the
+        // default rather than as a question appearing late
+        // (`SessionsList` makes the mirror-image test for the same
+        // reason).
         label: gui.ws_remove,
+        confirm: askRemove ? gui.ws_remove_confirm : undefined,
         note: refused.get(k),
         run: run(() => wsRm(r.device, r.path)),
       },

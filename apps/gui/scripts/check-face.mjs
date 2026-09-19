@@ -1704,8 +1704,53 @@ try {
   await page.route("**/about", (r) =>
     r.fulfill({
       contentType: "application/json",
-      body: JSON.stringify({ version: "0.0.0-gate", root: "/gate/khor" }),
+      body: JSON.stringify({ version: "0.0.0-gate", root: "/gate/khor", store_bytes: 761 }),
     }),
+  );
+  // 设置 (docs/MORE.md). **The fixture holds the value between calls**,
+  // because what §4F asserts is a round trip: a page that painted what
+  // it had just sent would pass over a store that never took it.
+  //
+  // ⚠️ **The table here is a copy, and it is deliberately not the
+  // claim.** Which keys exist, which section each is in and what each is
+  // worded as are `khor_node::config::KEYS` and the catalog, guarded by
+  // `khor-node`'s own gate (every name has a word, every word names
+  // something) and by `smoke` §34 against the real binary. What this
+  // fixture is for is the *page*: that a row draws, that pressing one
+  // sends the key and the value, and that another screen reads the
+  // answer.
+  const configValues = { "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
+  const CONFIG_SHAPE = [
+    ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
+    ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "钉住"]]],
+    ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
+    ["confirm-ws-remove", "confirm", "security", "移出工作区", [["on", "开"], ["off", "关"]]],
+  ];
+  const SECTION_WORD = { session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
+  const configRows = () =>
+    CONFIG_SHAPE.map(([name, section, page_, label, choices]) => ({
+      name,
+      label,
+      section,
+      section_label: SECTION_WORD[section],
+      page: page_,
+      value: configValues[name],
+      choices: choices.map(([value, l]) => ({ value, label: l })),
+    }));
+  await page.route("**/set_config", (r) => {
+    const { name, value } = JSON.parse(r.request().postData() || "{}");
+    // Refused by name, the node's own shape — a fixture that accepted
+    // anything would let a page send a value no store would take and
+    // still look like it worked.
+    if (!(name in configValues) || !CONFIG_SHAPE.find((k) => k[0] === name)[4].some(([v]) => v === value)) {
+      r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(`no: ${name}=${value}`) });
+      return;
+    }
+    configValues[name] = value;
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(configRows()) });
+  });
+  await page.route("**/config", (r) =>
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(configRows()) }),
   );
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
@@ -9497,6 +9542,183 @@ try {
           fail("the session list did not come back after unlocking — 「解锁后再挂」");
         }
       }
+    }
+  }
+
+  // ── 4F) 设置 · `khor config` (docs/MORE.md 设置) ────────────────────
+  //
+  // 「`khor config get|set|list`，键值存 store；GUI 页按节排」.
+  //
+  // **The claim is the one a person can see: a setting changed on 设置
+  // changes a different screen.** Asserting that the page shows the
+  // value it just sent would be asking a switch whether it thinks it is
+  // on — the row would say 终端 while the wizard went on opening 对话,
+  // and this file has been burned by exactly that shape before (量「没有
+  // 列表」on a screen that never had one). So the reading is taken in the
+  // new-session wizard, which is the place this key means anything.
+  //
+  // **Armed in both directions**: the wizard is read *before* the
+  // setting is touched, so 「终端 is lit」 afterwards cannot be a fixture
+  // that opened that way to begin with.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+
+    /** Which of the wizard's two forms is lit, with the wizard opened
+        and closed around the reading. */
+    const wizardForm = async () => {
+      // `open`, never a raw press on the rail: pressing the landing that
+      // is already open collapses its list, and the 新建 button lives in
+      // that list's own head (the helper's own note, 2026-09-02).
+      await open("sessions");
+      await press("[data-pane-new]");
+      await press('[data-new-item="new"]');
+      if (!(await until(5_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 1))) {
+        return null;
+      }
+      const lit = await page.evaluate(() => ({
+        chat: document.querySelector("[data-new-session-chat]")?.getAttribute("data-on") ?? null,
+        term: document.querySelector("[data-new-session-term]")?.getAttribute("data-on") ?? null,
+      }));
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 0);
+      return lit;
+    };
+
+    const before = await wizardForm();
+    console.log(`config · the wizard before: ${JSON.stringify(before)}`);
+    if (before === null) {
+      fail("probe dead: the new-session wizard did not open, so nothing below reads anything");
+    } else if (before.chat !== "true" || before.term !== "false") {
+      fail(
+        `the wizard opens on ${JSON.stringify(before)} before anything was set — ` +
+          "`session-form` ships as 对话 (khor_node::config::KEYS), and a fixture that already " +
+          "opened on 终端 would make the assertion below prove nothing",
+      );
+    }
+
+    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="settings"]'))) {
+      fail("probe dead: 「…」 → 设置 did not open");
+    } else {
+      const drew = await page.evaluate(() => {
+        const el = document.querySelector('[data-more-page="settings"]');
+        return {
+          sections: [...(el?.querySelectorAll("[data-more-section]") ?? [])].map((e) =>
+            e.getAttribute("data-more-section"),
+          ),
+          rows: [...(el?.querySelectorAll("[data-config-row]") ?? [])].map((e) => [
+            e.getAttribute("data-config-row"),
+            e.getAttribute("data-value"),
+          ]),
+          // 存储 and 关于 state facts rather than offering switches.
+          store: el?.querySelector('[data-more-fact="store-path"]')?.textContent?.trim() ?? null,
+          size: el?.querySelector('[data-more-fact="store-size"]')?.textContent?.trim() ?? null,
+          version: el?.querySelector('[data-more-fact="version"]')?.textContent?.trim() ?? null,
+          open: el?.querySelectorAll("[data-store-open]").length ?? 0,
+        };
+      });
+      console.log(`config · 设置 drew: ${JSON.stringify(drew)}`);
+      // The sections MORE.md names, by the node's own section keys —
+      // never by their words, which would be reading the catalog to
+      // check the catalog.
+      for (const want of ["face", "session", "workspace", "store", "about"]) {
+        if (!drew.sections.includes(want)) {
+          fail(`设置 has no 「${want}」 section — it drew ${JSON.stringify(drew.sections)}`);
+        }
+      }
+      // **危险动作二次确认 is not here.** docs/MORE.md puts it under 安全,
+      // and a section that drifted onto this page would still look
+      // entirely reasonable — which is why it is asserted rather than
+      // left to a reading.
+      if (drew.sections.includes("confirm")) {
+        fail("危险动作二次确认 is drawn on 设置 — docs/MORE.md puts it under 安全");
+      }
+      if (!drew.rows.some(([n]) => n === "session-form") || !drew.rows.some(([n]) => n === "files-click")) {
+        fail(`设置 drew rows ${JSON.stringify(drew.rows)} — 会话 and 工作区 each have one key`);
+      }
+      // A store with no path, or a version that is the empty string, is
+      // the `about` call not having answered — and this page must not
+      // draw the section at all in that case rather than draw a blank
+      // where a path belongs.
+      if (!drew.store || !drew.size || !drew.version || drew.open !== 1) {
+        fail(
+          `存储 / 关于 drew ${JSON.stringify({ store: drew.store, size: drew.size, version: drew.version, open: drew.open })} — ` +
+            "both sections come off one `about` answer and neither is drawn without it",
+        );
+      }
+
+      // Set it, and wait for the **store's** answer to come back round
+      // through the shell: the page paints from the re-read, never from
+      // what it just sent.
+      await press('[data-config-choice="session-form:term"]');
+      const took = await until(5_000, async () =>
+        (await page.locator('[data-config-row="session-form"][data-value="term"]').count()) === 1,
+      );
+      if (!took) {
+        fail("pressing 终端 on 设置 left the row on its old value — the store did not answer, or the shell did not re-read");
+      }
+      await press("[data-more-close]");
+
+      const after = await wizardForm();
+      console.log(`config · the wizard after: ${JSON.stringify(after)}`);
+      if (after === null) {
+        fail("the wizard did not open again");
+      } else if (after.term !== "true" || after.chat !== "false") {
+        fail(
+          `设置 says 终端 and the wizard still opens on ${JSON.stringify(after)} — ` +
+            "a setting nothing reads is a switch that stores an answer and changes nothing " +
+            "(src/views/NewSessionDialog.tsx, the reset effect)",
+        );
+      }
+
+      // Put the fixture back, so every stop after this one meets the
+      // wizard it has always met.
+      await press("[data-rail-more]");
+      await press('[data-more-open="settings"]');
+      await press('[data-config-choice="session-form:chat"]');
+      await until(5_000, async () =>
+        (await page.locator('[data-config-row="session-form"][data-value="chat"]').count()) === 1,
+      );
+      await press("[data-more-close]");
+    }
+
+    // …and the other page's section, where docs/MORE.md puts it. Two
+    // keys, not the three that document lists: 删文件's 「不再提醒」 stays
+    // a per-face habit in `localStorage` (裁决 2026-09-20).
+    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="security"]'))) {
+      fail("probe dead: 「…」 → 安全 did not open");
+    } else {
+      const confirm = await page.evaluate(() => {
+        const el = document.querySelector('[data-more-page="security"]');
+        return {
+          section: el?.querySelectorAll('[data-more-section="confirm"]').length ?? 0,
+          rows: [...(el?.querySelectorAll("[data-config-row]") ?? [])].map((e) => [
+            e.getAttribute("data-config-row"),
+            e.getAttribute("data-value"),
+          ]),
+        };
+      });
+      console.log(`config · 安全's 危险动作二次确认: ${JSON.stringify(confirm)}`);
+      if (confirm.section !== 1) {
+        fail("安全 drew no 危险动作二次确认 section (docs/MORE.md 安全)");
+      }
+      // **The defaults are today's behaviour**, which is the whole
+      // reason this batch is installable without surprising anybody:
+      // 接管会话 already asks, 移出工作区 already does not (user,
+      // 2026-09-14:「nothing is destroyed」).
+      const want = { "confirm-takeover": "on", "confirm-ws-remove": "off" };
+      for (const [name, value] of Object.entries(want)) {
+        const got = confirm.rows.find(([n]) => n === name);
+        if (!got) {
+          fail(`安全 has no 「${name}」 row — it drew ${JSON.stringify(confirm.rows)}`);
+        } else if (got[1] !== value) {
+          fail(
+            `「${name}」 ships as ${JSON.stringify(got[1])} and today's behaviour is ${JSON.stringify(value)} — ` +
+              "installing this batch must change nothing anybody can see until somebody sets something",
+          );
+        }
+      }
+      await press("[data-more-close]");
     }
   }
 

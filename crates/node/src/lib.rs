@@ -13,6 +13,7 @@ pub mod cagent;
 pub mod chat;
 pub mod code;
 pub mod codexagent;
+pub mod config;
 pub mod day;
 pub mod doctor;
 pub mod face;

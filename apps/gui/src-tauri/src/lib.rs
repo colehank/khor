@@ -2226,6 +2226,22 @@ fn about() -> khor_gui_core::About {
     khor_gui_core::about(&Node::root_from_env())
 }
 
+// ── 设置 (docs/MORE.md) ─────────────────────────────────────────────
+
+/// Every setting and its value (`khor_gui_core::config_rows`). No node
+/// is opened, so this answers before anything has been drawn.
+#[tauri::command]
+fn config() -> Vec<khor_gui_core::ConfigRow> {
+    khor_gui_core::config_rows(&Node::root_from_env())
+}
+
+/// Sets one, and answers the whole list again. Refused by name for an
+/// unknown key or a value outside that key's ladder.
+#[tauri::command]
+fn set_config(name: String, value: String) -> Result<Vec<khor_gui_core::ConfigRow>, String> {
+    khor_gui_core::set_config(&Node::root_from_env(), &name, &value)
+}
+
 #[tauri::command]
 fn invite() -> Result<khor_gui_core::Ticket, String> {
     khor_gui_core::invite(&Node::root_from_env())
@@ -2497,6 +2513,8 @@ pub fn run() {
             doctor,
             doctor_fix,
             about,
+            config,
+            set_config,
             invite,
             pair
         ])

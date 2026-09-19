@@ -8225,6 +8225,92 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     rmSync(LOCK_HOME, { recursive: true, force: true });
   }
 
+  // 34) `khor config` on a real home (docs/MORE.md 设置).
+  //
+  //      A scratch home of its own, for §33's reason: this one writes
+  //      preferences, and writing them into a home the rest of the file
+  //      is still driving would change a wizard mid-walk.
+  {
+    const CONF_HOME = join(SCRATCH, "config-home");
+    rmSync(CONF_HOME, { recursive: true, force: true });
+    mkdirSync(CONF_HOME, { recursive: true });
+    const envC = homeEnv(CONF_HOME, "confbox");
+    const line = (...args) => cli(envC, ...args).trim();
+
+    //    a. **a machine nobody has configured lists every key anyway.**
+    //    A listing of the file would be empty here, and a command that
+    //    prints an empty page reads as broken rather than as nothing
+    //    having been set.
+    const listed = line("config")
+      .split("\n")
+      .map((l) => l.split("\t"));
+    if (listed.length < 2 || listed.some((r) => r.length !== 2 || !r[0] || !r[1])) {
+      throw new Error(`khor config on a fresh home printed ${JSON.stringify(listed)}`);
+    }
+    //    …and `list` is the same answer as no arguments at all.
+    if (line("config", "list") !== line("config")) {
+      throw new Error("`khor config` and `khor config list` answered differently");
+    }
+
+    //    b. set → get, through the disk. The value is read back with a
+    //    second process, so what is asserted is the store and not a
+    //    variable one command held.
+    const was = line("config", "get", "session-form");
+    const echoed = line("config", "set", "session-form", "term");
+    const now = line("config", "get", "session-form");
+    if (was !== "chat" || echoed !== "term" || now !== "term") {
+      throw new Error(
+        `config set/get: was ${JSON.stringify(was)}, set echoed ${JSON.stringify(echoed)}, ` +
+          `get says ${JSON.stringify(now)}`,
+      );
+    }
+    //    …and nothing else moved with it.
+    if (line("config", "get", "files-click") !== "preview") {
+      throw new Error("setting one key disturbed another");
+    }
+    //    The two faces read this file directly, so it is checked for
+    //    being a file and not only for what the command echoes back.
+    const onDisk = readFileSync(join(CONF_HOME, ".khor", "config.json"), "utf8");
+    if (!onDisk.includes("session-form") || !onDisk.includes("term")) {
+      throw new Error(`.khor/config.json does not carry the setting: ${onDisk}`);
+    }
+
+    //    c. **an unknown key is refused by name**, and so is a value
+    //    outside that key's ladder — two different sentences, because
+    //    they send a person to two different places. A `set` that
+    //    quietly did nothing would look exactly like one that took.
+    const refuse = (...args) => {
+      try {
+        execFileSync(KHOR, args, { env: envC, encoding: "utf8", timeout: 30_000 });
+        return null;
+      } catch (e) {
+        return String(e.stderr || e);
+      }
+    };
+    const noKey = refuse("config", "set", "holodeck", "on");
+    if (noKey === null || !noKey.includes("holodeck")) {
+      throw new Error(`khor config set holodeck was not refused by name: ${noKey}`);
+    }
+    if (refuse("config", "get", "holodeck") === null) {
+      throw new Error("khor config get holodeck answered instead of refusing");
+    }
+    const noValue = refuse("config", "set", "session-form", "holodeck");
+    if (noValue === null || !noValue.includes("holodeck") || !noValue.includes("chat")) {
+      throw new Error(
+        `a value off the ladder must be refused by name and name the rungs: ${noValue}`,
+      );
+    }
+    if (line("config", "get", "session-form") !== "term") {
+      throw new Error("a refused set moved the value anyway");
+    }
+
+    console.log(
+      "config: a fresh home lists every key at its default, set/get made the round trip through " +
+        ".khor/config.json, and an unknown key and an unknown value were each refused by name",
+    );
+    rmSync(CONF_HOME, { recursive: true, force: true });
+  }
+
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 

@@ -44,6 +44,9 @@ fn main() {
     // 安全's own facts: asked by the lock screen before anything else is
     // drawn, embedded in nothing.
     khor_gui_core::LockFacts::export_all_to(&dir).expect("export LockFacts");
+    // 设置's rows: asked on their own beat by two pages, embedded in
+    // nothing. Walks into `ConfigChoice` from here.
+    khor_gui_core::ConfigRow::export_all_to(&dir).expect("export ConfigRow");
     // Not reachable through any row above: the wizard asks for the
     // agent list on its own, so nothing embeds it.
     khor_gui_core::AgentRow::export_all_to(&dir).expect("export AgentRow");

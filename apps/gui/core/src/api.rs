@@ -682,6 +682,10 @@ pub fn answer(
         // machine whose store refuses — the moment the answer matters
         // most.
         "about" => to_json(&crate::about(root)),
+        // 设置 (docs/MORE.md). Like the lock, a local preference read
+        // straight off the store — no node is opened by either arm.
+        "config" => to_json(&crate::config_rows(root)),
+        "set_config" => to_json(&crate::set_config(root, &arg("name")?, &arg("value")?)?),
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
         other => Err(format!("no such command: {other}")),

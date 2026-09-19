@@ -31,6 +31,7 @@ import { IconChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { useSetting } from "@/settings";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
 
 /** One row, already placed: the tree is flattened before it is drawn so
@@ -162,6 +163,10 @@ export function FileTree({
       the second one. */
   const asked = useRef(new Set<string>());
   const { took, take } = useTake(machine);
+  /** 单击文件: whether one click keeps the tab, or takes the preview
+      seat the next click replaces (`khor config`). Double click pins
+      either way, so 「预览」 is not a road with no exit. */
+  const clickPins = useSetting("files-click") === "pin";
 
   // **The tree is remounted per workspace** (`WorkspacePane` keys it),
   // so `machine` and `root` are constants here and nothing resets: a
@@ -490,7 +495,11 @@ export function FileTree({
                   <RowMenu items={menu(r.full, false)}>
                     <button
                       type="button"
-                      onClick={() => onOpen(r.full, false)}
+                      // 单击文件 (`khor config set files-click
+                      // preview|pin`). **Only an explicit 「pin」 moves
+                      // it**, so an answer that has not arrived is the
+                      // default rather than a second copy of it.
+                      onClick={() => onOpen(r.full, clickPins)}
                       // 「双击、或在里面打了字,就钉住」— the second
                       // press is what says 「I am staying」, and the
                       // browser hands it over as its own event rather

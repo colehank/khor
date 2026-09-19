@@ -1119,6 +1119,12 @@ pub fn uninstall_hooks(root: &Path) -> Result<HooksState, String> {
 pub struct About {
     pub version: String,
     pub root: String,
+    /// How much of the disk the store is using — 设置's 存储 section
+    /// (docs/MORE.md). It rides here rather than on a call of its own
+    /// because it is the same kind of fact as `root` and is read the
+    /// same way: a walk of `.khor/` with no node opened
+    /// (`doctor::store_bytes`, which 自检 already does).
+    pub store_bytes: u64,
 }
 
 /// Neither half opens a node: the version is a compile-time constant and
@@ -1129,7 +1135,89 @@ pub fn about(root: &Path) -> About {
     About {
         version: khor_node::VERSION.to_owned(),
         root: root.display().to_string(),
+        store_bytes: khor_node::doctor::store_bytes(root),
     }
+}
+
+/// One value a setting takes, with the word for it.
+///
+/// **The word is looked up here, not in TS** — the same judgment
+/// `DoctorRow` makes: the catalog has one entry per value
+/// (`khor_catalog::config`), and a second match on the same keys over
+/// there would be one restyle away from a page with a button labelled
+/// `files-click`.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ConfigChoice {
+    pub value: String,
+    pub label: String,
+}
+
+/// One row of 设置 (docs/MORE.md), as the pages draw it.
+///
+/// `section` is the node's (`khor_node::config::section`) so the two
+/// pages group these rows the way the table says rather than by a
+/// grouping written a second time in TS.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct ConfigRow {
+    pub name: String,
+    pub label: String,
+    pub section: String,
+    pub section_label: String,
+    /// Which 「…」 page draws this row's section — `settings` or
+    /// `security` (`khor_node::config::Section::page`). It rides on the
+    /// row so neither page keeps a list of the sections it owns.
+    pub page: String,
+    pub value: String,
+    pub choices: Vec<ConfigChoice>,
+}
+
+fn config_row(k: &khor_node::config::Key, value: &str) -> ConfigRow {
+    ConfigRow {
+        name: k.name.to_owned(),
+        label: khor_catalog::config::word(k.name).to_owned(),
+        section: k.section.to_owned(),
+        section_label: khor_catalog::config::word(k.section).to_owned(),
+        // A key whose section is not on the node's list would be drawn
+        // by nobody, which is what the empty string says here — and
+        // `khor_node`'s own gate refuses that table, so it cannot ship.
+        page: khor_node::config::section(k.section)
+            .map(|s| s.page)
+            .unwrap_or_default()
+            .to_owned(),
+        value: value.to_owned(),
+        choices: k
+            .values
+            .iter()
+            .map(|v| ConfigChoice {
+                value: (*v).to_owned(),
+                label: khor_catalog::config::word(v).to_owned(),
+            })
+            .collect(),
+    }
+}
+
+/// Every setting and what it is set to. **No node is opened**: the
+/// preferences file is read straight off the store, so a face can ask
+/// this before it has drawn anything — which is what lets the theme be
+/// stamped before the first paint (批 D2).
+pub fn config_rows(root: &Path) -> Vec<ConfigRow> {
+    khor_node::config::list(root)
+        .into_iter()
+        .map(|(k, v)| config_row(k, v))
+        .collect()
+}
+
+/// Sets one setting and answers **the whole list again**.
+///
+/// The whole list rather than the one row, for `set_lock`'s reason one
+/// step further: a page that patched its own copy would be holding an
+/// answer nobody checked, and these rows are what two different pages
+/// draw from.
+pub fn set_config(root: &Path, name: &str, value: &str) -> Result<Vec<ConfigRow>, String> {
+    khor_node::config::set(root, name, value)?;
+    Ok(config_rows(root))
 }
 
 /// One row of 自检 (docs/MORE.md), as the page draws it.

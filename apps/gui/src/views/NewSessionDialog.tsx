@@ -100,6 +100,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { useSetting } from "@/settings";
 import { connectionWord } from "@/words";
 import { cn } from "@/lib/utils";
 
@@ -156,6 +157,11 @@ export function NewSessionDialog({
   /** The line to leave, for the 留言 kind. */
   const [text, setText] = useState("");
   const [form, setForm] = useState<"chat" | "term">("chat");
+  /** 新会话默认开成 (`khor config set session-form chat|term`). **Only an
+      explicit 「term」 moves it**: `useSetting` answers `null` until khor
+      has said, and spelling the other half out here would be a second
+      copy of a default only `khor_node::config::KEYS` decides. */
+  const wantsTerm = useSetting("session-form") === "term";
   const [agent, setAgent] = useState("claude");
   const [known, setKnown] = useState<AgentRow[]>([]);
   // **Whether the registry answered**, which is not the same as it
@@ -201,7 +207,16 @@ export function NewSessionDialog({
     setTitle("");
     setKind("agent");
     setText("");
-    setForm("chat");
+    // **The reset is what decides**, not the `useState` above: this
+    // dialog stays mounted and every opening comes back through here.
+    //
+    // ⚠️ 终端 is only reachable for the vendor khor can speak for, and
+    // the two lines below are in that order for that reason: this opens
+    // on claude, which is the one agent 终端 is offered for. The day the
+    // agent below becomes a setting too, this line has to converge
+    // against it the way `pick` does — a selected 终端 under an agent
+    // that has no terminal is a button the 开 press refuses.
+    setForm(wantsTerm ? "term" : "chat");
     setAgent("claude");
     setKnown([]);
     setListed(false);
