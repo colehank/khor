@@ -82,8 +82,10 @@ impl iroh::address_lookup::AddressLookupBuilder for Prebuilt {
     fn into_address_lookup(
         self,
         _endpoint: &iroh::Endpoint,
-    ) -> Result<impl iroh::address_lookup::AddressLookup, iroh::address_lookup::AddressLookupBuilderError>
-    {
+    ) -> Result<
+        impl iroh::address_lookup::AddressLookup,
+        iroh::address_lookup::AddressLookupBuilderError,
+    > {
         Ok(self.0)
     }
 }
@@ -507,7 +509,10 @@ mod tests {
             // Relays are not IPs and are never this filter's business.
             iroh::TransportAddr::Relay("http://39.97.7.248:3340".parse().unwrap()),
         ] {
-            assert!(!unroutable(&road), "{road:?} is a road that works somewhere");
+            assert!(
+                !unroutable(&road),
+                "{road:?} is a road that works somewhere"
+            );
         }
         // 198.18.0.0/15 — RFC 2544 benchmarking, handed out by local
         // proxies on a tun interface. Both halves of the /15.

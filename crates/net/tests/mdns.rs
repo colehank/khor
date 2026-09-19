@@ -115,11 +115,17 @@ async fn what_mdns_hears_becomes_a_dial_candidate() {
     })
     .await
     .unwrap_or(false);
-    assert!(heard, "mdns should have put this machine on the segment map");
+    assert!(
+        heard,
+        "mdns should have put this machine on the segment map"
+    );
 
     let addr = endpoint::dial_addr(&server_id.to_string(), &[], &[]).expect("the id should parse");
     let heard_at: Vec<String> = addr.ip_addrs().map(|a| a.to_string()).collect();
-    assert!(!heard_at.is_empty(), "the dial should carry what mdns heard");
+    assert!(
+        !heard_at.is_empty(),
+        "the dial should carry what mdns heard"
+    );
     assert_eq!(
         addr.relay_urls().count(),
         0,

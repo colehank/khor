@@ -48,9 +48,14 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     // take over. A list that came back empty would pass the assertion
     // above while meaning the opposite of what it says.
     let before = node.relays().len();
-    assert!(before > 0, "the built-in relay tier should still be present");
+    assert!(
+        before > 0,
+        "the built-in relay tier should still be present"
+    );
 
-    let merged = node.set_relays(&[MINE.to_string()], false).expect("a real relay url should be accepted");
+    let merged = node
+        .set_relays(&[MINE.to_string()], false)
+        .expect("a real relay url should be accepted");
     assert!(
         merged.iter().any(|r| r == MINE),
         "the call should report the list the next node will use"
@@ -80,7 +85,10 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     // A validation that clears the list on its way to saying no would be
     // worse than one that never checked.
     let refused = reopened.set_relays(&["这不是一个地址".to_string()], false);
-    assert!(refused.is_err(), "a string that is not a relay url must not be stored");
+    assert!(
+        refused.is_err(),
+        "a string that is not a relay url must not be stored"
+    );
     assert_eq!(
         reopened.relay_choices(),
         vec![MINE.to_string()],
@@ -89,7 +97,9 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
 
     // And the list can be emptied — the delete key has to reach the
     // thing the add button wrote.
-    reopened.set_relays(&[], false).expect("clearing should be allowed");
+    reopened
+        .set_relays(&[], false)
+        .expect("clearing should be allowed");
     assert!(
         reopened.relay_choices().is_empty(),
         "clearing should remove the user's own entries"
@@ -121,7 +131,10 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
         node.set_relays(&[], true).is_err(),
         "「only mine」with no relay of my own must be refused, not silently downgraded"
     );
-    assert!(!node.relays_only_mine(), "and the refusal must not have stored it");
+    assert!(
+        !node.relays_only_mine(),
+        "and the refusal must not have stored it"
+    );
 
     // Added: mine plus the built-in tier. This is the control for the
     // exclusive case below — without it, "the list is just mine" could
@@ -129,7 +142,10 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
     let joined = node
         .set_relays(&[MINE.to_string()], false)
         .expect("a real relay url should be accepted");
-    assert!(joined.len() > 1, "added means the built-in tier is still in the list");
+    assert!(
+        joined.len() > 1,
+        "added means the built-in tier is still in the list"
+    );
 
     // Exclusive: the same one address, and now it is the whole map.
     let alone = node
@@ -142,7 +158,10 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
     );
 
     let reopened = Node::open(root.clone()).expect("the home should reopen");
-    assert!(reopened.relays_only_mine(), "the switch should survive a reopen");
+    assert!(
+        reopened.relays_only_mine(),
+        "the switch should survive a reopen"
+    );
     assert_eq!(
         reopened.relays(),
         [MINE.to_string()],
