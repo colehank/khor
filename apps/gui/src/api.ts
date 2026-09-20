@@ -730,16 +730,26 @@ export const forgetDevice = (machine: string) => call<string>("forget_device", {
     answers the list as kept. */
 export const setWatch = (machine: string, paths: string[]) =>
   call<string[]>("set_watch", { machine, paths });
-/** What this machine wears and every option painted as it would look —
-    derived by the node, one call for the whole screen. */
-export const fetchFaceChoices = () => call<FaceChoices>("face_choices");
+/** What a machine wears and every option painted as it would look —
+    derived by the node, one call for the whole editor.
+
+    `machine` is a device id and **empty is this one**. Every swatch is
+    painted under *that* machine's seed, so what the editor shows is the
+    face that machine is about to have rather than this one's. */
+export const fetchFaceChoices = (machine = "") =>
+  call<FaceChoices>("face_choices", { machine });
 /** Changes the axes it is given; an axis left out stays where it is. The
-    same call `khor face` makes, with the same shape of arguments. */
-export const restyle = (change: {
-  colors?: string[];
-  variant?: string;
-  shape?: string;
-}) => call<null>("restyle", change);
+    same call `khor avatar` makes, with the same shape of arguments —
+    including which machine, because a face is 全网同一份 and anyone may
+    set anyone's (`khor_sync::devices`). */
+export const restyle = (
+  machine: string,
+  change: {
+    colors?: string[];
+    variant?: string;
+    shape?: string;
+  },
+) => call<null>("restyle", { machine, ...change });
 /** This machine's relays, both halves: `mine` is what the user typed
     here and the only part a control can remove, `in_use` is everything
     the machine actually binds with (the built-in tier included). */

@@ -408,9 +408,18 @@ pub fn answer(
             };
             to_json(&crate::set_relays(root, &urls, flag("only_mine")?)?)
         }
-        "face_choices" => to_json(&crate::face_choices(root)?),
+        "face_choices" => to_json(&crate::face_choices(
+            root,
+            &opt_str("machine")?.unwrap_or_default(),
+        )?),
         "restyle" => {
-            crate::restyle(root, opt_colors()?, opt_str("variant")?, opt_str("shape")?)?;
+            crate::restyle(
+                root,
+                &opt_str("machine")?.unwrap_or_default(),
+                opt_colors()?,
+                opt_str("variant")?,
+                opt_str("shape")?,
+            )?;
             Ok("null".to_owned())
         }
         "hooks_state" => to_json(&crate::hooks_state(root)?),

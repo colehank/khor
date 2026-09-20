@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>well</title>
+<style>
+  /* One colour slot, reduced to what WebKit decides about it: the
+     control the face editor gives a person to pick a colour with
+     (`views/FaceSettings.tsx` ColorWell — `<input type="color">`, which
+     on this engine is macOS's own picker panel). Sized the way khor
+     sizes it, because a control the engine refuses to lay out is a
+     control nobody can press. */
+  html, body { margin: 0; }
+  #well {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid #888;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+  }
+</style>
+<body>
+  <input id="well" type="color" value="#e69f00" />
+  <script>
+    // What the gate asks for. Three separate questions, because they
+    // fail in three different ways and a single boolean would hide two
+    // of them:
+    //
+    //   1. does this engine keep `type="color"` at all, or fall back to
+    //      a text field (`el.type` answers that, and a fallback reports
+    //      "text" — the whole editor would then be five text boxes);
+    //   2. does it lay the control out at the size it was given, so a
+    //      finger has something to aim at;
+    //   3. is the value really settable and readable back as a colour —
+    //      the half that matters to khor, because what the picker hands
+    //      back is what gets written to the device table.
+    //
+    // **`showPicker()` is asked for but never required.** Opening the
+    // OS panel from a script is gated on a user gesture, and a probe
+    // cannot supply one; what is reported is whether the engine *has*
+    // the entry point. The panel itself is the eye's to verify — the
+    // gate says so rather than pretending.
+    window.__well = () => {
+      const el = document.getElementById("well");
+      const box = el.getBoundingClientRect();
+      const was = el.value;
+      el.value = "#0055aa";
+      const took = el.value;
+      // Round-tripped through the engine's own parser: an engine that
+      // stored the string without understanding it would hand back
+      // whatever was written, so the reading is compared against the
+      // normalised form rather than against the literal.
+      el.value = "#0055AA";
+      const caseFolded = el.value;
+      // A JSON **string**, because the probe reads this one through
+      // `evaluateJavaScript`, which hands back only strings (probe.swift
+      // `ask`). An object would come back as "not a string" and the
+      // whole arm would read as a load failure.
+      return JSON.stringify({
+        type: el.type,
+        w: Math.round(box.width),
+        h: Math.round(box.height),
+        was,
+        took,
+        caseFolded,
+        hasShowPicker: typeof el.showPicker === "function",
+      });
+    };
+  </script>
+</body>

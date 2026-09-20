@@ -31,34 +31,27 @@
 // memory. It is also why every face in the app moves in the same frame:
 // the caller refetches rows and devices together, and all of them are
 // painted from that one answer.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchFaceChoices, restyle, type FaceChoices } from "@/api";
 import { AvatarFace } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { avatar } from "@/gen/catalog";
+import { avatar, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { faceWord } from "@/words";
+import { MoreFold } from "@/views/more/MorePage";
 
 
-/**
- * One axis and its heading. The heading names the choice; it does not
- * explain it (docs/UX.md 文案: 装饰性说明归零).
- *
- * `name` is the stable key and `label` the word — separate because the
- * options underneath carry the key too, and verification that had to
- * match a heading by its translated text would be reading the catalog
- * to check the catalog.
+/*
+ * **`Axis` retired 2026-09-21.** It drew a heading over each row of
+ * options. The editor the user drew has none — a big face, a row of
+ * styles, a row of colours, one button (docs/MORE.md 第二轮) — and a
+ * word over pictures that say what they are is the decorative
+ * explanation docs/UX.md zeroes out. The names did not vanish with it:
+ * each row carries its own `aria-label` from the same catalog keys, so
+ * a screen reader still hears 画法 and 色板.
  */
-function Axis({ name, label, children }: { name: string; label: string; children: ReactNode }) {
-  return (
-    <div data-face-axis={name} className="flex flex-col gap-2">
-      <h2 className="text-sm font-label text-muted-foreground">{label}</h2>
-      {children}
-    </div>
-  );
-}
 
 /**
  * One option: this machine's face under it, and its word.
@@ -198,8 +191,14 @@ function ColorWell({
 }
 
 export function FaceSettings({
+  machine = "",
   onChanged,
 }: {
+  /** Which machine's avatar this edits — a device id, and **empty is
+      this one**. 「头像设置这, 要支持对每台机器的修改」 (the user,
+      2026-09-20): the map opens this same editor on whichever machine
+      was pressed, and a face is 全网同一份 — anyone may set anyone's. */
+  machine?: string;
   /** Called after a change took, so the faces elsewhere in the app come
       from the node's new answer rather than from this screen. */
   onChanged: () => void;
@@ -209,10 +208,10 @@ export function FaceSettings({
 
   const load = useCallback(
     () =>
-      fetchFaceChoices().then(setChoices, (e: unknown) =>
+      fetchFaceChoices(machine).then(setChoices, (e: unknown) =>
         setError(String(e instanceof Error ? e.message : e)),
       ),
-    [],
+    [machine],
   );
 
   // Read on every opening — which is every mount now that this is a
@@ -230,7 +229,7 @@ export function FaceSettings({
   const apply = useCallback(
     (change: { colors?: string[]; variant?: string; shape?: string }) => {
       setError(null);
-      restyle(change).then(
+      restyle(machine, change).then(
         () => {
           void load();
           onChanged();
@@ -238,7 +237,7 @@ export function FaceSettings({
         (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
       );
     },
-    [load, onChanged],
+    [machine, load, onChanged],
   );
 
   const pickColor = useCallback(
@@ -254,6 +253,23 @@ export function FaceSettings({
     [choices, apply],
   );
 
+  // 「换一组配色」: the next factory set, wrapping. **A button rather than
+  // the row of seven swatches this used to be** — 「出厂色板做成一个「换一组
+  // 配色」的按钮, 按一下换一组」 (docs/MORE.md 第二轮). Nothing has to
+  // say which set you landed on, because the five wells directly above
+  // it are that answer.
+  //
+  // A palette nobody recognises (a slot edited by hand, so `preset` is
+  // `null`) starts the walk at the first set rather than nowhere: the
+  // press has to do something visible or it is the 「做了但没变化」
+  // docs/UX.md refuses.
+  const shuffle = useCallback(() => {
+    if (!choices || choices.palettes.length === 0) return;
+    const at = choices.palettes.findIndex((p) => p.key === choices.preset);
+    const next = choices.palettes[(at + 1) % choices.palettes.length];
+    apply({ colors: next.colors });
+  }, [choices, apply]);
+
   return (
     <div data-face-settings className="flex flex-col gap-group">
       {error && (
@@ -262,64 +278,87 @@ export function FaceSettings({
         </div>
       )}
       {choices && (
-          <div className="flex flex-col gap-5">
-            <Axis name="palette" label={avatar.axis_palette}>
-              <div className="flex flex-wrap gap-1">
-                {choices.palettes.map((p) => (
-                  <FaceOption
-                    key={p.key}
-                    axis="palette"
-                    option={p.key}
-                    label={faceWord(p.key)}
-                    face={p.face}
-                    // Nothing is marked once a slot has been changed by
-                    // hand, and that is the honest answer: a nearest
-                    // match would light a button nobody pressed.
-                    on={choices.preset === p.key}
-                    onPick={() => apply({ colors: p.colors })}
-                  />
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {choices.colors.map((c, i) => (
-                  <ColorWell key={i} index={i} value={c} onCommit={(hex) => pickColor(i, hex)} />
-                ))}
-              </div>
-            </Axis>
+        <div className="flex flex-col items-center gap-4">
+          {/* The big face. **The one place in this app a face is drawn
+              larger than it is worn**, and it is the editor's subject
+              rather than a preview: what the other rows change, this
+              shows. The swatches stay at `--avatar` for the reason the
+              old head gave — judging a face at a size it is never shown
+              at is choosing on evidence you will not get. */}
+          <AvatarFace face={choices.face} className="size-avatar-xl" />
 
-            <Axis name="variant" label={avatar.axis_variant}>
-              <div className="flex flex-wrap gap-1">
-                {choices.variants.map((v) => (
-                  <FaceOption
-                    key={v.key}
-                    axis="variant"
-                    option={v.key}
-                    label={faceWord(v.key)}
-                    face={v.face}
-                    on={choices.variant === v.key}
-                    onPick={() => apply({ variant: v.key })}
-                  />
-                ))}
-              </div>
-            </Axis>
-
-            <Axis name="shape" label={avatar.axis_shape}>
-              <div className="flex flex-wrap gap-1">
-                {choices.shapes.map((s) => (
-                  <FaceOption
-                    key={s.key}
-                    axis="shape"
-                    option={s.key}
-                    label={faceWord(s.key)}
-                    face={s.face}
-                    on={choices.shape === s.key}
-                    onPick={() => apply({ shape: s.key })}
-                  />
-                ))}
-              </div>
-            </Axis>
-
+          {/* 画法, as thumbnails. No heading: the pictures say what the
+              choice is, and a word over them would be the decorative
+              explanation docs/UX.md zeroes out. The name is still said
+              — to a screen reader, through the row's label. */}
+          <div
+            data-face-axis="variant"
+            aria-label={avatar.axis_variant}
+            role="group"
+            className="flex flex-wrap justify-center gap-1"
+          >
+            {choices.variants.map((v) => (
+              <FaceOption
+                key={v.key}
+                axis="variant"
+                option={v.key}
+                label={faceWord(v.key)}
+                face={v.face}
+                on={choices.variant === v.key}
+                onPick={() => apply({ variant: v.key })}
+              />
+            ))}
           </div>
+
+          {/* The five slots, and pressing one opens the system picker
+              (`ColorWell` — `<input type="color">`, which on WebKit is
+              macOS's own panel; `npm run wk` measures that it really
+              opens and really changes the value). */}
+          <div
+            data-face-wells
+            aria-label={avatar.axis_palette}
+            role="group"
+            className="flex flex-wrap justify-center gap-2"
+          >
+            {choices.colors.map((c, i) => (
+              <ColorWell key={i} index={i} value={c} onCommit={(hex) => pickColor(i, hex)} />
+            ))}
+          </div>
+
+          <Button
+            variant="outline"
+            data-face-shuffle
+            onClick={shuffle}
+            className="min-h-touch"
+          >
+            {gui.face_shuffle}
+          </Button>
+
+          {/* 形状 is folded. 「不是所有的设置都要去铺在界面上」 — three
+              rounded corners are the rarest of the three axes and the
+              one nobody arrives looking for, so the page's default shape
+              is the face, the styles, the colours and one button. */}
+          <MoreFold name="face-advanced" label={gui.advanced}>
+            <div
+              data-face-axis="shape"
+              aria-label={avatar.axis_shape}
+              role="group"
+              className="flex flex-wrap gap-1"
+            >
+              {choices.shapes.map((sh) => (
+                <FaceOption
+                  key={sh.key}
+                  axis="shape"
+                  option={sh.key}
+                  label={faceWord(sh.key)}
+                  face={sh.face}
+                  on={choices.shape === sh.key}
+                  onPick={() => apply({ shape: sh.key })}
+                />
+              ))}
+            </div>
+          </MoreFold>
+        </div>
       )}
       {/* 中继 stood here until 2026-09-20 and is on 网络 now, behind
           高级 (docs/MORE.md 第二轮: 中继从通用搬到网络页的「高级」里).

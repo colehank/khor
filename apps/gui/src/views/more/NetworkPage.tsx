@@ -108,7 +108,7 @@ export function NetworkPage({
             {gui.identity_alone}
           </div>
         ) : (
-          <MarkPlace rows={rows} devices={devices} onForgot={onChanged} onPickWaiting={onPickWaiting} />
+          <MarkPlace rows={rows} devices={devices} onChanged={onChanged} onPickWaiting={onPickWaiting} />
         )}
       </div>
 
@@ -187,7 +187,7 @@ export function NetworkPage({
             **Mounted only while the fold is open** — a relay list is two
             fetches, and a page that made them to draw nothing is a
             machine dialling on behalf of a control nobody opened. */}
-        <MoreFold name="advanced" label={gui.net_advanced}>
+        <MoreFold name="advanced" label={gui.advanced}>
           <NetSettings />
         </MoreFold>
       </div>

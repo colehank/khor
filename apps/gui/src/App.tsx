@@ -1965,13 +1965,7 @@ export default function App() {
         }}
       />
     ) : morePage === "settings" ? (
-      <SettingsPage
-        onClose={() => setMorePage(null)}
-        onChanged={() => {
-          refresh().catch(() => {});
-        }}
-        onSettingChanged={settings.reread}
-      />
+      <SettingsPage onClose={() => setMorePage(null)} onSettingChanged={settings.reread} />
     ) : morePage === "security" ? (
       <SecurityPage
         onClose={() => setMorePage(null)}
@@ -1988,7 +1982,13 @@ export default function App() {
     ) : morePage === "doctor" ? (
       <DoctorPage onClose={() => setMorePage(null)} />
     ) : (
-      <IdentityPage devices={devices} onClose={() => setMorePage(null)} />
+      <IdentityPage
+        devices={devices}
+        onClose={() => setMorePage(null)}
+        onRestyled={() => {
+          refresh().catch(() => {});
+        }}
+      />
     );
 
   /**

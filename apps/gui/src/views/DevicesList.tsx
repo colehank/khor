@@ -125,7 +125,13 @@ export function DevicesList({
       : [
           {
             key: "forget",
-            label: gui.forget_machine,
+            // **The same word the map's card uses** (2026-09-21,
+            // docs/MORE.md 第二轮 文案): this row's menu and that card
+            // run the one act (`Node::forget_device`), and a menu
+            // saying 「删除」 beside a card saying 「移除设备」 is two
+            // names for it. The sentence between the two presses is
+            // already shared; the verb is now too.
+            label: gui.remove_device,
             confirm: gui.forget_machine_confirm,
             note: forgetRefused.get(d.id),
             run: () => onForget(d),

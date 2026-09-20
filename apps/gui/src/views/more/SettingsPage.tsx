@@ -25,7 +25,6 @@ import { useEffect, useState } from "react";
 import { fetchAbout, launchOn, type About } from "@/api";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
-import { FaceSettings } from "@/views/FaceSettings";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
@@ -46,14 +45,9 @@ function bytes(n: bigint): string {
 
 export function SettingsPage({
   onClose,
-  onChanged,
   onSettingChanged,
 }: {
   onClose: () => void;
-  /** A restyle repaints this machine everywhere at once, because the
-      shell refetches rows and devices together and every face on screen
-      is painted from that one answer. */
-  onChanged: () => void;
   /** A setting changed: the shell re-reads the store, and every screen
       that reads one of these keys is drawn from that answer rather than
       from what this page just sent. */
@@ -70,13 +64,10 @@ export function SettingsPage({
 
   return (
     <MoreFrame page="settings" onClose={onClose}>
-      {/* The heading this section never had. In the dialog the three
-          axes stood directly under the dialog's own title, so 「这是在
-          设什么」 was answered by the frame; on a page with sections
-          under one title the axes need to say whose they are. */}
-      <MoreSection name="face" label={gui.settings_face}>
-        <FaceSettings onChanged={onChanged} />
-      </MoreSection>
+      {/* 头像 left this page on 2026-09-21 (docs/MORE.md 第二轮 地图:
+          头像 = 这台机器是谁). The editor is on the avatar's own page
+          now, where the thing it edits is already the subject — and on
+          the map's machine card, for every other machine. */}
 
       <ConfigSections page="settings" onChanged={onSettingChanged} />
 

@@ -1072,7 +1072,25 @@ impl Node {
             None => self.device_str.clone(),
             Some(name) => self.device_by_name(name)?,
         };
-        let mut style = self.avatar_style_of(&device);
+        self.restyle_device(&device, colors, variant, shape)
+    }
+
+    /// The act itself, on a device **id** — what the faces call once
+    /// they already have one (the GUI's rows carry ids, not names).
+    ///
+    /// Read-modify-write over the *whole* style, because whole is what
+    /// the device table carries (`khor_sync::devices`: one JSON value,
+    /// whole-value LWW). There is deliberately nothing finer to write:
+    /// half a palette from one writer and a variant from another is a
+    /// face nobody chose.
+    pub fn restyle_device(
+        &self,
+        device: &str,
+        colors: Option<&[String]>,
+        variant: Option<&str>,
+        shape: Option<&str>,
+    ) -> Result<AvatarStyle, String> {
+        let mut style = self.avatar_style_of(device);
         if let Some(colors) = colors {
             style.palette = Palette::parse(colors).ok_or_else(|| {
                 msg::not_a_palette(colors.join(khor_catalog::cli::name_separator()))
@@ -1090,7 +1108,7 @@ impl Node {
                 msg::not_a_face_shape(key, all.join(khor_catalog::cli::name_separator()))
             })?;
         }
-        self.set_avatar_style_of(&device, &style)?;
+        self.set_avatar_style_of(device, &style)?;
         Ok(style)
     }
 

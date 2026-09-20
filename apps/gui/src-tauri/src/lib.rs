@@ -393,20 +393,24 @@ fn set_watch(machine: String, paths: Vec<String>) -> Result<Vec<String>, String>
     khor_gui_core::set_watch(&Node::root_from_env(), &machine, &paths)
 }
 
+/// `machine` is a device id and **empty is this one** — 「头像设置这, 要
+/// 支持对每台机器的修改」 (the user, 2026-09-20), so the editor opens on
+/// whichever machine was pressed rather than always on this one.
 #[tauri::command]
-fn face_choices() -> Result<FaceChoices, String> {
-    khor_gui_core::face_choices(&Node::root_from_env())
+fn face_choices(machine: String) -> Result<FaceChoices, String> {
+    khor_gui_core::face_choices(&Node::root_from_env(), &machine)
 }
 
-/// An axis left out stays where it is — the same shape as `khor face`'s
+/// An axis left out stays where it is — the same shape as `khor avatar`'s
 /// flags, because they are the same call underneath.
 #[tauri::command]
 fn restyle(
+    machine: String,
     colors: Option<Vec<String>>,
     variant: Option<String>,
     shape: Option<String>,
 ) -> Result<(), String> {
-    khor_gui_core::restyle(&Node::root_from_env(), colors, variant, shape)
+    khor_gui_core::restyle(&Node::root_from_env(), &machine, colors, variant, shape)
 }
 
 /// The three hook commands are about **this machine's** claude: the

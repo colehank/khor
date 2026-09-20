@@ -1,6 +1,11 @@
-//! Real-connection acceptance for self-reported faces: a machine's face
-//! is **its own palette times its id**, and the palette half has to
-//! survive the trip.
+//! Real-connection acceptance for faces the device table carries: a
+//! machine's face is **the palette its row holds times its id**, and the
+//! palette half has to survive the trip.
+//!
+//! **「self-reported」 until 2026-09-21.** Anyone may write anyone's
+//! style now (`khor_sync::devices`, same rule as a rename), so a row
+//! carries a choice rather than a claim — and a machine nobody has
+//! styled carries nothing at all.
 //!
 //! Two nodes on one machine, real UDP, real pairing, real sync — and the
 //! control group that makes the result mean something: beta must paint
@@ -79,9 +84,13 @@ async fn wait_for_endpoint_file(root: &Path) {
 }
 
 /// A style that is **not** the factory default in all three of its
-/// parts, so "the report arrived" cannot be confused with "it fell back
-/// to the default and happened to match".
-fn a_reported_style() -> AvatarStyle {
+/// parts, so "somebody's choice arrived" cannot be confused with "it
+/// fell back to the default and happened to match".
+///
+/// **Named for a choice rather than a report since 2026-09-21**: a style
+/// is not a thing a machine says about itself any more, it is a row in
+/// the device table that anyone may write (`khor_sync::devices`).
+fn a_chosen_style() -> AvatarStyle {
     let json = r##"{
         "palette": ["#e69f00", "#009e4f", "#f0e442", "#d55e00", "#cc79a7"],
         "variant": "bauhaus",
@@ -97,7 +106,7 @@ fn a_reported_style() -> AvatarStyle {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_machine_is_painted_in_the_palette_it_reported() {
+async fn a_machine_is_painted_in_the_palette_the_table_carries_for_it() {
     let ra = root("a");
     let rb = root("b");
 
@@ -113,10 +122,10 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
     );
 
     // alpha chooses a style before anyone can see it.
-    a.set_avatar_style(&a_reported_style()).unwrap();
+    a.set_avatar_style(&a_chosen_style()).unwrap();
     assert_eq!(
         a.avatar_style(),
-        a_reported_style(),
+        a_chosen_style(),
         "the choice must persist locally"
     );
 
@@ -135,52 +144,54 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
         .expect("sync must not hang")
         .unwrap();
 
-    // 1) beta's table carries what alpha said about itself.
+    // 1) beta's table carries the style alpha's row was given.
     let devices = b.devices().unwrap();
     let alpha = devices
         .iter()
         .find(|d| d.name == "alpha")
         .expect("alpha should be in the table");
-    let reported = alpha
+    let chosen = alpha
         .style
         .as_deref()
         .and_then(AvatarStyle::from_json)
-        .expect("alpha's reported style should have travelled and should parse");
-    assert_eq!(
-        reported,
-        a_reported_style(),
-        "the style must arrive unchanged"
-    );
+        .expect("alpha's style should have travelled and should parse");
+    assert_eq!(chosen, a_chosen_style(), "the style must arrive unchanged");
 
     // 2) …and it reaches the paint. The control is the same face
     //    derived with the default style: equal here would mean the
-    //    report travelled and was then ignored, which every assertion
+    //    choice travelled and was then ignored, which every assertion
     //    above would still pass.
     let face = b.face_of(alpha).expect("beta must be able to paint alpha");
     let seed = AvatarSeed::from_id_hex(&alpha.id).unwrap();
     assert_ne!(
         face,
         avatar(&seed, &AvatarStyle::default()),
-        "alpha is being painted with the default palette, not the one it reported"
+        "alpha is being painted with the default palette, not the one its row carries"
     );
     assert_eq!(
         face,
-        avatar(&seed, &reported),
-        "the painted face is the reported style's"
+        avatar(&seed, &chosen),
+        "the painted face is the chosen style's"
     );
 
-    // 3) The point of self-reporting: on one screen, beta paints alpha
-    //    in alpha's palette and itself in its own. Before this, style
-    //    was stored per viewer and the same machine was two colors on
-    //    two screens with neither side wrong.
+    // 3) On one screen, beta paints alpha in alpha's palette and itself
+    //    in its own. Before the table carried style at all, it was
+    //    stored per viewer and the same machine was two colors on two
+    //    screens with neither side wrong.
+    //
+    //    **beta's row carries no style, and that is the assertion**
+    //    (2026-09-21): `register_self` stopped pushing one, because a
+    //    machine that pushed its own on every boot would take its face
+    //    back from whoever last set it. An unwritten row is painted with
+    //    the factory default — a fallback, not a report, and the
+    //    difference is that a fallback overwrites nobody.
     let beta = devices
         .iter()
         .find(|d| d.name == "beta")
         .expect("beta should be in the table");
     assert_eq!(
-        beta.style.as_deref().and_then(AvatarStyle::from_json),
-        Some(AvatarStyle::default()),
-        "beta reports its own default, and reports it explicitly"
+        beta.style, None,
+        "a machine nobody has styled carries no style of its own"
     );
     let beta_face = b.face_of(beta).expect("beta must be able to paint itself");
     assert_ne!(
@@ -193,8 +204,8 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
     //    one network look alike, which is what an avatar exists to stop.
     let beta_seed = AvatarSeed::from_id_hex(&beta.id).unwrap();
     assert_ne!(
-        avatar(&seed, &reported),
-        avatar(&beta_seed, &reported),
+        avatar(&seed, &chosen),
+        avatar(&beta_seed, &chosen),
         "two machines under one style must still differ"
     );
 
@@ -252,7 +263,7 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
     // claim is already in its table when the inviter creates a row for
     // the same id.
     let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
-    b.set_avatar_style(&a_reported_style()).unwrap();
+    b.set_avatar_style(&a_chosen_style()).unwrap();
 
     timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
@@ -270,7 +281,7 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
         .expect("the newcomer must be in the inviter's table at all");
     assert_eq!(
         beta.style.as_deref().and_then(AvatarStyle::from_json),
-        Some(a_reported_style()),
+        Some(a_chosen_style()),
         "the newcomer's own claim must survive the row being created twice"
     );
 
@@ -280,7 +291,7 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
     let face = a
         .face_of(beta)
         .expect("the inviter must be able to paint the newcomer");
-    assert_eq!(face, avatar(&seed, &a_reported_style()));
+    assert_eq!(face, avatar(&seed, &a_chosen_style()));
     assert_ne!(
         face,
         avatar(&seed, &AvatarStyle::default()),
@@ -304,9 +315,9 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
 fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
     let r = root("restyle");
     let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
-    n.set_avatar_style(&a_reported_style()).unwrap();
+    n.set_avatar_style(&a_chosen_style()).unwrap();
 
-    let before = a_reported_style();
+    let before = a_chosen_style();
     let after = n
         .restyle(None, None, Some("rounded"))
         .expect("rounded is a shape");
@@ -354,7 +365,7 @@ fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
 fn an_unknown_option_is_refused_and_changes_nothing() {
     let r = root("refuse");
     let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
-    n.set_avatar_style(&a_reported_style()).unwrap();
+    n.set_avatar_style(&a_chosen_style()).unwrap();
 
     assert!(
         n.restyle(None, Some("holodeck"), None).is_err(),
@@ -380,7 +391,7 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
     assert!(n.restyle(Some(&good), Some("holodeck"), None).is_err());
     assert_eq!(
         n.avatar_style(),
-        a_reported_style(),
+        a_chosen_style(),
         "a refused restyle wrote its palette on the way out"
     );
 
@@ -388,7 +399,7 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
     // refusals above are not "restyle never writes anything".
     n.restyle(Some(&good), Some("beam"), None)
         .expect("beam is a variant");
-    assert_ne!(n.avatar_style(), a_reported_style());
+    assert_ne!(n.avatar_style(), a_chosen_style());
 }
 
 /// **A preview is the picture the row will show.**
@@ -402,7 +413,7 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
 fn a_preview_is_the_same_picture_the_row_will_show() {
     let r = root("preview");
     let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
-    let style = a_reported_style();
+    let style = a_chosen_style();
 
     // Painted before it is chosen…
     let previewed = n.face_under(&style);
@@ -433,7 +444,7 @@ async fn an_unreported_style_falls_back_to_the_factory_default() {
     let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
     // This viewer has a non-default style of its own, so "default" and
     // "whatever the viewer likes" are distinguishable answers.
-    n.set_avatar_style(&a_reported_style()).unwrap();
+    n.set_avatar_style(&a_chosen_style()).unwrap();
 
     // A peer known by id and name only, exactly as one arrives through
     // someone else's table.
@@ -456,11 +467,10 @@ async fn an_unreported_style_falls_back_to_the_factory_default() {
     assert_eq!(face, avatar(&seed, &AvatarStyle::default()));
     assert_ne!(
         face,
-        avatar(&seed, &a_reported_style()),
+        avatar(&seed, &a_chosen_style()),
         "a silent device must not inherit the viewer's own style"
     );
 }
-
 
 /// **A face somebody else gave this machine survives its restart.**
 ///
@@ -490,8 +500,8 @@ fn a_face_another_machine_gave_this_one_survives_a_restart() {
         let n = Node::open_as(r.to_path_buf(), "alpha").unwrap();
         // Stands for 「beta restyled alpha and it synced here」: the same
         // register a peer writes, written through the same call.
-        n.set_avatar_style(&a_reported_style()).unwrap();
-        assert_eq!(n.avatar_style(), a_reported_style(), "the table took it");
+        n.set_avatar_style(&a_chosen_style()).unwrap();
+        assert_eq!(n.avatar_style(), a_chosen_style(), "the table took it");
         n.avatar_style()
     };
 

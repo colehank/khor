@@ -79,6 +79,7 @@ const pages = {
   "/pdf.html": readFileSync(join(PROBE, "pdf.html")),
   "/sheet.html": readFileSync(join(PROBE, "sheet.html")),
   "/shell.html": readFileSync(join(PROBE, "shell.html")),
+  "/well.html": readFileSync(join(PROBE, "well.html")),
 };
 const server = createServer((req, res) => {
   const body = pages[req.url];
@@ -253,6 +254,60 @@ if (said.pdf?.loadFailed) {
     fail(
       `the frame's box is ${dark}% dark over a PDF whose one page is a black square — the blob ` +
         "loaded and nothing was painted, which is the failure this arm exists for",
+    );
+  }
+}
+
+// ── The face editor's colour slot: the OS picker, not a text box ────
+//
+// 「点击单个配色展开系统的颜色设置」 (the user, 2026-09-20). The editor
+// leans on this engine turning `<input type="color">` into macOS's own
+// panel; if it degraded to a text field the five wells would silently
+// become five places to type a hex string, and every gate that only
+// counts elements would go on passing.
+{
+  const wl = said.well ?? {};
+  if (wl.loadFailed) {
+    fail(`the colour-well page did not load: ${wl.loadFailed}`);
+  } else {
+    if (wl.type !== "color") {
+      fail(
+        `on this WebKit a colour slot is an <input type=${JSON.stringify(wl.type)}> — ` +
+          "the editor's five wells would be five text boxes (views/FaceSettings ColorWell)",
+      );
+    }
+    // Laid out at the size khor gives it: a control the engine collapses
+    // is one nobody can press, and the well is the one control in this
+    // app whose target and its picture are the same thing.
+    if (wl.w !== 44 || wl.h !== 44) {
+      fail(
+        `a colour slot lays out ${wl.w}×${wl.h} where khor asked for 44×44 — ` +
+          "the well *is* the target (tokens.css --touch)",
+      );
+    }
+    // **The half khor depends on**: what the panel hands back is what
+    // gets written to the device table, so the value has to survive the
+    // engine's own parser. Compared against the normalised form rather
+    // than the literal, or an engine that stored the string without
+    // understanding it would pass.
+    if (wl.took !== "#0055aa" || wl.caseFolded !== "#0055aa") {
+      fail(
+        `a colour slot read back ${JSON.stringify(wl.took)} / ${JSON.stringify(wl.caseFolded)} ` +
+          "for #0055aa — what the picker hands back is what khor writes to the device table",
+      );
+    }
+    console.log(
+      `wk: colour well ${wl.type} ${wl.w}×${wl.h}, ${JSON.stringify(wl.was)} → ` +
+        `${JSON.stringify(wl.took)}, showPicker=${wl.hasShowPicker}`,
+    );
+    // ⚠️ **Not asserted, and the sentence is the reason.** Opening the
+    // panel needs a user gesture; a probe has none. So whether the
+    // macOS colour panel really appears is 未量 here and stays the eye's
+    // — the same rule this file keeps for the worker realm: a hole is
+    // printed, never asserted shut.
+    console.log(
+      "--- the panel itself is 未量: opening it wants a user gesture, so this arm measures the " +
+        "control and the value, and a person measures the panel ---",
     );
   }
 }

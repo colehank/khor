@@ -287,6 +287,34 @@ func sheetProbe(size: String, leading: String) -> String {
   return ask(web, "return window.__measure(s, l, t);", async: true, args: ["s": size, "l": leading, "t": text])
 }
 
+/// One colour slot of the face editor, on this WebKit.
+///
+/// 「点击单个配色展开系统的颜色设置」 — the user, 2026-09-20. On this
+/// engine `<input type="color">` *is* macOS's colour panel, which is
+/// why the editor uses it rather than drawing a picker of its own —
+/// and which is also why nothing in Chrome can answer whether it
+/// survives here.
+///
+/// **What this can and cannot say.** It can say the engine keeps the
+/// control (rather than degrading it to a text field), lays it out at
+/// the size khor gives it, and round-trips a value through its own
+/// colour parser — that last one is the half khor depends on, because
+/// what comes back out is what gets written to the device table.
+/// It cannot open the panel: that needs a user gesture a probe has no
+/// way to supply. So the entry point is reported and the panel itself
+/// stays the eye's to check, which the gate says out loud rather than
+/// implying.
+func wellProbe() -> String {
+  let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 200))
+  let w = Waiter()
+  web.navigationDelegate = w
+  web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/well.html")!))
+  spin({ w.done }, seconds: 20)
+  if let t = w.trouble { return "{\"loadFailed\":\(quoted(t))}" }
+  if !w.done { return "{\"loadFailed\":\"never finished\"}" }
+  return ask(web, "window.__well()", async: false)
+}
+
 /// The shell under a wheel that has run off the end of a pane
 /// (docs/SHELL.md 第 1 条).
 ///
@@ -319,5 +347,5 @@ let codeLeading = CommandLine.arguments.count > 4 ? CommandLine.arguments[4] : "
 let shellCss = CommandLine.arguments.count > 5 ? CommandLine.arguments[5] : ""
 
 print(
-  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading)),"
+  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading)),\"well\":\(wellProbe()),"
     + "\"shellBare\":\(shellProbe("")),\"shellNailed\":\(shellProbe(shellCss))}")

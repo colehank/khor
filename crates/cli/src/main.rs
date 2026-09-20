@@ -481,7 +481,7 @@ const VERBS: &[Verb] = &[
         run: leave,
         reach: Reach::Act,
     },
-    // 暂停 / 接回来 (docs/MORE.md 暂停). Acts, like the two above: they
+    // 暂停 / 恢复 (docs/MORE.md 暂停). Acts, like the two above: they
     // write what this machine does next, and a running serve reads that
     // file rather than being told (`crate::pause`).
     Verb {
@@ -592,6 +592,14 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
          the rule in sh (`khor_root` in scripts/onset-lib.sh is what reproducing it costs). Not a \
          verb a person types: the answer is a path they cannot do anything with, and the one thing \
          they might want it for (which home am I on) is `khor id`.",
+    ),
+    (
+        "face",
+        "the old spelling of `avatar`, kept one version as an alias (2026-09-21). Out of the usage \
+         on purpose: the usage is what khor teaches, and teaching both spellings of one verb is how \
+         a rename never finishes. In this tree 「face」 means khor's interfaces — the desktop app \
+         and the web face, which is what `khor faces` lists — so the word had to stop meaning a \
+         picture as well.",
     ),
     (
         "help",
