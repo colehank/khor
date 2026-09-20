@@ -377,6 +377,16 @@ try {
     //   button playwright had just resolved, and on later runs the
     //   locator never resolving at all. **It reproduces at
     //   `853447b` too**, so it is this walk's race and not the card's.
+    // **Already there is already there.** Pressing the open landing's
+    // own glyph is 「put its column away」 since docs/SHELL.md 第 4 条,
+    // and 浏览 joined that rule in 批二 when its tabs became the column
+    // — so a call site that means 「be on the browser landing」 must not
+    // spell it as a press. This is the same correction `check-face`'s
+    // `open()` helper carries, and it is the second place a hand-written
+    // 「which landings toggle」 turned out to be living.
+    if ((await rail("browser").getAttribute("data-on").catch(() => null)) === "true") {
+      return;
+    }
     for (let i = 0; ; i += 1) {
       try {
         if ((await rail("browser").count()) === 0) {

@@ -356,7 +356,16 @@ export function BrowserPane({
             data-pin-web
             data-on={pinned}
             aria-label={pinned ? gui.unpin_place : gui.pin_place}
-            className="text-muted-foreground"
+            // **The finger's floor, missing until 2026-09-21.** It
+            // measured 78×24 — `size="sm"` is what a control *looks*
+            // like beside text and `--touch` is what a finger needs,
+            // and the two are allowed to disagree only when the floor
+            // is written down as well (tokens.css). Invisible to
+            // `check-face` for the same reason the address's resting
+            // face was: the browser stop's fixture had no tab pointed
+            // anywhere, so nothing that only draws over a live page was
+            // ever walked.
+            className="min-h-touch text-muted-foreground"
             onClick={() => {
               pinWeb(machine, here, !pinned)
                 .then(loadPins)

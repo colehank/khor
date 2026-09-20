@@ -11,6 +11,8 @@ import { msg } from "./gen/catalog";
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
 import type { PlaceRow } from "./gen/bindings/PlaceRow";
+import type { TabRow } from "./gen/bindings/TabRow";
+import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
 import type { FileText } from "./gen/bindings/FileText";
 import type { GitStatus } from "./gen/bindings/GitStatus";
@@ -69,6 +71,8 @@ import type { WatchedDir } from "./gen/bindings/WatchedDir";
 export type {
   AccountRing,
   PlaceRow,
+  TabRow,
+  TabsOpen,
   WorkspaceRow,
   FileText,
   GitStatus,
@@ -251,6 +255,43 @@ export const fetchPlaces = (machine = "") => call<PlaceRow[]>("places", { machin
     need a far machine is what a row *shows*: `fetchGitStatus` and
     `fetchTouched`, asked per row, each leaving its corner blank when
     that machine cannot answer. */
+/* ── the browsing tabs (docs/SHELL.md 第 2 条) ──────────────────────
+ *
+ * **They live in `.khor/tabs.json` on this machine, not in this
+ * window's storage**, and that is what `khor tabs` reads. The list was
+ * `localStorage` until 2026-09-20 and everything worked except the part
+ * of the ruling that says the terminal has to be able to list, open and
+ * close them — and CLI 与 GUI 等价 is one of this repo's three standing
+ * rules, so a list only the webview can read is not an option.
+ *
+ * **Every write answers with the list as it now stands.** A caller that
+ * had to ask again to learn what its own write did would be two reads
+ * out of step for the length of a round trip, and the column would
+ * flicker through the old order on every close.
+ *
+ * `kind` is `page` today; the store is keyed by it so a second browsing
+ * kind lands beside rather than inside (`khor_node::tabs`). */
+export const fetchTabs = (kind: string) => call<TabsOpen>("tabs_list", { kind });
+/** Opens one and puts it in front; answers its id. Both places empty is
+    the fresh tab the 「+」 mints — a real state, not a half-made row.
+    **The id is minted by the node**, because the terminal opens tabs
+    too and two minters is two id shapes. */
+export const openTab = (kind: string, device: string, url: string) =>
+  call<string>("tabs_open", { kind, device, url });
+/** Points an open tab somewhere and names it. Refused by name for a tab
+    that is not there, rather than quietly adding one. */
+export const goTab = (kind: string, id: string, device: string, url: string, title: string) =>
+  call<TabsOpen>("tabs_go", { kind, id, device, url, title });
+export const focusTab = (kind: string, id: string) =>
+  call<TabsOpen>("tabs_focus", { kind, id });
+export const closeTab = (kind: string, id: string) =>
+  call<TabsOpen>("tabs_close", { kind, id });
+/** The whole column at once — the one gesture that cannot be spelled as
+    a close and an open: a drag that reorders. Ids are still the node's
+    to mint, and a row carrying one it never minted is refused. */
+export const saveTabs = (kind: string, open: TabsOpen) =>
+  call<TabsOpen>("tabs_save", { kind, open });
+
 export const fetchWorkspaces = () => call<WorkspaceRow[]>("workspaces");
 /** Declares a directory on a machine a workspace; `machine` empty is
     this one. **The one workspace call that goes out on the wire**, and

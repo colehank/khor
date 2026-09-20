@@ -252,6 +252,16 @@ const VERBS: &[Verb] = &[
         run: borrow,
         reach: Reach::Act,
     },
+    // `ls` reads and the other three write this machine's own tab
+    // table, so the word is an act — the rule is per word, not per
+    // invocation (`ws` above). **Nothing here goes out on the wire**:
+    // the table is a file on this disk (`khor_node::tabs`), and
+    // `open -m` only resolves a name against the device table.
+    Verb {
+        word: "tabs",
+        run: tabs,
+        reach: Reach::Act,
+    },
     Verb {
         word: "usage",
         run: usage,
@@ -749,6 +759,86 @@ fn config(rest: &[String]) -> Result<(), String> {
             println!("{}", khor_node::config::set(&root, name, value)?);
             Ok(())
         }
+        _ => Err(usage_text().into()),
+    }
+}
+
+/// `khor tabs`: the browsing tabs this screen has open
+/// (docs/SHELL.md 第 2 条:「CLI 至少要能列、能开、能关」).
+///
+/// # Why this verb exists at all
+///
+/// The tabs were the webview's own storage until 2026-09-20, which met
+/// every part of that ruling except this one — and **CLI 与 GUI 等价**
+/// is one of this repo's three standing rules, not a nicety. A list
+/// only the window can read is a list nothing else can check, fix or
+/// script against.
+///
+/// # The shape follows `ws`, not `config`
+///
+/// Four sub-words over a table this machine keeps, with `ls` the one
+/// that only reads — the same grammar the workspace table has, so
+/// nobody has to learn a second one. **`-m <机器>` names the exit
+/// machine by name and becomes its id here**, the one place this verb's
+/// grammar meets the table's key, exactly as `ws rm` does.
+///
+/// **`close` takes the tab's id**, which `ls` prints in full. A row
+/// number would be the thing that changes under a person between two
+/// commands — the list is a live thing, and the GUI is sitting on the
+/// other end of it.
+fn tabs(rest: &[String]) -> Result<(), String> {
+    let root = Node::root_from_env();
+    // One kind today (`page`), and the store is keyed by it so the
+    // editor tab can land beside rather than inside
+    // (`khor_node::tabs`). Not a flag: a word nobody can use yet is a
+    // thing to explain in a usage line that is already long.
+    const KIND: &str = "page";
+    let list = || {
+        let open = khor_node::tabs::list(&root, KIND);
+        for t in &open.tabs {
+            // **`in-use`, not `pinned-mark`.** The first draft borrowed
+            // the workspace table's 「(置顶)」 and a real `khor tabs ls`
+            // read 「置顶 https://…」, which says a person put that tab
+            // first — a decision nobody made. What this column has to
+            // say is 「this is the one you are looking at」, and khor
+            // already has that word: `khor face` prints it for the
+            // palette in use (catalog `in-use`). One word, one meaning,
+            // no synonym minted.
+            let front = if t.id == open.active {
+                cli::in_use()
+            } else {
+                ""
+            };
+            // The id first because it is what the other three sub-words
+            // take; a name and a place after it, which is what a person
+            // reads. Tab-separated, like every other table khor prints.
+            println!("{front}\t{}\t{}\t{}", t.id, t.title, t.url);
+        }
+    };
+    match rest {
+        [] => {
+            list();
+            Ok(())
+        }
+        [word] if word == "ls" => {
+            list();
+            Ok(())
+        }
+        // Echoes the id it minted, for `lock`'s reason: 「开好了」 with
+        // nothing after it is a claim that needs a second command to
+        // check, and this one is what `close` takes.
+        [word, flag, machine, url] if word == "open" && (flag == "-m" || flag == "--machine") => {
+            let id = khor_node::tabs::open(&root, KIND, &node()?.machine_id(machine)?, url)?;
+            println!("{id}");
+            Ok(())
+        }
+        [word, url] if word == "open" => {
+            let id = khor_node::tabs::open(&root, KIND, &node()?.machine_id("")?, url)?;
+            println!("{id}");
+            Ok(())
+        }
+        [word, id] if word == "close" => khor_node::tabs::close(&root, KIND, id),
+        [word, id] if word == "focus" => khor_node::tabs::focus(&root, KIND, id),
         _ => Err(usage_text().into()),
     }
 }

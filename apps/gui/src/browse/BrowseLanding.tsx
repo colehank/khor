@@ -291,11 +291,21 @@ export function BrowseLanding({
   // **One screen at a time** (docs/UX.md 姿势, docs/WORKSPACE.md 第 33
   // 条): the tab list is one screen and the page is the other, with the
   // count in the address bar as the way between them.
+  // **Nothing is drawn against the stand-in tab** (`useBrowseTabs`'s
+  // `ready`). The list is a round trip now rather than a synchronous
+  // read of this window's own storage, and everything on this landing
+  // is keyed by the open tab's id — so a face built over the stand-in
+  // is torn down and rebuilt when the real one lands, taking whatever
+  // was being typed into the address box with it. One frame of the
+  // landing's own ground says nothing about anybody's tabs, which is
+  // the same choice the lock screen makes (`App.tsx`).
+  const body = tabs.ready ? content : <div data-browse-waiting className="h-full" />;
+
   if (narrow) {
     return (
       <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
-        {address(<TabCount n={tabs.tabs.length} onPress={() => setSwitching(true)} />)}
-        <div className="min-h-0 flex-1 overflow-hidden">{switching ? tabList : content}</div>
+        {tabs.ready && address(<TabCount n={tabs.tabs.length} onPress={() => setSwitching(true)} />)}
+        <div className="min-h-0 flex-1 overflow-hidden">{switching ? tabList : body}</div>
       </section>
     );
   }
@@ -324,8 +334,8 @@ export function BrowseLanding({
         {tabList}
       </ListPane>
       <div className="flex min-w-0 flex-1 flex-col">
-        {address()}
-        <div className="min-h-0 flex-1 overflow-hidden">{content}</div>
+        {tabs.ready && address()}
+        <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
       </div>
     </section>
   );

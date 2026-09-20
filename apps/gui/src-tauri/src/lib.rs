@@ -37,6 +37,77 @@ fn workspaces() -> Result<Vec<khor_gui_core::workspaces::WorkspaceRow>, String> 
     khor_gui_core::workspaces::workspaces(&Node::root_from_env())
 }
 
+// ── the browsing tabs (docs/SHELL.md 第 2 条) ────────────────────────
+//
+// **Five thin shells over `khor_gui_core::tabs`, which is five thin
+// shells over `khor_node::tabs`** — the same functions `khor tabs`
+// calls, which is the whole reason the list moved out of the webview's
+// own storage. Nothing here decides anything: not which tab takes the
+// front after a close, not what an id looks like, not what an
+// unreadable file means.
+//
+// Every write answers with the list as it now stands. A caller that had
+// to ask again to learn what its own write did would be two reads out
+// of step for the length of a round trip, and the column would flicker
+// through the old order on every close.
+
+/// This screen's tabs of one kind (`page` today).
+#[tauri::command]
+fn tabs_list(kind: String) -> khor_gui_core::tabs::TabsOpen {
+    khor_gui_core::tabs::list(&Node::root_from_env(), &kind)
+}
+
+/// Opens one and puts it in front; answers its id. Both places absent
+/// is the fresh tab the 「+」 mints.
+#[tauri::command]
+fn tabs_open(kind: String, device: Option<String>, url: Option<String>) -> Result<String, String> {
+    khor_gui_core::tabs::open(
+        &Node::root_from_env(),
+        &kind,
+        device.as_deref().unwrap_or(""),
+        url.as_deref().unwrap_or(""),
+    )
+}
+
+/// Points an open tab somewhere and names it.
+#[tauri::command]
+fn tabs_go(
+    kind: String,
+    id: String,
+    device: Option<String>,
+    url: Option<String>,
+    title: Option<String>,
+) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+    khor_gui_core::tabs::go(
+        &Node::root_from_env(),
+        &kind,
+        &id,
+        device.as_deref().unwrap_or(""),
+        url.as_deref().unwrap_or(""),
+        title.as_deref().unwrap_or(""),
+    )
+}
+
+#[tauri::command]
+fn tabs_focus(kind: String, id: String) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+    khor_gui_core::tabs::focus(&Node::root_from_env(), &kind, &id)
+}
+
+#[tauri::command]
+fn tabs_close(kind: String, id: String) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+    khor_gui_core::tabs::close(&Node::root_from_env(), &kind, &id)
+}
+
+/// The whole column at once — the one gesture that cannot be spelled as
+/// a close and an open: a drag that reorders.
+#[tauri::command]
+fn tabs_save(
+    kind: String,
+    open: khor_gui_core::tabs::TabsOpen,
+) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+    khor_gui_core::tabs::save_all(&Node::root_from_env(), &kind, &open)
+}
+
 /// Declares a directory a workspace; `machine` absent is this one.
 #[tauri::command]
 async fn ws_add(machine: Option<String>, path: String) -> Result<(), String> {
@@ -2484,6 +2555,12 @@ pub fn run() {
             let _ = (window, event);
         })
         .invoke_handler(tauri::generate_handler![
+            tabs_list,
+            tabs_open,
+            tabs_go,
+            tabs_focus,
+            tabs_close,
+            tabs_save,
             sessions,
             widen,
             day_strips,

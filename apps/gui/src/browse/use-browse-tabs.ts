@@ -1,208 +1,261 @@
 // What this screen currently has open on one browsing landing.
 //
-// **The shell's, not the files landing's** (docs/DESIGN.md 浏览型外壳):
-// a tab is a machine and a place on it either way, and the store, the
+// **The shell's, not one landing's** (docs/DESIGN.md 浏览型外壳): a tab
+// is a machine and a place on it either way, and the store, the
 // validation and the closing rules are the same whether the place is a
 // directory or a page. Only the `kind` differs, and it differs in one
 // place — the key.
 //
-// **Kept on this device and not on the network, deliberately** — the
-// same split the arrangement and the collapse state already follow
-// (`App.tsx` 储存的 arrange), and `khor_sync::recents` states the other
-// half of it: *having been* somewhere is a fact about a person and
-// travels, *having it open right now* is a fact about one screen and
-// does not. A desk with four directories open says nothing about what
-// the phone in a queue should be showing.
+// # It is the node's list now (docs/SHELL.md 第 2 条, 2026-09-20)
 //
-// Every read and every write is inside a try/catch, and a store that
-// refuses (private mode, a full quota, a browser with site data off) is
-// not an error state: the tabs still work, they just will not outlive
-// the reload. What a read cannot do is **turn "I could not read" into
-// "there is nothing"** — either way the answer is one fresh tab,
-// because a landing with no tab at all has nothing to draw.
+// ⚠️ **Tombstone: this file held the whole store.** It parsed
+// `localStorage`, minted ids, decided which tab took the front after a
+// close, and wrote back on every change — about a hundred lines of
+// judgment, all of it correct and none of it reachable from anywhere
+// but this window.
+//
+// The ruling that moved it is 「CLI 等价：标签页列表是本机状态，CLI 至少
+// 要能列、能开、能关」. A list only the webview can read is a list
+// `khor tabs` cannot, and **CLI 与 GUI 等价** is one of this repo's
+// three standing rules — the tauri command is a thin shell over the
+// same function the terminal calls, never a second implementation. So
+// every one of those judgments is in `khor_node::tabs` and this file
+// keeps none of them:
+//
+//   - **ids** are minted there, because two callers minting is two id
+//     shapes and the first collision is a tab the window opened that
+//     `khor tabs close` cannot name;
+//   - **which tab takes the front** after a close is there, so the
+//     terminal and the window cannot disagree about what you are
+//     looking at;
+//   - **an unreadable store** reads as nothing open there, once.
+//
+// What is left here is a cache of the node's answer and a hook's worth
+// of plumbing. **Every write sends and then takes the node's answer as
+// the new truth** — no local optimism: a refused write must show as the
+// list not moving, which is the truth, rather than as a row appearing
+// and then vanishing a round trip later (docs/UX.md 「做了但没变化」和
+// 「失败」长不一样的脸).
+//
+// # The one thing this file still decides
+//
+// **A landing with no tabs at all gets one.** The node leaves the list
+// empty when the last tab closes — it is a store, and 「what a landing
+// with nothing open draws」 is a question about a screen. This side
+// answers it, because this side is the screen.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** One tab: a machine and a place on it. */
+import { closeTab, fetchTabs, focusTab, goTab, openTab, type TabsOpen } from "@/api";
+
+/** One tab: a machine and a place on it. The shape the node keeps,
+    renamed for the callers that were written against it. */
 export type BrowseTab = {
-  /** This screen's own handle for the tab. Never shown, never sent —
-      two tabs on one machine and one path are two tabs, so the identity
-      cannot be derived from what the tab points at. */
+  /** This screen's handle for the tab. **Minted by the node**; never
+      shown, never sent to another machine. Two tabs on one machine and
+      one path are two tabs, so the identity cannot be derived from what
+      the tab points at. */
   id: string;
   /** The machine's device id, or `null` on a tab that has not been
       pointed anywhere yet — the fresh-tab state, which is a real state
-      and not a missing one. */
+      and not a missing one.
+      **`null` here and `""` on the wire**: the node has no nulls in
+      this table, and this layer keeps the shape the faces already
+      branch on. */
   device: string | null;
   /** Where to open, in this kind's own spelling; `""` asks for that
-      kind's starting point on that machine (for a disk, its home). What
-      actually opened is written back here, so a restored tab needs no
-      second resolution. Still called `path` because that is what the
-      one kind alive today calls it; the shell never reads inside it. */
+      kind's starting point on that machine. */
   path: string;
+  /** What it was last called, for the column to draw before anything
+      has been loaded (第 2 条:「页面内容可以在点到那枚时才加载」). */
+  title: string;
 };
 
-/**
- * Where one landing's tabs are kept.
- *
- * **Keyed by the kind, so two browsing landings cannot read each
- * other's tabs.** A directory and a page are both `{machine, place}`
- * pairs and would parse cleanly out of each other's store, which is
- * precisely the danger: the browser landing would come up holding four
- * paths, point its address bar at them, and every failure after that
- * would be about the wrong subject. One key per kind makes that
- * unreachable rather than unlikely.
- */
-const storeKey = (kind: string) => `khor.browse.${kind}.tabs`;
-
-/**
- * A fresh handle.
- *
- * Time plus a counter rather than `crypto.randomUUID`: the ids are
- * written to storage and read back, so they have to survive a reload,
- * and two tabs minted in the same millisecond have to differ. Neither
- * needs a random source.
- */
-let minted = 0;
-function mintId(): string {
-  minted += 1;
-  return `t${Date.now().toString(36)}-${minted}`;
-}
-
-export function blankTab(): BrowseTab {
-  return { id: mintId(), device: null, path: "" };
-}
-
-/** The stored shape, checked field by field rather than trusted. A
-    value written by another version of this app — or by a person with a
-    console open — must not be able to put the landing into a state that
-    draws nothing. */
-function restore(kind: string): { tabs: BrowseTab[]; active: string } {
-  const fresh = () => {
-    const one = blankTab();
-    return { tabs: [one], active: one.id };
-  };
-  try {
-    const raw = window.localStorage.getItem(storeKey(kind));
-    if (!raw) return fresh();
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return fresh();
-    const { tabs, active } = parsed as { tabs?: unknown; active?: unknown };
-    if (!Array.isArray(tabs)) return fresh();
-    const kept: BrowseTab[] = [];
-    for (const t of tabs) {
-      if (typeof t !== "object" || t === null) continue;
-      const { id, device, path } = t as Record<string, unknown>;
-      if (typeof id !== "string" || typeof path !== "string") continue;
-      if (device !== null && typeof device !== "string") continue;
-      kept.push({ id, device, path });
-    }
-    if (kept.length === 0) return fresh();
-    // An `active` naming a tab that is not there is the same failure as
-    // no `active` at all, and both land on the first tab rather than on
-    // nothing.
-    const found = typeof active === "string" && kept.some((t) => t.id === active);
-    return { tabs: kept, active: found ? (active as string) : kept[0].id };
-  } catch {
-    return fresh();
-  }
-}
+const shape = (open: TabsOpen): BrowseTab[] =>
+  open.tabs.map((t) => ({
+    id: t.id,
+    device: t.device === "" ? null : t.device,
+    path: t.url,
+    title: t.title,
+  }));
 
 export type BrowseTabs = {
   tabs: BrowseTab[];
-  /** The open one. Never undefined: closing the last tab mints a fresh
-      one rather than leaving the landing with nothing to draw. */
+  /** The open one. Never undefined: a landing with nothing open mints a
+      fresh tab rather than drawing nothing. */
   current: BrowseTab;
+  /**
+   * Whether `current` is a real tab yet.
+   *
+   * ⚠️ **A face that draws against the stand-in gets torn down when the
+   * real one lands**, because the id changes and everything keyed by
+   * the tab remounts — the address box included, with whatever was
+   * being typed into it. That is not theoretical: it is what
+   * `npm run tabs` caught the day the list moved to the node
+   * (「the kept page completed from what is remembered」 timed out,
+   * because the box had been re-created under the keystrokes).
+   *
+   * The list read to be empty in about a frame before; it is a round
+   * trip now, so the frame is long enough to type into.
+   */
+  ready: boolean;
   focus: (id: string) => void;
-  /** A fresh tab, focused — the "+" and the switcher's own button. */
+  /** A fresh tab, focused — the 「+」 at the foot of the column. */
   add: () => void;
   /** Points the **open** tab somewhere. What a pin, a recent and the
       address bar all do: you are already looking at the tab, so a new
       one would be a tab you did not ask for (Chrome's own behaviour on
       a new-tab page's shortcuts). */
-  goTo: (device: string, path: string) => void;
+  goTo: (device: string, path: string, title?: string) => void;
   /** Opens a **new** tab, focused. What arriving from somewhere else
-      does — the machine card's 看它的文件 — because there the tab you
-      are looking at is not part of the request. */
+      does — the machine card's 借它的网 — because there the tab you are
+      looking at is not part of the request. */
   open: (device: string, path: string) => void;
   /** Points the open tab at nothing: taking the machine off the address
       bar. **Not `close` and not `goTo("")`** — the tab is still the tab
-      the person is looking at, it has simply stopped naming a place,
-      and that is the fresh-tab state rather than a missing one. */
+      the person is looking at, it has simply stopped naming a place. */
   clear: () => void;
   close: (id: string) => void;
 };
 
+/**
+ * A tab that exists only on this side, for the frame between asking the
+ * node for the list and being told.
+ *
+ * **Never written anywhere**, and its id is deliberately not one the
+ * node would mint (`?` is not in its alphabet): a caller that tried to
+ * close or focus it is refused by name rather than closing somebody
+ * else's tab.
+ *
+ * ⚠️ **Nothing may be *drawn against* it** — see `ready`. It stands in
+ * so `current` is never undefined, not so a face can render it.
+ */
+const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "" };
+
 export function useBrowseTabs(kind: string): BrowseTabs {
-  const [state, setState] = useState(() => restore(kind));
-  // The first render must not write: `restore` may have just answered
-  // "I could not read", and writing that answer back would turn a
-  // one-off storage failure into a real erasure of the tabs.
-  const wrote = useRef(false);
+  const [tabs, setTabs] = useState<BrowseTab[]>([]);
+  const [active, setActive] = useState("");
+  /**
+   * The id the *last render* is standing on, for the two verbs that act
+   * on 「the open tab」 without being told which.
+   *
+   * ⚠️ **They read it through `setActive(id => …)` at first, and that is
+   * a side effect inside a state updater.** React calls those twice in
+   * development on purpose, so every 「go here」 was sent twice; and an
+   * updater is not a place a caller may act from at all — this repo has
+   * the same judgment written down about effects that must be
+   * idempotent (`use-list-width`'s `show`). A ref is what 「the current
+   * value, read outside render」 actually is.
+   */
+  const front = useRef("");
+  front.current = active;
+  /**
+   * Whether the first read has come back. Until it has, the landing
+   * must not decide it is empty and mint a tab — that would be a tab
+   * per launch, written to the file, for every person whose list was
+   * simply still in flight.
+   *
+   * ⚠️ **State, not a ref, and that distinction was a real bug for an
+   * hour.** As a ref it never re-ran the effect below: the first read
+   * answers 「nothing open」, so `tabs.length` goes 0 → 0 and the only
+   * other dependency was that ref — which React does not watch. So the
+   * landing settled into 「empty and never asked」 and drew no address
+   * bar at all, which `npm run tabs` reported as 「probe dead: an
+   * address bar with no name」. **A value an effect must re-run on is a
+   * dependency, and a dependency cannot be a ref.**
+   */
+  const [settled, setSettled] = useState(false);
+  // One mint at a time. Without this, two renders of an empty landing
+  // both see 「no tabs」 and both ask for one.
+  const minting = useRef(false);
+
+  const take = useCallback((open: TabsOpen) => {
+    setSettled(true);
+    setTabs(shape(open));
+    setActive(open.active);
+  }, []);
 
   useEffect(() => {
-    if (!wrote.current) {
-      wrote.current = true;
-      return;
-    }
-    try {
-      window.localStorage.setItem(storeKey(kind), JSON.stringify(state));
-    } catch {
-      /* the tabs still work; only the memory of them is lost */
-    }
-  }, [kind, state]);
-
-  const focus = useCallback((id: string) => {
-    setState((was) => (was.tabs.some((t) => t.id === id) ? { ...was, active: id } : was));
-  }, []);
+    let live = true;
+    setSettled(false);
+    fetchTabs(kind)
+      .then((open) => live && take(open))
+      .catch(() => {
+        // **A store that will not answer is not an empty store.** The
+        // landing draws its fresh tab either way, and what must not
+        // happen is that reading 「I could not」 gets written back as
+        // 「there is nothing」 — so `settled` stays false and nothing is
+        // minted against a node that is not talking.
+        if (live) setTabs([]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [kind, take]);
 
   const add = useCallback(() => {
-    setState((was) => {
-      const one = blankTab();
-      return { tabs: [...was.tabs, one], active: one.id };
-    });
-  }, []);
+    openTab(kind, "", "")
+      .then(() => fetchTabs(kind))
+      .then(take)
+      .catch(() => {});
+  }, [kind, take]);
 
-  const goTo = useCallback((device: string, path: string) => {
-    setState((was) => ({
-      ...was,
-      tabs: was.tabs.map((t) => (t.id === was.active ? { ...t, device, path } : t)),
-    }));
-  }, []);
+  // **The one judgment left on this side**: a landing with nothing open
+  // draws a tab. The node leaves the list empty because it is a store;
+  // this is a screen, and a screen with nothing on it is not a state
+  // this landing has.
+  useEffect(() => {
+    if (!settled || tabs.length > 0 || minting.current) return;
+    minting.current = true;
+    openTab(kind, "", "")
+      .then(() => fetchTabs(kind))
+      .then(take)
+      .catch(() => {})
+      .finally(() => {
+        minting.current = false;
+      });
+  }, [kind, settled, tabs.length, take]);
 
-  const open = useCallback((device: string, path: string) => {
-    setState((was) => {
-      const one: BrowseTab = { id: mintId(), device, path };
-      return { tabs: [...was.tabs, one], active: one.id };
-    });
-  }, []);
+  const focus = useCallback(
+    (id: string) => {
+      focusTab(kind, id).then(take).catch(() => {});
+    },
+    [kind, take],
+  );
+
+  const goTo = useCallback(
+    (device: string, path: string, title = "") => {
+      // The open tab, by the id this render is standing on. A tab closed
+      // out from under this press is refused by name on the far side,
+      // which is the truthful answer: the thing it was aimed at is not
+      // there.
+      const id = front.current;
+      if (id) goTab(kind, id, device, path, title).then(take).catch(() => {});
+    },
+    [kind, take],
+  );
+
+  const open = useCallback(
+    (device: string, path: string) => {
+      openTab(kind, device, path)
+        .then(() => fetchTabs(kind))
+        .then(take)
+        .catch(() => {});
+    },
+    [kind, take],
+  );
 
   const clear = useCallback(() => {
-    setState((was) => ({
-      ...was,
-      tabs: was.tabs.map((t) => (t.id === was.active ? { ...t, device: null, path: "" } : t)),
-    }));
-  }, []);
+    const id = front.current;
+    if (id) goTab(kind, id, "", "", "").then(take).catch(() => {});
+  }, [kind, take]);
 
-  const close = useCallback((id: string) => {
-    setState((was) => {
-      const at = was.tabs.findIndex((t) => t.id === id);
-      if (at < 0) return was;
-      const left = was.tabs.filter((t) => t.id !== id);
-      if (left.length === 0) {
-        // Chrome closes the window here. This landing is not a window —
-        // the rail is still on screen and the region has to hold
-        // something — so the last close is a reset to a fresh tab.
-        const one = blankTab();
-        return { tabs: [one], active: one.id };
-      }
-      if (was.active !== id) return { ...was, active: was.active, tabs: left };
-      // The neighbour on the right takes the place, falling back to the
-      // left at the end of the strip — the browser convention, and the
-      // one that keeps the eye where the hand already is.
-      const next = left[Math.min(at, left.length - 1)];
-      return { tabs: left, active: next.id };
-    });
-  }, []);
+  const close = useCallback(
+    (id: string) => {
+      closeTab(kind, id).then(take).catch(() => {});
+    },
+    [kind, take],
+  );
 
-  const current = state.tabs.find((t) => t.id === state.active) ?? state.tabs[0];
-  return { tabs: state.tabs, current, focus, add, goTo, open, clear, close };
+  const current = tabs.find((t) => t.id === active) ?? tabs[0] ?? PENDING;
+  return { tabs, current, ready: current !== PENDING, focus, add, goTo, open, clear, close };
 }

@@ -38,6 +38,7 @@ pub mod proto;
 pub mod quota;
 pub mod reactor;
 pub mod satellite;
+pub mod tabs;
 pub mod top;
 pub mod transfer;
 pub mod tunnel;

@@ -122,7 +122,18 @@ function PageAddress({ tab, at, onEdit }: RestProps) {
         // full height, and a baseline-aligned group inside a stretched
         // box sits at its top — so the address rode high above the three
         // buttons beside it. Its own height, centred by the row.
-        className="flex min-w-0 flex-1 cursor-text items-baseline gap-0 text-left text-sm"
+        //
+        // **`min-h-touch`, and it was missing for four batches without
+        // anything noticing** (2026-09-21). This is the way into the
+        // address box — the control a person aims at to type somewhere
+        // else — and it measured 18 tall. `check-face` section 3 could
+        // not see it because the browser stop's fixture had no tab
+        // pointed anywhere, so the resting face never drew: 「a floor
+        // nothing walks to is not a floor」, the same hole 額度's lower
+        // half was in until 2026-09-08. What made it visible was the
+        // tabs moving to the node (第 2 条) and the fixture therefore
+        // serving a tab with an address on it.
+        className="flex min-h-touch min-w-0 flex-1 cursor-text items-baseline gap-0 text-left text-sm"
       >
         <span className="flex-none text-muted-foreground">{before}</span>
         <span data-page-host className="flex-none font-label">

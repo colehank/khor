@@ -16,6 +16,7 @@ pub mod code;
 pub mod files;
 pub mod git;
 pub mod recents;
+pub mod tabs;
 pub mod term;
 pub mod web;
 pub mod workspaces;

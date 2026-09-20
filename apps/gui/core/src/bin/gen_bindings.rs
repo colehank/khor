@@ -102,6 +102,12 @@ fn main() {
     khor_gui_core::recents::RecentRow::export_all_to(&dir).expect("export RecentRow");
     khor_gui_core::web::WebPinRow::export_all_to(&dir).expect("export WebPinRow");
     khor_gui_core::web::WebBorrow::export_all_to(&dir).expect("export WebBorrow");
+    // The browsing tabs (docs/SHELL.md 第 2 条). `TabsOpen` embeds
+    // `TabRow`, and `export_all_to` walks into it — but the row is
+    // named here as well, because the face reads a single tab in places
+    // where it never holds the whole list.
+    khor_gui_core::tabs::TabsOpen::export_all_to(&dir).expect("export TabsOpen");
+    khor_gui_core::tabs::TabRow::export_all_to(&dir).expect("export TabRow");
     khor_gui_core::term::TermStart::export_all_to(&dir).expect("export TermStart");
     khor_gui_core::term::TermChunk::export_all_to(&dir).expect("export TermChunk");
     println!("bindings -> {}", dir.display());

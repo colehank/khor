@@ -218,6 +218,11 @@ usage = """
                         标记的结果打到标准输出,退出码 1
   borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
                         它那儿出去(要 serve 在跑;close 那条 session 收口)
+  tabs [ls] | open [-m 机器] <网址> | close <标签号> | focus <标签号>
+                        浏览器这块屏幕上开着的标签页。**本机的,不同步**:
+                        开着什么是这块屏幕的事,别的机器不看(常去的地方才跟着人走)。
+                        ls 每行是当前标记、标签号、标题、网址;open 印出新开那枚的
+                        标签号,close 和 focus 就收这个号
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
   sessions [--by recent|category|device|state|place] [--all]
                         session 列表(默认最近);换一种排布,置顶永远在最上;
@@ -1137,6 +1142,9 @@ cant-export-snapshot = "导不出快照: {0}"
 cant-merge = "合不进来: {0}"
 cant-append = "加不进去: {0}"
 no-such-message = "没有这条: {0}"
+# 指着一枚不在的标签页(`khor_node::tabs`)。**拒绝而不是顺手建一枚**:
+# 提这个 id 的人对「现在开着什么」的印象已经旧了,底下冒出一行会把这件事盖住。
+no-such-tab = "没有这枚标签页: {0}"
 
 # ── frames (node) ──
 cant-encode-frame = "编不出帧: {0}"

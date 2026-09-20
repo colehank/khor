@@ -89,6 +89,52 @@ pub fn answer(
         // decision and decisions replicate, so there is no machine to
         // ask (`workspaces` module head).
         "workspaces" => to_json(&crate::workspaces::workspaces(root)?),
+        // ── the browsing tabs (docs/SHELL.md 第 2 条) ────────────────
+        //
+        // **A file on this disk, not this window's storage**, so
+        // `khor tabs` can list, open and close the same rows. The five
+        // below are the whole surface, and every one of them answers
+        // with the list as it now stands — a caller that had to ask
+        // again to find out what its own write did would be two reads
+        // out of step for as long as the round trip takes.
+        //
+        // `kind` is always given: `page` today, and the store is keyed
+        // by it so a second browsing kind lands beside rather than
+        // inside (`khor_node::tabs`).
+        "tabs_list" => to_json(&crate::tabs::list(root, &arg("kind")?)),
+        // Both places may be empty — that is the fresh tab the 「+」
+        // mints, and it is a real state rather than a half-made row.
+        "tabs_open" => to_json(&crate::tabs::open(
+            root,
+            &arg("kind")?,
+            &opt_str("device")?.unwrap_or_default(),
+            &opt_str("url")?.unwrap_or_default(),
+        )?),
+        "tabs_go" => to_json(&crate::tabs::go(
+            root,
+            &arg("kind")?,
+            &arg("id")?,
+            &opt_str("device")?.unwrap_or_default(),
+            &opt_str("url")?.unwrap_or_default(),
+            &opt_str("title")?.unwrap_or_default(),
+        )?),
+        "tabs_focus" => to_json(&crate::tabs::focus(root, &arg("kind")?, &arg("id")?)?),
+        "tabs_close" => to_json(&crate::tabs::close(root, &arg("kind")?, &arg("id")?)?),
+        // The whole column, for the one gesture that cannot be spelled
+        // as a close and an open: a drag that reorders. The ids are
+        // still the node's to mint.
+        "tabs_save" => {
+            // **Shape-checked by serde rather than field by field**, and
+            // a malformed one is refused out loud: this is the only
+            // argument on this layer that is a structure, and a
+            // half-read column would be a list of tabs with rows
+            // silently missing.
+            let want: crate::tabs::TabsOpen = serde_json::from_value(
+                args.get("open").cloned().unwrap_or(serde_json::Value::Null),
+            )
+            .map_err(|e| format!("arg is not a tab list: open ({e})"))?;
+            to_json(&crate::tabs::save_all(root, &arg("kind")?, &want)?)
+        }
         // `machine` empty is this one, the way every path verb here
         // spells it.
         "ws_add" => {

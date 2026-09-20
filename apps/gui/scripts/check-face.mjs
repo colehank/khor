@@ -1070,6 +1070,69 @@ try {
       body: JSON.stringify([{ device: pin.device, name: pin.name, url: "https://example.invalid/" }]),
     }),
   );
+  // ── the browsing tabs (docs/SHELL.md 第 2 条) ──────────────────────
+  //
+  // The list is a file on the machine now (`khor_node::tabs`), so the
+  // landing asks for it instead of reading its own storage. This
+  // fixture is **deliberately the dumbest thing that answers**: a list
+  // and an id, no closing rule, no minting rule, no id shape.
+  //
+  // **It is not a stand-in for the node and must not grow into one.**
+  // Every judgment this gate is tempted to copy — which tab takes the
+  // front after a close, what an unreadable store means, who may mint
+  // an id — is proved twice already, in `khor_node::tabs`'s own tests
+  // and over a real bridge by `npm run tabs`. What *this* gate is for
+  // is the arrangement on screen (4H), and a column needs rows in it to
+  // be a column. A second copy of the rules here would be the hand-made
+  // replica this repo's own rule refuses (docs/handoff/001.md GUI 每批
+  // 要守的三条), and it would drift the first time the Rust changed.
+  const tabRows = [
+    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "khor.example" },
+  ];
+  let tabFront = "t1";
+  let minted = 0;
+  const tabsBody = () =>
+    JSON.stringify({ tabs: tabRows, active: tabFront });
+  const tabsJson = (r) => r.fulfill({ contentType: "application/json", body: tabsBody() });
+  await page.route("**/tabs_list", tabsJson);
+  await page.route("**/tabs_go", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const t = tabRows.find((x) => x.id === a.id);
+    if (t) {
+      t.device = a.device ?? "";
+      t.url = a.url ?? "";
+      t.title = a.title ?? "";
+    }
+    return tabsJson(r);
+  });
+  await page.route("**/tabs_focus", (r) => {
+    tabFront = (r.request().postDataJSON() ?? {}).id ?? tabFront;
+    return tabsJson(r);
+  });
+  await page.route("**/tabs_close", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const at = tabRows.findIndex((x) => x.id === a.id);
+    if (at >= 0) tabRows.splice(at, 1);
+    if (!tabRows.some((x) => x.id === tabFront)) tabFront = tabRows[0]?.id ?? "";
+    return tabsJson(r);
+  });
+  await page.route("**/tabs_open", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    minted += 1;
+    const id = `t-new-${minted}`;
+    tabRows.push({ id, device: a.device ?? "", url: a.url ?? "", title: "" });
+    tabFront = id;
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(id) });
+  });
+  await page.route("**/tabs_save", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    if (a.open) {
+      tabRows.length = 0;
+      tabRows.push(...a.open.tabs);
+      tabFront = a.open.active;
+    }
+    return tabsJson(r);
+  });
   // The workspace table (工作区批①). **One read, no machine named** —
   // the list is replicated, so this route takes no arguments and the
   // landing has no per-machine states left to draw.
