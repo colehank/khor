@@ -91,6 +91,11 @@ pub struct Check {
     /// The stable key — what `khor doctor --fix <key>` takes, and what a
     /// face reaches for. Never translated.
     pub key: String,
+    /// Which of [`GROUPS`] this check is filed under, for the page that
+    /// folds the healthy ones away. **On the row rather than looked up
+    /// by the face**, the way `ConfigRow::section` is: a page that
+    /// derived it would be a second table of the same fact.
+    pub group: String,
     pub state: Health,
     /// One sentence for a person, already in their language.
     pub said: String,
@@ -111,6 +116,60 @@ pub const KEYS: &[&str] = &[
     "version", "identity", "store", "serve", "web", "relays", "peers", "hooks", "agents", "vscode",
     "disk", "launcher",
 ];
+
+/// The three groups the healthy checks are folded under (docs/MORE.md
+/// 第二轮 自检页: 「分三组:本机、网络、工具」).
+///
+/// **A fact beside the key table, not a layout decision in TS** — the
+/// same reasoning `config::SECTIONS` is written with. Which group a
+/// check belongs to is a statement about what the check is, and a copy
+/// of it in the faces would be two tables of one fact: ones that
+/// compile, run, and put 中继 under 本机 the day somebody adds a check.
+///
+/// **This list is the whole set, and that is all a face reads it for.**
+/// It is what the gate walks in both directions; the page draws its
+/// headings in the order each group's first check falls in [`KEYS`],
+/// so it needs no order from here and cannot fall out of step with one.
+/// (`config::SECTIONS` carries an order because its rows are *drawn* in
+/// it; these rows are gathered, not walked.)
+pub const GROUPS: &[&str] = &["machine", "network", "tools"];
+
+/// Which of [`GROUPS`] a check belongs to.
+///
+/// **An empty string for a key this does not know**, rather than a
+/// fourth bucket or a guess: an unknown check with a plausible group
+/// would be filed somewhere a person then trusts. It cannot happen
+/// while [`KEYS`] and this match are read together, and the gate below
+/// walks them against each other — which is exactly what the empty
+/// string is there to let it catch.
+pub fn group(key: &str) -> &'static str {
+    match key {
+        // 本机: what this machine is and what it is made of. `disk` is
+        // here rather than under 工具 because a full store is this
+        // machine's problem before it is anybody's tool.
+        "version" | "identity" | "store" | "disk" => "machine",
+        // 网络: the four that are about reaching, or being reached by,
+        // another machine.
+        "serve" | "web" | "relays" | "peers" => "network",
+        // 工具: the things khor installs *beside* itself — none of them
+        // is khor failing, and all of them are khor's to mend.
+        "hooks" | "agents" | "vscode" | "launcher" => "tools",
+        _ => "",
+    }
+}
+
+/// The word a person reads for one of [`GROUPS`].
+///
+/// A match here for the same reason [`name`] is one: these keys are
+/// code's, not data's.
+pub fn group_name(group: &str) -> &str {
+    match group {
+        "machine" => cli::doctor_group_machine(),
+        "network" => cli::doctor_group_network(),
+        "tools" => cli::doctor_group_tools(),
+        other => other,
+    }
+}
 
 /// The word a person reads for one check's key.
 ///
@@ -187,12 +246,14 @@ async fn timed(key: &str, work: impl Future<Output = (Health, String, Option<Str
     match tokio::time::timeout(CHECK_TIMEOUT, work).await {
         Ok((state, said, fix)) => Check {
             key: key.to_owned(),
+            group: group(key).to_owned(),
             state,
             said,
             fix,
         },
         Err(_) => Check {
             key: key.to_owned(),
+            group: group(key).to_owned(),
             state: Health::Unmeasured,
             said: cli::doctor_timed_out(CHECK_TIMEOUT.as_secs()),
             fix: None,
