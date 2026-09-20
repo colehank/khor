@@ -311,6 +311,11 @@ usage = """
   version               本机装的是哪一版(网里各机器的版本看 devices)
   forget <机器>          把一台机器请出网:全网都不再认它,它也不再看得见网。
                         要回来得重新配对(在还认它的那台上出票)
+  leave <本机名>         本机离开这张网:先趁还连着把「我走了」发出去,再把
+                        本机的机器表清到只剩自己、别人留在这儿的东西清掉。
+                        本机自己的会话、工作区、身份、设置一样不动。
+                        把本机的名字原样打一遍就是确认(和 forget 同一条规矩)。
+                        拿一张新票 pair 可以再入网
   watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷(全网同一份,
                         devices 里那台机器多印每个目录还剩多少);不给目录=清空"""
 this-machine = "(本机)"
@@ -1370,9 +1375,27 @@ reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常
 # network on purpose: the tombstone travels, so "one that still knows
 # it" is a place that stops existing.
 forgot = "请出去了: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
+# `khor leave` 的三句,分开说。第一句是这件事本身,后两句是两种结局——
+# 合成一句就会把「全网都知道了」和「还有几台以为你只是离线」说成同一件事,
+# 而这两种情况剩下要做的事不一样(docs/UX.md 失败要说清是哪一种)。
+left = "离开这张网了。这台机器现在不在任何网里,拿一张新票 khor pair 可以再入"
+left-told = "这几台收到了: {0}"
+left-untold = "这几台没连上,她们那边还会看见 {1} 离线——要在那边 khor forget {1}: {0}"
 # You cannot show yourself the door: the table this would be written into
-# is the one being left, so the act has no meaning from the inside.
-cant-forget-self = "这是本机——一台机器不能把自己请出网"
+# is the one being left, so the act has no meaning from the inside. It
+# names the verb that does the whole act instead (`Node::leave`) — a
+# refusal with nowhere to go reads as 「khor can't do this」 when what is
+# true is 「not with this word」. {0} is this machine's own name, because
+# `khor leave` wants it typed back as the confirmation.
+cant-forget-self = "这是本机——一台机器不能把自己请出网。要本机离开这张网: khor leave {0}"
+# `khor leave <本机>` with somebody else's name in it. Not a typo worth
+# guessing at: it is a person reaching for the other verb, so it hands
+# them that verb with the name already in it.
+leave-names-another-machine = "{0} 不是本机。要把它请出网: khor forget {0}"
+# Leaving a network you were never in. Refused by name rather than
+# answered with a cheerful nothing — 「离开了」 would be a sentence about
+# an act that did not happen (`lock::set_on` refuses the same shape).
+leave-with-no-network = "这台机器还没入过网——没有网可离。要入网: khor pair <票>"
 # The GUI asks for a reach from a synchronous door, so the async call
 # runs on a thread of its own; if that thread dies there is no answer to
 # report and no exception to quote — only the fact that none came.
@@ -2697,6 +2720,13 @@ identity-version = "khor 版本"
 # 「这台机器和谁配过对」——一张清单,不是一个去处。
 identity-paired = "配对过的机器"
 identity-alone = "还没和别的机器配对过"
+# 身份卡最底下那一节:本机离开这张网(`khor leave`,docs/MORE.md 离开)。
+# **和 `reset-section`(重置身份)不是一件事**,两节的词都写全:重置是
+# 换一台机器,离开是这台机器不在这张网里了——离开还能凭票回来,重置回不来。
+identity-leave-section = "这张网"
+identity-leave-warn = "本机从这张网里退出来:机器表清到只剩自己,别的机器留在这儿的东西一并清掉。本机自己的会话、工作区、身份、设置一样不动;拿一张新票 pair 可以再进来。"
+identity-leave-type-name = "把这台机器的名字原样打一遍"
+identity-leave-do = "离开这张网"
 # 设置页里脸那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
 settings-face = "这台机器的脸"

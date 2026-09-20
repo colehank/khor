@@ -11,17 +11,33 @@
 // half that needs no hypergraph: **which machine am I, and who have I
 // paired with** — plus the two verbs that already exist for pairing.
 //
-// So this page states facts and offers the two existing doors. It does
-// not offer a 退出 or a 暂停, because there is nothing behind either
-// word yet and a control that refuses is worse than a control that is
-// absent (docs/MORE.md: 没有落地实现的键不画).
+// So this page states facts and offers the doors that exist.
+//
+// > **2026-09-20: 退出 landed, 暂停 is still absent.** 「单网络的做通呀」 —
+// > the user. A single network needs no hypergraph to be left: leaving
+// > is `khor leave`, the half `khor forget` refuses to do, and it is on
+// > this card because this card is where somebody stands when they ask
+// > 「这台机器还在这张网里做什么」. 建立 / 接入 were already here as
+// > 邀请 / 接入. 暂停 is not drawn yet, and a control that refuses is
+// > still worse than one that is absent (docs/MORE.md: 没有落地实现的
+// > 键不画).
+//
+// **The confirmation is the machine's own name typed back, and the node
+// is what checks it** (`Node::leave`). Not a second press: leaving is
+// one press away from a card somebody opened to look at a version
+// number, and the two-press confirm on a row menu is for an act that
+// names its target in the press. Here the target is the machine you are
+// standing on, so typing it is what says you meant this one. The rule
+// itself lives in the node for `lock::reset_identity`'s reason — a rule
+// here as well would be two rules about one irreversible act.
 import { useEffect, useState } from "react";
 
-import { fetchAbout, type About, type DeviceRow } from "@/api";
+import { fetchAbout, leaveNetwork, type About, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { EditableName } from "@/components/EditableName";
 import { Button } from "@/components/ui/button";
-import { gui } from "@/gen/catalog";
+import { Input } from "@/components/ui/input";
+import { cli, gui, msg } from "@/gen/catalog";
 import { CopyId } from "@/views/DetailPane";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
@@ -31,6 +47,7 @@ export function IdentityPage({
   onMesh,
   onInvite,
   onJoin,
+  onLeft,
 }: {
   /** The shell's own polled table — **not fetched again here**. Two
       readers of one answer is how two surfaces come to show two
@@ -44,6 +61,9 @@ export function IdentityPage({
   onMesh: () => void;
   onInvite: () => void;
   onJoin: () => void;
+  /** The table changed under every surface on this screen — the shell
+      re-reads it (`App`'s `refresh`, the same one a forget gets). */
+  onLeft: () => void;
 }) {
   // Asked once per opening, like the settings screen reads its face
   // choices: a version cannot change under a running app, but the
@@ -58,6 +78,15 @@ export function IdentityPage({
       // from the shell's table and is unaffected.
     });
   }, []);
+
+  // What the box holds, and what khor said the last time 离开 was
+  // pressed. `said` carries both endings in the order the CLI prints
+  // them — the act, who heard, who did not — because they are the
+  // node's sentences and a page that rewrote them would be a second
+  // account of one act (`msg::left`).
+  const [typedName, setTypedName] = useState("");
+  const [said, setSaid] = useState<string[] | null>(null);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   const me = devices.find((d) => d.me) ?? null;
   const others = devices.filter((d) => !d.me);
@@ -145,6 +174,79 @@ export function IdentityPage({
           </Button>
         </div>
       </MoreSection>
+
+      {/* 离开这张网 (docs/MORE.md 离开). Drawn on a machine that is in a
+          network and on no other: `Node::leave` refuses a machine that
+          never joined one by name, so drawing it there would be an
+          offer whose one answer is no — the rule that keeps 「忘掉」 off
+          this machine's own row in `DevicesList`. */}
+      {others.length > 0 && (
+        <MoreSection name="leave" label={gui.identity_leave_section}>
+          {/* The whole cost in one clause, and it is not red like the
+              reset's: leaving is undone by a ticket, and painting the
+              two the same colour would say they are the same size. */}
+          <p data-identity-leave-warn className="text-sm text-muted-foreground">
+            {gui.identity_leave_warn}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              data-identity-leave-name
+              autoComplete="off"
+              aria-label={gui.identity_leave_type_name}
+              placeholder={gui.identity_leave_type_name}
+              value={typedName}
+              onChange={(e) => setTypedName(e.target.value)}
+              className="min-h-touch min-w-0 flex-1"
+            />
+            <Button
+              variant="ghost"
+              data-identity-leave
+              // Checked here only so the button is not live over an
+              // empty box; the answer that counts is the node's, and it
+              // is the one that comes back as a sentence.
+              disabled={typedName.trim() !== (me?.shown ?? "") || !me}
+              onClick={() => {
+                setLeaveError(null);
+                setSaid(null);
+                leaveNetwork(typedName).then(
+                  (left) => {
+                    setTypedName("");
+                    setSaid([
+                      msg.left,
+                      ...(left.told.length
+                        ? [msg.left_told(left.told.join(cli.name_separator))]
+                        : []),
+                      // The two endings stay two sentences all the way
+                      // to the screen: a machine in `untold` goes on
+                      // painting this one offline until somebody over
+                      // there runs `khor forget`, which is a different
+                      // thing left to do.
+                      ...(left.untold.length
+                        ? [msg.left_untold(left.untold.join(cli.name_separator), me?.shown ?? "")]
+                        : []),
+                    ]);
+                    onLeft();
+                  },
+                  (e: unknown) => setLeaveError(String(e instanceof Error ? e.message : e)),
+                );
+              }}
+              className="min-h-touch text-destructive"
+            >
+              {gui.identity_leave_do}
+            </Button>
+          </div>
+        </MoreSection>
+      )}
+      {said?.map((line) => (
+        <p key={line} data-identity-left className="text-sm text-muted-foreground">
+          {line}
+        </p>
+      ))}
+      {leaveError && (
+        <p data-identity-leave-refused className="text-sm text-destructive">
+          {leaveError}
+        </p>
+      )}
     </MoreFrame>
   );
 }

@@ -363,6 +363,15 @@ usage: khor <verb>
                         see the network either. To come back it has to
                         pair again (issue a ticket from a machine that
                         still recognizes it)
+  leave <this machine>  takes this machine out of the network: sends
+                        "I'm leaving" while the connections are still
+                        up, then empties this machine's table down to
+                        itself and drops what the others left here.
+                        This machine's own sessions, workspaces,
+                        identity and settings are untouched. Typing
+                        this machine's name is the confirmation (the
+                        same rule forget follows). A fresh ticket and
+                        pair bring it back in
   watch <machine> [directory ...]
                         has a machine watch the volumes those
                         directories sit on (shared across the whole
@@ -830,7 +839,12 @@ borrowing-title = "Borrowing {0}'s network"
 borrow-needs-serve = "Borrowing a network needs serve running (the proxy port has to live in a resident process)"
 reach-needs-serve = "Reaching another machine's terminal needs serve running (the pipe has to live in a resident process)"
 forgot = "Removed from the network: {0}. To bring it back: run khor invite on any machine still in the network, then take the ticket to that machine and run khor pair"
-cant-forget-self = "This is the local machine — a machine can't remove itself from the network"
+left = "Left the network. This machine is in no network now; a fresh ticket and khor pair bring it back in"
+left-told = "These machines were told: {0}"
+left-untold = "These machines couldn't be reached and will go on seeing {1} as offline — run khor forget {1} over there: {0}"
+cant-forget-self = "This is the local machine — a machine can't remove itself from the network. For this machine to leave: khor leave {0}"
+leave-names-another-machine = "{0} isn't the local machine. To remove it from the network: khor forget {0}"
+leave-with-no-network = "This machine has never joined a network — there's none to leave. To join one: khor pair <ticket>"
 reach-thread-died = "The terminal reach never came back"
 deliver-thread-died = "The file delivery never came back"
 landed-unsaid = "The file arrived, but that machine didn't say where it landed (its khor is older than this one), so there's no path to paste"
@@ -1232,6 +1246,10 @@ identity-id = "Machine ID"
 identity-version = "khor version"
 identity-paired = "Paired machines"
 identity-alone = "Not paired with any machine yet"
+identity-leave-section = "This network"
+identity-leave-warn = "Takes this machine out of this network: the machine table goes down to this machine alone, and what the others left here goes with them. This machine's own sessions, workspaces, identity and settings are untouched; a fresh ticket and pair bring it back in."
+identity-leave-type-name = "Type this machine's name exactly"
+identity-leave-do = "Leave this network"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "This machine's face"
 # 存储 / 关于: read-only, and neither opens a node — which is why they

@@ -189,6 +189,23 @@ struct EndpointFile {
     ipc_cookie: String,
 }
 
+/// How a [`Node::leave`] ended, per machine that was in the table.
+///
+/// **Two lists rather than a count**, because the two endings leave
+/// different things to do and the names are what a person acts on: a
+/// machine in `untold` is one somebody has to walk over to (or reach
+/// another way) and run `khor forget` on, and saying 「3 of 5」 would
+/// name none of them.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Left {
+    /// Machines that took the news before this one emptied its table.
+    pub told: Vec<String>,
+    /// Machines that could not be reached. They go on holding a row for
+    /// this machine and painting it offline until somebody over there
+    /// shows it the door.
+    pub untold: Vec<String>,
+}
+
 impl Node {
     /// Runs this device's listening half: answers connections, executes
     /// handed-off one-shot verbs, syncs with every known device every few
@@ -4846,6 +4863,142 @@ impl Node {
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
+    }
+
+    /// Takes **this** machine out of the network (docs/MORE.md 离开).
+    ///
+    /// # The other half of the refusal `forget` makes
+    ///
+    /// `Node::forget_device` refuses this machine by name, and its
+    /// reason is that a machine which removed itself from the table
+    /// would keep every row it holds while becoming a stranger to
+    /// everybody else — 「not left the network, broken in a way with no
+    /// word for it」. Leaving supplies the missing half: the table is
+    /// emptied too, so what is left is a machine that is in no network,
+    /// which is a state khor has a word for and can be undone by
+    /// pairing.
+    ///
+    /// # Three steps, in this order
+    ///
+    /// 1. **Tell the network first**, with the same tombstone `forget`
+    ///    writes and down the same road ([`DeviceDoc::set_gone`] has why
+    ///    leaving must travel the way joining does). The bit goes onto
+    ///    this machine's *own* row and is pushed while the connections
+    ///    are still up — after step 3 there is nobody left to push to.
+    /// 2. **Empty the table down to this machine** (`keep_only`), and
+    ///    clear the tombstone off the row that stays: a machine is not
+    ///    gone from its own table. The bit that was sent is the peers'
+    ///    copy now, and it is the copy that matters.
+    /// 3. **Drop what the others left here** — their cached session
+    ///    reports, readings and watch lists, and their rows on the
+    ///    workspace list. Sessions need no step of their own: every row
+    ///    is derived through the device table, so they leave with it
+    ///    (the same thing that happens to a forgotten machine's rows).
+    ///    Workspaces do need one — those rows survive a machine leaving
+    ///    the table on purpose, so that a row whose machine is gone can
+    ///    still be taken off the list — so leaving takes them off.
+    ///
+    /// **This machine's own sessions, workspaces, identity and settings
+    /// are untouched.** Leaving a network is not leaving khor.
+    ///
+    /// # It works with nobody reachable, and says so
+    ///
+    /// A machine that cannot dial anyone still leaves — the alternative
+    /// is a network you can only leave with the network's permission.
+    /// What it cannot do is make the others believe it, so the two
+    /// endings are reported apart ([`Left`]) and said in two sentences,
+    /// never folded into one: 「everybody knows」 and 「they will go on
+    /// seeing you offline until somebody over there runs `khor forget`」
+    /// are different situations with different things left to do.
+    ///
+    /// **The machine's own name is the confirmation**, checked here
+    /// rather than on a screen — `lock::reset_identity`'s rule, for its
+    /// reason: a flag on the verb and a dialog on the page would be two
+    /// rules about one act, and the one that drifted would be the one
+    /// nobody ran. Naming another machine is not a typo worth guessing
+    /// at, it is somebody reaching for `khor forget`, so it is answered
+    /// with that.
+    pub async fn leave(&self, name_typed: &str) -> Result<Left, String> {
+        // Resolved through the same door `forget` uses, so either name
+        // works and an unknown one is refused with the table listed.
+        let (_, home) = self.resolve(name_typed)?;
+        let all = self.devices()?;
+        if home != self.device() {
+            // Named by what is on the glass, like every refusal that
+            // lists machines (`Node::resolve`): the channel is not what
+            // somebody would type next into `khor forget`.
+            let shown = all
+                .iter()
+                .find(|d| d.id == home.hex())
+                .map(|d| d.shown().to_owned())
+                .unwrap_or_else(|| name_typed.trim().to_owned());
+            return Err(msg::leave_names_another_machine(&shown));
+        }
+        let others: Vec<DeviceInfo> = all
+            .into_iter()
+            .filter(|d| d.id != self.device_str())
+            .collect();
+        if others.is_empty() {
+            // Refused by name rather than answered with a cheerful
+            // nothing: this machine is not in a network, and 「left」
+            // would be a sentence about an act that did not happen.
+            return Err(msg::leave_with_no_network().into());
+        }
+
+        // 1 — the tombstone, onto this machine's own row.
+        {
+            let loaded = self.devices_loaded()?;
+            loaded.doc.set_gone(self.device_str(), true)?;
+            let mut store = loaded.store;
+            store.flush(&loaded.doc)?;
+        }
+        // …and out, while there is still a table to send it to. A sync
+        // this machine could not start at all (no endpoint to bind) is
+        // the same ending as one where nobody answered: nobody was
+        // told, which is the sentence below.
+        let outcomes = self.sync_now().await.unwrap_or_default();
+        // **Walked over the table, not over the outcomes.** Every row
+        // gets exactly one ending that way — a machine the sync never
+        // visited at all was not told, which is an answer, while a
+        // machine missing from this list would be a machine khor said
+        // nothing about. And the names come out as `shown()`, one
+        // spelling: `sync_with_all` reports the channel, and on a
+        // renamed machine that is a word nobody can see on any screen.
+        let mut left = Left::default();
+        for d in &others {
+            let heard = outcomes
+                .iter()
+                .any(|(name, verdict)| name == &d.name && verdict.is_ok());
+            if heard {
+                left.told.push(d.shown().to_owned());
+            } else {
+                left.untold.push(d.shown().to_owned());
+            }
+        }
+
+        // 2 — the table, down to this machine.
+        {
+            let loaded = self.devices_loaded()?;
+            loaded.doc.keep_only(self.device_str())?;
+            loaded.doc.set_gone(self.device_str(), false)?;
+            let mut store = loaded.store;
+            store.flush(&loaded.doc)?;
+        }
+
+        // 3 — what the others left on this disk. Best effort, each on
+        // its own: a cache that will not go away is a stale byte nobody
+        // paints (every reader of these walks the device table first),
+        // and failing the leave over one would leave a machine half out
+        // of a network it has already been said goodbye to.
+        for dir in self.peer_caches() {
+            let _ = fs::remove_dir_all(dir);
+        }
+        for ws in self.workspaces().unwrap_or_default() {
+            if ws.device != self.device_str() {
+                let _ = self.ws_rm(&ws.device, &ws.path);
+            }
+        }
+        Ok(left)
     }
 
     /// Which road this machine is using to reach each device it knows.

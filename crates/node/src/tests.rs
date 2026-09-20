@@ -2828,3 +2828,238 @@ fn every_config_name_has_a_word_and_every_word_names_something() {
         );
     }
 }
+
+// ── khor leave (docs/MORE.md 离开, 2026-09-20) ──────────────────────
+//
+// Every test here builds its network by writing rows into the device
+// table by hand, the way the forget batch's tests do: `leave` is about
+// what happens to *this* machine's disk, and standing up two real
+// endpoints to prove that would be testing iroh. The half that needs
+// two machines — the tombstone arriving over there — is what the
+// tombstone's own tests in `khor_sync::devices` already cover, and the
+// bit is written by the same `set_gone` call `forget` makes.
+
+/// The runtime these use. `Node::leave` is async because it pushes the
+/// news before emptying the table, and with no resident and no peer to
+/// dial that push is a handful of failed dials — fast, and the failure
+/// is the ending under test.
+fn leaving(n: &Node, typed: &str) -> Result<crate::link::Left, String> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(n.leave(typed))
+}
+
+/// A node on `root` with two other machines in its table, and
+/// everything those two left on this disk.
+///
+/// ⚠️ **A dead resident is registered first, and that is not
+/// decoration.** `leave` pushes the news before emptying the table, and
+/// with no `endpoint.json` at all that push falls back to binding a real
+/// iroh endpoint — public relays, DNS, the lot. Measured on a scratch
+/// home with nobody to dial: **156 seconds** for two tests, all of it
+/// spent handshaking with servers that have nothing to do with the
+/// assertion. An empty relay list does not help (`endpoint::bind_with`
+/// ignores it and uses n0's).
+///
+/// So the fixture writes the file a resident writes, with this process's
+/// pid (`endpoint_file` honours a file only while its pid is alive) and
+/// a loopback port nothing is listening on. The hand-off is then
+/// refused in microseconds, `sync_now` answers an error, and every
+/// machine comes back untold — which is the ending these tests are
+/// about. It is also a real state: a serve that died without taking its
+/// file with it, the one `khor doctor`'s serve row exists for.
+fn a_network_of_three(root: &Path) -> (Node, String, String) {
+    let dead = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().port()
+    };
+    let dot = root.join(".khor");
+    fs::create_dir_all(&dot).unwrap();
+    fs::write(
+        dot.join("endpoint.json"),
+        serde_json::json!({
+            "id": "00".repeat(32),
+            "addrs": [],
+            "pid": std::process::id(),
+            "relays": [],
+            "ipc_port": dead,
+            "ipc_cookie": "00",
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let n = Node::open(root.to_path_buf()).unwrap();
+    let alpha = "aa".repeat(32);
+    let beta = "bb".repeat(32);
+    {
+        let loaded = n.devices_loaded().unwrap();
+        loaded.doc.upsert(&alpha, "alpha", &[]).unwrap();
+        loaded.doc.upsert(&beta, "beta", &[]).unwrap();
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    }
+    let mut template = n.sessions().unwrap()[0].session.clone();
+    template.id = SessionId("shell/on-alpha".into());
+    n.cache_peer_rows(&alpha, "alpha", &[template.clone()])
+        .unwrap();
+    template.id = SessionId("shell/on-beta".into());
+    n.cache_peer_rows(&beta, "beta", &[template]).unwrap();
+    n.ws_pin(&alpha, "/work/theirs", false).unwrap();
+    n.ws_pin(n.device_str(), "/work/mine", false).unwrap();
+    (n, alpha, beta)
+}
+
+/// **What leaving leaves behind is this machine, whole.** The table is
+/// down to one row, the caches the others filled are gone, their
+/// workspace rows are off the list — and this machine's own row, its own
+/// workspace and its own sessions are untouched, because leaving a
+/// network is not leaving khor.
+#[test]
+fn leaving_empties_the_table_down_to_this_machine() {
+    let r = scratch("leave-empty");
+    let (n, alpha, _beta) = a_network_of_three(&r);
+
+    // The control: all of it is here before the leave.
+    assert_eq!(n.devices().unwrap().len(), 3, "control: three in the table");
+    let before: Vec<String> = n
+        .sessions()
+        .unwrap()
+        .iter()
+        .map(|v| v.session.id.0.clone())
+        .collect();
+    assert!(
+        before.iter().any(|i| i == "shell/on-alpha"),
+        "control: alpha's reported row is on the list before the leave"
+    );
+    assert_eq!(
+        n.workspaces().unwrap().len(),
+        2,
+        "control: one workspace each"
+    );
+
+    leaving(&n, n.name()).unwrap();
+
+    let table = n.devices().unwrap();
+    assert_eq!(
+        table.iter().map(|d| d.id.clone()).collect::<Vec<_>>(),
+        vec![n.device_str().to_owned()],
+        "the table is this machine and nobody else"
+    );
+    for dir in n.peer_caches() {
+        assert!(
+            !dir.exists(),
+            "{} is what other machines left here",
+            dir.display()
+        );
+    }
+    let ws: Vec<String> = n
+        .workspaces()
+        .unwrap()
+        .into_iter()
+        .map(|w| w.path)
+        .collect();
+    assert_eq!(
+        ws,
+        vec!["/work/mine".to_owned()],
+        "their workspaces go with them; this machine's stays"
+    );
+    let after: Vec<String> = n
+        .sessions()
+        .unwrap()
+        .iter()
+        .map(|v| v.session.id.0.clone())
+        .collect();
+    assert!(
+        !after
+            .iter()
+            .any(|i| i.ends_with("-alpha") || i == "chat/alpha"),
+        "a row derived through the table leaves with the table: {after:?}"
+    );
+    assert!(
+        !after.is_empty(),
+        "this machine's own sessions are not the network's to take"
+    );
+    let _ = alpha;
+}
+
+/// **Nobody reachable is still a leave, and it says who was not told.**
+/// The alternative is a network you can only leave with the network's
+/// permission. Every machine that was in the table gets an ending.
+#[test]
+fn leaving_with_nobody_reachable_names_who_was_not_told() {
+    let r = scratch("leave-untold");
+    let (n, _, _) = a_network_of_three(&r);
+
+    let left = leaving(&n, n.name()).unwrap();
+
+    assert!(
+        left.told.is_empty(),
+        "nothing was dialable, so nobody was told: {:?}",
+        left.told
+    );
+    let mut untold = left.untold.clone();
+    untold.sort();
+    assert_eq!(
+        untold,
+        vec!["alpha".to_owned(), "beta".to_owned()],
+        "every machine that was in the table gets an ending"
+    );
+    assert_eq!(
+        n.devices().unwrap().len(),
+        1,
+        "and it left anyway — the table is empty of everyone else"
+    );
+}
+
+/// **`khor leave <somebody else>` is not a typo, it is the other verb.**
+/// So it is answered with that verb and the name already in it.
+#[test]
+fn leaving_under_another_machines_name_points_at_forget() {
+    let r = scratch("leave-other");
+    let (n, _, _) = a_network_of_three(&r);
+
+    let refused = leaving(&n, "alpha").unwrap_err();
+
+    assert!(
+        refused.contains("alpha") && refused.contains("khor forget"),
+        "naming another machine is answered with forget: {refused:?}"
+    );
+    assert_eq!(
+        n.devices().unwrap().len(),
+        3,
+        "and nothing happened to the table"
+    );
+}
+
+/// **Leaving a network this machine was never in is refused by name.**
+/// 「离开了」 would be a sentence about an act that did not happen.
+#[test]
+fn leaving_with_no_network_is_refused_by_name() {
+    let r = scratch("leave-alone");
+    let n = Node::open(r.to_path_buf()).unwrap();
+
+    let refused = leaving(&n, n.name()).unwrap_err();
+
+    assert!(
+        refused.contains("khor pair"),
+        "the refusal says how to be in a network at all: {refused:?}"
+    );
+}
+
+/// **`forget <this machine>` still refuses, and now it has somewhere to
+/// send you.** The two verbs are the two halves of one act, and a
+/// refusal with nowhere to go reads as 「khor can't do this」.
+#[test]
+fn forgetting_this_machine_points_at_leave() {
+    let r = scratch("forget-self");
+    let (n, _, _) = a_network_of_three(&r);
+
+    let refused = n.forget_device(n.name()).unwrap_err();
+
+    assert!(
+        refused.contains("khor leave") && refused.contains(&n.shown_name()),
+        "the refusal names the verb and the name it wants typed: {refused:?}"
+    );
+}

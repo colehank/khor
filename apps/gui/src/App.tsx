@@ -1943,6 +1943,13 @@ export default function App() {
         }}
         onInvite={() => setSheet("invite")}
         onJoin={() => setSheet("join")}
+        onLeft={() => {
+          // The device table is the thing that changed, and every
+          // surface on this screen paints off it — the card's own list,
+          // the rail's foot, the machines landing. One refresh, the
+          // same one a forget gets (`SecurityPage`'s `onForgot`).
+          refresh().catch(() => {});
+        }}
       />
     );
 

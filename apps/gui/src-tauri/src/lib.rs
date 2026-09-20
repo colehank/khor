@@ -2305,6 +2305,15 @@ async fn pair(ticket: String) -> Result<String, String> {
     khor_gui_core::pair(&Node::root_from_env(), &ticket).await
 }
 
+/// This machine leaves the network (docs/MORE.md 离开). Async for
+/// `pair`'s reason and one more: it pushes the news to every machine in
+/// the table before it empties it, so the slow case is every dial's
+/// timeout in a row.
+#[tauri::command]
+async fn leave(machine: String) -> Result<khor_gui_core::LeaveOutcome, String> {
+    khor_gui_core::leave(&Node::root_from_env(), &machine).await
+}
+
 pub fn run() {
     // 语言, before anything is drawn or printed (docs/MORE.md 语言).
     // The face resolves its own (`src/lang.ts`, from the same key); this
@@ -2586,7 +2595,8 @@ pub fn run() {
             config,
             set_config,
             invite,
-            pair
+            pair,
+            leave
         ])
         .run(tauri::generate_context!())
         .expect("tauri run");

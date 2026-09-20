@@ -1206,6 +1206,27 @@ impl Node {
         &self.name
     }
 
+    /// This machine's name **as a person reads it** — the rename when
+    /// there is one, else the channel (`DeviceInfo::shown`).
+    ///
+    /// Sentences that ask somebody to type this machine's name use it,
+    /// and that is the whole reason it exists: `Node::name` answers the
+    /// channel, and after a rename the channel is a word nobody can see
+    /// on any screen. Both still resolve (`Node::resolve` tries the
+    /// label first), so this chooses which one to *print*, never which
+    /// one to accept.
+    ///
+    /// Falls back to the channel when the table cannot be read or holds
+    /// no row for this machine — true before the first pairing, and a
+    /// machine's own name is not a thing khor should fail to say.
+    pub fn shown_name(&self) -> String {
+        self.devices_loaded()
+            .ok()
+            .and_then(|l| l.doc.get(self.device_str()))
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| self.name.clone())
+    }
+
     pub(crate) fn root(&self) -> &PathBuf {
         &self.root
     }
@@ -2528,10 +2549,16 @@ impl Node {
     /// row it holds while becoming a stranger to everyone else, which
     /// is not "left the network", it is broken in a way with no word
     /// for it.
+    ///
+    /// The refusal names the verb that *is* this act done properly
+    /// ([`Node::leave`], 2026-09-20): everything this one refuses to do
+    /// by halves, that one does whole. A refusal with nowhere to go
+    /// reads as 「khor cannot do this」 when what is true is 「not with
+    /// this word」.
     pub fn forget_device(&self, machine: &str) -> Result<String, String> {
         let (name, home) = self.resolve(machine)?;
         if home == self.device() {
-            return Err(msg::cant_forget_self().into());
+            return Err(msg::cant_forget_self(self.shown_name()));
         }
         let loaded = self.devices_loaded()?;
         loaded.doc.set_gone(&home.hex(), true)?;
@@ -2625,6 +2652,20 @@ impl Node {
             }
         }
         out
+    }
+
+    /// Every directory holding what **other** machines left on this
+    /// disk: their last reported rows, their readings, their watch
+    /// lists. All three are caches keyed by device id, every reader
+    /// walks the device table before reaching for one, and none of them
+    /// holds anything this machine derived itself.
+    ///
+    /// It exists for `Node::leave`, which empties the table and has to
+    /// empty these with it — and as one list rather than three calls at
+    /// the call site, so a fourth cache added later is dropped by the
+    /// leave that forgot it existed.
+    pub(crate) fn peer_caches(&self) -> [PathBuf; 3] {
+        [self.peers_dir(), self.vitals_dir(), self.watched_dir()]
     }
 
     // ── what machines last reported about themselves (vitals) ──

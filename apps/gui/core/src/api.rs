@@ -688,6 +688,9 @@ pub fn answer(
         "set_config" => to_json(&crate::set_config(root, &arg("name")?, &arg("value")?)?),
         "invite" => to_json(&crate::invite(root)?),
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
+        // 离开这张网 (docs/MORE.md 离开). Async for `pair`'s reason: it
+        // goes out over the wire before it touches this disk.
+        "leave" => to_json(&rt.block_on(crate::leave(root, &arg("machine")?))?),
         other => Err(format!("no such command: {other}")),
     }
 }

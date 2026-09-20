@@ -8437,6 +8437,70 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     rmSync(LANG_HOME, { recursive: true, force: true });
   }
 
+  // 36) `khor leave` on a real home, through the real binary
+  //      (docs/MORE.md 离开).
+  //
+  //      **The refusals, and not the act.** A leave that means anything
+  //      needs a machine that is in a network, and this file's only
+  //      spare one — gamma — is the machine §30 already showed the
+  //      door: whether its own row is still in its own table by now
+  //      depends on whether the tombstone found it, and a gate whose
+  //      subject is racing another section is a gate that reports the
+  //      race. Standing up a fourth home and a second resident to get
+  //      one more assertion is a bigger bet than the assertion is
+  //      worth, so what runs here is the half a lone machine can
+  //      answer for, and the act itself is on record as having no
+  //      end-to-end gate (docs/handoff/001.md 单网络做通).
+  //
+  //      A scratch home of its own, §33's reason.
+  {
+    const LEAVE_HOME = join(SCRATCH, "leave-home");
+    rmSync(LEAVE_HOME, { recursive: true, force: true });
+    mkdirSync(LEAVE_HOME, { recursive: true });
+    const envL = homeEnv(LEAVE_HOME, "leavebox");
+    const refused = (...args) => {
+      try {
+        execFileSync(KHOR, args, { env: envL, encoding: "utf8", timeout: 30_000 });
+        return null;
+      } catch (e) {
+        return String(e.stderr || e).trim();
+      }
+    };
+
+    //    a. a machine that never joined anything is refused by name —
+    //    「离开了」 would be a sentence about an act that did not happen
+    //    — and the refusal says how to be in a network at all.
+    const alone = refused("leave", "leavebox");
+    if (!alone || !alone.includes("khor pair")) {
+      throw new Error(`khor leave on a fresh home answered ${JSON.stringify(alone)}`);
+    }
+    //    b. **`forget <this machine>` still refuses, and now it has
+    //    somewhere to send you** — with the name `khor leave` wants
+    //    typed already in the sentence. The two verbs are the two
+    //    halves of one act.
+    const self = refused("forget", "leavebox");
+    if (!self || !self.includes("khor leave") || !self.includes("leavebox")) {
+      throw new Error(`khor forget <self> answered ${JSON.stringify(self)}`);
+    }
+    //    c. a name the table does not hold is the same refusal `forget`
+    //    gives, with the table listed — not a leave that quietly took.
+    const nobody = refused("leave", "nosuchbox");
+    if (!nobody || !nobody.includes("leavebox")) {
+      throw new Error(`khor leave <a name nobody has> answered ${JSON.stringify(nobody)}`);
+    }
+    //    d. …and the usage promises the verb, which is what makes it
+    //    findable without this file.
+    if (!cli(envL, "help").includes("leave")) {
+      throw new Error("khor help does not promise leave");
+    }
+
+    console.log(
+      "leave: refused by name with no network to leave, refused an unknown name with the table " +
+        "listed, and forget <this machine> now points at it by name",
+    );
+    rmSync(LEAVE_HOME, { recursive: true, force: true });
+  }
+
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 

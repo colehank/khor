@@ -1697,6 +1697,22 @@ try {
     doctorFixed.push(JSON.parse(r.request().postData() || "{}").key);
     r.fulfill({ contentType: "application/json", body: JSON.stringify("钥匙的权限改回只有你读得了") });
   });
+  // 离开这张网 (docs/MORE.md 离开). The fixture answers the node's two
+  // lists and remembers what name was typed at it — the assertion in
+  // §4C is that the card sends **this machine's** name, because that
+  // name is the confirmation and a card that sent anything else would
+  // be confirming something nobody typed.
+  const leaveTried = [];
+  await page.route("**/leave", (r) => {
+    leaveTried.push(JSON.parse(r.request().postData() || "{}").machine);
+    r.fulfill({
+      contentType: "application/json",
+      // One of each ending, so the two sentences can be told apart:
+      // a page that folded them into one would pass on a fixture where
+      // everybody was told.
+      body: JSON.stringify({ told: ["beta-gate"], untold: ["gamma-gate"] }),
+    });
+  });
   // Which khor this is, for the identity card's foot (docs/MORE.md 头像).
   // The version string is this fixture's own and deliberately not the
   // workspace's: what the card has to prove is that it prints what the
@@ -9257,6 +9273,7 @@ try {
           paired: el.querySelectorAll("[data-paired-machine]").length,
           mesh: el.querySelectorAll("[data-identity-mesh]").length,
           tickets: el.querySelectorAll("[data-identity-invite], [data-identity-join]").length,
+          leave: el.querySelectorAll("[data-identity-leave]").length,
         };
       });
       console.log(`identity ${posture}: ${JSON.stringify(card)}`);
@@ -9286,6 +9303,76 @@ try {
         }
         if (card.mesh !== 1) {
           fail(`${posture}: the identity card carries no way into 网里的机器 — the avatar was the mesh's only door`);
+        }
+        // 离开这张网 (docs/MORE.md 离开, 2026-09-20). Three things, and
+        // the middle one is the point.
+        if (card.leave !== 1) {
+          fail(
+            `${posture}: the identity card offers ${card.leave} way(s) out of the network — ` +
+              "「身份卡上「离开这张网」」 (docs/MORE.md 离开)",
+          );
+        }
+        // **The confirmation is always there, and it is not a config
+        // key** (docs/MORE.md: 这一件不可撤回). Live over an empty box
+        // would be one press between looking at a version number and
+        // being in no network.
+        const beforeTyping = await page.evaluate(() =>
+          document.querySelector("[data-identity-leave]")?.hasAttribute("disabled"),
+        );
+        if (beforeTyping !== true) {
+          fail(
+            `${posture}: 离开这张网 is live before this machine's name is typed — ` +
+              "the confirmation is always there (docs/MORE.md 离开)",
+          );
+        }
+        // …and the name it wants is **this machine's**, which is what
+        // makes the typing a confirmation rather than a formality.
+        await page.fill("[data-identity-leave-name]", "beta");
+        const wrongName = await page.evaluate(() =>
+          document.querySelector("[data-identity-leave]")?.hasAttribute("disabled"),
+        );
+        if (wrongName !== true) {
+          fail(
+            `${posture}: 离开这张网 went live on another machine's name — ` +
+              "`Node::leave`答的就是 khor forget (docs/MORE.md 离开)",
+          );
+        }
+        const tried = leaveTried.length;
+        await page.fill("[data-identity-leave-name]", "gate");
+        await press("[data-identity-leave]");
+        await until(2000, async () => leaveTried.length > tried);
+        const left = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-identity-left]")].map((e) =>
+            (e.textContent ?? "").trim(),
+          ),
+        );
+        console.log(`identity ${posture} · 离开: ${JSON.stringify({ sent: leaveTried.at(-1), said: left })}`);
+        if (leaveTried.at(-1) !== "gate") {
+          fail(
+            `${posture}: 离开这张网 sent ${JSON.stringify(leaveTried.at(-1))} — the machine's own ` +
+              "name typed back is the confirmation `Node::leave` checks",
+          );
+        }
+        // **Three sentences, not one.** The act, who heard it, and who
+        // did not — the last two leave different things to do, and a
+        // machine among the untold is one somebody has to go and run
+        // `khor forget` on (docs/MORE.md: 两种结局各一句话,不合成一句).
+        if (left.length !== 3) {
+          fail(
+            `${posture}: 离开这张网 said ${left.length} sentence(s) of the 3 endings the node ` +
+              "answered — 「两种结局各一句话,不合成一句」 (docs/MORE.md 离开)",
+          );
+        }
+        if (!left.some((l) => l.includes("beta-gate")) || !left.some((l) => l.includes("gamma-gate"))) {
+          fail(
+            `${posture}: 离开这张网 named neither who heard nor who did not: ${JSON.stringify(left)}`,
+          );
+        }
+        if (!left.some((l) => l.includes("khor forget"))) {
+          fail(
+            `${posture}: nobody is told what to do about the machines that were not reached — ` +
+              "they go on painting this one offline until somebody runs khor forget over there",
+          );
         }
       }
       await press("[data-more-close]");

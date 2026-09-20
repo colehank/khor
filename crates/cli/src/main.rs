@@ -442,6 +442,14 @@ const VERBS: &[Verb] = &[
         run: forget,
         reach: Reach::Act,
     },
+    // Takes this machine out of the network — the half `forget` refuses
+    // to do (`Node::leave`). An act by the same reading as `forget`: it
+    // writes the network's table, and this one empties this machine's.
+    Verb {
+        word: "leave",
+        run: leave,
+        reach: Reach::Act,
+    },
     Verb {
         word: "watch",
         run: watch,
@@ -1466,6 +1474,37 @@ fn forget(rest: &[String]) -> Result<(), String> {
     };
     let name = node()?.forget_device(machine)?;
     println!("{}", msg::forgot(&name));
+    Ok(())
+}
+
+/// Takes **this** machine out of the network (docs/MORE.md 离开).
+///
+/// One argument and no flag, exactly like `forget` above: typing the
+/// machine's name *is* the confirmation, and the node is what checks it
+/// (`Node::leave` — one rule for the verb and the page, the rule
+/// `lock::reset_identity` already follows).
+///
+/// **Three sentences at most, never folded into one.** The act, who
+/// heard it, and who did not — the last two are different situations
+/// with different things left to do, and a machine in the third line is
+/// one somebody has to go and run `khor forget` on.
+fn leave(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(usage_text().into());
+    };
+    let n = node()?;
+    let me = n.shown_name();
+    let left = rt()?.block_on(n.leave(machine))?;
+    println!("{}", msg::left());
+    if !left.told.is_empty() {
+        println!("{}", msg::left_told(left.told.join(cli::name_separator())));
+    }
+    if !left.untold.is_empty() {
+        println!(
+            "{}",
+            msg::left_untold(left.untold.join(cli::name_separator()), &me)
+        );
+    }
     Ok(())
 }
 

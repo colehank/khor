@@ -502,6 +502,48 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// Throws every row away but one — what is left of this table after
+    /// the machine holding it leaves the network (`Node::leave`).
+    ///
+    /// **A real delete, not the tombstone [`DeviceDoc::set_gone`]
+    /// writes**, and the difference is which direction the news is
+    /// travelling. `set_gone` is a statement *to* the network about a
+    /// machine, so it has to survive merging with a replica that still
+    /// holds the row. This is the opposite: the network has already been
+    /// told (that is what the tombstone on the leaver's own row was
+    /// for), and what is being emptied is one machine's private copy of
+    /// a document it is done with. There is no later merge to resurrect
+    /// anything — a machine the table does not hold is refused at every
+    /// door (`msg::not_paired`), so the peers cannot sync back in, and
+    /// re-joining goes through a ticket, which arrives as a fresh
+    /// snapshot.
+    ///
+    /// Field-agnostic on purpose: it deletes by key rather than
+    /// rebuilding the kept row out of the fields this module knows
+    /// today, so a field added tomorrow is not silently dropped on the
+    /// one row that has to survive.
+    pub fn keep_only(&self, id: &str) -> Result<(), String> {
+        let map = self.map();
+        // Both shapes: `<id>/<field>` registers and the old nested
+        // entry keyed by the id itself ([`DeviceDoc::ids`]).
+        let doomed: Vec<String> = map
+            .keys()
+            .map(|k| k.to_string())
+            .filter(|k| match k.split_once(SEP) {
+                Some((owner, _)) => owner != id,
+                None => k != id,
+            })
+            .collect();
+        if doomed.is_empty() {
+            return Ok(());
+        }
+        for k in &doomed {
+            map.delete(k).map_err(|e| e.to_string())?;
+        }
+        self.inner.commit();
+        Ok(())
+    }
+
     /// Every device, pinned ones first, each group by name.
     ///
     /// **Sorted here, once.** Every face reads the table through this,

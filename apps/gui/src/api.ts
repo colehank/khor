@@ -30,6 +30,7 @@ import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
+import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
 import type { About } from "./gen/bindings/About";
 import type { DoctorRow } from "./gen/bindings/DoctorRow";
 import type { LockFacts } from "./gen/bindings/LockFacts";
@@ -86,6 +87,7 @@ export type {
   RelayChoices,
   HooksState,
   Ticket,
+  LeaveOutcome,
   About,
   DoctorRow,
   LockFacts,
@@ -722,6 +724,17 @@ export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
     copy of a number only `link::INVITE_WINDOW_MS` decides. */
 export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });
+/** `khor leave` — this machine out of the network (docs/MORE.md 离开).
+    Takes this machine's own name typed back, because that is the
+    confirmation and **the node is what checks it** (`Node::leave`, the
+    rule `lock::reset_identity` set: one rule for the verb and the page,
+    or the one nobody runs is the one that drifts).
+
+    Answers who heard it and who did not. The two are kept apart all the
+    way to the screen: a machine in `untold` goes on painting this one
+    offline until somebody over there runs `khor forget`, and that is a
+    different thing left to do from 「everybody knows」. */
+export const leaveNetwork = (machine: string) => call<LeaveOutcome>("leave", { machine });
 /** Which khor this is and which store it is talking to — the identity
     card's foot (docs/MORE.md 头像). A fact about **this** installation:
     what another machine is running is `khor doctor`'s question, asked

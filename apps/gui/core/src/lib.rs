@@ -1797,6 +1797,38 @@ pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
     node.pair(ticket).await
 }
 
+/// How a leave ended, per machine that was in the table (docs/MORE.md
+/// 离开). The node's [`khor_node::link::Left`], minted here for the
+/// same reason [`LockFacts`] is minted here: what crosses to a face is
+/// this crate's own type, so the node is free to carry more.
+///
+/// **Two lists rather than a count**, which is the node's judgment and
+/// not this file's: a machine in `untold` is one somebody has to go and
+/// run `khor forget` on, and a number names none of them.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct LeaveOutcome {
+    pub told: Vec<String>,
+    pub untold: Vec<String>,
+}
+
+/// This machine leaves the network — the call `khor leave <本机>` makes,
+/// from the identity card.
+///
+/// **The name is passed through, not checked here.** `Node::leave` is
+/// what refuses a name that is not this machine's, and a second rule on
+/// this side would be the drift `lock::reset_identity` names: two rules
+/// about one irreversible act, and the one nobody runs is the one that
+/// rots. The page still disables its button on an empty box, which is
+/// about the button being live, not about the act.
+pub async fn leave(root: &Path, name_typed: &str) -> Result<LeaveOutcome, String> {
+    let left = open(root)?.leave(name_typed).await?;
+    Ok(LeaveOutcome {
+        told: left.told,
+        untold: left.untold,
+    })
+}
+
 #[cfg(test)]
 mod wizard_agent_tests {
     use super::*;
