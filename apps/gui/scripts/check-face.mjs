@@ -9038,6 +9038,103 @@ try {
       }
     }
 
+    // ── 第 6 条, the half the toggle cannot see: **the seam drags** ──
+    //
+    // ⚠️ **This arm exists because the one above it went green over a
+    // real bug, and the bug was worse than the guess.** 批一 gave 额度
+    // the shell's seam and left `useListWidth` measuring the pane by a
+    // hard-coded `[data-list]` — a selector matching nothing on that
+    // landing, so the drag measured **the seam element** instead.
+    //
+    // The guess was 「it jumps by the hit margin」. Measured with the
+    // bug put back (2026-09-21):
+    //
+    //     sessions seam · drag: 288 → (grab) 289 → (+60) 348
+    //     quota    seam · drag: 288 → (grab) 0   → (+60) 0
+    //     browser  seam · drag: 288 → (grab) 0   → (+60) 0
+    //
+    // **The column collapses the instant it is touched.** The seam's
+    // own box sits less than `--list-w-snap` from where the drag thinks
+    // the pane begins, so the very first move lands in 「put it away」.
+    // On those two landings the seam could not size anything at all —
+    // it could only close the column. 批一's gate was green and the
+    // build was installed, because nobody had dragged either seam.
+    //
+    // 「按两下，288 → 0 → 288」 could not see it: that road is
+    // `toggle()`, and it never touches the pointer. **A pane has two
+    // ways to be sized and the gate was walking one of them.**
+    //
+    // What is asserted is the gesture's own promise, on every landing
+    // that has a column: **the pane follows the pointer, and it does
+    // not jump when the pointer first lands.** Measured as a delta
+    // rather than a width, because the width is the viewer's and the
+    // delta is the contract.
+    {
+      for (const [key, sel] of [
+        ["sessions", "[data-list]"],
+        ["quota", "[data-quota-pane]"],
+        ["browser", "[data-browse-tabs]"],
+      ]) {
+        await open(key);
+        await wait(350);
+        const seam = page.locator(`${sel} ~ [data-list-seam]`).first();
+        if ((await seam.count()) === 0) {
+          fail(`probe dead: ${key} has a column but no seam beside it (${sel})`);
+          continue;
+        }
+        const wideOf = () =>
+          page.evaluate((s) => {
+            const el = document.querySelector(s);
+            return el === null ? null : Math.round(el.getBoundingClientRect().width);
+          }, sel);
+        const before = await wideOf();
+        const box = await seam.boundingBox();
+        const y = box.y + box.height / 2;
+        await page.mouse.move(box.x + box.width / 2, y);
+        await page.mouse.down();
+        // **A grab with no movement must move nothing.** This is the
+        // reading the bug failed: the pane was already at a different
+        // width by the time the pointer had gone anywhere.
+        await page.mouse.move(box.x + box.width / 2 + 1, y, { steps: 2 });
+        await wait(120);
+        const onGrab = await wideOf();
+        const step = 60;
+        await page.mouse.move(box.x + box.width / 2 + step, y, { steps: 12 });
+        await wait(120);
+        const after = await wideOf();
+        await page.mouse.up();
+        await wait(250);
+        console.log(`${key} seam · drag: ${before} → (grab) ${onGrab} → (+${step}) ${after}`);
+        if (before === null || onGrab === null || after === null) {
+          fail(`probe dead: ${key}'s column stopped being measurable during the drag`);
+          continue;
+        }
+        // A pixel of slack on the grab: the pointer really did move one.
+        if (Math.abs(onGrab - before) > 2) {
+          fail(
+            `grabbing ${key}'s seam moved its column ${onGrab - before}px before the pointer went anywhere — ` +
+              "the drag is measuring something that is not the pane (src/hooks/use-list-width.ts LIST_PANE)",
+          );
+        }
+        // Follows the pointer: 60 across is 60 wider, within the slack a
+        // `steps: 12` move and a rounded rect leave.
+        if (Math.abs(after - before - step) > 4) {
+          fail(
+            `${key}'s column went ${before} → ${after} for a ${step}px drag — a seam that does not track ` +
+              "the pointer is a width nobody can choose (src/hooks/use-list-width.ts)",
+          );
+        }
+        // Put it back, so the next landing is not measured through this
+        // one's leftovers.
+        await page.mouse.move(box.x + box.width / 2, y);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width / 2, y, { steps: 2 });
+        await page.mouse.up();
+        await seam.dblclick();
+        await wait(250);
+      }
+    }
+
     // ── 第 1 条: the shell does not move ──
     //
     // 「我在工作区的文件树拖动, 整个app都会下移, 正确的应该是整个app是
