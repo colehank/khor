@@ -1793,11 +1793,21 @@ try {
   // The version string is this fixture's own and deliberately not the
   // workspace's: what the card has to prove is that it prints what the
   // node answered, not that it can read a Cargo file.
+  //
+  // `faces` is 本机开着哪几张 khor 界面 (docs/MORE.md 头像页), assembled
+  // by the node — **the sentence on the right of each row comes down
+  // whole**, so a port can never be printed beside 未打开. One of each
+  // here on purpose: a fixture where both were up could not tell 「draws
+  // every face」 from 「draws the running ones」.
   const gateAbout = () => ({
     version: "0.0.0-gate",
     root: "/gate/khor",
     paused: gatePaused,
     store_bytes: 761,
+    faces: [
+      { key: "app", name: "桌面 app", up: false, said: "未打开" },
+      { key: "web", name: "网页脸", up: true, said: "已打开 · 端口 5467" },
+    ],
   });
   await page.route("**/about", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(gateAbout()) }),
@@ -1853,6 +1863,26 @@ try {
   await page.route("**/config", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(configRows()) }),
   );
+  // 移除设备 (docs/MORE.md 第二轮), from the card of the machine on the
+  // map. The fixture remembers which machine was named, because that is
+  // the claim: a card that sent anything but the machine whose card it
+  // is would be removing somebody nobody pointed at.
+  const forgotten = [];
+  await page.route("**/forget_device", (r) => {
+    forgotten.push(JSON.parse(r.request().postData() || "{}").machine);
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("请出去了: beta") });
+  });
+  // 中继, behind 高级 on the 网络 page. Routed so the fold has something
+  // to draw once it is opened — and **only then**: the claim in §4C is
+  // that nothing here is fetched while the fold is shut.
+  const relaysAsked = [];
+  await page.route("**/relays", (r) => {
+    relaysAsked.push(Date.now());
+    r.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ mine: ["http://relay.gate:4433"], in_use: ["http://relay.gate:4433"], only_mine: false }),
+    });
+  });
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
 
@@ -2172,11 +2202,18 @@ try {
    * (docs/MORE.md): the avatar opens this machine's identity card, and
    * the card carries the way into the picture.
    *
-   * **Written once rather than at each site**, because「the mesh moved
-   * one press deeper」 is one fact — two copies of the walk is two
-   * places to forget the day it moves again.
+   * > **2026-09-20: it moved again, and to its last place.** The picture
+   * > is the whole of the 网络 page now (「网络就搞成地图」), which is a
+   * > row on the 「…」 menu — so the walk is 「…」 → 网络 rather than the
+   * > avatar and a row on its card. The avatar's page says nothing about
+   * > the network any more.
+   *
+   * **Written once rather than at each site**, because「where the mesh
+   * is」 is one fact — two copies of the walk is two places to forget
+   * the day it moves again, which it has now done twice.
    */
-  const toMesh = async () => (await press("[data-rail-mark]")) && press("[data-identity-mesh]");
+  const toMesh = async () =>
+    (await press("[data-rail-more]")) && press('[data-more-open="network"]');
   // Reach a landing as a *switch*, never a re-click. Pressing the open
   // landing's own glyph now collapses its list (App.tsx 再点收起,
   // 2026-09-02), and this walk re-opens the same landing across
@@ -2415,15 +2452,17 @@ try {
       },
     },
     {
-      // The mesh is **two presses from the rail now** (docs/MORE.md):
-      // the avatar opens this machine's identity card, and the card
-      // carries the way into the picture. The door did not disappear,
-      // it moved one press deeper — so this stop grew a press rather
-      // than being deleted, which is also the assertion that the move
-      // kept the picture reachable at all.
-      name: "the mark's place",
+      // The mesh is the 网络 page's body (docs/MORE.md 第二轮), reached
+      // through 「…」. It has had three doors — the app's mark, this
+      // machine's face, a row on the identity card — and this stop is
+      // what keeps「the picture is still reachable」 true across each
+      // move rather than only after the last one.
+      name: "the network page",
       anchor: "[data-mark-place]",
-      go: async () => (await press("[data-rail-mark]")) && press("[data-identity-mesh]"),
+      go: toMesh,
+      after: async () => {
+        await press("[data-more-close]");
+      },
     },
     {
       // …and the card itself, which is what the avatar actually opens.
@@ -9705,9 +9744,17 @@ try {
   // ── 4C) 「…」的就地菜单,和它开出来的四张独立页 (docs/MORE.md) ────
   //
   // 「点击..., 显示设置、安全、自检, 网络, 点击后是就地的菜单栏, 进一步点击
-  // 都是独立的界面」 — the user, 2026-09-18. 网络 was ruled out of this
-  // batch (「先不整网络吧, 有点复杂了. 可以是宏图」), so three rows, not
-  // four, and the fourth page is the avatar's.
+  // 都是独立的界面」 — the user, 2026-09-18. 网络 was ruled out of the
+  // first batch (「先不整网络吧, 有点复杂了」) and landed on 2026-09-20,
+  // so four rows now, and a fifth page behind the avatar.
+  //
+  // **What this section is really guarding after 2026-09-20 is
+  // 一样东西只住一处.** 「不同功能分开, 设置里有网络,本机里也有网络」 —
+  // the user. The paired machines were a list on the identity card *and*
+  // a list on 安全; 邀请 / 接入 / 暂停 / 离开 were on the identity card;
+  // 中继 was on 设置. All of them are on 网络 now, and the assertions
+  // below are as much about where they are **not** as about where they
+  // are — an absence nothing measures is the half that comes back.
   //
   // **What this section adds over the walk above is the shape, not the
   // existence.** Every one of the four already has a stop in section 3,
@@ -9741,10 +9788,10 @@ try {
         continue;
       }
       console.log(`「…」 ${posture}: pages ${JSON.stringify(menu.pages)} landings ${JSON.stringify(menu.landings)} rule ${menu.rule}`);
-      if (menu.pages.join(",") !== "settings,security,doctor") {
+      if (menu.pages.join(",") !== "network,settings,security,doctor") {
         fail(
-          `${posture}: 「…」 offers ${JSON.stringify(menu.pages)} — 「显示设置、安全、自检」, ` +
-            "in that order (src/App.tsx morePages)",
+          `${posture}: 「…」 offers ${JSON.stringify(menu.pages)} — 网络 / 通用 / 安全 / 自检, ` +
+            "in that order (docs/MORE.md 第二轮 地图; src/App.tsx morePages)",
         );
       }
       // The folded landings are the narrow bar's alone, and the rule
@@ -9769,7 +9816,7 @@ try {
       // Each page, opened and closed: what it replaces, what its head
       // carries, and that the landing under it is still the one that was
       // open when it was.
-      for (const key of ["settings", "security", "doctor"]) {
+      for (const key of ["network", "settings", "security", "doctor"]) {
         if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
           fail(`probe dead: ${posture} · 「…」 → ${key} did not open`);
           continue;
@@ -9784,6 +9831,13 @@ try {
             drag: head?.getAttribute("data-tauri-drag-region") ?? null,
             close: pageEl?.querySelectorAll("[data-more-close]").length ?? 0,
             lit: document.querySelector("[data-rail-more]")?.getAttribute("data-on") ?? null,
+            // 一样东西只住一处 (docs/MORE.md 第二轮): a list of the
+            // machines this one has paired with. It was on the identity
+            // card and on 安全; the 网络 page's map is the one place it
+            // lives now, so on every other page the count is zero.
+            paired: document.querySelectorAll(
+              "[data-paired-machine], [data-security-machine], [data-security-forget]",
+            ).length,
           };
         }, key);
         console.log(`page ${posture} · ${key}: ${JSON.stringify(up)}`);
@@ -9809,6 +9863,12 @@ try {
         if (up.lit !== "true") {
           fail(`${posture}: 「…」 does not light while ${key} is open — the rail must answer 我在哪一页`);
         }
+        if (up.paired !== 0) {
+          fail(
+            `${posture}: ${key} draws ${up.paired} row(s) of 已配对的机器 — that list lives on the ` +
+              "网络 page's map and nowhere else (docs/MORE.md 第二轮: 已配对的机器从头像卡和安全页都拿掉)",
+          );
+        }
         await press("[data-more-close]");
         const back = await page.evaluate(() => ({
           page: document.querySelectorAll("[data-more-page]").length,
@@ -9824,8 +9884,229 @@ try {
         }
       }
 
-      // …and the avatar's own page, which is the fourth and is not on
+      // ── 网络: the page is the picture, and the four acts ───────────
+      //
+      // 「网络就搞成地图. 更多里的一个单独的页面」 — the user, 2026-09-20.
+      // **Counted from here, not from zero.** This section runs once
+      // per posture and opens 高级 in each — an absolute count would
+      // read the *previous* posture's opening as this one fetching
+      // while shut (measured: red on the narrow pass at 2 asks, and the
+      // 2 is React's StrictMode double-mount, not a second reader).
+      const relaysBefore = relaysAsked.length;
+      if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="network"]'))) {
+        fail(`probe dead: ${posture} · 「…」 → 网络 did not open`);
+        continue;
+      }
+      const net = await page.evaluate(() => {
+        const el = document.querySelector('[data-more-page="network"]');
+        if (!el) return null;
+        const fold = el.querySelector('[data-more-fold="advanced"]');
+        return {
+          // The picture, and it is the body of the page rather than a
+          // row on it.
+          map: el.querySelectorAll("[data-mark-place]").length,
+          acts: ["invite", "join", "pause", "leave"].map(
+            (k) => el.querySelectorAll(`[data-net-${k}]`).length,
+          ),
+          // 中继 is here and is **shut**, and while it is shut its body
+          // is not in the document at all.
+          fold: !!fold,
+          foldOpen: fold ? fold.hasAttribute("open") : null,
+          relayRows: el.querySelectorAll("[data-relay-mine], [data-relay-add]").length,
+        };
+      });
+      console.log(`网络 ${posture}: ${JSON.stringify(net)}`);
+      if (!net) {
+        fail(`${posture}: 「…」 → 网络 drew no page`);
+      } else {
+        if (net.map !== 1) {
+          fail(
+            `${posture}: the 网络 page draws ${net.map} map(s) — 「网络就搞成地图」, and the map ` +
+              "has no other door since the mark's place was retired (views/more/NetworkPage)",
+          );
+        }
+        if (net.acts.join(",") !== "1,1,1,1") {
+          fail(
+            `${posture}: the 网络 page offers ${JSON.stringify(net.acts)} of 邀请设备 / 加入网络 / ` +
+              "暂停·恢复 / 离开网络 — 「页上四个动作」 (docs/MORE.md 第二轮)",
+          );
+        }
+        if (!net.fold) {
+          fail(`${posture}: 中继 is not folded into 高级 on the 网络 page — 「中继折在「高级」里」`);
+        }
+        if (net.foldOpen !== false) {
+          fail(
+            `${posture}: 高级 is open on arrival (${JSON.stringify(net.foldOpen)}) — ` +
+              "「次要的默认收起」 (docs/MORE.md 第二轮)",
+          );
+        }
+        // **The claim is not「it is hidden」, it is「it was never
+        // fetched」.** A `<details>` keeps a hidden body mounted, which
+        // for a section that reads on mount is khor dialling on behalf
+        // of a control nobody opened.
+        if (net.relayRows !== 0 || relaysAsked.length !== relaysBefore) {
+          fail(
+            `${posture}: the shut 高级 drew ${net.relayRows} relay row(s) and asked for relays ` +
+              `${relaysAsked.length - relaysBefore} time(s) — a fold that fetches while shut is ` +
+              "not folded",
+          );
+        }
+        const asked = relaysAsked.length;
+        await press("[data-more-fold-open]");
+        await until(3_000, async () => relaysAsked.length > asked);
+        const opened = await page.evaluate(() => ({
+          open: document.querySelector('[data-more-fold="advanced"]')?.hasAttribute("open") ?? null,
+          rows: document.querySelectorAll("[data-relay-mine], [data-relay-add]").length,
+        }));
+        console.log(`网络 ${posture} · 高级: ${JSON.stringify(opened)}`);
+        if (opened.open !== true || opened.rows === 0) {
+          fail(
+            `${posture}: opening 高级 gave ${JSON.stringify(opened)} — the relays are behind it, ` +
+              "not gone (views/NetSettings)",
+          );
+        }
+        await press("[data-more-fold-open]");
+
+        // 移除设备 lives in the card of the machine it is about, and
+        // **nowhere else in the app** (docs/MORE.md 第二轮). Pressing a
+        // seat opens that card.
+        if (!(await press('[data-seat][data-seat-me="false"]'))) {
+          fail(`probe dead: ${posture} · no other machine's seat on the map to press`);
+        } else {
+          await until(3_000, async () => (await page.locator("[data-node-card]").count()) > 0);
+          const card = await page.evaluate(() => ({
+            forget: document.querySelectorAll("[data-node-card-forget]").length,
+            named:
+              document.querySelector("[data-node-card-forget]")?.getAttribute("data-node-card-forget") ??
+              null,
+          }));
+          console.log(`网络 ${posture} · 机器卡: ${JSON.stringify(card)}`);
+          if (card.forget !== 1) {
+            fail(
+              `${posture}: the machine's card on the map offers ${card.forget} 移除设备 — ` +
+                "「移除设备在地图上那台机器的卡里」 (docs/MORE.md 第二轮)",
+            );
+          }
+          const sent = forgotten.length;
+          await press("[data-node-card-forget]");
+          await until(3_000, async () => forgotten.length > sent);
+          if (forgotten.at(-1) !== devs.find((d) => !d.me).name) {
+            fail(
+              `${posture}: 移除设备 sent ${JSON.stringify(forgotten.at(-1))} — the card names the ` +
+                "machine, so nothing else can be what it removes",
+            );
+          }
+        }
+
+        // 暂停 / 恢复 and 离开网络 moved here from the identity card.
+        // The two states are compared **against each other**, read off
+        // the screen — a rename in `zh.toml` then moves the gate with
+        // the product instead of turning it red (this file's rule).
+        const talkingSays = await page.evaluate(
+          () => document.querySelector("[data-net-pause]")?.textContent?.trim() ?? null,
+        );
+        await press("[data-net-pause]");
+        await until(2_000, async () =>
+          page.evaluate(() => !!document.querySelector("[data-net-pause][data-paused]")),
+        );
+        const whilePaused = await page.evaluate(() => ({
+          says: document.querySelector("[data-net-pause]")?.textContent?.trim() ?? null,
+          // **The rail, not the page**: a machine deliberately quiet
+          // should not have to be asked, and the rail is the one thing
+          // on screen the whole time (docs/MORE.md 暂停).
+          rail: !!document.querySelector("[data-rail-mark][data-paused]"),
+          said: document.querySelector("[data-net-paused]")?.textContent?.trim() ?? null,
+        }));
+        console.log(
+          `网络 ${posture} · 暂停: ${JSON.stringify({ talking: talkingSays, ...whilePaused })}`,
+        );
+        if (!talkingSays || whilePaused.says === talkingSays) {
+          fail(
+            `${posture}: the pause control says ${JSON.stringify(talkingSays)} in both states — ` +
+              "a machine that is talking and one that is not offer different acts",
+          );
+        }
+        if (!whilePaused.rail) {
+          fail(
+            `${posture}: this machine is paused and the rail's face says nothing — ` +
+              "「侧栏头像上看得出」 (docs/MORE.md 暂停)",
+          );
+        }
+        if (!whilePaused.said) {
+          fail(`${posture}: a paused machine's 网络 page says nothing about being paused`);
+        }
+        await press("[data-net-pause]");
+        await until(2_000, async () =>
+          page.evaluate(() => !document.querySelector("[data-net-pause][data-paused]")),
+        );
+
+        // 离开网络 is a dialog, and **the confirmation is always there**
+        // (docs/MORE.md: 这一件不可撤回). Live over an empty box would be
+        // one press between looking at a map and being in no network.
+        await press("[data-net-leave]");
+        await until(3_000, async () => (await page.locator("[data-net-leave-name]").count()) > 0);
+        const beforeTyping = await page.evaluate(() =>
+          document.querySelector("[data-net-leave-do]")?.hasAttribute("disabled"),
+        );
+        if (beforeTyping !== true) {
+          fail(
+            `${posture}: 离开网络 is live before this machine's name is typed — ` +
+              "the confirmation is always there (docs/MORE.md 离开)",
+          );
+        }
+        // …and the name it wants is **this machine's**.
+        await page.fill("[data-net-leave-name]", "beta");
+        const wrongName = await page.evaluate(() =>
+          document.querySelector("[data-net-leave-do]")?.hasAttribute("disabled"),
+        );
+        if (wrongName !== true) {
+          fail(
+            `${posture}: 离开网络 went live on another machine's name — ` +
+              "`Node::leave` answers that with khor forget (docs/MORE.md 离开)",
+          );
+        }
+        const tried = leaveTried.length;
+        await page.fill("[data-net-leave-name]", "gate");
+        await press("[data-net-leave-do]");
+        await until(3_000, async () => leaveTried.length > tried);
+        const left = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-net-left]")].map((e) => (e.textContent ?? "").trim()),
+        );
+        console.log(
+          `网络 ${posture} · 离开: ${JSON.stringify({ sent: leaveTried.at(-1), said: left })}`,
+        );
+        if (leaveTried.at(-1) !== "gate") {
+          fail(
+            `${posture}: 离开网络 sent ${JSON.stringify(leaveTried.at(-1))} — the machine's own ` +
+              "name typed back is the confirmation `Node::leave` checks",
+          );
+        }
+        // **Three sentences, not one.** The act, who heard it, and who
+        // did not — the last two leave different things to do
+        // (docs/MORE.md 离开: 两种结局各一句话,不合成一句).
+        if (left.length !== 3) {
+          fail(
+            `${posture}: 离开网络 said ${left.length} sentence(s) of the 3 endings the node ` +
+              "answered — 「两种结局各一句话,不合成一句」 (docs/MORE.md 离开)",
+          );
+        }
+        if (!left.some((l) => l.includes("khor forget"))) {
+          fail(
+            `${posture}: nobody is told what to do about the machines that were not reached — ` +
+              "they go on painting this one offline until somebody runs khor forget over there",
+          );
+        }
+      }
+      await press("[data-more-close]");
+
+      // …and the avatar's own page, which is the fifth and is not on
       // that menu: it is what pressing this machine's face opens now.
+      //
+      // **What it no longer carries is the claim.** 「头像 = 这台机器是
+      // 谁」 (docs/MORE.md 第二轮): the paired machines, the two pairing
+      // doors, the mesh door, 暂停 and 离开 all left this card for 网络,
+      // and a second copy of any of them here is how two surfaces come
+      // to disagree.
       if (!(await press("[data-rail-mark]"))) {
         fail(`probe dead: ${posture} has no face at the foot of the rail`);
         continue;
@@ -9833,15 +10114,24 @@ try {
       const card = await page.evaluate(() => {
         const el = document.querySelector('[data-more-page="identity"]');
         if (!el) return null;
+        const faces = [...el.querySelectorAll("[data-iface]")];
         return {
           version: el.querySelector('[data-more-fact="version"]')?.textContent?.trim() ?? null,
           id: el.querySelector('[data-more-fact="id"]')?.textContent?.trim() ?? null,
-          paired: el.querySelectorAll("[data-paired-machine]").length,
-          mesh: el.querySelectorAll("[data-identity-mesh]").length,
-          tickets: el.querySelectorAll("[data-identity-invite], [data-identity-join]").length,
-          leave: el.querySelectorAll("[data-identity-leave]").length,
-          pause: el.querySelectorAll("[data-identity-pause]").length,
-          pauseSays: el.querySelector("[data-identity-pause]")?.textContent?.trim() ?? null,
+          // Everything about the network, counted so its absence is a
+          // number rather than a hope.
+          net: el.querySelectorAll(
+            "[data-paired-machine], [data-identity-invite], [data-identity-join], " +
+              "[data-identity-mesh], [data-identity-leave], [data-identity-pause], [data-mark-place]",
+          ).length,
+          // 本机开着哪几张界面, 当前是哪张 (docs/MORE.md 头像页).
+          faceKeys: faces.map((e) => e.getAttribute("data-iface")),
+          faceSaids: faces.map(
+            (e) => e.querySelector("[data-iface-said]")?.textContent?.trim() ?? null,
+          ),
+          here: faces
+            .filter((e) => e.querySelector("[data-iface-here]"))
+            .map((e) => e.getAttribute("data-iface")),
         };
       });
       console.log(`identity ${posture}: ${JSON.stringify(card)}`);
@@ -9856,154 +10146,40 @@ try {
           fail(`${posture}: the identity card states no khor version — 「本机的脸、名字、id、khor 版本」`);
         }
         if (!card.id) fail(`${posture}: the identity card states no machine id`);
-        // The fixture routes two machines and one of them is this one.
-        // Against the fixture rather than a number written here: the
-        // card lists every machine that is not this one, and the
-        // routed table is what「every machine」means on this page.
-        const wanted = devs.filter((d) => !d.me).length;
-        if (card.paired !== wanted) {
+        if (card.net !== 0) {
           fail(
-            `${posture}: the identity card lists ${card.paired} paired machine(s) of the ${wanted} routed`,
+            `${posture}: the identity card still carries ${card.net} thing(s) about the network — ` +
+              "「头像 = 这台机器是谁。「…」= 这个 app」, and 已配对机器 / 邀请 / 接入 / 暂停 / 离开 " +
+              "are the 网络 page's (docs/MORE.md 第二轮 地图)",
           );
         }
-        if (card.tickets !== 2) {
-          fail(`${posture}: the identity card offers ${card.tickets} pairing door(s) — 「邀请」 and 「接入」`);
-        }
-        if (card.mesh !== 1) {
-          fail(`${posture}: the identity card carries no way into 网里的机器 — the avatar was the mesh's only door`);
-        }
-        // 离开这张网 (docs/MORE.md 离开, 2026-09-20). Three things, and
-        // the middle one is the point.
-        if (card.leave !== 1) {
+        // **Every face, including the one that is not up.** Against the
+        // fixture rather than a number written here: what 「每一张」 means
+        // is whatever the node answered.
+        const wantedFaces = gateAbout().faces;
+        if (card.faceKeys.join(",") !== wantedFaces.map((f) => f.key).join(",")) {
           fail(
-            `${posture}: the identity card offers ${card.leave} way(s) out of the network — ` +
-              "「身份卡上「离开这张网」」 (docs/MORE.md 离开)",
+            `${posture}: the identity card lists ${JSON.stringify(card.faceKeys)} of the ` +
+              `${JSON.stringify(wantedFaces.map((f) => f.key))} khor answered — a face khor cannot ` +
+              "see is drawn as 未打开, never left out (docs/MORE.md 头像页)",
           );
         }
-        // 暂停接入 (docs/MORE.md 暂停, 2026-09-20). One control, and
-        // **it says which way it goes** — a switch drawn the same in
-        // both states would leave a person pressing to find out.
-        if (card.pause !== 1) {
+        // The right-hand side is the node's sentence, printed as it
+        // came: a page that assembled its own could put a port beside
+        // 未打开.
+        if (card.faceSaids.join("|") !== wantedFaces.map((f) => f.said).join("|")) {
           fail(
-            `${posture}: the identity card offers ${card.pause} way(s) to pause — ` +
-              "「头像上看得出已暂停」 (docs/MORE.md 暂停)",
+            `${posture}: the interface rows say ${JSON.stringify(card.faceSaids)} where khor said ` +
+              `${JSON.stringify(wantedFaces.map((f) => f.said))} (khor_gui_core FaceRow.said)`,
           );
         }
-        // The two states are compared **against each other**, read off
-        // the screen — a rename in `zh.toml` then moves the gate with
-        // the product instead of turning it red (this file's rule).
-        const talkingSays = card.pauseSays;
-        const talkingSaid = await page.evaluate(
-          () => document.querySelector("[data-identity-pause-warn]")?.textContent?.trim() ?? null,
-        );
-        if (!talkingSays || !talkingSaid) {
-          fail(`${posture}: the pause section says nothing at all — ${JSON.stringify({ talkingSays, talkingSaid })}`);
-        }
-        await press("[data-identity-pause]");
-        await until(2000, async () =>
-          page.evaluate(() => !!document.querySelector("[data-identity-pause][data-paused]")),
-        );
-        const whilePaused = await page.evaluate(() => ({
-          says: document.querySelector("[data-identity-pause]")?.textContent?.trim() ?? null,
-          // **The rail, not the card**: a machine deliberately quiet
-          // should not have to be asked, and the rail is the one thing
-          // on screen the whole time (docs/MORE.md 暂停).
-          rail: !!document.querySelector("[data-rail-mark][data-paused]"),
-          said: document.querySelector("[data-identity-pause-warn]")?.textContent?.trim() ?? null,
-        }));
-        console.log(
-          `identity ${posture} · 暂停: ${JSON.stringify({ talking: talkingSays, ...whilePaused })}`,
-        );
-        // **One control that says which way it goes.** Drawn the same in
-        // both states, it would leave a person pressing to find out.
-        if (whilePaused.says === talkingSays) {
+        // 当前是哪张: exactly one, and on this face — a browser — it is
+        // the web face, because `inApp` is what the question is about
+        // and nothing in the answer can say it.
+        if (card.here.join(",") !== "web") {
           fail(
-            `${posture}: the pause control says ${JSON.stringify(talkingSays)} in both states — ` +
-              "a machine that is talking and one that is not offer different acts",
-          );
-        }
-        if (!whilePaused.rail) {
-          fail(
-            `${posture}: this machine is paused and the rail's face says nothing — ` +
-              "「侧栏头像上看得出」 (docs/MORE.md 暂停)",
-          );
-        }
-        // A paused machine says it *is* paused; the other sentence is
-        // about what pausing would do, and it is the wrong tense to be
-        // reading once it has happened.
-        if (whilePaused.said === talkingSaid) {
-          fail(
-            `${posture}: the paused card still reads ${JSON.stringify(talkingSaid)} — ` +
-              "that sentence is what pausing would do, not what is",
-          );
-        }
-        // Back, so the leave assertions below stand on the machine the
-        // rest of this gate describes.
-        await press("[data-identity-pause]");
-        await until(2000, async () =>
-          page.evaluate(() => !document.querySelector("[data-identity-pause][data-paused]")),
-        );
-
-        // **The confirmation is always there, and it is not a config
-        // key** (docs/MORE.md: 这一件不可撤回). Live over an empty box
-        // would be one press between looking at a version number and
-        // being in no network.
-        const beforeTyping = await page.evaluate(() =>
-          document.querySelector("[data-identity-leave]")?.hasAttribute("disabled"),
-        );
-        if (beforeTyping !== true) {
-          fail(
-            `${posture}: 离开这张网 is live before this machine's name is typed — ` +
-              "the confirmation is always there (docs/MORE.md 离开)",
-          );
-        }
-        // …and the name it wants is **this machine's**, which is what
-        // makes the typing a confirmation rather than a formality.
-        await page.fill("[data-identity-leave-name]", "beta");
-        const wrongName = await page.evaluate(() =>
-          document.querySelector("[data-identity-leave]")?.hasAttribute("disabled"),
-        );
-        if (wrongName !== true) {
-          fail(
-            `${posture}: 离开这张网 went live on another machine's name — ` +
-              "`Node::leave`答的就是 khor forget (docs/MORE.md 离开)",
-          );
-        }
-        const tried = leaveTried.length;
-        await page.fill("[data-identity-leave-name]", "gate");
-        await press("[data-identity-leave]");
-        await until(2000, async () => leaveTried.length > tried);
-        const left = await page.evaluate(() =>
-          [...document.querySelectorAll("[data-identity-left]")].map((e) =>
-            (e.textContent ?? "").trim(),
-          ),
-        );
-        console.log(`identity ${posture} · 离开: ${JSON.stringify({ sent: leaveTried.at(-1), said: left })}`);
-        if (leaveTried.at(-1) !== "gate") {
-          fail(
-            `${posture}: 离开这张网 sent ${JSON.stringify(leaveTried.at(-1))} — the machine's own ` +
-              "name typed back is the confirmation `Node::leave` checks",
-          );
-        }
-        // **Three sentences, not one.** The act, who heard it, and who
-        // did not — the last two leave different things to do, and a
-        // machine among the untold is one somebody has to go and run
-        // `khor forget` on (docs/MORE.md: 两种结局各一句话,不合成一句).
-        if (left.length !== 3) {
-          fail(
-            `${posture}: 离开这张网 said ${left.length} sentence(s) of the 3 endings the node ` +
-              "answered — 「两种结局各一句话,不合成一句」 (docs/MORE.md 离开)",
-          );
-        }
-        if (!left.some((l) => l.includes("beta-gate")) || !left.some((l) => l.includes("gamma-gate"))) {
-          fail(
-            `${posture}: 离开这张网 named neither who heard nor who did not: ${JSON.stringify(left)}`,
-          );
-        }
-        if (!left.some((l) => l.includes("khor forget"))) {
-          fail(
-            `${posture}: nobody is told what to do about the machines that were not reached — ` +
-              "they go on painting this one offline until somebody runs khor forget over there",
+            `${posture}: the identity card marks ${JSON.stringify(card.here)} as 当前 — this gate ` +
+              "drives a browser, so the one it is looking through is the web face (api.ts inApp)",
           );
         }
       }

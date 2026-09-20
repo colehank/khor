@@ -1028,13 +1028,26 @@ for line in sys.stdin:
    * already saying; the mesh is what it used to answer instead. Written
    * once here so the three sites that walk to the mesh cannot drift the
    * day it moves again.
+   *
+   * > **2026-09-21: it moved again, and this is the walk that caught
+   * > it.** The picture is the whole of the 网络 page now
+   * > (「网络就搞成地图」, docs/MORE.md 第二轮), reached from the
+   * > 「…」 menu; the avatar's page says nothing about the network any
+   * > more, so `[data-identity-mesh]` is gone. `check-face.mjs` has its
+   * > own copy of this walk and was updated with the product — **this
+   * > one was not**, and the only thing that said so was a 30-second
+   * > `locator.click` timeout in `toMesh` two thousand lines below the
+   * > change. Two walks, one fact: when it moves a fourth time, both.
    */
   const toMesh = async () => {
-    await page.locator("[data-rail-mark]").click();
-    await until("the identity card", 10_000, async () =>
-      (await page.locator('[data-more-page="identity"]').count()) === 1,
+    await page.locator("[data-rail-more]").click();
+    await until("the 「…」 menu", 10_000, async () =>
+      (await page.locator('[data-more-open="network"]').count()) === 1,
     );
-    await page.locator("[data-identity-mesh]").click();
+    await page.locator('[data-more-open="network"]').click();
+    await until("the 网络 page", 10_000, async () =>
+      (await page.locator('[data-more-page="network"]').count()) === 1,
+    );
   };
 
   // The open machine card's full id.
@@ -5234,10 +5247,22 @@ for line in sys.stdin:
   //      First that there *are* tabs there — a landing that drew none
   //      answers 「no editors」 the same way a correct one does, and
   //      that is the shape this file has been bitten by before.
+  //
+  //      ⚠️ **`[data-switch-tab]`, not `[data-tab]`** (2026-09-21). The
+  //      browsing tabs moved into the sidebar as a column
+  //      (外壳一致性批二·单元一, `1934283`), and that column is
+  //      `TabSwitcher` — whose rows have always been `data-switch-tab`.
+  //      `data-tab` belongs to the horizontal `TabStrip`, which this page
+  //      no longer draws. The probe-dead line above is what caught it,
+  //      which is exactly the job that line was put there to do: the
+  //      claim「no editors」would otherwise have gone on passing against
+  //      a page with no tabs on it at all.
   await openLanding("browser");
-  const browseTabs = await page.locator("[data-browse-landing] [data-tab]").count();
+  const browseTabs = await page.locator("[data-browse-landing] [data-switch-tab]").count();
   if (browseTabs === 0) throw new Error("probe dead: the browser landing drew no tabs to check");
-  const strays = await page.locator("[data-browse-landing] [data-tab] [data-session-title]").count();
+  const strays = await page
+    .locator("[data-browse-landing] [data-switch-tab] [data-session-title]")
+    .count();
   if (strays !== 0) throw new Error(`${strays} of ${browseTabs} browsing tab(s) grew a rename editor`);
   await openLanding("sessions");
   await until("back on the session strip", 15_000, async () =>

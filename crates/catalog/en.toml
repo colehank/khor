@@ -312,6 +312,11 @@ usage: khor <verb>
                         app is khor-gui, installed alongside khor; if
                         it's not installed, this tells you where to
                         get it)
+  faces                 which of khor's interfaces are up on this
+                        machine: whether the desktop app is running,
+                        whether the web face is listening and on which
+                        port. **"face" here means an interface, not the
+                        avatar** — that one is face
   quit                  shuts down: stops this machine's serve and
                         every session host (files all stay — serve
                         again and everything comes back)
@@ -379,12 +384,12 @@ usage: khor <verb>
                         this machine's name is the confirmation (the
                         same rule forget follows). A fresh ticket and
                         pair bring it back in
-  pause                 stop talking to this network: sends and receives
-                        nothing and the others see this machine offline,
-                        while its own sessions, workspaces and web face
-                        go on working. A restart is still paused
-  resume                come back: sending and receiving again, and the
-                        next sync round catches up
+  pause                 pauses this machine's place in the network: it
+                        stops syncing with the others and they see it
+                        offline, while its own sessions, workspaces and
+                        web face go on working. A restart is still paused
+  resume                resumes it: syncing again, and the next round
+                        catches up
   watch <machine> [directory ...]
                         has a machine watch the volumes those
                         directories sit on (shared across the whole
@@ -441,7 +446,13 @@ doctor-fixable = "khor doctor --fix {0}"
 # The GUI page's two actions. The CLI has neither: checking again is
 # typing it again, and the remedy is printed at the end of the row.
 doctor-again = "Check again"
-doctor-mend = "Mend"
+doctor-mend = "Repair"
+# ── `khor faces`: which of khor's interfaces are up here ─────────────
+face-name-app = "Desktop app"
+face-up = "Open"
+face-down = "Not open"
+face-at = "port {0}"
+face-current = "Current"
 # ── what each check says ──
 doctor-version-split = "the command line is {0}, this one is {1}"
 doctor-version-no-cli = "no khor command on this machine"
@@ -471,7 +482,7 @@ doctor-peer-mute = "{0} {1}, version unknown"
 doctor-peers-alone = "not paired with any machine yet"
 # What the checklist says while this machine is paused (docs/MORE.md
 # 暂停). Not a warning: it is doing what it was told.
-doctor-peers-paused = "Paused — sending and receiving nothing, and the others see this machine offline. To come back: khor resume"
+doctor-peers-paused = "Paused — not syncing with the others, and they see this machine offline. To resume: khor resume"
 doctor-peers-unread = "cannot read the machine table"
 doctor-hooks-ok = "every claude hook is installed"
 doctor-hooks-part = "{0} event hook(s) missing, or pointing at another khor"
@@ -859,28 +870,28 @@ tunnel-no-route = "The exit can't reach the destination: {0}"
 borrowing-title = "Borrowing {0}'s network"
 borrow-needs-serve = "Borrowing a network needs serve running (the proxy port has to live in a resident process)"
 reach-needs-serve = "Reaching another machine's terminal needs serve running (the pipe has to live in a resident process)"
-forgot = "Removed from the network: {0}. To bring it back: run khor invite on any machine still in the network, then take the ticket to that machine and run khor pair"
-left = "Left the network. This machine is in no network now; a fresh ticket and khor pair bring it back in"
+forgot = "Device removed: {0}. To bring it back: run khor invite on any machine still in the network, then take the ticket to that machine and run khor pair"
+left = "Left the network. This machine is in no network now; a fresh ticket and khor pair rejoin it"
 left-told = "These machines were told: {0}"
 left-untold = "These machines couldn't be reached and will go on seeing {1} as offline — run khor forget {1} over there: {0}"
-cant-forget-self = "This is the local machine — a machine can't remove itself from the network. For this machine to leave: khor leave {0}"
+cant-forget-self = "This is the local machine — a machine can't remove itself. For this machine to leave the network: khor leave {0}"
 leave-names-another-machine = "{0} isn't the local machine. To remove it from the network: khor forget {0}"
 leave-with-no-network = "This machine has never joined a network — there's none to leave. To join one: khor pair <ticket>"
 # `khor pause` / `khor resume` (docs/MORE.md 暂停). Pausing is not
 # leaving: the table stays, the others see this machine offline, and
 # everything local goes on working.
-paused = "Paused. This machine sends and receives nothing and the others see it offline; everything here still works. To come back: khor resume"
-resumed = "Back. This machine sends and receives again, and the next sync round catches it up"
+paused = "Paused. This machine stops syncing with the others and they see it offline; everything here still works. To resume: khor resume"
+resumed = "Resumed. This machine syncs with the others again, and the next round catches it up"
 # Asked twice. Unlike a setting: putting a preference to the value it
 # already holds is worth no sentence, while telling a paused machine to
 # pause is somebody who did not know it was (`lock::set_on` refuses the
 # same shape).
-already-paused = "Already paused. To come back: khor resume"
+already-paused = "Already paused. To resume: khor resume"
 not-paused = "Not paused. To pause: khor pause"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
 # that right now」 — refused by name, with the way out in it.
-paired-while-paused = "This machine is paused; pairing needs it back first: khor resume"
+paired-while-paused = "This machine is paused; pairing needs it resumed first: khor resume"
 reach-thread-died = "The terminal reach never came back"
 deliver-thread-died = "The file delivery never came back"
 landed-unsaid = "The file arrived, but that machine didn't say where it landed (its khor is older than this one), so there's no path to paste"
@@ -1271,7 +1282,8 @@ file-merged-clashes = "Merged in. {0} places changed the same line on both sides
 file-read-only = "Read-only"
 git-stale = "Save to see where it changed."
 git-added = "These lines aren't in HEAD"
-settings = "Settings"
+settings = "General"
+network = "Network"
 security = "Security"
 # "Doctor" (self-check), matching the CLI's own dev-tool-idiom naming rather than a literal "self-check"
 doctor = "Doctor"
@@ -1281,20 +1293,20 @@ doctor = "Doctor"
 identity = "About this machine"
 identity-id = "Machine ID"
 identity-version = "khor version"
-identity-paired = "Paired machines"
 identity-alone = "Not paired with any machine yet"
-# The pause section on the identity card (`khor pause`, docs/MORE.md
-# 暂停). Above leaving: this one is undoable and that one is not, and
-# people read from the lighter to the heavier.
-identity-pause-section = "Talking"
-identity-pause-warn = "Stop sending and receiving for now: the others see this machine offline while its own sessions and workspaces go on working. The machine table is untouched — this is not leaving, and it comes back whenever you say."
-identity-pause-do = "Pause this machine"
-identity-resume-do = "Come back"
+net-advanced = "Advanced"
+identity-faces = "khor's interfaces"
+# The four acts on the 网络 page (docs/MORE.md 第二轮). They moved off
+# the identity card: they are about this machine's relationship to the
+# network, not about which machine this is. Pause before leave — the
+# undoable one first.
+identity-pause-warn = "While paused this machine stops syncing with the others and they see it offline; its own sessions and workspaces go on working. The device table is untouched — this is not leaving the network, and it resumes whenever you say."
+identity-pause-do = "Pause"
+identity-resume-do = "Resume"
 identity-paused-now = "Paused — the others see this machine offline"
-identity-leave-section = "This network"
-identity-leave-warn = "Takes this machine out of this network: the machine table goes down to this machine alone, and what the others left here goes with them. This machine's own sessions, workspaces, identity and settings are untouched; a fresh ticket and pair bring it back in."
+identity-leave-warn = "Takes this machine out of the network: the device table goes down to this machine alone, and what the others left here goes with them. This machine's own sessions, workspaces, identity and settings are untouched; a fresh ticket and pair rejoin it."
 identity-leave-type-name = "Type this machine's name exactly"
-identity-leave-do = "Leave this network"
+identity-leave-do = "Leave network"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "This machine's face"
 # 存储 / 关于: read-only, and neither opens a node — which is why they
@@ -1342,11 +1354,11 @@ web-key-none = "this machine has never raised a web face"
 # Not decoration: every link handed out before this stops working, and
 # that is the whole meaning of the act.
 web-key-rotated = "Done; every link handed out before this one is dead"
-forget-section = "Machines paired with this one"
+# Takes a device out of the network, from its card on the 网络 page.
 # **Not the row menu's word.** That one is 「delete」, a row leaving a
-# list; this is a machine leaving the network. The sentence after the
+# list; this is a device leaving the network. The sentence after the
 # press is shared, because that is one act.
-forget-put-out = "Show it out"
+remove-device = "Remove device"
 # The one thing on this page that cannot be undone: red, and it wants the
 # machine's name typed out.
 reset-section = "Reset identity"
@@ -1427,8 +1439,8 @@ uninstall-hooks-failed = "Couldn't uninstall"
 hooks-buy-you = "Install it, and a session shows \"Done\" only after it finishes a turn"
 message-text = "Message"
 send-it = "Send"
-make-a-ticket = "Create a pairing ticket"
-join-with-a-ticket = "Join with a ticket"
+make-a-ticket = "Invite device"
+join-with-a-ticket = "Join network"
 ticket = "Pairing ticket"
 paste-a-ticket = "Paste the ticket here"
 join = "Join"

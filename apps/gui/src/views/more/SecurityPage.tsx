@@ -21,7 +21,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   fetchWebKey,
-  forgetDevice,
   resetIdentity,
   rotateWebKey,
   setLock,
@@ -30,7 +29,6 @@ import {
   type DeviceRow,
   type LockFacts,
 } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
@@ -44,7 +42,7 @@ export function SecurityPage({
   onLockNow,
   onSettingChanged,
   devices,
-  onForgot,
+  onReset,
 }: {
   onClose: () => void;
   /** What the shell already asked for — **not fetched again here**. Two
@@ -58,8 +56,13 @@ export function SecurityPage({
   /** A 二次确认 switch changed: the shell re-reads, and the rows that
       read those keys are drawn from that answer. */
   onSettingChanged: () => void;
+  /** Only this machine is read off it: 重置身份 wants this machine's
+      own name typed back. The list of the others left this page on
+      2026-09-20 (see the tombstone below). */
   devices: DeviceRow[];
-  onForgot: () => void;
+  /** This machine's identity was reset — every surface repaints, and
+      the lock is re-read with it. */
+  onReset: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState("");
@@ -69,7 +72,6 @@ export function SecurityPage({
   const [typedName, setTypedName] = useState("");
 
   const me = devices.find((d) => d.me) ?? null;
-  const others = devices.filter((d) => !d.me);
 
   useEffect(() => {
     void fetchWebKey().then(setKey, (e: unknown) =>
@@ -238,42 +240,13 @@ export function SecurityPage({
         )}
       </MoreSection>
 
-      <MoreSection name="paired" label={gui.forget_section}>
-        {others.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{gui.identity_alone}</p>
-        ) : (
-          <ul className="flex flex-col">
-            {others.map((d) => (
-              <li
-                key={d.id}
-                data-security-machine={d.id}
-                className="flex min-w-0 items-center gap-row border-b py-1 text-sm last:border-b-0"
-              >
-                <MachineAvatar face={d.face} className="size-avatar flex-none" />
-                <span className="min-w-0 flex-1 truncate">{d.shown}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-security-forget={d.id}
-                  onClick={() => {
-                    setError(null);
-                    forgetDevice(d.name).then(onForgot, (e: unknown) =>
-                      setError(String(e instanceof Error ? e.message : e)),
-                    );
-                  }}
-                  className="min-h-touch flex-none"
-                >
-                  {gui.forget_put_out}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {/* The whole cost in one clause, and **the same clause the row
-            menu's confirm uses** — it is one act, so it is one sentence
-            (`forget-machine-confirm`). */}
-        <p className="text-xs text-muted-foreground">{gui.forget_machine_confirm}</p>
-      </MoreSection>
+      {/* 配对的机器 left this page on 2026-09-20 (docs/MORE.md 第二轮:
+          已配对机器从头像卡和安全页拿掉). It was a list here *and* a
+          list on the identity card, and the network page's map is the
+          one place a machine lives now — 移除设备 with it, in the card
+          of the machine it is about (`MarkPlace`). What is left on 安全
+          is what this page is for: the keys and the acts that cost
+          something. */}
 
       <MoreSection name="reset" label={gui.reset_section}>
         {/* Red, because this is the one thing on this page that cannot
@@ -303,7 +276,7 @@ export function SecurityPage({
             onClick={() => {
               setError(null);
               resetIdentity(typedName).then(
-                () => onForgot(),
+                () => onReset(),
                 (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
               );
             }}

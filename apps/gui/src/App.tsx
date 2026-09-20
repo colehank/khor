@@ -31,6 +31,7 @@ import {
   IconDevices,
   IconFiles,
   IconGear,
+  IconNetwork,
   IconMore,
   IconPulse,
   IconQuota,
@@ -93,13 +94,13 @@ import { WorkspacesList } from "@/views/WorkspacesList";
 import { LockScreen } from "@/views/LockScreen";
 import { moreName, type MorePage } from "@/views/more/MorePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
+import { NetworkPage } from "@/views/more/NetworkPage";
 import { IdentityPage } from "@/views/more/IdentityPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCard } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
-import { MarkPlace } from "@/views/MarkPlace";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
@@ -115,21 +116,16 @@ import { NewSessionDialog } from "@/views/NewSessionDialog";
  */
 type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 
-/**
- * The app's mark opens a place of its own: the whole mesh, and what the
- * agents on it have cost.
- *
- * **Not a fifth `Landing`, and the difference is structural rather than
- * cosmetic.** A landing is a list beside a detail — that is what the
- * shell is built out of, and what the rail's four glyphs each open. This
- * one is neither half of that pair: there is no list of things to pick
- * from, because the thing it shows is the network itself. So it replaces
- * the list-and-detail pair rather than filling it, and the state that
- * says so is separate from the landing rather than another value of it.
- * Coming back from it restores whichever landing was open, which is why
- * that value is never overwritten.
+/*
+ * **The mark's place is gone as a screen of its own** (2026-09-20).
+ * It was a state beside `landing` — the mesh, reached first from the
+ * app's mark at the head of the rail, then from this machine's face,
+ * then from a row on the identity card. It is the body of the 网络 page
+ * now (`views/more/NetworkPage`), which is the whole of that page:
+ * 「网络就搞成地图」. The structural argument that kept it out of
+ * `Landing` still holds and now belongs to `morePage`, which is where it
+ * is written.
  */
-type Mark = boolean;
 
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
     leaving a line is the wizard's first kind now (`NewSessionDialog`),
@@ -544,7 +540,7 @@ export default function App() {
   // another tab — a phone has no strip — and the wide face's answer
   // once the strip has stopped showing every tab (`TabStrip.onSwitch`,
   // which is the side that can measure that). Reset wherever the tabs
-  // stop being the thing on screen: another landing, the mark's place,
+  // stop being the thing on screen: another landing, a 「…」 page,
   // or the last tab closing.
   const [switchingTabs, setSwitchingTabs] = useState(false);
   useEffect(() => {
@@ -644,8 +640,6 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(null);
-  // Whether the mark's place is showing. See `Mark`.
-  const [mark, setMark] = useState<Mark>(false);
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
   // there has ever been, eighteen seconds for the first pass on the
@@ -799,7 +793,7 @@ export default function App() {
       live = false;
       clearInterval(t);
     };
-  }, [mark, landing]);
+  }, [morePage, landing]);
 
   const onSelect = useCallback((row: SessionRow) => {
     sessionTabs.open(row.id);
@@ -1075,7 +1069,6 @@ export default function App() {
               return;
             }
             setMorePage(null);
-            setMark(false);
             setLanding("workspaces");
             // The id stands in where the device table has no name for
             // it — `WorkspacesList`'s own line, for the same reason.
@@ -1218,7 +1211,7 @@ export default function App() {
   // fourth (身份) is behind the avatar and lights that one instead.
   const foldedOn =
     (morePage !== null && morePage !== "identity") ||
-    (!mark && narrow && landings().slice(NARROW_SHOWN).some((l) => l.key === landing));
+    (narrow && landings().slice(NARROW_SHOWN).some((l) => l.key === landing));
   /**
    * The three doors 「…」 opens, in the order docs/MORE.md lists them.
    *
@@ -1228,6 +1221,9 @@ export default function App() {
    * how one press comes to mean two things.
    */
   const morePages: { key: MorePage; glyph: ReactNode }[] = [
+    // 网络 first: it is the page the other three are not about, and the
+    // one the user asked for by name (docs/MORE.md 第二轮).
+    { key: "network", glyph: <IconNetwork /> },
     { key: "settings", glyph: <IconGear /> },
     { key: "security", glyph: <IconShield /> },
     { key: "doctor", glyph: <IconPulse /> },
@@ -1304,12 +1300,12 @@ export default function App() {
           // window, where the corner in question is not. Narrow's gap is
           // at the head of the screen column instead (the shell below).
           className={!narrow && i === 0 ? "mt-traffic" : undefined}
-          // **Not lit while the mark's place is up.** A landing is still
+          // **Not lit while a 「…」 page is up.** A landing is still
           // remembered — coming back out of the mesh returns to it — but
           // remembering it and being the thing on screen are two facts,
           // and painting both at once puts two selected items in one
           // rail with the wrong one lit.
-          on={!mark && landing === l.key}
+          on={morePage === null && landing === l.key}
           narrow={narrow}
           // Only the sessions glyph counts anything: the badge rule is
           // that it must be able to reach zero (docs/UX.md 状态呈现),
@@ -1324,12 +1320,11 @@ export default function App() {
             // put away (the two inbox landings) and only wide: narrow
             // shows one screen, so there is nothing beside the list to
             // give its room to.
-            const again = !mark && morePage === null && landing === l.key;
+            const again = morePage === null && landing === l.key;
             // A 「…」 page is open over this landing, so pressing a rail
             // glyph has to close it — otherwise the one press that
             // always answers 「带我回去」 would do nothing visible.
             setMorePage(null);
-            setMark(false);
             setLanding(l.key);
             setScreen("list");
             setSwitchingTabs(false);
@@ -1406,12 +1401,11 @@ export default function App() {
               <DropdownMenuItem
                 key={l.key}
                 data-more-landing={l.key}
-                data-on={!mark && morePage === null && landing === l.key}
+                data-on={morePage === null && landing === l.key}
                 className="min-h-touch gap-2"
                 onSelect={() => {
                   setMorePage(null);
-                  setMark(false);
-                  setLanding(l.key);
+                        setLanding(l.key);
                   setScreen("list");
                   setSwitchingTabs(false);
                   listPane.expand();
@@ -1471,7 +1465,7 @@ export default function App() {
           that picture is going to be re-decided anyway. */}
       <RailItem
         label={gui.identity}
-        on={mark || morePage === "identity"}
+        on={morePage === "identity"}
         narrow={narrow}
         onClick={() => {
           setMorePage("identity");
@@ -1857,7 +1851,6 @@ export default function App() {
       // the same from the other side).
       onBrowseFiles={(row) => {
         setMorePage(null);
-        setMark(false);
         setLanding("workspaces");
         // Home, not a workspace: this machine may have no checkouts at
         // all and the request is still「show me its disk」. The pane
@@ -1871,7 +1864,6 @@ export default function App() {
       // what an empty place opens to (docs/NET.md 借网).
       onBorrowWeb={(row) => {
         setMorePage(null);
-        setMark(false);
         setLanding("browser");
         pageTabs.open(row.id, "");
         setScreen("detail");
@@ -1915,7 +1907,6 @@ export default function App() {
             return;
           }
           setMorePage(null);
-          setMark(false);
           setLanding("sessions");
           sessionTabs.open(id);
           setScreen("detail");
@@ -1953,7 +1944,27 @@ export default function App() {
    * showing different styles.
    */
   const morePageEl =
-    morePage === null ? null : morePage === "settings" ? (
+    morePage === null ? null : morePage === "network" ? (
+      <NetworkPage
+        rows={rows}
+        devices={devices}
+        onClose={() => setMorePage(null)}
+        onInvite={() => setSheet("invite")}
+        onJoin={() => setSheet("join")}
+        onChanged={() => {
+          // The device table is the thing that changed, and every
+          // surface on this screen paints off it — the map's seats, the
+          // rail's foot, the machines landing. One refresh, the same
+          // one a forget has always got.
+          refresh().catch(() => {});
+        }}
+        onPickWaiting={(row) => {
+          setMorePage(null);
+          setLanding("sessions");
+          onSelect(row);
+        }}
+      />
+    ) : morePage === "settings" ? (
       <SettingsPage
         onClose={() => setMorePage(null)}
         onChanged={() => {
@@ -1969,7 +1980,7 @@ export default function App() {
         onLockNow={lock.now}
         onSettingChanged={settings.reread}
         devices={devices}
-        onForgot={() => {
+        onReset={() => {
           refresh().catch(() => {});
           lock.reread();
         }}
@@ -1977,49 +1988,15 @@ export default function App() {
     ) : morePage === "doctor" ? (
       <DoctorPage onClose={() => setMorePage(null)} />
     ) : (
-      <IdentityPage
-        devices={devices}
-        onClose={() => setMorePage(null)}
-        onMesh={() => {
-          setMorePage(null);
-          setMark(true);
-          setScreen("list");
-          setSwitchingTabs(false);
-        }}
-        onInvite={() => setSheet("invite")}
-        onJoin={() => setSheet("join")}
-        onLeft={() => {
-          // The device table is the thing that changed, and every
-          // surface on this screen paints off it — the card's own list,
-          // the rail's foot, the machines landing. One refresh, the
-          // same one a forget gets (`SecurityPage`'s `onForgot`).
-          refresh().catch(() => {});
-        }}
-      />
+      <IdentityPage devices={devices} onClose={() => setMorePage(null)} />
     );
-
-  // Its own file: this surface and the session list get reshaped by
-  // different people at the same time, and while it lived here those
-  // were one file's changes (`MarkPlace` says the rest).
-  const markPlace = (
-    <MarkPlace
-      rows={rows}
-      devices={devices}
-      onPickWaiting={(row) => {
-        setMorePage(null);
-        setMark(false);
-        setLanding("sessions");
-        onSelect(row);
-      }}
-    />
-  );
 
   /**
    * The two browsing landings, which are neither half of the
-   * list-and-detail pair either — for a different reason from the
-   * mark's, and the two reasons are worth keeping apart.
+   * list-and-detail pair either — for a different reason from a 「…」
+   * page's, and the two reasons are worth keeping apart.
    *
-   * The mark's place is not a landing at all. These are: they are
+   * A 「…」 page is not a landing at all. These are: they are
    * simply **browsing** landings rather than **inbox** ones
    * (docs/UX.md 姿势 — 收件箱型 / 浏览型). 会话 and 机器 are lists a
    * person keeps an eye on, so the list is furniture and stays on
@@ -2106,9 +2083,9 @@ export default function App() {
   }
 
   // One shell, two width classes: wide is rail|list|detail all at once,
-  // narrow is one screen at a time with the rail as a bottom bar. The
-  // mark's place is neither half of that pair, so it takes the whole of
-  // what is left of the window beside the rail (see `Mark`).
+  // narrow is one screen at a time with the rail as a bottom bar. A
+  // 「…」 page is neither half of that pair, so it takes the whole of
+  // what is left of the window beside the rail (see `morePage`).
   return (
     <SettingsProvider value={settings.rows}>
     <TooltipProvider delayDuration={0}>
@@ -2136,8 +2113,8 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div
-            key={morePage ? `more:${morePage}` : mark ? "mark" : browses ? landing : screen}
-            data-screen={morePage ? "more" : mark ? "mark" : browses ? landing : screen}
+            key={morePage ? `more:${morePage}` : browses ? landing : screen}
+            data-screen={morePage ? "more" : browses ? landing : screen}
             ref={detailBox}
             className="min-h-0 flex-1 overflow-hidden"
           >
@@ -2148,12 +2125,10 @@ export default function App() {
                 A 「…」 page is one screen too, and its own `data-screen`
                 word — **not "detail"**: the slide in `app.css` says
                 「你往里走了一层」, and these do not sit inside anything.
-                They are opened over the whole region, the way the mark's
-                place is, and take the same silence. */}
+                They are opened over the whole region, the way the
+                mark's place used to be, and take the same silence. */}
             {morePage
               ? morePageEl
-              : mark
-              ? markPlace
               : quotas
                 ? (
                     // 额度 is an inbox now, so it takes the inbox
@@ -2195,15 +2170,13 @@ export default function App() {
       ) : (
         <div className="flex h-dvh">
           {rail}
-          {/* A 「…」 page takes the whole region beside the rail, the way
-              the mark's place does and for the same structural reason:
-              it is neither half of the list-and-detail pair. The landing
-              under it keeps its state — closing the page puts it back
-              exactly as it was. */}
+          {/* A 「…」 page takes the whole region beside the rail, and the
+              reason is structural rather than cosmetic: it is neither
+              half of the list-and-detail pair. The landing under it
+              keeps its state — closing the page puts it back exactly as
+              it was. */}
           {morePage ? (
             <div className="min-w-0 flex-1">{morePageEl}</div>
-          ) : mark ? (
-            <div className="min-w-0 flex-1">{markPlace}</div>
           ) : quotas ? (
             <div className="min-w-0 flex-1">
               <QuotaLanding

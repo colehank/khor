@@ -3146,3 +3146,71 @@ fn the_checklist_calls_a_paused_machine_well() {
         "and it says which of the two it is"
     );
 }
+
+/// 本机开着哪几张 khor 界面 (docs/MORE.md 头像页) — the answer behind
+/// `khor faces` and behind the identity card's list.
+///
+/// **Every face, including the ones that are not up.** A list of only
+/// the running ones would leave somebody looking for the browser face
+/// with nothing saying it exists, so the assertion is on the whole key
+/// set rather than on what happened to be listening.
+#[test]
+fn every_face_is_listed_whether_or_not_it_is_up() {
+    let r = scratch("faces-all");
+
+    let rows = crate::face::faces(&r);
+    assert_eq!(
+        rows.iter().map(|f| f.key.as_str()).collect::<Vec<_>>(),
+        crate::face::FACE_KEYS,
+        "the listing is every face khor has, in the order a page draws them"
+    );
+    assert!(
+        rows.iter().all(|f| f.key != "app" || !f.up),
+        "no desktop app has said it is here on this scratch home"
+    );
+    // A face that is not up carries no address: a port beside 未打开 is
+    // an address nobody can open.
+    assert!(rows.iter().all(|f| f.up || f.at.is_none()), "{rows:?}");
+}
+
+/// The desktop app is the one face nothing else on the machine can see,
+/// so it says so itself — and **a recorded pid that is not running reads
+/// as gone**, which is what makes a crashed app harmless rather than a
+/// face khor reports forever.
+#[test]
+fn the_desktop_app_is_up_only_while_its_recorded_pid_is() {
+    let r = scratch("faces-app");
+
+    assert!(
+        !crate::face::app_up(&r),
+        "control: nothing has claimed the window on a fresh home"
+    );
+
+    crate::face::app_here(&r).unwrap();
+    assert!(
+        crate::face::app_up(&r),
+        "this process wrote its own pid, and this process is running"
+    );
+
+    // A pid nothing is wearing. **Borrowed from a process that has
+    // already been reaped**, rather than a large number written here:
+    // `kill(0, 0)` addresses this whole process group and answers yes,
+    // and a number picked to be「surely too big」 is a guess about
+    // `pid_max` on a machine this test has never seen.
+    let mut gone = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg("exit 0")
+        .spawn()
+        .unwrap();
+    let pid = gone.id();
+    gone.wait().unwrap();
+    std::fs::write(
+        crate::face::app_pid_path(&r),
+        format!("{{\"pid\":{pid}}}").as_bytes(),
+    )
+    .unwrap();
+    assert!(
+        !crate::face::app_up(&r),
+        "a recorded pid nobody is running is an app that is not there"
+    );
+}

@@ -2406,6 +2406,12 @@ pub fn run() {
     // If this process was re-exec'd as a session host, be one — the app
     // spawns hosts through its own binary (`host.rs main_if_host`).
     khor_node::host::main_if_host(Node::root_from_env());
+    // 本机开着哪几张脸 (docs/MORE.md 头像页): the desktop app is the one
+    // face nothing else on this machine can see, so it says so itself.
+    // **After `main_if_host`**, or a re-exec'd session host would claim
+    // to be the window. Failing to write it costs a row on one card and
+    // nothing else, so it does not stop the app coming up.
+    let _ = khor_node::face::app_here(&Node::root_from_env());
 
     // The app embeds serve — the desktop is a full node, not a client
     // (one mesh, no client/server split). Running `khor serve` on the

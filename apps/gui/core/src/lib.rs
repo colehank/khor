@@ -1139,6 +1139,36 @@ pub struct About {
     /// same way: a walk of `.khor/` with no node opened
     /// (`doctor::store_bytes`, which 自检 already does).
     pub store_bytes: u64,
+    /// Which of khor's interfaces are up on this machine — the desktop
+    /// app, the web face (docs/MORE.md 头像页: 本机开着哪几张脸).
+    ///
+    /// **Here rather than in a call of its own**, `paused`'s reason:
+    /// it is read the same way, off two files and a loopback port with
+    /// no node opened, by the one page that asks for `About` at all.
+    /// The CLI's equivalent is `khor faces`, which prints this same
+    /// list from the same function.
+    pub faces: Vec<FaceRow>,
+}
+
+/// One of khor's interfaces on this machine, as the identity card draws
+/// it (docs/MORE.md 头像页).
+///
+/// **The word is looked up here, not in TS** — `DoctorRow`'s judgment:
+/// the catalog has one entry per key (`khor_node::face::face_name`), and
+/// a second match on the same keys over there would be one rename away
+/// from a card with a row labelled `web`.
+///
+/// `said` is the whole right-hand side already assembled — 运行中 with
+/// the port when there is one, 未运行 when there is not. Assembling it
+/// on this side is what keeps a port from ever being printed beside
+/// 未运行.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct FaceRow {
+    pub key: String,
+    pub name: String,
+    pub up: bool,
+    pub said: String,
 }
 
 /// Neither half opens a node: the version is a compile-time constant and
@@ -1151,6 +1181,23 @@ pub fn about(root: &Path) -> About {
         root: root.display().to_string(),
         paused: khor_node::pause::is_on(root),
         store_bytes: khor_node::doctor::store_bytes(root),
+        faces: khor_node::face::faces(root)
+            .into_iter()
+            .map(|f| FaceRow {
+                name: khor_node::face::face_name(&f.key).to_owned(),
+                said: match (&f.at, f.up) {
+                    (Some(at), true) => format!(
+                        "{} · {}",
+                        khor_catalog::cli::face_up(),
+                        khor_catalog::cli::face_at(at)
+                    ),
+                    (_, true) => khor_catalog::cli::face_up().to_owned(),
+                    _ => khor_catalog::cli::face_down().to_owned(),
+                },
+                key: f.key,
+                up: f.up,
+            })
+            .collect(),
     }
 }
 
