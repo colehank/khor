@@ -8901,6 +8901,11 @@ try {
         ["devices", "[data-list]"],
         ["workspaces", "[data-list]"],
         ["quota", "[data-quota-pane]"],
+        // 浏览 joined the rule in 批二, when its tabs became the column
+        // (docs/SHELL.md 第 2 条). It was the one landing `hasList`
+        // excluded, and it was excluded because it had no column —
+        // not by anybody's decision.
+        ["browser", "[data-browse-tabs]"],
       ]) {
         await open(key);
         await wait(300);
@@ -9000,6 +9005,104 @@ try {
             "three buttons sit in that corner (第 58 条)",
         );
       }
+    }
+  }
+
+  // ── 4H) 浏览器:标签页在侧边栏 (docs/SHELL.md 第 2 条) ──────────────
+  //
+  // 「浏览器改版为侧边栏. 标签页移动到侧边栏, 参考chrome的最新模式.」—
+  // the user, 2026-09-20, with Chrome's vertical tabs as the picture: a
+  // column of tabs on the left, the page filling the rest, the address
+  // bar above the page.
+  //
+  // What is measured is the **arrangement**, because that is what the
+  // ruling is: the column is a column (taller than it is wide, and to
+  // the left of the page), the address bar sits above the page and not
+  // above the column, and the horizontal strip is gone from this
+  // landing — while still being drawn by the two faces that kept it, so
+  // 「it moved」 is told apart from 「it was deleted」.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await open("browser");
+    await wait(400);
+    const shape = await page.evaluate(() => {
+      const box = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+      };
+      return {
+        column: box("[data-browse-tabs]"),
+        rows: document.querySelectorAll("[data-browse-tabs] [data-switch-tab]").length,
+        plus: document.querySelectorAll("[data-browse-tabs] [data-tab-new]").length,
+        strip: document.querySelectorAll('[data-browse-landing="page"] [data-tab-bar]').length,
+        count: document.querySelectorAll('[data-browse-landing="page"] [data-tab-count]').length,
+        bar: box("[data-address-bar]"),
+        seam: document.querySelectorAll('[data-browse-landing="page"] [data-list-seam]').length,
+      };
+    });
+    console.log(`browser column: ${JSON.stringify(shape)}`);
+    if (!shape.column || !shape.bar) {
+      fail(
+        `probe dead: the browser landing drew ${shape.column ? "" : "no column"}${shape.bar ? "" : " no address bar"} — ` +
+          "nothing below is measuring 第 2 条 (src/browse/BrowseLanding.tsx)",
+      );
+    } else {
+      if (shape.rows < 1) {
+        fail("the tab column has no tab rows in it — a column of tabs is what 「标签页移动到侧边栏」 asks for");
+      }
+      // The 「+」 is at the **foot**, under the last tab, which is the
+      // user's own picture (「列底一个『+』」) and where `TabSwitcher`
+      // has drawn it since it was a phone screen.
+      if (shape.plus !== 1) {
+        fail(`the tab column carries ${shape.plus} way(s) to open a tab — 「列底一个『+』新开一枚」`);
+      }
+      // A column, not a strip: taller than wide, and against the left.
+      if (shape.column.h <= shape.column.w) {
+        fail(
+          `the tab column is ${shape.column.w}x${shape.column.h} — wider than it is tall is a strip, ` +
+            "and the strip is what this ruling moved (src/browse/BrowseLanding.tsx)",
+        );
+      }
+      // **The address bar is above the page, not above the column.**
+      // That is the half of the picture a column alone does not give:
+      // a bar spanning the whole landing would read as being about the
+      // tabs as well as the page.
+      if (shape.bar.x < shape.column.x + shape.column.w) {
+        fail(
+          `the address bar starts at ${shape.bar.x}, inside the column that ends at ${shape.column.x + shape.column.w} — ` +
+            "「地址栏在页面上方」, and the column is not the page (src/browse/BrowseLanding.tsx)",
+        );
+      }
+      if (shape.strip !== 0 || shape.count !== 0) {
+        fail(
+          `the browser landing still draws ${shape.strip} horizontal strip(s) and ${shape.count} tab count(s) — ` +
+            "the column is every tab at once, so the way into a switcher over it is clutter",
+        );
+      }
+      if (shape.seam !== 1) {
+        fail(
+          `the browser landing drew ${shape.seam} seam(s) beside its column — it is the shell's pane now, ` +
+            "and the seam comes with it (src/components/ListPane.tsx)",
+        );
+      }
+    }
+    // …**and the strip is not gone from the app**, which is what tells
+    // 「it moved」 from 「it was deleted」. One component, two customers
+    // left: the sessions landing and the workspace's files.
+    await open("sessions");
+    await press("[data-row]");
+    await wait(400);
+    const stillStriped = await page.evaluate(
+      () => document.querySelectorAll("[data-session-tabs] [data-tab-bar]").length,
+    );
+    console.log(`the strip's remaining customers · sessions: ${stillStriped}`);
+    if (stillStriped !== 1) {
+      fail(
+        `the sessions landing draws ${stillStriped} tab strip(s) — the browser's tabs moved into a column, ` +
+          "the strip itself did not go anywhere (src/browse/TabStrip.tsx)",
+      );
     }
   }
 
@@ -17938,7 +18041,11 @@ try {
     // pointer* is the one carrying the attribute, so an ancestor with it
     // buys nothing. The top row is walked across its whole width and
     // every hit is named by the marker it wears.
-    const MARKS = ["data-rail", "data-pane-bar", "data-tab-bar", "data-tab-strip", "data-detail-header", "data-tree-head", "data-traffic-room"];
+    // `data-address-bar` joined on 2026-09-20: the browsing landing's
+    // tabs became a column down the left (docs/SHELL.md 第 2 条), so the
+    // strip that used to carry that landing's drag is not in its top
+    // row any more and the address bar is.
+    const MARKS = ["data-rail", "data-pane-bar", "data-tab-bar", "data-tab-strip", "data-detail-header", "data-tree-head", "data-traffic-room", "data-address-bar"];
     const topRow = (marks) =>
       page.evaluate((names) => {
         const seen = new Set();

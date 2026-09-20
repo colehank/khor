@@ -2,14 +2,43 @@
 // tab is showing.
 //
 // **One shell, one per landing that browses** (docs/UX.md 浏览型,
-// docs/DESIGN.md for what it owns and what a kind must bring). A
-// browsing landing has **no list pane** — 会话 and 机器 are lists a
-// person keeps an eye on, so their list is furniture and stays on
-// screen, while a place is not watched but walked: which machine is a
-// step on the way, and a permanent column of machines is a column spent
-// on a question that was answered the moment the tab opened. What
-// replaces it is the browser's own answer, tabs and an address bar, and
-// the column goes to the content.
+// docs/DESIGN.md for what it owns and what a kind must bring).
+//
+// # The tabs are a column now (docs/SHELL.md 第 2 条, 2026-09-20)
+//
+// 「浏览器改版为侧边栏. 标签页移动到侧边栏, 参考chrome的最新模式.」— the
+// user, with Chrome's vertical tabs as the picture: a column of tabs on
+// the left, each a face and a name with a close on it, a 「+」 at the
+// foot, the page filling the rest and the address bar above it.
+//
+// ⚠️ **This overturns what this file used to argue, and the old
+// argument is worth keeping because it was not wrong about its own
+// subject.** It said a browsing landing has no list pane: 会话 and 机器
+// are lists a person keeps an eye on, so their list is furniture, while
+// a place is not watched but walked — 「which machine」 is a step on the
+// way, and a permanent column of machines is a column spent on a
+// question the tab answered the moment it opened.
+//
+// Every word of that is about **a column of machines**, which is what
+// the first version of this landing had. A column of **tabs** is not
+// that: it is the thing a person keeps an eye on here, exactly the way
+// the sessions list is on its own landing — what is open, which one is
+// in front, what to close. So the landing did not stop being 浏览型; it
+// grew the one list it turns out to have.
+//
+// **And the column is `TabSwitcher`, the component the narrow face was
+// already using.** Chrome's vertical tab is a face, a name, a second
+// line and a close — which is the switcher's row, drawn for a phone
+// two batches ago. One component, two seats: a pane on the wide face
+// and a screen on the narrow one. A second drawing of it would be the
+// failure `PaneBar`'s head warns about, one landing over.
+//
+// **What left with the strip**: `TabStrip` is not drawn here any more,
+// and neither is the way into the switcher on the wide face (`onSwitch`,
+// `TabCount`) — the column *is* every tab at once, at every number of
+// tabs, so the condition the strip's switcher existed for cannot arise.
+// The strip is still one component and still has two customers (the
+// sessions landing and the workspace's files).
 //
 // One tab is (a machine, a place). That pair is the tab's whole
 // identity, it is what the strip titles, what the address bar draws,
@@ -26,9 +55,11 @@ import { forgetRecent, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
-import { TabCount, TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
+import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
+import { ListPane } from "@/components/ListPane";
+import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
 
 /** What a tab calls itself: the way a browser tab wears a page's title
@@ -51,6 +82,7 @@ export function BrowseLanding({
   devices,
   tabs,
   narrow,
+  pane,
 }: {
   /**
    * Which kind of browsing this is.
@@ -63,20 +95,35 @@ export function BrowseLanding({
   devices: DeviceRow[];
   tabs: BrowseTabs;
   narrow: boolean;
+  /**
+   * The tab column's width, **the shell's own** (`components/ListPane`,
+   * docs/SHELL.md 第 6 条).
+   *
+   * It is the same object the rail toggles, which is what makes 「再按
+   * 一次收起」 work here too (第 4 条) — this was the one landing left
+   * out of that rule, and it was left out because it had no column to
+   * put away rather than by anybody's decision. `null` on the narrow
+   * face, where there is one screen and nothing beside it.
+   */
+  pane: PaneWidth | null;
 }) {
-  // Whether the switcher is up.
-  //
-  // **Both faces now, and the correction is worth keeping.** This read
-  // "narrow only — the strip is already every tab at once, and a
-  // switcher over it would be a second way to do a thing that is not
-  // hidden". The second clause is still right and the first was a
-  // condition read as a fact: measured, the strip stops showing every
-  // tab as soon as it scrolls (`TabStrip`, tokens.css `--tab-w`: fixed
-  // stubs, so it scrolls rather than shrinks). So the switcher is
-  // offered on the wide face exactly when the strip has stopped being
-  // able to do what the old comment credited it with, and `TabStrip`
-  // owns that condition because it is the only thing that can measure
-  // it.
+  /**
+   * Whether the switcher's **screen** is up. Narrow only, and this time
+   * that really is a fact about the face rather than a condition read
+   * as one.
+   *
+   * ⚠️ **It was on both faces for two batches, and the reason it is not
+   * any more is the tabs moving into a column** (第 2 条). The wide
+   * face's switcher existed because the strip stopped showing every tab
+   * as soon as it scrolled (tokens.css `--tab-w`: fixed stubs, so it
+   * scrolls rather than shrinks) — a switcher was the answer to 「too
+   * many to find one in」, which is a question about the number of tabs
+   * and not about the width of the window. A column scrolls **down**
+   * and shows every tab at every number of them, so the question cannot
+   * arise there and a second way in would be clutter over something
+   * that is not hidden. That was this file's original judgment, and it
+   * is true again for a reason it was not true for before.
+   */
   const [switching, setSwitching] = useState(false);
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
@@ -210,10 +257,22 @@ export function BrowseLanding({
       />
     );
 
-  // **One switcher, written once**, whichever face asked for it. Spelled
-  // twice it would be two places to keep the closing rules in step, and
-  // the wide face's copy would be the one nobody notices drifting.
-  const region = switching ? (
+  /**
+   * Every tab as a row: **the column on the wide face, the screen on
+   * the narrow one, and one component either way.**
+   *
+   * Chrome's vertical tab is a face, a name, a second line and a close,
+   * with a 「+」 under the list — which is precisely what `TabSwitcher`
+   * has drawn for phones since before this ruling. Written twice, the
+   * two would be two places to keep the closing rules in step, and the
+   * wide one would be the copy nobody notices drifting.
+   *
+   * `setSwitching(false)` on every action is a no-op on the wide face
+   * (the screen is never up there) and is what puts the screen away on
+   * the narrow one. Said once rather than branched: a handler that
+   * differed per face is the second spelling this whole file is about.
+   */
+  const tabList = (
     <TabSwitcher
       faces={faces}
       active={tabs.current.id}
@@ -227,40 +286,47 @@ export function BrowseLanding({
         setSwitching(false);
       }}
     />
-  ) : (
-    content
   );
 
+  // **One screen at a time** (docs/UX.md 姿势, docs/WORKSPACE.md 第 33
+  // 条): the tab list is one screen and the page is the other, with the
+  // count in the address bar as the way between them.
   if (narrow) {
     return (
       <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
         {address(<TabCount n={tabs.tabs.length} onPress={() => setSwitching(true)} />)}
-        <div className="min-h-0 flex-1 overflow-hidden">{region}</div>
+        <div className="min-h-0 flex-1 overflow-hidden">{switching ? tabList : content}</div>
       </section>
     );
   }
 
   return (
-    <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
-      <TabStrip
-        faces={faces}
-        active={tabs.current.id}
-        onFocus={(id) => {
-          tabs.focus(id);
-          setSwitching(false);
-        }}
-        onClose={tabs.close}
-        onNew={() => {
-          tabs.add();
-          setSwitching(false);
-        }}
-        // The strip decides *whether* to offer this — it is the only
-        // thing that can measure whether it is still showing every tab.
-        // This side only says what pressing it does.
-        onSwitch={() => setSwitching(true)}
-      />
-      {address()}
-      <div className="min-h-0 flex-1 overflow-hidden">{region}</div>
+    <section data-browse-landing={kind.kind} className="flex h-full min-h-0">
+      {/* **No head on this pane, and that is a decision rather than an
+          omission.** `ListPane`'s head is where a landing puts what you
+          can *do* there — a search box, a filter, a 「+」. Chrome's
+          vertical tabs put the one thing this column can do at the
+          foot, under the last tab, and the user's own picture is that
+          one; `TabSwitcher` has drawn it there since it was a phone
+          screen. A search box over the tabs would be a control this
+          ruling did not ask for, on the one list in the app short
+          enough to read at a glance. */}
+      <ListPane
+        mark="data-browse-tabs"
+        name={kind.words.segment}
+        pane={pane}
+        narrow={false}
+        seam={{ "data-list-seam": "" }}
+        // The switcher holds its own scroller, under a foot that must
+        // not scroll away with the tabs.
+        scroll={false}
+      >
+        {tabList}
+      </ListPane>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {address()}
+        <div className="min-h-0 flex-1 overflow-hidden">{content}</div>
+      </div>
     </section>
   );
 }

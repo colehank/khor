@@ -63,7 +63,7 @@ import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
-import { roomBeside, useListWidth } from "@/hooks/use-list-width";
+import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
@@ -235,12 +235,14 @@ const landings = (): { key: Landing; name: string; glyph: ReactNode }[] => [
  * one place to say so, and the gate presses every rail glyph twice
  * rather than the three somebody remembered.
  *
- * 浏览 is the one that has none — it is a 浏览型 landing (docs/UX.md
- * 姿势), all page and no list. **That changes in 批二**, where its tabs
- * become the column (docs/SHELL.md 第 2 条); this is the line that will
- * say so.
+ * **Every landing, since 批二.** 浏览 was the last one without a
+ * column — 「all page and no list」 — and its tabs became that column
+ * (docs/SHELL.md 第 2 条). So the answer is now the same for all five,
+ * and this is kept as a function rather than deleted for two reasons:
+ * the sixth landing is the one this exists for, and a call site reading
+ * `hasList(l.key)` says *why* the rail toggles, which `true` would not.
  */
-const hasList = (l: Landing): boolean => l !== "browser";
+const hasList = (_l: Landing): boolean => true;
 
 /** How many landings the narrow bar seats before folding the rest
     (2026-09-02:「窄屏的时候,下面的侧边栏最多只显示四个icon,多余的
@@ -507,7 +509,12 @@ export default function App() {
   // rather than 「is this half the window yet」. Away from a workspace
   // `roomBeside` finds no middle column and answers the old ceiling, so
   // the list pane on every other landing is unchanged.
-  const listPane = useListWidth(narrow, "list", "left", "[data-list]", roomBeside("[data-list]"));
+  // **`LIST_PANE`, not `[data-list]`**: this one seam sizes the shell's
+  // list pane on every landing that has one, and each of them answers
+  // to a name of its own (`components/ListPane`'s `mark`). Naming only
+  // the sessions pane's meant the drag measured nothing at all on 额度
+  // and 浏览 — see the constant.
+  const listPane = useListWidth(narrow, "list", "left", LIST_PANE, roomBeside(LIST_PANE));
   /** The workspace's file tree, as a seam of its own — **held here
       rather than in the pane**, because the control that folds it now
       sits on the workspace's row in the list (2026-09-16:「再次点击工作
@@ -2054,6 +2061,10 @@ export default function App() {
       devices={devices}
       tabs={browsing.tabs}
       narrow={narrow}
+      // **The shell's own column width, since 批二** (docs/SHELL.md 第
+      // 2 条): the tabs are a pane here now, so this landing has the
+      // same seam and the same 「再按一次收起」 as every other one.
+      pane={narrow ? null : listPane}
     />
   );
 

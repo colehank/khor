@@ -186,7 +186,28 @@ export function AddressBar({
   const boxUp = !machine || editing;
 
   return (
-    <div data-address-bar className="flex min-h-ctl-lg flex-none items-center gap-1 border-b px-2">
+    <div
+      data-address-bar
+      // **This is the browsing landing's top row now** (docs/SHELL.md 第
+      // 2 条), so its blank is the 顶部空白 that moves the window (第八轮
+      // 第 59 条). It was not, and did not need to be: the tab strip sat
+      // above it and carried the drag. The strip moved into a column
+      // down the left side, and nothing was left along the top — the
+      // window lost its handle on this one landing, which is the kind of
+      // thing only the gate that walks the top row pixel by pixel
+      // notices.
+      //
+      // Declared here rather than on a cut-out strip, for `PaneBar`'s
+      // reason: tauri drags only when the element *under the pointer*
+      // carries the attribute, so the box, the chip and the arrows are
+      // children and keep every press they had.
+      data-tauri-drag-region="deep"
+      // `--pane-head`, the height every other top row in this app wears
+      // (第 5 条). It read `min-h-ctl-lg` and measured 45 for `PaneBar`'s
+      // exact reason — the box inside carries the finger's floor and
+      // won — so this was a third number nobody had written down.
+      className="flex min-h-pane-head flex-none items-center gap-1 border-b px-2"
+    >
       {boxUp ? (
         <Omnibox
           label={kind.words.address}

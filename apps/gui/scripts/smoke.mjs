@@ -1806,8 +1806,19 @@ for line in sys.stdin:
   //     reading.
   for (const tab of ["browser"]) {
     await openLanding(tab);
+    // ⚠️ **「no list pane」 was the claim here until 2026-09-20, and the
+    // half that survives is the one this section is actually about.**
+    // The browsing landing has a column again (docs/SHELL.md 第 2 条:
+    // 「标签页移动到侧边栏」), but it is a column of **tabs** — what was
+    // refused was a permanent column of **machines**, spent on a
+    // question the tab settles the moment it opens. So the sessions
+    // pane's own marker must still be absent, the machine rows must
+    // still be absent, and the tabs' column must be there.
     if ((await page.locator("[data-list]").count()) !== 0) {
-      throw new Error(`the ${tab} landing still has a list pane`);
+      throw new Error(`the ${tab} landing paints the sessions pane's marker`);
+    }
+    if ((await page.locator("[data-browse-tabs]").count()) !== 1) {
+      throw new Error(`the ${tab} landing has no tab column — 「标签页移动到侧边栏」`);
     }
     if ((await page.locator("[data-device]").count()) !== 0) {
       throw new Error(`the ${tab} landing still lists machines`);

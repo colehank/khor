@@ -29,6 +29,28 @@ import type React from "react";
 export type Seam = "list" | "ws-tree" | "ws-sessions";
 const STORE = (seam: Seam) => `khor.${seam}-width`;
 
+/**
+ * **The shell's one list pane, wherever it happens to be mounted.**
+ *
+ * `components/ListPane` draws every secondary sidebar in this app
+ * (docs/SHELL.md 第 6 条) and each landing gives it a name of its own,
+ * because a gate and a smoke reach for *the workspace's tree* rather
+ * than for *a pane*. The seam's width, though, is measured against
+ * whichever of them is on screen — and only one ever is at a time,
+ * since they belong to different landings.
+ *
+ * ⚠️ **This was `[data-list]` alone until 批二, and that was a bug I
+ * shipped in 批一.** The 额度 landing got the shell's seam and kept
+ * drawing `[data-quota-pane]`, so `querySelector` found nothing and the
+ * drag fell back to measuring the *seam element* — whose box overhangs
+ * the border by its hit margin (`-mx-1`), so grabbing it jumped the
+ * pane by that overhang before it started tracking. The browser's
+ * column would have landed the same way. One selector naming all of
+ * them is what makes 「the pane the seam is beside」 a thing this hook
+ * can actually find.
+ */
+export const LIST_PANE = "[data-list],[data-quota-pane],[data-browse-tabs]";
+
 // Numbers live in tokens.css; these fallbacks only catch the token
 // failing to resolve at all, and mirror the values written there.
 function tokenPx(name: string, fallback: number): number {
@@ -52,9 +74,10 @@ export function useListWidth(
       the distance from the pointer to the pane's *right* edge — the
       same gesture, mirrored, rather than a second set of rules. */
   side: "left" | "right" = "left",
-  /** Which element the width is measured against. The list pane is
-      `[data-list]`; the workspace's seams name their own. */
-  paneSel = "[data-list]",
+  /** Which element the width is measured against. The shell's list
+      pane answers to [`LIST_PANE`] whichever landing drew it; the
+      workspace's two seams name their own. */
+  paneSel: string = LIST_PANE,
   /** How wide this pane may be dragged, asked at the moment of the drag
       (2026-09-17 ruling 52:「session无法再往右拖了, 似乎被固定了最大宽
       度, 不应该这样」— the user).

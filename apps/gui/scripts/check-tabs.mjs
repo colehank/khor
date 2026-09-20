@@ -426,16 +426,46 @@ try {
     return Math.round(window.innerWidth - railW - w("[data-list]"));
   });
   await openBrowser();
+  // ⚠️ **Tombstone: this asked for the opposite until 2026-09-20.** It
+  // read 「the browser landing still paints a list pane」 and 「content
+  // gained N」 — the claim being that a 浏览型 landing spends none of
+  // its width on a column. The user overturned it (docs/SHELL.md 第 2
+  // 条:「浏览器改版为侧边栏. 标签页移动到侧边栏, 参考chrome的最新模式」),
+  // and the column it has now is not the one that claim was about: what
+  // was refused was a permanent column of **machines**, answering a
+  // question the tab settles the moment it opens. A column of **tabs**
+  // is the thing a person watches here.
+  //
+  // So the measurement is kept and its sign is flipped: the landing
+  // draws the shell's pane under its own name, and its content is what
+  // is left beside it. **The section is not deleted**, because「the
+  // browser has a column now」is exactly the kind of change that should
+  // have to walk past a gate that used to say otherwise.
   if ((await page.locator("[data-list]").count()) !== 0) {
-    fail("the browser landing still paints a list pane");
-  } else ok("no list pane on the browser landing");
-  const pageWide = await page
-    .locator('[data-browse-landing="page"]')
-    .evaluate((el) => Math.round(el.getBoundingClientRect().width));
-  if (pageWide <= detailWide) {
-    fail(`the browser content is ${pageWide} wide, no wider than the ${detailWide} a landing with a list pane leaves`);
+    fail("the browser landing paints the sessions pane's marker — its column answers to [data-browse-tabs]");
+  } else ok("the browser landing draws no [data-list]");
+  const column = await page.locator("[data-browse-tabs]").count();
+  if (column !== 1) {
+    fail(`the browser landing drew ${column} tab column(s) — 「标签页移动到侧边栏」 (src/browse/BrowseLanding.tsx)`);
+  } else ok("the browser landing's tabs are a column");
+  const pageWide = await page.evaluate(() => {
+    const w = (sel) => {
+      const el = document.querySelector(sel);
+      return el ? el.getBoundingClientRect().width : 0;
+    };
+    return Math.round(w('[data-browse-landing="page"]') - w("[data-browse-tabs]"));
+  });
+  // The two landings spend the same room on a column, because it is the
+  // same component at the same seam (`components/ListPane`, 第 6 条).
+  // Measured rather than assumed: a column that drifted a few pixels
+  // from the other would be two widths wearing one name.
+  if (Math.abs(pageWide - detailWide) > 2) {
+    fail(
+      `the browser's page has ${pageWide} beside its column while a list pane leaves ${detailWide} — ` +
+        "one shell, one seam, one width (src/components/ListPane.tsx)",
+    );
   } else {
-    ok(`content gained ${pageWide - detailWide} (a list pane leaves ${detailWide}, this has ${pageWide})`);
+    ok(`the column leaves ${pageWide}, the same room a list pane leaves (${detailWide})`);
   }
 
   //    **The words are this landing's own.** Read off the two landings

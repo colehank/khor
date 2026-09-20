@@ -633,7 +633,17 @@ export function TabSwitcher({
             >
               <TabAvatar f={f} bare="size-avatar flex-none" />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-label">{f.label}</span>
+                {/* **The same two names the strip's label wears**, because
+                    it is the same fact: what this tab is called, as
+                    painted. Since 2026-09-20 the rows are the browsing
+                    landing's tabs as well as its switcher (docs/SHELL.md
+                    第 2 条), so a probe reaching for 「the tab's title」
+                    has to find it in whichever seat the tabs are in —
+                    `check-tabs` was looking only at the strip's and read
+                    the column as a landing with no titles at all. */}
+                <span data-tab-label data-tab-name className="truncate text-sm font-label">
+                  {f.label}
+                </span>
                 {/* The whole path under the name: on a phone the strip
                     is not there to give the tab context, so the row has
                     to carry it. Truncated from the tail — a slashed
