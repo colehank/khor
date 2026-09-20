@@ -2945,10 +2945,14 @@ for line in sys.stdin:
   // **Two presses since 2026-09-19** (docs/MORE.md): that glyph opens a
   // menu of three pages and 设置 is the first row of it, where it used
   // to open a dialog outright.
+  // **One press again since 2026-09-21** (docs/MORE.md 第二轮: 头像编辑
+  // 器在头像页). The editor was the first section of 设置 — two presses,
+  // 「…」 then 设置 — and it is on the 头像 page now, which the rail's own
+  // mark opens directly. The name below is kept: what these three walks
+  // measure is this machine changing its face, not which page it is on.
   const openSettings = async () => {
-    await settingsGlyph.click();
-    await page.locator('[data-more-open="settings"]').click();
-    await until("the settings page", 10_000, async () => (await sheet.count()) === 1);
+    await page.locator("[data-rail-mark]").click();
+    await until("the 头像 page", 10_000, async () => (await sheet.count()) === 1);
     await until("the options to arrive", 10_000, async () =>
       (await sheet.locator("[data-face-option]").count()) > 0,
     );
@@ -2990,29 +2994,40 @@ for line in sys.stdin:
   // three runs before it failed on the fourth, which is the whole
   // signature of waiting for the wrong thing.)
 
-  //     a. three axes, and every option on all of them painted by the
-  //     real brush. Stated positively for the same reason the row faces
-  //     are: a face that failed to derive renders no <svg> at all, so
-  //     counting them *is* "nothing fell back to a placeholder".
+  //     a. what the page offers on arrival: **one row of styles, five
+  //     colour wells and one button** (docs/MORE.md 第二轮 — 「不是所有
+  //     的设置都要去铺在界面上」). 形状 is behind 「高级」 and so is not
+  //     an axis here until somebody opens it; 色板 stopped being a row
+  //     at all — it is the button.
+  //
+  //     Every option painted by the real brush, stated positively for
+  //     the same reason the row faces are: a face that failed to derive
+  //     renders no <svg> at all, so counting them *is* "nothing fell
+  //     back to a placeholder".
   const axisNames = await sheet
     .locator("[data-face-axis]")
     .evaluateAll((els) => els.map((e) => e.dataset.faceAxis));
-  if (axisNames.join(",") !== "palette,variant,shape") {
-    throw new Error(`the settings screen offers ${JSON.stringify(axisNames)}`);
+  if (axisNames.join(",") !== "variant") {
+    throw new Error(`the 头像 page offers ${JSON.stringify(axisNames)} on arrival`);
+  }
+  const wellCount = await sheet.locator("[data-color-slot]").count();
+  if (wellCount !== 5) throw new Error(`${wellCount} colour wells; a palette is five`);
+  if ((await sheet.locator("[data-face-shuffle]").count()) !== 1) {
+    throw new Error("the 换一组配色 button is not on the page");
   }
   const optionCount = await sheet.locator("[data-face-option]").count();
   const optionFaces = await sheet.locator("[data-face-option] [data-face] svg").count();
-  if (optionCount < 6 || optionFaces !== optionCount) {
+  if (optionCount < 3 || optionFaces !== optionCount) {
     throw new Error(`options with a painted face: ${optionFaces} of ${optionCount}`);
   }
 
-  //     b. one option marked per axis, and **all three paint the face
-  //     this machine is already wearing**. That follows from the
-  //     design — a marked option is the current value on its axis, and
-  //     every option is derived with the other two left alone — which
-  //     is exactly why it is worth asserting: one line catches a swatch
-  //     derived from the wrong style, a mark on the wrong option, and a
-  //     second painter.
+  //     b. one option marked on the axis that is showing, and it
+  //     **paints the face this machine is already wearing**. That
+  //     follows from the design — a marked option is the current value
+  //     on its axis, and every option is derived with the others left
+  //     alone — which is exactly why it is worth asserting: one line
+  //     catches a swatch derived from the wrong style, a mark on the
+  //     wrong option, and a second painter.
   // The same locator item 10 proved is this machine's face at the foot
   // of the rail — reused rather than re-derived, so what moves below is
   // the picture that test already tied to beta's own row.
@@ -3022,26 +3037,23 @@ for line in sys.stdin:
       .evaluateAll((els) => els.map((e) => e.innerHTML.replace(/av-blur-[^"')\s]+/g, "BLUR")));
   let worn = await faceOf(railFace);
   const marked = await markedFaces();
-  if (marked.length !== 3) throw new Error(`${marked.length} options are marked; one per axis`);
+  if (marked.length !== 1) throw new Error(`${marked.length} options are marked; one per axis on show`);
   if (marked.some((m) => m !== worn)) {
     throw new Error("a marked option is not the face this machine is wearing");
   }
 
-  //     c. picking another palette moves this machine's face
-  //     **everywhere it appears**, in one go.
+  //     c. 「换一组配色」 moves this machine's face **everywhere it
+  //     appears**, in one go. One button where seven swatches used to
+  //     be a row (docs/MORE.md 第二轮), so what is pressed here is the
+  //     button; the five wells above it are what says which set you
+  //     landed on.
   //
   //     Counted rather than named: this script does not work out which
   //     rows are beta's, it counts how many places wore that face
   //     before and requires the same number to wear the new one after,
   //     and none to be left wearing the old. Scoped to #root so the
-  //     sheet's own swatches — which change too — stay out of it.
-  const otherPalette = (
-    await sheet
-      .locator('[data-face-axis="palette"] [data-face-option]')
-      .evaluateAll((els) => els.filter((e) => e.dataset.on !== "true").map((e) => e.dataset.faceOption))
-  )[0];
-  if (!otherPalette) throw new Error("probe dead: every palette is already the chosen one");
-  await sheet.locator(`[data-face-option="${otherPalette}"][data-axis="palette"]`).click();
+  //     page's own swatches — which change too — stay out of it.
+  await sheet.locator("[data-face-shuffle]").click();
   await until("this machine's own face repainted", 15_000, async () => (await faceOf(railFace)) !== worn);
   const wasWorn = worn;
   worn = await faceOf(railFace);
@@ -3064,10 +3076,12 @@ for line in sys.stdin:
   await sheet.locator('[data-face-option="marble"][data-axis="variant"]').click();
   await until("back off beam's canvas", 15_000, async () => (await canvasOf()) === wideCanvas);
 
-  //     e. a hand-picked color belongs to no factory set, so **no**
-  //     palette is marked — two marks, not three. A nearest match would
-  //     light a button nobody pressed, and pressing that lit button
-  //     would then look like a control that does nothing.
+  //     e. a hand-picked color reaches the machine, and **the well it
+  //     was picked in reads it back**. The well is the only thing on
+  //     this page that says which colours you are wearing now that the
+  //     factory sets are behind one button, so a well that showed the
+  //     set's colour while the machine wore another would be the page
+  //     telling you about a choice nobody made.
   //
   //     Driven by setting the well and dispatching what a commit
   //     dispatches. **This is not the forbidden kind of shortcut.** The
@@ -3095,43 +3109,51 @@ for line in sys.stdin:
     (await wearing(handPicked)) === placesBefore,
   );
   await openSettings();
-  const afterHand = await markedFaces();
-  if (afterHand.length !== 2) {
-    throw new Error(`${afterHand.length} options marked after a hand-picked color; no palette is one`);
+  const slotReads = await sheet.locator("[data-color-slot]").first().inputValue();
+  if (slotReads !== "#123456") {
+    throw new Error(`the well reads ${JSON.stringify(slotReads)} after a hand-picked colour`);
   }
 
   //     f. the CLI says the same thing — so the change went through the
   //     library and not just through this screen. Read structurally:
   //     the marked lines are the ones carrying a third field, and the
   //     words themselves belong to the catalog, not to this script.
+  //     **`avatar`, not `face`** (renamed 2026-09-21): in this tree
+  //     「face」 is khor's interfaces — what `khor faces` lists — and a
+  //     verb may not mean two things. The old spelling still answers
+  //     for one version, which is exactly why the script uses the new
+  //     one: an alias nothing exercises the new name through would let
+  //     the rename be undone without anything noticing.
+  const cliMarks = () =>
+    cli(envB, "avatar")
+      .split("\n")
+      .filter((l) => l.split("\t").length === 3);
   const wornBefore = await faceOf(railFace);
-  await sheet.locator(`[data-face-option="${otherPalette}"][data-axis="palette"]`).click();
+  const marksBefore = cliMarks();
+  await sheet.locator("[data-face-shuffle]").click();
   //     **Wait for the face this machine wears to change, not only for
-  //     the sheet to settle.** The marks come from the sheet's own
-  //     answer and the rail's face comes round on the device poll, so
-  //     "three options are marked" is true a beat before the rail has
-  //     caught up — and what gets compared then is the *previous* face.
-  //     The two are read together below, so waiting for the slower one
-  //     is what makes the comparison mean anything.
-  await until("the factory palette back, and worn", 20_000, async () => {
-    const marks = await markedFaces();
-    return marks.length === 3 && (await faceOf(railFace)) !== wornBefore;
-  });
-  //     …and the three marked options still paint what this machine
-  //     wears. Re-asserted here and not only at the top, because up
-  //     there the machine wore the factory style and every axis sat on
-  //     its default — an option derived from the defaults instead of
-  //     from the current style would have looked exactly the same.
+  //     the page to settle.** The marks come from the page's own answer
+  //     and the rail's face comes round on the device poll, so the
+  //     screen agrees a beat before the rail has caught up — and what
+  //     gets compared then is the *previous* face. The two are read
+  //     together below, so waiting for the slower one is what makes the
+  //     comparison mean anything.
+  await until("the next colour set, and worn", 20_000, async () => (await faceOf(railFace)) !== wornBefore);
+  const marksAfter = cliMarks();
+  if (marksAfter.length !== 3) {
+    throw new Error(`khor avatar marks ${marksAfter.length} options; one per axis`);
+  }
+  if (marksAfter.join("|") === marksBefore.join("|")) {
+    throw new Error("khor avatar does not see the colour set this screen just changed");
+  }
+  //     …and the marked option still paints what this machine wears.
+  //     Re-asserted here and not only at the top, because up there the
+  //     machine wore the factory style and every axis sat on its
+  //     default — an option derived from the defaults instead of from
+  //     the current style would have looked exactly the same.
   const nowWorn = await faceOf(railFace);
   if ((await markedFaces()).some((m) => m !== nowWorn)) {
     throw new Error("after a change, a marked option is not the face this machine is wearing");
-  }
-  const cliMarks = cli(envB, "face")
-    .split("\n")
-    .filter((l) => l.split("\t").length === 3);
-  if (cliMarks.length !== 3) throw new Error(`khor face marks ${cliMarks.length} options; one per axis`);
-  if (!cliMarks.some((l) => l.startsWith(`${otherPalette}\t`))) {
-    throw new Error(`khor face does not agree that ${otherPalette} is what this machine wears`);
   }
 
   //     g. flipping the theme still moves nothing inside the face — now
@@ -3158,23 +3180,27 @@ for line in sys.stdin:
 
   // 22) a machine restyled from its own terminal reaches this screen.
   //
-  //     The direction that carries "only a machine may say what it
-  //     looks like": alpha changes its own style with `khor face`, and
-  //     beta's screen follows — which can only happen through the
-  //     device table and the sync pump. The before state is established
-  //     on both sides first (beta is provably painting something else,
-  //     and alpha's palette provably changed), and the control comes
-  //     after: beta's own face did not move, because nobody else may
-  //     move it.
+  //     alpha changes its own style with `khor avatar`, and beta's
+  //     screen follows — which can only happen through the device table
+  //     and the sync pump. The before state is established on both
+  //     sides first (beta is provably painting something else, and
+  //     alpha's palette provably changed), and the control comes after:
+  //     beta's own face did not move.
+  //
+  //     **The control used to be read as 「nobody else may move it」**,
+  //     and that is no longer the rule — since 2026-09-21 anyone may
+  //     write anyone's style (docs/MORE.md 第二轮). What it measures is
+  //     unchanged and still worth having: one machine's write lands on
+  //     one machine's row, not on every row in the table.
   await openLanding("devices");
   const alphaFace = page.locator('[data-device="alpha"] [data-face]');
   const betaFace = page.locator('[data-device="beta"] [data-face]');
   await until("both machines on the list", 10_000, async () => (await alphaFace.count()) === 1);
   const alphaWas = await faceOf(alphaFace);
   const betaWas = await faceOf(betaFace);
-  const alphaColorsBefore = cli(envA, "face").split("\n")[1];
-  cli(envA, "face", "--palette", "monokai", "--variant", "bauhaus");
-  const alphaColorsAfter = cli(envA, "face").split("\n")[1];
+  const alphaColorsBefore = cli(envA, "avatar").split("\n")[1];
+  cli(envA, "avatar", "--palette", "monokai", "--variant", "bauhaus");
+  const alphaColorsAfter = cli(envA, "avatar").split("\n")[1];
   if (alphaColorsBefore === alphaColorsAfter) {
     throw new Error("probe dead: alpha's own palette did not change");
   }

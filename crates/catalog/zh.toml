@@ -155,8 +155,13 @@ usage = """
                         **对全网来说这就是换了一台机器**,别的机器还认着
                         旧的、不认新的,要回去得重新配对。所以它要你把
                         这台机器的名字原样打一遍
-  face [--palette 色板] [--colors 五个颜色] [--variant 画法] [--shape 形状]
-                        本机的脸;不带参数看现在是什么、有哪些可选
+  avatar [机器] [--palette 色板] [--colors 五个颜色] [--variant 画法]
+         [--shape 形状]
+                        一台机器的头像;不带参数看现在是什么、有哪些可选,
+                        不给机器就是本机。**全网同一份**:谁都能改任何一台,
+                        后写的赢(和改名同一条路)。
+                        旧名 face 还认,下一版撤——头像是头像,
+                        界面是界面(见 faces)
   devices               网里的机器
   top [机器]            这台机器在忙什么:进程 top 与最近 24 小时 CPU
   ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
@@ -285,7 +290,7 @@ usage = """
                         khor-gui;没装它会告诉你去哪儿拿)
   faces                 本机开着哪几张 khor 界面:桌面 app 在不在跑、
                         网页脸在不在听、听的是哪个端口。**这里的「脸」是
-                        界面,不是头像**——头像那一个是 face
+                        界面,不是头像**——头像那一个是 avatar
   quit                  收摊:停掉本机的 serve 和所有 session 宿主
                         (文件都留着,再 serve 就都回来)
   hooks [install|uninstall]
@@ -1428,7 +1433,9 @@ cant-forget-self = "这是本机——一台机器不能移除它自己。要本
 # `khor leave <本机>` with somebody else's name in it. Not a typo worth
 # guessing at: it is a person reaching for the other verb, so it hands
 # them that verb with the name already in it.
-leave-names-another-machine = "{0} 不是本机。要把它请出网: khor forget {0}"
+# **「移除」, 不是「请出网」** (2026-09-21, docs/MORE.md 第二轮 文案):
+# 界面和 CLI 说同一个动词,而界面上那颗按钮叫「移除设备」。
+leave-names-another-machine = "{0} 不是本机。要移除这台设备: khor forget {0}"
 # Leaving a network you were never in. Refused by name rather than
 # answered with a cheerful nothing — 「离开了」 would be a sentence about
 # an act that did not happen (`lock::set_on` refuses the same shape).
@@ -2773,9 +2780,10 @@ identity-version = "khor 版本"
 # 网络页在这台机器还没配过对时说的那一句。**留在这儿而不是画一张空地图**:
 # 一张一个点的图答不了「怎么再加一台」,而那正是这时候唯一的问题。
 identity-alone = "还没和别的机器配对过"
-# 网络页上折起来的那一格 (docs/MORE.md 第二轮:中继折在「高级」里)。
-# **默认收起**——「不是所有的设置都要去铺在界面上」。
-net-advanced = "高级"
+# 折起来的那一格,网络页的中继和头像编辑器的形状共用一个词
+# (docs/MORE.md 第二轮:中继折在「高级」里)。**默认收起**——
+# 「不是所有的设置都要去铺在界面上」。
+advanced = "高级"
 # 身份卡上「本机开着哪几张界面」那一节 (docs/MORE.md 头像页)。
 # 这里的「界面」是桌面 app 和网页脸,不是头像;事实从节点拿
 # (`khor_node::face::faces`,CLI 那边是 `khor faces`)。
@@ -2793,9 +2801,19 @@ identity-paused-now = "已暂停——别的设备那边看见这台离线"
 identity-leave-warn = "本机从网络中退出:设备表清到只剩自己,别的设备留在这儿的数据一并清掉。本机自己的会话、工作区、身份、设置不受影响;拿一张新票 pair 可以重新加入。"
 identity-leave-type-name = "把这台机器的名字原样打一遍"
 identity-leave-do = "离开网络"
-# 设置页里脸那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
+# 头像页上编辑器那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
-settings-face = "这台机器的脸"
+# **2026-09-21 从「这台机器的脸」改成「头像」**:这棵树里「脸」指的是 khor 的
+# 界面(桌面 app、网页脸),而这一节说的是一张图。一个词不能指两样东西。
+settings-face = "头像"
+# 「换一组配色」那颗按钮 (docs/MORE.md 第二轮:出厂色板做成一个按钮,按一下换一组)。
+# **不再把七张色板铺成一排**——「不是所有的设置都要去铺在界面上」;按一下走下一张,
+# 走到头绕回来,而五个色点就在它上面,所以「换到了哪一张」不用说,看得见。
+#
+# ⚠️ **在 `[gui]` 而不是 `[avatar]`。** 那一节装的是一张脸的**选项**(色板、
+# 画法、形状的 id)和三根轴的名字,`crates/catalog/tests/gate.rs` 会走一遍,
+# 要求「这儿有词的,都得是有人挑得到的东西」。这是一颗按钮的标签,不是选项。
+face-shuffle = "换一组配色"
 # ── 设置页里只读的两节 (docs/MORE.md 设置:存储 / 关于) ─────────────
 # 两节都不判断任何事:路径和占用是 `doctor::store_bytes` 已经在量的,
 # 版本是编译期常量。**所以一台 store 打不开的机器上它们照样答得出来**
@@ -2823,7 +2841,7 @@ lock-system = "用系统验证"
 lock-section = "打开密码"
 # 开关那一行的名字。**说的是「锁不锁这几张脸」,不是「现在锁没锁」**:
 # 后者是每张脸自己的事,一个设置项答不了。
-lock-switch = "锁上这台机器的脸"
+lock-switch = "锁上这台机器的界面"
 lock-switch-note = "锁的是 app 窗口和网页脸,不锁命令行"
 lock-set-pin = "设一个 PIN"
 lock-change-pin = "换一个 PIN"
@@ -3032,15 +3050,10 @@ collapse-old = "收起旧会话"
 # be a whole surface built for the least common thing that happens here.
 pin-failed = "钉不上"
 unpin-failed = "取消不了"
-# The machine row's second menu item (2026-09-06:「机器左侧 list,与 session
-# 一样,是右键,置顶或删除,取消现在的置顶 icon」); the first is 置顶/取消置顶
-# above, the session row's own two words. **「删除」, not 「请出网」**: the
-# CLI's `forget` line explains what the act does, a menu item says what
-# the person is doing, and the cost goes in the sentence between the two
-# presses — the same split `close` and its confirm make. Absent on this
-# machine's own row: `Node::forget_device` refuses that by name, so the
-# item would exist only to be refused.
-forget-machine = "删除"
+# **`forget-machine` 退休于 2026-09-21** (docs/MORE.md 第二轮 文案)。
+# 机器行的菜单项本来自己有一个词「删除」,而地图上那台机器的卡里同一个act
+# 叫「移除设备」——一个动作两个名字。两处现在都用 `remove-device`;
+# 两个人之间的那一句 (`forget-machine-confirm`) 本来就是共用的,动词跟上。
 # Said between the two presses. The whole cost in one clause, from the
 # CLI's own line for `forget` (docs/NET.md): it is the network's
 # decision, not this screen's, so every other machine stops knowing it

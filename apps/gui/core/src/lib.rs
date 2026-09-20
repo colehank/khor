@@ -466,64 +466,105 @@ fn open(root: &Path) -> Result<Node, String> {
     Node::open(root.to_path_buf())
 }
 
-/// Everything the settings screen paints. The order of each axis is the
-/// library's (`PRESETS` is ordered by provenance, `ALL` by the order a
-/// chooser should offer them); this layer picks none of it.
-pub fn face_choices(root: &Path) -> Result<FaceChoices, String> {
+/// Everything the editor paints, **for whichever machine is open in
+/// it**. The order of each axis is the library's (`PRESETS` is ordered
+/// by provenance, `ALL` by the order a chooser should offer them); this
+/// layer picks none of it.
+///
+/// `machine` is a device id, and **empty means this one** — the shape
+/// `files::launch` already uses for 「which machine」 in this crate. Every
+/// swatch is painted under *that* machine's seed (`face_under_for`),
+/// because a preview drawn with this machine's seed would show somebody
+/// a set of faces none of which is the face they are about to give.
+pub fn face_choices(root: &Path, machine: &str) -> Result<FaceChoices, String> {
     let n = open(root)?;
-    let now = n.avatar_style();
+    let device = if machine.is_empty() {
+        n.device_str().to_owned()
+    } else {
+        machine.to_owned()
+    };
+    let now = n.avatar_style_of(&device);
+    // An id with no seed has no face to paint, and a chooser drawing the
+    // factory default for it would be inviting somebody to restyle a
+    // machine khor cannot render.
+    let paint = |st: &AvatarStyle| {
+        n.face_under_for(&device, st)
+            .ok_or_else(|| khor_catalog::msg::no_such_machine(machine, String::new()))
+    };
     Ok(FaceChoices {
-        face: n.face_under(&now),
+        face: paint(&now)?,
         colors: now.palette.colors().to_vec(),
         preset: now.palette.preset_id().map(str::to_owned),
         variant: now.variant.key().to_owned(),
         shape: now.shape.key().to_owned(),
         palettes: PRESETS
             .iter()
-            .map(|p| PaletteChoice {
-                key: p.id.to_owned(),
-                colors: p.colors.iter().map(|c| c.to_string()).collect(),
-                face: n.face_under(&AvatarStyle {
-                    palette: p.palette(),
-                    ..now.clone()
-                }),
+            .map(|p| {
+                Ok(PaletteChoice {
+                    key: p.id.to_owned(),
+                    colors: p.colors.iter().map(|c| c.to_string()).collect(),
+                    face: paint(&AvatarStyle {
+                        palette: p.palette(),
+                        ..now.clone()
+                    })?,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, String>>()?,
         variants: Variant::ALL
             .iter()
-            .map(|v| FaceChoice {
-                key: v.key().to_owned(),
-                face: n.face_under(&AvatarStyle {
-                    variant: *v,
-                    ..now.clone()
-                }),
+            .map(|v| {
+                Ok(FaceChoice {
+                    key: v.key().to_owned(),
+                    face: paint(&AvatarStyle {
+                        variant: *v,
+                        ..now.clone()
+                    })?,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, String>>()?,
         shapes: FaceShape::ALL
             .iter()
-            .map(|s| FaceChoice {
-                key: s.key().to_owned(),
-                face: n.face_under(&AvatarStyle {
-                    shape: *s,
-                    ..now.clone()
-                }),
+            .map(|sh| {
+                Ok(FaceChoice {
+                    key: sh.key().to_owned(),
+                    face: paint(&AvatarStyle {
+                        shape: *sh,
+                        ..now.clone()
+                    })?,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, String>>()?,
     })
 }
 
 /// Changes what this machine wears — the call `khor face` makes. One
 /// function behind the verb and behind every control, so the two faces
 /// cannot come to mean different things by the same words.
+/// `machine` is a device id and **empty is this one**, `face_choices`'
+/// rule. The node resolves and refuses; nothing here decides anything.
 pub fn restyle(
     root: &Path,
+    machine: &str,
     colors: Option<Vec<String>>,
     variant: Option<String>,
     shape: Option<String>,
 ) -> Result<(), String> {
-    open(root)?
-        .restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())
-        .map(|_| ())
+    let n = open(root)?;
+    let device = if machine.is_empty() {
+        n.device_str().to_owned()
+    } else {
+        machine.to_owned()
+    };
+    // The same call the CLI makes, so an axis left out stays where it is
+    // and a value outside its ladder is refused by name rather than
+    // defaulted — one judgment, not one per face.
+    n.restyle_device(
+        &device,
+        colors.as_deref(),
+        variant.as_deref(),
+        shape.as_deref(),
+    )
+    .map(|_| ())
 }
 
 /// The list, arranged. `by` is a `khor_node::list::Arrange` key; an

@@ -1703,6 +1703,16 @@ try {
       }),
     }),
   );
+  // 改头像 (docs/MORE.md 第二轮: 每台机器的头像都能改). The fixture
+  // remembers **which machine** was restyled, because that is the whole
+  // claim of the editor opened from a card: a dialog that sent an empty
+  // machine would quietly be restyling *this* machine while showing you
+  // somebody else's name.
+  const restyled = [];
+  await page.route("**/restyle", (r) => {
+    restyled.push(JSON.parse(r.request().postData() || "{}"));
+    r.fulfill({ contentType: "application/json", body: "null" });
+  });
   // 安全 (docs/MORE.md). **The shell asks this before it draws
   // anything**, so the route has to exist or every walk below waits on
   // a blank ground — which is itself the assertion section 4E turns
@@ -1870,7 +1880,7 @@ try {
   const forgotten = [];
   await page.route("**/forget_device", (r) => {
     forgotten.push(JSON.parse(r.request().postData() || "{}").machine);
-    r.fulfill({ contentType: "application/json", body: JSON.stringify("请出去了: beta") });
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("已移除设备: beta") });
   });
   // 中继, behind 高级 on the 网络 page. Routed so the fold has something
   // to draw once it is opened — and **only then**: the claim in §4C is
@@ -2469,8 +2479,13 @@ try {
       // The anchor is a fact on it rather than the frame: a page that
       // drew its head and threw on the way to its body would still
       // satisfy the frame.
+      // The editor's own row, because that is the thing only this page
+      // draws and the thing that is absent if the body drew half of
+      // itself — a `FaceChoices` whose shape drifted so the render threw
+      // partway says *probe dead* here rather than passing. (The version
+      // and the id are asserted in §4C, off the same page.)
       name: "identity",
-      anchor: '[data-more-page="identity"] [data-more-fact="version"]',
+      anchor: '[data-face-axis="variant"] [data-face-option]',
       go: () => press("[data-rail-mark]"),
       after: async () => {
         await press("[data-more-close]");
@@ -2512,8 +2527,16 @@ try {
       // the body drew half of itself: a frame with a spinner in it, or a
       // `FaceChoices` whose shape drifted so the render threw partway,
       // both say *probe dead* here rather than passing.
+      // > **2026-09-21: the anchor moved with the editor.** 头像 left
+      // > this page for the avatar's own (docs/MORE.md 第二轮 地图), so
+      // > the shape axis is not here any more — and it would not be a
+      // > usable anchor anywhere now, because it is folded behind 高级
+      // > and not in the document until somebody opens it. A settings
+      // > row is what only this page draws, and it is drawn from the
+      // > node's own table, so a `config_rows` that drifted still says
+      // > *probe dead* here rather than passing.
       name: "settings",
-      anchor: '[data-face-axis="shape"] [data-face-option]',
+      anchor: '[data-config-row="theme"] [data-config-choice]',
       // **Two presses on both faces since 2026-09-19** (docs/MORE.md):
       // 设置 stopped being the one thing behind 「…」 — it is one of
       // three — so the wide rail's own glyph opens the same menu the
@@ -10084,6 +10107,84 @@ try {
                 "「移除设备在地图上那台机器的卡里」 (docs/MORE.md 第二轮)",
             );
           }
+          // 每台机器的头像都能改 (docs/MORE.md 第二轮). The card opens
+          // the same editor the 头像 page draws, pointed at **this**
+          // machine — and pressing a style there is an errand inside
+          // the card, so the card is still under it when the errand is
+          // done. Measured because the first wiring handed the editor
+          // 移除设备's callback: every colour press closed the card, an
+          // act that removes nothing wearing the shape of the act that
+          // does.
+          const restyledBefore = restyled.length;
+          await press(`[data-node-card-avatar]`);
+          const editorUp = await until(
+            3_000,
+            async () => (await page.locator('[data-face-axis="variant"] [data-face-option]').count()) > 0,
+          );
+          if (!editorUp) {
+            fail(`probe dead: ${posture} · 头像 on the machine's card never drew the editor`);
+          } else {
+            await pressNth('[data-face-axis="variant"] [data-face-option]', 1);
+            await until(3_000, async () => restyled.length > restyledBefore);
+            const drew = await page.evaluate(() => ({
+              card: document.querySelectorAll("[data-node-card]").length,
+              editor: document.querySelectorAll('[data-face-axis="variant"]').length,
+            }));
+            const forWhom = restyled.at(-1)?.machine ?? null;
+            console.log(`网络 ${posture} · 改头像: ${JSON.stringify({ sent: forWhom, ...drew })}`);
+            const them = devs.find((d) => !d.me);
+            if (forWhom !== them.id) {
+              fail(
+                `${posture}: the card's editor restyled ${JSON.stringify(forWhom)} while it is ` +
+                  `${JSON.stringify(them.id)}'s card — a face is 全网一份, so the one it writes is the ` +
+                  "one you pointed at (docs/MORE.md 第二轮)",
+              );
+            }
+            if (drew.card !== 1) {
+              fail(
+                `${posture}: the machine's card is gone after a restyle (${drew.card} left) — ` +
+                  "改头像 changes a face, it does not put the machine away",
+              );
+            }
+            // **Escape puts away the editor and nothing else.** The
+            // map binds Escape on `window` to close the card, and that
+            // listener does not know a dialog is open over it — so one
+            // press used to take both, and a person dismissing a colour
+            // picker lost the machine they were looking at.
+            //
+            // The instrument needs no arming: both selectors were just
+            // counted non-zero two lines above, in this same run.
+            // Read again *before* the key, so a card that went away on
+            // its own is not reported as a card Escape took.
+            await wait(1_500);
+            const settled = await page.evaluate(() => ({
+              card: document.querySelectorAll("[data-node-card]").length,
+              editor: document.querySelectorAll('[data-face-axis="variant"]').length,
+            }));
+            console.log(`网络 ${posture} · 改完之后: ${JSON.stringify(settled)}`);
+            if (settled.card !== 1 || settled.editor !== 1) {
+              fail(
+                `${posture}: a moment after the restyle the card reads ${JSON.stringify(settled)} — ` +
+                  "the re-read that follows a face write must not put the screen away",
+              );
+            }
+            await page.keyboard.press("Escape");
+            await until(3_000, async () =>
+              page.evaluate(() => document.querySelectorAll('[data-face-axis="variant"]').length === 0),
+            );
+            const afterEsc = await page.evaluate(() => ({
+              card: document.querySelectorAll("[data-node-card]").length,
+              editor: document.querySelectorAll('[data-face-axis="variant"]').length,
+            }));
+            console.log(`网络 ${posture} · 收起编辑器: ${JSON.stringify(afterEsc)}`);
+            if (afterEsc.editor !== 0 || afterEsc.card !== 1) {
+              fail(
+                `${posture}: Escape over the 头像 editor left ${JSON.stringify(afterEsc)} — ` +
+                  "it dismisses the top layer, not the card underneath it",
+              );
+            }
+          }
+
           const sent = forgotten.length;
           await press("[data-node-card-forget]");
           await until(3_000, async () => forgotten.length > sent);
@@ -10221,6 +10322,17 @@ try {
             "[data-paired-machine], [data-identity-invite], [data-identity-join], " +
               "[data-identity-mesh], [data-identity-leave], [data-identity-pause], [data-mark-place]",
           ).length,
+          // 头像编辑器 (docs/MORE.md 第二轮 头像页), 照用户给的图:
+          // 上面大脸、下面一排画法缩略图、再一排五个色点、一个换一组配色。
+          editor: el.querySelectorAll("[data-face-settings]").length,
+          variants: el.querySelectorAll('[data-face-axis="variant"] [data-face-option]').length,
+          wells: el.querySelectorAll("[data-face-wells] [data-color-slot]").length,
+          shuffle: el.querySelectorAll("[data-face-shuffle]").length,
+          // 「不是所有的设置都要去铺在界面上」: 形状折起来, 默认收着。
+          fold: el.querySelectorAll('[data-more-fold="face-advanced"]').length,
+          foldOpen:
+            el.querySelector('[data-more-fold="face-advanced"]')?.hasAttribute("open") ?? null,
+          shapes: el.querySelectorAll('[data-face-axis="shape"] [data-face-option]').length,
           // 本机开着哪几张界面, 当前是哪张 (docs/MORE.md 头像页).
           faceKeys: faces.map((e) => e.getAttribute("data-iface")),
           faceSaids: faces.map(
@@ -10250,6 +10362,34 @@ try {
               "are the 网络 page's (docs/MORE.md 第二轮 地图)",
           );
         }
+        // The editor, in the shape the user drew. Counts against the
+        // fixture rather than numbers written here: how many styles
+        // there are is `Variant::ALL`'s and how many wells is the
+        // palette's, and a number here would be this file having an
+        // opinion about the library.
+        if (card.editor !== 1) {
+          fail(
+            `${posture}: the identity card draws ${card.editor} avatar editor(s) — ` +
+              "「脸编辑器照用户给的图」 (docs/MORE.md 第二轮 头像页)",
+          );
+        }
+        if (card.variants === 0 || card.wells === 0 || card.shuffle !== 1) {
+          fail(
+            `${posture}: the editor drew ${card.variants} style(s), ${card.wells} colour slot(s) ` +
+              `and ${card.shuffle} 「换一组配色」 — the drawing is a big face, a row of ` +
+              "styles, a row of colours and one button",
+          );
+        }
+        // 形状 is the one axis that folded away. **Both halves**: it is
+        // still reachable, and it is not on the page until asked for —
+        // 「不是所有的设置都要去铺在界面上，显得非常杂乱」.
+        if (card.fold !== 1 || card.foldOpen !== false || card.shapes !== 0) {
+          fail(
+            `${posture}: 形状 is ${card.fold} fold(s), open=${JSON.stringify(card.foldOpen)}, ` +
+              `${card.shapes} option(s) on the page — it folds and it starts shut`,
+          );
+        }
+
         // **Every face, including the one that is not up.** Against the
         // fixture rather than a number written here: what 「每一张」 means
         // is whatever the node answered.
@@ -10615,10 +10755,22 @@ try {
       // The sections MORE.md names, by the node's own section keys —
       // never by their words, which would be reading the catalog to
       // check the catalog.
-      for (const want of ["face", "appearance", "language", "session", "workspace", "store", "about"]) {
+      for (const want of ["appearance", "language", "session", "workspace", "store", "about"]) {
         if (!drew.sections.includes(want)) {
           fail(`设置 has no 「${want}」 section — it drew ${JSON.stringify(drew.sections)}`);
         }
+      }
+      // **「face」 left this page on 2026-09-21** (docs/MORE.md 第二轮:
+      // 头像编辑器在头像页). It was the first section here until then,
+      // and the whole of this round's acceptance is 「一样东西只住一
+      // 处」 — so the page it moved off is asserted about too, not just
+      // the page it moved to. A section drawn on both would read as
+      // finished work from either screen alone.
+      if (drew.sections.includes("face")) {
+        fail(
+          "设置 still draws 「face」 — the avatar editor lives on the 头像 page now " +
+            "(docs/MORE.md 第二轮), and one thing on two pages is what this round is against",
+        );
       }
       // **危险动作二次确认 is not here.** docs/MORE.md puts it under 安全,
       // and a section that drifted onto this page would still look

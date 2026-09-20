@@ -95,10 +95,16 @@ off = "Off"
 usage = """
 usage: khor <verb>
   id                    this machine's identity
-  face [--palette palette] [--colors five colors] [--variant style]
-       [--shape shape]
-                        this machine's face; with no arguments, shows
-                        what it is now and what's available
+  avatar [machine] [--palette palette] [--colors five colors]
+         [--variant style] [--shape shape]
+                        a machine's avatar; with no arguments, shows
+                        what it is now and what's available, and with
+                        no machine, this one. **One copy for the whole
+                        network**: anyone may restyle any machine and
+                        the later write wins (the road a rename takes).
+                        The old name face still answers and goes next
+                        version — an avatar is a picture, an interface
+                        is a face (see faces)
   devices               the network's machines
   top [machine]         what this machine is busy with: process top
                         and the last 24 hours of CPU
@@ -319,7 +325,7 @@ usage: khor <verb>
                         machine: whether the desktop app is running,
                         whether the web face is listening and on which
                         port. **"face" here means an interface, not the
-                        avatar** — that one is face
+                        avatar** — that one is avatar
   quit                  shuts down: stops this machine's serve and
                         every session host (files all stay — serve
                         again and everything comes back)
@@ -1297,7 +1303,7 @@ identity = "About this machine"
 identity-id = "Machine ID"
 identity-version = "khor version"
 identity-alone = "Not paired with any machine yet"
-net-advanced = "Advanced"
+advanced = "Advanced"
 identity-faces = "khor's interfaces"
 # The four acts on the 网络 page (docs/MORE.md 第二轮). They moved off
 # the identity card: they are about this machine's relationship to the
@@ -1311,7 +1317,10 @@ identity-leave-warn = "Takes this machine out of the network: the device table g
 identity-leave-type-name = "Type this machine's name exactly"
 identity-leave-do = "Leave network"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
-settings-face = "This machine's face"
+settings-face = "Avatar"
+# In [gui], not [avatar]: that section holds the options a face is made
+# of, and its gate requires every word there to name one.
+face-shuffle = "Another colour set"
 # 存储 / 关于: read-only, and neither opens a node — which is why they
 # still answer on a machine whose store won't open.
 settings-store = "Storage"
@@ -1336,7 +1345,7 @@ lock-system = "Use system verification"
 lock-section = "Screen lock"
 # The switch says **whether these faces lock**, not whether one is locked
 # right now — that is each face's own, and no setting can answer it.
-lock-switch = "Lock this machine's faces"
+lock-switch = "Lock this machine's interfaces"
 lock-switch-note = "Locks the app window and the web face, never the command line"
 lock-set-pin = "Set a PIN"
 lock-change-pin = "Change the PIN"
@@ -1420,10 +1429,8 @@ old-sessions = "{0} old sessions"
 collapse-old = "Collapse old sessions"
 pin-failed = "Couldn't pin"
 unpin-failed = "Couldn't unpin"
-# Not "Delete" — that word is `file-remove`'s (a file leaving disk); a
-# paired machine leaving the mesh is a different action, matching the
-# `khor forget` CLI command.
-forget-machine = "Forget"
+# `forget-machine` retired 2026-09-21: the row menu and the map card ran
+# one act under two names — both say `remove-device` now.
 forget-machine-confirm = "The whole network stops recognizing it, and it stops seeing the network too"
 watch-dirs = "Watched directories"
 watch-add = "Add"

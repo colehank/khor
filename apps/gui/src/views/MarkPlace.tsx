@@ -2,6 +2,8 @@ import type { DeviceRow, SessionRow } from "@/api";
 import type { Track } from "@/components/Ring";
 import { useEffect, useState } from "react";
 import { forgetDevice } from "@/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { FaceSettings } from "@/views/FaceSettings";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring } from "@/components/Ring";
 import { IconClose } from "@/components/icons";
@@ -74,19 +76,21 @@ import { ageIfOld, connectionWord } from "@/words";
 export function MarkPlace({
   rows,
   devices,
-  onForgot,
+  onChanged,
   onPickWaiting,
 }: {
   rows: SessionRow[];
   devices: DeviceRow[];
-  /** A machine left the network — the shell re-reads the table, and the
-      card closes with the row it was about.
+  /** Something on the map wrote to the device table — the shell re-reads
+      it. **Two acts do**, and they part company inside this file: a
+      machine that left takes its card with it, a machine that was
+      restyled keeps it.
 
-      **移除设备 is on this card and nowhere else** (docs/MORE.md 第二轮:
+      **移除设备 is on that card and nowhere else** (docs/MORE.md 第二轮:
       移除设备在地图上那台机器的卡里). It was a row on 安全 until
       2026-09-20, beside a second copy of the same list on the identity
       card; the list lives here now, which is why the act does. */
-  onForgot: () => void;
+  onChanged: () => void;
   /** Where the waiting call leads, when anything is waiting. */
   onPickWaiting: (row: SessionRow) => void;
 }) {
@@ -98,6 +102,19 @@ export function MarkPlace({
   // structure it was for: it costs a `kind` at every read and quietly
   // teaches the next person that this screen has two things to open.
   const [open, setOpen] = useState<string | null>(null);
+  // Whether the card has the 头像 editor open over it.
+  //
+  // **Held here rather than in the card**, and it is the Escape
+  // listener below that decides where it lives: this screen can have
+  // two things open at once now, and the key that closes them has to
+  // know which one is on top. It was the card's own state for an
+  // afternoon, and one Escape took the editor *and* the machine under
+  // it — a person putting a colour picker away lost the card they were
+  // reading. The first repair asked the DOM (`[role="dialog"]`) instead
+  // of keeping this flag; it went red exactly as before, because
+  // whether that attribute has caught up with the press is the dialog
+  // library's timing and not a fact this file can read.
+  const [editing, setEditing] = useState(false);
   // Escape closes, wherever the focus is. Bound while a card is open
   // and not before: a listener that is always on is a key this screen
   // has taken away from everything under it for the 99% of the time
@@ -105,11 +122,24 @@ export function MarkPlace({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(null);
+      // The editor is above the card, so the press is its to answer —
+      // the dialog closes itself, and the card stays where it was.
+      if (e.key === "Escape" && !editing) setOpen(null);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+    // **Capture, and the third argument is the whole repair.** The
+    // dialog library listens on `document` in the bubble phase; a
+    // bubble listener here would be *replaced* while that handler runs,
+    // because closing the dialog re-renders this component and this
+    // effect re-binds — and a listener added while the event is still
+    // at `document` is copied in when the event reaches `window`. So
+    // the press arrived at the freshly-bound listener, whose `editing`
+    // already read false, and one Escape took both layers. Measured
+    // three times against three different repairs (2026-09-21); in the
+    // capture phase this runs before anything has closed anything, so
+    // what it reads is the screen as the key found it.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, editing]);
   // A machine that leaves the table takes its card with it. Read from
   // the row rather than held in state, so the card cannot outlive the
   // fact it is about.
@@ -149,14 +179,26 @@ export function MarkPlace({
             <MachineNodeCard
               row={machine}
               rows={rows.filter((r) => r.home === machine.name)}
-              onClose={() => setOpen(null)}
+              // Both exits put the editor away with the card: a flag
+              // left standing would open the next card with a dialog
+              // already on it.
+              onClose={() => {
+                setEditing(false);
+                setOpen(null);
+              }}
               onForgot={() => {
                 // The card is about a row that is leaving the table, so
                 // it closes first — a card that outlived its machine
                 // would be a fact about nothing.
+                setEditing(false);
                 setOpen(null);
-                onForgot();
+                onChanged();
               }}
+              // The same re-read **without** the close: the machine is
+              // staying, only its face changed.
+              onRestyled={onChanged}
+              editing={editing}
+              onEditing={setEditing}
               onPickWaiting={onPickWaiting}
             />
           )}
@@ -272,6 +314,9 @@ function MachineNodeCard({
   rows,
   onClose,
   onForgot,
+  onRestyled,
+  editing,
+  onEditing,
   onPickWaiting,
 }: {
   row: DeviceRow;
@@ -280,12 +325,32 @@ function MachineNodeCard({
   rows: SessionRow[];
   onClose: () => void;
   onForgot: () => void;
+  /** A face was written — the table is re-read and **the card stays
+      open**.
+
+      ⚠️ **Not `onForgot`.** It was, for one afternoon, and every colour
+      press closed the card: 移除设备's callback shuts the card because
+      the row it is about is leaving, and an act that removes nothing
+      borrowed that shape. The two callbacks differ by exactly the thing
+      a person sees, which is why they are two. */
+  onRestyled: () => void;
+  /** Whether the 头像 editor is open over this card — **the map's
+      state, not this card's**, because the map is what owns the Escape
+      key for this screen (see its listener). */
+  editing: boolean;
+  onEditing: (open: boolean) => void;
   onPickWaiting: (row: SessionRow) => void;
 }) {
   const tracks = vitalsTracks(row);
   const aged = row.vitals ? ageIfOld(row.vitals.age_ms) : null;
   const blocked = rows.filter((r) => r.word === "blocked");
   const [forgetError, setForgetError] = useState<string | null>(null);
+  // 地图上点任何一台, 进的是同一个编辑器 (docs/MORE.md 第二轮).
+  // A dialog rather than another page: restyling a machine you pressed
+  // on the map is an errand — 办完就回去 — and the map underneath is
+  // where you were. **Whether it is open is the map's state**, handed
+  // down: the key that closes both layers is bound up there.
+  const setEditing = onEditing;
   return (
     <NodeCard
       onClose={onClose}
@@ -376,6 +441,30 @@ function MachineNodeCard({
           {cli.vitals_taken(aged)}
         </div>
       )}
+      {/* 头像: the same editor the avatar's own page draws, opened on
+          **this** machine. A face is 全网同一份 and anyone may set
+          anyone's (`khor_sync::devices`), so there is nothing to refuse
+          here and nothing about this machine being 「not mine」. */}
+      <div className="mt-in flex flex-wrap items-center gap-row border-t pt-in">
+        <Button
+          variant="outline"
+          size="sm"
+          data-node-card-avatar={row.id}
+          onClick={() => setEditing(true)}
+          className="min-h-touch flex-none"
+        >
+          {gui.settings_face}
+        </Button>
+      </div>
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{row.shown}</DialogTitle>
+          </DialogHeader>
+          <FaceSettings machine={row.id} onChanged={onRestyled} />
+        </DialogContent>
+      </Dialog>
+
       {/* 移除设备 (`khor forget`, docs/MORE.md 第二轮). **On this card and
           on no other surface**: the machine it is about is the one whose
           card you opened, so nothing has to be said about which one. It

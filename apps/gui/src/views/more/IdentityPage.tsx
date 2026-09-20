@@ -33,11 +33,13 @@ import { EditableName } from "@/components/EditableName";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { CopyId } from "@/views/DetailPane";
+import { FaceSettings } from "@/views/FaceSettings";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 export function IdentityPage({
   devices,
   onClose,
+  onRestyled,
 }: {
   /** The shell's own polled table — **not fetched again here**. Two
       readers of one answer is how two surfaces come to show two
@@ -45,6 +47,10 @@ export function IdentityPage({
       (`App.tsx`'s devices effect). */
   devices: DeviceRow[];
   onClose: () => void;
+  /** A restyle repaints this machine everywhere at once — the shell
+      refetches rows and devices together and every face on screen is
+      painted from that one answer. */
+  onRestyled: () => void;
 }) {
   // Asked once per opening, like the settings screen reads its face
   // choices: a version cannot change under a running app, but the
@@ -109,6 +115,13 @@ export function IdentityPage({
           </MoreFact>
         </div>
       </div>
+
+      {/* 头像 (docs/MORE.md 头像页: 脸编辑器). **Empty machine — this
+          one**: the page is about this machine, and the same editor
+          opens on the map for any other. */}
+      <MoreSection name="avatar" label={gui.settings_face}>
+        <FaceSettings onChanged={onRestyled} />
+      </MoreSection>
 
       {/* 本机开着哪几张界面 (docs/MORE.md 头像页). Drawn only once khor
           has answered — a list of faces painted from a default this file
