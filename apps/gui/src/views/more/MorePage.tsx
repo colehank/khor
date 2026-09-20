@@ -16,9 +16,9 @@
 // wherever you were. That is the same structural line the mark's place
 // sits on, and it is why the open page is held apart from the landing
 // rather than being another value of it.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
-import { IconClose } from "@/components/icons";
+import { IconChevronRight, IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ import { cn } from "@/lib/utils";
  * The keys are the values of `data-more-page`, so what a gate reaches
  * for and what the shell switches on are one string.
  */
-export type MorePage = "settings" | "security" | "doctor" | "identity";
+export type MorePage = "network" | "settings" | "security" | "doctor" | "identity";
 
 /** The four names, in one place, so the menu item and the page head
     cannot come to call the same page two things.
@@ -41,6 +41,7 @@ export type MorePage = "settings" | "security" | "doctor" | "identity";
     pages, one file over, had already changed. */
 export const moreName = (page: MorePage): string =>
   ({
+    network: gui.network,
     settings: gui.settings,
     security: gui.security,
     doctor: gui.doctor,
@@ -61,11 +62,21 @@ export const moreName = (page: MorePage): string =>
 export function MoreFrame({
   page,
   onClose,
+  bleed,
   children,
 }: {
   page: MorePage;
   /** Back to the landing this was opened over. */
   onClose: () => void;
+  /** The body fills the frame instead of standing in a reading column.
+      **One page asks for this and it is not a preference**: 网络 is a
+      picture — 「网络就搞成地图」 — and a picture capped at a reading
+      measure is a map with margins, which is the one layout that makes
+      the seats near the edge unreachable on a phone. Everything else on
+      these pages is prose and rows, and prose stretched across a 1400
+      window puts a label and its control at opposite ends of the
+      screen. */
+  bleed?: boolean;
   /** Optional, and it stays optional on purpose: two of these four pages
       are a head and nothing else until their backend lands (batches B
       and C), and a placeholder section saying so would be the 「灰着的
@@ -102,13 +113,17 @@ export function MoreFrame({
           <IconClose />
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-pane">
-        {/* Capped at a reading measure and centred: these pages are
-            prose and rows rather than a table, and a settings row
-            stretched across a 1400 window puts its label and its
-            control at opposite ends of the screen. */}
-        <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
-      </div>
+      {bleed ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-pane">
+          {/* Capped at a reading measure and centred: these pages are
+              prose and rows rather than a table, and a settings row
+              stretched across a 1400 window puts its label and its
+              control at opposite ends of the screen. */}
+          <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
+        </div>
+      )}
     </section>
   );
 }
@@ -135,6 +150,58 @@ export function MoreSection({
       <h2 className="text-sm font-label text-muted-foreground">{label}</h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * A section that is folded away until somebody asks for it.
+ *
+ * 「不是所有的设置都要去铺在界面上, 显得非常杂乱」 — the user,
+ * 2026-09-20. **Closed on arrival, always**, and the state is not
+ * stored: a fold that remembered would be a page that is a different
+ * height on two machines for a reason nobody can see, and the whole
+ * point of folding is that the page has one shape when you open it.
+ *
+ * It is a `<details>` rather than a button and a conditional render,
+ * because the browser already gives that element the open/closed
+ * semantics a reader needs — a screen reader announces it, and the
+ * summary is a real focus stop with no `aria-expanded` for this file to
+ * keep in step with its own state.
+ */
+export function MoreFold({
+  name,
+  label,
+  children,
+}: {
+  name: string;
+  label: string;
+  children: ReactNode;
+}) {
+  // **The body is not in the document while the fold is shut.** A
+  // `<details>` keeps its children and hides them, which for a section
+  // that fetches on mount would mean khor dialling on behalf of a
+  // control nobody opened — and a probe that only ever runs invisibly is
+  // one nothing on screen can report the failure of.
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      data-more-fold={name}
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+      className="group flex min-w-0 flex-col"
+    >
+      <summary
+        data-more-fold-open
+        // The finger floor on both axes: 「高级」 is two characters, and
+        // the marker beside them does not make a target (`MoreSwitch`'s
+        // own measurement).
+        className="flex min-h-touch cursor-pointer list-none items-center gap-in text-sm font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
+      >
+        <IconChevronRight className="size-4 flex-none transition-transform group-open:rotate-90" />
+        {label}
+      </summary>
+      {open && <div className="flex min-w-0 flex-col gap-group pt-2">{children}</div>}
+    </details>
   );
 }
 

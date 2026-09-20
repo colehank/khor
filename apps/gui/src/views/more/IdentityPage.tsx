@@ -1,53 +1,43 @@
-// The avatar's page: this machine, as a card (docs/MORE.md 头像).
+// The avatar's page: **this machine, and nothing about the network**
+// (docs/MORE.md 第二轮 地图: 头像 = 这台机器是谁。「…」= 这个 app).
 //
-// **What the user asked the avatar for is not what it draws yet**, and
-// the gap is written here rather than left to be discovered:
-// 「点击左下角头像, 是选择接入已有khor网络,或建立新的khor网络, 退出Khor
-// 网络, 暂停接入Khor网络」 (2026-09-18). Joining, leaving and pausing a
-// *network* need the hypergraph first — a network is an edge with a
-// name, a machine is a point, one machine can sit on several edges — and
-// that ruling (2026-09-19: 「先不整网络吧, 有点复杂了. 可以是宏图」) put
-// the whole shape after this batch. What is left of the press is the
-// half that needs no hypergraph: **which machine am I, and who have I
-// paired with** — plus the two verbs that already exist for pairing.
+// # What left this card on 2026-09-20, and why
 //
-// So this page states facts and offers the doors that exist.
+// It used to carry the paired machines, 邀请 / 接入, a door to the mesh,
+// 暂停 / 恢复 and 离开这张网 — five things about *the network*, on the
+// page somebody opens to ask *which machine am I*. 「不同功能分开」 —
+// the user. All five are on 网络 now, and none of them is here as well:
+// a second copy is how two surfaces come to disagree, and the one
+// somebody finds first is never the one that was updated.
 //
-// > **2026-09-20: 退出 landed, 暂停 is still absent.** 「单网络的做通呀」 —
-// > the user. A single network needs no hypergraph to be left: leaving
-// > is `khor leave`, the half `khor forget` refuses to do, and it is on
-// > this card because this card is where somebody stands when they ask
-// > 「这台机器还在这张网里做什么」. 建立 / 接入 were already here as
-// > 邀请 / 接入. 暂停 is not drawn yet, and a control that refuses is
-// > still worse than one that is absent (docs/MORE.md: 没有落地实现的
-// > 键不画).
+// What is left is the two halves of 这台机器是谁:
 //
-// **The confirmation is the machine's own name typed back, and the node
-// is what checks it** (`Node::leave`). Not a second press: leaving is
-// one press away from a card somebody opened to look at a version
-// number, and the two-press confirm on a row menu is for an act that
-// names its target in the press. Here the target is the machine you are
-// standing on, so typing it is what says you meant this one. The rule
-// itself lives in the node for `lock::reset_identity`'s reason — a rule
-// here as well would be two rules about one irreversible act.
+// - the face, the name (editable) and the id — what the network calls
+//   this machine;
+// - **本机开着哪几张 khor 界面, 当前是哪张** (「头像这, 还可以显示, 本机
+//   运行了哪些脸. 当前是哪张脸」). The facts come from the node
+//   (`khor_node::face::faces`, which `khor faces` prints) — the desktop
+//   app's own pid file and a probe of the web face's port. The page does
+//   not guess: a face khor cannot see is drawn as 未打开, never omitted.
+//
+// 「当前」 is the one thing on this page the node cannot answer, because
+// it is a fact about the viewer rather than about the machine: the app
+// and the browser are looking at one khor and each is a different
+// 「this one」. `inApp` (`api.ts`) is that fact, and it is asked once
+// here rather than carried in the answer.
 import { useEffect, useState } from "react";
 
-import { fetchAbout, leaveNetwork, setPaused, type About, type DeviceRow } from "@/api";
+import { fetchAbout, inApp, type About, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { EditableName } from "@/components/EditableName";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cli, gui, msg } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 import { CopyId } from "@/views/DetailPane";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 export function IdentityPage({
   devices,
   onClose,
-  onMesh,
-  onInvite,
-  onJoin,
-  onLeft,
 }: {
   /** The shell's own polled table — **not fetched again here**. Two
       readers of one answer is how two surfaces come to show two
@@ -55,41 +45,30 @@ export function IdentityPage({
       (`App.tsx`'s devices effect). */
   devices: DeviceRow[];
   onClose: () => void;
-  /** 网里的机器: the picture. The avatar used to open it directly and
-      now opens this page, so the picture moved one press deeper rather
-      than losing its only door — see the handoff for that ruling. */
-  onMesh: () => void;
-  onInvite: () => void;
-  onJoin: () => void;
-  /** The table changed under every surface on this screen — the shell
-      re-reads it (`App`'s `refresh`, the same one a forget gets). */
-  onLeft: () => void;
 }) {
   // Asked once per opening, like the settings screen reads its face
   // choices: a version cannot change under a running app, but the
   // answer is cheap and a page that read it at mount would go stale
   // across an in-place upgrade the person then wonders about.
+  //
+  // **The list of faces rides on the same answer** and is therefore as
+  // fresh as the page: the web face can come up while the card is open,
+  // and the honest cost of not polling is one reopening.
   const [about, setAbout] = useState<About | null>(null);
   useEffect(() => {
     void fetchAbout().then(setAbout, () => {
       // Silent: the version is a line on a card, and a sentence about
       // khor failing to read its own version is worse than the line
-      // simply not being there. Everything else on this page comes
-      // from the shell's table and is unaffected.
+      // simply not being there. The name and the id come from the
+      // shell's table and are unaffected.
     });
   }, []);
 
-  // What the box holds, and what khor said the last time 离开 was
-  // pressed. `said` carries both endings in the order the CLI prints
-  // them — the act, who heard, who did not — because they are the
-  // node's sentences and a page that rewrote them would be a second
-  // account of one act (`msg::left`).
-  const [typedName, setTypedName] = useState("");
-  const [said, setSaid] = useState<string[] | null>(null);
-  const [leaveError, setLeaveError] = useState<string | null>(null);
-
   const me = devices.find((d) => d.me) ?? null;
-  const others = devices.filter((d) => !d.me);
+  // Which face this person is looking through. The desktop shell says
+  // so about itself; everything else is a browser, which is the web
+  // face — and in neither case is it something the node can be asked.
+  const hereKey = inApp ? "app" : "web";
 
   return (
     <MoreFrame page="identity" onClose={onClose}>
@@ -131,161 +110,41 @@ export function IdentityPage({
         </div>
       </div>
 
-      <MoreSection name="paired" label={gui.identity_paired}>
-        {others.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{gui.identity_alone}</p>
-        ) : (
+      {/* 本机开着哪几张界面 (docs/MORE.md 头像页). Drawn only once khor
+          has answered — a list of faces painted from a default this file
+          kept would be a page reporting a probe it never made. */}
+      {about !== null && (
+        <MoreSection name="faces" label={gui.identity_faces}>
           <ul className="flex flex-col">
-            {others.map((d) => (
-              // Facts, not doors. A machine's card is one press away on
-              // the 机器 landing, and a second way in from here would
-              // be two surfaces owning one navigation — the thing that
-              // makes two screens disagree about what pressing a
-              // machine means.
+            {about.faces.map((f) => (
               <li
-                key={d.id}
-                data-paired-machine={d.id}
+                key={f.key}
+                data-iface={f.key}
+                data-on={f.up}
                 className="flex min-w-0 items-center gap-row py-1 text-sm"
               >
-                <MachineAvatar face={d.face} className="size-avatar flex-none" />
-                <span className="min-w-0 flex-1 truncate">{d.shown}</span>
-                <span className="flex-none text-muted-foreground tabular-nums">
-                  {d.id.slice(0, 12)}
+                <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                {/* 当前 first, because it is the one word on this row
+                    that is about the reader rather than the machine. */}
+                {f.key === hereKey && (
+                  <span data-iface-here className="flex-none text-primary">
+                    {cli.face_current}
+                  </span>
+                )}
+                {/* The whole right-hand side is the node's sentence —
+                    已打开 with the port when there is one, 未打开 when
+                    there is not. Assembled over there so a port can
+                    never be printed beside 未打开 (`FaceRow::said`). */}
+                <span
+                  data-iface-said
+                  className={cn("flex-none", f.up ? "" : "text-muted-foreground")}
+                >
+                  {f.said}
                 </span>
               </li>
             ))}
           </ul>
-        )}
-        <div className="flex flex-wrap gap-in">
-          {/* The two verbs that already exist, and the same two the
-              machines pane's 「+」 offers — one wizard each, opened by
-              the shell (`App.tsx`'s `Sheet`). Repeated here rather than
-              moved, because this page is where somebody who pressed
-              their own face is standing when the question 「怎么再加一台」
-              occurs to them. */}
-          <Button variant="outline" data-identity-invite onClick={onInvite} className="min-h-touch">
-            {gui.make_a_ticket}
-          </Button>
-          <Button variant="outline" data-identity-join onClick={onJoin} className="min-h-touch">
-            {gui.join_with_a_ticket}
-          </Button>
-          <Button variant="ghost" data-identity-mesh onClick={onMesh} className="min-h-touch">
-            {gui.mesh_map}
-          </Button>
-        </div>
-      </MoreSection>
-
-      {/* 暂停接入 (docs/MORE.md 暂停). Above 离开 and drawn on the same
-          condition, because both are answers to 「这台机器还在这张网里
-          做什么」 — and this one first, since it is the reversible half
-          and a person reads from the lighter act to the heavier. The
-          node refuses the state it is already in, so the control is one
-          button that says which way it goes rather than a switch that
-          could sit out of step with the file. */}
-      {others.length > 0 && about && (
-        <MoreSection name="pause" label={gui.identity_pause_section}>
-          <p data-identity-pause-warn className="text-sm text-muted-foreground">
-            {about.paused ? gui.identity_paused_now : gui.identity_pause_warn}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              data-identity-pause
-              data-paused={about.paused ? "" : undefined}
-              onClick={() => {
-                setLeaveError(null);
-                // The fresh `About` is the answer: the card shows what
-                // the file now says, never what the press assumed.
-                setPaused(!about.paused).then((now) => {
-                  setAbout(now);
-                  // **The rail paints off the device table, not off
-                  // this card.** Pausing changes a fact both of them
-                  // state, so the shell re-reads it here — the same
-                  // refresh a leave and a forget get. Without it the
-                  // face at the foot of the rail would go on looking
-                  // like a talking machine until the next poll.
-                  onLeft();
-                }, (e: unknown) => setLeaveError(String(e instanceof Error ? e.message : e)));
-              }}
-              className="min-h-touch"
-            >
-              {about.paused ? gui.identity_resume_do : gui.identity_pause_do}
-            </Button>
-          </div>
         </MoreSection>
-      )}
-
-      {/* 离开这张网 (docs/MORE.md 离开). Drawn on a machine that is in a
-          network and on no other: `Node::leave` refuses a machine that
-          never joined one by name, so drawing it there would be an
-          offer whose one answer is no — the rule that keeps 「忘掉」 off
-          this machine's own row in `DevicesList`. */}
-      {others.length > 0 && (
-        <MoreSection name="leave" label={gui.identity_leave_section}>
-          {/* The whole cost in one clause, and it is not red like the
-              reset's: leaving is undone by a ticket, and painting the
-              two the same colour would say they are the same size. */}
-          <p data-identity-leave-warn className="text-sm text-muted-foreground">
-            {gui.identity_leave_warn}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              data-identity-leave-name
-              autoComplete="off"
-              aria-label={gui.identity_leave_type_name}
-              placeholder={gui.identity_leave_type_name}
-              value={typedName}
-              onChange={(e) => setTypedName(e.target.value)}
-              className="min-h-touch min-w-0 flex-1"
-            />
-            <Button
-              variant="ghost"
-              data-identity-leave
-              // Checked here only so the button is not live over an
-              // empty box; the answer that counts is the node's, and it
-              // is the one that comes back as a sentence.
-              disabled={typedName.trim() !== (me?.shown ?? "") || !me}
-              onClick={() => {
-                setLeaveError(null);
-                setSaid(null);
-                leaveNetwork(typedName).then(
-                  (left) => {
-                    setTypedName("");
-                    setSaid([
-                      msg.left,
-                      ...(left.told.length
-                        ? [msg.left_told(left.told.join(cli.name_separator))]
-                        : []),
-                      // The two endings stay two sentences all the way
-                      // to the screen: a machine in `untold` goes on
-                      // painting this one offline until somebody over
-                      // there runs `khor forget`, which is a different
-                      // thing left to do.
-                      ...(left.untold.length
-                        ? [msg.left_untold(left.untold.join(cli.name_separator), me?.shown ?? "")]
-                        : []),
-                    ]);
-                    onLeft();
-                  },
-                  (e: unknown) => setLeaveError(String(e instanceof Error ? e.message : e)),
-                );
-              }}
-              className="min-h-touch text-destructive"
-            >
-              {gui.identity_leave_do}
-            </Button>
-          </div>
-        </MoreSection>
-      )}
-      {said?.map((line) => (
-        <p key={line} data-identity-left className="text-sm text-muted-foreground">
-          {line}
-        </p>
-      ))}
-      {leaveError && (
-        <p data-identity-leave-refused className="text-sm text-destructive">
-          {leaveError}
-        </p>
       )}
     </MoreFrame>
   );

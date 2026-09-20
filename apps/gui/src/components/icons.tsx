@@ -245,6 +245,23 @@ export function IconShield({ className }: IconProps) {
   );
 }
 
+/** 网络 = points joined by edges, which is exactly what the page draws
+    (docs/MORE.md 第二轮: 网络整页是地图). **Not `IconDevices`**, which the
+    机器 landing already wears: one glyph standing for two rows in one
+    rail is two places to press to find out which. */
+export function IconNetwork({ className }: IconProps) {
+  return (
+    <RailGlyph className={className}>
+      <circle cx="12" cy="5.2" r="2.4" />
+      <circle cx="5.4" cy="17.4" r="2.4" />
+      <circle cx="18.6" cy="17.4" r="2.4" />
+      <path d="M10.3 7.1 6.7 15.2" />
+      <path d="M13.7 7.1l3.6 8.1" />
+      <path d="M7.8 17.4h8.4" />
+    </RailGlyph>
+  );
+}
+
 /** 自检 = a pulse across a frame: a list of readings taken, which is what
     the page is. Not a stethoscope — khor checks itself, nobody holds it. */
 export function IconPulse({ className }: IconProps) {

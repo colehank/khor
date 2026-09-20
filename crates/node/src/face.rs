@@ -138,3 +138,129 @@ fn check_permissions(path: &Path) -> Result<(), String> {
     let _ = path;
     Ok(())
 }
+
+// ── Which of khor's faces are up on this machine (docs/MORE.md 头像页) ──
+//
+// 「本机开着哪几张脸, 当前是哪张」 — the user, 2026-09-20. The 「face」 in
+// that sentence is khor's *interface* — the desktop app, the browser
+// face — and not the avatar `khor face` restyles. The two meanings sit
+// one letter apart in the CLI (`khor face` / `khor faces`) and the
+// avatar verb is the one misnamed; renaming it is a separate change and
+// is on the ledger.
+//
+// **Nothing here is a second probe.** The port and the key path are this
+// module's own, and the liveness test is the one every other recorded
+// pid in this tree gets. `khor doctor`'s `web` row reaches for the same
+// two facts, so no machine can be listening on one page and quiet on the
+// other.
+
+/// One of khor's faces on this machine.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FaceUp {
+    /// The stable key — `app` or `web`, never translated. The word a
+    /// person reads is looked up from it (`cli::face_name`), the rule
+    /// `doctor::name` already keeps.
+    pub key: String,
+    pub up: bool,
+    /// Where it is, when that is a thing to say: the port, for the web
+    /// face. `None` for a face with no address and for one that is not
+    /// up — a port printed beside 未运行 is an address nobody can use.
+    pub at: Option<String>,
+}
+
+/// Every face khor has, in the order a page lists them — **including
+/// the ones that are not up**. A list of only the running ones would
+/// answer 「本机开着哪几张脸」 with a page that shrinks, and somebody
+/// looking for the browser face would have nothing on screen telling
+/// them it exists.
+pub const FACE_KEYS: &[&str] = &["app", "web"];
+
+/// Where the desktop app records that it is running.
+///
+/// **A file rather than a walk of the process table.** Matching by name
+/// is on the ledger for hitting a class where somebody meant one process
+/// (账本: 起进程时选对了工具, 收进程时要沿用它), and it reads forward the
+/// same way: on a shared machine a name match counts another account's
+/// khor.
+pub fn app_pid_path(root: &Path) -> PathBuf {
+    root.join(".khor").join("app.json")
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct AppPid {
+    pid: u32,
+}
+
+/// The desktop shell saying it is here. Called once as the window comes
+/// up; a crash leaves the file behind, and the pid check below is what
+/// makes that harmless rather than a face khor reports forever.
+pub fn app_here(root: &Path) -> Result<(), String> {
+    let dot = root.join(".khor");
+    std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
+    let text = serde_json::to_vec(&AppPid {
+        pid: std::process::id(),
+    })
+    .map_err(|e| e.to_string())?;
+    let p = app_pid_path(root);
+    std::fs::write(&p, text).map_err(|e| msg::cant_write(p.display(), e))
+}
+
+/// Whether the desktop app is running on this machine.
+pub fn app_up(root: &Path) -> bool {
+    std::fs::read_to_string(app_pid_path(root))
+        .ok()
+        .and_then(|t| serde_json::from_str::<AppPid>(&t).ok())
+        .map(|a| crate::link::pid_alive(a.pid))
+        .unwrap_or(false)
+}
+
+/// Whether anything answers on the web face's port.
+///
+/// **Loopback, with a short budget**, because the question here is only
+/// 「本机有没有人在听这个端口」. `khor web` probes the address it is about
+/// to print instead — a different question with a different right answer
+/// on a Mac whose firewall has not been told about khor.
+fn web_up(port: u16) -> bool {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok()
+}
+
+/// Which faces are up, in [`FACE_KEYS`] order.
+pub fn faces(root: &Path) -> Vec<FaceUp> {
+    let port = web_port();
+    FACE_KEYS
+        .iter()
+        .map(|&key| match key {
+            "web" => {
+                let up = web_up(port);
+                FaceUp {
+                    key: key.to_owned(),
+                    up,
+                    at: up.then(|| port.to_string()),
+                }
+            }
+            _ => FaceUp {
+                key: key.to_owned(),
+                up: app_up(root),
+                at: None,
+            },
+        })
+        .collect()
+}
+
+/// The word a person reads for one face's key.
+///
+/// A match here rather than a generated `word()`, `doctor::name`'s
+/// reason: the generator only builds those for the sections whose keys
+/// are data, and these keys are code's.
+pub fn face_name(key: &str) -> &str {
+    match key {
+        "app" => khor_catalog::cli::face_name_app(),
+        // **Borrowed from the 自检 row rather than spelled twice**: one
+        // fact, one word — and the catalog refuses two keys in one
+        // section holding one text anyway, which is that rule wearing a
+        // compile error.
+        "web" => khor_catalog::cli::doctor_name_web(),
+        other => other,
+    }
+}

@@ -367,6 +367,15 @@ const VERBS: &[Verb] = &[
         run: gui,
         reach: Reach::Act,
     },
+    // Reads two files and one loopback port and prints. **A word away
+    // from `face`, which restyles this machine's avatar** — the two
+    // meanings of 「脸」 in this tree, and the avatar is the one wearing
+    // the wrong word (`khor_node::face`'s note, and the ledger).
+    Verb {
+        word: "faces",
+        run: faces,
+        reach: Reach::Read,
+    },
     Verb {
         word: "quit",
         run: quit,
@@ -830,6 +839,39 @@ fn face(rest: &[String]) -> Result<(), String> {
         _ => n.restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())?,
     };
     print_face(&style);
+    Ok(())
+}
+
+/// Which of khor's interfaces are up on this machine (docs/MORE.md
+/// 头像页).
+///
+/// **It opens no node**, the reason `about` does not: both facts are a
+/// file and a loopback port, so this answers on a machine whose store
+/// refuses — which is one of the moments somebody asks it.
+///
+/// **Every face, including the ones that are not up.** A listing that
+/// only named the running ones would leave somebody looking for the web
+/// face with nothing on screen saying it exists.
+fn faces(rest: &[String]) -> Result<(), String> {
+    if !rest.is_empty() {
+        return Err(usage_text().into());
+    }
+    for f in khor_node::face::faces(&Node::root_from_env()) {
+        let state = if f.up {
+            cli::face_up()
+        } else {
+            cli::face_down()
+        };
+        match (&f.at, f.up) {
+            (Some(at), true) => println!(
+                "{}  {}  {}",
+                khor_node::face::face_name(&f.key),
+                state,
+                cli::face_at(at)
+            ),
+            _ => println!("{}  {}", khor_node::face::face_name(&f.key), state),
+        }
+    }
     Ok(())
 }
 

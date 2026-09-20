@@ -277,6 +277,9 @@ usage = """
                         会同步的文档。--new 换一把,之前发出去的链接全作废
   gui                   开桌面 app 的窗口(桌面 app 是装在 khor 旁边的
                         khor-gui;没装它会告诉你去哪儿拿)
+  faces                 本机开着哪几张 khor 界面:桌面 app 在不在跑、
+                        网页脸在不在听、听的是哪个端口。**这里的「脸」是
+                        界面,不是头像**——头像那一个是 face
   quit                  收摊:停掉本机的 serve 和所有 session 宿主
                         (文件都留着,再 serve 就都回来)
   hooks [install|uninstall]
@@ -304,21 +307,21 @@ usage = """
   invite                出一张一次性配对票(要求 serve 在跑)
   pair <票>             凭票入网
   adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网(卫星):身份从你的
-                        known_hosts 来,一切操作经本机代跑;请出去还是
+                        known_hosts 来,一切操作经本机代跑;移除还是
                         forget。要求免密 ssh(有密码提示的连不上)
   sync                  立即和全网各同步一趟
   mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)
   version               本机装的是哪一版(网里各机器的版本看 devices)
-  forget <机器>          把一台机器请出网:全网都不再认它,它也不再看得见网。
+  forget <机器>          把一台机器移出网络:全网都不再认它,它也不再看得见网。
                         要回来得重新配对(在还认它的那台上出票)
-  leave <本机名>         本机离开这张网:先趁还连着把「我走了」发出去,再把
+  leave <本机名>         本机离开网络:先趁还连着把「我走了」发出去,再把
                         本机的机器表清到只剩自己、别人留在这儿的东西清掉。
                         本机自己的会话、工作区、身份、设置一样不动。
                         把本机的名字原样打一遍就是确认(和 forget 同一条规矩)。
                         拿一张新票 pair 可以再入网
-  pause                 暂停接入这张网:不收不发,别的机器那边看见这台离线;
-                        本机的会话、工作区、网页脸照常用。关机重开还是暂停的
-  resume                接回来:重新收发,下一轮同步就能对上
+  pause                 暂停接入网络:不再与别的机器同步,别的机器那边看见这台
+                        离线;本机的会话、工作区、网页脸照常用。关机重开还是暂停的
+  resume                恢复接入:重新同步,下一轮就能对上
   watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷(全网同一份,
                         devices 里那台机器多印每个目录还剩多少);不给目录=清空"""
 this-machine = "(本机)"
@@ -381,8 +384,25 @@ doctor-fixable = "khor doctor --fix {0}"
 # GUI 那一页上的两个动作。**CLI 没有这两个词**:再查一遍在命令行上就是
 # 再敲一遍,而修法在命令行上是行尾印出来的那一句(`doctor-fixable`)。
 # 放在 [cli] 是因为这一节的词两边共用,而这两条只有一边画得出来。
-doctor-again = "再查一遍"
-doctor-mend = "修"
+# 2026-09-20 用户改口:「不叫修好它, 就叫修复. 你这些动词哪学的,太尴尬了」。
+# 界面上的动词一律用中文软件里通行的标准词,先过一遍「系统设置里会不会这么写」。
+doctor-again = "重新检查"
+doctor-mend = "修复"
+# ── `khor faces`: 本机开着哪几张 khor 界面 (docs/MORE.md 头像页) ──────
+# 这里的「脸」是 khor 的**界面**(桌面 app、网页脸),不是头像——头像那个
+# 动词是 `khor face`。两个词只差一个字母,而名字起错的是头像那一个;
+# 改它是另一件事,记在账上。
+# 网页脸那一张借自检那一行的词(`doctor-name-web`):同一个事实,同一个名字
+# ——同一节里两个键不许共用一句话,而这里本来就该是一个词。
+face-name-app = "桌面 app"
+face-up = "已打开"
+face-down = "未打开"
+# 网页脸在跑时后面跟的那一段。**不在跑就不印**:一个印在「未运行」
+# 旁边的端口是谁也打不开的地址。
+face-at = "端口 {0}"
+# 标出「你现在看的就是这一张」。**只有界面上有这个词**:命令行不是这
+# 两张脸里的任何一张,它问的是别人开着没有。
+face-current = "当前"
 # ── `khor lock` 印出来的几个词 (docs/MORE.md 安全) ─────────────────
 # 一行三段:锁开着没有、有没有钥匙、闲置多久自己锁上。**锁的是屏幕上的
 # 那几张脸,不是这个终端**——`khor` 后面站着的人已经登进这台机器了。
@@ -422,7 +442,7 @@ doctor-peer-behind = "{0} {1} {2},和这台不一样"
 doctor-peer-mute = "{0} {1},版本说不上"
 doctor-peers-alone = "还没和别的机器配对"
 # 本机暂停接入时的自检结论(docs/MORE.md 暂停)。不是警告:它正在做被吩咐的事。
-doctor-peers-paused = "暂停接入中——不收不发,别的机器那边看见这台离线。要接回来: khor resume"
+doctor-peers-paused = "已暂停接入——不再与别的机器同步,别的机器那边看见这台离线。要恢复: khor resume"
 doctor-peers-unread = "读不了机器表"
 doctor-hooks-ok = "claude 的钩子都装着"
 doctor-hooks-part = "{0} 个事件的钩子没装,或者指着另一个 khor"
@@ -1382,20 +1402,20 @@ reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常
 # one that cannot be told anything. It names *any* machine still in the
 # network on purpose: the tombstone travels, so "one that still knows
 # it" is a place that stops existing.
-forgot = "请出去了: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
+forgot = "已移除设备: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
 # `khor leave` 的三句,分开说。第一句是这件事本身,后两句是两种结局——
 # 合成一句就会把「全网都知道了」和「还有几台以为你只是离线」说成同一件事,
 # 而这两种情况剩下要做的事不一样(docs/UX.md 失败要说清是哪一种)。
-left = "离开这张网了。这台机器现在不在任何网里,拿一张新票 khor pair 可以再入"
+left = "已离开网络。这台机器现在不在任何网里,拿一张新票 khor pair 可以重新加入"
 left-told = "这几台收到了: {0}"
-left-untold = "这几台没连上,她们那边还会看见 {1} 离线——要在那边 khor forget {1}: {0}"
+left-untold = "这几台设备没连上,那边还会看见 {1} 离线——要在那边 khor forget {1}: {0}"
 # You cannot show yourself the door: the table this would be written into
 # is the one being left, so the act has no meaning from the inside. It
 # names the verb that does the whole act instead (`Node::leave`) — a
 # refusal with nowhere to go reads as 「khor can't do this」 when what is
 # true is 「not with this word」. {0} is this machine's own name, because
 # `khor leave` wants it typed back as the confirmation.
-cant-forget-self = "这是本机——一台机器不能把自己请出网。要本机离开这张网: khor leave {0}"
+cant-forget-self = "这是本机——一台机器不能移除它自己。要本机离开网络: khor leave {0}"
 # `khor leave <本机>` with somebody else's name in it. Not a typo worth
 # guessing at: it is a person reaching for the other verb, so it hands
 # them that verb with the name already in it.
@@ -1406,16 +1426,16 @@ leave-names-another-machine = "{0} 不是本机。要把它请出网: khor forge
 leave-with-no-network = "这台机器还没入过网——没有网可离。要入网: khor pair <票>"
 # `khor pause` / `khor resume` (docs/MORE.md 暂停). 暂停不是离开:表还在,
 # 别人那边看见的是这台离线,本机自己照常用。
-paused = "暂停接入了。这台机器不收不发,别的机器那边看见的是它离线;本机照常用。要接回来: khor resume"
-resumed = "接回来了。这台机器重新收发,下一轮同步就能对上"
+paused = "已暂停接入。这台机器不再与别的机器同步,别的机器那边看见的是它离线;本机照常用。要恢复: khor resume"
+resumed = "已恢复接入。这台机器重新与别的机器同步,下一轮就能对上"
 # 问第二遍。和设置项不一样:把一个偏好设成它已经是的值,不值一句话;
 # 而对一台已经暂停的机器说「暂停」,是这个人不知道它已经停了(`lock::set_on`
 # 拒的是同一个形状)。
-already-paused = "已经是暂停的了。要接回来: khor resume"
+already-paused = "已经是暂停的了。要恢复: khor resume"
 not-paused = "本来就没暂停。要暂停: khor pause"
 # 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
 # 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
-paired-while-paused = "这台机器暂停接入了,配对要先接回来: khor resume"
+paired-while-paused = "这台机器已暂停接入,配对要先恢复: khor resume"
 # The GUI asks for a reach from a synchronous door, so the async call
 # runs on a thread of its own; if that thread dies there is no answer to
 # report and no exception to quote — only the fact that none came.
@@ -2724,10 +2744,14 @@ git-stale = "存了才知道改在哪儿"
 # 说两遍。**`git-added` 留着**:一处纯新增没有旧文可躺,那一块得自己说话,
 # 否则按下去开出来的是个空格子。
 git-added = "HEAD 里没有这几行"
-settings = "设置"
-# ── 「…」的三个门,和头像的那一张卡 (docs/MORE.md) ─────────────────
-# 「…」按下是就地菜单,三项各开一整页(`data-more-page`),不是对话框:
-# 一页是一个地方,对话框是「这件事办完就回去」。设置借上面那个 `settings`。
+settings = "通用"
+# ── 「…」的四个门,和头像的那一张卡 (docs/MORE.md 第二轮) ──────────
+# 「…」按下是就地菜单,四项各开一整页(`data-more-page`),不是对话框:
+# 一页是一个地方,对话框是「这件事办完就回去」。
+# **键还叫 `settings`,词是「通用」**:那个键是 `data-more-page` 和
+# `khor_node::config::Section.page` 两边共用的同一个字符串,改它是改一根
+# 接缝;而屏幕上该写的是系统设置里会写的那个词。
+network = "网络"
 security = "安全"
 doctor = "自检"
 # 头像开的那一页。**不叫「我」**——khor 里没有账号,一台机器就是一个身份,
@@ -2735,25 +2759,29 @@ doctor = "自检"
 identity = "这台机器"
 identity-id = "机器 id"
 identity-version = "khor 版本"
-# 身份卡下半张:配对过的机器。**和 `devices-tab`(机器)、`mesh-map`
-# (网里的机器)不是一个词**:那两个是落地页和地图,这一节答的是
-# 「这台机器和谁配过对」——一张清单,不是一个去处。
-identity-paired = "配对过的机器"
+# 网络页在这台机器还没配过对时说的那一句。**留在这儿而不是画一张空地图**:
+# 一张一个点的图答不了「怎么再加一台」,而那正是这时候唯一的问题。
 identity-alone = "还没和别的机器配对过"
-# 身份卡最底下那一节:本机离开这张网(`khor leave`,docs/MORE.md 离开)。
-# **和 `reset-section`(重置身份)不是一件事**,两节的词都写全:重置是
-# 换一台机器,离开是这台机器不在这张网里了——离开还能凭票回来,重置回不来。
-# 身份卡上的暂停那一节(`khor pause`,docs/MORE.md 暂停)。排在离开上面:
-# 这一件是可逆的,那一件不是,而人是从轻的往重的读。
-identity-pause-section = "收发"
-identity-pause-warn = "暂时不收不发:别的机器那边看见这台离线,本机的会话、工作区照常用。机器表不动——这不是离开,随时可以接回来。"
-identity-pause-do = "暂停接入"
-identity-resume-do = "接回来"
-identity-paused-now = "已暂停——别的机器那边看见这台离线"
-identity-leave-section = "这张网"
-identity-leave-warn = "本机从这张网里退出来:机器表清到只剩自己,别的机器留在这儿的东西一并清掉。本机自己的会话、工作区、身份、设置一样不动;拿一张新票 pair 可以再进来。"
+# 网络页上折起来的那一格 (docs/MORE.md 第二轮:中继折在「高级」里)。
+# **默认收起**——「不是所有的设置都要去铺在界面上」。
+net-advanced = "高级"
+# 身份卡上「本机开着哪几张界面」那一节 (docs/MORE.md 头像页)。
+# 这里的「界面」是桌面 app 和网页脸,不是头像;事实从节点拿
+# (`khor_node::face::faces`,CLI 那边是 `khor faces`)。
+identity-faces = "khor 的界面"
+# ── 网络页上那四个动作 (docs/MORE.md 第二轮:邀请设备 / 加入网络 /
+# 暂停·恢复 / 离开网络) ───────────────────────────────────────────
+# **动词用中文软件里通行的标准词**(用户 2026-09-20:「你这些动词哪学的,
+# 太尴尬了」):每一条都先过一遍「系统设置里会不会这么写」。
+# 它们从头像卡搬到了网络页:说的是这台机器和这张网的关系,
+# 不是这台机器是谁。暂停排在离开前面——可逆的在不可逆的前面。
+identity-pause-warn = "暂停后不再与别的设备同步,别的设备那边看见这台离线;本机的会话、工作区照常用。设备表不动——这不是离开网络,随时可以恢复。"
+identity-pause-do = "暂停"
+identity-resume-do = "恢复"
+identity-paused-now = "已暂停——别的设备那边看见这台离线"
+identity-leave-warn = "本机从网络中退出:设备表清到只剩自己,别的设备留在这儿的数据一并清掉。本机自己的会话、工作区、身份、设置不受影响;拿一张新票 pair 可以重新加入。"
 identity-leave-type-name = "把这台机器的名字原样打一遍"
-identity-leave-do = "离开这张网"
+identity-leave-do = "离开网络"
 # 设置页里脸那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
 settings-face = "这台机器的脸"
@@ -2804,12 +2832,11 @@ web-key-none = "这台机器还没开过网页脸"
 # 换钥匙之后那一句。不是装饰:之前发出去的每一条链接从这一刻起全都打不开,
 # 而那正是这个动作的全部意思。
 web-key-rotated = "换好了;之前发出去的链接全都作废了"
-# 配对过的机器那一节:这里能做的事只有一件,把一台请出去。
-forget-section = "配对的机器"
-# 这一节的动作只有一件。**按钮的词和机器行菜单里那个不共用**:那边是
-# 「删除」(一张列表里的一行),这边是「请出去」(一台机器和这张网的关系),
-# 而按下去之后的那一句两边共用(`forget-machine-confirm`),因为那是同一件事。
-forget-put-out = "请出去"
+# 把一台设备移出网络,在网络页上那台机器的卡里。**按钮的词和机器行菜单里
+# 那个不共用**:那边是「删除」(一张列表里的一行),这边是「移除设备」
+# (一台设备和这张网的关系),而按下去之后的那一句两边共用
+# (`forget-machine-confirm`),因为那是同一件事。
+remove-device = "移除设备"
 # 重置身份。红字、输机器名——这一页上唯一一件撤不回来的事。
 reset-section = "重置身份"
 reset-warn = "删掉这台机器的身份钥匙、重新铸一把。**对全网来说这就是换了一台机器**:别的机器还认着旧的、不认新的,要回去得重新配对。"
@@ -3107,8 +3134,8 @@ hooks-buy-you = "装了它,会话答完一轮才会显示「完成」"
 # 留下——它既是那一档的词,也是留言框的名字,一件事一个词。
 message-text = "留言"
 send-it = "发出"
-make-a-ticket = "出一张配对票"
-join-with-a-ticket = "凭票入网"
+make-a-ticket = "邀请设备"
+join-with-a-ticket = "加入网络"
 ticket = "配对票"
 paste-a-ticket = "把票贴在这里"
 join = "入网"

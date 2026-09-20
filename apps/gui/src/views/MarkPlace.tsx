@@ -1,6 +1,7 @@
 import type { DeviceRow, SessionRow } from "@/api";
 import type { Track } from "@/components/Ring";
 import { useEffect, useState } from "react";
+import { forgetDevice } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { Ring } from "@/components/Ring";
 import { IconClose } from "@/components/icons";
@@ -73,10 +74,19 @@ import { ageIfOld, connectionWord } from "@/words";
 export function MarkPlace({
   rows,
   devices,
+  onForgot,
   onPickWaiting,
 }: {
   rows: SessionRow[];
   devices: DeviceRow[];
+  /** A machine left the network — the shell re-reads the table, and the
+      card closes with the row it was about.
+
+      **移除设备 is on this card and nowhere else** (docs/MORE.md 第二轮:
+      移除设备在地图上那台机器的卡里). It was a row on 安全 until
+      2026-09-20, beside a second copy of the same list on the identity
+      card; the list lives here now, which is why the act does. */
+  onForgot: () => void;
   /** Where the waiting call leads, when anything is waiting. */
   onPickWaiting: (row: SessionRow) => void;
 }) {
@@ -140,6 +150,13 @@ export function MarkPlace({
               row={machine}
               rows={rows.filter((r) => r.home === machine.name)}
               onClose={() => setOpen(null)}
+              onForgot={() => {
+                // The card is about a row that is leaving the table, so
+                // it closes first — a card that outlived its machine
+                // would be a fact about nothing.
+                setOpen(null);
+                onForgot();
+              }}
               onPickWaiting={onPickWaiting}
             />
           )}
@@ -254,6 +271,7 @@ function MachineNodeCard({
   row,
   rows,
   onClose,
+  onForgot,
   onPickWaiting,
 }: {
   row: DeviceRow;
@@ -261,11 +279,13 @@ function MachineNodeCard({
       the one holding the whole table. */
   rows: SessionRow[];
   onClose: () => void;
+  onForgot: () => void;
   onPickWaiting: (row: SessionRow) => void;
 }) {
   const tracks = vitalsTracks(row);
   const aged = row.vitals ? ageIfOld(row.vitals.age_ms) : null;
   const blocked = rows.filter((r) => r.word === "blocked");
+  const [forgetError, setForgetError] = useState<string | null>(null);
   return (
     <NodeCard
       onClose={onClose}
@@ -354,6 +374,41 @@ function MachineNodeCard({
       {aged !== null && (
         <div data-node-card-age className="pt-in text-aux text-muted-foreground">
           {cli.vitals_taken(aged)}
+        </div>
+      )}
+      {/* 移除设备 (`khor forget`, docs/MORE.md 第二轮). **On this card and
+          on no other surface**: the machine it is about is the one whose
+          card you opened, so nothing has to be said about which one. It
+          is drawn on every machine except this one — `Node::forget_device`
+          refuses this machine by name and sends you to `khor leave`,
+          which is the act on the page under this card. */}
+      {!row.me && (
+        <div className="mt-in flex flex-wrap items-center gap-row border-t pt-in">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-node-card-forget={row.id}
+            onClick={() => {
+              setForgetError(null);
+              forgetDevice(row.name).then(onForgot, (e: unknown) =>
+                setForgetError(String(e instanceof Error ? e.message : e)),
+              );
+            }}
+            className="min-h-touch flex-none text-destructive"
+          >
+            {gui.remove_device}
+          </Button>
+          {/* The whole cost in one clause, and **the same clause the row
+              menu's confirm uses** — it is one act, so it is one
+              sentence (`forget-machine-confirm`). */}
+          <span className="min-w-0 flex-1 text-aux text-muted-foreground">
+            {gui.forget_machine_confirm}
+          </span>
+        </div>
+      )}
+      {forgetError && (
+        <div data-node-card-forget-refused className="pt-in text-aux text-destructive">
+          {forgetError}
         </div>
       )}
     </NodeCard>

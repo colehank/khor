@@ -41,7 +41,6 @@ import { avatar } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { faceWord } from "@/words";
 
-import { NetSettings } from "@/views/NetSettings";
 
 /**
  * One axis and its heading. The heading names the choice; it does not
@@ -322,17 +321,11 @@ export function FaceSettings({
 
           </div>
       )}
-      {/* Not a face axis — the machine's own relays. It sits under them
-          because it is the rarer errand, and on this page because 设置
-          is one door (the head of this file).
-
-          **Outside the `choices &&` above, and that is not tidiness.**
-          Inside it, a face-choices call that failed took the network
-          section down with it — a relay list that disappears because
-          the avatar palette could not be read, with nothing on screen
-          saying so. The two halves fail separately because they are two
-          questions. */}
-      <NetSettings />
+      {/* 中继 stood here until 2026-09-20 and is on 网络 now, behind
+          高级 (docs/MORE.md 第二轮: 中继从通用搬到网络页的「高级」里).
+          It was never a face axis; it was here because 设置 was the one
+          door, and it is on the network page because that is what it is
+          about. */}
     </div>
   );
 }
