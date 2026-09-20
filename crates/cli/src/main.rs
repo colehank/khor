@@ -791,10 +791,20 @@ fn config(rest: &[String]) -> Result<(), String> {
 /// machine by name and becomes its id here**, the one place this verb's
 /// grammar meets the table's key, exactly as `ws rm` does.
 ///
-/// **`close` takes the tab's id**, which `ls` prints in full. A row
-/// number would be the thing that changes under a person between two
-/// commands — the list is a live thing, and the GUI is sitting on the
-/// other end of it.
+/// # 墓碑：「close 只收 id」，2026-09-21 推翻
+///
+/// The first version printed and took **only** the id, and the argument
+/// was that a row number changes under a person between two commands —
+/// the list is a live thing and the GUI is sitting on the other end of
+/// it. That much is still true. What it missed is that an id here reads
+/// `t1a0c0593bd7-d792-0`, and **nobody retypes that** (验收方,
+/// 2026-09-21, reading a real `khor tabs ls`); the usage line even
+/// called it 「标签号」, a word for something you can say out loud.
+///
+/// So `ls` prints both and `close`/`focus` take either
+/// ([`tab_named`]). The moving number is the price of a verb a hand can
+/// use, and it is paid where it belongs: a script holds the id, and the
+/// listing that hands out a number is the same listing it came from.
 fn tabs(rest: &[String]) -> Result<(), String> {
     let root = Node::root_from_env();
     // One kind today (`page`), and the store is keyed by it so the
@@ -804,7 +814,7 @@ fn tabs(rest: &[String]) -> Result<(), String> {
     const KIND: &str = "page";
     let list = || {
         let open = khor_node::tabs::list(&root, KIND);
-        for t in &open.tabs {
+        for (n, t) in (1..).zip(&open.tabs) {
             // **`in-use`, not `pinned-mark`.** The first draft borrowed
             // the workspace table's 「(置顶)」 and a real `khor tabs ls`
             // read 「置顶 https://…」, which says a person put that tab
@@ -818,10 +828,15 @@ fn tabs(rest: &[String]) -> Result<(), String> {
             } else {
                 ""
             };
-            // The id first because it is what the other three sub-words
-            // take; a name and a place after it, which is what a person
-            // reads. Tab-separated, like every other table khor prints.
-            println!("{front}\t{}\t{}\t{}", t.id, t.title, t.url);
+            // **A number first, and it is the one a person types.**
+            // 「标签号」 in the usage line meant `t1a0c…-b391-0` for one
+            // build, and nobody is retyping that (验收方, 2026-09-21).
+            // The id is still printed, because it is what a script
+            // should hold: a number is a row's *place in this listing*
+            // and moves when a tab closes, an id never does. Both are
+            // accepted below, and they cannot be confused — an id never
+            // parses as a number.
+            println!("{front}\t{n}\t{}\t{}\t{}", t.id, t.title, t.url);
         }
     };
     match rest {
@@ -846,10 +861,40 @@ fn tabs(rest: &[String]) -> Result<(), String> {
             println!("{id}");
             Ok(())
         }
-        [word, id] if word == "close" => khor_node::tabs::close(&root, KIND, id),
-        [word, id] if word == "focus" => khor_node::tabs::focus(&root, KIND, id),
+        [word, which] if word == "close" => {
+            khor_node::tabs::close(&root, KIND, &tab_named(&root, KIND, which)?)
+        }
+        [word, which] if word == "focus" => {
+            khor_node::tabs::focus(&root, KIND, &tab_named(&root, KIND, which)?)
+        }
         _ => Err(usage_text().into()),
     }
+}
+
+/// Which tab a person meant: **the number `ls` printed, or the id**.
+///
+/// A number is that row's place in the listing and is what a hand
+/// types; an id is what a script holds, because it does not move when a
+/// neighbour closes. They cannot be confused — an id begins with `t`
+/// and never parses as a number — so both can be taken without a flag
+/// to say which.
+///
+/// A number outside the listing is refused **by the same sentence a
+/// missing id gets**: both mean 「that is not one of the tabs that are
+/// open」, and two sentences for one fact would be two things to read.
+fn tab_named(root: &std::path::Path, kind: &str, which: &str) -> Result<String, String> {
+    let Ok(n) = which.parse::<usize>() else {
+        // Not a number: it is an id, and the node refuses an unknown one
+        // by name — handing it straight through keeps that one sentence.
+        return Ok(which.to_string());
+    };
+    khor_node::tabs::list(root, kind)
+        .tabs
+        .into_iter()
+        .nth(n.wrapping_sub(1))
+        .map(|t| t.id)
+        .filter(|_| n >= 1)
+        .ok_or_else(|| khor_catalog::msg::no_such_tab(which))
 }
 
 /// The verb table, for whatever is about to gate an agent that types

@@ -197,13 +197,16 @@ usage: khor <verb>
                         proxy port — point a browser at it and traffic
                         goes out from there (needs serve running;
                         close that session to shut the port)
-  tabs [ls] | open [-m machine] <url> | close <tab> | focus <tab>
+  tabs [ls] | open [-m machine] <url> | close <n|id> | focus <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
                         screen, not to the person (places you keep do
-                        travel). ls prints the front mark, the tab's id,
-                        its title and its address; open prints the id it
-                        minted, which close and focus take
+                        travel). ls prints the front mark, a number, the
+                        id, the title and the address. close and focus
+                        take either: **the number** is the row's place in
+                        that listing — what a hand types, and it moves
+                        when a tab closes; **the id** names one tab for
+                        good, which is what a script should hold
   usage [--days N]      tokens spent per machine, by day and category
                         (defaults to 7 days)
   sessions [--by recent|category|device|state|place] [--all]

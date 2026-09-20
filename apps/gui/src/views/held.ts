@@ -70,8 +70,45 @@ export function releaseBorrows(keep: readonly string[]): void {
   }
 }
 
-/** Tab ids that have a live page webview behind them. */
-const pages = new Set<string>();
+/**
+ * How many tabs keep a **live** page behind them (docs/SHELL.md 第 2 条:
+ * 「藏着的标签页不设上限会吃光 16G 的机器。落一个上限……最近用过的 N 枚
+ * 留着活的，其余只留地址和标题，点到再加载」).
+ *
+ * ⚠️ **待实测.** Eight is a placeholder with a shape, not a measurement:
+ * the ruling says the number is to be measured and then written down,
+ * and measuring it means installing the app and reading what one hidden
+ * `WKWebView` actually holds — which is 验收方's to do, not a gate's
+ * (the browser this repo tests with is not the engine khor ships).
+ *
+ * What eight is *not* is arbitrary in kind: it is 「more tabs than a
+ * person usually has in front of them, fewer than a person can
+ * accumulate in a day」. When the real number lands, it lands here and
+ * nothing else changes — which is the whole reason it is a name.
+ *
+ * ⚠️ **No gate watches the cap, and none can watch it cheaply.** It
+ * only bites at the ninth live page, and 「the ninth tab let the first
+ * one go」 is invisible on the glass: a tab whose page was released
+ * looks exactly like a tab nobody has pressed yet, which is the point
+ * of the design. The seam a gate would read is [`releasePages`]'s
+ * `closePage` calls, and reaching nine of them means nine real borrows
+ * against an engine this repo does not test with. So the ordering and
+ * the arithmetic below are reviewed, not measured — the first person to
+ * change either of them should know that.
+ */
+export const LIVE_TABS = 8;
+
+/**
+ * Tab ids with a live page webview, **most recently opened last**.
+ *
+ * An array rather than a set, because the cap needs an order and 「when
+ * was this tab last used」 is not something the set could answer.
+ * [`holdPage`] is the touch: it fires when a tab's page is opened, and
+ * a tab's page is opened when somebody looks at it (`BrowserPane`
+ * mounts only for the tab in front). So the tail of this list is the
+ * most recently looked at, and the head is the one to let go of.
+ */
+const pages: string[] = [];
 
 /**
  * Remembers that a tab has a page webview.
@@ -82,7 +119,9 @@ const pages = new Set<string>();
  * only this side has that list.
  */
 export function holdPage(tab: string): void {
-  pages.add(tab);
+  const at = pages.indexOf(tab);
+  if (at >= 0) pages.splice(at, 1);
+  pages.push(tab);
 }
 
 /**
@@ -94,11 +133,20 @@ export function holdPage(tab: string): void {
  */
 export function releasePages(keep: readonly string[]): void {
   const wanted = new Set(keep);
-  for (const tab of [...pages]) {
-    if (wanted.has(tab)) continue;
-    pages.delete(tab);
+  // **Two reasons a page goes, and the order matters.** First the tabs
+  // that are not open any more — those are gone for good and must not
+  // count against the cap. What is left is every live page whose tab is
+  // still open, most recently looked at last; anything past
+  // [`LIVE_TABS`] from that end is let go.
+  const closed = pages.filter((t) => !wanted.has(t));
+  const alive = pages.filter((t) => wanted.has(t));
+  const capped = alive.slice(0, Math.max(0, alive.length - LIVE_TABS));
+  pages.length = 0;
+  pages.push(...alive.slice(Math.max(0, alive.length - LIVE_TABS)));
+  for (const tab of [...closed, ...capped]) {
     closePage(tab).catch(() => {
       /* a webview whose window is gone is already the state we wanted */
     });
   }
 }
+

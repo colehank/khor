@@ -625,6 +625,193 @@ try {
     fail(`no tab is titled by the page's host — ${JSON.stringify(pageTitles)}`);
   } else ok("a browser tab is titled by its host");
 
+  //    ── the terminal and the window are two processes over one file ──
+  //
+  //    「CLI 开的标签, 正在跑的窗口里看不见」 — the验收方, 2026-09-21, on
+  //    a real install: four `khor tabs open` on the machine, `khor tabs
+  //    ls` listing five, and the window's column still showing one.
+  //
+  //    **This is the assertion that had to exist the moment the list
+  //    left `localStorage`** (docs/SHELL.md 第 2 条 CLI 等价). The window
+  //    read `tabs_list` once, on mount, which is exactly right for a
+  //    store only it could write and exactly wrong for `.khor/tabs.json`.
+  //
+  //    **It is checked here and cannot be checked in `check-face`**: the
+  //    face gate answers `tabs_list` from a fixture inside the page, so
+  //    「another process wrote the file」 is not a thing that can happen
+  //    there. This gate has a real home, a real node and a real `khor`
+  //    on the path — the two processes are actually two.
+  {
+    const before = await page.evaluate(
+      () => document.querySelectorAll("[data-browse-tabs] [data-switch-tab]").length,
+    );
+    const said = cli(envB, "tabs", "open", "https://from-the-terminal.example/");
+    const minted = said.trim().split("\n").pop().trim();
+    if (!minted.startsWith("t")) {
+      fail(`probe dead: \`khor tabs open\` answered ${JSON.stringify(said)} rather than an id`);
+    } else {
+      const grew = await until(
+        "the window sees the tab the terminal opened",
+        15_000,
+        async () =>
+          (await page.evaluate(
+            () => document.querySelectorAll("[data-browse-tabs] [data-switch-tab]").length,
+          )) > before,
+      ).then(
+        () => true,
+        () => false,
+      );
+      if (!grew) {
+        fail(
+          `the terminal opened a tab (${minted}) and the window's column still shows ${before} — ` +
+            "one file, two writers, and the window reads it once (src/browse/use-browse-tabs.ts)",
+        );
+      } else {
+        //  …and the **front** follows too: `tabs open` puts the new one
+        //  in front, so a column that grew but kept its old selection
+        //  would be showing a list it is not standing in.
+        const front = await page.evaluate(
+          () =>
+            document.querySelector('[data-browse-tabs] [data-switch-tab][data-on="true"]')
+              ?.getAttribute("data-switch-tab") ?? null,
+        );
+        if (front !== minted) {
+          fail(
+            `the window's front tab is ${front}, the terminal's new one is ${minted} — ` +
+              "「open」 puts it in front, on both faces",
+          );
+        } else ok("a tab opened in the terminal shows up in the window, in front");
+      }
+    }
+
+    //  ── 重启之后也还在 (第 2 条) ──
+    //
+    //  **A reload is this face's restart.** The claim is that the list
+    //  is on the disk and not in the window, so what has to survive is
+    //  the window going away and coming back — and for a page that is
+    //  `reload()`. The store outliving the *process* is proved one
+    //  layer down, by `khor_node::tabs`'s own test; what could still be
+    //  wrong up here is the face reading it only from somewhere it kept
+    //  itself, which is exactly what `localStorage` was.
+    {
+      const was = cli(envB, "tabs", "ls")
+        .split("\n")
+        .map((l) => l.split("\t")[2])
+        .filter(Boolean);
+      await page.reload({ waitUntil: "load" });
+      await openBrowser();
+      const drawn = await until(
+        "the tabs are still there after a reload",
+        15_000,
+        async () => {
+          const ids = await page.evaluate(() =>
+            [...document.querySelectorAll("[data-browse-tabs] [data-switch-tab]")].map((e) =>
+              e.getAttribute("data-switch-tab"),
+            ),
+          );
+          return ids.length === was.length ? ids : false;
+        },
+      ).then(
+        (ids) => ids,
+        () => null,
+      );
+      if (drawn === null) {
+        fail(
+          `the terminal lists ${was.length} tab(s) and a reloaded window does not — ` +
+            "「重启之后也还在」 (src/browse/use-browse-tabs.ts)",
+        );
+      } else if (was.some((id) => !drawn.includes(id))) {
+        fail(`after a reload the window shows ${JSON.stringify(drawn)}, the file says ${JSON.stringify(was)}`);
+      } else ok(`${was.length} tab(s) survived a reload, by id`);
+    }
+
+    //  …and the other direction: the window closes one, the terminal
+    //  sees it gone. **Both ways or neither** — a face that only reads
+    //  is a face that can still be lying to `khor tabs ls`.
+    const shut = await page.evaluate(
+      () =>
+        document.querySelector('[data-browse-tabs] [data-switch-tab][data-on="true"]')
+          ?.getAttribute("data-switch-tab") ?? null,
+    );
+    if (shut) {
+      await page.locator(`[data-switch-close="${shut}"]`).click();
+      const gone = await until(
+        "the terminal stops listing the tab the window closed",
+        15_000,
+        () => !cli(envB, "tabs", "ls").includes(shut),
+      ).then(
+        () => true,
+        () => false,
+      );
+      if (!gone) {
+        fail(`the window closed ${shut} and \`khor tabs ls\` still lists it — the write did not land`);
+      } else ok("a tab closed in the window is gone from `khor tabs ls`");
+    }
+
+    //  ── and a restart that is one, not a fresh page ──
+    //
+    //  **The reload above is only half the claim.** It proves the face
+    //  keeps nothing of its own; it does not prove the list outlives
+    //  the thing that holds it, because the node kept running the
+    //  whole time. So the node dies here. The bridge *is* beta's node
+    //  (it embeds the serve), so killing it is the app quitting —
+    //  webview, resident and all — and starting it again is the
+    //  person opening khor tomorrow.
+    //
+    //  ⚠️ **The CLI is what says what should be there, and it is read
+    //  while the backend is down** — `khor tabs ls` opens the file
+    //  itself rather than asking a resident, which is the only reason
+    //  this can be a before/after at all.
+    {
+      const was = cli(envB, "tabs", "ls")
+        .split("\n")
+        .map((l) => l.split("\t")[2])
+        .filter(Boolean);
+      try {
+        process.kill(-bridge.pid, "SIGKILL");
+      } catch {
+        /* already gone */
+      }
+      // Waited on the process, not on the port: a bridge that answers
+      // nothing on `/` would make a port probe say 「gone」 the instant
+      // it was asked, and the next `run` would race the dying one for
+      // the address.
+      //
+      // ⚠️ **`exitCode` alone is never set here.** A child that was
+      // *signalled* reports `signalCode` and leaves `exitCode` null, so
+      // the first spelling of this waited twenty seconds for a process
+      // that had been dead since the first tick.
+      await until(
+        "the old bridge is gone",
+        20_000,
+        () => bridge.exitCode !== null || bridge.signalCode !== null,
+      );
+      const again = run(BRIDGE, [], { ...envB, BRIDGE_PORT: String(BRIDGE_PORT) }, "bridge");
+      let back = false;
+      again.stdout.on("data", (d) => (back ||= String(d).includes(`:${BRIDGE_PORT}`)));
+      await until(`the bridge back on ${BRIDGE_PORT}`, 40_000, () => back);
+      await page.reload({ waitUntil: "load" });
+      await openBrowser();
+      const drawn = await until("the tabs are still there after a restart", 20_000, async () => {
+        const ids = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-browse-tabs] [data-switch-tab]")].map((e) =>
+            e.getAttribute("data-switch-tab"),
+          ),
+        );
+        return ids.length === was.length ? ids : false;
+      }).then(
+        (ids) => ids,
+        () => null,
+      );
+      if (drawn === null || was.some((id) => !drawn.includes(id))) {
+        fail(
+          `the backend went away and came back, the file says ${JSON.stringify(was)} and the ` +
+            `window draws ${JSON.stringify(drawn)} — 「重启之后也还在」 (crates/node/src/tabs.rs)`,
+        );
+      } else ok(`${was.length} tab(s) survived the backend restarting, by id`);
+    }
+  }
+
   //    The narrow face is the shell's, but this landing has to reach it
   //    too — one press, because the shape itself was proved in 4.
   await page.setViewportSize({ width: 390, height: 800 });
