@@ -15,18 +15,40 @@
 //! runtime it freezes tokio's clock, so every timeout in the file
 //! silently stretches with it and a real hang stops looking like one.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::Node;
 use khor_sync::chat::{ChatDoc, Sender, channel_dir};
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-pair-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -59,15 +81,15 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     let rb = root("b");
 
     // alpha serves; the serve task owns its node instance.
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
 
     // A second alpha instance plays the one-shot CLI role.
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let ticket = a.invite().unwrap();
 
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let peer_name = timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
@@ -191,7 +213,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     // ── control groups ──────────────────────────────────────────────
     // A burned token pairs nobody: gamma replays beta's ticket.
     let rc = root("c");
-    let c = Node::open_as(rc.clone(), "gamma").unwrap();
+    let c = Node::open_as(rc.to_path_buf(), "gamma").unwrap();
     let err = timeout(Duration::from_secs(60), c.pair(&ticket))
         .await
         .expect("refusal must not hang either")
@@ -243,9 +265,6 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     );
 
     serve.abort();
-    for r in [&ra, &rb, &rc] {
-        let _ = std::fs::remove_dir_all(r);
-    }
 }
 
 /// **A ticket found later is not a key.** Real connection, real refusal,
@@ -267,11 +286,11 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     let ra = root("exp-a");
     let rb = root("exp-b");
 
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let stale = a.invite().unwrap();
     let token = khor_net::endpoint::Ticket::decode(&stale).unwrap().token;
     let record = ra.join(".khor").join("invites").join(&token);
@@ -281,7 +300,7 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     let minted = now_ms() - khor_node::link::INVITE_WINDOW_MS - 1;
     std::fs::write(&record, minted.to_string()).unwrap();
 
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let err = timeout(Duration::from_secs(60), b.pair(&stale))
         .await
         .expect("a refusal must not hang")
@@ -320,9 +339,6 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
     );
 
     serve.abort();
-    for r in [&ra, &rb] {
-        let _ = std::fs::remove_dir_all(r);
-    }
 }
 
 /// Minting sweeps what can never be used again — the whole of the
@@ -330,7 +346,7 @@ async fn a_ticket_older_than_its_window_is_refused_as_expired() {
 #[test]
 fn minting_a_ticket_sweeps_the_ones_that_expired() {
     let ra = root("sweep");
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let dir = ra.join(".khor").join("invites");
     std::fs::create_dir_all(&dir).unwrap();
     let old = dir.join("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -358,8 +374,6 @@ fn minting_a_ticket_sweeps_the_ones_that_expired() {
     assert!(!old.exists(), "an expired ticket is swept");
     assert!(!empty.exists(), "and so is one whose age cannot be read");
     assert!(dir.join(&minted).exists(), "while the new one stays");
-
-    let _ = std::fs::remove_dir_all(&ra);
 }
 
 fn now_ms() -> i64 {

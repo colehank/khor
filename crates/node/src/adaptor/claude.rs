@@ -1319,9 +1319,9 @@ mod tests {
     /// so the bound lands inside one by construction.
     #[test]
     fn a_working_directory_survives_a_cut_that_lands_mid_character() {
-        let dir = std::env::temp_dir().join(format!("khor-cwdcut-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = Scratch(std::env::temp_dir().join(format!("khor-cwdcut-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(&*dir);
+        std::fs::create_dir_all(&*dir).unwrap();
         let path = dir.join("t.jsonl");
 
         let mut text = String::new();
@@ -1341,7 +1341,6 @@ mod tests {
         );
 
         assert_eq!(cwd_in(&path), Some(PathBuf::from("/somewhere/deep")));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Every line shape a real transcript holds (sampled on this
@@ -1413,7 +1412,6 @@ mod tests {
         assert_ne!(leaf, uuid, "the leaf is lossy, or this test tests nothing");
         let got = Claude::at(dir.join(".claude")).transcript(&leaf).unwrap();
         assert_eq!(got, vec![Utterance::User("hello".into())]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn proc_of(started_ms: i64) -> Proc {
@@ -1620,7 +1618,6 @@ mod tests {
         let sweep = Claude::at(dir.join(".claude")).sweep(&alive);
         assert_eq!(sweep.rows.len(), 2);
         assert!(sweep.rows.iter().all(|r| r.word == State::Busy));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The hook glue end to end on payloads: an observed session
@@ -1771,8 +1768,6 @@ mod tests {
         assert!(g.rewound, "a shorter file is a different file");
         assert_eq!(g.said, vec![Utterance::Agent("fresh".into())]);
         assert_eq!(g.at, std::fs::metadata(&file).unwrap().len());
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// **The agent's own name for a conversation, and the three ways it
@@ -1863,8 +1858,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.ai_title(&crate::live::clean_leaf(f)), None);
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// registers itself on first sight; the idle-notification does NOT
@@ -1872,10 +1865,10 @@ mod tests {
     /// permission ask does; SessionEnd settles it.
     #[test]
     fn hook_payloads_move_an_observed_session() {
-        let root = std::env::temp_dir().join(format!("khor-hook-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        let k = crate::live::LiveKind::new(root.clone(), khor_core::DeviceId([9; 32]));
+        let root = Scratch(std::env::temp_dir().join(format!("khor-hook-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(&*root);
+        std::fs::create_dir_all(&*root).unwrap();
+        let k = crate::live::LiveKind::new(root.to_path_buf(), khor_core::DeviceId([9; 32]));
         let payload = |event: &str, extra: &str| {
             format!(
                 r#"{{"session_id":"55E-fake.uuid","cwd":"/home/u/proj","hook_event_name":"{event}"{extra}}}"#
@@ -1923,7 +1916,6 @@ mod tests {
             State::Idle,
             "a clean end is idle"
         );
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// **A hook-observed session has a place, and it is the payload's.**
@@ -1945,7 +1937,7 @@ mod tests {
         let repo = root.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::create_dir_all(repo.join("apps/gui")).unwrap();
-        let k = crate::live::LiveKind::new(root.clone(), khor_core::DeviceId([9; 32]));
+        let k = crate::live::LiveKind::new(root.to_path_buf(), khor_core::DeviceId([9; 32]));
         let payload = |event: &str, cwd: &std::path::Path| {
             format!(
                 r#"{{"session_id":"77E-fake.uuid","cwd":"{}","hook_event_name":"{event}"}}"#,
@@ -1978,7 +1970,6 @@ mod tests {
             .find(|r| r.id.0 == "tui/88e-otheruuid")
             .unwrap();
         assert_eq!(other.place, None);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     // ── installing the hook ─────────────────────────────────
@@ -1987,11 +1978,33 @@ mod tests {
     /// and none of them can reach `~/.claude`: the path is a parameter
     /// all the way down (`super::vendor_home`), so there is no
     /// configuration this suite could touch by accident.
-    fn hook_home(tag: &str) -> PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn hook_home(tag: &str) -> Scratch {
         let dir = std::env::temp_dir().join(format!("khor-hooks-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join(".claude")).unwrap();
-        dir
+        Scratch(dir)
     }
 
     /// A settings file shaped like a real one: other top-level keys,
@@ -2116,7 +2129,6 @@ mod tests {
             after.events.iter().all(|(_, s)| *s == Installed::Here),
             "every event khor asked for now names this binary"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// **Installed twice is installed once**, asserted on the bytes.
@@ -2140,7 +2152,6 @@ mod tests {
             HOOK_EVENTS.len(),
             "and it says so, which is the only way a person can tell"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// **Only additions.** Somebody else's hooks, under the same events,
@@ -2202,7 +2213,6 @@ mod tests {
             after["hooks"]["PreToolUse"],
             original["hooks"]["PreToolUse"]
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A khor that moved is corrected where it stands, not added a
@@ -2242,7 +2252,6 @@ mod tests {
             after["hooks"]["Stop"][0]["hooks"][0]["command"],
             hook_command().unwrap()
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A settings file khor cannot parse is refused **and left alone**.
@@ -2261,7 +2270,6 @@ mod tests {
             broken,
             "still exactly as the user left it"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     // ── taking the hook back out ────────────────────────────
@@ -2308,7 +2316,6 @@ mod tests {
                 .all(|(_, s)| *s == Installed::Missing),
             "…and khor now reports itself as not installed"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// **Only khor's entries.** Somebody else's hooks under the very
@@ -2336,7 +2343,6 @@ mod tests {
             vec!["env", "permissions", "hooks", "model"],
             "and the user's key order is untouched"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// **Removed twice is removed once**, and the second run says so
@@ -2359,7 +2365,6 @@ mod tests {
             "and it says which events those were"
         );
         assert_eq!(std::fs::read_to_string(settings_path(&home)).unwrap(), once);
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// **A hook belonging to a different khor comes out too.**
@@ -2406,7 +2411,6 @@ mod tests {
         // Khor made the `hooks` object empty, so khor takes it away —
         // an empty container says exactly what its absence says.
         assert_eq!(read_json(&settings_path(&home)), serde_json::json!({}));
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A machine where claude was never configured: there is nothing to
@@ -2421,7 +2425,6 @@ mod tests {
             !settings_path(&home).exists(),
             "removing nothing must not leave a trace that something happened"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A file khor cannot parse is refused here too, and left alone —
@@ -2438,7 +2441,6 @@ mod tests {
             broken,
             "still exactly as the user left it"
         );
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// The hook command names this binary by absolute path and ends with

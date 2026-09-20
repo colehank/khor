@@ -31,11 +31,33 @@ fn shield_dirs() -> std::collections::HashSet<PathBuf> {
         .collect()
 }
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-keeper-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// The pid the *inner* serve wrote about itself — endpoint.json is the
@@ -81,7 +103,7 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
     let log = home.join("serve.log");
     let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("serve")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(&log).unwrap())
@@ -143,8 +165,6 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
         after == second && !alive(after),
         "an operator's kill must not be repaired: a new life after TERM is a keeper gone rogue"
     );
-
-    let _ = fs::remove_dir_all(&home);
 }
 
 /// Everything after the stamp is stable; the stamp is not — so grep the
@@ -166,7 +186,7 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     let log = home.join("serve.log");
     let mut keeper = Command::new(&bin)
         .arg("serve")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(&log).unwrap())
@@ -246,7 +266,6 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     wait_for("the keeper and its serve to leave", 10, || {
         keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
     });
-    let _ = fs::remove_dir_all(&home);
 }
 
 #[test]
@@ -266,7 +285,7 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     let log = home.join("serve.log");
     let mut keeper = Command::new(&bin)
         .arg("serve")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
         .env("KHOR_SHIELD", "1")
         .env_remove("KHOR_SESSION")
@@ -344,10 +363,11 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     // while the keeper resolves its own exe to `/private/var/…`, and
     // the two hash apart. What came and went is a fact this test can
     // read instead of derive.
+    // ⚠️ **Not the scratch home's** — these are the keeper's shield
+    // directories, made outside it, so no `Scratch` takes them away.
     for d in shield_dirs().difference(&before) {
         let _ = fs::remove_dir_all(d);
     }
-    let _ = fs::remove_dir_all(&home);
 }
 
 #[test]
@@ -359,7 +379,7 @@ fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
     let home = root("orphan");
     let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("serve")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(home.join("serve.log")).unwrap())
@@ -400,6 +420,4 @@ fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
         said.contains(&expected),
         "the departure must be named: {said}"
     );
-
-    let _ = fs::remove_dir_all(&home);
 }

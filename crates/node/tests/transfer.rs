@@ -4,7 +4,7 @@
 //! word — with controls, every await under a timeout.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_core::State;
@@ -13,11 +13,33 @@ use khor_node::{MsgBody, Node, SessionId};
 use khor_sync::chat::{ChatDoc, FileRef, Sender};
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-xfer-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -43,12 +65,12 @@ async fn wait_for_endpoint_file(root: &Path) {
 async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let ra = root("a");
     let rb = root("b");
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let ticket = a.invite().unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     timeout(Duration::from_secs(45), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
@@ -287,7 +309,4 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     );
 
     serve.abort();
-    for r in [&ra, &rb] {
-        let _ = fs::remove_dir_all(r);
-    }
 }

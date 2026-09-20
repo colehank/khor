@@ -1871,11 +1871,33 @@ mod wizard_agent_tests {
             .block_on(f)
     }
 
-    fn root(tag: &str) -> std::path::PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn root(tag: &str) -> Scratch {
         let p = std::env::temp_dir().join(format!("khor-wizard-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
-        p
+        Scratch(p)
     }
 
     /// **The 智能体 answer is an open position, and it refuses by name.**
@@ -1893,7 +1915,7 @@ mod wizard_agent_tests {
     #[test]
     fn a_name_nobody_registered_is_refused_the_way_the_command_line_refuses_it() {
         let r = root("unknown");
-        let n = khor_node::Node::open(r.clone()).unwrap();
+        let n = khor_node::Node::open(r.to_path_buf()).unwrap();
         n.register_agent("zed", &["some-acp-agent".to_owned()])
             .unwrap();
 
@@ -1908,7 +1930,6 @@ mod wizard_agent_tests {
             why.contains("zed"),
             "and the refusal names what is registered: {why}"
         );
-        let _ = std::fs::remove_dir_all(&r);
     }
 
     /// **The two forms a registered agent cannot take say which wall
@@ -1922,7 +1943,7 @@ mod wizard_agent_tests {
     #[test]
     fn a_registered_agent_is_refused_the_two_forms_it_cannot_take() {
         let r = root("forms");
-        let n = khor_node::Node::open(r.clone()).unwrap();
+        let n = khor_node::Node::open(r.to_path_buf()).unwrap();
         n.register_agent("zed", &["some-acp-agent".to_owned()])
             .unwrap();
 
@@ -1938,7 +1959,6 @@ mod wizard_agent_tests {
             khor_catalog::msg::wizard_codex_chat_only(),
             "and neither of them is codex's refusal, which is about a different limit"
         );
-        let _ = std::fs::remove_dir_all(&r);
     }
 
     /// khor's own two keep every form they had. The control for the
@@ -1947,7 +1967,7 @@ mod wizard_agent_tests {
     #[test]
     fn the_two_khor_ships_keep_the_forms_they_had() {
         let r = root("builtin");
-        let _n = khor_node::Node::open(r.clone()).unwrap();
+        let _n = khor_node::Node::open(r.to_path_buf()).unwrap();
         // Refused for what it *is*, not for the form — codex is
         // chat-only and claude is not, which is the pre-批⑥ shape and
         // must survive the open position.
@@ -1972,6 +1992,5 @@ mod wizard_agent_tests {
             khor_catalog::msg::no_such_dir("/nonexistent/khor-no-such-dir"),
             "claude+term is refused by the directory, never by the form"
         );
-        let _ = std::fs::remove_dir_all(&r);
     }
 }

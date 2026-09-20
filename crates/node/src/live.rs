@@ -1528,11 +1528,33 @@ fn exit_code_of(status: std::process::ExitStatus) -> i32 {
 mod tests {
     use super::*;
 
-    fn tmp(tag: &str) -> PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn tmp(tag: &str) -> Scratch {
         let p = std::env::temp_dir().join(format!("khor-live-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
-        p
+        Scratch(p)
     }
 
     fn kind_at(root: &Path) -> LiveKind {
@@ -1752,7 +1774,7 @@ mod tests {
             "mux-held",
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
         );
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
                 .with_procs(procs)
                 .with_tmux(Tmux::at_binary(&holding)),
@@ -1841,7 +1863,6 @@ mod tests {
             (State::Failed, 0),
             "failed sinks, no badge"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// Shell exit mapping differs from tui: a clean exit is 完成 until
@@ -1859,7 +1880,6 @@ mod tests {
         assert_eq!((row.state.state, row.unread), (State::Done, 1));
         let row = &k.rows(|_| i64::MAX)[0];
         assert_eq!((row.state.state, row.unread), (State::Idle, 0));
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The missing-ending rule: a dead pid with no recorded exit is 失败
@@ -1889,7 +1909,6 @@ mod tests {
             State::Busy,
             "no pid on record = the word stands"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The lost-host rule at the level it is decided, with no host to
@@ -1949,7 +1968,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Failed);
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// **A marker file outlives the process it names.** `term` is the
@@ -1999,7 +2017,6 @@ mod tests {
             !term_now(),
             "the host is gone; the file it left behind must not promise a terminal"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// Nothing a hook sends may leave the registry, name a failed state,
@@ -2042,7 +2059,6 @@ mod tests {
             State::Idle,
             "the first recorded ending wins"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// 同源去重: one claude session that both reports through a hook and
@@ -2072,7 +2088,7 @@ mod tests {
             },
         )]);
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(discovery);
 
         // Discovery alone: one row, wearing the word from disk.
         let rows = k.rows(|_| 0);
@@ -2099,7 +2115,6 @@ mod tests {
             "the registered row wins: it is the only one that can say 完成"
         );
         assert_eq!(rows[0].title, "one");
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The same collision, decided the other way, because the registry
@@ -2135,7 +2150,7 @@ mod tests {
             },
         )]);
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(discovery);
 
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
         // The hook's own shape: it names no pid (`claude.rs`'s `ensure`
@@ -2161,7 +2176,6 @@ mod tests {
             State::Idle,
             "control: a reported word still wins, so the source is the only thing deciding",
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// Recording an ending must not launder a word's provenance.
@@ -2192,7 +2206,6 @@ mod tests {
             Some(Source::Screen),
             "an ending is not a fresh report",
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// An entry written before provenance existed reads as the strong
@@ -2221,7 +2234,7 @@ mod tests {
             },
         )]);
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(procs));
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(discovery);
 
         let id = crate::adaptor::id_for("11111111-1111-4111-8111-111111111111");
         // The hook's own shape: it names no pid (`claude.rs`'s `ensure`
@@ -2259,7 +2272,6 @@ mod tests {
             State::Idle,
             "an entry from before this field stands against the sweep",
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// A row registered before anyone could place it learns its category
@@ -2286,7 +2298,6 @@ mod tests {
             Some("claude"),
             "a category already on record is not up for grabs"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The disk sweep places a registered row that arrived unplaced.
@@ -2310,7 +2321,7 @@ mod tests {
                 ppid: None,
             },
         )]);
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32]))
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
             .discovering(Arc::new(Discovery::at(&vendors).with_procs(procs)));
 
         // The registry claims the id first, with nothing to say about
@@ -2326,7 +2337,6 @@ mod tests {
             Some("claude"),
             "the sweep read claude's own files, so it can place what the registry could not"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// **One running claude in a tmux pane is one row, and it is
@@ -2379,7 +2389,7 @@ mod tests {
             "holding",
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
         );
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
                 .with_procs(procs.clone())
                 .with_tmux(Tmux::at_binary(&holding)),
@@ -2402,7 +2412,7 @@ mod tests {
             "empty-pane",
             "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f/tmp\x1fjust-a-shell\n",
         );
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
                 .with_procs(procs)
                 .with_tmux(Tmux::at_binary(&empty)),
@@ -2425,7 +2435,6 @@ mod tests {
             !rows[1].term,
             "control: an agent held by no multiplexer has no route to a terminal here"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The fold against a **registry entry**: a bridge row somebody
@@ -2464,7 +2473,7 @@ mod tests {
             "bridge-fold",
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
         );
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
                 .with_procs(procs)
                 .with_tmux(Tmux::at_binary(&holding)),
@@ -2492,7 +2501,6 @@ mod tests {
             "and the row is the agent's"
         );
         assert!(rows[0].term, "wearing the route");
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// A grouped twin session is furniture, not a second row: tmux lists
@@ -2521,7 +2529,7 @@ mod tests {
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fbase\n\
              $9\x1f1786245400\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fbase-1\n",
         );
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(Arc::new(
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty()
                 .with_procs(procs)
                 .with_tmux(Tmux::at_binary(&fake)),
@@ -2532,7 +2540,6 @@ mod tests {
             rows[0].id.0, "shell/1786245338-7",
             "and the original session is the row"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The transcript outranks the hosted screen line for an agent row
@@ -2594,7 +2601,6 @@ mod tests {
             Some("from the transcript"),
             "a khor-minted row reaches its transcript through the vendor leaf"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// The same rule against the **registry**: `khor run` started inside
@@ -2609,7 +2615,7 @@ mod tests {
         use crate::adaptor::{Discovery, Proc, Procs, tmux::Tmux};
 
         let root = tmp("tmux-registry");
-        let k_root = root.clone();
+        let k_root = root.to_path_buf();
         let me = std::process::id();
         let procs = Procs::of([
             (
@@ -2651,7 +2657,6 @@ mod tests {
             "the command khor started is the row; the pane is not a second"
         );
         assert_eq!(rows[0].id, id);
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// Installing the hook must not make crash detection worse.
@@ -2685,7 +2690,7 @@ mod tests {
         let id = crate::adaptor::id_for(vendor_sid);
         // An empty process table is the whole point — pid 8001 is gone.
         let discovery = Arc::new(Discovery::at(&vendors).with_procs(Procs::default()));
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(discovery);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(discovery);
         k.register(&id, "tui", "hooked", None, None).unwrap();
         k.report(&id, State::Busy, Source::Reported).unwrap();
 
@@ -2710,8 +2715,7 @@ mod tests {
                 ppid: None,
             },
         )])));
-        let k = LiveKind::new(root.clone(), DeviceId([9; 32])).discovering(alive);
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(alive);
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
-        let _ = fs::remove_dir_all(&root);
     }
 }

@@ -1952,11 +1952,25 @@ for line in sys.stdin:
   // The trigger is the row's own open button — it now spans the row,
   // and it is a button rather than the surrounding div so that a
   // keyboard's Menu key lands somewhere that can receive it.
+  //   **The list re-renders under this press**, so the node found and
+  //   the node clicked are not always the same one — a pin floats its
+  //   row to the top of the list, and a poll that cannot reach the
+  //   backend redraws the lot. Playwright calls that `element was
+  //   detached` and it took §26 down twice on 2026-09-17/18, green on
+  //   every rerun. **Retried rather than fatal**: the claim is about
+  //   the menu opening, never about which render served the press, and
+  //   the press is only made when no menu is open so a retry cannot
+  //   toggle one shut.
   const openRowMenu = async (id) => {
-    await page.locator(`[data-row="${id}"] [data-row-open]`).click({ button: "right" });
-    await until(`the menu on ${id}`, 5_000, async () =>
-      (await page.locator('[data-menu-item="pin"]').count()) === 1,
-    );
+    await until(`the menu on ${id}`, 10_000, async () => {
+      if ((await page.locator("[data-row-menu]").count()) === 0) {
+        await page
+          .locator(`[data-row="${id}"] [data-row-open]`)
+          .click({ button: "right", timeout: 3_000 })
+          .catch(() => {});
+      }
+      return (await page.locator('[data-menu-item="pin"]').count()) === 1;
+    });
   };
   const menuItemWord = async (which) =>
     (await page.locator(`[data-menu-item="${which}"]`).innerText()).trim();
@@ -7897,11 +7911,18 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   // already set. Waiting on the element's own animations is the "wait
   // for the thing itself" rule; a fixed sleep would measure how busy the
   // machine is.
+  //   Read through `until` for `openRowMenu`'s reason: this resolves an
+  //   element and then reaches into it, and between those two steps a
+  //   re-render can take it away. A retry re-resolves; the reading
+  //   itself is unchanged, and a menu that never holds still still
+  //   times out with what it last saw.
   const pinItemState = () =>
-    page.locator('[data-menu-item="pin"]').evaluate(async (el) => {
-      await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
-      return { word: el.innerText.trim(), color: getComputedStyle(el).color };
-    });
+    until("the pin item to hold still long enough to be read", 5_000, () =>
+      page.locator('[data-menu-item="pin"]').evaluate(async (el) => {
+        await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
+        return { word: el.innerText.trim(), color: getComputedStyle(el).color };
+      }),
+    );
 
   //     The control comes first: the same item, pressed while the
   //     backend is there, must come back *not* wearing the face — and a

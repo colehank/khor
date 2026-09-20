@@ -17,7 +17,7 @@
 //! silently stretches with it and a real hang stops looking like one.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::Node;
@@ -27,11 +27,33 @@ use tokio::time::timeout;
 mod util;
 use util::raw_request;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-ls-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -62,12 +84,12 @@ async fn wait_for_endpoint_file(root: &Path) {
 async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_refused() {
     let ra = root("a");
     let rb = root("b");
-    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let sa = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve_a = tokio::spawn(async move { sa.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let ticket = a.invite().unwrap();
     timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
@@ -347,6 +369,5 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
     let _ = fs::remove_file(&recents_dir);
 
     serve_a.abort();
-    let _ = fs::remove_dir_all(&ra);
-    let _ = fs::remove_dir_all(&rb);
+    let _ = fs::remove_dir_all(&*ra);
 }

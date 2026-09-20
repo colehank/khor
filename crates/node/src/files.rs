@@ -868,7 +868,6 @@ mod tests {
         assert!(rows[3].dir && !rows[4].dir);
         assert_eq!(rows[2].size, 2);
         assert!(!truncated);
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Relative paths are refused, not resolved: an answer about
@@ -889,7 +888,6 @@ mod tests {
         let (_, rows, truncated) = list_dir(root.to_str().unwrap()).unwrap();
         assert_eq!(rows.len(), MOST_ENTRIES);
         assert!(truncated);
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
 

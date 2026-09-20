@@ -5,18 +5,40 @@
 //! process table and a file) stayed off the reactor they travel on
 //! (`tests/vitals.rs` has the scar).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::Node;
 use khor_node::TopBy;
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-load-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -44,12 +66,12 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
     let ra = root("a");
     let rb = root("b");
 
-    let alpha = Node::open_as(ra.clone(), "alpha").unwrap();
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let alpha = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let _serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let beta = Node::open_as(rb.clone(), "beta").unwrap();
+    let beta = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     assert!(
         beta.load_on("alpha", 3, TopBy::Busiest, true)
             .await
@@ -147,12 +169,12 @@ async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
     let ra = root("reuse-a");
     let rb = root("reuse-b");
 
-    let alpha = Node::open_as(ra.clone(), "alpha").unwrap();
-    let server_a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let alpha = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let server_a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let _serve_a = tokio::spawn(async move { server_a.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let beta = Node::open_as(rb.clone(), "beta").unwrap();
+    let beta = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let ticket = alpha.invite().unwrap();
     timeout(Duration::from_secs(60), beta.pair(&ticket))
         .await
@@ -160,7 +182,7 @@ async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
         .unwrap();
 
     // Beta's own serve, the way every face reaches the wire.
-    let server_b = Node::open_as(rb.clone(), "beta").unwrap();
+    let server_b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let wires = server_b.wire_watch();
     let _serve_b = tokio::spawn(async move { server_b.serve().await });
     wait_for_endpoint_file(&rb).await;

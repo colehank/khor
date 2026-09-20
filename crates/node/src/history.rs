@@ -218,11 +218,33 @@ pub struct Reading {
 mod tests {
     use super::*;
 
-    fn dir(tag: &str) -> PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    pub(super) struct Scratch(pub(super) std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn dir(tag: &str) -> Scratch {
         let p = std::env::temp_dir().join(format!("khor-history-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
-        p
+        super::tests::Scratch(p)
     }
 
     /// **A gap in one series does not take the next one with it.**
@@ -276,7 +298,6 @@ mod tests {
             Some(71.0),
             "and so must the column after it"
         );
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// Two beats in one bucket average; the bucket nobody sampled stays
@@ -332,7 +353,6 @@ mod tests {
             "the unmeasured bucket is a hole, not a bridge"
         );
         assert_eq!(day.buckets[n - 1], Some(50.0));
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// "Survives a restart" with the restart actually happening: a
@@ -367,7 +387,6 @@ mod tests {
             day.buckets[..BUCKETS - 1].iter().all(Option::is_none),
             "…and nothing was invented around it"
         );
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// The day's far edge really is an edge: a reading older than the
@@ -404,7 +423,6 @@ mod tests {
             day.buckets[..BUCKETS - 1].iter().all(Option::is_none),
             "the day-old reading is off the board, not lurking under it"
         );
-        let _ = std::fs::remove_dir_all(&d);
     }
 
     /// An unreadable line in the file is dropped, not read as a
@@ -417,7 +435,6 @@ mod tests {
         let day = h.day(701 * BUCKET_MS);
         assert_eq!(day.buckets[BUCKETS - 1], Some(10.0));
         assert_eq!(day.buckets[BUCKETS - 2], Some(20.0));
-        let _ = std::fs::remove_dir_all(&d);
     }
 }
 
@@ -429,10 +446,10 @@ mod tests {
 mod memory_day {
     use super::*;
 
-    fn fresh_dir(tag: &str) -> PathBuf {
+    fn fresh_dir(tag: &str) -> super::tests::Scratch {
         let p = std::env::temp_dir().join(format!("khor-history-mem-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
-        p
+        super::tests::Scratch(p)
     }
 
     #[test]
@@ -478,7 +495,7 @@ mod memory_day {
     #[test]
     fn a_bucket_from_before_memory_draws_as_absence_not_zero() {
         let d = fresh_dir("old");
-        std::fs::create_dir_all(&d).unwrap();
+        std::fs::create_dir_all(&*d).unwrap();
         // A line the previous recorder wrote: index, cpu sum, count — no memory.
         std::fs::write(d.join("cpu"), "10 120.0 2\n").unwrap();
         let day = CpuHistory::open(&d).day(10 * BUCKET_MS);

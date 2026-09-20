@@ -15,7 +15,6 @@
 
 use std::fs;
 use std::net::TcpStream;
-use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -24,11 +23,33 @@ use khor_node::gui_host::{GuiNote, GuiOp};
 use khor_node::host::{connect_at, read_frame, write_frame};
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-far-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 fn wait_for(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
@@ -101,7 +122,7 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     #[allow(clippy::zombie_processes)]
     let keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("serve")
-        .env("KHOR_HOME", &ra)
+        .env("KHOR_HOME", &*ra)
         .env("KHOR_NAME", "alpha")
         .env("KHOR_CLAUDE", &fake)
         .env_remove("KHOR_SESSION")
@@ -116,7 +137,7 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
 
     // beta: in-process, with a resident of its own — the pairing and
     // the reach both go through it, the way the app's do.
-    let serve_b = Node::open_as(rb.clone(), "beta").unwrap();
+    let serve_b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let serve = tokio::spawn(async move { serve_b.serve().await });
     // Awaited, not slept: the serve is a task on this runtime, and a
     // thread asleep is a worker it cannot have. Ninety seconds because
@@ -130,11 +151,11 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
     })
     .await
     .expect("beta's serve to stand up");
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let ticket = a
         .invite()
         .expect("alpha mints a ticket through its resident");
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let peer = timeout(Duration::from_secs(90), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
@@ -247,5 +268,4 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
         panic!("a goodbye")
     };
     serve.abort();
-    let _ = fs::remove_dir_all(&rb);
 }

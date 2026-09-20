@@ -15,18 +15,40 @@
 //! strip says 失败, in the same instant, from the same node.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use khor_core::{DayCell, DeviceId, SessionId, State};
 use khor_node::Node;
 use khor_node::day;
 use khor_node::live::LiveKind;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-day-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// A pid nobody is using: one that ran and was reaped. Spawned and
@@ -72,11 +94,11 @@ fn word_on_disk(root: &Path, id: &SessionId) -> State {
 #[test]
 fn the_strip_records_the_word_the_list_shows_not_the_one_on_disk() {
     let r = root("derived");
-    let node = Node::open_as(r.clone(), "alpha").expect("a node opens");
+    let node = Node::open_as(r.to_path_buf(), "alpha").expect("a node opens");
     let id = SessionId("tui/gone".to_owned());
     // Registering writes 忙碌 and never touches it again; the pid is
     // one the OS has already taken back.
-    LiveKind::new(r.clone(), node.device())
+    LiveKind::new(r.to_path_buf(), node.device())
         .register(&id, "tui", "an agent that died", Some(a_dead_pid()), None)
         .expect("registered");
 
@@ -103,9 +125,9 @@ fn the_strip_records_the_word_the_list_shows_not_the_one_on_disk() {
 #[test]
 fn a_sampled_minute_tells_a_missing_row_apart_from_a_missing_watcher() {
     let r = root("absent");
-    let node = Node::open_as(r.clone(), "alpha").expect("a node opens");
+    let node = Node::open_as(r.to_path_buf(), "alpha").expect("a node opens");
     let id = SessionId("tui/alive".to_owned());
-    LiveKind::new(r.clone(), node.device())
+    LiveKind::new(r.to_path_buf(), node.device())
         .register(&id, "tui", "an agent", Some(std::process::id()), None)
         .expect("registered");
 
@@ -143,14 +165,14 @@ fn a_second_node_on_the_same_home_keeps_what_the_first_recorded() {
     let r = root("restart");
     let id = SessionId("tui/kept".to_owned());
     {
-        let node = Node::open_as(r.clone(), "alpha").expect("a node opens");
-        LiveKind::new(r.clone(), node.device())
+        let node = Node::open_as(r.to_path_buf(), "alpha").expect("a node opens");
+        LiveKind::new(r.to_path_buf(), node.device())
             .register(&id, "tui", "an agent", Some(std::process::id()), None)
             .expect("registered");
         node.record_day().expect("a sample");
         assert_eq!(newest(&node, &id.0), DayCell::Word(State::Busy));
     }
-    let again = Node::open_as(r.clone(), "alpha").expect("a second node opens");
+    let again = Node::open_as(r.to_path_buf(), "alpha").expect("a second node opens");
     assert_eq!(
         newest(&again, &id.0),
         DayCell::Word(State::Busy),

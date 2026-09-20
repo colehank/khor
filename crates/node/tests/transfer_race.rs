@@ -70,17 +70,39 @@
 //! shape.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::{Node, SessionId};
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-xrace-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// 90s, not 10, and multi_thread below for the same reason: on a Mac
@@ -111,7 +133,7 @@ fn ghost_id() -> SessionId {
 async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     let ra = root("a");
     let rb = root("b");
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move {
         // Reported rather than swallowed: a serve that refuses to start
         // shows up downstream as "endpoint.json never appeared", which
@@ -121,9 +143,9 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
         }
     });
     wait_for_endpoint_file(&ra).await;
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let ticket = a.invite().unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     timeout(Duration::from_secs(45), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
@@ -232,9 +254,6 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     );
 
     serve.abort();
-    for r in [&ra, &rb] {
-        let _ = fs::remove_dir_all(r);
-    }
 }
 
 /// The routed half: **the machine that presses 收下 is the one that is
@@ -264,17 +283,17 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
     let ra = root("ra");
     let rb = root("rb");
     let rg = root("rg");
-    let alpha = Node::open_as(ra.clone(), "alpha").unwrap();
+    let alpha = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve_a = tokio::spawn(async move {
         if let Err(why) = alpha.serve().await {
             eprintln!("alpha's serve refused to start: {why}");
         }
     });
     wait_for_endpoint_file(&ra).await;
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
 
     // beta serves: a routed accept lands on the recipient's serve.
-    let beta = Node::open_as(rb.clone(), "beta").unwrap();
+    let beta = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let ticket_for_beta = a.invite().unwrap();
     timeout(Duration::from_secs(45), beta.pair(&ticket_for_beta))
         .await
@@ -286,7 +305,7 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
         }
     });
     wait_for_endpoint_file(&rb).await;
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
 
     // **gamma pairs with beta, not with alpha, and the reason is that
     // one of them is a coin toss.**
@@ -304,7 +323,7 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
     // synchronously, so pairing gamma to **beta** — the machine that
     // must answer the routed action — makes the one hop that matters
     // deterministic instead of hoping for a pump.
-    let g = Node::open_as(rg.clone(), "gamma").unwrap();
+    let g = Node::open_as(rg.to_path_buf(), "gamma").unwrap();
     timeout(Duration::from_secs(45), g.pair(&b.invite().unwrap()))
         .await
         .expect("pairing must not hang")
@@ -373,7 +392,4 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
 
     serve_a.abort();
     serve_b.abort();
-    for r in [&ra, &rb, &rg] {
-        let _ = fs::remove_dir_all(r);
-    }
 }

@@ -10,17 +10,39 @@
 //! transcripts under its own root. Alpha is given one number and beta
 //! another, and the assertion is that beta reports **alpha's**.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::Node;
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-usage-net-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// Gives a node's own home one claude transcript, billing `out` tokens.
@@ -96,12 +118,12 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
     spend(&ra, "msg_alpha", 4242);
     spend(&rb, "msg_beta", 7);
 
-    let alpha = Node::open_as(ra.clone(), "alpha").unwrap();
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let alpha = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let beta = Node::open_as(rb.clone(), "beta").unwrap();
+    let beta = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let alpha_id = alpha.device_str().to_owned();
 
     // The control: before pairing, beta has heard from nobody but itself.
@@ -163,8 +185,7 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
         "…and it is visibly older than it was: {age} ms then, {older} ms now"
     );
 
-    let _ = std::fs::remove_dir_all(&ra);
-    let _ = std::fs::remove_dir_all(&rb);
+    let _ = std::fs::remove_dir_all(&*ra);
 }
 
 /// **The second place an old spending answer has to survive, and it is
@@ -184,7 +205,7 @@ async fn a_machine_reports_its_own_spending_and_it_keeps_ageing_honestly() {
 #[test]
 fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
     let r = root("olddisk");
-    let node = Node::open_as(r.clone(), "solo").unwrap();
+    let node = Node::open_as(r.to_path_buf(), "solo").unwrap();
     let peer = "ab".repeat(32);
     let dir = r.join(".khor").join("usage");
     std::fs::create_dir_all(&dir).unwrap();
@@ -208,7 +229,6 @@ fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
         "an answer from before the breakdown says so by being empty, not by being wrong"
     );
     assert_eq!(usage.today, None, "and states no day rather than today's");
-    let _ = std::fs::remove_dir_all(&r);
 }
 
 /// **The network-wide answer states a day, and it is this machine's.**
@@ -237,7 +257,7 @@ fn a_cached_answer_written_before_the_model_breakdown_still_reads_back() {
 #[test]
 fn the_network_wide_answer_states_this_machines_day_and_not_nobodys() {
     let r = root("today");
-    let node = Node::open_as(r.clone(), "solo").unwrap();
+    let node = Node::open_as(r.to_path_buf(), "solo").unwrap();
     let everywhere = node
         .usage_everywhere()
         .expect("a node can sum its own network");
@@ -254,5 +274,4 @@ fn the_network_wide_answer_states_this_machines_day_and_not_nobodys() {
         everywhere.days.is_empty(),
         "…and it says so beside no spending at all, which is where a day is easiest to drop"
     );
-    let _ = std::fs::remove_dir_all(&r);
 }

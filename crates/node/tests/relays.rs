@@ -6,8 +6,6 @@
 //! nothing in this file depends on the aliyun box being up (which is
 //! what `relay.rs` is for, and why that one is `#[ignore]`).
 
-use std::path::PathBuf;
-
 use khor_node::Node;
 
 /// An address in TEST-NET-3 (RFC 5737), which exists so that a document
@@ -15,11 +13,33 @@ use khor_node::Node;
 /// it must never be dialled — both true here.
 const MINE: &str = "http://203.0.113.9:3340";
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-relays-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// The whole round trip, with the arm that makes it mean something.
@@ -34,7 +54,7 @@ fn root(tag: &str) -> PathBuf {
 fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     let root = root("roundtrip");
 
-    let node = Node::open(root.clone()).expect("a fresh home should open");
+    let node = Node::open(root.to_path_buf()).expect("a fresh home should open");
     assert!(
         !node.relays().iter().any(|r| r == MINE),
         "control: with nothing typed, this address must not already be in the list — \
@@ -70,7 +90,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     // list is read when a node opens, so this is the assertion that the
     // setting reaches anything at all.
     drop(node);
-    let reopened = Node::open(root.clone()).expect("the home should reopen");
+    let reopened = Node::open(root.to_path_buf()).expect("the home should reopen");
     assert!(
         reopened.relays().iter().any(|r| r == MINE),
         "a relay typed on this machine must be in the list the next node binds with"
@@ -104,13 +124,11 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
         reopened.relay_choices().is_empty(),
         "clearing should remove the user's own entries"
     );
-    let bare = Node::open(root.clone()).expect("the home should reopen");
+    let bare = Node::open(root.to_path_buf()).expect("the home should reopen");
     assert!(
         !bare.relays().iter().any(|r| r == MINE),
         "and the cleared address should be gone from the list a node binds with"
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }
 
 /// 「只用我自己那台」replaces the list instead of joining it — and it
@@ -123,7 +141,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
 #[test]
 fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
     let root = root("onlymine");
-    let node = Node::open(root.clone()).expect("a fresh home should open");
+    let node = Node::open(root.to_path_buf()).expect("a fresh home should open");
 
     // Refused before anything is stored: there is nothing to be the
     // only one. The switch must not come on by itself either.
@@ -157,7 +175,7 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
         "「only mine」must replace the built-in tier, not sit on top of it"
     );
 
-    let reopened = Node::open(root.clone()).expect("the home should reopen");
+    let reopened = Node::open(root.to_path_buf()).expect("the home should reopen");
     assert!(
         reopened.relays_only_mine(),
         "the switch should survive a reopen"
@@ -174,6 +192,4 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
         reopened.set_relays(&[], true).is_err(),
         "emptying the list must not be a way into「only mine, and none」"
     );
-
-    let _ = std::fs::remove_dir_all(&root);
 }

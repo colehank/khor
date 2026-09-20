@@ -225,11 +225,33 @@ pub fn resume_session(
 mod tests {
     use super::*;
 
-    fn root(tag: &str) -> std::path::PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn root(tag: &str) -> Scratch {
         let p = std::env::temp_dir().join(format!("khor-guiagents-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
-        p
+        Scratch(p)
     }
 
     /// **The four answers stay four on the way out.** This is the
@@ -353,7 +375,7 @@ mod tests {
     fn attaching_a_snapshot_entry_registers_it_under_its_own_id() {
         let r = root("attach");
         register_known(&r, "gemini").unwrap();
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let spec = n.agent("gemini").expect("readable").expect("registered");
         assert!(spec.typed().contains("gemini-cli"), "{}", spec.typed());
         // And nothing was asked: attaching is not asking, and the
@@ -362,7 +384,6 @@ mod tests {
             matches!(agent_seen(&r, "gemini").unwrap(), AgentSaid::Unasked),
             "registering must not have put the question"
         );
-        let _ = std::fs::remove_dir_all(&r);
     }
 
     /// **An id khor never recorded is refused, not opened.** Nothing
@@ -378,7 +399,7 @@ mod tests {
     #[test]
     fn resuming_a_conversation_nobody_recorded_is_refused_by_name() {
         let r = root("resume");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         n.register_agent("zed", &["some-acp-agent".to_owned()])
             .unwrap();
 
@@ -401,7 +422,6 @@ mod tests {
             unrecorded, unregistered,
             "「没登记过这个 agent」and「没问到过这段对话」are different situations"
         );
-        let _ = std::fs::remove_dir_all(&r);
     }
 
     /// The two refusals `@id` can hit are different sentences — and
@@ -416,6 +436,5 @@ mod tests {
         assert_ne!(missing, binary);
         assert!(missing.contains("no-such-agent"), "{missing}");
         assert!(binary.contains("goose"), "{binary}");
-        let _ = std::fs::remove_dir_all(&r);
     }
 }

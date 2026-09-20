@@ -22,7 +22,7 @@
 //! real hang stops looking like one.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::Node;
@@ -33,11 +33,33 @@ use tokio::time::timeout;
 mod util;
 use util::raw_tunnel;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-tun-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -89,12 +111,12 @@ async fn echo_server() -> String {
 async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused() {
     let ra = root("a");
     let rb = root("b");
-    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let sa = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve_a = tokio::spawn(async move { sa.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let ticket = a.invite().unwrap();
     timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
@@ -162,8 +184,6 @@ async fn a_paired_machine_borrows_the_far_network_and_an_unpaired_key_is_refused
     );
 
     serve_a.abort();
-    let _ = fs::remove_dir_all(&ra);
-    let _ = fs::remove_dir_all(&rb);
 }
 
 /// Reads from a socket until `needle` appears, returning all bytes read.
@@ -225,12 +245,12 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
 
     let ra = root("pa");
     let rb = root("pb");
-    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let sa = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve_a = tokio::spawn(async move { sa.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let ticket = a.invite().unwrap();
     timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
@@ -356,8 +376,6 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
     );
 
     serve_a.abort();
-    let _ = fs::remove_dir_all(&ra);
-    let _ = fs::remove_dir_all(&rb);
 }
 
 /// Opens a tunnel through a proxy and returns the still-open client
@@ -406,15 +424,15 @@ async fn wait_borrow_state(node: &Node, id: &str, want: khor_core::State) -> boo
 async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
     let ra = root("sa");
     let rb = root("sb");
-    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let sa = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve_a = tokio::spawn(async move { sa.serve().await });
-    let sb = Node::open_as(rb.clone(), "beta").unwrap();
+    let sb = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let serve_b = tokio::spawn(async move { sb.serve().await });
     wait_for_endpoint_file(&ra).await;
     wait_for_endpoint_file(&rb).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let ticket = a.invite().unwrap();
     // Routed through beta's serve (both hold their keys), like every verb.
     timeout(Duration::from_secs(60), b.pair(&ticket))
@@ -632,6 +650,4 @@ async fn a_borrow_is_one_per_machine_and_only_the_hand_held_kind_wears_a_row() {
 
     serve_a.abort();
     serve_b.abort();
-    let _ = fs::remove_dir_all(&ra);
-    let _ = fs::remove_dir_all(&rb);
 }

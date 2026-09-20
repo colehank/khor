@@ -213,11 +213,33 @@ mod tests {
 
     /// The repo's own temp-dir convention (`crates/node/src/tests.rs`),
     /// which is also why this file needs no dev-dependency.
-    fn root(tag: &str) -> PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn root(tag: &str) -> Scratch {
         let p = std::env::temp_dir().join(format!("khor-place-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
-        p
+        Scratch(p)
     }
 
     /// A checkout is the project; everything under it folds into it.

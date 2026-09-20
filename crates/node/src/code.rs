@@ -466,11 +466,32 @@ mod tests {
         std::fs::write(dir.join("node"), b"#!/bin/sh\n").expect("write node");
     }
 
-    fn scratch(name: &str) -> PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn scratch(name: &str) -> Scratch {
         let dir = std::env::temp_dir().join(format!("khor-code-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("make scratch");
-        dir
+        Scratch(dir)
     }
 
     #[test]
@@ -487,7 +508,6 @@ mod tests {
             &base,
             "0000000000000000000000000000000000000000"
         ));
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -499,7 +519,6 @@ mod tests {
         let base = scratch("half");
         std::fs::create_dir_all(base.join("serve-web").join("abc")).expect("make dir");
         assert!(!server_under(&base, "abc"));
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -508,7 +527,6 @@ mod tests {
         // directory with, so the answer is the asking one.
         let base = scratch("nocommit");
         assert!(!server_under(&base, ""));
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// 工作区第六轮 第 49 条, the half a person meets on a fresh
@@ -517,12 +535,12 @@ mod tests {
     #[test]
     fn a_machine_with_no_settings_gets_the_key() {
         let dir = scratch("theme-fresh");
+        std::fs::create_dir_all(&*dir).expect("make scratch");
         let at = dir.join("data").join("Machine").join("settings.json");
         follow_theme_in(&at);
         let text = std::fs::read_to_string(&at).expect("the file khor wrote");
         let v: serde_json::Value = serde_json::from_str(&text).expect("valid json");
         assert_eq!(v[FOLLOW_KEY], serde_json::Value::Bool(true));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// …and the half the ruling is actually about: **a key somebody has
@@ -532,7 +550,7 @@ mod tests {
     #[test]
     fn a_key_already_answered_is_left_exactly_as_it_was() {
         let dir = scratch("theme-answered");
-        std::fs::create_dir_all(&dir).expect("make scratch");
+        std::fs::create_dir_all(&*dir).expect("make scratch");
         let at = dir.join("settings.json");
         let was = "{\n  \"window.autoDetectColorScheme\": false,\n  \"editor.fontSize\": 13\n}\n";
         std::fs::write(&at, was).expect("write settings");
@@ -542,7 +560,6 @@ mod tests {
             was,
             "khor rewrote a settings file it had nothing to add to"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The other keys survive, and so does their order — which is what
@@ -552,7 +569,7 @@ mod tests {
     #[test]
     fn everything_else_in_the_file_comes_back_in_its_own_order() {
         let dir = scratch("theme-order");
-        std::fs::create_dir_all(&dir).expect("make scratch");
+        std::fs::create_dir_all(&*dir).expect("make scratch");
         let at = dir.join("settings.json");
         std::fs::write(
             &at,
@@ -571,7 +588,6 @@ mod tests {
             vec!["zebra", "apple", "workbench.colorTheme", FOLLOW_KEY],
             "the keys came back in another order, or one of them did not come back"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A file khor cannot parse is not khor's to repair. VS Code's own
@@ -581,12 +597,11 @@ mod tests {
     #[test]
     fn a_settings_file_with_comments_in_it_is_left_alone() {
         let dir = scratch("theme-jsonc");
-        std::fs::create_dir_all(&dir).expect("make scratch");
+        std::fs::create_dir_all(&*dir).expect("make scratch");
         let at = dir.join("settings.json");
         let was = "{\n  // mine\n  \"editor.fontSize\": 13\n}\n";
         std::fs::write(&at, was).expect("write settings");
         follow_theme_in(&at);
         assert_eq!(std::fs::read_to_string(&at).expect("read back"), was);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

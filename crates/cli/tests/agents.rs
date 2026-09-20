@@ -50,11 +50,33 @@ fn stub() -> PathBuf {
         .join("acp-stub")
 }
 
-fn home(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn home(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-agents-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// Closes a session when it goes out of scope, however it goes.
@@ -120,7 +142,7 @@ fn an_agent_nobody_shipped_opens_a_session_that_says_whose_it_is() {
     assert!(!id.is_empty(), "the id is the deliverable");
     // Handed over **before** the first assertion that could panic.
     let _closer = Closer {
-        home: home.clone(),
+        home: home.to_path_buf(),
         id: id.clone(),
     };
 
@@ -171,7 +193,6 @@ fn a_typo_in_the_agent_name_opens_nothing() {
             .all(|l| !l.contains("tui/")),
         "no session was opened"
     );
-    let _ = std::fs::remove_dir_all(&home);
 }
 
 /// **`--gui --on <machine>` is refused out loud.**
@@ -208,7 +229,6 @@ fn asking_for_a_conversation_on_another_machine_is_refused_not_ignored() {
             .all(|l| !l.contains("tui/")),
         "and nothing was opened locally"
     );
-    let _ = std::fs::remove_dir_all(&home);
 }
 
 /// **An agent that wants a login says so, in its own words, at once.**
@@ -252,7 +272,6 @@ fn an_agent_that_wants_a_login_says_so_before_any_timeout_could() {
         took < Duration::from_secs(15),
         "the refusal must arrive at the refusal, not at the opener's timeout: {took:?}"
     );
-    let _ = std::fs::remove_dir_all(&home);
 }
 
 /// The control for the one above: a command that is not an agent at all
@@ -275,7 +294,6 @@ fn a_command_that_is_not_an_agent_gets_its_own_sentence() {
         err.contains("ACP"),
         "it says what khor was expecting instead: {err}"
     );
-    let _ = std::fs::remove_dir_all(&home);
 }
 
 /// **An ad-hoc command gets no category at all, and does not borrow
@@ -294,7 +312,7 @@ fn a_command_opened_without_a_registration_is_filed_as_unplaceable() {
     assert!(ok, "opening: {err}");
     let id = id.trim().to_owned();
     let _closer = Closer {
-        home: home.clone(),
+        home: home.to_path_buf(),
         id: id.clone(),
     };
 
@@ -369,7 +387,7 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
     assert!(ok, "opening: {err}");
     let id = id.trim().to_owned();
     let _closer = Closer {
-        home: home.clone(),
+        home: home.to_path_buf(),
         id: id.clone(),
     };
     println!("session: {id}");
@@ -381,7 +399,7 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
         "a real agent's row says whose it is too: {rows}"
     );
 
-    let k = LiveKind::new(home.clone(), DeviceId([1; 32]));
+    let k = LiveKind::new(home.to_path_buf(), DeviceId([1; 32]));
     let hf = read_host_file(
         &k.dir_of(&khor_core::SessionId(id.clone()))
             .expect("a session dir"),

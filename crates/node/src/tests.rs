@@ -9,11 +9,11 @@ use khor_sync::store::Doc;
 
 use super::*;
 
-fn root(tag: &str) -> PathBuf {
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-node-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 /// A scratch tree that takes itself away, **however the test leaves**
@@ -26,10 +26,11 @@ fn root(tag: &str) -> PathBuf {
 /// Measured 2026-09-19: 8389 of them, 724 MB, on the machine this
 /// repo is built on.
 ///
-/// The tests above still call `root` and still leak on a panic; that is
-/// a standing account somebody is clearing separately. **Everything
-/// written from here down takes this instead**, so the account stops
-/// growing.
+/// ⚠️ **`root` hands one back too, as of 2026-09-20** — the standing
+/// account this paragraph used to name is cleared: every helper in this
+/// repo that makes a temp tree now returns one of these, so a red run
+/// leaves nothing behind. Measured before the sweep: 3256 directories,
+/// 952 MB in `$TMPDIR` on the machine this repo is built on.
 struct Scratch(PathBuf);
 
 impl Drop for Scratch {
@@ -47,13 +48,13 @@ impl std::ops::Deref for Scratch {
 }
 
 fn scratch(tag: &str) -> Scratch {
-    Scratch(root(tag))
+    root(tag)
 }
 
 #[test]
 fn notes_to_self_are_seen_the_moment_they_are_told() {
     let r = root("tell");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     n.tell(n.name().to_owned().as_str(), "a note to self")
         .unwrap();
 
@@ -69,7 +70,6 @@ fn notes_to_self_are_seen_the_moment_they_are_told() {
     let log = n.log(n.name().to_owned().as_str()).unwrap();
     assert_eq!(log.broken, 0);
     assert_eq!(log.messages.len(), 1);
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// The dumb path in miniature: a block from another device lands as a
@@ -77,7 +77,7 @@ fn notes_to_self_are_seen_the_moment_they_are_told() {
 #[test]
 fn a_foreign_block_raises_unread_and_seen_clears_it() {
     let r = root("foreign");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
 
     let far = ChatDoc::new(0xF0F0).unwrap();
     far.tell(
@@ -101,13 +101,12 @@ fn a_foreign_block_raises_unread_and_seen_clears_it() {
     let row = &n.sessions().unwrap()[0].session;
     assert_eq!(row.unread, 0);
     assert_eq!(row.state.state, State::Idle);
-    let _ = fs::remove_dir_all(&r);
 }
 
 #[test]
 fn watch_receives_what_tell_emits() {
     let r = root("watch");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let rx = n.watch();
     n.tell(n.name().to_owned().as_str(), "push one").unwrap();
 
@@ -118,7 +117,6 @@ fn watch_receives_what_tell_emits() {
         NodeEvent::Row(row) => assert_eq!(row.unread, 0),
         other => panic!("then a row update, got {other:?}"),
     }
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// Close is putting the row away, never deletion (chat 收起批, on top of
@@ -129,7 +127,7 @@ fn watch_receives_what_tell_emits() {
 #[test]
 fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
     let r = root("close");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     n.tell(n.name().to_owned().as_str(), "the line that stays")
         .unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
@@ -165,7 +163,6 @@ fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
     );
     let row = &rows[0].session;
     assert_eq!((row.unread, row.state.state), (0, State::Idle));
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// Closing marks seen to the same instant: a revived row owes only the
@@ -175,7 +172,7 @@ fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
 #[test]
 fn a_revived_chat_owes_only_what_revived_it() {
     let r = root("close-unread");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
     let far = ChatDoc::new(0xF0F0).unwrap();
@@ -208,7 +205,6 @@ fn a_revived_chat_owes_only_what_revived_it() {
         rows[0].session.unread, 1,
         "only the reviver counts: close marked the dismissed debt seen"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// forget 批: a machine shown the door takes its rows with it — its chat
@@ -220,7 +216,7 @@ fn a_revived_chat_owes_only_what_revived_it() {
 #[test]
 fn a_forgotten_machines_rows_leave_the_list() {
     let r = root("forget-rows");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let keep_id = "aa".repeat(32);
     let gone_id = "bb".repeat(32);
     {
@@ -275,7 +271,6 @@ fn a_forgotten_machines_rows_leave_the_list() {
         r.join(".khor").join("peers").join(&gone_id).exists(),
         "the report cache stays on disk — only the painting stops"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A send makes a message, not a row** (传输并入对话批). The offer is
@@ -287,7 +282,7 @@ fn a_forgotten_machines_rows_leave_the_list() {
 #[test]
 fn a_send_makes_a_file_message_and_no_transfer_row() {
     let r = root("send-msg");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let payload = r.join("hello.txt");
     fs::write(&payload, b"five!").unwrap();
 
@@ -320,7 +315,6 @@ fn a_send_makes_a_file_message_and_no_transfer_row() {
         State::Blocked,
         "the sender's seat has nothing to approve: its row must not say 待批"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **Offering is not looking.** `khor send` used to raise the offered-to
@@ -342,7 +336,7 @@ fn a_send_makes_a_file_message_and_no_transfer_row() {
 #[test]
 fn an_offer_must_not_raise_the_seen_watermark() {
     let r = root("offer-watermark");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let me = n.name().to_owned();
     let sid = format!("chat/{me}");
     let watermark = |n: &Node| n.seen_loaded().unwrap().doc.watermark(&sid);
@@ -379,7 +373,6 @@ fn an_offer_must_not_raise_the_seen_watermark() {
         watermark(&n) > 0,
         "control: telling *is* looking, and this probe can read a mark when there is one"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// The receiving seat's half of the pair: an offer sent TO this machine
@@ -409,7 +402,7 @@ fn an_offer_must_not_raise_the_seen_watermark() {
 #[test]
 fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     let r = root("recv-offer");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
 
     // A file offer from another device, landed as a chat block — the
     // same shape `a_foreign_block_raises_unread_and_seen_clears_it`
@@ -483,7 +476,6 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
         "and 完成 here means one message nobody at this machine has looked at — \
          the far machine's watermark is not this machine's answer"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// The file ref the incoming-offer test plants.
@@ -501,7 +493,7 @@ fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
 #[test]
 fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
     let r = root("pin");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     n.tell(n.name().to_owned().as_str(), "a note").unwrap();
     let live = n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
 
@@ -535,7 +527,6 @@ fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
         chat_first,
         "unpinning restores the original order exactly"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// A pin is a key, not a copy of the row. An id nothing answers to is
@@ -545,7 +536,7 @@ fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
 #[test]
 fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
     let r = root("pin-ghost");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     n.tell(n.name().to_owned().as_str(), "a note").unwrap();
 
     n.pin_session(&SessionId("tui/long-gone".into()), true)
@@ -561,7 +552,6 @@ fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
         !rows[0].pinned,
         "and it must not land on somebody else's row"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// What khor says a row belongs to when khor itself started it.
@@ -575,7 +565,7 @@ fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
 #[test]
 fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
     let r = root("category");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     n.tell(n.name().to_owned().as_str(), "a note").unwrap();
     let shell = n.open_ephemeral(khor_core::kind::SHELL, "build").unwrap();
     let tui = n
@@ -598,7 +588,6 @@ fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
 
     let chat = SessionId(format!("chat/{}", n.name()));
     assert_eq!(of(&chat).as_deref(), Some(khor_core::category::KHOR));
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **Every name khor already answers to is refused, one by one.**
@@ -619,7 +608,7 @@ fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
 #[test]
 fn the_names_khor_answers_to_are_not_up_for_registration() {
     let r = root("agents-reserved");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let argv = vec!["some-acp-agent".to_owned()];
     for name in ["claude", "codex", "khor", "shell"] {
         let refused = n.register_agent(name, &argv);
@@ -644,7 +633,7 @@ fn the_names_khor_answers_to_are_not_up_for_registration() {
     // "registered" is a claim about disk: this control is what caught
     // the registry never being flushed at all, with all four refusals
     // above passing while nothing was ever written.
-    let again = Node::open(r.clone()).unwrap();
+    let again = Node::open(r.to_path_buf()).unwrap();
     assert_eq!(
         again.agent("gemini").unwrap().map(|s| s.typed()),
         Some("some-acp-agent".to_owned()),
@@ -658,7 +647,6 @@ fn the_names_khor_answers_to_are_not_up_for_registration() {
         &["claude", "codex", "khor", "shell"],
         "the reserved list is exactly khor's own four words"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// A name that is only whitespace, and a registration with no command,
@@ -670,7 +658,7 @@ fn the_names_khor_answers_to_are_not_up_for_registration() {
 #[test]
 fn a_registration_needs_both_a_name_and_a_command() {
     let r = root("agents-blank");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     assert!(
         n.register_agent("   ", &["x".to_owned()]).is_err(),
         "a blank name names nothing"
@@ -680,7 +668,6 @@ fn a_registration_needs_both_a_name_and_a_command() {
         "a registration with no command starts nothing"
     );
     assert!(n.agents().unwrap().is_empty(), "neither wrote anything");
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// The gap above closes the moment the vendor speaks for itself: a
@@ -688,7 +675,7 @@ fn a_registration_needs_both_a_name_and_a_command() {
 #[test]
 fn a_vendors_hook_places_the_row_that_khor_could_not() {
     let r = root("category-hook");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let payload = r#"{"session_id":"feed01","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#;
     n.claude_hook(payload).unwrap();
 
@@ -703,7 +690,6 @@ fn a_vendors_hook_places_the_row_that_khor_could_not() {
         Some(crate::adaptor::claude::VENDOR),
         "a claude hook is claude naming its own session"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// A claude status file the sweep will pick up on every list: the pid
@@ -767,8 +753,8 @@ fn plant_live_claude(r: &Path, vendor_session: &str, status: &str, pid: u32) {
 #[test]
 fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
     let r = root("other-reporter");
-    let n = Node::open(r.clone()).unwrap();
-    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
     let me = std::process::id();
     // The parent (the test harness) is another live process — a
     // reporter that is not the claude the file describes.
@@ -814,7 +800,6 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
         State::Idle,
         "a first-hand word from the process itself outranks its own file"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A conversation that is running somewhere is not resumed.** The
@@ -823,7 +808,7 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
 #[test]
 fn resuming_a_session_that_is_live_elsewhere_is_refused_by_name() {
     let r = root("resume-live");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let me = std::process::id();
     let vendor_session = "aaaaaaa2-0000-4000-8000-00000000000b";
     plant_live_claude(&r, vendor_session, "busy", me);
@@ -843,12 +828,11 @@ fn resuming_a_session_that_is_live_elsewhere_is_refused_by_name() {
     // as a test filter and runs the suite again, ghosts and all
     // (found the hard way: four of them, ten minutes each).
     let dead = "aaaaaaa2-0000-4000-8000-00000000000c";
-    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
     assert!(
         live.sighting_of(&crate::adaptor::id_for(dead)).is_none(),
         "a session nobody runs has no sighting to refuse on"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **The user's name outlives the vendor's sweep.** The sweep rebuilds a
@@ -859,7 +843,7 @@ fn resuming_a_session_that_is_live_elsewhere_is_refused_by_name() {
 #[test]
 fn a_users_rename_outlives_the_vendors_sweep() {
     let r = root("rename-sweep");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     plant_discovered_claude(&r, "renamed0001", "vendor-name");
 
     let row_of = |n: &Node| {
@@ -887,7 +871,6 @@ fn a_users_rename_outlives_the_vendors_sweep() {
         "the rent job",
         "…and the sweep after that: the vendor keeps deriving, the overlay keeps winning"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// The other half of the pair above: with no rename on record the
@@ -897,7 +880,7 @@ fn a_users_rename_outlives_the_vendors_sweep() {
 #[test]
 fn an_unnamed_discovered_row_keeps_the_vendors_title() {
     let r = root("rename-none");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     plant_discovered_claude(&r, "unnamed0001", "vendor-name");
 
     for _ in 0..2 {
@@ -912,7 +895,6 @@ fn an_unnamed_discovered_row_keeps_the_vendors_title() {
             "no override on record: the vendor's title stands"
         );
     }
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// A khor-opened row renames the same way, and clearing the name falls
@@ -922,7 +904,7 @@ fn an_unnamed_discovered_row_keeps_the_vendors_title() {
 #[test]
 fn clearing_a_rename_falls_back_to_the_opened_title() {
     let r = root("rename-clear");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let id = n
         .open_ephemeral(khor_core::kind::TUI, "opened-title")
         .unwrap();
@@ -948,7 +930,7 @@ fn clearing_a_rename_falls_back_to_the_opened_title() {
     // A second open of the same store reads the same overlay — the
     // document is what a serve restart comes back to.
     drop(n);
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     assert_eq!(
         title_of(&n),
         "my words",
@@ -961,7 +943,6 @@ fn clearing_a_rename_falls_back_to_the_opened_title() {
         "opened-title",
         "clearing must fall back to the opened title"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// A khor-opened agent row's conversation is found through the vendor
@@ -972,7 +953,7 @@ fn clearing_a_rename_falls_back_to_the_opened_title() {
 #[test]
 fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
     let r = root("vendor-leaf");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let tui = n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
 
     // The vendor's transcript, named by the vendor's own session id.
@@ -999,7 +980,7 @@ fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
 
     // The hook's half, minus the env: record the vendor leaf, then the
     // same lookup lands on the vendor's file.
-    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
     live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid))
         .unwrap();
     let said = n.transcript_of(&tui).unwrap();
@@ -1010,7 +991,6 @@ fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
         )],
         "the vendor leaf must lead to the vendor's own file"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// Machine pins are keyed by device id but spoken in machine names, and
@@ -1018,7 +998,7 @@ fn a_hosted_rows_conversation_is_found_through_the_vendor_leaf() {
 #[test]
 fn pinning_a_machine_that_is_not_in_the_table_is_refused_by_name() {
     let r = root("pin-machine");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     n.pin_device(n.name().to_owned().as_str(), true).unwrap();
     assert!(
         n.devices().unwrap()[0].pinned,
@@ -1028,13 +1008,12 @@ fn pinning_a_machine_that_is_not_in_the_table_is_refused_by_name() {
     let e = n.pin_device("no-such-box", true).unwrap_err();
     let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
     assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
-    let _ = fs::remove_dir_all(&r);
 }
 
 #[test]
 fn telling_an_unknown_machine_is_refused_by_name() {
     let r = root("unknown");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let e = n.tell("no-such-box", "hi").unwrap_err();
     let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
     assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
@@ -1042,19 +1021,17 @@ fn telling_an_unknown_machine_is_refused_by_name() {
         e.contains(n.name()),
         "the error should name existing machines: {e}"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 #[test]
 fn a_wrong_session_id_names_what_exists() {
     let r = root("badid");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let e = n.seen(&SessionId("chat/elsewhere".into())).unwrap_err();
     assert!(
         e.contains("chat/"),
         "the error should carry the existing ids: {e}"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A session khor mints for itself carries the full 64 bits.**
@@ -1068,7 +1045,7 @@ fn a_wrong_session_id_names_what_exists() {
 #[test]
 fn a_minted_session_id_carries_its_full_width() {
     let r = root("mint");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
 
     let id = n.open_ephemeral(khor_core::kind::SHELL, "a title").unwrap();
     let leaf = id.0.split_once('/').expect("an id is <kind>/<leaf>").1;
@@ -1092,8 +1069,6 @@ fn a_minted_session_id_carries_its_full_width() {
     // every assertion above.
     let other = n.open_ephemeral(khor_core::kind::SHELL, "another").unwrap();
     assert_ne!(id.0, other.0, "two sessions must not share an id");
-
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A reported row's strip is its home machine's own record** (远端
@@ -1107,7 +1082,7 @@ fn a_minted_session_id_carries_its_full_width() {
 #[test]
 fn a_reported_rows_strip_comes_from_its_home_machines_day() {
     let r = root("peer-day");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let told_id = "a".repeat(64);
     let mute_id = "b".repeat(64);
     {
@@ -1203,8 +1178,8 @@ fn only_dead_seen_and_old_rows_are_stale() {
 #[test]
 fn a_long_dead_row_is_stale_on_the_list_and_a_fresh_one_is_not() {
     let r = root("stale-rows");
-    let n = Node::open(r.clone()).unwrap();
-    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
     let old = n
         .open_ephemeral(khor_core::kind::SHELL, "old-probe")
         .unwrap();
@@ -1233,7 +1208,6 @@ fn a_long_dead_row_is_stale_on_the_list_and_a_fresh_one_is_not() {
     };
     assert!(stale_of(&old), "failed 49h ago and looked at: folds");
     assert!(!stale_of(&fresh), "failed just now: stays in plain sight");
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A live word with no voucher goes quiet after a day; a vouched one
@@ -1247,8 +1221,8 @@ fn a_long_dead_row_is_stale_on_the_list_and_a_fresh_one_is_not() {
 #[test]
 fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
     let r = root("quiet");
-    let n = Node::open(r.clone()).unwrap();
-    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
     let orphan = n
         .open_ephemeral(khor_core::kind::TUI, "orphan-busy")
         .unwrap();
@@ -1307,7 +1281,6 @@ fn an_unvouched_live_word_goes_quiet_and_a_vouched_one_never_does() {
         !view(&idle).quiet,
         "空闲 states a finished fact; silence cannot falsify it"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// `pid_alive` answers about this process, and about one that cannot
@@ -1364,8 +1337,6 @@ mod store_owner_tests {
         )
         .unwrap();
         crate::Node::open_as(root.clone(), "renamed-machine").expect("a rename is not a move");
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Which store a bare `khor` picks under a given home. The rule used
@@ -1412,8 +1383,6 @@ mod store_owner_tests {
         // setting it would be a process-wide change in a suite that runs
         // in parallel, and `root_from_env` returns it before reading
         // anything on disk.
-
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// A rename must not cost a machine its store — the thing the old
@@ -1479,8 +1448,6 @@ mod store_owner_tests {
             upgraded.contains(&fp),
             "and gets its fingerprint: {upgraded:?}"
         );
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The side room is found by what is stamped inside it, not by what
@@ -1539,8 +1506,6 @@ mod store_owner_tests {
             old,
             "the room is the one stamped with this box, whatever the door says"
         );
-
-        let _ = std::fs::remove_dir_all(&home);
     }
 
     /// The channel is settled once, so renaming the host does not open
@@ -1562,8 +1527,6 @@ mod store_owner_tests {
             "before",
             "the channel is what the store joined under, not what the host says today"
         );
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
@@ -1601,11 +1564,11 @@ mod recents_tests {
 
     use crate::{Node, PlaceKind};
 
-    fn root(tag: &str) -> std::path::PathBuf {
+    fn root(tag: &str) -> super::Scratch {
         let p = std::env::temp_dir().join(format!("khor-node-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
-        p
+        super::Scratch(p)
     }
 
     /// **The list grows by places, not by trips.** Opening the same
@@ -1615,7 +1578,7 @@ mod recents_tests {
     #[test]
     fn going_back_to_a_place_does_not_lengthen_the_list() {
         let r = root("recents-revisit");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let me = n.name().to_owned();
 
         for _ in 0..3 {
@@ -1636,7 +1599,6 @@ mod recents_tests {
             2,
             "a second place is what makes it two"
         );
-        let _ = fs::remove_dir_all(&r);
     }
 
     /// Written in one order, read in the other, and cut to the cap.
@@ -1647,7 +1609,7 @@ mod recents_tests {
     #[test]
     fn the_list_reads_most_recent_first_and_stops_at_the_cap() {
         let r = root("recents-order");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let me = n.name().to_owned();
 
         for p in ["/first", "/second", "/third"] {
@@ -1682,7 +1644,6 @@ mod recents_tests {
             n.recents(PlaceKind::Dir, 0).unwrap().is_empty(),
             "a cap of none is none"
         );
-        let _ = fs::remove_dir_all(&r);
     }
 
     /// Two landings, two lists. A page must never surface where
@@ -1692,7 +1653,7 @@ mod recents_tests {
     #[test]
     fn directories_and_pages_never_show_up_in_each_others_lists() {
         let r = root("recents-kinds");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let me = n.name().to_owned();
 
         n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
@@ -1706,7 +1667,6 @@ mod recents_tests {
         assert_eq!(dirs[0].place, "/Users/x/proj");
         assert_eq!(pages.len(), 1, "one page: {pages:?}");
         assert_eq!(pages[0].place, "https://example.com/read");
-        let _ = fs::remove_dir_all(&r);
     }
 
     /// Dismissing takes a place off the list; going back puts it back.
@@ -1715,7 +1675,7 @@ mod recents_tests {
     #[test]
     fn a_dismissed_place_leaves_the_list_and_a_new_visit_brings_it_back() {
         let r = root("recents-forget");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let me = n.name().to_owned();
 
         n.recent_visit(PlaceKind::Page, &me, "https://news.example")
@@ -1745,7 +1705,6 @@ mod recents_tests {
             "https://news.example",
             "going back there must put it back, at the top"
         );
-        let _ = fs::remove_dir_all(&r);
     }
 
     /// The record is a document on disk, not process state: a serve
@@ -1754,19 +1713,18 @@ mod recents_tests {
     #[test]
     fn the_list_survives_reopening_the_node() {
         let r = root("recents-reopen");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let me = n.name().to_owned();
         n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
             .unwrap();
         drop(n);
 
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         assert_eq!(
             n.recents(PlaceKind::Dir, 10).unwrap()[0].place,
             "/Users/x/proj",
             "the record must outlive the process that made it"
         );
-        let _ = fs::remove_dir_all(&r);
     }
 
     /// A relative path names nowhere, and a machine nobody has heard of
@@ -1777,7 +1735,7 @@ mod recents_tests {
     #[test]
     fn a_place_nobody_can_reach_is_refused_rather_than_recorded() {
         let r = root("recents-refuse");
-        let n = Node::open(r.clone()).unwrap();
+        let n = Node::open(r.to_path_buf()).unwrap();
         let me = n.name().to_owned();
 
         n.recent_visit(PlaceKind::Dir, &me, "/Users/x/proj")
@@ -1801,7 +1759,6 @@ mod recents_tests {
         // pages — it would refuse every page there is.
         n.recent_visit(PlaceKind::Page, &me, "https://example.com/read")
             .expect("a page is not judged by the path rule");
-        let _ = fs::remove_dir_all(&r);
     }
 }
 
@@ -1815,7 +1772,7 @@ mod recents_tests {
 #[test]
 fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
     let r = root("chip-seen");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
 
@@ -1859,7 +1816,6 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
         Some(State::Idle),
         "看过了 — a chip may not keep shouting 完成 forever"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A line in the conversation covers the file that came before it,
@@ -1905,7 +1861,7 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
 #[test]
 fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
     let r = root("line-covers-file");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
 
@@ -1985,7 +1941,6 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
         State::Idle,
         "…and the row, with nothing pressing and nothing owed, is 空闲"
     );
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **The `PATH` a GUI process gets is not the one a person has**, and
@@ -2073,7 +2028,6 @@ mod finding_the_program {
             Node::launch_on(&spec("data"), &here).is_err(),
             "a data file is not a program"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// **The shell's answer is added to what this process had, never
@@ -2205,7 +2159,7 @@ mod finding_the_program {
 #[test]
 fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
     let r = root("codex-follow");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let tui = n.open_ephemeral(khor_core::kind::TUI, "a codex").unwrap();
 
     let uuid = "019fd755-4444-7aaa-8aaa-aaaaaaaaaaaa";
@@ -2222,7 +2176,7 @@ fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
     };
     fs::write(&roll, line("first") + "\n").unwrap();
 
-    let live = crate::live::LiveKind::new(r.clone(), n.device());
+    let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
     live.learn_vendor_leaf(&tui, &crate::live::clean_leaf(uuid))
         .unwrap();
 
@@ -2251,8 +2205,6 @@ fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
         "the tail, not the whole record again"
     );
     assert!(!two.rewound, "a growing file is appended to, not repainted");
-
-    let _ = fs::remove_dir_all(&r);
 }
 
 /// **A workspace whose machine has left the device table is still a
@@ -2270,7 +2222,7 @@ fn a_codex_conversation_can_be_followed_and_not_merely_read_once() {
 #[test]
 fn a_workspace_whose_machine_left_the_table_keeps_its_row_and_comes_off_by_id() {
     let r = root("ws-ghost");
-    let n = Node::open(r.clone()).unwrap();
+    let n = Node::open(r.to_path_buf()).unwrap();
     let ghost = "c".repeat(64);
     let path = "/srv/gone/project";
     {
@@ -2319,8 +2271,6 @@ fn a_workspace_whose_machine_left_the_table_keeps_its_row_and_comes_off_by_id() 
         n.workspaces().unwrap().is_empty(),
         "the row it removed was the one shown"
     );
-
-    let _ = fs::remove_dir_all(&r);
 }
 
 // ── `khor doctor` (docs/MORE.md 自检) ───────────────────────────────

@@ -414,11 +414,33 @@ mod tests {
         TransferKind::new(root.to_path_buf(), "me".repeat(32), "mybox".into())
     }
 
-    fn tmp(tag: &str) -> PathBuf {
+    /// A scratch tree that **takes itself away however the test leaves**
+    /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+    /// cleanup written at the end of a test is skipped by the assertion
+    /// that fails, so a red run leaks a directory every time it is red).
+    /// A copy per file, which is this repo's convention for test helpers —
+    /// it costs no dev-dependency.
+    struct Scratch(std::path::PathBuf);
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    impl std::ops::Deref for Scratch {
+        type Target = std::path::Path;
+
+        fn deref(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    fn tmp(tag: &str) -> Scratch {
         let p = std::env::temp_dir().join(format!("khor-transfer-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
-        p
+        Scratch(p)
     }
 
     /// The receiver's pressure, walked over disk states (传输并入对话批
@@ -461,7 +483,6 @@ mod tests {
             None,
             "a landed payload presses nothing; the message itself is the news"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// **待批 comes from the seat whose approval is being waited on,
@@ -524,7 +545,6 @@ mod tests {
             None,
             "neither sender nor recipient = no pressure"
         );
-        let _ = fs::remove_dir_all(&root);
     }
 
     /// A malicious file name must not escape the files/ directory.

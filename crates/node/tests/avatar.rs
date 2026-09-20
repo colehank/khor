@@ -20,17 +20,39 @@
 //! clock, so every timeout in the file silently stretches with it and a
 //! real hang stops looking like one.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_node::{AvatarSeed, AvatarStyle, FaceShape, Node, avatar, preset};
 use tokio::time::timeout;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-face-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -83,7 +105,7 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
     // the hex the device table stores seed the same face. Nothing else
     // checks that these two encodings match, and if they ever drifted
     // the symptom would be one machine with two faces.
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     assert_eq!(
         AvatarSeed::of(&a.device()),
         AvatarSeed::from_id_hex(a.device_str()).expect("the table's id is hex"),
@@ -98,12 +120,12 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
         "the choice must persist locally"
     );
 
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
 
     let ticket = a.invite().unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     timeout(Duration::from_secs(60), b.pair(&ticket))
         .await
         .expect("pairing must not hang")
@@ -192,9 +214,6 @@ async fn a_machine_is_painted_in_the_palette_it_reported() {
     );
 
     serve.abort();
-    for r in [&ra, &rb] {
-        let _ = std::fs::remove_dir_all(r);
-    }
 }
 
 /// A device that never reported a style is painted with the factory
@@ -222,17 +241,17 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
     let ra = root("inv");
     let rb = root("new");
 
-    let server = Node::open_as(ra.clone(), "alpha").unwrap();
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve = tokio::spawn(async move { server.serve().await });
     wait_for_endpoint_file(&ra).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let ticket = a.invite().unwrap();
 
     // The newcomer picks its face before it has ever been seen, so the
     // claim is already in its table when the inviter creates a row for
     // the same id.
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     b.set_avatar_style(&a_reported_style()).unwrap();
 
     timeout(Duration::from_secs(60), b.pair(&ticket))
@@ -269,9 +288,6 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
     );
 
     serve.abort();
-    for r in [&ra, &rb] {
-        let _ = std::fs::remove_dir_all(r);
-    }
 }
 
 /// **One axis moves and the other two stay, and the write reaches the
@@ -287,7 +303,7 @@ async fn a_newcomers_own_style_survives_pairing_on_the_inviters_side() {
 #[test]
 fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
     let r = root("restyle");
-    let n = Node::open_as(r.clone(), "solo").unwrap();
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
     n.set_avatar_style(&a_reported_style()).unwrap();
 
     let before = a_reported_style();
@@ -320,11 +336,11 @@ fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
 
     // …and it outlives the process, which is the other half of "chosen".
     assert_eq!(
-        Node::open_as(r.clone(), "solo").unwrap().avatar_style(),
+        Node::open_as(r.to_path_buf(), "solo")
+            .unwrap()
+            .avatar_style(),
         after
     );
-
-    let _ = std::fs::remove_dir_all(&r);
 }
 
 /// **An unknown option is refused by name and nothing is written.**
@@ -337,7 +353,7 @@ fn restyling_one_axis_leaves_the_others_and_reaches_the_table() {
 #[test]
 fn an_unknown_option_is_refused_and_changes_nothing() {
     let r = root("refuse");
-    let n = Node::open_as(r.clone(), "solo").unwrap();
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
     n.set_avatar_style(&a_reported_style()).unwrap();
 
     assert!(
@@ -373,8 +389,6 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
     n.restyle(Some(&good), Some("beam"), None)
         .expect("beam is a variant");
     assert_ne!(n.avatar_style(), a_reported_style());
-
-    let _ = std::fs::remove_dir_all(&r);
 }
 
 /// **A preview is the picture the row will show.**
@@ -387,7 +401,7 @@ fn an_unknown_option_is_refused_and_changes_nothing() {
 #[test]
 fn a_preview_is_the_same_picture_the_row_will_show() {
     let r = root("preview");
-    let n = Node::open_as(r.clone(), "solo").unwrap();
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
     let style = a_reported_style();
 
     // Painted before it is chosen…
@@ -411,14 +425,12 @@ fn a_preview_is_the_same_picture_the_row_will_show() {
     // picture, or the line above holds for a painter that ignores what
     // it is handed.
     assert_ne!(n.face_under(&AvatarStyle::default()), previewed);
-
-    let _ = std::fs::remove_dir_all(&r);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_unreported_style_falls_back_to_the_factory_default() {
     let r = root("fallback");
-    let n = Node::open_as(r.clone(), "solo").unwrap();
+    let n = Node::open_as(r.to_path_buf(), "solo").unwrap();
     // This viewer has a non-default style of its own, so "default" and
     // "whatever the viewer likes" are distinguishable answers.
     n.set_avatar_style(&a_reported_style()).unwrap();
@@ -447,6 +459,4 @@ async fn an_unreported_style_falls_back_to_the_factory_default() {
         avatar(&seed, &a_reported_style()),
         "a silent device must not inherit the viewer's own style"
     );
-
-    let _ = std::fs::remove_dir_all(&r);
 }

@@ -10,7 +10,7 @@
 //! pinned.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use khor_core::State;
@@ -38,11 +38,33 @@ use util::raw_request;
 /// this suite has never been in the business of failing anyone for.
 const PATIENCE: u64 = 120;
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-act-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 async fn wait_for_endpoint_file(root: &Path) {
@@ -65,16 +87,16 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let ra = root("a");
     let rb = root("b");
     let rg = root("g");
-    let sa = Node::open_as(ra.clone(), "alpha").unwrap();
+    let sa = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
     let serve_a = tokio::spawn(async move { sa.serve().await });
     wait_for_endpoint_file(&ra).await;
-    let sb = Node::open_as(rb.clone(), "beta").unwrap();
+    let sb = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let serve_b = tokio::spawn(async move { sb.serve().await });
     wait_for_endpoint_file(&rb).await;
 
-    let a = Node::open_as(ra.clone(), "alpha").unwrap();
-    let b = Node::open_as(rb.clone(), "beta").unwrap();
-    let g = Node::open_as(rg.clone(), "gamma").unwrap();
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    let g = Node::open_as(rg.to_path_buf(), "gamma").unwrap();
 
     let t1 = a.invite().unwrap();
     timeout(Duration::from_secs(PATIENCE), b.pair(&t1))
@@ -269,7 +291,4 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
 
     serve_a.abort();
     serve_b.abort();
-    for r in [&ra, &rb, &rg] {
-        let _ = fs::remove_dir_all(r);
-    }
 }

@@ -5,15 +5,37 @@
 //! about processes, `close` is the one that deletes things.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-fn root(tag: &str) -> PathBuf {
+/// A scratch tree that **takes itself away however the test leaves**
+/// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
+/// cleanup written at the end of a test is skipped by the assertion
+/// that fails, so a red run leaks a directory every time it is red).
+/// A copy per file, which is this repo's convention for test helpers —
+/// it costs no dev-dependency.
+struct Scratch(std::path::PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+impl std::ops::Deref for Scratch {
+    type Target = std::path::Path;
+
+    fn deref(&self) -> &std::path::Path {
+        &self.0
+    }
+}
+
+fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-quit-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
-    p
+    Scratch(p)
 }
 
 fn inner_pid(home: &Path) -> Option<u32> {
@@ -55,7 +77,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
     let home = root("main");
     let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("serve")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
         .env_remove("KHOR_SESSION")
         .stderr(std::process::Stdio::null())
@@ -99,7 +121,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
 
     let out = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("quit")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env_remove("KHOR_SESSION")
         .output()
         .unwrap();
@@ -142,7 +164,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
     // Control: a second quit finds nothing and says so.
     let out = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("quit")
-        .env("KHOR_HOME", &home)
+        .env("KHOR_HOME", &*home)
         .env_remove("KHOR_SESSION")
         .output()
         .unwrap();
@@ -152,6 +174,4 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
         said.contains(khor_catalog::msg::quit_no_serve()),
         "a quit with nothing to stop must say so: {said}"
     );
-
-    let _ = fs::remove_dir_all(&home);
 }
