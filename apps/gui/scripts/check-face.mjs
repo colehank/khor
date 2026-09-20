@@ -2120,9 +2120,19 @@ try {
   // consecutive stops — so a raw re-press would put the list away and
   // the row a stop then reaches for would be unclickable. Hopping
   // through another landing makes the return a fresh switch, which
-  // always leaves the list expanded. Sessions, devices and (since
-  // 2026-09-16) workspaces carry a list that toggles; the others no-op
-  // through this unchanged.
+  // always leaves the list expanded.
+  //
+  // ⚠️ **Which landings toggle is not a list worth keeping here, and
+  // that is exactly what docs/SHELL.md 第 4 条 is about.** This said
+  // 「sessions, devices and (since 2026-09-16) workspaces carry a list
+  // that toggles; the others no-op through this unchanged」 — and on
+  // 2026-09-20 額度 grew one, so the sentence quietly stopped being
+  // true and three stops that pressed its glyph raw began folding the
+  // pane they were about to click into. The stop read 「element is
+  // visible, enabled and stable … the rail intercepts pointer events」,
+  // which is a timeout about a zero-wide pane wearing the words of a
+  // broken row. Every landing with a list is now every landing but
+  // 浏览 (`App.tsx` `hasList`), so **every stop goes through here.**
   const open = async (tab) => {
     const on = await page.locator(rail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
@@ -2163,7 +2173,7 @@ try {
   //     account that spent nothing, and that is a fact nobody
   //     established. The route is held, so this is a state to stand in
   //     rather than a race to win — on a real machine it is 18.5 s.
-  await press(rail("quota"));
+  await open("quota");
   await until(8000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
   await press('[data-quota-row="sub:local"]');
   await wait(500);
@@ -2314,7 +2324,10 @@ try {
       // Tell / Invite / Join), and that hole is one hole, not five.
       name: "\u989d\u5ea6",
       anchor: "[data-quota-row]",
-      go: () => press(rail("quota")),
+      // `open`, never a raw press: 額度's list folds under a second
+      // press since 第 4 条, and this walk arrives here from the stop
+      // above and leaves into the stop below.
+      go: () => open("quota"),
     },
     {
       // ⚠️ **The stop this walk did not have, added 2026-09-08.**
@@ -2333,7 +2346,7 @@ try {
       name: "\u989d\u5ea6 \u00b7 \u4e00\u5f20\u5361\u7684\u4e0b\u534a\u5f20",
       anchor: "[data-usage-half] [data-usage-chart]",
       go: async () => {
-        await press(rail("quota"));
+        await open("quota");
         await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
         return press('[data-quota-row="sub:local"]');
       },
@@ -4188,14 +4201,61 @@ try {
             "the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
         );
       }
-      // **…and they are 20, not 14** (2026-09-16 ruling 44:「工作区右上角
-      // 的四个icon过小. 浪费他们自己的空间,放大一点,但注意四个icon的大小
-      // 一致性」). The box was already the finger's floor and the marks
-      // in it were spending a third of it; what grew is the ink.
-      if (inks.some((k) => k < 19 || k > 21)) {
+      // **…and the box came down on 2026-09-20** (docs/SHELL.md 第 7 条:
+      // 「搜索框旁边有这些按钮… 可以小一点来支持显示」— the user). Two
+      // finger-sized boxes were spending 88 pixels of this column on two
+      // controls, and what the column is short of is search box.
+      //
+      // ⚠️ **This supersedes 2026-09-16 ruling 44 for the box and not
+      // for the ink.** That ruling ("放大一点") was about marks spending
+      // a third of the boxes they sat in, and it is still what the two
+      // readings above hold: one box each, and the painted marks within
+      // a pixel and a half. What changed is how big「a box」is, which
+      // is why the two rulings are not in conflict — one is about
+      // proportion and this one is about room.
+      //
+      // The floor under a finger is not given up: `--ws-switch` becomes
+      // `--touch` under `(pointer: coarse)`, and section 3 walks this
+      // very head with touch emulated on.
+      const boxes = tailLook.btns.map((t) => t.box);
+      const tall = boxes.map((b) => Number(b.split("x")[1]));
+      if (tall.some((h) => h > 40)) {
         fail(
-          `the tree's head paints ${inks.join("/")}px of ink — 20, in a 44 box: 「过小. 浪费他们自己的空间,` +
-            "放大一点」 (src/views/WorkspacePane.tsx)",
+          `the tree's head carries ${boxes.join(", ")} boxes with a mouse on the glass — 「可以小一点来支持` +
+            "显示」, and the finger floor comes back under (pointer: coarse) (src/styles/tokens.css --ws-switch)",
+        );
+      }
+      // The ink follows the box down: a mark that kept its old size in
+      // a smaller box is the crowding ruling 44 was about, one size on.
+      if (inks.some((k) => k < 14 || k > 19)) {
+        fail(
+          `the tree's head paints ${inks.join("/")}px of ink in ${boxes[0]} boxes — the mark keeps its share ` +
+            "of the box it sits in (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // …and the box bought the search box room, which is the whole of
+      // what the ruling asked for. Measured as a share of the row, so
+      // it survives somebody dragging the column.
+      //
+      // **70, and the number is measured rather than chosen.** Two 44
+      // boxes left the field 64% of a 288 column and two 32 boxes leave
+      // it 73%: the line sits between the two readings, so it is red on
+      // the face the user complained about and green on the one that
+      // answers them. A round 60 would have been green on both — which
+      // is a gate agreeing with whatever it is handed.
+      const boxShare = await page.evaluate(() => {
+        const head = document.querySelector("[data-tree-head]");
+        const field = document.querySelector("[data-tree-search]");
+        if (!head || !field) return null;
+        return Math.round((field.getBoundingClientRect().width / head.getBoundingClientRect().width) * 100);
+      });
+      console.log(`tree head · the search box takes ${boxShare}% of the row`);
+      if (boxShare === null) {
+        fail("probe dead: no tree head or no search box in it — 第 7 条's whole point is unmeasured");
+      } else if (boxShare < 70) {
+        fail(
+          `the tree's search box takes ${boxShare}% of its row — 「可以小一点来支持显示」 is about what is ` +
+            "left for the box (src/views/WorkspacePane.tsx)",
         );
       }
       // **Pressed in is the rail's own open ink** (2026-09-16 ruling 26:
@@ -7511,20 +7571,46 @@ try {
         sessions: document.querySelectorAll("[data-ws-sessions]").length,
         back: document.querySelectorAll("[data-ws-back]").length,
         switches: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
-        // Finger-sized, both of them: the tree screen is where a phone
-        // reaches the other two from, so these are the targets that
-        // ruling 47 is actually about (section 3's floor, asked here
-        // because this screen only exists at this width).
-        small: [...document.querySelectorAll("[data-tree-head] [data-ws-switches] > button")].filter(
-          (b) => {
-            const r = b.getBoundingClientRect();
-            const floor = Number.parseFloat(
-              getComputedStyle(document.documentElement).getPropertyValue("--touch"),
-            );
-            return r.width + 0.5 < floor || r.height + 0.5 < floor;
-          },
-        ).length,
       }));
+    /**
+     * How many of the tree head's switches are under the finger's floor
+     * — **asked with a finger on the glass, not at this width.**
+     *
+     * The tree screen is where a phone reaches the other two columns
+     * from, so these are the targets ruling 47 is actually about, and
+     * this is section 3's floor asked here because the screen only
+     * exists at this width.
+     *
+     * ⚠️ **It used to be asked at this width and nothing else, and that
+     * was the wrong criterion** (2026-09-20, docs/SHELL.md 第 7 条 made
+     * it matter). 「可以小一点来支持显示」 shrank these to
+     * `--ws-switch`, which the coarse-pointer block puts back to
+     * `--touch` — the same road `--tree-row` takes, and tokens.css says
+     * why in its own words: **the width of the window says nothing
+     * about what is pressing it** (an iPad is wide and has no mouse; a
+     * narrow desktop window has one). So the emulation is turned on for
+     * the reading and off again after it, rather than the floor being
+     * asked of a mouse.
+     */
+    const underTheFloor = async () => {
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      await wait(300);
+      const n = await page.evaluate(
+        () =>
+          [...document.querySelectorAll("[data-tree-head] [data-ws-switches] > button")].filter(
+            (b) => {
+              const r = b.getBoundingClientRect();
+              const floor = Number.parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue("--touch"),
+              );
+              return r.width + 0.5 < floor || r.height + 0.5 < floor;
+            },
+          ).length,
+      );
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await wait(300);
+      return n;
+    };
     const first = await screens();
     console.log(`narrow workspace · on arrival: ${JSON.stringify(first)}`);
     if (first.tree !== 1) {
@@ -7546,10 +7632,13 @@ try {
           "without it a phone reaches neither the sessions nor the editor (src/views/WorkspacePane.tsx)",
       );
     }
-    if (first.small > 0) {
+    const small = await underTheFloor();
+    console.log(`narrow workspace · switches under the finger's floor, with a finger: ${small}`);
+    if (small > 0) {
       fail(
-        `${first.small} of the tree head's switches are under the finger's floor — 「都是手指大小」 ` +
-          "(src/views/WorkspacePane.tsx)",
+        `${small} of the tree head's switches are under the finger's floor with touch emulated — ` +
+          "「都是手指大小」, and the coarse-pointer block is what puts it back " +
+          "(src/styles/tokens.css --ws-switch)",
       );
     }
     // ii/iii) a file, and the way back.
@@ -8620,6 +8709,297 @@ try {
         `an open sessions column went from ${openBefore} to ${openAfter} across a fold of the list — ` +
           "a default is declared once, on arrival (src/views/WorkspacePane.tsx)",
       );
+    }
+  }
+
+  // ── 4G) 外壳一致性: 一个壳、一份滚动、一份标签页 (docs/SHELL.md) ───
+  //
+  // 「这看起来没有用统一的逻辑进行编写」— the user, 2026-09-20, said
+  // about the 额度 sidebar's ground and meant about five things at once.
+  // The batch's judgment is **not**「五处各修好」, it is「同类的东西只剩
+  // 一份写法」, so what this section measures is sameness rather than
+  // each symptom: every secondary sidebar on one ground, every pane's
+  // head and every tab band at one height, every rail glyph putting its
+  // own list away, and no pane handing its scroll to the page.
+  //
+  // Every number here is read off the glass. None of them is read from
+  // `tokens.css` — a gate that took the token as its expected value
+  // would pass on any pair of panes that agreed with the token and with
+  // nothing else (the 「我这个预期值是从哪儿来的」 family).
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+
+    /** Every secondary sidebar's ground, with all of them on screen. */
+    const grounds = async () => {
+      await atTree();
+      // The sessions column too, so the workspace page is showing all
+      // three of its panes at once: read together, they cannot differ
+      // by a theme flip landing between two readings.
+      if ((await page.locator("[data-ws-sessions]").count()) === 0) {
+        await press("[data-ws-sessions-switch]");
+        await wait(400);
+      }
+      const here = await page.evaluate(() =>
+        ["[data-list]", "[data-ws-tree]", "[data-ws-sessions]"].map((s) => {
+          const el = document.querySelector(s);
+          return { pane: s, ground: el ? getComputedStyle(el).backgroundColor : "no such pane" };
+        }),
+      );
+      await open("quota");
+      await wait(500);
+      const quota = await page.evaluate(() => {
+        const el = document.querySelector("[data-quota-pane]");
+        return {
+          pane: "[data-quota-pane]",
+          ground: el ? getComputedStyle(el).backgroundColor : "no such pane",
+        };
+      });
+      return [...here, quota];
+    };
+
+    // ── 第 6 条: one ground, and it has to hold on both themes ──
+    //
+    // 「除了额度页面之外的侧边栏底色都是深灰, 但额度页是黑色」. Both
+    // themes, because one token is the claim: two panes that agree on
+    // light and part on dark are two grounds that happened to meet.
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await until(5_000, async () =>
+        (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === scheme,
+      );
+      const panes = await grounds();
+      console.log(`sidebar grounds · ${scheme}: ${JSON.stringify(panes)}`);
+      const missing = panes.filter((p) => p.ground === "no such pane");
+      if (missing.length) {
+        fail(
+          `probe dead: ${missing.map((p) => p.pane).join(", ")} never drew on the ${scheme} pass — ` +
+            "nothing about the grounds was measured",
+        );
+      } else if (new Set(panes.map((p) => p.ground)).size !== 1) {
+        fail(
+          `the secondary sidebars sit on ${panes.length} panes and ${new Set(panes.map((p) => p.ground)).size} grounds ` +
+            `on the ${scheme} theme (${panes.map((p) => `${p.pane} ${p.ground}`).join(", ")}) — ` +
+            "「整体app的视觉一致… 这看起来没有用统一的逻辑进行编写」 (src/components/ListPane.tsx)",
+        );
+      }
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await until(5_000, async () =>
+      (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light",
+    );
+
+    // ── 第 5 条: a tab band is exactly as tall as a pane's head ──
+    //
+    // 「标签页的高度, 要和侧边栏搜索框的高度一致, 保持和谐. 现在, 标签页
+    // 普遍比侧边栏更高一些」. **The difference, not the number**: what
+    // the ruling asks for is that the two agree, and asking for 48 here
+    // would be this gate deciding a look.
+    {
+      await open("sessions");
+      await press("[data-row]");
+      await wait(400);
+      const pair = await page.evaluate(() => {
+        const h = (s) => {
+          const el = document.querySelector(s);
+          return el ? Math.round(el.getBoundingClientRect().height) : null;
+        };
+        return { band: h("[data-session-tabs] [data-tab-bar]"), head: h("[data-list] [data-pane-bar]") };
+      });
+      console.log(`session tab band ${pair.band} · list head ${pair.head}`);
+      if (pair.band === null || pair.head === null) {
+        fail(`probe dead: the sessions landing drew ${JSON.stringify(pair)} — one of the two rows is not on screen`);
+      } else if (pair.band !== pair.head) {
+        fail(
+          `the tab band is ${pair.band} tall over a pane head of ${pair.head} — 「标签页的高度, 要和侧边栏` +
+            "搜索框的高度一致」, one token (src/styles/tokens.css --pane-head)",
+        );
+      }
+
+      // …and the same pair one landing over, where the head is the
+      // tree's own rather than a `PaneBar`. Two surfaces, one token: a
+      // fix that only reached `PaneBar` would pass the reading above
+      // and leave the workspace exactly as the user found it.
+      await atTree();
+      await press("[data-file]");
+      await wait(500);
+      const ws = await page.evaluate(() => {
+        const h = (s) => {
+          const el = document.querySelector(s);
+          return el ? Math.round(el.getBoundingClientRect().height) : null;
+        };
+        return { band: h("[data-ws-tab-strip] [data-tab-bar]"), head: h("[data-tree-head]") };
+      });
+      console.log(`workspace tab band ${ws.band} · tree head ${ws.head}`);
+      if (ws.band === null || ws.head === null) {
+        fail(`probe dead: the workspace drew ${JSON.stringify(ws)} — one of the two rows is not on screen`);
+      } else if (ws.band !== ws.head) {
+        fail(
+          `the workspace's tab band is ${ws.band} tall over a tree head of ${ws.head} — same token, both ` +
+            "surfaces (src/views/WorkspacePane.tsx)",
+        );
+      }
+    }
+
+    // ── 第 3 条: the kind mark is big enough to read, and the tab's
+    //    name is not leaning on its face ──
+    //
+    // 「session 类别的icon大一点, 现在有点不可读. 此外, 标签页上的标题
+    // 距离头像稍远一些, 现在有些拥挤」.
+    {
+      await open("sessions");
+      await wait(300);
+      const mark = await page.evaluate(() => {
+        const el = document.querySelector("[data-row] [data-kind-mark]");
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return Math.round(Math.min(b.width, b.height));
+      });
+      console.log(`session row kind mark: ${mark}px`);
+      if (mark === null) {
+        fail("probe dead: no [data-kind-mark] on a session row — the class mark is unmeasured");
+      } else if (mark < 17) {
+        fail(
+          `the session row's kind mark is ${mark}px across — 「session 类别的icon大一点, 现在有点不可读」 ` +
+            "(src/styles/tokens.css --kind-mark)",
+        );
+      }
+      // The gap between a tab's face and its name, measured as the
+      // distance between the two boxes rather than read off a class.
+      const gap = await page.evaluate(() => {
+        const opener = document.querySelector("[data-tab-open]");
+        const label = document.querySelector("[data-tab] [data-tab-label]");
+        if (!opener || !label) return null;
+        const face = opener.firstElementChild;
+        if (!face || face === label) return null;
+        return Math.round(label.getBoundingClientRect().left - face.getBoundingClientRect().right);
+      });
+      console.log(`tab face → title gap: ${gap}px`);
+      if (gap === null) {
+        fail("probe dead: no open session tab with a face and a label — the crowding is unmeasured");
+      } else if (gap < 10) {
+        fail(
+          `a tab's title starts ${gap}px after its face — 「标签页上的标题距离头像稍远一些, 现在有些拥挤」 ` +
+            "(src/styles/tokens.css --tab-gap)",
+        );
+      }
+    }
+
+    // ── 第 4 条: every rail glyph puts its own list away ──
+    //
+    // 「额度页面, 再次点击额度按钮也应该收起额度侧边栏」. **Every
+    // landing that has a list, not the three somebody remembered** —
+    // which is the whole point: 额度 was left out of a hand-written
+    // list of landing names, and the next landing would have been too.
+    {
+      const widthOf = (sel) =>
+        page.evaluate((s) => {
+          const el = document.querySelector(s);
+          return el ? Math.round(el.getBoundingClientRect().width) : null;
+        }, sel);
+      for (const [key, sel] of [
+        ["sessions", "[data-list]"],
+        ["devices", "[data-list]"],
+        ["workspaces", "[data-list]"],
+        ["quota", "[data-quota-pane]"],
+      ]) {
+        await open(key);
+        await wait(300);
+        const out = await widthOf(sel);
+        await press(rail(key));
+        await wait(400);
+        const away = await widthOf(sel);
+        await press(rail(key));
+        await wait(400);
+        const back = await widthOf(sel);
+        console.log(`${key} · press twice: ${out} → ${away} → ${back}`);
+        if (out === null || !(out > 0)) {
+          fail(`probe dead: ${key} never drew a list pane (${sel} measured ${out})`);
+          continue;
+        }
+        if (away !== 0) {
+          fail(
+            `pressing the ${key} rail glyph a second time left its list ${away} wide — ` +
+              "「再次点击…也应该收起…侧边栏」, one rule the rail gives (src/App.tsx hasList)",
+          );
+        }
+        if (back !== out) {
+          fail(
+            `the ${key} list came back at ${back} rather than the ${out} it went away at — ` +
+              "the width survives a collapse (src/hooks/use-list-width.ts)",
+          );
+        }
+      }
+    }
+
+    // ── 第 1 条: the shell does not move ──
+    //
+    // 「我在工作区的文件树拖动, 整个app都会下移, 正确的应该是整个app是
+    // 不允许随滑轮变化的」.
+    //
+    // ⚠️ **Two readings here and only one of them can fail on Chrome.**
+    // The two declarations are what changed and they are read off the
+    // computed style, which is the only place a browser will say
+    // whether a rule landed. The pair under them — the document did not
+    // move, the rail did not move — is what a person sees, and on this
+    // engine it was **already true before the fix**: Chrome's desktop
+    // viewport does not rubber-band, so the symptom the user reported
+    // cannot be produced here at all. That half is measured on a real
+    // WebKit by `npm run wk`, with an arm that has no rules at all to
+    // prove the reading can fail. Neither gate alone says this works.
+    {
+      await open("sessions");
+      await wait(300);
+      const nailed = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const pane = document.querySelector("[data-pane-body]");
+        const bar = document.querySelector("[data-rail]");
+        const before = bar ? Math.round(bar.getBoundingClientRect().top) : null;
+        // A pane taken to its own end, then the page asked to move: the
+        // wheel that follows a pane's last row is the gesture the
+        // ruling is about, and `scrollTop` is where it would land.
+        if (pane) pane.scrollTop = pane.scrollHeight;
+        const doc = document.scrollingElement;
+        doc.scrollTop = 400;
+        doc.scrollLeft = 400;
+        return {
+          rootOverflowY: root.overflowY,
+          rootOverscroll: root.overscrollBehaviorY,
+          paneOverscroll: pane ? getComputedStyle(pane).overscrollBehaviorY : "no pane",
+          docTop: Math.round(doc.scrollTop),
+          docLeft: Math.round(doc.scrollLeft),
+          railTop: bar ? Math.round(bar.getBoundingClientRect().top) : null,
+          railWas: before,
+        };
+      });
+      console.log(`shell nailed down: ${JSON.stringify(nailed)}`);
+      if (nailed.rootOverflowY !== "hidden") {
+        fail(
+          `the document's overflow-y computes to ${nailed.rootOverflowY} — this page has nothing to scroll and ` +
+            "must say so 「整个app是不允许随滑轮变化的」 (src/styles/tokens.css base layer)",
+        );
+      }
+      if (nailed.rootOverscroll !== "none") {
+        fail(
+          `the document's overscroll-behavior-y computes to ${nailed.rootOverscroll} — a wheel that runs off the ` +
+            "end of a pane is handed to the viewport, which is where the rubber band comes from " +
+            "(src/styles/tokens.css base layer)",
+        );
+      }
+      if (nailed.paneOverscroll !== "contain") {
+        fail(
+          `a list pane's overscroll-behavior-y computes to ${nailed.paneOverscroll} rather than contain — ` +
+            "the one selector that says so is keyed on the overflow utility (src/styles/app.css)",
+        );
+      }
+      if (nailed.docTop !== 0 || nailed.docLeft !== 0) {
+        fail(`the document scrolled to ${nailed.docLeft},${nailed.docTop} when it was asked to — the shell moved`);
+      }
+      if (nailed.railTop !== nailed.railWas) {
+        fail(
+          `the rail's top went ${nailed.railWas} → ${nailed.railTop} — 「整个app都会下移」, and the window's ` +
+            "three buttons sit in that corner (第 58 条)",
+        );
+      }
     }
   }
 
@@ -10421,7 +10801,7 @@ try {
   // nothing goes red on each, and a changed fixture must change them
   // (the repo's falsifiability rule).
   await page.setViewportSize({ width: 1400, height: 900 });
-  await press(rail("quota"));
+  await open("quota");
   await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
   // **`board.length + 1`, and the `+ 1` is the subscription.** The
   // `**/quota` route above answers two windows, so this fixture has a
@@ -11287,7 +11667,7 @@ try {
     const goToQuota = async () => {
       await page.reload({ waitUntil: "load" });
       await wait(400);
-      await press(rail("quota"));
+      await open("quota");
       await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
       await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
       await wait(300);

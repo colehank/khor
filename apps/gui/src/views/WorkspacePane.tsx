@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconCode, IconSearch, IconSessions } from "@/components/icons";
+import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
@@ -416,9 +417,19 @@ export function WorkspacePane({
    * is the argument `RailItem` already made and this borrows whole.
    *
    * Off is muted, as it was: the pair has to differ in more than hue. */
+  /** The look of one switch at the head of the tree.
+   *
+   * **`--ws-switch`, not `--touch`** (docs/SHELL.md 第 7 条:「搜索框
+   * 旁边有这些按钮… 可以小一点来支持显示」— the user, 2026-09-20). Two
+   * 44 boxes were spending 88 pixels of a 288 column on two controls a
+   * mouse lands on at 32, and what is short in that row is the search
+   * box. The finger floor is not given up, it is **conditional**: the
+   * coarse-pointer block in tokens.css puts `--touch` back, which is
+   * the same road `--tree-row` takes and the reason `check-face`
+   * section 3 still measures 44 when it walks the face with a finger. */
   const switchClass = (on: boolean) =>
     cn(
-      "min-h-touch min-w-touch",
+      "min-h-ws-switch min-w-ws-switch",
       on
         ? "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]"
         : "text-muted-foreground",
@@ -1315,10 +1326,15 @@ export function WorkspacePane({
             明显大小不一」, then 「放大一点,但注意四个icon的大小一致性」).
             The rail's bubble keeps air inside its own canvas and the
             editor's mark fills its own, so a box each is what makes the
-            *painted* marks match: 28 here paints ~20, which is what 20
-            on the other paints. `check-face` measures the painted
-            extents, never the class. */}
-        <IconSessions className="size-7!" />
+            *painted* marks match: this one paints about five sevenths
+            of its box and the other fills its own. `check-face`
+            measures the painted extents, never the class.
+
+            **Both came down a step on 2026-09-20** with the box around
+            them (第 7 条). What that ruling asks for is room, and a
+            smaller box holding the same mark would have been the
+            crowding 2026-09-16 was about, one size down. */}
+        <IconSessions className="size-6!" />
       </Button>
       {/* **Only where there is an editor to open.** A machine without
           one, and a machine that could not be asked, both answer empty
@@ -1346,9 +1362,10 @@ export function WorkspacePane({
           onClick={want}
           className={switchClass(codeUp)}
         >
-          {/* 20: the logo fills its canvas (see `switchClass` for the
-              arithmetic). */}
-          <IconCode className="size-5" />
+          {/* The logo fills its canvas, so this is the painted size
+              itself — the bubble beside it needs a larger box to paint
+              the same (see the note on it). */}
+          <IconCode className="size-4" />
         </Button>
       )}
     </div>
@@ -1398,8 +1415,21 @@ export function WorkspacePane({
 
       <div className="flex min-h-0 flex-1">
         {(narrow ? screen === "tree" : tree) && (
-          <div
-            data-ws-tree
+          <ListPane
+            mark="data-ws-tree"
+            // **A region's name, not a control's** — and that
+            // distinction is why `workspace-tree` came back into the
+            // catalog after being retired in 2026-09-16 (the key's own
+            // note says which of the two it is now).
+            name={gui.workspace_tree}
+            // **The shell, like every other secondary sidebar**
+            // (2026-09-20 第 6 条). The ground, the head's height, the
+            // seam and the scroll rule all come from there; the tree
+            // keeps its own scroller inside, so `scroll` is off.
+            pane={narrow ? null : treePane}
+            narrow={narrow}
+            seam={{ "data-ws-seam": "tree" }}
+            scroll={false}
             // **A ceiling on the share, not only a width** (工作区批⑨).
             // The dragged width is a number of pixels and the pane it
             // sits in is not: on a 390 phone the remembered 288 left
@@ -1424,43 +1454,37 @@ export function WorkspacePane({
             // floor. It is still worth having, because a width
             // remembered from a wide window is applied unread in a
             // narrow one, and that is the case the seam never sees.
-            className={cn(
-              "flex flex-col",
-              narrow
-                ? "min-w-0 flex-1"
-                : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0 border-r",
-            )}
-            style={narrow ? undefined : { width: treePane.width }}
-          >
-            {/* ── the tree's own head: a box and two switches ───────
-                (2026-09-17 ruling 47:「在文件树的侧边上加一个搜索框(可搜
-                索文件名与内容)、框的右侧是session和vscode icon」— the
-                user).
-
-                **It is here because the narrow face has no other
-                door.** 「窄屏进入工作区, 没有到vscode和session的按钮,
-                仅有打开一个文件才能知道」: the switches used to live at
-                the far end of the tab strip, and the narrow face draws
-                no strip until a file is open — so a person who had just
-                walked into a project could not reach either column
-                without first opening a file they had not come for. The
-                head of the tree is on every screen the tree is on,
-                which is the first one. */}
+            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}
+            // ── the tree's own head: a box and two switches ───────
+            // (2026-09-17 ruling 47:「在文件树的侧边上加一个搜索框(可搜
+            // 索文件名与内容)、框的右侧是session和vscode icon」— the
+            // user).
+            //
+            // **It is here because the narrow face has no other door.**
+            // 「窄屏进入工作区, 没有到vscode和session的按钮, 仅有打开一个
+            // 文件才能知道」: the switches used to live at the far end of
+            // the tab strip, and the narrow face draws no strip until a
+            // file is open — so a person who had just walked into a
+            // project could not reach either column without first opening
+            // a file they had not come for. The head of the tree is on
+            // every screen the tree is on, which is the first one.
+            head={
             <div
               data-tree-head
               // The tree column's top row, so its blank moves the window
               // (第八轮 第 59 条). Same shape as `PaneBar`'s: the box and
               // the two switches are children and keep their presses.
               data-tauri-drag-region="deep"
-              // **A finger's height, not `--ctl-md`.** The ruling wrote
-              // 「高 --ctl-md」 and the two switches beside the box are
-              // the floor themselves (44), so a 30-tall row would have
-              // held two controls standing out of it — and the whole
-              // reason this row exists is that a phone can reach them
-              // (「窄档的树屏也有这一行」). The box grew with it, for
-              // `check-face`'s touch floor: a 25-tall search field is a
-              // target a finger misses.
-              className="flex min-h-touch flex-none items-center gap-0.5 border-b pr-1 pl-2"
+              // **A pane's head height, not `--ctl-md`.** The ruling
+              // wrote 「高 --ctl-md」 and the search box inside is the
+              // finger's floor itself (44), so a 30-tall row would have
+              // held a control standing out of it — and the whole
+              // reason this row exists is that a phone can reach it
+              // (「窄档的树屏也有这一行」). Since 2026-09-20 it is
+              // `--pane-head`, which is the same token `PaneBar` and
+              // the tab band wear: this *is* a pane's head, and 第 5 条
+              // is that the one below it measures the same.
+              className="flex min-h-pane-head flex-none items-center gap-0.5 border-b pr-1 pl-2"
             >
               <div className="relative min-w-0 flex-1">
                 <IconSearch className="pointer-events-none absolute top-1/2 left-1 -translate-y-1/2 text-muted-foreground" />
@@ -1483,6 +1507,8 @@ export function WorkspacePane({
               </div>
               {switches}
             </div>
+            }
+          >
             {/* **Two trees, one ruling apart** (工作区批⑦). A project
                 gets `FileTree`: rooted, expandable, with no way above
                 itself. A machine's whole disk (`root === ""`, what
@@ -1546,22 +1572,7 @@ export function WorkspacePane({
                 onMade={() => setGitAt((n) => n + 1)}
               />
             )}
-          </div>
-        )}
-        {/* The seam, drawn the way the list pane's is (App.tsx): a
-            two-pixel strip with a hit margin overhanging the border,
-            reachable by keyboard, lighting up under a pointer so it can
-            be found before it is grabbed. */}
-        {tree && !narrow && (
-          <div
-            data-ws-seam="tree"
-            role="separator"
-            aria-orientation="vertical"
-            tabIndex={0}
-            {...treePane.aria}
-            {...treePane.handleProps}
-            className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors outline-none hover:bg-border focus-visible:bg-ring"
-          />
+          </ListPane>
         )}
         {(!narrow || screen === "file") && (
         <div
@@ -1702,20 +1713,23 @@ export function WorkspacePane({
           )}
         </div>
         )}
-        {sessions && !narrow && (
-          <div
-            data-ws-seam="sessions"
-            role="separator"
-            aria-orientation="vertical"
-            tabIndex={0}
-            {...sidePane.aria}
-            {...sidePane.handleProps}
-            className="relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors outline-none hover:bg-border focus-visible:bg-ring"
-          />
-        )}
         {(narrow ? screen === "sessions" : sessions) && (
-          <div
-            data-ws-sessions
+          <ListPane
+            mark="data-ws-sessions"
+            name={gui.workspace_sessions}
+            // The shell, like the tree one column over and like every
+            // list pane in the app (2026-09-20 第 6 条). **`side`
+            // right**: this column's rule is the edge facing the file,
+            // which is its left one. **The seam is drawn ahead of the
+            // pane by `ListPane`'s own order** — it is written after
+            // the column in that file and lands before it here because
+            // this pane sits on the far side; that is the one thing a
+            // right-hand pane has to say for itself.
+            mountSeamFirst
+            side="right"
+            pane={narrow ? null : sidePane}
+            narrow={narrow}
+            seam={{ "data-ws-seam": "sessions" }}
             // **Neither half scrolls this box** (工作区批⑩). It used to
             // be the scroller for the list; with a `PaneBar` on top of
             // that list the bar would scroll away with the rows, and a
@@ -1723,16 +1737,11 @@ export function WorkspacePane({
             // people stop using. So the scroller moved one level in, to
             // the rows alone. `DetailPane` was already `h-full` with a
             // scroller of its own.
+            scroll={false}
             // Capped for the tree's reason, one column over — and on
             // narrow it is the screen, for the tree's reason there too
             // (ruling 33).
-            className={cn(
-              "flex min-h-0 flex-col",
-              narrow
-                ? "min-w-0 flex-1"
-                : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0 border-l",
-            )}
-            style={narrow ? undefined : { width: sidePane.width }}
+            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}
           >
             {/* **A place to work, not a list of what exists**
                 (2026-09-13). Until now this column named the sessions
@@ -1858,7 +1867,7 @@ export function WorkspacePane({
                 onBack={() => setPicked(null)}
               />
             )}
-          </div>
+          </ListPane>
         )}
       </div>
       {/* ── the editor's two sentences, as a sheet ────────────────

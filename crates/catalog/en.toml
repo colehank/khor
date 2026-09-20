@@ -1238,6 +1238,7 @@ tab-close-others = "Close others"
 
 tab-copy-path = "Copy path"
 tab-copy-rel = "Copy relative path"
+workspace-tree = "File tree"
 workspace-sessions = "Sessions here"
 tree-search = "Search files"
 search-none = "Nothing here"

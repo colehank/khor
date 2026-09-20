@@ -136,7 +136,15 @@ export function PaneBar({
       data-tauri-drag-region="deep"
       // `min-h`, not `h`: chips make the box taller than one row, and a
       // bar with a fixed height would clip them or squeeze the list.
-      className="flex min-h-ctl-lg flex-none items-center gap-1 border-b px-2"
+      //
+      // **`--pane-head`, which is also the tab band's height**
+      // (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的高度一致,
+      // 保持和谐」). It read `min-h-ctl-lg` and *measured* 44, because
+      // the search box inside it carries the finger floor and won — a
+      // number nobody wrote against a band that was 48. One token now
+      // says both, so they cannot drift apart again by one of them
+      // being retuned.
+      className="flex min-h-pane-head flex-none items-center gap-1 border-b px-2"
     >
       {/* **One search slot, two shapes.** A pane that has axes to narrow
           by gets the omnibox; one that does not gets the plain box it

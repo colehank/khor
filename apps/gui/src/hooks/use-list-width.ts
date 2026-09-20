@@ -292,6 +292,16 @@ export function useListWidth(
 }
 
 /**
+ * What one seam reports about the pane it sizes.
+ *
+ * Named so the shell can take it as a prop (`components/ListPane`):
+ * every secondary sidebar in this app is drawn by that one component,
+ * and it has to be able to say「this pane's width, whichever seam owns
+ * it」 without naming the hook's return shape three times.
+ */
+export type PaneWidth = ReturnType<typeof useListWidth>;
+
+/**
  * A seam's ceiling on the workspace page: **everything the middle
  * column can spare above its floor** (2026-09-17 ruling 52).
  *

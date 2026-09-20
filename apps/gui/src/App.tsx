@@ -39,6 +39,7 @@ import {
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
+import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
@@ -221,6 +222,25 @@ const landings = (): { key: Landing; name: string; glyph: ReactNode }[] => [
   { key: "quota", name: gui.accounts_tab, glyph: <IconQuota /> },
   { key: "browser", name: gui.browser_tab, glyph: <IconBrowser /> },
 ];
+
+/**
+ * Whether a landing keeps a column beside its content — which is the
+ * same question as 「does pressing its rail glyph a second time put
+ * something away」 (docs/SHELL.md 第 4 条).
+ *
+ * **One predicate, not a list of names at each call site.** The rail's
+ * second press was spelled `l.key === "sessions" || … || "workspaces"`
+ * and 额度 was simply not in it: nobody decided that, the landing was
+ * added after the line was written. A landing that grows a list now has
+ * one place to say so, and the gate presses every rail glyph twice
+ * rather than the three somebody remembered.
+ *
+ * 浏览 is the one that has none — it is a 浏览型 landing (docs/UX.md
+ * 姿势), all page and no list. **That changes in 批二**, where its tabs
+ * become the column (docs/SHELL.md 第 2 条); this is the line that will
+ * say so.
+ */
+const hasList = (l: Landing): boolean => l !== "browser";
 
 /** How many landings the narrow bar seats before folding the rest
     (2026-09-02:「窄屏的时候,下面的侧边栏最多只显示四个icon,多余的
@@ -1309,11 +1329,17 @@ export default function App() {
             // …and workspaces since 2026-09-16 (「再次点击侧边栏工作区
             // icon,是收起工作区。这点一直没有实现」): it was left out
             // of this pair for no reason anybody wrote down.
-            if (
-              again &&
-              !narrow &&
-              (l.key === "sessions" || l.key === "devices" || l.key === "workspaces")
-            ) {
+            //
+            // **…and 额度 since 2026-09-20** (第 4 条:「额度页面, 再次
+            // 点击额度按钮也应该收起额度侧边栏」). It was left out for
+            // the same non-reason — its column was a `w-72` of its own
+            // rather than the shell's, so there was nothing here to
+            // toggle. The list is `ListPane` now and this is one rule
+            // the rail gives, not something each landing implements:
+            // **the test is whether the landing has a list**, which is
+            // one predicate below rather than a set of landing names
+            // that the next landing gets left out of.
+            if (again && !narrow && hasList(l.key)) {
               listPane.toggle();
             } else {
               // Choosing a landing reopens a collapsed list: the rail is
@@ -1535,20 +1561,20 @@ export default function App() {
   // No pane wears its name where you can see it (docs/UX.md). The name
   // rides the region's aria-label — read aloud, taking no room — and the
   // strip where a title would have sat holds the work instead.
+  //
+  // **The ground, the head's height, the scroller and the seam are
+  // `ListPane`'s** (2026-09-20 第 6 条). Three panes drew those four
+  // things for themselves and had already drifted on the first; what is
+  // left here is what only this landing knows — what the bar holds and
+  // which list is under it.
   const list = (
-    <section
-      data-list
-      aria-label={paneName}
-      className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden bg-card",
-        !narrow && !listPane.collapsed && "border-r",
-      )}
-      // Wide, the width is the viewer's own, dragged at the seam and
-      // remembered (`useListWidth`); collapsed it is zero, not unmounted
-      // — what the pane holds (a typed search, a scroll) is state worth
-      // keeping through a collapse. Narrow keeps the class-driven flow.
-      style={narrow ? undefined : { width: listPane.collapsed ? 0 : listPane.width }}
-    >
+    <ListPane
+      mark="data-list"
+      name={paneName}
+      pane={listPane}
+      narrow={narrow}
+      seam={{ "data-list-seam": "" }}
+      head={
       <PaneBar
         // Files and browser search machines, because machines are what
         // they list — so they borrow the machine pane's label rather
@@ -1603,7 +1629,9 @@ export default function App() {
             : undefined
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      }
+    >
+      <>
         {stale && <div className="p-4 text-sm text-muted-foreground">{gui.backend_unreachable}</div>}
         {sessions ? (
           <SessionsList
@@ -1658,8 +1686,8 @@ export default function App() {
             pinFailed={pinFailed}
           />
         )}
-      </div>
-    </section>
+      </>
+    </ListPane>
   );
 
   // Every pane has something to open now, and each gets the component
@@ -2125,6 +2153,11 @@ export default function App() {
                     // to be the other half of a pair.)
                     <QuotaLanding
                       narrow
+                      // Narrow has one screen and nothing beside it, so
+                      // there is no width to remember and no seam to
+                      // drag — `ListPane` takes the same `null` every
+                      // other pane hands it there.
+                      pane={null}
                       me={devices.find((d) => d.me)?.shown ?? ""}
                       quota={quota}
                       query={queries.quota}
@@ -2164,6 +2197,15 @@ export default function App() {
             <div className="min-w-0 flex-1">
               <QuotaLanding
                 narrow={false}
+                // **The shell's own seam, not a `w-72` of its own**
+                // (第 6 条 / 第 4 条). Sharing `listPane` is what makes
+                // the rail's second press work here: the thing the rail
+                // toggles and the thing this landing draws are now one
+                // object. It also means a width dragged on the sessions
+                // pane is the width here — which is the right answer
+                // for the same reason the ground is: a person drags a
+                // sidebar, not five sidebars.
+                pane={listPane}
                 me={devices.find((d) => d.me)?.shown ?? ""}
                 quota={quota}
                 query={queries.quota}
@@ -2179,35 +2221,11 @@ export default function App() {
             <div className="min-w-0 flex-1">{browsingLanding}</div>
           ) : (
             <>
+              {/* …and the seam between list and detail comes with it:
+                  a pane and the thing that sizes it are one component
+                  now (`ListPane`), which is what kept 额度 from having
+                  either for four batches. */}
               {list}
-              {/* The seam between list and detail, and the whole width
-                  control: drag to size, drag under the snap line to put
-                  the list away, double-click for the default. It takes
-                  no room — a hit margin overhanging the pane's border —
-                  so collapsing paints it as the one visible strip left,
-                  which is also the way to pull the pane back out. */}
-              <div
-                data-list-seam
-                role="separator"
-                aria-orientation="vertical"
-                // **Reachable, and that is the whole change here.** It
-                // had the role and the pointer gestures and nothing
-                // else: no focus, no key, so on a keyboard the list
-                // could not be put away or brought back at all. Arrow
-                // keys walk its stops, Home restores the default
-                // (`useListWidth` says why stops rather than nudges).
-                tabIndex={narrow ? undefined : 0}
-                {...listPane.aria}
-                className={cn(
-                  "relative z-10 -mx-1 w-2 shrink-0 cursor-col-resize transition-colors hover:bg-border",
-                  // Focus has to be visible on a strip that is mostly
-                  // not there: the ring is the whole seam lighting up,
-                  // because there is no glyph to put a ring around.
-                  "outline-none focus-visible:bg-ring",
-                  listPane.collapsed && "bg-border",
-                )}
-                {...listPane.handleProps}
-              />
               {/* The open sessions as tabs over the pane (iTerm's
                   arrangement), only on the sessions landing and only
                   when something is open — an empty strip is a band

@@ -10,6 +10,15 @@
 //      globals are real interface objects rather than plain properties;
 //   2. which realms a `forMainFrameOnly: false` user script reaches.
 //
+// It has since grown three arms that are not about the shim at all and
+// are here for the same reason — **they are questions only a real
+// WebKit answers**: whether a blob: PDF in an iframe paints, whether
+// the editor's rows sit on the painted sheet, and (2026-09-20,
+// docs/SHELL.md 第 1 条) whether a wheel that runs off the end of a
+// pane moves the whole app. Chrome cannot be asked the last one: its
+// desktop viewport does not rubber-band, so `check-face` measures the
+// declarations and this measures what they do.
+//
 // It loads a page in a bare `WKWebView` and again in one carrying the
 // shim, and reads five realms in each. **The bare arm is the point.**
 // Without it, 「WebTransport is gone」 and 「this WebKit never shipped
@@ -69,6 +78,7 @@ const pages = {
   "/kid.html": readFileSync(join(PROBE, "kid.html")),
   "/pdf.html": readFileSync(join(PROBE, "pdf.html")),
   "/sheet.html": readFileSync(join(PROBE, "sheet.html")),
+  "/shell.html": readFileSync(join(PROBE, "shell.html")),
 };
 const server = createServer((req, res) => {
   const body = pages[req.url];
@@ -97,6 +107,32 @@ const token = (name) => {
 const codeSize = token("--text-code");
 const codeLeading = token("--text-code--line-height");
 
+// ── the two blocks that nail the shell down (docs/SHELL.md 第 1 条) ──
+//
+// **Lifted verbatim, never retyped.** The shell arm's whole claim is
+// that *khor's* rules stop the page moving on this engine, and a copy
+// of them in the probe would be this gate agreeing with itself. A block
+// that cannot be found is a failure rather than an empty string: the
+// arm would otherwise run with no rules at all and report「the page did
+// not move」about a page that was never given anything to hold it.
+const APP = readFileSync(join(here, "..", "src", "styles", "app.css"), "utf8");
+const block = (text, where, opener) => {
+  const at = text.indexOf(opener);
+  const shut = at === -1 ? -1 : text.indexOf("}", at);
+  if (at === -1 || shut === -1) {
+    console.error(
+      `wk gate: ${where} no longer contains the rule starting \`${opener.split("\n")[0]}\` — ` +
+        "the shell arm would measure a page with no rules on it and pass",
+    );
+    process.exit(1);
+  }
+  return text.slice(at, shut + 1);
+};
+const shellCss = [
+  block(TOKENS, "tokens.css", "html,\n  body,\n  #root {"),
+  block(APP, "app.css", ".overflow-auto,"),
+].join("\n");
+
 // **Spawned, not `spawnSync`.** The probe fetches its pages from the
 // server above, and a synchronous spawn blocks this process's event
 // loop — the server would never answer, and the probe would report a
@@ -105,7 +141,7 @@ const codeLeading = token("--text-code--line-height");
 let raw;
 try {
   const ran = await new Promise((done) => {
-    const child = spawn("swift", [join(PROBE, "probe.swift"), SHIM, String(port), codeSize, codeLeading], {
+    const child = spawn("swift", [join(PROBE, "probe.swift"), SHIM, String(port), codeSize, codeLeading, shellCss], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -244,6 +280,80 @@ if (said.pdf?.loadFailed) {
   }
 }
 
+// ── The shell under a wheel: 整个app不随滑轮动 (第 1 条) ────────────
+//
+// 「我在工作区的文件树拖动, 整个app都会下移, 正确的应该是整个app是不
+// 允许随滑轮变化的」— the user, 2026-09-20, about this engine.
+//
+// **This is the arm `check-face` cannot have.** Chrome's desktop
+// viewport does not rubber-band and its document, in khor's layout,
+// never had anywhere to go — so over there the readings below are true
+// whatever the stylesheet says. Here they are not: the bare arm's page
+// is taller than its window, and with no rules on it the rail slides
+// out of the corner the window's three buttons stand in.
+{
+  const bare = said.shellBare ?? {};
+  const nailed = said.shellNailed ?? {};
+  if (bare.loadFailed || nailed.loadFailed) {
+    fail(
+      `wk probe could not run the shell arm (bare: ${bare.loadFailed ?? "ok"}, nailed: ${nailed.loadFailed ?? "ok"}) — ` +
+        "nothing about 整个app不随滑轮动 was measured",
+    );
+  } else {
+    console.log(`wk: shell bare   ${JSON.stringify(bare)}`);
+    console.log(`wk: shell nailed ${JSON.stringify(nailed)}`);
+    // The control, in three parts: this WebKit understands the
+    // property at all, the pane really did reach its end, and the page
+    // really can move when nothing is holding it.
+    if (bare.supports !== true) {
+      fail(
+        "this WebKit answers CSS.supports('overscroll-behavior','none') = false — khor's shell rule is inert " +
+          "on it and every reading below proves nothing (src/styles/tokens.css base layer)",
+      );
+    }
+    if (bare.paneAtEnd !== true) {
+      fail(
+        `probe dead: the pane did not reach its end in the bare arm (${bare.paneAtEnd}) — the gesture this ` +
+          "arm is about never happened",
+      );
+    }
+    if (!(bare.docTop > 0) || bare.railTop === bare.railWas) {
+      fail(
+        `probe dead: with no rules the page went to ${bare.docTop} and the rail stayed at ${bare.railTop} — ` +
+          "this arm cannot fail, so its green below says nothing (scripts/wk-probe/shell.html)",
+      );
+    }
+    // …and khor's own two blocks, on the same page.
+    if (nailed.rootOverflowY !== "hidden") {
+      fail(
+        `with khor's rules the document's overflow-y is ${nailed.rootOverflowY} on this WebKit — ` +
+          "「整个app是不允许随滑轮变化的」 (src/styles/tokens.css base layer)",
+      );
+    }
+    if (nailed.rootOverscrollY !== "none") {
+      fail(
+        `with khor's rules the document's overscroll-behavior-y is ${nailed.rootOverscrollY} on this WebKit — ` +
+          "this is the declaration that stops the elastic band, and it is the half Chrome cannot measure",
+      );
+    }
+    if (nailed.paneOverscrollY !== "contain") {
+      fail(
+        `a pane wearing tailwind's overflow class computes ${nailed.paneOverscrollY} on this WebKit — ` +
+          "khor's one containment selector did not reach it (src/styles/app.css)",
+      );
+    }
+    if (nailed.docTop !== 0) {
+      fail(`with khor's rules the page still scrolled to ${nailed.docTop} — 「整个app都会下移」`);
+    }
+    if (nailed.railTop !== nailed.railWas) {
+      fail(
+        `with khor's rules the rail went ${nailed.railWas} → ${nailed.railTop} — the window's three buttons ` +
+          "sit in that corner (第 58 条)",
+      );
+    }
+  }
+}
+
 // ── Printed, not asserted: the two ways out that are still open ──────
 console.log(`wk: bare        ${JSON.stringify(said.bare)}`);
 console.log(`wk: shimmed     ${JSON.stringify(said.shimmed)}`);
@@ -259,7 +369,8 @@ if (!bad) {
   console.log(
     "wk gate: on this WebKit the delete takes, and the script reaches the page, both parsed frames, " +
       "a scripted blank frame and a srcdoc frame once loaded — a blob: PDF in an iframe really paints, " +
-      "and the editor's rows sit on the sheet's",
+      "and the editor's rows sit on the sheet's, and a wheel past the end of a pane moves neither the " +
+      "page nor the rail",
   );
 }
 process.exitCode = bad ? 1 : 0;
