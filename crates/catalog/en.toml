@@ -95,10 +95,16 @@ off = "Off"
 usage = """
 usage: khor <verb>
   id                    this machine's identity
-  face [--palette palette] [--colors five colors] [--variant style]
-       [--shape shape]
-                        this machine's face; with no arguments, shows
-                        what it is now and what's available
+  avatar [machine] [--palette palette] [--colors five colors]
+         [--variant style] [--shape shape]
+                        a machine's avatar; with no arguments, shows
+                        what it is now and what's available, and with
+                        no machine, this one. **One copy for the whole
+                        network**: anyone may restyle any machine and
+                        the later write wins (the road a rename takes).
+                        The old name face still answers and goes next
+                        version — an avatar is a picture, an interface
+                        is a face (see faces)
   devices               the network's machines
   top [machine]         what this machine is busy with: process top
                         and the last 24 hours of CPU

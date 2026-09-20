@@ -460,3 +460,67 @@ async fn an_unreported_style_falls_back_to_the_factory_default() {
         "a silent device must not inherit the viewer's own style"
     );
 }
+
+
+/// **A face somebody else gave this machine survives its restart.**
+///
+/// This is the guard on the one behaviour that changed when `style`
+/// stopped being self-reported (2026-09-21, 「头像设置这, 要支持对每台
+/// 机器的修改」). `Node::register_self` used to push `.khor/avatar.json`
+/// into the device table on *every* open — which, once anybody may
+/// restyle anybody, is this machine quietly taking its own face back
+/// once per start, against a write that was the network's.
+///
+/// **The arm is the leftover file**, and it is what makes this test
+/// discriminate. Setting a style and reading it back would pass either
+/// way, because the old code kept file and table in step. So the table
+/// is given one style and the dead file a *different* one by hand —
+/// exactly the state an older khor on the same home leaves behind. If
+/// the table is the only source the file is ignored; if anything still
+/// reads it, the restart reverts the face and this goes red naming both.
+///
+/// No network: the claim is about what one machine does to its own row
+/// when it opens, and a real peer's write lands in that same register by
+/// construction (one field, whole-value LWW).
+#[test]
+fn a_face_another_machine_gave_this_one_survives_a_restart() {
+    let r = root("kept");
+
+    let chosen = {
+        let n = Node::open_as(r.to_path_buf(), "alpha").unwrap();
+        // Stands for 「beta restyled alpha and it synced here」: the same
+        // register a peer writes, written through the same call.
+        n.set_avatar_style(&a_reported_style()).unwrap();
+        assert_eq!(n.avatar_style(), a_reported_style(), "the table took it");
+        n.avatar_style()
+    };
+
+    // The dead file, wearing a style that is neither the table's nor the
+    // factory default — so a revert to *either* is visible.
+    let leftover = AvatarStyle::from_json(
+        r##"{
+            "palette": ["#111111", "#222222", "#333333", "#444444", "#555555"],
+            "variant": "beam",
+            "shape": "circle"
+        }"##,
+    )
+    .expect("the fixture must parse");
+    assert_ne!(
+        leftover, chosen,
+        "control: the leftover has to differ from the table's"
+    );
+    std::fs::write(
+        r.join(".khor").join("avatar.json"),
+        leftover.to_json().unwrap(),
+    )
+    .unwrap();
+
+    // The restart.
+    let again = Node::open_as(r.to_path_buf(), "alpha").unwrap();
+    assert_eq!(
+        again.avatar_style(),
+        chosen,
+        "a restart must not take the face back from whoever set it; the table is \
+         the only source and `.khor/avatar.json` is dead"
+    );
+}

@@ -63,23 +63,32 @@
 //! `an_old_khor_still_reads_what_this_version_writes` is what turns red
 //! if someone takes half of it out.
 //!
-//! `style` is the device's **self-reported** avatar style, one JSON
-//! object (whole-value LWW). It rides the table rather than a wire frame
-//! because of what it has to achieve: **a machine looks the same to
-//! everyone, painted in its own palette** — whoever is looking derives
-//! its face from what it reported about itself, not from local
+//! `style` is a device's avatar style, one JSON object (whole-value
+//! LWW). It rides the table rather than a wire frame because of what it
+//! has to achieve: **a machine looks the same to everyone** — whoever
+//! is looking derives its face from this one row, not from local
 //! preference. Whole-value and not per-slot: half a palette from one
 //! writer and a variant from another is a face nobody chose.
+//!
+//! > **It was 「self-reported」 until 2026-09-21, and that half is gone.**
+//! > 「头像设置这, 要支持对每台机器的修改」 (the user, 2026-09-20).
+//! > Anyone may now write anyone's style, which is the rule `F_LABEL`
+//! > has always had and for the same reason: this is one person's fleet,
+//! > so 「who is allowed to name that machine」 was never a question the
+//! > network needed to answer. **One field, last writer wins** — the
+//! > ruling names the alternative and refuses it: 「不要做成「自报一份
+//! > + 覆盖一份」两个字段」. A machine restyling itself writes the
+//! > same register a phone across the room writes, and the later write
+//! > is the face.
 //!
 //! `pinned` is "this machine matters", and it rides the table for the
 //! reason `khor_sync::pins` states for sessions: a pin belongs to the
 //! thing pinned, so it has to be one fact the network agrees on rather
-//! than one answer per screen. **It is the opposite of `style` in who
-//! may write it** — anyone may pin anyone, while only a machine may
-//! describe its own face — and it lands in the same place for the
-//! opposite reason: the device table is already the one row per machine
-//! everybody replicates, and a second table keyed by device id would be
-//! the same key twice.
+//! than one answer per screen. It lands in the same place `style` does
+//! and now under the same rule — anyone may write it about anyone —
+//! because the device table is already the one row per machine everybody
+//! replicates, and a second table keyed by device id would be the same
+//! key twice.
 //!
 //! What the two share is that [`DeviceDoc::upsert`] must not touch
 //! either. Pairing has every peer writing names and addresses for
@@ -356,11 +365,14 @@ impl DeviceDoc {
     /// fields that actually changed — a no-change upsert must not grow
     /// the version vector on every startup.
     ///
-    /// **Deliberately does not touch `style`.** Everyone writes this for
-    /// their peers (pairing writes the far side's name and addresses),
-    /// while `style` is a claim only the device itself may make; folding
-    /// it in here would have every peer overwrite what a machine said
-    /// about its own face with nothing.
+    /// **Deliberately does not touch `style` or `pinned`.** Everyone
+    /// writes this for their peers (pairing writes the far side's name
+    /// and addresses), and this call runs on every open — folding
+    /// either of those in would have a routine update silently clear a
+    /// face somebody chose or a pin somebody set. That `style` may now
+    /// be written *by anyone* (see the module head) does not make it
+    /// something to write *by accident*: the rule here is about which
+    /// call carries the intent, not about who is allowed to have it.
     pub fn upsert(&self, id: &str, name: &str, addrs: &[String]) -> Result<(), String> {
         let addrs_json = serde_json::to_string(addrs).map_err(|e| e.to_string())?;
         let mut dirty = false;
@@ -378,13 +390,16 @@ impl DeviceDoc {
         Ok(())
     }
 
-    /// Records the avatar style a device reports about itself. Callers
-    /// pass their **own** id; a claim about someone else's face is not
-    /// theirs to make.
+    /// Sets a device's avatar style. **Anyone may, for anyone**
+    /// — [`DeviceDoc::set_label`]'s rule, and the module head says why
+    /// it is now this one's too. One field and the later write wins;
+    /// there is deliberately no second field for 「what the machine says
+    /// about itself」, because two fields is two answers and the screen
+    /// would have to pick one.
     ///
-    /// Unchanged means unwritten, same as [`DeviceDoc::upsert`]: this
-    /// runs on every open, and a rewrite each time inflates the version
-    /// vector for nothing.
+    /// Unchanged means unwritten, same as [`DeviceDoc::upsert`]: a
+    /// rewrite that changes nothing inflates the version vector for
+    /// nothing.
     pub fn set_style(&self, id: &str, style_json: &str) -> Result<(), String> {
         if self.flat_str(id, F_STYLE).as_deref() == Some(style_json) {
             return Ok(());
@@ -394,9 +409,9 @@ impl DeviceDoc {
         Ok(())
     }
 
-    /// Pins or unpins a machine. Anyone may pin anyone — unlike
-    /// [`DeviceDoc::set_style`], this is not a claim only the subject can
-    /// make. Unchanged means unwritten, same reason as the others.
+    /// Pins or unpins a machine. Anyone may pin anyone, which is
+    /// [`DeviceDoc::set_style`]'s rule as well since 2026-09-21.
+    /// Unchanged means unwritten, same reason as the others.
     pub fn set_pinned(&self, id: &str, on: bool) -> Result<(), String> {
         // Nothing written in either shape and nothing to write:
         // unpinning a machine nobody pinned must not cost an op, and

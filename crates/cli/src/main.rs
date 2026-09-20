@@ -139,9 +139,21 @@ const VERBS: &[Verb] = &[
     },
     // Reads with no arguments and restyles with any, so it is an act:
     // the rule is per word, not per invocation.
+    //
+    // **It was `face` until 2026-09-21**, and the rename is the user's
+    // (领队 2026-09-21: 「头像动词改叫 `khor avatar`」). One word cannot
+    // mean two things: 「脸」 is khor's *interface* everywhere else in
+    // this tree — the desktop app, the browser face, `khor faces` — and
+    // this verb is about a **picture**. `face` stays one version as an
+    // alias so nobody's muscle memory breaks silently.
+    Verb {
+        word: "avatar",
+        run: avatar_verb,
+        reach: Reach::Act,
+    },
     Verb {
         word: "face",
-        run: face,
+        run: avatar_verb,
         reach: Reach::Act,
     },
     Verb {
@@ -896,10 +908,16 @@ fn verbs(_rest: &[String]) -> Result<(), String> {
 /// — with no flags because "what am I" is the question somebody runs this
 /// to ask, and after a change because a verb that says nothing leaves
 /// 做了但没变化 and 失败 looking alike (docs/UX.md 状态呈现).
-fn face(rest: &[String]) -> Result<(), String> {
+fn avatar_verb(rest: &[String]) -> Result<(), String> {
     let mut colors: Option<Vec<String>> = None;
     let mut variant: Option<String> = None;
     let mut shape: Option<String> = None;
+    // **Which machine, and it is a bare word rather than a flag.** 「CLI
+    // 等价：`khor face` 要能指定机器」 (docs/MORE.md 第二轮). Every
+    // other verb in this table that acts on a machine takes it that way
+    // (`khor top [机器]`, `khor ls <机器>`), and a flag here would be
+    // the one place a person has to remember something different.
+    let mut machine: Option<String> = None;
     let mut it = rest.iter();
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or_else(|| usage_text().to_string()).cloned();
@@ -920,13 +938,27 @@ fn face(rest: &[String]) -> Result<(), String> {
             }
             "--variant" => variant = Some(value()?),
             "--shape" => shape = Some(value()?),
+            // The first bare word is the machine; a second one is a
+            // typo, not a second machine, so it is refused rather than
+            // quietly ignored.
+            name if !name.starts_with("--") && machine.is_none() => {
+                machine = Some(name.to_owned());
+            }
             _ => return Err(usage_text().into()),
         }
     }
     let n = node()?;
+    let who = machine.as_deref();
     let style = match (&colors, &variant, &shape) {
-        (None, None, None) => n.avatar_style(),
-        _ => n.restyle(colors.as_deref(), variant.as_deref(), shape.as_deref())?,
+        (None, None, None) => match who {
+            None => n.avatar_style(),
+            // Refused by name for a machine khor does not have, rather
+            // than falling through to this one — a face printed for the
+            // wrong machine reads exactly like a face printed for the
+            // right one.
+            Some(name) => n.avatar_style_of(&n.device_by_name(name)?),
+        },
+        _ => n.restyle_machine(who, colors.as_deref(), variant.as_deref(), shape.as_deref())?,
     };
     print_face(&style);
     Ok(())

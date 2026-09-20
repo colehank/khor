@@ -897,57 +897,77 @@ impl Node {
             .map(|d| d.addrs)
             .unwrap_or_default();
         loaded.doc.upsert(&self.device_str, &self.name, &keep)?;
-        // A machine's face is its own palette times its id: whoever is
-        // looking paints it from what it reported, so this has to be in
-        // the table before anyone syncs, not at first paint.
-        loaded
-            .doc
-            .set_style(&self.device_str, &self.avatar_style().to_json()?)?;
+        // **No style is written here any more** (2026-09-21). It used to
+        // push `.khor/avatar.json` into the table on every open, back
+        // when the file was the choice and the table was a report of it.
+        // The table *is* the choice now (`khor_sync::devices`'s head:
+        // one field, anyone may write it, the later write wins) — and a
+        // push on every open would be this machine quietly taking its
+        // own face back from whoever last restyled it, once per start.
+        // A machine nobody has restyled simply has no `style` register,
+        // which `Node::avatar_style` reads as the factory default.
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
-    }
-
-    /// Where this machine's chosen avatar style is kept. A local
-    /// preference file, not a synced document: **the choice is made
-    /// here and only travels outward** (through the device table), so
-    /// no other device can restyle this one.
-    fn avatar_prefs_path(&self) -> PathBuf {
-        self.root.join(".khor").join("avatar.json")
     }
 
     /// This machine's avatar style, or the factory default.
     ///
-    /// Unreadable and unparseable both fall back to the default rather
-    /// than erroring: "no file" is the ordinary state of a machine
-    /// nobody has restyled, and a face is style, never identity — a
-    /// fallback here cannot make anyone misread *which* machine they
-    /// are looking at.
+    /// > **It read `.khor/avatar.json` until 2026-09-21.** That file was
+    /// > the choice and the device table was a copy of it, which is
+    /// > exactly the shape the ruling refuses now that any machine may
+    /// > restyle any other: 「不要做成「自报一份 + 覆盖一份」两个字段」.
+    /// > **The table is the only source.** Nothing migrates, because
+    /// > nothing has to: `register_self` has been pushing this
+    /// > machine's file into the table on every open since the table
+    /// > existed, so the row already holds whatever the file said. The
+    /// > file is dead and is no longer read, written or removed —
+    /// > deleting it would be this version reaching into a store an
+    /// > older khor on the same home still writes.
     ///
-    /// A bad file falls back **whole**, never slot by slot — the reason
-    /// is on `Palette`'s `Deserialize`, and it is the same one there and
-    /// here: half a chosen style and half a default is a face nobody
-    /// picked. `Node::restyle` validates before it writes, so the only
-    /// way to reach that path is somebody editing `.khor/avatar.json` by
-    /// hand.
+    /// A row that cannot be parsed falls back **whole**, never slot by
+    /// slot — the reason is on `Palette`'s `Deserialize` and it is the
+    /// same one here: half a chosen style and half a default is a face
+    /// nobody picked.
     pub fn avatar_style(&self) -> AvatarStyle {
-        fs::read_to_string(self.avatar_prefs_path())
+        self.avatar_style_of(&self.device_str)
+    }
+
+    /// Any machine's avatar style, by device id — the same read
+    /// [`Node::face_of`] does, exposed because the editor now opens on
+    /// machines that are not this one.
+    ///
+    /// A store that will not open answers the factory default rather
+    /// than an error: a face is style, never identity, so a fallback
+    /// here cannot make anyone misread *which* machine they are looking
+    /// at.
+    pub fn avatar_style_of(&self, device: &str) -> AvatarStyle {
+        self.devices_loaded()
             .ok()
+            .and_then(|l| l.doc.get(device))
+            .and_then(|d| d.style)
             .and_then(|t| AvatarStyle::from_json(&t))
             .unwrap_or_default()
     }
 
-    /// Chooses this machine's avatar style: persists it and reports it
-    /// to the network in the same move. Splitting those two is how a
-    /// machine ends up wearing one face locally and another everywhere
-    /// else.
-    pub fn set_avatar_style(&self, style: &AvatarStyle) -> Result<(), String> {
-        link::write_private(&self.avatar_prefs_path(), style.to_json()?.as_bytes())?;
+    /// Sets a machine's avatar style, in the one place it lives.
+    ///
+    /// **Any machine, and the write is the whole of it.** 「头像设置这,
+    /// 要支持对每台机器的修改」 (the user, 2026-09-20) — so this takes
+    /// the device it is about rather than assuming this one, and it
+    /// travels the way a rename travels (`DeviceDoc::set_label`):
+    /// one register, whole-value, last writer wins.
+    pub fn set_avatar_style_of(&self, device: &str, style: &AvatarStyle) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.set_style(&self.device_str, &style.to_json()?)?;
+        loaded.doc.set_style(device, &style.to_json()?)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(())
+    }
+
+    /// This machine's, for the callers that mean this one.
+    pub fn set_avatar_style(&self, style: &AvatarStyle) -> Result<(), String> {
+        self.set_avatar_style_of(&self.device_str.clone(), style)
     }
 
     /// This machine's own relays, as the user typed them.
@@ -1029,7 +1049,30 @@ impl Node {
         variant: Option<&str>,
         shape: Option<&str>,
     ) -> Result<AvatarStyle, String> {
-        let mut style = self.avatar_style();
+        self.restyle_machine(None, colors, variant, shape)
+    }
+
+    /// The same act, on a machine named the way people name machines.
+    ///
+    /// **`None` is this one**, and any other name goes through
+    /// [`Node::device_by_name`] — the same resolution a rename and a
+    /// forget use, so 「which machine did you mean」 has one answer in
+    /// this tree rather than one per verb. An unknown name is refused by
+    /// name; it is not quietly read as this machine, because the face
+    /// that came back would be the wrong machine's and nothing on screen
+    /// would say so.
+    pub fn restyle_machine(
+        &self,
+        machine: Option<&str>,
+        colors: Option<&[String]>,
+        variant: Option<&str>,
+        shape: Option<&str>,
+    ) -> Result<AvatarStyle, String> {
+        let device = match machine {
+            None => self.device_str.clone(),
+            Some(name) => self.device_by_name(name)?,
+        };
+        let mut style = self.avatar_style_of(&device);
         if let Some(colors) = colors {
             style.palette = Palette::parse(colors).ok_or_else(|| {
                 msg::not_a_palette(colors.join(khor_catalog::cli::name_separator()))
@@ -1047,8 +1090,31 @@ impl Node {
                 msg::not_a_face_shape(key, all.join(khor_catalog::cli::name_separator()))
             })?;
         }
-        self.set_avatar_style(&style)?;
+        self.set_avatar_style_of(&device, &style)?;
         Ok(style)
+    }
+
+    /// A machine's device id, by whatever it is called on screen.
+    ///
+    /// Refused by name for a machine khor does not have — the shape
+    /// `khor forget` and `khor watch` already answer in, and the reason
+    /// is theirs: a name that matched nothing and fell through to this
+    /// machine would be an act performed on the wrong subject with
+    /// nothing anywhere saying so.
+    pub fn device_by_name(&self, name: &str) -> Result<String, String> {
+        let loaded = self.devices_loaded()?;
+        if let Some(d) = loaded.doc.by_name(name) {
+            return Ok(d.id);
+        }
+        // Listed by the name on the glass, `Node::resolve`'s rule: a
+        // list of channels would name machines the person cannot see
+        // anywhere.
+        let all = loaded.doc.all();
+        let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
+        Err(msg::no_such_machine(
+            name,
+            names.join(khor_catalog::cli::name_separator()),
+        ))
     }
 
     /// This machine's face under a style it has **not** chosen — what
@@ -1062,6 +1128,19 @@ impl Node {
     /// choice made on a picture that never appears.
     pub fn face_under(&self, style: &AvatarStyle) -> Avatar {
         avatar(&AvatarSeed::of(&self.device), style)
+    }
+
+    /// The same preview for a machine that is not this one.
+    ///
+    /// **The seed has to be that machine's**, which is the whole reason
+    /// this exists beside `face_under`: the seed is the device id, so a
+    /// chooser painting its swatches with *this* machine's seed would
+    /// show somebody a set of faces none of which is the face they are
+    /// about to give that machine. An id that is not sixty-four hex
+    /// characters has no seed and no face — `None`, never a default
+    /// drawn from nothing.
+    pub fn face_under_for(&self, device: &str, style: &AvatarStyle) -> Option<Avatar> {
+        Some(avatar(&AvatarSeed::from_id_hex(device)?, style))
     }
 
     /// A device's face: **its own reported palette, keyed by its id.**
