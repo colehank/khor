@@ -574,7 +574,10 @@ export default function App() {
   // same shell with a different kind, and the two stores are kept apart
   // by that kind alone (`useBrowseTabs` keys on it), so a page can
   // never turn up where a directory belongs.
-  const pageTabs = useBrowseTabs(PAGES.kind);
+  // **Watched while its landing is open** (`useBrowseTabs`'s `WATCH_MS`):
+  // `.khor/tabs.json` has two writers now, and `khor tabs open` in a
+  // terminal has to show up in the column without anybody reloading.
+  const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser");
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">("list");
   const [stale, setStale] = useState(false);

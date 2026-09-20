@@ -43,6 +43,22 @@
 // empty when the last tab closes — it is a store, and 「what a landing
 // with nothing open draws」 is a question about a screen. This side
 // answers it, because this side is the screen.
+//
+// # It has to keep up with the other process
+//
+// ⚠️ **This read the list once, on mount, and that was a regression the
+// day the store moved** (2026-09-21, caught installing `362ea88`:
+// 「CLI 开的标签, 正在跑的窗口里看不见」— four `khor tabs open` on the
+// machine, `khor tabs ls` listing five, the window's column showing
+// one). Reading once is exactly right for a store only this window can
+// write, and exactly wrong for a file on the disk.
+//
+// So it polls, **on the beat the sessions list already uses for the
+// same reason** (`App.tsx`'s `POLL_MS`): a landing whose rows another
+// process can change is a landing that asks again. The two directions
+// are not symmetric and both had to be checked — writes from here
+// landed all along, because every one of them goes through the node
+// and takes its answer back.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { closeTab, fetchTabs, focusTab, goTab, openTab, type TabsOpen } from "@/api";
@@ -131,7 +147,20 @@ export type BrowseTabs = {
  */
 const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "" };
 
-export function useBrowseTabs(kind: string): BrowseTabs {
+/**
+ * How often the list is re-read while the landing that draws it is on
+ * screen.
+ *
+ * **`App.tsx`'s `POLL_MS`, said again rather than imported**, because
+ * what it means here is 「a row another process can change」 and not
+ * 「the session heartbeat」 — the two happen to be the same number and
+ * are not the same fact. Away from the browsing landing nothing is
+ * polled at all: the column is not on screen, and the mount-time read
+ * is what a person coming back to it sees.
+ */
+const WATCH_MS = 2000;
+
+export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
   const [tabs, setTabs] = useState<BrowseTab[]>([]);
   const [active, setActive] = useState("");
   /**
@@ -168,11 +197,31 @@ export function useBrowseTabs(kind: string): BrowseTabs {
   // both see 「no tabs」 and both ask for one.
   const minting = useRef(false);
 
+  /**
+   * How many writes are in the air.
+   *
+   * **A poll that landed between a write and its answer would paint the
+   * list as it was before the press**, and the press would read as
+   * having done nothing until the next tick undid that. So the beat
+   * stands still while this side is mid-sentence; the write's own
+   * answer is the fresher reading anyway.
+   */
+  const writing = useRef(0);
   const take = useCallback((open: TabsOpen) => {
     setSettled(true);
     setTabs(shape(open));
     setActive(open.active);
   }, []);
+  /** A write, and the bookkeeping that keeps the poll off its toes. */
+  const sending = useCallback(
+    <T,>(go: Promise<T>): Promise<T> => {
+      writing.current += 1;
+      return go.finally(() => {
+        writing.current -= 1;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     let live = true;
@@ -193,11 +242,10 @@ export function useBrowseTabs(kind: string): BrowseTabs {
   }, [kind, take]);
 
   const add = useCallback(() => {
-    openTab(kind, "", "")
-      .then(() => fetchTabs(kind))
+    sending(openTab(kind, "", "").then(() => fetchTabs(kind)))
       .then(take)
       .catch(() => {});
-  }, [kind, take]);
+  }, [kind, sending, take]);
 
   // **The one judgment left on this side**: a landing with nothing open
   // draws a tab. The node leaves the list empty because it is a store;
@@ -206,20 +254,19 @@ export function useBrowseTabs(kind: string): BrowseTabs {
   useEffect(() => {
     if (!settled || tabs.length > 0 || minting.current) return;
     minting.current = true;
-    openTab(kind, "", "")
-      .then(() => fetchTabs(kind))
+    sending(openTab(kind, "", "").then(() => fetchTabs(kind)))
       .then(take)
       .catch(() => {})
       .finally(() => {
         minting.current = false;
       });
-  }, [kind, settled, tabs.length, take]);
+  }, [kind, sending, settled, tabs.length, take]);
 
   const focus = useCallback(
     (id: string) => {
-      focusTab(kind, id).then(take).catch(() => {});
+      sending(focusTab(kind, id)).then(take).catch(() => {});
     },
-    [kind, take],
+    [kind, sending, take],
   );
 
   const goTo = useCallback(
@@ -229,32 +276,57 @@ export function useBrowseTabs(kind: string): BrowseTabs {
       // which is the truthful answer: the thing it was aimed at is not
       // there.
       const id = front.current;
-      if (id) goTab(kind, id, device, path, title).then(take).catch(() => {});
+      if (id) sending(goTab(kind, id, device, path, title)).then(take).catch(() => {});
     },
-    [kind, take],
+    [kind, sending, take],
   );
 
   const open = useCallback(
     (device: string, path: string) => {
-      openTab(kind, device, path)
-        .then(() => fetchTabs(kind))
+      sending(openTab(kind, device, path).then(() => fetchTabs(kind)))
         .then(take)
         .catch(() => {});
     },
-    [kind, take],
+    [kind, sending, take],
   );
 
   const clear = useCallback(() => {
     const id = front.current;
-    if (id) goTab(kind, id, "", "", "").then(take).catch(() => {});
-  }, [kind, take]);
+    if (id) sending(goTab(kind, id, "", "", "")).then(take).catch(() => {});
+  }, [kind, sending, take]);
 
   const close = useCallback(
     (id: string) => {
-      closeTab(kind, id).then(take).catch(() => {});
+      sending(closeTab(kind, id)).then(take).catch(() => {});
     },
-    [kind, take],
+    [kind, sending, take],
   );
+
+  // **The beat, and only while the column is on screen** (see
+  // `WATCH_MS`). It asks for the same thing the mount read asked for
+  // and hands it to the same setter — there is no second way into this
+  // state, so a tick and a press cannot disagree about its shape.
+  useEffect(() => {
+    if (!watch) return;
+    let live = true;
+    const tick = () => {
+      if (writing.current > 0) return;
+      fetchTabs(kind)
+        .then((open) => live && take(open))
+        .catch(() => {
+          /* a store that will not answer keeps the list that is drawn */
+        });
+    };
+    const beat = setInterval(tick, WATCH_MS);
+    // …and at once on arrival, so walking back onto the landing shows
+    // what the terminal did while you were away rather than waiting a
+    // beat for it.
+    tick();
+    return () => {
+      live = false;
+      clearInterval(beat);
+    };
+  }, [kind, watch, take]);
 
   const current = tabs.find((t) => t.id === active) ?? tabs[0] ?? PENDING;
   return { tabs, current, ready: current !== PENDING, focus, add, goTo, open, clear, close };

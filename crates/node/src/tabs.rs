@@ -129,12 +129,92 @@ fn stored(root: &Path) -> BTreeMap<String, Open> {
         .unwrap_or_default()
 }
 
+/// Written **beside** the file and renamed over it, so a reader never
+/// sees half a list.
+///
+/// The temp name carries this process, because two of them really do
+/// write here (第 2 条 put a terminal and a window over one file) and a
+/// shared temp name is two writers clobbering each other's draft before
+/// either has renamed.
 fn save(root: &Path, all: &BTreeMap<String, Open>) -> Result<(), String> {
     let dot = root.join(".khor");
     std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
     let text = serde_json::to_vec_pretty(all).map_err(|e| e.to_string())?;
     let p = path(root);
-    std::fs::write(&p, text).map_err(|e| msg::cant_write(p.display(), e))
+    let tmp = dot.join(format!("tabs.json.{}", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| msg::cant_write(tmp.display(), e))?;
+    std::fs::rename(&tmp, &p).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        msg::cant_write(p.display(), e)
+    })
+}
+
+/// An exclusive hold on the tab table for the length of one
+/// read-modify-write.
+///
+/// # Why a lock at all
+///
+/// Every change here is read-the-file, change it, write it back — and
+/// since docs/SHELL.md 第 2 条 there are **two processes** doing that:
+/// the window and `khor tabs`. Two interleaved read-modify-writes lose
+/// one of the two changes outright, and what a person sees is a tab
+/// they just opened quietly not being there.
+///
+/// Atomic rename alone does not fix it. Rename stops a reader seeing a
+/// half-written file; it does nothing about two writers who both read
+/// the same 「before」.
+///
+/// # Why `flock` on a file of its own
+///
+/// **Of its own**, because [`save`] renames the table — a lock taken on
+/// the table's inode would be released the moment somebody replaced it,
+/// and the next writer would lock a file nobody else is holding. The
+/// lock file is only ever created and locked, never rewritten.
+///
+/// **`flock` rather than a lock somebody has to remove**, because the
+/// kernel drops it when the fd closes: a process killed mid-change
+/// leaves nothing to clean up and nothing to time out. A lock file this
+/// app had to garbage-collect would be one more thing that goes wrong
+/// on the machine the user is actually using.
+struct Hold(std::fs::File);
+
+impl Hold {
+    fn take(root: &Path) -> Result<Hold, String> {
+        let dot = root.join(".khor");
+        std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
+        let p = dot.join("tabs.lock");
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&p)
+            .map_err(|e| msg::cant_write(p.display(), e))?;
+        // Blocks until the other writer is done. There is no timeout on
+        // purpose: what is held is one read-modify-write of a few
+        // hundred bytes, so the wait is bounded by that and not by
+        // anything a person or a network does.
+        let got = unsafe { libc::flock(std::os::unix::io::AsRawFd::as_raw_fd(&f), libc::LOCK_EX) };
+        if got != 0 {
+            return Err(msg::cant_write(
+                p.display(),
+                std::io::Error::last_os_error(),
+            ));
+        }
+        Ok(Hold(f))
+    }
+}
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        // Closing the fd releases it; this is the explicit spelling so
+        // the release is not a thing a reader has to know about `File`.
+        let _ = unsafe {
+            libc::flock(
+                std::os::unix::io::AsRawFd::as_raw_fd(&self.0),
+                libc::LOCK_UN,
+            )
+        };
+    }
 }
 
 /// One kind's tabs.
@@ -154,6 +234,10 @@ fn change<T>(
     kind: &str,
     with: impl FnOnce(&mut Open) -> Result<T, String>,
 ) -> Result<T, String> {
+    // **Held across the read as well as the write.** A lock taken only
+    // for the write would let both writers read the same 「before」 and
+    // then take turns overwriting it, which is the whole failure.
+    let _hold = Hold::take(root)?;
     let mut all = stored(root);
     let open = all.entry(kind.to_string()).or_default();
     let out = with(open)?;
@@ -512,6 +596,71 @@ mod tests {
         sorted.sort();
         sorted.dedup();
         assert_eq!(sorted.len(), ids.len(), "every id is its own");
+    }
+
+    /// **Two writers do not lose each other's tabs.**
+    ///
+    /// Every `open` is a read-modify-write, and since 第 2 条 there are
+    /// two processes doing them over one file. Without [`Hold`] the two
+    /// read the same 「before」 and take turns overwriting it, and what
+    /// a person sees is a tab they just opened quietly not being there.
+    ///
+    /// ⚠️ **Threads, not processes, and that is honest rather than
+    /// convenient.** `flock` is held per *open file description*, so
+    /// two threads that each open the lock file contend exactly the way
+    /// two processes do — which is what makes this a real test of the
+    /// lock and not of a mutex. What it does **not** cover is the lock
+    /// surviving a process being killed mid-change; that is the
+    /// kernel's promise about `flock`, and it is why this is `flock` and
+    /// not a lock file khor would have to garbage-collect.
+    #[test]
+    fn two_writers_do_not_lose_each_others_tabs() {
+        let r = root("race");
+        // Warm the file first: the interesting interleaving is over an
+        // existing table, not over its creation.
+        open(&r.0, "page", "m", "first").unwrap();
+        let here = r.0.clone();
+        let hands: Vec<_> = (0..4)
+            .map(|n| {
+                let at = here.clone();
+                std::thread::spawn(move || {
+                    for i in 0..10 {
+                        open(&at, "page", "m", &format!("u{n}-{i}")).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in hands {
+            h.join().unwrap();
+        }
+        let after = list(&r.0, "page");
+        assert_eq!(
+            after.tabs.len(),
+            41,
+            "every write landed: 1 + 4 writers × 10 (got {:?})",
+            after.tabs.iter().map(|t| &t.url).collect::<Vec<_>>(),
+        );
+        // …and the file is still one readable list, not a torn one.
+        let again = list(&r.0, "page");
+        assert_eq!(again.tabs.len(), 41);
+        assert!(after.tabs.iter().any(|t| t.id == after.active));
+    }
+
+    /// The table is renamed into place, so a reader never sees a
+    /// half-written list — and the draft carries this process's name,
+    /// because two writers sharing one draft would clobber each other
+    /// before either renamed.
+    #[test]
+    fn a_write_leaves_no_draft_behind() {
+        let r = root("atomic");
+        open(&r.0, "page", "m", "a").unwrap();
+        let strays: Vec<String> = fs::read_dir(r.0.join(".khor"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("tabs.json."))
+            .collect();
+        assert!(strays.is_empty(), "a draft was left behind: {strays:?}");
     }
 
     /// …**and two processes in the same millisecond are still two
