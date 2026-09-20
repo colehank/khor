@@ -243,6 +243,15 @@ export function TabStrip({
       // short is not available here: either the band grows or the
       // target stays under the floor. It grows.
       //
+      // **…and it is the same height as a pane's top row, from the same
+      // token** (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的
+      // 高度一致, 保持和谐. 现在, 标签页普遍比侧边栏更高一些」).
+      // `--pane-head` is the finger's floor plus `--tab-lip`, the
+      // sliver of band a tab stands on; a pane's search row centres its
+      // controls in exactly that. They were 48 and 44 — two numbers
+      // arrived at separately, agreeing about nothing — and the gate
+      // now subtracts them and asks for zero.
+      //
       // **The band and the scrolling row are two elements now, and the
       // reason is a measurement**: with everything in one scroll
       // container the "+" scrolled away with the tabs — at 20 tabs on a
@@ -263,7 +272,7 @@ export function TabStrip({
       // tab when it is crowded is the switcher, which has its own — and
       // the switcher is offered exactly when the strip has stopped
       // showing every tab.
-      className="flex flex-none items-end gap-1 bg-muted/40 px-2 pt-1"
+      className="flex h-pane-head flex-none items-end gap-1 bg-muted/40 px-2 pt-tab-lip"
     >
       {head}
       <div
@@ -316,7 +325,15 @@ export function TabStrip({
                 // in the middle of it. Left at content height this was 18
                 // tall inside a tab it filled the width of — the band
                 // around the label looked pressable and was not.
-                className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
+                // `gap-tab-gap`, not the `gap-1` this had: 「标签页上的
+                // 标题距离头像稍远一些, 现在有些拥挤」 (2026-09-20 第 3
+                // 条). Four pixels put the name against the face while
+                // the tab's own `gap-1` put the same four between the
+                // name and the × — so the face read as part of the
+                // word. Its own token (tokens.css `--tab-gap`) rather
+                // than a step up in `--gap-in`, which would move every
+                // clump in the app for one complaint about tabs.
+                className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-tab-gap text-left"
               >
                 {/* **A two-line file tab stands its glyph beside both
                     lines** (2026-09-16:「标签页上, 文件类型的icon, 过小
@@ -616,7 +633,17 @@ export function TabSwitcher({
             >
               <TabAvatar f={f} bare="size-avatar flex-none" />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-label">{f.label}</span>
+                {/* **The same two names the strip's label wears**, because
+                    it is the same fact: what this tab is called, as
+                    painted. Since 2026-09-20 the rows are the browsing
+                    landing's tabs as well as its switcher (docs/SHELL.md
+                    第 2 条), so a probe reaching for 「the tab's title」
+                    has to find it in whichever seat the tabs are in —
+                    `check-tabs` was looking only at the strip's and read
+                    the column as a landing with no titles at all. */}
+                <span data-tab-label data-tab-name className="truncate text-sm font-label">
+                  {f.label}
+                </span>
                 {/* The whole path under the name: on a phone the strip
                     is not there to give the tab context, so the row has
                     to carry it. Truncated from the tail — a slashed

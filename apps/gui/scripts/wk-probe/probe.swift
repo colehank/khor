@@ -287,8 +287,37 @@ func sheetProbe(size: String, leading: String) -> String {
   return ask(web, "return window.__measure(s, l, t);", async: true, args: ["s": size, "l": leading, "t": text])
 }
 
+/// The shell under a wheel that has run off the end of a pane
+/// (docs/SHELL.md 第 1 条).
+///
+/// 「我在工作区的文件树拖动, 整个app都会下移, 正确的应该是整个app是不
+/// 允许随滑轮变化的」— the user, 2026-09-20, describing this engine.
+///
+/// **Two arms, and the bare one is the point.** Without it, 「the page
+/// did not move」 and 「this page never had anywhere to move to」 are
+/// the same green — the same hole the shim's bare arm exists for. So
+/// the page is deliberately taller than its window, and the arm with no
+/// rules really does slide the rail down out of the corner the window's
+/// three buttons stand in.
+///
+/// `css` is khor's own two blocks, handed down by the gate out of
+/// `tokens.css` and `app.css`. Nothing about these rules is written
+/// twice: a copy here would be a probe measuring itself.
+func shellProbe(_ css: String) -> String {
+  let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 500))
+  let w = Waiter()
+  web.navigationDelegate = w
+  web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/shell.html")!))
+  spin({ w.done }, seconds: 20)
+  if let t = w.trouble { return "{\"loadFailed\":\(quoted(t))}" }
+  if !w.done { return "{\"loadFailed\":\"never finished\"}" }
+  return ask(web, "return window.__nail(c);", async: true, args: ["c": css])
+}
+
 let codeSize = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "14.4px"
 let codeLeading = CommandLine.arguments.count > 4 ? CommandLine.arguments[4] : "21.6px"
+let shellCss = CommandLine.arguments.count > 5 ? CommandLine.arguments[5] : ""
 
 print(
-  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading))}")
+  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading)),"
+    + "\"shellBare\":\(shellProbe("")),\"shellNailed\":\(shellProbe(shellCss))}")

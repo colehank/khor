@@ -1052,3 +1052,45 @@ input[type="search"]::-webkit-search-decoration {
   filter: grayscale(1);
   opacity: 0.45;
 }
+
+/* ── a pane that has scrolled to its end stops there ────────────────
+ *
+ * 「整个app是不允许随滑轮变化的」 — the user, 2026-09-20
+ * (docs/SHELL.md 第 1 条). The root's half of that rule is in
+ * `tokens.css`'s base layer; this is the other half.
+ *
+ * **One selector, not a class somebody has to remember to add.** The
+ * ruling's own words are 「做成一个类 / 一个组件,别在十几处各写一遍」,
+ * and a class would have been forty-eight call sites the day it was
+ * written and forty-nine the next time anybody makes a scroller. What
+ * a scroller has in common is already written down at every one of
+ * those sites — it is the overflow utility itself — so that is what
+ * this reaches for. A pane added tomorrow is contained without anybody
+ * being told.
+ *
+ * ⚠️ **It is the utility class, so it cannot outlive the utility.** If
+ * these names ever stop being what tailwind emits for
+ * `overflow-y-auto`, every one of these panes silently goes back to
+ * chaining — which is exactly the failure that has no symptom until
+ * somebody flicks a trackpad. `check-wk` therefore measures the
+ * computed `overscroll-behavior` on a real pane rather than trusting
+ * this file to have matched.
+ *
+ * Unlayered on purpose: tailwind's utilities sit in `@layer utilities`
+ * and unlayered rules beat layered ones whatever the specificity, so
+ * this wins without an `!` and without counting classes. Nothing else
+ * in this app sets `overscroll-behavior`, so there is nothing for it
+ * to fight.
+ *
+ * `contain`, not `none`: a pane may still bounce on its own — that is
+ * WebKit telling a finger it has reached the end of *this* list, which
+ * is information. What it may not do is hand the rest to whatever is
+ * behind it. */
+.overflow-auto,
+.overflow-scroll,
+.overflow-x-auto,
+.overflow-x-scroll,
+.overflow-y-auto,
+.overflow-y-scroll {
+  overscroll-behavior: contain;
+}

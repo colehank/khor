@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>shell</title>
+<style>
+  /* khor's shell reduced to what a wheel can reach: a rail beside a
+     scrolling pane, the pair exactly the window's height, and a tail
+     under them so the **document** has somewhere to go.
+
+     That tail is the whole reason this page can go red. Without it the
+     document fits its own window and「the page did not scroll」 is true
+     of any stylesheet at all — the shape docs/… calls 一个不会失败的
+     对照组. With it, the bare arm really does slide the rail out of the
+     corner the window's three buttons stand in (第 58 条), which is
+     what the user reported: 「整个app都会下移」.
+
+     **No overflow rule and no overscroll rule here.** Those are handed
+     in by the gate, lifted verbatim out of khor's own two stylesheets,
+     so what this measures is khor's rules rather than a copy of them
+     that could agree with nothing. The pane wears tailwind's class name
+     for the same reason: khor's containment rule is keyed on that
+     class, and a probe that invented its own selector would be
+     measuring the probe. */
+  body { margin: 0; font: 13px/1.6 system-ui, sans-serif; }
+  #shell { display: flex; height: 100vh; }
+  #rail { width: 64px; flex: none; background: #d8d8d0; }
+  #pane { flex: 1; min-height: 0; overflow-y: auto; }
+  #pane div { padding: 0 8px; }
+  #tail { height: 240px; background: #eee; }
+</style>
+<body>
+  <div id="shell">
+    <div id="rail"></div>
+    <div id="pane" class="overflow-y-auto"></div>
+  </div>
+  <div id="tail"></div>
+  <script>
+    const pane = document.getElementById("pane");
+    for (let i = 0; i < 400; i++) {
+      const d = document.createElement("div");
+      d.textContent = "row " + i;
+      pane.append(d);
+    }
+    /**
+     * Read the shell twice: standing still, then after a pane has been
+     * taken to its end and the page has been asked to move.
+     *
+     * `css` is khor's own two blocks, or the empty string for the arm
+     * that has none. The reading is deliberately the same either way —
+     * what tells the two apart is the numbers, not which fields came
+     * back.
+     */
+    window.__nail = (css) => {
+      if (css) {
+        const s = document.createElement("style");
+        s.textContent = css;
+        document.head.append(s);
+      }
+      const root = getComputedStyle(document.documentElement);
+      const rail = document.getElementById("rail");
+      const was = Math.round(rail.getBoundingClientRect().top);
+      // The gesture the ruling is about: a pane is already at its end,
+      // and the wheel keeps coming.
+      pane.scrollTop = pane.scrollHeight;
+      const doc = document.scrollingElement;
+      doc.scrollTop = 400;
+      return JSON.stringify({
+        supports: CSS.supports("overscroll-behavior", "none"),
+        rootOverflowY: root.overflowY,
+        rootOverscrollY: root.overscrollBehaviorY,
+        paneOverscrollY: getComputedStyle(pane).overscrollBehaviorY,
+        paneAtEnd: Math.round(pane.scrollTop) > 0,
+        docTop: Math.round(doc.scrollTop),
+        railWas: was,
+        railTop: Math.round(rail.getBoundingClientRect().top),
+      });
+    };
+  </script>
+</body>

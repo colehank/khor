@@ -45,9 +45,30 @@ use std::process::Command;
 
 /// This machine's stable id, hashed. `None` when the platform will not
 /// say — see the module head on why that is not an error.
+///
+/// # Asked once per process
+///
+/// On macOS the platform will only say through `ioreg`, which is a
+/// child process — and `Node::root_from_env` reaches this on **every**
+/// command a face sends, several a second while a window is open.
+/// Measured 2026-09-21 on a desktop app that had been up four hours:
+/// the fork was the hottest frame under the IPC handler, on the thread
+/// the webview waits on. The answer is a fact about the hardware this
+/// process is running on; it cannot change while the process lives, so
+/// it is read once and kept.
 pub fn fingerprint() -> Option<String> {
-    raw_id().map(|raw| hashed(raw.trim()))
+    static KEPT: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    KEPT.get_or_init(|| {
+        ASKED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        raw_id().map(|raw| hashed(raw.trim()))
+    })
+    .clone()
 }
+
+/// How many times this process actually went and asked the platform —
+/// what the test below reads, since the point of the cache is a fork
+/// that does not happen and an answer alone cannot show that.
+static ASKED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 #[cfg(target_os = "linux")]
 fn raw_id() -> Option<String> {
@@ -121,5 +142,25 @@ mod tests {
     #[test]
     fn asking_this_machine_twice_gives_one_answer() {
         assert_eq!(super::fingerprint(), super::fingerprint());
+    }
+}
+
+#[cfg(test)]
+mod asked_once {
+    /// **The second ask costs nothing.** `Node::root_from_env` stands
+    /// behind every command a face sends; an `ioreg` per command was a
+    /// child process several times a second for as long as a window was
+    /// open.
+    #[test]
+    fn the_platform_is_asked_once_however_often_khor_asks() {
+        let first = super::fingerprint();
+        for _ in 0..50 {
+            assert_eq!(super::fingerprint(), first, "and the answer does not move");
+        }
+        assert_eq!(
+            super::ASKED.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "fifty-one asks reached the platform once"
+        );
     }
 }

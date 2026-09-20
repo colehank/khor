@@ -42,6 +42,7 @@ import {
 } from "@/api";
 import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
+import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
@@ -66,6 +67,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
@@ -865,6 +867,7 @@ function storedGroup(): string {
 
 export function QuotaLanding({
   narrow,
+  pane,
   quota,
   me,
   query,
@@ -876,6 +879,19 @@ export function QuotaLanding({
   onBack,
 }: {
   narrow: boolean;
+  /**
+   * The list column's width, **the shell's and not this landing's**
+   * (2026-09-20 第 6 条 / 第 4 条).
+   *
+   * It was `w-72`: a fixed number, no seam, no way to put it away, and
+   * — the thing the user actually saw — no ground, so this one column
+   * sat on `--background` while every other pane in the app sat on
+   * `--card`. 「这看起来没有用统一的逻辑进行编写」. All four of those
+   * are `ListPane`'s now, and this prop is the one of them a landing
+   * cannot supply for itself: the rail is what puts a list away, so the
+   * rail has to be holding the same object.
+   */
+  pane: PaneWidth | null;
   /** The bar's search text and its ticked filter keys. **Held by the
       shell, like every other pane's** (`App`'s `queries` / `words`,
       keyed by landing): the query is per pane so switching landings is
@@ -1854,21 +1870,29 @@ export function QuotaLanding({
             </div>
           </div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {bar}
-            <div className="min-h-0 flex-1 overflow-y-auto">{list}</div>
-          </div>
+          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow head={bar}>
+            {list}
+          </ListPane>
         )
       ) : (
         <div className="flex min-h-0 flex-1">
           {/* The bar belongs to the list column, not to the landing:
               what it narrows is the list, and a bar spanning the detail
               too would say it narrows that as well. Same seat it has on
-              the sessions pane. */}
-          <div className="flex w-72 flex-none flex-col border-r">
-            {bar}
-            <div className="min-h-0 flex-1 overflow-y-auto">{list}</div>
-          </div>
+              the sessions pane — **and since 2026-09-20 it is literally
+              the same component** (第 6 条): the ground, the head's
+              height, the scroller and the seam all come from
+              `ListPane`, and what is left here is the bar and the rows. */}
+          <ListPane
+            mark="data-quota-pane"
+            name={gui.accounts_tab}
+            pane={pane}
+            narrow={false}
+            seam={{ "data-list-seam": "" }}
+            head={bar}
+          >
+            {list}
+          </ListPane>
           <div className="min-w-0 flex-1 overflow-y-auto">
             {detail}
             {subDetail}

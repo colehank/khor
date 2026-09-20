@@ -624,6 +624,40 @@
    * inline controls beside text; this is a floor under anything a finger
    * must land on, and the two move for different reasons. */
   --touch: 44px;
+  /* ── the top row of a pane, and the sliver a tab sits on ──────
+   *
+   * **One number, two surfaces, because they are one line of the
+   * window** (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的高度
+   * 一致, 保持和谐. 现在, 标签页普遍比侧边栏更高一些」). The search row
+   * of every secondary sidebar (`PaneBar`, the tree's own head) and the
+   * band the tabs stand in are drawn at exactly this, and the gate
+   * subtracts the two and asks for zero — **the same token, not two
+   * numbers that happen to agree**, which is the whole of what that
+   * ruling is about.
+   *
+   * Derived rather than picked: a tab is a finger's target and so is
+   * the search box, so the floor under both is `--touch`; `--tab-lip`
+   * is the strip of band left above a tab, which is what makes a tab
+   * read as standing *on* the row rather than as filling it. The pane's
+   * head has no tab in it and simply centres its controls in the same
+   * height.
+   *
+   * It is not a fourth `--ctl-*`: those are the *look* of a control
+   * beside text. This is the height of a region's first row. */
+  --tab-lip: 4px;
+  --pane-head: calc(var(--touch) + var(--tab-lip));
+  /* The two switches at the head of the file tree (docs/SHELL.md 第 7
+   * 条:「搜索框旁边有这些按钮… 可以小一点来支持显示」). **Smaller than
+   * the finger floor on purpose, and only where there is no finger** —
+   * the coarse-pointer block at the foot of this file puts `--touch`
+   * back, the same way `--tree-row` gets it back. What the user is
+   * short of is search box, and two 44 boxes were spending 88 of a
+   * 288 column on two controls that a mouse lands on at 32.
+   *
+   * This supersedes 2026-09-16 ruling 44 (「放大一点」) **for the box
+   * only**: what that ruling was about is the painted mark, which was
+   * spending a third of its box, and the marks still fill these. */
+  --ws-switch: 32px;
   /* How wide the veil is at the cut edge of a sideways scroller
      (`app.css` `[data-side-cut]`).
      **Derived from the floor above it, not picked.** The narrowest
@@ -1160,15 +1194,38 @@
    * moved: leaving it at 28 would have made it *equal* to a landing,
    * which is the one thing the paragraph above says it must not be. */
   --icon-mark: 30px;
-  /* The session row's corner mark (mandala's .wsagent, numbers verbatim):
-   * a 14px frame holding an 11px glyph. The frame matches the old 14px
-   * machine badge so the row's grid does not move; the glyph takes 11
-   * not 14 because a full-bleed glyph against the rounded frame reads as
-   * about to spill. The frame is a solid punch-out (bg-card) — brand
+  /* The session row's corner mark: a frame holding a glyph, sat on the
+   * bottom-right of the machine's face. The glyph is a step under the
+   * frame, not full-bleed — a glyph filling a rounded frame reads as
+   * about to spill. The frame is a solid punch-out (bg-card): brand
    * glyphs are transparent-bottomed strokes, and laid straight on a
-   * painted face they dissolve into its light and dark. */
-  --kind-mark: 14px;
-  --kind-mark-glyph: 11px;
+   * painted face they dissolve into its light and dark.
+   *
+   * **18/14 since 2026-09-20**, from mandala's verbatim 14/11
+   * (docs/SHELL.md 第 3 条:「session 类别的icon大一点, 现在有点不可读」
+   * — the user). This is the one thing on a session row that says
+   * **what kind of session this is**, and at 11 the three shapes
+   * (chat / term / agent) are a difference people stop trying to read.
+   *
+   * It costs the row nothing: the mark is positioned on the face's
+   * corner rather than sitting in the row's flow, so what grew is what
+   * hangs over that corner and no column moved. 18 against the face's
+   * `--avatar` 32 is the same proportion VS Code gives a badge. */
+  --kind-mark: 18px;
+  --kind-mark-glyph: 14px;
+  /* The gap between a tab's face and the name beside it (第 3 条:
+   * 「标签页上的标题距离头像稍远一些, 现在有些拥挤」— the user,
+   * 2026-09-20). It was 4 — the same 4 the tab puts between the name
+   * and the × on the other side — so the face read as the first
+   * letter of the word rather than as a thing beside it.
+   *
+   * 12 rather than a step up in `--gap-in`: what is being separated is
+   * a picture from a sentence, not the parts of one control, and
+   * moving `--gap-in` would move every clump in the app to answer one
+   * complaint about tabs. It is also `--gap-row`'s number, which is
+   * what this app already uses between the parts of a list row — a tab
+   * is a row that happens to be lying on its side. */
+  --tab-gap: 12px;
 
   /* Tombstone (2026-08-29): `--gauge-bar` / `--gauge-bar-len` — the
    * thickness of a reading drawn as a bar and the length one took in a
@@ -1503,6 +1560,13 @@
   --spacing-icon-mark: var(--icon-mark);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
+  /* `min-h-pane-head` on a pane's top row, `h-pane-head` on the tab
+     band, `pt-tab-lip` on the sliver above a tab — 第 5 条's one token
+     reaching both surfaces. */
+  --spacing-pane-head: var(--pane-head);
+  --spacing-tab-lip: var(--tab-lip);
+  --spacing-tab-gap: var(--tab-gap);
+  --spacing-ws-switch: var(--ws-switch);
 
   /* the four gaps → utilities (gap-in, mb-group, pt-pane…) */
   --spacing-in: var(--gap-in);
@@ -1729,10 +1793,40 @@
     font-size: var(--text-base);
     -webkit-font-smoothing: antialiased;
   }
+  /* ── the shell is nailed down ─────────────────────────────────
+   *
+   * 「整个app的拖动逻辑没有统一. 我在工作区的文件树拖动, 整个app都会
+   * 下移, 正确的应该是整个app是不允许随滑轮变化的」 — the user,
+   * 2026-09-20 (docs/SHELL.md 第 1 条).
+   *
+   * The height was already here and was never the problem: the app
+   * fits its window exactly. What it did not say is what happens to a
+   * wheel that arrives **after a pane has reached its end** — and the
+   * default is that the scroll chains outward until something takes
+   * it, which on WebKit is the viewport's elastic band. So the whole
+   * document, the rail and the window's three buttons with it, slid
+   * down under a flick in the file tree and sprang back.
+   *
+   * Two declarations, and each answers a different half:
+   *
+   *   `overflow: hidden` — this document has nothing to scroll.
+   *     ⚠️ It does **not** hide a layout that overflows: `scrollWidth`
+   *     and `scrollHeight` still report it, which is what every gate
+   *     that ever caught a sideways-scrolling face measures
+   *     (`check-tabs`, `check-face` 4m). Nothing became unmeasurable.
+   *   `overscroll-behavior: none` — and no elastic band either. This
+   *     is the half that only WebKit has (Chrome's desktop viewport
+   *     does not bounce), so it is `npm run wk` that measures it and
+   *     not `npm run face`.
+   *
+   * The other half of the rule — every scrolling pane keeping its
+   * scroll to itself — is one selector in `app.css`. */
   html,
   body,
   #root {
     height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 }
 
@@ -1744,5 +1838,10 @@
 @media (pointer: coarse) {
   :root {
     --tree-row: var(--touch);
+    /* …and the tree head's two switches, for the same reason and by
+       the same road (docs/SHELL.md 第 7 条: 「宽档可以小,窄档(触屏)按
+       --touch 走」). `check-face` section 3 walks the whole face with a
+       finger emulated and would find a 32 box otherwise. */
+    --ws-switch: var(--touch);
   }
 }
