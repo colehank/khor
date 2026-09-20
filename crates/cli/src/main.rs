@@ -450,6 +450,19 @@ const VERBS: &[Verb] = &[
         run: leave,
         reach: Reach::Act,
     },
+    // 暂停 / 接回来 (docs/MORE.md 暂停). Acts, like the two above: they
+    // write what this machine does next, and a running serve reads that
+    // file rather than being told (`crate::pause`).
+    Verb {
+        word: "pause",
+        run: pause,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "resume",
+        run: resume,
+        reach: Reach::Act,
+    },
     Verb {
         word: "watch",
         run: watch,
@@ -1508,6 +1521,32 @@ fn leave(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Stops this machine talking to the network without leaving it
+/// (docs/MORE.md 暂停).
+///
+/// No argument: unlike `leave` and `forget`, nothing here is
+/// irreversible and nothing names another machine — `khor resume` puts
+/// it back, and the thing being paused is the machine you are standing
+/// on.
+fn pause(rest: &[String]) -> Result<(), String> {
+    if !rest.is_empty() {
+        return Err(usage_text().into());
+    }
+    khor_node::pause::set_on(&Node::root_from_env(), true)?;
+    println!("{}", msg::paused());
+    Ok(())
+}
+
+/// Puts it back (docs/MORE.md 暂停).
+fn resume(rest: &[String]) -> Result<(), String> {
+    if !rest.is_empty() {
+        return Err(usage_text().into());
+    }
+    khor_node::pause::set_on(&Node::root_from_env(), false)?;
+    println!("{}", msg::resumed());
+    Ok(())
+}
+
 /// `khor watch <机器> [目录 ...]` — the directories that machine keeps an
 /// eye on, replaced whole; none given clears the list. The CLI twin of
 /// the card's editor (docs/KHOR.md 等价): one node call, one sentence
@@ -1565,6 +1604,15 @@ fn devices(_rest: &[String]) -> Result<(), String> {
         // second home on this Mac made every row claim to be home.
         let me = d.id == n.device_str();
         let here = if me { cli::this_machine() } else { "" };
+        // 暂停 (docs/MORE.md): on this machine's row only, because
+        // that is whose state it is. Another machine being paused
+        // is not a thing this one can know — what it sees is the
+        // road going quiet, which the road column already says.
+        let held = if me && n.paused() {
+            cli::paused_mark()
+        } else {
+            ""
+        };
         let pin = if d.pinned { cli::pinned_mark() } else { "" };
         let hop = hops
             .iter()
@@ -1579,7 +1627,7 @@ fn devices(_rest: &[String]) -> Result<(), String> {
             None => hop_word(hop, me).to_owned(),
         };
         println!(
-            "{}\t{}…{here}{pin}\t{}\t{}",
+            "{}\t{}…{here}{held}{pin}\t{}\t{}",
             // **The name people gave it** (`DeviceInfo::shown`), which
             // is what every other surface prints. The channel is not a
             // secret, it is just not what this line is for.

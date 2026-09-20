@@ -39,6 +39,14 @@ pub const SYNC_EVERY: Duration = Duration::from_secs(5);
 /// the same relay in seconds; the cure was always a restart, so the
 /// serve prescribes it to itself — the keeper stands it back up with
 /// fresh ears).
+/// How often a running serve re-reads 暂停 (docs/MORE.md). Half a
+/// second: somebody pressing 暂停接入 and watching the rail cannot feel
+/// it, and it is far under anything the network does. **A beat rather
+/// than a notification**, because the file is the truth and a serve
+/// started while paused has to obey it too — one path, whether the
+/// state was set a second ago or last week.
+const PAUSE_POLL: Duration = Duration::from_millis(500);
+
 const DEAF_AFTER: Duration = Duration::from_secs(120);
 
 /// The exit code of a serve that concluded it had gone deaf. Non-zero
@@ -294,12 +302,45 @@ impl Node {
             let n = node.clone();
             tokio::spawn(async move { n.cpu_recorder().await });
         }
+        // 暂停 (docs/MORE.md), read **off this loop**. The file stays the
+        // one truth — `khor pause` writes it from another process and
+        // nothing here caches a decision — but the accept arm may not
+        // touch a disk: a `read_to_string` per connection put the
+        // reactor over its second under load (2026-09-20,
+        // `crates/node/tests/load.rs`, which is the gate that said so,
+        // and this file's own rule about the loop). So a task of its
+        // own does the reading, on a beat a person cannot feel, and the
+        // two arms below consult a bit.
+        let paused = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(node.paused()));
+        {
+            let flag = paused.clone();
+            let root = node.root().clone();
+            tokio::spawn(async move {
+                let mut beat = tokio::time::interval(PAUSE_POLL);
+                loop {
+                    beat.tick().await;
+                    let r = root.clone();
+                    // `spawn_blocking` for the reason the read is not in
+                    // the loop: it is a file, and this runtime carries
+                    // the link.
+                    if let Ok(now) =
+                        tokio::task::spawn_blocking(move || crate::pause::is_on(&r)).await
+                    {
+                        flag.store(now, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+            });
+        }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         loop {
             tokio::select! {
                 incoming = ep.accept() => {
                     let Some(incoming) = incoming else { break };
+                    // Paused: dropped without an answer, so the far side
+                    // sees what a machine that is not there looks like —
+                    // which is the state somebody asked for.
+                    if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
                     let e = ep.clone();
                     tokio::spawn(async move {
@@ -342,6 +383,15 @@ impl Node {
                     // visit for DIAL_TIMEOUT, and a serve that goes deaf
                     // for that long fails everyone else. Skip when the
                     // previous pump still runs instead of piling up.
+                    // Paused: no pump, and **no hearing test either**.
+                    // The deaf watch exits the process when everyone
+                    // with a road has been silent for DEAF_AFTER, which
+                    // is exactly what a pause looks like from in here —
+                    // left running, it would restart a machine somebody
+                    // deliberately quieted, over and over. The local
+                    // handoff arm stays open: a paused machine is still
+                    // a machine its own faces talk to.
+                    if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
                     let e = ep.clone();
                     let deaf = deaf.clone();
@@ -4726,6 +4776,13 @@ impl Node {
     /// moment somebody is certainly thinking about invites is the moment
     /// they ask for one.
     pub fn invite(&self) -> Result<String, String> {
+        // **Before the serve check**, because it is the more specific
+        // truth: a paused machine's serve is running and answering
+        // locally, so 「serve 没在跑」 would send somebody to start one
+        // that is already there (docs/MORE.md 暂停).
+        if self.paused() {
+            return Err(msg::paired_while_paused().to_owned());
+        }
         let file = self
             .endpoint_file()?
             .ok_or(msg::serve_not_running_for_invite())?;
@@ -4798,6 +4855,12 @@ impl Node {
     /// machines — pairing has no direction (docs/NET.md). Routed through
     /// the resident serve when one holds the key.
     pub async fn pair(&self, ticket: &str) -> Result<String, String> {
+        // Refused before the ticket is read: a paused machine cannot
+        // finish the dial either way, and 「票过期了」 would be an
+        // answer about the wrong thing (docs/MORE.md 暂停).
+        if self.paused() {
+            return Err(msg::paired_while_paused().to_owned());
+        }
         if let Some(reply) = self
             .via_serve(ipc::Op::Pair {
                 ticket: ticket.to_owned(),

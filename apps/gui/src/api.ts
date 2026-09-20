@@ -735,6 +735,14 @@ export const pair = (ticket: string) => call<string>("pair", { ticket });
     offline until somebody over there runs `khor forget`, and that is a
     different thing left to do from 「everybody knows」. */
 export const leaveNetwork = (machine: string) => call<LeaveOutcome>("leave", { machine });
+
+/** `khor pause` / `khor resume` — this machine stops talking to the
+    network without leaving it (docs/MORE.md 暂停). Answers the fresh
+    `About`, because pausing is a fact the card is already showing and
+    re-reading it is how the two stay one answer. The node refuses the
+    state it is already in, and that refusal is a sentence worth
+    showing. */
+export const setPaused = (on: boolean) => call<About>("set_paused", { on });
 /** Which khor this is and which store it is talking to — the identity
     card's foot (docs/MORE.md 头像). A fact about **this** installation:
     what another machine is running is `khor doctor`'s question, asked

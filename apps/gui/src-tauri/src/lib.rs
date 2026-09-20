@@ -2314,6 +2314,18 @@ async fn leave(machine: String) -> Result<khor_gui_core::LeaveOutcome, String> {
     khor_gui_core::leave(&Node::root_from_env(), &machine).await
 }
 
+/// This machine pauses or resumes (docs/MORE.md 暂停). Not async: it
+/// writes one small file, and the resident serve is what reads it.
+///
+/// It answers the fresh `About` because pausing changes a fact the card
+/// is already showing, and re-reading it is how the two stay one answer.
+#[tauri::command]
+fn set_paused(on: bool) -> Result<khor_gui_core::About, String> {
+    let root = Node::root_from_env();
+    khor_gui_core::set_paused(&root, on)?;
+    Ok(khor_gui_core::about(&root))
+}
+
 pub fn run() {
     // 语言, before anything is drawn or printed (docs/MORE.md 语言).
     // The face resolves its own (`src/lang.ts`, from the same key); this
@@ -2596,7 +2608,8 @@ pub fn run() {
             set_config,
             invite,
             pair,
-            leave
+            leave,
+            set_paused
         ])
         .run(tauri::generate_context!())
         .expect("tauri run");

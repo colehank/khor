@@ -31,6 +31,7 @@ pub mod live;
 pub mod lock;
 pub mod mcp;
 pub mod merge;
+pub mod pause;
 pub mod place;
 pub mod preview;
 pub mod proto;
@@ -1225,6 +1226,14 @@ impl Node {
             .and_then(|l| l.doc.get(self.device_str()))
             .map(|d| d.shown().to_owned())
             .unwrap_or_else(|| self.name.clone())
+    }
+
+    /// Whether this machine is paused (docs/MORE.md 暂停) — read from
+    /// the file every time, never cached, so a resident serve and a
+    /// `khor pause` in another terminal cannot disagree about it
+    /// (`crate::pause` has the whole of that reasoning).
+    pub fn paused(&self) -> bool {
+        crate::pause::is_on(&self.root)
     }
 
     pub(crate) fn root(&self) -> &PathBuf {

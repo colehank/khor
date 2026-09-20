@@ -372,6 +372,12 @@ usage: khor <verb>
                         this machine's name is the confirmation (the
                         same rule forget follows). A fresh ticket and
                         pair bring it back in
+  pause                 stop talking to this network: sends and receives
+                        nothing and the others see this machine offline,
+                        while its own sessions, workspaces and web face
+                        go on working. A restart is still paused
+  resume                come back: sending and receiving again, and the
+                        next sync round catches up
   watch <machine> [directory ...]
                         has a machine watch the volumes those
                         directories sit on (shared across the whole
@@ -383,6 +389,10 @@ watching = "{0} watching: {1}"
 watching-none = "{0} isn't watching any directories"
 in-use = "(current)"
 pinned-mark = "(pinned)"
+# The mark after 「(this machine)」 while it is paused (docs/MORE.md
+# 暂停). Apart from the road column: a road says how this machine
+# reaches that one, pausing is this machine's own state.
+paused-mark = "(paused)"
 group-header = "── {0}"
 group-pinned = "pinned"
 name-separator = ", "
@@ -452,6 +462,9 @@ doctor-peer = "{0} {1} {2}"
 doctor-peer-behind = "{0} {1} {2}, not what this one runs"
 doctor-peer-mute = "{0} {1}, version unknown"
 doctor-peers-alone = "not paired with any machine yet"
+# What the checklist says while this machine is paused (docs/MORE.md
+# 暂停). Not a warning: it is doing what it was told.
+doctor-peers-paused = "Paused — sending and receiving nothing, and the others see this machine offline. To come back: khor resume"
 doctor-peers-unread = "cannot read the machine table"
 doctor-hooks-ok = "every claude hook is installed"
 doctor-hooks-part = "{0} event hook(s) missing, or pointing at another khor"
@@ -845,6 +858,21 @@ left-untold = "These machines couldn't be reached and will go on seeing {1} as o
 cant-forget-self = "This is the local machine — a machine can't remove itself from the network. For this machine to leave: khor leave {0}"
 leave-names-another-machine = "{0} isn't the local machine. To remove it from the network: khor forget {0}"
 leave-with-no-network = "This machine has never joined a network — there's none to leave. To join one: khor pair <ticket>"
+# `khor pause` / `khor resume` (docs/MORE.md 暂停). Pausing is not
+# leaving: the table stays, the others see this machine offline, and
+# everything local goes on working.
+paused = "Paused. This machine sends and receives nothing and the others see it offline; everything here still works. To come back: khor resume"
+resumed = "Back. This machine sends and receives again, and the next sync round catches it up"
+# Asked twice. Unlike a setting: putting a preference to the value it
+# already holds is worth no sentence, while telling a paused machine to
+# pause is somebody who did not know it was (`lock::set_on` refuses the
+# same shape).
+already-paused = "Already paused. To come back: khor resume"
+not-paused = "Not paused. To pause: khor pause"
+# Reaching for pairing while paused. Both verbs need to send and
+# receive, so this is not 「it failed」 but 「this machine is not doing
+# that right now」 — refused by name, with the way out in it.
+paired-while-paused = "This machine is paused; pairing needs it back first: khor resume"
 reach-thread-died = "The terminal reach never came back"
 deliver-thread-died = "The file delivery never came back"
 landed-unsaid = "The file arrived, but that machine didn't say where it landed (its khor is older than this one), so there's no path to paste"
@@ -1246,6 +1274,14 @@ identity-id = "Machine ID"
 identity-version = "khor version"
 identity-paired = "Paired machines"
 identity-alone = "Not paired with any machine yet"
+# The pause section on the identity card (`khor pause`, docs/MORE.md
+# 暂停). Above leaving: this one is undoable and that one is not, and
+# people read from the lighter to the heavier.
+identity-pause-section = "Talking"
+identity-pause-warn = "Stop sending and receiving for now: the others see this machine offline while its own sessions and workspaces go on working. The machine table is untouched — this is not leaving, and it comes back whenever you say."
+identity-pause-do = "Pause this machine"
+identity-resume-do = "Come back"
+identity-paused-now = "Paused — the others see this machine offline"
 identity-leave-section = "This network"
 identity-leave-warn = "Takes this machine out of this network: the machine table goes down to this machine alone, and what the others left here goes with them. This machine's own sessions, workspaces, identity and settings are untouched; a fresh ticket and pair bring it back in."
 identity-leave-type-name = "Type this machine's name exactly"

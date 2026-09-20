@@ -691,6 +691,12 @@ pub fn answer(
         // 离开这张网 (docs/MORE.md 离开). Async for `pair`'s reason: it
         // goes out over the wire before it touches this disk.
         "leave" => to_json(&rt.block_on(crate::leave(root, &arg("machine")?))?),
+        // 暂停 / 接回来 (docs/MORE.md 暂停). No runtime: it writes one
+        // small file, and the resident serve is what reads it.
+        "set_paused" => {
+            crate::set_paused(root, flag("on")?)?;
+            to_json(&crate::about(root))
+        }
         other => Err(format!("no such command: {other}")),
     }
 }

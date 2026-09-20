@@ -32,7 +32,7 @@
 // here as well would be two rules about one irreversible act.
 import { useEffect, useState } from "react";
 
-import { fetchAbout, leaveNetwork, type About, type DeviceRow } from "@/api";
+import { fetchAbout, leaveNetwork, setPaused, type About, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { EditableName } from "@/components/EditableName";
 import { Button } from "@/components/ui/button";
@@ -174,6 +174,46 @@ export function IdentityPage({
           </Button>
         </div>
       </MoreSection>
+
+      {/* 暂停接入 (docs/MORE.md 暂停). Above 离开 and drawn on the same
+          condition, because both are answers to 「这台机器还在这张网里
+          做什么」 — and this one first, since it is the reversible half
+          and a person reads from the lighter act to the heavier. The
+          node refuses the state it is already in, so the control is one
+          button that says which way it goes rather than a switch that
+          could sit out of step with the file. */}
+      {others.length > 0 && about && (
+        <MoreSection name="pause" label={gui.identity_pause_section}>
+          <p data-identity-pause-warn className="text-sm text-muted-foreground">
+            {about.paused ? gui.identity_paused_now : gui.identity_pause_warn}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              data-identity-pause
+              data-paused={about.paused ? "" : undefined}
+              onClick={() => {
+                setLeaveError(null);
+                // The fresh `About` is the answer: the card shows what
+                // the file now says, never what the press assumed.
+                setPaused(!about.paused).then((now) => {
+                  setAbout(now);
+                  // **The rail paints off the device table, not off
+                  // this card.** Pausing changes a fact both of them
+                  // state, so the shell re-reads it here — the same
+                  // refresh a leave and a forget get. Without it the
+                  // face at the foot of the rail would go on looking
+                  // like a talking machine until the next poll.
+                  onLeft();
+                }, (e: unknown) => setLeaveError(String(e instanceof Error ? e.message : e)));
+              }}
+              className="min-h-touch"
+            >
+              {about.paused ? gui.identity_resume_do : gui.identity_pause_do}
+            </Button>
+          </div>
+        </MoreSection>
+      )}
 
       {/* 离开这张网 (docs/MORE.md 离开). Drawn on a machine that is in a
           network and on no other: `Node::leave` refuses a machine that

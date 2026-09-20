@@ -316,6 +316,9 @@ usage = """
                         本机自己的会话、工作区、身份、设置一样不动。
                         把本机的名字原样打一遍就是确认(和 forget 同一条规矩)。
                         拿一张新票 pair 可以再入网
+  pause                 暂停接入这张网:不收不发,别的机器那边看见这台离线;
+                        本机的会话、工作区、网页脸照常用。关机重开还是暂停的
+  resume                接回来:重新收发,下一轮同步就能对上
   watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷(全网同一份,
                         devices 里那台机器多印每个目录还剩多少);不给目录=清空"""
 this-machine = "(本机)"
@@ -330,6 +333,9 @@ in-use = "(现在)"
 # top, and "on top" alone is not readable: without a mark, a row leading
 # the list looks like the most recent one.
 pinned-mark = "(置顶)"
+# 本机暂停接入时挂在「(本机)」后面的记号(docs/MORE.md 暂停)。和路那一列
+# 分开:路说的是「这台怎么够到那台」,暂停说的是这台机器自己的状态。
+paused-mark = "(已暂停)"
 # A group heading in a grouped listing. The rule marks it as a heading
 # rather than a row, which matters in a list where every other line is
 # tab-separated data.
@@ -415,6 +421,8 @@ doctor-peer = "{0} {1} {2}"
 doctor-peer-behind = "{0} {1} {2},和这台不一样"
 doctor-peer-mute = "{0} {1},版本说不上"
 doctor-peers-alone = "还没和别的机器配对"
+# 本机暂停接入时的自检结论(docs/MORE.md 暂停)。不是警告:它正在做被吩咐的事。
+doctor-peers-paused = "暂停接入中——不收不发,别的机器那边看见这台离线。要接回来: khor resume"
 doctor-peers-unread = "读不了机器表"
 doctor-hooks-ok = "claude 的钩子都装着"
 doctor-hooks-part = "{0} 个事件的钩子没装,或者指着另一个 khor"
@@ -1396,6 +1404,18 @@ leave-names-another-machine = "{0} 不是本机。要把它请出网: khor forge
 # answered with a cheerful nothing — 「离开了」 would be a sentence about
 # an act that did not happen (`lock::set_on` refuses the same shape).
 leave-with-no-network = "这台机器还没入过网——没有网可离。要入网: khor pair <票>"
+# `khor pause` / `khor resume` (docs/MORE.md 暂停). 暂停不是离开:表还在,
+# 别人那边看见的是这台离线,本机自己照常用。
+paused = "暂停接入了。这台机器不收不发,别的机器那边看见的是它离线;本机照常用。要接回来: khor resume"
+resumed = "接回来了。这台机器重新收发,下一轮同步就能对上"
+# 问第二遍。和设置项不一样:把一个偏好设成它已经是的值,不值一句话;
+# 而对一台已经暂停的机器说「暂停」,是这个人不知道它已经停了(`lock::set_on`
+# 拒的是同一个形状)。
+already-paused = "已经是暂停的了。要接回来: khor resume"
+not-paused = "本来就没暂停。要暂停: khor pause"
+# 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
+# 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
+paired-while-paused = "这台机器暂停接入了,配对要先接回来: khor resume"
 # The GUI asks for a reach from a synchronous door, so the async call
 # runs on a thread of its own; if that thread dies there is no answer to
 # report and no exception to quote — only the fact that none came.
@@ -2723,6 +2743,13 @@ identity-alone = "还没和别的机器配对过"
 # 身份卡最底下那一节:本机离开这张网(`khor leave`,docs/MORE.md 离开)。
 # **和 `reset-section`(重置身份)不是一件事**,两节的词都写全:重置是
 # 换一台机器,离开是这台机器不在这张网里了——离开还能凭票回来,重置回不来。
+# 身份卡上的暂停那一节(`khor pause`,docs/MORE.md 暂停)。排在离开上面:
+# 这一件是可逆的,那一件不是,而人是从轻的往重的读。
+identity-pause-section = "收发"
+identity-pause-warn = "暂时不收不发:别的机器那边看见这台离线,本机的会话、工作区照常用。机器表不动——这不是离开,随时可以接回来。"
+identity-pause-do = "暂停接入"
+identity-resume-do = "接回来"
+identity-paused-now = "已暂停——别的机器那边看见这台离线"
 identity-leave-section = "这张网"
 identity-leave-warn = "本机从这张网里退出来:机器表清到只剩自己,别的机器留在这儿的东西一并清掉。本机自己的会话、工作区、身份、设置一样不动;拿一张新票 pair 可以再进来。"
 identity-leave-type-name = "把这台机器的名字原样打一遍"

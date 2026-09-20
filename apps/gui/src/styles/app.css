@@ -1041,3 +1041,14 @@ input[type="search"]::-webkit-search-decoration {
 }
 .prose-khor th { font-weight: var(--font-weight-title); background: var(--muted); }
 .prose-khor img { max-width: 100%; }
+
+/* 暂停 (docs/MORE.md): the rail's face, dimmed and drained, while this
+   machine is not talking to the network. **Not a badge**: the mark is
+   this machine's own face and anything laid over it would be a second
+   thing to learn. Greyed and faded is what every surface here already
+   means by 「不在」, and it is legible in both themes because it changes
+   neither colour. */
+[data-rail-mark][data-paused] {
+  filter: grayscale(1);
+  opacity: 0.45;
+}

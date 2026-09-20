@@ -1459,7 +1459,17 @@ export default function App() {
             machine's row in the device list, so the two are the same
             picture; that is the whole promise, and it is checkable on
             one screen. */}
-        <span data-rail-mark className="block size-avatar">
+        {/* 暂停 (docs/MORE.md): the mark carries it, because the rail
+            is the one thing on screen the whole time and a machine that
+            is deliberately quiet should not have to be asked. An
+            attribute rather than a second glyph — the picture is this
+            machine's face and a badge over it would be a second thing
+            to recognise. */}
+        <span
+          data-rail-mark
+          data-paused={devices.find((d) => d.me)?.paused ? "" : undefined}
+          className="block size-avatar"
+        >
           <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-full" />
         </span>
       </RailItem>

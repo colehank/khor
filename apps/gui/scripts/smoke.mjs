@@ -8501,6 +8501,83 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     rmSync(LEAVE_HOME, { recursive: true, force: true });
   }
 
+  // 37) `khor pause` / `khor resume` on a real home, through the real
+  //     binary (docs/MORE.md 暂停).
+  //
+  //     **Everything here a lone machine can answer for**, §36's rule —
+  //     but unlike leaving, that is nearly the whole verb: what a pause
+  //     does to the wire is stop dialling, and what it does to a person
+  //     is refuse pairing and say so on the machine list. The one half
+  //     no gate here covers is a resident serve reading the file
+  //     mid-flight (`link::serve`'s two arms), which needs two
+  //     residents and a clock.
+  {
+    const PAUSE_HOME = join(SCRATCH, "pause-home");
+    rmSync(PAUSE_HOME, { recursive: true, force: true });
+    mkdirSync(PAUSE_HOME, { recursive: true });
+    const envP = homeEnv(PAUSE_HOME, "pausebox");
+    const refusedP = (...args) => {
+      try {
+        execFileSync(KHOR, args, { env: envP, encoding: "utf8", timeout: 30_000 });
+        return null;
+      } catch (e) {
+        return String(e.stderr || e).trim();
+      }
+    };
+
+    //    a. it takes, and it says what it did.
+    if (!cli(envP, "pause")) {
+      throw new Error("khor pause said nothing");
+    }
+    //    b. **asked twice, refused by name.** A preference put to the
+    //    value it holds is worth no sentence; a paused machine told to
+    //    pause is somebody who did not know it was.
+    const twice = refusedP("pause");
+    if (!twice || !twice.includes("khor resume")) {
+      throw new Error(`khor pause on a paused machine answered ${JSON.stringify(twice)}`);
+    }
+    //    c. pairing is refused by name while paused, with the way out
+    //    in it — not left to fail as though the network were at fault.
+    for (const verb of [["invite"], ["pair", "sometickethere"]]) {
+      const said = refusedP(...verb);
+      if (!said || !said.includes("khor resume")) {
+        throw new Error(`khor ${verb[0]} while paused answered ${JSON.stringify(said)}`);
+      }
+    }
+    //    d. **the machine list says so, on this machine's row.** Read
+    //    in English, because the mark is a catalog word and an
+    //    assertion carrying the Chinese one would be product copy
+    //    pinned in a gate (§35's `withLocale` does the same).
+    const inEnglish = { ...envP, LC_ALL: "en_US.UTF-8", LC_MESSAGES: "en_US.UTF-8", LANG: "en_US.UTF-8" };
+    const listed = cli(inEnglish, "devices");
+    if (!listed.includes("(paused)")) {
+      throw new Error(`khor devices while paused answered ${JSON.stringify(listed)}`);
+    }
+    //    e. and it comes back, which is the whole difference from
+    //    leaving: `khor invite` works again straight after.
+    if (!cli(envP, "resume")) {
+      throw new Error("khor resume said nothing");
+    }
+    const back = refusedP("invite");
+    if (back && back.includes("khor resume")) {
+      throw new Error("khor invite is still refused as paused after khor resume");
+    }
+    if (cli(inEnglish, "devices").includes("(paused)")) {
+      throw new Error("the machine list still marks this machine paused after khor resume");
+    }
+    //    f. …and the usage promises both verbs.
+    const help = cli(envP, "help");
+    if (!help.includes("pause") || !help.includes("resume")) {
+      throw new Error("khor help does not promise pause and resume");
+    }
+
+    console.log(
+      "pause: took and said so, refused a second pause by name, refused invite and pair with the " +
+        "way out in them, marked this machine on the list, and came back",
+    );
+    rmSync(PAUSE_HOME, { recursive: true, force: true });
+  }
+
   // 27) the page never threw.
   if (pageErrors.length) throw new Error(`pageerror: ${pageErrors.join(" | ")}`);
 

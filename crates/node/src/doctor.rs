@@ -386,6 +386,15 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
     if others.is_empty() {
         return (Health::Ok, cli::doctor_peers_alone().to_owned(), None);
     }
+    // 暂停 (docs/MORE.md): every peer is mute, and that is the state
+    // somebody asked for — walking the rows would paint a whole page of
+    // 警告 for a machine doing exactly what it was told. **Ok, not
+    // Warn**, for the reason `Health::Unmeasured` exists at all: a
+    // checklist that cries about what it was asked to do teaches people
+    // to stop reading it.
+    if node.paused() {
+        return (Health::Ok, cli::doctor_peers_paused().to_owned(), None);
+    }
     let mut said = Vec::new();
     let mut worst = Health::Ok;
     for d in &others {

@@ -206,6 +206,12 @@ pub struct DeviceRow {
     /// name rather than offering that name as something to edit.
     pub label: Option<String>,
     pub me: bool,
+    /// Paused — **this machine's row only** (docs/MORE.md 暂停). What
+    /// another machine is doing about its own talking is not a thing
+    /// this one can know; what it sees is the road going quiet, which
+    /// `hop` already says. Read off the file like `khor devices` reads
+    /// it, so the rail, the card and the terminal are one answer.
+    pub paused: bool,
     /// This machine's face, in **its own** reported palette. See
     /// `khor_node::Node::face_of`.
     pub face: Option<Avatar>,
@@ -881,6 +887,7 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
                 ring.next().unwrap_or(map::CENTRE)
             },
             me: d.id == me,
+            paused: d.id == me && khor_node::pause::is_on(root),
             hop: (d.id != me).then(|| {
                 hops.iter()
                     .find(|(id, _)| *id == d.id)
@@ -1119,6 +1126,12 @@ pub fn uninstall_hooks(root: &Path) -> Result<HooksState, String> {
 pub struct About {
     pub version: String,
     pub root: String,
+    /// Whether this machine is paused (docs/MORE.md 暂停). It rides on
+    /// `About` rather than a call of its own for the reason the store
+    /// size does — it is read the same way, off one file with no node
+    /// opened — and that is also why a card can show it on a machine
+    /// whose store will not open.
+    pub paused: bool,
     /// How much of the disk the store is using — 设置's 存储 section
     /// (docs/MORE.md). It rides here rather than on a call of its own
     /// because it is the same kind of fact as `root` and is read the
@@ -1135,6 +1148,7 @@ pub fn about(root: &Path) -> About {
     About {
         version: khor_node::VERSION.to_owned(),
         root: root.display().to_string(),
+        paused: khor_node::pause::is_on(root),
         store_bytes: khor_node::doctor::store_bytes(root),
     }
 }
@@ -1827,6 +1841,17 @@ pub async fn leave(root: &Path, name_typed: &str) -> Result<LeaveOutcome, String
         told: left.told,
         untold: left.untold,
     })
+}
+
+/// Pauses or resumes this machine (docs/MORE.md 暂停) — the call
+/// `khor pause` and `khor resume` make.
+///
+/// **Refusing the state it is already in is the node's rule**, not a
+/// thing this side re-decides: a card that greyed the control out would
+/// be the second rule `lock::reset_identity` warns about, and the face
+/// wants the sentence anyway to say what happened.
+pub fn set_paused(root: &Path, on: bool) -> Result<(), String> {
+    khor_node::pause::set_on(root, on)
 }
 
 #[cfg(test)]

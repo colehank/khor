@@ -343,11 +343,24 @@ try {
   //   the next poll carries it, and a fixture that kept answering the
   //   old list would reset the editor's draft under the section that
   //   measures it (2026-09-06).
+  // 暂停 (docs/MORE.md). **The fixture holds it between calls**, for
+  // 设置's reason: what the card has to prove is a round trip, and a
+  // page that painted what it had just sent would pass over a node that
+  // never took it.
+  let gatePaused = false;
   const watchKept = {};
   await page.route("**/devices", (r) =>
     r.fulfill({
       contentType: "application/json",
-      body: JSON.stringify(devs.map((d) => (watchKept[d.name] ? { ...d, watch: watchKept[d.name] } : d))),
+      // 暂停 rides on this machine's row as well as on `about`, because
+      // the node reads both off one file — a fixture that let the two
+      // drift would pass a page that asked the wrong one.
+      body: JSON.stringify(
+        devs.map((d) => ({
+          ...(watchKept[d.name] ? { ...d, watch: watchKept[d.name] } : d),
+          ...(d.me ? { paused: gatePaused } : {}),
+        })),
+      ),
     }),
   );
   // What a machine is busy with (`MachineCard`'s `Busy`): the peer
@@ -1717,12 +1730,19 @@ try {
   // The version string is this fixture's own and deliberately not the
   // workspace's: what the card has to prove is that it prints what the
   // node answered, not that it can read a Cargo file.
+  const gateAbout = () => ({
+    version: "0.0.0-gate",
+    root: "/gate/khor",
+    paused: gatePaused,
+    store_bytes: 761,
+  });
   await page.route("**/about", (r) =>
-    r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ version: "0.0.0-gate", root: "/gate/khor", store_bytes: 761 }),
-    }),
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(gateAbout()) }),
   );
+  await page.route("**/set_paused", (r) => {
+    gatePaused = JSON.parse(r.request().postData() || "{}").on;
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(gateAbout()) });
+  });
   // 设置 (docs/MORE.md). **The fixture holds the value between calls**,
   // because what §4F asserts is a round trip: a page that painted what
   // it had just sent would pass over a store that never took it.
@@ -9274,6 +9294,8 @@ try {
           mesh: el.querySelectorAll("[data-identity-mesh]").length,
           tickets: el.querySelectorAll("[data-identity-invite], [data-identity-join]").length,
           leave: el.querySelectorAll("[data-identity-leave]").length,
+          pause: el.querySelectorAll("[data-identity-pause]").length,
+          pauseSays: el.querySelector("[data-identity-pause]")?.textContent?.trim() ?? null,
         };
       });
       console.log(`identity ${posture}: ${JSON.stringify(card)}`);
@@ -9312,6 +9334,70 @@ try {
               "「身份卡上「离开这张网」」 (docs/MORE.md 离开)",
           );
         }
+        // 暂停接入 (docs/MORE.md 暂停, 2026-09-20). One control, and
+        // **it says which way it goes** — a switch drawn the same in
+        // both states would leave a person pressing to find out.
+        if (card.pause !== 1) {
+          fail(
+            `${posture}: the identity card offers ${card.pause} way(s) to pause — ` +
+              "「头像上看得出已暂停」 (docs/MORE.md 暂停)",
+          );
+        }
+        // The two states are compared **against each other**, read off
+        // the screen — a rename in `zh.toml` then moves the gate with
+        // the product instead of turning it red (this file's rule).
+        const talkingSays = card.pauseSays;
+        const talkingSaid = await page.evaluate(
+          () => document.querySelector("[data-identity-pause-warn]")?.textContent?.trim() ?? null,
+        );
+        if (!talkingSays || !talkingSaid) {
+          fail(`${posture}: the pause section says nothing at all — ${JSON.stringify({ talkingSays, talkingSaid })}`);
+        }
+        await press("[data-identity-pause]");
+        await until(2000, async () =>
+          page.evaluate(() => !!document.querySelector("[data-identity-pause][data-paused]")),
+        );
+        const whilePaused = await page.evaluate(() => ({
+          says: document.querySelector("[data-identity-pause]")?.textContent?.trim() ?? null,
+          // **The rail, not the card**: a machine deliberately quiet
+          // should not have to be asked, and the rail is the one thing
+          // on screen the whole time (docs/MORE.md 暂停).
+          rail: !!document.querySelector("[data-rail-mark][data-paused]"),
+          said: document.querySelector("[data-identity-pause-warn]")?.textContent?.trim() ?? null,
+        }));
+        console.log(
+          `identity ${posture} · 暂停: ${JSON.stringify({ talking: talkingSays, ...whilePaused })}`,
+        );
+        // **One control that says which way it goes.** Drawn the same in
+        // both states, it would leave a person pressing to find out.
+        if (whilePaused.says === talkingSays) {
+          fail(
+            `${posture}: the pause control says ${JSON.stringify(talkingSays)} in both states — ` +
+              "a machine that is talking and one that is not offer different acts",
+          );
+        }
+        if (!whilePaused.rail) {
+          fail(
+            `${posture}: this machine is paused and the rail's face says nothing — ` +
+              "「侧栏头像上看得出」 (docs/MORE.md 暂停)",
+          );
+        }
+        // A paused machine says it *is* paused; the other sentence is
+        // about what pausing would do, and it is the wrong tense to be
+        // reading once it has happened.
+        if (whilePaused.said === talkingSaid) {
+          fail(
+            `${posture}: the paused card still reads ${JSON.stringify(talkingSaid)} — ` +
+              "that sentence is what pausing would do, not what is",
+          );
+        }
+        // Back, so the leave assertions below stand on the machine the
+        // rest of this gate describes.
+        await press("[data-identity-pause]");
+        await until(2000, async () =>
+          page.evaluate(() => !document.querySelector("[data-identity-pause][data-paused]")),
+        );
+
         // **The confirmation is always there, and it is not a config
         // key** (docs/MORE.md: 这一件不可撤回). Live over an empty box
         // would be one press between looking at a version number and

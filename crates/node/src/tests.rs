@@ -3063,3 +3063,136 @@ fn forgetting_this_machine_points_at_leave() {
         "the refusal names the verb and the name it wants typed: {refused:?}"
     );
 }
+
+// ── 暂停批: this machine stops talking without leaving (docs/MORE.md 暂停) ──
+
+/// **The state outlives the process that set it.** A serve comes back
+/// from a restart the keeper ordered — `link::serve` exits on purpose in
+/// two arms — and one that came back talking would have undone a pause
+/// nobody lifted.
+#[test]
+fn a_pause_is_still_there_after_a_restart() {
+    let r = scratch("pause-sticks");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    assert!(
+        !crate::pause::is_on(n.root()),
+        "control: talking to begin with"
+    );
+
+    crate::pause::set_on(n.root(), true).unwrap();
+    drop(n);
+
+    let again = Node::open(r.to_path_buf()).unwrap();
+    assert!(
+        crate::pause::is_on(again.root()),
+        "a pause a person set is still on after khor opened the machine again"
+    );
+}
+
+/// Asked twice, each direction. A preference put to the value it already
+/// holds is worth no sentence; being told a stopped machine is stopped
+/// is news to whoever asked (`lock::set_on` refuses the same shape).
+#[test]
+fn pausing_a_paused_machine_is_refused_by_name() {
+    let r = scratch("pause-twice");
+    let n = Node::open(r.to_path_buf()).unwrap();
+
+    assert_eq!(
+        crate::pause::set_on(n.root(), false).unwrap_err(),
+        khor_catalog::msg::not_paused(),
+        "resuming a machine that never paused says so"
+    );
+    crate::pause::set_on(n.root(), true).unwrap();
+    assert_eq!(
+        crate::pause::set_on(n.root(), true).unwrap_err(),
+        khor_catalog::msg::already_paused(),
+        "pausing a paused machine says so"
+    );
+    crate::pause::set_on(n.root(), false).unwrap();
+    assert!(!crate::pause::is_on(n.root()), "and resuming took");
+}
+
+/// **Pairing is refused by name while paused, not left to fail.** Both
+/// verbs need this machine to send and receive, so a pause is not a
+/// network fault they should retry through — it is this machine not
+/// doing that right now, and the refusal carries the way out.
+#[test]
+fn pairing_while_paused_is_refused_by_name() {
+    let r = scratch("pause-pairing");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    crate::pause::set_on(n.root(), true).unwrap();
+
+    assert_eq!(
+        n.invite().unwrap_err(),
+        khor_catalog::msg::paired_while_paused(),
+        "khor invite while paused"
+    );
+    assert_eq!(
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(n.pair("anything"))
+            .unwrap_err(),
+        khor_catalog::msg::paired_while_paused(),
+        "khor pair while paused — refused before the ticket is even read"
+    );
+}
+
+/// **Pausing is not leaving, and the table is how you tell.** The rows
+/// stay exactly as they were — this is the whole difference between the
+/// two verbs, and a pause that quietly emptied the table would be a
+/// leave with a gentler word on it.
+#[test]
+fn pausing_does_not_touch_the_machine_table() {
+    let r = scratch("pause-row");
+    let (n, _alpha, _beta) = a_network_of_three(&r);
+
+    let before: Vec<String> = n.devices().unwrap().iter().map(|d| d.id.clone()).collect();
+    assert_eq!(before.len(), 3, "control: three in the table");
+    assert!(!n.paused(), "control: talking to begin with");
+
+    crate::pause::set_on(n.root(), true).unwrap();
+
+    let after: Vec<String> = n.devices().unwrap().iter().map(|d| d.id.clone()).collect();
+    assert_eq!(
+        after, before,
+        "a pause leaves the table alone; leaving is the verb that empties it"
+    );
+    assert!(n.paused(), "and the machine says it is paused");
+}
+
+/// **A paused machine is not a sick one.** Every peer goes mute the
+/// moment somebody pauses, and a checklist that painted that a 警告
+/// would be crying about the thing it was asked to do — which is how
+/// people learn to stop reading checklists.
+#[test]
+fn the_checklist_calls_a_paused_machine_well() {
+    let r = scratch("pause-doctor");
+    let (n, _alpha, _beta) = a_network_of_three(&r);
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    let peers = |n: &Node| {
+        rt.block_on(doctor::doctor(n))
+            .into_iter()
+            .find(|c| c.key == "peers")
+            .expect("the checklist has a peers row")
+    };
+
+    let before = peers(&n);
+    assert_eq!(
+        before.state,
+        doctor::Health::Warn,
+        "control: two machines that never answered are a warning while this one is talking"
+    );
+
+    crate::pause::set_on(n.root(), true).unwrap();
+    let after = peers(&n);
+    assert_eq!(
+        after.state,
+        doctor::Health::Ok,
+        "a paused machine's mute peers are the state it asked for, not a fault"
+    );
+    assert_ne!(
+        after.said, before.said,
+        "and it says which of the two it is"
+    );
+}
