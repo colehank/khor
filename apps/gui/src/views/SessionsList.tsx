@@ -254,7 +254,7 @@ export function SessionsList({
       // out again here would be a second source that compiles, runs,
       // and says the wrong thing.
       label: gui.delete,
-      confirm: closeWarning(r.kind),
+      ask: closeWarning(r.kind),
       note: closeRefused.get(r.id),
       run: () => onClose(r),
     },

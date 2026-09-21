@@ -31,6 +31,14 @@ const Settings = createContext<ConfigRow[] | null>(null);
 
 export const SettingsProvider = Settings.Provider;
 
+/** Ask the shell to read the settings again — for a surface that changes
+    one outside the settings pages (the delete window's 不再提醒). */
+const Reread = createContext<() => void>(() => {});
+export const SettingsRereadProvider = Reread.Provider;
+export function useSettingsReread(): () => void {
+  return useContext(Reread);
+}
+
 /** Every setting, or `null` before the first answer. The two pages that
     draw rows want the whole list; everything else wants one key. */
 export function useSettings(): ConfigRow[] | null {

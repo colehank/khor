@@ -155,7 +155,7 @@ export function RemoveDialog({
               // because a `label` wrapping its own input already is.
               className="size-4 min-h-touch min-w-touch"
             />
-            {gui.file_remove_never_ask}
+            {gui.never_ask}
           </label>
         )}
         {refused !== null && (

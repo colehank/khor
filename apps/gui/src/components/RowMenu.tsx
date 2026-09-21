@@ -27,6 +27,11 @@ export type RowAction = {
       action takes two presses: the first shows this, the second does
       it. Absent means one press. */
   confirm?: string;
+  /** **A 删除**, and what deleting this row does, in one sentence
+      (docs/SHELL.md 第四轮 第 3 条). `SideList` turns it into the one
+      delete window every sidebar shares — with 不再提醒 — instead of a
+      second press on the menu. */
+  ask?: string;
   /** Something the caller wants said here right now — a refusal that
       came back from the node, in the node's own sentence. It is the
       caller's state, not this menu's: what failed outlives one opening

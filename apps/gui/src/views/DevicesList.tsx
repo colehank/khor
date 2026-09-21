@@ -124,7 +124,7 @@ export function DevicesList({
             // peer — `forget` is this item and `pause` is the whole
             // machine — and an item with nothing behind it is not offered.
             label: gui.delete,
-            confirm: gui.forget_machine_confirm,
+            ask: gui.forget_machine_confirm,
             note: forgetRefused.get(d.id),
             run: () => onForget(d),
           },

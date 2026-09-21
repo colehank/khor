@@ -202,24 +202,32 @@ pub const KEYS: &[Key] = &[
     // one browser remembers into one answer a phone and a desktop share.
     //
     // 接管会话 carries a confirm today, so `on` is the behaviour.
-    // 移出工作区 does **not**: 「nothing is destroyed. The directory is
-    // untouched」 (the user, 2026-09-14), so `off` is the behaviour and
-    // the switch is there for somebody who wants the question anyway. A
-    // default of `on` would have been this table quietly reversing a
-    // ruling.
     Key {
         name: "confirm-takeover",
         section: "confirm",
         values: &["on", "off"],
         default: "on",
     },
+    // 删除 (docs/SHELL.md 第四轮 第 3 条:「删除这些, 都要弹出一个弹窗, 若
+    // 勾选不再提醒, 后续删除操作都不提醒」): **one switch for every
+    // sidebar's 删除**, and ticking 不再提醒 in that window is setting it
+    // off. On by default — the window is the ruling.
+    //
+    // ⚠️ 墓碑: `confirm-ws-remove` (default off, 2026-09-14「nothing is
+    // destroyed」) is retired into this. A value somebody set on the old
+    // key explicitly is carried over (`value_of`), so a person who had
+    // asked for the question, or turned it off, keeps what they chose.
     Key {
-        name: "confirm-ws-remove",
+        name: "confirm-delete",
         section: "confirm",
         values: &["on", "off"],
-        default: "off",
+        default: "on",
     },
 ];
+
+/// Keys that were retired into another, and which: a value stored under
+/// the old name answers for the new one until the new one is set.
+const RETIRED: &[(&str, &str)] = &[("confirm-delete", "confirm-ws-remove")];
 
 /// The declaration for a name, if khor has one.
 pub fn key(name: &str) -> Option<&'static Key> {
@@ -268,7 +276,12 @@ fn save(root: &Path, map: &BTreeMap<String, String>) -> Result<(), String> {
 /// `set` would accept — so it is read as unset, which is a state every
 /// face already knows how to paint.
 fn value_of(map: &BTreeMap<String, String>, k: &Key) -> &'static str {
+    let carried = RETIRED
+        .iter()
+        .find(|(now, _)| *now == k.name)
+        .and_then(|(_, was)| map.get(*was));
     map.get(k.name)
+        .or(carried)
         .and_then(|v| k.values.iter().find(|w| *w == v))
         .copied()
         .unwrap_or(k.default)

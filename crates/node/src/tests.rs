@@ -2713,6 +2713,32 @@ fn a_set_key_reads_back_and_leaves_the_others_alone() {
     );
 }
 
+/// **删除 asks by default, one switch for every sidebar** (docs/SHELL.md
+/// 第四轮 第 3 条): `confirm-delete`, on until somebody ticks 不再提醒.
+#[test]
+fn confirm_delete_asks_by_default() {
+    let r = scratch("confirm-delete");
+    assert_eq!(config::get(&r, "confirm-delete").unwrap(), "on");
+}
+
+/// …and it **replaces** `confirm-ws-remove`: the old key is gone from
+/// the table, and a value somebody set on it explicitly is carried
+/// over — 「旧键明确设过 on/off 的照旧值」.
+#[test]
+fn an_old_confirm_ws_remove_carries_over_to_confirm_delete() {
+    assert!(config::key("confirm-ws-remove").is_none(), "the old key is retired");
+    for old in ["on", "off"] {
+        let r = scratch(&format!("confirm-migrate-{old}"));
+        std::fs::create_dir_all(r.join(".khor")).unwrap();
+        std::fs::write(
+            config::path_for_tests(&r),
+            format!("{{\"confirm-ws-remove\": \"{old}\"}}"),
+        )
+        .unwrap();
+        assert_eq!(config::get(&r, "confirm-delete").unwrap(), old);
+    }
+}
+
 /// **An unknown key and an unknown value are refused by name, and they
 /// are two different sentences.**
 ///

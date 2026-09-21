@@ -1193,7 +1193,7 @@ export function QuotaLanding({
       {
         key: "remove",
         label: gui.delete,
-        confirm: gui.accounts_remove_confirm,
+        ask: gui.accounts_remove_confirm,
         note: removeRefused.get(id),
         run: () => remove(id),
       },

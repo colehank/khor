@@ -24,10 +24,12 @@
 // did all of this; the other four had each grown part of it.
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark } from "@/components/FaceMark";
 import { IconBack } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { cn } from "@/lib/utils";
+import { useSetting } from "@/settings";
 
 type Data = Record<string, string | number | boolean | null | undefined>;
 
@@ -195,6 +197,18 @@ export function SideList({
       if (!next.delete(group)) next.add(group);
       return next;
     });
+  // **删除 asks first, in one window for every column** (第四轮 第 3 条),
+  // until 不再提醒 turns `confirm-delete` off. Only an explicit off takes
+  // the question away: a setting that has not arrived reads as the
+  // default, which asks.
+  const asking = useSetting("confirm-delete") !== "off";
+  const [pending, setPending] = useState<Pending | null>(null);
+  const menuOf = (items: RowAction[]): RowAction[] =>
+    items.map((a) =>
+      a.ask === undefined || !asking
+        ? a
+        : { ...a, confirm: undefined, run: () => setPending({ says: a.ask ?? "", run: a.run }) },
+    );
   const box = useRowFlip(
     (showOld ? [...fresh, ...aged] : fresh)
       .filter((r) => !shutOf(r.group))
@@ -290,7 +304,7 @@ export function SideList({
                 `onPointerDown`, and a press handler on a bare `<div>` is
                 a target only a pointer can find. On the button, focus
                 reaches it and the keyboard's Menu key opens it. */}
-            {r.menu.length > 0 ? <RowMenu items={r.menu}>{button}</RowMenu> : button}
+            {r.menu.length > 0 ? <RowMenu items={menuOf(r.menu)}>{button}</RowMenu> : button}
             {r.after}
           </div>
         )}
@@ -308,6 +322,7 @@ export function SideList({
   };
   return (
     <div ref={box} data-side-list {...mark}>
+      <DeleteDialog pending={pending} onDone={() => setPending(null)} />
       {run(fresh)}
       {/* The fold at the foot. A control, not a heading: its word is
           what pressing it does next. It never renders over nothing. */}

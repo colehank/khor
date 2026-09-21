@@ -69,7 +69,7 @@ import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { useTabsLimit } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
-import { SettingsProvider } from "@/settings";
+import { SettingsProvider, SettingsRereadProvider } from "@/settings";
 import { speakLang, type LangPref } from "@/lang";
 import { wearTheme, type ThemePref } from "@/theme";
 import { useNarrow } from "@/hooks/use-narrow";
@@ -2098,6 +2098,7 @@ export default function App() {
   // what is left of the window beside the rail (see `morePage`).
   return (
     <SettingsProvider value={settings.rows}>
+    <SettingsRereadProvider value={settings.reread}>
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
@@ -2257,6 +2258,7 @@ export default function App() {
         </div>
       )}
     </TooltipProvider>
+    </SettingsRereadProvider>
     </SettingsProvider>
   );
 }

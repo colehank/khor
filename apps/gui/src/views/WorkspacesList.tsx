@@ -38,7 +38,6 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
-import { useSetting } from "@/settings";
 import { ago, groupLabel } from "@/words";
 import { IGNORED } from "@/views/fileRow";
 
@@ -188,8 +187,6 @@ export function WorkspacesList({
   const said = (k: string, e: unknown) =>
     setRefused((m) => new Map(m).set(k, String(e instanceof Error ? e.message : e)));
 
-  // 危险动作二次确认 · 移出工作区 (`khor_node::config`).
-  const askRemove = useSetting("confirm-ws-remove") === "on";
 
   const actions = (r: WorkspaceRow): RowAction[] => {
     const k = keyOf(r);
@@ -225,20 +222,11 @@ export function WorkspacesList({
       },
       {
         key: "remove",
-        // **Off by default, and that is the ruling rather than an
-        // omission**: nothing is destroyed here, the directory is
-        // untouched (user, 2026-09-14) and the row comes back with one
-        // `ws add`. `khor config set confirm-ws-remove on` asks anyway,
-        // for somebody who wants the question — and only an explicit
-        // 「on」 does, so an answer that has not arrived reads as the
-        // default rather than as a question appearing late
-        // (`SessionsList` makes the mirror-image test for the same
-        // reason).
-        // 删除, every sidebar's second word (docs/SHELL.md 第二轮). It
-        // said 移出工作区 until then, for fear 删除 would read as the
-        // directory going; that is what the confirm sentence says now.
+        // What deleting a workspace does is the window's sentence: the
+        // row comes off the list and the directory is not touched (the
+        // user, 2026-09-14) — the fact 移出 used to carry in the word.
         label: gui.delete,
-        confirm: askRemove ? gui.ws_remove_confirm : undefined,
+        ask: gui.ws_remove_confirm,
         note: refused.get(k),
         run: run(() => wsRm(r.device, r.path)),
       },

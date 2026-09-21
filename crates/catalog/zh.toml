@@ -130,7 +130,8 @@ tabs-limit = "标签页上限"
 session-form = "新会话默认开成"
 files-click = "单击文件"
 confirm-takeover = "接管会话"
-confirm-ws-remove = "删除工作区"
+# 每条侧边栏右键「删除」之前那一问(docs/SHELL.md 第四轮);取代「删除工作区」那一项。
+confirm-delete = "删除"
 
 # 取值。
 # `auto` 是**跟着这台机器的桌面走**,不是「khor 自己猜」——所以词说的是
@@ -2476,11 +2477,12 @@ ws-add = "加一个工作区"
 # as touching the directory (user, 2026-09-14). The user overruled that
 # for one word per action; the directory being untouched is said in the
 # confirm below instead.
-# 这一行的二次确认,只在 `khor config set confirm-ws-remove on` 之后才问
-# (docs/MORE.md 危险动作二次确认)。**默认不问**:这一下什么都没毁掉,
-# 目录一个字节都不动,一条 `khor ws add` 就回来——问一句的代价大于这一下
-# 的代价。开关留着,是给「我还是想被问一声」的人。
+# 删除一个工作区之前那一问的那一句(`confirm-delete`,docs/SHELL.md 第四轮)。
+# 墓碑:它曾默认不问(`confirm-ws-remove` 默认 off,「这一下什么都没毁掉」);
+# 第四轮起每条侧边栏的删除都先问,勾「不再提醒」一起关掉。
 ws-remove-confirm = "只是从这张表上拿掉,目录本身不动"
+# 浏览标签右键「删除」之前那一问的那一句;标签上的 × 不问,照 Chrome。
+tab-remove-confirm = "这个标签页会关掉"
 # The workspace row's git corner, beside the branch: how many files
 # differ from HEAD on that machine. **Files and not hunks** — 处 is the
 # word for a place inside one file, and this counts the files. There
@@ -2571,7 +2573,8 @@ file-remove-gone = "「{0}」直接删掉,找不回来;目录连里面的一起�
 # act that cannot be undone must not be silenceable by a tick somebody
 # ticked once about something else (`views/FilesPane`), so the far
 # machines ask every time and this word is simply not drawn there.
-file-remove-never-ask = "以后不再问"
+# 删除之前那一问里的勾(侧边栏的删除窗和文件树的删除窗共用一个词,用户的原话)。
+never-ask = "不再提醒"
 # 树上右键新建 (工作区第五轮 第 36 条). **Two words, not one with a
 # 「文件/目录」 switch**: which of the two is being made decides what can
 # go inside it, and a menu that asked afterwards would be asking about a

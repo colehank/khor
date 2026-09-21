@@ -1907,7 +1907,7 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { theme: "auto", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
+  const configValues = { theme: "auto", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
   const CONFIG_SHAPE = [
     ["theme", "appearance", "settings", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
     ["lang", "language", "settings", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
@@ -1916,7 +1916,7 @@ try {
     ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
     ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "保持打开"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
-    ["confirm-ws-remove", "confirm", "security", "删除工作区", [["on", "开"], ["off", "关"]]],
+    ["confirm-delete", "confirm", "security", "删除", [["on", "开"], ["off", "关"]]],
   ];
   const SECTION_WORD = { appearance: "外观", language: "语言", general: "通用", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
   const configRows = () =>
@@ -9980,6 +9980,81 @@ try {
     }
   }
 
+  // ── 4V) 第四轮:删除一律先问,带「不再提醒」 (docs/SHELL.md) ─────────
+  //
+  // 「删除这些, 都要弹出一个弹窗, 若勾选不再提醒, 后续删除操作都不提醒.」
+  // Every column's 删除 raises the same window with a sentence of its
+  // own; ticking 不再提醒 once turns `confirm-delete` off, and the next
+  // 删除 — in another column — goes straight through.
+  {
+    const COLS = [
+      { landing: "sessions", pane: "[data-list]" },
+      { landing: "devices", pane: "[data-list]" },
+      { landing: "workspaces", pane: "[data-list]" },
+      { landing: "browser", pane: "[data-browse-tabs]" },
+      { landing: "quota", pane: "[data-quota-pane]" },
+    ];
+    // The second item of every row menu is 删除 (第二轮), whatever its key.
+    const deleteOn = async (pane) => {
+      const row = page.locator(`${pane} [data-side-row][data-side-menu="true"]:not([data-me="true"]) [data-side-open]`).last();
+      if ((await row.count()) === 0) return false;
+      await row.click({ button: "right" });
+      await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 1);
+      await page.locator("[data-row-menu] [data-menu-item]").nth(1).click();
+      return true;
+    };
+    const says = {};
+    for (const c of COLS) {
+      await open(c.landing);
+      await wait(500);
+      if (!(await deleteOn(c.pane))) {
+        fail(`probe dead: no row with a menu in the ${c.landing} sidebar`);
+        continue;
+      }
+      const up = await until(3_000, async () => (await page.locator("[data-delete-dialog]").count()) === 1);
+      says[c.landing] = up ? (await page.locator("[data-delete-says]").innerText()).trim() : null;
+      if (!up || !says[c.landing]) {
+        fail(
+          `删除 in the ${c.landing} sidebar raised no delete window with a sentence — 「删除这些, 都要弹出一个弹窗」 ` +
+            "(src/components/DeleteDialog.tsx)",
+        );
+      }
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await page.locator("[data-delete-dialog], [data-row-menu]").count()) === 0);
+    }
+    console.log(`delete 4V · the window says: ${JSON.stringify(says)}`);
+    // 不再提醒, then another column.
+    await open("sessions");
+    await wait(400);
+    let ticked = false;
+    if (await deleteOn("[data-list]")) {
+      if (await until(3_000, async () => (await page.locator("[data-delete-never-ask]").count()) === 1)) {
+        await page.locator("[data-delete-never-ask]").check();
+        await page.locator("[data-delete-go]").click();
+        ticked = await until(5_000, async () => configValues["confirm-delete"] === "off");
+        await page.keyboard.press("Escape");
+      }
+    }
+    if (!ticked) {
+      fail("ticking 不再提醒 and deleting did not set confirm-delete off (src/components/DeleteDialog.tsx)");
+    } else {
+      await wait(500);
+      await open("browser");
+      await wait(400);
+      await deleteOn("[data-browse-tabs]");
+      await wait(600);
+      const again = await page.locator("[data-delete-dialog]").count();
+      if (again !== 0) {
+        fail("不再提醒 was ticked in one sidebar and the next 删除, in another, still asked — 「后续删除操作都不提醒」");
+      }
+      await page.keyboard.press("Escape");
+    }
+    configValues["confirm-delete"] = "on";
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await page.setViewportSize({ width: 1400, height: 900 });
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**
@@ -11795,11 +11870,10 @@ try {
       if (confirm.section !== 1) {
         fail("安全 drew no 危险动作二次确认 section (docs/MORE.md 安全)");
       }
-      // **The defaults are today's behaviour**, which is the whole
-      // reason this batch is installable without surprising anybody:
-      // 接管会话 already asks, 移出工作区 already does not (user,
-      // 2026-09-14:「nothing is destroyed」).
-      const want = { "confirm-takeover": "on", "confirm-ws-remove": "off" };
+      // **Both ask by default**: 接管会话 always has, and 删除 does since
+      // docs/SHELL.md 第四轮 (`confirm-delete` replaced
+      // `confirm-ws-remove`, whose default was off).
+      const want = { "confirm-takeover": "on", "confirm-delete": "on" };
       for (const [name, value] of Object.entries(want)) {
         const got = confirm.rows.find(([n]) => n === name);
         if (!got) {
@@ -12855,22 +12929,19 @@ try {
     } else if (menu.some((m) => m.word === "")) {
       fail(`probe void: an item has no word (${JSON.stringify(menu)}), so the words below measure nothing`);
     } else {
-      //   **删除 takes two presses, and the first one is the control
-      //   arm**: it puts the sentence on screen and moves nothing. A
-      //   menu that removed on one press would empty the row and every
-      //   assertion after it would still pass.
+      //   **删除 asks first, in the delete window** (docs/SHELL.md 第四轮
+      //   第 3 条), and asking moves nothing: a menu that removed on one
+      //   press would empty the row and every assertion after it would
+      //   still pass.
       await page.locator('[data-menu-item="remove"]').click();
       await wait(300);
       const armed = await page.evaluate(() => ({
-        said: document.querySelector('[data-menu-confirm="remove"]')?.textContent?.trim() ?? null,
+        said: document.querySelector("[data-delete-dialog] [data-delete-says]")?.textContent?.trim() ?? null,
         rowStillThere: document.querySelectorAll('[data-quota-row="acc-fill"]').length,
-        // The sentence is the account's own, never the machine's: two
-        // different acts cannot share one clause about their cost.
-        machineWord: document.querySelector('[data-menu-confirm="forget"]') !== null,
       }));
-      if (!armed.said || armed.rowStillThere !== 1 || armed.machineWord) {
+      if (!armed.said || armed.rowStillThere !== 1) {
         fail(
-          `the first 删除 press said ${JSON.stringify(armed.said)} and left ${armed.rowStillThere} row(s) — one press must arm and move nothing`,
+          `删除 on an account said ${JSON.stringify(armed.said)} and left ${armed.rowStillThere} row(s) — it must ask in the delete window and move nothing`,
         );
       }
     }

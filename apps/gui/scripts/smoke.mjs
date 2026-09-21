@@ -2020,6 +2020,21 @@ for line in sys.stdin:
       (await page.locator("[data-row-menu]").count()) === 0,
     );
   };
+  //     **删除 asks in one window since docs/SHELL.md 第四轮**, not with a
+  //     second press on the menu: the item raises `[data-delete-dialog]`,
+  //     whose sentence is this row's and whose button does the act.
+  const deleteAsked = async (what) => {
+    await until(`the delete window (${what})`, 10_000, async () =>
+      (await page.locator("[data-delete-dialog] [data-delete-says]").count()) === 1,
+    );
+    return (await page.locator("[data-delete-says]").innerText()).trim();
+  };
+  const deleteBackOut = async () => {
+    await page.keyboard.press("Escape");
+    await until("the delete window to close", 5_000, async () =>
+      (await page.locator("[data-delete-dialog]").count()) === 0,
+    );
+  };
 
   //     a. the control: nothing is pinned, and **every row opens a menu**
   //     — "every row" is the reachability claim, and walking the rows
@@ -6605,11 +6620,8 @@ for line in sys.stdin:
   const warningFor = async (rowId) => {
     await openRowMenu(rowId);
     await page.locator('[data-menu-item="close"]').click();
-    await until("its confirm", 10_000, async () =>
-      (await page.locator('[data-menu-confirm="close"]').count()) === 1,
-    );
-    const said = (await page.locator('[data-menu-confirm="close"]').innerText()).trim();
-    await closeRowMenu();
+    const said = await deleteAsked("its sentence");
+    await deleteBackOut();
     return said;
   };
   const kindOf = (rowId) =>
@@ -6666,10 +6678,8 @@ for line in sys.stdin:
   // The confirm is a real gate: backing out leaves the session running.
   await openRowMenu(wizId);
   await page.locator('[data-menu-item="close"]').click();
-  await until("the confirm on the wizard row", 10_000, async () =>
-    (await page.locator('[data-menu-confirm="close"]').count()) === 1,
-  );
-  await closeRowMenu();
+  await deleteAsked("on the wizard row");
+  await deleteBackOut();
   await settle();
   if ((await page.locator(`[data-row="${wizId}"]`).count()) !== 1) {
     throw new Error("backing out of the confirm must not close the session");
@@ -6692,10 +6702,8 @@ for line in sys.stdin:
   );
   await openRowMenu(wizId);
   await page.locator('[data-menu-item="close"]').click();
-  await until("the confirm again", 10_000, async () =>
-    (await page.locator('[data-menu-confirm="close"]').count()) === 1,
-  );
-  await page.locator('[data-menu-item="close"]').click();
+  await deleteAsked("again");
+  await page.locator("[data-delete-go]").click();
   // Closing a live GUI-hosted session does real work — kill the host,
   // drop its pty, reap the agent, record the exit, remove the dir — then
   // the row leaves on the next 2s list poll. Measured end to end at
@@ -7106,14 +7114,12 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     throw new Error("gamma's row offers no way to forget it");
   }
   await page.locator('[data-menu-item="forget"]').click();
-  await until("the sentence between the two presses", 5_000, async () =>
-    (await page.locator('[data-menu-confirm="forget"]').count()) === 1,
-  );
+  await deleteAsked("forgetting gamma");
   await settle();
   if ((await page.locator('[data-device="gamma"]').count()) !== 1 || !listsGamma()) {
     throw new Error("one press forgot the machine — nothing stood between the press and the act");
   }
-  await page.locator('[data-menu-item="forget"]').click();
+  await page.locator("[data-delete-go]").click();
   await until("gamma to leave beta's machine list", 20_000, async () =>
     (await page.locator('[data-device="gamma"]').count()) === 0,
   );
@@ -7954,6 +7960,8 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     (await page.locator('[data-menu-item="remove"]').count()) === 1,
   );
   await page.locator('[data-menu-item="remove"]').click();
+  await deleteAsked("moving the workspace out");
+  await page.locator("[data-delete-go]").click();
   await until("the row gone from beta's list", 20_000, async () =>
     !(await page.locator("[data-ws-row] [data-ws-name]").allInnerTexts()).includes(wsName),
   );
@@ -8167,22 +8175,17 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     throw new Error("a close was reported failed before one was asked for");
   }
   await page.locator('[data-menu-item="close"]').click();
-  await until("the confirm", 10_000, async () =>
-    (await page.locator('[data-menu-confirm="close"]').count()) === 1,
+  await deleteAsked("the close that will fail");
+  await page.locator("[data-delete-go]").click();
+  //     The refusal is said in the window that asked — the menu closed
+  //     when the window opened, so the window is where the press was.
+  await until("the failure said in the window that asked", 15_000, async () =>
+    (await page.locator("[data-delete-refused]").count()) === 1,
   );
-  await page.locator('[data-menu-item="close"]').click();
-  await until("the failure said on the item that asked", 15_000, async () =>
-    (await page.locator('[data-menu-note="close"]').count()) === 1,
-  );
-  if (!(await page.locator('[data-menu-note="close"]').innerText()).trim()) {
+  if (!(await page.locator("[data-delete-refused]").innerText()).trim()) {
     throw new Error("the failure must be a sentence, not an empty note");
   }
-  // The confirm goes when it fails — leaving it armed would read as the
-  // close still being on offer, on a backend that cannot take it.
-  if ((await page.locator('[data-menu-confirm="close"]').count()) !== 0) {
-    throw new Error("a failed close must not leave its confirm standing");
-  }
-  await closeRowMenu();
+  await deleteBackOut();
 
 
   // 32) `khor doctor` on a real home, through the real node (docs/MORE.md

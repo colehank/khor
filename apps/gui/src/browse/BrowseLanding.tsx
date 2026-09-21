@@ -209,6 +209,7 @@ export function BrowseLanding({
       {
         key: "close",
         label: gui.delete,
+        ask: gui.tab_remove_confirm,
         note: refused.get(k("close")),
         run: () => answered("close")(tabs.close(t.id)),
       },

@@ -901,6 +901,41 @@ try {
         }
       }
     }
+
+    //  ── 删除 asks, and 不再提醒 is `khor config` (docs/SHELL.md 第四轮) ──
+    //
+    //  The face gate proves the window and the tick on a fixture; what
+    //  only a real node can say is that the tick landed in the store the
+    //  terminal reads: `khor config get confirm-delete` answers off.
+    {
+      const was = cli(envB, "config", "get", "confirm-delete").trim();
+      const row = page.locator('[data-browse-tabs] [data-side-row][data-side-pinned="false"] [data-side-open]').last();
+      // The unpins above were the terminal's, and the window hears them
+      // on its next beat.
+      await until("an unpinned tab in the column", 10_000, async () => (await row.count()) > 0).catch(() => {});
+      if (was !== "on" || (await row.count()) === 0) {
+        fail(`probe dead: confirm-delete reads ${JSON.stringify(was)} before anything, or no unpinned tab to delete`);
+      } else {
+        await row.click({ button: "right" });
+        await page.locator('[data-row-menu] [data-menu-item="close"]').click();
+        const asked = await until("the delete window", 5_000, async () =>
+          (await page.locator("[data-delete-dialog]").count()) === 1,
+        ).catch(() => false);
+        if (!asked) {
+          fail("删除 on a tab raised no delete window — 「删除这些, 都要弹出一个弹窗」 (src/components/DeleteDialog.tsx)");
+        } else {
+          await page.locator("[data-delete-never-ask]").check();
+          await page.locator("[data-delete-go]").click();
+          const off = await until("the terminal reads the tick", 10_000, () =>
+            cli(envB, "config", "get", "confirm-delete").trim() === "off",
+          ).catch(() => false);
+          if (!off) {
+            fail("ticked 不再提醒 and `khor config get confirm-delete` still reads on — the tick did not reach the store");
+          } else ok("不再提醒 is `khor config get confirm-delete` = off");
+        }
+        cli(envB, "config", "set", "confirm-delete", "on");
+      }
+    }
   }
 
   //    The narrow face is the shell's, but this landing has to reach it

@@ -75,7 +75,7 @@ files-click = "Single click"
 # Under "Ask before", so each key names the act rather than repeating
 # the question.
 confirm-takeover = "Taking over a session"
-confirm-ws-remove = "Deleting a workspace"
+confirm-delete = "Deleting"
 
 # What is stored is the choice, `auto` included — never the theme it
 # resolves to today.
@@ -1237,11 +1237,10 @@ browser-tab = "Browser"
 workspaces-empty = "No workspaces yet"
 workspaces-how = "Use the + above to pick a directory on a machine"
 ws-add = "Add a workspace"
-# "Remove workspace", not "Delete" — mirrors the source's 移出/删除
-# distinction: this takes the row off the list, the directory is untouched.
-# Only asked once `khor config set confirm-ws-remove on` — off by
-# default, because nothing is destroyed here.
+# Said in the one delete window every sidebar shares (`confirm-delete`,
+# docs/SHELL.md 第四轮).
 ws-remove-confirm = "Takes it off this list; the directory itself is untouched"
+tab-remove-confirm = "This tab will close"
 ws-marked = "{0} files changed"
 dir-picker = "Pick a directory"
 dir-picker-take = "Use this directory"
@@ -1256,7 +1255,7 @@ pdf-as-words = "This machine's browser can't render PDFs — showing extracted t
 file-remove-trash = "Move \"{0}\" to the trash"
 file-remove-dir = "Move \"{0}\" and everything in it to the trash"
 file-remove-gone = "Delete \"{0}\" outright — it can't be recovered; a directory takes everything inside it too."
-file-remove-never-ask = "Don't ask again"
+never-ask = "Don't ask again"
 file-new = "New file"
 dir-new = "New directory"
 # Ambiguous: the Chinese comment says this borrows `rename`'s verb for the
