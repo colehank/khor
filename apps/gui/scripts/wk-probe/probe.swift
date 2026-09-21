@@ -342,10 +342,43 @@ func shellProbe(_ css: String) -> String {
   return ask(web, "return window.__nail(c);", async: true, args: ["c": css])
 }
 
+/// A page view **inside a window**, and the window's appearance turned
+/// dark, light, dark (docs/SHELL.md 第四轮 第 6 条:「浏览器访问地址的时候,
+/// 传递app的外观主题」).
+///
+/// This is the mechanism khor's desktop app uses and nothing more: the
+/// app sets the main window's `NSAppearance` when 深浅 changes
+/// (`wear_appearance`), and a browsing tab's page is a WebKit view added
+/// into that window (`open_page`'s `add_child`). What only WebKit can
+/// answer is whether the page's `prefers-color-scheme` follows the window
+/// it sits in, live — which is what is read here, three times, so a page
+/// that caught the first appearance and kept it reads wrong on the second.
+func themeProbe() -> String {
+  _ = NSApplication.shared
+  let win = NSWindow(
+    contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled],
+    backing: .buffered, defer: false)
+  let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 300, height: 200))
+  win.contentView?.addSubview(web)
+  let w = Waiter()
+  web.navigationDelegate = w
+  web.load(URLRequest(url: URL(string: "http://127.0.0.1:\(port)/shell.html")!))
+  spin({ w.done }, seconds: 20)
+  if let t = w.trouble { return "{\"loadFailed\":\(quoted(t))}" }
+  if !w.done { return "{\"loadFailed\":\"never finished\"}" }
+  var reads: [String] = []
+  for name in [NSAppearance.Name.darkAqua, .aqua, .darkAqua] {
+    win.appearance = NSAppearance(named: name)
+    spin({ false }, seconds: 0.6)
+    reads.append(ask(web, "String(matchMedia('(prefers-color-scheme: dark)').matches)", async: false))
+  }
+  return "{\"reads\":[\(reads.map { quoted($0) }.joined(separator: ","))]}"
+}
+
 let codeSize = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "14.4px"
 let codeLeading = CommandLine.arguments.count > 4 ? CommandLine.arguments[4] : "21.6px"
 let shellCss = CommandLine.arguments.count > 5 ? CommandLine.arguments[5] : ""
 
 print(
   "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading)),\"well\":\(wellProbe()),"
-    + "\"shellBare\":\(shellProbe("")),\"shellNailed\":\(shellProbe(shellCss))}")
+    + "\"shellBare\":\(shellProbe("")),\"shellNailed\":\(shellProbe(shellCss)),\"theme\":\(themeProbe())}")

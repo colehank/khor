@@ -997,6 +997,7 @@ async fn open_page(
             live.set_size(LogicalSize::new(at.w, at.h))
                 .map_err(|e| e.to_string())?;
             live.show().map_err(|e| e.to_string())?;
+            keep_the_buttons_in_the_rail(window.app_handle());
             return Ok(borrow);
         }
         let _ = live.close();
@@ -1143,6 +1144,7 @@ async fn open_page(
             LogicalSize::new(at.w, at.h),
         )
         .map_err(|e| e.to_string())?;
+    keep_the_buttons_in_the_rail(window.app_handle());
     if let Ok(mut m) = page_exits().lock() {
         m.insert(label, (machine, going_to));
     }
@@ -1164,6 +1166,7 @@ fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), Stri
         .map_err(|e| e.to_string())?;
     view.set_size(LogicalSize::new(at.w, at.h))
         .map_err(|e| e.to_string())?;
+    keep_the_buttons_in_the_rail(window.app_handle());
     Ok(())
 }
 
@@ -1180,7 +1183,9 @@ fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     let Some(view) = app.get_webview(&page_label(&tab)) else {
         return Ok(());
     };
-    view.hide().map_err(|e| e.to_string())
+    view.hide().map_err(|e| e.to_string())?;
+    keep_the_buttons_in_the_rail(&app);
+    Ok(())
 }
 
 /// Puts a page back after `hide_page` took it away.
@@ -1197,7 +1202,9 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     let Some(view) = app.get_webview(&page_label(&tab)) else {
         return Ok(());
     };
-    view.show().map_err(|e| e.to_string())
+    view.show().map_err(|e| e.to_string())?;
+    keep_the_buttons_in_the_rail(&app);
+    Ok(())
 }
 
 /// Give the window the app's own ground **before the page has one**.
@@ -1285,6 +1292,28 @@ fn squeeze_the_window_buttons(window: &tauri::WebviewWindow) {
             let _: () = msg_send![button, setFrameOrigin: NSPoint::new(x, frame.origin.y)];
         }
     }
+}
+
+/// `squeeze_the_window_buttons` on the main window, from anywhere that
+/// holds the app. **Called after every page view is added, shown, hidden
+/// or moved, and when the window takes focus** (docs/SHELL.md 第四轮 第 7
+/// 条:「左上角三个系统按钮没有在侧边栏内」— the user's picture has them
+/// on the browse landing, beside 「搜索标签页」, which is the one landing
+/// that puts native child views into the window). Each of those can have
+/// AppKit lay the title bar out again, and nothing else puts the buttons
+/// back; the squeeze does nothing when they are already where it wants
+/// them, so calling it too often costs a frame read.
+#[cfg(desktop)]
+fn keep_the_buttons_in_the_rail(app: &tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::Manager;
+        if let Some(main) = app.get_webview_window("main") {
+            squeeze_the_window_buttons(&main);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 #[cfg(desktop)]
@@ -2564,6 +2593,7 @@ pub fn run() {
                         }
                     }
                     tauri::WindowEvent::Focused(here) => {
+                        keep_the_buttons_in_the_rail(window.app_handle());
                         if let Some(menu) = menu()
                             && menu_up().load(std::sync::atomic::Ordering::Relaxed)
                         {

@@ -428,6 +428,27 @@ if (said.pdf?.loadFailed) {
   }
 }
 
+// ── A page follows the window's 深浅 (docs/SHELL.md 第四轮 第 6 条) ──
+//
+// 「浏览器访问地址的时候, 传递app的外观主题(深色、浅色, 似乎已经做到了,
+// 检查一下)」. The app sets its window's appearance and a browsing tab's
+// page is a view inside that window; this reads `prefers-color-scheme` in
+// such a page as the window turns dark, light, dark. The web face cannot
+// do this at all — a page there is the visitor's own browser's, and its
+// 深浅 is that browser's to decide.
+{
+  const t = said.theme ?? {};
+  console.log(`wk: theme       ${JSON.stringify(t)}`);
+  if (t.loadFailed) {
+    fail(`wk probe could not run the theme arm (${t.loadFailed}) — nothing about 外观主题 was measured`);
+  } else if (JSON.stringify(t.reads) !== JSON.stringify(["true", "false", "true"])) {
+    fail(
+      `a page inside the window read prefers-color-scheme: dark as ${JSON.stringify(t.reads)} while the window ` +
+        "went dark, light, dark — 「传递app的外观主题」 (src-tauri wear_appearance)",
+    );
+  }
+}
+
 // ── Printed, not asserted: the two ways out that are still open ──────
 console.log(`wk: bare        ${JSON.stringify(said.bare)}`);
 console.log(`wk: shimmed     ${JSON.stringify(said.shimmed)}`);
