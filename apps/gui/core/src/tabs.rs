@@ -33,6 +33,9 @@ pub struct TabRow {
     pub device: String,
     pub url: String,
     pub title: String,
+    /// Put at the top by a person; sorts above every unpinned tab and
+    /// cannot be closed until it is unpinned (`khor_node::tabs::pin`).
+    pub pinned: bool,
 }
 
 /// One kind's tabs and which is in front. `active` is empty only when
@@ -53,6 +56,7 @@ fn shape(open: tabs::Open) -> TabsOpen {
                 device: t.device,
                 url: t.url,
                 title: t.title,
+                pinned: t.pinned,
             })
             .collect(),
         active: open.active,
@@ -88,6 +92,12 @@ pub fn focus(root: &Path, kind: &str, id: &str) -> Result<TabsOpen, String> {
     Ok(list(root, kind))
 }
 
+/// Pins or unpins one. A pinned tab refuses to close (`khor_node::tabs`).
+pub fn pin(root: &Path, kind: &str, id: &str, on: bool) -> Result<TabsOpen, String> {
+    tabs::pin(root, kind, id, on)?;
+    Ok(list(root, kind))
+}
+
 pub fn close(root: &Path, kind: &str, id: &str) -> Result<TabsOpen, String> {
     tabs::close(root, kind, id)?;
     Ok(list(root, kind))
@@ -106,6 +116,7 @@ pub fn save_all(root: &Path, kind: &str, want: &TabsOpen) -> Result<TabsOpen, St
                 device: t.device.clone(),
                 url: t.url.clone(),
                 title: t.title.clone(),
+                pinned: t.pinned,
             })
             .collect(),
         active: want.active.clone(),

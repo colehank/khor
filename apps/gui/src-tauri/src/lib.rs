@@ -98,6 +98,12 @@ fn tabs_close(kind: String, id: String) -> Result<khor_gui_core::tabs::TabsOpen,
     khor_gui_core::tabs::close(&Node::root_from_env(), &kind, &id)
 }
 
+/// Pins or unpins one (docs/SHELL.md 第二轮) — `khor tabs pin|unpin`.
+#[tauri::command]
+fn tabs_pin(kind: String, id: String, on: bool) -> Result<khor_gui_core::tabs::TabsOpen, String> {
+    khor_gui_core::tabs::pin(&Node::root_from_env(), &kind, &id, on)
+}
+
 /// The whole column at once — the one gesture that cannot be spelled as
 /// a close and an open: a drag that reorders.
 #[tauri::command]
@@ -2570,6 +2576,7 @@ pub fn run() {
             tabs_go,
             tabs_focus,
             tabs_close,
+            tabs_pin,
             tabs_save,
             sessions,
             widen,

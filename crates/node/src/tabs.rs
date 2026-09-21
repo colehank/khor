@@ -74,6 +74,11 @@ pub struct Tab {
     /// What it was last called. Empty until it has been somewhere.
     #[serde(default)]
     pub title: String,
+    /// Put at the top by a person (docs/SHELL.md 第二轮). A pinned tab
+    /// sorts above every unpinned one and cannot be closed until it is
+    /// unpinned.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// One kind's tabs, and which of them is in front.
@@ -96,7 +101,14 @@ impl Open {
     /// choice the face's own store made when it was the one reading
     /// this file's job. An empty list keeps an empty `active`; minting
     /// a tab is a decision, and reading is not the place to make one.
+    ///
+    /// **It also keeps every pinned tab above every unpinned one**, and
+    /// that is here rather than in [`pin`] because more than one road can
+    /// reorder the list: a drag through [`save_all`] that lifted a tab
+    /// over a pin would otherwise be written as asked. A stable sort, so
+    /// the order within each half is whatever the caller made it.
     fn settle(&mut self) {
+        self.tabs.sort_by_key(|t| !t.pinned);
         if self.tabs.iter().any(|t| t.id == self.active) {
             return;
         }
@@ -284,6 +296,7 @@ pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, 
             device: device.to_string(),
             url: url.to_string(),
             title: String::new(),
+            pinned: false,
         });
         open.active = id.clone();
         Ok(id)
@@ -316,6 +329,27 @@ pub fn go(
     })
 }
 
+/// Pins or unpins a tab (docs/SHELL.md 第二轮).
+///
+/// **Either way it lands on the seam between the two halves**: pinned,
+/// under the tabs already pinned — the order they were pinned in is
+/// the order they read; unpinned, at the head of the rest, nearest to
+/// where it just was.
+pub fn pin(root: &Path, kind: &str, id: &str, on: bool) -> Result<(), String> {
+    change(root, kind, |open| {
+        let at = open
+            .tabs
+            .iter()
+            .position(|t| t.id == id)
+            .ok_or_else(|| msg::no_such_tab(id))?;
+        let mut tab = open.tabs.remove(at);
+        tab.pinned = on;
+        let seam = open.tabs.iter().take_while(|t| t.pinned).count();
+        open.tabs.insert(seam, tab);
+        Ok(())
+    })
+}
+
 /// Brings a tab to the front.
 pub fn focus(root: &Path, kind: &str, id: &str) -> Result<(), String> {
     change(root, kind, |open| {
@@ -334,6 +368,10 @@ pub fn focus(root: &Path, kind: &str, id: &str) -> Result<(), String> {
 /// that keeps the eye where the hand already is. Closing the last tab
 /// leaves the list empty: this is a store, and 「what a landing with no
 /// tabs draws」 is the face's decision, not a row invented down here.
+///
+/// **A pinned tab is refused**: a pin is a person saying 「keep this
+/// one」, so it has to be taken off before the tab can go — the same
+/// sentence for the window and for `khor tabs close`.
 pub fn close(root: &Path, kind: &str, id: &str) -> Result<(), String> {
     change(root, kind, |open| {
         let at = open
@@ -341,6 +379,9 @@ pub fn close(root: &Path, kind: &str, id: &str) -> Result<(), String> {
             .iter()
             .position(|t| t.id == id)
             .ok_or_else(|| msg::no_such_tab(id))?;
+        if open.tabs[at].pinned {
+            return Err(msg::tab_pinned().into());
+        }
         let was_front = open.active == id;
         open.tabs.remove(at);
         if was_front {
@@ -363,15 +404,22 @@ pub fn close(root: &Path, kind: &str, id: &str) -> Result<(), String> {
 /// was given, and a row carrying an id this machine never minted is
 /// refused rather than trusted — a face that invented ids would be the
 /// second minter this module exists to prevent.
+///
+/// **What is pinned is kept from the file, not taken from the caller**:
+/// a drag is not a pin, and [`pin`] is the one road that says either.
 pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
     change(root, kind, |open| {
-        let known: Vec<String> = open.tabs.iter().map(|t| t.id.clone()).collect();
+        let mut rows = Vec::with_capacity(want.tabs.len());
         for t in &want.tabs {
-            if !known.contains(&t.id) {
+            let Some(was) = open.tabs.iter().find(|k| k.id == t.id) else {
                 return Err(msg::no_such_tab(&t.id));
-            }
+            };
+            rows.push(Tab {
+                pinned: was.pinned,
+                ..t.clone()
+            });
         }
-        open.tabs = want.tabs.clone();
+        open.tabs = rows;
         open.active = want.active.clone();
         Ok(())
     })
@@ -579,6 +627,7 @@ mod tests {
             device: "m".into(),
             url: "c".into(),
             title: String::new(),
+            pinned: false,
         });
         let said = save_all(&r.0, "page", &forged).unwrap_err();
         assert!(said.contains("mine"), "the refusal names the id: {said}");
@@ -682,5 +731,96 @@ mod tests {
             id.contains(&format!("-{mine}-")),
             "the id says which process minted it ({id} should carry {mine})",
         );
+    }
+
+    fn order(r: &Scratch) -> Vec<String> {
+        list(&r.0, "page")
+            .tabs
+            .iter()
+            .map(|t| t.url.clone())
+            .collect()
+    }
+
+    /// **A pinned tab sorts above every unpinned one** (docs/SHELL.md
+    /// 第二轮:「置顶的标签排在最上」), in the order they were pinned —
+    /// and unpinning puts it back at the head of the unpinned rows, the
+    /// place nearest where the eye already is.
+    #[test]
+    fn pinning_floats_a_tab_and_unpinning_sets_it_down_below_the_pins() {
+        let r = root("pin");
+        let _a = open(&r.0, "page", "m", "a").unwrap();
+        let b = open(&r.0, "page", "m", "b").unwrap();
+        let c = open(&r.0, "page", "m", "c").unwrap();
+        pin(&r.0, "page", &c, true).unwrap();
+        assert_eq!(order(&r), ["c", "a", "b"], "the pinned tab leads");
+        pin(&r.0, "page", &b, true).unwrap();
+        assert_eq!(
+            order(&r),
+            ["c", "b", "a"],
+            "a second pin lands under the first"
+        );
+        pin(&r.0, "page", &c, false).unwrap();
+        assert_eq!(order(&r), ["b", "c", "a"], "unpinned, it heads the rest");
+        // Read afresh, as the next launch would: the mark is in the file.
+        let again = list(&r.0, "page");
+        let flags: Vec<bool> = again.tabs.iter().map(|t| t.pinned).collect();
+        assert_eq!(flags, [true, false, false]);
+    }
+
+    /// A tab opened after a pin still lands under the pins: a new row
+    /// is not a decision anybody made about the top.
+    #[test]
+    fn a_new_tab_opens_below_the_pinned_ones() {
+        let r = root("pin-new");
+        let a = open(&r.0, "page", "m", "a").unwrap();
+        pin(&r.0, "page", &a, true).unwrap();
+        open(&r.0, "page", "m", "b").unwrap();
+        assert_eq!(order(&r), ["a", "b"]);
+    }
+
+    /// **A pinned tab cannot be closed until it is unpinned** — the
+    /// ruling's 「关不掉之前要先取消置顶」, held here so the terminal and
+    /// the window are refused alike.
+    #[test]
+    fn a_pinned_tab_refuses_to_close_until_unpinned() {
+        let r = root("pin-close");
+        let a = open(&r.0, "page", "m", "a").unwrap();
+        pin(&r.0, "page", &a, true).unwrap();
+        let said = close(&r.0, "page", &a).unwrap_err();
+        assert_eq!(said, msg::tab_pinned());
+        assert_eq!(list(&r.0, "page").tabs.len(), 1, "and nothing was closed");
+        pin(&r.0, "page", &a, false).unwrap();
+        close(&r.0, "page", &a).unwrap();
+        assert_eq!(list(&r.0, "page").tabs.len(), 0);
+    }
+
+    /// Pinning a tab that is not there is refused by name, like every
+    /// other verb here.
+    #[test]
+    fn pinning_a_missing_tab_is_refused_by_name() {
+        let r = root("pin-missing");
+        open(&r.0, "page", "m", "a").unwrap();
+        let said = pin(&r.0, "page", "nope", true).unwrap_err();
+        assert!(said.contains("nope"), "the refusal names the tab: {said}");
+    }
+
+    /// The bulk save may reorder, **but not lift a tab over a pin, and
+    /// not change what is pinned**: that is [`pin`]'s to say, and a
+    /// drag is not a pin.
+    #[test]
+    fn the_bulk_save_cannot_unpin_or_climb_over_a_pin() {
+        let r = root("pin-bulk");
+        let a = open(&r.0, "page", "m", "a").unwrap();
+        open(&r.0, "page", "m", "b").unwrap();
+        pin(&r.0, "page", &a, true).unwrap();
+        let mut want = list(&r.0, "page");
+        want.tabs.reverse();
+        for t in &mut want.tabs {
+            t.pinned = false;
+        }
+        save_all(&r.0, "page", &want).unwrap();
+        let after = list(&r.0, "page");
+        assert_eq!(order(&r), ["a", "b"], "the pinned tab still leads");
+        assert!(after.tabs[0].pinned, "and it is still pinned");
     }
 }

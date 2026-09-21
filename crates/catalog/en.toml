@@ -203,12 +203,14 @@ usage: khor <verb>
                         proxy port — point a browser at it and traffic
                         goes out from there (needs serve running;
                         close that session to shut the port)
-  tabs [ls] | open [-m machine] <url> | close <n|id> | focus <n|id>
+  tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
                         screen, not to the person (places you keep do
-                        travel). ls prints the front mark, a number, the
-                        id, the title and the address. close and focus
+                        travel). ls prints the front and pinned marks, a
+                        number, the id, the title and the address. pin
+                        keeps a tab on top (it won't close until unpinned);
+                        unpin lets it go. All four
                         take either: **the number** is the row's place in
                         that listing — what a hand types, and it moves
                         when a tab closes; **the id** names one tab for
@@ -779,6 +781,7 @@ cant-merge = "Can't merge: {0}"
 cant-append = "Can't append: {0}"
 no-such-message = "No such message: {0}"
 no-such-tab = "No such tab: {0}"
+tab-pinned = "This tab is pinned — unpin it before deleting it"
 
 # ── frames (node) ──
 cant-encode-frame = "Can't encode frame: {0}"

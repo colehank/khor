@@ -848,6 +848,13 @@ fn tabs(rest: &[String]) -> Result<(), String> {
             } else {
                 ""
             };
+            // **The pin rides the same first column**, after the front
+            // mark, and it is the table's own 「(置顶)」 this time — here
+            // it does mean a person put the tab first (docs/SHELL.md
+            // 第二轮). Same column so the number and the id stay where
+            // scripts already read them.
+            let pinned = if t.pinned { cli::pinned_mark() } else { "" };
+            let front = format!("{front}{pinned}");
             // **A number first, and it is the one a person types.**
             // 「标签号」 in the usage line meant `t1a0c…-b391-0` for one
             // build, and nobody is retyping that (验收方, 2026-09-21).
@@ -886,6 +893,12 @@ fn tabs(rest: &[String]) -> Result<(), String> {
         }
         [word, which] if word == "focus" => {
             khor_node::tabs::focus(&root, KIND, &tab_named(&root, KIND, which)?)
+        }
+        // 置顶 / 取消置顶, the window's row menu said in the terminal
+        // (CLI 与 GUI 等价). A pinned tab refuses `close` until it is
+        // unpinned — the node says so, for both callers.
+        [word, which] if word == "pin" || word == "unpin" => {
+            khor_node::tabs::pin(&root, KIND, &tab_named(&root, KIND, which)?, word == "pin")
         }
         _ => Err(usage_text().into()),
     }

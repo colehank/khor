@@ -120,6 +120,12 @@ pub fn answer(
         )?),
         "tabs_focus" => to_json(&crate::tabs::focus(root, &arg("kind")?, &arg("id")?)?),
         "tabs_close" => to_json(&crate::tabs::close(root, &arg("kind")?, &arg("id")?)?),
+        "tabs_pin" => to_json(&crate::tabs::pin(
+            root,
+            &arg("kind")?,
+            &arg("id")?,
+            flag("on")?,
+        )?),
         // The whole column, for the one gesture that cannot be spelled
         // as a close and an open: a drag that reorders. The ids are
         // still the node's to mint.
