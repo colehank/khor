@@ -5232,13 +5232,26 @@ for line in sys.stdin:
     ([onId, offId]) => {
       const w = (id) => document.querySelector(`[data-tab="${id}"]`).getBoundingClientRect().width;
       const label = document.querySelector(`[data-tab="${onId}"] [data-tab-label]`);
-      const stub = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--tab-w"));
-      return { on: w(onId), off: w(offId), stub, clipped: label.scrollWidth > label.clientWidth };
+      const css = getComputedStyle(document.documentElement);
+      const stub = parseFloat(css.getPropertyValue("--tab-w"));
+      const floor = parseFloat(css.getPropertyValue("--tab-w-min"));
+      const stubs = [...document.querySelectorAll('[data-session-tabs] [data-tab][data-on="false"]')].map(
+        (t) => Math.round(t.getBoundingClientRect().width),
+      );
+      return { on: w(onId), off: w(offId), stub, floor, stubs, clipped: label.scrollWidth > label.clientWidth };
     },
     [stretchRow, sbRow],
   );
-  if (Math.abs(tabW.off - tabW.stub) > 1) {
-    throw new Error(`a tab not in front is ${tabW.off} wide, not the stub's ${tabW.stub}`);
+  //      **A stub is one width, not one number** (docs/SHELL.md 第三轮
+  //      第 1 条:「先压，再溢出」): at rest it is `--tab-w`, and on a
+  //      crowded strip every stub gives together down to `--tab-w-min`.
+  //      What 2026-09-02 asked for is that they do not follow their names
+  //      — so: inside the two, and all the same.
+  if (tabW.off < tabW.floor - 1 || tabW.off > tabW.stub + 1) {
+    throw new Error(`a tab not in front is ${tabW.off} wide, outside the stub's ${tabW.floor}–${tabW.stub}`);
+  }
+  if (new Set(tabW.stubs).size > 1) {
+    throw new Error(`the tabs not in front stand at ${[...new Set(tabW.stubs)].join(", ")} — one width for every stub`);
   }
   if (tabW.on <= tabW.stub + 40) {
     throw new Error(`the tab in front is ${tabW.on} wide for a ${longName.length}-character name — it did not grow`);
