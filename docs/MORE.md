@@ -125,6 +125,7 @@
   - 六个状态词、git 的字母、专有名词的规矩不变：状态词有英文（Busy / Blocked / Done /
     Errored / Failed / Idle），git 字母与 claude / codex / VS Code 原样。
 - **这台机器的脸**、**中继**：现有 `FaceSettings` 两节原样搬来。
+- **通用**：标签页上限（`tabs-limit`，off 或 4–50，默认 off；docs/SHELL.md 第三轮）。
 - **会话**：新会话默认是对话还是终端（`session-form`）。
 - **工作区**：单击文件是预览标签（现状）还是直接钉住（`files-click`）。
 - **存储**：store 位置与占用（只读 + 一个「打开这个目录」走 `launch`）。

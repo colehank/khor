@@ -132,6 +132,10 @@ const block = (text, where, opener) => {
 const shellCss = [
   block(TOKENS, "tokens.css", "html,\n  body,\n  #root {"),
   block(APP, "app.css", ".overflow-auto,"),
+  // 第三轮: the tab strip draws no scrollbar. Both rules, because one
+  // engine reads the property and an older one only the pseudo-element.
+  block(APP, "app.css", "[data-tab-strip] {"),
+  block(APP, "app.css", "[data-tab-strip]::-webkit-scrollbar {"),
 ].join("\n");
 
 // **Spawned, not `spawnSync`.** The probe fetches its pages from the
@@ -399,6 +403,21 @@ if (said.pdf?.loadFailed) {
     }
     if (nailed.docTop !== 0) {
       fail(`with khor's rules the page still scrolled to ${nailed.docTop} — 「整个app都会下移」`);
+    }
+    // 第三轮: a tab strip past its edge spends no height on a scrollbar.
+    // **Only red-able where this WebKit draws a bar that takes room** —
+    // with overlay scrollbars (a trackpad Mac) the bare arm reads 0 too,
+    // and then this is said to be unmeasured rather than passed.
+    if (!(bare.stripBar > 0)) {
+      console.log(
+        `wk: tab strip   未量 — with no rules the strip's bar takes ${bare.stripBar}px on this WebKit ` +
+          "(overlay scrollbars), so 「不画滚动条」 cannot go red here",
+      );
+    } else if (nailed.stripBar !== 0) {
+      fail(
+        `with khor's rules a tab strip past its edge still spends ${nailed.stripBar}px on a scrollbar on this ` +
+          "WebKit — 「标签会被移动条顶出窗口」 (src/styles/app.css [data-tab-strip])",
+      );
     }
     if (nailed.railTop !== nailed.railWas) {
       fail(

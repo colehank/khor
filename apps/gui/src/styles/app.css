@@ -196,6 +196,22 @@ input[type="search"]::-webkit-search-decoration {
   scrollbar-color: var(--scroll-thumb-strong) transparent;
 }
 
+/* **A tab strip draws no scrollbar** (docs/SHELL.md 第三轮 第 2 条:
+   「多标签页的时候, 标签会被移动条顶出窗口. 且此条无法拖动」). On a
+   machine with a mouse the bar took room under the tabs and pushed them
+   up out of the band, and at `thin` it was too narrow to drag. The ways
+   past the edge are the strip's own: a vertical wheel turned sideways,
+   a fade on the cut side, the count and its switcher (`TabStrip`).
+   Both spellings: the property for engines that read it, the
+   pseudo-element for WebKit builds that only read that. `check-wk`
+   lifts these two blocks verbatim. */
+[data-tab-strip] {
+  scrollbar-width: none;
+}
+[data-tab-strip]::-webkit-scrollbar {
+  display: none;
+}
+
 /* Two selectors because the two properties inherit differently:
    `scrollbar-color` inherits, so the root reaches every pane;
    `scrollbar-width` does not, so it has to be said everywhere. */

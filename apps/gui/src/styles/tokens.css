@@ -817,6 +817,15 @@
    * kind of number. */
   --tab-w: 160px;
   --tab-w-on: min(420px, 100%);
+  /* …and the floor a stub is pressed down to before the strip gives up
+   * and overflows (docs/SHELL.md 第三轮 第 1 条:「先压，再溢出」): a face,
+   * the tab gap and two or three characters. Every stub shrinks by the
+   * same amount, so they are still one width — 2026-09-02's
+   * 「未选中固定长度」 is about stubs not following their names, and
+   * they still do not. The × takes no room on a stub (it lies over the
+   * name's end under the pointer), which is what lets the floor be this
+   * low. */
+  --tab-w-min: 80px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted
@@ -1543,6 +1552,7 @@
   --spacing-list: var(--list-w);
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);
+  --spacing-tab-min: var(--tab-w-min);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
   --spacing-drawer-row: var(--drawer-row);

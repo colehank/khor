@@ -21,9 +21,22 @@
 import { useState } from "react";
 
 import { setConfig, type ConfigRow } from "@/api";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
 import { useSettings } from "@/settings";
 import { MoreSection, MoreSwitch, type MorePage } from "@/views/more/MorePage";
+
+/** How many choices still read as a ladder of switches. Past this a row
+    is a menu: 标签页上限 has 48 (off, 4…50 — docs/SHELL.md 第三轮), and
+    48 switches wrapping down the page is a wall, not a setting. */
+const LADDER_MAX = 8;
 
 /** One setting: its name on the left, its ladder under it. */
 function Row({
@@ -39,6 +52,32 @@ function Row({
     // catalog (`MoreSection`'s own split).
     <div data-config-row={row.name} data-value={row.value} className="flex flex-col gap-1">
       <span className="text-sm">{row.label}</span>
+      {row.choices.length > LADDER_MAX ? (
+        // **The same keys either way**: each item wears the anchor a
+        // switch would, so a gate presses `data-config-choice` whichever
+        // shape the row took.
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="secondary"
+              size="sm"
+              data-config-open={row.name}
+              className="min-h-touch min-w-touch self-start"
+            >
+              {row.choices.find((c) => c.value === row.value)?.label ?? row.value}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto">
+            <DropdownMenuRadioGroup value={row.value} onValueChange={(v) => onPick(row.name, v)}>
+              {row.choices.map((c) => (
+                <DropdownMenuRadioItem key={c.value} value={c.value} data-config-choice={`${row.name}:${c.value}`}>
+                  {c.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
       <div className="flex flex-wrap gap-1">
         {row.choices.map((c) => (
           <MoreSwitch
@@ -50,6 +89,7 @@ function Row({
           />
         ))}
       </div>
+      )}
     </div>
   );
 }

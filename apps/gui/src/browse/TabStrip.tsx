@@ -38,7 +38,7 @@
 // you all of them and a second way to a thing that is not hidden is
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { EditableName } from "@/components/EditableName";
@@ -46,6 +46,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { IconClose, IconEye, IconPin, IconPlus } from "@/components/icons";
+import { PaneBar } from "@/components/PaneBar";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -139,6 +140,24 @@ function TabAvatar({ f, bare }: { f: TabFace; bare: string }) {
   );
 }
 
+/**
+ * A name cut **in the middle** when it has to be (docs/SHELL.md 第三轮 第
+ * 1 条:「名字从中间省略」): the head truncates, the tail keeps its last
+ * few characters — the part that tells `notes-draft.md` from
+ * `notes-final.md`, and a file's extension. Short names are one span, so
+ * nothing about them changes.
+ */
+function MidName({ text }: { text: string }) {
+  const KEEP = 5;
+  if (text.length <= KEEP * 2) return <span className="min-w-0 truncate">{text}</span>;
+  return (
+    <>
+      <span className="min-w-0 truncate">{text.slice(0, -KEEP)}</span>
+      <span className="flex-none">{text.slice(-KEEP)}</span>
+    </>
+  );
+}
+
 /** The tab's opener, inside its menu when it has one. **A component
     rather than a ternary around the button**, so the button is written
     once: two copies of it is how the hover title and the anchor drift
@@ -190,19 +209,75 @@ export function TabStrip({
   // landing all have a say in, and a number derived here would be a
   // second opinion about a layout the browser has already decided.
   const [crowded, setCrowded] = useState(false);
+  /** Which ends have a tab cut off behind them, for the fade on that
+      side (docs/SHELL.md 第三轮 第 2 条). No fade where nothing is cut:
+      a fade over a whole tab would be a mark that says 「more this
+      way」 about nothing. */
+  const [cut, setCut] = useState({ left: false, right: false });
+  /**
+   * **The tab in front is scrolled into view** whenever it changes — a
+   * click, a shortcut, a pick from the switcher, a new one (第三轮 第 2
+   * 条) — and when the strip itself changes width, which is how a tab
+   * that was in view ends up past the edge without anybody touching it.
+   * Measured against the strip rather than with `scrollIntoView`, which
+   * also scrolls every ancestor that can scroll, and the shell's own
+   * boxes are not this strip's to move.
+   */
+  const bringFront = useRef(() => {});
+  bringFront.current = () => {
+    const el = strip.current;
+    const tab = el?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(active)}"]`);
+    if (!el || !tab) return;
+    const box = el.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    if (t.left < box.left) el.scrollLeft -= box.left - t.left;
+    else if (t.right > box.right) el.scrollLeft += t.right - box.right;
+  };
   useEffect(() => {
     const el = strip.current;
     if (!el) return;
     // A pixel of tolerance: sub-pixel flex widths make an exact
     // comparison flap between renders on a strip that fits.
-    const measure = () => setCrowded(el.scrollWidth - el.clientWidth > 1);
+    const measure = () => {
+      const over = el.scrollWidth - el.clientWidth;
+      setCrowded(over > 1);
+      setCut({ left: el.scrollLeft > 1, right: over - el.scrollLeft > 1 });
+    };
     measure();
     // The observer catches the region changing; the dependency catches
     // tabs opening and closing. Neither alone sees both.
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(() => {
+      bringFront.current();
+      measure();
+    });
     ro.observe(el);
-    return () => ro.disconnect();
+    el.addEventListener("scroll", measure, { passive: true });
+    /**
+     * **A vertical wheel over the strip moves it sideways** (第三轮 第
+     * 2 条): the scrollbar is gone, and a mouse has no other way to say
+     * 「further along」. A trackpad's own sideways swipe is left alone.
+     *
+     * Not passive, because it has to `preventDefault` — and it does so
+     * **even at the end**: a wheel that ran off the strip must not be
+     * handed to whatever is behind it (第 1 条:「滚到头不带动整页」).
+     * A strip that fits takes nothing: there is nowhere to go, and the
+     * wheel belongs to whoever else wants it.
+     */
+    const wheel = (e: WheelEvent) => {
+      if (el.scrollWidth - el.clientWidth <= 1) return;
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", measure);
+      el.removeEventListener("wheel", wheel);
+    };
   }, [faces.length]);
+
+  useLayoutEffect(() => bringFront.current(), [active, faces.length]);
 
   return (
     <div
@@ -280,6 +355,25 @@ export function TabStrip({
       className="flex h-pane-head flex-none items-end gap-1 bg-muted/40 px-2 pt-tab-lip"
     >
       {head}
+      {/* The scroller and the two fades over its ends. **No scrollbar**
+          (第三轮 第 2 条:「标签会被移动条顶出窗口. 且此条无法拖动」):
+          `app.css` hides it on `[data-tab-strip]`; the wheel, the fades,
+          the count and the switcher are the ways past the edge. */}
+      <div className="relative flex min-w-0 flex-1 self-stretch">
+      {cut.left && (
+        <div
+          data-tab-fade="left"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-linear-to-r from-muted to-transparent"
+        />
+      )}
+      {cut.right && (
+        <div
+          data-tab-fade="right"
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-linear-to-l from-muted to-transparent"
+        />
+      )}
       <div
         ref={strip}
         data-tab-strip
@@ -306,7 +400,7 @@ export function TabStrip({
                 // box inside a short pill. A tab whose colour stops short
                 // of where it can be pressed is a tab that lies about
                 // where it is.
-                "group flex h-touch flex-none items-center gap-1 rounded-t-md pr-0.5 pl-2",
+                "group relative flex h-touch items-center gap-1 rounded-t-md pr-0.5 pl-2",
                 // **Two widths, and each tab wears exactly one.** The one
                 // in front takes its own name's width — never less than a
                 // stub, so it does not read as the smallest tab on the
@@ -316,9 +410,17 @@ export function TabStrip({
                 // `cn()` cannot lift one of those off another (button.tsx
                 // measured that) — both would survive and the
                 // stylesheet's order would pick.
+                //
+                // **…and the stubs give together before the strip scrolls**
+                // (docs/SHELL.md 第三轮 第 1 条:「先压，再溢出」). A stub is
+                // `--tab-w` at rest and shrinks, every one by the same
+                // amount, down to `--tab-w-min` — so they are still all
+                // one width, which is what 2026-09-02 asked for; only
+                // once every stub is at the floor does the strip overflow.
+                // The tab in front never gives.
                 on
-                  ? "min-w-tab max-w-tab-on bg-background text-foreground"
-                  : "w-tab text-muted-foreground hover:bg-background/50",
+                  ? "min-w-tab max-w-tab-on flex-none bg-background text-foreground"
+                  : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-background/50",
               )}
             >
               <TabOpen menu={f.menu}>
@@ -385,9 +487,9 @@ export function TabStrip({
                   <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
                     <span
                       data-tab-name
-                      className={cn("min-w-0 truncate text-sm leading-tight", f.preview && "italic")}
+                      className={cn("flex min-w-0 text-sm leading-tight", f.preview && "italic")}
                     >
-                      {f.label}
+                      <MidName text={f.label} />
                     </span>
                     {/* **Both lines start on one edge**, which is the
                         glyph's right side: the icon is beside the pair
@@ -405,9 +507,9 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("min-w-0 flex-1 truncate text-sm", f.preview && "italic")}
+                    className={cn("flex min-w-0 flex-1 text-sm", f.preview && "italic")}
                   >
-                    {f.label}
+                    <MidName text={f.label} />
                   </span>
                 )}
               </button>
@@ -473,8 +575,17 @@ export function TabStrip({
                 // not: the dot *is* the report that something is waiting
                 // here, and a report that only appears under a pointer
                 // is one a phone never sees.
+                //
+                // **On a stub it takes no width** (第三轮 第 1 条): a
+                // compressed stub is a face and two or three characters,
+                // and a close reserved beside them would be most of it.
+                // So on a tab not in front the × lies over the name's end,
+                // under the pointer, on the tab's own ground — and a draft's
+                // dot stays drawn there, the report that must not need a
+                // pointer.
                 className={cn(
                   "min-h-touch min-w-touch flex-none",
+                  !on && "absolute top-0 right-0 bg-muted",
                   !on &&
                     !f.dirty &&
                     "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
@@ -518,6 +629,7 @@ export function TabStrip({
             <IconPlus />
           </Button>
         )}
+      </div>
       </div>
       {/* Pinned against the scrolling row, in the order a hand reaches
           them: the way to see the ones that scrolled off, then the way
@@ -597,16 +709,28 @@ export function TabSwitcher({
   active,
   onFocus,
   onClose,
+  search = true,
 }: {
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
+  /** Whether the switcher wears its own search box (docs/SHELL.md 第三轮
+      第 3 条:「切换器头上加搜索框」). **Off where the seat already has
+      one**: the browse landing's tab column is a sidebar with its own
+      head (第二轮), and two boxes over one list is the failure
+      `PaneBar`'s head warns about. */
+  search?: boolean;
 }) {
+  const [query, setQuery] = useState("");
+  // By what a row shows — the name and where it is — and nothing else.
+  const q = query.trim().toLowerCase();
+  const shown = q === "" ? faces : faces.filter((f) => `${f.label} ${f.path}`.toLowerCase().includes(q));
   return (
     <div data-tab-switcher className="flex h-full min-h-0 flex-col">
+      {search && <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} />}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {faces.map((f) => (
+        {shown.map((f) => (
           <div
             key={f.id}
             data-switch-tab={f.id}

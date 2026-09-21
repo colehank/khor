@@ -26,6 +26,11 @@
   #pane { flex: 1; min-height: 0; overflow-y: auto; }
   #pane div { padding: 0 8px; }
   #tail { height: 240px; background: #eee; }
+  /* A tab strip that has run out of room (docs/SHELL.md 第三轮): a row
+     wider than its box, wearing khor's own anchor and overflow class so
+     the rule handed in is the one that reaches it. */
+  #strip { position: fixed; left: 80px; top: 8px; width: 200px; height: 44px; display: flex; overflow-x: auto; }
+  #strip span { flex: none; width: 160px; }
 </style>
 <body>
   <div id="shell">
@@ -33,6 +38,7 @@
     <div id="pane" class="overflow-y-auto"></div>
   </div>
   <div id="tail"></div>
+  <div id="strip" data-tab-strip class="overflow-x-auto"><span>a</span><span>b</span><span>c</span></div>
   <script>
     const pane = document.getElementById("pane");
     for (let i = 0; i < 400; i++) {
@@ -72,6 +78,12 @@
         docTop: Math.round(doc.scrollTop),
         railWas: was,
         railTop: Math.round(rail.getBoundingClientRect().top),
+        // What a horizontal scrollbar takes out of a tab strip's height:
+        // 「标签会被移动条顶出窗口」 (docs/SHELL.md 第三轮).
+        stripBar: (() => {
+          const st = document.getElementById("strip");
+          return st.offsetHeight - st.clientHeight;
+        })(),
       });
     };
   </script>

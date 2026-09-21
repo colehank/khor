@@ -66,6 +66,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
+import { useTabsLimit } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
 import { SettingsProvider } from "@/settings";
@@ -532,7 +533,13 @@ export default function App() {
   // `selected` is the front tab (`useSessionTabs` — iTerm's arrangement,
   // asked for 2026-09-02). Opening a row opens or focuses its tab;
   // closing a tab is a view leaving, never a session ending.
-  const sessionTabs = useSessionTabs();
+  // 标签页上限 (docs/SHELL.md 第三轮 第 4 条): a pinned session's tab is
+  // one a person said to keep. A ref kept in step with `rows`, read by
+  // the hook at the moment a tab opens.
+  const tabsLimit = useTabsLimit();
+  const pinnedRows = useRef(new Set<string>());
+  pinnedRows.current = new Set(rows.filter((r) => r.pinned).map((r) => r.id));
+  const sessionTabs = useSessionTabs(tabsLimit, (id) => pinnedRows.current.has(id));
   const { tabs: openTabs, drop: dropTabs } = sessionTabs;
   const selected = sessionTabs.active;
   // Whether the open tabs are up as a list to pick from (`TabSwitcher`)

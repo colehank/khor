@@ -364,6 +364,9 @@ export function BrowseLanding({
       // The × is fire and forget: it is never drawn on a pinned tab,
       // so the one refusal the node has for it cannot be met here.
       onClose={(id) => void tabs.close(id).catch(() => {})}
+      // The column wears the landing's own head (search and 「+」); a
+      // second box inside it would be two over one list.
+      search={false}
     />
   );
 

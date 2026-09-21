@@ -1866,16 +1866,18 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { theme: "auto", lang: "auto", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
+  const configValues = { theme: "auto", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-ws-remove": "off" };
   const CONFIG_SHAPE = [
     ["theme", "appearance", "settings", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
     ["lang", "language", "settings", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
+    // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
+    ["tabs-limit", "general", "settings", "标签页上限", [["off", "关"], ...Array.from({ length: 47 }, (_, i) => [String(i + 4), String(i + 4)])]],
     ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
     ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "保持打开"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-ws-remove", "confirm", "security", "删除工作区", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { appearance: "外观", language: "语言", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
+  const SECTION_WORD = { appearance: "外观", language: "语言", general: "通用", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices]) => ({
       name,
@@ -9571,6 +9573,244 @@ try {
         );
       }
     }
+  }
+
+  // ── 4T) 第三轮:标签多了也找得到 (docs/SHELL.md, 2026-09-21) ───────
+  //
+  // 「多标签页的时候, 标签会被移动条顶出窗口. 且此条无法拖动.」— and
+  // 「这个标签页逻辑适用于所有页面的标签页」. One component
+  // (`browse/TabStrip.tsx`), so the claims are read off two of its three
+  // seats: the sessions strip (compress, then overflow) and the
+  // workspace's file strip — the seat in the user's screenshot, which
+  // had no way to the tabs past the edge but a scrollbar nobody could
+  // drag. The browse landing's narrow tab screen already carries the
+  // count and a searching head (第二轮) and is measured by 4S / tabs.
+  {
+    const stripOf = (seat) =>
+      page.evaluate((seat) => {
+        const band = document.querySelector(`${seat} [data-tab-bar]`);
+        const strip = document.querySelector(`${seat} [data-tab-strip]`);
+        if (!band || !strip) return null;
+        const r = strip.getBoundingClientRect();
+        const tabs = [...strip.querySelectorAll("[data-tab]")].map((t) => {
+          const b = t.getBoundingClientRect();
+          return { id: t.getAttribute("data-tab"), on: t.getAttribute("data-on") === "true", l: b.left, r: b.right, w: Math.round(b.width) };
+        });
+        return {
+          band: Math.round(band.getBoundingClientRect().height),
+          bar: strip.offsetHeight - strip.clientHeight,
+          over: strip.scrollWidth - strip.clientWidth,
+          left: strip.scrollLeft,
+          count: band.querySelector("[data-tab-count]")?.textContent?.trim() ?? null,
+          tabs,
+          clipped: tabs.filter((t) => t.l < r.left - 1 || t.r > r.right + 1).map((t) => t.id),
+          box: { l: r.left, r: r.right, top: r.top, h: r.height },
+        };
+      }, seat);
+    const headH = () =>
+      page.evaluate(() => Math.round(document.querySelector("[data-list] [data-pane-bar]")?.getBoundingClientRect().height ?? -1));
+
+    // ── (a) seven or fewer at 1080: compressed, nothing past the edge ──
+    await page.setViewportSize({ width: 1080, height: 800 });
+    await open("sessions");
+    await wait(300);
+    const rowCount = await page.locator("[data-list] [data-row-open]").count();
+    for (let i = 0; i < rowCount; i++) await pressNth("[data-list] [data-row-open]", i);
+    await wait(400);
+    const fit = await stripOf("[data-session-tabs]");
+    console.log(`tabs 4T · sessions at 1080: ${JSON.stringify(fit && { ...fit, tabs: fit.tabs.length })}`);
+    if (!fit || fit.tabs.length < 5) {
+      fail(`probe dead: the sessions strip holds ${fit?.tabs.length ?? 0} tabs at 1080 — nothing to compress`);
+    } else {
+      if (fit.count !== null || fit.over > 1 || fit.clipped.length) {
+        fail(
+          `${fit.tabs.length} session tabs at 1080 overflow by ${fit.over} (count ${fit.count}, clipped ` +
+            `${JSON.stringify(fit.clipped)}) — 「先压，再溢出」: seven or fewer fit (src/browse/TabStrip.tsx)`,
+        );
+      }
+      const stubs = new Set(fit.tabs.filter((t) => !t.on).map((t) => t.w));
+      if (stubs.size > 1) {
+        fail(
+          `the tabs not in front stand at ${[...stubs].join(", ")} wide — compressed together or not at all ` +
+            "(2026-09-02:「未选中固定长度」)",
+        );
+      }
+    }
+
+    // ── (b) past the edge at 760: no scrollbar, a wheel that moves it,
+    //        a count, a switcher with a box, the picked tab in view ──
+    await page.setViewportSize({ width: 760, height: 800 });
+    await wait(500);
+    const over = await stripOf("[data-session-tabs]");
+    const head = await headH();
+    console.log(`tabs 4T · sessions at 760: ${JSON.stringify(over && { ...over, tabs: over.tabs.length })} · head ${head}`);
+    if (!over || over.over <= 1) {
+      fail(`probe dead: the sessions strip does not overflow at 760 (${JSON.stringify(over && over.over)}) — nothing below measures the overflow`);
+    } else {
+      if (over.bar !== 0) {
+        fail(
+          `the tab strip spends ${over.bar}px on a scrollbar — 「标签会被移动条顶出窗口. 且此条无法拖动」 ` +
+            "(src/browse/TabStrip.tsx)",
+        );
+      }
+      if (over.band !== head) {
+        fail(`the tab band is ${over.band} tall over a pane head of ${head} — one token, --pane-head`);
+      }
+      if (over.count !== String(over.tabs.length)) {
+        fail(`the overflowing strip's count reads ${JSON.stringify(over.count)} for ${over.tabs.length} tabs`);
+      }
+      // The wheel: a vertical flick over the strip moves it sideways, and
+      // nothing else on the page moves.
+      const railWas = await page.evaluate(() => document.querySelector("[data-rail]")?.getBoundingClientRect().top ?? null);
+      await page.mouse.move(over.box.l + 40, over.box.top + over.box.h / 2);
+      // Towards whichever end it is not at.
+      const toward = over.left > 1 ? -600 : 600;
+      await page.mouse.wheel(0, toward);
+      await wait(300);
+      const after = await stripOf("[data-session-tabs]");
+      const moved = await page.evaluate(() => ({
+        doc: document.scrollingElement?.scrollTop ?? 0,
+        rail: document.querySelector("[data-rail]")?.getBoundingClientRect().top ?? null,
+      }));
+      console.log(`tabs 4T · wheel: ${over.left} → ${after?.left} · ${JSON.stringify(moved)} (rail was ${railWas})`);
+      if (!after || after.left === over.left) {
+        fail(`a vertical wheel over the strip left it at scrollLeft ${over.left} — 「竖向滚轮 = 横向滚动」`);
+      }
+      if (moved.doc !== 0 || moved.rail !== railWas) {
+        fail(`the wheel over the strip moved the page (${JSON.stringify(moved)}) — 滚到头不带动整页`);
+      }
+      // The switcher, and its box.
+      const last = over.tabs[over.tabs.length - 1];
+      const lastName = await page
+        .locator(`[data-session-tabs] [data-tab="${last.id}"] [data-tab-name], [data-session-tabs] [data-tab="${last.id}"] [data-tab-label]`)
+        .first()
+        .innerText()
+        .catch(() => "");
+      await press("[data-session-tabs] [data-tab-count]");
+      await wait(300);
+      const box = page.locator("[data-tab-switcher] input");
+      if ((await box.count()) === 0) {
+        fail("the tab switcher has no search box — 「切换器头上加搜索框」 (src/browse/TabStrip.tsx)");
+      } else {
+        await box.first().fill(lastName.trim());
+        await wait(250);
+        const rows = await page.locator("[data-tab-switcher] [data-switch-tab]").evaluateAll((els) =>
+          els.map((e) => e.getAttribute("data-switch-tab")),
+        );
+        if (rows.length !== 1 || rows[0] !== last.id) {
+          fail(`typing ${JSON.stringify(lastName.trim())} into the switcher leaves ${JSON.stringify(rows)} — only ${last.id}`);
+        }
+      }
+      // Whatever the box did, pick from the switcher a tab that is **past
+      // the edge now and not in front**, and read it back on the strip,
+      // wholly inside.
+      const now = (await stripOf("[data-session-tabs]")) ?? over;
+      const first = now.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? last.id;
+      if ((await page.locator("[data-tab-switcher]").count()) === 0) await press("[data-session-tabs] [data-tab-count]");
+      if ((await box.count()) > 0) await box.first().fill("");
+      await press(`[data-tab-switcher] [data-switch-open="${first}"]`);
+      await wait(400);
+      const picked = await stripOf("[data-session-tabs]");
+      if (!picked || picked.clipped.includes(first)) {
+        fail(`picked ${first} from the switcher and it sits past the strip's edge — 选中一枚时把它滚进视野`);
+      }
+    }
+
+    // ── (c) the workspace's file strip, 20 tabs: the seat in the screenshot ──
+    const wsKey = "khor.ws-tabs.peer:/home/peer/work";
+    const many = Array.from({ length: 20 }, (_, i) => `/home/peer/work/f${String(i).padStart(2, "0")}.rs`);
+    await page.evaluate(([k, v]) => window.localStorage.setItem(k, JSON.stringify(v)), [wsKey, many]);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await atTree();
+    await wait(400);
+    const ws = await stripOf("[data-ws-tab-strip]");
+    console.log(`tabs 4T · workspace 20: ${JSON.stringify(ws && { ...ws, tabs: ws.tabs.length })}`);
+    if (!ws || ws.tabs.length !== 20) {
+      fail(`probe dead: the workspace strip drew ${ws?.tabs.length ?? "no"} of 20 seeded tabs`);
+    } else {
+      if (ws.bar !== 0) fail(`the workspace's tab strip spends ${ws.bar}px on a scrollbar — the screenshot's bar`);
+      if (ws.count !== "20") {
+        fail(
+          `the workspace strip overflows with ${JSON.stringify(ws.count)} for a count — its only road to the tabs ` +
+            "past the edge was a scrollbar nobody could drag (src/views/WorkspacePane.tsx onSwitch)",
+        );
+      } else {
+        await press("[data-ws-tab-strip] [data-tab-count]");
+        await wait(300);
+        const wsBox = page.locator("[data-tab-switcher] input");
+        if ((await wsBox.count()) === 0) {
+          fail("the workspace's tab switcher has no search box");
+        } else {
+          await wsBox.first().fill("f17");
+          await wait(250);
+          const rows = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
+          if (rows !== 1) fail(`typing f17 into the workspace switcher leaves ${rows} rows, not 1`);
+          await press("[data-tab-switcher] [data-switch-open]");
+          await wait(400);
+          const after = await stripOf("[data-ws-tab-strip]");
+          const id = "peer:/home/peer/work/f17.rs";
+          if (!after || !after.tabs.find((t) => t.id === id)?.on || after.clipped.includes(id)) {
+            fail(`picked f17 from the workspace switcher and the strip reads ${JSON.stringify(after && { on: after.tabs.find((t) => t.on)?.id, clipped: after.clipped.includes(id) })}`);
+          }
+        }
+      }
+    }
+
+    // ── (d) 标签页上限: set 4 on the settings page, then open a fifth ──
+    await page.evaluate((k) => window.localStorage.setItem(k, JSON.stringify(["/home/peer/work/a.rs", "/home/peer/work/b.rs", "/home/peer/work/c.rs"])), wsKey);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const toSettings = (await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'));
+    const limitOpen = page.locator('[data-config-open="tabs-limit"]');
+    if (!toSettings || (await limitOpen.count()) === 0) {
+      fail("probe dead: no 标签页上限 row with a menu on the settings page (src/views/more/ConfigRows.tsx)");
+    } else {
+      await limitOpen.click();
+      await wait(200);
+      await press('[data-config-choice="tabs-limit:4"]');
+      await until(3_000, async () =>
+        (await page.locator('[data-config-row="tabs-limit"]').getAttribute("data-value")) === "4",
+      );
+      await page.keyboard.press("Escape");
+      await atTree();
+      await wait(300);
+      // one.rs joins as the fourth, and is typed into: a draft.
+      await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+      await wait(400);
+      const edit = await page.$("[data-edit]");
+      if (edit === null) {
+        fail("probe dead: one.rs grew no editor, so 「有未保存改动的留着」 could not be staged");
+      } else {
+        await edit.click();
+        await page.keyboard.type("X");
+        await wait(250);
+        // Touch the three seeded tabs after it, so the draft is the
+        // stalest tab on the strip and the one the limit would reach
+        // for first if it did not know better.
+        for (const f of ["a", "b", "c"]) {
+          await press(`[data-ws-tab-strip] [data-tab-open="peer:/home/peer/work/${f}.rs"]`);
+          await wait(150);
+        }
+        await press('[data-file-tree] [data-depth="0"][data-file="shot.png"] > button');
+        await wait(500);
+        const left = (await stripOf("[data-ws-tab-strip]"))?.tabs.map((t) => t.id.split("/").pop()) ?? [];
+        console.log(`tabs 4T · limit 4 after a fifth: ${JSON.stringify(left)}`);
+        if (left.length !== 4 || left.includes("a.rs") || !left.includes("one.rs") || !left.includes("shot.png")) {
+          fail(
+            `with 标签页上限 4 the strip reads ${JSON.stringify(left)} after a fifth — the one touched longest ago ` +
+              "(a.rs) goes, the one with a draft (one.rs) stays (docs/SHELL.md 第三轮 第 4 条)",
+          );
+        }
+      }
+    }
+    // Put everything back for the sections after this one.
+    await page.evaluate((k) => window.localStorage.removeItem(k), wsKey);
+    configValues["tabs-limit"] = "off";
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await page.setViewportSize({ width: 1400, height: 900 });
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────

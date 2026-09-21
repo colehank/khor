@@ -48,7 +48,8 @@ import { PathCrumbs } from "@/components/PathCrumbs";
 import { type RowAction } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TabStrip, type TabFace } from "@/browse/TabStrip";
+import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
+import { TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
@@ -251,6 +252,13 @@ export function WorkspacePane({
       the user asked for VS Code's). `null` when every open tab is
       pinned. A double click, or typing in it, pins it. */
   const [preview, setPreview] = useState<string | null>(null);
+  /** Whether the tab switcher has the file's region (第三轮 第 3 条). */
+  const [switching, setSwitching] = useState(false);
+  /** When each tab was last in front, for 标签页上限 (`browse/tab-limit`).
+      A ref: it is read when a tab is opened, and a change to it is not
+      something the screen draws. */
+  const touched = useRef(new Map<string, number>());
+  const limit = useTabsLimit();
   /** 源码 or 预览 for the file in front (2026-09-16).
    *
    * **Held here because the switch is on the tab strip**, whose tail is
@@ -972,10 +980,14 @@ export function WorkspacePane({
         if (was.includes(path)) return was;
         // The preview seat, if there is one, is where a fresh glance
         // goes; otherwise the tab joins the end.
-        const now =
+        let now =
           !pinned && preview !== null && was.includes(preview)
             ? was.map((p) => (p === preview ? path : p))
             : [...was, path];
+        // 标签页上限 (第三轮 第 4 条): the tab touched longest ago goes —
+        // never the one just opened, never one holding unsaved work.
+        const gone = stalestTab(now, limit, touched.current, (p) => p === path || drafts.has(p));
+        if (gone !== null) now = now.filter((p) => p !== gone);
         remember(now);
         return now;
       });
@@ -988,8 +1000,13 @@ export function WorkspacePane({
         return path;
       });
     },
-    [tabs, preview, remember, machine, root],
+    [tabs, preview, remember, machine, root, limit, drafts],
   );
+
+  // What 「touched」 means for the limit: this tab was put in front.
+  useEffect(() => {
+    if (file !== null) touched.current.set(file, Date.now());
+  }, [file]);
 
   /** git's letter was pressed: open that file **against HEAD** in a
       tab of its own (工作区第五轮 第 38 条).
@@ -1613,8 +1630,17 @@ export function WorkspacePane({
           <TabStrip
             faces={tabFaces}
             active={file === null ? "" : `${machine}:${file}`}
-            onFocus={(id) => setFile(id.slice(machine.length + 1))}
+            onFocus={(id) => {
+              setFile(id.slice(machine.length + 1));
+              setSwitching(false);
+            }}
             onClose={(id) => shut(id.slice(machine.length + 1))}
+            // **The count and its switcher, once the strip runs past its
+            // edge** (docs/SHELL.md 第三轮 第 3 条). This strip was the one
+            // seat without it — the user's screenshot: twenty files and
+            // a scrollbar nobody could drag as the only way to the ones
+            // past the edge.
+            onSwitch={() => setSwitching(true)}
             // **The way back to the tree, and only where the tree is
             // off screen** (2026-09-16 ruling 33). The same control the
             // sessions landing's narrow face draws for the same reason
@@ -1644,7 +1670,20 @@ export function WorkspacePane({
               (ruling 45), and both were the same mistake at two sizes:
               an editor is a whole application and it was being given a
               third of a window. */}
-          {file === null ? (
+          {switching && tabs.length > 0 ? (
+            // The switcher takes the file's region, not the strip: the
+            // strip still says which tab you will come back to
+            // (`TabSwitcher`'s own judgment).
+            <TabSwitcher
+              faces={tabFaces}
+              active={file === null ? "" : `${machine}:${file}`}
+              onFocus={(id) => {
+                setFile(id.slice(machine.length + 1));
+                setSwitching(false);
+              }}
+              onClose={(id) => shut(id.slice(machine.length + 1))}
+            />
+          ) : file === null ? (
             // 中栏没有标签时 (ruling 37). Not a blank: where this is,
             // what branch it is on, and what was open last time.
             <WorkspaceEmpty

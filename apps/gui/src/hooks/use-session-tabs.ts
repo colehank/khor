@@ -22,6 +22,8 @@
 // (`App`'s gone-row rule), not the other way round.
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { stalestTab } from "@/browse/tab-limit";
+
 const STORE_KEY = "khor.sessions.tabs";
 
 type Tabs = { tabs: string[]; active: string | null };
@@ -61,9 +63,24 @@ export type SessionTabs = {
   drop: (ids: string[]) => void;
 };
 
-export function useSessionTabs(): SessionTabs {
+/**
+ * `limit` and `keep` are 标签页上限 (docs/SHELL.md 第三轮 第 4 条): past
+ * the limit, opening one more closes the tab touched longest ago that
+ * `keep` does not hold — a pinned session. Closing a tab is closing the
+ * tab, never the session, the way every close on this strip already is.
+ */
+export function useSessionTabs(
+  limit: number | null = null,
+  keep: (id: string) => boolean = () => false,
+): SessionTabs {
   const [state, setState] = useState<Tabs>(restore);
   const wrote = useRef(false);
+  /** When each tab was last put in front. A ref, read inside the state
+      updaters below; and the two inputs ride refs too, so `open` keeps
+      one identity (`App` lists it as an effect dependency). */
+  const touched = useRef(new Map<string, number>());
+  const rules = useRef({ limit, keep });
+  rules.current = { limit, keep };
 
   useEffect(() => {
     if (!wrote.current) {
@@ -78,12 +95,18 @@ export function useSessionTabs(): SessionTabs {
   }, [state]);
 
   const open = useCallback((id: string) => {
-    setState((was) =>
-      was.tabs.includes(id) ? { ...was, active: id } : { tabs: [...was.tabs, id], active: id },
-    );
+    touched.current.set(id, Date.now());
+    setState((was) => {
+      if (was.tabs.includes(id)) return { ...was, active: id };
+      const now = [...was.tabs, id];
+      const { limit, keep } = rules.current;
+      const gone = stalestTab(now, limit, touched.current, (t) => t === id || keep(t));
+      return { tabs: gone === null ? now : now.filter((t) => t !== gone), active: id };
+    });
   }, []);
 
   const focus = useCallback((id: string) => {
+    touched.current.set(id, Date.now());
     setState((was) => (was.tabs.includes(id) ? { ...was, active: id } : was));
   }, []);
 
