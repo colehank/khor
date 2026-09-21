@@ -196,12 +196,9 @@ pub async fn bind_with(
         // internal one loses n0 name resolution — is on the ledger.
         .dns_resolver(
             iroh::dns::DnsResolver::builder()
-                .with_nameserver("223.5.5.5:53".parse().unwrap(), iroh::dns::DnsProtocol::Udp)
-                .with_nameserver("8.8.8.8:53".parse().unwrap(), iroh::dns::DnsProtocol::Udp)
-                .with_nameserver("1.1.1.1:53".parse().unwrap(), iroh::dns::DnsProtocol::Udp)
-                .with_nameserver(
-                    "[2400:3200::1]:53".parse().unwrap(),
-                    iroh::dns::DnsProtocol::Udp,
+                .add_nameserver_configs(
+                    ["223.5.5.5", "8.8.8.8", "1.1.1.1", "2400:3200::1"]
+                        .map(|ip| iroh::dns::NameserverConfig::udp(ip.parse().unwrap())),
                 )
                 .build(),
         )

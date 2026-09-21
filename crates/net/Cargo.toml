@@ -23,4 +23,4 @@ serde_json.workspace = true
 # that reboots it saws the branch the whole fleet dials on (2026-08-20,
 # three reboots = 40 minutes of "unreachable" that was really the
 # bridge). Version-locked to the workspace iroh.
-iroh-relay = { version = "1.0.3", features = ["server"] }
+iroh-relay = { version = "1.2.0", features = ["server"] }
