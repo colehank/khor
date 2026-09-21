@@ -13,6 +13,9 @@ members = [
     "apps/gui/core",
     "apps/gui/src-tauri",
 ]
+# A patched copy of a dependency is not a member: its tests are
+# upstream's and want upstream's dev-dependencies (vendor/iroh/KHOR.md).
+exclude = ["vendor"]
 
 [workspace.package]
 # Kept equal to the release tag — the CI gate in `.github/workflows`
@@ -199,3 +202,8 @@ codegen-units = 16
 # what goes is a debugger's view of locals.
 [profile.dev]
 debug = "line-tables-only"
+
+# iroh 1.2.0 with one upstream bug fixed in place. Why, which change,
+# and when this block and the directory can go: vendor/iroh/KHOR.md.
+[patch.crates-io]
+iroh = { path = "vendor/iroh" }

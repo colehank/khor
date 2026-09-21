@@ -228,7 +228,10 @@ const BUILT_BRIDGE = join(repo, "target/debug/bridge");
 
     Walked rather than globbed because this script has no dependencies.
     `target/` never appears because neither root contains it. */
-const RUST_ROOTS = ["crates", join("apps", "gui", "core")];
+// `vendor` too: a patched dependency is linked into both binaries
+// (vendor/iroh/KHOR.md), so an edit there makes them stale like any
+// other source.
+const RUST_ROOTS = ["crates", join("apps", "gui", "core"), "vendor"];
 function rustSources(dir, out = []) {
   if (dir === undefined) {
     for (const r of RUST_ROOTS) rustSources(join(repo, r), out);

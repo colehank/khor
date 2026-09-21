@@ -496,17 +496,35 @@ impl Node {
                 }
             }
             ipc::Op::Hops => {
-                let mut by_device = Vec::new();
-                for d in self.devices().unwrap_or_default() {
-                    // Every device gets a row, including this machine
-                    // and the ones nothing has ever dialled: a device
-                    // left out would read as absent rather than as
-                    // unread, and those are different answers.
-                    let hop = match endpoint::roads_in_use(ep, &d.id).await {
-                        Some(u) => khor_core::Hop::of(u.direct, u.relay, u.other),
-                        None => khor_core::Hop::Unknown,
-                    };
-                    by_device.push((d.id, hop));
+                // Every device gets a row, including this machine and
+                // the ones nothing has ever dialled: a device left out
+                // would read as absent rather than as unread, and those
+                // are different answers.
+                let devices = self.devices().unwrap_or_default();
+                let asks = devices
+                    .iter()
+                    .map(|d| {
+                        let id = d.id.clone();
+                        (d.id.clone(), async move {
+                            endpoint::roads_in_use(ep, &id).await
+                        })
+                    })
+                    .collect();
+                let (by_device, late) = hops_within(asks, HOPS_BUDGET).await;
+                // Said, not swallowed: 说不出 on the card is true, and this
+                // line is where the *why* goes — a stalled endpoint is a
+                // fault worth finding in the serve's log.
+                if !late.is_empty() {
+                    let names: Vec<&str> = devices
+                        .iter()
+                        .filter(|d| late.contains(&d.id))
+                        .map(|d| d.name.as_str())
+                        .collect();
+                    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                    eprintln!(
+                        "{}",
+                        msg::serve_hops_late(&stamp, HOPS_BUDGET.as_millis(), names.join(", "))
+                    );
                 }
                 ipc::Reply::Hops { by_device }
             }
@@ -5766,6 +5784,108 @@ impl Node {
         alpn: &[u8],
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
         self.dial_with(ep, id, direct, self.relays(), alpn).await
+    }
+}
+
+/// How long the road question may take, for the whole device table.
+///
+/// **Not borrowed from the dial budgets.** The serve's other waits
+/// (`DIAL_TIMEOUT`, the tunnel's `CONNECT_TIMEOUT`, 10 s each) cover a
+/// trip across a network; this one never leaves the process — it asks
+/// iroh's in-memory map, which answered in 20-75 µs across a 40 s
+/// probe on 2026-09-21. The ceiling that matters is the caller's: the
+/// app asks for the device list on a 2 s beat, from a bridge that
+/// serves one request at a time, so a wait anywhere near 2 s stacks the
+/// next poll behind this one. Half a second is four orders over normal
+/// and a quarter of that beat.
+const HOPS_BUDGET: Duration = Duration::from_millis(500);
+
+/// The road question for every device, one answer each, inside one
+/// budget for the lot.
+///
+/// **A machine whose answer is late reads [`khor_core::Hop::Unknown`]
+/// and is named in the second list** — never left out, and never
+/// waited on past the budget. The asks run in order against one
+/// deadline, and each is polled once even when the deadline has
+/// passed, so an answer that is already there still counts: one stuck
+/// machine costs the budget, not every machine after it.
+async fn hops_within<F>(
+    asks: Vec<(String, F)>,
+    budget: Duration,
+) -> (Vec<(String, khor_core::Hop)>, Vec<String>)
+where
+    F: std::future::Future<Output = Option<endpoint::RoadsInUse>>,
+{
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut by_device = Vec::new();
+    let mut late = Vec::new();
+    for (id, ask) in asks {
+        let hop = match tokio::time::timeout_at(deadline, ask).await {
+            Ok(Some(u)) => khor_core::Hop::of(u.direct, u.relay, u.other),
+            Ok(None) => khor_core::Hop::Unknown,
+            Err(_) => {
+                late.push(id.clone());
+                khor_core::Hop::Unknown
+            }
+        };
+        by_device.push((id, hop));
+    }
+    (by_device, late)
+}
+
+#[cfg(test)]
+mod hops {
+    use super::*;
+    use std::future::Future;
+    use std::pin::Pin;
+
+    type Ask = Pin<Box<dyn Future<Output = Option<endpoint::RoadsInUse>> + Send>>;
+
+    fn stuck() -> Ask {
+        Box::pin(std::future::pending())
+    }
+
+    fn direct() -> Ask {
+        Box::pin(std::future::ready(Some(endpoint::RoadsInUse {
+            direct: true,
+            relay: false,
+            other: false,
+        })))
+    }
+
+    /// **A road question that never comes back costs the budget, not the
+    /// caller.** Measured 2026-09-21: iroh's per-remote actor spun in
+    /// `open_path_on_all_conns` (upstream #4390), `remote_info` queued
+    /// behind it, and `Op::Hops` took 52950 ms and then never answered —
+    /// with the bridge's one request thread waiting on it, so the whole
+    /// face froze. The stuck machine reads 说不出 and is named; the one
+    /// after it still gets its real answer.
+    #[tokio::test]
+    async fn a_road_question_that_never_answers_costs_the_budget_not_the_caller() {
+        let asks = vec![("stuck".to_owned(), stuck()), ("fine".to_owned(), direct())];
+        let started = std::time::Instant::now();
+        let Ok((by_device, late)) =
+            tokio::time::timeout(Duration::from_secs(5), hops_within(asks, HOPS_BUDGET)).await
+        else {
+            panic!("the road question hung for 5 s on one machine that never answered");
+        };
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "took {:?} — past the GUI's 2 s poll beat",
+            started.elapsed()
+        );
+        assert_eq!(
+            by_device,
+            vec![
+                ("stuck".to_owned(), khor_core::Hop::Unknown),
+                ("fine".to_owned(), khor_core::Hop::Direct),
+            ]
+        );
+        assert_eq!(
+            late,
+            vec!["stuck".to_owned()],
+            "the late machine is named, not dropped"
+        );
     }
 }
 

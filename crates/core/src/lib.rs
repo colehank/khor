@@ -178,8 +178,10 @@ impl State {
 ///   endpoint*, so there was no one to ask. Fixable, and the fix is a
 ///   command.
 /// - [`Hop::Unknown`] is *somebody was asked and could not say* — the
-///   remote is not in its map, or the road in use is a transport this
-///   version has no word for.
+///   remote is not in its map, the road in use is a transport this
+///   version has no word for, or the endpoint did not answer within the
+///   serve's budget (`khor_node::link`'s `HOPS_BUDGET`; the serve's log
+///   names the machine when that is why).
 ///
 /// Folding any of the three together would be the same mistake one size
 /// down. "nothing is flowing", "khor is not running here" and "I have
