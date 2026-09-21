@@ -32,10 +32,12 @@ bug：同一个 remote 有 ≥2 条连接、都开不出新 path 时（`RemoteCi
 RemoteStateActor 从此在 `open_path_on_all_conns` 里空转，排在它后面的消息（包括 `Endpoint::remote_info`）
 一直等不到回复，内存一路翻倍。
 
-在 khor 里的样子（docs/handoff/001.md 里 smoke §25 那一节有全部读数）：beta 对 alpha 同时有同步连接和隧道连接，
-本机防火墙挡掉未签名二进制的非回环入站，打洞一直不成，path id 一路被耗完。`sample` 看到 actor 所在的
-worker 线程 263/266、389/393、308/310 个样本都在 `open_path_on_all_conns` 里；bridge 的 `devices`
-请求（→ serve 的 `Op::Hops` → `remote_info`）从几十毫秒涨到 52950ms，然后再也不回来。
+在 khor 里的样子（docs/handoff/001.md 里 smoke §25 那一节有全部读数）：beta 对 alpha 同时有同步连接和
+隧道连接，两边在同一台机器上，互相公布的候选地址里只有回环走得通（本机发往自己局域网地址、tailnet 地址的
+UDP 到不了，连系统自带的 `/usr/bin/nc` 也一样），开往其余候选的 path 一直失败。从这里怎么一步步走到
+`MaxPathIdReached` 没有逐帧追，读数只有结果：`sample` 看到 actor 所在的 worker 线程 263/266、389/393、
+308/310 个样本都在 `open_path_on_all_conns` 里；bridge 的 `devices` 请求（→ serve 的 `Op::Hops` →
+`remote_info`）从几十毫秒涨到 52950ms，然后再也不回来。
 
 上游没有带修复的版本可升，所以只能在本地打补丁。
 
