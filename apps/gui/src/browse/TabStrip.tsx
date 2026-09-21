@@ -45,7 +45,7 @@ import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
-import { IconClose, IconEye, IconPin, IconPlus } from "@/components/icons";
+import { IconClose, IconEye, IconPlus } from "@/components/icons";
 import { PaneBar } from "@/components/PaneBar";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -121,11 +121,6 @@ export type TabFace = {
    * a close, and a second mark on each of them would be a row of
    * controls aimed at files nobody is looking at. */
   look?: { on: boolean; label: string; onToggle: () => void };
-  /** Put at the top by a person (docs/SHELL.md 第二轮). The switcher
-      draws a pin where the close would be: a pinned tab cannot be
-      closed until it is unpinned, so a close on it would be an offer
-      whose one answer is no. */
-  pinned?: boolean;
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -716,10 +711,7 @@ export function TabSwitcher({
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
   /** Whether the switcher wears its own search box (docs/SHELL.md 第三轮
-      第 3 条:「切换器头上加搜索框」). **Off where the seat already has
-      one**: the browse landing's tab column is a sidebar with its own
-      head (第二轮), and two boxes over one list is the failure
-      `PaneBar`'s head warns about. */
+      第 3 条:「切换器头上加搜索框」). */
   search?: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -735,7 +727,6 @@ export function TabSwitcher({
             key={f.id}
             data-switch-tab={f.id}
             data-on={f.id === active}
-            data-pinned={f.pinned ?? false}
             className={cn(
               // `py-1` where it was `py-2`: the row's own height now
               // comes from the two controls in it, both of which are at
@@ -783,18 +774,6 @@ export function TabSwitcher({
               </span>
             </button>
             </TabOpen>
-            {f.pinned ? (
-              // Where the close would be: the state, not a control. A
-              // pinned tab is unpinned from its menu first, so this seat
-              // says why there is no close here (docs/SHELL.md 第二轮:
-              // 「关不掉之前要先取消置顶」).
-              <span
-                data-switch-pinned={f.id}
-                className="flex min-h-touch min-w-touch flex-none items-center justify-center text-muted-foreground"
-              >
-                <IconPin pinned />
-              </span>
-            ) : (
             <Button
               size="icon"
               variant="ghost"
@@ -811,7 +790,6 @@ export function TabSwitcher({
             >
               <IconClose />
             </Button>
-            )}
           </div>
         ))}
       </div>

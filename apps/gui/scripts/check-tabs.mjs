@@ -907,7 +907,12 @@ try {
   //    too — one press, because the shape itself was proved in 4.
   await page.setViewportSize({ width: 390, height: 800 });
   await openBrowser();
-  if ((await page.locator("[data-tab-count]").count()) !== 1) {
+  //    Waited for: the viewport just changed under a landing that was
+  //    already open, and the narrow face is one render away.
+  const counted = await until("a tab count on the narrow face", 5_000, async () =>
+    (await page.locator("[data-tab-count]").count()) === 1,
+  ).catch(() => false);
+  if (!counted) {
     fail("no tab count on the browser landing's narrow face");
   } else ok("the narrow switcher is reachable on the browser landing too");
   const overPage = await page.evaluate(

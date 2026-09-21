@@ -301,6 +301,20 @@ function Mark({
   );
 }
 
+/** A git branch: two commits on a trunk and one on a side road joined
+    back in — the corner of a workspace that is a repository
+    (docs/SHELL.md 第四轮 第 2 条:「文件夹, 是 git 仓库时换分支」). */
+export function IconBranch({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <circle cx="4.5" cy="3.5" r="1.6" />
+      <circle cx="4.5" cy="12.5" r="1.6" />
+      <circle cx="11.5" cy="5" r="1.6" />
+      <path d="M4.5 5.1v5.8M11.5 6.6c0 3-4.8 2.5-6.7 4.4" />
+    </Mark>
+  );
+}
+
 /** Back chevron, 16-canvas mark. */
 export function IconBack({ className }: IconProps) {
   return (

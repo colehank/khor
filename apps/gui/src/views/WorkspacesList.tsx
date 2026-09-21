@@ -32,36 +32,15 @@ import {
   type WorkspaceRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconChevronRight } from "@/components/icons";
-import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { IconBranch, IconChevronRight, IconFiles } from "@/components/icons";
+import { type RowAction } from "@/components/RowMenu";
+import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
-import { ago } from "@/words";
+import { ago, groupLabel } from "@/words";
 import { IGNORED } from "@/views/fileRow";
-
-/** Whether a row answers what is typed in the box (2026-09-17 ruling
-    50).
- *
- * **The three things the row says out loud**: its name, the machine it
- * is on, and its path. Nothing hidden — a box that matched a field
- * nobody can see would leave a person staring at a row wondering what
- * it has to do with the word they typed (`visibleQuota`'s rule, one
- * landing over).
- *
- * `machine` is the **shown** name, because that is the one on the glass
- * — a row whose machine has left the device table carries an empty one
- * and is then findable by its name and its path, which is all it says.
- *
- * Case-insensitive, a plain substring, any one of the three: the same
- * reading `khor search` gives a typed word, and the same reading every
- * other box in this app gives one. */
-function matches(r: WorkspaceRow, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (q === "") return true;
-  return [r.name, r.machine, r.path].some((s) => s.toLowerCase().includes(q));
-}
 
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
@@ -197,7 +176,9 @@ export function WorkspacesList({
   // first; a row with no time sinks to the foot (0 and 「not answered」
   // are one answer here, `marks`' note). Ties by path, so two machines
   // holding the same tree print in one order.
-  const rows = [...list].filter((r) => matches(r, query)).sort((a, b) => {
+  // The box's rule is `SideList`'s now (`find` below reads the same
+  // three things `matches` did); this only orders.
+  const rows = [...list].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     const ta = times[keyOf(a)] ?? 0;
     const tb = times[keyOf(b)] ?? 0;
@@ -264,199 +245,128 @@ export function WorkspacesList({
     ];
   };
 
-  if (rows.length === 0) {
-    if (!read) return <div className="flex min-h-0 flex-1 flex-col" />;
-    // **A list emptied by the box is not an empty list** (ruling 50).
-    // 「还没有工作区」 under a typed word would be khor telling somebody
-    // they have no projects while three of them are one backspace away.
-    if (query.trim() !== "" && list.length > 0) {
-      return (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+  if (!read) return <div className="flex min-h-0 flex-1 flex-col" />;
+
+  const side: SideRow[] = rows.map((r) => {
+    const k = keyOf(r);
+    const isOpen = selected?.device === r.device && selected.path === r.path;
+    const git = marks[k];
+    const at = times[k] ?? 0;
+    // **Ignored paths are rows too since 2026-09-16, and they are not
+    // changes** (`khor_node::git::IGNORED`).
+    const changed = git ? git.rows.filter((w) => w.mark !== IGNORED).length : 0;
+    const repo = !!git && git.branch !== "";
+    return {
+      // Not `keyOf`: that joins on a NUL, which no attribute selector can
+      // name. The machine's id and the path, with a colon between — the
+      // shape the CLI prints.
+      id: `${r.device}:${r.path}`,
+      group: r.pinned ? "pin" : "",
+      pinned: r.pinned,
+      face: (
+        <MachineAvatar
+          face={devices.find((d) => d.id === r.device)?.face ?? null}
+          className="size-avatar"
+        />
+      ),
+      // 「工作区: 文件夹, 是 git 仓库时换分支」 (docs/SHELL.md 第四轮 第 2 条).
+      badge: repo
+        ? { mark: "branch", icon: <IconBranch className="size-kind-mark-glyph" /> }
+        : { mark: "folder", icon: <IconFiles className="size-kind-mark-glyph" /> },
+      title: (
+        <span className="flex w-full items-center gap-1.5">
+          {/* **The name gives way last** (「list 宽度折叠的时候, 优先折叠
+              branch 名,保留工作区名」— 2026-09-16): the branch beside it
+              starts at a base of zero and takes only the leftover, so
+              the name is the one item that shrinks, and only once the
+              branch has given up everything it had. */}
+          <span data-ws-name className="min-w-0 truncate text-fact font-title text-foreground">
+            {r.name}
+          </span>
+          {/* **The branch, or nothing at all** — not a repository, a
+              machine that could not be asked, a detached HEAD: all
+              three arrive here as nothing. */}
+          <span data-ws-git className="min-w-0 flex-1 truncate text-right text-aux text-muted-foreground">
+            {git && git.branch !== ""
+              ? changed > 0
+                ? `${git.branch} · ${gui.ws_marked(changed)}`
+                : git.branch
+              : ""}
+          </span>
+        </span>
+      ),
+      // Where it is, in full — the machine and the absolute path are one
+      // fact, and this pair is what the CLI prints. **Not shortened to
+      // `~`**: whose home that is, is a fact about the far machine.
+      sub: (
+        <span className="flex w-full items-baseline gap-1.5">
+          <span data-ws-where className="truncate">
+            {r.machine === "" ? r.path : `${r.machine}:${r.path}`}
+          </span>
+          <span data-ws-touched className="ml-auto shrink-0 tabular-nums">
+            {at > 0 ? ago(at) : ""}
+          </span>
+        </span>
+      ),
+      // **The three things the row says out loud**: its name, its
+      // machine, its path (2026-09-17 ruling 50).
+      find: `${r.name} ${r.machine} ${r.path}`,
+      selected: isOpen,
+      menu: actions(r),
+      // **The row is the control, and pressing the open one folds its
+      // tree** (2026-09-16): a row that is not open means 「open this
+      // workspace」 and nothing else; only the one already in front has
+      // a second meaning left, and the selection never changes under it.
+      onOpen: () => (isOpen && onTree !== undefined ? onTree() : onOpen(r)),
+      // The tree's state, on the open row only — a drawing, not a
+      // button (「『<』保留为状态展示」), pointing at the tree when it is
+      // out and back at this list when it is folded.
+      after:
+        isOpen && onTree !== undefined ? (
+          <span
+            data-ws-tree-mark
+            data-on={treeOpen}
+            aria-hidden="true"
+            className="flex min-w-touch flex-none items-center justify-center self-stretch text-muted-foreground"
+          >
+            <IconChevronRight className={cn("size-4 transition-transform", !treeOpen && "rotate-180")} />
+          </span>
+        ) : undefined,
+      // Whether this row's tree is out, said on the line rather than only
+      // drawn: the chevron is `aria-hidden` and may not be there at all.
+      rowData: {
+        "data-ws-line": "",
+        "data-tree": isOpen && onTree !== undefined ? treeOpen : undefined,
+        "data-pinned": r.pinned,
+      },
+      openData: { "data-ws-row": "", "data-ws-pinned": r.pinned, "data-selected": isOpen },
+    };
+  });
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <SideList
+        rows={side}
+        query={query}
+        label={groupLabel}
+        empty={
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+            <span className="text-fact font-title text-foreground">{gui.workspaces_empty}</span>
+            <span className="text-aux text-muted-foreground">{gui.workspaces_how}</span>
+          </div>
+        }
+        // **A list emptied by the box is not an empty list** (ruling 50):
+        // 「还没有工作区」 under a typed word would be khor telling somebody
+        // they have no projects while three are one backspace away.
+        none={
           <div
             data-ws-none-match
             className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center text-fact text-muted-foreground"
           >
             {gui.workspace_none_match}
           </div>
-        </div>
-      );
-    }
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-          <span className="text-fact font-title text-foreground">{gui.workspaces_empty}</span>
-          <span className="text-aux text-muted-foreground">{gui.workspaces_how}</span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      {rows.map((r) => {
-        const k = keyOf(r);
-        const isOpen = selected?.device === r.device && selected.path === r.path;
-        const git = marks[k];
-        const at = times[k] ?? 0;
-        // **Ignored paths are rows too since 2026-09-16, and they are
-        // not changes** (`khor_node::git::IGNORED`): 「N 个文件改过」
-        // counting a build directory would be the corner reporting on
-        // things git is not even looking at.
-        const changed = git ? git.rows.filter((w) => w.mark !== IGNORED).length : 0;
-        return (
-          <div
-            key={k}
-            data-ws-line
-            data-pinned={r.pinned}
-            // Whether this row's tree is out, said on the line rather
-            // than only drawn: the chevron is `aria-hidden` and may not
-            // be there at all (the narrow face has no column to fold),
-            // and a state nothing can read is a state a gate cannot
-            // hold (2026-09-16).
-            data-tree={isOpen && onTree !== undefined ? treeOpen : undefined}
-            // **One wash for the whole line** (2026-09-17 ruling 48:
-            // 「悬浮工作区list的时候, >符号的高亮要比别的区域深一些,
-            // 应该一致」— the user). The row is two boxes — the button
-            // and the chevron beside it — and the hover used to be the
-            // button's, so the part of the line under the chevron did
-            // not change while the rest did. A row is one thing to a
-            // hand, so it lights as one: the wash is here, and nothing
-            // inside paints a ground of its own.
-            className={cn(
-              "flex items-stretch border-b border-border/50",
-              isOpen ? "bg-accent" : "hover:bg-accent/50",
-            )}
-          >
-          <RowMenu items={actions(r)}>
-            {/* **The open one is marked the way an open session is**
-                (「一个工作区被选中了没有任何状态」— the user,
-                2026-09-16). It wore `bg-card` until then, which is the
-                ground this whole pane already stands on (`App`'s
-                `data-list`) — a selected state painted in the colour of
-                the thing behind it is no selected state at all, and
-                nothing on the glass said which row the middle column
-                belongs to. `bg-accent` is what `SessionsList` marks its
-                own front row with; one gesture, one look. */}
-            <button
-              data-ws-row
-              data-ws-pinned={r.pinned}
-              data-selected={isOpen}
-              type="button"
-              // **The row is the control, and pressing the open one
-              // folds its tree** (2026-09-16:「取消工作区list这个只能
-              // 点击『<』展开文件树吧. 还是点击整个工作区行都可以. 但
-              // 『<』保留为状态展示. 收起状态, 点击行来控制」— the user).
-              //
-              // The two meanings this was designed away from are still
-              // not both on one press: a row that is **not** open means
-              // 「open this workspace」 and nothing else, and it is only
-              // once a row is the one already in front that its press
-              // has anything else left to mean. So the second press is
-              // the fold, the selection never changes under it, and the
-              // middle column never moves.
-              onClick={() => (isOpen && onTree !== undefined ? onTree() : onOpen(r))}
-              className="flex min-h-touch min-w-0 flex-1 flex-col items-start gap-0.5 px-3 py-2.5 text-left"
-            >
-              <span className="flex w-full items-center gap-1.5">
-                <MachineAvatar
-                  face={devices.find((d) => d.id === r.device)?.face ?? null}
-                  className="size-kind-mark flex-none"
-                />
-                {/* **The name gives way last** (「list 宽度折叠的时候,
-                    优先折叠 branch 名,保留工作区名」— the user,
-                    2026-09-16). Ordinary flex shrinking here, arranged
-                    so the deficit has only one place to go: the branch
-                    beside it starts at a base of zero (`flex-1`), so
-                    the width it draws is whatever is left over and it
-                    absorbs nothing when the row gets narrower. This one
-                    keeps its natural base and `min-w-0`, so it is the
-                    only item that can shrink — and it only starts to
-                    once the branch has already given up everything it
-                    had. */}
-                <span data-ws-name className="min-w-0 truncate text-fact font-title text-foreground">
-                  {r.name}
-                </span>
-                {/* **The branch, or nothing at all.** A directory that
-                    is not a repository, a machine that could not be
-                    asked, a detached HEAD with no name to say: all
-                    three arrive here as nothing, and 「没有就不显示」
-                    is the rule for all three. The corner keeps its
-                    anchor so the absence is a readable fact rather than
-                    a missing element. */}
-                {/* **`flex-1` where this was `ml-auto shrink-0`.** A
-                    base of zero that grows into the leftover is the
-                    same right-hand corner on a wide row, and on a
-                    narrow one it is the half that folds: it takes what
-                    the name did not want and truncates inside it, down
-                    to nothing. `text-right` is what `ml-auto` was doing
-                    before — the box now reaches all the way across, so
-                    the corner is where the text sits rather than where
-                    the box starts. */}
-                <span
-                  data-ws-git
-                  className="min-w-0 flex-1 truncate text-right text-aux text-muted-foreground"
-                >
-                  {git && git.branch !== ""
-                    ? changed > 0
-                      ? `${git.branch} · ${gui.ws_marked(changed)}`
-                      : git.branch
-                    : ""}
-                </span>
-              </span>
-              <span className="flex w-full items-baseline gap-1.5 text-aux text-muted-foreground">
-                {/* Where it is, in full: the machine and the absolute
-                    path are one fact, and this pair is what the CLI
-                    prints and what somebody pastes. **Not shortened to
-                    `~`** — whose home that is, is a fact about the far
-                    machine, and this list holds rows from several. */}
-                <span data-ws-where className="truncate">
-                  {r.machine === "" ? r.path : `${r.machine}:${r.path}`}
-                </span>
-                <span data-ws-touched className="ml-auto shrink-0 tabular-nums">
-                  {at > 0 ? ago(at) : ""}
-                </span>
-              </span>
-            </button>
-          </RowMenu>
-          {/* The tree's state, on the open row only — a closed row has
-              no tree to be about, and a chevron on every row would read
-              as 「expand this row」. Turned when the tree is out, the
-              same glyph the tree's own directories turn.
-
-              **A drawing, not a button** (2026-09-16, the ruling above):
-              「『<』保留为状态展示」. It was a control and the row was
-              not; now the row is the control and this says which way it
-              went. `aria-hidden` because it is a picture of state a
-              screen reader already has from the row's own press — and
-              the state itself is on `[data-ws-line]`'s `data-tree`,
-              where a reader of the DOM finds it whether or not this
-              glyph is drawn. */}
-          {isOpen && onTree !== undefined && (
-            <span
-              data-ws-tree-mark
-              data-on={treeOpen}
-              aria-hidden="true"
-              // As tall as the row still, though nothing washes now:
-              // the glyph sits in the middle of the row's right edge
-              // whatever height the row came out at, and a box that
-              // stretched with it is how that stays true. The `min-w-touch`
-              // is not a target any more — it is the width the corner
-              // was, kept so the two rows either side of a fold do not
-              // step sideways as the glyph turns.
-              className="flex min-w-touch flex-none items-center justify-center self-stretch text-muted-foreground"
-            >
-              {/* **Left and right, not up and down** (2026-09-16:「收起是
-                  <,打开是 >」): the tree is the column to this list's
-                  right, so the glyph points at it when it is out and
-                  back at this list when it is folded. */}
-              <IconChevronRight
-                className={cn("size-4 transition-transform", !treeOpen && "rotate-180")}
-              />
-            </span>
-          )}
-          </div>
-        );
-      })}
+        }
+      />
     </div>
   );
 }

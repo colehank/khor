@@ -58,14 +58,19 @@ import { forgetRecent, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
-import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
+import { TabCount } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
+import { MachineAvatar } from "@/components/Avatar";
+import { IconBrowser, IconClose, IconPin } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
 import type { RowAction } from "@/components/RowMenu";
+import { SideList, type SideRow } from "@/components/SideList";
+import { Button } from "@/components/ui/button";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
+import { groupLabel } from "@/words";
 
 /** What a tab calls itself: the way a browser tab wears a page's title
     rather than its URL. A machine with nothing open on it wears its own
@@ -215,29 +220,61 @@ export function BrowseLanding({
     ];
   };
 
-  // The box narrows by what a row shows — its name and its place —
-  // and nothing it does not show. A pinned tab is not exempt: a search
-  // that kept rows which do not match would be a filter with holes.
-  const q = query.trim().toLowerCase();
-  const shown = q === "" ? tabs.tabs : tabs.tabs.filter((t) => {
+  /**
+   * Every tab as a row of the one sidebar list (`SideList`, docs/SHELL.md
+   * 第四轮): the column on the wide face, the screen on the narrow one.
+   * The pinned group, its fold and the box's rule are that list's.
+   */
+  const side: SideRow[] = tabs.tabs.map((t) => {
     const d = deviceOf(t.device);
-    return `${tabLabel(kind, t.path, d)} ${t.title} ${t.path}`.toLowerCase().includes(q);
-  });
-
-  const faces: TabFace[] = shown.map((t) => {
-    const d = deviceOf(t.device);
+    const label = tabLabel(kind, t.path, d);
+    const on = t.id === tabs.current.id;
     return {
       id: t.id,
-      label: tabLabel(kind, t.path, d),
-      face: d?.face ?? null,
-      path: t.path,
-      // The exit machine's name, for the tab's hover title. **The face
-      // was already there and said which machine without saying its
-      // name** (2026-09-09) — a coloured disc is recognisable once you
-      // know it and unreadable before that.
-      machine: d?.name ?? null,
+      group: t.pinned ? "pin" : "",
       pinned: t.pinned,
+      face: <MachineAvatar face={d?.face ?? null} className="size-avatar" />,
+      badge: { mark: "page", icon: <IconBrowser className="size-kind-mark-glyph" /> },
+      title: (
+        <span data-tab-label data-tab-name className="block truncate text-sm font-label">
+          {label}
+        </span>
+      ),
+      sub: t.path || undefined,
+      // What the row shows — its name and its place — and nothing else.
+      find: `${label} ${t.title} ${t.path}`,
+      selected: on,
       menu: menuOf(t),
+      onOpen: () => {
+        tabs.focus(t.id);
+        setSwitching(false);
+      },
+      // Where the close would be, a pinned tab wears its pin: it is
+      // unpinned from its menu first (「关不掉之前要先取消置顶」). The × is
+      // fire and forget — never drawn on a pinned tab, so the node's one
+      // refusal for it cannot be met here — and it closes without asking,
+      // as Chrome's does (docs/SHELL.md 第四轮 第 3 条).
+      after: t.pinned ? (
+        <span
+          data-switch-pinned={t.id}
+          className="flex min-h-touch min-w-touch flex-none items-center justify-center text-muted-foreground"
+        >
+          <IconPin pinned />
+        </span>
+      ) : (
+        <Button
+          size="icon"
+          variant="ghost"
+          data-switch-close={t.id}
+          aria-label={gui.close_tab}
+          className="min-h-touch min-w-touch flex-none"
+          onClick={() => void tabs.close(t.id).catch(() => {})}
+        >
+          <IconClose />
+        </Button>
+      ),
+      rowData: { "data-switch-tab": t.id, "data-on": on, "data-pinned": t.pinned },
+      openData: { "data-switch-open": t.id },
     };
   });
 
@@ -338,36 +375,10 @@ export function BrowseLanding({
       />
     );
 
-  /**
-   * Every tab as a row: **the column on the wide face, the screen on
-   * the narrow one, and one component either way.**
-   *
-   * Chrome's vertical tab is a face, a name, a second line and a close,
-   * with a 「+」 under the list — which is precisely what `TabSwitcher`
-   * has drawn for phones since before this ruling. Written twice, the
-   * two would be two places to keep the closing rules in step, and the
-   * wide one would be the copy nobody notices drifting.
-   *
-   * `setSwitching(false)` on every action is a no-op on the wide face
-   * (the screen is never up there) and is what puts the screen away on
-   * the narrow one. Said once rather than branched: a handler that
-   * differed per face is the second spelling this whole file is about.
-   */
   const tabList = (
-    <TabSwitcher
-      faces={faces}
-      active={tabs.current.id}
-      onFocus={(id) => {
-        tabs.focus(id);
-        setSwitching(false);
-      }}
-      // The × is fire and forget: it is never drawn on a pinned tab,
-      // so the one refusal the node has for it cannot be met here.
-      onClose={(id) => void tabs.close(id).catch(() => {})}
-      // The column wears the landing's own head (search and 「+」); a
-      // second box inside it would be two over one list.
-      search={false}
-    />
+    <div data-tab-switcher className="h-full min-h-0 overflow-y-auto">
+      <SideList rows={side} query={query} label={groupLabel} none={gui.no_matches} />
+    </div>
   );
 
   /**

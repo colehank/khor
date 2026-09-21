@@ -1,9 +1,7 @@
-import type { CSSProperties } from "react";
-
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionMark } from "@/components/BrandIcons";
-import { cn } from "@/lib/utils";
+import { FaceMark } from "@/components/FaceMark";
 
 /** The corner mark on a session's face: the shape is `sessionMark`'s
     one judgment; this only sizes it. (Moved here from `SessionsList`
@@ -57,28 +55,17 @@ export function SessionFace({
   category: string | null;
   className?: string;
 }) {
+  // **`FaceMark` with a halo and a kind mark** (docs/SHELL.md 第四轮 第 2
+  // 条): the assembly this file used to draw by hand is the one every
+  // sidebar row wears now; a session's is the only one with a halo.
   return (
-    // `flex`, not inline: an inline wrap grows the baseline's few
-    // pixels under the face and the mark's corner offset bites into
-    // that gap instead of the face (mandala's .badged-face fix, the
-    // flex spelling of display:block+line-height:0).
-    <span className={cn("relative flex flex-none", className)}>
-      <MachineAvatar face={face} className="size-avatar" />
-      {/* Behind nothing and in front of nothing — it paints outside
-          the face's box entirely (`app.css`), so it can neither cover
-          the artwork nor be covered by it. */}
-      <span
-        data-halo={word}
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-full"
-        style={{ "--halo-color": `var(--state-${word})` } as CSSProperties}
-      />
-      <span
-        data-kind-mark={category ?? kind}
-        className="absolute -bottom-0.5 -right-0.5 grid size-kind-mark place-items-center rounded-sm bg-card text-muted-foreground"
-      >
-        <KindMark kind={kind} category={category} />
-      </span>
-    </span>
+    <FaceMark
+      face={<MachineAvatar face={face} className="size-avatar" />}
+      halo={word}
+      mark={category ?? kind}
+      badgeData={{ "data-kind-mark": category ?? kind }}
+      badge={<KindMark kind={kind} category={category} />}
+      className={className}
+    />
   );
 }

@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
@@ -45,7 +45,9 @@ import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
-import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { type RowAction } from "@/components/RowMenu";
+import { sessionMark } from "@/components/BrandIcons";
+import { SideList, type SideRow } from "@/components/SideList";
 import {
   DIAL_CARD_RATIO,
   DIAL_CARD_SIZE,
@@ -71,7 +73,7 @@ import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
-import { QUOTA_AXES, axisOf, lasting, until, valueOf } from "@/words";
+import { QUOTA_AXES, axisOf, groupLabel, lasting, until, valueOf } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
     five minutes and cools a failed account for ten (`accounts` module
@@ -1048,10 +1050,15 @@ export function QuotaLanding({
   // same reason: a group that no row falls into cannot draw a heading
   // over nothing, with no special case to remember.
   const grouped = useMemo(() => {
-    if (groupBy === GROUP_NONE) return shown;
+    // **Pinned first, under their own heading, in every grouping** — the
+    // pinned group every sidebar has (docs/SHELL.md 第四轮 第 1 条); the
+    // chosen axis groups the rest.
+    const pinned = shown.filter((r) => r.account?.pinned);
+    const rest = shown.filter((r) => !r.account?.pinned);
+    if (groupBy === GROUP_NONE) return [...pinned, ...rest];
     const order: string[] = [];
     const bins = new Map<string, Row[]>();
-    for (const r of shown) {
+    for (const r of rest) {
       const g = answersOf(r)[groupBy] ?? "";
       if (!bins.has(g)) {
         bins.set(g, []);
@@ -1059,7 +1066,7 @@ export function QuotaLanding({
       }
       bins.get(g)!.push(r);
     }
-    return order.flatMap((g) => bins.get(g)!);
+    return [...pinned, ...order.flatMap((g) => bins.get(g)!)];
     // `shown` is rebuilt every render (it is a filter over `rows`), so
     // the deps that matter are the three inputs behind it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1214,129 +1221,88 @@ export function QuotaLanding({
         throw e;
       });
 
+  // **The rows are `SideList`'s** (docs/SHELL.md 第四轮): the heading
+  // where the group changes, its fold, the face with its corner. The
+  // box's rule stays `visibleQuota` above, because the pick has to
+  // follow what is on screen (`current`) and it is read off the same
+  // filtered list.
+  const groupOf = (r: Row): string =>
+    r.account?.pinned ? "pin" : groupBy === GROUP_NONE ? "" : `${groupBy}${answersOf(r)[groupBy] ?? ""}`;
+  const side: SideRow[] = grouped.map((r) => {
+    const on = current?.id === r.id;
+    // The pips are the windows themselves, so **every** subscription row
+    // has them — probed or registered.
+    const dials = r.kind === "sub" ? subDials(r) : [];
+    const M = sessionMark("agent", r.provider);
+    return {
+      id: r.id,
+      group: groupOf(r),
+      pinned: !!r.account?.pinned,
+      // **The machine card's dial, one size down** — the same geometry,
+      // milestones and rim (2026-09-07:「环全部和机器卡对齐」); the
+      // reading is inside the ring.
+      face: (
+        <Face
+          size={DIAL_ROW_SIZE}
+          stroke={DIAL_ROW_STROKE}
+          ratio={DIAL_ROW_RATIO}
+          crop
+          fraction={arcOf(r)}
+          strain={r.account?.strain ?? null}
+          pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+        >
+          {centreOf(r)}
+        </Face>
+      ),
+      // The provider on the corner — what this reading is *of*.
+      badge: { mark: r.provider, icon: <M className="size-kind-mark-glyph" /> },
+      // **The title is somebody's own word** (「标题是用户可以自己起的」),
+      // so the line under it carries what the row *is*: 类型 · 提供商.
+      title: (
+        <span data-quota-name className="block truncate text-fact">
+          {r.name}
+        </span>
+      ),
+      sub: <span data-quota-sub-line>{subLine(r)}</span>,
+      // **The right end is when this was read**, not what it says.
+      trailing: (
+        <span data-quota-age-cell className="flex-none text-xs tabular-nums text-muted-foreground">
+          {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
+        </span>
+      ),
+      find: `${r.name} ${subLine(r)}`,
+      selected: on,
+      // **A probed subscription gets no menu**: it is not a registration,
+      // so there is nothing to pin, edit or delete — and an item whose
+      // one answer is no is not offered.
+      menu: actionsFor(r),
+      onOpen: () => {
+        setPicked(r.id);
+        onOpen?.();
+      },
+      openData: {
+        "data-quota-row": r.id,
+        "data-on": on,
+        "data-provider": r.provider,
+        "data-quota-kind": r.kind,
+        "data-quota-from": r.from || "khor",
+        "data-quota-pinned": r.account ? r.account.pinned : undefined,
+        "data-pinned": r.account ? r.account.pinned : undefined,
+        "data-trouble": r.account?.reading.trouble ?? undefined,
+      },
+    };
+  });
   const list = (
-    <div data-quota-list className="flex min-w-0 flex-col">
-      {grouped.length === 0 && (
-        <div data-quota-none className="p-row text-sm text-muted-foreground">
-          {gui.no_matches}
-        </div>
-      )}
-      {grouped.map((r, i) => {
-        const on = current?.id === r.id;
-        // **One list for the rim and for the summary**, so the mark
-        // count and the word on the right cannot come from two
-        // different ideas of what this row is made of.
-        // The pips are the windows themselves, so **every**
-        // subscription row has them — probed or registered. Keyed on
-        // the kind rather than on 「has an account」, which used to be
-        // the same question and is not one any more.
-        const dials = r.kind === "sub" ? subDials(r) : [];
-        // A heading starts where the group changes between neighbouring
-        // rows. `GROUP_NONE` answers the empty string for every row, so
-        // it draws none — no branch of its own.
-        const group = groupBy === GROUP_NONE ? null : (answersOf(r)[groupBy] ?? "");
-        const opens = group !== null && group !== (i > 0 ? answersOf(grouped[i - 1]!)[groupBy] : undefined);
-        const actions = actionsFor(r);
-        return (
-          <Fragment key={r.id}>
-            {opens && (
-              <div
-                data-quota-group={`${groupBy}${group}`}
-                className="px-3 pt-3 pb-1 text-xs text-muted-foreground"
-              >
-                {valueWord(groupBy, group)}
-              </div>
-            )}
-          {/* **The trigger is the row's own button.** `RowMenu` renders
-              no element of its own, and the press handler it adds has
-              to land on something the DOM already admits is a target —
-              a handler on a bare wrapper is reachable by pointer alone,
-              which `check-face`'s section 4 asserts against.
-              **The subscription row gets no menu**, and the empty
-              branch is the point: it is not a registration, so 编辑 and
-              删除 have nothing to act on and 置顶 would need a flag no
-              doc holds for it. An item whose one answer is no is not
-              offered (`DevicesList` refuses this machine's own row for
-              the same reason). */}
-          <RowMenuMaybe items={actions}>
-          <button
-            type="button"
-            data-quota-row={r.id}
-            data-on={on}
-            data-provider={r.provider}
-            data-quota-kind={r.kind}
-            data-quota-from={r.from || "khor"}
-            data-quota-pinned={r.account ? r.account.pinned : undefined}
-            // The name every sidebar's row answers to (docs/SHELL.md 第二轮).
-            data-pinned={r.account ? r.account.pinned : undefined}
-            data-trouble={r.account?.reading.trouble ?? undefined}
-            onClick={() => {
-              setPicked(r.id);
-              onOpen?.();
-            }}
-            className={cn(
-              "flex min-h-touch w-full items-center gap-3 px-3 py-2 text-left hover:bg-secondary",
-              on && "bg-accent hover:bg-accent",
-            )}
-          >
-            {/* **The machine card's dial, one size down** — the same
-                210° geometry, the same milestones, the same rim
-                (2026-09-07:「环全部和机器卡对齐」). The arc is the
-                whole-plan window (`headline`); every window is a pip at
-                its own angle,
-                so two windows at the same percent are two marks on one
-                spot and a row with one window looks like a gauge rather
-                than a stack. No number inside at this size: the number
-                is the word on the right, where there is room to say
-                *which* window it is. */}
-            <Face
-              size={DIAL_ROW_SIZE}
-              stroke={DIAL_ROW_STROKE}
-              ratio={DIAL_ROW_RATIO}
-              crop
-              fraction={arcOf(r)}
-              strain={r.account?.strain ?? null}
-              pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
-            >
-              {/* **The reading moved inside the ring** (2026-09-07:
-                  「最左环,旁边上标题,下类型,右边是更新时间」) — the
-                  right end of the row is the age now, so this is the
-                  only seat left for it. */}
-              {centreOf(r)}
-            </Face>
-            <span className="flex min-w-0 flex-1 flex-col">
-              {/* **The title, and it is somebody's own word.** The
-                  user names these (「标题是用户可以自己起的」), so it
-                  classifies nothing and the line under it carries the
-                  whole of what this row *is*. */}
-              <span data-quota-name className="truncate text-fact">{r.name}</span>
-              {/* **类型 · 提供商, the same pair on every row** — see
-                  `subLine` for why a unified model is the point rather
-                  than a tidier line. */}
-              <span data-quota-sub-line className="truncate text-xs text-muted-foreground">
-                {subLine(r)}
-              </span>
-            </span>
-            {/* **The right end is when this was read**, not what it
-                says — the reading is in the ring now. An age here and a
-                figure in the ring are two different questions, and the
-                row answers each once.
-                **Just the age**, not 「谁读的,多久以前」: that sentence
-                is the *card head's* seat, and a row that repeated it
-                would be saying one fact twice on one screen — measured
-                too, at 288 it is 98px and cuts the row's own name off.
-                `card-age` is the machine card's word for exactly this,
-                reused rather than re-spelled (the catalog refuses one
-                text under two names, which is the right refusal here). */}
-            <span data-quota-age-cell className="flex-none text-xs tabular-nums text-muted-foreground">
-              {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
-            </span>
-          </button>
-          </RowMenuMaybe>
-          </Fragment>
-        );
-      })}
-    </div>
+    <SideList
+      rows={side}
+      mark={{ "data-quota-list": "" }}
+      label={(g) => (g === "pin" ? groupLabel(g) : valueWord(groupBy, g.slice(groupBy.length)))}
+      headData={(g) => (g === "pin" ? {} : { "data-quota-group": g })}
+      // This landing always has its own subscription row, so an empty
+      // list is always a filter — said the same way either road.
+      empty={<span data-quota-none>{gui.no_matches}</span>}
+      none={<span data-quota-none>{gui.no_matches}</span>}
+    />
   );
 
   // **The strip where a title would have sat.** This landing used to
@@ -1932,13 +1898,6 @@ export function QuotaLanding({
   );
 }
 
-/** `RowMenu` where there is something to offer, and the row untouched
-    where there is not. **A menu with no items is a menu that opens onto
-    nothing** — worse than no menu, because the gesture answers and the
-    answer is blank. */
-function RowMenuMaybe({ items, children }: { items: RowAction[]; children: React.ReactNode }) {
-  return items.length === 0 ? <>{children}</> : <RowMenu items={items}>{children}</RowMenu>;
-}
 
 /**
  * A card's first line: what this is, and **when it was read**.

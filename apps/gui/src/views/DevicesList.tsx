@@ -1,10 +1,11 @@
 import type { DeviceRow } from "@/api";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
-import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { IconDevices } from "@/components/icons";
+import { type RowAction } from "@/components/RowMenu";
+import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
-import { cn } from "@/lib/utils";
-import { connectionWord } from "@/words";
+import { connectionWord, groupLabel } from "@/words";
 
 /** Search matches the name people call the machine and the id they
     paste. The id left the row's face (2026-09-02 — the card carries it
@@ -87,17 +88,6 @@ export function DevicesList({
       moment a later attempt on that row gets anywhere (`App`). */
   forgetRefused: Map<string, string>;
 }) {
-  const shown = visibleDevices(rows, query);
-  // An empty device table cannot happen — this machine is always in it —
-  // so the only way to reach zero rows is by filtering, and that gets
-  // said in the words for it rather than borrowing the sessions pane's.
-  if (shown.length === 0) {
-    return rows.length === 0 ? null : (
-      <div data-empty className="p-4 text-sm text-muted-foreground">
-        {gui.no_matches}
-      </div>
-    );
-  }
   const actions = (d: DeviceRow): RowAction[] => [
     {
       key: "pin",
@@ -126,16 +116,13 @@ export function DevicesList({
           {
             key: "forget",
             // **删除, the word every sidebar's second item says**
-            // (docs/SHELL.md 第二轮:「置顶与删除的操作统一为置顶与删除」),
-            // and the map's card says it too — one act
-            // (`Node::forget_device`), one word. What deleting a
-            // machine *means* (it leaves the network, for everyone) is
-            // the sentence between the two presses.
+            // (docs/SHELL.md 第二轮), and the map's card says it too —
+            // one act (`Node::forget_device`), one word. What deleting
+            // a machine *means* is the sentence between the two presses.
             //
-            // **No 断开 after it.** The ruling named one for machines;
-            // khor has no act that drops a single peer — `forget` is
-            // this item and `pause` is the whole machine — and an item
-            // with nothing behind it is not offered.
+            // **No 断开 after it.** khor has no act that drops a single
+            // peer — `forget` is this item and `pause` is the whole
+            // machine — and an item with nothing behind it is not offered.
             label: gui.delete,
             confirm: gui.forget_machine_confirm,
             note: forgetRefused.get(d.id),
@@ -143,109 +130,60 @@ export function DevicesList({
           },
         ]),
   ];
+  // **The rows are `SideList`'s** (docs/SHELL.md 第四轮): the node's
+  // order (pinned first), the pinned group and its fold, the box's one
+  // rule. What is left here is what a machine row says.
+  const side: SideRow[] = rows.map((d) => {
+    const connection = connectionWord(d);
+    return {
+      id: d.id,
+      group: d.pinned ? "pin" : "",
+      pinned: d.pinned,
+      face: <MachineAvatar face={d.face} className="size-avatar" />,
+      // 「在设备, 是头像+机器型号icon」. **No reading names a model yet**
+      // — the vitals carry cores, memory, GPUs and khor's version, never
+      // what the box is — so every machine wears the generic machine
+      // mark until the node reports one (docs/SHELL.md 第四轮, builder
+      // 就地更正).
+      badge: { mark: "machine", icon: <IconDevices className="size-kind-mark-glyph" /> },
+      // Double-click to rename, the gesture a session row wears
+      // (`EditableName`); `nested` because it sits inside the button
+      // that opens the row. Only where a row opens anything.
+      title: onOpen ? (
+        <EditableName
+          kind="machine"
+          id={d.id}
+          title={d.shown}
+          className="block text-fact"
+          inputClassName="w-full text-fact"
+          nested
+        />
+      ) : (
+        <span className="block truncate text-fact">{d.shown}</span>
+      ),
+      // How this machine is reached — the fact a person picks a row by;
+      // this machine's own word is 本机. Absent rather than an empty line.
+      sub: connection ? <span data-row-connection>{connection}</span> : undefined,
+      // **Both names are searchable**, and the id people paste: a renamed
+      // machine must be findable by what it is called now and by the
+      // name this person knew it by.
+      find: `${d.shown} ${d.name} ${d.id}`,
+      selected: onOpen !== undefined && d.id === selected,
+      // A pane with nowhere to send a row has not earned actions on it.
+      menu: onOpen ? actions(d) : [],
+      onOpen: onOpen ? () => onOpen(d) : undefined,
+      rowData: { "data-device": d.name, "data-row": d.id, "data-pinned": d.pinned, "data-me": d.me },
+      openData: { "data-row-open": "" },
+    };
+  });
   return (
-    <div>
-      {shown.map((d) => (
-        <div
-          key={d.id}
-          data-device={d.name}
-          data-row={d.id}
-          data-pinned={d.pinned}
-          data-me={d.me}
-          className={cn(
-            "flex items-center",
-            // Only a row that opens something reacts to the pointer.
-            onOpen && "hover:bg-secondary",
-            onOpen && d.id === selected && "bg-accent hover:bg-accent",
-          )}
-        >
-          {/* **The menu's trigger is the button, not the strip around
-              it** — the session row's arrangement, for its reason: the
-              trigger carries an `onPointerDown` (that is the long
-              press), and a press handler on a bare `<div>` is a target
-              only a pointer can find (`check-face`'s section 4). On the
-              button it sits on something the DOM already admits is a
-              target: focus reaches it, and a keyboard's Menu key fires
-              `contextmenu` on the focused element.
-
-              The inert branch offers no menu, and that is not an
-              oversight: a span is not a target either, and a pane with
-              nowhere to send a row is a pane that has not earned
-              actions on it (the rule at the head). No pane draws that
-              branch today. */}
-          {onOpen ? (
-            <RowMenu items={actions(d)}>
-              <button
-                type="button"
-                data-row-open
-                onClick={() => onOpen(d)}
-                className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4 text-left"
-              >
-                <Identity row={d} rename />
-              </button>
-            </RowMenu>
-          ) : (
-            <span className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4">
-              <Identity row={d} />
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** What a row says about a machine, the same either way — so the two
-    branches above differ in whether they answer a click and in nothing
-    else a reader can see.
-
-    The face, then the name over how this machine is reached — the
-    session row's arrangement (2026-09-02:「左侧头像,右上机器名,右下
-    连接方式」). The reading stack that used to sit between them was the
-    user's word for 抽象/看不明白 and is gone; the id under the name went
-    onto the card. The connection line took their place because it is
-    the fact a person picks a row by — and this machine reaches itself
-    over nothing, so its word is 本机, which is also why the name no
-    longer carries the `(本机)` bracket. */
-function Identity({ row, rename }: { row: DeviceRow; rename?: boolean }) {
-  const connection = connectionWord(row);
-  return (
-    <>
-      <MachineAvatar face={row.face} className="size-avatar" />
-      <span className="min-w-0 flex-1">
-        {/* Double-click to rename, the same component and the same
-            gesture a session row wears (`EditableName`) — 2026-09-11:
-            「session 现在列表双击名称即可重命名,我需要机器也一样」.
-            `nested` because the name sits inside the button that opens
-            the row: a control inside a control is invalid markup and
-            worse behaviour, so the keyboard path is the card's, reached
-            by opening the row.
-
-            **Only on the branch that answers a click.** The inert
-            branch has no menu either, and for the same reason stated
-            above it: a pane with nowhere to send a row has not earned
-            actions on it. */}
-        {rename ? (
-          <EditableName
-            kind="machine"
-            id={row.id}
-            title={row.shown}
-            className="block text-fact"
-            inputClassName="w-full text-fact"
-            nested
-          />
-        ) : (
-          <span className="block truncate text-fact">{row.shown}</span>
-        )}
-        {/* Absent rather than an empty line when there is nothing to
-            say: a machine whose road khor cannot name yet keeps a
-            one-line row instead of a blank second line. */}
-        {connection && (
-          <span data-row-connection className="block truncate text-aux text-muted-foreground">
-            {connection}
-          </span>
-        )}
-      </span>
-    </>
+    <SideList
+      rows={side}
+      query={query}
+      label={groupLabel}
+      // An empty device table cannot happen — this machine is always in
+      // it — so zero rows is always a filter, said in its own words.
+      none={gui.no_matches}
+    />
   );
 }

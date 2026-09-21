@@ -1134,6 +1134,39 @@ try {
     if (t) t.pinned = !!a.on;
     return tabsJson(r);
   });
+  // ── pins for the other four columns (docs/SHELL.md 第四轮 门) ──────
+  //
+  // 4U pins a row in every sidebar and reads it back under the pinned
+  // group, so each list's pin has to *take* here. **The dumbest thing
+  // that answers**: flip the flag and put pinned rows first — the order
+  // the node answers in. Sessions also carry the node's group key
+  // (`pin`), because on that list the group is the node's word, not
+  // the face's.
+  const pinFirst = (list) => list.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned));
+  await page.route("**/pin_session", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const row = rows.find((x) => x.id === a.id);
+    if (row) {
+      row.pinned = !!a.on;
+      row.group = a.on ? "pin" : "";
+    }
+    pinFirst(rows);
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
+  await page.route("**/pin_device", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const d = devs.find((x) => x.name === a.machine || x.id === a.machine);
+    if (d) d.pinned = !!a.on;
+    pinFirst(devs);
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
+  await page.route("**/pin_account", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const acc = board.find((x) => x.reading?.account === a.id);
+    if (acc) acc.pinned = !!a.on;
+    pinFirst(board);
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
   await page.route("**/tabs_save", (r) => {
     const a = r.request().postDataJSON() ?? {};
     if (a.open) {
@@ -1173,6 +1206,14 @@ try {
   await page.route("**/workspaces", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(wsRows) }),
   );
+  // 4U pins a workspace too (docs/SHELL.md 第四轮); the list sorts its
+  // own rows, so this only flips the flag.
+  await page.route("**/ws_pin", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const w = wsRows.find((x) => x.device === a.device && x.path === a.path);
+    if (w) w.pinned = !!a.on;
+    return r.fulfill({ contentType: "application/json", body: "null" });
+  });
   const addedWs = [];
   await page.route("**/ws_add", (r) => {
     const body = r.request().postDataJSON() ?? {};
@@ -9811,6 +9852,132 @@ try {
     await page.reload({ waitUntil: "load" });
     await wait(900);
     await page.setViewportSize({ width: 1400, height: 900 });
+  }
+
+  // ── 4U) 第四轮:五条侧边栏是一份代码 (docs/SHELL.md, 2026-09-21) ───
+  //
+  // 「所有展开的一级侧边栏内容显示逻辑要一致, 都是如session那样, 可以被
+  // filter, 置顶的显示也是收起与展开, 形式完全一致, 不必写多份代码」.
+  //
+  // **Compared between the columns, never written per column**: the
+  // anchors a row carries, and three behaviours every column must have —
+  // a pinned row sits under the pinned group, the group folds and its
+  // heading stays, a title fragment in the box leaves that row alone.
+  {
+    const COLS = [
+      { landing: "sessions", pane: "[data-list]" },
+      { landing: "devices", pane: "[data-list]" },
+      { landing: "workspaces", pane: "[data-list]" },
+      { landing: "browser", pane: "[data-browse-tabs]" },
+      { landing: "quota", pane: "[data-quota-pane]" },
+    ];
+    const PARTS = ["data-side-open", "data-side-face", "data-side-badge", "data-side-title", "data-side-sub"];
+    await page.setViewportSize({ width: 1400, height: 900 });
+    const shapes = [];
+    for (const c of COLS) {
+      await open(c.landing);
+      await wait(500);
+      const shape = await page.evaluate(
+        ([pane, parts]) => {
+          const list = document.querySelector(`${pane} [data-side-list]`);
+          const row = list?.querySelector("[data-side-row]");
+          if (!row) return null;
+          return parts.filter((a) => row.hasAttribute(a) || row.querySelector(`[${a}]`));
+        },
+        [c.pane, PARTS],
+      );
+      shapes.push({ landing: c.landing, shape });
+    }
+    console.log(`sidelist 4U · shapes: ${JSON.stringify(shapes)}`);
+    const missing = shapes.filter((x) => x.shape === null).map((x) => x.landing);
+    if (missing.length) {
+      fail(
+        `${missing.join(", ")} draw no [data-side-list] row — 「一份共同的抽象可以作出所有页面」 ` +
+          "(src/components/SideList.tsx)",
+      );
+    }
+    const drawn = shapes.filter((x) => x.shape !== null);
+    if (new Set(drawn.map((x) => x.shape.join(","))).size > 1) {
+      fail(`the sidebars' rows are built of different parts: ${JSON.stringify(drawn)} — one row, five columns`);
+    }
+
+    for (const c of COLS) {
+      await open(c.landing);
+      await wait(500);
+      const rowSel = `${c.pane} [data-side-list] [data-side-row]`;
+      if ((await page.locator(rowSel).count()) === 0) continue;
+      // ── a pinned row goes under the pinned group ──
+      const target = await page
+        .locator(`${rowSel}[data-side-pinned="false"][data-side-menu="true"]`)
+        .first()
+        .getAttribute("data-side-row")
+        .catch(() => null);
+      if (target === null) {
+        fail(`probe dead: the ${c.landing} sidebar has no unpinned row with a menu to pin`);
+      } else {
+        const one = `${c.pane} [data-side-row="${target}"]`;
+        const pin = async () => {
+          await page.locator(`${one} [data-side-open]`).first().click({ button: "right" });
+          await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="pin"]').count()) === 1);
+          await page.locator('[data-row-menu] [data-menu-item="pin"]').click();
+          // A pin that did not take keeps the menu open (`RowMenu`) —
+          // put it away, so the red below is about the group and not a
+          // menu standing over every later press.
+          if (!(await until(3_000, async () => (await page.locator("[data-row-menu]").count()) === 0))) {
+            await page.keyboard.press("Escape");
+          }
+        };
+        await pin();
+        const under = await until(8_000, async () =>
+          page.evaluate((one) => document.querySelector(one)?.getAttribute("data-side-in") === "pin", one),
+        );
+        const head = `${c.pane} [data-side-list] [data-side-group="pin"]`;
+        if (!under || (await page.locator(head).count()) !== 1) {
+          fail(`pinned a ${c.landing} row and it is not under the pinned group — 「置顶的显示也是收起与展开」`);
+        } else {
+          // ── the group folds, its heading stays ──
+          await page.locator(head).click();
+          await wait(300);
+          const folded = await page.evaluate(
+            ([pane, head]) => ({
+              rows: document.querySelectorAll(`${pane} [data-side-list] [data-side-row][data-side-in="pin"]`).length,
+              head: document.querySelectorAll(head).length,
+            }),
+            [c.pane, head],
+          );
+          if (folded.rows !== 0 || folded.head !== 1) {
+            fail(`folding the ${c.landing} pinned group left ${folded.rows} row(s) and ${folded.head} heading(s) — the rows go, the heading stays`);
+          }
+          await page.locator(head).click();
+          await wait(300);
+        }
+        await pin(); // and back, for the sections after this one
+        await wait(300);
+      }
+      // ── a title fragment leaves that row alone ──
+      // A title fragment no other row says anywhere — in its title or
+      // its subtitle, which is what the box reads.
+      const said = await page.locator(rowSel).evaluateAll((els) =>
+        els.map((e) => ({
+          title: (e.querySelector("[data-side-title]")?.innerText ?? "").split("\n")[0].trim(),
+          all: `${e.querySelector("[data-side-title]")?.innerText ?? ""} ${e.querySelector("[data-side-sub]")?.innerText ?? ""}`,
+        })),
+      );
+      const unique = said
+        .map((x) => x.title)
+        .find((t) => t.length > 2 && said.filter((x) => x.all.includes(t)).length === 1);
+      const box = page.locator(`${c.pane} [data-pane-bar] input`).first();
+      if (!unique || (await box.count()) === 0) {
+        fail(`probe dead: the ${c.landing} sidebar has no unique title or no search box to type it into`);
+      } else {
+        await box.fill(unique);
+        await wait(400);
+        const left = await page.locator(rowSel).count();
+        if (left !== 1) fail(`typing ${JSON.stringify(unique)} into the ${c.landing} box leaves ${left} rows, not 1`);
+        await box.fill("");
+        await wait(300);
+      }
+    }
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────
