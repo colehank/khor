@@ -9262,6 +9262,20 @@ try {
         count: document.querySelectorAll('[data-browse-landing="page"] [data-tab-count]').length,
         bar: box("[data-address-bar]"),
         seam: document.querySelectorAll('[data-browse-landing="page"] [data-list-seam]').length,
+        // The resting address and the arrows beside it, as **midlines
+        // rather than boxes**: what a person sees as 「crooked」 is two
+        // things on the same row not sharing a centre, and two boxes of
+        // different heights that do share one are not crooked at all.
+        // Unrounded, because the whole claim is about a pixel.
+        mid: (() => {
+          const of = (sel) => {
+            const el = document.querySelector(sel);
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return r.top + r.height / 2;
+          };
+          return { ink: of("[data-page-host]"), arm: of("[data-page-back]") };
+        })(),
       };
     });
     console.log(`browser column: ${JSON.stringify(shape)}`);
@@ -9307,6 +9321,31 @@ try {
         fail(
           `the browser landing drew ${shape.seam} seam(s) beside its column — it is the shell's pane now, ` +
             "and the seam comes with it (src/components/ListPane.tsx)",
+        );
+      }
+      // **The address sits on the same line as the arrows beside it**
+      // (验收方 2026-09-21, on a real install: the address text was
+      // flush against the top of the window, a good few pixels above
+      // 后退 / 前进 / 刷新).
+      //
+      // Nothing here could see it. Section 3 measures every control's
+      // *floor* and both of these clear it; 4H measures the landing's
+      // *arrangement* and both of these are in the right column. A row
+      // whose contents do not share a centre is neither, and it is the
+      // first thing a person's eye reports.
+      //
+      // One pixel, because that is the whole tolerance a shared centre
+      // has: half a pixel is a rounding artefact of an odd height, and
+      // two is visible.
+      if (shape.mid.ink === null || shape.mid.arm === null) {
+        fail(
+          "probe dead: the browser stop drew no resting address — 「地址和箭头同一条中线」 " +
+            "is measuring nothing (the fixture needs a tab pointed somewhere)",
+        );
+      } else if (Math.abs(shape.mid.ink - shape.mid.arm) > 1) {
+        fail(
+          `the address sits on ${shape.mid.ink.toFixed(1)} and the arrows beside it on ` +
+            `${shape.mid.arm.toFixed(1)} — one row, one centre (src/views/PagesKind.tsx)`,
         );
       }
     }

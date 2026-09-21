@@ -148,3 +148,27 @@
   标签页列是一屏，页面是一屏。
 - 门：面门量「切走再切回，同一个 frame 节点还在、没有重新 load」；
   smoke 量「重启 app 后标签页列表还在」。
+
+  > **builder 就地更正（2026-09-21）：这两条门都不在它们被指去的地方。**
+  >
+  > 前半条**没有任何一道门做得到**，而且不是没写，是写不出来。页面不是
+  > 页面里的一个节点，是一张盖在上面的原生 webview（`open_page` /
+  > `hide_page` / `show_page`）；面门跑的是装好料的 fixture，
+  > `check-tabs` 跑的是系统 Chrome，两边都没有 tauri——`api.ts` 里这几个
+  > 调用在网页脸上本来就写着 no-op。所以「切走再切回没有重新 load」的
+  > 实现在 `apps/gui/src-tauri/src/lib.rs` 的复用分支里（同一个出口 +
+  > 同一个地址 = 根本不 `navigate`，注释就写着「a reload on every tab
+  > switch is exactly the thing keeping a webview per tab exists to
+  > avoid」），**只有装机的人能验**。人眼验收的做法：借一台机器的网开一枚
+  > 标签，页面里往下滚一段，切到别的落地页再切回来，滚动位置还在。
+  >
+  > ⚠️ 量的时候要用**带 `-m` 的标签**。不带机器的标签根本不加载页面，
+  > 窗口里印的是「这就是本机的网,不用借」——那是借网浏览器本来的规矩，
+  > 但拿它去量「有没有重新加载」，量到的是一句话（验收方 2026-09-21 实撞）。
+  >
+  > 后半条挪了位置：在 `npm run tabs` 里，不在 smoke 里。smoke 从头到尾
+  > 没有一枚浏览标签页，而 `check-tabs` 有两个真 home、真 UDP、真 `khor`
+  > 在 PATH 上，`khor tabs ls` 在 backend 死着的时候照样读得到文件——那是
+  > 这条断言能有「之前/之后」的唯一理由。它在那里是两条：`page.reload()`
+  > （窗口没了又回来）和把 bridge 杀掉再起一个（beta 的 node 就是 bridge，
+  > 它死等于 app 整个退出）。

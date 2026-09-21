@@ -117,12 +117,6 @@ function PageAddress({ tab, at, onEdit }: RestProps) {
         data-address-rest
         aria-label={gui.address_page}
         onClick={onEdit}
-        // `items-baseline` lines the three spans up with each other;
-        // `self-stretch` used to also stretch this button to the row's
-        // full height, and a baseline-aligned group inside a stretched
-        // box sits at its top — so the address rode high above the three
-        // buttons beside it. Its own height, centred by the row.
-        //
         // **`min-h-touch`, and it was missing for four batches without
         // anything noticing** (2026-09-21). This is the way into the
         // address box — the control a person aims at to type somewhere
@@ -133,13 +127,28 @@ function PageAddress({ tab, at, onEdit }: RestProps) {
         // half was in until 2026-09-08. What made it visible was the
         // tabs moving to the node (第 2 条) and the fixture therefore
         // serving a tab with an address on it.
-        className="flex min-h-touch min-w-0 flex-1 cursor-text items-baseline gap-0 text-left text-sm"
+        //
+        // ⚠️ **And the floor immediately broke the alignment, which the
+        // comment sitting here had already explained** (验收方
+        // 2026-09-21, on a real install: the address flush against the
+        // top of the window, a good few pixels above 后退 / 前进 /
+        // 刷新). A baseline-aligned group in a box taller than itself
+        // sits at that box's **top** — which is why `self-stretch` came
+        // off this button once before. `min-h-touch` made it a tall box
+        // again and handed the same bug back.
+        //
+        // So the two jobs are two elements now, and neither can undo the
+        // other: the button is the finger's floor and centres what is in
+        // it, the row inside is the baseline the three spans share.
+        className="flex min-h-touch min-w-0 flex-1 cursor-text items-center gap-0 text-left text-sm"
       >
-        <span className="flex-none text-muted-foreground">{before}</span>
-        <span data-page-host className="flex-none font-label">
-          {host}
+        <span className="flex min-w-0 flex-1 items-baseline gap-0">
+          <span className="flex-none text-muted-foreground">{before}</span>
+          <span data-page-host className="flex-none font-label">
+            {host}
+          </span>
+          <span className="min-w-0 truncate text-muted-foreground">{rest}</span>
         </span>
-        <span className="min-w-0 truncate text-muted-foreground">{rest}</span>
       </button>
     </div>
   );

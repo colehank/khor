@@ -75,16 +75,24 @@ export function releaseBorrows(keep: readonly string[]): void {
  * 「藏着的标签页不设上限会吃光 16G 的机器。落一个上限……最近用过的 N 枚
  * 留着活的，其余只留地址和标题，点到再加载」).
  *
- * ⚠️ **待实测.** Eight is a placeholder with a shape, not a measurement:
- * the ruling says the number is to be measured and then written down,
- * and measuring it means installing the app and reading what one hidden
- * `WKWebView` actually holds — which is 验收方's to do, not a gate's
- * (the browser this repo tests with is not the engine khor ships).
+ * # 量过了 (验收方, 2026-09-21)
  *
- * What eight is *not* is arbitrary in kind: it is 「more tabs than a
- * person usually has in front of them, fewer than a person can
- * accumulate in a day」. When the real number lands, it lands here and
- * nothing else changes — which is the whole reason it is a name.
+ * On the real install, borrowing turing's network and opening one tab
+ * at a time with `khor tabs open -m turing <url>`, twenty seconds
+ * apart: **one `com.apple.WebKit.WebContent` process per tab**, and
+ * resident memory up by 58 MB (rust-lang.org), 68 (wikipedia), 29
+ * (news.ycombinator), 29 (github) — call it **46 MB a tab**. Closing
+ * all four took the process count back to where it started (18 → 22 →
+ * 18), so the release is real and not a leak wearing a cap.
+ *
+ * Eight is therefore two to three gigabytes at worst on a 16 GB
+ * machine, which is what the ruling was protecting. **Eight stays.**
+ *
+ * ⚠️ **Those are light pages, freshly loaded.** A video site, or a web
+ * app of the VS Code kind, runs to hundreds of megabytes each and was
+ * **not** measured. If this number is ever revisited, that is the case
+ * to measure — the light one is already known and it is not the one
+ * that would hurt.
  *
  * ⚠️ **No gate watches the cap, and none can watch it cheaply.** It
  * only bites at the ninth live page, and 「the ninth tab let the first
