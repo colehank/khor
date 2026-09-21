@@ -456,6 +456,16 @@ doctor-fixable = "khor doctor --fix {0}"
 # typing it again, and the remedy is printed at the end of the row.
 doctor-again = "Check again"
 doctor-mend = "Repair"
+# The three groups the healthy checks fold under. Which check belongs to
+# which is the node's (`khor_node::doctor::group`), beside the key table.
+doctor-group-machine = "This machine"
+doctor-group-network = "Network"
+doctor-group-tools = "Tools"
+# The verdict line. "All good" only when every check is ok: a check that
+# could not be taken is not a check that passed.
+doctor-all-well = "All good"
+doctor-needs-you = "{0} need looking at"
+doctor-well-count = "{0} fine"
 # ── `khor faces`: which of khor's interfaces are up here ─────────────
 face-name-app = "Desktop app"
 face-up = "Open"

@@ -2294,6 +2294,44 @@ fn every_doctor_check_has_a_word_and_every_word_names_a_check() {
     );
 }
 
+/// **Every check is filed under one of the three groups, and every
+/// group has checks in it.**
+///
+/// The grouping is a fact about what a check *is* (`doctor::group`,
+/// beside the key table) and not a layout decision, so this walks it
+/// the way the word gate above walks the names. Both directions:
+/// a check with no group would be drawn under no heading — invisible on
+/// the page that folds the healthy ones away, which is the same silence
+/// the second half of the word gate exists for — and a group with
+/// nothing in it would be a heading a person opens onto nothing.
+#[test]
+fn every_doctor_check_is_in_a_group_and_every_group_has_checks() {
+    for key in doctor::KEYS {
+        let g = doctor::group(key);
+        assert!(
+            doctor::GROUPS.contains(&g),
+            "doctor.{key} is filed under {g:?}, which is not one of {:?}",
+            doctor::GROUPS
+        );
+        assert_ne!(
+            doctor::group_name(g),
+            g,
+            "the group {g:?} must map to a word, not echo"
+        );
+    }
+    for g in doctor::GROUPS {
+        assert!(
+            doctor::KEYS.iter().any(|k| doctor::group(k) == *g),
+            "the group {g:?} holds no check, so its heading opens onto nothing"
+        );
+    }
+    assert_eq!(
+        doctor::group("holodeck"),
+        "",
+        "an unknown check is filed nowhere rather than under a plausible neighbour"
+    );
+}
+
 /// **The four states are four, and 未量 is not ok.**
 ///
 /// Pinned because the whole value of the page rests on it: a check that

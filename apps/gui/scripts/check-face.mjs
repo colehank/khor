@@ -1767,17 +1767,35 @@ try {
   // failure this page is most exposed to.
   const doctorAsked = [];
   const doctorFixed = [];
+  // **Every row carries its group and the word for it**, because the
+  // node's rows do (`khor_node::doctor::group`) — the page folds the
+  // healthy ones under three headings and decides none of them itself.
+  // The healthy rows are spread across all three groups on purpose: two
+  // of them in one group and none in another would let a page that drew
+  // one heading per *row* pass, and let a page that dropped a heading
+  // pass too.
+  const g = (key, label) => ({ group: key, group_label: label });
+  const MACHINE = g("machine", "本机");
+  const NETWORK = g("network", "网络");
+  const TOOLS = g("tools", "工具");
   const DOCTOR_ROWS = [
-    { key: "version", name: "版本", state: "ok", said: "0.0.0-gate", fix: null },
-    { key: "identity", name: "身份钥匙", state: "warn", said: "别人也读得了(权限 644)", fix: "chmod" },
-    { key: "store", name: "本机数据", state: "ok", said: "打得开、写得进,占 761B", fix: null },
-    { key: "serve", name: "常驻", state: "fail", said: "没在跑", fix: "serve" },
-    { key: "relays", name: "中继", state: "unmeasured", said: "3 秒没答上来", fix: null },
-    { key: "launcher", name: "开启器", state: "ok", said: "用 open", fix: null },
+    { key: "version", name: "版本", state: "ok", said: "0.0.0-gate", fix: null, ...MACHINE },
+    { key: "identity", name: "身份钥匙", state: "warn", said: "别人也读得了(权限 644)", fix: "chmod", ...MACHINE },
+    { key: "store", name: "本机数据", state: "ok", said: "打得开、写得进,占 761B", fix: null, ...MACHINE },
+    { key: "serve", name: "常驻", state: "fail", said: "没在跑", fix: "serve", ...NETWORK },
+    { key: "web", name: "网页脸", state: "ok", said: "在听,端口 5467", fix: null, ...NETWORK },
+    { key: "relays", name: "中继", state: "unmeasured", said: "3 秒没答上来", fix: null, ...NETWORK },
+    { key: "launcher", name: "开启器", state: "ok", said: "用 open", fix: null, ...TOOLS },
   ];
+  // What the next ask answers. A `let` because §4F asks twice on
+  // purpose: the verdict line has two things to say and the only honest
+  // way to read them is off a screen that has been in both states — a
+  // sentence compared against the catalog would be this file checking
+  // the catalog against itself.
+  let doctorNow = DOCTOR_ROWS;
   await page.route("**/doctor", (r) => {
     doctorAsked.push(Date.now());
-    r.fulfill({ contentType: "application/json", body: JSON.stringify(DOCTOR_ROWS) });
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(doctorNow) });
   });
   await page.route("**/doctor_fix", (r) => {
     doctorFixed.push(JSON.parse(r.request().postData() || "{}").key);
@@ -2506,7 +2524,10 @@ try {
       // The list, not the frame: a page that drew its head and threw on
       // the way to its rows would still satisfy the frame.
       name: "doctor",
-      anchor: "[data-doctor-list] [data-doctor-row]",
+      // A problem card, because 2026-09-21 the healthy rows are behind
+      // a fold and a page that drew *only* the fold would still satisfy
+      // the frame.
+      anchor: "[data-doctor-list] [data-doctor-card]",
       go: async () => (await press("[data-rail-more]")) && press('[data-more-open="doctor"]'),
       after: async () => {
         await press("[data-more-close]");
@@ -10484,55 +10505,134 @@ try {
     if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="doctor"]'))) {
       fail("probe dead: 「…」 → 自检 did not open");
     } else {
-      await until(5_000, async () => (await page.locator("[data-doctor-row]").count()) > 0);
+      await until(5_000, async () => (await page.locator("[data-doctor-card]").count()) > 0);
       const list = await page.evaluate(() => {
-        const rows = [...document.querySelectorAll("[data-doctor-row]")];
+        const cards = [...document.querySelectorAll("[data-doctor-card]")];
         return {
-          keys: rows.map((e) => e.getAttribute("data-doctor-row")),
-          states: rows.map((e) => e.getAttribute("data-doctor-state")),
-          words: rows.map((e) => e.querySelector("[data-doctor-word]")?.textContent?.trim() ?? null),
-          saids: rows.map((e) => e.querySelector("[data-doctor-said]")?.textContent?.trim() ?? null),
-          fixes: rows.map((e) => !!e.querySelector("[data-doctor-fix]")),
+          keys: cards.map((e) => e.getAttribute("data-doctor-card")),
+          states: cards.map((e) => e.getAttribute("data-doctor-state")),
+          words: cards.map((e) => e.querySelector("[data-doctor-word]")?.textContent?.trim() ?? null),
+          saids: cards.map((e) => e.querySelector("[data-doctor-said]")?.textContent?.trim() ?? null),
+          fixes: cards.map((e) => !!e.querySelector("[data-doctor-fix]")),
           again: document.querySelectorAll("[data-doctor-again]").length,
+          // 正常的收成一行,**点开才展开** — and 「收起来」 here means
+          // the rows are not in the document at all, the same claim the
+          // 网络 page's 高级 makes about its relays.
+          wellRows: document.querySelectorAll("[data-doctor-row]").length,
+          fold: document.querySelectorAll('[data-more-fold="doctor-well"]').length,
+          foldOpen: document.querySelector('[data-more-fold="doctor-well"]')?.hasAttribute("open") ?? null,
+          verdict: document.querySelector("[data-doctor-verdict]")?.getAttribute("data-doctor-verdict") ?? null,
+          said: document.querySelector("[data-doctor-verdict]")?.textContent?.trim() ?? null,
         };
       });
       console.log(`doctor: ${JSON.stringify(list)}`);
-      // One row per check, in the node's order. A page that sorted or
-      // filtered would be deciding what was checked.
-      const wanted = DOCTOR_ROWS.map((r) => r.key);
+      // **Only what is wrong** (docs/MORE.md 第二轮: 「下面只列有问题
+      // 的」). In the node's order, because a page that sorted would be
+      // deciding what mattered; and 未量 is among them, because a check
+      // nobody could take is not a check that passed.
+      const wanted = DOCTOR_ROWS.filter((r) => r.state !== "ok").map((r) => r.key);
       if (list.keys.join(",") !== wanted.join(",")) {
         fail(
-          `自检 drew ${JSON.stringify(list.keys)} against the node's ${JSON.stringify(wanted)} — ` +
-            "the page paints the checklist, it does not choose it (src/views/more/DoctorPage.tsx)",
+          `自检 leads with ${JSON.stringify(list.keys)} against the node's troubled ` +
+            `${JSON.stringify(wanted)} — 「只列有问题的」, and 未量 is one of them ` +
+            "(src/views/more/DoctorPage.tsx)",
         );
       }
-      if (list.states.join(",") !== DOCTOR_ROWS.map((r) => r.state).join(",")) {
+      if (list.states.join(",") !== DOCTOR_ROWS.filter((r) => r.state !== "ok").map((r) => r.state).join(",")) {
         fail(`自检 painted states ${JSON.stringify(list.states)}`);
+      }
+      // **The healthy ones are one line, and it is shut.** A `<details>`
+      // that kept its body mounted would be a page still laying twelve
+      // rows out, dressed as a page that does not.
+      if (list.fold !== 1 || list.foldOpen !== false || list.wellRows !== 0) {
+        fail(
+          `自检 folded the healthy checks as ${JSON.stringify({ fold: list.fold, open: list.foldOpen, rows: list.wellRows })} — ` +
+            "「正常的收成一行「N 项正常」,点开才展开」 (docs/MORE.md 第二轮)",
+        );
+      }
+      if (list.verdict !== "wants" || !list.said) {
+        fail(
+          `自检 opened on the verdict ${JSON.stringify(list.verdict)} / ${JSON.stringify(list.said)} ` +
+            "while the node answered three troubled checks — 「顶上一句结论」",
+        );
+      }
+      // A check khor can mend carries the door, and one it cannot does
+      // not — a button that refuses is worse than no button.
+      const wantedFixes = DOCTOR_ROWS.filter((r) => r.state !== "ok").map((r) => r.fix !== null);
+      if (list.fixes.join(",") !== wantedFixes.join(",")) {
+        fail(
+          `自检 offered a remedy on ${JSON.stringify(list.fixes)} against the node's ` +
+            `${JSON.stringify(wantedFixes)} — 「能修的带一个「修复」」, and only those`,
+        );
+      }
+
+      // …and what the one line opens onto: the healthy checks, under the
+      // node's three groups (`khor_node::doctor::group`).
+      await press("[data-more-fold-open]");
+      await until(3_000, async () => (await page.locator("[data-doctor-row]").count()) > 0);
+      const well = await page.evaluate(() => {
+        const groups = [...document.querySelectorAll("[data-doctor-group]")];
+        return {
+          groups: groups.map((e) => e.getAttribute("data-doctor-group")),
+          under: groups.map((e) =>
+            [...e.querySelectorAll("[data-doctor-row]")].map((r) => r.getAttribute("data-doctor-row")),
+          ),
+          rows: document.querySelectorAll("[data-doctor-row]").length,
+          words: [...document.querySelectorAll("[data-doctor-row] [data-doctor-said]")].map((e) =>
+            e.textContent?.trim(),
+          ),
+        };
+      });
+      console.log(`doctor · 正常的: ${JSON.stringify(well)}`);
+      // **The grouping is read off the node's own answer**, not spelled
+      // here: what the fixture said each row's group was is what the
+      // page must have filed it under. A page that grouped by its own
+      // table would pass a list written to match that table and fail
+      // the machine.
+      const byGroup = [];
+      for (const r of DOCTOR_ROWS.filter((r) => r.state === "ok")) {
+        const at = byGroup.find(([g]) => g === r.group);
+        if (at) at[1].push(r.key);
+        else byGroup.push([r.group, [r.key]]);
+      }
+      if (well.groups.join(",") !== byGroup.map(([g]) => g).join(",")) {
+        fail(
+          `自检 filed the healthy checks under ${JSON.stringify(well.groups)} against the node's ` +
+            `${JSON.stringify(byGroup.map(([g]) => g))} — 「分三组:本机、网络、工具」, and which ` +
+            "group a check is in is `khor_node::doctor::group`'s to say",
+        );
+      }
+      if (JSON.stringify(well.under) !== JSON.stringify(byGroup.map(([, keys]) => keys))) {
+        fail(
+          `自检 put ${JSON.stringify(well.under)} under those headings against ` +
+            `${JSON.stringify(byGroup.map(([, keys]) => keys))}`,
+        );
+      }
+      if (well.rows !== DOCTOR_ROWS.filter((r) => r.state === "ok").length) {
+        fail(`自检 opened onto ${well.rows} healthy check(s) of ${DOCTOR_ROWS.filter((r) => r.state === "ok").length}`);
       }
       // **The four words are four.** 未量 sharing ok's word is the one
       // way this page can lie, and it is the sentence 「未量不是 ok」 is
-      // written against.
-      const ok = list.words[list.states.indexOf("ok")];
+      // written against. Read across both halves now that the two sit
+      // on different parts of the page: the troubled cards carry the
+      // state words, and 未量 is one of them precisely because it is
+      // *not* filed with the healthy.
       const unmeasured = list.words[list.states.indexOf("unmeasured")];
       const spoken = new Set(list.words);
-      if (!ok || !unmeasured || ok === unmeasured) {
-        fail(
-          `自检 says ${JSON.stringify(ok)} for a check that passed and ${JSON.stringify(unmeasured)} ` +
-            "for one nobody could take — 「『未量』不是 ok」 (docs/MORE.md 自检)",
-        );
+      if (!unmeasured) {
+        fail("自检 says nothing for a check nobody could take — 「『未量』不是 ok」");
       }
       if (spoken.size !== new Set(list.states).size) {
         fail(`自检 spells ${list.states.length} states with ${spoken.size} word(s): ${JSON.stringify([...spoken])}`);
       }
-      // A row khor can mend carries the door, and one it cannot does not
-      // — a button that refuses is worse than no button.
-      const wantedFixes = DOCTOR_ROWS.map((r) => r.fix !== null);
-      if (list.fixes.join(",") !== wantedFixes.join(",")) {
-        fail(
-          `自检 offered a remedy on ${JSON.stringify(list.fixes)} against the node's ` +
-            `${JSON.stringify(wantedFixes)} — 「能修的带一个动作」, and only those`,
-        );
+      // **未量 is not filed with the healthy**, which is the same claim
+      // one level up: the fold holds the checks that passed, and a page
+      // that folded 未量 in with them would have hidden the one row a
+      // person most needs to see the absence of.
+      if (well.under.flat().includes("relays")) {
+        fail("自检 folded 未量 in with 正常的 — 「看过了」 and 「没看成」 are not one line");
       }
+      await press("[data-more-fold-open]");
       if (list.again !== 1) fail(`自检 draws ${list.again} 「再查一遍」`);
       // **Asked on arrival, and then left alone.** The count on arrival
       // is 1 or 2 rather than exactly 1, and the 2 is this gate's own
@@ -10583,6 +10683,47 @@ try {
       if (doctorAsked.length <= asksBefore) {
         fail("a remedy that took did not re-measure — the row would go on showing what it said before");
       }
+
+      // **The verdict has two things to say, and both are read off the
+      // screen.** 「一切正常」 against 「N 项需要注意」 (docs/MORE.md
+      // 第二轮). Compared against each other rather than against the
+      // catalog — a gate that spelled the sentence would go red on a
+      // rewording and green on a page that never changed its mind.
+      //
+      // A machine with nothing wrong is a state this fixture can reach
+      // and a real one mostly cannot, which is the whole reason it is
+      // asked for here: the sentence a healthy machine gets is the one
+      // nobody would otherwise ever see fail.
+      const troubled = await page.evaluate(
+        () => document.querySelector("[data-doctor-verdict]")?.textContent?.trim() ?? null,
+      );
+      doctorNow = DOCTOR_ROWS.map((r) => ({ ...r, state: "ok", fix: null }));
+      await press("[data-doctor-again]");
+      await until(3_000, async () =>
+        page.evaluate(
+          () => document.querySelector('[data-doctor-verdict="well"]') !== null,
+        ),
+      );
+      const allWell = await page.evaluate(() => ({
+        said: document.querySelector("[data-doctor-verdict]")?.textContent?.trim() ?? null,
+        cards: document.querySelectorAll("[data-doctor-card]").length,
+        fold: document.querySelectorAll('[data-more-fold="doctor-well"]').length,
+      }));
+      console.log(`doctor · 一切正常: ${JSON.stringify({ troubled, ...allWell })}`);
+      if (!allWell.said || allWell.said === troubled) {
+        fail(
+          `自检 says ${JSON.stringify(allWell.said)} on a machine with nothing wrong and ` +
+            `${JSON.stringify(troubled)} on one with three — a verdict that reads the same either ` +
+            "way is not a verdict",
+        );
+      }
+      if (allWell.cards !== 0) {
+        fail(`自检 still draws ${allWell.cards} card(s) with nothing wrong — 「只列有问题的」`);
+      }
+      if (allWell.fold !== 1) {
+        fail("自检 on a healthy machine drew no 「N 项正常」 line — the checks were still taken");
+      }
+      doctorNow = DOCTOR_ROWS;
     }
     await press("[data-more-close]");
   }

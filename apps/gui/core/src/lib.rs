@@ -1351,6 +1351,12 @@ pub struct DoctorRow {
     pub name: String,
     pub state: String,
     pub said: String,
+    /// Which of `khor_node::doctor::GROUPS` this row is filed under, and
+    /// the word for it — the pair `ConfigRow` carries for a section, for
+    /// the same reason: the page folds the healthy rows under three
+    /// headings, and neither the key nor the word is its to decide.
+    pub group: String,
+    pub group_label: String,
     /// The key to hand back to `doctor_fix`, when khor can mend this.
     pub fix: Option<String>,
 }
@@ -1367,6 +1373,8 @@ pub async fn doctor(root: &Path) -> Result<Vec<DoctorRow>, String> {
             key: c.key,
             state: c.state.key().to_owned(),
             said: c.said,
+            group_label: khor_node::doctor::group_name(&c.group).to_owned(),
+            group: c.group,
             fix: c.fix,
         })
         .collect())
