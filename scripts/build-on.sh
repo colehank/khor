@@ -145,9 +145,9 @@ eval "rsync -a --delete \
 # ── the build, there ──────────────────────────────────────
 # The whole workspace's dependencies compile the first time (minutes on
 # many cores); every run after that is incremental against $TGT.
-say "build-on: cargo build --release -p khor-cli on $HOST (target $TGT)"
-ssh_ "cd '$SRC' && PATH=\"\$HOME/.cargo/bin:\$PATH\" CARGO_TARGET_DIR='$TGT' cargo build --release -p khor-cli --bin khor 2>&1 | grep -E '^(error|warning: unused|Finished|   Compiling khor)' | tail -5"
-PRODUCT="$TGT/release/khor"
+say "build-on: cargo build --profile local -p khor-cli on $HOST (target $TGT)"
+ssh_ "cd '$SRC' && PATH=\"\$HOME/.cargo/bin:\$PATH\" CARGO_TARGET_DIR='$TGT' cargo build --profile local -p khor-cli --bin khor 2>&1 | grep -E '^(error|warning: unused|Finished|   Compiling khor)' | tail -5"
+PRODUCT="$TGT/local/khor"
 HASH=$(ssh_ "sha256sum '$PRODUCT' 2>/dev/null | cut -c1-24" | tr -d '\r')
 [ -n "$HASH" ] || { echo "build-on: no product at $HOST:$PRODUCT" >&2; exit 1; }
 say "build-on: built $PRODUCT (${HASH}…)"

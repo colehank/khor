@@ -183,3 +183,19 @@ toml = "0.8"
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# **What we install on our own machines is not what ships** (2026-09-22).
+# The size argument above is about a download; an install from a local
+# build never crosses the slow link, and one codegen unit left the last
+# two crates compiling on one core for most of a five-minute build.
+# Everything else stays release's, so a bug seen here is a bug there.
+[profile.local]
+inherits = "release"
+codegen-units = 16
+
+# Debug builds keep line tables, not full debug info (2026-09-22): the
+# target reached 250 GB, most of it ~70 test binaries each carrying full
+# DWARF for iroh, tauri and aws-lc. Backtraces still name file and line;
+# what goes is a debugger's view of locals.
+[profile.dev]
+debug = "line-tables-only"
