@@ -117,6 +117,8 @@ pub fn save_all(root: &Path, kind: &str, want: &TabsOpen) -> Result<TabsOpen, St
                 url: t.url.clone(),
                 title: t.title.clone(),
                 pinned: t.pinned,
+                // Kept from the file by `save_all`, like `pinned`.
+                touched: 0,
             })
             .collect(),
         active: want.active.clone(),

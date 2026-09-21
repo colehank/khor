@@ -62,12 +62,14 @@ square = "Square"
 # same shape as the state words and the face options.
 appearance = "Appearance"
 language = "Language"
+general = "General"
 session = "Sessions"
 workspace = "Workspace"
 confirm = "Ask before"
 
 theme = "Light or dark"
 lang = "Interface language"
+tabs-limit = "Tab limit"
 session-form = "New sessions open as"
 files-click = "Single click"
 # Under "Ask before", so each key names the act rather than repeating

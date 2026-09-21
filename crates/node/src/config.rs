@@ -63,6 +63,12 @@ pub const SECTIONS: &[Section] = &[
         name: "language",
         page: "settings",
     },
+    // 通用: what holds for every landing at once — the tab strips are
+    // the first thing on it (docs/SHELL.md 第三轮 第 4 条).
+    Section {
+        name: "general",
+        page: "settings",
+    },
     // 会话: what a new one starts out as; 工作区 under it.
     Section {
         name: "session",
@@ -141,6 +147,28 @@ pub const KEYS: &[Key] = &[
         section: "language",
         values: &["auto", "zh", "en"],
         default: "auto",
+    },
+    // ── 通用 ──────────────────────────────────────────────────────
+    //
+    // 标签页上限 (docs/SHELL.md 第三轮 第 4 条): past this many, opening
+    // one more closes the one touched longest ago that is neither pinned
+    // nor holding unsaved work — and when every candidate is one of
+    // those, nothing is closed and the strip simply grows. `off` is
+    // what the strips have always done.
+    //
+    // **The numbers are the values themselves**, not words: `4` means
+    // four in every language, so the catalog has no entry for them and
+    // `word()`'s echo is the answer (the gate in `tests.rs` knows).
+    Key {
+        name: "tabs-limit",
+        section: "general",
+        values: &[
+            "off", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17",
+            "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31",
+            "32", "33", "34", "35", "36", "37", "38", "39", "40", "41", "42", "43", "44", "45",
+            "46", "47", "48", "49", "50",
+        ],
+        default: "off",
     },
     // ── 会话 ──────────────────────────────────────────────────────
     //
@@ -301,6 +329,12 @@ pub fn apply_lang(root: &Path) {
         _ => khor_catalog::lang::from_env(),
     };
     khor_catalog::lang::set(chosen);
+}
+
+/// 标签页上限 as a number, or `None` for `off` (and for a store that
+/// cannot be read, which reads as the default).
+pub fn tabs_limit(root: &Path) -> Option<usize> {
+    get(root, "tabs-limit").ok().and_then(|v| v.parse().ok())
 }
 
 /// Whether a switch-shaped key is on. The two `confirm-*` keys' readers

@@ -79,6 +79,12 @@ pub struct Tab {
     /// unpinned.
     #[serde(default)]
     pub pinned: bool,
+    /// When a person last put this tab in front or pointed it somewhere,
+    /// in milliseconds — what 标签页上限 reads to find the one touched
+    /// longest ago (docs/SHELL.md 第三轮). Zero on a file written before
+    /// it existed, which reads as 「longest ago」, the honest answer.
+    #[serde(default)]
+    pub touched: u64,
 }
 
 /// One kind's tabs, and which of them is in front.
@@ -273,6 +279,13 @@ fn change<T>(
 /// `khor tabs open` are two processes over one file, and 第 2 条 is the
 /// ruling that put them there. Caught by reading a real `khor tabs ls`:
 /// every id ended in `-0`.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 fn mint() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static N: AtomicU64 = AtomicU64::new(0);
@@ -289,6 +302,7 @@ fn mint() -> String {
 /// `device` and `url` may both be empty: that is the fresh tab the
 /// 「+」 mints, and it is a real state rather than a half-made row.
 pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, String> {
+    let limit = crate::config::tabs_limit(root);
     change(root, kind, |open| {
         let id = mint();
         open.tabs.push(Tab {
@@ -297,10 +311,32 @@ pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, 
             url: url.to_string(),
             title: String::new(),
             pinned: false,
+            touched: now_ms(),
         });
         open.active = id.clone();
+        if let Some(limit) = limit
+            && open.tabs.len() > limit
+            && let Some(at) = stalest(open)
+        {
+            open.tabs.remove(at);
+        }
         Ok(id)
     })
+}
+
+/// Which tab 标签页上限 closes (docs/SHELL.md 第三轮 第 4 条): the one
+/// **touched longest ago** that is neither pinned nor in front — the tab
+/// just opened is in front, so it is never its own victim. Ties go to
+/// the one further left. `None` when every tab is kept, and then nothing
+/// closes: a strip that grows past the limit is better than one that
+/// drops something a person said to keep.
+fn stalest(open: &Open) -> Option<usize> {
+    open.tabs
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| !t.pinned && t.id != open.active)
+        .min_by_key(|(i, t)| (t.touched, *i))
+        .map(|(i, _)| i)
 }
 
 /// Points an open tab somewhere, and names it.
@@ -325,6 +361,7 @@ pub fn go(
         tab.device = device.to_string();
         tab.url = url.to_string();
         tab.title = title.to_string();
+        tab.touched = now_ms();
         Ok(())
     })
 }
@@ -353,9 +390,12 @@ pub fn pin(root: &Path, kind: &str, id: &str, on: bool) -> Result<(), String> {
 /// Brings a tab to the front.
 pub fn focus(root: &Path, kind: &str, id: &str) -> Result<(), String> {
     change(root, kind, |open| {
-        if !open.tabs.iter().any(|t| t.id == id) {
-            return Err(msg::no_such_tab(id));
-        }
+        let tab = open
+            .tabs
+            .iter_mut()
+            .find(|t| t.id == id)
+            .ok_or_else(|| msg::no_such_tab(id))?;
+        tab.touched = now_ms();
         open.active = id.to_string();
         Ok(())
     })
@@ -416,6 +456,7 @@ pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
             };
             rows.push(Tab {
                 pinned: was.pinned,
+                touched: was.touched,
                 ..t.clone()
             });
         }
@@ -628,6 +669,7 @@ mod tests {
             url: "c".into(),
             title: String::new(),
             pinned: false,
+            touched: 0,
         });
         let said = save_all(&r.0, "page", &forged).unwrap_err();
         assert!(said.contains("mine"), "the refusal names the id: {said}");
@@ -822,5 +864,73 @@ mod tests {
         let after = list(&r.0, "page");
         assert_eq!(order(&r), ["a", "b"], "the pinned tab still leads");
         assert!(after.tabs[0].pinned, "and it is still pinned");
+    }
+
+    /// 标签页上限 (docs/SHELL.md 第三轮 第 4 条): past the limit, opening
+    /// one more closes the tab **touched longest ago** — not the oldest
+    /// opened — and never a pinned one or the one in front.
+    #[test]
+    fn past_the_limit_the_tab_touched_longest_ago_goes() {
+        let r = root("limit");
+        crate::config::set(&r.0, "tabs-limit", "4").unwrap();
+        let a = open(&r.0, "page", "m", "a").unwrap();
+        let b = open(&r.0, "page", "m", "b").unwrap();
+        open(&r.0, "page", "m", "c").unwrap();
+        open(&r.0, "page", "m", "d").unwrap();
+        // `a` was opened first but touched since; `b` is now the stalest.
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        focus(&r.0, "page", &a).unwrap();
+        open(&r.0, "page", "m", "e").unwrap();
+        let left: Vec<String> = list(&r.0, "page")
+            .tabs
+            .iter()
+            .map(|t| t.url.clone())
+            .collect();
+        assert_eq!(left, ["a", "c", "d", "e"], "b was touched longest ago");
+        assert!(!list(&r.0, "page").tabs.iter().any(|t| t.id == b));
+    }
+
+    /// A pinned tab is kept however stale, and when every candidate is
+    /// pinned nothing is closed — the strip grows past the limit rather
+    /// than losing something a person said to keep.
+    #[test]
+    fn the_limit_never_takes_a_pinned_tab() {
+        let r = root("limit-pin");
+        crate::config::set(&r.0, "tabs-limit", "4").unwrap();
+        let ids: Vec<String> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|u| open(&r.0, "page", "m", u).unwrap())
+            .collect();
+        pin(&r.0, "page", &ids[0], true).unwrap();
+        open(&r.0, "page", "m", "e").unwrap();
+        let left: Vec<String> = list(&r.0, "page")
+            .tabs
+            .iter()
+            .map(|t| t.url.clone())
+            .collect();
+        assert!(
+            left.contains(&"a".to_string()),
+            "the pinned tab stays: {left:?}"
+        );
+        assert_eq!(left.len(), 4);
+        for t in list(&r.0, "page").tabs {
+            pin(&r.0, "page", &t.id, true).unwrap();
+        }
+        open(&r.0, "page", "m", "f").unwrap();
+        assert_eq!(
+            list(&r.0, "page").tabs.len(),
+            5,
+            "all pinned: nothing closes"
+        );
+    }
+
+    /// `off` is what the strips always did: nothing is ever closed.
+    #[test]
+    fn with_no_limit_nothing_is_closed() {
+        let r = root("limit-off");
+        for u in 0..12 {
+            open(&r.0, "page", "m", &u.to_string()).unwrap();
+        }
+        assert_eq!(list(&r.0, "page").tabs.len(), 12);
     }
 }

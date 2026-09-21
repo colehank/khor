@@ -2801,6 +2801,11 @@ fn every_config_name_has_a_word_and_every_word_names_something() {
         }
     }
     for name in &named {
+        // A number is its own word in every language (`tabs-limit`'s
+        // 4…50) — the one kind of value the catalog has no entry for.
+        if name.parse::<u32>().is_ok() {
+            continue;
+        }
         // `word` echoes what it does not know, so an echo *is* the
         // missing entry.
         assert_ne!(
