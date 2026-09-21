@@ -3450,6 +3450,12 @@ web-address = "网址,从 {0} 的网开"
 web-open = "打开"
 web-opening = "正在借 {0} 的网开…"
 web-opened = "在 {0} 的网里开了"
+# 本机直接上网(docs/SHELL.md 第四轮 第 5 条):不借谁的网,就没有「谁的网」可说。
+web-opening-here = "正在打开…"
+web-opened-here = "打开了"
+# 浏览标签右键里的一项,只在从本机出去的标签上:借网的页面交给系统浏览器
+# 就换了出口,那不是同一个页面。
+open-in-browser = "在系统浏览器中打开"
 no-pinned-webs = "还没有置顶的网页"
 # The browser landing's way onward, `go-pin-a-dir`'s sibling. Pressing
 # it picks an exit to borrow — the first machine that is not this one,

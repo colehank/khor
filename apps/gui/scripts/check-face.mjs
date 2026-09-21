@@ -1090,8 +1090,10 @@ try {
   // pinned row's menu beside an unpinned one's. Pinned first because the
   // node keeps them first — this fixture does not sort.
   const tabRows = [
-    { id: "t0", device: pin.device, url: "https://khor.example/zero", title: "khor.example", pinned: true },
-    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "khor.example", pinned: false },
+    // Titles a page would give itself, unlike its address: 4W reads the
+    // sidebar's title off `title` and its subtitle off the address.
+    { id: "t0", device: pin.device, url: "https://khor.example/zero", title: "Khor Zero Page", pinned: true },
+    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "Khor One Page", pinned: false },
   ];
   let tabFront = "t1";
   let minted = 0;
@@ -10053,6 +10055,44 @@ try {
     await page.reload({ waitUntil: "load" });
     await wait(900);
     await page.setViewportSize({ width: 1400, height: 900 });
+  }
+
+  // ── 4W) 第四轮:浏览标签的标题、副标题,页面上没有置顶按钮 ──────────
+  //
+  // 「标题是网页的标题而非网址, 副标题是现在的网址, 但不用显示http(s)://
+  // 这种前缀, 与chrome一致」 and 「浏览器底部不要有置顶按钮, 统一到侧边栏去
+  // 操作」. The title is the one the tab remembers (a page names itself in
+  // the app; here the fixture holds it), read off the glass and compared
+  // with the store's own.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await open("browser");
+    await wait(500);
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-browse-tabs] [data-side-row]")].map((r) => ({
+        id: r.getAttribute("data-side-row"),
+        title: (r.querySelector("[data-side-title]")?.textContent ?? "").trim(),
+        sub: (r.querySelector("[data-side-sub]")?.textContent ?? "").trim(),
+      })),
+    );
+    console.log(`browse 4W · rows: ${JSON.stringify(rows)}`);
+    for (const t of tabRows.filter((x) => x.url && x.title)) {
+      const r = rows.find((x) => x.id === t.id);
+      if (!r) {
+        fail(`probe dead: tab ${t.id} is not in the column`);
+        continue;
+      }
+      if (r.title !== t.title) {
+        fail(`tab ${t.id}'s sidebar title reads ${JSON.stringify(r.title)}, the page's title is ${JSON.stringify(t.title)} — 「标题是网页的标题而非网址」`);
+      }
+      if (/^https?:\/\//.test(r.sub) || !r.sub.includes(t.url.replace(/^https?:\/\//, ""))) {
+        fail(`tab ${t.id}'s subtitle reads ${JSON.stringify(r.sub)} — 「副标题是现在的网址, 但不用显示http(s)://」`);
+      }
+    }
+    const pins = await page.locator('[data-browse-landing="page"] [data-pin-web]').count();
+    if (pins !== 0) {
+      fail(`the browser page still carries ${pins} 置顶 button(s) — 「浏览器底部不要有置顶按钮, 统一到侧边栏去操作」 (src/views/BrowserPane.tsx)`);
+    }
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────

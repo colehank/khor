@@ -900,6 +900,10 @@ export const chatOpen = (id: string) => call<boolean>("chat_open", { id });
     anything that is not http/https — the address came out of an agent's
     own words (`khor_gui_core::web::open_link`). */
 export const openLink = (url: string) => call<null>("open_link", { url });
+/** A page's site icon as a `data:` URI, asked through the page's own
+    exit — `proxy` is its borrow's local address, `""` for a page this
+    machine opens itself (`khor_node::favicon`). */
+export const pageIcon = (url: string, proxy: string) => call<string>("page_icon", { url, proxy });
 /** 接管 the other way: a conversation khor holds moves into a terminal
     (`Node::takeover_term`). Same row, same conversation. */
 export const takeoverTerm = (id: string) => call<null>("takeover_term", { id });

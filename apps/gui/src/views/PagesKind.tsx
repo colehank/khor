@@ -181,13 +181,18 @@ function useBorrowsHeld(open: readonly HeldTab[]): void {
   }, [tabs]);
 }
 
-function Surf({ tab, machine, place, onPlace, onLanded, onPopup }: BodyProps) {
+function Surf({ tab, machine, place, onPlace, onLanded, onPopup, onTitle, onIcon }: BodyProps) {
   return (
     <BrowserPane
       tab={tab}
       machine={machine.name}
       device={machine.id}
       url={place}
+      // This machine's tab goes out of this machine's own network
+      // (docs/SHELL.md 第四轮 第 5 条).
+      here={machine.me}
+      onTitle={(t) => onTitle?.(t)}
+      onIcon={(src) => onIcon?.(src)}
       onOpened={onLanded}
       // Where the page went is where the tab is, so it is `onPlace` and
       // not `onLanded`: the shell's two callbacks split on *intention*

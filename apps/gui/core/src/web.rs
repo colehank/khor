@@ -104,6 +104,14 @@ pub async fn drop_web_borrow(root: &Path, session: &str) -> Result<(), String> {
     Node::open(root.to_path_buf())?.drop_borrow(session).await
 }
 
+/// A page's site icon as a `data:` URI, asked **the way the page was**:
+/// through its borrow's local proxy (`proxy`, the `addr` `borrow_web`
+/// answered), or directly for a page this machine opens itself
+/// (`khor_node::favicon` says why the difference matters).
+pub async fn page_icon(url: &str, proxy: &str) -> Result<String, String> {
+    khor_node::favicon::icon(url, (!proxy.is_empty()).then_some(proxy)).await
+}
+
 /// Hands a page to whatever this machine opens pages with.
 ///
 /// **The address comes out of an agent's own words** — a conversation

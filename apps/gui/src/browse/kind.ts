@@ -120,6 +120,13 @@ export type BodyProps = {
       where you are or beside you is the page author's call, and the
       body is where that call arrives. */
   onPopup: (place: string) => void;
+  /** What the page calls itself, as it says so (docs/SHELL.md 第四轮:
+      「标题是网页的标题而非网址」). A kind whose places have no title
+      never calls it. */
+  onTitle?: (title: string) => void;
+  /** The page's icon, as something an `<img>` can draw, for the corner of
+      its row. */
+  onIcon?: (src: string) => void;
 };
 
 export type BrowseKind = {

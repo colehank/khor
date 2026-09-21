@@ -615,15 +615,19 @@ try {
     ok("the borrow came up, and the pane stopped talking about it");
   }
 
-  //    …and the tab wears the page's host, not its whole address — the
-  //    kind's `leafOf`, which is the other thing the two do differently.
+  //    …and what the tab wears.
   const pageTitles = await page
     .locator("[data-tab-label]")
     .evaluateAll((els) => els.map((e) => e.textContent));
   console.log(`     browser tab titles: ${JSON.stringify(pageTitles)}`);
-  if (!pageTitles.includes("khor.example")) {
-    fail(`no tab is titled by the page's host — ${JSON.stringify(pageTitles)}`);
-  } else ok("a browser tab is titled by its host");
+  //  **Until the page names itself, its address without the scheme**
+  //  (docs/SHELL.md 第四轮:「副标题是现在的网址, 但不用显示http(s)://」,
+  //  Chrome's own fallback). It said the host alone until then; a page
+  //  on the web face never loads, so its title never arrives here, and
+  //  what is measured is the fallback.
+  if (!pageTitles.some((t) => t?.startsWith("khor.example")) || pageTitles.some((t) => /^https?:\/\//.test(t ?? ""))) {
+    fail(`no tab is titled by its address without the scheme — ${JSON.stringify(pageTitles)}`);
+  } else ok("a browser tab is titled by its address, without http(s)://");
 
   //    ── the terminal and the window are two processes over one file ──
   //

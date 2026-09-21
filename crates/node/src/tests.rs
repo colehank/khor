@@ -2726,7 +2726,10 @@ fn confirm_delete_asks_by_default() {
 /// over — 「旧键明确设过 on/off 的照旧值」.
 #[test]
 fn an_old_confirm_ws_remove_carries_over_to_confirm_delete() {
-    assert!(config::key("confirm-ws-remove").is_none(), "the old key is retired");
+    assert!(
+        config::key("confirm-ws-remove").is_none(),
+        "the old key is retired"
+    );
     for old in ["on", "off"] {
         let r = scratch(&format!("confirm-migrate-{old}"));
         std::fs::create_dir_all(r.join(".khor")).unwrap();

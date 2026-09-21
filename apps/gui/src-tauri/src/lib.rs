@@ -461,6 +461,12 @@ fn chat_answer(id: String, ask: u64, option: Option<String>) -> Result<(), Strin
     khor_gui_core::chat::chat_answer(&id, ask, option)
 }
 
+/// A page's site icon, through the page's own exit (docs/SHELL.md 第四轮).
+#[tauri::command]
+async fn page_icon(url: String, proxy: Option<String>) -> Result<String, String> {
+    khor_gui_core::web::page_icon(&url, proxy.as_deref().unwrap_or("")).await
+}
+
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     khor_gui_core::web::open_link(&url)
@@ -2637,6 +2643,7 @@ pub fn run() {
             chat_stop,
             chat_set_mode,
             chat_set_option,
+            page_icon,
             open_link,
             chat_replay,
             chat_leave,

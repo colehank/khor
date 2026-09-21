@@ -54,7 +54,7 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useState } from "react";
 
-import { forgetRecent, recentVisit, type DeviceRow } from "@/api";
+import { forgetRecent, openLink, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
@@ -144,6 +144,11 @@ export function BrowseLanding({
       so it is kept here and not there. The one a person meets is
       「删除」 on a pinned tab (`khor_node::tabs::close`). */
   const [refused, setRefused] = useState<Map<string, string>>(new Map());
+  /** Each tab's site icon, once its page has loaded here — kept for this
+      window's life, not written down: a restart draws the generic page
+      mark until the page is opened again (docs/SHELL.md 第四轮 第 2 条:
+      「拿不到给通用网页图标」). */
+  const [icons, setIcons] = useState<Map<string, string>>(new Map());
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
@@ -218,6 +223,12 @@ export function BrowseLanding({
       ...(t.path
         ? [{ key: "copy-place", label: kind.words.copy, run: () => navigator.clipboard.writeText(t.path) }]
         : []),
+      // **Only on a tab that goes out of this machine**: a borrowed page
+      // handed to the system browser would leave through a different
+      // network, and that is a different page (`open_link`).
+      ...(t.path && deviceOf(t.device)?.me
+        ? [{ key: "open-outside", label: gui.open_in_browser, run: () => openLink(t.path).then(() => {}) }]
+        : []),
     ];
   };
 
@@ -230,18 +241,32 @@ export function BrowseLanding({
     const d = deviceOf(t.device);
     const label = tabLabel(kind, t.path, d);
     const on = t.id === tabs.current.id;
+    // 「标题是网页的标题而非网址, 副标题是现在的网址, 但不用显示http(s)://」
+    // (docs/SHELL.md 第四轮, Chrome's own arrangement): the page's own
+    // title when it has said one, else the bare address, else what a tab
+    // pointed nowhere is called.
+    // A site's root reads as its host, the way Chrome prints it.
+    const bare = t.path.replace(/^https?:\/\//i, "").replace(/^([^/]+)\/$/, "$1");
+    const src = icons.get(t.id);
     return {
       id: t.id,
       group: t.pinned ? "pin" : "",
       pinned: t.pinned,
       face: <MachineAvatar face={d?.face ?? null} className="size-avatar" />,
-      badge: { mark: "page", icon: <IconBrowser className="size-kind-mark-glyph" /> },
+      badge: {
+        mark: src ? "favicon" : "page",
+        icon: src ? (
+          <img src={src} alt="" className="size-kind-mark-glyph rounded-sm" />
+        ) : (
+          <IconBrowser className="size-kind-mark-glyph" />
+        ),
+      },
       title: (
         <span data-tab-label data-tab-name className="block truncate text-sm font-label">
-          {label}
+          {t.title || bare || label}
         </span>
       ),
-      sub: t.path || undefined,
+      sub: bare || undefined,
       // What the row shows — its name and its place — and nothing else.
       find: `${label} ${t.title} ${t.path}`,
       selected: on,
@@ -328,7 +353,15 @@ export function BrowseLanding({
           machine={machine}
           place={tabs.current.path}
           narrow={narrow}
-          onPlace={(place) => tabs.goTo(machine.id, place)}
+          // The title the tab already has rides along: the page names
+          // itself on its own beat (`onTitle`), and a move that cleared it
+          // would leave the row on its bare address until the next word.
+          onPlace={(place) => tabs.goTo(machine.id, place, tabs.current.title)}
+          onTitle={(title) => tabs.goTo(machine.id, tabs.current.path, title)}
+          onIcon={(src) => {
+            const id = tabs.current.id;
+            setIcons((m) => (m.get(id) === src ? m : new Map(m).set(id, src)));
+          }}
           // A new tab beside this one, on the same machine — `open`
           // rather than `goTo`, which is the whole difference the shell
           // draws between the two (`BrowseTabs`).

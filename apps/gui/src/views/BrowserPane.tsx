@@ -17,9 +17,7 @@
 // once it worked (`onLanded` → the visit is recorded).
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { fetchWebPins, hidePage, movePage, onPageWord, openPage, pinWeb, showPage } from "@/api";
-import { IconPin } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { hidePage, movePage, onPageWord, openPage, pageIcon, showPage } from "@/api";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { holdBorrow, holdPage } from "@/views/held";
@@ -64,9 +62,12 @@ export function BrowserPane({
   machine,
   device,
   url,
+  here,
   onOpened,
   onWent,
   onPopped,
+  onTitle,
+  onIcon,
 }: {
   /** This tab's handle. The page webview is keyed by it on the app side,
       so every call about that page names it. */
@@ -77,6 +78,14 @@ export function BrowserPane({
   device: string;
   /** The page this tab is pointed at; `""` before one has been named. */
   url: string;
+  /** The exit is this machine (docs/SHELL.md 第四轮 第 5 条:「本机支持直接
+      上网, 同样在khor里打开」): nothing is borrowed, the page goes out
+      of this machine's own network, in a page view of khor's own. */
+  here: boolean;
+  /** What the page calls itself, as it says so. */
+  onTitle: (title: string) => void;
+  /** The page's site icon, fetched through the page's own exit. */
+  onIcon: (src: string) => void;
   /** It really opened. Only on success: a borrow that was refused is
       not a place this person has been. */
   onOpened: (url: string) => void;
@@ -98,16 +107,19 @@ export function BrowserPane({
      second behaviour nobody can see. */
 }) {
   const [opening, setOpening] = useState<Opening | null>(null);
-  // This machine's pinned pages — only so the control below can show
-  // which of its two jobs it is about to do.
-  const [pins, setPins] = useState<string[]>([]);
-
-  const loadPins = () => {
-    fetchWebPins()
-      .then((rows) => setPins(rows.filter((r) => r.device === device).map((r) => r.url)))
-      .catch(() => {});
-  };
-  useEffect(loadPins, [device]);
+  /** The proxy this page's webview wears — its borrow's local address,
+      `""` for a page this machine opens itself. The icon is asked
+      through the same one (`khor_node::favicon`). */
+  const exit = useRef("");
+  const icon = useRef(onIcon);
+  icon.current = onIcon;
+  const iconOf = useCallback((at: string) => {
+    pageIcon(at, exit.current).then(
+      (src) => icon.current(src),
+      // No icon is a row wearing the generic page mark — nothing to say.
+      () => {},
+    );
+  }, []);
 
   // Where the page goes: the rectangle this body occupies, in CSS pixels,
   // which are the app's logical pixels. **Measured here because only this
@@ -220,23 +232,29 @@ export function BrowserPane({
     setOpening({
       url: want,
       state: "opening",
-      word: gui.web_opening(machine),
+      word: here ? gui.web_opening_here : gui.web_opening(machine),
     });
-    openPage(tab, machine, want, at).then(
+    // **An empty exit is the app's 「go direct」** (`open_page`): no
+    // borrow, no proxy — this machine's own network, in khor's own page
+    // view. It used to be refused as 「这就是本机的网,不用借」, which was
+    // true of the *borrow* and said nothing about opening the page.
+    openPage(tab, here ? "" : machine, want, at).then(
       (borrow) => {
         // **Written down before the unmount check, on purpose.** The
         // borrow is open on the far machine whether or not this pane is
         // still on screen; a record skipped because the tab was closed
         // mid-dial is a lease nobody can give back.
-        holdBorrow(device, borrow.session);
+        if (!here) holdBorrow(device, borrow.session);
         holdPage(tab);
+        exit.current = borrow.addr;
         if (stopped) return;
         setOpening({
           url: want,
           state: "opened",
-          word: gui.web_opened(machine),
+          word: here ? gui.web_opened_here : gui.web_opened(machine),
         });
         onOpened(want);
+        iconOf(want);
       },
       (e) => {
         if (stopped) return;
@@ -257,7 +275,7 @@ export function BrowserPane({
       hidePage(tab).catch(() => {});
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, machine, url]);
+  }, [tab, machine, url, here]);
 
   // The page is a native view laid over this rectangle, not something in
   // the layout, so nothing moves it when the layout moves. This is the
@@ -310,15 +328,27 @@ export function BrowserPane({
   const popped = useRef(onPopped);
   went.current = onWent;
   popped.current = onPopped;
-  useEffect(() => onPageWord("page:went", tab, (u) => went.current(u)), [tab]);
+  useEffect(
+    () =>
+      onPageWord("page:went", tab, (u) => {
+        went.current(u);
+        // A page that moved may have moved to another site.
+        iconOf(u);
+      }),
+    [tab, iconOf],
+  );
+  // What the page calls itself (docs/SHELL.md 第四轮:「标题是网页的标题而
+  // 非网址」), as the webview reports it.
+  const titled = useRef(onTitle);
+  titled.current = onTitle;
+  useEffect(() => onPageWord("page:title", tab, (t) => t.trim() && titled.current(t.trim())), [tab]);
   useEffect(() => onPageWord("page:popup", tab, (u) => popped.current(u)), [tab]);
   // …and a link that asked for a new window becomes a new tab. Carried,
   // not decided: `target="_blank"` on one link and not another is the
   // page author's distinction, and khor's job is to keep it.
 
 
-  const here = normalize(url);
-  const pinned = here !== null && pins.includes(here);
+
 
   return (
     <section className="flex h-full min-w-0 flex-col">
@@ -346,37 +376,10 @@ export function BrowserPane({
           reported and a box that changed size with the status would
           move the page under the person reading it. */}
       <div ref={host} data-page-host className="relative min-h-0 flex-1" />
-      {here && (
-        // The one place a page becomes a shortcut. Two words for one
-        // control, the pin's rule: it shows what pressing it will do.
-        <div className="flex-none border-t p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            data-pin-web
-            data-on={pinned}
-            aria-label={pinned ? gui.unpin : gui.pin}
-            // **The finger's floor, missing until 2026-09-21.** It
-            // measured 78×24 — `size="sm"` is what a control *looks*
-            // like beside text and `--touch` is what a finger needs,
-            // and the two are allowed to disagree only when the floor
-            // is written down as well (tokens.css). Invisible to
-            // `check-face` for the same reason the address's resting
-            // face was: the browser stop's fixture had no tab pointed
-            // anywhere, so nothing that only draws over a live page was
-            // ever walked.
-            className="min-h-touch text-muted-foreground"
-            onClick={() => {
-              pinWeb(machine, here, !pinned)
-                .then(loadPins)
-                .catch(() => {});
-            }}
-          >
-            <IconPin pinned={pinned} />
-            <span className="ml-2">{pinned ? gui.unpin : gui.pin}</span>
-          </Button>
-        </div>
-      )}
+      {/* ⚠️ 墓碑: a 置顶 button stood under the page here — 「the one
+          place a page becomes a shortcut」. docs/SHELL.md 第四轮 第 3 条
+          took it off (「浏览器底部不要有置顶按钮, 统一到侧边栏去操作」):
+          pinning is the sidebar's, on the tab's own menu. */}
     </section>
   );
 }

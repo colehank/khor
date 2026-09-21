@@ -17,6 +17,7 @@ pub mod config;
 pub mod day;
 pub mod doctor;
 pub mod face;
+pub mod favicon;
 pub mod files;
 pub mod git;
 pub mod gui_host;
