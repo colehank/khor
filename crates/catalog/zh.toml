@@ -1521,6 +1521,9 @@ quit-hosts = "收了 {0} 个 session 宿主"
 # keeper stands it back up with fresh ears.
 serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了,退下换一双(keeper 会再起)"
 serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任,退场"
+# The road question (Op::Hops) never leaves the process, so a late
+# answer means iroh itself is stuck: said here, 说不出 on the card.
+serve-hops-late = "[{0}] 问 iroh 走哪条路,{1} 毫秒内没答上来,先报「说不出」:{2}"
 # 76's preventive half: on a network filesystem, replacing the binary
 # can kill the running keeper on another machine (SIGBUS suspicion), so
 # the keeper re-execs from a local copy and nothing khor keeps running
