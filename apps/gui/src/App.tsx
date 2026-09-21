@@ -59,7 +59,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
-import { TabCount, TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
+import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
+import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
@@ -1732,7 +1733,7 @@ export default function App() {
       // so it hands nothing in.
       tabs={
         narrow && openTabs.length > 0 ? (
-          <TabCount n={openTabs.length} onPress={() => setSwitchingTabs(true)} />
+          <TabCount n={openTabs.length} onPress={() => setSwitchingTabs((v) => !v)} open={switchingTabs} />
         ) : undefined
       }
       // The network's now, painted from the shell's own polled state —
@@ -2228,28 +2229,26 @@ export default function App() {
                   关闭 ends the session, and the gone-row rule then
                   closes the tab. `ref` is the band's width source. */}
               <div ref={detailBox} className="flex min-w-0 flex-1 flex-col">
-                {sessions && openTabs.length > 0 && (
-                  <div data-session-tabs aria-label={gui.session_tabs}>
-                    <TabStrip
-                      faces={tabFaces}
-                      active={selected ?? ""}
-                      onFocus={(id) => {
-                        sessionTabs.focus(id);
-                        setSwitchingTabs(false);
-                        setScreen("detail");
-                      }}
-                      onClose={sessionTabs.close}
-                      // The strip decides *whether* to offer the way to
-                      // the switcher — only it can measure whether it
-                      // has stopped showing every tab. This side only
-                      // says what pressing it does.
-                      onSwitch={() => setSwitchingTabs(true)}
-                    />
-                  </div>
+                {/* **`Tabs`, the one tab strip** (docs/SHELL.md 第四轮 第 9
+                    条): the strip, the count that opens and closes the
+                    switcher, the switcher over the detail. This side says
+                    what focusing and closing a tab does. */}
+                {sessions && openTabs.length > 0 ? (
+                  <Tabs
+                    faces={tabFaces}
+                    active={selected ?? ""}
+                    onFocus={(id) => {
+                      sessionTabs.focus(id);
+                      setScreen("detail");
+                    }}
+                    onClose={sessionTabs.close}
+                    stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
+                  >
+                    {detail}
+                  </Tabs>
+                ) : (
+                  <div className="min-h-0 flex-1">{detail}</div>
                 )}
-                <div className="min-h-0 flex-1">
-                  {sessions && switchingTabs && openTabs.length > 0 ? tabSwitcher : detail}
-                </div>
               </div>
             </>
           )}

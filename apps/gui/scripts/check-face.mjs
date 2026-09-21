@@ -10095,6 +10095,122 @@ try {
     }
   }
 
+  // ── 4X) 第四轮补充:浏览页零置顶控件、计数按钮是开关 (docs/SHELL.md) ──
+  //
+  // 「浏览器不要置顶按钮了呀，完全交给侧边栏list … 点击计数按钮展开后，
+  // 再次点击要能收起。」 Two claims:
+  //   · nothing on the browse landing is a pin control or a pin mark — a
+  //     pinned tab is said by the sidebar's pinned group, and it has no ×;
+  //   · every `[data-tab-count]` is a switch: press → the switcher is up
+  //     and `aria-expanded` is true; press again → it is gone and the tab
+  //     in front is the one that was.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await open("browser");
+    await wait(500);
+    const pins = await page.evaluate(() => {
+      const land = document.querySelector('[data-browse-landing="page"]');
+      if (!land) return null;
+      return {
+        controls: land.querySelectorAll('[data-pin-web], [data-pin-dir], [data-switch-pinned], svg[data-icon="pin"]').length,
+        closeOnPinned: land.querySelectorAll('[data-side-row][data-side-pinned="true"] [data-switch-close]').length,
+        pinnedRows: land.querySelectorAll('[data-side-row][data-side-pinned="true"]').length,
+      };
+    });
+    console.log(`tabs 4X · browse pins: ${JSON.stringify(pins)}`);
+    if (!pins || pins.pinnedRows === 0) {
+      fail("probe dead: the browse landing has no pinned tab to look at");
+    } else {
+      if (pins.controls !== 0) {
+        fail(`the browse landing draws ${pins.controls} pin control(s) or mark(s) — 「浏览器不要置顶按钮了呀，完全交给侧边栏list」`);
+      }
+      if (pins.closeOnPinned !== 0) {
+        fail(`a pinned tab still carries ${pins.closeOnPinned} × — it closes only once unpinned`);
+      }
+    }
+
+    // The count, three seats.
+    const toggles = async (seat, count) => {
+      const front = () =>
+        page.evaluate(
+          (seat) =>
+            document.querySelector(`${seat} [data-tab][data-on="true"]`)?.getAttribute("data-tab") ??
+            document.querySelector('[data-switch-tab][data-on="true"]')?.getAttribute("data-switch-tab") ??
+            document.querySelector("[data-address-tab]")?.getAttribute("data-address-tab") ??
+            null,
+          seat,
+        );
+      const btn = page.locator(count).first();
+      if ((await btn.count()) === 0) return { dead: true };
+      const was = await front();
+      await btn.click();
+      await wait(300);
+      const up = {
+        switcher: await page.locator("[data-tab-switcher]").count(),
+        expanded: await btn.getAttribute("aria-expanded").catch(() => null),
+      };
+      await btn.click();
+      await wait(300);
+      const down = {
+        switcher: await page.locator("[data-tab-switcher]").count(),
+        expanded: await btn.getAttribute("aria-expanded").catch(() => null),
+        front: await front(),
+      };
+      return { was, up, down };
+    };
+    const seats = [];
+    // Sessions, at a width where its strip overflows (4T measured 760).
+    await page.setViewportSize({ width: 760, height: 800 });
+    await open("sessions");
+    await wait(400);
+    await press("[data-list] [data-row-open]");
+    await wait(400);
+    seats.push({ seat: "sessions", ...(await toggles("[data-session-tabs]", "[data-session-tabs] [data-tab-count]")) });
+    // The workspace, twenty files.
+    const wsKey2 = "khor.ws-tabs.peer:/home/peer/work";
+    await page.evaluate(
+      (k) => window.localStorage.setItem(k, JSON.stringify(Array.from({ length: 20 }, (_, i) => `/home/peer/work/g${i}.rs`))),
+      wsKey2,
+    );
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await atTree();
+    await wait(400);
+    seats.push({ seat: "workspace", ...(await toggles("[data-ws-tab-strip]", "[data-ws-tab-strip] [data-tab-count]")) });
+    await page.evaluate((k) => window.localStorage.removeItem(k), wsKey2);
+    // The browse landing's narrow face: the count in the address bar.
+    // Opened wide first — on a phone 浏览 is behind 「…」, and the landing
+    // stays where it is when the window narrows.
+    await open("browser");
+    await wait(400);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await until(5_000, async () => (await page.locator('[data-browse-landing="page"] [data-tab-count]').count()) === 1);
+    seats.push({ seat: "browser narrow", ...(await toggles('[data-browse-landing="page"]', '[data-browse-landing="page"] [data-tab-count]')) });
+    console.log(`tabs 4X · count toggles: ${JSON.stringify(seats)}`);
+    for (const x of seats) {
+      if (x.dead) {
+        fail(`probe dead: no tab count on the ${x.seat} seat`);
+        continue;
+      }
+      if (x.up.switcher !== 1 || x.up.expanded !== "true") {
+        fail(`pressing the ${x.seat} count drew ${x.up.switcher} switcher(s), aria-expanded ${x.up.expanded}`);
+      }
+      if (x.down.switcher !== 0 || x.down.expanded !== "false") {
+        fail(
+          `pressing the ${x.seat} count again left ${x.down.switcher} switcher(s), aria-expanded ${x.down.expanded} — ` +
+            "「点击计数按钮展开后，再次点击要能收起」",
+        );
+      }
+      if (x.down.front !== x.was) {
+        fail(`after the ${x.seat} switcher folded, ${x.down.front} is in front where ${x.was} was`);
+      }
+    }
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await page.setViewportSize({ width: 1400, height: 900 });
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**

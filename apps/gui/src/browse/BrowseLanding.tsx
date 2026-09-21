@@ -62,7 +62,7 @@ import { TabCount } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconBrowser, IconClose, IconPin } from "@/components/icons";
+import { IconBrowser, IconClose } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
 import type { RowAction } from "@/components/RowMenu";
@@ -275,18 +275,15 @@ export function BrowseLanding({
         tabs.focus(t.id);
         setSwitching(false);
       },
-      // Where the close would be, a pinned tab wears its pin: it is
-      // unpinned from its menu first (「关不掉之前要先取消置顶」). The × is
-      // fire and forget — never drawn on a pinned tab, so the node's one
-      // refusal for it cannot be met here — and it closes without asking,
-      // as Chrome's does (docs/SHELL.md 第四轮 第 3 条).
+      // **A pinned tab has no ×, and no pin either** (docs/SHELL.md 第四轮
+      // 第 8 条:「浏览器不要置顶按钮了呀, 完全交给侧边栏list」): the pinned
+      // group it sits under is its mark, and it is unpinned from its menu
+      // before it can go. The seat stays, empty, so the rows keep one
+      // shape. The × is fire and forget — never drawn on a pinned tab, so
+      // the node's one refusal for it cannot be met here — and it closes
+      // without asking, as Chrome's does.
       after: t.pinned ? (
-        <span
-          data-switch-pinned={t.id}
-          className="flex min-h-touch min-w-touch flex-none items-center justify-center text-muted-foreground"
-        >
-          <IconPin pinned />
-        </span>
+        <span aria-hidden="true" className="min-h-touch min-w-touch flex-none" />
       ) : (
         <Button
           size="icon"
@@ -460,7 +457,11 @@ export function BrowseLanding({
   if (narrow) {
     return (
       <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
-        {tabs.ready && address(<TabCount n={tabs.tabs.length} onPress={() => setSwitching(true)} />)}
+        {tabs.ready &&
+          address(
+            // A switch (第四轮 第 10 条): the tab screen it opens, it closes.
+            <TabCount n={tabs.tabs.length} onPress={() => setSwitching((v) => !v)} open={switching} />,
+          )}
         <div className="min-h-0 flex-1 overflow-hidden">
           {switching ? (
             // The narrow face's tab screen is this landing's sidebar,

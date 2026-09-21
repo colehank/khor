@@ -188,6 +188,9 @@ export function AddressBar({
   return (
     <div
       data-address-bar
+      // Which tab this bar is about — the one in front — for the gate
+      // that folds the narrow tab screen and checks nothing moved.
+      data-address-tab={tab}
       // **This is the browsing landing's top row now** (docs/SHELL.md 第
       // 2 条), so its blank is the 顶部空白 that moves the window (第八轮
       // 第 59 条). It was not, and did not need to be: the tab strip sat

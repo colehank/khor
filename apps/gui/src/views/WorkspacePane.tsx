@@ -49,7 +49,8 @@ import { type RowAction } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
-import { TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
+import { type TabFace } from "@/browse/TabStrip";
+import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
@@ -252,8 +253,6 @@ export function WorkspacePane({
       the user asked for VS Code's). `null` when every open tab is
       pinned. A double click, or typing in it, pins it. */
   const [preview, setPreview] = useState<string | null>(null);
-  /** Whether the tab switcher has the file's region (第三轮 第 3 条). */
-  const [switching, setSwitching] = useState(false);
   /** When each tab was last in front, for 标签页上限 (`browse/tab-limit`).
       A ref: it is read when a tab is opened, and a change to it is not
       something the screen draws. */
@@ -1626,27 +1625,19 @@ export function WorkspacePane({
               moved onto the tab it is about. What is left on the strip
               is tabs and, on the narrow face, the way back to the
               tree. */}
-          <div data-ws-tab-strip className="flex flex-none flex-col">
-          <TabStrip
+          {/* **`Tabs`, the one tab strip** (docs/SHELL.md 第四轮 第 9 条): the
+              strip, the count that opens and closes the switcher, the
+              switcher over the file. This strip was the one seat without
+              a count until the third round — the wiring each seat did for
+              itself, forgotten in one of them, which is why it lives in
+              one place now. */}
+          <Tabs
             faces={tabFaces}
             active={file === null ? "" : `${machine}:${file}`}
-            onFocus={(id) => {
-              setFile(id.slice(machine.length + 1));
-              setSwitching(false);
-            }}
+            onFocus={(id) => setFile(id.slice(machine.length + 1))}
             onClose={(id) => shut(id.slice(machine.length + 1))}
-            // **The count and its switcher, once the strip runs past its
-            // edge** (docs/SHELL.md 第三轮 第 3 条). This strip was the one
-            // seat without it — the user's screenshot: twenty files and
-            // a scrollbar nobody could drag as the only way to the ones
-            // past the edge.
-            onSwitch={() => setSwitching(true)}
-            // **The way back to the tree, and only where the tree is
-            // off screen** (2026-09-16 ruling 33). The same control the
-            // sessions landing's narrow face draws for the same reason
-            // — one screen at a time, and every screen that is not the
-            // first has a way out of it. On wide the tree is a column
-            // away and there is nothing to go back from.
+            stripData={{ "data-ws-tab-strip": "" }}
+            bodyClass="flex flex-col"
             head={
               narrow ? (
                 <Button
@@ -1661,29 +1652,8 @@ export function WorkspacePane({
                 </Button>
               ) : undefined
             }
-          />
-          </div>
-          {/* **The editor is a window of its own since 2026-09-17**
-              (ruling 46), so nothing about it touches this column at
-              all — not what it draws and not how wide it is. It was a
-              webview over this space (批5), then a column beside it
-              (ruling 45), and both were the same mistake at two sizes:
-              an editor is a whole application and it was being given a
-              third of a window. */}
-          {switching && tabs.length > 0 ? (
-            // The switcher takes the file's region, not the strip: the
-            // strip still says which tab you will come back to
-            // (`TabSwitcher`'s own judgment).
-            <TabSwitcher
-              faces={tabFaces}
-              active={file === null ? "" : `${machine}:${file}`}
-              onFocus={(id) => {
-                setFile(id.slice(machine.length + 1));
-                setSwitching(false);
-              }}
-              onClose={(id) => shut(id.slice(machine.length + 1))}
-            />
-          ) : file === null ? (
+          >
+          {file === null ? (
             // 中栏没有标签时 (ruling 37). Not a blank: where this is,
             // what branch it is on, and what was open last time.
             <WorkspaceEmpty
@@ -1750,6 +1720,7 @@ export function WorkspacePane({
               }}
             />
           )}
+          </Tabs>
         </div>
         )}
         {(narrow ? screen === "sessions" : sessions) && (

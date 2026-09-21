@@ -283,10 +283,14 @@ export function IconPulse({ className }: IconProps) {
 function Mark({
   className,
   weight = "sm",
+  icon,
   children,
-}: IconProps & { weight?: "sm" | "bold"; children: ReactNode }) {
+}: IconProps & { weight?: "sm" | "bold"; icon?: string; children: ReactNode }) {
   return (
     <svg
+      // Which mark this is, for the few gates that must find one by what
+      // it *is* (docs/SHELL.md 第四轮: no pin anywhere on the browse page).
+      data-icon={icon}
       className={cn("size-4", className)}
       viewBox="0 0 16 16"
       fill="none"
@@ -494,7 +498,7 @@ export function IconAttach({ className }: IconProps) {
  */
 export function IconPin({ className, pinned = false }: IconProps & { pinned?: boolean }) {
   return (
-    <Mark className={cn("origin-center", pinned && "-rotate-45", className)}>
+    <Mark className={cn("origin-center", pinned && "-rotate-45", className)} icon="pin">
       <path d="M9.6 1.9l4.5 4.5-1.6.5-.6 2.6-4.9-4.9 2.6-.6.4-2.1z" />
       <path d="M7 9L2.7 13.3" />
     </Mark>

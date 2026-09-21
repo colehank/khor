@@ -168,6 +168,7 @@ export function TabStrip({
   onClose,
   onNew,
   onSwitch,
+  switching = false,
   head,
   tail,
 }: {
@@ -182,6 +183,9 @@ export function TabStrip({
       every tab** — see the file head; a landing that has no switcher to
       open leaves this out and gets the strip alone. */
   onSwitch?: () => void;
+  /** Whether the switcher the count opens is up — the count stays drawn
+      while it is, so the press that opened it can close it. */
+  switching?: boolean;
   /** Whatever the landing pins against the **left** end of the strip.
       One caller so far: the workspace's narrow face, where the file is
       one screen of three and this is the way back to the tree
@@ -639,7 +643,7 @@ export function TabStrip({
           way *in* disappearing is not a way *out* disappearing, and
           holding the button drawn on `switching` would be drawing "go
           see your tabs" over the screen that is showing them. */}
-      {onSwitch && crowded && <TabCount n={faces.length} onPress={onSwitch} />}
+      {onSwitch && (crowded || switching) && <TabCount n={faces.length} onPress={onSwitch} open={switching} />}
       {tail}
     </div>
   );
@@ -658,12 +662,16 @@ export function TabStrip({
  * borrowed onto the wide face; the narrow face is just the width where
  * the condition is permanently true.
  */
-export function TabCount({ n, onPress }: { n: number; onPress: () => void }) {
+export function TabCount({ n, onPress, open = false }: { n: number; onPress: () => void; open?: boolean }) {
   return (
     <Button
       variant="ghost"
       size="icon"
       data-tab-count
+      // **A switch** (docs/SHELL.md 第四轮 第 10 条): pressed again, the
+      // switcher it opened goes; which way it is, is said out loud.
+      aria-expanded={open}
+      data-open={open}
       aria-label={gui.switch_tabs(n)}
       onClick={onPress}
       // The count keeps its size; the box around it takes the floor.
