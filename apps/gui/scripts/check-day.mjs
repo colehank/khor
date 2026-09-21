@@ -67,12 +67,14 @@
 // Run: `npm run day` (needs system Chrome, and:
 // `cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`)
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
+
+import { fakeHome, fakeUsage } from "./fake-home.mjs";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "..", "..");
@@ -143,6 +145,11 @@ for (const [what, path] of [["the bridge", BRIDGE], ["the fixture", FIXTURE]]) {
 // and a handful of registry entries, and doing that to somebody's real
 // `~/.khor` would be this gate damaging the thing it measures.
 const home = mkdtempSync(join(tmpdir(), "khor-day-gate-"));
+// Not the operator's `HOME` either (`fake-home.mjs`).
+const usage = await fakeUsage();
+const fakeHomeDir = join(home, "home");
+mkdirSync(fakeHomeDir, { recursive: true });
+const faked = fakeHome(fakeHomeDir, usage.url);
 execFileSync(FIXTURE, [home], { stdio: "inherit" });
 
 let bridge, vite, browser;
@@ -162,7 +169,7 @@ const listening = async (port, what, ms) => {
 
 try {
   bridge = spawn(BRIDGE, [], {
-    env: { ...process.env, KHOR_HOME: home, BRIDGE_PORT: String(BRIDGE_PORT) },
+    env: { ...process.env, ...faked, KHOR_HOME: home, BRIDGE_PORT: String(BRIDGE_PORT) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   bridge.on("exit", (code) => {
@@ -667,6 +674,10 @@ try {
   await new Promise((r) => setTimeout(r, 800));
   for (const p of [vite, bridge]) if (p && p.exitCode === null) p.kill("SIGKILL");
   rmSync(home, { recursive: true, force: true });
+  await usage.close();
+  if (usage.seen.strangers !== 0) {
+    fail(`${usage.seen.strangers} usage request(s) carried a token that is not the fake login — a real credential reached a gate`);
+  }
   // Leaving a listener behind is its own bug, and one this tree has paid
   // for twice: an orphaned dev server holds a port and memory while
   // nobody knows it is there. Said out loud rather than assumed.

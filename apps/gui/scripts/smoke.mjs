@@ -197,6 +197,8 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
+import { FAKE_TOKEN, fakeHome, fakeUsage } from "./fake-home.mjs";
+
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
 // **What this run tests is a snapshot, never the live tree.** Both faces
@@ -307,8 +309,31 @@ const NEEDLE = "khor-smoke-hello";
 // the run's other two, and a home apiece so the two serves do not take
 // each other's.
 let webPort = Number(process.env.WEB_PORT ?? 1444);
+// **Not the operator's `HOME`** (`fake-home.mjs`): every process this run
+// starts gets a home of its own with a fake Claude login in it, and asks
+// a fake usage endpoint this script runs. The files are laid out after
+// the scratch directory is wiped (below); the addresses are fixed here,
+// because the environments are built now.
+//
+// `VSCODE_CLI_DATA_DIR` is the one thing of the operator's that is lent
+// on purpose: the VS Code server binary khor starts (§49) lives there, and
+// without it every run would download 640 MB into a scratch home. It is
+// VS Code's tool cache, not an identity; **`~/.vscode-server`, where the
+// editor keeps its settings and state, is the fake home's** from now on.
+const usage = await fakeUsage();
+const FAKE_HOME = join(SCRATCH, "home");
+const realHome = process.env.HOME ?? "";
+const codeData = process.env.VSCODE_CLI_DATA_DIR ?? join(realHome, ".vscode", "cli");
 const homeEnv = (dir, name) => {
-  const e = { ...process.env, KHOR_HOME: dir, KHOR_NAME: name, KHOR_WEB_PORT: String(webPort++) };
+  const e = {
+    ...process.env,
+    HOME: FAKE_HOME,
+    KHOR_CLAUDE_USAGE_URL: usage.url,
+    VSCODE_CLI_DATA_DIR: codeData,
+    KHOR_HOME: dir,
+    KHOR_NAME: name,
+    KHOR_WEB_PORT: String(webPort++),
+  };
   delete e.KHOR_SESSION;
   return e;
 };
@@ -338,7 +363,7 @@ const homeEnv = (dir, name) => {
 // developer's, and the developer's is what this must not test.
 const launchdEnv = (e) => {
   const out = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
-  for (const k of ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "SSH_AUTH_SOCK"]) {
+  for (const k of ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "SSH_AUTH_SOCK", "VSCODE_CLI_DATA_DIR"]) {
     if (e[k] !== undefined) out[k] = e[k];
   }
   for (const k of Object.keys(e)) {
@@ -641,6 +666,7 @@ let cleanedUp = false;
 async function cleanup() {
   if (cleanedUp) return;
   cleanedUp = true;
+  await usage.close().catch(() => {});
   // Said out loud, because the run that most needs this to have
   // happened is the one that was interrupted — and "did the cleanup
   // even run" is otherwise unanswerable from the log.
@@ -712,6 +738,7 @@ try {
   killStrays();
   rmSync(SCRATCH, { recursive: true, force: true });
   mkdirSync(SCRATCH, { recursive: true });
+  fakeHome(FAKE_HOME, usage.url);
 
   // Take the snapshot before anything is started, so every process
   // below is looking at this trip's own copy (see the constants).
@@ -3904,7 +3931,7 @@ for line in sys.stdin:
   //     happen and then put the file back exactly as it was found —
   //     including not existing, which is the common case.
   const codeSettings = join(
-    process.env.HOME ?? "",
+    FAKE_HOME,
     ".vscode-server",
     "data",
     "Machine",
@@ -8752,6 +8779,24 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     await new Promise((r) => setTimeout(r, 600));
     await page.screenshot({ path: process.env.SMOKE_SHOT });
   }
+
+  // ── 测试与 smoke 绝不碰真身份 (2026-09-22) ──
+  //
+  // Every request that reached the usage endpoint this run stood up
+  // carried the fake login, and at least one did: the subscription row
+  // above was read end to end, and read with nothing of the operator's.
+  // A stranger here is a real token that leaked into a gate — counted,
+  // never printed (`fake-home.mjs`).
+  if (usage.seen.asked === 0) {
+    throw new Error("the fake usage endpoint was never asked — this run's subscription came from somewhere else");
+  }
+  if (usage.seen.strangers !== 0) {
+    throw new Error(
+      `${usage.seen.strangers} of ${usage.seen.asked} usage request(s) carried a token that is not the fake login — ` +
+        "a real credential reached a gate (crates/node/src/quota.rs keychain_is_ours)",
+    );
+  }
+  console.log(`identity: ${usage.seen.asked} usage request(s), every one with the fake login (${FAKE_TOKEN.length}-char token)`);
 
   console.log("gui smoke: all green");
 } finally {

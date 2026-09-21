@@ -39,6 +39,73 @@ use khor_core::{Quota, QuotaCredits, QuotaTrouble, QuotaWindow, QuotaWindowSpan}
 use serde_json::Value;
 
 const ENDPOINT: &str = "https://api.anthropic.com/api/oauth/usage";
+
+/// Where the usage is asked, with the door a test uses to stand in for
+/// Anthropic (`KHOR_CLAUDE_USAGE_URL`, the sibling of `KHOR_CLAUDE`).
+/// **A test door, not a setting**: nothing on a real machine sets it, and
+/// what it buys is that `smoke` can read a subscription end to end
+/// against a fake it runs itself instead of against the operator's own
+/// account (docs/handoff: 测试与 smoke 绝不碰真身份).
+fn endpoint_from(door: Option<String>) -> String {
+    door.filter(|d| !d.is_empty())
+        .unwrap_or_else(|| ENDPOINT.to_owned())
+}
+
+fn endpoint() -> String {
+    endpoint_from(std::env::var("KHOR_CLAUDE_USAGE_URL").ok())
+}
+
+/// **The keychain is the account's, and only a process speaking as the
+/// account reads it.** Claude Code's login sits in two stores: the file
+/// under `$HOME/.claude` and the login keychain. The file follows `$HOME`
+/// and the keychain does not — so a process handed a scratch home (every
+/// gate here) still reached the operator's real login through the
+/// keychain, and then spent it against Anthropic's endpoint (2026-09-22,
+/// s25-investigator: quota 1835 ms, quota_board 5477 ms in a smoke run).
+///
+/// So the keychain is asked only when `$HOME` *is* the account's home
+/// directory (the password database's, not the environment's). A
+/// process somebody pointed at another home is, for the purpose of
+/// whose login to read, somebody else.
+fn keychain_is_ours(home: Option<&Path>, account: Option<&Path>) -> bool {
+    let (Some(home), Some(account)) = (home, account) else {
+        return false;
+    };
+    let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    real(home) == real(account)
+}
+
+/// The account's home directory as the password database has it —
+/// **not** `$HOME`, which is exactly the thing a test changes.
+#[cfg(unix)]
+fn account_home() -> Option<std::path::PathBuf> {
+    use std::ffi::CStr;
+    use std::os::unix::ffi::OsStrExt;
+    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut buf = vec![0 as libc::c_char; 4096];
+    let mut out: *mut libc::passwd = std::ptr::null_mut();
+    let rc = unsafe {
+        libc::getpwuid_r(
+            libc::getuid(),
+            &mut pwd,
+            buf.as_mut_ptr(),
+            buf.len(),
+            &mut out,
+        )
+    };
+    if rc != 0 || out.is_null() || pwd.pw_dir.is_null() {
+        return None;
+    }
+    let dir = unsafe { CStr::from_ptr(pwd.pw_dir) };
+    Some(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(
+        dir.to_bytes(),
+    )))
+}
+
+#[cfg(not(unix))]
+fn account_home() -> Option<std::path::PathBuf> {
+    None
+}
 /// The beta header the endpoint requires. Not a version khor chose.
 const BETA: &str = "oauth-2025-04-20";
 
@@ -356,7 +423,7 @@ fn read_local_status() -> Option<Quota> {
 async fn fetch() -> Result<Quota, QuotaTrouble> {
     let token = access_token()?;
     let response = reqwest::Client::new()
-        .get(ENDPOINT)
+        .get(endpoint())
         .bearer_auth(&token)
         .header("anthropic-beta", BETA)
         .timeout(Duration::from_secs(15))
@@ -413,8 +480,17 @@ fn access_token() -> Result<String, QuotaTrouble> {
 fn stored_credential() -> Result<String, QuotaTrouble> {
     let mut found: Vec<String> = Vec::new();
 
+    // **A tripwire for this crate's own tests.** They run with the
+    // operator's `HOME`, so a test that reached this line would be reading
+    // the operator's Claude login — the one thing no test may touch. It
+    // stops the test instead of reading (`unit_tests_never_reach_the_login`).
+    #[cfg(test)]
+    if keychain_is_ours(std::env::home_dir().as_deref(), account_home().as_deref()) {
+        panic!("a unit test reached the operator's Claude login (quota::stored_credential)");
+    }
+
     #[cfg(target_os = "macos")]
-    {
+    if keychain_is_ours(std::env::home_dir().as_deref(), account_home().as_deref()) {
         // A process with no GUI session cannot read the keychain at all
         // ("User interaction is not allowed"). That is not an error here
         // — it just means this store has nothing to offer and the file
@@ -1147,5 +1223,51 @@ mod tests {
             Some(1_700_000_000)
         );
         assert_eq!(unix_seconds(&serde_json::json!("not a time")), None);
+    }
+
+    /// The test door answers when it is set, and Anthropic's own address
+    /// when it is not — the default must not move.
+    #[test]
+    fn the_usage_endpoint_has_a_test_door_and_a_fixed_default() {
+        assert_eq!(endpoint_from(None), ENDPOINT);
+        assert_eq!(
+            endpoint_from(Some("http://127.0.0.1:9/usage".into())),
+            "http://127.0.0.1:9/usage"
+        );
+        assert_eq!(
+            endpoint_from(Some(String::new())),
+            ENDPOINT,
+            "an empty door is no door"
+        );
+    }
+
+    /// **A process with a scratch `$HOME` does not read the keychain** —
+    /// the keychain is the account's, and that process is not speaking as
+    /// the account. The same home, spelled the same, is the account.
+    #[test]
+    fn only_the_accounts_own_home_reads_the_keychain() {
+        let real = Path::new("/Users/someone");
+        assert!(keychain_is_ours(Some(real), Some(real)));
+        assert!(!keychain_is_ours(
+            Some(Path::new("/tmp/khor-smoke/home")),
+            Some(real)
+        ));
+        assert!(
+            !keychain_is_ours(None, Some(real)),
+            "no home at all is not the account"
+        );
+        assert!(
+            !keychain_is_ours(Some(real), None),
+            "an account the system cannot name is not this one"
+        );
+    }
+
+    /// **No unit test reads the operator's login**: they run under the
+    /// operator's `HOME`, and one that reached the credential would stop
+    /// here rather than read it (the tripwire in `stored_credential`).
+    #[test]
+    #[should_panic(expected = "reached the operator's Claude login")]
+    fn unit_tests_never_reach_the_login() {
+        let _ = logged_in();
     }
 }

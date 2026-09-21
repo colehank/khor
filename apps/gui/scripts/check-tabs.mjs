@@ -44,6 +44,8 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 
+import { fakeHome, fakeUsage } from "./fake-home.mjs";
+
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
 // One fixed directory, wiped on the way in rather than minted per run.
@@ -78,8 +80,13 @@ const VITE_PORT = Number(process.env.VITE_PORT ?? 1446);
 const A = join(SCRATCH, "alpha");
 const B = join(SCRATCH, "beta");
 
+// **Not the operator's `HOME`** (`fake-home.mjs`, 测试绝不碰真身份): every
+// process here gets a scratch home with a fake Claude login, and a fake
+// usage endpoint that counts any request carrying anything else.
+const usage = await fakeUsage();
+const FAKE_HOME = join(SCRATCH, "home");
 const homeEnv = (dir, name) => {
-  const e = { ...process.env, KHOR_HOME: dir, KHOR_NAME: name };
+  const e = { ...process.env, HOME: FAKE_HOME, KHOR_CLAUDE_USAGE_URL: usage.url, KHOR_HOME: dir, KHOR_NAME: name };
   delete e.KHOR_SESSION;
   return e;
 };
@@ -192,6 +199,7 @@ let browser;
 try {
   rmSync(SCRATCH, { recursive: true, force: true });
   mkdirSync(RUN, { recursive: true });
+  fakeHome(FAKE_HOME, usage.url);
   for (const [built, here] of [
     [join(repo, "target/debug/khor"), KHOR],
     [join(repo, "target/debug/bridge"), BRIDGE],
@@ -968,9 +976,15 @@ try {
 
   if (thrown.length) fail(`page errors: ${thrown.join(" | ")}`);
   else ok("zero pageerror throughout");
+  // 测试绝不碰真身份: nothing this run started asked for usage with a login
+  // that is not the fake one (counted, never printed).
+  if (usage.seen.strangers !== 0) {
+    fail(`${usage.seen.strangers} usage request(s) carried a token that is not the fake login — a real credential reached a gate`);
+  } else ok(`no real login reached a gate (${usage.seen.asked} usage request(s), all fake)`);
 } finally {
   await browser?.close();
   await cleanup();
+  await usage.close();
 }
 
 if (fails.length) {
