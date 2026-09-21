@@ -7993,10 +7993,54 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   await openRowMenu(failTarget);
   const okItem = await pinItemState();
   if (!okItem.word) throw new Error("probe dead: the pin item prints nothing");
+  //   **What was on the glass when this arm goes red.** It has — three
+  //   times on 2026-09-21 alone, on three different trees, green on
+  //   every rerun — and each time the only thing left behind was
+  //   「the row never wore the pin」, which names no cause. So the wait
+  //   keeps a record and hands it over with the timeout: whether the
+  //   pin call left the page at all, what it answered, whether the menu
+  //   is still open and what its item says, and what the row wears.
+  //   Nothing here changes what is asserted.
+  const pinCalls = [];
+  const notePin = (r) => {
+    if (r.url().endsWith("/pin_session")) pinCalls.push({ at: Date.now(), sent: r.postData() });
+  };
+  const notePinAnswer = async (r) => {
+    if (r.url().endsWith("/pin_session")) {
+      pinCalls.push({ at: Date.now(), status: r.status(), said: (await r.text().catch(() => "")).slice(0, 200) });
+    }
+  };
+  page.on("request", notePin);
+  page.on("response", notePinAnswer);
+  const pressedAt = Date.now();
   await page.locator('[data-menu-item="pin"]').click();
-  await until("the pin to take while the backend is there", 10_000, async () =>
-    (await page.locator(`[data-row="${failTarget}"][data-pinned=true]`).count()) === 1,
-  );
+  try {
+    await until("the pin to take while the backend is there", 10_000, async () =>
+      (await page.locator(`[data-row="${failTarget}"][data-pinned=true]`).count()) === 1,
+    );
+  } catch (e) {
+    const seen = await page.evaluate((id) => {
+      const row = document.querySelector(`[data-row="${id}"]`);
+      const item = document.querySelector('[data-menu-item="pin"]');
+      return {
+        rowThere: !!row,
+        rowPinned: row?.getAttribute("data-pinned") ?? null,
+        rowsPinned: [...document.querySelectorAll('[data-row][data-pinned="true"]')].map((r) => r.dataset.row),
+        menuOpen: document.querySelectorAll("[data-row-menu]").length,
+        itemSays: item?.textContent?.trim() ?? null,
+        note: document.querySelector('[data-menu-note="pin"]')?.textContent?.trim() ?? null,
+        focus: document.activeElement?.tagName + (document.activeElement?.getAttribute("data-row-open") !== null ? "[data-row-open]" : ""),
+      };
+    }, failTarget).catch((x) => ({ probe: String(x) }));
+    throw new Error(
+      `${e.message}\n  §26 control · target ${failTarget} · pressed ${Date.now() - pressedAt}ms ago\n` +
+        `  pin calls: ${JSON.stringify(pinCalls.map((c) => ({ ...c, at: c.at - pressedAt })))}\n` +
+        `  on the glass: ${JSON.stringify(seen)}`,
+    );
+  } finally {
+    page.off("request", notePin);
+    page.off("response", notePinAnswer);
+  }
   await until("the menu to close itself on success", 5_000, async () =>
     (await page.locator("[data-row-menu]").count()) === 0,
   );
