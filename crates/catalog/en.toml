@@ -73,7 +73,7 @@ files-click = "Single click"
 # Under "Ask before", so each key names the act rather than repeating
 # the question.
 confirm-takeover = "Taking over a session"
-confirm-ws-remove = "Removing a workspace"
+confirm-ws-remove = "Deleting a workspace"
 
 # What is stored is the choice, `auto` included — never the theme it
 # resolves to today.
@@ -87,7 +87,7 @@ en = "English"
 chat = "Chat"
 term = "Terminal"
 preview = "Preview"
-pin = "Pin"
+pin = "Keep open"
 on = "On"
 off = "Off"
 
@@ -892,12 +892,12 @@ tunnel-no-route = "The exit can't reach the destination: {0}"
 borrowing-title = "Borrowing {0}'s network"
 borrow-needs-serve = "Borrowing a network needs serve running (the proxy port has to live in a resident process)"
 reach-needs-serve = "Reaching another machine's terminal needs serve running (the pipe has to live in a resident process)"
-forgot = "Device removed: {0}. To bring it back: run khor invite on any machine still in the network, then take the ticket to that machine and run khor pair"
+forgot = "Device deleted: {0}. To bring it back: run khor invite on any machine still in the network, then take the ticket to that machine and run khor pair"
 left = "Left the network. This machine is in no network now; a fresh ticket and khor pair rejoin it"
 left-told = "These machines were told: {0}"
 left-untold = "These machines couldn't be reached and will go on seeing {1} as offline — run khor forget {1} over there: {0}"
-cant-forget-self = "This is the local machine — a machine can't remove itself. For this machine to leave the network: khor leave {0}"
-leave-names-another-machine = "{0} isn't the local machine. To remove it from the network: khor forget {0}"
+cant-forget-self = "This is the local machine — a machine can't delete itself. For this machine to leave the network: khor leave {0}"
+leave-names-another-machine = "{0} isn't the local machine. To delete it: khor forget {0}"
 leave-with-no-network = "This machine has never joined a network — there's none to leave. To join one: khor pair <ticket>"
 # `khor pause` / `khor resume` (docs/MORE.md 暂停). Pausing is not
 # leaving: the table stays, the others see this machine offline, and
@@ -1163,7 +1163,6 @@ accounts-read-here = "Just read on this machine"
 accounts-read-from = "Read by {0}, {1} ago"
 # The bare `remove` key already owns "Remove" (the search chip's own
 # control) — "Remove account" keeps this menu item distinct.
-accounts-remove = "Remove account"
 accounts-remove-confirm = "No longer on any machine — the key still needs deleting on its own machine"
 accounts-edit = "Edit"
 accounts-key-keep = "Leave blank to keep the current key; a key can only be changed on the machine that stores it"
@@ -1237,7 +1236,6 @@ workspaces-how = "Use the + above to pick a directory on a machine"
 ws-add = "Add a workspace"
 # "Remove workspace", not "Delete" — mirrors the source's 移出/删除
 # distinction: this takes the row off the list, the directory is untouched.
-ws-remove = "Remove workspace"
 # Only asked once `khor config set confirm-ws-remove on` — off by
 # default, because nothing is destroyed here.
 ws-remove-confirm = "Takes it off this list; the directory itself is untouched"
@@ -1250,7 +1248,6 @@ dir-picker-typed = "Or type a path directly"
 file-not-text = "Not text"
 file-cut = "Only the first {0} was read — the file is {1}"
 file-take = "Download"
-file-remove = "Delete"
 file-face-preview = "Preview"
 pdf-as-words = "This machine's browser can't render PDFs — showing extracted text, not the layout."
 file-remove-trash = "Move \"{0}\" to the trash"
@@ -1383,7 +1380,6 @@ web-key-rotated = "Done; every link handed out before this one is dead"
 # **Not the row menu's word.** That one is 「delete」, a row leaving a
 # list; this is a device leaving the network. The sentence after the
 # press is shared, because that is one act.
-remove-device = "Remove device"
 # The one thing on this page that cannot be undone: red, and it wants the
 # machine's name typed out.
 reset-section = "Reset identity"
@@ -1412,6 +1408,7 @@ backend-unreachable = "Can't reach khor on this machine"
 search-sessions = "Search sessions"
 search-devices = "Search machines"
 search-quota = "Search quota"
+search-tabs = "Search tabs"
 filter = "Filter"
 axis-state = "Status"
 axis-category = "Category"
@@ -1431,19 +1428,15 @@ new-item = "New"
 no-matches = "No matches"
 pin = "Pin"
 unpin = "Unpin"
-# Distinct word from pin/unpin: the Chinese source deliberately uses a
-# different pair (钉住/取消钉住) here because this moves a directory or
-# web page into a kept list, not a row to the top of one.
-pin-place = "Bookmark"
-unpin-place = "Unbookmark"
+delete = "Delete"
 rename = "Rename"
 rename-failed = "Couldn't rename"
 old-sessions = "{0} old sessions"
 collapse-old = "Collapse old sessions"
 pin-failed = "Couldn't pin"
 unpin-failed = "Couldn't unpin"
-# `forget-machine` retired 2026-09-21: the row menu and the map card ran
-# one act under two names — both say `remove-device` now.
+# The row menu and the map card run one act under one word, `delete`
+# (docs/SHELL.md 第二轮).
 forget-machine-confirm = "The whole network stops recognizing it, and it stops seeing the network too"
 watch-dirs = "Watched directories"
 watch-add = "Add"
@@ -1497,7 +1490,8 @@ close-warn-live = "Close it, and the process it's running will stop"
 close-warn-chat = "Close it and this row is put away — history and received files stay, and it comes back with the next message"
 close-warn-transfer = "Close it and the files from this transfer are deleted — the row stays"
 close-warn = "Close it — this can't be undone"
-copy-id = "Copy id"
+copy-id = "Copy ID"
+copy-url = "Copy URL"
 copied = "Copied"
 copy-failed = "Couldn't copy"
 up-dir = "Up one level"
@@ -1517,7 +1511,7 @@ send-file-failed = "Couldn't send"
 no-pinned-dirs = "No pinned directories yet"
 go-pin-a-dir = "Pick a directory on a machine to pin"
 new-tab = "New tab"
-close-tab = "Close this tab"
+close-tab = "Close tab"
 switch-tabs = "{0} tabs"
 address-dir = "Machine and path"
 address-page = "Machine and URL"

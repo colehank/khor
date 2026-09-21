@@ -1180,14 +1180,17 @@ export function QuotaLanding({
               throw e;
             }),
       },
-      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
+      // 删除 second and 编辑 after it — every sidebar's first two are
+      // 置顶 and 删除, in that order (docs/SHELL.md 第二轮). It was 撤掉
+      // and third until then.
       {
         key: "remove",
-        label: gui.accounts_remove,
+        label: gui.delete,
         confirm: gui.accounts_remove_confirm,
         note: removeRefused.get(id),
         run: () => remove(id),
       },
+      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
     ];
   };
 
@@ -1264,6 +1267,8 @@ export function QuotaLanding({
             data-quota-kind={r.kind}
             data-quota-from={r.from || "khor"}
             data-quota-pinned={r.account ? r.account.pinned : undefined}
+            // The name every sidebar's row answers to (docs/SHELL.md 第二轮).
+            data-pinned={r.account ? r.account.pinned : undefined}
             data-trouble={r.account?.reading.trouble ?? undefined}
             onClick={() => {
               setPicked(r.id);

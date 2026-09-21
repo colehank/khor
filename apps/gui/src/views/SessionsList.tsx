@@ -362,8 +362,11 @@ export function SessionsList({
       },
     ];
   };
+  // **置顶, 删除, then this column's own** (docs/SHELL.md 第二轮:「右键头两项
+  // 永远是置顶与删除」). Every sidebar's menu starts with the same two
+  // words in the same places, so a hand that learned them on one list
+  // finds them on the next.
   const actions = (r: SessionRow): RowAction[] => [
-    ...turnInto(r),
     {
       key: "pin",
       // The word is what pressing it *does*, so it is the opposite of
@@ -384,6 +387,19 @@ export function SessionsList({
       run: () => onPin(r),
     },
     {
+      key: "close",
+      // 删除, and what deleting *this* row does is the sentence
+      // between the two presses — this row's own, from the one place
+      // that map lives (`DetailPane.closeWarning`). Writing the kinds
+      // out again here would be a second source that compiles, runs,
+      // and says the wrong thing.
+      label: gui.delete,
+      confirm: closeWarning(r.kind),
+      note: closeRefused.get(r.id),
+      run: () => onClose(r),
+    },
+    ...turnInto(r),
+    {
       // The id is paste material, not reading material. The menu
       // closing is the success face; a clipboard refusal rejects, so
       // the menu stays open where the press was made (RowMenu's rule:
@@ -391,17 +407,6 @@ export function SessionsList({
       key: "copy-id",
       label: gui.copy_id,
       run: () => navigator.clipboard.writeText(r.id),
-    },
-    {
-      key: "close",
-      label: gui.close,
-      // This row's own sentence, from the one place that map lives
-      // (`DetailPane.closeWarning`). Writing the kinds out again here
-      // would be a second source that compiles, runs, and says the
-      // wrong thing.
-      confirm: closeWarning(r.kind),
-      note: closeRefused.get(r.id),
-      run: () => onClose(r),
     },
   ];
   const strip = (r: SessionRow, prev: SessionRow | undefined, size: number) => {

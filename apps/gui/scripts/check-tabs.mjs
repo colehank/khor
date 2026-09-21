@@ -810,6 +810,97 @@ try {
         );
       } else ok(`${was.length} tab(s) survived the backend restarting, by id`);
     }
+
+    //  ── 置顶 (docs/SHELL.md 第二轮) ──
+    //
+    //  「浏览标签的『置顶』是新行为:置顶的标签排在最上、关不掉之前要先
+    //  取消置顶,存进 .khor/tabs.json,khor tabs 也要能置顶」. Four
+    //  readings, all against the real node over the real file:
+    //    1. pinned from the window's own row menu, the tab is the column's
+    //       first row;
+    //    2. `khor tabs ls` marks it — read as 「its first column changed
+    //       and nothing else did」, so no word is copied in here;
+    //    3. it survives a reload, still first and still pinned;
+    //    4. the terminal pins another and the window follows (two
+    //       writers, the 单元三 lesson).
+    {
+      const ids = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-browse-tabs] [data-switch-tab]")].map((e) => ({
+            id: e.getAttribute("data-switch-tab"),
+            pinned: e.getAttribute("data-pinned") === "true",
+          })),
+        );
+      const markOf = (id) =>
+        cli(envB, "tabs", "ls")
+          .split("\n")
+          .map((l) => l.split("\t"))
+          .find((c) => c[2] === id)?.[0];
+      // At least two rows, so 「it moved to the top」 can be false.
+      if ((await ids()).length < 2) cli(envB, "tabs", "open", "https://second-for-the-pin.example/");
+      const rows = await until("two tabs in the column", 15_000, async () => {
+        const r = await ids();
+        return r.length >= 2 ? r : false;
+      }).catch(() => []);
+      const last = rows.at(-1)?.id;
+      if (!last) {
+        fail("probe dead: the column never held two tabs, so 「置顶排到最上」 measured nothing");
+      } else {
+        const before = markOf(last);
+        await page.locator(`[data-switch-open="${last}"]`).click({ button: "right" });
+        const item = page.locator('[data-row-menu] [data-menu-item="pin"]');
+        const offered = await until("the tab's menu offers the pin item", 5_000, async () => (await item.count()) === 1).catch(
+          () => false,
+        );
+        if (!offered) {
+          fail(
+            `right-clicking a tab drew no 置顶 item — 「所有侧边栏内都要支持右键去置顶、删除」 ` +
+              "(src/browse/BrowseLanding.tsx)",
+          );
+        } else {
+          await item.click();
+          const first = await until("the pinned tab leads the column", 10_000, async () => {
+            const r = await ids();
+            return r[0]?.id === last && r[0].pinned ? r : false;
+          }).catch(() => null);
+          if (!first) {
+            fail(
+              `pinned ${last} from its menu and the column reads ${JSON.stringify(await ids())} — ` +
+                "「置顶的标签排在最上」 (crates/node/src/tabs.rs)",
+            );
+          } else ok("a tab pinned from its menu leads the column");
+          const after = markOf(last);
+          if (after === undefined || after === before || !after.startsWith(before ?? "")) {
+            fail(
+              `\`khor tabs ls\` marks the pinned tab ${JSON.stringify(after)} where it read ${JSON.stringify(before)} — ` +
+                "the terminal has to see the pin (crates/cli/src/main.rs)",
+            );
+          } else ok("`khor tabs ls` marks the pinned tab");
+          await page.reload({ waitUntil: "load" });
+          await openBrowser();
+          const kept = await until("the pin survives a reload", 15_000, async () => {
+            const r = await ids();
+            return r[0]?.id === last && r[0].pinned ? r : false;
+          }).catch(() => null);
+          if (!kept) {
+            fail(`after a reload the column reads ${JSON.stringify(await ids())} — the pin did not stay`);
+          } else ok("the pin survives a reload");
+          const other = (await ids()).find((r) => !r.pinned)?.id;
+          if (other) {
+            cli(envB, "tabs", "pin", other);
+            const follows = await until("the window sees the terminal's pin", 15_000, async () => {
+              const r = await ids();
+              return r.find((x) => x.id === other)?.pinned ? r : false;
+            }).catch(() => null);
+            if (!follows) {
+              fail(`\`khor tabs pin ${other}\` and the window still draws it unpinned — one file, two writers`);
+            } else ok("a pin made in the terminal shows in the window");
+            cli(envB, "tabs", "unpin", other);
+          }
+          cli(envB, "tabs", "unpin", last);
+        }
+      }
+    }
   }
 
   //    The narrow face is the shell's, but this landing has to reach it

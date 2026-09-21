@@ -485,7 +485,7 @@ function MachineNodeCard({
             }}
             className="min-h-touch flex-none text-destructive"
           >
-            {gui.remove_device}
+            {gui.delete}
           </Button>
           {/* The whole cost in one clause, and **the same clause the row
               menu's confirm uses** — it is one act, so it is one

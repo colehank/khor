@@ -125,13 +125,18 @@ export function DevicesList({
       : [
           {
             key: "forget",
-            // **The same word the map's card uses** (2026-09-21,
-            // docs/MORE.md 第二轮 文案): this row's menu and that card
-            // run the one act (`Node::forget_device`), and a menu
-            // saying 「删除」 beside a card saying 「移除设备」 is two
-            // names for it. The sentence between the two presses is
-            // already shared; the verb is now too.
-            label: gui.remove_device,
+            // **删除, the word every sidebar's second item says**
+            // (docs/SHELL.md 第二轮:「置顶与删除的操作统一为置顶与删除」),
+            // and the map's card says it too — one act
+            // (`Node::forget_device`), one word. What deleting a
+            // machine *means* (it leaves the network, for everyone) is
+            // the sentence between the two presses.
+            //
+            // **No 断开 after it.** The ruling named one for machines;
+            // khor has no act that drops a single peer — `forget` is
+            // this item and `pause` is the whole machine — and an item
+            // with nothing behind it is not offered.
+            label: gui.delete,
             confirm: gui.forget_machine_confirm,
             note: forgetRefused.get(d.id),
             run: () => onForget(d),
@@ -146,6 +151,7 @@ export function DevicesList({
           data-device={d.name}
           data-row={d.id}
           data-pinned={d.pinned}
+          data-me={d.me}
           className={cn(
             "flex items-center",
             // Only a row that opens something reacts to the pointer.

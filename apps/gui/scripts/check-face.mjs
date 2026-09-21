@@ -1086,8 +1086,12 @@ try {
   // be a column. A second copy of the rules here would be the hand-made
   // replica this repo's own rule refuses (docs/handoff/001.md GUI 每批
   // 要守的三条), and it would drift the first time the Rust changed.
+  // **Two rows, the first pinned** (docs/SHELL.md 第二轮): 4S reads a
+  // pinned row's menu beside an unpinned one's. Pinned first because the
+  // node keeps them first — this fixture does not sort.
   const tabRows = [
-    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "khor.example" },
+    { id: "t0", device: pin.device, url: "https://khor.example/zero", title: "khor.example", pinned: true },
+    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "khor.example", pinned: false },
   ];
   let tabFront = "t1";
   let minted = 0;
@@ -1120,9 +1124,15 @@ try {
     const a = r.request().postDataJSON() ?? {};
     minted += 1;
     const id = `t-new-${minted}`;
-    tabRows.push({ id, device: a.device ?? "", url: a.url ?? "", title: "" });
+    tabRows.push({ id, device: a.device ?? "", url: a.url ?? "", title: "", pinned: false });
     tabFront = id;
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(id) });
+  });
+  await page.route("**/tabs_pin", (r) => {
+    const a = r.request().postDataJSON() ?? {};
+    const t = tabRows.find((x) => x.id === a.id);
+    if (t) t.pinned = !!a.on;
+    return tabsJson(r);
   });
   await page.route("**/tabs_save", (r) => {
     const a = r.request().postDataJSON() ?? {};
@@ -1861,9 +1871,9 @@ try {
     ["theme", "appearance", "settings", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
     ["lang", "language", "settings", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
     ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
-    ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "钉住"]]],
+    ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "保持打开"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
-    ["confirm-ws-remove", "confirm", "security", "移出工作区", [["on", "开"], ["off", "关"]]],
+    ["confirm-ws-remove", "confirm", "security", "删除工作区", [["on", "开"], ["off", "关"]]],
   ];
   const SECTION_WORD = { appearance: "外观", language: "语言", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
   const configRows = () =>
@@ -9309,11 +9319,16 @@ try {
       if (shape.rows < 1) {
         fail("the tab column has no tab rows in it — a column of tabs is what 「标签页移动到侧边栏」 asks for");
       }
-      // The 「+」 is at the **foot**, under the last tab, which is the
-      // user's own picture (「列底一个『+』」) and where `TabSwitcher`
-      // has drawn it since it was a phone screen.
-      if (shape.plus !== 1) {
-        fail(`the tab column carries ${shape.plus} way(s) to open a tab — 「列底一个『+』新开一枚」`);
+      // ⚠️ **The foot is gone** (docs/SHELL.md 第二轮, 2026-09-21:「浏览器
+      // 侧边栏也要和其他侧边栏一样有搜索和新建的组件在最上面」). It used
+      // to be the one way to open a tab and this line asked for exactly
+      // one; the way is the head's 「+」 now (4S), and a second one at
+      // the foot would be two places for one action.
+      if (shape.plus !== 0) {
+        fail(
+          `the tab column still carries ${shape.plus} way(s) at its foot to open a tab — the head's 「+」 is ` +
+            "the one place now (src/browse/BrowseLanding.tsx)",
+        );
       }
       // A column, not a strip: taller than wide, and against the left.
       if (shape.column.h <= shape.column.w) {
@@ -9385,6 +9400,176 @@ try {
         `the sessions landing draws ${stillStriped} tab strip(s) — the browser's tabs moved into a column, ` +
           "the strip itself did not go anywhere (src/browse/TabStrip.tsx)",
       );
+    }
+  }
+
+  // The word every sidebar's second menu item reads, kept for the map
+  // card's own button further down (「网络页地图卡改成『删除』」).
+  let sidebarDelete = null;
+  // ── 4S) 第二轮:每条侧边栏长一个样 (docs/SHELL.md, 2026-09-21) ─────
+  //
+  // 「浏览器侧边栏也要和其他侧边栏一样有搜索和新建的组件在最上面呀。以及,
+  // 所有侧边栏内都要支持右键去置顶、删除……关于置顶与删除的操作统一为置顶
+  // 与删除。」— the user.
+  //
+  // Three claims, each read off the glass and **compared between the
+  // columns rather than against the catalog**: a word copied out of
+  // `zh.toml` into this file would move with the catalog and prove
+  // nothing about whether two columns agree.
+  //
+  //   head   every column's top row is a `PaneBar` with a search box and
+  //          one 「+」, at one height (the height 第 5 条 already ties to
+  //          the tab band).
+  //   menu   the first two items of every column's row menu read the
+  //          same two words, in the same order — measured on a row that
+  //          is not pinned, and again on one that is, because the first
+  //          item's word is the opposite of the row's state.
+  //   words  the retired words are nowhere on the glass — 「一个动作只有
+  //          一个词」. Spelled as escapes: this file holds no Chinese
+  //          of its own, and the list is of words that must *not*
+  //          appear, which no catalog lookup can supply.
+  {
+    const COLUMNS = [
+      { landing: "sessions", pane: "[data-list]" },
+      { landing: "devices", pane: "[data-list]" },
+      { landing: "workspaces", pane: "[data-list]" },
+      { landing: "browser", pane: "[data-browse-tabs]" },
+      { landing: "quota", pane: "[data-quota-pane]" },
+    ];
+    // 钉 (any pin word built on it: 钉住, 钉不上, 取消钉住), 移除设备,
+    // 移出工作区, 转成.
+    const RETIRED = ["钉", "移除设备", "移出工作区", "转成"];
+    const heard = [];
+    const glass = () =>
+      page.evaluate(() => {
+        const bits = [document.body.innerText];
+        for (const el of document.querySelectorAll("[aria-label], [title], [placeholder]")) {
+          for (const a of ["aria-label", "title", "placeholder"]) {
+            const v = el.getAttribute(a);
+            if (v) bits.push(v);
+          }
+        }
+        return bits.join("\n");
+      });
+    const listen = async (where) => heard.push({ where, text: await glass() });
+    // What a row's menu says, top to bottom, and the keys under the words
+    // for the failure sentence. Closed again before returning.
+    const menuOf = async (sel) => {
+      const at = page.locator(sel).first();
+      if ((await at.count()) === 0) return null;
+      await at.scrollIntoViewIfNeeded();
+      await at.click({ button: "right" });
+      await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
+      const items = await page.locator("[data-row-menu] [data-menu-item]").evaluateAll((els) =>
+        els.map((e) => ({ key: e.getAttribute("data-menu-item"), word: (e.textContent ?? "").trim() })),
+      );
+      await listen(`${sel} menu`);
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await page.locator("[data-row-menu]").count()) === 0);
+      return items;
+    };
+    // A trigger on a row in that pinned state. **`data-pinned` on the
+    // row or on the trigger itself** — the lists hang it where their row
+    // is — and never this machine's own row, which has no 删除 by design
+    // (docs/SHELL.md 第二轮: 本机那一行没有删除和断开).
+    const rowIn = (pane, pinned) =>
+      [
+        `${pane} [data-pinned="${pinned}"]:not([data-me="true"]) [data-row-menu-trigger]`,
+        `${pane} [data-row-menu-trigger][data-pinned="${pinned}"]:not([data-me="true"])`,
+      ].join(", ");
+
+    const read = [];
+    for (const c of COLUMNS) {
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await open(c.landing);
+      await wait(500);
+      const head = await page.evaluate((pane) => {
+        const bar = document.querySelector(`${pane} [data-pane-bar]`);
+        if (!bar) return null;
+        return {
+          h: Math.round(bar.getBoundingClientRect().height),
+          search: bar.querySelectorAll("input").length,
+          plus: bar.querySelectorAll("[data-pane-new]").length,
+        };
+      }, c.pane);
+      await listen(`${c.landing} landing`);
+      const bare = await menuOf(rowIn(c.pane, "false"));
+      const pinned = await menuOf(rowIn(c.pane, "true"));
+      read.push({ ...c, head, bare, pinned });
+      console.log(
+        `sidebar ${c.landing}: head ${JSON.stringify(head)} · menu ${JSON.stringify(bare)} · pinned ${JSON.stringify(pinned?.[0] ?? null)}`,
+      );
+    }
+
+    // ── head ──
+    for (const r of read) {
+      if (!r.head) {
+        fail(
+          `the ${r.landing} sidebar has no head row — 「和其他侧边栏一样有搜索和新建的组件在最上面」 ` +
+            "(src/components/PaneBar.tsx)",
+        );
+        continue;
+      }
+      if (r.head.search < 1 || r.head.plus !== 1) {
+        fail(
+          `the ${r.landing} sidebar's head carries ${r.head.search} search box(es) and ${r.head.plus} 「+」 — ` +
+            "every sidebar's top row is one search and one 「+」",
+        );
+      }
+    }
+    const heads = read.filter((r) => r.head).map((r) => `${r.landing} ${r.head.h}`);
+    if (new Set(read.filter((r) => r.head).map((r) => r.head.h)).size > 1) {
+      fail(`the sidebars' heads stand at different heights (${heads.join(", ")}) — one token, --pane-head`);
+    }
+
+    // ── menu ──
+    for (const r of read) {
+      if (!r.bare) {
+        fail(`probe dead: the ${r.landing} sidebar has no unpinned row with a menu to open — nothing measured there`);
+      } else if (r.bare.length < 2) {
+        fail(
+          `the ${r.landing} sidebar's row menu reads ${JSON.stringify(r.bare.map((i) => i.word))} — ` +
+            "every row carries 置顶 and 删除 as its first two",
+        );
+      }
+    }
+    const full = read.filter((r) => r.bare && r.bare.length >= 2);
+    sidebarDelete = full.find((r) => r.landing === "devices")?.bare[1].word ?? null;
+    for (const n of [0, 1]) {
+      const words = new Map(full.map((r) => [r.landing, r.bare[n].word]));
+      if (new Set(words.values()).size !== 1) {
+        fail(
+          `item ${n + 1} of the row menus reads ${JSON.stringify(Object.fromEntries(words))} — ` +
+            "「置顶与删除的操作统一为置顶与删除」, the same word in the same place in every sidebar",
+        );
+      }
+    }
+    const pinnedFirst = new Map(read.filter((r) => r.pinned?.length).map((r) => [r.landing, r.pinned[0].word]));
+    if (pinnedFirst.size < 2) {
+      fail(`probe dead: only ${pinnedFirst.size} sidebar(s) had a pinned row — the pinned word was not compared`);
+    } else if (new Set(pinnedFirst.values()).size !== 1) {
+      fail(
+        `a pinned row's first item reads ${JSON.stringify(Object.fromEntries(pinnedFirst))} — one word for 取消置顶`,
+      );
+    } else if (full.length && [...pinnedFirst.values()][0] === full[0].bare[0].word) {
+      fail("a pinned row's first item reads the same as an unpinned one's — it has to say what pressing it does");
+    }
+
+    // ── the browse column's fresh tab: its headings are words too ──
+    await open("browser");
+    await press("[data-browse-tabs] [data-pane-new]");
+    await wait(500);
+    await listen("browser fresh tab");
+
+    // ── words ──
+    for (const w of RETIRED) {
+      const where = heard.filter((h) => h.text.includes(w)).map((h) => h.where);
+      if (where.length) {
+        fail(
+          `a retired word (${JSON.stringify(w)}) is still on the glass at ${where.join(", ")} — ` +
+            "「一个动作只有一个词」 (crates/catalog/zh.toml)",
+        );
+      }
     }
   }
 
@@ -10159,8 +10344,18 @@ try {
             named:
               document.querySelector("[data-node-card-forget]")?.getAttribute("data-node-card-forget") ??
               null,
+            word: document.querySelector("[data-node-card-forget]")?.textContent?.trim() ?? null,
           }));
           console.log(`网络 ${posture} · 机器卡: ${JSON.stringify(card)}`);
+          // **One act, one word** (docs/SHELL.md 第二轮): the card's button
+          // runs what the machine row's second item runs, so it reads what
+          // that item reads — compared with the row menu, not the catalog.
+          if (card.word !== null && sidebarDelete !== null && card.word !== sidebarDelete) {
+            fail(
+              `${posture}: the machine's card says ${JSON.stringify(card.word)} for the act the row menu calls ` +
+                `${JSON.stringify(sidebarDelete)} — 「同一个动作在整个 app 里只有一个词」 (src/views/MarkPlace.tsx)`,
+            );
+          }
           if (card.forget !== 1) {
             fail(
               `${posture}: the machine's card on the map offers ${card.forget} 移除设备 — ` +

@@ -109,7 +109,12 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
   };
   return (
     <ContextMenu open={open} onOpenChange={change}>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      {/* `data-row-menu-trigger` lands on the caller's element (asChild):
+          the anchor a gate right-clicks when it compares one sidebar's
+          menu with another's (docs/SHELL.md 第二轮). */}
+      <ContextMenuTrigger asChild data-row-menu-trigger="">
+        {children}
+      </ContextMenuTrigger>
       <ContextMenuContent
         data-row-menu
         onCloseAutoFocus={(e) => {

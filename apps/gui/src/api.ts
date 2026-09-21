@@ -286,6 +286,10 @@ export const focusTab = (kind: string, id: string) =>
   call<TabsOpen>("tabs_focus", { kind, id });
 export const closeTab = (kind: string, id: string) =>
   call<TabsOpen>("tabs_close", { kind, id });
+/** 置顶 / 取消置顶 one (docs/SHELL.md 第二轮) — `khor tabs pin|unpin`. The
+    node keeps pinned tabs first and refuses to close one. */
+export const pinTab = (kind: string, id: string, on: boolean) =>
+  call<TabsOpen>("tabs_pin", { kind, id, on });
 /** The whole column at once — the one gesture that cannot be spelled as
     a close and an open: a drag that reorders. Ids are still the node's
     to mint, and a row carrying one it never minted is refused. */

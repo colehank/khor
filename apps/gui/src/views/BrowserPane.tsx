@@ -355,7 +355,7 @@ export function BrowserPane({
             size="sm"
             data-pin-web
             data-on={pinned}
-            aria-label={pinned ? gui.unpin_place : gui.pin_place}
+            aria-label={pinned ? gui.unpin : gui.pin}
             // **The finger's floor, missing until 2026-09-21.** It
             // measured 78×24 — `size="sm"` is what a control *looks*
             // like beside text and `--touch` is what a finger needs,

@@ -240,6 +240,12 @@ export const PAGES: BrowseKind = {
     get go() {
       return gui.pick_exit;
     },
+    get search() {
+      return gui.search_tabs;
+    },
+    get copy() {
+      return gui.copy_url;
+    },
   },
   pins: async () => {
     const rows = await fetchWebPins();

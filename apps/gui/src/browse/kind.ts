@@ -162,6 +162,13 @@ export type BrowseKind = {
         as a thing to press. */
     empty: string;
     go: string;
+    /** The tab column's search box (docs/SHELL.md 第二轮) — it finds a
+        tab by what it is called and where it is, and 「where」 is this
+        kind's own word. */
+    search: string;
+    /** The row menu's copy item: a place in this kind's spelling is
+        paste material. */
+    copy: string;
   };
   /** Every place kept on purpose, for the fresh tab and for the
       fallback when a machine goes quiet. */

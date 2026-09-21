@@ -61,7 +61,7 @@
 // and takes its answer back.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { closeTab, fetchTabs, focusTab, goTab, openTab, type TabsOpen } from "@/api";
+import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, type TabsOpen } from "@/api";
 
 /** One tab: a machine and a place on it. The shape the node keeps,
     renamed for the callers that were written against it. */
@@ -84,6 +84,10 @@ export type BrowseTab = {
   /** What it was last called, for the column to draw before anything
       has been loaded (第 2 条:「页面内容可以在点到那枚时才加载」). */
   title: string;
+  /** Put at the top by a person (docs/SHELL.md 第二轮). The node keeps
+      pinned tabs first and refuses to close one — this side only
+      draws what it was told. */
+  pinned: boolean;
 };
 
 const shape = (open: TabsOpen): BrowseTab[] =>
@@ -92,6 +96,7 @@ const shape = (open: TabsOpen): BrowseTab[] =>
     device: t.device === "" ? null : t.device,
     path: t.url,
     title: t.title,
+    pinned: t.pinned,
   }));
 
 export type BrowseTabs = {
@@ -130,7 +135,13 @@ export type BrowseTabs = {
       bar. **Not `close` and not `goTo("")`** — the tab is still the tab
       the person is looking at, it has simply stopped naming a place. */
   clear: () => void;
-  close: (id: string) => void;
+  /** **Answers**, where the rest fire and forget: the row menu reads a
+      rejection to stay open with the node's sentence (`RowMenu`) — a
+      pinned tab is refused by name, and that refusal is the whole of
+      「关不掉之前要先取消置顶」 on this side. */
+  close: (id: string) => Promise<void>;
+  /** 置顶 / 取消置顶 (docs/SHELL.md 第二轮). Answers, for `close`'s reason. */
+  pin: (id: string, on: boolean) => Promise<void>;
 };
 
 /**
@@ -145,7 +156,7 @@ export type BrowseTabs = {
  * ⚠️ **Nothing may be *drawn against* it** — see `ready`. It stands in
  * so `current` is never undefined, not so a face can render it.
  */
-const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "" };
+const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "", pinned: false };
 
 /**
  * How often the list is re-read while the landing that draws it is on
@@ -296,9 +307,12 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
   }, [kind, sending, take]);
 
   const close = useCallback(
-    (id: string) => {
-      sending(closeTab(kind, id)).then(take).catch(() => {});
-    },
+    (id: string) => sending(closeTab(kind, id)).then(take),
+    [kind, sending, take],
+  );
+
+  const pin = useCallback(
+    (id: string, on: boolean) => sending(pinTab(kind, id, on)).then(take),
     [kind, sending, take],
   );
 
@@ -329,5 +343,5 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
   }, [kind, watch, take]);
 
   const current = tabs.find((t) => t.id === active) ?? tabs[0] ?? PENDING;
-  return { tabs, current, ready: current !== PENDING, focus, add, goTo, open, clear, close };
+  return { tabs, current, ready: current !== PENDING, focus, add, goTo, open, clear, close, pin };
 }

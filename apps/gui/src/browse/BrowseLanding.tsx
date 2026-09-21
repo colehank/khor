@@ -11,6 +11,9 @@
 // the left, each a face and a name with a close on it, a 「+」 at the
 // foot, the page filling the rest and the address bar above it.
 //
+// **The 「+」 is at the head now, beside a search box** (docs/SHELL.md
+// 第二轮, 2026-09-21): every sidebar has one look, this one included.
+//
 // ⚠️ **This overturns what this file used to argue, and the old
 // argument is worth keeping because it was not wrong about its own
 // subject.** It said a browsing landing has no list pane: 会话 and 机器
@@ -59,6 +62,8 @@ import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
 import { ListPane } from "@/components/ListPane";
+import { PaneBar } from "@/components/PaneBar";
+import type { RowAction } from "@/components/RowMenu";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
 
@@ -125,6 +130,15 @@ export function BrowseLanding({
    * is true again for a reason it was not true for before.
    */
   const [switching, setSwitching] = useState(false);
+  /** What the column's search box holds (docs/SHELL.md 第二轮). This
+      screen's, like every other pane's query — a filter over rows that
+      are already here, not a question for the node. */
+  const [query, setQuery] = useState("");
+  /** A row action the node refused, in its own sentence, by tab and
+      action — `RowMenu`'s `note`: it outlives one opening of the menu,
+      so it is kept here and not there. The one a person meets is
+      「删除」 on a pinned tab (`khor_node::tabs::close`). */
+  const [refused, setRefused] = useState<Map<string, string>>(new Map());
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
@@ -145,7 +159,72 @@ export function BrowseLanding({
   const machine = deviceOf(tabs.current.device);
   const me = devices.find((d) => d.me) ?? null;
 
-  const faces: TabFace[] = tabs.tabs.map((t) => {
+  /**
+   * A tab's own menu: **置顶, 删除, then what this column has of its own**
+   * (docs/SHELL.md 第二轮:「每一行都有右键菜单,头两项永远是置顶、删除,
+   * 顺序固定」).
+   *
+   * 删除 asks nothing first. What it does to a tab is close it — the
+   * same act as the × beside it, which has never asked — and a question
+   * on one road and not the other would make the cheap act read as the
+   * costly one depending on where it was pressed. A pinned tab is
+   * refused by the node; that sentence is the note.
+   *
+   * No 「在系统浏览器中打开」: the ruling asked for it where a road
+   * already exists, and none does — a page here leaves through the
+   * machine the tab names, and the system browser would take it out
+   * through this one.
+   */
+  const menuOf = (t: BrowseTab): RowAction[] => {
+    const k = (action: string) => `${t.id}:${action}`;
+    const answered = (action: string) => (p: Promise<void>) =>
+      p.then(
+        () =>
+          setRefused((m) => {
+            if (!m.has(k(action))) return m;
+            const next = new Map(m);
+            next.delete(k(action));
+            return next;
+          }),
+        (e: unknown) => {
+          setRefused((m) => new Map(m).set(k(action), String(e instanceof Error ? e.message : e)));
+          // Rejecting is how an action says it did not happen (`RowMenu`).
+          throw e;
+        },
+      );
+    return [
+      {
+        key: "pin",
+        // What pressing it does, so the opposite of the tab's state —
+        // every row's pin says it this way.
+        label: t.pinned ? gui.unpin : gui.pin,
+        note: refused.get(k("pin")),
+        run: () => answered("pin")(tabs.pin(t.id, !t.pinned)),
+      },
+      {
+        key: "close",
+        label: gui.delete,
+        note: refused.get(k("close")),
+        run: () => answered("close")(tabs.close(t.id)),
+      },
+      // A tab pointed nowhere has nothing to copy, and an item that
+      // would put an empty string on the clipboard is not offered.
+      ...(t.path
+        ? [{ key: "copy-place", label: kind.words.copy, run: () => navigator.clipboard.writeText(t.path) }]
+        : []),
+    ];
+  };
+
+  // The box narrows by what a row shows — its name and its place —
+  // and nothing it does not show. A pinned tab is not exempt: a search
+  // that kept rows which do not match would be a filter with holes.
+  const q = query.trim().toLowerCase();
+  const shown = q === "" ? tabs.tabs : tabs.tabs.filter((t) => {
+    const d = deviceOf(t.device);
+    return `${tabLabel(kind, t.path, d)} ${t.title} ${t.path}`.toLowerCase().includes(q);
+  });
+
+  const faces: TabFace[] = shown.map((t) => {
     const d = deviceOf(t.device);
     return {
       id: t.id,
@@ -157,6 +236,8 @@ export function BrowseLanding({
       // name** (2026-09-09) — a coloured disc is recognisable once you
       // know it and unreadable before that.
       machine: d?.name ?? null,
+      pinned: t.pinned,
+      menu: menuOf(t),
     };
   });
 
@@ -280,10 +361,37 @@ export function BrowseLanding({
         tabs.focus(id);
         setSwitching(false);
       }}
-      onClose={tabs.close}
-      onNew={() => {
-        tabs.add();
-        setSwitching(false);
+      // The × is fire and forget: it is never drawn on a pinned tab,
+      // so the one refusal the node has for it cannot be met here.
+      onClose={(id) => void tabs.close(id).catch(() => {})}
+    />
+  );
+
+  /**
+   * **The column's head, the one every sidebar wears** (docs/SHELL.md
+   * 第二轮:「浏览器侧边栏也要和其他侧边栏一样有搜索和新建的组件在最上面」):
+   * a search box and a 「+」, in `PaneBar`, at `--pane-head`.
+   *
+   * ⚠️ 墓碑:this column had no head on purpose for one batch — Chrome's
+   * vertical tabs put the one thing it can do at the foot, and that was
+   * the user's own picture. The user overruled it: one kind of thing (a
+   * sidebar) has one look. The 「+」 moved up rather than being drawn
+   * twice; a foot *and* a head would be two places for one act.
+   */
+  const head = (
+    <PaneBar
+      searchLabel={kind.words.search}
+      query={query}
+      onQuery={setQuery}
+      create={{
+        label: gui.new_tab,
+        onSelect: () => {
+          tabs.add();
+          // A tab that did not match would open behind the box that
+          // hid it; clearing it is what makes the new row visible.
+          setQuery("");
+          setSwitching(false);
+        },
       }}
     />
   );
@@ -305,30 +413,32 @@ export function BrowseLanding({
     return (
       <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
         {tabs.ready && address(<TabCount n={tabs.tabs.length} onPress={() => setSwitching(true)} />)}
-        <div className="min-h-0 flex-1 overflow-hidden">{switching ? tabList : body}</div>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {switching ? (
+            // The narrow face's tab screen is this landing's sidebar,
+            // one screen wide — so it wears the same head.
+            <div className="flex h-full min-h-0 flex-col bg-card">
+              {head}
+              <div className="min-h-0 flex-1">{tabList}</div>
+            </div>
+          ) : (
+            body
+          )}
+        </div>
       </section>
     );
   }
 
   return (
     <section data-browse-landing={kind.kind} className="flex h-full min-h-0">
-      {/* **No head on this pane, and that is a decision rather than an
-          omission.** `ListPane`'s head is where a landing puts what you
-          can *do* there — a search box, a filter, a 「+」. Chrome's
-          vertical tabs put the one thing this column can do at the
-          foot, under the last tab, and the user's own picture is that
-          one; `TabSwitcher` has drawn it there since it was a phone
-          screen. A search box over the tabs would be a control this
-          ruling did not ask for, on the one list in the app short
-          enough to read at a glance. */}
       <ListPane
         mark="data-browse-tabs"
         name={kind.words.segment}
         pane={pane}
         narrow={false}
         seam={{ "data-list-seam": "" }}
-        // The switcher holds its own scroller, under a foot that must
-        // not scroll away with the tabs.
+        head={head}
+        // The switcher holds its own scroller.
         scroll={false}
       >
         {tabList}

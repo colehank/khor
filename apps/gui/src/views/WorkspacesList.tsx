@@ -253,7 +253,10 @@ export function WorkspacesList({
         // default rather than as a question appearing late
         // (`SessionsList` makes the mirror-image test for the same
         // reason).
-        label: gui.ws_remove,
+        // 删除, every sidebar's second word (docs/SHELL.md 第二轮). It
+        // said 移出工作区 until then, for fear 删除 would read as the
+        // directory going; that is what the confirm sentence says now.
+        label: gui.delete,
         confirm: askRemove ? gui.ws_remove_confirm : undefined,
         note: refused.get(k),
         run: run(() => wsRm(r.device, r.path)),
@@ -304,6 +307,7 @@ export function WorkspacesList({
           <div
             key={k}
             data-ws-line
+            data-pinned={r.pinned}
             // Whether this row's tree is out, said on the line rather
             // than only drawn: the chevron is `aria-hidden` and may not
             // be there at all (the narrow face has no column to fold),

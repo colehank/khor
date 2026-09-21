@@ -125,7 +125,7 @@ lang = "界面语言"
 session-form = "新会话默认开成"
 files-click = "单击文件"
 confirm-takeover = "接管会话"
-confirm-ws-remove = "移出工作区"
+confirm-ws-remove = "删除工作区"
 
 # 取值。
 # `auto` 是**跟着这台机器的桌面走**,不是「khor 自己猜」——所以词说的是
@@ -141,10 +141,13 @@ zh = "中文"
 en = "English"
 chat = "对话"
 term = "终端"
-# 预览位上的标签是斜体的那一个,下一次单击会顶掉它;双击照旧钉住,
+# 预览位上的标签是斜体的那一个,下一次单击会顶掉它;双击照旧保持打开,
 # 所以「预览」不是一条没有出口的路。
+# `pin` 是这个值的键(CLI 照旧 `files-click pin`),词是 VS Code 中文版那一个
+# ——「钉住」2026-09-21 退休(docs/SHELL.md 第二轮:一个动作一个词,而这里说的
+# 不是置顶,是这个标签不再被下一次单击顶掉)。
 preview = "预览"
-pin = "钉住"
+pin = "保持打开"
 on = "开"
 off = "关"
 
@@ -1434,7 +1437,7 @@ reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常
 # one that cannot be told anything. It names *any* machine still in the
 # network on purpose: the tombstone travels, so "one that still knows
 # it" is a place that stops existing.
-forgot = "已移除设备: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
+forgot = "已删除设备: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
 # `khor leave` 的三句,分开说。第一句是这件事本身,后两句是两种结局——
 # 合成一句就会把「全网都知道了」和「还有几台以为你只是离线」说成同一件事,
 # 而这两种情况剩下要做的事不一样(docs/UX.md 失败要说清是哪一种)。
@@ -1447,13 +1450,13 @@ left-untold = "这几台设备没连上,那边还会看见 {1} 离线——要�
 # refusal with nowhere to go reads as 「khor can't do this」 when what is
 # true is 「not with this word」. {0} is this machine's own name, because
 # `khor leave` wants it typed back as the confirmation.
-cant-forget-self = "这是本机——一台机器不能移除它自己。要本机离开网络: khor leave {0}"
+cant-forget-self = "这是本机——一台机器不能删除它自己。要本机离开网络: khor leave {0}"
 # `khor leave <本机>` with somebody else's name in it. Not a typo worth
 # guessing at: it is a person reaching for the other verb, so it hands
 # them that verb with the name already in it.
-# **「移除」, 不是「请出网」** (2026-09-21, docs/MORE.md 第二轮 文案):
-# 界面和 CLI 说同一个动词,而界面上那颗按钮叫「移除设备」。
-leave-names-another-machine = "{0} 不是本机。要移除这台设备: khor forget {0}"
+# **「删除」** (2026-09-21, docs/SHELL.md 第二轮 文案):界面和 CLI 说同一个动词,
+# 而界面上那一项叫「删除」。
+leave-names-another-machine = "{0} 不是本机。要删除这台设备: khor forget {0}"
 # Leaving a network you were never in. Refused by name rather than
 # answered with a cheerful nothing — 「离开了」 would be a sentence about
 # an act that did not happen (`lock::set_on` refuses the same shape).
@@ -2112,24 +2115,10 @@ accounts-read-from = "{0} 读的,{1} 前"
 # **`card-version`「Khor {0}」故意没有抄过来**:那半说的是这台机器上的 khor
 # 是哪个版本,而额度卡背后不是一台 khor,是一个厂商的读数。两张卡对齐的是
 # **座位**和「多久以前」那件事,不是那两个键。
-# 账户行右键菜单的第三项。**照抄机器行的形状,不是照抄它的词。**
-#
-# 「置顶 / 取消置顶」两处共用 `pin` / `unpin`——那本来就是会话行和机器行共用的
-# 通用动词。而删除这一项两处各有各的字,**理由不是「对不了」,是「不该对」**。
-#
-# `build.rs` 确实禁止一段文案挂两个名字(两个名字一段文案会 panic,因为按名字
-# 拒绝要求名字之间文案可分),而 `forget-machine` 已经占了「删除」。**但那条规则
-# 不是在挡路,它在逼这里回答一个问题:撤掉一份登记和让一台机器离开网络,是不是
-# 同一件事?**
-#
-# **不是。** 这份文件自己就答过了——两句确认词不复用,正因为代价不同。既然不是
-# 同一件事,两个词就是对的答案,不是一次妥协。
-#
-# (这一段 2026-09-07 重写过。原先写的是「对不了所以对形状」,那记录的是一次
-# 妥协——**而读到妥协的人会想办法绕过那条 build 规则**;记录成判断,他就不会。)
-#
-# 「撤掉」本身满足 `forget-machine` 那条判据:菜单项说的是人在做什么。
-accounts-remove = "撤掉"
+# 账户行右键菜单:置顶、删除、编辑——头两项和每条侧边栏一样(docs/SHELL.md 第二轮)。
+# 墓碑:删除这一项曾经自己叫「撤掉」,理由是「撤掉一份登记和让一台机器离开网络
+# 不是同一件事,所以两个词」。用户 2026-09-21 推翻:**词统一,不同写在确认那一句
+# 里**——两句确认本来就不复用,那条区分一直是由它们在守。
 # 两次按之间那句。**照实现写的,不是照感觉**(`Node::remove_account`):
 # 描述在复制的 doc 里,所以每台机器都不再有它;而密钥只 `remove_file` 本机
 # 那一份——**从别的机器撤,那台的密钥还在它自己的盘上**。
@@ -2415,7 +2404,7 @@ chat-readonly = "只读——它正在自己的终端里跑"
 # the row wears, in the conversation (docs/UX.md 状态呈现).
 chat-busy-for = "忙碌 {0}"
 # The confirms for changing a session's form, both directions
-# (`SessionsList` 转成对话 / 转成终端). One body, two forms — what ends
+# (`SessionsList` 转为对话 / 转为终端). One body, two forms — what ends
 # is the form khor is holding, never the conversation, and each
 # sentence says **which one is ending**, so the direction is never
 # guessed from the label alone.
@@ -2474,10 +2463,11 @@ workspaces-how = "按上面的 + 挑一台机器上的目录"
 # The 「+」 on the workspace pane. It opens the cross-machine directory
 # picker (工作区批②).
 ws-add = "加一个工作区"
-# On a row: take it off the list. **Says 移出 and not 删除** — the
-# directory is not touched (user, 2026-09-14), and 删除 beside a
-# directory name is the one word that must not be a guess.
-ws-remove = "移出工作区"
+# On a row the word is `delete` (docs/SHELL.md 第二轮). ⚠️ 墓碑:it said
+# 移出工作区 until 2026-09-21, because 删除 beside a directory name reads
+# as touching the directory (user, 2026-09-14). The user overruled that
+# for one word per action; the directory being untouched is said in the
+# confirm below instead.
 # 这一行的二次确认,只在 `khor config set confirm-ws-remove on` 之后才问
 # (docs/MORE.md 危险动作二次确认)。**默认不问**:这一下什么都没毁掉,
 # 目录一个字节都不动,一条 `khor ws add` 就回来——问一句的代价大于这一下
@@ -2525,11 +2515,9 @@ file-not-text = "这不是文本"
 file-cut = "只读了开头 {0},整个文件 {1}"
 # The way out of both of the above, and the one khor already has.
 file-take = "取下来"
-# 删掉 (工作区批④): the row's own action, and the word on the button
-# that confirms it. **Not 删除**, which `forget-machine` already is —
-# one word, one meaning (docs/UX.md 语料库), and a machine leaving the
-# mesh is not a file leaving a disk.
-file-remove = "删掉"
+# ⚠️ 墓碑:`file-remove`「删掉」(工作区批④)2026-09-21 退休。文件行和确认框
+# 那颗按钮说的都是 `delete`「删除」——一个动作一个词(docs/SHELL.md 第二轮),
+# 删的是文件还是一台机器,由确认那一句说,不由动词说。
 # 预览 (工作区批⑤, moved 2026-09-16). **One switch, and its default is
 # 源码** — 「所有代码、md 文件,打开先是源码,要有语法高亮。然后对于支持
 # 预览的文件,如 md,显示预览」(the user, 2026-09-14). Drawn only where
@@ -2879,11 +2867,9 @@ web-key-none = "这台机器还没开过网页脸"
 # 换钥匙之后那一句。不是装饰:之前发出去的每一条链接从这一刻起全都打不开,
 # 而那正是这个动作的全部意思。
 web-key-rotated = "换好了;之前发出去的链接全都作废了"
-# 把一台设备移出网络,在网络页上那台机器的卡里。**按钮的词和机器行菜单里
-# 那个不共用**:那边是「删除」(一张列表里的一行),这边是「移除设备」
-# (一台设备和这张网的关系),而按下去之后的那一句两边共用
-# (`forget-machine-confirm`),因为那是同一件事。
-remove-device = "移除设备"
+# 网络页上那台机器的卡里那颗按钮,和机器行菜单同一个词 `delete`
+# (docs/SHELL.md 第二轮:「网络页地图卡改成『删除』」),按下去之后的那一句
+# 两边共用(`forget-machine-confirm`)。墓碑:它叫过「移除设备」。
 # 重置身份。红字、输机器名——这一页上唯一一件撤不回来的事。
 reset-section = "重置身份"
 reset-warn = "删掉这台机器的身份钥匙、重新铸一把。**对全网来说这就是换了一台机器**:别的机器还认着旧的、不认新的,要回去得重新配对。"
@@ -2963,6 +2949,8 @@ search-devices = "搜索机器"
 # 额度那一栏的搜索框。搜的是行上写着的字——行名、类型、提供商、来源
 # (`visibleQuota`),不是任何一个藏起来的字段。
 search-quota = "搜索额度"
+# 浏览那一列的搜索框(docs/SHELL.md 第二轮):找的是标签页的标题和网址。
+search-tabs = "搜索标签页"
 filter = "筛选"
 # The filter menu's axis headings. It ticks on three axes now (状态 /
 # 机器 / 类别), and a flat checkbox list with no headings reads as one
@@ -3021,25 +3009,27 @@ no-matches = "没有匹配的"
 # The row action. Two words because the button has two jobs, and the one
 # it names is the one it will do next — a button labelled by its current
 # state tells you what is, not what pressing it does.
-# 两个词,两件事,别合并——账本里「钉住 vs 置顶 统一用词」那条,答案是
-# **各归各**而不是挑一个。
+# **一个词,四种落点**(2026-09-21 用户:「关于置顶与删除的操作统一为置顶与删除」,
+# docs/SHELL.md 第二轮)。
 #
-# **置顶说的是位置**:这一行本来就在你眼前那张单子里,按一下它挪到最上面。
-# 会话和机器是这样。**钉住说的是留下**:一个目录、一个网页不在任何单子里,
-# 按一下是把它收起来,以后在「钉住的目录/网页」那一栏里再见到。
+# ⚠️ 墓碑:这里曾经是两个词——「置顶」说位置(会话、机器),「钉住」说留下
+# (目录、网页),理由是按钮上的词要对得上结果落在哪一栏。用户推翻了它:同一个
+# 动作在这个 app 里只许有一个词。那条理由没丢,是换了个做法兑现——结果那一栏
+# 也改叫「置顶的目录 / 置顶的网页」,按钮和栏名照样对得上。
 #
-# 混用的代价今天量得出来:文件面板和浏览器那两颗按钮写着「置顶」,而按完
-# 东西出现在「钉住的目录」底下——**按钮说的动作和结果那一栏的名字对不上**,
-# 而对不上的时候人会以为自己按错了。
-#
-# 挡不住的:CLI 那个动词仍然叫 `pin`(一个动词管四种落点),而中文这边分成
-# 两个词。那是对的——**动词是给机器的,词是给人的**,人看得见的是结果落在
-# 哪一栏,机器看不见。
+# CLI 那个动词仍然叫 `pin`(一个动词管所有落点)。
 pin = "置顶"
 unpin = "取消置顶"
-# 给「留下」的那两种落点(目录、网页)。
-pin-place = "钉住"
-unpin-place = "取消钉住"
+# 每条侧边栏右键菜单的第二项,紧跟在置顶后面,顺序固定(docs/SHELL.md 第二轮)。
+# **词统一,后果各不一样,后果写在二次确认那一句里**:会话是关掉(`close-warn-*`),
+# 机器是移出网络(`forget-machine-confirm`),工作区是从列表拿掉、目录不动
+# (`ws-remove-confirm`),额度账户是撤掉登记(`accounts-remove-confirm`),
+# 浏览标签是关掉。
+#
+# 墓碑:它替掉了四个词——「关闭」(会话)、「移除设备」(机器,也在地图卡上)、
+# 「移出工作区」、「撤掉」(额度账户)。`build.rs` 不许一段文案挂两个名字,
+# 所以是一个键,不是四个键同一段字。
+delete = "删除"
 # The title's own control: double-click it and it becomes this input.
 # The label names the action; the input needs no hint text because the
 # current title is already in it, selected — typing replaces, Enter
@@ -3066,12 +3056,11 @@ collapse-old = "收起旧会话"
 # pressed**, not in a notification: there is no place in this app that
 # collects messages, and inventing one to carry a rare disk error would
 # be a whole surface built for the least common thing that happens here.
-pin-failed = "钉不上"
-unpin-failed = "取消不了"
-# **`forget-machine` 退休于 2026-09-21** (docs/MORE.md 第二轮 文案)。
-# 机器行的菜单项本来自己有一个词「删除」,而地图上那台机器的卡里同一个act
-# 叫「移除设备」——一个动作两个名字。两处现在都用 `remove-device`;
-# 两个人之间的那一句 (`forget-machine-confirm`) 本来就是共用的,动词跟上。
+pin-failed = "置顶失败"
+unpin-failed = "取消置顶失败"
+# 机器行菜单和地图卡上那颗按钮是同一个动作,同一个词 `delete`
+# (2026-09-21 docs/SHELL.md 第二轮;`forget-machine`、`remove-device` 两个键
+# 先后退休),按下去之后那一句也共用。
 # Said between the two presses. The whole cost in one clause, from the
 # CLI's own line for `forget` (docs/NET.md): it is the network's
 # decision, not this screen's, so every other machine stops knowing it
@@ -3334,7 +3323,10 @@ close-warn = "关掉它,这一步撤不回来"
 # Three words for one button, the pin's rule — the one shown names what
 # just happened, so a copy that silently did nothing cannot pass for a
 # copy that worked.
-copy-id = "复制 id"
+copy-id = "复制 ID"
+# 浏览标签右键菜单里的那一项(docs/SHELL.md 第二轮),`copy-id` 的邻居:
+# 网址是拿去贴的东西。
+copy-url = "复制网址"
 copied = "复制好了"
 copy-failed = "复制不了"
 # The files pane. 上一级 is a place to go, not a "back": the list on
@@ -3394,12 +3386,12 @@ send-file-failed = "发不出去"
 # where this person already goes. Empty says what would be here — a
 # blank region reads as broken, and this landing has no machine list
 # left to explain it (标签页一期: the sidebar went away).
-no-pinned-dirs = "还没有钉住的目录"
+no-pinned-dirs = "还没有置顶的目录"
 # …and the way onward, as a thing to press. An empty state that only
 # names what is missing is a dead end wearing a sentence; this one opens
 # a machine's directory, which is where pinning starts. Pressing it
 # opens this machine's home — the one browse that always exists.
-go-pin-a-dir = "去一台机器挑个目录钉住"
+go-pin-a-dir = "去一台机器挑个目录置顶"
 # ── the file landing's tabs (标签页一期) ──────────────
 # The landing is a browser now: tabs across the top, one address bar
 # under them, and a fresh tab that offers the places already gone to.
@@ -3411,7 +3403,7 @@ new-tab = "新标签页"
 # means losing something, this one puts a tab away and means nothing at
 # all — one text for both would make the cheap act read as the costly
 # one.
-close-tab = "关掉这个标签页"
+close-tab = "关闭标签页"
 # The narrow face's switcher, Chrome mobile's shape: the count *is* the
 # button, and pressing it is the only way to another tab on a face that
 # shows one at a time.
@@ -3430,8 +3422,8 @@ address-page = "机器和网址"
 # The fresh tab's sections. A pin is a decision, so it is always on
 # top — and what got pinned differs per landing, so the heading does
 # too.
-pinned-dirs = "钉住的目录"
-pinned-webs = "钉住的网页"
+pinned-dirs = "置顶的目录"
+pinned-webs = "置顶的网页"
 # …and the other heading, **shared by both on purpose**. 「最近去过」 is
 # already about the going and not about what was gone to, so it is one
 # fact in one place rather than two keys with one text (which this file
@@ -3447,7 +3439,7 @@ web-address = "网址,从 {0} 的网开"
 web-open = "打开"
 web-opening = "正在借 {0} 的网开…"
 web-opened = "在 {0} 的网里开了"
-no-pinned-webs = "还没有钉住的网页"
+no-pinned-webs = "还没有置顶的网页"
 # The browser landing's way onward, `go-pin-a-dir`'s sibling. Pressing
 # it picks an exit to borrow — the first machine that is not this one,
 # because borrowing your own network is refused by design (borrow-self).
@@ -3481,8 +3473,8 @@ view-chat = "对话"
 # introduced a second vocabulary for a concept the rest of the app
 # already names would be the 机器/设备 mistake again (2026-08-23) —
 # one concept, one word, wherever it appears.
-to-a-chat = "转成对话"
-to-a-terminal = "转成终端"
+to-a-chat = "转为对话"
+to-a-terminal = "转为终端"
 
 # ── Claude 订阅余量(批⑩) ─────────────────────────────
 # 窗口的名字。数字与「已用多少」由环画,这里只给名字——

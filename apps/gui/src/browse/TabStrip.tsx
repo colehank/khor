@@ -45,7 +45,7 @@ import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
-import { IconClose, IconEye, IconPlus } from "@/components/icons";
+import { IconClose, IconEye, IconPin, IconPlus } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -120,6 +120,11 @@ export type TabFace = {
    * a close, and a second mark on each of them would be a row of
    * controls aimed at files nobody is looking at. */
   look?: { on: boolean; label: string; onToggle: () => void };
+  /** Put at the top by a person (docs/SHELL.md 第二轮). The switcher
+      draws a pin where the close would be: a pinned tab cannot be
+      closed until it is unpinned, so a close on it would be an offer
+      whose one answer is no. */
+  pinned?: boolean;
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -592,17 +597,11 @@ export function TabSwitcher({
   active,
   onFocus,
   onClose,
-  onNew,
 }: {
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
-  /** Mint a tab. Absent on a switcher whose tabs are not made here —
-      the session tabs' rule, same as the strip's own `onNew`: a session
-      tab *is* its session, so there is nothing a "new tab" here could
-      open, and the foot stays off. */
-  onNew?: () => void;
 }) {
   return (
     <div data-tab-switcher className="flex h-full min-h-0 flex-col">
@@ -612,6 +611,7 @@ export function TabSwitcher({
             key={f.id}
             data-switch-tab={f.id}
             data-on={f.id === active}
+            data-pinned={f.pinned ?? false}
             className={cn(
               // `py-1` where it was `py-2`: the row's own height now
               // comes from the two controls in it, both of which are at
@@ -622,6 +622,11 @@ export function TabSwitcher({
               f.id === active && "bg-muted",
             )}
           >
+            {/* The row's menu hangs on the button that opens the tab, the
+                strip's arrangement (`TabOpen`) — every sidebar's rows
+                answer a right-click, this one included (docs/SHELL.md
+                第二轮). */}
+            <TabOpen menu={f.menu}>
             <button
               type="button"
               data-switch-open={f.id}
@@ -653,6 +658,19 @@ export function TabSwitcher({
                 )}
               </span>
             </button>
+            </TabOpen>
+            {f.pinned ? (
+              // Where the close would be: the state, not a control. A
+              // pinned tab is unpinned from its menu first, so this seat
+              // says why there is no close here (docs/SHELL.md 第二轮:
+              // 「关不掉之前要先取消置顶」).
+              <span
+                data-switch-pinned={f.id}
+                className="flex min-h-touch min-w-touch flex-none items-center justify-center text-muted-foreground"
+              >
+                <IconPin pinned />
+              </span>
+            ) : (
             <Button
               size="icon"
               variant="ghost"
@@ -669,26 +687,10 @@ export function TabSwitcher({
             >
               <IconClose />
             </Button>
+            )}
           </div>
         ))}
       </div>
-      {onNew && (
-        <div className="flex-none border-t p-2">
-          {/* `size="sm"` is the look — a filled word, not a bar across the
-              foot — and the floor is the hit area under it. The two are
-              allowed to disagree: `--ctl-*` is what a control *is* beside
-              text, `--touch` is what a finger needs (tokens.css). */}
-          <Button
-            variant="secondary"
-            size="sm"
-            data-tab-new
-            className="min-h-touch min-w-touch"
-            onClick={onNew}
-          >
-            {gui.new_tab}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

@@ -136,7 +136,7 @@ export function RemoveDialog({
     >
       <DialogContent data-remove-dialog>
         <DialogHeader>
-          <DialogTitle>{gui.file_remove}</DialogTitle>
+          <DialogTitle>{gui.delete}</DialogTitle>
         </DialogHeader>
         <div data-remove-says className="text-sm">
           {word}
@@ -165,7 +165,7 @@ export function RemoveDialog({
         )}
         <DialogFooter>
           <Button data-remove-go disabled={going} onClick={press} className="min-h-touch">
-            {gui.file_remove}
+            {gui.delete}
           </Button>
         </DialogFooter>
       </DialogContent>

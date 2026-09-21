@@ -237,7 +237,7 @@ export function useRemoveFlow({
   const actions = (full: string, isDir: boolean): RowAction[] => [
     {
       key: "remove",
-      label: gui.file_remove,
+      label: gui.delete,
       run: () => {
         setRefused(null);
         const kind = kindOf(isDir);
