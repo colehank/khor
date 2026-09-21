@@ -394,7 +394,20 @@ function run(cmd, args, env, name, cwd) {
 // test `opening_one_home_from_many_places_at_once_never_fails`, which
 // went 90-of-96 red the moment the shared temp name came back. Do not
 // read a green smoke run as evidence about that.
+/**
+ * Every session this script has ended with `khor close`.
+ *
+ * **A closed row is still on the glass for a while** — until the next
+ * poll here, and for a row that lives on alpha, until the mesh's own
+ * beat carries the close to beta. A step that picks 「the first row」
+ * can pick one of these, and whatever it does to that row is undone
+ * when the row leaves: §26 pinned `ws-writes` (closed a whole section
+ * earlier) and waited ten seconds for a pin on a row that was gone
+ * (2026-09-21, `rowThere:false` with the pin answered 200).
+ */
+const closedHere = new Set();
 function cli(env, ...args) {
+  if (args[0] === "close" && args[1]) closedHere.add(args[1]);
   let last;
   for (let i = 0; i < 5; i++) {
     try {
@@ -7960,11 +7973,14 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //     so the item pressed here was its 取消钉住, and「the pin to
   //     take」was waited on for a row that had just been unpinned
   //     (seen twice on 2026-09-17/18, green on the rerun each time).
+  //     **…and not a row this script has closed** (`closedHere`): the
+  //     sections before this one end their sessions on the way out, and
+  //     a row on its way out is the newest row there is.
   const failTarget = (
     await page
       .locator('[data-row]:not([data-pinned="true"])')
       .evaluateAll((els) => els.map((e) => e.dataset.row))
-  )[0];
+  ).find((id) => !closedHere.has(id));
   if (failTarget === undefined) throw new Error("probe dead: every row on the landing is pinned already");
   // **The colour is read after the item's own transitions finish**, not
   // the instant the attribute flips. A reading taken at t=0 of a
