@@ -10500,6 +10500,68 @@ try {
     await wait(900);
   }
 
+  // ── 4M) 第五轮第 7 条改画法:机器角标按系统,型号进副标题 (docs/SHELL.md) ──
+  //
+  // 「机器行的角标按系统画」 — apple / linux / windows / android, and the
+  // plain machine mark for a machine that could not say. The node's
+  // `vitals.system` is the answer; `vitals.model` no longer draws the
+  // corner, and its name goes under the machine's name. Three machines:
+  // `peer` linux (with a model name), `elder` apple, `gate` (this one,
+  // no reading at all) nothing.
+  {
+    const peer = devs.find((d) => d.name === "peer");
+    const elder = devs.find((d) => d.name === "elder");
+    const was = [peer?.vitals?.vitals?.system, peer?.vitals?.vitals?.model, elder?.vitals?.vitals?.system];
+    if (peer?.vitals?.vitals) {
+      peer.vitals.vitals.system = "linux";
+      peer.vitals.vitals.model = { kind: "server", name: "SYS-4028GR-TR" };
+    }
+    if (elder?.vitals?.vitals) elder.vitals.vitals.system = "apple";
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("devices");
+    const read = () =>
+      page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll("[data-side-row][data-device]")].map((row) => [
+            row.getAttribute("data-device"),
+            {
+              corner: row.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+              sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
+            },
+          ]),
+        ),
+      );
+    await until(5_000, async () => Object.keys(await read()).length >= 3);
+    await until(3_000, async () => (await read()).peer?.corner === "linux");
+    const seen = await read();
+    console.log(`devices 4M · rows: ${JSON.stringify(seen)}`);
+    const want = { peer: "linux", elder: "apple", gate: "machine" };
+    if (Object.keys(seen).length < 3) {
+      fail(`probe dead: the devices column drew ${Object.keys(seen).length} row(s)`);
+    } else {
+      for (const [name, kind] of Object.entries(want)) {
+        if (seen[name]?.corner !== kind) {
+          fail(
+            `the ${name} row wears 「${seen[name]?.corner}」 where its system says ${kind} — 「机器行的角标按系统画」 ` +
+              "(docs/SHELL.md 第五轮第 7 条改画法)",
+          );
+        }
+      }
+      if (!seen.peer?.sub.includes("SYS-4028GR-TR")) {
+        fail(`the peer row's second line reads ${JSON.stringify(seen.peer?.sub)} — 「型号文字进机器行的副标题」`);
+      }
+    }
+    if (peer?.vitals?.vitals) {
+      peer.vitals.vitals.system = was[0];
+      peer.vitals.vitals.model = was[1];
+    }
+    if (elder?.vitals?.vitals) elder.vitals.vitals.system = was[2];
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**

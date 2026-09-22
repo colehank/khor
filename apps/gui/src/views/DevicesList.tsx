@@ -1,7 +1,7 @@
 import type { DeviceRow } from "@/api";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconDevices } from "@/components/icons";
+import { machineMark } from "@/components/BrandIcons";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
@@ -135,17 +135,23 @@ export function DevicesList({
   // rule. What is left here is what a machine row says.
   const side: SideRow[] = rows.map((d) => {
     const connection = connectionWord(d);
+    const system = d.vitals?.vitals.system ?? null;
+    const SystemMark = machineMark(system);
+    const modelName = d.vitals?.vitals.model?.name ?? null;
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
       pinned: d.pinned,
       face: <MachineAvatar face={d.face} className="size-avatar" />,
-      // 「在设备, 是头像+机器型号icon」. **No reading names a model yet**
-      // — the vitals carry cores, memory, GPUs and khor's version, never
-      // what the box is — so every machine wears the generic machine
-      // mark until the node reports one (docs/SHELL.md 第四轮, builder
-      // 就地更正).
-      badge: { mark: "machine", icon: <IconDevices className="size-kind-mark-glyph" /> },
+      // **The system family's own mark** (docs/SHELL.md 第五轮第 7 条改画法:
+      // 「角标按系统」) — the node's `vitals.system`. A machine that could
+      // not say (an older peer, a satellite, no reading yet) wears the
+      // plain machine mark, never a guess. The model is not the corner's
+      // any more; its name is the second line's (`sub`).
+      badge: {
+        mark: system ?? "machine",
+        icon: <SystemMark className="size-kind-mark-glyph" />,
+      },
       // Double-click to rename, the gesture a session row wears
       // (`EditableName`); `nested` because it sits inside the button
       // that opens the row. Only where a row opens anything.
@@ -162,8 +168,20 @@ export function DevicesList({
         <span className="block truncate text-fact">{d.shown}</span>
       ),
       // How this machine is reached — the fact a person picks a row by;
-      // this machine's own word is 本机. Absent rather than an empty line.
-      sub: connection ? <span data-row-connection>{connection}</span> : undefined,
+      // this machine's own word is 本机 — and then what the box is, as
+      // the machine names itself (`vitals.model.name`: 「型号文字进机器行
+      // 的副标题」). Either can be missing; absent rather than an empty line.
+      sub:
+        connection || modelName ? (
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            {connection && <span data-row-connection>{connection}</span>}
+            {modelName && (
+              <span data-row-model className="min-w-0 truncate">
+                {modelName}
+              </span>
+            )}
+          </span>
+        ) : undefined,
       // **Both names are searchable**, and the id people paste: a renamed
       // machine must be findable by what it is called now and by the
       // name this person knew it by.

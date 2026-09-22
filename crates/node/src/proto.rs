@@ -1322,6 +1322,7 @@ mod tests {
             volumes: vec![],
             uptime_s: 0,
             model: None,
+            system: None,
         })
         .unwrap();
         assert!(
@@ -1989,6 +1990,7 @@ mod tests {
             volumes: vec![],
             uptime_s: 0,
             model: None,
+            system: None,
         };
         let bytes = encode(&Response::SatVitals {
             vitals: sent.clone(),
@@ -2035,6 +2037,7 @@ mod tests {
             }],
             uptime_s: 12,
             model: None,
+            system: None,
         };
         let bytes = encode(&Response::Vitals {
             vitals: sent.clone(),

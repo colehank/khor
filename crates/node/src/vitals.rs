@@ -122,6 +122,7 @@ pub fn sample(home: &Path) -> Vitals {
         volumes,
         uptime_s: sysinfo::System::uptime(),
         model: model::this_machine(),
+        system: khor_core::SystemKind::this_machine(),
     }
 }
 

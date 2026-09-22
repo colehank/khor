@@ -724,6 +724,68 @@ pub struct Vitals {
     /// before this field existed.
     #[serde(default)]
     pub model: Option<Model>,
+    /// Which operating system family this machine runs — what a machine
+    /// row's corner draws (docs/SHELL.md 第五轮第 7 条改画法: 「角标按系统」).
+    ///
+    /// `None` when it could not say, and from an older peer: the face
+    /// draws the plain machine mark for both, never a guess.
+    /// Wire: tail, serde default.
+    #[serde(default)]
+    pub system: Option<SystemKind>,
+}
+
+/// The families a machine row's corner has a mark for. **Closed on
+/// purpose**, [`ModelKind`]'s reason: a new family is a new mark, which
+/// is a decision. macOS and iOS are one family, `apple` — the user,
+/// 2026-09-22:「所有的macos系统(ios和macos)都用这个」.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum SystemKind {
+    Apple,
+    Linux,
+    Windows,
+    Android,
+}
+
+#[cfg(test)]
+mod system_kind_tests {
+    use super::SystemKind;
+
+    /// The wire spelling is the face's match arm, and this build's own
+    /// family is what the node reports about itself.
+    #[test]
+    fn a_system_family_crosses_as_one_kebab_word() {
+        assert_eq!(
+            serde_json::to_string(&SystemKind::Apple).unwrap(),
+            "\"apple\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SystemKind::Android).unwrap(),
+            "\"android\""
+        );
+        #[cfg(target_os = "macos")]
+        assert_eq!(SystemKind::this_machine(), Some(SystemKind::Apple));
+        #[cfg(target_os = "linux")]
+        assert_eq!(SystemKind::this_machine(), Some(SystemKind::Linux));
+    }
+}
+
+impl SystemKind {
+    /// The family this binary was built for — which is the family the
+    /// machine it runs on belongs to. `None` for anything else.
+    pub fn this_machine() -> Option<SystemKind> {
+        if cfg!(any(target_os = "macos", target_os = "ios")) {
+            Some(SystemKind::Apple)
+        } else if cfg!(target_os = "android") {
+            Some(SystemKind::Android)
+        } else if cfg!(target_os = "linux") {
+            Some(SystemKind::Linux)
+        } else if cfg!(target_os = "windows") {
+            Some(SystemKind::Windows)
+        } else {
+            None
+        }
+    }
 }
 
 /// A machine's model: a stable [`ModelKind`] for code to branch on, and
@@ -2898,11 +2960,12 @@ mod tests {
             volumes: vec![],
             uptime_s: 0,
             model: None,
+            system: None,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
         assert_eq!(
-            bytes[0], 0x9a,
-            "ten fields today (the model rode the tail on 2026-09-22)"
+            bytes[0], 0x9b,
+            "eleven fields today (the system family rode the tail after the model, 2026-09-22)"
         );
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
@@ -3031,11 +3094,12 @@ mod tests {
                 volumes: vec![],
                 uptime_s: 0,
                 model: None,
+                system: None,
             };
             let bytes = rmp_serde::to_vec(&v).unwrap();
             assert_eq!(
-                bytes[0], 0x9a,
-                "ten fields today (the model rode the tail on 2026-09-22)"
+                bytes[0], 0x9b,
+                "eleven fields today (the system family rode the tail after the model, 2026-09-22)"
             );
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
@@ -3145,11 +3209,12 @@ mod tests {
                 kind: ModelKind::MacMini,
                 name: Some("Mac mini (2024)".to_owned()),
             }),
+            system: Some(SystemKind::Apple),
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
         assert_eq!(
-            bytes[0], 0x9a,
-            "ten fields today (the model rode the tail on 2026-09-22)"
+            bytes[0], 0x9b,
+            "eleven fields today (the system family rode the tail after the model, 2026-09-22)"
         );
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }

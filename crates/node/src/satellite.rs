@@ -997,6 +997,7 @@ fn parse_vitals(text: &str) -> khor_core::Vitals {
         uptime_s: get("uptime_s").unwrap_or(0.0) as u64,
         // A satellite runs no khor, and its script does not ask.
         model: None,
+        system: None,
     }
 }
 

@@ -3464,6 +3464,16 @@ for line in sys.stdin:
   if (rowRoadWord !== cliRow("alpha", envB).road.trim()) {
     throw new Error(`alpha's row road is "${rowRoadWord}", the terminal prints something else`);
   }
+  //     The corner is alpha's own system family, read by alpha and carried
+  //     across in its vitals (docs/SHELL.md 第五轮第 7 条改画法). Both
+  //     nodes run on this machine, so the family is this machine's.
+  const family = { darwin: "apple", linux: "linux", win32: "windows", android: "android" }[process.platform];
+  if (family) {
+    const corner = page.locator('[data-device="alpha"] [data-side-badge]');
+    await until(`alpha's row wearing the ${family} mark`, 20_000, async () =>
+      (await corner.getAttribute("data-side-badge").catch(() => null)) === family,
+    );
+  }
   //     Clicked the way a person clicks it: the row's own button.
   const shortId = await page
     .locator('[data-device="alpha"]')

@@ -50,10 +50,57 @@ function check(path) {
     });
 }
 
+// ── The one named exception: brand marks (docs/SHELL.md 第五轮第 7 条改画法)
+//
+// Claude's, Codex's, Cursor's marks and the four system families' (apple,
+// linux, windows, android) are **somebody else's marks**, filled, drawn on
+// a 1024 canvas: redrawn in this family's strokes they stop being
+// recognisable, which is the only thing they are for. So they are let in
+// — **by name, in one file**, `src/components/BrandIcons.tsx` — and held
+// to the two things that keep them from becoming a second family by the
+// back door:
+//   · nowhere else draws on their canvas (`viewBox="0 0 1024 1024"`
+//     outside that file is a brand mark that escaped, or a new family);
+//   · nothing the exporter wrote survives in that file: no hard-coded
+//     fill (`fill="#…"`: a mark that is `#040000` by fiat vanishes on the
+//     dark theme), no `p-id` / `t="…"` / `data-darkreader-*`.
+// Source of the set: iconfont.cn, provided by the user 2026-09-22, whose
+// licence allows sharing (written beside the marks too).
+const BRANDS = "src/components/BrandIcons.tsx";
+const CANVAS = /viewBox=["']0 0 1024 1024["']/;
+const LITTER = /fill=\\?["']#|\bp-id=|\bt=\\?["']\d|data-darkreader/;
+walkBrands(join(root, "src"));
+
+function walkBrands(dir) {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) {
+      walkBrands(p);
+      continue;
+    }
+    const rel = relative(root, p).replaceAll("\\", "/");
+    if (!/\.(tsx?|html)$/.test(rel) || rel.startsWith("src/gen/")) continue;
+    readFileSync(p, "utf8")
+      .split("\n")
+      .forEach((line, i) => {
+        if (rel !== BRANDS && CANVAS.test(line)) {
+          offenders.push(`${rel}:${i + 1}: a brand-mark canvas outside ${BRANDS}`);
+        }
+        // Prose is not markup: a comment naming the litter it removed is
+        // this file's own lesson about gates that fire on the comment.
+        if (rel === BRANDS && LITTER.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line)) {
+          offenders.push(`${rel}:${i + 1}: exporter litter or a hard-coded fill in a brand mark`);
+        }
+      });
+  }
+}
+
 if (offenders.length) {
   console.error(
-    "a second icon family — port the mark into src/components/icons.tsx:\n" + offenders.join("\n"),
+    "a second icon family — port the mark into src/components/icons.tsx " +
+      `(brand marks go in ${BRANDS}, cleaned):\n` +
+      offenders.join("\n"),
   );
   process.exit(1);
 }
-console.log("icon gate: one family");
+console.log("icon gate: one family, and the brand marks only in BrandIcons.tsx, cleaned");
