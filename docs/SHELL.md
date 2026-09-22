@@ -584,3 +584,19 @@
 - face：五列各种一枚置顶 + 一枚未置顶 → 两组之间正好一条 `[data-side-list-rule]`；只有一组时为零。
 - face：空的新标签页读不到任何按钮（地址栏以外）。
 - 先看它红，红句记进 handoff。
+
+### 第五轮第 7 条改画法：角标按系统（2026-09-22）
+
+用户给了一批图标（`~/Downloads/icons/`：sys-macos / sys-linux / sys-windows / sys-android，agent-claude /
+agent-codex / agent-cursor / agent），原话「这有一堆icon库可以参考」；我问「角标画系统标还是形态」，答「系统标」；
+经 khor-58 转的三条：「1 按系统; 2 前者; 3 有许可, iconfont支持分享」，再补：「macOS改为apple, 所有的macos系统(ios和macos)都用这个」。
+
+- **机器行角标按系统画**，四类：`apple`（macOS 与 iOS 共用 sys-macos 那枚苹果标）、`linux`、`windows`、`android`；
+  认不出的照旧给通用机器图标。节点报系统类别（新字段，尾部追加），`ModelKind`（形态）留在数据里，角标不用它；
+  **型号文字进机器行的副标题**。
+- **会话行角标**同一次换成用户给的 agent-claude / agent-codex / agent-cursor / agent（通用）。机器和会话一家，
+  由 ui-builder 一次做完（khor-58 同意不碰）。
+- **品牌标保留原样的实心形状**：去掉写死的颜色（sys-macos 的 `#040000` 等）和 iconfont 导出的 `p-id`、`t`、
+  `data-darkreader-*` 属性，填充改 `currentColor` 跟主题；`icon gate: one family` 给品牌标开**具名例外**，门里写理由
+  （它们是别人的标，照原形才认得出）。
+- **出处**：iconfont.cn，用户 2026-09-22 提供，用户说许可允许分享；在图标旁（或 icons 目录 README）记一笔。
