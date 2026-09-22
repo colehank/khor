@@ -11,6 +11,7 @@ use std::sync::{Mutex, OnceLock};
 use khor_core::{Fill, Vitals, Volume, WatchedDir};
 
 pub(crate) mod gpu;
+pub mod model;
 
 /// Everything a reading is taken from, kept alive between calls.
 ///
@@ -120,6 +121,7 @@ pub fn sample(home: &Path) -> Vitals {
         gpus,
         volumes,
         uptime_s: sysinfo::System::uptime(),
+        model: model::this_machine(),
     }
 }
 

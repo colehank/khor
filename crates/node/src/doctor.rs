@@ -353,11 +353,18 @@ async fn check_store(root: PathBuf) -> (Health, String, Option<String>) {
 /// and a socket that never answers is a wedged serve, and「没在跑」
 /// would send somebody to start a second one.
 async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
-    // **The machine before the store** (SHELL.md 第五轮 第 0 条): every
-    // question below is about this store's serve, and on turing that
-    // one was healthy while a second resident, serving a second store,
-    // sat on its port. Two residents is the finding whatever this
-    // store's own serve is doing.
+    let Some(pid) = node.serve_pid() else {
+        return (
+            Health::Fail,
+            cli::doctor_serve_none().to_owned(),
+            Some("serve".to_owned()),
+        );
+    };
+    // **Then the machine** (SHELL.md 第五轮 第 0 条): every question
+    // here is about this store's serve, and on turing that one was
+    // healthy while a second resident, serving a second store, sat on
+    // its port. A store with no serve at all stays a `fail` above —
+    // that is the worse news and the one with a fix.
     let default_root = Node::root_from_env_default();
     let seen = tokio::task::spawn_blocking(crate::serves::here)
         .await
@@ -375,13 +382,6 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
             None,
         );
     }
-    let Some(pid) = node.serve_pid() else {
-        return (
-            Health::Fail,
-            cli::doctor_serve_none().to_owned(),
-            Some("serve".to_owned()),
-        );
-    };
     // The cheapest op the resident answers, and one this page wants
     // anyway (the peers row reads the same answer).
     if node.hops().await.is_empty() {

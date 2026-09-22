@@ -367,6 +367,7 @@ mod vitals_reading_tests {
                 },
             ],
             uptime_s: 0,
+            model: None,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));
@@ -399,6 +400,7 @@ mod vitals_reading_tests {
             gpus: vec![],
             volumes: vec![],
             uptime_s: 0,
+            model: None,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.vram_strain, None);
