@@ -1538,7 +1538,7 @@ web-opened = "Opened through {0}'s network"
 web-opening-here = "Opening…"
 web-opened-here = "Opened"
 open-in-browser = "Open in system browser"
-pick-exit = "Pick a machine to borrow its network"
+# ⚠️ Tombstone: pick-exit, retired 2026-09-22 with the fresh tab's button (docs/SHELL.md 第七轮).
 term-over = "This terminal ended"
 view-terminal = "Terminal"
 view-chat = "Chat"

@@ -167,9 +167,8 @@ export type BrowseKind = {
         2026-09-22 (docs/SHELL.md 第六轮: a pin is the sidebar's pinned
         group and nothing else). */
     recent: string;
-    /** The way onward from a fresh tab with nothing on it, as a thing
-        to press. */
-    go: string;
+    // ⚠️ 墓碑: `go`, the way onward from an empty fresh tab as a thing
+    // to press — retired 2026-09-22 with the button (docs/SHELL.md 第七轮).
     /** The tab column's search box (docs/SHELL.md 第二轮) — it finds a
         tab by what it is called and where it is, and 「where」 is this
         kind's own word. */

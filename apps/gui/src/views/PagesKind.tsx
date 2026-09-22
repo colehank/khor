@@ -236,9 +236,6 @@ export const PAGES: BrowseKind = {
     get recent() {
       return gui.recent_places;
     },
-    get go() {
-      return gui.pick_exit;
-    },
     get search() {
       return gui.search_tabs;
     },
