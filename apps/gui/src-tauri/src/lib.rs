@@ -470,7 +470,14 @@ fn chat_answer(id: String, ask: u64, option: Option<String>) -> Result<(), Strin
 /// A page's site icon, through the page's own exit (docs/SHELL.md 第四轮).
 #[tauri::command]
 async fn page_icon(url: String, proxy: Option<String>) -> Result<String, String> {
-    khor_gui_core::web::page_icon(&url, proxy.as_deref().unwrap_or("")).await
+    khor_gui_core::web::page_icon(&Node::root_from_env(), &url, proxy.as_deref().unwrap_or(""))
+        .await
+}
+
+/// Every site icon kept on this disk (`khor_gui_core::web::page_icons`).
+#[tauri::command]
+fn page_icons() -> std::collections::BTreeMap<String, String> {
+    khor_gui_core::web::page_icons(&Node::root_from_env())
 }
 
 #[tauri::command]
@@ -2689,6 +2696,7 @@ pub fn run() {
             chat_set_mode,
             chat_set_option,
             page_icon,
+            page_icons,
             open_link,
             chat_replay,
             chat_leave,

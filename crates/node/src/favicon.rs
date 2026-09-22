@@ -77,6 +77,176 @@ pub async fn icon(url: &str, proxy: Option<&str>) -> Result<String, String> {
     Ok(format!("data:{kind};base64,{b64}"))
 }
 
+// # Kept on disk (docs/SHELL.md 第五轮 第 8 条)
+//
+// 「重开 app 就有」: an icon fetched once is written to
+// `.khor/favicons.json`, keyed by the site's origin, so a restart draws
+// every row's icon before any page is opened again. **Nothing is ever
+// fetched to fill it** — only what [`icon`] already got, the way the
+// page itself was reached, lands here; reading it back makes no request
+// at all, so the rule at the top of this file holds.
+//
+// Keyed by origin rather than by tab: two tabs on one site are one icon,
+// and a tab moving to another site must not carry the old one along.
+
+/// How many sites the file remembers; the one kept longest ago goes
+/// first. An icon is at most [`MOST`] bytes before base64, so this is the
+/// bound on the file too (~17 MB at the very worst, a few hundred KB in
+/// practice — real icons are a few KB).
+const KEPT: usize = 200;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct Kept {
+    /// The `data:` URI [`icon`] answered.
+    icon: String,
+    /// When it was kept, ms — what [`KEPT`] evicts by.
+    at: u64,
+}
+
+fn kept_path(root: &std::path::Path) -> std::path::PathBuf {
+    root.join(".khor").join("favicons.json")
+}
+
+/// The site a page is on, as the key: `scheme://host[:port]`. `None` for
+/// anything that is not an http(s) page.
+pub fn origin(url: &str) -> Option<String> {
+    let at = reqwest::Url::parse(url).ok()?;
+    if !matches!(at.scheme(), "http" | "https") {
+        return None;
+    }
+    Some(at.origin().ascii_serialization())
+}
+
+fn stored(root: &std::path::Path) -> std::collections::BTreeMap<String, Kept> {
+    // Unreadable reads as empty: this is a cache, and a lost one costs a
+    // generic mark until the page is opened again.
+    std::fs::read_to_string(kept_path(root))
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// Every kept icon, by origin.
+pub fn kept(root: &std::path::Path) -> std::collections::BTreeMap<String, String> {
+    stored(root).into_iter().map(|(k, v)| (k, v.icon)).collect()
+}
+
+/// Keeps the icon of the site `url` is on. Only a `data:image/` URI is
+/// kept — what [`icon`] answers and nothing else.
+///
+/// **No lock**, unlike `tabs`: one writer in practice (the window), and
+/// two racing writers lose one icon, which the next page load puts back.
+/// Written beside the file and renamed over it, so a reader never sees
+/// half of it.
+pub fn keep(root: &std::path::Path, url: &str, icon: &str) -> Result<(), String> {
+    let Some(key) = origin(url) else {
+        return Err(format!("not a page: {url}"));
+    };
+    if !icon.starts_with("data:image/") {
+        return Err("not an icon".to_owned());
+    }
+    let mut all = stored(root);
+    if all.get(&key).is_some_and(|k| k.icon == icon) {
+        return Ok(());
+    }
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    all.insert(
+        key,
+        Kept {
+            icon: icon.to_owned(),
+            at,
+        },
+    );
+    while all.len() > KEPT {
+        let Some(oldest) = all.iter().min_by_key(|(_, v)| v.at).map(|(k, _)| k.clone()) else {
+            break;
+        };
+        all.remove(&oldest);
+    }
+    let dot = root.join(".khor");
+    std::fs::create_dir_all(&dot).map_err(|e| e.to_string())?;
+    let text = serde_json::to_vec(&all).map_err(|e| e.to_string())?;
+    let p = kept_path(root);
+    let tmp = dot.join(format!("favicons.json.{}", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &p).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        e.to_string()
+    })
+}
+
+#[cfg(test)]
+mod kept_tests {
+    use super::*;
+
+    struct Scratch(std::path::PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Kept by origin, read back after the fact, and only icons.
+    #[test]
+    fn an_icon_is_kept_by_its_site_and_read_back() {
+        let s = Scratch(std::env::temp_dir().join(format!("khor-favicons-{}", std::process::id())));
+        let root = s.0.clone();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(kept(&root).is_empty());
+        keep(
+            &root,
+            "https://far.example/a/b?c",
+            "data:image/png;base64,AA==",
+        )
+        .unwrap();
+        // Another page on the same site is the same key.
+        keep(
+            &root,
+            "https://far.example/other",
+            "data:image/png;base64,BB==",
+        )
+        .unwrap();
+        let got = kept(&root);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got["https://far.example"], "data:image/png;base64,BB==");
+        assert!(keep(&root, "file:///etc/passwd", "data:image/png;base64,AA==").is_err());
+        assert!(keep(&root, "https://far.example/", "<html>").is_err());
+        assert_eq!(
+            origin("http://127.0.0.1:8080/x").as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+    }
+
+    /// The file does not grow past [`KEPT`] sites; the oldest goes.
+    #[test]
+    fn the_oldest_site_goes_first() {
+        let s =
+            Scratch(std::env::temp_dir().join(format!("khor-favicons-cap-{}", std::process::id())));
+        let root = s.0.clone();
+        let _ = std::fs::remove_dir_all(&root);
+        let mut all = std::collections::BTreeMap::new();
+        for i in 0..KEPT {
+            all.insert(
+                format!("https://s{i}.example"),
+                Kept {
+                    icon: "data:image/png;base64,AA==".to_owned(),
+                    at: 1_000 + i as u64,
+                },
+            );
+        }
+        std::fs::create_dir_all(root.join(".khor")).unwrap();
+        std::fs::write(kept_path(&root), serde_json::to_vec(&all).unwrap()).unwrap();
+        keep(&root, "https://new.example/", "data:image/png;base64,AA==").unwrap();
+        let got = kept(&root);
+        assert_eq!(got.len(), KEPT);
+        assert!(!got.contains_key("https://s0.example"));
+        assert!(got.contains_key("https://new.example"));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{Read, Write};

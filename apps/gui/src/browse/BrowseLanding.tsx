@@ -52,9 +52,9 @@
 // file knows what a place looks like: no slash, no URL, no listing. All
 // of that arrives through `kind`, which is what lets the second
 // browsing landing be a descriptor rather than a second copy of this.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { forgetRecent, openLink, recentVisit, type DeviceRow } from "@/api";
+import { fetchPageIcons, forgetRecent, openLink, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
@@ -71,6 +71,18 @@ import { Button } from "@/components/ui/button";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
 import { groupLabel } from "@/words";
+
+/** The site a page is on, spelled as the node keys its kept icons
+    (`khor_node::favicon::origin`: `scheme://host[:port]`); `""` for
+    anything that is not an http(s) page. */
+function originOf(path: string): string {
+  try {
+    const u = new URL(path);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : "";
+  } catch {
+    return "";
+  }
+}
 
 /** What a tab calls itself: the way a browser tab wears a page's title
     rather than its URL. A machine with nothing open on it wears its own
@@ -144,11 +156,25 @@ export function BrowseLanding({
       so it is kept here and not there. The one a person meets is
       「删除」 on a pinned tab (`khor_node::tabs::close`). */
   const [refused, setRefused] = useState<Map<string, string>>(new Map());
-  /** Each tab's site icon, once its page has loaded here — kept for this
-      window's life, not written down: a restart draws the generic page
-      mark until the page is opened again (docs/SHELL.md 第四轮 第 2 条:
-      「拿不到给通用网页图标」). */
+  /** Each tab's site icon, once its page has loaded here in this window. */
   const [icons, setIcons] = useState<Map<string, string>>(new Map());
+  /** **And every icon fetched before, read off this disk by site**
+      (docs/SHELL.md 第五轮 第 8 条:「favicon 存盘…重开 app 就有」). The
+      node keeps what `pageIcon` got; this is a read of that file and asks
+      no site anything, so a restart draws each row's icon without a
+      request leaving from here. Read once when the landing mounts. */
+  const [kept, setKept] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let live = true;
+    fetchPageIcons().then(
+      (m) => live && setKept(m),
+      // A cache that cannot be read is rows wearing the generic mark.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
@@ -247,7 +273,7 @@ export function BrowseLanding({
     // pointed nowhere is called.
     // A site's root reads as its host, the way Chrome prints it.
     const bare = t.path.replace(/^https?:\/\//i, "").replace(/^([^/]+)\/$/, "$1");
-    const src = icons.get(t.id);
+    const src = icons.get(t.id) ?? kept[originOf(t.path)];
     return {
       id: t.id,
       group: t.pinned ? "pin" : "",

@@ -108,8 +108,22 @@ pub async fn drop_web_borrow(root: &Path, session: &str) -> Result<(), String> {
 /// through its borrow's local proxy (`proxy`, the `addr` `borrow_web`
 /// answered), or directly for a page this machine opens itself
 /// (`khor_node::favicon` says why the difference matters).
-pub async fn page_icon(url: &str, proxy: &str) -> Result<String, String> {
-    khor_node::favicon::icon(url, (!proxy.is_empty()).then_some(proxy)).await
+///
+/// **What comes back is also kept** (`khor_node::favicon::keep`,
+/// docs/SHELL.md 第五轮 第 8 条), so a restart draws it before the page is
+/// opened again. A cache that cannot be written is not the answer
+/// failing: the icon is still handed back.
+pub async fn page_icon(root: &Path, url: &str, proxy: &str) -> Result<String, String> {
+    let icon = khor_node::favicon::icon(url, (!proxy.is_empty()).then_some(proxy)).await?;
+    let _ = khor_node::favicon::keep(root, url, &icon);
+    Ok(icon)
+}
+
+/// Every icon kept on this disk, by site origin
+/// (`khor_node::favicon::kept`). Read only — nothing is fetched to
+/// answer it.
+pub fn page_icons(root: &Path) -> std::collections::BTreeMap<String, String> {
+    khor_node::favicon::kept(root)
 }
 
 /// Hands a page to whatever this machine opens pages with.

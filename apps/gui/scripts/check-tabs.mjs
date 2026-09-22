@@ -914,6 +914,58 @@ try {
       }
     }
 
+    //  ── 网页图标存盘 (docs/SHELL.md 第五轮 第 8 条) ──
+    //
+    //  「重开 app 就有」, and 「不从本机偷发请求的规矩照旧」. A loopback site
+    //  that answers `/favicon.ico` and counts every ask; a tab on it; the
+    //  icon asked once the way the app asks when the page loads
+    //  (`page_icon`, the real node). Then the window is reloaded — a
+    //  fresh page with nothing in memory — and the row has to wear the
+    //  site's icon **without the site being asked again**.
+    {
+      const { createServer } = await import("node:http");
+      let icoAsked = 0;
+      const site = createServer((req, res) => {
+        if (req.url === "/favicon.ico") {
+          icoAsked += 1;
+          res.writeHead(200, { "content-type": "image/png" });
+          res.end(Buffer.from("89504e470d0a1a0a", "hex"));
+        } else {
+          res.writeHead(200, { "content-type": "text/html" });
+          res.end("<title>icon site</title>");
+        }
+      });
+      await new Promise((r) => site.listen(0, "127.0.0.1", r));
+      const origin = `http://127.0.0.1:${site.address().port}`;
+      try {
+        cli(envB, "tabs", "open", `${origin}/page`);
+        const got = await ask("page_icon", { url: `${origin}/page`, proxy: "" }).catch((e) => String(e));
+        const before = icoAsked;
+        await page.reload({ waitUntil: "load" });
+        await openBrowser();
+        const row = page
+          .locator("[data-browse-tabs] [data-side-row]")
+          .filter({ hasText: `127.0.0.1:${site.address().port}/page` })
+          .first();
+        await until("the icon site's row", 10_000, async () => (await row.count()) === 1).catch(() => false);
+        await until("its icon", 5_000, async () =>
+          (await row.locator("[data-side-badge]").getAttribute("data-side-badge").catch(() => null)) === "favicon",
+        ).catch(() => false);
+        const badge = await row.locator("[data-side-badge]").getAttribute("data-side-badge").catch(() => null);
+        console.log(`     icon kept: asked once → ${typeof got === "string" ? got.slice(0, 22) : got}; after a reload the row wears ${badge}; the site was asked ${icoAsked - before} more time(s)`);
+        if (icoAsked === 0) {
+          fail("probe dead: the icon site was never asked, so nothing could have been kept");
+        } else if (badge !== "favicon") {
+          fail(`after a reload the row wears 「${badge}」 — 「favicon 存盘…重开 app 就有」 (docs/SHELL.md 第五轮 第 8 条)`);
+        } else ok("a site's icon survives a reload");
+        if (icoAsked !== before) {
+          fail(`drawing the kept icon asked the site ${icoAsked - before} more time(s) — 「不从本机偷发请求的规矩照旧」`);
+        } else ok("drawing a kept icon asks nobody");
+      } finally {
+        site.close();
+      }
+    }
+
     //  ── 删除 asks, and 不再提醒 is `khor config` (docs/SHELL.md 第四轮) ──
     //
     //  The face gate proves the window and the tick on a fixture; what

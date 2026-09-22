@@ -484,7 +484,9 @@ pub fn answer(
             crate::chat::chat_answer(&arg("id")?, num("ask")?, opt_str("option")?)?;
             Ok("null".to_owned())
         }
+        "page_icons" => to_json(&crate::web::page_icons(root)),
         "page_icon" => to_json(&rt.block_on(crate::web::page_icon(
+            root,
             &arg("url")?,
             &opt_str("proxy")?.unwrap_or_default(),
         ))?),

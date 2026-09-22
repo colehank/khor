@@ -914,6 +914,11 @@ export const openLink = (url: string) => call<null>("open_link", { url });
     exit — `proxy` is its borrow's local address, `""` for a page this
     machine opens itself (`khor_node::favicon`). */
 export const pageIcon = (url: string, proxy: string) => call<string>("page_icon", { url, proxy });
+/** Every site icon `pageIcon` has fetched before, kept on this disk by
+    the site's origin (`khor_node::favicon::kept`, docs/SHELL.md 第五轮
+    第 8 条). **A read of a file, never a fetch** — a restart draws these
+    without asking any site anything. */
+export const fetchPageIcons = () => call<Record<string, string>>("page_icons");
 /** 接管 the other way: a conversation khor holds moves into a terminal
     (`Node::takeover_term`). Same row, same conversation. */
 export const takeoverTerm = (id: string) => call<null>("takeover_term", { id });
