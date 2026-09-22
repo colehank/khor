@@ -353,6 +353,28 @@ async fn check_store(root: PathBuf) -> (Health, String, Option<String>) {
 /// and a socket that never answers is a wedged serve, and「没在跑」
 /// would send somebody to start a second one.
 async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
+    // **The machine before the store** (SHELL.md 第五轮 第 0 条): every
+    // question below is about this store's serve, and on turing that
+    // one was healthy while a second resident, serving a second store,
+    // sat on its port. Two residents is the finding whatever this
+    // store's own serve is doing.
+    let default_root = Node::root_from_env_default();
+    let seen = tokio::task::spawn_blocking(crate::serves::here)
+        .await
+        .unwrap_or_default();
+    let residents = crate::serves::residents(&seen, &default_root);
+    if residents.len() > 1 {
+        let list = residents
+            .iter()
+            .map(|r| cli::doctor_serve_one_of(r.pid, r.root.display()))
+            .collect::<Vec<_>>()
+            .join(cli::name_separator());
+        return (
+            Health::Warn,
+            cli::doctor_serve_many(residents.len(), list),
+            None,
+        );
+    }
     let Some(pid) = node.serve_pid() else {
         return (
             Health::Fail,

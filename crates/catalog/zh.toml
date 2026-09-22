@@ -464,6 +464,11 @@ doctor-store-shut = "写不进去: {0}"
 doctor-serve-ok = "在跑(pid {0})"
 doctor-serve-none = "没在跑"
 doctor-serve-deaf = "记着 pid {0},可是不答话"
+# One machine, more than one resident (keeper and child count as one).
+# Named by the pid a person would stop and the store each serves, which
+# is how the two are told apart.
+doctor-serve-many = "这台机器上有 {0} 个 serve:{1}"
+doctor-serve-one-of = "pid {0}(店 {1})"
 doctor-web-ok = "端口 {0} 在听,钥匙在"
 doctor-web-nokey = "端口 {0} 在听,可是钥匙文件不在"
 doctor-web-quiet = "端口 {0} 没人听"
@@ -1532,6 +1537,9 @@ serve-hops-late = "[{0}] 问 iroh 走哪条路,{1} 毫秒内没答上来,先报�
 serve-shielding = "[{0}] {1} 在网络盘上——keeper 搬进本地副本再跑,那边换文件砸不到这边跑着的进程"
 serve-shield-failed = "[{0}] 本地副本没做成({1}),就在原地跑"
 serve-copy-swept = "[{0}] 本地副本被清掉了(多半是 /tmp 清理器),拷一份新的交棒"
+# The keeper follows its serve into a new generation by exec; this is
+# the one line it writes when that exec did not happen.
+serve-keeper-stayed = "[{0}] serve 换了新版,keeper 自己没换过去({1}),先用旧的接着看"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # A page opened in the app is a second webview parented to the window, and
 # `Window::add_child` exists on desktop alone — mobile needs a native

@@ -1,0 +1,146 @@
+//! `khor doctor` says so when one machine is running two serves
+//! (SHELL.md 第五轮 第 0 条).
+//!
+//! Measured on turing, 2026-09-22: a keeper from 9 月 17 日 serving a
+//! second store (`.khor-hosts/turing`, a second identity for the same
+//! machine) beside the resident the installer had just restarted. The
+//! old one held port 5467, so the new one's web face never came up —
+//! and every row of `khor doctor` read fine, because every row asks
+//! about *this* store, and this store's serve was healthy. Nothing
+//! looked at the machine.
+//!
+//! The shape here is that one, on temporary stores: two keepers, two
+//! `KHOR_HOME`s, one user. The doctor asked from either store must name
+//! the other.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command};
+use std::time::{Duration, Instant};
+
+/// A scratch tree that takes itself away however the test leaves (the
+/// reasoning is on `crates/node/src/tests.rs::Scratch`).
+struct Scratch(PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn root(tag: &str) -> Scratch {
+    let p = std::env::temp_dir().join(format!("khor-two-{tag}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&p);
+    fs::create_dir_all(&p).unwrap();
+    Scratch(p)
+}
+
+/// Kills the keeper by pid however the test leaves; TERM reaches its
+/// serve through the keeper's forwarding.
+struct Keeper(Child);
+
+impl Drop for Keeper {
+    fn drop(&mut self) {
+        let _ = Command::new("kill")
+            .args(["-TERM", &self.0.id().to_string()])
+            .status();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if self.0.try_wait().ok().flatten().is_some() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn keeper(home: &Path, name: &str) -> Keeper {
+    Keeper(
+        Command::new(env!("CARGO_BIN_EXE_khor"))
+            .arg("serve")
+            .env("KHOR_HOME", home)
+            .env("KHOR_NAME", name)
+            // Each its own web port: the collision is not what this
+            // test is about, and the doctor must see both whatever
+            // the ports do.
+            .env("KHOR_WEB_PORT", "0")
+            .env_remove("KHOR_SESSION")
+            .stderr(fs::File::create(home.join("serve.log")).unwrap())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    )
+}
+
+fn inner_pid(home: &Path) -> Option<u32> {
+    let text = fs::read_to_string(home.join(".khor").join("endpoint.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get("pid")?.as_u64().map(|p| p as u32)
+}
+
+fn wait_for(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(secs);
+    while Instant::now() < deadline {
+        if f() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+/// The serve row of `khor doctor --json`, asked from `home`.
+fn serve_row(home: &Path) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_khor"))
+        .args(["doctor", "--json"])
+        .env("KHOR_HOME", home)
+        .env_remove("KHOR_SESSION")
+        .output()
+        .unwrap();
+    let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!(
+            "doctor --json did not print JSON ({e}): {}",
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    rows.as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["key"] == "serve")
+        .cloned()
+        .expect("a serve row")
+}
+
+#[test]
+fn the_doctor_names_a_second_serve_on_the_same_machine() {
+    let a = root("a");
+    let b = root("b");
+    let ka = keeper(&a.0, "box-a");
+    let kb = keeper(&b.0, "box-b");
+    wait_for("both serves to stand up", 30, || {
+        inner_pid(&a.0).is_some() && inner_pid(&b.0).is_some()
+    });
+
+    let row = serve_row(&a.0);
+    let said = row["said"].as_str().unwrap().to_owned();
+    assert_eq!(
+        row["state"], "warn",
+        "two serves on one machine is not a clean bill: {said}"
+    );
+    assert!(
+        said.contains(&kb.0.id().to_string()),
+        "the other serve is named by the pid a person would kill (its keeper's): {said}"
+    );
+    assert!(
+        said.contains(&b.0.display().to_string()),
+        "and by the store it is serving, which is how a person tells the two apart: {said}"
+    );
+    // Asked from the other side, the same fact.
+    let said_b = serve_row(&b.0)["said"].as_str().unwrap().to_owned();
+    assert!(
+        said_b.contains(&ka.0.id().to_string()),
+        "the doctor asked from the second store names the first: {said_b}"
+    );
+}

@@ -39,6 +39,7 @@ pub mod proto;
 pub mod quota;
 pub mod reactor;
 pub mod satellite;
+pub mod serves;
 pub mod tabs;
 pub mod top;
 pub mod transfer;
@@ -1229,6 +1230,13 @@ impl Node {
         if let Some(explicit) = std::env::var_os("KHOR_HOME") {
             return PathBuf::from(explicit);
         }
+        Self::root_from_env_default()
+    }
+
+    /// The store a process of this user started **without** `KHOR_HOME`
+    /// works out — which is also what any other such process of this
+    /// user on this machine is serving (`serves::residents`).
+    pub fn root_from_env_default() -> PathBuf {
         let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
         Self::store_under(&home)
     }
