@@ -339,6 +339,26 @@ fn stalest(open: &Open) -> Option<usize> {
         .map(|(i, _)| i)
 }
 
+/// Adds a tab **already pinned**, without putting it in front — what a
+/// migrated 「置顶的网页」 row becomes (`Node::migrate_place_pins`). Not
+/// [`open`]: a migration is not somebody opening a page, so it takes
+/// nobody's front tab and it is not counted against 标签页上限 (a pin is
+/// never what the limit closes anyway). Answers the new id.
+pub fn adopt_pinned(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, String> {
+    change(root, kind, |open| {
+        let id = mint();
+        open.tabs.push(Tab {
+            id: id.clone(),
+            device: device.to_string(),
+            url: url.to_string(),
+            title: String::new(),
+            pinned: true,
+            touched: 0,
+        });
+        Ok(id)
+    })
+}
+
 /// Points an open tab somewhere, and names it.
 ///
 /// **Refused by name for a tab that is not there**, rather than

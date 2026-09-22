@@ -10347,6 +10347,40 @@ try {
     await wait(900);
   }
 
+  // ── 4Z) 第六轮:新标签页没有「置顶的目录 / 置顶的网页」 (docs/SHELL.md) ──
+  //
+  // 「置顶的浏览器不就是和 session list 一样的置顶吗」: a pin is the
+  // sidebar's pinned group and nothing else, so the fresh tab carries no
+  // pinned section — not its anchor, not its heading, not its empty
+  // sentence — while the fixture still answers `web_pins` with a row, so
+  // a page that asked would have something to draw. Saved as a picture
+  // too, for the question 「空出来显得太空吗」 (SHELL.md 第六轮 第 4 条).
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await open("browser");
+    await wait(400);
+    await press("[data-browse-tabs] [data-pane-new]");
+    await wait(700);
+    const fresh = await page.evaluate(() => {
+      const land = document.querySelector('[data-browse-landing="page"]');
+      return {
+        sections: [...(land?.querySelectorAll("[data-places-section]") ?? [])].map((e) => e.getAttribute("data-places-section")),
+        text: land?.innerText ?? "",
+      };
+    });
+    console.log(`newtab 4Z · sections ${JSON.stringify(fresh.sections)}`);
+    if (fresh.sections.includes("pinned")) {
+      fail("the fresh tab still draws a pinned section — 「浏览的置顶只有侧边栏这一处」 (src/browse/NewTabPage.tsx)");
+    }
+    // 置顶的网页 / 置顶的目录 / 还没有置顶的
+    for (const w of ["置顶的网页", "置顶的目录", "还没有置顶的"]) {
+      if (fresh.text.includes(w)) fail(`the fresh tab still says ${JSON.stringify(w)} — the two columns and their empty sentences are retired`);
+    }
+    const shot = join(process.env.FACE_SHOTS ?? "/tmp", "newtab-after-round5.png");
+    await page.screenshot({ path: shot });
+    console.log(`newtab 4Z · picture: ${shot}`);
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**

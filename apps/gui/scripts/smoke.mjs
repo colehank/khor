@@ -4134,90 +4134,15 @@ for line in sys.stdin:
   //      machine as an exit — and that is the half this section can
   //      still prove.
 
-  // 24b) the browser landing keeps pages: a pin made against the real
-  //      webpins table shows up among this landing's places, survives a
-  //      reload (it is the network's, not this screen's), and goes when
-  //      it is unpinned.
-  //
-  //      **Made through the backend op, not by clicking pin.** The pin
-  //      control (`[data-pin-web]`) lives on the *opened* page now, and
-  //      opening dials a real borrow through somebody's actual browser —
-  //      the same reason 24d stops short of pressing Enter. So this item
-  //      calls the very op that button calls (`pin_web`, over the bridge
-  //      that is one HTTP skin on the real node) and then asks the
-  //      screen what it shows. Nothing here is mocked; what is skipped
-  //      is the dial.
-  //
-  //      **It replaces an item that could not run.** The old one was
-  //      written against the pre-06f5757 browser pane — machine rows, a
-  //      `[data-web-address]` box, a `[data-web-pin-open]` list — and
-  //      two of those three attributes no longer exist anywhere in the
-  //      source. A locator that matches nothing reads as "the app is
-  //      broken" when it is positive and passes for free when it is
-  //      negative; either way this feature went unguarded from the day
-  //      the shell landed.
-  const bridgeOp = async (cmd, args) => {
-    const r = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/${cmd}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(args),
-    });
-    if (!r.ok) throw new Error(`${cmd} answered ${r.status}`);
-    return r.json().catch(() => null);
-  };
-  const webUrl = "https://smoke.example/page";
-  await openLanding("browser");
-  //      **Either marker proves the places view drew**, and it has to be
-  //      either: `[data-new-tab]` is the list, and a landing with
-  //      nothing kept yet paints `[data-no-places]` instead — which is
-  //      exactly the state this item starts in. Waiting for the list
-  //      alone is an assertion that cannot hold before the thing it is
-  //      about exists (it did not, first time out).
-  await until("the browser landing's places", 10_000, async () =>
-    (await page.locator("[data-new-tab], [data-no-places]").count()) >= 1,
-  );
-  //      The control: not there before it is pinned, so what follows is
-  //      about the pin rather than about the selector.
-  if ((await page.locator(`[data-place="${webUrl}"]`).count()) !== 0) {
-    throw new Error("that page was already pinned before this item pinned it");
-  }
-  await bridgeOp("pin_web", { machine: "beta", url: webUrl, on: true });
-  //      **Reload, and that is the claim rather than a workaround.**
-  //      This landing asks for what is kept when it mounts (and again
-  //      after it visits somewhere); nothing pushes a pin at an open
-  //      screen, and asserting that one appeared without a reload would
-  //      be asserting a live update the app does not do and has never
-  //      claimed. What it does claim is that the pin belongs to the
-  //      network and not to this screen — so the next time any screen
-  //      asks, it is there. (Reload keeps the ?bridge= query.)
-  await page.reload();
-  await openLanding("browser");
-  //      **Two locators, because the heading is the row's sibling and
-  //      not its parent** — `[data-places-section] [data-place]` matches
-  //      nothing at all, which reads exactly like "the pin never
-  //      arrived" (`.nav-badge`'s lesson, again).
-  await until("the pinned page among the places", 15_000, async () =>
-    (await page.locator(`[data-place="${webUrl}"]`).count()) === 1,
-  );
-  if ((await page.locator('[data-places-section="pinned"]').count()) !== 1) {
-    throw new Error("the pinned page arrived without the heading that says it is pinned");
-  }
-  await bridgeOp("pin_web", { machine: "beta", url: webUrl, on: false });
-  await page.reload();
-  await openLanding("browser");
-  //      **The view first, the absence second, and that order is the
-  //      assertion's spine.** While nobody has answered about the pins
-  //      this landing paints nothing at all (`usePlaces.asked` — "no
-  //      answer yet" is not "nothing kept"), and an empty screen
-  //      satisfies "the pin is gone" for a reason that has nothing to do
-  //      with the pin. Written the other way round it read the loading
-  //      frame as proof and then tripped over its own probe.
-  await until("the places view again", 15_000, async () =>
-    (await page.locator("[data-new-tab], [data-no-places]").count()) >= 1,
-  );
-  if ((await page.locator(`[data-place="${webUrl}"]`).count()) !== 0) {
-    throw new Error("the page is still among the places after it was unpinned");
-  }
+  // 24b) ⚠️ 墓碑 (2026-09-22, docs/SHELL.md 第六轮): this item pinned a
+  //      page through the `webpins` table (`pin_web` over the bridge) and
+  //      read it back under the fresh tab's 「置顶的网页」 heading. That
+  //      column is retired — a pin is the sidebar's pinned group, like a
+  //      session's — the old rows move there once
+  //      (`khor_node::Node::migrate_place_pins`, its own test), and the
+  //      bridge no longer answers `pin_web`. What the fresh tab draws now
+  //      is `check-face` 4Z's; the tab pin on a real node is
+  //      `check-tabs`' 置顶 block.
 
   // 29) the mark opens the mesh and what it cost — on both faces.
   //

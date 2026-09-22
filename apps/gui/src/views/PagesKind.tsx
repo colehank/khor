@@ -20,7 +20,7 @@
 //     and this one does not.
 import { useEffect } from "react";
 
-import { fetchWebPins, pageStep } from "@/api";
+import { pageStep } from "@/api";
 import type { BodyProps, BrowseKind, HeldTab, RestProps, SecondSegment } from "@/browse/kind";
 import { Button } from "@/components/ui/button";
 import { IconBack, IconForward, IconReload } from "@/components/icons";
@@ -232,15 +232,9 @@ export const PAGES: BrowseKind = {
     get segment() {
       return gui.browser_tab;
     },
-    get pinned() {
-      return gui.pinned_webs;
-    },
     // The one heading both landings share — see `recent-places`.
     get recent() {
       return gui.recent_places;
-    },
-    get empty() {
-      return gui.no_pinned_webs;
     },
     get go() {
       return gui.pick_exit;
@@ -251,10 +245,6 @@ export const PAGES: BrowseKind = {
     get copy() {
       return gui.copy_url;
     },
-  },
-  pins: async () => {
-    const rows = await fetchWebPins();
-    return rows.map((r) => ({ device: r.device, name: r.name, place: r.url, at_ms: null }));
   },
   useSecond: (machine, _typed, remembered): SecondSegment => ({
     // **What this person already keeps on that machine**, handed in by

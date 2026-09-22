@@ -27,7 +27,7 @@
 //
 // Run: `node scripts/check-tabs.mjs` (needs `cargo build -p khor-cli
 // -p khor-gui-core --bins` first, and system Chrome).
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -518,9 +518,12 @@ try {
   if (!pageWords.address) fail("probe dead: an address bar with no name");
   else ok("the browsing landing names its address bar");
 
-  //    A page kept, made through the real backend rather than by
-  //    reaching into a file: the bridge is the node behind an HTTP
-  //    skin, so this is `Node::pin_web` and nothing else.
+  //    A page gone to, recorded through the real backend rather than by
+  //    reaching into a file: the bridge is the node behind an HTTP skin,
+  //    so this is `Node::recent_visit` and nothing else.
+  //    ⚠️ It was a *pinned* page (`pin_web`) until 2026-09-22; that column
+  //    is retired (docs/SHELL.md 第六轮) and what the fresh tab and the
+  //    address bar remember now is where this person has been.
   const KEPT = "https://khor.example/kept";
   const ask = (cmd, args) =>
     fetch(`http://127.0.0.1:${BRIDGE_PORT}/${cmd}`, {
@@ -528,7 +531,7 @@ try {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(args),
     }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(`${cmd}: ${r.status}`))));
-  await ask("pin_web", { machine: "alpha", url: KEPT, on: true });
+  await ask("recent_visit", { kind: "page", machine: "alpha", place: KEPT });
   // **Left and come back, because the fresh tab reads its pins once on
   // mount** (`use-places`). This used to happen by accident: the
   // section before it ended on the files landing, which unmounted this
@@ -544,7 +547,7 @@ try {
   await until("the kept page on the fresh tab", 20_000, async () =>
     (await page.locator(`[data-place="${KEPT}"]`).count()) === 1,
   );
-  ok("a pinned page reaches the browser landing's fresh tab");
+  ok("a page gone to reaches the browser landing's fresh tab");
 
   //    **The second segment completes from memory, not from a machine.**
   //    Nobody can enumerate the web, so what the box offers is what this
@@ -911,6 +914,22 @@ try {
           }
           cli(envB, "tabs", "unpin", last);
         }
+      }
+    }
+
+    //  ── 置顶的目录 retired (docs/SHELL.md 第六轮) ──
+    //
+    //  `khor pin -d` wrote the column the fresh tab no longer draws. It
+    //  refuses now, **non-zero**, and says which verbs do the job — a
+    //  verb that went on answering 0 would be a pin written somewhere
+    //  nothing reads.
+    {
+      for (const verb of ["pin", "unpin"]) {
+        const r = spawnSync(KHOR, [verb, "-d", "beta", "/tmp"], { env: envB, encoding: "utf8", timeout: 30_000 });
+        const said = `${r.stdout}${r.stderr}`;
+        if (r.status === 0 || !said.includes("khor ws pin")) {
+          fail(`\`khor ${verb} -d\` answered ${r.status} and ${JSON.stringify(said.trim().slice(0, 120))} — retired, it must refuse and name \`khor ws pin\``);
+        } else ok(`\`khor ${verb} -d\` refuses and points at \`khor ws pin\``);
       }
     }
 

@@ -305,9 +305,9 @@ export function BrowseLanding({
   // list it came from. The address bar falls back to these when a
   // machine stops answering, and the hint is what stops a remembered
   // address passing for a live one.
-  const remembered: Remembered[] = placesInOrder(places).map(({ place, pinned }) => ({
+  const remembered: Remembered[] = placesInOrder(places).map((place) => ({
     place,
-    hint: pinned ? kind.words.pinned : kind.words.recent,
+    hint: kind.words.recent,
   }));
 
   // Pointing the open tab somewhere puts the switcher away on either

@@ -13,40 +13,6 @@ use khor_node::Node;
 use serde::Serialize;
 use ts_rs::TS;
 
-/// One pinned page, with the exit machine's current name looked up here —
-/// the pin is keyed by device id (`khor_sync::webpins`), and a machine
-/// that left the table keeps its pin under a short hex, so an unpin stays
-/// reachable from everywhere.
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct WebPinRow {
-    pub device: String,
-    pub name: String,
-    pub url: String,
-}
-
-pub fn web_pins(root: &Path) -> Result<Vec<WebPinRow>, String> {
-    let n = Node::open(root.to_path_buf())?;
-    let devices = n.devices()?;
-    Ok(n.web_pins()?
-        .into_iter()
-        .map(|(device, url)| WebPinRow {
-            name: devices
-                .iter()
-                .find(|d| d.id == device)
-                .map(|d| d.name.clone())
-                .unwrap_or_else(|| device.chars().take(8).collect()),
-            device,
-            url,
-        })
-        .collect())
-}
-
-/// Pins or unpins a page against an exit machine. `on` is explicit for
-/// the reason every pin API's is (`api.ts`).
-pub fn pin_web(root: &Path, machine: &str, url: &str, on: bool) -> Result<(), String> {
-    Node::open(root.to_path_buf())?.pin_web(machine, url, on)
-}
-
 /// The script every borrowed page runs before its own scripts do.
 ///
 /// **Lives here, in the shared half, on purpose.** Each skin builds its

@@ -158,7 +158,8 @@ pub fn answer(
             crate::workspaces::ws_rm(root, &arg("device")?, &arg("path")?)?;
             Ok("null".to_owned())
         }
-        // `on` is explicit rather than a toggle, for `pin_dir`'s reason.
+        // `on` is explicit rather than a toggle: a toggle sent twice is a
+        // no-op nobody can see.
         "ws_pin" => {
             crate::workspaces::ws_pin(root, &arg("device")?, &arg("path")?, flag("on")?)?;
             Ok("null".to_owned())
@@ -523,7 +524,6 @@ pub fn answer(
         "pull" => {
             to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
         }
-        "dir_pins" => to_json(&crate::files::dir_pins(root)?),
         // Taking a path off a disk. `machine` empty is this one, which
         // is also the only one with a recycle bin behind it.
         "remove" => {
@@ -588,10 +588,6 @@ pub fn answer(
         // Whether this browser draws PDFs itself — asked for
         // `trash_here`'s reason, never read off `navigator`.
         "pdf_here" => to_json(&crate::files::pdf_here()),
-        "pin_dir" => {
-            crate::files::pin_dir(root, &arg("machine")?, &arg("path")?, flag("on")?)?;
-            Ok("null".to_owned())
-        }
         "term_open" => {
             crate::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
             Ok("null".to_owned())
@@ -636,11 +632,6 @@ pub fn answer(
         }
         "forget_recent" => {
             crate::recents::forget_recent(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
-            Ok("null".to_owned())
-        }
-        "web_pins" => to_json(&crate::web::web_pins(root)?),
-        "pin_web" => {
-            crate::web::pin_web(root, &arg("machine")?, &arg("url")?, flag("on")?)?;
             Ok("null".to_owned())
         }
         // The other half of that: giving the borrow back. Both roads need

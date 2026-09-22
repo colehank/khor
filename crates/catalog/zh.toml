@@ -284,10 +284,10 @@ usage = """
                         不给名字=撤销,它自己的名原样露出
                         -m 改机器名;机器改的只是人看的那个名字,
                         网络归档用的频道名不动,所以对话和已读都不搬家
-  pin [-m|-d] <session|机器|机器 路径>
-                        置顶(-m 置顶机器,-d 置顶某台机器上的目录);
-                        在哪台上置顶都一样,全网同一份
-  unpin [-m|-d] <session|机器|机器 路径>
+  pin [-m] <session|机器>
+                        置顶(-m 置顶机器);在哪台上置顶都一样,全网同一份。
+                        目录要置顶就把它加成工作区再 ws pin;网页是 tabs pin
+  unpin [-m] <session|机器>
                         取消置顶
   close <session>       关掉(session 停掉进程;对话收起这一行,历史和
                         收下的文件都留着,再来消息它自己回来)
@@ -1203,6 +1203,9 @@ no-such-message = "没有这条: {0}"
 # 指着一枚不在的标签页(`khor_node::tabs`)。**拒绝而不是顺手建一枚**:
 # 提这个 id 的人对「现在开着什么」的印象已经旧了,底下冒出一行会把这件事盖住。
 no-such-tab = "没有这枚标签页: {0}"
+# `khor pin -d` / `unpin -d` 退役(docs/SHELL.md 第六轮):「置顶的目录」那一栏撤了,
+# 一个要常去的目录就是一个置顶的工作区。拒绝,退出码非 0,给出做这件事的动词。
+dir-pin-retired = "「置顶的目录」已经退役:目录现在是工作区。用 khor ws add -m {0} {1},再 khor ws pin -m {0} {1}"
 # 删除一个置顶的标签页(`khor_node::tabs::close`)。置顶就是「别让我顺手关掉它」,
 # 所以先取消置顶才能删——窗口和 `khor tabs close` 都走这一句。
 tab-pinned = "这个标签页已置顶,先取消置顶再删除"
@@ -3415,16 +3418,6 @@ uploading = "上传中…"
 # because the person's next step is the same: try again or go smaller,
 # and the refusal sentence beside it says which it was.
 send-file-failed = "发不出去"
-# A fresh tab, before it has been pointed anywhere: what is on offer is
-# where this person already goes. Empty says what would be here — a
-# blank region reads as broken, and this landing has no machine list
-# left to explain it (标签页一期: the sidebar went away).
-no-pinned-dirs = "还没有置顶的目录"
-# …and the way onward, as a thing to press. An empty state that only
-# names what is missing is a dead end wearing a sentence; this one opens
-# a machine's directory, which is where pinning starts. Pressing it
-# opens this machine's home — the one browse that always exists.
-go-pin-a-dir = "去一台机器挑个目录置顶"
 # ── the file landing's tabs (标签页一期) ──────────────
 # The landing is a browser now: tabs across the top, one address bar
 # under them, and a fresh tab that offers the places already gone to.
@@ -3452,12 +3445,10 @@ switch-tabs = "{0} 个标签页"
 # 「机器和地方」, which names nothing anybody types.
 address-dir = "机器和路径"
 address-page = "机器和网址"
-# The fresh tab's sections. A pin is a decision, so it is always on
-# top — and what got pinned differs per landing, so the heading does
-# too.
-pinned-dirs = "置顶的目录"
-pinned-webs = "置顶的网页"
-# …and the other heading, **shared by both on purpose**. 「最近去过」 is
+# ⚠️ 墓碑:新标签页原来还有「置顶的目录 / 置顶的网页」一栏和它们的空状态
+# (`pinned-dirs`、`pinned-webs`、`no-pinned-dirs`、`no-pinned-webs`、`go-pin-a-dir`),
+# 2026-09-22 退役(docs/SHELL.md 第六轮:浏览的置顶只有侧边栏这一处)。
+# The fresh tab's one heading, **shared by both landings on purpose**. 「最近去过」 is
 # already about the going and not about what was gone to, so it is one
 # fact in one place rather than two keys with one text (which this file
 # refuses at build time anyway). The key stopped saying `dirs` when the
@@ -3478,8 +3469,7 @@ web-opened-here = "打开了"
 # 浏览标签右键里的一项,只在从本机出去的标签上:借网的页面交给系统浏览器
 # 就换了出口,那不是同一个页面。
 open-in-browser = "在系统浏览器中打开"
-no-pinned-webs = "还没有置顶的网页"
-# The browser landing's way onward, `go-pin-a-dir`'s sibling. Pressing
+# The browser landing's way onward from a fresh tab with nothing on it. Pressing
 # it picks an exit to borrow — the first machine that is not this one,
 # because borrowing your own network is refused by design (borrow-self).
 # When the network has no other machine it is a plain sentence: a

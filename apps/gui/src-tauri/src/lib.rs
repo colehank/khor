@@ -530,11 +530,6 @@ async fn pull(machine: String, path: String) -> Result<String, String> {
     khor_gui_core::files::pull(&Node::root_from_env(), &machine, &path).await
 }
 
-#[tauri::command]
-fn dir_pins() -> Result<Vec<khor_gui_core::files::DirPinRow>, String> {
-    khor_gui_core::files::dir_pins(&Node::root_from_env())
-}
-
 /// Takes a path off a machine's disk. This machine's goes to the
 /// recycle bin; every other machine's is deleted (`files::remove`).
 #[tauri::command]
@@ -627,11 +622,6 @@ fn pdf_here() -> bool {
     khor_gui_core::files::pdf_here()
 }
 
-#[tauri::command]
-fn pin_dir(machine: String, path: String, on: bool) -> Result<(), String> {
-    khor_gui_core::files::pin_dir(&Node::root_from_env(), &machine, &path, on)
-}
-
 /// The seven terminal commands are one attachment registry in gui-core,
 /// mirroring chat: the window replays the feed and tails it, because
 /// a byte stream is the shape both skins can serve
@@ -698,16 +688,6 @@ fn recent_visit(kind: String, machine: String, place: String) -> Result<(), Stri
 #[tauri::command]
 fn forget_recent(kind: String, machine: String, place: String) -> Result<(), String> {
     khor_gui_core::recents::forget_recent(&Node::root_from_env(), &kind, &machine, &place)
-}
-
-#[tauri::command]
-fn web_pins() -> Result<Vec<khor_gui_core::web::WebPinRow>, String> {
-    khor_gui_core::web::web_pins(&Node::root_from_env())
-}
-
-#[tauri::command]
-fn pin_web(machine: String, url: String, on: bool) -> Result<(), String> {
-    khor_gui_core::web::pin_web(&Node::root_from_env(), &machine, &url, on)
 }
 
 /// Gives a page's borrow back.
@@ -2696,8 +2676,6 @@ pub fn run() {
             history_follow,
             ls,
             pull,
-            dir_pins,
-            pin_dir,
             term_open,
             term_attach,
             term_stream,
@@ -2708,8 +2686,6 @@ pub fn run() {
             recents,
             recent_visit,
             forget_recent,
-            web_pins,
-            pin_web,
             close_web,
             open_page,
             move_page,

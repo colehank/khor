@@ -869,6 +869,13 @@ fn config(rest: &[String]) -> Result<(), String> {
 /// listing that hands out a number is the same listing it came from.
 fn tabs(rest: &[String]) -> Result<(), String> {
     let root = Node::root_from_env();
+    // The retired 「置顶的网页 / 置顶的目录」 rows become sidebar pins the
+    // first time anything looks at the tabs (`Node::migrate_place_pins`,
+    // once per row). A failure here is not this verb's: the tabs are read
+    // either way.
+    if let Ok(n) = node() {
+        let _ = n.migrate_place_pins();
+    }
     // One kind today (`page`), and the store is keyed by it so the
     // editor tab can land beside rather than inside
     // (`khor_node::tabs`). Not a flag: a word nobody can use yet is a
@@ -3669,7 +3676,12 @@ fn pinning(rest: &[String], on: bool) -> Result<(), String> {
     let n = node()?;
     match rest {
         [flag, machine] if flag == "-m" || flag == "--machine" => n.pin_device(machine, on),
-        [flag, machine, path] if flag == "-d" || flag == "--dir" => n.pin_dir(machine, path, on),
+        // **Retired** (docs/SHELL.md 第六轮): a pinned directory is a pinned
+        // workspace now — the list the fresh tab's 「置顶的目录」 column used
+        // to stand in for. Refused, non-zero, with the verbs that do it.
+        [flag, machine, path] if flag == "-d" || flag == "--dir" => {
+            Err(khor_catalog::msg::dir_pin_retired(machine, path))
+        }
         [id] => n.pin_session(&SessionId(id.clone()), on),
         _ => Err(usage_text().into()),
     }

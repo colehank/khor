@@ -22,11 +22,10 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
-import { fetchDirPins, fetchLs, pinDir, type DirListing } from "@/api";
+import { fetchLs, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { RowMenu } from "@/components/RowMenu";
-import { IconPin } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -51,9 +50,7 @@ export function sizeWord(bytes: number): string {
 
 export function FilesPane({
   machine,
-  device,
   path,
-  narrow,
   onPath,
   onLanded,
   onFile,
@@ -64,11 +61,8 @@ export function FilesPane({
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
-  /** Its device id — what a directory pin is keyed by. */
-  device: string;
   /** Where to open; "" is that machine's home. */
   path: string;
-  narrow: boolean;
   /** Where the tab should now be. Called both for a step the person
       took and for the home a `""` resolved to — the tab holds the
       answer, this pane only ever asks. */
@@ -116,21 +110,11 @@ export function FilesPane({
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { took, take } = useTake(machine);
-  // This machine's pinned paths. Refreshed with the pins call itself:
-  // each toggle answers by re-asking, so the mark never guesses.
-  const [pinned, setPinned] = useState<Set<string>>(new Set());
   /** Bumped when this pane changed the directory under itself, which is
       the one change its own effect cannot notice: the path did not
       move, so nothing in the deps would. */
   const [again, setAgain] = useState(0);
 
-  const loadPins = () => {
-    fetchDirPins()
-      .then((rows) =>
-        setPinned(new Set(rows.filter((r) => r.device === device).map((r) => r.path))),
-      )
-      .catch(() => {});
-  };
   // The pane opens where the tab points — "" asks for home, and the
   // answer carries the real path, which is handed straight back so the
   // tab stops saying "home" and starts saying where that is.
@@ -175,13 +159,6 @@ export function FilesPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [machine, path, again]);
 
-  useEffect(loadPins, [device]);
-
-  const togglePin = (p: string) => {
-    pinDir(machine, p, !pinned.has(p))
-      .then(loadPins)
-      .catch(() => {});
-  };
 
   const up = () => {
     if (!listing) return;
@@ -301,44 +278,10 @@ export function FilesPane({
                     <Mark mark={marks?.get(full)} dir />
                   </button>
                   </RowMenu>
-                  {/* The two states get the two words the row action rule
-                      demands; the mark stays visible once set. */}
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    data-pin-dir={e.name}
-                    data-on={pinned.has(full)}
-                    aria-label={pinned.has(full) ? gui.unpin : gui.pin}
-                    // The session rows' visibility rule, worn here too:
-                    // narrow draws it always (the browser face put this
-                    // pane on phones, 批⑦, and a phone has no pointer to
-                    // summon it with); wide reveals it under the pointer
-                    // or keyboard focus, because a pin on every row of a
-                    // directory was the pane's loudest repetition. A
-                    // pinned row's mark stays drawn on both faces — a
-                    // fact, not an entry point (`SessionsList`).
-                    //
-                    // **`min-*` rather than a size**: `cn()` cannot lift
-                    // the icon variant's `h-ctl-md`/`w-ctl-md` off (that
-                    // is `button.tsx`'s own measurement — tailwind-merge
-                    // does not read `ctl-*` as a size, so both classes
-                    // survive and the stylesheet's order decides), and a
-                    // floor does not need the height taken off first.
-                    // The glyph keeps its own size; what grows is the
-                    // box, and the ghost wash paints that box.
-                    //
-                    // What it costs, out loud: the pin takes the floor's
-                    // width where it took the icon size, and the half
-                    // holding the directory's name gives that up.
-                    className={cn(
-                      "min-h-touch min-w-touch flex-none text-muted-foreground",
-                      !narrow &&
-                        "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 data-[on=true]:opacity-100",
-                    )}
-                    onClick={() => togglePin(full)}
-                  >
-                    <IconPin pinned={pinned.has(full)} />
-                  </Button>
+                  {/* ⚠️ 墓碑: a pin button stood here, writing 「置顶的目录」
+                      — retired with that column (docs/SHELL.md 第六轮).
+                      A directory kept on purpose is a workspace, and the
+                      workspace list's own 置顶 is where it is pinned. */}
                 </div>
               ) : (
                 <div

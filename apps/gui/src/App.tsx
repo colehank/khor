@@ -1774,7 +1774,6 @@ export default function App() {
         key={`${openWs.device} ${openWs.path}`}
         treePane={treePane}
         machine={openWs.machine}
-        device={openWs.device}
         // **Compared by channel, never by the name on the glass**: the
         // shown name is the user's to retype, and a machine renamed to
         // match another's label must not start answering for it

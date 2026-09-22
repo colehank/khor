@@ -269,41 +269,18 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         other => panic!("an unpaired fetch-path must be refused, got {other:?}"),
     }
 
-    // A directory pinned on beta names alpha's disk, and reaches alpha
-    // over the same pump as every replicated decision — pin here,
-    // listed there.
-    b.pin_dir("alpha", browse.to_str().unwrap(), true).unwrap();
-    timeout(Duration::from_secs(60), b.sync_now())
-        .await
-        .expect("sync must not hang")
-        .unwrap();
-    let pins = a.dir_pins().unwrap();
-    let alpha_hex = a.device_str();
-    assert!(
-        pins.iter()
-            .any(|(d, p)| d == alpha_hex && p == browse.to_str().unwrap()),
-        "a pin made on beta must reach alpha: {pins:?}"
-    );
-
-    // A web page pinned against alpha as its exit travels the same pump —
-    // the fourth pins table, keyed URL-and-machine (docs/NET.md 借网).
-    b.pin_web("alpha", "https://example.com/read", true)
-        .unwrap();
-    timeout(Duration::from_secs(60), b.sync_now())
-        .await
-        .expect("sync must not hang")
-        .unwrap();
-    let webs = a.web_pins().unwrap();
-    assert!(
-        webs.iter()
-            .any(|(d, u)| d == alpha_hex && u == "https://example.com/read"),
-        "a web pin made on beta must reach alpha: {webs:?}"
-    );
+    // ⚠️ 墓碑 (2026-09-22, docs/SHELL.md 浏览的置顶那一节): a directory
+    // pin and a web pin made on beta were read back on alpha here. Both
+    // tables are retired as things anybody writes — a pin is a sidebar's
+    // pinned group now, and the old rows move there once
+    // (`Node::migrate_place_pins`, its own test) — so nothing is pinned
+    // here to travel.
 
     // Where this person has been rides the same pump — and so does
     // "stop suggesting this", which is the half a per-device store
     // cannot do at all: dismissing on the desk has to reach the phone,
     // or the phone keeps offering what was already waved away.
+    let alpha_hex = a.device_str();
     let place = browse.to_str().unwrap();
     b.recent_visit(khor_node::PlaceKind::Dir, "alpha", place)
         .unwrap();

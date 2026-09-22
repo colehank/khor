@@ -45,9 +45,7 @@ import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
 import type { SearchHit } from "./gen/bindings/SearchHit";
-import type { DirPinRow } from "./gen/bindings/DirPinRow";
 import type { RecentRow } from "./gen/bindings/RecentRow";
-import type { WebPinRow } from "./gen/bindings/WebPinRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
 import type { TermStart } from "./gen/bindings/TermStart";
 import type { TermChunk } from "./gen/bindings/TermChunk";
@@ -104,9 +102,7 @@ export type {
   DirListing,
   Found,
   SearchHit,
-  DirPinRow,
   RecentRow,
-  WebPinRow,
   WebBorrow,
   AgentRow,
   KnownAgent,
@@ -1032,9 +1028,6 @@ export const searchIn = (machine: string, dir: string, query: string) =>
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
 export const fetchTrashHere = () => call<boolean>("trash_here");
 /** Every pinned directory, machine names already looked up. */
-export const fetchDirPins = () => call<DirPinRow[]>("dir_pins");
-export const pinDir = (machine: string, path: string, on: boolean) =>
-  call<null>("pin_dir", { machine, path, on });
 /**
  * Where this person has been, of one kind ("dir" | "page"), most recent
  * first and machine names already looked up.
@@ -1055,9 +1048,6 @@ export const recentVisit = (kind: string, machine: string, place: string) =>
 export const forgetRecent = (kind: string, machine: string, place: string) =>
   call<null>("forget_recent", { kind, machine, place });
 /** Every pinned page, exit-machine names already looked up. */
-export const fetchWebPins = () => call<WebPinRow[]>("web_pins");
-export const pinWeb = (machine: string, url: string, on: boolean) =>
-  call<null>("pin_web", { machine, url, on });
 /**
  * Gives a page's borrow back: the far machine's network stops being
  * borrowed and the local proxy port goes.

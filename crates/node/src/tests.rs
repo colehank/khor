@@ -3336,3 +3336,45 @@ fn the_desktop_app_is_up_only_while_its_recorded_pid_is() {
         "a recorded pid nobody is running is an app that is not there"
     );
 }
+
+// ── 浏览的置顶只有侧边栏这一处 (docs/SHELL.md 第六轮, 2026-09-22) ─────
+
+/// The two retired columns' rows become sidebar pins, **once**: a pinned
+/// page becomes a pinned browse tab on its exit machine, a pinned
+/// directory becomes a pinned workspace on the machine that holds it.
+/// Run again, nothing moves; a tab somebody closed since is not brought
+/// back.
+#[test]
+fn place_pins_move_to_the_sidebars_once() {
+    let r = root("place-pins");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let here = n.name().to_owned();
+    n.pin_web(&here, "https://khor.example/kept", true).unwrap();
+    n.pin_dir(&here, "/srv/kept/dir", true).unwrap();
+
+    assert_eq!(n.migrate_place_pins().unwrap(), 2, "both rows move");
+    let tabs = crate::tabs::list(&r, "page");
+    assert_eq!(tabs.tabs.len(), 1);
+    assert_eq!(tabs.tabs[0].url, "https://khor.example/kept");
+    assert_eq!(tabs.tabs[0].device, n.device_str());
+    assert!(tabs.tabs[0].pinned, "a pinned page is a pinned tab");
+    let ws = n.workspaces().unwrap();
+    assert!(
+        ws.iter()
+            .any(|w| w.path == "/srv/kept/dir" && w.pinned && w.device == n.device_str()),
+        "a pinned directory is a pinned workspace: {ws:?}"
+    );
+
+    assert_eq!(n.migrate_place_pins().unwrap(), 0, "again, nothing moves");
+    assert_eq!(crate::tabs::list(&r, "page").tabs.len(), 1);
+
+    let id = crate::tabs::list(&r, "page").tabs[0].id.clone();
+    crate::tabs::pin(&r, "page", &id, false).unwrap();
+    crate::tabs::close(&r, "page", &id).unwrap();
+    assert_eq!(
+        n.migrate_place_pins().unwrap(),
+        0,
+        "a tab closed since is not brought back"
+    );
+    assert_eq!(crate::tabs::list(&r, "page").tabs.len(), 0);
+}
