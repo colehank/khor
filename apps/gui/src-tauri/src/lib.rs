@@ -1264,27 +1264,17 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 /// this on the next frame. Instead the frames are set here and set
 /// again whenever AppKit lays the title bar out afresh — a resize, a
 /// focus, a theme change — which is when it would put them back.
+///
+/// ⚠️ **Since 2026-09-22 this is the insurance, not the road** (docs/SHELL.md
+/// 插队:「左上角的系统按钮又超出侧边栏了, 注意守门」). The buttons came
+/// back on the sessions page from a relayout none of these events
+/// covered; `window_buttons::watch` (installed once, in `setup`) now puts
+/// them back whenever their frames change at all, and these calls stay
+/// because they cost a frame read each.
 #[cfg(target_os = "macos")]
 fn squeeze_the_window_buttons(window: &tauri::WebviewWindow) {
-    use objc2::msg_send;
-    use objc2::runtime::AnyObject;
-    use objc2_foundation::{NSPoint, NSRect};
     let Ok(win) = window.ns_window() else { return };
-    let w = win as *mut AnyObject;
-    // NSWindowButton: closeButton = 0, miniaturizeButton = 1, zoomButton = 2.
-    for (i, x) in [7.0f64, 25.0, 43.0].into_iter().enumerate() {
-        unsafe {
-            let button: *mut AnyObject = msg_send![w, standardWindowButton: i];
-            if button.is_null() {
-                continue;
-            }
-            let frame: NSRect = msg_send![button, frame];
-            if frame.origin.x == x {
-                continue;
-            }
-            let _: () = msg_send![button, setFrameOrigin: NSPoint::new(x, frame.origin.y)];
-        }
-    }
+    unsafe { window_buttons::squeeze(win as *mut objc2::runtime::AnyObject) }
 }
 
 /// `squeeze_the_window_buttons` on the main window, from anywhere that
@@ -2500,6 +2490,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
                 squeeze_the_window_buttons(&main);
+                // …and from now on they put themselves back
+                // (`window_buttons::watch`). `setup` runs on the main
+                // thread, and the main window lives as long as the app.
+                if let Ok(win) = main.ns_window() {
+                    unsafe { window_buttons::watch(win as *mut objc2::runtime::AnyObject) }
+                }
             }
             #[cfg(not(desktop))]
             let _ = app;
@@ -2745,6 +2741,9 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("tauri run");
 }
+
+#[cfg(target_os = "macos")]
+mod window_buttons;
 
 #[cfg(test)]
 mod tests {

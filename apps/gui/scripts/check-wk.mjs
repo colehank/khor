@@ -449,6 +449,69 @@ if (said.pdf?.loadFailed) {
   }
 }
 
+// ── The three window buttons stay in the rail (docs/SHELL.md 插队) ───
+//
+// 「左上角的系统按钮又超出侧边栏了, 注意守门」. Not WebKit, but a question
+// only a real AppKit window answers, which is why it lives in this
+// family: `examples/window_buttons.rs` builds a window in khor's style,
+// wears `src-tauri/src/window_buttons.rs` — the app's own lines, included
+// by path — and prints the three frames after a resize, an appearance
+// change, becoming key, a child view, and **a relayout no hook of ours
+// hears** (a title change). Twice:
+//
+//   - `events-only`, the app before 2026-09-22 (squeeze on events and
+//     nothing else) — the control arm: the relayout **must** move the
+//     buttons back to the SDK's spacing there, or the step proves
+//     nothing;
+//   - `watch`, the app: every step ends squeezed, in the 64-wide rail.
+{
+  const RAIL = 64;
+  const SQUEEZED = [7, 25, 43];
+  const run = (mode) => {
+    try {
+      const out = execFileSync(
+        "cargo",
+        ["run", "-q", "-j", "3", "-p", "khor-gui", "--example", "window_buttons", "--", mode],
+        { cwd: join(here, "../../.."), encoding: "utf8", timeout: 900_000, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      return out
+        .split("\n")
+        .filter((l) => l.startsWith("{"))
+        .map((l) => JSON.parse(l));
+    } catch (e) {
+      fail(`wk: the window-buttons probe did not run in ${mode} (${String(e.stderr ?? e.message).trim().slice(-300)})`);
+      return [];
+    }
+  };
+  const squeezed = (r) => JSON.stringify(r.xs) === JSON.stringify(SQUEEZED) && r.ends.every((e) => e <= RAIL);
+  const control = run("events-only");
+  const unseen = control.find((r) => r.step === "relayout");
+  console.log(`wk: buttons, events only  ${control.map((r) => `${r.step} ${JSON.stringify(r.xs)}`).join(" · ")}`);
+  if (!unseen) {
+    fail("wk: probe dead — the events-only window never reached its relayout step");
+  } else if (squeezed(unseen)) {
+    fail(
+      "wk: probe dead — with only the event hooks the relayout left the buttons squeezed, so that step moves nothing " +
+        "and cannot tell the observer from its absence",
+    );
+  }
+  const app = run("watch");
+  console.log(`wk: buttons, the app      ${app.map((r) => `${r.step} ${JSON.stringify(r.xs)}`).join(" · ")}`);
+  const steps = ["squeezed", "resize", "appearance", "key", "subview", "relayout"];
+  for (const step of steps) {
+    const r = app.find((x) => x.step === step);
+    if (!r) {
+      fail(`wk: the buttons' ${step} step never printed`);
+    } else if (!squeezed(r)) {
+      fail(
+        `wk: after ${step} the window buttons sit at ${JSON.stringify(r.xs)} ending ${JSON.stringify(r.ends)} — ` +
+          `squeezed is ${JSON.stringify(SQUEEZED)} inside the ${RAIL}-wide rail, whatever laid the title bar out ` +
+          "(「注意守门」, src-tauri/src/window_buttons.rs watch)",
+      );
+    }
+  }
+}
+
 // ── Printed, not asserted: the two ways out that are still open ──────
 console.log(`wk: bare        ${JSON.stringify(said.bare)}`);
 console.log(`wk: shimmed     ${JSON.stringify(said.shimmed)}`);
@@ -465,7 +528,7 @@ if (!bad) {
     "wk gate: on this WebKit the delete takes, and the script reaches the page, both parsed frames, " +
       "a scripted blank frame and a srcdoc frame once loaded — a blob: PDF in an iframe really paints, " +
       "and the editor's rows sit on the sheet's, and a wheel past the end of a pane moves neither the " +
-      "page nor the rail",
+      "page nor the rail — and the window buttons stay squeezed in the rail through a relayout nobody hooked",
   );
 }
 process.exitCode = bad ? 1 : 0;
