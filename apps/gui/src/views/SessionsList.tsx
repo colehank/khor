@@ -254,7 +254,7 @@ export function SessionsList({
       // out again here would be a second source that compiles, runs,
       // and says the wrong thing.
       label: gui.delete,
-      ask: closeWarning(r.kind),
+      ask: closeWarning(r.kind, r.imported),
       note: closeRefused.get(r.id),
       run: () => onClose(r),
     },
@@ -354,6 +354,10 @@ export function SessionsList({
     // sidebar.
     rowData: {
       "data-row": r.id,
+      // The row's shape (shell / tui / gui / chat …): what an import
+      // landed as is a fact the gates read (docs/SHELL.md 第八轮).
+      "data-kind": r.kind,
+      "data-imported": r.imported,
       "data-mux": r.mux,
       "data-word": r.word,
       "data-pinned": r.pinned,

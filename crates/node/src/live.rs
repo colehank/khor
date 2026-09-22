@@ -747,6 +747,21 @@ impl LiveKind {
     /// Kills the process if it still runs, then forgets the session.
     /// 失败沉底 is a list fact, not a registry fact — closing is how a
     /// settled row leaves the list.
+    /// Ends khor's own **lens** on a session, if it has one — the viewer
+    /// host a terminal face stood up to bridge into somebody else's
+    /// multiplexer or agent (`host::spawn_viewer_host`) — and nothing
+    /// else: the session, its process, its registry entry and its
+    /// vendor's files stay. What 删除 on an imported row does beside
+    /// taking it off the list (docs/SHELL.md 第八轮 第 3 条).
+    pub fn drop_lens(&self, id: &SessionId) {
+        let Some(dir) = self.dir_of(id) else { return };
+        if let Ok(vf) = crate::host::read_view_file(&dir)
+            && crate::link::pid_alive(vf.host_pid)
+        {
+            terminate(vf.host_pid);
+        }
+    }
+
     pub fn close_session(&self, id: &SessionId) -> Result<(), String> {
         let dir = self.existing_dir(id)?;
         if let Ok(hf) = crate::host::read_host_file(&dir) {
@@ -1147,6 +1162,38 @@ impl LiveKind {
     /// is one decides whether anyone can pronounce the session dead;
     /// which one it is decides whether a multiplexer session is already
     /// on this list (see [`LiveKind::rows`]).
+    /// The ids of every registry entry a khor host was started for —
+    /// what khor itself opened, as against what a hook or a sweep put
+    /// here. The session list's one-time upgrade reads it (docs/SHELL.md
+    /// 第八轮: khor 新建的照旧，自动发现的不保留).
+    pub fn hosted_ids(&self) -> Vec<SessionId> {
+        let mut out = Vec::new();
+        let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else {
+            return out;
+        };
+        for e in rd.flatten() {
+            if crate::host::read_host_file(&e.path()).is_err() {
+                continue;
+            }
+            let Ok((meta, _)) = read_pair(&e.path()) else {
+                continue;
+            };
+            let Some(name) = e.file_name().to_str().map(String::from) else {
+                continue;
+            };
+            let id = if meta.id.is_empty() {
+                let Some(leaf) = name.strip_prefix(&format!("{}-", meta.kind)) else {
+                    continue;
+                };
+                SessionId(format!("{}/{leaf}", meta.kind))
+            } else {
+                SessionId(meta.id.clone())
+            };
+            out.push(id);
+        }
+        out
+    }
+
     fn registry_rows(&self, watermark: &impl Fn(&str) -> i64) -> Vec<RegistryRow> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(sessions_dir(&self.root)) else {

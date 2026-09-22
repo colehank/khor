@@ -195,30 +195,10 @@ pub fn resume_session(
     agent: &str,
     session: &str,
 ) -> Result<String, String> {
-    let n = Node::open(root.to_path_buf())?;
-    // The same refusal the CLI and the wizard give (`agent_or_refuse`),
-    // for the same reason: one judgment, or it grows two.
-    let spec = n.agent_or_refuse(agent)?;
-    let seen = n
-        .agent_seen_row(agent, session)?
-        .ok_or_else(|| khor_catalog::msg::resume_unknown_session(session, agent))?;
-    // Its own name, or where it lives — an id is not something a
-    // person recognises in a list of rows (`khor agents sessions`
-    // prints the same two, in the same order, for the same reason).
-    let title = seen.title.clone().unwrap_or_else(|| {
-        std::path::Path::new(&seen.cwd)
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| agent.to_owned())
-    });
-    let id = n.reopen_gui_as(
-        std::path::Path::new(&seen.cwd),
-        &title,
-        &[Node::agent_launch(&spec)?],
-        agent,
-        session,
-    )?;
-    Ok(id.0)
+    // The node's since 第八轮: `khor import` does the same act.
+    Ok(Node::open(root.to_path_buf())?
+        .resume_agent_session(agent, session)?
+        .0)
 }
 
 #[cfg(test)]

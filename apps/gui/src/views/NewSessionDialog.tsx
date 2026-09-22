@@ -52,27 +52,15 @@
 // the id doubles as the registration's name so two machines attaching
 // the same agent arrive at the same 类.
 //
-// **已有的对话** is what one registered agent said it already has
-// (`session/list` → the agents doc → every machine on the mesh). Two
-// judgments hold this section up and both are load-bearing:
-//
-//  1. **Four answers, four sentences.** Never asked / it cannot list /
-//     it has none / here they are. An empty list collapses the first
-//     three into one shape, and the person's next move differs in all
-//     of them — go ask, stop asking, open a new one, pick one. The
-//     wire type (`AgentSaid`) carries `rows` on one variant only, so
-//     this face cannot flatten them even by accident.
-//  2. **Asking starts an agent process — measured 1.5s against a real
-//     `@claude-acp` with its package cached, 5.64s without, against
-//     0.017s to read what was recorded.** So the read runs when a person
-//     picks an agent, and the ask is a button they press (or the one
-//     beat right after they attached something, which is the same
-//     press). Nothing on a timer may ask.
+// ⚠️ 墓碑 (2026-09-22, docs/SHELL.md 第八轮): **已有的对话** — what a
+// registered agent said it already has (`session/list`), with its four
+// sentences and its 问一次 — stood here. It moved to 导入 whole
+// (`ImportDialog`): continuing a conversation that exists is bringing
+// something in, not starting something, and one act has one place.
 import { useEffect, useState } from "react";
 
 import {
   agentAsk,
-  agentSeen,
   agents as fetchAgents,
   agentsKnown,
   agentsKnownTaken,
@@ -81,10 +69,8 @@ import {
   openSession,
   openTermOn,
   registerKnownAgent,
-  resumeSession,
   tell,
   type AgentRow,
-  type AgentSaid,
   type DeviceRow,
   type KnownAgent,
   type PlaceRow,
@@ -180,13 +166,6 @@ export function NewSessionDialog({
   const [taken, setTaken] = useState<[string, number, number] | null>(null);
   const [query, setQuery] = useState("");
   const [attaching, setAttaching] = useState<string | null>(null);
-  // **What this agent said, and which agent said it.** Kept as a pair
-  // because the answer arrives after the click that asked for it: a
-  // person switching agents faster than the read returns would
-  // otherwise see one agent's conversations under another's name,
-  // which is the kind of wrong that looks entirely plausible.
-  const [said, setSaid] = useState<{ of: string; answer: AgentSaid } | null>(null);
-  const [asking, setAsking] = useState<string | null>(null);
 
   // Reopening must not inherit a stale attempt (TellDialog's rule), and
   // the registry is re-read each time: it syncs from other machines, so
@@ -225,8 +204,6 @@ export function NewSessionDialog({
     setBrowsing(false);
     setQuery("");
     setAttaching(null);
-    setSaid(null);
-    setAsking(null);
     let live = true;
     // **Read on opening, like the registry above it.** A place list
     // cached across openings would be answering with where this person
@@ -283,42 +260,12 @@ export function NewSessionDialog({
 
   const why = (e: unknown) => setError(String(e instanceof Error ? e.message : e));
 
-  /** Reads what was recorded. **No process** — this is the 0.017s half,
-      which is why it may run on a pick. */
-  const readSeen = (name: string) => {
-    setSaid(null);
-    agentSeen(name)
-      .then((answer) => setSaid({ of: name, answer }))
-      .catch(why);
-  };
-
-  /** Puts the question to the agent. **Starts it.** Only ever from a
-      press, or from the beat right after an attach — which is the same
-      press, one step on, and is what keeps this face and `khor agents
-      add` telling a person the same thing. */
-  const ask = (name: string) => {
-    setAsking(name);
-    // Not cancelled when this dialog closes: the answer is written to
-    // the agents doc and syncs, so a question already paid for is
-    // worth keeping even if nobody is left watching. Only the painting
-    // is guarded, by the name it belongs to.
-    agentAsk(name)
-      .then((answer) => setSaid({ of: name, answer }))
-      .catch(why)
-      .finally(() => setAsking((n) => (n === name ? null : n)));
-  };
-
   // Picking anything but claude settles the form too: only claude has a
   // terminal khor knows how to open, so leaving 终端 selected would send
   // a refusal the person could have been spared.
   const pick = (name: string) => {
     setAgent(name);
     if (name !== "claude") setForm("chat");
-    // khor's own two have no recorded answer and never will — khor
-    // reads their conversations off disk. Asking the store about them
-    // would paint 「还没问过」 about a question that does not apply.
-    if (registered(name)) readSeen(name);
-    else setSaid(null);
   };
 
   const browse = () => {
@@ -350,29 +297,15 @@ export function NewSessionDialog({
         setAgent(id);
         setForm("chat");
         setBrowsing(false);
-        // Nothing recorded yet, and that is a real state rather than a
-        // gap: it is what shows if the question below fails.
-        setSaid({ of: id, answer: { said: "unasked" } });
-        ask(id);
+        // Asked once, the way `khor agents add` does at this point —
+        // what it says it has lands among the import candidates
+        // (docs/SHELL.md 第八轮: 已有的对话 moved to 导入). Not painted
+        // here, and not cancelled when this dialog closes: the answer
+        // is written to the agents doc and syncs.
+        agentAsk(id).catch(() => {});
       })
       .catch(why)
       .finally(() => setAttaching(null));
-  };
-
-  /** Opens a conversation that already exists. It brings its own
-      directory and its own name, so 目录 and 名字 are not sent — the
-      row prints where it lands for exactly that reason. */
-  const resume = (session: string) => {
-    if (opening) return;
-    setOpening(true);
-    setError(null);
-    resumeSession(agent, session)
-      .then((id) => {
-        onOpenChange(false);
-        onOpened(id);
-      })
-      .catch(why)
-      .finally(() => setOpening(false));
   };
 
   /** The machine the act lands on, by name. `machine` empty is this
@@ -405,37 +338,6 @@ export function NewSessionDialog({
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => setOpening(false));
   };
-
-  // **The four answers, kept four.** `answer` is null only while the
-  // read is still out — which is its own case again, for the reason
-  // `listed` exists: a question not yet answered is not a fact.
-  //
-  // Written as one chain so the four are visibly exhaustive. Note that
-  // `rows` is reachable only inside the last branch — that is the wire
-  // type doing the work, and it is why 「它说它没有」 cannot quietly
-  // become 「还没问过」 here.
-  const answer = said !== null && said.of === agent ? said.answer : null;
-  const mark =
-    answer === null
-      ? "reading"
-      : answer.said === "unasked"
-        ? "unasked"
-        : answer.said === "cannot"
-          ? "cannot"
-          : answer.rows.length === 0
-            ? "none"
-            : "sessions";
-  const sentence =
-    mark === "unasked"
-      ? gui.new_session_seen_unasked
-      : mark === "cannot"
-        ? gui.new_session_seen_cannot
-        : mark === "none"
-          ? gui.new_session_seen_none
-          : // A listing says itself; a sentence over it would be a
-            // count nobody asked for.
-            null;
-  const rows = answer !== null && answer.said === "sessions" ? answer.rows : [];
 
   return (
     <>
@@ -697,70 +599,6 @@ export function NewSessionDialog({
               {gui.view_terminal}
             </Button>
           </div>
-          {/* **Only for an agent that was registered.** khor finds
-              claude's and codex's conversations by reading their files;
-              this section is the *other* discovery path, and pointing
-              it at them would paint 「还没问过」 about a question that
-              does not apply to them. */}
-          {registered(agent) && (
-            <div data-agent-seen data-said={mark} className="flex min-w-0 flex-col gap-1 text-sm">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-muted-foreground">{gui.new_session_seen}</span>
-                {/* **The only thing here that starts a process.** It is
-                    a button because of that, and for no other reason:
-                    seconds against 0.017s to read what was recorded. */}
-                <Button
-                  size="sm"
-                  variant={mark === "unasked" ? "secondary" : "ghost"}
-                  data-agent-ask
-                  data-asking={asking === agent}
-                  disabled={asking !== null}
-                  onClick={() => ask(agent)}
-                >
-                  {asking === agent ? gui.new_session_seen_asking : gui.new_session_seen_ask}
-                </Button>
-              </div>
-              {/* **Three sentences for three answers**, and they are
-                  three because the next move differs: go ask, stop
-                  asking, open a new one. Nothing is said while the read
-                  is still out — an unanswered question is not a fact
-                  about this agent (the `listed` rule, one field up). */}
-              {sentence !== null && (
-                <span data-agent-seen-text className="text-xs text-muted-foreground">
-                  {sentence}
-                </span>
-              )}
-              {rows.length > 0 && (
-                <div className="flex max-h-40 min-w-0 flex-col gap-1 overflow-y-auto">
-                  {rows.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      data-seen-row={r.id}
-                      disabled={opening}
-                      onClick={() => resume(r.id)}
-                      className="flex w-full min-w-0 items-baseline justify-between gap-2 text-left text-xs hover:bg-accent"
-                    >
-                      {/* Its own name where it has one, and where it
-                          lives where it does not — an id is not
-                          something a person recognises. The cwd is
-                          shown either way, because clicking lands
-                          there rather than in the 目录 box above. */}
-                      <span className="min-w-0 flex-1 truncate">{r.title ?? r.cwd}</span>
-                      {r.title !== null && (
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          {r.cwd}
-                        </span>
-                      )}
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {(r.updated_at ?? "").slice(0, 10)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
             </>
           )}
           {kind !== "tell" && (
@@ -833,8 +671,7 @@ export function NewSessionDialog({
                 <div className="flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto">
                   {places.map((p) => {
                     // **The last component is the name, the rest is
-                    // where it lives** — the same split the 已有的对话
-                    // rows use, and the reason the path is not printed
+                    // where it lives** — the reason the path is not printed
                     // whole: the end of a path is what a person
                     // recognises, and it is the end a narrow dialog
                     // cuts off.

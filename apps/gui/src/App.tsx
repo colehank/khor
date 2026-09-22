@@ -105,6 +105,7 @@ import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
+import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
 
 /**
@@ -131,7 +132,7 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
     leaving a line is the wizard's first kind now (`NewSessionDialog`),
     one door for every kind of session. */
-type Sheet = "new" | "invite" | "join" | "ws-add" | null;
+type Sheet = "new" | "import" | "invite" | "join" | "ws-add" | null;
 
 const POLL_MS = 2000;
 /**
@@ -1206,6 +1207,8 @@ export default function App() {
     // First, because opening a session is the pane's first act
     // (会话身份批B: 建 session 是第一动作).
     { key: "new", label: gui.new_session, onSelect: () => openNewSession() },
+    // What khor found and has not put on the list (docs/SHELL.md 第八轮).
+    { key: "import", label: gui.import_sessions, onSelect: () => setSheet("import") },
   ];
   const deviceActions: PaneAction[] = [
     { key: "invite", label: gui.make_a_ticket, onSelect: () => setSheet("invite") },
@@ -1896,6 +1899,18 @@ export default function App() {
           quitNow();
         }}
         onKeep={() => setQuitting(null)}
+      />
+      <ImportDialog
+        open={sheet === "import"}
+        onOpenChange={(o) => setSheet(o ? "import" : null)}
+        // The first one imported is what the person came to see, the
+        // way a freshly opened session is (`NewSessionDialog` below).
+        onImported={(ids) => {
+          if (ids.length === 0) return;
+          setLanding("sessions");
+          sessionTabs.open(ids[0]);
+          setScreen("detail");
+        }}
       />
       <NewSessionDialog
         open={sheet === "new"}

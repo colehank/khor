@@ -24,6 +24,7 @@
 //! | `KHOR_STUB_LOGIN=1` | answers `session/new` with `auth_required` (-32000) |
 //! | `KHOR_STUB_LISTS=1` | advertises `sessionCapabilities.list`, and answers `session/list` |
 //! | `KHOR_STUB_LISTS=empty` | advertises it and answers with **no** sessions |
+//! | `KHOR_STUB_LIST_CWD=<dir>` | the listed conversations say they live in `dir` (default `/w/one`, `/w/two`) |
 //!
 //! `KHOR_STUB_LISTS` has three settings rather than two because the
 //! fact being tested has three states: an agent that cannot list, one
@@ -160,13 +161,22 @@ async fn main() -> agent_client_protocol::Result<()> {
                     return responder
                         .respond_with_error(agent_client_protocol::Error::method_not_found());
                 };
+                // Where the listed conversations say they live. A fixed
+                // path by default; a gate that goes on to *open* one
+                // (`session/load` wants a directory that exists) names a
+                // real one (`KHOR_STUB_LIST_CWD`).
+                let at = |fixed: &str| {
+                    std::env::var("KHOR_STUB_LIST_CWD")
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|_| PathBuf::from(fixed))
+                };
                 let sessions = if has {
                     vec![
-                        SessionInfo::new("sess-a", PathBuf::from("/w/one")).title("先看看那个文件"),
+                        SessionInfo::new("sess-a", at("/w/one")).title("先看看那个文件"),
                         // No title: an agent may have none, and the
                         // client must not turn that into an empty
                         // string on screen.
-                        SessionInfo::new("sess-b", PathBuf::from("/w/two")),
+                        SessionInfo::new("sess-b", at("/w/two")),
                     ]
                 } else {
                     vec![]

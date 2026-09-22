@@ -101,6 +101,9 @@ fn the_strip_records_the_word_the_list_shows_not_the_one_on_disk() {
     LiveKind::new(r.to_path_buf(), node.device())
         .register(&id, "tui", "an agent that died", Some(a_dead_pid()), None)
         .expect("registered");
+    // Found, not started: on the list because it was imported
+    // (docs/SHELL.md 第八轮) — the strip answers for the list's rows.
+    node.import(&id.0).expect("imported");
 
     node.record_day().expect("a sample");
 
@@ -130,6 +133,7 @@ fn a_sampled_minute_tells_a_missing_row_apart_from_a_missing_watcher() {
     LiveKind::new(r.to_path_buf(), node.device())
         .register(&id, "tui", "an agent", Some(std::process::id()), None)
         .expect("registered");
+    node.import(&id.0).expect("imported");
 
     node.record_day().expect("a sample");
 
@@ -169,6 +173,7 @@ fn a_second_node_on_the_same_home_keeps_what_the_first_recorded() {
         LiveKind::new(r.to_path_buf(), node.device())
             .register(&id, "tui", "an agent", Some(std::process::id()), None)
             .expect("registered");
+        node.import(&id.0).expect("imported");
         node.record_day().expect("a sample");
         assert_eq!(newest(&node, &id.0), DayCell::Word(State::Busy));
     }

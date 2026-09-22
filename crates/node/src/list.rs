@@ -202,6 +202,7 @@ mod tests {
 
     fn view(id: &str, at: u64, word: State, category: Option<&str>, home: u8) -> SessionView {
         SessionView {
+            imported: false,
             session: Session {
                 id: SessionId(id.to_owned()),
                 kind: Kind("tui".to_owned()),

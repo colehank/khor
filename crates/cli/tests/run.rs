@@ -102,6 +102,29 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
     };
     feed("SessionStart");
     feed("UserPromptSubmit");
+    // **Found is not listed** (docs/SHELL.md 第八轮): an agent somebody
+    // started in their own terminal is an import candidate until they
+    // bring it in — `khor import` lists it, `khor import <id>` does it.
+    let text = listed(&home);
+    assert!(
+        !text.contains("tui/cafe1234"),
+        "a hooked agent nobody imported is on the list:\n{text}"
+    );
+    let out = khor(&home).arg("import").output().unwrap();
+    let offered = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        offered.lines().any(|l| l.ends_with("tui/cafe1234")),
+        "the hooked agent is not offered for import:\n{offered}"
+    );
+    let out = khor(&home)
+        .args(["import", "tui/cafe1234"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let text = listed(&home);
     assert!(
         text.lines().any(|l| l.contains("tui/cafe1234")

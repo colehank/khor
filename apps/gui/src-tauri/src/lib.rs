@@ -2262,6 +2262,18 @@ fn agent_ask(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> {
     khor_gui_core::agents::agent_ask(&Node::root_from_env(), &name)
 }
 
+/// 导入 (docs/SHELL.md 第八轮): what could be brought onto the list.
+#[tauri::command]
+fn import_candidates() -> Result<Vec<khor_gui_core::import::CandidateRow>, String> {
+    khor_gui_core::import::import_candidates(&Node::root_from_env())
+}
+
+/// …and bringing it: the session ids, in order.
+#[tauri::command]
+fn import_sessions(ids: Vec<String>) -> Result<Vec<String>, String> {
+    khor_gui_core::import::import_sessions(&Node::root_from_env(), &ids)
+}
+
 /// Opens a conversation the agent already has, at **its own** cwd —
 /// not a fresh one, and not the wizard's 目录 answer.
 #[tauri::command]
@@ -2715,6 +2727,8 @@ pub fn run() {
             agent_seen,
             agent_ask,
             resume_session,
+            import_candidates,
+            import_sessions,
             takeover,
             takeover_term,
             system_unlock,

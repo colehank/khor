@@ -15,6 +15,7 @@ pub mod chat;
 pub mod code;
 pub mod files;
 pub mod git;
+pub mod import;
 pub mod recents;
 pub mod tabs;
 pub mod term;
@@ -51,6 +52,9 @@ pub struct SessionRow {
     /// paints a mark from this and **does not sort by it** — the rows
     /// arrive in the order the node decided.
     pub pinned: bool,
+    /// On the list because it was imported (docs/SHELL.md 第八轮): 删除
+    /// takes it off the list and nothing else.
+    pub imported: bool,
     /// Old news the default view folds into a tail count
     /// (`khor_node::SessionView::stale` — dead, looked at, and dead
     /// past the one threshold). The frontend folds, it never judges:
@@ -641,6 +645,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 pinned: v.pinned,
                 stale: v.stale,
                 quiet: v.quiet,
+                imported: v.imported,
                 category: v.session.category,
                 place: v.session.place,
                 mux: v.session.mux,

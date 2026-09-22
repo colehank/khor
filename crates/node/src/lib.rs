@@ -115,6 +115,7 @@ use khor_sync::pins::{PinDoc, pins_dir};
 /// callers cannot name is a method they cannot call.
 pub use khor_sync::recents::Kind as PlaceKind;
 use khor_sync::recents::{RecentDoc, recents_dir};
+use khor_sync::roster::{RosterDoc, roster_dir};
 use khor_sync::seen::{SeenDoc, seen_dir};
 use khor_sync::store::{Loaded, load};
 use khor_sync::titles::{TitleDoc, titles_dir};
@@ -170,6 +171,10 @@ pub struct SessionView {
     /// judgment; docs/SESSION.md 离线不是第七个词, this is that axis's
     /// second case: the machine is reachable, the *signal* is not).
     pub quiet: bool,
+    /// On the list because somebody imported it (`khor_sync::roster`,
+    /// docs/SHELL.md 第八轮) — so 删除 takes it off the list and leaves
+    /// the session itself alone, and the delete window says exactly that.
+    pub imported: bool,
 }
 
 /// How long a dead, looked-at row stays on the default list before it
@@ -1385,6 +1390,12 @@ impl Node {
         load(&pins_dir(&self.root), self.peer)
     }
 
+    /// What is on the session list (`khor_sync::roster`, docs/SHELL.md
+    /// 第八轮).
+    pub(crate) fn roster_loaded(&self) -> Result<Loaded<RosterDoc>, String> {
+        load(&roster_dir(&self.root), self.peer)
+    }
+
     pub(crate) fn dirpins_loaded(&self) -> Result<Loaded<DirPinDoc>, String> {
         load(&dirpins_dir(&self.root), self.peer)
     }
@@ -2028,6 +2039,25 @@ impl Node {
     /// (docs/UX.md — the list never re-derives a judgment the library
     /// already made).
     pub fn sessions(&self) -> Result<Vec<SessionView>, String> {
+        self.roster_upgrade_once();
+        let roster = self.roster_loaded()?;
+        Ok(self
+            .every_session()?
+            .into_iter()
+            .filter(|v| listed(&roster.doc, &v.session))
+            .map(|mut v| {
+                v.imported =
+                    roster.doc.entry(&v.session.id.0) == Some(khor_sync::roster::Entry::Import);
+                v
+            })
+            .collect())
+    }
+
+    /// Every session this machine can see, **on the list or not** — the
+    /// list is [`Self::sessions`], and what it leaves out are the import
+    /// candidates ([`Self::import_candidates`]). Same order, same
+    /// overlays.
+    pub(crate) fn every_session(&self) -> Result<Vec<SessionView>, String> {
         let pins = self.pins_loaded()?;
         let titles = self.titles_loaded()?;
         let now = crate::live::now_ms().max(0) as u64;
@@ -2038,6 +2068,7 @@ impl Node {
                     pinned: pins.doc.pinned(&row.id.0),
                     stale: false,
                     quiet: false,
+                    imported: false,
                     session: row,
                     source: None,
                 });
@@ -2053,6 +2084,7 @@ impl Node {
                     pinned: pins.doc.pinned(&row.id.0),
                     stale: false,
                     quiet: false,
+                    imported: false,
                     session: row,
                     source: Some((name, age)),
                 });
@@ -2120,6 +2152,198 @@ impl Node {
         Ok(list::arrange(views, mode, &|home: &DeviceId| {
             by_id.get(&home.hex()).cloned()
         }))
+    }
+
+    /// **删除 on an imported row takes it off the list, and that is all**
+    /// (docs/SHELL.md 第八轮 第 3 条): the process, the vendor's own files
+    /// and the multiplexer stay exactly as they were, and the session is
+    /// a candidate again. Answers whether it was one.
+    fn take_off_if_imported(&self, id: &SessionId) -> Result<bool, String> {
+        let loaded = self.roster_loaded()?;
+        if loaded.doc.entry(&id.0) != Some(khor_sync::roster::Entry::Import) {
+            return Ok(false);
+        }
+        // **接管 makes it khor's** (`takeover`, `takeover_term`): the
+        // agent khor imported now runs under a host khor started, or is
+        // a conversation khor holds. 删除 on that is the ordinary close —
+        // there is a process of khor's to wind down — so the row only
+        // leaves the list here, and the close below does the rest.
+        if self.khor_holds(id) {
+            loaded.doc.take_off(&id.0)?;
+            let mut store = loaded.store;
+            store.flush(&loaded.doc)?;
+            return Ok(false);
+        }
+        loaded.doc.take_off(&id.0)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        // khor's own terminal onto it goes; the session does not.
+        self.live.drop_lens(id);
+        self.emit(NodeEvent::Closed(id.clone()));
+        Ok(true)
+    }
+
+    /// Whether khor itself holds this session now: a conversation it is
+    /// the protocol client of, or a terminal it hosts (a takeover leaves
+    /// one behind). What a found session never has.
+    fn khor_holds(&self, id: &SessionId) -> bool {
+        let held_kind = self
+            .every_session()
+            .ok()
+            .and_then(|all| all.into_iter().find(|v| v.session.id == *id))
+            .is_some_and(|v| {
+                let kind = v.session.kind.0.as_str();
+                kind != khor_core::kind::SHELL && kind != khor_core::kind::TUI
+            });
+        held_kind
+            || self
+                .live
+                .dir_of(id)
+                .is_some_and(|dir| crate::host::read_host_file(&dir).is_ok())
+    }
+
+    /// What could be brought onto the list (docs/SHELL.md 第八轮 导入):
+    /// every terminal and agent this machine can see — its own sweep and
+    /// what the others reported — that is not on it and has not ended,
+    /// and every conversation a registered ACP agent said it has
+    /// (`session/list`, as recorded) that is not open here already.
+    /// Newest activity first.
+    pub fn import_candidates(&self) -> Result<Vec<Candidate>, String> {
+        let roster = self.roster_loaded()?;
+        let every = self.every_session()?;
+        let mut out: Vec<Candidate> = every
+            .iter()
+            .filter(|v| !listed(&roster.doc, &v.session) && !v.session.dead)
+            .map(|v| Candidate {
+                id: v.session.id.0.clone(),
+                form: v.session.kind.0.clone(),
+                home: v.session.home.hex(),
+                title: v.session.title.clone(),
+                place: v.session.place.clone(),
+                at_ms: v.session.state.at.0 as i64,
+                category: v.session.category.clone(),
+                agent: None,
+            })
+            .collect();
+        let me = self.device_str().to_owned();
+        for (name, _) in self.agents()? {
+            let Some(khor_sync::agents::Answer::Sessions { rows }) = self.agent_seen(&name)? else {
+                continue;
+            };
+            for r in rows {
+                let as_row = adaptor::id_for(&r.id);
+                if every.iter().any(|v| v.session.id == as_row) {
+                    continue;
+                }
+                out.push(Candidate {
+                    id: format!("{ACP_CANDIDATE}{name}:{}", r.id),
+                    form: khor_core::kind::GUI.to_owned(),
+                    home: me.clone(),
+                    title: r.title.clone().unwrap_or_default(),
+                    place: (!r.cwd.is_empty()).then(|| r.cwd.clone()),
+                    at_ms: r
+                        .updated_at
+                        .as_deref()
+                        .and_then(|t| t.parse::<jiff::Timestamp>().ok())
+                        .map_or(0, |t| t.as_millisecond()),
+                    category: None,
+                    agent: Some(name.clone()),
+                });
+            }
+        }
+        out.sort_by_key(|c| std::cmp::Reverse(c.at_ms));
+        Ok(out)
+    }
+
+    /// Brings one candidate onto the list, by the id
+    /// [`Self::import_candidates`] gave it. A terminal or an agent goes
+    /// on as `import`; an ACP conversation is opened again with
+    /// `session/load` (a conversation khor holds is on the list by
+    /// construction). Answers the row's session id.
+    pub fn import(&self, id: &str) -> Result<SessionId, String> {
+        if let Some(rest) = id.strip_prefix(ACP_CANDIDATE)
+            && let Some((agent, session)) = rest.split_once(':')
+        {
+            return self.resume_agent_session(agent, session);
+        }
+        // Any row this machine can see and the list does not have — an
+        // ended one too, when somebody names it: the panel offers only
+        // the living, but an id typed on purpose is a choice.
+        let loaded = self.roster_loaded()?;
+        let known = self
+            .every_session()?
+            .into_iter()
+            .any(|v| v.session.id.0 == id && !listed(&loaded.doc, &v.session));
+        if !known {
+            return Err(msg::not_a_candidate(id));
+        }
+        loaded.doc.put(id, khor_sync::roster::Entry::Import)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(SessionId(id.to_owned()))
+    }
+
+    /// Opens a conversation a registered agent already has, by the id it
+    /// gave (`session/load`) — the import of an ACP candidate, and what
+    /// the new-session wizard's 「已有的对话」 used to do.
+    ///
+    /// **The id must be one khor recorded**: an id that was never listed
+    /// has no address to open at, so it is refused by name rather than
+    /// opened at some default — a fresh conversation called the old one
+    /// is the failure being avoided. It brings its own directory and
+    /// name, decided by it.
+    pub fn resume_agent_session(&self, agent: &str, session: &str) -> Result<SessionId, String> {
+        let spec = self.agent_or_refuse(agent)?;
+        let seen = self
+            .agent_seen_row(agent, session)?
+            .ok_or_else(|| msg::resume_unknown_session(session, agent))?;
+        let title = seen.title.clone().unwrap_or_else(|| {
+            std::path::Path::new(&seen.cwd)
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| agent.to_owned())
+        });
+        self.reopen_gui_as(
+            std::path::Path::new(&seen.cwd),
+            &title,
+            &[Node::agent_launch(&spec)?],
+            agent,
+            session,
+        )
+    }
+
+    /// Puts a session khor just started on the list (`khor_sync::roster`,
+    /// `new`). Every opener calls this, on the machine the session is
+    /// on; the document carries it everywhere else.
+    pub(crate) fn roster_new(&self, id: &SessionId) -> Result<(), String> {
+        let loaded = self.roster_loaded()?;
+        loaded.doc.put(&id.0, khor_sync::roster::Entry::New)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// **Once per store**: what khor opened before the list became the
+    /// user's (docs/SHELL.md 第八轮 升级) stays on it — every registry
+    /// entry a khor host was started for goes on as `new`. What was only
+    /// ever found (a sweep, a hook, a multiplexer) does not: 「升级时自动
+    /// 发现的：不保留」. A local mark says it ran; best effort, a failure
+    /// costs a retry on the next read and nothing else.
+    fn roster_upgrade_once(&self) {
+        let mark = self.root.join(".khor").join("roster-upgraded");
+        if mark.exists() {
+            return;
+        }
+        let Ok(loaded) = self.roster_loaded() else {
+            return;
+        };
+        for id in self.live.hosted_ids() {
+            let _ = loaded.doc.put(&id.0, khor_sync::roster::Entry::New);
+        }
+        let mut store = loaded.store;
+        if store.flush(&loaded.doc).is_ok() {
+            let _ = std::fs::create_dir_all(self.root.join(".khor"));
+            let _ = std::fs::write(&mark, b"");
+        }
     }
 
     /// Rewrite this home's piled-up documents as snapshots.
@@ -3322,6 +3546,11 @@ impl Node {
     /// question the person answers before they can close a row — but it
     /// is a question the **caller** answers, not the primitive.
     pub async fn close_anywhere(&self, id: &SessionId) -> Result<(), String> {
+        // An imported row is taken off the list and nothing else — on
+        // whichever machine it lives, since the list is one document.
+        if self.take_off_if_imported(id)? {
+            return Ok(());
+        }
         if let Some(machine) = self.far_machine(id)? {
             return self.close_on(&machine, id).await;
         }
@@ -3352,6 +3581,9 @@ impl Node {
     }
 
     pub fn close(&self, id: &SessionId) -> Result<(), String> {
+        if self.take_off_if_imported(id)? {
+            return Ok(());
+        }
         for k in self.kinds() {
             if !k.claims(self, id) {
                 continue;
@@ -3408,6 +3640,7 @@ impl Node {
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live
             .register(&id, kind, title, None, Self::category_of_started(kind))?;
+        self.roster_new(&id)?;
         Ok(id)
     }
 
@@ -3443,6 +3676,7 @@ impl Node {
             .dir_of(&id)
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         host::spawn_host(&dir, &id, cmd, size)?;
+        self.roster_new(&id)?;
         Ok(id)
     }
 
@@ -3469,6 +3703,7 @@ impl Node {
             .dir_of(&id)
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         host::spawn_host_at(cwd, &dir, &id, cmd, size)?;
+        self.roster_new(&id)?;
         Ok(id)
     }
 
@@ -3503,6 +3738,7 @@ impl Node {
             .dir_of(id)
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         host::spawn_host_at(cwd, &dir, id, cmd, size)?;
+        self.roster_new(id)?;
         Ok(id.clone())
     }
 
@@ -3961,6 +4197,11 @@ impl Node {
             }
         }
         host::spawn_host_at(&cwd, &dir, id, &resume, (80, 24))?;
+        // **A form khor holds is on the list, whatever it was before**
+        // (docs/SHELL.md 第八轮): a conversation khor opened was never in
+        // the roster — it did not need to be — and turning it into a
+        // terminal makes it a `tui` row, which does.
+        self.roster_new(id)?;
         self.live.reseat(id, khor_core::kind::TUI, &title, None)
     }
 
@@ -4509,6 +4750,41 @@ impl KindSurface for LiveKind {
     fn close(&self, _node: &Node, id: &SessionId) -> Result<(), String> {
         self.close_session(id)
     }
+}
+
+/// How an ACP conversation is spelled among the candidates: it is not a
+/// session yet, so it has no session id — `acp:<agent>:<its own id>`.
+pub const ACP_CANDIDATE: &str = "acp:";
+
+/// One thing that could be brought onto the session list
+/// ([`Node::import_candidates`]).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Candidate {
+    /// What `khor import` and the face send back.
+    pub id: String,
+    /// The row it becomes: `shell`, `tui` (watched) or `gui` (an ACP
+    /// conversation).
+    pub form: String,
+    /// The machine it is on, by device id.
+    pub home: String,
+    pub title: String,
+    /// Where it runs, when anybody could say.
+    pub place: Option<String>,
+    /// Its last activity, ms — the order the panel lists them in.
+    pub at_ms: i64,
+    pub category: Option<String>,
+    /// The ACP agent it belongs to, for a conversation.
+    pub agent: Option<String>,
+}
+
+/// Whether a row is on the session list (docs/SHELL.md 第八轮). A
+/// device's conversation, a transfer, a borrow and an ACP conversation
+/// are khor's by construction; a terminal or an agent in one is on the
+/// list when khor started it or somebody imported it (`khor_sync::roster`).
+fn listed(roster: &RosterDoc, row: &Session) -> bool {
+    let kind = row.kind.0.as_str();
+    !(kind == khor_core::kind::SHELL || kind == khor_core::kind::TUI)
+        || roster.entry(&row.id.0).is_some()
 }
 
 /// One device's last session report, as cached on disk.

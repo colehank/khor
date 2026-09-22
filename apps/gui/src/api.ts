@@ -52,6 +52,7 @@ import type { TermChunk } from "./gen/bindings/TermChunk";
 import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { KnownAgent } from "./gen/bindings/KnownAgent";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
+import type { CandidateRow } from "./gen/bindings/CandidateRow";
 import type { SeenSession } from "./gen/bindings/SeenSession";
 import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
 import type { QuotaCredits } from "./gen/bindings/QuotaCredits";
@@ -107,6 +108,7 @@ export type {
   AgentRow,
   KnownAgent,
   AgentSaid,
+  CandidateRow,
   SeenSession,
   QuotaAnswer,
   QuotaCredits,
@@ -698,6 +700,15 @@ export const agentAsk = (name: string) => call<AgentSaid>("agent_ask", { name })
     which is why neither is passed. Answers the new row's id. */
 export const resumeSession = (agent: string, session: string) =>
   call<string>("resume_session", { agent, session });
+
+/** 导入 (docs/SHELL.md 第八轮): what could be brought onto the session
+    list — agents started elsewhere, tmux sessions, and the ACP
+    conversations a registered agent said it has (as recorded; asking is
+    `agentAsk`, behind a press). Newest first. */
+export const fetchImportCandidates = () => call<CandidateRow[]>("import_candidates");
+/** Brings these onto the list, in order; answers their session ids.
+    Stops at the first refusal and says it. */
+export const importSessions = (ids: string[]) => call<string[]>("import_sessions", { ids });
 /** The wizard (会话身份批B): a fresh agent session in `dir`, as a
     conversation ("chat") or a terminal ("term"), for the chosen agent.
     `agent` is an **open position** since 批⑥: "claude", "codex", or the

@@ -219,6 +219,9 @@ const repo = join(gui, "../..");
 // edits mid-run, and a link to it still resolves from the snapshot.
 const BUILT_KHOR = join(repo, "target/debug/khor");
 const BUILT_BRIDGE = join(repo, "target/debug/bridge");
+// The scripted ACP agent (`crates/acp/src/bin/acp-stub.rs`): section 24m
+// imports a conversation it says it has (docs/SHELL.md 第八轮).
+const BUILT_STUB = join(repo, "target/debug/acp-stub");
 
 /** Every `.rs` the two binaries above are actually built from.
     **Named roots, not the whole repo** — and the first spelling of this
@@ -234,9 +237,9 @@ const BUILT_BRIDGE = join(repo, "target/debug/bridge");
 // (vendor/iroh/KHOR.md), so an edit there makes them stale like any
 // other source.
 const RUST_ROOTS = ["crates", join("apps", "gui", "core"), "vendor"];
-function rustSources(dir, out = []) {
+function rustSources(dir, out = [], roots = RUST_ROOTS) {
   if (dir === undefined) {
-    for (const r of RUST_ROOTS) rustSources(join(repo, r), out);
+    for (const r of roots) rustSources(join(repo, r), out, roots);
     return out;
   }
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -259,6 +262,7 @@ const SCRATCH = process.env.SMOKE_DIR ?? join(repo, "target/gui-smoke");
 const RUN = join(SCRATCH, "run");
 const KHOR = join(RUN, "khor");
 const BRIDGE = join(RUN, "bridge");
+const STUB = join(RUN, "acp-stub");
 const GUI_RUN = join(RUN, "gui");
 /** What vite needs and nothing else — no `node_modules` (linked), no
     `dist`, no rust crates.
@@ -750,12 +754,18 @@ try {
   // Take the snapshot before anything is started, so every process
   // below is looking at this trip's own copy (see the constants).
   mkdirSync(GUI_RUN, { recursive: true });
-  for (const [built, here] of [
-    [BUILT_KHOR, KHOR],
-    [BUILT_BRIDGE, BRIDGE],
+  for (const [built, here, roots] of [
+    [BUILT_KHOR, KHOR, RUST_ROOTS],
+    [BUILT_BRIDGE, BRIDGE, RUST_ROOTS],
+    // **The scripted agent is built from `crates/acp` and nothing else
+    // in this tree** (its protocol crate is a dependency, not a source
+    // here). Compared against the whole workspace it would refuse to
+    // run after any edit anywhere — a rebuild that changes nothing
+    // about it and therefore never makes it newer.
+    [BUILT_STUB, STUB, [join("crates", "acp")]],
   ]) {
     if (!existsSync(built)) {
-      throw new Error(`${built} is not built — cargo build -p khor-cli -p khor-gui-core --bins`);
+      throw new Error(`${built} is not built — cargo build -p khor-cli -p khor-gui-core -p khor-acp --bins`);
     }
     // **And it must not be older than what it is meant to be testing.**
     // Existence was the whole check, and a binary from yesterday passes
@@ -768,14 +778,14 @@ try {
     // script starts servers and browsers, so a silent rebuild in the
     // middle of it is a surprise on a machine somebody else may be
     // compiling on. The sentence names the command.
-    const sources = rustSources();
+    const sources = rustSources(undefined, [], roots);
     const bin = statSync(built).mtimeMs;
     const newer = sources.filter((f) => statSync(f).mtimeMs > bin);
     if (newer.length > 0) {
       throw new Error(
         `${built} is older than ${newer.length} source file(s) — ` +
           `${relative(repo, newer[0])} and others. ` +
-          `cargo build -p khor-cli -p khor-gui-core --bins`,
+          `cargo build -p khor-cli -p khor-gui-core -p khor-acp --bins`,
       );
     }
     copyFileSync(built, here);
@@ -943,7 +953,18 @@ for line in sys.stdin:
   const ticketA = cli(envA, "invite").trim().split("\n").pop().trim();
   feedHook(envA, "SessionStart");
   feedHook(envA, "UserPromptSubmit");
-  if (!cli(envA, "sessions").includes("tui/cafe1")) throw new Error("alpha row missing");
+  // **Found is not listed** (docs/SHELL.md 第八轮:「session 里放什么，应该
+  // 是用户决定，不是我们自动」). An agent started in alpha's own terminal
+  // is an import candidate until somebody brings it in; everything below
+  // that follows this row does so because it was imported here.
+  if (cli(envA, "sessions").includes("tui/cafe1")) {
+    throw new Error("an agent started in alpha's own terminal is on alpha's list with nobody having imported it — 「session 里放什么，应该是用户决定」");
+  }
+  if (!cli(envA, "import").split("\n").some((l) => l.endsWith("\ttui/cafe1"))) {
+    throw new Error(`\`khor import\` does not offer the agent alpha found: ${cli(envA, "import")}`);
+  }
+  cli(envA, "import", "tui/cafe1");
+  if (!cli(envA, "sessions").includes("tui/cafe1")) throw new Error("alpha row missing after `khor import`");
 
   // beta: the bridge is the app backend — embedded serve pumps sync and
   // holds this key's endpoint, which is what lets the GUI mint and
@@ -2986,6 +3007,9 @@ for line in sys.stdin:
   //     would be measuring the rail twice.
   feedHook(envB, "SessionStart", "", "beef2");
   feedHook(envB, "UserPromptSubmit", "", "beef2");
+  // Found, so imported (docs/SHELL.md 第八轮) — what this section wants
+  // is a row of beta's own on the list.
+  cli(envB, "import", "tui/beef2");
   await openLanding("sessions");
   await until("beta's own row", 15_000, async () =>
     (await page.locator('[data-row="tui/beef2"]').count()) === 1,
@@ -4611,42 +4635,114 @@ for line in sys.stdin:
     (await page.locator(`[data-row="${agentId}"]`).count()) === 0,
   );
 
-  // 24m) a discovered tmux session opens as a live terminal, and closing
-  //      khor's view leaves the user's session standing.
-  //
-  //      A session on beta's private server prints a marker; the sweep
-  //      lists it (nobody opened it through khor), clicking it makes the
-  //      bridge stand a grouped client up under the same id, and the
-  //      marker is on the painted screen. The control is the whole
-  //      point: `khor close` must kill only khor's client — the session
-  //      itself survives on the server, and its discovered row comes
-  //      back.
+  // 24m) 新建与导入 (docs/SHELL.md 第八轮). Three things beta did not
+  //      start — a tmux session on its private server, an agent somebody
+  //      started in their own terminal (its hook fires), and a
+  //      conversation a registered ACP agent says it has (the scripted
+  //      stub, `session/list`) — are **not** on the list, and are all in
+  //      the import panel. Imported from the window, each lands in its
+  //      own form: a terminal, a watched agent, a conversation; and alpha
+  //      lists the ones alpha can see, because the list is one document.
+  //      Deleting an imported row takes it off the list and nothing else:
+  //      the tmux session still stands, the hook's registry entry is
+  //      still there, and it is a candidate again. And beta's own
+  //      conversation is on the list with nobody importing anything.
   execFileSync("tmux", ["-L", TMUX_SOCK, "new-session", "-d", "-s", "bridgeme", "-x", "80", "-y", "24"], { timeout: 10_000 });
   execFileSync("tmux", ["-L", TMUX_SOCK, "send-keys", "-t", "bridgeme", "printf 'tmux-bridge-marker\\n'", "Enter"], { timeout: 10_000 });
+  feedHook(envB, "SessionStart", "", "imp01");
+  const stubHome = join(SCRATCH, "stub-home");
+  mkdirSync(stubHome, { recursive: true });
+  cli({ ...envB, KHOR_STUB_LISTS: "1", KHOR_STUB_LIST_CWD: stubHome }, "agents", "add", "stub", STUB);
   await openLanding("sessions");
-  await until("the discovered tmux row", 20_000, async () =>
-    (await page.locator('[data-title="bridgeme"]').count()) === 1,
+  // The control: the list is drawing rows at all — beta's own
+  // conversation with alpha, which nobody imported.
+  await until("the conversation with alpha, on the list with no import", 20_000, async () =>
+    (await page.locator('[data-row="chat/alpha"]').count()) === 1,
   );
-  const tmuxRowId = await page.locator('[data-title="bridgeme"]').getAttribute("data-row");
+  await until("the sweep having seen the tmux session", 20_000, () =>
+    cli(envB, "import").split("\n").some((l) => l.split("\t")[3] === "bridgeme"),
+  );
+  const tmuxRowId = cli(envB, "import").split("\n").find((l) => l.split("\t")[3] === "bridgeme").split("\t").pop();
+  const acpRow = "acp:stub:sess-a";
+  const acpOpened = "tui/sess-a";
+  for (const id of [tmuxRowId, "tui/imp01"]) {
+    if ((await page.locator(`[data-row="${id}"]`).count()) !== 0) {
+      throw new Error(`${id} is on beta's list with nobody having imported it — 「session 里放什么，应该是用户决定」`);
+    }
+  }
+  if ((await page.locator(`[data-row="${acpOpened}"]`).count()) !== 0) {
+    throw new Error(`the stub's conversation ${acpOpened} is open on beta's list before anybody imported it`);
+  }
+  await page.locator("[data-list] [data-pane-new]").first().click();
+  await page.locator('[data-new-item="import"]').click();
+  await until("the import panel with all three", 20_000, async () => {
+    for (const id of [tmuxRowId, "tui/imp01", acpRow]) {
+      if ((await page.locator(`[data-import-row="${id}"]`).count()) !== 1) return false;
+    }
+    return true;
+  }).catch(async (e) => {
+    const drawn = await page.locator("[data-import-row]").evaluateAll((els) => els.map((el) => el.getAttribute("data-import-row")));
+    throw new Error(`the import panel offers ${JSON.stringify(drawn)} — wanted the tmux session, tui/imp01 and ${acpRow} (${e.message})`);
+  });
+  const forms = await page.locator("[data-import-row]").evaluateAll((els) =>
+    Object.fromEntries(els.map((el) => [el.getAttribute("data-import-row"), el.getAttribute("data-import-form")])),
+  );
+  if (forms[tmuxRowId] !== "shell" || forms["tui/imp01"] !== "tui" || forms[acpRow] !== "gui") {
+    throw new Error(`the panel names the forms ${JSON.stringify(forms)} — a terminal, a watched agent, a conversation`);
+  }
+  for (const id of [tmuxRowId, "tui/imp01", acpRow]) {
+    await page.locator(`[data-import-row="${id}"]`).click();
+  }
+  await page.locator("[data-import-go]").click();
+  await until("the three on beta's list, each in its own form", 30_000, async () => {
+    const kinds = await page.locator("[data-row]").evaluateAll((els) =>
+      Object.fromEntries(els.map((el) => [el.getAttribute("data-row"), el.getAttribute("data-kind")])),
+    );
+    return kinds[tmuxRowId] === "shell" && kinds["tui/imp01"] === "tui" && kinds[acpOpened] === "gui";
+  }).catch(async (e) => {
+    const kinds = await page.locator("[data-row]").evaluateAll((els) => els.map((el) => `${el.getAttribute("data-row")}:${el.getAttribute("data-kind")}`));
+    throw new Error(`after the import beta lists ${JSON.stringify(kinds)} (${e.message})`);
+  });
+  // The list is one list: alpha has beta's report of the two live rows,
+  // and the imports reached it through the roster.
+  await until("alpha listing beta's imported rows", 60_000, () => {
+    const a = cli(envA, "sessions", "--all");
+    return a.includes(tmuxRowId) && a.includes("tui/imp01");
+  });
+  // A terminal that was imported still opens as the tmux session.
   await page.locator(`[data-row="${tmuxRowId}"] [data-row-open]`).click();
   await until("the tmux screen painted in the app", 20_000, async () =>
     (await termText()).includes("tmux-bridge-marker"),
   );
+  // 删除 on the imported agent — a row that knows it was imported.
+  if ((await page.locator('[data-row="tui/imp01"]').getAttribute("data-imported")) !== "true") {
+    throw new Error("tui/imp01 does not know it was imported, so its 删除 would say the wrong thing");
+  }
+  const regDir = () =>
+    readdirSync(join(B, ".khor", "sessions")).some((d) => d.includes("imp01"));
+  if (!regDir()) throw new Error("probe dead: tui/imp01 has no registry entry to keep");
+  await page.locator('[data-row="tui/imp01"] [data-row-open]').click({ button: "right" });
+  await until("the row's menu", 5_000, async () => (await page.locator('[data-row-menu] [data-menu-item="close"]').count()) === 1);
+  await page.locator('[data-row-menu] [data-menu-item="close"]').click();
+  if (await until("the delete question", 3_000, async () => (await page.locator("[data-delete-dialog]").count()) === 1).then(() => true, () => false)) {
+    await page.locator("[data-delete-go]").click();
+  }
+  await until("tui/imp01 off the list", 15_000, async () => (await page.locator('[data-row="tui/imp01"]').count()) === 0);
+  if (!regDir()) throw new Error("taking tui/imp01 off the list deleted its registry entry — the session is not khor's to touch");
+  if (!cli(envB, "import").split("\n").some((l) => l.endsWith("\ttui/imp01"))) {
+    throw new Error("tui/imp01 left the list and is not a candidate again");
+  }
+  // …and the tmux one, from the terminal: off the list, the session
+  // standing on its server, a candidate again.
   cli(envB, "close", tmuxRowId);
-  // The user's session survives khor's close — only the grouped client
-  // died. `has-session` exits non-zero if it were gone.
   execFileSync("tmux", ["-L", TMUX_SOCK, "has-session", "-t", "bridgeme"], { timeout: 5_000 });
-  // …and the discovered row returns once the registry entry is gone.
-  await until("the discovered row back after close", 20_000, async () =>
-    (await page.locator('[data-title="bridgeme"]').count()) === 1,
+  await until("the tmux row off the list", 20_000, async () => (await page.locator(`[data-row="${tmuxRowId}"]`).count()) === 0);
+  await until("the tmux session a candidate again", 20_000, () =>
+    cli(envB, "import").split("\n").some((l) => l.endsWith(`\t${tmuxRowId}`)),
   );
   execFileSync("tmux", ["-L", TMUX_SOCK, "kill-session", "-t", "bridgeme"], { timeout: 5_000 });
-  // …and wait for the killed session's row to leave the list before the
-  // next item picks "the first row" — same trap the cat close hit.
-  await until("the killed tmux row gone", 20_000, async () =>
-    (await page.locator('[data-title="bridgeme"]').count()) === 0,
-  );
-
+  cli(envB, "close", acpOpened);
+  console.log(`import: ${tmuxRowId} (shell), tui/imp01 (tui) and ${acpRow} → ${acpOpened} (gui) imported from the window and listed on alpha; deleting took them off the list and left the sessions`);
 
   // 24g) an agent inside a tmux session is one row — the agent's — and
   //      its terminal face bridges into the pane it sits in (会话身份批:
@@ -4688,6 +4784,11 @@ for line in sys.stdin:
     JSON.stringify({ type: "user", cwd: agentCwd, message: { role: "user", content: inTmux } }) + "\n",
   );
   await openLanding("sessions");
+  // Found, not started: imported, then on the list (docs/SHELL.md 第八轮).
+  await until("the tmux-held agent among the candidates", 20_000, () =>
+    cli(envB, "import").split("\n").some((l) => l.endsWith(`\t${tmuxAgentRow}`)),
+  );
+  cli(envB, "import", tmuxAgentRow);
   await until("the tmux-held agent row wearing claude", 20_000, async () =>
     (await page.locator(`[data-row="${tmuxAgentRow}"] [data-kind-mark="claude"]`).count()) === 1,
   );
@@ -4804,6 +4905,12 @@ for line in sys.stdin:
       if (now !== "cat") throw new Error(`probe dead: ${name} is running ${now}, not cat`);
       return true;
     });
+    // khor did not start it, so it is a candidate until somebody brings
+    // it in (docs/SHELL.md 第八轮) — the sections below want a row.
+    await until(`${name} among the candidates`, 20_000, () =>
+      cli(envB, "import").split("\n").some((l) => l.split("\t")[3] === name),
+    );
+    cli(envB, "import", cli(envB, "import").split("\n").find((l) => l.split("\t")[3] === name).split("\t").pop());
   }
   await openLanding("sessions");
   const pasteInto = async (title, wantBracket) => {

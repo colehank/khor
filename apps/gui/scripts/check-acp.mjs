@@ -733,6 +733,9 @@ try {
     press = null,
     attachId = null,
     resumeId = null,
+    // **Which door** (docs/SHELL.md 第八轮): the registry and attaching
+    // stay in 新建; what an agent said it has moved to 导入 whole.
+    door = "import",
   }) => {
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -772,18 +775,34 @@ try {
       }
       r.fulfill({ contentType: "application/json", body: "null" });
     });
-    await page.route("**/resume_session", (r) => {
+    // What the agent said, as the node offers it among the candidates:
+    // one row per conversation, spelled `acp:<agent>:<its id>`.
+    const offered = seen.said === "sessions"
+      ? seen.rows.map((r) => ({
+          id: `acp:${registered[0].name}:${r.id}`,
+          form: "gui",
+          machine: "alpha",
+          device: "a".repeat(64),
+          title: r.title ?? "",
+          place: r.cwd || null,
+          at_ms: r.updated_at ? Date.parse(r.updated_at) : 0,
+          category: null,
+          agent: registered[0].name,
+        }))
+      : [];
+    await page.route("**/import_candidates", json(offered));
+    await page.route("**/import_sessions", (r) => {
       try {
         sent.resume.push(JSON.parse(r.request().postData() ?? "{}"));
       } catch {
         sent.resume.push(null);
       }
-      r.fulfill({ contentType: "application/json", body: JSON.stringify("gui/resumed") });
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(["tui/resumed"]) });
     });
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(700);
     await page.locator("[data-pane-new]").first().click();
-    await page.locator('[data-new-item="new"]').click();
+    await page.locator(`[data-new-item="${door}"]`).click();
     await wait(400);
     if (attachId !== null) {
       await page.locator("[data-new-session-add-agent]").click();
@@ -807,7 +826,7 @@ try {
       await page.locator(`[data-registry-attach="${attachId}"]`).click();
       await wait(600);
     }
-    if (pick) {
+    if (pick && door === "new") {
       await page.locator(`[data-new-session-agent="${pick}"]`).click();
       await wait(400);
     }
@@ -817,14 +836,16 @@ try {
     await wait(settle);
     const before = { ...calls };
     if (press) {
-      await page.locator("[data-agent-ask]").click();
+      await page.locator("[data-agent-ask]").first().click();
       await wait(600);
     }
     if (resumeId) {
-      await page.locator(`[data-seen-row="${resumeId}"]`).click();
+      await page.locator(`[data-import-row="acp:${registered[0].name}:${resumeId}"]`).click();
+      await wait(300);
+      await page.locator("[data-import-go]").click();
       await wait(600);
     }
-    const out = await page.evaluate(() => {
+    const out = await page.evaluate((door) => {
       const box = document.querySelector("[data-agent-seen]");
       return {
         // Null and "" are different: no section at all versus a section
@@ -833,13 +854,15 @@ try {
         text: box
           ? (box.querySelector("[data-agent-seen-text]")?.textContent ?? "").trim()
           : null,
-        rows: [...document.querySelectorAll("[data-seen-row]")].map((el) => ({
-          id: el.getAttribute("data-seen-row"),
+        rows: [...document.querySelectorAll('[data-import-row^="acp:"]')].map((el) => ({
+          id: el.getAttribute("data-import-row"),
           text: (el.textContent ?? "").trim(),
         })),
         // The positive control for every negative claim below: the
-        // dialog is open and painting agent buttons at all.
-        buttons: document.querySelectorAll("[data-new-session-agent]").length,
+        // dialog is open and painting agents at all.
+        buttons: door === "new"
+          ? document.querySelectorAll("[data-new-session-agent]").length
+          : document.querySelectorAll("[data-agent-seen]").length,
         askButton: !!document.querySelector("[data-agent-ask]"),
         // **Where things actually landed**, asked of the engine. `box`
         // is the dialog; `worst` is how far past its right edge any
@@ -847,7 +870,7 @@ try {
         // than against `scrollWidth`, because a child positioned
         // outside an `overflow:visible` parent does not grow it.
         geom: (() => {
-          const box = document.querySelector("[data-new-session-dialog]");
+          const box = document.querySelector(door === "new" ? "[data-new-session-dialog]" : "[data-import-dialog]");
           if (!box) return null;
           const r = box.getBoundingClientRect();
           let worst = 0;
@@ -858,7 +881,7 @@ try {
             const over = b.right - r.right;
             if (over > worst) {
               worst = over;
-              who = el.getAttribute("data-seen-row")
+              who = el.getAttribute("data-import-row")
                 ?? el.getAttribute("data-registry-row")
                 ?? el.tagName.toLowerCase();
             }
@@ -866,7 +889,7 @@ try {
           return { width: Math.round(r.width), over: Math.round(worst), who };
         })(),
       };
-    });
+    }, door);
     await ctx.close();
     return { ...out, errs, calls, before, sent, panel };
   };
@@ -1004,7 +1027,7 @@ try {
 
   // 15 & 16) the snapshot's two halves, and what goes on the wire.
   {
-    const w = await wizard({ seen: { said: "unasked" }, attachId: "claude-acp", pick: null });
+    const w = await wizard({ seen: { said: "unasked" }, attachId: "claude-acp", pick: null, door: "new" });
     const say = "wizard/registry";
     if (w.errs.length) fail(`${say}: the page threw — ${w.errs[0]}`);
     const rows = w.panel?.rows ?? [];
@@ -1072,17 +1095,17 @@ try {
     if (w.errs.length) fail(`${say}: the page threw — ${w.errs[0]}`);
     const body = w.sent.resume[0];
     if (!body) {
-      fail(`${say}: a recorded conversation was clicked and no resume_session went out`);
-    } else if (body.agent !== "gemini" || body.session !== "sess-a") {
-      fail(`${say}: the frame carried ${JSON.stringify(body)}, wanted {agent:"gemini",session:"sess-a"}`);
+      fail(`${say}: a recorded conversation was picked and imported, and no import_sessions went out`);
+    } else if (JSON.stringify(body.ids) !== JSON.stringify(["acp:gemini:sess-a"])) {
+      fail(`${say}: the frame carried ${JSON.stringify(body)}, wanted {ids:["acp:gemini:sess-a"]}`);
     } else {
-      console.log(`${say}: click → resume_session ${JSON.stringify(body)}`);
+      console.log(`${say}: pick + 导入 → import_sessions ${JSON.stringify(body)}`);
     }
     // **A resume is not the wizard's four answers.** Sending the 目录
     // box would hand the agent another conversation's address, which
     // `session/load` is entitled to refuse.
     if (body && ("dir" in body || "form" in body)) {
-      fail(`${say}: the resume carried the wizard's answers too: ${JSON.stringify(body)}`);
+      fail(`${say}: the import carried the wizard's answers too: ${JSON.stringify(body)}`);
     }
   }
 

@@ -21,17 +21,21 @@
 //! # Where the protocol's edge actually is (surveyed 2026-08-20)
 //!
 //! `session/load` (v1) IS history: the agent replays the whole past as
-//! `session/update`s — khor's takeover rides it. What stays outside
-//! the stable protocol: enumerating sessions (`session/list` is an
-//! unaccepted RFD, answered by a *running* agent, with on-disk
-//! persistence explicitly left undefined and no known adopters),
-//! no-replay resume and fork (v2 alpha / draft), choosing and spawning
-//! the agent binary (client-side by the protocol's own starting line),
-//! and reading a dead agent's history without spawning anything —
-//! which is exactly what khor's adaptors do for discovery, usage and
-//! the recorded-past view. If `session/list` lands and vendors adopt
-//! it, "whose session is this id" becomes askable over the wire; until
-//! then the vendor fork lives in the adaptors, one file-format each.
+//! `session/update`s — khor's takeover rides it. **Enumerating sessions
+//! is in v1 now**: `session/list` stabilised on 2026-03-09
+//! (advertised as `sessionCapabilities.list`), and `session/delete`
+//! with it — asked of a *running* agent, and still optional, so
+//! adapters differ (20 of 32 registry agents answered it on
+//! 2026-08-30; the rest say they cannot). khor asks it behind a press
+//! and records the answer (`khor_sync::agents`), and those conversations
+//! are import candidates (docs/SHELL.md 第八轮). **The disk road stays**
+//! for that reason: claude's and codex's own files answer without
+//! starting anything and whether or not an adapter lists, so discovery,
+//! usage and the recorded-past view keep reading them, one file-format
+//! per vendor in the adaptors. Still outside the stable protocol:
+//! no-replay resume and fork (v2 alpha / draft), and choosing and
+//! spawning the agent binary (client-side by the protocol's own
+//! starting line).
 //!
 //! # Which way this can be wrong
 //!

@@ -680,7 +680,7 @@ fn a_vendors_hook_places_the_row_that_khor_could_not() {
     n.claude_hook(payload).unwrap();
 
     let row = n
-        .sessions()
+        .every_session()
         .unwrap()
         .into_iter()
         .find(|v| v.session.id.0.starts_with("tui/"))
@@ -768,7 +768,7 @@ fn a_word_reported_by_another_process_loses_to_the_vendors_live_file() {
     plant_live_claude(&r, vendor_session, "busy", me);
     let id = crate::adaptor::id_for(vendor_session);
     let word_of = |n: &Node| {
-        n.sessions()
+        n.every_session()
             .unwrap()
             .into_iter()
             .find(|v| v.session.id == id)
@@ -847,7 +847,7 @@ fn a_users_rename_outlives_the_vendors_sweep() {
     plant_discovered_claude(&r, "renamed0001", "vendor-name");
 
     let row_of = |n: &Node| {
-        n.sessions()
+        n.every_session()
             .unwrap()
             .into_iter()
             .find(|v| v.session.id.0.starts_with("tui/"))
@@ -885,7 +885,7 @@ fn an_unnamed_discovered_row_keeps_the_vendors_title() {
 
     for _ in 0..2 {
         let row = n
-            .sessions()
+            .every_session()
             .unwrap()
             .into_iter()
             .find(|v| v.session.id.0.starts_with("tui/"))
@@ -3477,4 +3477,102 @@ fn a_login_found_here_is_registered_once() {
         .id;
     m.remove_account(&id).unwrap();
     assert_eq!(m.adopt_subscriptions_with(|_| true).unwrap(), 0);
+}
+
+// ── 会话列表里放什么由用户决定:新建与导入 (docs/SHELL.md 第八轮) ──
+#[test]
+fn what_is_on_the_list_is_the_users_choice() {
+    let r = root("roster");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let ids = |n: &Node| {
+        n.sessions()
+            .unwrap()
+            .into_iter()
+            .map(|v| v.session.id.0)
+            .collect::<Vec<_>>()
+    };
+    // An agent somebody started in their own terminal, reported by its
+    // hook: found, and **not** on the list.
+    n.claude_hook(r#"{"session_id":"feed02","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#)
+        .unwrap();
+    let found = crate::adaptor::id_for("feed02").0;
+    assert!(
+        !ids(&n).contains(&found),
+        "found is not listed: {:?}",
+        ids(&n)
+    );
+    // This machine's own conversation needs no import.
+    assert!(ids(&n).contains(&format!("chat/{}", n.name())));
+    let candidates = n.import_candidates().unwrap();
+    assert!(
+        candidates.iter().any(|c| c.id == found && c.form == "tui"),
+        "{candidates:?}"
+    );
+    // What khor starts is on the list the moment it is.
+    let started = n.open_ephemeral("shell", "started").unwrap();
+    assert!(ids(&n).contains(&started.0));
+    assert!(
+        n.import(&started.0).is_err(),
+        "on the list already: nothing to import"
+    );
+
+    // Imported: on the list, and no longer a candidate.
+    n.import(&found).unwrap();
+    assert!(ids(&n).contains(&found));
+    assert!(!n.import_candidates().unwrap().iter().any(|c| c.id == found));
+
+    // 删除 takes it off the list and nothing else: a candidate again,
+    // and its registry entry (the hook's) untouched.
+    n.close(&SessionId(found.clone())).unwrap();
+    assert!(!ids(&n).contains(&found));
+    assert!(n.import_candidates().unwrap().iter().any(|c| c.id == found));
+    assert!(
+        n.every_session()
+            .unwrap()
+            .iter()
+            .any(|v| v.session.id.0 == found)
+    );
+}
+
+/// **The upgrade** (docs/SHELL.md 第八轮 升级): a store from before the
+/// list was the user's — one terminal khor hosted, one agent only ever
+/// found through its hook. Opened by this build, the hosted one stays on
+/// the list and the found one does not: 「升级时自动发现的：不保留」.
+#[test]
+fn an_upgraded_store_keeps_what_khor_started_and_drops_what_it_found() {
+    let r = root("roster-upgrade");
+    let hosted = SessionId("shell/0ld0ld0l".to_owned());
+    {
+        let n = Node::open(r.to_path_buf()).unwrap();
+        let live = crate::live::LiveKind::new(r.to_path_buf(), n.device());
+        live.register(&hosted, "shell", "an old terminal", None, None)
+            .unwrap();
+        let dir = live.dir_of(&hosted).unwrap();
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&crate::host::HostFile {
+                port: 1,
+                cookie: "x".into(),
+                host_pid: u32::MAX - 1,
+                child_pid: u32::MAX - 1,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        n.claude_hook(
+            r#"{"session_id":"f0und","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#,
+        )
+        .unwrap();
+    }
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let ids: Vec<String> = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .map(|v| v.session.id.0)
+        .collect();
+    assert!(ids.contains(&hosted.0), "what khor hosted stays: {ids:?}");
+    let found = crate::adaptor::id_for("f0und").0;
+    assert!(!ids.contains(&found), "what was only found goes: {ids:?}");
+    assert!(n.import_candidates().unwrap().iter().any(|c| c.id == found));
 }

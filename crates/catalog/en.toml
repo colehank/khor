@@ -223,7 +223,14 @@ usage: khor <verb>
                         session list (defaults to recent); --by
                         switches the layout, pinned rows always stay
                         on top; already-seen old sessions default to
-                        just a count, --all lists them all
+                        just a count, --all lists them all. The list
+                        holds what you started, what you imported and
+                        each machine's own conversation
+  import [<number|id>...]
+                        with nothing, lists what can be imported (agents
+                        started elsewhere, tmux sessions, ACP
+                        conversations), numbered; with numbers or ids,
+                        brings those onto the list
   tell <machine> <words...>
                         leaves a message in that machine's window
                         (always taken literally)
@@ -316,7 +323,9 @@ usage: khor <verb>
   close <session>       closes it (stops the session's process; the
                         conversation folds up its row, history and
                         received files stay — a new message brings it
-                        back on its own)
+                        back on its own; an imported row only leaves the
+                        list, the session itself untouched, and is a
+                        candidate again)
   serve                 stays resident: answers others, runs this
                         machine's commands on their behalf, syncs the
                         whole network every 5 seconds (also opens the
@@ -700,6 +709,7 @@ account-budget-number = "--budget needs a number after it"
 account-name-ambiguous = "More than one account named {0} — use its id instead"
 quota-trouble = "Couldn't get it ({0})"
 quota-unlimited = "Unlimited"
+import-none = "Nothing to import: agents started elsewhere, tmux sessions and ACP conversations are all on the list already, or there are none"
 quota-why-unavailable = "can't run on this machine"
 quota-why-used = "its reading was used"
 quota-why-cached = "not asked: this machine's reading from {0}s ago is still fresh"
@@ -803,6 +813,7 @@ no-such-message = "No such message: {0}"
 no-such-tab = "No such tab: {0}"
 dir-pin-retired = "Pinned directories are retired: a directory is a workspace now. Use khor ws add -m {0} {1}, then khor ws pin -m {0} {1}"
 provider-sub-only = "{0} can only be registered as a subscription: add --kind sub, with no key"
+not-a-candidate = "{0} isn't one you can import (khor import lists what you can)"
 sub-auto-name = "{0} subscription"
 tab-pinned = "This tab is pinned — unpin it before deleting it"
 
@@ -1249,7 +1260,18 @@ new-session-search = "Find agent"
 new-session-attach = "Connect"
 new-session-attached = "Connected"
 new-session-byhand = "Install it yourself, then connect it from the command line."
-new-session-seen = "Existing conversations — click one to continue"
+import-sessions = "Import"
+import-title = "Import sessions"
+import-note = "Sessions khor found that aren't on the list yet. Imported, they show on the list; deleting one from the list leaves the session itself untouched."
+import-empty = "Nothing to import"
+import-all-machines = "All machines"
+import-all-places = "All folders"
+import-go = "Import {0}"
+import-form-tui = "Agent · terminal (watched)"
+import-form-gui = "Agent · conversation"
+import-agents = "Conversations ACP agents remembered"
+close-warn-imported = "Only takes it off the list — the session itself is untouched, and you can import it again"
+# ⚠️ Tombstone: new-session-seen, the wizard section that moved into import (docs/SHELL.md 第八轮).
 new-session-seen-ask = "Ask once"
 new-session-seen-asking = "Asking…"
 new-session-seen-unasked = "Haven't asked yet"
@@ -1521,6 +1543,7 @@ chat-refused-turn-in-flight = "Another window is already talking — that messag
 chat-refused-no-turn = "There's no turn running right now"
 chat-refused-setting = "The agent declined this — nothing changed"
 close-warn-live = "Close it, and the process it's running will stop"
+close-warn-gui = "This deletes khor's row; the conversation itself stays with that agent and can be imported again"
 close-warn-chat = "Close it and this row is put away — history and received files stay, and it comes back with the next message"
 close-warn-transfer = "Close it and the files from this transfer are deleted — the row stays"
 close-warn = "Close it — this can't be undone"

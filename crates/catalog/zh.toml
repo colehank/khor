@@ -242,7 +242,10 @@ usage = """
   usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
   sessions [--by recent|category|device|state|place] [--all]
                         session 列表(默认最近);换一种排布,置顶永远在最上;
-                        看过的旧会话默认只报条数,--all 全列出来
+                        看过的旧会话默认只报条数,--all 全列出来。列表里只有
+                        新建的、导入的和对设备的对话
+  import [<序号|id>...]  不带参数列出可导入的会话(外面开的智能体、tmux 会话、
+                        ACP 对话),带序号;带序号或 id 就把它们导进列表
   tell <机器> <话...>    给机器的窗口留言(永远当字面的话)
   send <机器> <文件|话...>
                         给那台机器:是个存在的文件就传文件(摘要先到,
@@ -294,7 +297,8 @@ usage = """
   unpin [-m] <session|机器>
                         取消置顶
   close <session>       关掉(session 停掉进程;对话收起这一行,历史和
-                        收下的文件都留着,再来消息它自己回来)
+                        收下的文件都留着,再来消息它自己回来;导入的行只从
+                        列表里拿掉,那边的会话一个字节不动,它回到候选里)
   serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
                         (顺带把网页脸也开在局域网上,见 web)
   web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
@@ -1087,6 +1091,8 @@ account-name-ambiguous = "有不止一个账号叫 {0},用 id 指"
 # than a number (`khor_node::accounts::trouble`).
 quota-trouble = "问不出来({0})"
 quota-unlimited = "不限量"
+# `khor import` 没有候选可列。
+import-none = "没有可导入的会话:外面开的智能体、tmux 会话和 ACP 对话都已经在列表里,或者一个也没有"
 # `khor quota --why`:每家每条取数策略这一回做了什么(khor_node::quota::Outcome)。
 # 策略名是标识符(statusline、oauth-usage、rollout、wham-usage),照原样打印在前面。
 quota-why-unavailable = "这台机器上用不了"
@@ -1219,6 +1225,8 @@ no-such-tab = "没有这枚标签页: {0}"
 dir-pin-retired = "「置顶的目录」已经退役:目录现在是工作区。用 khor ws add -m {0} {1},再 khor ws pin -m {0} {1}"
 # 只能登记为订阅的提供商(codex:读的是 Codex 存的 ChatGPT 登录,没有密钥可填)。
 provider-sub-only = "{0} 只能登记订阅:加 --kind sub,不填密钥"
+# `khor import <序号|id>` 给的不是候选(已经在列表里、已经结束、或者根本没有这个会话)。
+not-a-candidate = "{0} 不在可导入的里面(khor import 看一眼现在有哪些)"
 # 本机读到的订阅登录自动建成的那条账户登记的名字(docs/SHELL.md 第七轮 第 3 条)。
 # {0} 是厂商自己的叫法(Claude Code),名字之后和别的登记一样可以改。
 sub-auto-name = "{0} 订阅"
@@ -2420,13 +2428,22 @@ new-session-attached = "已接入"
 # **和「接不了」必须读起来不一样**(cli 那两句同一个理由):装好之后
 # 用命令行把命令告诉 khor,和第一天一样能用。
 new-session-byhand = "自己装,再用命令行接进来"
-# 一个登记过的 agent 自己报过的历史对话。只在选中的是登记过的 agent 时
-# 出现——claude 和 codex 的对话 khor 是读它们的磁盘拿到的,这一节对它们
-# 没有主语。
-#
-# 「点一段接着走」写在标题里,因为点一行和底下那颗「建立」是两个动作:
-# 它不开新的,而且它去的是那段对话自己的目录,不是上面填的那个。
-new-session-seen = "已有的对话——点一段接着走"
+# ⚠️ 墓碑:new-session-seen(「已有的对话——点一段接着走」),新建向导里那一节的标题。
+# 2026-09-22 那一节挪进导入(docs/SHELL.md 第八轮:一个动作一个位置),标题换成 import-agents;
+# 底下「问一次」和三句回答的键照旧用。
+# 导入(docs/SHELL.md 第八轮):「+」的第二项,和它打开的那个面板。
+import-sessions = "导入"
+import-title = "导入会话"
+import-note = "khor 找到了、还没放进列表的会话。导入后出现在列表里;从列表删掉时,那边的会话一个字节不动。"
+import-empty = "没有可导入的会话"
+import-all-machines = "所有机器"
+import-all-places = "所有目录"
+import-go = "导入 {0} 个"
+import-form-tui = "智能体·终端形态(观察)"
+import-form-gui = "智能体·对话形态"
+import-agents = "ACP 智能体记下的对话"
+# 删除一行导入的会话:只是从列表拿掉(第八轮 第 3 条)。
+close-warn-imported = "只是从列表里拿掉,那边的会话一个字节不动,还能再导入"
 # 起一个真的 agent 进程:对真的 `@claude-acp` 实测 1.5 秒(npm 包已缓存)、
 # 冷启 5.64 秒;读记下来的同一个答案 0.017 秒。**所以它是一颗人按的按钮,
 # 永远不跟着轮询走。**
@@ -3357,6 +3374,9 @@ chat-refused-setting = "这一项 agent 没收,还是原来那样"
 # useful for none: the thing a person is deciding is what they are about
 # to lose, and that is the part that differs.
 close-warn-live = "关掉它,它正在跑的进程会停下"
+# ACP 对话那一行(gui 形态,docs/SHELL.md 第八轮):删掉的是 khor 里这一行和它起的 agent 进程,
+# 对话本身还在那个 agent 那里,在「导入」里还能再找回来。
+close-warn-gui = "删掉的是 khor 里这一行,对话本身还在那个 agent 那里,可以再导入"
 # chat 收起批 rewrote this again (传输并入对话批 had it down to "costs
 # nothing", which described a close that visibly did nothing — the one
 # face docs/UX.md forbids). Now the sentence carries the two facts a

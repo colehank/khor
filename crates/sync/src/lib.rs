@@ -16,6 +16,7 @@ mod glue;
 pub mod pins;
 pub mod plan;
 pub mod recents;
+pub mod roster;
 pub mod seen;
 pub mod store;
 pub mod titles;

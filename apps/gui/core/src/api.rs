@@ -715,6 +715,19 @@ pub fn answer(
         // Not `open_session` with a flag: a conversation that exists
         // brings its own directory and its own name, so the wizard's
         // answers do not apply to it (`agents::resume_session`).
+        // 导入 (docs/SHELL.md 第八轮): the candidates, and bringing some
+        // onto the list. `ids` in the order the person picked them.
+        "import_candidates" => to_json(&crate::import::import_candidates(root)?),
+        "import_sessions" => {
+            let ids: Vec<String> = args
+                .get("ids")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| "missing arg: ids".to_owned())?
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_owned))
+                .collect();
+            to_json(&crate::import::import_sessions(root, &ids)?)
+        }
         "resume_session" => to_json(&crate::agents::resume_session(
             root,
             &arg("agent")?,

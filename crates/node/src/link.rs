@@ -1245,6 +1245,9 @@ impl Node {
                 } else if doc == "pins" {
                     let mut loaded = self.pins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
+                } else if doc == "roster" {
+                    let mut loaded = self.roster_loaded()?;
+                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
                 } else if doc == "dirpins" {
                     let mut loaded = self.dirpins_loaded()?;
                     wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
@@ -1706,6 +1709,9 @@ impl Node {
                 })
                 .await
                 .map_err(|e| e.to_string())??;
+                // Opened here for another machine, and on the list for
+                // all of them (`khor_sync::roster`).
+                self.roster_new(&id)?;
                 Ok(Response::Opened { session: id.0 })
             }
             Request::Reach { session } => {
@@ -5347,6 +5353,17 @@ impl Node {
         {
             let mut loaded = self.pins_loaded()?;
             moved += self.rounds(&conn, "pins", &mut loaded).await?;
+        }
+        // What is on the session list (docs/SHELL.md 第八轮): an import
+        // on one machine is a row on every machine. Best effort — an
+        // older peer refuses the doc by name, and that must not cost the
+        // rounds behind it; what it costs is that peer's list still
+        // showing whatever it found on its own.
+        {
+            let mut loaded = self.roster_loaded()?;
+            if let Ok(n) = self.rounds(&conn, "roster", &mut loaded).await {
+                moved += n;
+            }
         }
         // Directory pins too — a shortcut chosen on the phone must be
         // there when the desk opens the same machine's disk. Best

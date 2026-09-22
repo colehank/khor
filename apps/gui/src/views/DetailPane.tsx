@@ -141,10 +141,16 @@ export function CopyId({
  * later, and the honest thing to say about it is only the part that is
  * true of every close.
  */
-export function closeWarning(kind: string): string {
+export function closeWarning(kind: string, imported = false): string {
+  // An imported row leaves the list and nothing else (docs/SHELL.md
+  // 第八轮 第 3 条) — the window says so, whatever its kind.
+  if (imported) return gui.close_warn_imported;
   if (kind === "chat") return gui.close_warn_chat;
   if (kind === "transfer") return gui.close_warn_transfer;
-  if (kind === "shell" || kind === "tui" || kind === "gui" || kind === "borrow") {
+  // An ACP conversation outlives the row: it is the agent's, and 导入
+  // finds it again (docs/SHELL.md 第八轮).
+  if (kind === "gui") return gui.close_warn_gui;
+  if (kind === "shell" || kind === "tui" || kind === "borrow") {
     return gui.close_warn_live;
   }
   return gui.close_warn;

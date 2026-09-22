@@ -116,6 +116,9 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
         k.report(&id, State::Blocked, khor_node::live::Source::Reported)
             .unwrap();
     }
+    // Found, not started: on the list because somebody imported it
+    // (docs/SHELL.md 第八轮) — and the list is one list, so beta shows it.
+    a.import(&id.0).unwrap();
 
     // beta is not home: its row can only be a report, and says so.
     timeout(Duration::from_secs(60), b.sync_now())
@@ -173,12 +176,25 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
     );
 
     // Remote close is not a thing yet — refused by name, pointing home.
-    let err = b.close(&id).unwrap_err();
+    // Asked of the row khor started (on the list as `new`): an imported
+    // row is not closed at all, only taken off the list (below).
+    let err = b.close(&ephemeral).unwrap_err();
     assert_eq!(
         err,
         khor_catalog::msg::remote_close_not_yet("alpha"),
         "remote close points home"
     );
+    // 删除 on the imported row, from beta: off the list, and nothing
+    // else — alpha's process is untouched (docs/SHELL.md 第八轮 第 3 条).
+    b.close(&id).unwrap();
+    assert!(!b.sessions().unwrap().iter().any(|v| v.session.id == id));
+    assert!(agent.try_wait().unwrap().is_none(), "the process lives on");
+    // …and brought back, for the ending rule below.
+    b.import(&id.0).unwrap();
+    timeout(Duration::from_secs(60), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
 
     // The missing-ending rule: the agent dies, nobody records an exit,
     // the row turns 失败 — and the far side sees it.

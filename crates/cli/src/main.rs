@@ -326,6 +326,13 @@ const VERBS: &[Verb] = &[
         run: sessions,
         reach: Reach::Read,
     },
+    // 导入 (docs/SHELL.md 第八轮): the candidates, or bringing some onto
+    // the list. Writes the list document, so it acts.
+    Verb {
+        word: "import",
+        run: import,
+        reach: Reach::Act,
+    },
     Verb {
         word: "tell",
         run: tell,
@@ -3076,6 +3083,58 @@ fn count(n: u64) -> String {
     } else {
         format!("{v:.1}{}", UNITS[u])
     }
+}
+
+/// `khor import` — what could be brought onto the session list, one per
+/// line with a number; `khor import <number|id>...` brings those. The
+/// numbers are this listing's, so they are asked again right before use
+/// — a number from a listing a minute old is not a promise.
+fn import(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    let candidates = n.import_candidates()?;
+    if rest.is_empty() {
+        if candidates.is_empty() {
+            println!("{}", cli::import_none());
+        }
+        let names: std::collections::HashMap<String, String> = n
+            .devices()?
+            .into_iter()
+            .map(|d| (d.id.clone(), d.shown().to_owned()))
+            .collect();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        for (i, c) in candidates.iter().enumerate() {
+            let age = if c.at_ms > 0 {
+                human_age(now.saturating_sub(c.at_ms).max(0) as u64)
+            } else {
+                String::new()
+            };
+            println!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                i + 1,
+                names
+                    .get(&c.home)
+                    .cloned()
+                    .unwrap_or_else(|| c.home.clone()),
+                c.form,
+                c.title,
+                c.place.as_deref().unwrap_or(""),
+                age,
+                c.id
+            );
+        }
+        return Ok(());
+    }
+    for which in rest {
+        let id = match which.parse::<usize>() {
+            Ok(k) if k >= 1 && k <= candidates.len() => candidates[k - 1].id.clone(),
+            _ => which.clone(),
+        };
+        println!("{}", n.import(&id)?.0);
+    }
+    Ok(())
 }
 
 fn sessions(rest: &[String]) -> Result<(), String> {
