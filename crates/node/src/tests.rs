@@ -3134,6 +3134,50 @@ fn pausing_a_paused_machine_is_refused_by_name() {
     assert!(!crate::pause::is_on(n.root()), "and resuming took");
 }
 
+/// 按机器暂停 (SHELL.md 第五轮 第 3 条): the one verb for every row's menu.
+/// This machine's own name is `khor pause` itself, a name nobody has is
+/// refused by name, and pausing a machine is its own file — never the
+/// whole-machine pause.
+#[test]
+fn pausing_by_machine_name_is_the_whole_machine_only_for_this_one() {
+    let r = scratch("pause-by-name");
+    let n = Node::open_as(r.to_path_buf(), "box").unwrap();
+    n.set_machine_paused("box", true).unwrap();
+    assert!(
+        crate::pause::is_on(n.root()),
+        "this machine's own name pauses this machine"
+    );
+    assert!(n.machine_paused(n.device_str()));
+    n.set_machine_paused("", false).unwrap();
+    assert!(
+        !crate::pause::is_on(n.root()),
+        "and the empty name is it too"
+    );
+    let refused = n.set_machine_paused("nobody", true).unwrap_err();
+    assert!(refused.contains("nobody"), "{refused}");
+    assert!(
+        crate::pause::peers(n.root()).is_empty() && !crate::pause::is_on(n.root()),
+        "a refused name changed nothing"
+    );
+}
+
+/// The per-machine file refuses the state it is in, by the machine's name.
+#[test]
+fn pausing_a_paused_machine_twice_is_refused_by_its_name() {
+    let r = scratch("peer-pause-twice");
+    crate::pause::set_peer(&r, "abc", "turing", true).unwrap();
+    assert_eq!(
+        crate::pause::set_peer(&r, "abc", "turing", true).unwrap_err(),
+        khor_catalog::msg::peer_already_paused("turing")
+    );
+    assert!(crate::pause::peer_on(&r, "abc"));
+    crate::pause::set_peer(&r, "abc", "turing", false).unwrap();
+    assert_eq!(
+        crate::pause::set_peer(&r, "abc", "turing", false).unwrap_err(),
+        khor_catalog::msg::peer_not_paused("turing")
+    );
+}
+
 /// **Pairing is refused by name while paused, not left to fail.** Both
 /// verbs need this machine to send and receive, so a pause is not a
 /// network fault they should retry through — it is this machine not

@@ -1962,6 +1962,41 @@ impl Node {
         }
     }
 
+    /// Pauses or resumes talking to one machine (SHELL.md 第五轮 第 3
+    /// 条), by the name a person typed. **This machine's own name, or the
+    /// empty name, is `khor pause` itself** — one verb for the menu item
+    /// on every row. Answers the sentence to print.
+    pub fn set_machine_paused(&self, machine: &str, on: bool) -> Result<String, String> {
+        let (_, id) = self.resolve_or_here(machine)?;
+        if id == self.device() {
+            crate::pause::set_on(&self.root, on)?;
+            return Ok(if on { msg::paused() } else { msg::resumed() }.to_owned());
+        }
+        let id = id.hex();
+        let shown = self
+            .devices()?
+            .into_iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| machine.to_owned());
+        crate::pause::set_peer(&self.root, &id, &shown, on)?;
+        Ok(if on {
+            msg::peer_paused(&shown)
+        } else {
+            msg::peer_resumed(&shown)
+        })
+    }
+
+    /// Whether this machine is paused toward the one with this id —
+    /// for the faces' rows (`khor devices`, the app's device list).
+    pub fn machine_paused(&self, id: &str) -> bool {
+        if id == self.device_str() {
+            self.paused()
+        } else {
+            crate::pause::peer_on(&self.root, id)
+        }
+    }
+
     /// [`Self::resolve`] for callers outside this module — the CLI's
     /// `rename -m` needs an id, and turning a typed name into one is
     /// exactly this.

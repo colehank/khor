@@ -403,6 +403,10 @@ usage: khor <verb>
                         web face go on working. A restart is still paused
   resume                resumes it: syncing again, and the next round
                         catches up
+                        pause <machine> pauses talking to that one machine
+                        only: not dialling it, not answering it, not syncing
+                        with it; it keeps running, and devices marks its row
+                        (paused). resume <machine> puts it back
   watch <machine> [directory ...]
                         has a machine watch the volumes those
                         directories sit on (shared across the whole
@@ -916,6 +920,11 @@ resumed = "Resumed. This machine syncs with the others again, and the next round
 # same shape).
 already-paused = "Already paused. To resume: khor resume"
 not-paused = "Not paused. To pause: khor pause"
+peer-paused = "Paused talking to {0}: not dialling it, not answering it, not syncing with it; it keeps running on its own. To resume: khor resume {0}"
+peer-resumed = "Resumed talking to {0}; the next round catches it up"
+peer-already-paused = "Already paused with {0}. To resume: khor resume {0}"
+peer-not-paused = "Not paused with {0}. To pause: khor pause {0}"
+peer-paused-refusal = "paused from this side — to resume: khor resume <machine>"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
 # that right now」 — refused by name, with the way out in it.

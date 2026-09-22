@@ -1752,28 +1752,28 @@ fn leave(rest: &[String]) -> Result<(), String> {
 }
 
 /// Stops this machine talking to the network without leaving it
-/// (docs/MORE.md 暂停).
-///
-/// No argument: unlike `leave` and `forget`, nothing here is
-/// irreversible and nothing names another machine — `khor resume` puts
-/// it back, and the thing being paused is the machine you are standing
-/// on.
+/// (docs/MORE.md 暂停) — or, with a machine named, stops talking to that
+/// one machine (SHELL.md 第五轮 第 3 条): not dialled, not answered, not
+/// synced with, while it keeps running on its own. This machine's own
+/// name is the same as no name.
 fn pause(rest: &[String]) -> Result<(), String> {
-    if !rest.is_empty() {
-        return Err(usage_text().into());
-    }
-    khor_node::pause::set_on(&Node::root_from_env(), true)?;
-    println!("{}", msg::paused());
-    Ok(())
+    pause_or_resume(rest, true)
 }
 
-/// Puts it back (docs/MORE.md 暂停).
+/// Puts it back (docs/MORE.md 暂停), for this machine or the one named.
 fn resume(rest: &[String]) -> Result<(), String> {
-    if !rest.is_empty() {
-        return Err(usage_text().into());
+    pause_or_resume(rest, false)
+}
+
+fn pause_or_resume(rest: &[String], on: bool) -> Result<(), String> {
+    match rest {
+        [] => {
+            khor_node::pause::set_on(&Node::root_from_env(), on)?;
+            println!("{}", if on { msg::paused() } else { msg::resumed() });
+        }
+        [machine] => println!("{}", node()?.set_machine_paused(machine, on)?),
+        _ => return Err(usage_text().into()),
     }
-    khor_node::pause::set_on(&Node::root_from_env(), false)?;
-    println!("{}", msg::resumed());
     Ok(())
 }
 
@@ -1834,11 +1834,12 @@ fn devices(_rest: &[String]) -> Result<(), String> {
         // second home on this Mac made every row claim to be home.
         let me = d.id == n.device_str();
         let here = if me { cli::this_machine() } else { "" };
-        // 暂停 (docs/MORE.md): on this machine's row only, because
-        // that is whose state it is. Another machine being paused
-        // is not a thing this one can know — what it sees is the
-        // road going quiet, which the road column already says.
-        let held = if me && n.paused() {
+        // 暂停 (docs/MORE.md), and 按机器暂停 (SHELL.md 第五轮 第 3
+        // 条): what *this* machine decided — about itself on its own
+        // row, about talking to that machine on that one's. Whether
+        // another machine paused itself is not a thing this one can
+        // know; what it sees is the road going quiet.
+        let held = if n.machine_paused(&d.id) {
             cli::paused_mark()
         } else {
             ""
