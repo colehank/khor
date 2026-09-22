@@ -266,7 +266,8 @@ usage = """
                         机器上);订阅是 add <名字> --provider claude --kind sub,
                         不填密钥——它读的是这台机器上 Claude Code 的登录,
                         所以登记在哪台就读哪台;rm <id|名字> 撤掉
-  quota                 每个账号用了多少:本机的现读,别的机器的按上次带回来的
+  quota [--why]         每个账号用了多少:本机的现读,别的机器的按上次带回来的;
+                        --why 印出本机每家订阅每条取数策略这一回做了什么
   attach <session>      接上一个持久 session(Ctrl-\\ 断开);
                         行在哪台机器上就接哪台,不用说
   takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
@@ -1083,6 +1084,13 @@ account-name-ambiguous = "有不止一个账号叫 {0},用 id 指"
 # than a number (`khor_node::accounts::trouble`).
 quota-trouble = "问不出来({0})"
 quota-unlimited = "不限量"
+# `khor quota --why`:每家每条取数策略这一回做了什么(khor_node::quota::Outcome)。
+# 策略名是标识符(statusline、oauth-usage、rollout、wham-usage),照原样打印在前面。
+quota-why-unavailable = "这台机器上用不了"
+quota-why-used = "用了它的读数"
+quota-why-cached = "没去问:这台机器 {0} 秒前的读数还新"
+quota-why-cooling = "没去问:上次失败了,还要歇 {0} 分钟"
+quota-why-failed = "试了,没读到({0})"
 quota-no-number = "没有数"
 # A prepaid wallet reports what is left, not what was spent.
 quota-remaining = "剩 {0}"
@@ -1206,6 +1214,8 @@ no-such-tab = "没有这枚标签页: {0}"
 # `khor pin -d` / `unpin -d` 退役(docs/SHELL.md 第六轮):「置顶的目录」那一栏撤了,
 # 一个要常去的目录就是一个置顶的工作区。拒绝,退出码非 0,给出做这件事的动词。
 dir-pin-retired = "「置顶的目录」已经退役:目录现在是工作区。用 khor ws add -m {0} {1},再 khor ws pin -m {0} {1}"
+# 只能登记为订阅的提供商(codex:读的是 Codex 存的 ChatGPT 登录,没有密钥可填)。
+provider-sub-only = "{0} 只能登记订阅:加 --kind sub,不填密钥"
 # 删除一个置顶的标签页(`khor_node::tabs::close`)。置顶就是「别让我顺手关掉它」,
 # 所以先取消置顶才能删——窗口和 `khor tabs close` 都走这一句。
 tab-pinned = "这个标签页已置顶,先取消置顶再删除"

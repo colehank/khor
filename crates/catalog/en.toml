@@ -266,9 +266,11 @@ usage: khor <verb>
                         reads the Claude Code login on this machine,
                         so whichever machine it's registered on is the
                         one it reads from; rm <id|name> removes one
-  quota                 how much each account has used: read live for
+  quota [--why]         how much each account has used: read live for
                         this machine, from whatever the last sync
-                        brought back for the others
+                        brought back for the others; --why prints what
+                        each way of reading this machine's
+                        subscriptions did this time
   attach <session>      attaches to a persistent session (Ctrl-\\
                         detaches); connects to whichever machine the
                         row is on — you don't say which
@@ -693,6 +695,11 @@ account-budget-number = "--budget needs a number after it"
 account-name-ambiguous = "More than one account named {0} — use its id instead"
 quota-trouble = "Couldn't get it ({0})"
 quota-unlimited = "Unlimited"
+quota-why-unavailable = "can't run on this machine"
+quota-why-used = "its reading was used"
+quota-why-cached = "not asked: this machine's reading from {0}s ago is still fresh"
+quota-why-cooling = "not asked: the last try failed, {0} more minute(s) to wait"
+quota-why-failed = "tried, got nothing ({0})"
 quota-no-number = "No number"
 # Worded differently from `fill-left` (a disk/dial reading) to avoid a
 # same-section duplicate — this is a prepaid wallet's remaining balance.
@@ -790,6 +797,7 @@ cant-append = "Can't append: {0}"
 no-such-message = "No such message: {0}"
 no-such-tab = "No such tab: {0}"
 dir-pin-retired = "Pinned directories are retired: a directory is a workspace now. Use khor ws add -m {0} {1}, then khor ws pin -m {0} {1}"
+provider-sub-only = "{0} can only be registered as a subscription: add --kind sub, with no key"
 tab-pinned = "This tab is pinned — unpin it before deleting it"
 
 # ── frames (node) ──

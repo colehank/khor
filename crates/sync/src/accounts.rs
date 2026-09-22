@@ -62,6 +62,10 @@ pub enum Provider {
     MoonshotCn,
     /// OpenRouter: the key's own spend cap and usage.
     Openrouter,
+    /// Codex's ChatGPT plan — **a subscription only**, read through the
+    /// login Codex stored (`khor_node::quota::codex`); there is no key
+    /// to register against it.
+    Codex,
     /// A word from a newer khor: carried and shown, never read here.
     Other(String),
 }
@@ -70,7 +74,7 @@ impl Provider {
     /// The words `parse` accepts, spelled as `word` spells them — for
     /// the sentence that refuses one it does not, and for the usage
     /// text, so neither can list fewer than exist.
-    pub const WORDS: [&'static str; 7] = [
+    pub const WORDS: [&'static str; 8] = [
         "newapi",
         "claude",
         "openai",
@@ -78,6 +82,7 @@ impl Provider {
         "moonshot",
         "moonshot-cn",
         "openrouter",
+        "codex",
     ];
 
     pub fn parse(word: &str) -> Option<Provider> {
@@ -89,6 +94,7 @@ impl Provider {
             "moonshot" | "moonshotai" => Some(Provider::Moonshot),
             "moonshot-cn" | "moonshotai-cn" => Some(Provider::MoonshotCn),
             "openrouter" => Some(Provider::Openrouter),
+            "codex" => Some(Provider::Codex),
             _ => None,
         }
     }
@@ -102,6 +108,7 @@ impl Provider {
             Provider::Moonshot => "moonshot",
             Provider::MoonshotCn => "moonshot-cn",
             Provider::Openrouter => "openrouter",
+            Provider::Codex => "codex",
             Provider::Other(word) => word,
         }
     }

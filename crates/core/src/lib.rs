@@ -1666,6 +1666,17 @@ pub struct Quota {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub fill: Option<f32>,
+    /// Which strategy in the vendor's chain answered (`statusline`,
+    /// `oauth-usage`, `rollout`, `wham-usage` — `khor_node::quota`),
+    /// kept with the reading so a cached one still says where it came
+    /// from. `None` from a cache written before the chain existed.
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Whether the vendor says the limit has been reached, where it
+    /// says so at all (Codex's `rate_limit.limit_reached`). `None` is
+    /// 「not said」, never 「not reached」.
+    #[serde(default)]
+    pub limit_reached: Option<bool>,
 }
 
 /// Why there is no quota reading — as a cause, never as a sentence.

@@ -245,6 +245,10 @@ impl Node {
             AccountKind::Other(word) => return Err(msg::no_such_kind(word)),
             AccountKind::Bill => {}
         }
+        // A plan read through a login, with no key or bill of its own.
+        if provider == Provider::Codex {
+            return Err(msg::provider_sub_only(provider.word()));
+        }
         let key = key.trim();
         if key.is_empty() {
             return Err(msg::account_key_blank().into());
@@ -339,7 +343,7 @@ impl Node {
         {
             return Err(msg::account_sub_already_here(had.name));
         }
-        if !reader.logged_in() {
+        if !(reader.logged_in)() {
             return Err(msg::account_sub_no_login().into());
         }
         self.commit_account(Account {
@@ -670,43 +674,16 @@ impl Node {
     }
 }
 
-/// Which stored login answers for a provider's subscription — **the
-/// one place that decides it, and everything else asks here.**
+/// Which vendor answers for a provider's subscription — **the one
+/// place that decides it, and everything else asks here.**
 ///
-/// Registration, the login check and the reader all go through this
-/// function, and [`SUB_PROVIDERS`]' words are derived from it rather
-/// than listed beside it. That is the whole shape of the opening left for codex:
-/// **adding a vendor is one arm here** (plus whatever reads that
-/// vendor's credential), not a second list to keep in step with this
-/// one — and a list kept in step by hand is how a provider comes to be
-/// offered on a form that nothing can read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SubReader {
-    /// Claude Code's own credential on this machine (`crate::quota`).
-    ClaudeCode,
-}
-
-pub fn sub_reader(provider: &Provider) -> Option<SubReader> {
-    match provider {
-        Provider::Claude => Some(SubReader::ClaudeCode),
-        _ => None,
-    }
-}
-
-impl SubReader {
-    /// Is that login on this machine at all — **without going near the
-    /// network** (`quota::logged_in`).
-    fn logged_in(self) -> bool {
-        match self {
-            SubReader::ClaudeCode => crate::quota::logged_in(),
-        }
-    }
-
-    async fn read(self) -> Result<khor_core::Quota, QuotaTrouble> {
-        match self {
-            SubReader::ClaudeCode => crate::quota::read().await,
-        }
-    }
+/// Registration, the login check and the reading all go through this,
+/// and [`sub_provider_words`] is derived from it rather than listed
+/// beside it. **The vendors are `crate::quota`'s descriptions** (one
+/// per vendor, a chain of strategies each — docs/SHELL.md 第九轮), so
+/// adding a vendor is a description there, not an arm here.
+pub fn sub_reader(provider: &Provider) -> Option<&'static crate::quota::Provider> {
+    crate::quota::provider(provider.word())
 }
 
 /// This machine's subscription reading for one registered account.
@@ -759,7 +736,7 @@ fn subscription_reading(
 /// The two new words are the ones worth having — 「no login」 and
 /// 「expired login」 have different remedies, and telling them apart is
 /// the whole value of saying anything.
-fn sub_trouble(why: &QuotaTrouble) -> &'static str {
+pub fn sub_trouble(why: &QuotaTrouble) -> &'static str {
     match why {
         QuotaTrouble::NoLogin => trouble::NO_LOGIN,
         QuotaTrouble::Stale => trouble::LOGIN_STALE,
@@ -865,7 +842,9 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
             .map_err(|_| trouble::UNREACHABLE)?;
             read_openrouter(account, &j, now)
         }
-        Provider::Other(_) => Err(trouble::UNKNOWN_PROVIDER),
+        // A subscription only: registration refuses a billed one, so
+        // this is a doc written by hand or by a newer khor.
+        Provider::Codex | Provider::Other(_) => Err(trouble::UNKNOWN_PROVIDER),
     }
 }
 
@@ -2697,6 +2676,8 @@ mod tests {
             plan: Some("Max 20x".into()),
             credits: None,
             fill: Some(0.39),
+            source: None,
+            limit_reached: None,
         };
         let r = subscription_reading(&acc, Ok(quota), taken * 1000 + 600_000);
         assert_eq!(r.trouble, None);
@@ -2827,11 +2808,12 @@ mod tests {
     /// first two stay behind.
     #[test]
     fn only_the_vendors_whose_login_khor_reads_can_be_subscribed_to() {
-        assert_eq!(sub_provider_words(), ["claude"]);
+        assert_eq!(sub_provider_words(), ["claude", "codex"]);
         assert!(sub_reader(&Provider::Claude).is_some());
+        assert!(sub_reader(&Provider::Codex).is_some());
         assert!(
             sub_reader(&Provider::Openai).is_none(),
-            "codex's credential has not been read yet"
+            "OpenAI's API is billed; the plan is Codex's"
         );
         assert!(sub_reader(&Provider::Other("quantum-llm".into())).is_none());
         // Every word the refusal offers is a word `parse` accepts —
