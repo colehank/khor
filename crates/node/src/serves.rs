@@ -61,6 +61,25 @@ pub fn residents(seen: &[Seen], default_root: &Path) -> Vec<Resident> {
     out
 }
 
+/// The residents that are **this machine's own**: serving a store khor's
+/// own rule could hand this user on this machine — the home itself, or a
+/// side room `home/.khor-hosts/<name>` (`Node::store_under`). Only those
+/// can be the turing shape: two identities for one machine.
+///
+/// **Everything else is left out on purpose**: a test's scratch store, a
+/// smoke run's, a second instance somebody started with `KHOR_HOME` on
+/// purpose. Counting those made the doctor amber on every machine where
+/// anything else was running — measured the day this shipped: smoke's
+/// own doctor row went red over two stray probe serves in a scratchpad
+/// (SHELL.md 第五轮 第 0 条, sidebar-builder's report).
+pub fn own(residents: Vec<Resident>, home: &Path) -> Vec<Resident> {
+    let rooms = home.join(".khor-hosts");
+    residents
+        .into_iter()
+        .filter(|r| r.root == home || r.root.parent() == Some(rooms.as_path()))
+        .collect()
+}
+
 /// Whether a command line is `khor serve`: the program's file name
 /// starts with `khor` (the keeper runs from `khor-<fingerprint>` copies
 /// behind the shield) and is not the app, and the verb is `serve`.
@@ -196,6 +215,28 @@ mod tests {
     fn an_orphaned_inner_counts() {
         let ps = [seen(10, 1, true, Some("/s"))];
         assert_eq!(residents(&ps, Path::new("/d")).len(), 1);
+    }
+
+    /// turing's two count; a test's and a smoke run's stores beside them
+    /// do not.
+    #[test]
+    fn only_the_stores_this_machine_could_own_count() {
+        let home = Path::new("/nfs/home");
+        let r = |pid, root: &str| Resident {
+            pid,
+            root: root.into(),
+        };
+        let kept = own(
+            vec![
+                r(1, "/nfs/home"),
+                r(2, "/nfs/home/.khor-hosts/turing"),
+                r(3, "/tmp/khor-two-a-123"),
+                r(4, "/repo/target/gui-smoke/alpha"),
+                r(5, "/nfs/home/.khor-hosts/turing/deeper"),
+            ],
+            home,
+        );
+        assert_eq!(kept.iter().map(|r| r.pid).collect::<Vec<_>>(), vec![1, 2]);
     }
 
     #[test]
