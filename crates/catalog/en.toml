@@ -403,6 +403,10 @@ usage: khor <verb>
                         web face go on working. A restart is still paused
   resume                resumes it: syncing again, and the next round
                         catches up
+                        pause <machine> pauses talking to that one machine
+                        only: not dialling it, not answering it, not syncing
+                        with it; it keeps running, and devices marks its row
+                        (paused). resume <machine> puts it back
   watch <machine> [directory ...]
                         has a machine watch the volumes those
                         directories sit on (shared across the whole
@@ -491,6 +495,8 @@ doctor-store-shut = "cannot write to it: {0}"
 doctor-serve-ok = "running (pid {0})"
 doctor-serve-none = "not running"
 doctor-serve-deaf = "pid {0} on file, but it does not answer"
+doctor-serve-many = "this machine is running {0} serves: {1}"
+doctor-serve-one-of = "pid {0} (store {1})"
 doctor-web-ok = "port {0} is listening, key is there"
 doctor-web-nokey = "port {0} is listening, but the key file is missing"
 doctor-web-quiet = "nothing is listening on port {0}"
@@ -794,6 +800,8 @@ serve-unreachable = "Can't reach serve: {0}"
 handoff-failed = "Handoff failed: {0}"
 cant-close-stream = "Can't close stream: {0}"
 no-reply-from-serve = "No reply from serve: {0}"
+serve-op-timed-out = "serve didn't finish {0} within {1}s — stopped waiting"
+serve-op-late = "[{0}] {1} ran past {2}s — gave up and answered"
 cant-open-handoff-port = "Can't open handoff port: {0}"
 handoff-unreadable = "Can't read handoff: {0}"
 handoff-wrong-cookie = "Handoff cookie doesn't match — re-read endpoint.json and try again"
@@ -912,6 +920,11 @@ resumed = "Resumed. This machine syncs with the others again, and the next round
 # same shape).
 already-paused = "Already paused. To resume: khor resume"
 not-paused = "Not paused. To pause: khor pause"
+peer-paused = "Paused talking to {0}: not dialling it, not answering it, not syncing with it; it keeps running on its own. To resume: khor resume {0}"
+peer-resumed = "Resumed talking to {0}; the next round catches it up"
+peer-already-paused = "Already paused with {0}. To resume: khor resume {0}"
+peer-not-paused = "Not paused with {0}. To pause: khor pause {0}"
+peer-paused-refusal = "paused from this side — to resume: khor resume <machine>"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
 # that right now」 — refused by name, with the way out in it.
@@ -935,6 +948,7 @@ serve-hops-late = "[{0}] iroh didn't say which road within {1} ms, reporting \"c
 serve-shielding = "[{0}] {1} is on a network drive — keeper is moving to a local copy before running, so a file swap over there can't hit the process running here"
 serve-shield-failed = "[{0}] local copy failed ({1}), running in place"
 serve-copy-swept = "[{0}] the local copy was swept away (probably a /tmp cleaner), copying a fresh one to hand off"
+serve-keeper-stayed = "[{0}] serve moved to the new build but the keeper couldn't follow ({1}); it keeps watching on the old one"
 borrow-self = "That's this machine's own network — no need to borrow it; open it directly for a direct connection"
 page-needs-desktop = "Opening a web page from another machine's network only works on desktop for now"
 

@@ -1309,7 +1309,8 @@ mod store_owner_tests {
     /// fight over one registry.
     #[test]
     fn a_store_belongs_to_the_machine_that_made_it() {
-        let root = std::env::temp_dir().join(format!("khor-owner-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("owner");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
@@ -1350,7 +1351,8 @@ mod store_owner_tests {
     /// implementation that always answers `$HOME` passes those two.
     #[test]
     fn a_shared_home_sends_every_other_machine_to_its_own_store() {
-        let home = std::env::temp_dir().join(format!("khor-under-{}", std::process::id()));
+        let _home_tree = crate::testdir::TempTree::at("under");
+        let home = _home_tree.path();
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join(".khor")).unwrap();
         let here = gethostname::gethostname().to_string_lossy().to_string();
@@ -1395,7 +1397,8 @@ mod store_owner_tests {
     /// first two.
     #[test]
     fn renaming_a_machine_does_not_cost_it_its_store() {
-        let root = std::env::temp_dir().join(format!("khor-rename-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("rename");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         crate::Node::open(root.clone()).expect("a fresh store opens");
@@ -1460,7 +1463,8 @@ mod store_owner_tests {
             eprintln!("skipped: this platform will not fingerprint itself");
             return;
         };
-        let home = std::env::temp_dir().join(format!("khor-room-{}", std::process::id()));
+        let _home_tree = crate::testdir::TempTree::at("room");
+        let home = _home_tree.path();
         let _ = std::fs::remove_dir_all(&home);
         let here = gethostname::gethostname().to_string_lossy().to_string();
 
@@ -1512,7 +1516,8 @@ mod store_owner_tests {
     /// a second chat window and strand the first one's watermark.
     #[test]
     fn the_channel_a_store_joined_under_outlives_a_rename() {
-        let root = std::env::temp_dir().join(format!("khor-chan-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("chan");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
@@ -2014,7 +2019,8 @@ mod finding_the_program {
     /// failure back to a child that dies with nothing to say.
     #[test]
     fn something_that_is_not_a_program_does_not_count_as_finding_one() {
-        let dir = std::env::temp_dir().join(format!("khor-path-{}", std::process::id()));
+        let _dir_tree = crate::testdir::TempTree::at("path");
+        let dir = _dir_tree.path();
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("npx")).unwrap();
         std::fs::write(dir.join("data"), b"not a program").unwrap();
@@ -3132,6 +3138,50 @@ fn pausing_a_paused_machine_is_refused_by_name() {
     );
     crate::pause::set_on(n.root(), false).unwrap();
     assert!(!crate::pause::is_on(n.root()), "and resuming took");
+}
+
+/// 按机器暂停 (SHELL.md 第五轮 第 3 条): the one verb for every row's menu.
+/// This machine's own name is `khor pause` itself, a name nobody has is
+/// refused by name, and pausing a machine is its own file — never the
+/// whole-machine pause.
+#[test]
+fn pausing_by_machine_name_is_the_whole_machine_only_for_this_one() {
+    let r = scratch("pause-by-name");
+    let n = Node::open_as(r.to_path_buf(), "box").unwrap();
+    n.set_machine_paused("box", true).unwrap();
+    assert!(
+        crate::pause::is_on(n.root()),
+        "this machine's own name pauses this machine"
+    );
+    assert!(n.machine_paused(n.device_str()));
+    n.set_machine_paused("", false).unwrap();
+    assert!(
+        !crate::pause::is_on(n.root()),
+        "and the empty name is it too"
+    );
+    let refused = n.set_machine_paused("nobody", true).unwrap_err();
+    assert!(refused.contains("nobody"), "{refused}");
+    assert!(
+        crate::pause::peers(n.root()).is_empty() && !crate::pause::is_on(n.root()),
+        "a refused name changed nothing"
+    );
+}
+
+/// The per-machine file refuses the state it is in, by the machine's name.
+#[test]
+fn pausing_a_paused_machine_twice_is_refused_by_its_name() {
+    let r = scratch("peer-pause-twice");
+    crate::pause::set_peer(&r, "abc", "turing", true).unwrap();
+    assert_eq!(
+        crate::pause::set_peer(&r, "abc", "turing", true).unwrap_err(),
+        khor_catalog::msg::peer_already_paused("turing")
+    );
+    assert!(crate::pause::peer_on(&r, "abc"));
+    crate::pause::set_peer(&r, "abc", "turing", false).unwrap();
+    assert_eq!(
+        crate::pause::set_peer(&r, "abc", "turing", false).unwrap_err(),
+        khor_catalog::msg::peer_not_paused("turing")
+    );
 }
 
 /// **Pairing is refused by name while paused, not left to fail.** Both

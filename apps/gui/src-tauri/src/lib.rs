@@ -2448,6 +2448,14 @@ fn set_paused(on: bool) -> Result<khor_gui_core::About, String> {
     Ok(khor_gui_core::about(&root))
 }
 
+/// Pauses or resumes talking to one machine, by name (SHELL.md 第五轮 第
+/// 3 条) — the row menu's 暂停 / 恢复. Not async, `set_paused`'s reason.
+/// Answers the sentence; the row's grey comes from the next device list.
+#[tauri::command]
+fn set_machine_paused(machine: String, on: bool) -> Result<String, String> {
+    khor_gui_core::set_machine_paused(&Node::root_from_env(), &machine, on)
+}
+
 pub fn run() {
     // 语言, before anything is drawn or printed (docs/MORE.md 语言).
     // The face resolves its own (`src/lang.ts`, from the same key); this
@@ -2747,7 +2755,8 @@ pub fn run() {
             invite,
             pair,
             leave,
-            set_paused
+            set_paused,
+            set_machine_paused
         ])
         .run(tauri::generate_context!())
         .expect("tauri run");

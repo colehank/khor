@@ -469,7 +469,7 @@ impl Node {
             .await
             .map_err(msg::handoff_unreadable)?;
         let reply = match proto::decode::<ipc::Handoff>(&bytes) {
-            Ok(h) if h.cookie == cookie => self.run_handoff(ep, h.op).await,
+            Ok(h) if h.cookie == cookie => self.run_handoff_within(ep, h.op).await,
             Ok(_) => ipc::Reply::Refused {
                 why: msg::handoff_wrong_cookie().into(),
             },
@@ -481,6 +481,26 @@ impl Node {
             .map_err(msg::cant_reply)?;
         stream.shutdown().await.map_err(msg::cant_close_stream)?;
         Ok(())
+    }
+
+    /// [`Self::run_handoff`] under the op's deadline (SHELL.md 第五轮 第 2
+    /// 条). **Half a second short of the asker's**, so the refusal still
+    /// reaches a caller that is about to stop waiting, and **named in the
+    /// log** — a stuck op is a fault in something this serve talks to,
+    /// and the log is where somebody goes looking for which.
+    async fn run_handoff_within(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+        let (name, deadline) = (op.name(), op.deadline());
+        let mine = deadline.saturating_sub(Duration::from_millis(500));
+        match tokio::time::timeout(mine, self.run_handoff(ep, op)).await {
+            Ok(reply) => reply,
+            Err(_) => {
+                let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                eprintln!("{}", msg::serve_op_late(&stamp, name, mine.as_secs()));
+                ipc::Reply::Refused {
+                    why: msg::serve_op_timed_out(name, deadline.as_secs()),
+                }
+            }
+        }
     }
 
     async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
@@ -997,6 +1017,14 @@ impl Node {
         channel: &str,
     ) -> Result<iroh::endpoint::Connection, String> {
         if let Some(open) = self.held_wire(channel).await {
+            // 按机器暂停 (SHELL.md 第五轮 第 3 条) reaches a pipe that was
+            // already open too: a pause that only stopped *new* dials
+            // would keep talking to the machine on the old one.
+            if crate::pause::peer_on(self.root(), &open.remote_id().to_string()) {
+                self.wires.lock().await.remove(channel);
+                open.close(0u32.into(), b"paused");
+                return Err(msg::cant_reach_named(channel, msg::peer_paused_refusal()));
+            }
             return Ok(open);
         }
         let target = self
@@ -1109,10 +1137,13 @@ impl Node {
     async fn serve_tunnel(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
         while let Ok((send, recv)) = conn.accept_bi().await {
-            let paired = self
-                .devices_loaded()
-                .map(|l| l.doc.get(&remote).is_some())
-                .unwrap_or(false);
+            // A machine this one has paused is treated as a stranger
+            // here, per stream, so a pause bites on a tunnel already up.
+            let paired = !crate::pause::peer_on(self.root(), &remote)
+                && self
+                    .devices_loaded()
+                    .map(|l| l.doc.get(&remote).is_some())
+                    .unwrap_or(false);
             tokio::spawn(async move {
                 let _ = crate::tunnel::serve_stream(send, recv, paired).await;
             });
@@ -1127,6 +1158,15 @@ impl Node {
     ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
+            // 按机器暂停 (SHELL.md 第五轮 第 3 条): a machine this one has
+            // paused gets no answer — the connection is closed, the way
+            // a machine that is not there closes nothing. Asked per
+            // request (a small file, off the accept loop) so a pause
+            // bites on a connection that was already open.
+            if crate::pause::peer_on(self.root(), &remote) {
+                conn.close(0u32.into(), b"paused");
+                return Ok(());
+            }
             let bytes = recv
                 .read_to_end(MAX_FRAME)
                 .await
@@ -5861,6 +5901,11 @@ impl Node {
         relays: &[String],
         alpn: &[u8],
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
+        // 按机器暂停: not dialled at all, and said so — the sync tick,
+        // every verb and every tunnel come through here.
+        if crate::pause::peer_on(self.root(), id) {
+            return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
+        }
         let bare = |e| DialFailure::Refused(format!("{e}"));
         let mut roads = tokio::task::JoinSet::new();
         if !direct.is_empty() {

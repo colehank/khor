@@ -1321,6 +1321,7 @@ mod tests {
             }],
             volumes: vec![],
             uptime_s: 0,
+            model: None,
         })
         .unwrap();
         assert!(
@@ -1329,6 +1330,10 @@ mod tests {
         );
         let v: khor_core::Vitals = rmp_serde::from_slice(&old).unwrap();
         assert_eq!(v.uptime_s, 0);
+        assert_eq!(
+            v.model, None,
+            "a peer that predates the model field reads as one that could not say"
+        );
         assert_eq!(v.gpus[0].temp_c, None);
         let day = rmp_serde::to_vec(&OldDay {
             bucket_ms: 1,
@@ -1983,6 +1988,7 @@ mod tests {
             gpus: vec![],
             volumes: vec![],
             uptime_s: 0,
+            model: None,
         };
         let bytes = encode(&Response::SatVitals {
             vitals: sent.clone(),
@@ -2028,6 +2034,7 @@ mod tests {
                 fill: khor_core::Fill { used: 1, total: 2 },
             }],
             uptime_s: 12,
+            model: None,
         };
         let bytes = encode(&Response::Vitals {
             vitals: sent.clone(),

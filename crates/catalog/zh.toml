@@ -343,6 +343,9 @@ usage = """
   pause                 暂停接入网络:不再与别的机器同步,别的机器那边看见这台
                         离线;本机的会话、工作区、网页脸照常用。关机重开还是暂停的
   resume                恢复接入:重新同步,下一轮就能对上
+                        pause <机器>:只暂停和那一台的往来——不拨它、不接它、
+                        不和它同步,它自己照常运行;devices 里那一行标(已暂停)。
+                        resume <机器> 接回来
   watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷(全网同一份,
                         devices 里那台机器多印每个目录还剩多少);不给目录=清空"""
 this-machine = "(本机)"
@@ -464,6 +467,11 @@ doctor-store-shut = "写不进去: {0}"
 doctor-serve-ok = "在跑(pid {0})"
 doctor-serve-none = "没在跑"
 doctor-serve-deaf = "记着 pid {0},可是不答话"
+# One machine, more than one resident (keeper and child count as one).
+# Named by the pid a person would stop and the store each serves, which
+# is how the two are told apart.
+doctor-serve-many = "这台机器上有 {0} 个 serve:{1}"
+doctor-serve-one-of = "pid {0}(店 {1})"
 doctor-web-ok = "端口 {0} 在听,钥匙在"
 doctor-web-nokey = "端口 {0} 在听,可是钥匙文件不在"
 doctor-web-quiet = "端口 {0} 没人听"
@@ -1208,6 +1216,10 @@ serve-unreachable = "递不到 serve: {0}"
 handoff-failed = "递不过去: {0}"
 cant-close-stream = "收不了尾: {0}"
 no-reply-from-serve = "读不到 serve 的答复: {0}"
+# SHELL.md 第五轮 第 2 条: every hand-off has a deadline. {0} is the op's
+# code name (never translated), {1} seconds.
+serve-op-timed-out = "serve 在 {1} 秒内没做完 {0},先不等了"
+serve-op-late = "[{0}] {1} 超过 {2} 秒没做完,放弃并回话"
 cant-open-handoff-port = "开不了递话口: {0}"
 handoff-unreadable = "读不完递话: {0}"
 handoff-wrong-cookie = "递话的暗号对不上,重读 endpoint.json 再来"
@@ -1476,6 +1488,13 @@ resumed = "已恢复接入。这台机器重新与别的机器同步,下一轮�
 # 拒的是同一个形状)。
 already-paused = "已经是暂停的了。要恢复: khor resume"
 not-paused = "本来就没暂停。要暂停: khor pause"
+# 按机器暂停 (SHELL.md 第五轮 第 3 条): this machine stops talking to one
+# other machine; that one keeps running and is told nothing.
+peer-paused = "已暂停和 {0} 的往来:不拨它、不接它、不和它同步;它那边照常运行。要恢复: khor resume {0}"
+peer-resumed = "已恢复和 {0} 的往来,下一轮就能对上"
+peer-already-paused = "和 {0} 的往来已经是暂停的了。要恢复: khor resume {0}"
+peer-not-paused = "和 {0} 的往来本来就没暂停。要暂停: khor pause {0}"
+peer-paused-refusal = "这台机器暂停着(本机这边暂停的),要恢复: khor resume <机器>"
 # 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
 # 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
 paired-while-paused = "这台机器已暂停接入,配对要先恢复: khor resume"
@@ -1532,6 +1551,9 @@ serve-hops-late = "[{0}] 问 iroh 走哪条路,{1} 毫秒内没答上来,先报�
 serve-shielding = "[{0}] {1} 在网络盘上——keeper 搬进本地副本再跑,那边换文件砸不到这边跑着的进程"
 serve-shield-failed = "[{0}] 本地副本没做成({1}),就在原地跑"
 serve-copy-swept = "[{0}] 本地副本被清掉了(多半是 /tmp 清理器),拷一份新的交棒"
+# The keeper follows its serve into a new generation by exec; this is
+# the one line it writes when that exec did not happen.
+serve-keeper-stayed = "[{0}] serve 换了新版,keeper 自己没换过去({1}),先用旧的接着看"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # A page opened in the app is a second webview parented to the window, and
 # `Window::add_child` exists on desktop alone — mobile needs a native

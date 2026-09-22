@@ -38,9 +38,13 @@
 //! it. Nothing that cannot answer gets to serve; the old generation
 //! keeps running and the refusal is one line in the log.
 //!
-//! The keeper itself stays on the old code until its own next start.
-//! It is deliberately too small for that to matter: every feature
-//! lives in the inner serve.
+//! Once the old serve has left, the keeper execs the new generation
+//! itself (same pid) and that keeper spawns the new serve. It used to
+//! stay on the old code "until its own next start", on the theory that
+//! it was too small for that to matter — but a healthy keeper never
+//! gets a next start, so every machine ended up showing the previous
+//! build beside the new one in `ps` (2026-09-22), and every keeper fix
+//! (the shield, the sweep) waited for a reboot to land.
 //!
 //! # The shield (#76)
 //!
@@ -472,6 +476,26 @@ pub fn keep() -> Result<(), String> {
             // The keeper's own TERM: a handover, not a death and not an
             // operator's stop — no death line, no backoff, and the exit
             // code (clean or signal 15) means nothing here.
+            //
+            // **And the keeper goes with it.** It used to carry on in
+            // the code it was born with, "until its own next start" —
+            // but a healthy keeper never has a next start, so on
+            // 2026-09-22 all three Linux machines showed the previous
+            // build still running beside the new serve (SHELL.md 第五轮
+            // 第 0 条): the keeper, which is also the part that decides
+            // what the next generation is. The child is gone (just
+            // reaped above), so nothing is held open that an exec could
+            // strand; same pid, same argv, same env — `SHIELD_FROM`
+            // among it, so a shielded keeper stays shielded and keeps
+            // watching the install path. The new keeper starts the new
+            // serve itself. Only if the exec fails does this one carry
+            // on, the old way, and say so.
+            use std::os::unix::process::CommandExt;
+            let err = std::process::Command::new(&from)
+                .args(std::env::args_os().skip(1))
+                .exec();
+            let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+            eprintln!("{}", msg::serve_keeper_stayed(&stamp, err));
             running = next;
             source = from;
             backoff = 1;

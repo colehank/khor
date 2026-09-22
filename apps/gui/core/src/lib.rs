@@ -207,11 +207,14 @@ pub struct DeviceRow {
     /// name rather than offering that name as something to edit.
     pub label: Option<String>,
     pub me: bool,
-    /// Paused — **this machine's row only** (docs/MORE.md 暂停). What
-    /// another machine is doing about its own talking is not a thing
-    /// this one can know; what it sees is the road going quiet, which
-    /// `hop` already says. Read off the file like `khor devices` reads
-    /// it, so the rail, the card and the terminal are one answer.
+    /// Paused, **as this machine decided it**: on this machine's own row,
+    /// `khor pause` (docs/MORE.md 暂停); on another machine's row, this
+    /// machine has stopped talking to that one (SHELL.md 第五轮 第 3 条,
+    /// `khor pause <机器>`). What another machine decided about its own
+    /// talking is not a thing this one can know; what it sees is the
+    /// road going quiet, which `hop` already says. Read off the files
+    /// like `khor devices` reads them, so the rail, the card and the
+    /// terminal are one answer.
     pub paused: bool,
     /// This machine's face, in **its own** reported palette. See
     /// `khor_node::Node::face_of`.
@@ -367,6 +370,7 @@ mod vitals_reading_tests {
                 },
             ],
             uptime_s: 0,
+            model: None,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.mem_strain, Some(Strain::Critical));
@@ -399,6 +403,7 @@ mod vitals_reading_tests {
             gpus: vec![],
             volumes: vec![],
             uptime_s: 0,
+            model: None,
         };
         let r = VitalsReading::of(v, 0);
         assert_eq!(r.vram_strain, None);
@@ -929,7 +934,11 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
                 ring.next().unwrap_or(map::CENTRE)
             },
             me: d.id == me,
-            paused: d.id == me && khor_node::pause::is_on(root),
+            paused: if d.id == me {
+                khor_node::pause::is_on(root)
+            } else {
+                khor_node::pause::peer_on(root, &d.id)
+            },
             hop: (d.id != me).then(|| {
                 hops.iter()
                     .find(|(id, _)| *id == d.id)
@@ -1949,6 +1958,14 @@ pub async fn leave(root: &Path, name_typed: &str) -> Result<LeaveOutcome, String
 /// wants the sentence anyway to say what happened.
 pub fn set_paused(root: &Path, on: bool) -> Result<(), String> {
     khor_node::pause::set_on(root, on)
+}
+
+/// Pauses or resumes talking to one machine, by name (SHELL.md 第五轮
+/// 第 3 条) — the row menu's 暂停 / 恢复, the call `khor pause <机器>`
+/// makes. This machine's own name is [`set_paused`]. Answers the
+/// sentence the face shows.
+pub fn set_machine_paused(root: &Path, machine: &str, on: bool) -> Result<String, String> {
+    open(root)?.set_machine_paused(machine, on)
 }
 
 #[cfg(test)]

@@ -360,6 +360,28 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
             Some("serve".to_owned()),
         );
     };
+    // **Then the machine** (SHELL.md 第五轮 第 0 条): every question
+    // here is about this store's serve, and on turing that one was
+    // healthy while a second resident, serving a second store, sat on
+    // its port. A store with no serve at all stays a `fail` above —
+    // that is the worse news and the one with a fix.
+    let default_root = Node::root_from_env_default();
+    let seen = tokio::task::spawn_blocking(crate::serves::here)
+        .await
+        .unwrap_or_default();
+    let residents = crate::serves::residents(&seen, &default_root);
+    if residents.len() > 1 {
+        let list = residents
+            .iter()
+            .map(|r| cli::doctor_serve_one_of(r.pid, r.root.display()))
+            .collect::<Vec<_>>()
+            .join(cli::name_separator());
+        return (
+            Health::Warn,
+            cli::doctor_serve_many(residents.len(), list),
+            None,
+        );
+    }
     // The cheapest op the resident answers, and one this page wants
     // anyway (the peers row reads the same answer).
     if node.hops().await.is_empty() {

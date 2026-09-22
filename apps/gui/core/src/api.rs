@@ -768,6 +768,14 @@ pub fn answer(
             crate::set_paused(root, flag("on")?)?;
             to_json(&crate::about(root))
         }
+        // 按机器暂停 (SHELL.md 第五轮 第 3 条): one other machine, by name.
+        // Answers the sentence; the row's grey comes from the next
+        // device list, which reads the same file.
+        "set_machine_paused" => to_json(&crate::set_machine_paused(
+            root,
+            &arg("machine")?,
+            flag("on")?,
+        )?),
         other => Err(format!("no such command: {other}")),
     }
 }

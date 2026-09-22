@@ -715,6 +715,46 @@ pub struct Vitals {
     #[serde(default)]
     #[ts(type = "number")]
     pub uptime_s: u64,
+    /// What kind of machine this is (SHELL.md 第五轮 第 1 条: the face
+    /// picks the machine's icon from [`Model::kind`]).
+    ///
+    /// `None` when the machine could not say — never a guessed kind.
+    /// Wire: tail, serde default; an older peer's frame decodes as
+    /// `None`, which the face draws as the plain machine icon it drew
+    /// before this field existed.
+    #[serde(default)]
+    pub model: Option<Model>,
+}
+
+/// A machine's model: a stable [`ModelKind`] for code to branch on, and
+/// the name the machine gives itself for a person to read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Model {
+    pub kind: ModelKind,
+    /// As the machine spells it: `Mac mini (2024)` (Apple Silicon's
+    /// device tree), `Macmini8,1` (an Intel Mac's `hw.model`), a DMI
+    /// `product_name` such as `SYS-4028GR-TR`. `None` when all the
+    /// machine offers is a vendor placeholder (`To Be Filled By O.E.M.`).
+    pub name: Option<String>,
+}
+
+/// The kinds a face draws a different icon for. **A closed set on
+/// purpose**: a face must be able to match it exhaustively, and a new
+/// kind is a new icon, which is a decision, not a data update.
+///
+/// No laptop kind other than [`ModelKind::Macbook`]: no machine in this
+/// fleet is one, and a laptop running Linux reads as
+/// [`ModelKind::Unknown`] rather than as a desktop it is not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelKind {
+    MacMini,
+    Macbook,
+    Imac,
+    MacStudio,
+    Server,
+    Desktop,
+    Unknown,
 }
 
 /// What the graphics hardware is doing.
@@ -2857,11 +2897,12 @@ mod tests {
             gpus: vec![],
             volumes: vec![],
             uptime_s: 0,
+            model: None,
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
         assert_eq!(
-            bytes[0], 0x99,
-            "nine fields today (uptime rode the tail on 2026-09-03)"
+            bytes[0], 0x9a,
+            "ten fields today (the model rode the tail on 2026-09-22)"
         );
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }
@@ -2989,11 +3030,12 @@ mod tests {
                 gpus: vec![],
                 volumes: vec![],
                 uptime_s: 0,
+                model: None,
             };
             let bytes = rmp_serde::to_vec(&v).unwrap();
             assert_eq!(
-                bytes[0], 0x99,
-                "nine fields today (uptime rode the tail on 2026-09-03)"
+                bytes[0], 0x9a,
+                "ten fields today (the model rode the tail on 2026-09-22)"
             );
             assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
         }
@@ -3045,6 +3087,23 @@ mod tests {
     /// card with no name, the two shapes a round trip that only ever
     /// carried the full form would let rot quietly.
     #[test]
+    fn the_model_kind_is_spelled_the_way_the_face_matches_it() {
+        // The face's icon switch keys off these strings (SHELL.md 第五轮
+        // 第 1 条 / 第 7 条); a rename here is an icon gone blank there.
+        for (kind, word) in [
+            (ModelKind::MacMini, "mac-mini"),
+            (ModelKind::Macbook, "macbook"),
+            (ModelKind::Imac, "imac"),
+            (ModelKind::MacStudio, "mac-studio"),
+            (ModelKind::Server, "server"),
+            (ModelKind::Desktop, "desktop"),
+            (ModelKind::Unknown, "unknown"),
+        ] {
+            assert_eq!(serde_json::to_value(kind).unwrap(), word);
+        }
+    }
+
+    #[test]
     fn a_vitals_frame_carries_the_cards_and_the_volumes_when_known() {
         let v = Vitals {
             cpu_pct: 3.0,
@@ -3082,11 +3141,15 @@ mod tests {
                 },
             ],
             uptime_s: 86_400 * 3,
+            model: Some(Model {
+                kind: ModelKind::MacMini,
+                name: Some("Mac mini (2024)".to_owned()),
+            }),
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
         assert_eq!(
-            bytes[0], 0x99,
-            "nine fields today (uptime rode the tail on 2026-09-03)"
+            bytes[0], 0x9a,
+            "ten fields today (the model rode the tail on 2026-09-22)"
         );
         assert_eq!(rmp_serde::from_slice::<Vitals>(&bytes).unwrap(), v);
     }

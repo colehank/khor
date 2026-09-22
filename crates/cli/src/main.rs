@@ -5,6 +5,48 @@
 //! Stable keys are the wire truth; every word a person reads comes from
 //! the catalog at print time (docs/UX.md 文案).
 
+// ── The print layer (SHELL.md 第五轮 第 4 条) ─────────────────────────
+//
+// **`println!` and `print!` are shadowed for the whole file**, so every
+// line this CLI prints goes through [`out`]. Rust ignores SIGPIPE, and
+// std's `println!` turns the broken-pipe error that leaves behind into
+// a panic — `khor devices | head -1` printed `failed printing to stdout:
+// Broken pipe` and exited 101. A reader that went away is not a fault:
+// [`out`] leaves the way any Unix tool does when its reader closes.
+// Textual scope: these must stay above every use in this file.
+macro_rules! println {
+    () => {
+        out(format_args!("\n"))
+    };
+    ($($t:tt)*) => {
+        out(format_args!("{}\n", format_args!($($t)*)))
+    };
+}
+
+macro_rules! print {
+    ($($t:tt)*) => {
+        out(format_args!($($t)*))
+    };
+}
+
+/// Writes to stdout; a closed reader ends the process the way SIGPIPE
+/// ends `cat` (exit by that signal, nothing on the terminal). Any other
+/// write error is std's panic, unchanged.
+fn out(args: std::fmt::Arguments) {
+    use std::io::Write;
+    if let Err(e) = std::io::stdout().lock().write_fmt(args) {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            #[cfg(unix)]
+            unsafe {
+                libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+                libc::raise(libc::SIGPIPE);
+            }
+            std::process::exit(141);
+        }
+        panic!("failed printing to stdout: {e}");
+    }
+}
+
 // **Aliased**, because this file already has a verb called `usage`
 // (`khor usage`, what each machine spent). The catalog's is the help
 // text; 批 D3 turned it from a const into a function, which is when the
@@ -1752,28 +1794,28 @@ fn leave(rest: &[String]) -> Result<(), String> {
 }
 
 /// Stops this machine talking to the network without leaving it
-/// (docs/MORE.md 暂停).
-///
-/// No argument: unlike `leave` and `forget`, nothing here is
-/// irreversible and nothing names another machine — `khor resume` puts
-/// it back, and the thing being paused is the machine you are standing
-/// on.
+/// (docs/MORE.md 暂停) — or, with a machine named, stops talking to that
+/// one machine (SHELL.md 第五轮 第 3 条): not dialled, not answered, not
+/// synced with, while it keeps running on its own. This machine's own
+/// name is the same as no name.
 fn pause(rest: &[String]) -> Result<(), String> {
-    if !rest.is_empty() {
-        return Err(usage_text().into());
-    }
-    khor_node::pause::set_on(&Node::root_from_env(), true)?;
-    println!("{}", msg::paused());
-    Ok(())
+    pause_or_resume(rest, true)
 }
 
-/// Puts it back (docs/MORE.md 暂停).
+/// Puts it back (docs/MORE.md 暂停), for this machine or the one named.
 fn resume(rest: &[String]) -> Result<(), String> {
-    if !rest.is_empty() {
-        return Err(usage_text().into());
+    pause_or_resume(rest, false)
+}
+
+fn pause_or_resume(rest: &[String], on: bool) -> Result<(), String> {
+    match rest {
+        [] => {
+            khor_node::pause::set_on(&Node::root_from_env(), on)?;
+            println!("{}", if on { msg::paused() } else { msg::resumed() });
+        }
+        [machine] => println!("{}", node()?.set_machine_paused(machine, on)?),
+        _ => return Err(usage_text().into()),
     }
-    khor_node::pause::set_on(&Node::root_from_env(), false)?;
-    println!("{}", msg::resumed());
     Ok(())
 }
 
@@ -1834,11 +1876,12 @@ fn devices(_rest: &[String]) -> Result<(), String> {
         // second home on this Mac made every row claim to be home.
         let me = d.id == n.device_str();
         let here = if me { cli::this_machine() } else { "" };
-        // 暂停 (docs/MORE.md): on this machine's row only, because
-        // that is whose state it is. Another machine being paused
-        // is not a thing this one can know — what it sees is the
-        // road going quiet, which the road column already says.
-        let held = if me && n.paused() {
+        // 暂停 (docs/MORE.md), and 按机器暂停 (SHELL.md 第五轮 第 3
+        // 条): what *this* machine decided — about itself on its own
+        // row, about talking to that machine on that one's. Whether
+        // another machine paused itself is not a thing this one can
+        // know; what it sees is the road going quiet.
+        let held = if n.machine_paused(&d.id) {
             cli::paused_mark()
         } else {
             ""

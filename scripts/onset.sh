@@ -71,17 +71,40 @@ for arg in "$@"; do
         --release=*) SOURCE=release; RELEASE="${arg#--release=}" ;;
         --bin-on-target=*) SOURCE=ontarget; ONTARGET="${arg#--bin-on-target=}" ;;
         --dry-run) DRY=yes ;;
+        --print-serve-up) MODE=print-serve-up ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
         *) HOST="$arg" ;;
     esac
 done
+# **`khor-serve-up`, the login pull-up, is shipped too — and it is
+# install.sh's own text, cut out of install.sh**, not a copy of it.
+#
+# onset never used to touch it, and on a shared home it is one file for
+# every machine. turing's was install.sh's from 2026-08-21: it compared
+# the whole `~/.khor/owner` to the hostname, the owner file grew a
+# second line on 9-11, and from then on every login on turing — the
+# machine that *owns* `$HOME` — started a resident for
+# `.khor-hosts/turing`, a second identity for itself. Measured
+# 2026-09-22: that resident had been up since 9-17 beside the real one,
+# holding its web port. Every onset run since had upgraded the binary
+# and left the script that starts it five weeks behind.
+#
+# `--print-serve-up` prints what would be sent and stops: the one way
+# to test the text without a machine.
+REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+serve_up_text() {
+    sed -n "/^cat > \"\$UP\" <<'SERVEUP'\$/,/^SERVEUP\$/p" "$REPO/scripts/install.sh" | sed '1d;$d'
+}
+if [ "$MODE" = print-serve-up ]; then
+    serve_up_text
+    exit 0
+fi
 [ -n "$HOST" ] || { echo "usage: onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve] [--release[=tag]] [--bin-on-target=PATH] [--dry-run]" >&2; exit 2; }
 if [ "$SOURCE" = release ] && [ "$LIBC" = musl ]; then
     echo "onset: the release has no static build (release.yml says why); build --musl here instead" >&2
     exit 2
 fi
 
-REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 STAGE="${TMPDIR:-/tmp}/khor-onset.$$"
 mkdir -p "$STAGE"
 trap 'ssh -O exit -o ControlPath="$STAGE/mux" "$HOST" 2>/dev/null; rm -rf "$STAGE"' EXIT
@@ -272,6 +295,11 @@ else
     say "onset: taking $ONTARGET as the staged binary"
     ssh_ "mv -f '$ONTARGET' '$STAGED'"
 fi
+# The pull-up script travels beside the binary and lands the same way.
+STAGED_UP="$REMOTE_HOME/.local/bin/.khor-serve-up.onset$$"
+serve_up_text > "$STAGE/khor-serve-up"
+[ -s "$STAGE/khor-serve-up" ] || { echo "onset: could not cut khor-serve-up out of scripts/install.sh" >&2; exit 1; }
+scp_ "$STAGE/khor-serve-up" "$STAGED_UP"
 
 # ── install ──────────────────────────────────────────────
 # The store's root is decided **on the target**, because only it knows
@@ -282,6 +310,7 @@ fi
 cat > "$STAGE/on.sh" <<REMOTE
 set -eu
 src="$STAGED"
+up="$STAGED_UP"
 REMOTE
 cat >> "$STAGE/on.sh" <<'REMOTE'
 mkdir -p "$HOME/.local/bin"
@@ -311,7 +340,7 @@ if ! ver=$("$src" version 2>"$src.err"); then
     echo "onset: what the machine said:" >&2
     sed 's/^/onset:   /' "$src.err" >&2
     echo "onset: nothing was replaced and nothing was started." >&2
-    rm -f "$src" "$src.err"
+    rm -f "$src" "$src.err" "$up"
     exit 1
 fi
 rm -f "$src.err"
@@ -320,6 +349,11 @@ echo "onset: khor $ver runs here"
 # rename, not copy: upgrading over a *running* khor works because Linux
 # keeps the open inode, and the next start picks up the new file.
 mv -f "$src" "$HOME/.local/bin/khor"
+# And the script every login runs to pull the resident up — install.sh's
+# current text, so it asks the binary just installed which store is
+# this machine's instead of working it out the way it did in August.
+chmod +x "$up"
+mv -f "$up" "$HOME/.local/bin/khor-serve-up"
 
 # **The third copy of this rule, and the one that cost a store.**
 # Until 2026-09-11 this block compared `$HOME/.khor/owner` to the

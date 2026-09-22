@@ -87,6 +87,39 @@ fn alive(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
+/// The inode of the image `pid` is running — not the path it was
+/// started from, which an upgrade renames over. Linux reads it through
+/// `/proc/<pid>/exe` (which follows to the open image even after an
+/// unlink); macOS has no such link, and `lsof`'s `txt` row for the
+/// program is the same fact.
+fn running_inode(pid: u32) -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        fs::metadata(format!("/proc/{pid}/exe"))
+            .ok()
+            .map(|m| m.ino())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let out = Command::new("lsof")
+            .args(["-a", "-p", &pid.to_string(), "-d", "txt", "-Fi"])
+            .output()
+            .ok()?;
+        // The first `i` row is the program itself; later ones are the
+        // dynamic loader and libraries.
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find_map(|l| l.strip_prefix('i'))
+            .and_then(|n| n.parse().ok())
+    }
+}
+
+fn inode(path: &Path) -> u64 {
+    use std::os::unix::fs::MetadataExt;
+    fs::metadata(path).unwrap().ino()
+}
+
 /// An assertion that panics must not leak a serve tree.
 struct Reaper(u32);
 impl Drop for Reaper {
@@ -244,6 +277,21 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         !alive(first),
         "the old generation must be gone, not doubled"
     );
+    // **And the keeper moved too** (SHELL.md 第五轮 第 0 条). On
+    // 2026-09-22 hinton and lecun each showed two `khor serve`s, one of
+    // them the previous build: the keeper, which used to stay on the
+    // code it was started with until its own next start — and a keeper
+    // that is never restarted never gets there. A handover that leaves
+    // the parent on the old image is half an upgrade.
+    let new_image = inode(&bin);
+    wait_for("the keeper to be on the new image", 10, || {
+        running_inode(keeper.id()) == Some(new_image)
+    });
+    assert_eq!(
+        running_inode(second),
+        Some(new_image),
+        "and so must the serve it spawned"
+    );
     let v = env!("CARGO_PKG_VERSION");
     let swap_line = after_stamp(&khor_catalog::msg::serve_swapping("\u{1}", v, v), '\u{1}');
     assert!(
@@ -259,12 +307,33 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         read_log()
     );
 
+    // A second upgrade, from the keeper that the first one re-made:
+    // the gate SHELL.md names is「同一个 KHOR_HOME 换两次二进制，只剩一个
+    // serve」, and a keeper that swapped itself once must still be
+    // watching the install path afterwards.
+    let again = home.join("again");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &again).unwrap();
+    fs::rename(&again, &bin).unwrap();
+    wait_for("the third generation to stand up", 30, || {
+        inner_pid(&home).is_some_and(|pid| pid != second && alive(pid))
+    });
+    let third = inner_pid(&home).unwrap();
+    let newest = inode(&bin);
+    wait_for("the keeper to be on the newest image", 10, || {
+        running_inode(keeper.id()) == Some(newest)
+    });
+    assert!(
+        !alive(first) && !alive(second),
+        "after two upgrades exactly one serve is left: the first two lives are gone"
+    );
+    assert_eq!(running_inode(third), Some(newest));
+
     Command::new("kill")
         .args(["-TERM", &keeper.id().to_string()])
         .status()
         .unwrap();
     wait_for("the keeper and its serve to leave", 10, || {
-        keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
+        keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(third)
     });
 }
 

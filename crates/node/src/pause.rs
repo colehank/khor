@@ -74,3 +74,62 @@ pub fn set_on(root: &Path, on: bool) -> Result<(), String> {
     let text = serde_json::to_vec(&Stored { on }).map_err(|e| e.to_string())?;
     crate::link::write_private(&path(root), &text)
 }
+
+// ── 按机器暂停 (SHELL.md 第五轮 第 3 条) ─────────────────────────────
+//
+// **This machine's side of one other machine**: stop dialling it, stop
+// answering it, stop syncing with it. The other machine keeps running
+// and is told nothing — a remote "pause yourself" would leave it unable
+// to hear the "resume" (SHELL.md says why that shape was not taken).
+//
+// **Kept here, beside `pause.json`, and never in a synced document**:
+// it is a decision this machine made about its own talking, and the
+// paused machine must not be the one to read it back. A file of ids
+// rather than names: a rename must not un-pause anybody.
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct Peers {
+    #[serde(default)]
+    ids: std::collections::BTreeSet<String>,
+}
+
+fn peers_path(root: &Path) -> PathBuf {
+    root.join(".khor").join("paused-peers.json")
+}
+
+/// The machines this one has paused, by device id. Unreadable reads as
+/// none, for [`is_on`]'s reason.
+pub fn peers(root: &Path) -> std::collections::BTreeSet<String> {
+    std::fs::read_to_string(peers_path(root))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Peers>(&t).ok())
+        .map(|p| p.ids)
+        .unwrap_or_default()
+}
+
+/// Whether this machine has paused the one with this device id.
+pub fn peer_on(root: &Path, id: &str) -> bool {
+    peers(root).contains(id)
+}
+
+/// Pauses or resumes one other machine, refusing the state it is
+/// already in by name (`set_on`'s rule). `name` is only for the words.
+pub fn set_peer(root: &Path, id: &str, name: &str, on: bool) -> Result<(), String> {
+    let mut all = peers(root);
+    if all.contains(id) == on {
+        return Err(if on {
+            msg::peer_already_paused(name)
+        } else {
+            msg::peer_not_paused(name)
+        });
+    }
+    if on {
+        all.insert(id.to_owned());
+    } else {
+        all.remove(id);
+    }
+    let dot = root.join(".khor");
+    std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
+    let text = serde_json::to_vec(&Peers { ids: all }).map_err(|e| e.to_string())?;
+    crate::link::write_private(&peers_path(root), &text)
+}

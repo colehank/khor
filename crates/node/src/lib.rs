@@ -39,7 +39,10 @@ pub mod proto;
 pub mod quota;
 pub mod reactor;
 pub mod satellite;
+pub mod serves;
 pub mod tabs;
+#[cfg(test)]
+pub(crate) mod testdir;
 pub mod top;
 pub mod transfer;
 pub mod tunnel;
@@ -1229,6 +1232,13 @@ impl Node {
         if let Some(explicit) = std::env::var_os("KHOR_HOME") {
             return PathBuf::from(explicit);
         }
+        Self::root_from_env_default()
+    }
+
+    /// The store a process of this user started **without** `KHOR_HOME`
+    /// works out — which is also what any other such process of this
+    /// user on this machine is serving (`serves::residents`).
+    pub fn root_from_env_default() -> PathBuf {
         let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
         Self::store_under(&home)
     }
@@ -1954,6 +1964,41 @@ impl Node {
         }
     }
 
+    /// Pauses or resumes talking to one machine (SHELL.md 第五轮 第 3
+    /// 条), by the name a person typed. **This machine's own name, or the
+    /// empty name, is `khor pause` itself** — one verb for the menu item
+    /// on every row. Answers the sentence to print.
+    pub fn set_machine_paused(&self, machine: &str, on: bool) -> Result<String, String> {
+        let (_, id) = self.resolve_or_here(machine)?;
+        if id == self.device() {
+            crate::pause::set_on(&self.root, on)?;
+            return Ok(if on { msg::paused() } else { msg::resumed() }.to_owned());
+        }
+        let id = id.hex();
+        let shown = self
+            .devices()?
+            .into_iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| machine.to_owned());
+        crate::pause::set_peer(&self.root, &id, &shown, on)?;
+        Ok(if on {
+            msg::peer_paused(&shown)
+        } else {
+            msg::peer_resumed(&shown)
+        })
+    }
+
+    /// Whether this machine is paused toward the one with this id —
+    /// for the faces' rows (`khor devices`, the app's device list).
+    pub fn machine_paused(&self, id: &str) -> bool {
+        if id == self.device_str() {
+            self.paused()
+        } else {
+            crate::pause::peer_on(&self.root, id)
+        }
+    }
+
     /// [`Self::resolve`] for callers outside this module — the CLI's
     /// `rename -m` needs an id, and turning a typed name into one is
     /// exactly this.
@@ -2225,6 +2270,17 @@ impl Node {
             });
             pct(&khor_core::Fill { used, total })
         };
+        // **A store that is gone is not re-made by a recorder.** The
+        // write creates the directory it needs, so a resident outliving
+        // its store (a test's scratch home taken away while its serve's
+        // tasks still run) put `.khor/history/cpu` back every minute —
+        // one of the directories every test run left in `$TMPDIR`
+        // (SHELL.md 第五轮 第 4 条: `khor-far-beta-*`, holding exactly
+        // that one file). Asked after the sample, which takes a while,
+        // and just before the write.
+        if !root.join(".khor").is_dir() {
+            return;
+        }
         history::CpuHistory::open(&Self::history_dir(root)).record(
             now_ms(),
             history::Reading {
