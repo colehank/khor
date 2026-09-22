@@ -197,7 +197,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
-import { FAKE_TOKEN, fakeHome, fakeUsage } from "./fake-home.mjs";
+import { FAKE_TOKEN, fakeHome, fakeUsage, keychainAsked, keychainGuard } from "./fake-home.mjs";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
@@ -327,6 +327,9 @@ const codeData = process.env.VSCODE_CLI_DATA_DIR ?? join(realHome, ".vscode", "c
 const homeEnv = (dir, name) => {
   const e = {
     ...process.env,
+    // The fake home's `security` first, so a keychain read is caught
+    // rather than made (`fake-home.mjs`, `keychainAsked` at the end).
+    PATH: `${keychainGuard(FAKE_HOME)}:${process.env.PATH ?? ""}`,
     HOME: FAKE_HOME,
     KHOR_CLAUDE_USAGE_URL: usage.url,
     VSCODE_CLI_DATA_DIR: codeData,
@@ -362,7 +365,10 @@ const homeEnv = (dir, name) => {
 // What launchd gives is a short list; anything not on it is the
 // developer's, and the developer's is what this must not test.
 const launchdEnv = (e) => {
-  const out = { PATH: "/usr/bin:/bin:/usr/sbin:/sbin" };
+  // launchd's PATH, with **one** thing ahead of it: the fake home's
+  // `security`, which answers nothing and writes down that it was asked
+  // (`fake-home.mjs`). Not the developer's; the gate's own guard.
+  const out = { PATH: `${keychainGuard(FAKE_HOME)}:/usr/bin:/bin:/usr/sbin:/sbin` };
   for (const k of ["HOME", "USER", "LOGNAME", "TMPDIR", "SHELL", "SSH_AUTH_SOCK", "VSCODE_CLI_DATA_DIR"]) {
     if (e[k] !== undefined) out[k] = e[k];
   }
@@ -8743,6 +8749,18 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     );
   }
   console.log(`identity: ${usage.seen.asked} usage request(s), every one with the fake login (${FAKE_TOKEN.length}-char token)`);
+  //      …and the keychain was never asked (docs/SHELL.md 第五轮 第 11 条).
+  //      Read only after a run that did read the subscription (the check
+  //      above), so a zero here is a rule holding and not a read that
+  //      never happened.
+  const keychain = keychainAsked(FAKE_HOME);
+  if (keychain !== 0) {
+    throw new Error(
+      `something this run started asked the login keychain ${keychain} time(s) — HOME was not the account's own ` +
+        "(crates/node/src/quota.rs keychain_is_ours)",
+    );
+  }
+  console.log("identity: the login keychain was asked 0 times");
 
   console.log("gui smoke: all green");
 } finally {

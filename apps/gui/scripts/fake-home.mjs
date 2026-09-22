@@ -23,7 +23,7 @@
 // only when `HOME` is the account's own home (`khor_node::quota`), which a
 // scratch one never is.
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -51,11 +51,40 @@ export function fakeHome(dir, usageUrl) {
   // rather than read, so their file is never opened.
   writeFileSync(join(dir, ".zprofile"), `export PATH=${JSON.stringify(process.env.PATH ?? "")}\n`);
   writeFileSync(join(dir, ".gitconfig"), "[user]\n\tname = khor gate\n\temail = gate@khor.invalid\n");
+  // **The keychain, caught rather than trusted** (docs/SHELL.md 第五轮
+  // 第 11 条). `HOME` does not move the login keychain, so the node asks
+  // it only when `HOME` is the account's own (`keychain_is_ours`) — and
+  // until now nothing watched that rule from outside. A `security` that
+  // is this file's, first on every child's PATH (`keychainGuard`): it
+  // writes down that it was asked and answers nothing, so the real
+  // keychain is never reached even by a run where the rule broke, and
+  // the gate reads the count at the end (`keychainAsked`). ⚠️ It only
+  // catches a lookup by PATH, which is how the node asks today
+  // (`Command::new("security")`); an absolute `/usr/bin/security` would
+  // walk past it without a word.
+  mkdirSync(join(dir, "bin"), { recursive: true });
+  const shim = join(dir, "bin", "security");
+  writeFileSync(shim, `#!/bin/sh\necho asked >> ${JSON.stringify(join(dir, "keychain-asked"))}\nexit 44\n`);
+  chmodSync(shim, 0o755);
   // The fake endpoint is on this machine's loopback, and this machine
   // sets `http_proxy` / `all_proxy`: loopback is let past them, so the
   // request cannot wander off to a proxy that has no way to reach it.
   const loopback = [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",");
   return { HOME: dir, KHOR_CLAUDE_USAGE_URL: usageUrl, NO_PROXY: loopback, no_proxy: loopback };
+}
+
+/** The directory holding the fake home's `security`, to put first on a
+    child's PATH. Known before `fakeHome` has laid it out, because the
+    gates build their environments at the top of the file. */
+export const keychainGuard = (dir) => join(dir, "bin");
+
+/** How many times anything this run started asked the keychain. */
+export function keychainAsked(dir) {
+  try {
+    return readFileSync(join(dir, "keychain-asked"), "utf8").split("\n").filter(Boolean).length;
+  } catch {
+    return 0;
+  }
 }
 
 /**

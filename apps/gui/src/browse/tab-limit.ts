@@ -14,7 +14,15 @@ import { useSetting } from "@/settings";
     arrived, which reads as the default rather than as a limit appearing
     late. */
 export function useTabsLimit(): number | null {
-  const v = useSetting("tabs-limit");
+  return tabsLimitOf(useSetting("tabs-limit"));
+}
+
+/** The same reading for a caller that holds the settings rows itself.
+    ⚠️ **`App` is one** (docs/SHELL.md 第五轮 第 11 条): it renders the
+    settings provider, so `useSetting` there reads the context *above*
+    the provider — always nothing — and the session tabs never had a
+    limit at all. The face gate that found it is 4Q. */
+export function tabsLimitOf(v: string | null): number | null {
   const n = v === null ? Number.NaN : Number(v);
   return Number.isInteger(n) && n > 0 ? n : null;
 }

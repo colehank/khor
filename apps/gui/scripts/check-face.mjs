@@ -10381,6 +10381,70 @@ try {
     console.log(`newtab 4Z · picture: ${shot}`);
   }
 
+  // ── 4Q) 第五轮 第 11 条:置顶会话的标签不被上限关 (docs/SHELL.md) ──
+  //
+  // 第三轮 第 4 条 wrote 「置顶的留着」 for session tabs and the face never
+  // had a pinned session to hold it to (handoff 第三轮 「有代码没门」).
+  // Four session tabs restored from storage — so none has been touched,
+  // and the tie goes to the leftmost — with the leftmost one's session
+  // pinned; limit 4; a fifth opened. The leftmost is the tab the limit
+  // would take if it did not know better, and it must stay.
+  {
+    const ids = rows.slice(0, 5).map((r) => r.id);
+    const pinnedId = ids[0];
+    const wasPinned = rows.find((r) => r.id === pinnedId)?.pinned ?? false;
+    const target = rows.find((r) => r.id === pinnedId);
+    if (target) {
+      target.pinned = true;
+      target.group = "pin";
+    }
+    configValues["tabs-limit"] = "4";
+    await page.evaluate(
+      (t) => window.localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: t, active: t[3] })),
+      ids.slice(0, 4),
+    );
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    // The settings reach the window when the settings page reads them
+    // (4T's road to the same limit), so pass through it once.
+    const readSettings = (await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'));
+    await until(3_000, async () =>
+      (await page.locator('[data-config-row="tabs-limit"]').getAttribute("data-value").catch(() => null)) === "4",
+    );
+    await page.keyboard.press("Escape");
+    await open("sessions");
+    await wait(400);
+    const strip = () =>
+      page.evaluate(() => [...document.querySelectorAll("[data-session-tabs] [data-tab]")].map((e) => e.getAttribute("data-tab")));
+    const before = await strip();
+    await press(`[data-side-row="${ids[4]}"] [data-side-open]`);
+    await until(3_000, async () => (await strip()).includes(ids[4]));
+    await wait(300);
+    const after = await strip();
+    console.log(`tabs 4Q · limit 4, ${pinnedId} pinned: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
+    if (!readSettings) {
+      fail("probe dead: the settings page never opened, so the limit never reached the window");
+    } else if (before.length !== 4 || !after.includes(ids[4])) {
+      fail(`probe dead: the session strip read ${JSON.stringify(before)} before and ${JSON.stringify(after)} after opening a fifth`);
+    } else if (!after.includes(pinnedId)) {
+      fail(
+        `with 标签页上限 4 a fifth session closed the pinned one's tab (${pinnedId}) — 「置顶的留着」 ` +
+          "(docs/SHELL.md 第三轮 第 4 条, src/hooks/use-session-tabs.ts)",
+      );
+    } else if (after.length !== 4) {
+      fail(`with 标签页上限 4 the session strip holds ${after.length} tabs after a fifth`);
+    }
+    if (target) {
+      target.pinned = wasPinned;
+      target.group = wasPinned ? "pin" : "";
+    }
+    configValues["tabs-limit"] = "off";
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**

@@ -67,7 +67,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
-import { useTabsLimit } from "@/browse/tab-limit";
+import { tabsLimitOf } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
 import { SettingsProvider, SettingsRereadProvider } from "@/settings";
@@ -537,7 +537,10 @@ export default function App() {
   // 标签页上限 (docs/SHELL.md 第三轮 第 4 条): a pinned session's tab is
   // one a person said to keep. A ref kept in step with `rows`, read by
   // the hook at the moment a tab opens.
-  const tabsLimit = useTabsLimit();
+  // Read off the rows this component holds, not `useSetting`: the
+  // provider is rendered below, so the context here is always empty
+  // (`tabsLimitOf`, docs/SHELL.md 第五轮 第 11 条).
+  const tabsLimit = tabsLimitOf(settings.rows?.find((r) => r.name === "tabs-limit")?.value ?? null);
   const pinnedRows = useRef(new Set<string>());
   pinnedRows.current = new Set(rows.filter((r) => r.pinned).map((r) => r.id));
   const sessionTabs = useSessionTabs(tabsLimit, (id) => pinnedRows.current.has(id));
