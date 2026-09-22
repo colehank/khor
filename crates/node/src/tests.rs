@@ -3378,3 +3378,103 @@ fn place_pins_move_to_the_sidebars_once() {
     );
     assert_eq!(crate::tabs::list(&r, "page").tabs.len(), 0);
 }
+
+// ── 探测到的订阅就是一条登记, 只自动建一次 (docs/SHELL.md 第七轮 第 3 条) ──
+#[test]
+fn a_login_found_here_is_registered_once() {
+    use khor_sync::accounts::{Account, AccountKind, Provider};
+    let sub_here = |n: &Node| {
+        n.accounts()
+            .unwrap()
+            .into_iter()
+            .filter(|a| a.kind.is_sub() && a.home == n.device_str())
+            .collect::<Vec<_>>()
+    };
+    let put = |n: &Node, home: &str| {
+        let loaded = n.accounts_loaded().unwrap();
+        loaded
+            .doc
+            .set(&Account {
+                id: crate::link::fresh_hex().unwrap(),
+                name: "by hand".into(),
+                provider: Provider::Claude,
+                base_url: None,
+                budget: None,
+                unit: None,
+                home: home.to_owned(),
+                pinned: false,
+                kind: AccountKind::Sub,
+            })
+            .unwrap();
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    };
+
+    let r = root("sub-adopt");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    // Another machine's subscription is that machine's to adopt.
+    put(&n, &"e".repeat(64));
+
+    assert_eq!(
+        n.adopt_subscriptions_with(|_| false).unwrap(),
+        0,
+        "no login, nothing made"
+    );
+    assert!(sub_here(&n).is_empty());
+    // Codex logged in first; Claude Code's login arrives later.
+    assert_eq!(n.adopt_subscriptions_with(|p| p.id == "codex").unwrap(), 1);
+    assert_eq!(
+        n.adopt_subscriptions_with(|_| true).unwrap(),
+        1,
+        "a login arriving later is adopted then"
+    );
+    let mut made = sub_here(&n);
+    made.sort_by(|a, b| a.provider.word().cmp(b.provider.word()));
+    assert_eq!(
+        made.len(),
+        2,
+        "one registration per vendor, homed here: {made:?}"
+    );
+    assert_eq!(made[0].provider, Provider::Claude);
+    assert!(
+        made[0].name.contains("Claude Code"),
+        "named as the row was: {:?}",
+        made[0].name
+    );
+    assert_eq!(made[1].provider, Provider::Codex);
+    assert!(made[1].name.contains("Codex"), "{:?}", made[1].name);
+    assert!(!made[0].pinned && !made[1].pinned);
+
+    assert_eq!(
+        n.adopt_subscriptions_with(|_| true).unwrap(),
+        0,
+        "again, nothing made"
+    );
+    for a in &made {
+        n.remove_account(&a.id).unwrap();
+    }
+    assert_eq!(
+        n.adopt_subscriptions_with(|_| true).unwrap(),
+        0,
+        "deleted stays deleted"
+    );
+    assert!(sub_here(&n).is_empty());
+
+    // Registered by hand before the first read: that one counts, and
+    // deleting it does not bring an adopted one in its place.
+    let r2 = root("sub-by-hand");
+    let m = Node::open(r2.to_path_buf()).unwrap();
+    put(&m, m.device_str());
+    assert_eq!(
+        m.adopt_subscriptions_with(|_| true).unwrap(),
+        1,
+        "Claude Code's is there by hand; only Codex's is made"
+    );
+    let id = sub_here(&m)
+        .into_iter()
+        .find(|a| a.name == "by hand")
+        .unwrap()
+        .id;
+    m.remove_account(&id).unwrap();
+    assert_eq!(m.adopt_subscriptions_with(|_| true).unwrap(), 0);
+}

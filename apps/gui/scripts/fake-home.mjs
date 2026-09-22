@@ -19,6 +19,10 @@
 //     subscription was read, but that it was read with the fake login and
 //     with nothing else (`usage.strangers`).
 //
+// Codex's login (`~/.codex/auth.json`) follows `HOME` and nothing else —
+// the node reads it under `$HOME` only, never `$CODEX_HOME`
+// (`khor_node::quota::codex`) — and gets its own fake and its own count.
+//
 // The keychain is the one store `HOME` does not move; the node now asks it
 // only when `HOME` is the account's own home (`khor_node::quota`), which a
 // scratch one never is.
@@ -29,6 +33,10 @@ import { join } from "node:path";
 
 /** The token the fake login carries. Recognisably not a real one. */
 export const FAKE_TOKEN = "khor-gate-fake-oauth-token";
+/** The fake Codex (ChatGPT) login's token and account (docs/SHELL.md
+    第九轮): `~/.codex/auth.json` is a login too, and it counts. */
+export const FAKE_CODEX_TOKEN = "khor-gate-fake-codex-token";
+export const FAKE_CODEX_ACCOUNT = "khor-gate-fake-account";
 
 /** Lays a home out under `dir` and answers the variables that point a
     child at it. `usageUrl` is the fake endpoint's address. */
@@ -44,6 +52,17 @@ export function fakeHome(dir, usageUrl) {
         rateLimitTier: "default_claude_max_5x",
         subscriptionType: "max",
       },
+    }),
+  );
+  // …and a fake Codex login, the shape Codex writes (`auth_mode`
+  // chatgpt, tokens with an account id).
+  mkdirSync(join(dir, ".codex"), { recursive: true });
+  writeFileSync(
+    join(dir, ".codex", "auth.json"),
+    JSON.stringify({
+      auth_mode: "chatgpt",
+      OPENAI_API_KEY: null,
+      tokens: { access_token: FAKE_CODEX_TOKEN, refresh_token: "khor-gate-fake-refresh", account_id: FAKE_CODEX_ACCOUNT },
     }),
   );
   // What a login shell would have found in the operator's own
@@ -70,7 +89,19 @@ export function fakeHome(dir, usageUrl) {
   // sets `http_proxy` / `all_proxy`: loopback is let past them, so the
   // request cannot wander off to a proxy that has no way to reach it.
   const loopback = [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",");
-  return { HOME: dir, KHOR_CLAUDE_USAGE_URL: usageUrl, NO_PROXY: loopback, no_proxy: loopback };
+  return {
+    HOME: dir,
+    KHOR_CLAUDE_USAGE_URL: usageUrl,
+    KHOR_CODEX_USAGE_URL: codexUrlOf(usageUrl),
+    NO_PROXY: loopback,
+    no_proxy: loopback,
+  };
+}
+
+/** The fake endpoint answers both vendors; Codex's is asked on its own
+    path, so one server counts both logins separately. */
+export function codexUrlOf(usageUrl) {
+  return usageUrl.replace("/api/oauth/usage", "/backend-api/wham/usage");
 }
 
 /** The directory holding the fake home's `security`, to put first on a
@@ -112,14 +143,31 @@ export async function fakeUsage() {
       `
       const { createServer } = require("node:http");
       const { writeFileSync } = require("node:fs");
-      const [counts, portFile, token] = process.argv.slice(1);
-      const seen = { asked: 0, strangers: 0 };
+      const [counts, portFile, token, codexToken, codexAccount] = process.argv.slice(1);
+      const seen = { asked: 0, strangers: 0, codex: { asked: 0, strangers: 0 } };
       writeFileSync(counts, JSON.stringify(seen));
       createServer((req, res) => {
+        res.writeHead(200, { "content-type": "application/json" });
+        if ((req.url ?? "").includes("/wham/usage")) {
+          seen.codex.asked += 1;
+          if ((req.headers.authorization ?? "") !== "Bearer " + codexToken || req.headers["chatgpt-account-id"] !== codexAccount) {
+            seen.codex.strangers += 1;
+          }
+          writeFileSync(counts, JSON.stringify(seen));
+          return res.end(JSON.stringify({
+            plan_type: "plus",
+            rate_limit: {
+              allowed: true,
+              limit_reached: false,
+              primary_window: { used_percent: 9, limit_window_seconds: 18000, reset_after_seconds: 3600 },
+              secondary_window: { used_percent: 31, limit_window_seconds: 604800, reset_after_seconds: 86400 },
+            },
+            credits: { has_credits: false, unlimited: false, balance: "0" },
+          }));
+        }
         seen.asked += 1;
         if ((req.headers.authorization ?? "") !== "Bearer " + token) seen.strangers += 1;
         writeFileSync(counts, JSON.stringify(seen));
-        res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ five_hour: { utilization: 37, resets_at: null }, seven_day: { utilization: 58, resets_at: null } }));
       }).listen(0, "127.0.0.1", function () {
         writeFileSync(portFile, String(this.address().port));
@@ -128,6 +176,8 @@ export async function fakeUsage() {
       counts,
       portFile,
       FAKE_TOKEN,
+      FAKE_CODEX_TOKEN,
+      FAKE_CODEX_ACCOUNT,
     ],
     { stdio: "ignore", detached: false },
   );
@@ -143,7 +193,7 @@ export async function fakeUsage() {
       try {
         return JSON.parse(readFileSync(counts, "utf8"));
       } catch {
-        return { asked: 0, strangers: 0 };
+        return { asked: 0, strangers: 0, codex: { asked: 0, strangers: 0 } };
       }
     },
     close: async () => {

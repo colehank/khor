@@ -306,8 +306,9 @@ impl Node {
     ///   ([`sub_reader`] answers nothing for it).
     /// - **No login on this machine.** The one check that is neither
     ///   transient nor a guess, and the whole reason `home` is here.
-    /// - **A second subscription on this machine.** One machine holds
-    ///   one login with no way to choose between logins, so a second
+    /// - **A second subscription to one vendor on this machine.** One
+    ///   machine holds one login per vendor with no way to choose
+    ///   between logins, so a second
     ///   registration could only ever draw a second row of the same
     ///   numbers — which is the duplication this batch removed from the
     ///   probe row, re-made by hand.
@@ -319,16 +320,16 @@ impl Node {
         key: &str,
         budget: Option<f64>,
     ) -> Result<Account, String> {
-        let given_address = base_url.map(str::trim).is_some_and(|u| !u.is_empty());
-        if !key.trim().is_empty() || given_address || budget.is_some() {
-            return Err(msg::account_sub_takes_nothing_else().into());
-        }
         let Some(reader) = sub_reader(&provider) else {
             return Err(msg::provider_has_no_sub(
                 provider.word(),
                 sub_provider_words().join("、"),
             ));
         };
+        let given_address = base_url.map(str::trim).is_some_and(|u| !u.is_empty());
+        if !key.trim().is_empty() || given_address || budget.is_some() {
+            return Err(msg::account_sub_takes_nothing_else(reader.vendor));
+        }
         let me = self.device_str().to_owned();
         // **Before the login check, deliberately.** Both can be true at
         // once — a machine that registered its subscription and later
@@ -339,12 +340,12 @@ impl Node {
         if let Some(had) = self
             .accounts()?
             .into_iter()
-            .find(|a| a.kind.is_sub() && a.home == me)
+            .find(|a| a.kind.is_sub() && a.home == me && a.provider == provider)
         {
             return Err(msg::account_sub_already_here(had.name));
         }
         if !(reader.logged_in)() {
-            return Err(msg::account_sub_no_login().into());
+            return Err(msg::account_sub_no_login(reader.vendor, reader.command));
         }
         self.commit_account(Account {
             id: link::fresh_hex()?,
@@ -360,6 +361,91 @@ impl Node {
             pinned: false,
             kind: AccountKind::Sub,
         })
+    }
+
+    /// **This machine's vendor login becomes a registration, once**
+    /// (docs/SHELL.md 第七轮 第 3 条:「这些自动读取的一视同仁. 只是自动初始化
+    /// 了, 但一切操作与别的list无异」). Until then a login khor found was a
+    /// probed row with no menu (2026-09-07); now it is the same document
+    /// `khor accounts add --kind sub` writes, so pinning, deleting and
+    /// editing it are what they are for every other account.
+    ///
+    /// **Once per provider, remembered here and never replicated**
+    /// (`.khor/subs-adopted.json`): a person who deletes it is not handed
+    /// it back on the next read — they register it by hand if they want
+    /// it. A provider is written down when a subscription for it is homed
+    /// here, whether this made it or somebody registered it by hand
+    /// first; a machine with no login writes nothing, so a login that
+    /// arrives later is adopted then.
+    ///
+    /// **Only this machine's own login**: the registration is homed here
+    /// like every subscription (`register_subscription` says why), and
+    /// another machine's login is that machine's to adopt — its row
+    /// arrives over sync.
+    ///
+    /// Answers how many it made. Called before every read of the list —
+    /// the window's board and `khor quota` / `khor accounts` — so an
+    /// installed machine adopts on its first read after the upgrade.
+    pub fn adopt_subscriptions(&self) -> Result<usize, String> {
+        self.adopt_subscriptions_with(|p| (p.logged_in)())
+    }
+
+    /// [`Node::adopt_subscriptions`] with the login check handed in: the
+    /// real one reads the operator's credential store, which no test may
+    /// touch (`quota::stored_credential`'s tripwire).
+    pub(crate) fn adopt_subscriptions_with(
+        &self,
+        logged_in: impl Fn(&'static crate::quota::Provider) -> bool,
+    ) -> Result<usize, String> {
+        let note = self.root().join(".khor").join("subs-adopted.json");
+        let mut done: std::collections::BTreeSet<String> = std::fs::read_to_string(&note)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let me = self.device_str().to_owned();
+        let mut made = 0;
+        let mut changed = false;
+        for word in sub_provider_words() {
+            if done.contains(word) {
+                continue;
+            }
+            let Some(provider) = Provider::parse(word) else {
+                continue;
+            };
+            let Some(reader) = sub_reader(&provider) else {
+                continue;
+            };
+            let here = self
+                .accounts()?
+                .into_iter()
+                .any(|a| a.kind.is_sub() && a.home == me && a.provider == provider);
+            if !here {
+                if !logged_in(reader) {
+                    continue;
+                }
+                self.commit_account(Account {
+                    id: link::fresh_hex()?,
+                    name: msg::sub_auto_name(reader.vendor),
+                    provider,
+                    base_url: None,
+                    budget: None,
+                    unit: None,
+                    home: me.clone(),
+                    pinned: false,
+                    kind: AccountKind::Sub,
+                })?;
+                made += 1;
+            }
+            done.insert(word.to_owned());
+            changed = true;
+        }
+        if changed {
+            let dot = self.root().join(".khor");
+            std::fs::create_dir_all(&dot).map_err(|_| msg::cant_make_dir(dot.display()))?;
+            let text = serde_json::to_vec(&done).map_err(|e| e.to_string())?;
+            std::fs::write(&note, text).map_err(|e| msg::cant_write(note.display(), e))?;
+        }
+        Ok(made)
     }
 
     /// Writes a fresh registration to the replicated doc. The key, when
@@ -2760,7 +2846,7 @@ mod tests {
             n.register_account("s", p, AccountKind::Sub, url, key, budget)
                 .unwrap_err()
         };
-        let no_use = msg::account_sub_takes_nothing_else();
+        let no_use = msg::account_sub_takes_nothing_else("Claude Code");
         assert_eq!(add(Provider::Claude, None, "sk-x", None), no_use, "a key");
         assert_eq!(
             add(Provider::Claude, Some("https://gw"), "", None),

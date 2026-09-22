@@ -99,6 +99,10 @@ pub struct Provider {
     /// Code」, 「Codex」) — a proper noun, the `{0}` of the words that
     /// say whose login a number came through.
     pub vendor: &'static str,
+    /// The command that logs the vendor's tool in again (`claude`,
+    /// `codex`) — what a person is sent to run when the login is
+    /// missing or expired, since khor never renews it.
+    pub command: &'static str,
     /// Whether this machine holds the vendor's login — **no network**.
     pub logged_in: fn() -> bool,
     /// The strategies, in the order they are tried.

@@ -4,7 +4,6 @@ import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
-  fetchQuota,
   fetchWorkspaces,
   installHooks,
   launchOn,
@@ -24,7 +23,6 @@ import {
   type DeviceRow,
   type HooksState,
   type SessionRow,
-  type QuotaAnswer,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import {
@@ -175,14 +173,6 @@ const UNWATCHED_MS = 10_000;
  * and that reason survives a minute of lateness intact.
  */
 const HOOKS_MS = 60_000;
-/** How often the subscription's arcs are re-asked while a surface that
-    can show them is open. **Named for the spending answer it used to
-    share a beat with**, which left on 2026-08-29 with the 今天 line —
-    kept rather than renamed on its own, because a constant's name is
-    not worth a line of diff in a file five people edit; the next thing
-    to touch this effect should rename it. Not the rows' beat: see where
-    it is used. */
-const USAGE_POLL_MS = 10_000;
 
 /** The sessions landing's stored ticks, one entry per pane
     (`lib/session-filter`). The workspace column keeps its own under a
@@ -662,7 +652,10 @@ export default function App() {
   // reader was the network's-now 今天 line, removed 2026-08-29, and a
   // poll nobody reads is not free: it is that tally, on a timer, for a
   // number nothing draws. `khor usage` is where that question lives.
-  const [quota, setQuota] = useState<QuotaAnswer | null>(null);
+  // ⚠️ 墓碑: `quota`, this machine's probed subscription, polled here
+  // for the 额度 list's row with no menu. Since 2026-09-22 a login found
+  // here is a registration (`Node::adopt_subscriptions`, docs/SHELL.md
+  // 第七轮 第 3 条) and comes in with the board like every other row.
 
   // This machine's hooks, polled with everything else rather than read
   // once when the card opens: `khor hooks install` in a terminal is the
@@ -782,33 +775,6 @@ export default function App() {
       clearInterval(t);
     };
   }, [hidden]);
-
-  // The subscription's arcs, on a beat of their own.
-  //
-  // **One reader now**: the 额度 landing's foot (`QuotaLanding`). They
-  // were on both machine surfaces until 2026-09-02 —「机器页面不需要有
-  // token usage的环」pulled them off — so the gate narrowed with the
-  // readers. The beat still costs the endpoint nothing: one fetch
-  // answers for five minutes and the whole machine shares it
-  // (`khor_node::quota`), so this reaches a cache and stops.
-  useEffect(() => {
-    if (landing !== "quota") return;
-    let live = true;
-    const tick = () => {
-      fetchQuota()
-        .then((q) => live && setQuota(q))
-        .catch(() => {});
-    };
-    tick();
-    // Left alone by the hidden pace on purpose: its beat already **is**
-    // the hidden beat, and it only runs while a surface that can show it
-    // is open.
-    const t = setInterval(tick, USAGE_POLL_MS);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [morePage, landing]);
 
   const onSelect = useCallback((row: SessionRow) => {
     sessionTabs.open(row.id);
@@ -2190,8 +2156,6 @@ export default function App() {
                       // drag — `ListPane` takes the same `null` every
                       // other pane hands it there.
                       pane={null}
-                      me={devices.find((d) => d.me)?.shown ?? ""}
-                      quota={quota}
                       query={queries.quota}
                       onQuery={setQuery}
                       words={words.quota}
@@ -2236,8 +2200,6 @@ export default function App() {
                 // for the same reason the ground is: a person drags a
                 // sidebar, not five sidebars.
                 pane={listPane}
-                me={devices.find((d) => d.me)?.shown ?? ""}
-                quota={quota}
                 query={queries.quota}
                 onQuery={setQuery}
                 words={words.quota}

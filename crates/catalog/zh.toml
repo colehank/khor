@@ -260,11 +260,14 @@ usage = """
                         --on 在别的机器上开,不给命令就用那台自己的 shell;
                         --gui/--agent 配 --on 在那台机器上起它自己的 agent,
                         不接命令,也不接 --resume)
-  accounts              登记过的账号;add <名字> --provider newapi|claude|openai|
-                        deepseek|moonshot|moonshot-cn|openrouter [--base-url 地址]
+  accounts [ls]         登记过的账号(本机的 Claude Code、Codex 登录第一次读到
+                        时各自动登记一条,删掉后不再自动建);add <名字> --provider
+                        newapi|claude|openai|deepseek|moonshot|moonshot-cn|
+                        openrouter [--base-url 地址]
                         [--budget 数] --key 密钥|--key-stdin 登记(密钥只留在这台
-                        机器上);订阅是 add <名字> --provider claude --kind sub,
-                        不填密钥——它读的是这台机器上 Claude Code 的登录,
+                        机器上);订阅是 add <名字> --provider claude|codex
+                        --kind sub,不填密钥——它读的是这台机器上 Claude Code
+                        或 Codex 的登录,
                         所以登记在哪台就读哪台;rm <id|名字> 撤掉
   quota [--why]         每个账号用了多少:本机的现读,别的机器的按上次带回来的;
                         --why 印出本机每家订阅每条取数策略这一回做了什么
@@ -1216,6 +1219,9 @@ no-such-tab = "没有这枚标签页: {0}"
 dir-pin-retired = "「置顶的目录」已经退役:目录现在是工作区。用 khor ws add -m {0} {1},再 khor ws pin -m {0} {1}"
 # 只能登记为订阅的提供商(codex:读的是 Codex 存的 ChatGPT 登录,没有密钥可填)。
 provider-sub-only = "{0} 只能登记订阅:加 --kind sub,不填密钥"
+# 本机读到的订阅登录自动建成的那条账户登记的名字(docs/SHELL.md 第七轮 第 3 条)。
+# {0} 是厂商自己的叫法(Claude Code),名字之后和别的登记一样可以改。
+sub-auto-name = "{0} 订阅"
 # 删除一个置顶的标签页(`khor_node::tabs::close`)。置顶就是「别让我顺手关掉它」,
 # 所以先取消置顶才能删——窗口和 `khor tabs close` 都走这一句。
 tab-pinned = "这个标签页已置顶,先取消置顶再删除"
@@ -1834,14 +1840,16 @@ account-budget-bad = "预算得是个正数"
 # 只有一份、没有选择器——所以登记一条订阅能填的只有名字。给了密钥、地址或
 # 预算就拒掉,**而不是默默丢掉**:默默丢掉的那一版,人粘完一把密钥、看见
 # 「登记成功」,而那把密钥哪儿都没去。
-account-sub-takes-nothing-else = "订阅读的是这台机器上 Claude Code 的登录,不收密钥、地址或预算"
+# {0} 是那家工具的名字(Claude Code、Codex,docs/SHELL.md 第九轮)。
+account-sub-takes-nothing-else = "订阅读的是这台机器上 {0} 的登录,不收密钥、地址或预算"
 # 登记订阅时这台机器根本没登录过 Claude Code。**当场拒掉。**
 #
 # 这是登记方唯一能**当场证伪**的一件事(问一次本地凭据,不出网)。放过去的
 # 代价不是「少一条登记」,是几分钟后屏幕上多一条**永远读不出数的行**,而人
 # 只能把它删掉重来——一句验不了的断言写进复制文档,错在哪要在另一台机器的
 # 屏幕上才显形。
-account-sub-no-login = "这台机器上没有 Claude Code 登录,登记不了订阅——先跑一次 claude"
+# {0} 工具名,{1} 让它登录的那条命令(claude、codex)。
+account-sub-no-login = "这台机器上没有 {0} 登录,登记不了订阅——先跑一次 {1}"
 # 同一台机器上的第二条订阅。一台机器一份凭据,所以第二条只会是两行一模一样
 # 的数——那正是这一批要消灭的重复,只是换了件衣服由人手动造出来。
 account-sub-already-here = "这台机器上的订阅已经登记过了: {0}"
@@ -1861,7 +1869,7 @@ no-such-kind = "不认识这种登记: {0}。可以是 bill(按量计费)或 sub
 # 而且是在人最不会怀疑的那一处(他刚粘过一把新密钥)。
 account-key-elsewhere = "{0} 的密钥不在这台机器上,换密钥要去它那台"
 no-such-account = "没登记过这个账号: {0}"
-no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai、deepseek、moonshot、moonshot-cn、openrouter"
+no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai、deepseek、moonshot、moonshot-cn、openrouter、codex"
 cant-make-keys-dir = "建不了密钥目录: {0}"
 # Resuming a vendor session that another process is running right now
 # (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
@@ -2057,6 +2065,11 @@ accounts-provider-deepseek = "DeepSeek"
 accounts-provider-moonshot = "Moonshot 国际站"
 accounts-provider-moonshot-cn = "Moonshot 国内站"
 accounts-provider-openrouter = "OpenRouter"
+# Codex 的 ChatGPT 套餐——只有订阅,没有计费(第九轮)。
+accounts-provider-codex = "Codex"
+# 读订阅登录的那家工具的名字——专名,照厂商的写法(第九轮)。填进 accounts-trouble-*、
+# accounts-sub-note 的 {0}。Codex 就用 accounts-provider-codex:同一段里不许两个键一句话。
+vendor-claude = "Claude Code"
 accounts-name = "叫什么"
 accounts-address = "地址"
 accounts-key = "密钥"
@@ -2222,20 +2235,13 @@ accounts-trouble-unknown-provider = "这台 khor 不认识这家,升级它才读
 # (`QuotaTrouble::Stale`:那会是 khor 冒充 Claude Code 去铸令牌),所以两边
 # 的落点都是「去那台机器上跑一次 claude」,而**说清是哪一种,是这句话全部
 # 的价值**——没登录的人要去登录,过期的人只要跑一次。
-accounts-trouble-no-login = "那台机器上没有 Claude Code 登录"
-accounts-trouble-login-stale = "那台机器的 Claude Code 登录过期了,去它那儿跑一次 claude"
-# 本机 Claude Code 登录那两窗的名字,现在是额度列表里**一行的行名**。
-# 它搬过两次家:2026-08-28「额度都是机器卡里的」把它钉在两张机器卡上;
-# 2026-09-02「机器页面不需要有 token usage 的环」撤了卡上那份,它成了页脚
-# 一条独立的横带;2026-09-06「不要有现在下方单独一个订阅的横条」把横带折
-# 进列表——它和登记过的账户列在一处,靠「类型」和「来源」两条轴分辨。
-#
-# ⚠️ **它现在只是「还没登记的那一条」的名字。** 2026-09-07 起订阅是能登记
-# 的一类(`AccountKind::Sub`),登记过的订阅顶着**人自己起的名字**,这句话
-# 只属于探测出来的那一行——本机登记了订阅之后,那一行不画,这个词也就不
-# 出现。它没有被撤掉,因为零配置的第一屏还靠它:一台刚装好的 khor 什么都
-# 没登记,额度页不该是空的。
-accounts-subscription = "Claude Code 订阅"
+# {0} 工具名(Claude Code、Codex),{1} 那条命令(claude、codex)——第九轮起不止一家。
+accounts-trouble-no-login = "那台机器上没有 {0} 登录"
+accounts-trouble-login-stale = "那台机器的 {0} 登录过期了,去它那儿跑一次 {1}"
+# ⚠️ 墓碑:accounts-subscription(「Claude Code 订阅」),探测出来的那一行的名字。
+# 2026-09-22 退役(docs/SHELL.md 第七轮 第 3 条):零配置的第一屏现在靠节点自动登记
+# 那条订阅(`Node::adopt_subscriptions`),名字是 [msg] 里的 sub-auto-name,
+# 之后和别的登记一样能改。
 # 额度页那三条分组/过滤轴的名字与值(2026-09-06:「额度这侧边栏分组,和 chat 的
 # sessionlist 类似,有 filter 和搜索。组别可以有来源(机器、设置,即 khor 登记的)、
 # 提供商、类型(订阅、计费)」)。
@@ -2252,8 +2258,8 @@ quota-kind = "类型"
 # 「现在的登记里面,还应该能够登记订阅」,于是订阅成了 `AccountKind` 的一
 # 个值:它能登记、能改名、能置顶、能删,也能在别的机器上看见——**登记它
 # 唯一填的就是「哪台机器」**(登记在哪台就是哪台,密钥不出机器那条规矩在
-# 这儿变成登录不出机器)。没登记过的本机订阅仍然自己冒出来,那是探测,
-# 不是登记;两者只会有一行,见 `accounts-subscription`。
+# 这儿变成登录不出机器)。2026-09-22 起本机的登录第一次读到时由 khor 自动
+# 登记一条(第七轮 第 3 条),不再有「探测出来、没登记」的那一行。
 #
 # **这两个词同时是登记表单上「类型」那一格的两颗按钮**,和过滤/组头共用
 # ——一个值一种拼法,这份词表拒绝同一段文案挂两个键,那正是这里要的。
@@ -2262,7 +2268,8 @@ quota-kind-bill = "计费"
 # 表单上选了「订阅」之后,密钥那一格不画。**这句话是那一格的替代品,不是
 # 装饰**:一个人看见「登记」却没有地方填密钥,得知道数是从哪来的——和填
 # 密钥前那两句(`accounts-key-stays`)是同一笔交代,方向相反。
-accounts-sub-note = "订阅读这台机器上 Claude Code 的登录,不用填密钥"
+# {0} 是选中的那家工具名(Claude Code、Codex)。
+accounts-sub-note = "订阅读这台机器上 {0} 的登录,不用填密钥"
 quota-by = "提供商"
 # 来源 = **这一行的读数从哪来**,每行只有一个值:
 # 订阅行是那台机器的名字(今天只有本机,将来别的机器的 Claude Code 登录跨帧

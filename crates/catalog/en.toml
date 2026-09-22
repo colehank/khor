@@ -256,14 +256,19 @@ usage: khor <verb>
                         combined with --on starts that machine's own
                         agent there, taking no command and no
                         --resume)
-  accounts              registered accounts; add <name> --provider
+  accounts [ls]         registered accounts (this machine's Claude Code
+                        and Codex logins are each registered on their own
+                        the first time they are read, and not again once
+                        deleted); add <name>
+                        --provider
                         newapi|claude|openai|deepseek|moonshot|
                         moonshot-cn|openrouter [--base-url <url>]
                         [--budget <number>] --key <key>|--key-stdin
                         registers one (the key stays only on this
                         machine); a subscription is add <name>
-                        --provider claude --kind sub, with no key — it
-                        reads the Claude Code login on this machine,
+                        --provider claude|codex --kind sub, with no key
+                        — it reads the Claude Code or Codex login on
+                        this machine,
                         so whichever machine it's registered on is the
                         one it reads from; rm <id|name> removes one
   quota [--why]         how much each account has used: read live for
@@ -798,6 +803,7 @@ no-such-message = "No such message: {0}"
 no-such-tab = "No such tab: {0}"
 dir-pin-retired = "Pinned directories are retired: a directory is a workspace now. Use khor ws add -m {0} {1}, then khor ws pin -m {0} {1}"
 provider-sub-only = "{0} can only be registered as a subscription: add --kind sub, with no key"
+sub-auto-name = "{0} subscription"
 tab-pinned = "This tab is pinned — unpin it before deleting it"
 
 # ── frames (node) ──
@@ -1071,14 +1077,14 @@ account-key-blank = "The key is empty"
 account-needs-address = "new-api's address differs by site; give it the address."
 account-address-bad = "Address must start with http:// or https://: {0}"
 account-budget-bad = "Budget must be a positive number"
-account-sub-takes-nothing-else = "A subscription reads this machine's Claude Code login; it doesn't take a key, address, or budget"
-account-sub-no-login = "This machine has no Claude Code login — can't register a subscription. Run claude once first"
+account-sub-takes-nothing-else = "A subscription reads this machine's {0} login; it doesn't take a key, address, or budget"
+account-sub-no-login = "This machine has no {0} login — can't register a subscription. Run {1} once first"
 account-sub-already-here = "This machine's subscription is already registered: {0}"
 provider-has-no-sub = "{0} has no subscription to read; subscriptions exist for: {1}"
 no-such-kind = "Unknown registration kind: {0}. Use bill (pay-as-you-go) or sub (subscription)"
 account-key-elsewhere = "{0}'s key isn't on this machine — change the key on that machine instead"
 no-such-account = "No account registered: {0}"
-no-such-provider = "Unknown provider: {0}. Known providers: newapi, claude, openai, deepseek, moonshot, moonshot-cn, openrouter"
+no-such-provider = "Unknown provider: {0}. Known providers: newapi, claude, openai, deepseek, moonshot, moonshot-cn, openrouter, codex"
 cant-make-keys-dir = "Can't create the keys directory: {0}"
 resume-running-elsewhere = "This session is already running in another process (pid {0}) — can't start a second one. Continue there, or quit it first"
 agent-speaks-another-acp = "This agent speaks ACP version {0}; khor speaks version 1"
@@ -1157,6 +1163,8 @@ accounts-provider-deepseek = "DeepSeek"
 accounts-provider-moonshot = "Moonshot (international)"
 accounts-provider-moonshot-cn = "Moonshot (China)"
 accounts-provider-openrouter = "OpenRouter"
+accounts-provider-codex = "Codex"
+vendor-claude = "Claude Code"
 # zh.toml uses the conversational "叫什么" (what's it called) here and
 # the plain "名字" for `new-session-name` — kept distinct in English too.
 accounts-name = "Nickname"
@@ -1201,13 +1209,13 @@ accounts-trouble-no-key = "No key for this account on that machine"
 accounts-trouble-no-reading = "That machine hasn't responded yet"
 accounts-trouble-gateway-too-old = "This new-api site is too old for /api/usage/token/ (needs v0.9+; v0.10.8+ for exhausted tokens)"
 accounts-trouble-unknown-provider = "This khor doesn't recognize this provider — upgrade it to read this"
-accounts-trouble-no-login = "Claude Code isn't logged in on that machine"
-accounts-trouble-login-stale = "Claude Code's login on that machine expired — run claude there once"
-accounts-subscription = "Claude Code subscription"
+accounts-trouble-no-login = "{0} isn't logged in on that machine"
+accounts-trouble-login-stale = "{0}'s login on that machine expired — run {1} there once"
+# ⚠️ Tombstone: accounts-subscription, the probed row's name, retired 2026-09-22 (docs/SHELL.md 第七轮 第 3 条; now [msg] sub-auto-name).
 quota-kind = "Type"
 quota-kind-sub = "Subscription"
 quota-kind-bill = "Billing"
-accounts-sub-note = "Subscription reads this machine's Claude Code login — no key needed"
+accounts-sub-note = "Subscription reads this machine's {0} login — no key needed"
 quota-by = "Provider"
 quota-from = "Source"
 quota-from-khor = "Registered in khor"

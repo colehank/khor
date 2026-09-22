@@ -4021,8 +4021,17 @@ fn quit(rest: &[String]) -> Result<(), String> {
 /// this machine and nowhere else (`accounts` module head).
 fn accounts(rest: &[String]) -> Result<(), String> {
     let n = node()?;
+    // `ls` spelled out is the bare listing, the verb every other list
+    // in this CLI answers to.
+    let rest = match rest {
+        [ls] if ls == "ls" => &[],
+        _ => rest,
+    };
     match rest.split_first() {
         None => {
+            // The same first read the window makes: a login found here
+            // is a registration from now on (`Node::adopt_subscriptions`).
+            let _ = n.adopt_subscriptions();
             let names: std::collections::HashMap<String, String> = n
                 .devices()?
                 .into_iter()
@@ -4145,6 +4154,7 @@ fn quota(rest: &[String]) -> Result<(), String> {
         return Err(usage_text().into());
     }
     let n = node()?;
+    let _ = n.adopt_subscriptions();
     let names: std::collections::HashMap<String, String> =
         n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();
     let board = rt()?.block_on(n.quota_board())?;

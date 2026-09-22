@@ -47,6 +47,7 @@ static STATE: State = State::new();
 pub static PROVIDER: Provider = Provider {
     id: "claude",
     vendor: "Claude Code",
+    command: "claude",
     logged_in,
     strategies,
     finish,

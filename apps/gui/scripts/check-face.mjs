@@ -823,9 +823,8 @@ try {
       mine: false,
     },
   ];
-  await page.route("**/quota_board", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify(board) }),
-  );
+  // (The board's route is laid down after the probe's fixture below —
+  // this machine's own subscription row is made of it.)
   // ⚠️ **The `**/usage` route is back, 2026-09-08.** The tombstone that
   // stood here said its absence was not an oversight — nothing had
   // asked for it since 2026-08-29, so a fixture would have been
@@ -1035,7 +1034,35 @@ try {
   // The default is the standing fixture's whole-plan week (39 of
   // `quotaWindows`), so a caller that says nothing gets a consistent
   // reading.
+  // What this machine's Claude Code login reads, as the node's own
+  // reader would carry it. **Since 2026-09-22 it reaches the page only
+  // as a registration** (docs/SHELL.md 第七轮 第 3 条: the node registers
+  // the login the first time it reads the board), so the standing board
+  // carries it as the row `acc-sub-here`, made from whatever this holds.
+  let probeNow = null;
+  // Its pin is kept here: the node keeps it on the registration, and
+  // the row is rebuilt from `probeNow` on every ask.
+  let subHerePinned = false;
+  const subHere = () => ({
+    ...ring("acc-sub-here", "claude code", "claude", {
+      kind: "sub",
+      windows: probeNow.windows,
+      plan: probeNow.plan,
+      credits: probeNow.credits,
+      fill: probeNow.fill,
+      at_ms: probeNow.as_of * 1000,
+    }),
+    pinned: subHerePinned,
+  });
+  const standing = () => pinFirst([subHere(), ...board]);
+  const routeStanding = async () => {
+    await page.unroute("**/quota_board");
+    await page.route("**/quota_board", (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(standing()) }),
+    );
+  };
   const routeQuota = async (credits, windows = quotaWindows, fill = 0.39) => {
+    probeNow = { windows, as_of: Math.floor(Date.now() / 1000) - 120, plan: quotaPlan, credits, fill };
     await page.unroute("**/quota");
     await page.route("**/quota", (r) =>
       r.fulfill({
@@ -1054,6 +1081,7 @@ try {
     );
   };
   await routeQuota(quotaCredits);
+  await routeStanding();
   // A place to have been, so the browsing landings are not measured at
   // their empty state and nothing else. **Without these the walk reaches
   // the files landing and finds one button on it** — the whole of a
@@ -1166,6 +1194,7 @@ try {
     const a = r.request().postDataJSON() ?? {};
     const acc = board.find((x) => x.reading?.account === a.id);
     if (acc) acc.pinned = !!a.on;
+    if (a.id === "acc-sub-here") subHerePinned = !!a.on;
     pinFirst(board);
     return r.fulfill({ contentType: "application/json", body: "null" });
   });
@@ -2368,8 +2397,8 @@ try {
   //     established. The route is held, so this is a state to stand in
   //     rather than a race to win — on a real machine it is 18.5 s.
   await open("quota");
-  await until(8000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
-  await press('[data-quota-row="sub:local"]');
+  await until(8000, async () => (await page.locator('[data-quota-row="acc-sub-here"]').count()) > 0);
+  await press('[data-quota-row="acc-sub-here"]');
   await wait(500);
   if ((await page.locator("[data-quota-detail] [data-usage-half]").count()) !== 0) {
     fail("the usage half drew before its answer arrived — an empty chart is the picture of an account that spent nothing");
@@ -2541,8 +2570,8 @@ try {
       anchor: "[data-usage-half] [data-usage-chart]",
       go: async () => {
         await open("quota");
-        await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
-        return press('[data-quota-row="sub:local"]');
+        await until(5_000, async () => (await page.locator('[data-quota-row="acc-sub-here"]').count()) > 0);
+        return press('[data-quota-row="acc-sub-here"]');
       },
     },
     {
@@ -13761,16 +13790,10 @@ try {
       );
     }
 
-    //   …and the subscription is not a registration: nothing to edit,
-    //   nothing to remove, so it is offered no menu at all.
-    await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click({ button: "right" });
-    await wait(500);
-    const onSub = await page.locator("[data-row-menu] [data-menu-item]").count();
-    if (onSub !== 0) {
-      fail(`the subscription row offers ${onSub} menu item(s) — it is not a registration`);
-    }
-    await page.keyboard.press("Escape");
-    await wait(300);
+    //   ⚠️ 墓碑 (2026-09-22, docs/SHELL.md 第七轮 第 3 条 / 第九轮): 「the
+    //   subscription is not a registration, so it is offered no menu」
+    //   stood here. It is a registration now — made by khor the first
+    //   time the login is read — and its menu is 8b's claim.
     await page.locator('[data-quota-row][data-quota-kind="sub"]').first().click();
     await wait(300);
 
@@ -13947,37 +13970,43 @@ try {
         .locator('[data-quota-row][data-quota-kind="sub"]')
         .evaluateAll((els) => els.map((e) => e.getAttribute("data-quota-row")));
 
-    //   **Read as ids, not as a count**: 「one row」 and 「the *right*
-    //   one」 are two claims, and a build that suppressed the
-    //   registration instead of the probe satisfies the count.
+    //   **Every row is a registration** (docs/SHELL.md 第七轮 第 3 条,
+    //   2026-09-22: 「这些自动读取的一视同仁. 只是自动初始化了」). The
+    //   login still answers `**/quota` all through this section; what the
+    //   list draws is the board, and nothing else. Read as ids, not as a
+    //   count: 「one row」 and 「the *right* one」 are two claims.
     await routeBoard([...board, registered(true)]);
     await goToQuota();
     const homedHere = await subRowIds();
     if (JSON.stringify(homedHere) !== JSON.stringify(["acc-sub"])) {
-      fail(
-        `with this machine's subscription registered the list draws ${JSON.stringify(homedHere)} — the registration stands and the probe (sub:local) stands down`,
-      );
+      fail(`with this machine's subscription registered the list draws ${JSON.stringify(homedHere)} — one login, one row`);
     }
-
-    //   ⚠️ **This arm is the test.** The one above passes just as well
-    //   against a build that hides the probe whenever *any*
-    //   subscription exists anywhere in the mesh. This one registers a
-    //   subscription homed on **another** machine and demands the probe
-    //   **stay** — two logins, two rows. One arm cannot tell those
-    //   builds apart, and it would read exactly like a successful
-    //   verification.
-    //
-    //   The two fixtures differ in **one field** (`mine`): two that
-    //   differed in two are not a control group, they are two
-    //   unrelated samples, and whichever difference the code happened
-    //   to read explains the result.
+    //   ⚠️ **This arm is the test.** The board carries only another
+    //   machine's subscription — this machine's own registration was
+    //   deleted, and the login is still here answering. A row drawn from
+    //   the login would be the deleted registration coming back
+    //   (「删掉它 → 行没了; 再读一次 → 不回来」).
     await routeBoard([...board, registered(false)]);
     await goToQuota();
     const homedElsewhere = (await subRowIds()).sort();
-    if (JSON.stringify(homedElsewhere) !== JSON.stringify(["acc-sub", "sub:local"])) {
+    if (JSON.stringify(homedElsewhere) !== JSON.stringify(["acc-sub"])) {
       fail(
-        `a subscription registered on another machine left ${JSON.stringify(homedElsewhere)} — it must not stand down this machine's own probed row: two logins, two rows`,
+        `with no subscription registered here the list draws ${JSON.stringify(homedElsewhere)} while the login answers — a row made from the login is a deleted registration coming back`,
       );
+    }
+    //   …and the registration this machine made itself wears the same
+    //   menu every row does: 置顶 and 删除 first, 编辑 beside them.
+    await routeStanding();
+    await goToQuota();
+    await page.locator('[data-quota-row="acc-sub-here"]').click({ button: "right" });
+    await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
+    const items = await page
+      .locator("[data-row-menu] [data-menu-item]")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
+    await page.keyboard.press("Escape");
+    console.log(`quota 7·3 · this machine's subscription menu ${JSON.stringify(items)}`);
+    if (JSON.stringify(items.slice(0, 2)) !== JSON.stringify(["pin", "remove"]) || !items.includes("edit")) {
+      fail(`this machine's own subscription row offers ${JSON.stringify(items)} — 置顶, 删除, then 编辑, like every other row`);
     }
 
     //   **One row is one card.** 「Has an account」 used to mean 「is not
@@ -14032,7 +14061,7 @@ try {
     //   Put the board back: everything after this is written against
     //   the standing fixture, and a gate that left its own state behind
     //   would make the next section's failure somebody else's puzzle.
-    await routeBoard(board);
+    await routeStanding();
     //   …and back to the fixture the rest of this section is written
     //   against.
     await routeQuota(quotaCredits);
@@ -14484,7 +14513,7 @@ try {
   // while looking finished.
   {
     const half = "[data-quota-detail] [data-usage-half]";
-    await press('[data-quota-row="sub:local"]');
+    await press('[data-quota-row="acc-sub-here"]');
     await wait(400);
 
     if ((await page.locator(`${half} [data-usage-chart]`).count()) === 0) {
@@ -14809,7 +14838,7 @@ try {
     //   for. That is the `querySelectorAll`-returns-`[]` shape, and it
     //   reads as 「the row is not a control」 rather than 「there is no
     //   row」.
-    await press('[data-quota-row="sub:local"]');
+    await press('[data-quota-row="acc-sub-here"]');
     await wait(400);
     if ((await page.locator(`${half} [data-usage-row]`).count()) === 0) {
       fail("probe dead: no rows on the subscription's card, so nothing about heads or pressing was measured");
@@ -15215,8 +15244,8 @@ try {
       console.log(`one dial: ${JSON.stringify(theirsDial)} on both pages`);
     }
     await open("quota");
-    await until(5_000, async () => (await page.locator('[data-quota-row="sub:local"]').count()) > 0);
-    await press('[data-quota-row="sub:local"]');
+    await until(5_000, async () => (await page.locator('[data-quota-row="acc-sub-here"]').count()) > 0);
+    await press('[data-quota-row="acc-sub-here"]');
     await wait(400);
     //   ⑪ **Nothing on this card is spaced 16 or 32 any more.**
     //
@@ -15278,7 +15307,7 @@ try {
         `cache columns ${itemised.cols.length} vs ${plain.cols.length}, no-report says ${JSON.stringify(silent.mute)}, ` +
         `heads ${JSON.stringify(sorts)}`,
     );
-    await press('[data-quota-row="sub:local"]');
+    await press('[data-quota-row="acc-sub-here"]');
     await wait(300);
   }
 
@@ -15356,6 +15385,23 @@ try {
       back: await page.locator("[data-back]").count(),
       windows: await page.locator("[data-quota-detail] [data-quota-window]").count(),
     };
+    //   **Any row, and the row pressed** (2026-09-22). The screen box
+    //   is keyed on `screen`, so opening remounts the landing; with the
+    //   board back at null its dead-end guard sent the detail straight
+    //   back, and no row opened on a phone — hidden while the probed
+    //   subscription was drawn from `App`'s own state. A billed row,
+    //   and not the first one: 「the row pressed」, not 「the first row」.
+    if (onDetail.detail === 1 && (await page.locator("[data-back]").count()) === 1) {
+      await press("[data-back]");
+    }
+    await press('[data-quota-row="acc-fill"]');
+    const billDetail = await page.locator("[data-quota-detail]").evaluateAll((els) => els.map((e) => e.getAttribute("data-quota-detail")));
+    console.log(`quota narrow · a billed row opens ${JSON.stringify(billDetail)}`);
+    if (JSON.stringify(billDetail) !== JSON.stringify(["acc-fill"])) {
+      fail(`pressing the narrow 额度 row acc-fill drew ${JSON.stringify(billDetail)} — the row pressed opens, on a phone too (src/views/QuotaLanding.tsx kept)`);
+    }
+    if ((await page.locator("[data-back]").count()) === 1) await press("[data-back]");
+    await press('[data-quota-row][data-quota-kind="sub"]');
     if (onDetail.detail !== 1 || onDetail.windows !== quotaWindows.length) {
       fail(`probe dead: pressing a narrow 额度 row drew ${onDetail.detail} details / ${onDetail.windows} windows — nothing below is measuring a detail screen`);
     } else if (onDetail.rows !== 0) {
@@ -19773,7 +19819,7 @@ try {
       await fits(`machine@${w}`, "[data-machine-card] [data-plot-settings]", "[data-machine-card] [data-plot-settings-open]");
       await open("quota");
       await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
-      await press('[data-quota-row="sub:local"]');
+      await press('[data-quota-row="acc-sub-here"]');
       await wait(500);
       for (const zone of ["trend", "stats"]) {
         await fits(

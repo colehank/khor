@@ -197,7 +197,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
-import { FAKE_TOKEN, fakeHome, fakeUsage, keychainAsked, keychainGuard } from "./fake-home.mjs";
+import { FAKE_TOKEN, codexUrlOf, fakeHome, fakeUsage, keychainAsked, keychainGuard } from "./fake-home.mjs";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
@@ -332,6 +332,7 @@ const homeEnv = (dir, name) => {
     PATH: `${keychainGuard(FAKE_HOME)}:${process.env.PATH ?? ""}`,
     HOME: FAKE_HOME,
     KHOR_CLAUDE_USAGE_URL: usage.url,
+    KHOR_CODEX_USAGE_URL: codexUrlOf(usage.url),
     VSCODE_CLI_DATA_DIR: codeData,
     KHOR_HOME: dir,
     KHOR_NAME: name,
@@ -7044,6 +7045,97 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     const said = cli(envA, "quota").trim().split("\n");
     return said.length > 1 && said[0].startsWith("gw-good");
   });
+  // 25h) 这台机器读到的订阅就是一条登记 (docs/SHELL.md 第七轮 第 3 条,
+  //      2026-09-22: 「这些自动读取的一视同仁. 只是自动初始化了, 但一切操作
+  //      与别的list无异」; 第九轮: 每家一份描述). Every machine here runs
+  //      with the fake Claude login **and** the fake Codex login
+  //      (`fake-home.mjs`), so each one registers its own two the first
+  //      time it reads the list — beta through this window's board, alpha
+  //      through `khor quota` above. **A registration, not a probe**: its
+  //      id is an account id, and it has the menu every row has.
+  const subsOf = async (provider) =>
+    await page
+      .locator(`[data-quota-row][data-quota-kind="sub"][data-quota-from="beta"][data-provider="${provider}"]`)
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-quota-row")));
+  const ownSub = () => subsOf("claude");
+  // Codex's row first: its windows and plan, read through the fake
+  // `wham/usage` with the fake login.
+  await until("beta's Codex subscription on its list", 30_000, async () => {
+    const ids = await subsOf("codex");
+    return ids.length === 1 && /^[0-9a-f]{32}$/.test(ids[0]);
+  }).catch(async (e) => {
+    throw new Error(`beta has no Codex subscription registered: ${JSON.stringify(await subsOf("codex"))} — ${e.message}`);
+  });
+  const [codexId] = await subsOf("codex");
+  const codexRow = page.locator(`[data-quota-row="${codexId}"]`);
+  await until("the Codex row reading its week", 30_000, async () => (await codexRow.innerText()).includes("31%"))
+    .catch(async () => {
+      throw new Error(`the Codex row does not read the week's 31%: ${JSON.stringify(await codexRow.innerText())}`);
+    });
+  await codexRow.click();
+  await until("the Codex card with its plan", 10_000, async () => {
+    const d = page.locator(`[data-quota-detail="${codexId}"]`);
+    return (await d.count()) === 1 && (await d.innerText()).includes("Plus");
+  }).catch(async () => {
+    throw new Error(`the Codex card does not name the plan: ${await page.locator("[data-quota-detail]").first().innerText().catch(() => "")}`);
+  });
+  await until("beta's own subscription on its list as a registration", 30_000, async () => {
+    const ids = await ownSub();
+    return ids.length === 1 && /^[0-9a-f]{32}$/.test(ids[0]);
+  }).catch(async (e) => {
+    throw new Error(`beta's own subscription is not a registration: ${JSON.stringify(await ownSub())} — ${e.message}`);
+  });
+  const [subId] = await ownSub();
+  if (!cli(envB, "accounts", "ls").includes(subId)) {
+    throw new Error(`beta's registered subscription ${subId} is on the window and not in \`khor accounts ls\``);
+  }
+  await page.locator(`[data-quota-row="${subId}"]`).click({ button: "right" });
+  await until("the subscription's menu", 5_000, async () =>
+    (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0,
+  );
+  const subMenu = await page
+    .locator("[data-row-menu] [data-menu-item]")
+    .evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
+  if (JSON.stringify(subMenu.slice(0, 2)) !== JSON.stringify(["pin", "remove"]) || !subMenu.includes("edit")) {
+    throw new Error(`beta's subscription offers ${JSON.stringify(subMenu)} — 置顶, 删除, then 编辑, like every other row`);
+  }
+  await page.locator('[data-row-menu] [data-menu-item="remove"]').click();
+  if (await until("the delete question", 3_000, async () =>
+    (await page.locator("[data-delete-dialog] [data-delete-go]").count()) === 1,
+  ).then(() => true, () => false)) {
+    await page.locator("[data-delete-dialog] [data-delete-go]").click();
+  }
+  await until("beta's subscription gone from its list", 15_000, async () => (await ownSub()).length === 0);
+  // Read again, both ways the node reads it — `khor quota` and the
+  // window's own board on its beat — and it stays gone.
+  cli(envB, "quota");
+  if (cli(envB, "accounts", "ls").includes(subId)) {
+    throw new Error(`a deleted subscription came back in \`khor accounts ls\` after \`khor quota\` read the list again`);
+  }
+  // Away and back — the landing mounts again and asks for a fresh board
+  // (`openLanding` knows the three list landings; the rail is the door).
+  await openLanding("devices");
+  await railItem("quota").click();
+  await until("the 额度 page again", 10_000, async () => (await page.locator("[data-quota-landing]").count()) === 1);
+  await new Promise((r) => setTimeout(r, 12_000));
+  if ((await ownSub()).length !== 0) {
+    throw new Error(`a deleted subscription came back on beta's list: ${JSON.stringify(await ownSub())}`);
+  }
+  // …and the terminal's delete is the same delete: alpha's own, off
+  // alpha's own CLI, and a second listing does not make it again.
+  const alphaSubs = () =>
+    cli(envA, "accounts", "ls")
+      .split("\n")
+      .map((l) => l.split("\t"))
+      .filter((f) => f[2] === "claude" && f[3] === "sub" && f[4] === "alpha");
+  const [alphaSub] = alphaSubs();
+  if (!alphaSub) throw new Error(`alpha's \`khor accounts ls\` lists no subscription of its own: ${cli(envA, "accounts", "ls")}`);
+  cli(envA, "accounts", "rm", alphaSub[0]);
+  if (alphaSubs().length !== 0) {
+    throw new Error(`\`khor accounts rm\` took alpha's subscription and the next listing made it again: ${JSON.stringify(alphaSubs())}`);
+  }
+  console.log(`subscription: beta's Codex ${codexId.slice(0, 8)} reads 31% and 「Plus」; beta's Claude ${subId.slice(0, 8)} registered with menu ${JSON.stringify(subMenu)}, deleted from the window and not back; alpha's deleted by \`khor accounts rm\` and not back`);
+
   // 30) a machine leaves the network from its row's menu — `khor forget`
   //     (2026-09-06:「机器左侧 list…右键,置顶或删除」). Two presses, and
   //     the first is the control arm: it arms the sentence and moves
@@ -8759,6 +8851,20 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     );
   }
   console.log(`identity: ${usage.seen.asked} usage request(s), every one with the fake login (${FAKE_TOKEN.length}-char token)`);
+  // …and Codex's: its `auth.json` is a login too (docs/SHELL.md 第九轮).
+  // Asked at least once (the Codex row above read through it), and every
+  // ask carried the fake token and the fake account — a real one here is
+  // the operator's ChatGPT login reaching a gate.
+  if (usage.seen.codex.asked === 0) {
+    throw new Error("the fake Codex endpoint was never asked — this run's Codex reading came from somewhere else");
+  }
+  if (usage.seen.codex.strangers !== 0) {
+    throw new Error(
+      `${usage.seen.codex.strangers} of ${usage.seen.codex.asked} Codex usage request(s) carried a login that is not the fake one — ` +
+        "a real ~/.codex/auth.json reached a gate (crates/node/src/quota/codex.rs codex_home)",
+    );
+  }
+  console.log(`identity: ${usage.seen.codex.asked} Codex usage request(s), every one with the fake Codex login`);
   //      …and the keychain was never asked (docs/SHELL.md 第五轮 第 11 条).
   //      Read only after a run that did read the subscription (the check
   //      above), so a zero here is a rule holding and not a read that

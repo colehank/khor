@@ -725,6 +725,10 @@ pub struct AccountRing {
 /// named.
 pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
     let n = open(root)?;
+    // This machine's own login joins the list as a registration the
+    // first time it is found (`Node::adopt_subscriptions`). A failure
+    // here is not the board's: the list is still the list.
+    let _ = n.adopt_subscriptions();
     let me = n.device_str().to_owned();
     let names: std::collections::HashMap<String, String> =
         n.devices()?.into_iter().map(|d| (d.id, d.name)).collect();

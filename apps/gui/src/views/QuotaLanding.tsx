@@ -35,7 +35,6 @@ import {
   removeAccount,
   updateAccount,
   type AccountRing,
-  type QuotaAnswer,
   type QuotaCredits,
   type QuotaWindow,
   type Usage,
@@ -86,7 +85,7 @@ const POLL_MS = 10_000;
     here — an account registered by a newer khor — and shows it as
     itself (`providerWord`'s default); the form only offers what this
     build can register. */
-const PROVIDERS = ["newapi", "claude", "openai", "deepseek", "moonshot", "moonshot-cn", "openrouter"] as const;
+const PROVIDERS = ["newapi", "claude", "openai", "deepseek", "moonshot", "moonshot-cn", "openrouter", "codex"] as const;
 type Provider = (typeof PROVIDERS)[number];
 
 /** Which providers a registered budget means anything for: those that
@@ -97,13 +96,25 @@ const BUDGETED: readonly string[] = ["claude", "openai", "openrouter"];
 /** Both vendors' usage reports are organisation-level admin calls. */
 const NEEDS_ADMIN: readonly string[] = ["claude", "openai"];
 /** Whose subscription khor can read — the vendors whose own login it
-    knows how to find (`khor_node::accounts::sub_reader`). The node
-    refuses anything else by name, so this list only decides what the
-    form *offers*; it is here beside `PROVIDERS` and `BUDGETED` because
-    that is where this file already keeps that kind of fact. codex is
-    the next candidate and is absent until its credential has been
-    read. */
-const SUBSCRIBED: readonly string[] = ["claude"];
+    knows how to find (`khor_node::quota`, one description per vendor).
+    The node refuses anything else by name, so this list only decides
+    what the form *offers*. */
+const SUBSCRIBED: readonly string[] = ["claude", "codex"];
+/** A plan read through a login and nothing else: offered only as a
+    subscription (the node refuses a billed one by name). */
+const SUB_ONLY: readonly string[] = ["codex"];
+
+/** The tool whose login a subscription reads, by provider word, and the
+    command that logs it in again — the two blanks in the sentences that
+    send a person to fix a login (khor never renews one). */
+function vendorOf(p: string): { name: string; command: string } {
+  switch (p) {
+    case "codex":
+      return { name: gui.accounts_provider_codex, command: "codex" };
+    default:
+      return { name: gui.vendor_claude, command: "claude" };
+  }
+}
 
 function providerWord(p: string): string {
   switch (p) {
@@ -121,6 +132,8 @@ function providerWord(p: string): string {
       return gui.accounts_provider_moonshot_cn;
     case "openrouter":
       return gui.accounts_provider_openrouter;
+    case "codex":
+      return gui.accounts_provider_codex;
     default:
       return p;
   }
@@ -129,7 +142,7 @@ function providerWord(p: string): string {
 /** The trouble key's sentence (`khor_node::accounts::trouble`). A key
     this face has never heard of is shown as itself — a reason is still
     a reason, and hiding it would paint 问不出来 with no why. */
-function troubleWord(key: string): string {
+function troubleWord(key: string, provider: string): string {
   switch (key) {
     case "key-refused":
       return gui.accounts_trouble_key_refused;
@@ -150,9 +163,9 @@ function troubleWord(key: string): string {
     // A subscription's two, and they are two because the remedies are:
     // log in over there, or run the vendor's command once over there.
     case "no-login":
-      return gui.accounts_trouble_no_login;
+      return gui.accounts_trouble_no_login(vendorOf(provider).name);
     case "login-stale":
-      return gui.accounts_trouble_login_stale;
+      return gui.accounts_trouble_login_stale(vendorOf(provider).name, vendorOf(provider).command);
     default:
       return key;
   }
@@ -652,9 +665,8 @@ function centreOf(r: Row): string {
   return r.fill == null ? "" : `${Math.round(r.fill * 100)}%`;
 }
 
-/** The id the subscription row wears. Not an account id and cannot
-    collide with one: those are the provider's, this one is khor's. */
-const SUB_ID = "sub:local";
+// ⚠️ 墓碑: `SUB_ID` (「sub:local」), the probed subscription row's id,
+// retired 2026-09-22 with the row (docs/SHELL.md 第七轮 第 3 条).
 
 /**
  * What a row answers on each of the three axes, **in the axis's own
@@ -867,11 +879,12 @@ function storedGroup(): string {
   }
 }
 
+/** What the landing was showing, kept across a remount (see `board`). */
+const kept: { board: AccountRing[] | null; picked: string | null } = { board: null, picked: null };
+
 export function QuotaLanding({
   narrow,
   pane,
-  quota,
-  me,
   query,
   onQuery,
   words,
@@ -915,19 +928,27 @@ export function QuotaLanding({
   screen?: "list" | "detail";
   onOpen?: () => void;
   onBack?: () => void;
-  /** This machine's name — the 来源 of its own subscription row. Passed
-      in rather than guessed from an account's `home_name`: a machine
-      with no registered key still has a subscription, and 「来源」 with
-      no name is the one thing this row must not be. */
-  me: string;
-  /** This machine's Claude Code subscription, polled by the shell on
-      its own beat (`App`'s quota effect) — drawn as a band at the foot
-      when there is a reading. A shell that has not asked yet passes
-      null, and the band simply is not there. */
-  quota?: QuotaAnswer | null;
 }) {
-  const [board, setBoard] = useState<AccountRing[] | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
+  // **Both outlive a remount.** The narrow face keys its screen box on
+  // `screen` (`App`, for the entrance slide), so opening a row mounts
+  // this landing afresh: with the board back at null the dead-end guard
+  // below saw no rows and sent the detail screen straight back, and the
+  // pick was gone besides — pressing any row drew nothing. The probed
+  // subscription row hid it, being drawn from `App`'s own state; it went
+  // on 2026-09-22 (第七轮 第 3 条) and every row on a phone stopped
+  // opening.
+  const [board, setBoardState] = useState<AccountRing[] | null>(() => kept.board);
+  const [picked, setPickedState] = useState<string | null>(() => kept.picked);
+  const setBoard = (next: AccountRing[] | null | ((was: AccountRing[] | null) => AccountRing[] | null)) =>
+    setBoardState((was) => {
+      const now = typeof next === "function" ? next(was) : next;
+      kept.board = now;
+      return now;
+    });
+  const setPicked = (id: string | null) => {
+    kept.picked = id;
+    setPickedState(id);
+  };
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
@@ -969,46 +990,16 @@ export function QuotaLanding({
     };
   }, [hidden]);
 
-  // **One list, two kinds of thing.** The subscription is first because
-  // it is the reading you did not ask for — everything below it you
-  // registered yourself.
-  // **A registration replaces the probe.** The probed row is what a
-  // khor that has been told
-  // nothing still shows; registering this machine's subscription gives
-  // the same login a name, a place in the order, a menu, and a reading
-  // every other machine can see. Both at once would be one login drawn
-  // twice, so the probe stands down the moment a registered
-  // subscription is homed here — and a machine with no registration
-  // keeps its zero-configuration first screen, which is why the probe
-  // was not simply deleted.
-  //
-  // **`mine` rather than a device id**: it is the node's own answer to
-  // 「was this read here」 (`quota_board`), which is exactly what
-  // 「homed here」 means. Asking by id would make this screen learn its
-  // own machine id, which it has no other use for.
-  const subHere = (board ?? []).some((a) => a.kind === "sub" && a.mine);
+  // **Every row is a registration** (docs/SHELL.md 第七轮 第 3 条,
+  // 2026-09-22:「这些自动读取的一视同仁. 只是自动初始化了, 但一切操作与
+  // 别的list无异」). ⚠️ 墓碑: a probed row (`SUB_ID`, 「sub:local」) stood
+  // here for this machine's Claude Code login — no menu, because nothing
+  // had been registered — and stood down when a registered subscription
+  // was homed here. The node now registers that login itself the first
+  // time it reads the board (`Node::adopt_subscriptions`), once: a row a
+  // person deleted stays deleted, which a probe drawn from the login
+  // could never do.
   const rows: Row[] = [
-    ...(quota?.quota && quota.quota.windows.length > 0 && !subHere
-      ? [
-          {
-            id: SUB_ID,
-            name: gui.accounts_subscription,
-            kind: "sub",
-            provider: "claude",
-            from: me,
-            plan: quota.quota.plan,
-            account: null,
-            windows: quota.quota.windows,
-            credits: quota.quota.credits,
-            fill: quota.quota.fill,
-            // `as_of` is unix seconds and `null` is 「this call」 — the
-            // node's own words, kept apart from 「zero ms ago」 because
-            // a served cache entry and a fresh fetch look identical
-            // otherwise (`Quota::as_of`).
-            age_ms: quota.quota.as_of === null ? null : Date.now() - quota.quota.as_of * 1000,
-          },
-        ]
-      : []),
     ...(board ?? []).map((a) => ({
       id: a.reading.account,
       name: a.reading.name,
@@ -1082,8 +1073,10 @@ export function QuotaLanding({
   // the back button. Same shape as `App`'s own rule for a session that
   // has gone.
   useEffect(() => {
-    if (screen === "detail" && !current) onBack?.();
-  }, [screen, current, onBack]);
+    // Only once the board has answered: before that there is nothing
+    // to judge by, and 「no row」 would be a guess.
+    if (screen === "detail" && board !== null && !current) onBack?.();
+  }, [screen, board, current, onBack]);
 
   const chooseGroup = (key: string) => {
     setGroupBy(key);
@@ -1140,11 +1133,10 @@ export function QuotaLanding({
    *
    * **Only a registration has these**, which since 2026-09-07 includes
    * a registered subscription: it has a name somebody chose, a place in
-   * the order and a row to remove, so it gets the same three. What is
-   * left without a menu is the **probed** row — nothing was registered,
-   * so there is nothing to edit or remove, and an item whose one answer
-   * is no is not offered (`DevicesList` makes the same refusal for this
-   * machine's own row).
+   * the order and a row to remove, so it gets the same three. Since
+   * 2026-09-22 every row is a registration — the probed row that had no
+   * menu is retired (docs/SHELL.md 第七轮 第 3 条) — so every row has
+   * all three.
    *
    * **Each action rejects when it did not take**, which is how the menu
    * learns to stay open: `RowMenu` closes on a resolve and keeps the
@@ -1272,9 +1264,6 @@ export function QuotaLanding({
       ),
       find: `${r.name} ${subLine(r)}`,
       selected: on,
-      // **A probed subscription gets no menu**: it is not a registration,
-      // so there is nothing to pin, edit or delete — and an item whose
-      // one answer is no is not offered.
       menu: actionsFor(r),
       onOpen: () => {
         setPicked(r.id);
@@ -1610,7 +1599,7 @@ export function QuotaLanding({
         {acc.reading.trouble ? (
           <>
             <dt className="text-muted-foreground">{gui.accounts_state}</dt>
-            <dd data-quota-trouble={acc.reading.trouble}>{troubleWord(acc.reading.trouble)}</dd>
+            <dd data-quota-trouble={acc.reading.trouble}>{troubleWord(acc.reading.trouble, acc.reading.provider)}</dd>
           </>
         ) : (
           <>
@@ -2321,6 +2310,7 @@ function RegisterDialog({
                     if (k === "sub" && !SUBSCRIBED.includes(provider)) {
                       setProvider(SUBSCRIBED[0] as Provider);
                     }
+                    if (k !== "sub" && SUB_ONLY.includes(provider)) setProvider("newapi");
                   }}
                 >
                   {kindWord(k)}
@@ -2331,7 +2321,7 @@ function RegisterDialog({
           <div className="flex flex-col gap-1 text-sm">
             <span className="text-muted-foreground">{gui.accounts_provider}</span>
             <div className="flex flex-wrap gap-1">
-              {(kind === "sub" ? PROVIDERS.filter((p) => SUBSCRIBED.includes(p)) : PROVIDERS).map((p) => (
+              {PROVIDERS.filter((p) => (kind === "sub" ? SUBSCRIBED.includes(p) : !SUB_ONLY.includes(p))).map((p) => (
                 <Button
                   key={p}
                   size="sm"
@@ -2368,7 +2358,7 @@ function RegisterDialog({
                other direction: there is nothing to paste because what
                reads this is the login already on this machine. */
             <p data-quota-sub-note className="text-xs text-muted-foreground">
-              {gui.accounts_sub_note}
+              {gui.accounts_sub_note(vendorOf(provider).name)}
             </p>
           ) : (
           <label className="flex min-w-0 flex-col gap-1 text-sm">
