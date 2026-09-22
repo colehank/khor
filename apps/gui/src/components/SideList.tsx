@@ -257,6 +257,16 @@ export function SideList({
     );
     return (
       <Fragment key={r.id}>
+        {/* One rule where the pinned group ends and the rest begins
+            (docs/SHELL.md 第七轮 第 1 条), noticed between neighbours like
+            the heading below — so it is drawn only while both groups
+            have rows. A folded group's rows are not drawn but its last
+            one is still this row's neighbour, which leaves the rule
+            right under the heading. The seam's colour: `border-t` is
+            `--color-border`, the same token `ListPane`'s seam wears. */}
+        {prev?.group === "pin" && r.group !== "pin" && (
+          <div data-side-list-rule aria-hidden className="mx-4 border-t" />
+        )}
         {/* A heading starts where the group changes between neighbouring
             rows: the rows arrive grouped, so this notices a boundary
             rather than deciding one, and a heading can never be drawn

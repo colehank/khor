@@ -13,9 +13,9 @@
 // empty sentence of its own. A pin is the sidebar's pinned group now, one
 // place for it the way a session's pin has one place, and the old rows
 // were moved there (`Node::migrate_place_pins`). With nothing gone to
-// yet, what is left is the way onward and **no sentence**: the one this
-// screen had was about the pins, and a new one would be writing content
-// to fill a space nobody asked to be filled.
+// yet the screen is empty — **no sentence**, and since 第七轮 no button
+// either: a new one would be writing content to fill a space nobody
+// asked to be filled.
 //
 // **A recent can be sent away, and until now nothing on any screen
 // could do it.** `khor_sync::recents` has had the tombstone since it
@@ -50,7 +50,6 @@ export function NewTabPage({
   narrow,
   onOpen,
   onForget,
-  onGo,
 }: {
   /** Whose places these are. This file asks it for two things: what
       to call a place in a word, and what to call the sections and the
@@ -73,11 +72,6 @@ export function NewTabPage({
    * reason `recent_visit` is called there and not in a body).
    */
   onForget: (place: Place) => void;
-  /** The way onward with nothing to show: this machine's home, the one
-      browse that always exists. Absent only until the device table has
-      answered — then the sentence stands alone rather than wearing a
-      button with nowhere to go. */
-  onGo?: () => void;
 }) {
   // **Asked again every time this appears**: a page visited in another
   // tab a moment ago is exactly the one a person opens a fresh tab to
@@ -94,29 +88,11 @@ export function NewTabPage({
   // Nobody has answered yet, so there is nothing true to say.
   if (!places.asked) return null;
 
-  if (rows.length === 0) {
-    return (
-      <div data-no-places className="grid h-full place-items-center text-sm text-muted-foreground">
-        <div className="flex flex-col items-center gap-2">
-          {onGo && (
-            <Button
-              size="sm"
-              variant="secondary"
-              data-go-places
-              // The only way onward from an empty screen: it has to be
-              // landable on (tokens.css `--touch`). The height token
-              // still says what kind of control it is; this says what a
-              // finger needs of it.
-              className="min-h-touch min-w-touch"
-              onClick={onGo}
-            >
-              {kind.words.go}
-            </Button>
-          )}
-        </div>
-      </div>
-    );
-  }
+  // Nothing gone to yet: nothing in the middle (docs/SHELL.md 第七轮
+  // 第 2 条). The button that stood here said 「去一台机器,借它的网上网」,
+  // and this machine is on the net already — it read as if borrowing
+  // were the only way out. Borrowing is picked in the address bar.
+  if (rows.length === 0) return <div data-no-places className="h-full" />;
 
   return (
     <div data-new-tab className="min-h-0 overflow-y-auto p-2">

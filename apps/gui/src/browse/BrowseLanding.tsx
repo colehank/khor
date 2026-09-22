@@ -402,7 +402,6 @@ export function BrowseLanding({
             .catch(() => {})
             .finally(places.reload);
         }}
-        onGo={me ? () => goTo(me.id, "") : undefined}
       />
     );
 

@@ -9940,6 +9940,43 @@ try {
             await page.keyboard.press("Escape");
           }
         };
+        // ── one rule between the pinned group and the rest (第七轮 第 1 条) ──
+        // Drawn only while both groups have rows; a folded group keeps
+        // it, right under its heading. Its colour is the seam's token.
+        const rules = (at) =>
+          page.evaluate(
+            ([pane, at]) => {
+              const list = document.querySelector(`${pane} [data-side-list]`);
+              const all = [...(list?.querySelectorAll("[data-side-list-rule]") ?? [])];
+              const head = list?.querySelector('[data-side-group="pin"]');
+              const rest = list?.querySelectorAll('[data-side-row][data-side-pinned="false"]').length ?? 0;
+              const style = all[0] ? getComputedStyle(all[0]) : null;
+              const norm = (c) => c.replace(/\s+/g, "");
+              return {
+                at,
+                rules: all.length,
+                want: head && rest > 0 ? 1 : 0,
+                thick: style ? parseFloat(style.borderTopWidth) : null,
+                seam: style
+                  ? norm(style.borderTopColor) === norm(getComputedStyle(document.documentElement).getPropertyValue("--border").trim())
+                  : null,
+                underHead: all[0] ? all[0].previousElementSibling === head : null,
+              };
+            },
+            [c.pane, at],
+          );
+        const ruled = async (at, folded = false) => {
+          const r = await rules(at);
+          console.log(`sidelist 7 · ${c.landing} ${JSON.stringify(r)}`);
+          if (r.rules !== r.want) {
+            fail(`the ${c.landing} sidebar ${at} draws ${r.rules} rule(s) between the pinned group and the rest, not ${r.want} — 「置顶组和其余的行之间加一条细分隔线」`);
+          } else if (r.rules === 1 && (!(r.thick > 0) || !r.seam)) {
+            fail(`the ${c.landing} sidebar's rule is ${r.thick} thick and ${r.seam ? "" : "not "}the seam's colour — the seam token, no new one`);
+          } else if (folded && r.rules === 1 && !r.underHead) {
+            fail(`the ${c.landing} pinned group folded and its rule is not right under the heading`);
+          }
+        };
+        await ruled("before a pin");
         await pin();
         const under = await until(8_000, async () =>
           page.evaluate((one) => document.querySelector(one)?.getAttribute("data-side-in") === "pin", one),
@@ -9961,8 +9998,10 @@ try {
           if (folded.rows !== 0 || folded.head !== 1) {
             fail(`folding the ${c.landing} pinned group left ${folded.rows} row(s) and ${folded.head} heading(s) — the rows go, the heading stays`);
           }
+          await ruled("with the pinned group folded", true);
           await page.locator(head).click();
           await wait(300);
+          await ruled("with a pin");
         }
         await pin(); // and back, for the sections after this one
         await wait(300);
@@ -10375,6 +10414,22 @@ try {
     // 置顶的网页 / 置顶的目录 / 还没有置顶的
     for (const w of ["置顶的网页", "置顶的目录", "还没有置顶的"]) {
       if (fresh.text.includes(w)) fail(`the fresh tab still says ${JSON.stringify(w)} — the two columns and their empty sentences are retired`);
+    }
+    // 第七轮 第 2 条: with nothing gone to yet, nothing in the middle —
+    // not the 「借网」 button either (this machine is on the net already;
+    // borrowing is picked in the address bar).
+    const pressable = await page.evaluate(() => {
+      const land = document.querySelector('[data-browse-landing="page"]');
+      if (land?.querySelector("[data-new-tab]")) return null;
+      return [...(land?.querySelectorAll("button") ?? [])]
+        .filter((b) => !b.closest("[data-address-bar], [data-browse-tabs]"))
+        .map((b) => b.innerText.trim());
+    });
+    console.log(`newtab 7 · buttons on the empty fresh tab ${JSON.stringify(pressable)}`);
+    if (pressable === null) {
+      fail("probe dead: the fixture's fresh tab has recents, so it is not the empty one");
+    } else if (pressable.length) {
+      fail(`the empty fresh tab still offers ${JSON.stringify(pressable)} — 「空的新标签页不放那颗按钮」`);
     }
     const shot = join(process.env.FACE_SHOTS ?? "/tmp", "newtab-after-round5.png");
     await page.screenshot({ path: shot });

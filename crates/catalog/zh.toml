@@ -3469,13 +3469,9 @@ web-opened-here = "打开了"
 # 浏览标签右键里的一项,只在从本机出去的标签上:借网的页面交给系统浏览器
 # 就换了出口,那不是同一个页面。
 open-in-browser = "在系统浏览器中打开"
-# The browser landing's way onward from a fresh tab with nothing on it. Pressing
-# it picks an exit to borrow — the first machine that is not this one,
-# because borrowing your own network is refused by design (borrow-self).
-# When the network has no other machine it is a plain sentence: a
-# button with nowhere to go teaches people to stop pressing the ones
-# that do. Not 「从左边」 any more — the narrow face has no left.
-pick-exit = "去一台机器,借它的网上网"
+# ⚠️ 墓碑:pick-exit(「去一台机器,借它的网上网」),空的新标签页中间那颗按钮,
+# 2026-09-22 退役(docs/SHELL.md 第七轮:本机就能上网,这句让人以为非借不可;
+# 借网在地址栏里选机器)。
 # The terminal ended — the host's child exited or the connection tore.
 # Both are one fact to a face (docs/handoff 终端画屏).
 term-over = "这个终端结束了"
