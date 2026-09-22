@@ -469,7 +469,7 @@ impl Node {
             .await
             .map_err(msg::handoff_unreadable)?;
         let reply = match proto::decode::<ipc::Handoff>(&bytes) {
-            Ok(h) if h.cookie == cookie => self.run_handoff(ep, h.op).await,
+            Ok(h) if h.cookie == cookie => self.run_handoff_within(ep, h.op).await,
             Ok(_) => ipc::Reply::Refused {
                 why: msg::handoff_wrong_cookie().into(),
             },
@@ -481,6 +481,26 @@ impl Node {
             .map_err(msg::cant_reply)?;
         stream.shutdown().await.map_err(msg::cant_close_stream)?;
         Ok(())
+    }
+
+    /// [`Self::run_handoff`] under the op's deadline (SHELL.md 第五轮 第 2
+    /// 条). **Half a second short of the asker's**, so the refusal still
+    /// reaches a caller that is about to stop waiting, and **named in the
+    /// log** — a stuck op is a fault in something this serve talks to,
+    /// and the log is where somebody goes looking for which.
+    async fn run_handoff_within(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+        let (name, deadline) = (op.name(), op.deadline());
+        let mine = deadline.saturating_sub(Duration::from_millis(500));
+        match tokio::time::timeout(mine, self.run_handoff(ep, op)).await {
+            Ok(reply) => reply,
+            Err(_) => {
+                let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                eprintln!("{}", msg::serve_op_late(&stamp, name, mine.as_secs()));
+                ipc::Reply::Refused {
+                    why: msg::serve_op_timed_out(name, deadline.as_secs()),
+                }
+            }
+        }
     }
 
     async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {

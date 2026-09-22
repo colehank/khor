@@ -236,6 +236,91 @@ pub enum Op {
     },
 }
 
+/// **In-process at the serve**: the answer is in the serve's own memory
+/// or on its own disk (`Hops` reads the endpoint's view of its roads,
+/// measured at 20–75 µs, and carries its own 500 ms budget inside;
+/// `DropBorrow` forgets a handle). Five seconds is two orders of
+/// magnitude over the work and still short enough that a face waiting
+/// on it recovers before a person gives up on the click.
+pub const DEADLINE_LOCAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// **One question to one other machine**: a dial (≤ 10 s,
+/// `link::DIAL_TIMEOUT`, relay included) and one request/response
+/// whose answer fits in a frame — a listing, a slice of a file, a git
+/// status, a rename. Thirty seconds is the dial three times over; past
+/// that the far machine is not slow, it is not answering.
+pub const DEADLINE_FAR: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// **Work the far machine has to go and do**: a search walks a tree, a
+/// sync visits every paired machine in turn (10 s dial each), pairing
+/// waits on the inviter, a borrow dials and binds a proxy, VS Code's
+/// web face may have to be fetched on first use (tens of MB). Five
+/// minutes covers the slow real cases measured on this fleet (a first
+/// `serve-web` download on an NFS home took about two) with room left.
+pub const DEADLINE_SLOW: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// **Bytes that move**: a whole file pulled, a session's files
+/// accepted. Their length is the file's, not khor's, so this is a
+/// backstop against a transfer that has stopped, not a speed limit —
+/// an hour moves a few GB over the slowest road this fleet has used
+/// (the relay). A transfer that needs longer is a transfer this
+/// deadline will name in the serve log, which is the point.
+pub const DEADLINE_TRANSFER: std::time::Duration = std::time::Duration::from_secs(3600);
+
+impl Op {
+    /// The op's name for the words that say it ran out of time — the
+    /// variant's own, never translated (it names code, like a check key).
+    pub fn name(&self) -> &'static str {
+        self.table().0
+    }
+
+    /// How long the serve may take over this op, end to end, before the
+    /// asker stops waiting and the serve gives up on it (SHELL.md 第五轮
+    /// 第 2 条). Chosen by **whether the work leaves the process** and
+    /// how far it goes; each tier's reason is on its constant.
+    pub fn deadline(&self) -> std::time::Duration {
+        self.table().1
+    }
+
+    /// **Exhaustive on purpose**: an op added without a deadline must not
+    /// compile, because the default it would otherwise get — none — is
+    /// the bug this table exists to end.
+    fn table(&self) -> (&'static str, std::time::Duration) {
+        match self {
+            Op::Hops => ("Hops", DEADLINE_LOCAL),
+            Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
+            Op::Ls { .. } => ("Ls", DEADLINE_FAR),
+            Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
+            Op::ReadAt { .. } => ("ReadAt", DEADLINE_FAR),
+            Op::TouchedOn { .. } => ("TouchedOn", DEADLINE_FAR),
+            Op::GitStatusOn { .. } => ("GitStatusOn", DEADLINE_FAR),
+            Op::GitDiffOn { .. } => ("GitDiffOn", DEADLINE_FAR),
+            Op::PlacesOn { .. } => ("PlacesOn", DEADLINE_FAR),
+            Op::LoadOn { .. } => ("LoadOn", DEADLINE_FAR),
+            Op::CodeHereOn { .. } => ("CodeHereOn", DEADLINE_FAR),
+            Op::RemoveOn { .. } => ("RemoveOn", DEADLINE_FAR),
+            Op::MkdirOn { .. } => ("MkdirOn", DEADLINE_FAR),
+            Op::TouchOn { .. } => ("TouchOn", DEADLINE_FAR),
+            Op::RenameOn { .. } => ("RenameOn", DEADLINE_FAR),
+            Op::LaunchOn { .. } => ("LaunchOn", DEADLINE_FAR),
+            Op::WritePathOn { .. } => ("WritePathOn", DEADLINE_FAR),
+            Op::OpenOn { .. } => ("OpenOn", DEADLINE_FAR),
+            Op::OpenAgentOn { .. } => ("OpenAgentOn", DEADLINE_FAR),
+            Op::ReachOn { .. } => ("ReachOn", DEADLINE_FAR),
+            Op::CloseOn { .. } => ("CloseOn", DEADLINE_FAR),
+            Op::CodeStopOn { .. } => ("CodeStopOn", DEADLINE_FAR),
+            Op::SearchOn { .. } => ("SearchOn", DEADLINE_SLOW),
+            Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
+            Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
+            Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
+            Op::BorrowUnlisted { .. } => ("BorrowUnlisted", DEADLINE_SLOW),
+            Op::CodeOpenOn { .. } => ("CodeOpenOn", DEADLINE_SLOW),
+            Op::Pull { .. } => ("Pull", DEADLINE_TRANSFER),
+            Op::Accept { .. } => ("Accept", DEADLINE_TRANSFER),
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Reply {
     Paired {
@@ -390,7 +475,23 @@ pub enum Reply {
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.
+///
+/// **Under the op's own deadline** ([`Op::deadline`]), end to end. It
+/// had none (SHELL.md 第五轮 第 2 条), and the app's bridge serves one
+/// request at a time — so one op stuck behind a far machine that had
+/// stopped answering held every later click on every page. The serve
+/// holds itself to the same deadline and names the op in its log
+/// (`link::run_handoff_within`); this side is the asker's guarantee,
+/// which does not depend on the serve being well.
 pub async fn call(port: u16, cookie: &str, op: Op) -> Result<Reply, String> {
+    let (name, deadline) = (op.name(), op.deadline());
+    match tokio::time::timeout(deadline, call_unbounded(port, cookie, op)).await {
+        Ok(r) => r,
+        Err(_) => Err(msg::serve_op_timed_out(name, deadline.as_secs())),
+    }
+}
+
+async fn call_unbounded(port: u16, cookie: &str, op: Op) -> Result<Reply, String> {
     let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
         .await
         .map_err(msg::serve_unreachable)?;
@@ -410,4 +511,84 @@ pub async fn call(port: u16, cookie: &str, op: Op) -> Result<Reply, String> {
         .await
         .map_err(msg::no_reply_from_serve)?;
     proto::decode(&bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A "serve" that takes the connection and then never says a word —
+    /// the shape of an op wedged behind a far machine that stopped
+    /// answering.
+    async fn mute_serve() -> (u16, tokio::task::JoinHandle<()>) {
+        let l = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = l.local_addr().unwrap().port();
+        let h = tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((s, _)) = l.accept().await {
+                held.push(s);
+            }
+        });
+        (port, h)
+    }
+
+    /// A serve that answers every hand-off with an empty road table.
+    async fn answering_serve() -> (u16, tokio::task::JoinHandle<()>) {
+        let l = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = l.local_addr().unwrap().port();
+        let h = tokio::spawn(async move {
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut b = Vec::new();
+                let _ = (&mut s).take(MAX_FRAME as u64).read_to_end(&mut b).await;
+                let reply = proto::encode(&Reply::Hops { by_device: vec![] }).unwrap();
+                let _ = s.write_all(&reply).await;
+                let _ = s.shutdown().await;
+            }
+        });
+        (port, h)
+    }
+
+    /// SHELL.md 第五轮 第 2 条: `ipc::call` had no deadline at all, and
+    /// the bridge serves one request at a time — so one op stuck behind
+    /// a far machine held every later click on every page. A stuck op
+    /// must come back with words, and the next call must go through.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stuck_op_comes_back_with_words_and_does_not_hold_the_next() {
+        let (mute, _m) = mute_serve().await;
+        let (live, _l) = answering_serve().await;
+        let stuck = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            call(mute, "c", Op::Hops),
+        )
+        .await
+        .expect("the call never came back: ipc::call has no deadline");
+        let why = stuck.expect_err("a serve that never answered is not an answer");
+        assert!(
+            why.contains(Op::Hops.name()),
+            "it names the op that ran out of time: {why}"
+        );
+        let next = call(live, "c", Op::Hops).await;
+        assert!(
+            matches!(next, Ok(Reply::Hops { .. })),
+            "the next call is not held by the stuck one: {next:?}"
+        );
+    }
+
+    /// Every tier is a real deadline and the in-process one is the
+    /// shortest: a face waits on those.
+    #[test]
+    fn the_in_process_tier_is_the_shortest() {
+        assert!(
+            Op::Hops.deadline()
+                <= Op::Ls {
+                    machine: String::new(),
+                    path: String::new()
+                }
+                .deadline()
+        );
+    }
 }

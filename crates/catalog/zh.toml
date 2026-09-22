@@ -1213,6 +1213,10 @@ serve-unreachable = "递不到 serve: {0}"
 handoff-failed = "递不过去: {0}"
 cant-close-stream = "收不了尾: {0}"
 no-reply-from-serve = "读不到 serve 的答复: {0}"
+# SHELL.md 第五轮 第 2 条: every hand-off has a deadline. {0} is the op's
+# code name (never translated), {1} seconds.
+serve-op-timed-out = "serve 在 {1} 秒内没做完 {0},先不等了"
+serve-op-late = "[{0}] {1} 超过 {2} 秒没做完,放弃并回话"
 cant-open-handoff-port = "开不了递话口: {0}"
 handoff-unreadable = "读不完递话: {0}"
 handoff-wrong-cookie = "递话的暗号对不上,重读 endpoint.json 再来"
