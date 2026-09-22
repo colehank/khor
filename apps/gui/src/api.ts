@@ -53,6 +53,7 @@ import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { KnownAgent } from "./gen/bindings/KnownAgent";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
 import type { CandidateRow } from "./gen/bindings/CandidateRow";
+import type { FindHit } from "./gen/bindings/FindHit";
 import type { SeenSession } from "./gen/bindings/SeenSession";
 import type { QuotaAnswer } from "./gen/bindings/QuotaAnswer";
 import type { QuotaCredits } from "./gen/bindings/QuotaCredits";
@@ -109,6 +110,7 @@ export type {
   KnownAgent,
   AgentSaid,
   CandidateRow,
+  FindHit,
   SeenSession,
   QuotaAnswer,
   QuotaCredits,
@@ -705,6 +707,28 @@ export const resumeSession = (agent: string, session: string) =>
     list — agents started elsewhere, tmux sessions, and the ACP
     conversations a registered agent said it has (as recorded; asking is
     `agentAsk`, behind a press). Newest first. */
+/** 全局搜索 (docs/SHELL.md 第十轮): one word over sessions, machines,
+    workspaces, browsing tabs and the app's pages. **The matching and the
+    order are the node's** (`Node::find`), so ⌘K and `khor find` answer
+    with the same list — a second rule on this side is how the two come
+    to disagree about the first hit. */
+export const find = (word: string) => call<FindHit[]>("find", { word });
+/** **Windows' own three, pressed** (docs/SHELL.md 第十轮). Only that
+    platform draws them: macOS has the system's inside the row and Linux
+    keeps its decorations. A no-op outside the app. */
+export const windowMinimize = () => call<null>("window_minimize");
+export const windowMaximizeToggle = () => call<null>("window_maximize_toggle");
+export const windowClose = () => call<null>("window_close");
+/**
+ * Whether this is the app on Windows — the one face that draws the
+ * window's three buttons itself.
+ *
+ * `navigator.platform` for `trafficLights`' reason, one line up: it is
+ * deprecated and still the only thing that answers without a round trip,
+ * and a wrong answer costs three buttons that are not needed rather than
+ * a broken face.
+ */
+export const windowsApp = inApp && /win/i.test(navigator.platform || navigator.userAgent);
 export const fetchImportCandidates = () => call<CandidateRow[]>("import_candidates");
 /** Brings these onto the list, in order; answers their session ids.
     Stops at the first refusal and says it. */

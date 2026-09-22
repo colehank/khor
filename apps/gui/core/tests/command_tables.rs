@@ -105,6 +105,26 @@ fn served_commands() -> BTreeSet<String> {
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
+    // ── the window's own three, 2026-09-23 (docs/SHELL.md 第十轮) ────
+    //
+    // **A fact about windows, like the menu's five below.** Windows is
+    // the one platform that draws khor's three window buttons itself,
+    // and what they press is this window — a browser tab has no window
+    // of its own to minimise, maximise or close, and an HTTP arm here
+    // would be a command reporting success at doing nothing to a window
+    // nobody is looking at.
+    (
+        "window_minimize",
+        "the app's own window; a browser tab has no window of its own to minimise",
+    ),
+    (
+        "window_maximize_toggle",
+        "the app's own window; a browser tab has none to maximise or restore",
+    ),
+    (
+        "window_close",
+        "the app's own window; a browser tab is closed by the browser",
+    ),
     (
         "pick_and_send",
         "app-only by nature: it opens the DESKTOP's native file picker (tauri-plugin-dialog) — \

@@ -4968,6 +4968,36 @@ for line in sys.stdin:
   }
   cli(envB, "close", plainCatId);
   cli(envB, "close", brackCatId);
+  // 24s) 全局搜索:一份匹配,两张脸 (docs/SHELL.md 第十轮). ⌘K in the
+  //      window and `khor find` in the terminal read the same list from
+  //      the same node, so the first hit is the same thing — the whole
+  //      point of the matching living in `Node::find` rather than on a
+  //      face. Asked about a row that is on the list here: the tmux
+  //      session imported above.
+  {
+    const word = "pasteplain";
+    const said = cli(envB, "find", word).split("\n").filter(Boolean);
+    const firstFromCli = (said[0] ?? "").split("\t");
+    await page.keyboard.press("Meta+k");
+    await until("the search box", 10_000, async () =>
+      (await page.locator("[data-search-dialog] [data-search-box]").count()) === 1,
+    );
+    await page.locator("[data-search-box]").fill(word);
+    await until("a hit in the window", 15_000, async () => (await page.locator("[data-search-row]").count()) > 0);
+    const firstOnScreen = await page.locator("[data-search-row]").first().evaluate((el) => ({
+      id: el.getAttribute("data-search-row"),
+      kind: el.getAttribute("data-search-kind"),
+    }));
+    await page.keyboard.press("Escape");
+    if (firstFromCli[1] !== firstOnScreen.id || firstFromCli[0] !== firstOnScreen.kind) {
+      throw new Error(
+        `\`khor find ${word}\` leads with ${JSON.stringify(firstFromCli.slice(0, 2))} and ⌘K leads with ` +
+          `${JSON.stringify(firstOnScreen)} — one matching, one order, one node`,
+      );
+    }
+    console.log(`find: \`khor find ${word}\` and ⌘K both lead with ${firstOnScreen.kind} ${firstOnScreen.id}`);
+  }
+
   // 24n) 拖文件进终端 (批④ 二笔): the path arrives quoted.
   //
   //      **The OS drag itself is not driven here and cannot be.** tauri

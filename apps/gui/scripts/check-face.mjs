@@ -349,6 +349,26 @@ try {
   // never took it.
   let gatePaused = false;
   const watchKept = {};
+  // 全局搜索 (docs/SHELL.md 第十轮). **The node decides the order**, so
+  // this replica does the least a fixture can: the sessions whose title
+  // holds the word, then the machines, in that order — which is the
+  // node's own for a word that hits both (`Node::find`). Its job is to
+  // answer at all, so the row's jump can be measured.
+  await page.route("**/find", (r) => {
+    const word = ((r.request().postDataJSON() ?? {}).word ?? "").toLowerCase();
+    const hit = (kind, id, label, note) => ({ kind, id, label, note });
+    const found = word.trim() === ""
+      ? []
+      : [
+          ...rows
+            .filter((x) => x.title.toLowerCase().includes(word))
+            .map((x) => hit("session", x.id, x.title, x.home)),
+          ...devs
+            .filter((d) => d.shown.toLowerCase().includes(word))
+            .map((d) => hit("machine", d.id, d.shown, null)),
+        ];
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(found) });
+  });
   await page.route("**/devices", (r) =>
     r.fulfill({
       contentType: "application/json",
@@ -2757,6 +2777,20 @@ try {
   // problem here」, and the next person to meet the control believes it.
   // So each entry says what a waiver does not buy.
   const UNDER_FLOOR = {
+    "data-crumb-step": [
+      "src/components/TitleBar.tsx",
+      "one step of 你在哪 in the window's own row, which is 38 tall by the " +
+        "ruling (docs/SHELL.md 第十轮) — a 44-tall target cannot exist in a " +
+        "38-tall band, and making the band 44 would be this gate deciding a " +
+        "layout the user chose. The step takes the row's whole height, which " +
+        "is every pixel there is to give. **What it does not buy:** a finger " +
+        "on a phone, where the row is thinner than a fingertip. What each " +
+        "step does is reachable at full size elsewhere and is not only here " +
+        "— the machine step opens 这台机器, which is the avatar's own page on " +
+        "the rail; the page step goes back to the landing, which is the " +
+        "rail's glyph. So the crumb is a shortcut to places that are already " +
+        "a finger's size, never the only way to them.",
+    ],
     "data-plot-point": [
       "src/views/MachineCard.tsx",
       "a point on the scatter, and the floor is the wrong criterion because a " +
@@ -20036,52 +20070,102 @@ try {
     await wait(300);
   }
 
-  // ── 窗顶那一条:这张脸上没有空位,而拖区盖到了每个落地页的头一行 ──
+  // ── 窗顶那一条:每张脸上都有,行里是全局的三样 (docs/SHELL.md 第十轮) ──
   //
-  // 第八轮 第 58、59 条. **Both halves of what this gate can reach are
-  // about the web face**, and that is the claim rather than a
-  // limitation: the app grows a corner for the window's own three
-  // buttons and a window to drag by, and the promise made alongside it
-  // is that a page in somebody's browser changes in no way at all. The
-  // app half — three buttons sitting on the rail, the gap collapsing in
-  // full screen, a real drag — is in `docs/handoff/001.md` under 人眼验
-  // 什么, because a tauri window is not a thing playwright can hold.
+  // 2026-09-23:「我们还要支持多系统。是不是应该不去动它，但是在那一行作出
+  // 真正有信心的内容？」 The row is one band across the top of the window
+  // on every face and every platform; what it carries is global — where
+  // you are, one search, the network in a line.
+  //
+  // ⚠️ 墓碑: this section used to measure 第 58 条's *gap* — the blank the
+  // rail kept at its head for macOS's three buttons, zero on the web
+  // face — and 第 59 条's drag. The gap is gone with the squeeze
+  // (第十轮 推翻了插队): the buttons stand in this row now, at the SDK's
+  // own size and spacing, put there by `trafficLightPosition`. The drag
+  // is still asserted, in its new home.
   {
-    await open("sessions");
-    // 58. The token exists (so this is not measuring a name nothing
-    // declares) and resolves to nothing here, and nothing stands between
-    // the rail's own padding and its first glyph.
-    const room = await page.evaluate(() => {
-      const root = document.documentElement;
-      const nav = document.querySelector("[data-rail]");
-      const first = nav && nav.querySelector("[data-rail-item]");
-      if (!nav || !first) return null;
-      const pad = parseFloat(getComputedStyle(nav).paddingTop);
-      return {
-        token: getComputedStyle(root).getPropertyValue("--traffic").trim(),
-        stamped: root.hasAttribute("data-traffic"),
-        blank: +(first.getBoundingClientRect().top - (nav.getBoundingClientRect().top + pad)).toFixed(2),
-      };
-    });
-    if (!room) {
-      fail("probe dead: no [data-rail] with a [data-rail-item] in it — the rail is what 第 58 条 opens a gap at the head of");
-    } else if (room.token === "") {
-      fail("probe dead: --traffic resolves to nothing at all, so 「on this face it is zero」 is a claim about a token that does not exist");
-    } else if (room.token !== "0px" || room.stamped || room.blank !== 0) {
-      fail(
-        `the web face kept ${room.blank} of blank above the rail's first glyph (--traffic=${room.token}, data-traffic=${room.stamped}) — ` +
-          `「网页脸 [data-rail] 顶上没有空位」: a page in a browser has no window buttons of its own to leave room for`,
-      );
-    } else {
-      console.log(`rail head: --traffic=${room.token}, no blank above the first glyph`);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    const seen = [];
+    for (const tab of ["sessions", "devices", "workspaces", "quota", "browser"]) {
+      if (!(await open(tab))) {
+        fail(`probe dead: the ${tab} landing is not on the rail`);
+        continue;
+      }
+      const bar = await page.evaluate(() => {
+        const el = document.querySelector("[data-title-bar]");
+        if (!el) return null;
+        const token = getComputedStyle(document.documentElement).getPropertyValue("--title-bar").trim();
+        const r = el.getBoundingClientRect();
+        return {
+          h: +r.height.toFixed(2),
+          token,
+          full: Math.abs(r.width - window.innerWidth) < 1,
+          top: +r.top.toFixed(2),
+          crumbs: [...el.querySelectorAll("[data-crumb-step]")].map((c) => c.textContent.trim()),
+          search: !!el.querySelector("[data-global-search]"),
+          net: (el.querySelector("[data-net-line]")?.textContent ?? "").trim(),
+        };
+      });
+      if (!bar) {
+        fail(`the ${tab} landing has no [data-title-bar] — 「窗口顶上加一条标题栏」 is every page's row`);
+        continue;
+      }
+      if (bar.token === "" || bar.h !== parseFloat(bar.token) || !bar.full || bar.top !== 0) {
+        fail(
+          `on ${tab} the row is ${bar.h} tall (token ${JSON.stringify(bar.token)}), full width ${bar.full}, top ${bar.top} — ` +
+            "one band across the top of the window, at the token's height",
+        );
+      }
+      if (!bar.search || bar.crumbs.length === 0) {
+        fail(`on ${tab} the row carries crumbs=${JSON.stringify(bar.crumbs)} search=${bar.search} — 你在哪 and ⌘K are both this row's`);
+      }
+      seen.push(`${tab}:${bar.crumbs.join("›")}${bar.net ? ` · ${bar.net}` : ""}`);
+    }
+    console.log(`title bar: ${seen.join(" | ")}`);
+    // 你在哪 follows the page: the second crumb is the landing's own name,
+    // so two landings cannot read the same.
+    if (new Set(seen.map((x) => x.split(":")[1])).size < 2) {
+      fail(`the crumbs say the same thing on every landing: ${seen.join(" | ")}`);
+    }
+    // The network line counts the machines the device table has.
+    const net = await page.evaluate(() => (document.querySelector("[data-net-line]")?.textContent ?? "").trim());
+    if (!net.includes(String(devs.length))) {
+      fail(`the network line reads ${JSON.stringify(net)} and the table has ${devs.length} machines — it counts what the list counts`);
     }
 
-    // 59. Nothing pressable carries the drag, anywhere on the page.
-    // This is the whole of 「按钮、输入框、标签本身不能拖」 that can be
-    // asked statically, and it is the half that could rot silently: the
-    // attribute is inert in a browser, so a drag region written onto a
-    // button would look and behave exactly right here and swallow that
-    // button's press in the app.
+    // ⌘K, from the keyboard, anywhere: the box opens, a session's name
+    // puts that session first, and Enter goes there.
+    await open("sessions");
+    await page.keyboard.press("Meta+k");
+    const opened = await until(5_000, async () => (await page.locator("[data-search-dialog]").count()) === 1);
+    if (!opened) {
+      fail("⌘K opened no [data-search-dialog] — the row's search is the app's, not one pane's");
+    } else {
+      await page.locator("[data-search-box]").fill(rows[1].title);
+      await until(5_000, async () => (await page.locator("[data-search-row]").count()) > 0);
+      const first = await page.locator("[data-search-row]").first().evaluate((el) => ({
+        id: el.getAttribute("data-search-row"),
+        kind: el.getAttribute("data-search-kind"),
+      }));
+      console.log(`⌘K · ${rows[1].title} → ${JSON.stringify(first)}`);
+      if (first.id !== rows[1].id) {
+        fail(`typing a session's own name put ${JSON.stringify(first)} first, not ${rows[1].id}`);
+      }
+      await page.keyboard.press("Enter");
+      const went = await until(8_000, async () =>
+        (await page.locator(`[data-row="${rows[1].id}"][data-on="true"], [data-tab="${rows[1].id}"]`).count()) > 0,
+      );
+      if (!went) {
+        fail(`Enter on the first hit did not open ${rows[1].id} — a search that finds a thing has to go to it`);
+      }
+      await page.keyboard.press("Escape");
+      await wait(200);
+    }
+
+    // 59. Nothing pressable carries the drag, anywhere on the page —
+    // the half that could rot silently, since the attribute is inert in
+    // a browser and a drag written onto a button would look right here
+    // and swallow that button's press in the app.
     const dragging = await page.evaluate(() =>
       [...document.querySelectorAll("[data-tauri-drag-region]")]
         .filter((el) => el.matches("button, input, textarea, a, select, [role=button], [role=tab], [data-tab]"))
@@ -20090,62 +20174,41 @@ try {
     if (dragging.length) {
       fail(`these controls carry the window drag and would stop answering a press in the app: ${dragging.join(", ")}`);
     }
-
-    // …and the drag reaches the rail and the head of every landing.
-    // **Asked at a pixel, not at a selector**, because that is the
-    // question tauri answers: it drags when the element *under the
-    // pointer* is the one carrying the attribute, so an ancestor with it
-    // buys nothing. The top row is walked across its whole width and
-    // every hit is named by the marker it wears.
-    // `data-address-bar` joined on 2026-09-20: the browsing landing's
-    // tabs became a column down the left (docs/SHELL.md 第 2 条), so the
-    // strip that used to carry that landing's drag is not in its top
-    // row any more and the address bar is.
-    const MARKS = ["data-rail", "data-pane-bar", "data-tab-bar", "data-tab-strip", "data-detail-header", "data-tree-head", "data-traffic-room", "data-address-bar"];
-    const topRow = (marks) =>
-      page.evaluate((names) => {
-        const seen = new Set();
-        for (let x = 2; x < window.innerWidth; x += 4) {
-          const el = document.elementFromPoint(x, 6);
-          if (!el || !el.hasAttribute("data-tauri-drag-region")) continue;
-          seen.add(names.find((n) => el.hasAttribute(n)) ?? el.tagName.toLowerCase());
-        }
-        return [...seen];
-      }, marks);
-    const heads = [];
-    for (const tab of ["sessions", "devices", "workspaces", "quota", "browser"]) {
-      if (!(await open(tab))) {
-        fail(`probe dead: the ${tab} landing is not on the rail`);
-        continue;
+    // …and the window's own row is what drags it, asked at a pixel
+    // because that is the question tauri answers: it drags when the
+    // element *under the pointer* carries the attribute.
+    const onTheRow = await page.evaluate(() => {
+      const seen = new Set();
+      for (let x = 2; x < window.innerWidth; x += 4) {
+        const el = document.elementFromPoint(x, 6);
+        if (el && el.hasAttribute("data-tauri-drag-region")) seen.add(el.hasAttribute("data-title-bar") ? "row" : el.tagName.toLowerCase());
       }
-      const hit = await topRow(MARKS);
-      heads.push(`${tab}:${hit.join("+") || "none"}`);
-      if (!hit.includes("data-rail")) {
-        fail(`on the ${tab} landing the rail's own column does not drag the window — 「侧边栏空白区域」 is every landing's, not one's`);
-      }
-      if (hit.filter((m) => m !== "data-rail").length === 0) {
-        fail(
-          `on the ${tab} landing nothing in the top row drags the window (${hit.join("+") || "nothing at all"}) — ` +
-            `「顶部空白区域」: the row where the title bar used to be is this landing's head, and its blank is what moves the window`,
-        );
-      }
+      return [...seen];
+    });
+    if (!onTheRow.includes("row")) {
+      fail(`the window's own row does not drag the window (${onTheRow.join("+") || "nothing at all"}) — its blank is 「顶部空白区域」 now`);
     }
-    console.log(`drag regions: ${heads.join(" · ")}`);
 
-    // Narrow puts the rail along the bottom, so the corner moves to the
-    // head of the screen column — and it is zero here for 58's reason.
+    // Narrow keeps the row, with only the last crumb and the search.
     await page.setViewportSize({ width: 390, height: 844 });
     await wait(400);
     const phone = await page.evaluate(() => {
-      const box = document.querySelector("[data-traffic-room]");
-      return box ? +box.getBoundingClientRect().height.toFixed(2) : null;
+      const el = document.querySelector("[data-title-bar]");
+      if (!el) return null;
+      return {
+        crumbs: [...el.querySelectorAll("[data-crumb-step]")].map((c) => c.textContent.trim()),
+        search: !!el.querySelector("[data-global-search]"),
+        net: !!el.querySelector("[data-net-line]"),
+      };
     });
-    if (phone === null) {
-      fail("probe dead: narrow drew no [data-traffic-room] — that is where 第 58 条's gap goes when the rail is a bottom bar");
-    } else if (phone !== 0) {
-      fail(`narrow kept ${phone} of blank at the head of the screen — a browser has no window buttons to leave room for on either face`);
+    if (!phone) {
+      fail("narrow drew no [data-title-bar] — the row is every face's");
+    } else if (phone.crumbs.length !== 1 || !phone.search || phone.net) {
+      fail(
+        `narrow's row reads ${JSON.stringify(phone)} — 「窄档只留最后一节加一个搜索图标」`,
+      );
     } else {
-      console.log("narrow head: no blank above the screen");
+      console.log(`narrow row: ${JSON.stringify(phone.crumbs)} + search`);
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);

@@ -226,6 +226,9 @@ usage: khor <verb>
                         just a count, --all lists them all. The list
                         holds what you started, what you imported and
                         each machine's own conversation
+  find <word>           one search over sessions, machines, workspaces,
+                        browsing tabs and pages (⌘K in the window reads
+                        the same list)
   import [<number|id>...]
                         with nothing, lists what can be imported (agents
                         started elsewhere, tmux sessions, ACP
@@ -709,6 +712,7 @@ account-budget-number = "--budget needs a number after it"
 account-name-ambiguous = "More than one account named {0} — use its id instead"
 quota-trouble = "Couldn't get it ({0})"
 quota-unlimited = "Unlimited"
+find-none = "Nothing matched “{0}” — not a session, machine, workspace, browsing tab or page"
 import-none = "Nothing to import: agents started elsewhere, tmux sessions and ACP conversations are all on the list already, or there are none"
 quota-why-unavailable = "can't run on this machine"
 quota-why-used = "its reading was used"
@@ -1156,6 +1160,16 @@ config-no-such-key = "No such setting: {0} — khor config list shows them all"
 config-no-such-value = "{0} doesn't take \"{1}\" — it takes {2}"
 
 [gui]
+window-minimize = "Minimize"
+window-maximize = "Maximize / restore"
+window-close = "Close window"
+net-line-all = "{0} machines · all reachable"
+net-line-quiet = "{0} machines · {1} out of reach"
+net-line-paused = "{0} machines · {1} paused"
+net-line-alone = "just this machine"
+find-everything = "Search everything"
+find-hint = "sessions, machines, workspaces, tabs, pages"
+find-nothing = "Nothing matched"
 sessions-tab = "Sessions"
 new-session = "New session"
 new-session-machine = "Which machine"

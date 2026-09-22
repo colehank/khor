@@ -990,7 +990,6 @@ async fn open_page(
             live.set_size(LogicalSize::new(at.w, at.h))
                 .map_err(|e| e.to_string())?;
             live.show().map_err(|e| e.to_string())?;
-            keep_the_buttons_in_the_rail(window.app_handle());
             return Ok(borrow);
         }
         let _ = live.close();
@@ -1137,7 +1136,6 @@ async fn open_page(
             LogicalSize::new(at.w, at.h),
         )
         .map_err(|e| e.to_string())?;
-    keep_the_buttons_in_the_rail(window.app_handle());
     if let Ok(mut m) = page_exits().lock() {
         m.insert(label, (machine, going_to));
     }
@@ -1159,7 +1157,6 @@ fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), Stri
         .map_err(|e| e.to_string())?;
     view.set_size(LogicalSize::new(at.w, at.h))
         .map_err(|e| e.to_string())?;
-    keep_the_buttons_in_the_rail(window.app_handle());
     Ok(())
 }
 
@@ -1177,7 +1174,6 @@ fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
         return Ok(());
     };
     view.hide().map_err(|e| e.to_string())?;
-    keep_the_buttons_in_the_rail(&app);
     Ok(())
 }
 
@@ -1196,9 +1192,17 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
         return Ok(());
     };
     view.show().map_err(|e| e.to_string())?;
-    keep_the_buttons_in_the_rail(&app);
     Ok(())
 }
+
+// ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮): `squeeze_the_window_buttons`
+// and `keep_the_buttons_in_the_rail` stood here — they moved macOS's
+// three buttons to an older spacing and put them back whenever AppKit
+// laid the title bar out again (`window_buttons.rs`, and a frame-change
+// observer on top of it). **Nothing of the system's is moved now**: the
+// window has a row of its own at the top, and `trafficLightPosition` in
+// `tauri.conf.json` places the buttons inside it at the SDK's own size
+// and spacing. One row, three platforms.
 
 /// Give the window the app's own ground **before the page has one**.
 ///
@@ -1246,59 +1250,6 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 /// runs.** The page follows that on its own (`prefers-color-scheme`),
 /// and this ground is only ever seen at launch, so the cost of being
 /// stale is a colour nobody is looking at.
-/// Puts the three window buttons where an older macOS put them: 14 wide
-/// at x = 7, 25, 43 — the trio ends at 57, inside the 64-wide rail with
-/// room on both sides.
-///
-/// 工作区第八轮 第 58 条, second look (2026-09-19):「左上角按钮没有变小,
-/// 还超过侧边栏了」— the user, pointing at WeChat. **Their size is the
-/// SDK's, not khor's, and it cannot be changed**: an app linked against
-/// the macOS 26 SDK gets the new 14-wide buttons 23 apart (measured on
-/// every title-bar style this SDK offers — plain, transparent, every
-/// toolbar style — all 14 and 23); WeChat is linked against 15.2 and
-/// gets the old 12-wide ones 18 apart. What can be moved is where each
-/// one sits, and 18 apart is what the old spacing was.
-///
-/// **Not tauri's `trafficLightPosition`.** That keeps the system spacing
-/// and re-asserts it on every draw (tao's `draw_rect`), so it would undo
-/// this on the next frame. Instead the frames are set here and set
-/// again whenever AppKit lays the title bar out afresh — a resize, a
-/// focus, a theme change — which is when it would put them back.
-///
-/// ⚠️ **Since 2026-09-22 this is the insurance, not the road** (docs/SHELL.md
-/// 插队:「左上角的系统按钮又超出侧边栏了, 注意守门」). The buttons came
-/// back on the sessions page from a relayout none of these events
-/// covered; `window_buttons::watch` (installed once, in `setup`) now puts
-/// them back whenever their frames change at all, and these calls stay
-/// because they cost a frame read each.
-#[cfg(target_os = "macos")]
-fn squeeze_the_window_buttons(window: &tauri::WebviewWindow) {
-    let Ok(win) = window.ns_window() else { return };
-    unsafe { window_buttons::squeeze(win as *mut objc2::runtime::AnyObject) }
-}
-
-/// `squeeze_the_window_buttons` on the main window, from anywhere that
-/// holds the app. **Called after every page view is added, shown, hidden
-/// or moved, and when the window takes focus** (docs/SHELL.md 第四轮 第 7
-/// 条:「左上角三个系统按钮没有在侧边栏内」— the user's picture has them
-/// on the browse landing, beside 「搜索标签页」, which is the one landing
-/// that puts native child views into the window). Each of those can have
-/// AppKit lay the title bar out again, and nothing else puts the buttons
-/// back; the squeeze does nothing when they are already where it wants
-/// them, so calling it too often costs a frame read.
-#[cfg(desktop)]
-fn keep_the_buttons_in_the_rail(app: &tauri::AppHandle) {
-    #[cfg(target_os = "macos")]
-    {
-        use tauri::Manager;
-        if let Some(main) = app.get_webview_window("main") {
-            squeeze_the_window_buttons(&main);
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = app;
-}
-
 #[cfg(desktop)]
 fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
     use tauri::{Manager, Theme};
@@ -2262,6 +2213,41 @@ fn agent_ask(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> {
     khor_gui_core::agents::agent_ask(&Node::root_from_env(), &name)
 }
 
+/// **Windows draws its own three, and these are what they press**
+/// (docs/SHELL.md 第十轮). macOS has the system's buttons inside the row
+/// and Linux keeps its decorations, so nothing there calls these.
+#[cfg(desktop)]
+#[tauri::command]
+fn window_minimize(window: tauri::Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn window_maximize_toggle(window: tauri::Window) -> Result<(), String> {
+    let full = window.is_maximized().map_err(|e| e.to_string())?;
+    if full {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+/// **`close`, not `destroy`**: closing is a request, and the draft guard
+/// (`onQuitRequested`) is hung on exactly that — a destroy would take a
+/// half-written message with it.
+#[cfg(desktop)]
+#[tauri::command]
+fn window_close(window: tauri::Window) -> Result<(), String> {
+    window.close().map_err(|e| e.to_string())
+}
+
+/// 全局搜索 (docs/SHELL.md 第十轮): one word over everything khor holds.
+#[tauri::command]
+fn find(word: String) -> Result<Vec<khor_gui_core::FindHit>, String> {
+    khor_gui_core::find(&Node::root_from_env(), &word)
+}
+
 /// 导入 (docs/SHELL.md 第八轮): what could be brought onto the list.
 #[tauri::command]
 fn import_candidates() -> Result<Vec<khor_gui_core::import::CandidateRow>, String> {
@@ -2379,13 +2365,6 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
             if let Ok(win) = w.ns_window() {
                 wear_appearance(win, wanted);
             }
-            // AppKit lays the title bar out again when a window changes
-            // appearance, and the buttons go back to the SDK's spacing
-            // (`squeeze_the_window_buttons`, the same reason a resize
-            // needs it).
-            if label == "main" {
-                squeeze_the_window_buttons(&w);
-            }
         }
     }
     #[cfg(not(target_os = "macos"))]
@@ -2499,16 +2478,6 @@ pub fn run() {
             hang_menu_window(app.handle());
             #[cfg(desktop)]
             paint_the_window_before_the_page(app.handle());
-            #[cfg(target_os = "macos")]
-            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
-                squeeze_the_window_buttons(&main);
-                // …and from now on they put themselves back
-                // (`window_buttons::watch`). `setup` runs on the main
-                // thread, and the main window lives as long as the app.
-                if let Ok(win) = main.ns_window() {
-                    unsafe { window_buttons::watch(win as *mut objc2::runtime::AnyObject) }
-                }
-            }
             #[cfg(not(desktop))]
             let _ = app;
             Ok(())
@@ -2562,21 +2531,7 @@ pub fn run() {
                     // window stops following the system on its own —
                     // so the main window, which does follow, passes
                     // every change on.
-                    // AppKit lays the title bar out again on a resize
-                    // (full screen in and out included) and the buttons
-                    // go back to the SDK's spacing; put them back
-                    // (`squeeze_the_window_buttons`).
-                    tauri::WindowEvent::Resized(_) => {
-                        #[cfg(target_os = "macos")]
-                        if let Some(main) = window.app_handle().get_webview_window("main") {
-                            squeeze_the_window_buttons(&main);
-                        }
-                    }
                     tauri::WindowEvent::ThemeChanged(theme) => {
-                        #[cfg(target_os = "macos")]
-                        if let Some(main) = window.app_handle().get_webview_window("main") {
-                            squeeze_the_window_buttons(&main);
-                        }
                         // **The desktop changed; what khor wears is
                         // still the choice** (批 D2). Passing `*theme`
                         // on unconditionally would make a machine set
@@ -2602,7 +2557,6 @@ pub fn run() {
                         }
                     }
                     tauri::WindowEvent::Focused(here) => {
-                        keep_the_buttons_in_the_rail(window.app_handle());
                         if let Some(menu) = menu()
                             && menu_up().load(std::sync::atomic::Ordering::Relaxed)
                         {
@@ -2727,6 +2681,10 @@ pub fn run() {
             agent_seen,
             agent_ask,
             resume_session,
+            find,
+            window_minimize,
+            window_maximize_toggle,
+            window_close,
             import_candidates,
             import_sessions,
             takeover,
@@ -2755,9 +2713,6 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("tauri run");
 }
-
-#[cfg(target_os = "macos")]
-mod window_buttons;
 
 #[cfg(test)]
 mod tests {

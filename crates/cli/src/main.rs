@@ -328,6 +328,13 @@ const VERBS: &[Verb] = &[
     },
     // 导入 (docs/SHELL.md 第八轮): the candidates, or bringing some onto
     // the list. Writes the list document, so it acts.
+    // 全局搜索 (docs/SHELL.md 第十轮): the same matching and the same
+    // order the window's ⌘K draws.
+    Verb {
+        word: "find",
+        run: find,
+        reach: Reach::Read,
+    },
     Verb {
         word: "import",
         run: import,
@@ -3083,6 +3090,31 @@ fn count(n: u64) -> String {
     } else {
         format!("{v:.1}{}", UNITS[u])
     }
+}
+
+/// `khor find <word>` — one search over sessions, machines, workspaces,
+/// browsing tabs and the app's pages (`Node::find`; ⌘K reads the same
+/// list in the same order). One row each: what it is, how to reach it,
+/// what it is called, and where it lives.
+fn find(rest: &[String]) -> Result<(), String> {
+    let word = rest.join(" ");
+    if word.trim().is_empty() {
+        return Err(usage_text().into());
+    }
+    let hits = node()?.find(&word)?;
+    if hits.is_empty() {
+        println!("{}", cli::find_none(word.trim()));
+    }
+    for h in hits {
+        println!(
+            "{}\t{}\t{}\t{}",
+            h.kind,
+            h.id,
+            h.label,
+            h.note.unwrap_or_default()
+        );
+    }
+    Ok(())
 }
 
 /// `khor import` — what could be brought onto the session list, one per

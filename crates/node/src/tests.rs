@@ -3576,3 +3576,36 @@ fn an_upgraded_store_keeps_what_khor_started_and_drops_what_it_found() {
     assert!(!ids.contains(&found), "what was only found goes: {ids:?}");
     assert!(n.import_candidates().unwrap().iter().any(|c| c.id == found));
 }
+
+/// **One search, one order** (docs/SHELL.md 第十轮): the window's ⌘K and
+/// `khor find` read this, so what is first here is first in both.
+#[test]
+fn one_search_reaches_every_kind_and_orders_them_one_way() {
+    let r = root("find");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let started = n.open_ephemeral("shell", "khor-web").unwrap();
+    crate::tabs::adopt_pinned(&r, "page", n.device_str(), "https://khor-web.example/one").unwrap();
+
+    let hits = n.find("khor-web").unwrap();
+    assert_eq!(
+        hits.first().map(|h| (h.kind.clone(), h.id.clone())),
+        Some(("session".to_owned(), started.0.clone())),
+        "the session leads: {hits:?}"
+    );
+    assert!(
+        hits.iter().any(|h| h.kind == "tab"),
+        "the browsing tab is reachable too: {hits:?}"
+    );
+    // A page is found by its own name, and nothing is found by nothing.
+    let pages = n.find(khor_catalog::gui::doctor()).unwrap();
+    assert_eq!(
+        pages.first().map(|h| h.id.clone()),
+        Some("doctor".to_owned()),
+        "{pages:?}"
+    );
+    assert!(
+        n.find("   ").unwrap().is_empty(),
+        "an empty word finds nothing"
+    );
+    assert!(n.find("no-such-thing-anywhere").unwrap().is_empty());
+}

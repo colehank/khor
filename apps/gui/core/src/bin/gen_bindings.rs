@@ -30,6 +30,7 @@ fn main() {
     khor_gui_core::SessionRow::export_all_to(&dir).expect("export SessionRow");
     khor_gui_core::DeviceRow::export_all_to(&dir).expect("export DeviceRow");
     khor_gui_core::import::CandidateRow::export_all_to(&dir).expect("export CandidateRow");
+    khor_gui_core::FindHit::export_all_to(&dir).expect("export FindHit");
     // Asked for on its own beat and keyed by session id, so no row
     // embeds it and `export_all_to` would never walk into it. Walks into
     // `DayMark` from here.

@@ -655,6 +655,34 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .collect())
 }
 
+/// One hit from the global search (`Node::find`, docs/SHELL.md 第十轮).
+/// Renamed for TS and nothing more — the matching and the order are the
+/// node's, so ⌘K and `khor find` cannot come to disagree.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct FindHit {
+    /// `session` / `machine` / `workspace` / `tab` / `page`.
+    pub kind: String,
+    /// What the face jumps by: a session id, a device id,
+    /// `<device>:<path>`, a tab id, or a page key.
+    pub id: String,
+    pub label: String,
+    pub note: Option<String>,
+}
+
+/// The whole list for one word, in the node's order.
+pub fn find(root: &Path, word: &str) -> Result<Vec<FindHit>, String> {
+    Ok(open(root)?
+        .find(word)?
+        .into_iter()
+        .map(|h| FindHit {
+            kind: h.kind,
+            id: h.id,
+            label: h.label,
+            note: h.note,
+        })
+        .collect())
+}
+
 /// One directory the person works in, for the wizard's first question
 /// (`khor_node::place`).
 #[derive(Debug, Clone, Serialize, TS)]

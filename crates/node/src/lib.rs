@@ -2183,6 +2183,117 @@ impl Node {
         Ok(true)
     }
 
+    /// **One search over everything khor holds** (docs/SHELL.md 第十轮:
+    /// 全局搜索 ⌘K, `khor find`): sessions, machines, workspaces, the
+    /// browsing tabs, and the pages the app's 「…」 opens. One matching
+    /// rule and one order, here, so the window's list and `khor find`
+    /// are the same list — a second rule on a face is how they come to
+    /// disagree about what the first hit is.
+    ///
+    /// **Not file contents** (this round): the roads that read a disk
+    /// are the workspace's own search, and folding them in here would
+    /// make one keystroke ask four machines for their files.
+    ///
+    /// The order: what *starts* with the word first, then what merely
+    /// holds it; within that, sessions, machines, workspaces, tabs,
+    /// pages — the order of how specific a thing is to what somebody is
+    /// doing. Ties break on the label, so two runs answer the same.
+    pub fn find(&self, query: &str) -> Result<Vec<Hit>, String> {
+        let q = query.trim().to_lowercase();
+        if q.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut out: Vec<Hit> = Vec::new();
+        let by_id: std::collections::BTreeMap<String, String> = self
+            .devices()?
+            .into_iter()
+            .map(|d| (d.id.clone(), d.shown().to_owned()))
+            .collect();
+        for v in self.sessions()? {
+            let s = v.session;
+            out.push(Hit {
+                kind: "session".to_owned(),
+                id: s.id.0.clone(),
+                label: if s.title.is_empty() {
+                    s.id.0.clone()
+                } else {
+                    s.title.clone()
+                },
+                note: by_id.get(&s.home.hex()).cloned(),
+            });
+        }
+        for d in self.devices()? {
+            out.push(Hit {
+                kind: "machine".to_owned(),
+                id: d.id.clone(),
+                label: d.shown().to_owned(),
+                note: None,
+            });
+        }
+        for w in self.workspaces()? {
+            out.push(Hit {
+                kind: "workspace".to_owned(),
+                id: format!("{}:{}", w.device, w.path),
+                label: w.name.clone(),
+                note: Some(w.path.clone()),
+            });
+        }
+        for t in crate::tabs::list(&self.root, "page").tabs {
+            out.push(Hit {
+                kind: "tab".to_owned(),
+                id: t.id.clone(),
+                label: if t.title.is_empty() {
+                    t.url.clone()
+                } else {
+                    t.title.clone()
+                },
+                note: (!t.url.is_empty()).then(|| t.url.clone()),
+            });
+        }
+        for (key, label) in [
+            ("network", khor_catalog::gui::network()),
+            ("settings", khor_catalog::gui::settings()),
+            ("security", khor_catalog::gui::security()),
+            ("doctor", khor_catalog::gui::doctor()),
+            ("identity", khor_catalog::gui::identity()),
+        ] {
+            out.push(Hit {
+                kind: "page".to_owned(),
+                id: key.to_owned(),
+                label: label.to_owned(),
+                note: None,
+            });
+        }
+        let rank = |h: &Hit| -> Option<(u8, u8, String)> {
+            let label = h.label.to_lowercase();
+            let note = h.note.clone().unwrap_or_default().to_lowercase();
+            let id = h.id.to_lowercase();
+            let how = if label.starts_with(&q) {
+                0
+            } else if label.contains(&q) {
+                1
+            } else if note.contains(&q) || id.contains(&q) {
+                2
+            } else {
+                return None;
+            };
+            let kind = match h.kind.as_str() {
+                "session" => 0,
+                "machine" => 1,
+                "workspace" => 2,
+                "tab" => 3,
+                _ => 4,
+            };
+            Some((how, kind, label))
+        };
+        let mut scored: Vec<((u8, u8, String), Hit)> = out
+            .into_iter()
+            .filter_map(|h| rank(&h).map(|r| (r, h)))
+            .collect();
+        scored.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(scored.into_iter().map(|(_, h)| h).collect())
+    }
+
     /// Whether khor itself holds this session now: a conversation it is
     /// the protocol client of, or a terminal it hosts (a takeover leaves
     /// one behind). What a found session never has.
@@ -4755,6 +4866,21 @@ impl KindSurface for LiveKind {
 /// How an ACP conversation is spelled among the candidates: it is not a
 /// session yet, so it has no session id — `acp:<agent>:<its own id>`.
 pub const ACP_CANDIDATE: &str = "acp:";
+
+/// One thing [`Node::find`] found: what it is, how a face jumps to it,
+/// what a person reads, and where it lives.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Hit {
+    /// `session` / `machine` / `workspace` / `tab` / `page`.
+    pub kind: String,
+    /// The session id, the device id, `<device>:<path>`, the tab id, or
+    /// the page's own key — whatever that kind is reached by.
+    pub id: String,
+    pub label: String,
+    /// The machine it is on, the path, the address — what tells two
+    /// things with one name apart.
+    pub note: Option<String>,
+}
 
 /// One thing that could be brought onto the session list
 /// ([`Node::import_candidates`]).

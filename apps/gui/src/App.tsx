@@ -105,6 +105,7 @@ import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
+import { TitleBar, type Crumb } from "@/components/TitleBar";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
 
@@ -1296,23 +1297,15 @@ export default function App() {
         narrow ? "flex-row justify-around gap-1 border-t py-1" : "w-rail flex-col gap-row border-r py-3",
       )}
     >
-      {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l, i) => (
+      {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l) => (
         <RailItem
           key={l.key}
           label={l.name}
           tab={l.key}
-          // **The gap the window's three buttons stand in** (第 58 条),
-          // and it is a margin on the first glyph rather than a spacer
-          // element above it. A spacer would be a flex child, so the
-          // rail's own `gap-row` would sit under it — a row-gap of blank
-          // on every face that has no buttons to leave room for, which
-          // is the one thing this ruling promised not to change. A
-          // margin of zero is nothing at all.
-          //
-          // Wide only: narrow puts this rail along the *bottom* of the
-          // window, where the corner in question is not. Narrow's gap is
-          // at the head of the screen column instead (the shell below).
-          className={!narrow && i === 0 ? "mt-traffic" : undefined}
+          // ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮): the first glyph
+          // wore `mt-traffic` — the gap macOS's three buttons stood in.
+          // They stand in the window's own row now, above this rail on
+          // every platform, so the rail starts where its padding says.
           // **Not lit while a 「…」 page is up.** A landing is still
           // remembered — coming back out of the mesh returns to it — but
           // remembering it and being the thing on screen are two facts,
@@ -2108,6 +2101,66 @@ export default function App() {
     );
   }
 
+  // 你在哪, for the window's own row (docs/SHELL.md 第十轮): the
+  // machine, the page, and the thing open in it. Built here because
+  // this is the only place that holds all three — a row cannot ask a
+  // pane what it is showing.
+  const meName = devices.find((d) => d.me)?.shown ?? "";
+  const hereNow: string | null = morePage
+    ? null
+    : landing === "sessions"
+      ? (selectedRow?.title ?? null)
+      : landing === "devices"
+        ? (openDevice?.shown ?? null)
+        : landing === "workspaces"
+          ? (openWs ? (openWs.path.split("/").pop() ?? openWs.path) : null)
+          : null;
+  const crumbs: Crumb[] = [
+    { key: "machine", label: meName, onPress: () => setMorePage("identity") },
+    {
+      key: "page",
+      label: morePage ? moreName(morePage) : paneName,
+      onPress: morePage ? () => setMorePage(null) : undefined,
+    },
+    ...(hereNow ? [{ key: "here", label: hereNow }] : []),
+  ].filter((c) => c.label !== "");
+  /** A hit from ⌘K: go where it lives (`Node::find`'s kinds). */
+  const jump = (hit: { kind: string; id: string; note: string | null }) => {
+    setMorePage(null);
+    if (hit.kind === "session") {
+      setLanding("sessions");
+      sessionTabs.open(hit.id);
+      setScreen("detail");
+    } else if (hit.kind === "machine") {
+      setLanding("devices");
+      setSelectedDevice(hit.id);
+      setScreen("detail");
+    } else if (hit.kind === "workspace") {
+      const [device, ...rest] = hit.id.split(":");
+      const path = rest.join(":");
+      setLanding("workspaces");
+      setOpenWs({
+        device,
+        machine: devices.find((d) => d.id === device)?.shown ?? "",
+        path,
+      });
+      setScreen("detail");
+    } else if (hit.kind === "tab") {
+      setLanding("browser");
+    } else {
+      setMorePage(hit.id as MorePage);
+    }
+  };
+  const titleBar = (
+    <TitleBar
+      narrow={narrow}
+      crumbs={crumbs}
+      devices={devices}
+      onJump={jump}
+      onNetwork={() => setMorePage("network")}
+    />
+  );
+
   // One shell, two width classes: wide is rail|list|detail all at once,
   // narrow is one screen at a time with the rail as a bottom bar. A
   // 「…」 page is neither half of that pair, so it takes the whole of
@@ -2118,19 +2171,11 @@ export default function App() {
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
-          {/* **Narrow's corner for the window's three buttons** (第 58
-              条). The rail is along the bottom here, so the gap cannot
-              be at its head — it goes at the head of the screen column,
-              which is what the buttons actually float over once the
-              window is under 719 wide (the app's own floor is 400, so
-              this posture is reachable by dragging an edge).
-
-              It is a drag region too: on this face the head of the
-              screen is the 顶部空白 the ruling names, and the screens
-              under it draw their own heads. Zero tall and inert on
-              every face without those buttons — this column has no gap,
-              so an empty box in it costs nothing. */}
-          <div data-traffic-room data-tauri-drag-region="deep" className="h-traffic flex-none" />
+          {titleBar}
+          {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮): a
+              `[data-traffic-room]` spacer stood here, holding the head of
+              the screen clear for macOS's three buttons. The window's own
+              row above does that now, on every face and every platform. */}
           {/* `key` is what makes the arrival visible: a CSS animation
               runs when an element is inserted, and without a changing
               key React would reuse this box and the new screen would
@@ -2193,7 +2238,9 @@ export default function App() {
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       ) : (
-        <div className="flex h-dvh">
+        <div className="flex h-dvh flex-col">
+          {titleBar}
+          <div className="flex min-h-0 flex-1">
           {rail}
           {/* A 「…」 page takes the whole region beside the rail, and the
               reason is structural rather than cosmetic: it is neither
@@ -2263,6 +2310,7 @@ export default function App() {
               </div>
             </>
           )}
+          </div>
           {sheets}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>

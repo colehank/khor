@@ -717,6 +717,8 @@ pub fn answer(
         // answers do not apply to it (`agents::resume_session`).
         // 导入 (docs/SHELL.md 第八轮): the candidates, and bringing some
         // onto the list. `ids` in the order the person picked them.
+        // 全局搜索 (docs/SHELL.md 第十轮): one word, the node's own list.
+        "find" => to_json(&crate::find(root, &arg("word")?)?),
         "import_candidates" => to_json(&crate::import::import_candidates(root)?),
         "import_sessions" => {
             let ids: Vec<String> = args

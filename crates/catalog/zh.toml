@@ -244,6 +244,7 @@ usage = """
                         session 列表(默认最近);换一种排布,置顶永远在最上;
                         看过的旧会话默认只报条数,--all 全列出来。列表里只有
                         新建的、导入的和对设备的对话
+  find <词>              一次搜会话、机器、工作区、浏览标签和设置页(窗口里 ⌘K 同一份)
   import [<序号|id>...]  不带参数列出可导入的会话(外面开的智能体、tmux 会话、
                         ACP 对话),带序号;带序号或 id 就把它们导进列表
   tell <机器> <话...>    给机器的窗口留言(永远当字面的话)
@@ -1091,6 +1092,8 @@ account-name-ambiguous = "有不止一个账号叫 {0},用 id 指"
 # than a number (`khor_node::accounts::trouble`).
 quota-trouble = "问不出来({0})"
 quota-unlimited = "不限量"
+# `khor find` 什么都没找到。
+find-none = "没找到「{0}」:会话、机器、工作区、浏览标签、设置页都没有"
 # `khor import` 没有候选可列。
 import-none = "没有可导入的会话:外面开的智能体、tmux 会话和 ACP 对话都已经在列表里,或者一个也没有"
 # `khor quota --why`:每家每条取数策略这一回做了什么(khor_node::quota::Outcome)。
@@ -2048,6 +2051,19 @@ config-no-such-key = "没有这个设置项: {0}(khor config list 列全部)"
 config-no-such-value = "{0} 收不了「{1}」,它收 {2}"
 
 [gui]
+# 窗口顶上那一行(docs/SHELL.md 第十轮)。网络一句话:台数在前,不对劲的在后。
+# Windows 上窗口自己的三颗按钮(docs/SHELL.md 第十轮;macOS 用系统的,Linux 用原生装饰)。
+window-minimize = "最小化"
+window-maximize = "最大化 / 还原"
+window-close = "关闭窗口"
+net-line-all = "{0} 台机器 · 都连得上"
+net-line-quiet = "{0} 台机器 · {1} 台连不上"
+net-line-paused = "{0} 台机器 · 暂停了 {1} 台"
+net-line-alone = "就这一台机器"
+# 全局搜索(⌘K;命令行是 khor find)。
+find-everything = "搜索全部"
+find-hint = "会话、机器、工作区、标签页、设置页"
+find-nothing = "什么都没找到"
 sessions-tab = "会话"
 new-session = "新会话"
 # Which machine the session is born on — this one first, then every
