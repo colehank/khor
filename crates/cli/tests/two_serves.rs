@@ -91,11 +91,13 @@ fn wait_for(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
     panic!("timed out waiting for {what}");
 }
 
-/// The serve row of `khor doctor --json`, asked from `home`.
-fn serve_row(home: &Path) -> serde_json::Value {
+/// The serve row of `khor doctor --json`, asked from the store `store`
+/// by a user whose home directory is `home`.
+fn serve_row(store: &Path, home: &Path) -> serde_json::Value {
     let out = Command::new(env!("CARGO_BIN_EXE_khor"))
         .args(["doctor", "--json"])
-        .env("KHOR_HOME", home)
+        .env("KHOR_HOME", store)
+        .env("HOME", home)
         .env_remove("KHOR_SESSION")
         .output()
         .unwrap();
@@ -115,32 +117,47 @@ fn serve_row(home: &Path) -> serde_json::Value {
 
 #[test]
 fn the_doctor_names_a_second_serve_on_the_same_machine() {
-    let a = root("a");
-    let b = root("b");
-    let ka = keeper(&a.0, "box-a");
-    let kb = keeper(&b.0, "box-b");
-    wait_for("both serves to stand up", 30, || {
-        inner_pid(&a.0).is_some() && inner_pid(&b.0).is_some()
+    // turing's shape: one serve on the home itself, one on a side room
+    // under `.khor-hosts` — both stores khor's own rule could hand this
+    // machine. Plus a control: a third serve on a store elsewhere (a
+    // test's, a smoke run's), which is nobody's second identity and must
+    // not be counted — smoke's own doctor row went amber over exactly
+    // that the day the first version shipped.
+    let home = root("home");
+    let a = home.0.clone();
+    let b = home.0.join(".khor-hosts").join("box-b");
+    fs::create_dir_all(&b).unwrap();
+    let elsewhere = root("elsewhere");
+    let ka = keeper(&a, "box-a");
+    let kb = keeper(&b, "box-b");
+    let kc = keeper(&elsewhere.0, "box-c");
+    wait_for("all three serves to stand up", 30, || {
+        inner_pid(&a).is_some() && inner_pid(&b).is_some() && inner_pid(&elsewhere.0).is_some()
     });
 
-    let row = serve_row(&a.0);
+    let row = serve_row(&a, &home.0);
     let said = row["said"].as_str().unwrap().to_owned();
     assert_eq!(
         row["state"], "warn",
-        "two serves on one machine is not a clean bill: {said}"
+        "two serves for one machine is not a clean bill: {said}"
     );
     assert!(
         said.contains(&kb.0.id().to_string()),
         "the other serve is named by the pid a person would kill (its keeper's): {said}"
     );
     assert!(
-        said.contains(&b.0.display().to_string()),
+        said.contains(&b.display().to_string()),
         "and by the store it is serving, which is how a person tells the two apart: {said}"
     );
+    assert!(
+        !said.contains(&kc.0.id().to_string()),
+        "a serve on a store this machine's rule would never pick is not counted: {said}"
+    );
     // Asked from the other side, the same fact.
-    let said_b = serve_row(&b.0)["said"].as_str().unwrap().to_owned();
+    let said_b = serve_row(&b, &home.0)["said"].as_str().unwrap().to_owned();
     assert!(
         said_b.contains(&ka.0.id().to_string()),
         "the doctor asked from the second store names the first: {said_b}"
     );
+    drop(kc);
 }

@@ -369,7 +369,8 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
     let seen = tokio::task::spawn_blocking(crate::serves::here)
         .await
         .unwrap_or_default();
-    let residents = crate::serves::residents(&seen, &default_root);
+    let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let residents = crate::serves::own(crate::serves::residents(&seen, &default_root), &home);
     if residents.len() > 1 {
         let list = residents
             .iter()
