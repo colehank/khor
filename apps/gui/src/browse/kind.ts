@@ -162,12 +162,13 @@ export type BrowseKind = {
     address: string;
     /** The second axis's heading in the completion menu. */
     segment: string;
-    /** The fresh tab's two section headings. */
-    pinned: string;
+    /** The fresh tab's one section heading. ⚠️ 墓碑: there were two, and
+        the other was 「置顶的…」 — retired with its empty sentence on
+        2026-09-22 (docs/SHELL.md 第六轮: a pin is the sidebar's pinned
+        group and nothing else). */
     recent: string;
-    /** …and what the fresh tab says with neither, plus the way onward
-        as a thing to press. */
-    empty: string;
+    /** The way onward from a fresh tab with nothing on it, as a thing
+        to press. */
     go: string;
     /** The tab column's search box (docs/SHELL.md 第二轮) — it finds a
         tab by what it is called and where it is, and 「where」 is this
@@ -177,9 +178,6 @@ export type BrowseKind = {
         paste material. */
     copy: string;
   };
-  /** Every place kept on purpose, for the fresh tab and for the
-      fallback when a machine goes quiet. */
-  pins: () => Promise<Place[]>;
   /**
    * Completions for the second segment.
    *

@@ -299,12 +299,12 @@ usage: khor <verb>
                         changes the name people see, the channel name
                         the network archives under doesn't move, so
                         conversations and read status don't move house
-  pin [-m|-d] <session|machine|machine path>
-                        pins it (-m pins a machine, -d pins a
-                        directory on a machine); pin it from any
+  pin [-m] <session|machine>
+                        pins it (-m pins a machine); pin it from any
                         machine — it's the same one across the whole
-                        network
-  unpin [-m|-d] <session|machine|machine path>
+                        network. A directory is pinned as a workspace
+                        (ws add, then ws pin); a page with tabs pin
+  unpin [-m] <session|machine>
                         unpins it
   close <session>       closes it (stops the session's process; the
                         conversation folds up its row, history and
@@ -789,6 +789,7 @@ cant-merge = "Can't merge: {0}"
 cant-append = "Can't append: {0}"
 no-such-message = "No such message: {0}"
 no-such-tab = "No such tab: {0}"
+dir-pin-retired = "Pinned directories are retired: a directory is a workspace now. Use khor ws add -m {0} {1}, then khor ws pin -m {0} {1}"
 tab-pinned = "This tab is pinned — unpin it before deleting it"
 
 # ── frames (node) ──
@@ -1524,15 +1525,11 @@ file-taken = "Received"
 send-file = "Send file"
 uploading = "Uploading…"
 send-file-failed = "Couldn't send"
-no-pinned-dirs = "No pinned directories yet"
-go-pin-a-dir = "Pick a directory on a machine to pin"
 new-tab = "New tab"
 close-tab = "Close tab"
 switch-tabs = "{0} tabs"
 address-dir = "Machine and path"
 address-page = "Machine and URL"
-pinned-dirs = "Pinned directories"
-pinned-webs = "Pinned pages"
 recent-places = "Recently visited"
 web-address = "URL, opens through {0}'s network"
 web-open = "Open"
@@ -1541,7 +1538,6 @@ web-opened = "Opened through {0}'s network"
 web-opening-here = "Opening…"
 web-opened-here = "Opened"
 open-in-browser = "Open in system browser"
-no-pinned-webs = "No pinned pages yet"
 pick-exit = "Pick a machine to borrow its network"
 term-over = "This terminal ended"
 view-terminal = "Terminal"

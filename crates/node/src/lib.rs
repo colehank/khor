@@ -2519,7 +2519,10 @@ impl Node {
     /// the mesh (`khor_sync::dirpins` module head); the path must be
     /// absolute for the reason `Ls` demands it — a relative pin names
     /// nowhere.
-    pub fn pin_dir(&self, machine: &str, path: &str, on: bool) -> Result<(), String> {
+    /// ⚠️ Retired as a face (docs/SHELL.md 第六轮): nothing but the
+    /// migration's own tests writes this table any more.
+    #[cfg(test)]
+    pub(crate) fn pin_dir(&self, machine: &str, path: &str, on: bool) -> Result<(), String> {
         if !std::path::Path::new(path).is_absolute() {
             return Err(msg::path_not_absolute(path));
         }
@@ -2549,7 +2552,10 @@ impl Node {
     /// The key carries the machine because a pinned page is "this page
     /// through this machine's network" (`khor_sync::webpins` module head)
     /// — the browser landing's shortcuts.
-    pub fn pin_web(&self, machine: &str, url: &str, on: bool) -> Result<(), String> {
+    /// ⚠️ Retired as a face (docs/SHELL.md 第六轮): nothing but the
+    /// migration's own tests writes this table any more.
+    #[cfg(test)]
+    pub(crate) fn pin_web(&self, machine: &str, url: &str, on: bool) -> Result<(), String> {
         let (_, home) = self.resolve(machine)?;
         let loaded = self.webpins_loaded()?;
         loaded
@@ -2557,6 +2563,70 @@ impl Node {
             .set(&khor_sync::webpins::key(&home.hex(), url), on)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// Moves the retired 「置顶的网页 / 置顶的目录」 rows into the sidebars
+    /// (docs/SHELL.md 第六轮:「浏览的置顶 = 侧边栏置顶组里的标签, 和会话一模
+    /// 一样」). Answers how many moved this time.
+    ///
+    /// # Where they were, and where they go
+    ///
+    /// Both lived in **replicated** documents (`khor_sync::webpins`,
+    /// `khor_sync::dirpins`) — one list for the whole network, keyed by
+    /// (machine, place).
+    ///
+    /// - **A pinned page** becomes a pinned browse tab in *this* machine's
+    ///   `.khor/tabs.json`, on the exit machine it was pinned against. Every
+    ///   machine moves every page: the column used to be on every machine's
+    ///   fresh tab, so every machine keeps it — as a pin in its own sidebar.
+    /// - **A pinned directory** becomes a pinned **workspace** — a browse
+    ///   tab cannot point at a directory (the files landing it belonged to
+    ///   retired on 2026-09-11), and a directory somebody keeps on a machine
+    ///   is exactly what the workspace list is. The workspace table is
+    ///   replicated, so **only the machine that holds the directory** moves
+    ///   it: otherwise a machine upgraded next week would pin again a
+    ///   workspace somebody had taken off in the meantime.
+    ///
+    /// # Once
+    ///
+    /// Every key moved is written down in `.khor/place-pins-moved.json`,
+    /// here and never replicated. A key in there is not moved again, so a
+    /// second run moves nothing and a tab closed since is not brought back;
+    /// a key that arrives later over sync (a machine that had not synced
+    /// yet the first time) is moved when it arrives. The old documents are
+    /// left as they are — other machines may still be on the old build —
+    /// and nothing reads them but this.
+    pub fn migrate_place_pins(&self) -> Result<usize, String> {
+        let note = self.root.join(".khor").join("place-pins-moved.json");
+        let mut done: std::collections::BTreeSet<String> = std::fs::read_to_string(&note)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        let mut moved = 0;
+        for (device, url) in self.web_pins()? {
+            let key = format!("page\u{0}{device}\u{0}{url}");
+            if done.contains(&key) {
+                continue;
+            }
+            crate::tabs::adopt_pinned(&self.root, "page", &device, &url)?;
+            done.insert(key);
+            moved += 1;
+        }
+        let me = self.device_str().to_owned();
+        for (device, path) in self.dir_pins()? {
+            let key = format!("dir\u{0}{device}\u{0}{path}");
+            if device != me || done.contains(&key) {
+                continue;
+            }
+            self.ws_pin(&device, &path, true)?;
+            done.insert(key);
+            moved += 1;
+        }
+        if moved > 0 {
+            let text = serde_json::to_vec_pretty(&done).map_err(|e| e.to_string())?;
+            std::fs::write(&note, text).map_err(|e| msg::cant_write(note.display(), e))?;
+        }
+        Ok(moved)
     }
 
     /// Every pinned page, as `(device_hex, url)` in the table's order

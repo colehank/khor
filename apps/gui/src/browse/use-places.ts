@@ -1,5 +1,10 @@
-// Places this person keeps: the ones pinned on purpose, and the ones
-// they keep going back to.
+// Places this person keeps going back to.
+//
+// ⚠️ 墓碑: this also held the ones pinned on purpose (「置顶的网页 /
+// 置顶的目录」), until 2026-09-22 (docs/SHELL.md 第六轮:「置顶的浏览器
+// 不就是和 session list 一样的置顶吗」). A pin is the sidebar's pinned
+// group now; the old rows were moved there once (`Node::
+// migrate_place_pins`) and this file does not read that table any more.
 //
 // **One fetch, two customers.** The fresh tab paints them and the
 // address bar falls back to them when a machine stops answering — and
@@ -68,27 +73,19 @@ import type { BrowseKind, Place } from "@/browse/kind";
 const MOST_RECENT = 12;
 
 export type Places = {
-  pinned: Place[];
   /** `null` while nobody has answered, and after a refusal — see the
       file head for why that is not `[]`. */
   recent: Place[] | null;
   /**
-   * Somebody has answered about the pins, one way or the other.
-   *
-   * **What it is for is the sentence that says there is nothing.** Until
-   * this is true, "no places" is not a fact about this person, it is a
-   * fact about a request still in flight — and painting 还没有钉住的目录
-   * over it is the same 不知道-drawn-as-没有 the six words are forbidden
-   * from doing (docs/UX.md). Measured on a real run: switching landings
-   * and coming back flashed the empty state over a mesh with a pin in
-   * it, because the fetch starts again on the way in.
+   * Somebody has answered, one way or the other. Until then 「no
+   * places」 is a fact about a request still in flight, not about this
+   * person, and the fresh tab draws nothing rather than claim it.
    */
   asked: boolean;
   reload: () => void;
 };
 
 export function usePlaces(kind: BrowseKind): Places {
-  const [pinned, setPinned] = useState<Place[]>([]);
   const [recent, setRecent] = useState<Place[] | null>(null);
   const [asked, setAsked] = useState(false);
   const [turn, setTurn] = useState(0);
@@ -96,64 +93,31 @@ export function usePlaces(kind: BrowseKind): Places {
 
   useEffect(() => {
     let stopped = false;
-    kind
-      .pins()
-      .then((rows) => {
-        if (stopped) return;
-        setPinned(rows);
-        setAsked(true);
-      })
-      .catch(() => {
-        // Answered, even though the answer was a refusal: what this
-        // gates is "is it still coming", and it is not.
-        if (!stopped) setAsked(true);
-        // A pin list that cannot be read is not an empty pin list
-        // either — but this one has no second face to fall back to, so
-        // the last good answer stands rather than being erased. A blink
-        // in the backend must not empty a shortcut list.
-      });
     fetchRecents(kind.kind, MOST_RECENT)
       .then((rows) => {
         if (stopped) return;
         setRecent(
           rows.map((r) => ({ device: r.device, name: r.name, place: r.place, at_ms: r.at_ms })),
         );
+        setAsked(true);
       })
       .catch(() => {
         // Refused: either the node is older than this screen, or it is
         // unreachable. Both mean "no answer", and neither is "no
         // places" — so nothing is painted rather than an empty section
         // that claims this person has been nowhere.
+        if (!stopped) setAsked(true);
       });
     return () => {
       stopped = true;
     };
   }, [kind, turn]);
 
-  return { pinned, recent, asked, reload };
+  return { recent, asked, reload };
 }
 
-/**
- * Pins first, then the recents that are not already pinned, most
- * lately first.
- *
- * **Pins are on top by rule, not by recency**, and that is the whole
- * ordering argument: a pin says "I decided this matters", a visit says
- * "I was here", and letting the second sort the first would move a
- * shortcut around under the hand that put it there. Within the pins the
- * node's own order stands (this layer never re-sorts — docs/UX.md).
- *
- * The de-duplication is by (machine, path) and it matters: a directory
- * you pinned is a directory you visit, so every pin would otherwise
- * appear twice on the one screen whose job is to be scannable.
- */
-export function placesInOrder(p: Places): { place: Place; pinned: boolean }[] {
-  const seen = new Set(p.pinned.map((x) => `${x.device}\n${x.place}`));
-  const rest = (p.recent ?? [])
-    .filter((x) => !seen.has(`${x.device}\n${x.place}`))
-    .sort((a, b) => (b.at_ms ?? 0) - (a.at_ms ?? 0));
-  return [
-    ...p.pinned.map((place) => ({ place, pinned: true })),
-    ...rest.map((place) => ({ place, pinned: false })),
-  ];
+/** The recents, most lately first. The node's order is by key; the
+    one this screen needs is by when. */
+export function placesInOrder(p: Places): Place[] {
+  return [...(p.recent ?? [])].sort((a, b) => (b.at_ms ?? 0) - (a.at_ms ?? 0));
 }

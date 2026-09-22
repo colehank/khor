@@ -96,11 +96,9 @@ fn main() {
     // embeds it.
     khor_gui_core::MachineLog::export_all_to(&dir).expect("export MachineLog");
     khor_gui_core::files::DirListing::export_all_to(&dir).expect("export DirListing");
-    khor_gui_core::files::DirPinRow::export_all_to(&dir).expect("export DirPinRow");
     // Asked for on its own by each landing's recent list; no row embeds
     // it, so `export_all_to` would never walk into it.
     khor_gui_core::recents::RecentRow::export_all_to(&dir).expect("export RecentRow");
-    khor_gui_core::web::WebPinRow::export_all_to(&dir).expect("export WebPinRow");
     khor_gui_core::web::WebBorrow::export_all_to(&dir).expect("export WebBorrow");
     // The browsing tabs (docs/SHELL.md 第 2 条). `TabsOpen` embeds
     // `TabRow`, and `export_all_to` walks into it — but the row is

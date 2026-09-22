@@ -64,6 +64,16 @@ fn shape(open: tabs::Open) -> TabsOpen {
 }
 
 pub fn list(root: &Path, kind: &str) -> TabsOpen {
+    // The retired 「置顶的网页 / 置顶的目录」 rows become sidebar pins the
+    // first time this process looks at the tabs (`Node::migrate_place_pins`,
+    // once per row, so a later process moves only what has arrived since).
+    // Once per process rather than per call: the column polls this.
+    static MOVED: std::sync::Once = std::sync::Once::new();
+    MOVED.call_once(|| {
+        if let Ok(n) = khor_node::Node::open(root.to_path_buf()) {
+            let _ = n.migrate_place_pins();
+        }
+    });
     shape(tabs::list(root, kind))
 }
 

@@ -76,7 +76,6 @@ import type { Editor } from "@/gen/bindings/Editor";
 
 export function WorkspacePane({
   machine,
-  device,
   here,
   root,
   rows,
@@ -96,7 +95,6 @@ export function WorkspacePane({
   listOpen,
 }: {
   machine: string;
-  device: string;
   /** Whether this workspace is on the machine khor is running on.
       Handed down to the tree, whose 拉过来 is a direction and not an
       action when there is nowhere to pull from (`FilesPane`'s
@@ -1545,9 +1543,7 @@ export function WorkspacePane({
             ) : root === "" ? (
               <FilesPane
                 machine={machine}
-                device={device}
                 path={at}
-                narrow={narrow}
                 onPath={setAt}
                 onLanded={setAt}
                 // The browsing face gets the same strip: a tab is a

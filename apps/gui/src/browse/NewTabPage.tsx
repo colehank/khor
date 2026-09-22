@@ -5,14 +5,17 @@
 // about one disk — the directory somebody was digging through this
 // morning is the thing they are looking for, and which machine it was
 // on is how they recognise it, not how they find it. So the machine
-// rides each row as its face, and the rows are ordered by the two
-// things that actually rank them: a pin is a decision and sits on top,
-// a visit is a fact and sorts by how lately (`placesInOrder`).
+// rides each row as its face, and the rows sort by how lately
+// (`placesInOrder`).
 //
-// The sentence for having neither is the one the files landing used to
-// wear beside its machine list. That list is gone (标签页一期), and an
-// empty state with nothing around it to explain it needs the sentence
-// more than the old one did, not less.
+// ⚠️ 墓碑 (2026-09-22, docs/SHELL.md 第六轮): a pinned section sat above
+// the recents — 「置顶的网页」, and 「置顶的目录」 before that — with an
+// empty sentence of its own. A pin is the sidebar's pinned group now, one
+// place for it the way a session's pin has one place, and the old rows
+// were moved there (`Node::migrate_place_pins`). With nothing gone to
+// yet, what is left is the way onward and **no sentence**: the one this
+// screen had was about the pins, and a new one would be writing content
+// to fill a space nobody asked to be filled.
 //
 // **A recent can be sent away, and until now nothing on any screen
 // could do it.** `khor_sync::recents` has had the tombstone since it
@@ -76,11 +79,10 @@ export function NewTabPage({
       button with nowhere to go. */
   onGo?: () => void;
 }) {
-  // **Asked again every time this appears**, and it has to be: a pin
-  // pressed in another tab a moment ago is exactly the pin a person
-  // opens a fresh tab to use, and the answer this landing was holding
-  // was fetched before that pin existed. Measured — a directory pinned
-  // in one tab was missing from the next fresh tab until this was here.
+  // **Asked again every time this appears**: a page visited in another
+  // tab a moment ago is exactly the one a person opens a fresh tab to
+  // go back to, and the answer this landing was holding was fetched
+  // before that visit.
   //
   // Cheap enough to be unconditional: two reads of local ledgers, on an
   // act a person performs deliberately.
@@ -89,16 +91,13 @@ export function NewTabPage({
 
   const rows = placesInOrder(places);
 
-  // Nobody has answered yet, so there is nothing true to say. **Not the
-  // empty sentence**: "there is nothing pinned" is a claim about this
-  // person, and a request in flight is not evidence for it.
+  // Nobody has answered yet, so there is nothing true to say.
   if (!places.asked) return null;
 
   if (rows.length === 0) {
     return (
-      <div className="grid h-full place-items-center text-sm text-muted-foreground">
+      <div data-no-places className="grid h-full place-items-center text-sm text-muted-foreground">
         <div className="flex flex-col items-center gap-2">
-          <div data-no-places>{kind.words.empty}</div>
           {onGo && (
             <Button
               size="sm"
@@ -121,22 +120,15 @@ export function NewTabPage({
 
   return (
     <div data-new-tab className="min-h-0 overflow-y-auto p-2">
-      {rows.map(({ place, pinned }, i) => {
-        // A heading where the kind changes, the way `SessionsList`
-        // starts a group: the caller decides which section each row is
-        // in, this only notices the boundary — so a section with no
-        // rows cannot draw a heading over nothing.
-        const first = i === 0 || rows[i - 1].pinned !== pinned;
+      {rows.map((place, i) => {
+        const first = i === 0;
         const leaf = kind.leafOf(place.place);
         const face = devices.find((d) => d.id === place.device)?.face ?? null;
         return (
           <div key={`${place.device}:${place.place}`}>
             {first && (
-              <div
-                data-places-section={pinned ? "pinned" : "recent"}
-                className="px-3 pt-2 pb-1 text-xs text-muted-foreground"
-              >
-                {pinned ? kind.words.pinned : kind.words.recent}
+              <div data-places-section="recent" className="px-3 pt-2 pb-1 text-xs text-muted-foreground">
+                {kind.words.recent}
               </div>
             )}
             {/* The row is a wrapper that holds the way in and, on a
@@ -167,37 +159,21 @@ export function NewTabPage({
                 >
                   {place.place}
                 </span>
-                {/* How lately, on the rows that have a "lately". A pin
-                    carries none and shows none — an invented age would
-                    be this screen claiming to know when a decision was
-                    made. */}
+                {/* How lately, on the rows that have a "lately". */}
                 {place.at_ms !== null && (
                   <span className="flex-none text-xs tabular-nums text-muted-foreground">
                     {ago(place.at_ms)}
                   </span>
                 )}
               </button>
-              {/* **Only on a recent.** A pin is a decision this person
-                  made, and the way to undo a decision is to unpin it
-                  where it was pinned — "stop suggesting this" is an
-                  answer to a suggestion, and a pin was never one. Drawn
-                  on a pinned row it would be a second, quieter way to
-                  unpin that does not say so.
-
-                  Visibility is the row-action rule this repo already
-                  settled (`FilesPane`'s pin): **narrow draws it
+              {/* 「Stop suggesting this」, on every row. Visibility is the
+                  row-action rule this repo settled: **narrow draws it
                   always** — a phone has no pointer to summon a control
-                  with, so hover-only there is a control that does not
-                  exist — while wide reveals it under the pointer or
+                  with — while wide reveals it under the pointer or
                   keyboard focus, because a mark on every one of a dozen
-                  rows is this screen's loudest repetition and the
-                  screen's job is to be scannable.
-
-                  `min-*` rather than a size: `cn()` cannot lift the icon
-                  variant's `h-ctl-md`/`w-ctl-md` off (`button.tsx` has
-                  that measurement), and a floor does not need the height
-                  taken off first. */}
-              {!pinned && (
+                  rows is this screen's loudest repetition. `min-*`
+                  rather than a size: `cn()` cannot lift the icon
+                  variant's `h-ctl-md`/`w-ctl-md` off (`button.tsx`). */}
                 <Button
                   size="icon"
                   variant="ghost"
@@ -205,10 +181,6 @@ export function NewTabPage({
                   data-forget-device={place.device}
                   aria-label={gui.forget_place(kind.words.recent)}
                   className={cn(
-                    // `mr-3` matches the open button's `px-3`, so the
-                    // right edge of a recent row lands where a pinned
-                    // row's text stops — two sections whose rows would
-                    // otherwise end on two different margins.
                     "min-h-touch min-w-touch mr-3 flex-none text-muted-foreground",
                     !narrow &&
                       "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
@@ -217,7 +189,6 @@ export function NewTabPage({
                 >
                   <IconClose />
                 </Button>
-              )}
             </div>
           </div>
         );
