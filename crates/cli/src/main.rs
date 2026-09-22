@@ -4136,6 +4136,11 @@ fn accounts(rest: &[String]) -> Result<(), String> {
 /// `khor quota` — every registered account's reading, this machine's
 /// read now and the others' as last carried here (`Node::quota_board`).
 fn quota(rest: &[String]) -> Result<(), String> {
+    if let [why] = rest
+        && why == "--why"
+    {
+        return quota_why();
+    }
     if !rest.is_empty() {
         return Err(usage_text().into());
     }
@@ -4184,6 +4189,32 @@ fn quota(rest: &[String]) -> Result<(), String> {
             share,
             age_ms / 1000
         );
+    }
+    Ok(())
+}
+
+/// `khor quota --why` — this machine's vendors, each read once down its
+/// chain (the chain's own cache and cooldown hold, so this asks no more
+/// than any other read), and what every strategy did (docs/SHELL.md
+/// 第九轮 第 1 条).
+fn quota_why() -> Result<(), String> {
+    use khor_node::quota::Outcome;
+    let rt = rt()?;
+    for p in khor_node::quota::providers() {
+        let _ = rt.block_on(p.read());
+        println!("{}", p.vendor);
+        for a in p.last_attempts() {
+            let said = match a.outcome {
+                Outcome::Unavailable => cli::quota_why_unavailable().to_owned(),
+                Outcome::Used => cli::quota_why_used().to_owned(),
+                Outcome::Cached { age } => cli::quota_why_cached(age),
+                Outcome::Cooling { minutes } => cli::quota_why_cooling(minutes),
+                Outcome::Failed(why) => {
+                    cli::quota_why_failed(khor_node::accounts::sub_trouble(&why))
+                }
+            };
+            println!("  {:<12} {said}", a.strategy);
+        }
     }
     Ok(())
 }
