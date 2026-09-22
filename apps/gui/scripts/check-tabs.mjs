@@ -969,6 +969,83 @@ try {
       }
     }
 
+    //  ── 网页图标:先认页面自己声明的,只收真是图片的 (2026-09-22) ──
+    //
+    //  The site that sent this: a single-page app answers `/favicon.ico`
+    //  with its index page and a 200, and names its real icon — an SVG —
+    //  in `<link rel="icon">`. The row has to wear **that** SVG. And a
+    //  site with no icon at all (every path its index page) is the
+    //  control: the generic page mark, and nothing kept on disk for it.
+    {
+      const { createServer } = await import("node:http");
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><rect width="8" height="8"/></svg>';
+      const index = (head) => `<!doctype html><html><head>${head}<title>spa</title></head><body>app</body></html>`;
+      const spa = createServer((req, res) => {
+        if (req.url === "/assets/logo-icon.svg") {
+          res.writeHead(200, { "content-type": "image/svg+xml" });
+          return res.end(svg);
+        }
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(index('<link rel="icon" href="/assets/logo-icon.svg" />'));
+      });
+      const bare = createServer((req, res) => {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(index(""));
+      });
+      await new Promise((r) => spa.listen(0, "127.0.0.1", r));
+      await new Promise((r) => bare.listen(0, "127.0.0.1", r));
+      const spaAt = `127.0.0.1:${spa.address().port}`;
+      const bareAt = `127.0.0.1:${bare.address().port}`;
+      try {
+        cli(envB, "tabs", "open", `http://${spaAt}/app`);
+        cli(envB, "tabs", "open", `http://${bareAt}/b`);
+        await ask("page_icon", { url: `http://${spaAt}/app`, proxy: "" }).catch(() => null);
+        const none = await ask("page_icon", { url: `http://${bareAt}/b`, proxy: "" }).then(
+          (v) => String(v).slice(0, 40),
+          () => null,
+        );
+        await page.reload({ waitUntil: "load" });
+        await openBrowser();
+        const rowOf = (at, path) =>
+          page.locator("[data-browse-tabs] [data-side-row]").filter({ hasText: `${at}${path}` }).first();
+        const drawn = async (row) => ({
+          badge: await row.locator("[data-side-badge]").getAttribute("data-side-badge").catch(() => null),
+          src: await row.locator("[data-side-badge] img").getAttribute("src").catch(() => null),
+        });
+        const spaRow = rowOf(spaAt, "/app");
+        await until("the SPA's row", 10_000, async () => (await spaRow.count()) === 1).catch(() => false);
+        await until("its icon", 5_000, async () => (await drawn(spaRow)).badge === "favicon").catch(() => false);
+        const a = await drawn(spaRow);
+        const want = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+        console.log(`     SPA row wears ${a.badge} ${a.src ? a.src.slice(0, 30) : a.src}`);
+        if (a.src !== want) {
+          fail(
+            `a site whose /favicon.ico is its index page and whose <link rel="icon"> names an SVG wears 「${a.badge}」 ${JSON.stringify(a.src?.slice(0, 40) ?? null)} — the page's own icon, the SVG (crates/node/src/favicon.rs)`,
+          );
+        } else ok("a page's <link rel=\"icon\"> SVG is the row's icon, not the index page its /favicon.ico answers with");
+        const bareRow = rowOf(bareAt, "/b");
+        await until("the bare site's row", 10_000, async () => (await bareRow.count()) === 1).catch(() => false);
+        const b = await drawn(bareRow);
+        const keptNow = await ask("page_icons", {}).catch(() => ({}));
+        const keptBare = Object.keys(keptNow).filter((k) => k.includes(bareAt));
+        console.log(`     bare site: page_icon answered ${JSON.stringify(none)}, row wears ${b.badge}, kept ${JSON.stringify(keptBare)}`);
+        if (b.badge !== "page" || none !== null || keptBare.length !== 0) {
+          fail(`a site with no icon at all answered ${JSON.stringify(none)}, wears 「${b.badge}」 and left ${JSON.stringify(keptBare)} on disk — the generic mark, and nothing kept`);
+        } else ok("a site with no icon wears the generic page mark and keeps nothing");
+        // Put back, and **wait for the window to hear it**: the section
+        // after this deletes the last unpinned row it sees, and a row the
+        // terminal already closed is one the node refuses to delete.
+        for (const [at, path] of [[spaAt, "/app"], [bareAt, "/b"]]) {
+          const id = await rowOf(at, path).getAttribute("data-side-row").catch(() => null);
+          if (id) cli(envB, "tabs", "close", id);
+          await until("the window hearing the close", 10_000, async () => (await rowOf(at, path).count()) === 0).catch(() => {});
+        }
+      } finally {
+        spa.close();
+        bare.close();
+      }
+    }
+
     //  ── 置顶的目录 retired (docs/SHELL.md 第六轮) ──
     //
     //  `khor pin -d` wrote the column the fresh tab no longer draws. It
