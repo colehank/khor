@@ -5,6 +5,48 @@
 //! Stable keys are the wire truth; every word a person reads comes from
 //! the catalog at print time (docs/UX.md 文案).
 
+// ── The print layer (SHELL.md 第五轮 第 4 条) ─────────────────────────
+//
+// **`println!` and `print!` are shadowed for the whole file**, so every
+// line this CLI prints goes through [`out`]. Rust ignores SIGPIPE, and
+// std's `println!` turns the broken-pipe error that leaves behind into
+// a panic — `khor devices | head -1` printed `failed printing to stdout:
+// Broken pipe` and exited 101. A reader that went away is not a fault:
+// [`out`] leaves the way any Unix tool does when its reader closes.
+// Textual scope: these must stay above every use in this file.
+macro_rules! println {
+    () => {
+        out(format_args!("\n"))
+    };
+    ($($t:tt)*) => {
+        out(format_args!("{}\n", format_args!($($t)*)))
+    };
+}
+
+macro_rules! print {
+    ($($t:tt)*) => {
+        out(format_args!($($t)*))
+    };
+}
+
+/// Writes to stdout; a closed reader ends the process the way SIGPIPE
+/// ends `cat` (exit by that signal, nothing on the terminal). Any other
+/// write error is std's panic, unchanged.
+fn out(args: std::fmt::Arguments) {
+    use std::io::Write;
+    if let Err(e) = std::io::stdout().lock().write_fmt(args) {
+        if e.kind() == std::io::ErrorKind::BrokenPipe {
+            #[cfg(unix)]
+            unsafe {
+                libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+                libc::raise(libc::SIGPIPE);
+            }
+            std::process::exit(141);
+        }
+        panic!("failed printing to stdout: {e}");
+    }
+}
+
 // **Aliased**, because this file already has a verb called `usage`
 // (`khor usage`, what each machine spent). The catalog's is the help
 // text; 批 D3 turned it from a const into a function, which is when the

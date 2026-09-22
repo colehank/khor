@@ -141,10 +141,8 @@ fn both(tag: &str) -> Usage {
 
 /// One directory wearing both vendors' trees, so that the two are read in
 /// a single pass the way a real home is.
-fn fixture_home(tag: &str) -> PathBuf {
-    let home = std::env::temp_dir().join(format!("khor-usage-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&home);
-    std::fs::create_dir_all(&home).unwrap();
+fn fixture_home(tag: &str) -> crate::testdir::TempTree {
+    let home = crate::testdir::TempTree::fresh(&format!("usage-{tag}"));
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink(fixture().join("claude/.claude"), home.join(".claude")).unwrap();
@@ -649,7 +647,8 @@ fn the_three_extensions_are_found_in_three_different_storage_locations() {
 /// request was billed once" and fail to see the second.
 #[test]
 fn a_rewritten_task_document_is_not_billed_twice() {
-    let root = std::env::temp_dir().join(format!("khor-usage-roo-{}", std::process::id()));
+    let _root_tree = crate::testdir::TempTree::at("usage-roo");
+    let root = _root_tree.path();
     let task = root.join("task-1");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&task).unwrap();
@@ -893,7 +892,8 @@ fn what_it_cannot_read_it_counts_and_an_unfinished_line_is_not_that() {
 /// two.
 #[test]
 fn an_empty_home_spends_nothing_and_reports_nothing_unreadable() {
-    let empty = std::env::temp_dir().join(format!("khor-usage-empty-{}", std::process::id()));
+    let _empty_tree = crate::testdir::TempTree::at("usage-empty");
+    let empty = _empty_tree.path();
     let _ = std::fs::remove_dir_all(&empty);
     std::fs::create_dir_all(&empty).unwrap();
     let usage = Meters::at(&empty).tally_in(&plus_eight());
@@ -1000,7 +1000,8 @@ fn the_empty_registry_reads_nothing() {
 /// 测的是「机器闲不闲」).
 #[test]
 fn a_kept_answer_survives_until_the_tree_moves_and_not_after() {
-    let home = std::env::temp_dir().join(format!("khor-usage-cache-{}", std::process::id()));
+    let _home_tree = crate::testdir::TempTree::at("usage-cache");
+    let home = _home_tree.path();
     let dir = home.join(".claude/projects/p");
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1048,7 +1049,8 @@ fn a_kept_answer_survives_until_the_tree_moves_and_not_after() {
 /// counted **nor consumed**, or the finished line would never be read.
 #[test]
 fn reading_only_the_tail_gives_the_same_answer_as_reading_it_all() {
-    let home = std::env::temp_dir().join(format!("khor-usage-tail-{}", std::process::id()));
+    let _home_tree = crate::testdir::TempTree::at("usage-tail");
+    let home = _home_tree.path();
     let dir = home.join(".claude/projects/p");
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1129,7 +1131,8 @@ fn reading_only_the_tail_gives_the_same_answer_as_reading_it_all() {
 /// nothing or keep billing contents that are gone.
 #[test]
 fn a_replaced_transcript_is_read_again_and_a_deleted_one_stops_counting() {
-    let home = std::env::temp_dir().join(format!("khor-usage-replace-{}", std::process::id()));
+    let _home_tree = crate::testdir::TempTree::at("usage-replace");
+    let home = _home_tree.path();
     let dir = home.join(".claude/projects/p");
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1190,7 +1193,8 @@ fn append(path: &std::path::Path, line: &str) {
 /// about.
 #[test]
 fn a_codex_turn_read_from_the_tail_is_billed_once() {
-    let home = std::env::temp_dir().join(format!("khor-usage-codex-{}", std::process::id()));
+    let _home_tree = crate::testdir::TempTree::at("usage-codex");
+    let home = _home_tree.path();
     let dir = home.join(".codex/sessions/2026/08/17");
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1341,7 +1345,8 @@ fn the_model_rows_add_up_to_the_day_rows_and_none_of_them_is_orphaned() {
 /// records at the fold and the day total falls from 20 to 10.
 #[test]
 fn a_record_that_names_no_model_is_counted_and_gets_a_row_of_its_own() {
-    let home = std::env::temp_dir().join(format!("khor-usage-unnamed-{}", std::process::id()));
+    let _home_tree = crate::testdir::TempTree::at("usage-unnamed");
+    let home = _home_tree.path();
     let dir = home.join(".claude/projects/p");
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&dir).unwrap();

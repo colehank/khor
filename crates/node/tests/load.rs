@@ -34,6 +34,19 @@ impl std::ops::Deref for Scratch {
     }
 }
 
+/// **One test of this file at a time** (SHELL.md 第五轮 第 4 条).
+///
+/// The reactor gauge (`khor_node::reactor`) is one process-wide number,
+/// fed by every serve in the process and reset by every `forget()`. The
+/// two tests below each start serves and each measure a window with it,
+/// and cargo runs them on parallel threads — so one test's setup (a
+/// pairing, an endpoint bound on a single-threaded runtime) could land
+/// in the other's window, and the other's `forget()` could wipe the
+/// start of this one's. On a busy machine that setup is slow enough to
+/// cross the 1000 ms line: a reading about the wrong test, not about the
+/// load handler.
+static ONE_AT_A_TIME: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-load-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
@@ -63,6 +76,7 @@ async fn wait_for_endpoint_file(root: &Path) {
 /// have paid for a whole process list nobody has room for.
 #[tokio::test]
 async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
+    let _one = ONE_AT_A_TIME.lock().await;
     let ra = root("a");
     let rb = root("b");
 
@@ -166,6 +180,7 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
 /// that serve consumes — the map is shared, so it still sees it.
 #[tokio::test]
 async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
+    let _one = ONE_AT_A_TIME.lock().await;
     let ra = root("reuse-a");
     let rb = root("reuse-b");
 

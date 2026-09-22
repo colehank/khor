@@ -41,6 +41,8 @@ pub mod reactor;
 pub mod satellite;
 pub mod serves;
 pub mod tabs;
+#[cfg(test)]
+pub(crate) mod testdir;
 pub mod top;
 pub mod transfer;
 pub mod tunnel;
@@ -2268,6 +2270,17 @@ impl Node {
             });
             pct(&khor_core::Fill { used, total })
         };
+        // **A store that is gone is not re-made by a recorder.** The
+        // write creates the directory it needs, so a resident outliving
+        // its store (a test's scratch home taken away while its serve's
+        // tasks still run) put `.khor/history/cpu` back every minute —
+        // one of the directories every test run left in `$TMPDIR`
+        // (SHELL.md 第五轮 第 4 条: `khor-far-beta-*`, holding exactly
+        // that one file). Asked after the sample, which takes a while,
+        // and just before the write.
+        if !root.join(".khor").is_dir() {
+            return;
+        }
         history::CpuHistory::open(&Self::history_dir(root)).record(
             now_ms(),
             history::Reading {

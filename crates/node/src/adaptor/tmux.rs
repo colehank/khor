@@ -651,10 +651,8 @@ pub fn id_of(session_id: &str, created_secs: i64) -> SessionId {
 /// a session holding a listed process is not a second row — is decided
 /// in `crate::live`, not here.
 #[cfg(test)]
-pub(crate) fn fake_tmux(tag: &str, output: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("khor-faketmux-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
+pub(crate) fn fake_tmux(tag: &str, output: &str) -> crate::testdir::TempBin {
+    let dir = crate::testdir::TempTree::fresh(&format!("faketmux-{tag}"));
     let path = dir.join("tmux");
     std::fs::write(
         &path,
@@ -666,7 +664,8 @@ pub(crate) fn fake_tmux(tag: &str, output: &str) -> String {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    path.to_string_lossy().to_string()
+    let path = path.to_string_lossy().to_string();
+    crate::testdir::TempBin::new(dir, path)
 }
 
 #[cfg(test)]

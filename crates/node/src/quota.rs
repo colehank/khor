@@ -806,8 +806,8 @@ mod tests {
 
     /// One file per test: sharing one would make them tread on each
     /// other, and none of them may touch the real cache.
-    fn tmp_cache(tag: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("khor-quota-{}-{tag}.json", std::process::id()))
+    fn tmp_cache(tag: &str) -> crate::testdir::TempTree {
+        crate::testdir::TempTree::at(&format!("quota-{tag}.json"))
     }
 
     fn quota_at(used: f32) -> Quota {

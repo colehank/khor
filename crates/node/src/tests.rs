@@ -1309,7 +1309,8 @@ mod store_owner_tests {
     /// fight over one registry.
     #[test]
     fn a_store_belongs_to_the_machine_that_made_it() {
-        let root = std::env::temp_dir().join(format!("khor-owner-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("owner");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
@@ -1350,7 +1351,8 @@ mod store_owner_tests {
     /// implementation that always answers `$HOME` passes those two.
     #[test]
     fn a_shared_home_sends_every_other_machine_to_its_own_store() {
-        let home = std::env::temp_dir().join(format!("khor-under-{}", std::process::id()));
+        let _home_tree = crate::testdir::TempTree::at("under");
+        let home = _home_tree.path();
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join(".khor")).unwrap();
         let here = gethostname::gethostname().to_string_lossy().to_string();
@@ -1395,7 +1397,8 @@ mod store_owner_tests {
     /// first two.
     #[test]
     fn renaming_a_machine_does_not_cost_it_its_store() {
-        let root = std::env::temp_dir().join(format!("khor-rename-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("rename");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         crate::Node::open(root.clone()).expect("a fresh store opens");
@@ -1460,7 +1463,8 @@ mod store_owner_tests {
             eprintln!("skipped: this platform will not fingerprint itself");
             return;
         };
-        let home = std::env::temp_dir().join(format!("khor-room-{}", std::process::id()));
+        let _home_tree = crate::testdir::TempTree::at("room");
+        let home = _home_tree.path();
         let _ = std::fs::remove_dir_all(&home);
         let here = gethostname::gethostname().to_string_lossy().to_string();
 
@@ -1512,7 +1516,8 @@ mod store_owner_tests {
     /// a second chat window and strand the first one's watermark.
     #[test]
     fn the_channel_a_store_joined_under_outlives_a_rename() {
-        let root = std::env::temp_dir().join(format!("khor-chan-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("chan");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
 
@@ -2014,7 +2019,8 @@ mod finding_the_program {
     /// failure back to a child that dies with nothing to say.
     #[test]
     fn something_that_is_not_a_program_does_not_count_as_finding_one() {
-        let dir = std::env::temp_dir().join(format!("khor-path-{}", std::process::id()));
+        let _dir_tree = crate::testdir::TempTree::at("path");
+        let dir = _dir_tree.path();
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("npx")).unwrap();
         std::fs::write(dir.join("data"), b"not a program").unwrap();

@@ -1398,7 +1398,8 @@ mod tests {
     /// (36 chars) must be found by its 24-char cleaned form.
     #[test]
     fn a_transcript_is_found_by_the_ids_lossy_leaf() {
-        let dir = std::env::temp_dir().join(format!("khor-transcript-{}", std::process::id()));
+        let _dir_tree = crate::testdir::TempTree::at("transcript");
+        let dir = _dir_tree.path();
         let _ = std::fs::remove_dir_all(&dir);
         let proj = dir.join(".claude/projects/-some-cwd");
         std::fs::create_dir_all(&proj).unwrap();
@@ -1569,7 +1570,8 @@ mod tests {
     #[test]
     fn a_status_file_that_outlived_its_process_is_failed_only_while_it_is_news() {
         let now = crate::live::now_ms();
-        let dir = std::env::temp_dir().join(format!("khor-crash-{}", std::process::id()));
+        let _dir_tree = crate::testdir::TempTree::at("crash");
+        let dir = _dir_tree.path();
         let sessions = dir.join(".claude/sessions");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&sessions).unwrap();
@@ -1690,7 +1692,8 @@ mod tests {
     /// it would drop that utterance permanently.
     #[test]
     fn a_followed_transcript_grows_holds_still_and_starts_over() {
-        let root = std::env::temp_dir().join(format!("khor-follow-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("follow");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         let proj = root.join("projects").join("-home-u-proj");
         std::fs::create_dir_all(&proj).unwrap();
@@ -1784,7 +1787,8 @@ mod tests {
     /// beside it.
     #[test]
     fn a_conversation_can_carry_the_name_the_agent_gave_it() {
-        let root = std::env::temp_dir().join(format!("khor-aititle-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("aititle");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         let proj = root.join("projects").join("-home-u-proj");
         std::fs::create_dir_all(&proj).unwrap();
@@ -1932,7 +1936,8 @@ mod tests {
     /// row.
     #[test]
     fn a_hook_observed_session_is_placed_where_its_payload_says() {
-        let root = std::env::temp_dir().join(format!("khor-hookplace-{}", std::process::id()));
+        let _root_tree = crate::testdir::TempTree::at("hookplace");
+        let root = _root_tree.path();
         let _ = std::fs::remove_dir_all(&root);
         let repo = root.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();

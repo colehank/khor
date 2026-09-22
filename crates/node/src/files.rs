@@ -841,11 +841,8 @@ mod remove_tests {
 mod tests {
     use super::*;
 
-    fn tmp(tag: &str) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("khor-files-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmp(tag: &str) -> crate::testdir::TempTree {
+        crate::testdir::TempTree::fresh(&format!("files-{tag}"))
     }
 
     /// Dotfiles sink, then directories lead, then names fold case —
@@ -895,11 +892,8 @@ mod tests {
 mod write_tests {
     use super::*;
 
-    fn tmp(tag: &str) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("khor-write-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn tmp(tag: &str) -> crate::testdir::TempTree {
+        crate::testdir::TempTree::fresh(&format!("write-{tag}"))
     }
 
     #[test]
