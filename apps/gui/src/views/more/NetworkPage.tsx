@@ -149,7 +149,7 @@ export function NetworkPage({
               }}
               className="min-h-touch"
             >
-              {about.paused ? gui.identity_resume_do : gui.identity_pause_do}
+              {about.paused ? gui.resume : gui.pause}
             </Button>
           )}
           {!alone && (

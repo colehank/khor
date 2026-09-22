@@ -804,6 +804,13 @@ export const leaveNetwork = (machine: string) => call<LeaveOutcome>("leave", { m
     state it is already in, and that refusal is a sentence worth
     showing. */
 export const setPaused = (on: boolean) => call<About>("set_paused", { on });
+/** `khor pause <机器>` / `khor resume <机器>` — this machine stops (or
+    starts again) talking to that one; it runs on as it was (docs/SHELL.md
+    第五轮 第 3、10 条). This machine's own name is `setPaused`. Answers
+    the node's sentence; the row's grey arrives with the next device
+    list, which reads the same file. */
+export const setMachinePaused = (machine: string, on: boolean) =>
+  call<string>("set_machine_paused", { machine, on });
 /** Which khor this is and which store it is talking to — the identity
     card's foot (docs/MORE.md 头像). A fact about **this** installation:
     what another machine is running is `khor doctor`'s question, asked

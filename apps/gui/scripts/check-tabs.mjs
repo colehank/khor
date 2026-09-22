@@ -1021,6 +1021,60 @@ try {
     }
   }
 
+  //  ── 按机器暂停, from the row, on real nodes (docs/SHELL.md 第五轮 第 10 条) ──
+  //
+  //  The face gate proves the menu and the grey on a fixture; what only a
+  //  real node can say is that the press reached the store `khor devices`
+  //  reads. From beta's window, alpha's row menu says 暂停; pressed, the
+  //  row goes grey, and beta's `khor devices` marks alpha's id column the
+  //  way `khor pause alpha` would (CLI 与 GUI 等价). Then 恢复, and the
+  //  mark is gone. The marks ride the id column; the columns after it
+  //  carry readings that move on their own, so only that one is compared.
+  {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await go("devices");
+    const alphaRow = page.locator('[data-side-row][data-device="alpha"]');
+    await until("alpha's row on beta's devices landing", 15_000, async () => (await alphaRow.count()) === 1).catch(() => false);
+    const marks = () => (cli(envB, "devices").split("\n").find((l) => l.includes("alpha")) ?? "").split("\t")[1] ?? "";
+    const before = marks();
+    const pressItem = async (key) => {
+      await alphaRow.locator("[data-side-open]").click({ button: "right" });
+      const item = page.locator(`[data-row-menu] [data-menu-item="${key}"]`);
+      await until(`the ${key} item`, 5_000, async () => (await item.count()) === 1);
+      await item.click();
+    };
+    const state = () => alphaRow.getAttribute("data-paused").catch(() => null);
+    const diag = async () =>
+      JSON.stringify({
+        row: await state(),
+        menuOpen: await page.locator("[data-row-menu]").count(),
+        menuText: (await page.locator("[data-row-menu]").innerText().catch(() => "")).slice(0, 160),
+        cli: marks(),
+      });
+    try {
+      await pressItem("pause");
+      const went = await until("alpha's row greyed as paused", 20_000, async () => (await state()) === "true").catch(() => false);
+      const pausedMarks = marks();
+      if (!went) {
+        fail(`pressed 暂停 on alpha's row and it did not go grey — ${await diag()}`);
+      } else if (pausedMarks === before || !pausedMarks.startsWith(before.slice(0, 16))) {
+        fail(`paused alpha from its row and \`khor devices\` marks ${JSON.stringify(pausedMarks)} (was ${JSON.stringify(before)})`);
+      } else ok("暂停 on alpha's row greys it, and `khor devices` marks it");
+      if (went) {
+        await page.keyboard.press("Escape").catch(() => {});
+        await pressItem("resume");
+        const back = await until("alpha's row back", 20_000, async () => (await state()) === "false").catch(() => false);
+        if (!back || marks() !== before) {
+          fail(`恢复 on alpha's row left it ${await diag()} (was ${JSON.stringify(before)})`);
+        } else ok("恢复 takes the grey and the mark away");
+      }
+    } catch (e) {
+      fail(`按机器暂停 could not be walked: ${String(e).slice(0, 200)} — ${await diag()}`);
+    }
+    await page.keyboard.press("Escape").catch(() => {});
+    if (marks() !== before) cli(envB, "resume", "alpha");
+  }
+
   //    The narrow face is the shell's, but this landing has to reach it
   //    too — one press, because the shape itself was proved in 4.
   await page.setViewportSize({ width: 390, height: 800 });

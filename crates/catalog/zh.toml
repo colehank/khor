@@ -2837,8 +2837,14 @@ identity-faces = "khor 的界面"
 # 它们从头像卡搬到了网络页:说的是这台机器和这张网的关系,
 # 不是这台机器是谁。暂停排在离开前面——可逆的在不可逆的前面。
 identity-pause-warn = "暂停后不再与别的设备同步,别的设备那边看见这台离线;本机的会话、工作区照常用。设备表不动——这不是离开网络,随时可以恢复。"
-identity-pause-do = "暂停"
-identity-resume-do = "恢复"
+# 「暂停」「恢复」: the network page says them about this machine, and a
+# machine row's menu about that machine (docs/SHELL.md 第五轮 第 10 条) —
+# one act, one word, which is why the key lost its `identity-` prefix.
+pause = "暂停"
+resume = "恢复"
+# A machine row this machine has stopped talking to (第 10 条), under its
+# name; the row is also drawn grey.
+machine-paused = "已暂停"
 identity-paused-now = "已暂停——别的设备那边看见这台离线"
 identity-leave-warn = "本机从网络中退出:设备表清到只剩自己,别的设备留在这儿的数据一并清掉。本机自己的会话、工作区、身份、设置不受影响;拿一张新票 pair 可以重新加入。"
 identity-leave-type-name = "把这台机器的名字原样打一遍"

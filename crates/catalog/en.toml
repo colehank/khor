@@ -1337,8 +1337,9 @@ identity-faces = "khor's interfaces"
 # network, not about which machine this is. Pause before leave — the
 # undoable one first.
 identity-pause-warn = "While paused this machine stops syncing with the others and they see it offline; its own sessions and workspaces go on working. The device table is untouched — this is not leaving the network, and it resumes whenever you say."
-identity-pause-do = "Pause"
-identity-resume-do = "Resume"
+pause = "Pause"
+resume = "Resume"
+machine-paused = "Paused"
 identity-paused-now = "Paused — the others see this machine offline"
 identity-leave-warn = "Takes this machine out of the network: the device table goes down to this machine alone, and what the others left here goes with them. This machine's own sessions, workspaces, identity and settings are untouched; a fresh ticket and pair rejoin it."
 identity-leave-type-name = "Type this machine's name exactly"

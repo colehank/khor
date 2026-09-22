@@ -10562,6 +10562,84 @@ try {
     await wait(900);
   }
 
+  // ── 4P) 第五轮 第 10 条:按机器暂停的菜单项 (docs/SHELL.md) ──────────
+  //
+  // 「机器行菜单 置顶、删除、暂停 / 恢复；暂停中的行变灰并标『已暂停』」.
+  // Another machine's row reads pin, delete, pause in that order; this
+  // machine's own row has no delete (a table cannot be left from the
+  // inside) and still has pause, which is `khor pause` for itself. Pause
+  // `peer` from its menu: the node is asked with that machine's name,
+  // the row goes grey and says so, and its menu now offers resume.
+  {
+    const pausedAsked = [];
+    const pauseRoute = (r) => {
+      const a = r.request().postDataJSON() ?? {};
+      pausedAsked.push({ machine: a.machine, on: a.on });
+      const d = devs.find((x) => x.name === a.machine);
+      if (d) d.paused = !!a.on;
+      return r.fulfill({ contentType: "application/json", body: JSON.stringify("ok") });
+    };
+    await page.route("**/set_machine_paused", pauseRoute);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("devices");
+    await until(5_000, async () => (await page.locator("[data-side-row][data-device]").count()) >= 3);
+    const menuOf = async (name) => {
+      await page.locator(`[data-side-row][data-device="${name}"] [data-side-open]`).click({ button: "right" });
+      await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
+      const keys = await page.locator("[data-row-menu] [data-menu-item]").evaluateAll((els) =>
+        els.map((e) => e.getAttribute("data-menu-item")),
+      );
+      return keys;
+    };
+    const peerKeys = await menuOf("peer");
+    await page.keyboard.press("Escape");
+    await wait(200);
+    const gateKeys = await menuOf("gate");
+    await page.keyboard.press("Escape");
+    await wait(200);
+    console.log(`devices 4P · menus: peer ${JSON.stringify(peerKeys)}, gate ${JSON.stringify(gateKeys)}`);
+    if (JSON.stringify(peerKeys.slice(0, 3)) !== JSON.stringify(["pin", "forget", "pause"])) {
+      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 「置顶、删除、暂停 / 恢复」 (docs/SHELL.md 第五轮 第 10 条)`);
+    }
+    if (JSON.stringify(gateKeys.slice(0, 2)) !== JSON.stringify(["pin", "pause"])) {
+      fail(`this machine's row menu reads ${JSON.stringify(gateKeys)} — 置顶, then 暂停 (no 删除 on its own row)`);
+    }
+    if (peerKeys.includes("pause")) {
+      await menuOf("peer");
+      await page.locator('[data-row-menu] [data-menu-item="pause"]').click();
+      await until(5_000, async () =>
+        (await page.locator('[data-side-row][data-device="peer"]').getAttribute("data-paused")) === "true",
+      );
+      await wait(300);
+      const row = await page.evaluate(() => {
+        const el = document.querySelector('[data-side-row][data-device="peer"]');
+        return {
+          paused: el?.getAttribute("data-paused") ?? null,
+          mark: el?.querySelectorAll("[data-row-paused]").length ?? 0,
+          opacity: el ? Number(getComputedStyle(el).opacity) : null,
+        };
+      });
+      const afterKeys = await menuOf("peer");
+      await page.keyboard.press("Escape");
+      console.log(`devices 4P · paused peer: ${JSON.stringify({ asked: pausedAsked, row, afterKeys })}`);
+      if (!pausedAsked.some((a) => a.machine === "peer" && a.on === true)) {
+        fail(`pressing 暂停 on peer asked the node ${JSON.stringify(pausedAsked)} — it has to name that machine`);
+      }
+      if (row.paused !== "true" || row.mark !== 1 || !(row.opacity < 1)) {
+        fail(`a paused machine's row reads ${JSON.stringify(row)} — 「暂停中的行变灰并标『已暂停』」`);
+      }
+      if (!afterKeys.includes("resume") || afterKeys.includes("pause")) {
+        fail(`a paused machine's menu reads ${JSON.stringify(afterKeys)} — it offers 恢复 now`);
+      }
+    }
+    for (const d of devs) d.paused = false;
+    await page.unroute("**/set_machine_paused", pauseRoute);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
   // ── 4d) the editor switch, and the card in front of it ────────────
   //
   // **Two things, and the second is why the first is a gate at all.**

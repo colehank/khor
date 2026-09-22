@@ -69,6 +69,8 @@ export function DevicesList({
   selected,
   pinFailed,
   forgetRefused,
+  onPause,
+  pauseRefused,
 }: {
   rows: DeviceRow[];
   query: string;
@@ -87,6 +89,11 @@ export function DevicesList({
   /** The node's sentence for a forget it refused, by row — cleared the
       moment a later attempt on that row gets anywhere (`App`). */
   forgetRefused: Map<string, string>;
+  /** 暂停 / 恢复 on a row — `onPin`'s contract: a rejection keeps the
+      menu open where the press was made. */
+  onPause?: (row: DeviceRow) => Promise<void>;
+  /** The node's sentence for a pause it refused, by row. */
+  pauseRefused?: Map<string, string>;
 }) {
   const actions = (d: DeviceRow): RowAction[] => [
     {
@@ -120,15 +127,30 @@ export function DevicesList({
             // one act (`Node::forget_device`), one word. What deleting
             // a machine *means* is the sentence between the two presses.
             //
-            // **No 断开 after it.** khor has no act that drops a single
-            // peer — `forget` is this item and `pause` is the whole
-            // machine — and an item with nothing behind it is not offered.
+            // What the user once called 断开 is 暂停 below (第四轮: 「机器的
+            // 断开指的是暂停」), which khor now has for one machine too.
             label: gui.delete,
             ask: gui.forget_machine_confirm,
             note: forgetRefused.get(d.id),
             run: () => onForget(d),
           },
         ]),
+    // **暂停 / 恢复, after 置顶 and 删除** (docs/SHELL.md 第五轮 第 10 条).
+    // On another machine's row it is this machine no longer talking to
+    // that one — it runs on as it was; on this machine's own row it is
+    // `khor pause`. Either way the word is what pressing it does, so it
+    // is the opposite of the row's state. Absent where the caller has
+    // nothing to do with it.
+    ...(onPause
+      ? [
+          {
+            key: d.paused ? "resume" : "pause",
+            label: d.paused ? gui.resume : gui.pause,
+            note: pauseRefused?.get(d.id),
+            run: () => onPause(d),
+          },
+        ]
+      : []),
   ];
   // **The rows are `SideList`'s** (docs/SHELL.md 第四轮): the node's
   // order (pinned first), the pinned group and its fold, the box's one
@@ -171,9 +193,11 @@ export function DevicesList({
       // this machine's own word is 本机 — and then what the box is, as
       // the machine names itself (`vitals.model.name`: 「型号文字进机器行
       // 的副标题」). Either can be missing; absent rather than an empty line.
+      // A paused row says so first (第 10 条: 「暂停中的行变灰并标『已暂停』」).
       sub:
-        connection || modelName ? (
+        d.paused || connection || modelName ? (
           <span className="flex min-w-0 items-baseline gap-1.5">
+            {d.paused && <span data-row-paused>{gui.machine_paused}</span>}
             {connection && <span data-row-connection>{connection}</span>}
             {modelName && (
               <span data-row-model className="min-w-0 truncate">
@@ -190,7 +214,16 @@ export function DevicesList({
       // A pane with nowhere to send a row has not earned actions on it.
       menu: onOpen ? actions(d) : [],
       onOpen: onOpen ? () => onOpen(d) : undefined,
-      rowData: { "data-device": d.name, "data-row": d.id, "data-pinned": d.pinned, "data-me": d.me },
+      // Grey, the way SideList greys a row (`dim`) — the machine is still
+      // in the table and still openable; this machine is not talking to it.
+      dim: d.paused,
+      rowData: {
+        "data-device": d.name,
+        "data-row": d.id,
+        "data-pinned": d.pinned,
+        "data-me": d.me,
+        "data-paused": d.paused,
+      },
       openData: { "data-row-open": "" },
     };
   });

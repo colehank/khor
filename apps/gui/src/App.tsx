@@ -16,6 +16,7 @@ import {
   pinDevice,
   quitNow,
   pinSession,
+  setMachinePaused,
   systemUnlock,
   trafficLights,
   uninstallHooks,
@@ -981,6 +982,35 @@ export default function App() {
   );
 
   /**
+   * 暂停 / 恢复 from a machine row's menu (docs/SHELL.md 第五轮 第 10 条):
+   * `khor pause <机器>` for another machine, `khor pause` for this one —
+   * the node takes this machine's own name as the same act. The refusal
+   * (already in that state) is the node's sentence, kept by row the way
+   * `forgetRefused` is; success refreshes the list, which is where the
+   * row's grey comes from.
+   */
+  const [pauseRefused, setPauseRefused] = useState<Map<string, string>>(() => new Map());
+  const onPauseDevice = useCallback(
+    (row: DeviceRow) =>
+      setMachinePaused(row.name, !row.paused).then(
+        () => {
+          setPauseRefused((was) => {
+            if (!was.has(row.id)) return was;
+            const next = new Map(was);
+            next.delete(row.id);
+            return next;
+          });
+          refresh().catch(() => {});
+        },
+        (e) => {
+          setPauseRefused((was) => new Map(was).set(row.id, String(e instanceof Error ? e.message : e)));
+          throw e;
+        },
+      ),
+    [refresh],
+  );
+
+  /**
    * Showing a machine the door from its row's menu — `khor forget`.
    *
    * The refusal is `Node::forget_device`'s, in its own sentence (this
@@ -1692,6 +1722,8 @@ export default function App() {
             onPin={onPinDevice}
             onForget={onForgetDevice}
             forgetRefused={forgetRefused}
+            onPause={onPauseDevice}
+            pauseRefused={pauseRefused}
             // One question left: the devices pane opens a machine's
             // card. Files and browser were the other two, and each
             // stopped being one when it stopped having a machine list
