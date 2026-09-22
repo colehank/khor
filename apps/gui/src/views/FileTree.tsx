@@ -198,6 +198,58 @@ export function FileTree({
     }
   }, [machine, want]);
 
+  /**
+   * **A directory remembered open and deleted since leaves quietly**
+   * (2026-09-22: 「列不出 …/target/x86_64-unknown-linux-musl: No such
+   * file or directory」, two build directories removed under an open
+   * tree). Gone is not an error about the directory — there is no
+   * directory — so it draws nothing, and the remembered set forgets it
+   * (and everything under it) so the next opening does not ask again.
+   *
+   * **Told by the parent's listing, not by the refusal's words.** The
+   * three roads say 「not there」 three ways — this machine's `io` error,
+   * a peer's (in its own language, from whatever khor it runs), a
+   * satellite's shell — and a sentence is not a thing to parse. The
+   * parent listing is the fact itself: listed, not cut short, and the
+   * name is not a directory in it. A refusal whose parent this tree has
+   * not asked about gets its parent asked. Any other refusal — no
+   * permission, a machine that does not answer — has its directory in
+   * the parent listing, or no parent listing to judge by, and keeps its
+   * sentence.
+   */
+  useEffect(() => {
+    const parentOf = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+    const gone: string[] = [];
+    const ask: string[] = [];
+    for (const dir of new Set([...failed.keys(), ...expanded])) {
+      if (dir === root || !dir.startsWith(`${root}/`)) continue;
+      const parent = parentOf(dir);
+      const l = listings.get(parent);
+      if (l === undefined) {
+        if (failed.has(dir) && !failed.has(parent) && !want.has(parent)) ask.push(parent);
+        continue;
+      }
+      if (l.truncated) continue;
+      const name = dir.slice(dir.lastIndexOf("/") + 1);
+      if (!l.entries.some((e) => e.dir && e.name === name)) gone.push(dir);
+    }
+    if (ask.length > 0) setWant((was) => new Set([...was, ...ask]));
+    if (gone.length === 0) return;
+    const under = (p: string) => gone.some((g) => p === g || p.startsWith(`${g}/`));
+    for (const p of [...asked.current]) if (under(p)) asked.current.delete(p);
+    setFailed((was) => new Map([...was].filter(([p]) => !under(p))));
+    setWant((was) => new Set([...was].filter((p) => !under(p))));
+    setExpanded((was) => {
+      const now = new Set([...was].filter((p) => !under(p)));
+      try {
+        window.localStorage.setItem(openKey(machine, root), JSON.stringify([...now]));
+      } catch {
+        // As `toggle`: only the memory is lost.
+      }
+      return now;
+    });
+  }, [failed, listings, expanded, want, machine, root]);
+
   /** Ask that directory again. Everything below it goes too: a listing
       for a path under one that just changed is an answer about a tree
       that may no longer be there. */

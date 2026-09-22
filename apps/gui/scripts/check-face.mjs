@@ -5347,6 +5347,90 @@ try {
   await page.setViewportSize({ width: 1400, height: 900 });
   await wait(200);
 
+  // ── 4g·gone) 展开过、后来删掉的目录悄悄离开展开集合 (2026-09-22) ──
+  //
+  // 「列不出 …/target/x86_64-unknown-linux-musl: No such file or
+  // directory」 on the user's tree: a directory remembered open, deleted
+  // since. Gone is gone — no error row, and the remembered set forgets
+  // it so the next opening does not ask again. **A directory that is
+  // there and refuses** (no permission) is the control: its sentence
+  // stays, and so does its place in the set.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await atTree();
+    const treeKey = async () =>
+      page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("khor.ws-tree.")));
+    // Open one directory so the tree writes its key, then read the root
+    // off it: the key is `khor.ws-tree.<machine>:<root>`.
+    await press('[data-file-tree] [data-dir="src"]');
+    await wait(400);
+    const keys = await treeKey();
+    const stored = await page.evaluate((ks) => Object.fromEntries(ks.map((k) => [k, localStorage.getItem(k)])), keys);
+    // Pressing `src` may have shut a branch an earlier section left
+    // open; either way the press wrote the set, and one tree is open.
+    const hit = Object.entries(stored).length === 1 ? Object.entries(stored)[0] : undefined;
+    if (!hit) {
+      fail(`probe dead: opening src wrote no remembered set (${JSON.stringify(stored)}) (src/views/FileTree.tsx openKey)`);
+    } else {
+      const [k] = hit;
+      const root = k.slice(k.indexOf(":") + 1);
+      const doomed = `${root}/built`;
+      const locked = `${root}/locked`;
+      let gone = false;
+      made.push({ path: doomed, kind: "mkdir" }, { path: locked, kind: "mkdir" });
+      const refuse = (r) => {
+        const body = r.request().postDataJSON() ?? {};
+        if (body.path === doomed && gone) {
+          return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`cannot list ${doomed}: No such file or directory (os error 2)`) });
+        }
+        if (body.path === locked) {
+          return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`cannot list ${locked}: Permission denied (os error 13)`) });
+        }
+        return r.fallback();
+      };
+      await page.route("**/ls", refuse);
+      // Reread the root so the two new directories are rows, then open
+      // both: one lists, one refuses.
+      await page.reload({ waitUntil: "load" });
+      await wait(600);
+      await atTree();
+      await press('[data-file-tree] [data-dir="built"]');
+      await press('[data-file-tree] [data-dir="locked"]');
+      await wait(600);
+      // …and the one that listed is deleted, and the tree opened again.
+      gone = true;
+      made.splice(made.findIndex((m) => m.path === doomed), 1);
+      await page.reload({ waitUntil: "load" });
+      await wait(600);
+      await atTree();
+      await wait(1200);
+      const after = await page.evaluate(
+        ([k, doomed, locked]) => ({
+          refused: [...document.querySelectorAll("[data-branch-refused]")].map((e) => e.getAttribute("data-branch-refused")),
+          remembered: JSON.parse(localStorage.getItem(k) ?? "[]"),
+          doomed,
+          locked,
+        }),
+        [k, doomed, locked],
+      );
+      console.log(`tree gone · refused ${JSON.stringify(after.refused)} · remembered ${JSON.stringify(after.remembered)}`);
+      if (after.refused.includes(doomed)) {
+        fail(`a directory remembered open and deleted since draws 「${doomed}」 as refused — gone is gone, no error row (src/views/FileTree.tsx)`);
+      }
+      if (after.remembered.includes(doomed)) {
+        fail(`the remembered set still holds ${doomed} after it answered that it is gone — the next opening would ask again`);
+      }
+      if (!after.refused.includes(locked) || !after.remembered.includes(locked)) {
+        fail(`a directory that is there and refuses (no permission) is ${after.refused.includes(locked) ? "" : "not "}drawn refused and ${after.remembered.includes(locked) ? "" : "not "}remembered — its sentence stays`);
+      }
+      await page.unroute("**/ls", refuse);
+      made.splice(made.findIndex((m) => m.path === locked), 1);
+      await page.evaluate((k) => localStorage.removeItem(k), k);
+      await page.reload({ waitUntil: "load" });
+      await wait(600);
+    }
+  }
+
   // ── 4h) the workspace's own sessions ──────────────────────────────
   //
   // **One project's column, drawn by the sessions list itself**
