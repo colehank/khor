@@ -804,6 +804,42 @@ mod tests {
         );
     }
 
+    /// **Not one ask of a borrowed page leaves from here** — the page's
+    /// HTML included, which is read only for its `<link>`s. The page is
+    /// on a real loopback site that counts what reaches it directly; the
+    /// borrow is a second server answering as the proxy. The site must
+    /// hear nothing, and the proxy both the page and its icon.
+    #[test]
+    fn nothing_of_a_borrowed_page_is_asked_directly() {
+        let (site, direct) = serve(vec![
+            ("/x", "text/html", br#"<link rel="icon" href="/i.svg">"#),
+            ("/i.svg", "image/svg+xml", SVG),
+            ("*", "text/html", INDEX),
+        ]);
+        let (borrow, through) = serve(vec![
+            ("/x", "text/html", br#"<link rel="icon" href="/i.svg">"#),
+            ("/i.svg", "image/svg+xml", SVG),
+            ("*", "text/html", INDEX),
+        ]);
+        let got = rt()
+            .block_on(icon(
+                &format!("http://127.0.0.1:{site}/x"),
+                Some(&format!("127.0.0.1:{borrow}")),
+            ))
+            .unwrap();
+        assert!(got.starts_with("data:image/svg+xml;base64,"), "{got}");
+        let direct = direct.lock().unwrap().clone();
+        assert_eq!(direct.len(), 0, "asked directly: {direct:?}");
+        let through = through.lock().unwrap().clone();
+        assert!(
+            through
+                .iter()
+                .any(|l| l.starts_with(&format!("GET http://127.0.0.1:{site}/x "))),
+            "the page's HTML went round the borrow: {through:?}"
+        );
+        assert!(through.iter().any(|l| l.contains("/i.svg")), "{through:?}");
+    }
+
     /// An icon kept before this rule that is not a picture is dropped on
     /// read, and a new one like it is refused.
     #[test]

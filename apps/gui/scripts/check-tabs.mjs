@@ -1032,6 +1032,44 @@ try {
         if (b.badge !== "page" || none !== null || keptBare.length !== 0) {
           fail(`a site with no icon at all answered ${JSON.stringify(none)}, wears 「${b.badge}」 and left ${JSON.stringify(keptBare)} on disk — the generic mark, and nothing kept`);
         } else ok("a site with no icon wears the generic page mark and keeps nothing");
+        // **A borrowed page's icon, HTML included, leaves through its
+        // borrow** — not one ask from this machine to the site. The site
+        // counts what reaches it; a second server stands in for the
+        // borrow's proxy (it is asked in absolute form, and answers).
+        {
+          let direct = 0;
+          const viaBorrow = [];
+          const far = createServer((req, res) => {
+            direct += 1;
+            res.writeHead(200, { "content-type": "text/html" });
+            res.end(index('<link rel="icon" href="/assets/logo-icon.svg" />'));
+          });
+          const borrow = createServer((req, res) => {
+            viaBorrow.push(req.url);
+            const path = new URL(req.url, "http://x").pathname;
+            if (path === "/assets/logo-icon.svg") {
+              res.writeHead(200, { "content-type": "image/svg+xml" });
+              return res.end(svg);
+            }
+            res.writeHead(200, { "content-type": "text/html" });
+            res.end(index('<link rel="icon" href="/assets/logo-icon.svg" />'));
+          });
+          await new Promise((r) => far.listen(0, "127.0.0.1", r));
+          await new Promise((r) => borrow.listen(0, "127.0.0.1", r));
+          const farUrl = `http://127.0.0.1:${far.address().port}/p`;
+          try {
+            const got = await ask("page_icon", { url: farUrl, proxy: `127.0.0.1:${borrow.address().port}` }).catch((e) => `error: ${e}`);
+            console.log(`     borrowed: ${direct} direct ask(s); through the borrow ${JSON.stringify(viaBorrow)}; answered ${String(got).slice(0, 30)}`);
+            if (direct !== 0 || !viaBorrow.includes(farUrl) || !String(got).startsWith("data:image/svg+xml")) {
+              fail(
+                `a borrowed page's icon: ${direct} ask(s) straight to the site, ${JSON.stringify(viaBorrow)} through the borrow — the page's HTML and its icon both leave through the borrow, none from here (page_shim.js, 第四轮)`,
+              );
+            } else ok("a borrowed page's HTML and icon both leave through its borrow, none directly");
+          } finally {
+            far.close();
+            borrow.close();
+          }
+        }
         // Put back, and **wait for the window to hear it**: the section
         // after this deletes the last unpinned row it sees, and a row the
         // terminal already closed is one the node refuses to delete.
