@@ -143,6 +143,24 @@ fn repo_root(path: &Path) -> Option<PathBuf> {
     crate::place::checkout_root(dir)
 }
 
+/// Whether `root` is a checkout: it has a `.git` of its own, directory
+/// or file (a linked worktree's `.git` is a file naming its repository).
+///
+/// **Asked apart from [`status`], and never made to wait for it**
+/// (docs/SHELL.md 第五轮 第 6 条). A workspace row wears a branch or a
+/// folder by this answer alone, and a status walk on a big tree or a
+/// network disk can take seconds or fail outright — while the corner
+/// sat on the walk, 「这是一个仓库」 was painted only once 「这个仓库里
+/// 哪些文件变了」 had been answered, and a slow repository wore a
+/// folder. This is one `stat`.
+///
+/// **The same marker [`status`] opens**: `gix::open(root)` reads the
+/// `.git` at the root and does not walk upward, so a directory this
+/// answers `false` for is one `status` refuses, and the other way round.
+pub fn is_checkout(root: &Path) -> bool {
+    root.join(".git").exists()
+}
+
 /// What differs from HEAD across one workspace.
 ///
 /// `root` must be the checkout itself — the workspace list only ever

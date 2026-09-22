@@ -7271,6 +7271,27 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   if (gitCorner.trim() !== "") {
     throw new Error(`a directory that is no checkout drew 「${gitCorner}」 in its git corner`);
   }
+  //      **Whether it is a repository is its own question** (docs/SHELL.md
+  //      第五轮 第 6 条), asked of alpha across the wire — the corner is
+  //      a folder here, and alpha says yes about the repository 30) made
+  //      and no about this directory. Both halves, because a question
+  //      that always said no would leave the folder above green.
+  const wsBadge = await wsRow.locator("[data-side-badge]").getAttribute("data-side-badge");
+  if (wsBadge !== "folder") {
+    throw new Error(`a directory that is no checkout wears the 「${wsBadge}」 corner`);
+  }
+  const askCheckout = async (dir) => {
+    const r = await fetch(`http://127.0.0.1:${BRIDGE_PORT}/checkout`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ machine: "alpha", dir }),
+    });
+    return `${r.status} ${await r.text()}`;
+  };
+  const checkouts = { repo: await askCheckout(gitDir), plain: await askCheckout(wsDir) };
+  if (checkouts.repo !== "200 true" || checkouts.plain !== "200 false") {
+    throw new Error(`alpha, asked whether two directories are repositories, said ${JSON.stringify(checkouts)}`);
+  }
 
   // 31b) the mtime is alpha's answer, re-asked on the way back to the
   //      window (the same kick `WorkspacePane` uses for the marks).

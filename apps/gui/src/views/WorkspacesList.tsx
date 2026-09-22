@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  fetchCheckout,
   fetchGitStatus,
   fetchTouched,
   fetchWorkspaces,
@@ -95,6 +96,12 @@ export function WorkspacesList({
       corner is blank either way, because the two lead to the same next
       move: look at the row, not at the column. */
   const [marks, setMarks] = useState<Record<string, GitStatus>>({});
+  /** Whether each row is a repository, asked apart from `marks`
+      (docs/SHELL.md 第五轮 第 6 条): 「is this a repository」 is one
+      stat, 「what changed in it」 is a walk, and the corner used to wait
+      on the walk — so a repository whose status was slow, failed, or
+      named no branch wore a folder. Absent means not answered. */
+  const [repos, setRepos] = useState<Record<string, boolean>>({});
   const [times, setTimes] = useState<Record<string, number>>({});
   /** A row action that did not take, in the node's own sentence. It
       outlives one opening of the menu, which is why it is here and not
@@ -132,7 +139,8 @@ export function WorkspacesList({
     setRound((n) => n + 1);
   }, [hidden]);
 
-  // One git question and one mtime question per row. **Both forget
+  // Two git questions (is it one; what changed) and one mtime question
+  // per row, all three at once. **The status and the mtime forget
   // their old answer when the new one fails**, rather than leaving the
   // last good one on screen: a corner that keeps saying `main` about a
   // machine that has stopped answering is the only reading here that
@@ -157,6 +165,15 @@ export function WorkspacesList({
     for (const r of list) {
       if (r.machine === "") continue;
       const k = keyOf(r);
+      fetchCheckout(r.machine, r.path).then(
+        (yes) => live && setRepos((m) => ({ ...m, [k]: yes })),
+        // **The one answer that is kept when a re-ask fails**, against
+        // the rule above: whether a directory is a repository is not
+        // something it stops being between two looks, and a flaky far
+        // machine would otherwise flip the corner to a folder on every
+        // failed round. The branch name beside it still goes blank.
+        () => {},
+      );
       fetchGitStatus(r.machine, r.path).then(
         (g) => live && setMarks((m) => ({ ...m, [k]: g })),
         () => live && setMarks(drop<GitStatus>(k)),
@@ -243,7 +260,11 @@ export function WorkspacesList({
     // **Ignored paths are rows too since 2026-09-16, and they are not
     // changes** (`khor_node::git::IGNORED`).
     const changed = git ? git.rows.filter((w) => w.mark !== IGNORED).length : 0;
-    const repo = !!git && git.branch !== "";
+    // **A repository is what the cheap answer says; where it has not
+    // answered, one whose status came back at all** — a detached HEAD
+    // names no branch and is still a checkout. Only the branch *name*
+    // waits on the walk.
+    const repo = repos[k] ?? git !== undefined;
     return {
       // Not `keyOf`: that joins on a NUL, which no attribute selector can
       // name. The machine's id and the path, with a colon between — the

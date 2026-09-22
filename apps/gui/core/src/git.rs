@@ -122,3 +122,14 @@ pub async fn diff(root: &Path, machine: &str, path: &str) -> Result<GitDiff, Str
         more: d.more,
     })
 }
+
+/// Whether that directory is a checkout (`khor_node::Node::checkout_on`;
+/// empty names this machine). **Asked beside [`status`], not after it**:
+/// the workspace row's branch-or-folder corner is this answer, and the
+/// status walk is the one that can be slow or fail
+/// (docs/SHELL.md 第五轮 第 6 条).
+pub async fn checkout(root: &Path, machine: &str, dir: &str) -> Result<bool, String> {
+    Node::open(root.to_path_buf())?
+        .checkout_on(machine, dir)
+        .await
+}

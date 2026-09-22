@@ -1336,6 +1336,17 @@ try {
       }),
     });
   });
+  // **Whether a directory is a repository, asked apart from its status**
+  // (docs/SHELL.md 第五轮 第 6 条). The same three machines as
+  // `git_status` above and the same three answers: `peer` holds a
+  // checkout, `gate` a plain directory, and `elder` cannot be reached.
+  await page.route("**/checkout", (r) => {
+    const machine = r.request().postDataJSON()?.machine ?? "";
+    if (machine === "elder") {
+      return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("联系不上 elder") });
+    }
+    return r.fulfill({ contentType: "application/json", body: JSON.stringify(machine === "peer") });
+  });
   // The three shapes a gutter draws, one of each: a change that has
   // both halves, an insertion with nothing removed, and a deletion with
   // no current line to stand on. A fixture with only the first would
@@ -10209,6 +10220,131 @@ try {
     await page.reload({ waitUntil: "load" });
     await wait(900);
     await page.setViewportSize({ width: 1400, height: 900 });
+  }
+
+  // ── 4Y) 第五轮 第 6 条:是不是仓库,不等 status 读完 (docs/SHELL.md) ──
+  //
+  // 「工作区这，我的有些目录是 git 但 icon 仍然是文件夹的 icon」— the
+  // user, 2026-09-22. The corner was read off the status answer alone, so
+  // a repository whose status was slow, failed, or named no branch wore a
+  // folder. Three shapes of that, each against the plain directory on
+  // `gate` as the control (it must stay a folder):
+  //   i.   `peer`'s status never comes back while the row is looked at;
+  //   ii.  `peer`'s status refuses (a walk that ran out of time);
+  //   iii. the cheap question is not answered at all and `peer`'s status
+  //        comes back with no branch (a detached HEAD) — a status that
+  //        answered at all is a repository.
+  {
+    const peerRow = `[data-side-row="${pin.device}:${pin.path}"]`;
+    const gateRow = `[data-side-row="${"e".repeat(64)}:/home/gate/notes"]`;
+    const badges = () =>
+      page.evaluate(
+        ([p, g]) => ({
+          peer: document.querySelector(`${p} [data-side-badge]`)?.getAttribute("data-side-badge") ?? null,
+          gate: document.querySelector(`${g} [data-side-badge]`)?.getAttribute("data-side-badge") ?? null,
+        }),
+        [peerRow, gateRow],
+      );
+    let release = () => {};
+    const held = new Promise((r) => (release = r));
+    const shapes = [
+      {
+        name: "a status that never comes back",
+        status: async (r) => {
+          await held;
+          return r.abort().catch(() => {});
+        },
+      },
+      {
+        name: "a status that refused",
+        status: (r) =>
+          r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("status timed out") }),
+      },
+      {
+        name: "a status with no branch and no cheap answer",
+        // Only `peer` answers; `gate` refuses as a plain directory does.
+        status: (r) =>
+          (r.request().postDataJSON()?.machine ?? "") === "peer"
+            ? r.fulfill({
+                contentType: "application/json",
+                body: JSON.stringify({ branch: "", rows: [], more: false, ahead: 0, behind: 0, fetched_ms: 0 }),
+              })
+            : r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("not a repository") }),
+        checkout: (r) => r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("") }),
+      },
+    ];
+    const seen = [];
+    for (const s of shapes) {
+      await page.route("**/git_status", s.status);
+      if (s.checkout) await page.route("**/checkout", s.checkout);
+      await page.reload({ waitUntil: "load" });
+      await wait(600);
+      await open("workspaces");
+      await until(5_000, async () => (await badges()).peer === "branch");
+      await wait(300);
+      const b = await badges();
+      seen.push({ shape: s.name, ...b });
+      await page.unroute("**/git_status", s.status);
+      if (s.checkout) await page.unroute("**/checkout", s.checkout);
+    }
+    release();
+    //   iv.  the machine answered once and then stopped answering both
+    //        questions (a flaky far machine) — being a repository is not
+    //        something a directory stops being between two looks, so
+    //        the corner keeps the answer it had.
+    {
+      const refuse = (r) =>
+        r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("联系不上 peer") });
+      let statusAsked = 0;
+      const refuseStatus = (r) => {
+        statusAsked += 1;
+        return refuse(r);
+      };
+      await page.route("**/git_status", refuseStatus);
+      await page.reload({ waitUntil: "load" });
+      await wait(600);
+      await open("workspaces");
+      await until(5_000, async () => (await badges()).peer === "branch");
+      await page.route("**/checkout", refuse);
+      const asked = statusAsked;
+      // Two separate turns: in one, React batches hidden→visible into no
+      // change at all and nothing is asked again.
+      for (const hide of [true, false]) {
+        await page.evaluate((h) => {
+          Object.defineProperty(document, "hidden", { value: h, configurable: true });
+          Object.defineProperty(document, "visibilityState", { value: h ? "hidden" : "visible", configurable: true });
+          document.dispatchEvent(new Event("visibilitychange"));
+        }, hide);
+        await wait(200);
+      }
+      await until(5_000, async () => statusAsked > asked);
+      await wait(600);
+      seen.push({ shape: "a machine that answered once and then stopped", reasked: statusAsked > asked, ...(await badges()) });
+      await page.unroute("**/checkout", refuse);
+      await page.unroute("**/git_status", refuseStatus);
+    }
+    console.log(`workspaces 4Y · corners: ${JSON.stringify(seen)}`);
+    for (const x of seen) {
+      if (x.peer === null || x.gate === null) {
+        fail(`probe dead: ${x.shape} — the workspace rows drew no corner (${JSON.stringify(x)})`);
+        continue;
+      }
+      if (x.reasked === false) {
+        fail(`probe dead: ${x.shape} — coming back to the window asked nothing again`);
+        continue;
+      }
+      if (x.peer !== "branch") {
+        fail(
+          `with ${x.shape}, the repository row wears 「${x.peer}」 — ` +
+            "「工作区这，我的有些目录是 git 但 icon 仍然是文件夹的 icon」",
+        );
+      }
+      if (x.gate !== "folder") {
+        fail(`with ${x.shape}, the plain directory wears 「${x.gate}」 — only a repository wears the branch`);
+      }
+    }
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
   }
 
   // ── 4d) the editor switch, and the card in front of it ────────────

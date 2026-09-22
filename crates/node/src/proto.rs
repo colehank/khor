@@ -532,6 +532,25 @@ pub enum Request {
         dir: String,
         query: String,
     },
+    /// Whether `path` is a checkout (`crate::git::is_checkout`) — one
+    /// `stat`, asked of the machine holding the directory.
+    ///
+    /// **Its own question and not a field on [`Request::GitStatus`]'s
+    /// answer** (docs/SHELL.md 第五轮 第 6 条): a workspace row wears a
+    /// branch or a folder by it, and the status walk is the one that
+    /// can take seconds on a big tree or a network disk, or fail. A
+    /// corner that waited on the walk painted a slow repository as a
+    /// folder.
+    ///
+    /// Answered as [`Response::Checkout`]; a khor that predates it
+    /// answers [`Response::Refused`], and the asker falls back to what
+    /// the status answer says.
+    Checkout { path: String },
+    /// [`Request::Checkout`], on a satellite: the sponsor looks over
+    /// ssh (`crate::satellite::is_checkout`).
+    ///
+    /// A new variant for [`Request::SatLs`]'s reason.
+    SatCheckout { sat: String, path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -770,6 +789,10 @@ pub enum Response {
     /// somebody's project is on.
     Found {
         found: crate::files::Found,
+    },
+    /// [`Request::Checkout`]'s and [`Request::SatCheckout`]'s answer.
+    Checkout {
+        yes: bool,
     },
 }
 
@@ -1061,6 +1084,19 @@ mod tests {
                     query: String::new(),
                 },
                 &b"SatSearch"[..],
+            ),
+            (
+                Request::Checkout {
+                    path: String::new(),
+                },
+                &b"Checkout"[..],
+            ),
+            (
+                Request::SatCheckout {
+                    sat: String::new(),
+                    path: String::new(),
+                },
+                &b"SatCheckout"[..],
             ),
             (
                 Request::SatGitStatus {

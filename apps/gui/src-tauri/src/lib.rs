@@ -244,6 +244,12 @@ async fn git_status(machine: String, dir: String) -> Result<khor_gui_core::git::
     khor_gui_core::git::status(&Node::root_from_env(), &machine, &dir).await
 }
 
+/// Whether that directory is a checkout (`khor_gui_core::git::checkout`).
+#[tauri::command]
+async fn checkout(machine: String, dir: String) -> Result<bool, String> {
+    khor_gui_core::git::checkout(&Node::root_from_env(), &machine, &dir).await
+}
+
 /// Where one file differs from HEAD (`khor_gui_core::git::diff`).
 #[tauri::command]
 async fn git_diff(machine: String, path: String) -> Result<khor_gui_core::git::GitDiff, String> {
@@ -2634,6 +2640,7 @@ pub fn run() {
             pdf_here,
             read_text,
             git_status,
+            checkout,
             git_diff,
             write_text,
             merge_text,

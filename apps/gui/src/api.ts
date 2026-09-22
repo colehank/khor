@@ -345,6 +345,16 @@ export const fetchFileText = (machine: string, path: string) =>
     guess. */
 export const fetchGitStatus = (machine: string, dir: string) =>
   call<GitStatus>("git_status", { machine, dir });
+/** Whether that directory is a repository at all — one `stat` on the
+    machine holding it (`khor_node::git::is_checkout`).
+
+    **Asked beside `fetchGitStatus`, never after it** (docs/SHELL.md
+    第五轮 第 6 条): the workspace row's branch-or-folder corner is this
+    answer, and the status walk is the one that can take seconds on a
+    big tree or a network disk, or fail. A khor that predates it refuses,
+    and the corner falls back to whether a status came back at all. */
+export const fetchCheckout = (machine: string, dir: string) =>
+  call<boolean>("checkout", { machine, dir });
 /** Where one file differs from HEAD (`khor_gui_core::git::diff`), in
     the coordinates of the file as it is now. Refuses out loud for
     `fetchGitStatus`'s reason. */

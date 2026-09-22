@@ -662,6 +662,12 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::CheckoutOn { machine, path } => {
+                match self.checkout_with(ep, &machine, &path).await {
+                    Ok(yes) => ipc::Reply::Checkout { yes },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::RemoveOn { machine, path } => {
                 match self.remove_with(ep, &machine, &path).await {
                     Ok(()) => ipc::Reply::Removed,
@@ -1365,6 +1371,18 @@ impl Node {
                     .map_err(|e| e.to_string())?;
                 Ok(Response::Touched { at_ms })
             }
+            Request::Checkout { path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::not_paired().into());
+                }
+                // Off the reactor anyway: one stat, but on a network
+                // disk one stat is the call that hangs.
+                let dir = std::path::PathBuf::from(path);
+                let yes = tokio::task::spawn_blocking(move || crate::git::is_checkout(&dir))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Checkout { yes })
+            }
             Request::GitStatus { root } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::not_paired().into());
@@ -1807,6 +1825,18 @@ impl Node {
                         .await
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Touched { at_ms })
+            }
+            Request::SatCheckout { sat, path } => {
+                if self.devices_loaded()?.doc.get(remote).is_none() {
+                    return Err(msg::not_paired().into());
+                }
+                let host = self.my_satellite_host(&sat)?;
+                let yes = tokio::task::spawn_blocking(move || {
+                    crate::satellite::is_checkout(&host, &path)
+                })
+                .await
+                .map_err(|e| e.to_string())??;
+                Ok(Response::Checkout { yes })
             }
             Request::SatGitStatus { sat, root } => {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
@@ -3252,6 +3282,104 @@ impl Node {
         let out = self.touched_with(&ep, machine, path).await;
         ep.close().await;
         out
+    }
+
+    /// Whether a directory on any machine is a checkout
+    /// (`crate::git::is_checkout`).
+    ///
+    /// **Asked beside [`Node::git_status_on`], never after it** — the
+    /// workspace row's corner is this answer (docs/SHELL.md 第五轮
+    /// 第 6 条), and the status walk is the one that can be slow or
+    /// fail. Routed exactly as [`Node::touched`] is, satellites
+    /// included, because it is the same shape of question: one row,
+    /// the machine holding the files.
+    pub async fn checkout_on(&self, machine: &str, path: &str) -> Result<bool, String> {
+        if machine.is_empty() || machine == self.name() {
+            return Ok(crate::git::is_checkout(std::path::Path::new(path)));
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::CheckoutOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Checkout { yes } => Ok(yes),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.checkout_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn checkout_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<bool, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let dir = std::path::PathBuf::from(path);
+            return tokio::task::spawn_blocking(move || crate::git::is_checkout(&dir))
+                .await
+                .map_err(|e| e.to_string());
+        }
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        // A satellite routes to its sponsor, [`Node::touched`]'s road.
+        if let Some(sp) = target.sponsor.clone() {
+            let sat = target.id.clone();
+            if sp == self.device_str() {
+                let host = target
+                    .ssh_host
+                    .clone()
+                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let path = path.to_owned();
+                return tokio::task::spawn_blocking(move || {
+                    crate::satellite::is_checkout(&host, &path)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+            let sponsor = self
+                .devices_loaded()?
+                .doc
+                .get(&sp)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            let req = Request::SatCheckout {
+                sat,
+                path: path.to_owned(),
+            };
+            return match self.ask(ep, &sponsor.name, &req).await? {
+                Response::Checkout { yes } => Ok(yes),
+                Response::Refused { why } => Err(why),
+                other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Checkout {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
+        {
+            Response::Checkout { yes } => Ok(yes),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     async fn touched_with(

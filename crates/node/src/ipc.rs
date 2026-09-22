@@ -234,6 +234,13 @@ pub enum Op {
         dir: String,
         query: String,
     },
+    /// Tail-appended: [`crate::proto::Request::Checkout`] through the
+    /// resident — whether a directory on that machine is a checkout
+    /// (docs/SHELL.md 第五轮 第 6 条).
+    CheckoutOn {
+        machine: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -386,6 +393,10 @@ pub enum Reply {
     /// (`crate::files::Found`).
     Found {
         found: crate::files::Found,
+    },
+    /// Tail-appended with [`Op::CheckoutOn`].
+    Checkout {
+        yes: bool,
     },
 }
 

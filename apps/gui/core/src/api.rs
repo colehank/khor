@@ -185,6 +185,12 @@ pub fn answer(
         "git_status" => {
             to_json(&rt.block_on(crate::git::status(root, &arg("machine")?, &arg("dir")?))?)
         }
+        // Whether that directory is a repository at all — one stat,
+        // asked beside `git_status` so the row's corner never waits on
+        // the walk (docs/SHELL.md 第五轮 第 6 条).
+        "checkout" => {
+            to_json(&rt.block_on(crate::git::checkout(root, &arg("machine")?, &arg("dir")?))?)
+        }
         "git_diff" => {
             to_json(&rt.block_on(crate::git::diff(root, &arg("machine")?, &arg("path")?))?)
         }

@@ -591,6 +591,34 @@ fn parse_touched(text: &str) -> i64 {
         * 1000
 }
 
+/// Whether the directory is a checkout, on a satellite: the same one
+/// marker `crate::git::is_checkout` reads, looked at by the far shell.
+/// `-e` because a linked worktree's `.git` is a file.
+const CHECKOUT_SH: &str = r#"
+cd "$KHOR_ROOT" || exit 3
+if [ -e .git ]; then echo yes=1; else echo yes=0; fi
+exit 0
+"#;
+
+/// [`CHECKOUT_SH`] over the user's ssh road. **Output that says neither
+/// is a refusal**, not a `false`: 「not a repository」 is a claim, and a
+/// shell that answered something else did not make it.
+pub fn is_checkout(host: &str, path: &str) -> Result<bool, String> {
+    parse_checkout(&sh_over_ssh_in(host, path, CHECKOUT_SH)?)
+}
+
+fn parse_checkout(text: &str) -> Result<bool, String> {
+    match text
+        .lines()
+        .find_map(|l| l.strip_prefix("yes="))
+        .map(str::trim)
+    {
+        Some("1") => Ok(true),
+        Some("0") => Ok(false),
+        _ => Err(msg::peer_non_answer(text.trim())),
+    }
+}
+
 /// `git status`, read on a satellite.
 ///
 /// **The one place khor runs a git binary, and it is not a change of
@@ -1449,6 +1477,43 @@ mod tests {
     /// script's portability and its arithmetic, and `sh` on this
     /// machine is the same `sh` the far side pipes it into
     /// (`sh_over_ssh` on why it is never the login shell).
+    /// **The far shell and the local reader answer one question alike**
+    /// — a checkout, a linked worktree (its `.git` is a file), a plain
+    /// directory — and output that says neither is a refusal.
+    #[test]
+    fn the_checkout_script_answers_what_the_local_look_answers() {
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let scratch =
+            Scratch(std::env::temp_dir().join(format!("khor-sat-checkout-{}", std::process::id())));
+        let tmp = scratch.0.clone();
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(tmp.join("repo/.git")).unwrap();
+        std::fs::create_dir_all(tmp.join("linked")).unwrap();
+        std::fs::write(tmp.join("linked/.git"), "gitdir: /elsewhere\n").unwrap();
+        std::fs::create_dir_all(tmp.join("plain")).unwrap();
+        for (dir, want) in [("repo", true), ("linked", true), ("plain", false)] {
+            let at = tmp.join(dir);
+            let script = format!(
+                "KHOR_ROOT={}\n{CHECKOUT_SH}",
+                sh_quote(&at.display().to_string())
+            );
+            let out = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(&script)
+                .output()
+                .expect("sh runs");
+            let said = parse_checkout(&String::from_utf8_lossy(&out.stdout));
+            assert_eq!(said, Ok(want), "{dir}: the script");
+            assert_eq!(crate::git::is_checkout(&at), want, "{dir}: the local look");
+        }
+        assert!(parse_checkout("sh: cd: nope").is_err());
+    }
+
     #[test]
     fn the_touched_script_answers_what_the_local_walk_answers() {
         // Takes itself away however this test leaves — an assertion
