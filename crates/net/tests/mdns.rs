@@ -22,6 +22,37 @@
 //! iroh publishes loopback only when there is no other interface, so
 //! nothing mDNS ever announces is reachable from here.
 //!
+//! **Settled with two machines, 2026-09-22** (SHELL.md 第五轮 第 5 条;
+//! this Mac `172.23.250.213` / tailnet `100.103.22.1`, and turing, a
+//! Linux box on another campus subnet `172.16.185.103` / tailnet
+//! `100.125.82.91`; no khor store or identity involved). On this Mac, at
+//! the same moment, two UDP listeners side by side — `/usr/bin/nc`
+//! (Apple-signed) and a ten-line C listener built here (ad-hoc,
+//! `linker-signed`, the standing khor's own binaries have) — and turing
+//! sending to each with its own `nc`, three datagrams apiece:
+//!
+//! ```text
+//!                         /usr/bin/nc     ad-hoc listener
+//! turing -> Mac LAN       received        nothing (12 s)
+//!   ports swapped         received        nothing (12 s)
+//! turing -> Mac tailnet   received        nothing (12 s)
+//! Mac -> turing LAN       received (turing's python listener)
+//! ```
+//!
+//! Same route, same ports (swapped as the control), only the receiving
+//! program differs — so it is **not the router** (a signed receiver gets
+//! the packet across two subnets) and not the tailnet: it is **the macOS
+//! application firewall refusing inbound to a binary it has not been
+//! told to allow**. The only other network extension on this Mac is
+//! Tailscale's, which does not filter by signature.
+//!
+//! Two readings that look like evidence and are not: `socketfilterfw
+//! --getappblocked` answered "permitted" for the ad-hoc listener that
+//! had just received nothing, so it says nothing about an unlisted
+//! binary; and the 2026-09-21 note that this Mac could not send UDP to
+//! its own LAN address even with `nc` no longer reproduces (same-host
+//! `nc` to `172.23.250.213` arrived on 2026-09-22).
+//!
 //! **This is the thing I twice announced I had ruled out.** The first
 //! "not the firewall" came from a probe that dialled `127.0.0.1` first
 //! and then called the next two dials green — they were reusing the
@@ -51,7 +82,13 @@
 //! block stands between two real Macs: khor's own binary is unsigned
 //! too, so a direct connection needs the「是否允许接受传入连接」dialog
 //! to have been accepted on the receiving side. Nobody can click it over
-//! ssh. `zh.toml`'s `web-face-down` already describes exactly this
+//! ssh. The two-machine readout above is this paragraph measured rather
+//! than inferred — with one limit: it measured an ad-hoc binary the
+//! firewall had never seen, not an installed `khor` whose path is on the
+//! Allow list. macOS ties an ad-hoc binary's rule to its code signature,
+//! so whether each reinstall falls off that list is **未量** (it would
+//! take a khor-to-khor handshake between two machines, on temporary
+//! identities). `zh.toml`'s `web-face-down` already describes exactly this
 //! failure — 「握手连得上,数据一个字节也不给」 — from the other end of
 //! the same rope.
 //!
