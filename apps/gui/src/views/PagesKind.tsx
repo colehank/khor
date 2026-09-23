@@ -181,13 +181,16 @@ function useBorrowsHeld(open: readonly HeldTab[]): void {
   }, [tabs]);
 }
 
-function Surf({ tab, machine, place, onPlace, onLanded, onPopup, onTitle, onIcon }: BodyProps) {
+function Surf({ tab, machine, place, onPlace, onLanded, onPopup, onTitle, onIcon, onBusy }: BodyProps) {
   return (
     <BrowserPane
       tab={tab}
       machine={machine.name}
       device={machine.id}
       url={place}
+      // 第十二轮: what khor is doing for this tab, so the row in the
+      // sidebar can breathe while it is doing it.
+      onBusy={(busy) => onBusy?.(busy)}
       // This machine's tab goes out of this machine's own network
       // (docs/SHELL.md 第四轮 第 5 条).
       here={machine.me}

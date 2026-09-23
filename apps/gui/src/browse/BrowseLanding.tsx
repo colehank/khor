@@ -60,6 +60,7 @@ import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
 import { TabCount } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
+import { useLoading } from "@/browse/use-loading";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconClose } from "@/components/icons";
@@ -175,6 +176,11 @@ export function BrowseLanding({
       live = false;
     };
   }, []);
+  /** Which tabs are loading, for the breath on their rows (docs/SHELL.md
+      第十二轮). Kept by the landing rather than by the body, because the
+      body is only ever mounted for the tab in front and a tab loading
+      behind one has to breathe too. */
+  const load = useLoading();
   const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
@@ -279,6 +285,12 @@ export function BrowseLanding({
       group: t.pinned ? "pin" : "",
       pinned: t.pinned,
       face: <MachineAvatar face={d?.face ?? null} className="size-avatar" />,
+      // **The same ring a 忙碌 session wears** (docs/SHELL.md 第十二轮:
+      // 「用同一个光晕…不新造一种转圈」) — one state word, one look,
+      // and the reduced-motion guard comes with it (`app.css`). Only
+      // this row: the strip's own tab is 80 wide and has no room for a
+      // ring around its face (第十二轮 第 3 条).
+      halo: load.busy(t.id) ? "busy" : undefined,
       badge: {
         mark: src ? "favicon" : "page",
         icon: src ? (
@@ -385,6 +397,10 @@ export function BrowseLanding({
             const id = tabs.current.id;
             setIcons((m) => (m.get(id) === src ? m : new Map(m).set(id, src)));
           }}
+          // What khor itself has out for this tab. Whether that is what
+          // the row breathes on is `use-loading`'s call: in the app the
+          // page's own report wins, and this only lights it.
+          onBusy={(busy) => load.errand(tabs.current.id, busy)}
           // A new tab beside this one, on the same machine — `open`
           // rather than `goTo`, which is the whole difference the shell
           // draws between the two (`BrowseTabs`).

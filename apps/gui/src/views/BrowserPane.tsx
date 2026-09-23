@@ -68,6 +68,7 @@ export function BrowserPane({
   onPopped,
   onTitle,
   onIcon,
+  onBusy,
 }: {
   /** This tab's handle. The page webview is keyed by it on the app side,
       so every call about that page names it. */
@@ -86,6 +87,18 @@ export function BrowserPane({
   onTitle: (title: string) => void;
   /** The page's site icon, fetched through the page's own exit. */
   onIcon: (src: string) => void;
+  /**
+   * khor has errands out for this tab, or they have all come back
+   * (docs/SHELL.md 第十二轮).
+   *
+   * **This is not「the page loaded」and must not be read as it.** What
+   * this pane can see is its own work — opening the borrow and asking
+   * the site for its icon through it. In the app the page itself says
+   * when it started and finished (`page:load`), and that is the fact the
+   * sidebar uses; this is what the web face has instead, where there is
+   * no page to ask (`browse/use-loading.ts` decides which is which).
+   */
+  onBusy?: (busy: boolean) => void;
   /** It really opened. Only on success: a borrow that was refused is
       not a place this person has been. */
   onOpened: (url: string) => void;
@@ -113,13 +126,21 @@ export function BrowserPane({
   const exit = useRef("");
   const icon = useRef(onIcon);
   icon.current = onIcon;
-  const iconOf = useCallback((at: string) => {
-    pageIcon(at, exit.current).then(
-      (src) => icon.current(src),
-      // No icon is a row wearing the generic page mark — nothing to say.
-      () => {},
-    );
-  }, []);
+  // **It hands back the errand**, so the caller can wait for it: a site
+  // that has not answered its icon has not answered anything, and on a
+  // face with no page of its own that is the whole of what「still
+  // loading」can mean (第十二轮).
+  const iconOf = useCallback(
+    (at: string) =>
+      pageIcon(at, exit.current).then(
+        (src) => icon.current(src),
+        // No icon is a row wearing the generic page mark — nothing to say.
+        () => {},
+      ),
+    [],
+  );
+  const busy = useRef(onBusy);
+  busy.current = onBusy;
 
   // Where the page goes: the rectangle this body occupies, in CSS pixels,
   // which are the app's logical pixels. **Measured here because only this
@@ -234,6 +255,10 @@ export function BrowserPane({
       state: "opening",
       word: here ? gui.web_opening_here : gui.web_opening(machine),
     });
+    // The errand is out from this moment — the press, not the answer
+    // (第十二轮). **Told even if this pane is about to be unmounted**:
+    // the sidebar row outlives the pane, and the errand is really out.
+    busy.current?.(true);
     // **An empty exit is the app's 「go direct」** (`open_page`): no
     // borrow, no proxy — this machine's own network, in khor's own page
     // view. It used to be refused as 「这就是本机的网,不用借」, which was
@@ -247,6 +272,24 @@ export function BrowserPane({
         if (!here) holdBorrow(device, borrow.session);
         holdPage(tab);
         exit.current = borrow.addr;
+        // ⚠️ **Nothing is asked for a pane that is gone, and this is
+        // where that rule was nearly lost.** The icon used to be fetched
+        // after this check and was moved above it while wiring 第十二轮
+        // up; that asked the node for an icon on every abandoned open —
+        // a 5-second blocking call each time on the browser road — and
+        // the window stopped seeing tabs another process had opened
+        // within the time the gate allows (measured 2026-09-23:
+        // 「the column never held two tabs」, green on the commit before).
+        //
+        // **And it says nothing about the errand either.** 「Loading」 is
+        // a fact about the *tab*, and this pane is not the one holding
+        // that tab any more — a live pane may already have started the
+        // load this one is abandoning, and reporting 「done」 here would
+        // put its ring out (measured the same day: React mounts an
+        // effect, tears it down and mounts it again in development, and
+        // the first one's answer arrived after the second had started).
+        // A load nobody is left to finish is the ceiling's to end
+        // (`browse/loading-rule.ts`).
         if (stopped) return;
         setOpening({
           url: want,
@@ -254,10 +297,21 @@ export function BrowserPane({
           word: here ? gui.web_opened_here : gui.web_opened(machine),
         });
         onOpened(want);
-        iconOf(want);
+        // **The icon is the last errand, so it is the one that ends it**
+        // — and it ends it however it goes: a site that answered「no
+        // icon」answered. `finally` rather than a success branch, for the
+        // same reason (第十二轮).
+        void iconOf(want).finally(() => {
+          // Same rule: a pane torn down while its icon was in flight is
+          // not the one to say the tab has stopped loading.
+          if (!stopped) busy.current?.(false);
+        });
       },
       (e) => {
         if (stopped) return;
+        // Nothing more is coming for this tab; whether it opened or not,
+        // khor has stopped waiting.
+        busy.current?.(false);
         setOpening({
           url: want,
           state: "failed",

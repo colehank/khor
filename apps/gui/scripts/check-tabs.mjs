@@ -195,6 +195,63 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   }
 }
 
+// ── 0b) 加载中的那一圈什么时候熄 (docs/SHELL.md 第十二轮) ───────────
+//
+// **The half of the rule no gate can reach through the product.** A row
+// breathes while its page loads and stops after half a minute of hearing
+// nothing more (第十二轮 第 2 条:「超过 30 秒没等到 finished 也要灭」) —
+// and the events that start it come from the app's own child webview,
+// which no gate here has: every one of them drives the face in Chrome.
+// So the rule is a module with no imports and the clock handed in
+// (`src/browse/loading-rule.ts`), and this drives it with a clock of its
+// own. The live section further down measures what the running face does
+// with it.
+//
+// **What stays 未量**: that the app emits `page:load` with these two
+// words and that the hook subscribes to it. Source, one line each.
+{
+  const rule = await import(new URL("../src/browse/loading-rule.ts", import.meta.url));
+  const T = 1_000_000;
+  const one = rule.started(rule.NONE, "tab-a", T);
+  const said = {
+    ceiling: rule.CEILING_MS,
+    atOnce: rule.loading(one, "tab-a", T),
+    justInside: rule.loading(one, "tab-a", T + rule.CEILING_MS - 1),
+    atTheCeiling: rule.loading(one, "tab-a", T + rule.CEILING_MS),
+    somebodyElse: rule.loading(one, "tab-b", T),
+    finished: rule.loading(rule.ended(one, "tab-a"), "tab-a", T + 1),
+    // A page that navigates again is a new load: the ceiling counts from
+    // the last thing heard, not from the first.
+    restarted: rule.loading(rule.started(one, "tab-a", T + 20_000), "tab-a", T + 45_000),
+    sweptOut: rule.alive(one, T + rule.CEILING_MS).size,
+    sweptKept: rule.alive(one, T + 1).size,
+    // Nothing expired must hand back the very same map, or a sweep on a
+    // beat would re-render the list forever.
+    sameWhenNothingExpired: rule.alive(one, T + 1) === one,
+  };
+  console.log(`  rule ${JSON.stringify(said)}`);
+  const want = {
+    ceiling: 30_000,
+    atOnce: true,
+    justInside: true,
+    atTheCeiling: false,
+    somebodyElse: false,
+    finished: false,
+    restarted: true,
+    sweptOut: 0,
+    sweptKept: 1,
+    sameWhenNothingExpired: true,
+  };
+  const wrong = Object.keys(want).filter((k) => said[k] !== want[k]);
+  if (wrong.length) {
+    fail(
+      `the loading rule answers ${JSON.stringify(Object.fromEntries(wrong.map((k) => [k, said[k]])))} ` +
+        `where it should answer ${JSON.stringify(Object.fromEntries(wrong.map((k) => [k, want[k]])))} — ` +
+        "「超过 30 秒没等到 finished 也要灭」 (src/browse/loading-rule.ts)",
+    );
+  } else ok("a row breathes from the start, stops on finished, and stops by itself after 30s");
+}
+
 let browser;
 try {
   rmSync(SCRATCH, { recursive: true, force: true });
@@ -1081,6 +1138,198 @@ try {
       } finally {
         spa.close();
         bare.close();
+      }
+    }
+
+    //  ── 页面在加载,侧边栏那一行在呼吸 (docs/SHELL.md 第十二轮) ──
+    //
+    //  「浏览器这, 如果页面在加载, 左侧的侧边栏应该有状态动效」, drawn as
+    //  the ring a 忙碌 session already wears (`FaceMark`'s `[data-halo]`)
+    //  rather than a second kind of spinner.
+    //
+    //  **What this face can see, and what it cannot.** The app hears the
+    //  page itself (`page:load`); a browser cannot be handed a borrowed
+    //  webview, so here the row breathes while *khor's* errand for that
+    //  tab is out — opening the borrow, then asking the site for its icon
+    //  through it (`BrowserPane`'s `onBusy`, `use-loading`). A site that
+    //  takes its time is therefore a tab that is still loading, which is
+    //  what this drives: one site that answers slowly, and one that never
+    //  answers at all.
+    //
+    //  **The ring going out is pinned to the site's answer, not to a
+    //  timeout**: the slow site answers its icon, and a row wearing that
+    //  icon is a row whose errand came back. The node gives up on an
+    //  icon after 5s of its own, which is what puts the mute site's row
+    //  out — the 30-second ceiling is section 0b's, and cannot be reached
+    //  from a face with no page events.
+    {
+      const { createServer } = await import("node:http");
+      const SLOW_MS = 2_000;
+      let asked = 0;
+      const slow = createServer((req, res) => {
+        asked += 1;
+        setTimeout(() => {
+          if (req.url === "/favicon.ico") {
+            res.writeHead(200, { "content-type": "image/png" });
+            res.end(Buffer.from("89504e470d0a1a0a", "hex"));
+          } else {
+            res.writeHead(200, { "content-type": "text/html" });
+            res.end("<!doctype html><html><head><title>slow</title></head><body>slow</body></html>");
+          }
+        }, SLOW_MS);
+      });
+      const mute = createServer(() => {
+        /* accepted, never answered — the page that never loads */
+      });
+      await new Promise((r) => slow.listen(0, "127.0.0.1", r));
+      await new Promise((r) => mute.listen(0, "127.0.0.1", r));
+      const slowAt = `127.0.0.1:${slow.address().port}`;
+      const muteAt = `127.0.0.1:${mute.address().port}`;
+      /** Opens a tab on **alpha** at this place, from the terminal.
+          **Through a machine that is not this one, on purpose**: a tab
+          pointed at this machine's own exit borrows nothing on this face
+          (the bridge has no window to open a page in), so khor's errand
+          would settle before the site was ever asked and the ring would
+          blink rather than stay — measured 2026-09-23: 「asked 0
+          time(s)」. Opened from the terminal rather than typed into the
+          address bar because typing the machine and then the address is
+          two navigations, and the first one's pane is torn down mid-open
+          (measured the same day, the same way). */
+      const openOn = (url) => {
+        cli(envB, "tabs", "open", "-m", "alpha", url);
+      };
+      /** What the row for this site is wearing **right now**, read off the
+          document in one go.
+          ⚠️ **Not a locator.** A locator auto-waits — up to playwright's
+          own 30 s — so a poll asking 「is it breathing?」 through one
+          blocks until long after the breath is over, and the loop around
+          it never gets a second look (measured 2026-09-23: the ring was
+          drawn, the site was asked, and the poll still timed out). */
+      const wearing = (at) =>
+        page.evaluate((site) => {
+          const row = [...document.querySelectorAll("[data-browse-tabs] [data-side-row]")].find((r) =>
+            (r.textContent ?? "").includes(site),
+          );
+          if (!row) return { row: false, halo: null, badge: null, title: null };
+          const halo = row.querySelector("[data-halo]");
+          return {
+            row: true,
+            halo: halo ? halo.getAttribute("data-halo") : null,
+            badge: row.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+            title: row.querySelector("[data-tab-label]")?.textContent ?? null,
+          };
+        }, at);
+      const haloOf = async (at) => (await wearing(at)).halo;
+      const badgeOf = async (at) => (await wearing(at)).badge;
+      try {
+        await openBrowser();
+        openOn(`http://${slowAt}/p`);
+        //  Every look is kept, so a miss says what was on screen instead
+        //  of only that nothing was.
+        const seen = [];
+        const began = Date.now();
+        const lit = await until(
+          "the row breathing",
+          20_000,
+          async () => {
+            const now = await wearing(slowAt);
+            seen.push(`${Date.now() - began}ms ${now.row ? (now.halo ?? "-") : "no row"}`);
+            return now.halo === "busy";
+          },
+          150,
+        ).catch((e) => String(e));
+        console.log(`     the first looks: ${seen.slice(0, 14).join(" · ")}`);
+        if (lit !== true) {
+          fail(
+            `a tab pointed at a site that has not answered draws no ring on its row (${lit}) — ` +
+              "「如果页面在加载, 左侧的侧边栏应该有状态动效」 (src/browse/BrowseLanding.tsx)",
+          );
+        } else ok("a loading tab's row wears the 忙碌 ring");
+        //  The site answers → the row goes quiet, **and wears what the
+        //  site sent**: the icon is the proof that this was the answer
+        //  arriving rather than khor giving up.
+        const out = await until("the ring going out", 20_000, async () => (await haloOf(slowAt)) === null).catch(
+          (e) => String(e),
+        );
+        const badge = await badgeOf(slowAt);
+        console.log(`     slow site: asked ${asked} time(s), row wears ${badge} once the ring is out`);
+        if (out !== true) {
+          fail(`the site answered and the row kept breathing (${out}) — 「finished 灭」`);
+        } else if (badge !== "favicon") {
+          fail(
+            `the ring went out with the row wearing 「${badge}」 — the site's icon never arrived, so what put it ` +
+              "out was khor giving up rather than the page answering",
+          );
+        } else ok("the site answers, the row wears its icon and the ring goes out");
+
+        //  A site that never answers at all: it breathes, it does not
+        //  breathe under reduced motion, and it stops on its own without
+        //  anything else about the row changing (第十二轮 第 2 条:
+        //  「灭了不改标题、不报错」).
+        //
+        //  **Reduced motion is set before the load starts and read in one
+        //  evaluate**, because this row stops breathing by itself after a
+        //  few seconds — a read taken in two steps raced it and came back
+        //  with nothing (measured 2026-09-23).
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        openOn(`http://${muteAt}/q`);
+        const titleOf = async () => (await wearing(muteAt)).title;
+        //  **Found and read inside one `page.evaluate`.** A locator
+        //  resolved in one round trip and read in the next came back with
+        //  empty strings — the row had re-rendered and the element in
+        //  hand was detached, which is what `getComputedStyle` answers
+        //  about a node that is no longer in the document (measured
+        //  2026-09-23).
+        const stilled = await until("the mute site's row breathing", 20_000, async () =>
+          page
+            .evaluate((at) => {
+              const row = [...document.querySelectorAll("[data-browse-tabs] [data-side-row]")].find((r) =>
+                (r.textContent ?? "").includes(at),
+              );
+              const el = row?.querySelector("[data-halo]");
+              if (!el) return null;
+              const s = getComputedStyle(el);
+              return {
+                halo: el.getAttribute("data-halo"),
+                animation: s.animationName,
+                shadow: s.boxShadow,
+                opacity: s.opacity,
+              };
+            }, muteAt)
+            .then((r) => (r && r.halo === "busy" ? r : false), () => false),
+        ).catch((e) => String(e));
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        console.log(`     never answers, reduced motion: ${JSON.stringify(stilled)}`);
+        if (typeof stilled === "string") {
+          fail(`a tab on a site that never answers drew no ring (${stilled}) — it has to breathe too`);
+        } else if (stilled.animation !== "none") {
+          fail(`reduced motion left the ring breathing (${JSON.stringify(stilled)}) — 「不动」`);
+        } else if (!stilled.shadow || stilled.shadow === "none" || Number(stilled.opacity) !== 1) {
+          fail(`reduced motion took the ring away instead of stopping it (${JSON.stringify(stilled)})`);
+        } else ok("reduced motion stops the breath and keeps the ring");
+        const titleWhileLit = await titleOf();
+        const wentOut = await until("the mute site's ring going out", 40_000, async () =>
+          (await haloOf(muteAt)) === null,
+        ).catch((e) => String(e));
+        const titleAfter = await titleOf();
+        console.log(
+          `     never answers: out=${wentOut === true}; title ${JSON.stringify(titleWhileLit)} → ${JSON.stringify(titleAfter)}`,
+        );
+        if (wentOut !== true) {
+          fail(`a tab on a site that never answers kept breathing (${wentOut}) — it has to stop by itself`);
+        } else if (titleAfter !== titleWhileLit) {
+          fail(`stopping rewrote the row: ${JSON.stringify(titleWhileLit)} → ${JSON.stringify(titleAfter)} — 「灭了不改标题」`);
+        } else ok("a page that never loads stops breathing on its own, with its title untouched");
+        //  The strip's own tab draws none of this (第十二轮 第 3 条: 80px
+        //  wide, no room for a ring), and the narrow face's switcher is
+        //  where that strip lives.
+        const onStrip = await page.locator("[data-tab-strip] [data-halo]").count();
+        if (onStrip !== 0) {
+          fail(`${onStrip} ring(s) on the tab strip — 「标签条上那枚标签不画光晕」`);
+        } else ok("the tab strip draws no ring");
+      } finally {
+        slow.close();
+        mute.close();
       }
     }
 

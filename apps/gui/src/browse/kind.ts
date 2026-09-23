@@ -127,6 +127,12 @@ export type BodyProps = {
   /** The page's icon, as something an `<img>` can draw, for the corner of
       its row. */
   onIcon?: (src: string) => void;
+  /** khor is fetching something for this tab, or has stopped
+      (docs/SHELL.md 第十二轮). **What the body knows and the shell does
+      not**: the shell asked for a place, and only the body can say
+      whether anything is still on its way. A kind whose places arrive
+      instantly never calls it, and its rows never breathe. */
+  onBusy?: (busy: boolean) => void;
 };
 
 export type BrowseKind = {
