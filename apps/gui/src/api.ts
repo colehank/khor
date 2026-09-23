@@ -729,6 +729,11 @@ export const windowClose = () => call<null>("window_close");
  * a broken face.
  */
 export const windowsApp = inApp && /win/i.test(navigator.platform || navigator.userAgent);
+/** How much of the title row's left end the system's three buttons stand
+    in, **as the window measured them** (docs/SHELL.md 第十一轮): the SDK
+    decides their size, so this is asked rather than written down. Zero
+    off the app and off macOS. */
+export const trafficRoom = () => call<number>("traffic_room");
 export const fetchImportCandidates = () => call<CandidateRow[]>("import_candidates");
 /** Brings these onto the list, in order; answers their session ids.
     Stops at the first refusal and says it. */

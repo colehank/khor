@@ -18,6 +18,7 @@ import {
   setMachinePaused,
   systemUnlock,
   trafficLights,
+  trafficRoom,
   uninstallHooks,
   wsAdd,
   type DeviceRow,
@@ -451,6 +452,22 @@ export default function App() {
     if (trafficLights && !fullscreen) root.setAttribute("data-traffic", "");
     else root.removeAttribute("data-traffic");
   }, [fullscreen]);
+  // …and how wide that strip really is, **asked of the window** rather
+  // than written into the stylesheet (docs/SHELL.md 第十一轮): the three
+  // buttons are the SDK's size, so only the app can say. Once, at
+  // startup; the token's own value is the first frame's.
+  useEffect(() => {
+    if (!trafficLights) return;
+    let live = true;
+    trafficRoom()
+      .then((px) => {
+        if (live && px > 0) document.documentElement.style.setProperty("--traffic", `${px}px`);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
   // 退出时还有草稿要拦 (工作区第五轮 第 39 条). Two roads, one
   // condition, and the condition is `lib/drafts`'s register.
   //

@@ -1200,9 +1200,80 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 // three buttons to an older spacing and put them back whenever AppKit
 // laid the title bar out again (`window_buttons.rs`, and a frame-change
 // observer on top of it). **Nothing of the system's is moved now**: the
-// window has a row of its own at the top, and `trafficLightPosition` in
-// `tauri.conf.json` places the buttons inside it at the SDK's own size
-// and spacing. One row, three platforms.
+// window has a row of its own at the top, and `trafficLightPosition`
+// places the buttons inside it once, at the SDK's own size and spacing,
+// with the number `traffic` measures (第十一轮 — it lived in
+// `tauri.conf.json` for one round, written down and wrong). One row,
+// three platforms.
+
+/// **How tall khor's own title row is** (docs/SHELL.md 第十轮),
+/// duplicated here from `src/styles/tokens.css`'s `--title-bar` for the
+/// one thing CSS cannot do: tell macOS where to put the three system
+/// buttons so they sit on this row's centre. `check-boot.mjs` reads both
+/// and refuses a disagreement — the same arrangement the window's two
+/// grounds already have.
+#[cfg(desktop)]
+const TITLE_BAR: f64 = 38.0;
+
+/// How far the trio starts from the window's left edge, and the gap
+/// after it before the row draws anything — the row keeps
+/// `traffic::room` of width clear for both.
+#[cfg(desktop)]
+const TRAFFIC_X: f64 = 20.0;
+#[cfg(desktop)]
+const TRAFFIC_GAP: f64 = 12.0;
+
+/// The window itself, **built here rather than in `tauri.conf.json`**.
+///
+/// One thing needs it: macOS's three buttons are placed by a number that
+/// has to be *measured* first (`traffic`'s module head — the SDK's button
+/// height and AppKit's own inset both go into it), and tauri takes that
+/// number only when the window is built. A config file cannot hold a
+/// measurement.
+///
+/// Everything else here is what that file used to say, unchanged, plus
+/// the ground: setting it on the builder paints the window from its
+/// first frame rather than a moment later (`paint_the_window_before_the_page`
+/// has the measurements).
+#[cfg(desktop)]
+fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+        .title("Khor")
+        .inner_size(1080.0, 720.0)
+        .min_inner_size(400.0, 500.0);
+    #[cfg(target_os = "macos")]
+    {
+        win = win
+            .title_bar_style(tauri::utils::TitleBarStyle::Overlay)
+            .hidden_title(true);
+        if let Some(lights) = traffic::measure() {
+            win = win.traffic_light_position(tauri::LogicalPosition::new(
+                TRAFFIC_X,
+                traffic::inset_y(TITLE_BAR, &lights),
+            ));
+        }
+    }
+    win.build()?;
+    Ok(())
+}
+
+/// How much of the row's left end macOS's three buttons stand in, in CSS
+/// pixels — what the face sets `--traffic` from. **Zero where the system
+/// draws no buttons over the row** (Windows draws its own at the other
+/// end, Linux keeps its decorations, a browser has no window).
+#[cfg(desktop)]
+#[tauri::command]
+fn traffic_room() -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        traffic::measure()
+            .map(|m| traffic::room(TRAFFIC_X, TRAFFIC_GAP, &m))
+            .unwrap_or(0.0)
+    }
+    #[cfg(not(target_os = "macos"))]
+    0.0
+}
 
 /// Give the window the app's own ground **before the page has one**.
 ///
@@ -2471,6 +2542,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // **The window first**: everything below reaches for it by
+            // name (`build_the_window` says why it is not in the config).
+            #[cfg(desktop)]
+            build_the_window(app.handle())?;
             // The window khor's own overlays are drawn in, hung off the
             // face and hidden until something has a list to show
             // (`hang_menu_window`).
@@ -2682,6 +2757,7 @@ pub fn run() {
             agent_ask,
             resume_session,
             find,
+            traffic_room,
             window_minimize,
             window_maximize_toggle,
             window_close,
@@ -2713,6 +2789,9 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("tauri run");
 }
+
+#[cfg(desktop)]
+mod traffic;
 
 #[cfg(test)]
 mod tests {

@@ -20133,13 +20133,57 @@ try {
       fail(`the network line reads ${JSON.stringify(net)} and the table has ${devs.length} machines — it counts what the list counts`);
     }
 
-    // ⌘K, from the keyboard, anywhere: the box opens, a session's name
-    // puts that session first, and Enter goes there.
+    // ── 搜索居中,就地展开 (docs/SHELL.md 第十一轮 第 1、2 条) ─────────
+    //
+    // 「为什么搜索框没有居中?」 and 「和 vscode 一样就地搜索就行了」. The
+    // box's centre is the **window's** centre, not the middle of what is
+    // left over beside the crumbs — which is what a row of flexed items
+    // gives and what the user was looking at. Asked at two widths,
+    // because the width the box itself takes is a token with a second
+    // value under 900 and a centre that only happens to be right at one
+    // width is the same bug again.
+    for (const w of [1400, 880]) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await wait(300);
+      const mid = await page.evaluate(() => {
+        const row = document.querySelector("[data-title-bar]");
+        const box = document.querySelector("[data-global-search], [data-search-box]");
+        if (!row || !box) return null;
+        const r = row.getBoundingClientRect();
+        const b = box.getBoundingClientRect();
+        return {
+          row: +(r.left + r.width / 2).toFixed(2),
+          box: +(b.left + b.width / 2).toFixed(2),
+          width: +b.width.toFixed(2),
+          token: getComputedStyle(document.documentElement).getPropertyValue("--search-box").trim(),
+        };
+      });
+      if (!mid) {
+        fail(`at ${w} wide the row drew no search box — 「搜索居中」 needs one to be there`);
+        continue;
+      }
+      const off = +(mid.box - mid.row).toFixed(2);
+      console.log(`search centre @${w}: box ${mid.box} · row ${mid.row} · 差 ${off} · ${mid.width} wide (token ${mid.token})`);
+      if (off !== 0) {
+        fail(
+          `at ${w} wide the search box's centre is ${mid.box} and the row's is ${mid.row} — 差 ${off}, not 0 ` +
+            "(「为什么搜索框没有居中」, TitleBar's three columns)",
+        );
+      }
+      if (mid.token === "" || Math.abs(mid.width - parseFloat(mid.token)) > 1) {
+        fail(`at ${w} wide the box is ${mid.width} wide and the token says ${JSON.stringify(mid.token)} — the width is the token's, 360 down to 240`);
+      }
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+
+    // ⌘K, from the keyboard, anywhere: the box opens **in place**, a
+    // session's name puts that session first, and Enter goes there.
     await open("sessions");
     await page.keyboard.press("Meta+k");
-    const opened = await until(5_000, async () => (await page.locator("[data-search-dialog]").count()) === 1);
+    const opened = await until(5_000, async () => (await page.locator("[data-search-box]").count()) === 1);
     if (!opened) {
-      fail("⌘K opened no [data-search-dialog] — the row's search is the app's, not one pane's");
+      fail("⌘K opened no [data-search-box] — the row's search is the app's, not one pane's");
     } else {
       await page.locator("[data-search-box]").fill(rows[1].title);
       await until(5_000, async () => (await page.locator("[data-search-row]").count()) > 0);
@@ -20151,6 +20195,61 @@ try {
       if (first.id !== rows[1].id) {
         fail(`typing a session's own name put ${JSON.stringify(first)} first, not ${rows[1].id}`);
       }
+      // **No cover over the window, and the hits hang off the box** —
+      // 第十一轮 第 2 条's whole difference from the dialog this
+      // replaced. An overlay is read as what it is rather than by a
+      // class name: anything fixed that covers most of the viewport;
+      // and 「贴在框下方」 is a measurement, the rows' top against the
+      // box's bottom and their centres against each other.
+      const inPlace = await page.evaluate(() => {
+        const box = document.querySelector("[data-search-box]");
+        const list = document.querySelector("[data-search-rows]");
+        const b = box.getBoundingClientRect();
+        const covers = [...document.querySelectorAll("body *")]
+          .filter((el) => {
+            const s = getComputedStyle(el);
+            if (s.position !== "fixed" || s.display === "none" || s.visibility === "hidden") return false;
+            const r = el.getBoundingClientRect();
+            return r.width * r.height > window.innerWidth * window.innerHeight * 0.8;
+          })
+          .map((el) => el.tagName.toLowerCase() + (el.getAttribute("data-slot") ? `[${el.getAttribute("data-slot")}]` : ""));
+        // Read, not asserted: what a press halfway down the window
+        // would land on. It says the same thing the count above says
+        // and says it less well — over a modal `elementFromPoint`
+        // answers the overlay, which has no mark of its own to name.
+        const under = document.elementFromPoint(window.innerWidth / 2, window.innerHeight - 40);
+        const behind =
+          under === null
+            ? "nothing"
+            : under.closest("[data-title-bar]")
+              ? "the row itself"
+              : `${under.tagName.toLowerCase()}${under.closest("[data-list]") ? " in the list" : ""}`;
+        if (!list) return { covers, rows: null, behind };
+        const l = list.getBoundingClientRect();
+        return {
+          covers,
+          rows: {
+            gap: +(l.top - b.bottom).toFixed(2),
+            offCentre: +(l.left + l.width / 2 - (b.left + b.width / 2)).toFixed(2),
+          },
+          behind,
+        };
+      });
+      console.log(`in place: ${JSON.stringify(inPlace)}`);
+      if (inPlace.covers.length) {
+        fail(
+          `pressing the search drew ${inPlace.covers.join(", ")} over the window — 「就地展开,不弹模态」 means the ` +
+            "page behind stays readable and stays pressable",
+        );
+      }
+      if (!inPlace.rows) {
+        fail("the hits are not in [data-search-rows] under the box — 「结果贴在框下方」");
+      } else if (inPlace.rows.gap < 0 || inPlace.rows.gap > 12 || inPlace.rows.offCentre !== 0) {
+        fail(
+          `the hits sit ${inPlace.rows.gap} below the box and ${inPlace.rows.offCentre} off its centre — ` +
+            "「结果贴在框下方」 is directly under it, hung from the box",
+        );
+      }
       await page.keyboard.press("Enter");
       const went = await until(8_000, async () =>
         (await page.locator(`[data-row="${rows[1].id}"][data-on="true"], [data-tab="${rows[1].id}"]`).count()) > 0,
@@ -20158,7 +20257,17 @@ try {
       if (!went) {
         fail(`Enter on the first hit did not open ${rows[1].id} — a search that finds a thing has to go to it`);
       }
+      // Esc puts it away — the half a dialog got free from its overlay,
+      // and the only way out left now that there is no overlay to press.
+      await page.keyboard.press("Meta+k");
+      await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1);
       await page.keyboard.press("Escape");
+      const shut = await until(3_000, async () =>
+        (await page.locator("[data-search-box]").count()) === 0 && (await page.locator("[data-global-search]").count()) === 1,
+      );
+      if (!shut) {
+        fail("Esc left the search open — with no overlay to press, Esc is the way out (第十一轮 第 2 条)");
+      }
       await wait(200);
     }
 

@@ -749,6 +749,12 @@
      global things — where you are, one search, the network in a line.
      38 by the ruling; one source, like `--pane-head`. */
   --title-bar: 38px;
+  /* How wide the row's middle column is — the search. Fixed rather than
+     fluid so it sits still while the crumbs beside it grow and shrink;
+     360 by the ruling (docs/SHELL.md 第十一轮), 240 once the window is
+     too narrow to spend that much on it, and after that it gives way
+     (the column is `auto`). */
+  --search-box: 360px;
   /* How wide a strip that row leaves at its left end for **the system's
      own three buttons**, which khor never moves or resizes: macOS puts
      them inside this row (tauri's `trafficLightPosition`) and this is
@@ -1300,9 +1306,22 @@
  *
  * Unlayered, beside `:root` itself: `@layer base` would lose to the
  * declaration above however specific this selector is. */
+/* A window too narrow for 360 of search gives the middle column less
+   before it gives the crumbs anything (docs/SHELL.md 第十一轮). A media
+   query rather than the app's `data-narrow`: this is about the window's
+   width and nothing else. */
+@media (max-width: 900px) {
+  :root {
+    --search-box: 240px;
+  }
+}
+
 :root[data-traffic] {
-  /* 20 of margin, three 14-wide buttons 23 apart (the SDK's own
-     spacing, untouched), and a gap before the first crumb. */
+  /* A starting value only, and deliberately close: the app measures the
+     buttons and writes the real width onto this element at startup
+     (`api.ts` trafficRoom, docs/SHELL.md 第十一轮), because their size is
+     the SDK's rather than khor's. What this number buys is the first
+     frame, before that answer comes back. */
   --traffic: 92px;
 }
 
@@ -1545,6 +1564,7 @@
   --spacing-rail: var(--rail-w);
   --spacing-traffic: var(--traffic);
   --spacing-title-bar: var(--title-bar);
+  --spacing-search-box: var(--search-box);
   --spacing-list: var(--list-w);
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);

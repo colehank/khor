@@ -125,6 +125,19 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "window_close",
         "the app's own window; a browser tab is closed by the browser",
     ),
+    // ── 2026-09-23 (docs/SHELL.md 第十一轮) ────────────────────────
+    //
+    // **A measurement of one window's own three buttons.** It asks
+    // AppKit how wide macOS draws its trio on *this* window, so the
+    // title row can keep that much clear (`--traffic`). A browser tab
+    // has no such buttons over khor's row at all, and an HTTP arm would
+    // answer a number about a window nobody is looking at — which the
+    // face would then hold empty for nothing.
+    (
+        "traffic_room",
+        "the app's own window: what macOS's three buttons take of its title row, measured from that window; \
+         a browser face has no window buttons over the row and keeps nothing clear",
+    ),
     (
         "pick_and_send",
         "app-only by nature: it opens the DESKTOP's native file picker (tauri-plugin-dialog) — \

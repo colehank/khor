@@ -1,5 +1,4 @@
-// 窗口顶上那一条 (docs/SHELL.md 第十轮, 2026-09-23:「我们还要支持多系统。
-// 是不是应该不去动它，但是在那一行作出真正有信心的内容？」).
+// 窗口顶上那一条 (docs/SHELL.md 第十轮, 收尾在第十一轮).
 //
 // **One row across the whole window, above the rail and every pane** —
 // VS Code's and Slack's structure, and the reason is portability: the
@@ -8,17 +7,25 @@
 // was true on one platform. Here nothing of the system's is touched:
 //
 //   - macOS keeps the buttons exactly as the SDK draws them (size and
-//     spacing), placed inside this row by tauri's `trafficLightPosition`;
-//     the row leaves `--traffic` of width for them.
+//     spacing), placed inside this row by tauri's `trafficLightPosition`
+//     — with the number khor measures rather than one written down
+//     (`src-tauri/src/traffic.rs`); the row leaves `--traffic` of width.
 //   - Windows draws its own three at the right end (its own habit).
 //   - Linux keeps the system's decorations; the row is still here.
 //   - The web face has no window at all, and the row is still here —
 //     what it carries is not about a window.
 //
-// **What it carries is the global half of the app**: where you are, one
-// search over everything, and the network in a sentence. Each of the
-// three is a thing that is true of the whole app rather than of one
-// pane, which is exactly what a pane's own head cannot say.
+// **Three columns, and the middle one is centred on the window** (第十一
+// 轮 第 1 条:「为什么搜索框没有居中？」). Left and right are `1fr` each,
+// so the search sits on the row's own centre however long the crumbs
+// get; macOS's strip is padding on the left column, which is what keeps
+// the centre the *window's* centre rather than the content's.
+//
+// **The search expands in place** (第十一轮 第 2 条:「和 vscode 一样就地
+// 搜索就行了」): pressing it — or ⌘K anywhere — turns the box into a
+// field and hangs the hits under it. No dialog, no overlay: the window
+// behind stays readable and stays clickable, and Esc or a press outside
+// puts it away.
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -32,7 +39,6 @@ import {
 } from "@/api";
 import { IconClose, IconSearch } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -93,6 +99,7 @@ export function TitleBar({
   const [hits, setHits] = useState<FindHit[]>([]);
   const [at, setAt] = useState(0);
   const box = useRef<HTMLInputElement>(null);
+  const seat = useRef<HTMLDivElement>(null);
 
   // ⌘K anywhere in the app — the one shortcut this row owns. Bound on
   // the window rather than on the button: a person who is typing in a
@@ -107,11 +114,27 @@ export function TitleBar({
     return () => window.removeEventListener("keydown", key);
   }, []);
 
+  // **A press outside puts it away** — the half of 「就地展开」 a dialog
+  // used to get for free from its overlay, and the reason there is no
+  // overlay: the window behind stays live, so the only thing that should
+  // close this is a press that was not meant for it.
   useEffect(() => {
     if (!open) return;
-    setWord("");
-    setHits([]);
-    setAt(0);
+    const away = (e: PointerEvent) => {
+      if (seat.current && !seat.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", away);
+    return () => window.removeEventListener("pointerdown", away);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setWord("");
+      setHits([]);
+      setAt(0);
+      return;
+    }
+    box.current?.focus();
   }, [open]);
 
   // The node answers the whole list; the order is its own, so this face
@@ -147,12 +170,20 @@ export function TitleBar({
       // platform that lets a page say so (第八轮 第 59 条's rule, in its
       // own row now rather than borrowed from each landing's head).
       data-tauri-drag-region="deep"
-      className="flex h-title-bar flex-none items-center gap-2 border-b bg-card pr-2 select-none"
-      // macOS puts its three buttons inside this row; the width they
-      // stand in is the token, and it is zero everywhere else.
-      style={{ paddingLeft: "var(--traffic)" }}
+      // `minmax(0,1fr)` rather than `1fr`: a plain `1fr` is
+      // `minmax(auto,1fr)`, so a long crumb — or macOS's own strip of
+      // padding — would push the left column wider than the right and
+      // the middle off the window's centre, which is the very thing
+      // 第十一轮 第 1 条 is about.
+      className="grid h-title-bar flex-none grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b bg-card select-none"
     >
-      <nav data-title-crumbs className="flex min-w-0 flex-1 items-center gap-1 text-xs">
+      <nav
+        data-title-crumbs
+        className="flex min-w-0 items-center gap-1 overflow-hidden text-xs"
+        // macOS's three buttons stand in this column's left end; the
+        // width is the window's own measurement (`--traffic`).
+        style={{ paddingLeft: "var(--traffic)" }}
+      >
         {here.map((c, i) => (
           <span key={c.key} className="flex min-w-0 items-center gap-1">
             {i > 0 && <span className="flex-none text-muted-foreground">›</span>}
@@ -174,73 +205,22 @@ export function TitleBar({
           </span>
         ))}
       </nav>
-      <Button
-        variant="ghost"
-        size={narrow ? "icon" : "sm"}
-        data-global-search
-        aria-label={gui.find_everything}
-        onClick={() => setOpen(true)}
-        className="min-h-touch min-w-touch flex-none"
-      >
-        <IconSearch />
-        {!narrow && (
-          <>
-            <span className="text-xs text-muted-foreground">{gui.find_everything}</span>
-            <span data-search-hint className="text-xs tabular-nums text-muted-foreground">
-              ⌘K
-            </span>
-          </>
-        )}
-      </Button>
-      {!narrow && (
-        <button
-          type="button"
-          data-net-line
-          onClick={onNetwork}
-          className="min-h-touch flex-none rounded-sm px-2 text-xs text-muted-foreground hover:bg-secondary"
-        >
-          {netLine(devices)}
-        </button>
-      )}
-      {windowsApp && (
-        // **Windows' habit, drawn here because Windows has no buttons of
-        // its own over this row**: minimise, maximise, close — close
-        // turning red under the pointer, the way every window on that
-        // desktop behaves.
-        <div data-window-controls className="flex flex-none items-center">
-          {[
-            { key: "minimize", label: gui.window_minimize, run: windowMinimize, mark: "—" },
-            { key: "maximize", label: gui.window_maximize, run: windowMaximizeToggle, mark: "▢" },
-            { key: "close", label: gui.window_close, run: windowClose, mark: null },
-          ].map((b) => (
-            <button
-              key={b.key}
-              type="button"
-              data-window-control={b.key}
-              aria-label={b.label}
-              onClick={() => void b.run().catch(() => {})}
-              className={cn(
-                "flex h-title-bar w-12 items-center justify-center text-xs",
-                b.key === "close" ? "hover:bg-destructive hover:text-white" : "hover:bg-secondary",
-              )}
-            >
-              {b.mark ?? <IconClose />}
-            </button>
-          ))}
-        </div>
-      )}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-search-dialog>
-          <DialogHeader>
-            <DialogTitle>{gui.find_everything}</DialogTitle>
-          </DialogHeader>
-          <div className="flex min-w-0 flex-col gap-2">
+      {/* The middle column: the seat is `relative` so the hits hang from
+          it, and the box inside is the fixed width the ruling names —
+          360, down to 240 before it gives way. */}
+      <div ref={seat} data-search-seat className="relative flex justify-center">
+        {open ? (
+          <div className="w-search-box">
             <Input
               ref={box}
-              autoFocus
               data-search-box
               value={word}
               placeholder={gui.find_hint}
+              aria-label={gui.find_everything}
+              role="combobox"
+              aria-expanded={shown.length > 0}
+              aria-controls="khor-search-rows"
+              className="h-7 w-full"
               onChange={(e) => setWord(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") {
@@ -252,39 +232,115 @@ export function TitleBar({
                 } else if (e.key === "Enter") {
                   e.preventDefault();
                   go(shown[at]);
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  setOpen(false);
                 }
               }}
             />
-            {word.trim() !== "" && shown.length === 0 && (
-              <span data-search-none className="text-sm text-muted-foreground">
-                {gui.find_nothing}
-              </span>
+            {/* Hung from the seat, not from the page: the row is the
+                anchor, and what is under it stays under it however the
+                window moves. */}
+            {word.trim() !== "" && (
+              <div
+                id="khor-search-rows"
+                data-search-rows
+                role="listbox"
+                className="absolute top-full right-0 left-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-md border bg-card shadow-md"
+              >
+                {shown.length === 0 && (
+                  <span data-search-none className="px-2 py-2 text-sm text-muted-foreground">
+                    {gui.find_nothing}
+                  </span>
+                )}
+                {shown.map((h, i) => (
+                  <button
+                    key={`${h.kind}:${h.id}`}
+                    type="button"
+                    role="option"
+                    aria-selected={i === at}
+                    data-search-row={h.id}
+                    data-search-kind={h.kind}
+                    data-on={i === at}
+                    onClick={() => go(h)}
+                    className={cn(
+                      "flex min-h-touch min-w-0 items-center gap-2 px-2 text-left text-sm hover:bg-muted/50",
+                      i === at && "bg-accent",
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate">{h.label}</span>
+                    {h.note !== null && (
+                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{h.note}</span>
+                    )}
+                    <span className="flex-none text-xs text-muted-foreground">{kindWord(h.kind)}</span>
+                  </button>
+                ))}
+              </div>
             )}
-            <div data-search-rows className="flex max-h-72 min-w-0 flex-col overflow-y-auto">
-              {shown.map((h, i) => (
-                <button
-                  key={`${h.kind}:${h.id}`}
-                  type="button"
-                  data-search-row={h.id}
-                  data-search-kind={h.kind}
-                  data-on={i === at}
-                  onClick={() => go(h)}
-                  className={cn(
-                    "flex min-h-touch min-w-0 items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-muted/50",
-                    i === at && "bg-accent",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{h.label}</span>
-                  {h.note !== null && (
-                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{h.note}</span>
-                  )}
-                  <span className="flex-none text-xs text-muted-foreground">{kindWord(h.kind)}</span>
-                </button>
-              ))}
-            </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        ) : (
+          <Button
+            variant="ghost"
+            size={narrow ? "icon" : "sm"}
+            data-global-search
+            aria-label={gui.find_everything}
+            onClick={() => setOpen(true)}
+            className={cn(
+              "min-h-touch flex-none justify-start gap-2",
+              narrow ? "min-w-touch" : "h-7 w-search-box border text-muted-foreground",
+            )}
+          >
+            <IconSearch />
+            {!narrow && (
+              <>
+                <span className="min-w-0 flex-1 truncate text-left text-xs">{gui.find_everything}</span>
+                <span data-search-hint className="text-xs tabular-nums">
+                  ⌘K
+                </span>
+              </>
+            )}
+          </Button>
+        )}
+      </div>
+      <div className="flex min-w-0 items-center justify-end gap-1">
+        {!narrow && (
+          <button
+            type="button"
+            data-net-line
+            onClick={onNetwork}
+            className="min-h-touch min-w-0 truncate rounded-sm px-2 text-xs text-muted-foreground hover:bg-secondary"
+          >
+            {netLine(devices)}
+          </button>
+        )}
+        {windowsApp && (
+          // **Windows' habit, drawn here because Windows has no buttons
+          // of its own over this row**: minimise, maximise, close —
+          // close turning red under the pointer, the way every window on
+          // that desktop behaves.
+          <div data-window-controls className="flex flex-none items-center">
+            {[
+              { key: "minimize", label: gui.window_minimize, run: windowMinimize, mark: "—" },
+              { key: "maximize", label: gui.window_maximize, run: windowMaximizeToggle, mark: "▢" },
+              { key: "close", label: gui.window_close, run: windowClose, mark: null },
+            ].map((b) => (
+              <button
+                key={b.key}
+                type="button"
+                data-window-control={b.key}
+                aria-label={b.label}
+                onClick={() => void b.run().catch(() => {})}
+                className={cn(
+                  "flex h-title-bar w-12 items-center justify-center text-xs",
+                  b.key === "close" ? "hover:bg-destructive hover:text-white" : "hover:bg-secondary",
+                )}
+              >
+                {b.mark ?? <IconClose />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </header>
   );
 }

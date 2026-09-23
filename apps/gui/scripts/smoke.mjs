@@ -4980,7 +4980,7 @@ for line in sys.stdin:
     const firstFromCli = (said[0] ?? "").split("\t");
     await page.keyboard.press("Meta+k");
     await until("the search box", 10_000, async () =>
-      (await page.locator("[data-search-dialog] [data-search-box]").count()) === 1,
+      (await page.locator("[data-search-seat] [data-search-box]").count()) === 1,
     );
     await page.locator("[data-search-box]").fill(word);
     await until("a hit in the window", 15_000, async () => (await page.locator("[data-search-row]").count()) > 0);

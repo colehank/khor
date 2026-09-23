@@ -88,6 +88,31 @@ const rust = readFileSync(
   join(here, "..", "src-tauri", "src", "lib.rs"),
   "utf8",
 );
+// **The title row's height, in the one place CSS cannot reach**
+// (docs/SHELL.md 第十一轮): macOS's three buttons are placed by a number
+// worked out from this height, and that number is handed to tauri when
+// the window is built — in Rust, where `--title-bar` is not readable. So
+// the height is written twice and this refuses a disagreement, the same
+// arrangement the two grounds above have.
+{
+  const inCss = /--title-bar:\s*([0-9.]+)px/.exec(css);
+  const inRust = /const TITLE_BAR: f64 = ([0-9.]+);/.exec(rust);
+  if (!inCss || !inRust) {
+    fail(
+      `the row's height is declared in tokens.css (--title-bar: ${inCss?.[1] ?? "missing"}) and in ` +
+        `src-tauri/src/lib.rs (TITLE_BAR = ${inRust?.[1] ?? "missing"}) — one of them is not there, so ` +
+        "nothing below compares them",
+    );
+  } else if (parseFloat(inCss[1]) !== parseFloat(inRust[1])) {
+    fail(
+      `the title row is ${inCss[1]}px in tokens.css and ${inRust[1]} in src-tauri/src/lib.rs — the window's ` +
+        "three buttons would be centred on a row that is not the one drawn",
+    );
+  } else {
+    console.log(`title row: ${inCss[1]}px in tokens.css and in src-tauri`);
+  }
+}
+
 const painted = [...rust.matchAll(/Color\(0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0xff\)/g)].map(
   (m) => `#${m[1]}${m[2]}${m[3]}`,
 );

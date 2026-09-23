@@ -457,6 +457,92 @@ if (said.pdf?.loadFailed) {
 // to hold in place and nothing to measure — what the row does is the
 // face gate's (`check-face.mjs`, 第十轮).
 
+// ── The three buttons sit on the row's centre (docs/SHELL.md 第十一轮) ─
+//
+// 「三颗按钮真的居中: 那个 y 不要写死, 改成启动时读三颗按钮和容器的实际
+// frame, 算出让按钮中心等于行中心的那个数再设」. Not WebKit, but a
+// question only a real AppKit window answers, which is why it lives in
+// this family: `examples/traffic_lights.rs` builds a window in khor's
+// style, wears `src-tauri/src/traffic.rs` — the app's own lines,
+// included by path — repeats tao's placement on it (container height =
+// button + `y`, pinned to the window's top) and prints where the trio
+// actually landed, measured from the window's top down.
+//
+// Two arms, and the first is the point:
+//
+//   - `written-down`, the number `tauri.conf.json` carried until this
+//     round (`y: 12`) — the control arm: it **must** miss the centre,
+//     or this window centres the buttons whatever khor says and the
+//     measured arm proves nothing;
+//   - `measured`, the app: centre exactly on the row's, for the row it
+//     has **and for a different row height**, since the height is a
+//     token that can move and a number that only happens to fit 38 is
+//     the bug this round is about.
+{
+  const ROWS = [38, 52];
+  const run = (mode) => {
+    try {
+      const out = execFileSync(
+        "cargo",
+        ["run", "-q", "-j", "3", "-p", "khor-gui", "--example", "traffic_lights", "--", mode],
+        { cwd: join(here, "../../.."), encoding: "utf8", timeout: 900_000, stdio: ["ignore", "pipe", "pipe"] },
+      );
+      return out
+        .split("\n")
+        .filter((l) => l.startsWith("{"))
+        .map((l) => JSON.parse(l));
+    } catch (e) {
+      fail(`wk: the traffic-lights probe did not run in ${mode} (${String(e.stderr ?? e.message).trim().slice(-300)})`);
+      return [];
+    }
+  };
+  const off = (r) => Math.abs(r.centre - r.row / 2);
+  const written = run("written-down");
+  console.log(`wk: lights, written down  ${written.map((r) => `${r.row} → ${r.centre} (差 ${off(r).toFixed(2)})`).join(" · ")}`);
+  if (written.length === 0 || written.some((r) => r.skipped !== undefined)) {
+    console.log("wk: lights      未量 — this window has no system buttons, so nothing about their place was measured");
+  } else {
+    const control = written.find((r) => r.row === 38);
+    if (!control) {
+      fail("wk: probe dead — the written-down arm never printed the 38 row");
+    } else if (off(control) === 0) {
+      fail(
+        "wk: probe dead — the old written-down 12 already centres the trio on a 38 row in this probe, so the " +
+          "measured arm cannot tell khor's arithmetic from any other number",
+      );
+    }
+    const app = run("measured");
+    console.log(
+      `wk: lights, the app       ${app
+        .map((r) => `${r.row} → ${r.centre} (差 ${off(r).toFixed(2)}, 间距 ${r.spacing}, 留宽 ${r.room})`)
+        .join(" · ")}`,
+    );
+    for (const row of ROWS) {
+      const r = app.find((x) => x.row === row);
+      if (!r) {
+        fail(`wk: the lights' ${row} row never printed`);
+        continue;
+      }
+      if (off(r) !== 0) {
+        fail(
+          `wk: on a ${row}-tall row the three buttons' centre landed at ${r.centre}, and the row's centre is ` +
+            `${row / 2} — 差 ${off(r).toFixed(2)}, not 0 (「三颗按钮真的居中」, src-tauri/src/traffic.rs inset_y)`,
+        );
+      }
+    }
+    // The SDK's own size and spacing, on every row height: this round
+    // moves the trio, it does not redraw it (第十轮's ruling that the
+    // system's buttons are the system's).
+    const spacings = new Set(app.map((r) => `${r.spacing}/${r.button}`));
+    if (app.length > 0 && spacings.size !== 1) {
+      fail(
+        `wk: the buttons' own spacing and size changed with the row height (${[...spacings].join(" vs ")}) — ` +
+          "khor places the trio and draws none of it",
+      );
+    }
+  }
+}
+
 // ── Printed, not asserted: the two ways out that are still open ──────
 console.log(`wk: bare        ${JSON.stringify(said.bare)}`);
 console.log(`wk: shimmed     ${JSON.stringify(said.shimmed)}`);
