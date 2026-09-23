@@ -12,10 +12,11 @@
 //
 // Every control carries a name from the catalog. A control the eye reads
 // by its shape still has to say what it is out loud.
-import { Fragment } from "react";
+import { Fragment, type CSSProperties } from "react";
 
 import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Omnibox, type OmniAxis } from "@/components/Omnibox";
+import { SideSeat } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
     word this layer invented — see `PaneBar`'s filter prop.
@@ -59,9 +61,21 @@ export function PaneBar({
   filterLabel,
   arrange,
   create,
+  seat,
 }: {
   /** Names the search box and stands in as its placeholder. */
   searchLabel: string;
+  /**
+   * `"side"`: this is a sidebar's head, and it sits in the left block's
+   * first row (docs/SHELL.md 第十三轮 第 4 条:「列表头原来那一行撤掉，
+   * 搜索只有这一处」) — beside macOS's buttons, over the rail and the
+   * list at once — rather than at the top of its own column. Still
+   * written by the landing, next to the list it narrows, because what
+   * the box does is the landing's; where it stands is the shell's
+   * (`SideHead`). A head with no seat stays at the top of whatever it
+   * is in (the tab switcher's box, the workspace's sessions column).
+   */
+  seat?: "side";
   query: string;
   onQuery: (q: string) => void;
   /**
@@ -119,7 +133,7 @@ export function PaneBar({
    */
   create?: { label: string; mark?: string; disabled?: boolean; onSelect?: () => void };
 }) {
-  return (
+  const bar = (
     <div
       data-pane-bar
       // **The blank of this bar moves the window** (第八轮 第 59 条:
@@ -144,7 +158,18 @@ export function PaneBar({
       // number nobody wrote against a band that was 48. One token now
       // says both, so they cannot drift apart again by one of them
       // being retuned.
-      className="flex min-h-pane-head flex-none items-center gap-1 border-b px-2"
+      //
+      // **Seated, no padding at the left and no rule under**: the row
+      // it sits in already starts at the rail's glyph box (第十三轮 第 2
+      // 条: the search box's left edge is that line) and is one piece
+      // with the block under it.
+      className={cn(
+        "flex min-h-pane-head flex-none items-center gap-1",
+        seat === "side" ? "min-w-0 flex-1 pr-1" : "border-b px-2",
+      )}
+      // A menu hung from this box starts at the list column, not over
+      // the rail (tokens.css `--seat-menu-inset`).
+      style={seat === "side" ? ({ "--menu-inset": "var(--seat-menu-inset)" } as CSSProperties) : undefined}
     >
       {/* **One search slot, two shapes.** A pane that has axes to narrow
           by gets the omnibox; one that does not gets the plain box it
@@ -180,8 +205,21 @@ export function PaneBar({
             // height, so both classes would have survived and the winner
             // would have been whichever the stylesheet emitted last
             // (`button.tsx` wrote that trap down first).
-            className="min-h-touch border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0"
+            className={cn(
+              "min-h-touch border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0",
+              seat === "side" && "pr-10",
+            )}
           />
+          {/* Which range the box is on (第十三轮 第 4 条): typing narrows
+              this column; the word says how to widen it. */}
+          {seat === "side" && (
+            <kbd
+              data-search-scope
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-xs text-muted-foreground"
+            >
+              ⌘K
+            </kbd>
+          )}
         </div>
       )}
 
@@ -290,4 +328,5 @@ export function PaneBar({
       )}
     </div>
   );
+  return seat === "side" ? <SideSeat>{bar}</SideSeat> : bar;
 }

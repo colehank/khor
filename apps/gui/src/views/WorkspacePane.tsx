@@ -1431,6 +1431,7 @@ export function WorkspacePane({
         {(narrow ? screen === "tree" : tree) && (
           <ListPane
             mark="data-ws-tree"
+            ground="side"
             // **A region's name, not a control's** — and that
             // distinction is why `workspace-tree` came back into the
             // catalog after being retired in 2026-09-16 (the key's own
@@ -1634,6 +1635,11 @@ export function WorkspacePane({
             onClose={(id) => shut(id.slice(machine.length + 1))}
             stripData={{ "data-ws-tab-strip": "" }}
             bodyClass="flex flex-col"
+            // This strip heads the middle column, between the tree and
+            // the sessions column — not the region (第十三轮 第 5 条's
+            // board is the sessions landing's), so the file lies flat
+            // under it on the card's colour.
+            frame={false}
             head={
               narrow ? (
                 <Button
@@ -1722,6 +1728,7 @@ export function WorkspacePane({
         {(narrow ? screen === "sessions" : sessions) && (
           <ListPane
             mark="data-ws-sessions"
+            ground="side"
             name={gui.workspace_sessions}
             // The shell, like the tree one column over and like every
             // list pane in the app (2026-09-20 第 6 条). **`side`

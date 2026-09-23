@@ -457,34 +457,58 @@ if (said.pdf?.loadFailed) {
 // to hold in place and nothing to measure — what the row does is the
 // face gate's (`check-face.mjs`, 第十轮).
 
-// ── The three buttons sit on the row's centre (docs/SHELL.md 第十一轮) ─
+// ── The three buttons sit in the left block's first row (docs/SHELL.md 第十三轮) ─
 //
-// 「三颗按钮真的居中: 那个 y 不要写死, 改成启动时读三颗按钮和容器的实际
-// frame, 算出让按钮中心等于行中心的那个数再设」. Not WebKit, but a
+// 第十一轮 asked for 「三颗按钮真的居中」 on the window's own 38 row;
+// 第十三轮 takes that row away and puts the trio in the first row of the
+// left block — the rail's and the list's one row, `--pane-head` tall —
+// with the first button's left edge on the rail's own glyph box, and
+// the search box starting where the trio ends. Not WebKit, but a
 // question only a real AppKit window answers, which is why it lives in
 // this family: `examples/traffic_lights.rs` builds a window in khor's
 // style, wears `src-tauri/src/traffic.rs` — the app's own lines,
 // included by path — repeats tao's placement on it (container height =
 // button + `y`, pinned to the window's top) and prints where the trio
-// actually landed, measured from the window's top down.
+// actually landed, measured from the window's top-left down.
 //
 // Two arms, and the first is the point:
 //
-//   - `written-down`, the number `tauri.conf.json` carried until this
-//     round (`y: 12`) — the control arm: it **must** miss the centre,
-//     or this window centres the buttons whatever khor says and the
+//   - `written-down`, the number `tauri.conf.json` carried until 第十一
+//     轮 (`y: 12`) — the control arm: it **must** miss the centre, or
+//     this window centres the buttons whatever khor says and the
 //     measured arm proves nothing;
-//   - `measured`, the app: centre exactly on the row's, for the row it
-//     has **and for a different row height**, since the height is a
-//     token that can move and a number that only happens to fit 38 is
-//     the bug this round is about.
+//   - `measured`, the app: centre exactly on the row's, the first
+//     button's left edge exactly on the rail's glyph box, the whole
+//     frame inside the row and clear of the search box — for the row
+//     it has **and for a different row height**, since the height is
+//     a token that can move.
+//
+// The rail's glyph box is read off `tokens.css`: a `--rail-item` box
+// centred in `--rail-w` — the same arithmetic `check-boot` holds the
+// Rust constant to.
 {
-  const ROWS = [38, 52];
+  const tokens = readFileSync(join(here, "..", "src", "styles", "tokens.css"), "utf8");
+  const px = (name) => {
+    const m = new RegExp(`--${name}:\\s*([0-9.]+)px;`).exec(tokens);
+    return m ? parseFloat(m[1]) : NaN;
+  };
+  const railW = px("rail-w");
+  const railItem = px("rail-item");
+  const touch = px("touch");
+  const tabLip = px("tab-lip");
+  const glyphLeft = (railW - railItem) / 2;
+  const paneHead = touch + tabLip;
+  if (![railW, railItem, touch, tabLip].every(Number.isFinite)) {
+    fail(`wk: tokens.css did not give --rail-w / --rail-item / --touch / --tab-lip (${railW} / ${railItem} / ${touch} / ${tabLip}) — nothing below knows where the rail's glyph box is`);
+  }
+  // The row it has, and one it does not: the second is what keeps a
+  // number that only happens to fit today's row out of the code.
+  const ROWS = [paneHead, paneHead + 12];
   const run = (mode) => {
     try {
       const out = execFileSync(
         "cargo",
-        ["run", "-q", "-j", "3", "-p", "khor-gui", "--example", "traffic_lights", "--", mode],
+        ["run", "-q", "-j", "3", "-p", "khor-gui", "--example", "traffic_lights", "--", mode, ...ROWS.map(String)],
         { cwd: join(here, "../../.."), encoding: "utf8", timeout: 900_000, stdio: ["ignore", "pipe", "pipe"] },
       );
       return out
@@ -502,19 +526,19 @@ if (said.pdf?.loadFailed) {
   if (written.length === 0 || written.some((r) => r.skipped !== undefined)) {
     console.log("wk: lights      未量 — this window has no system buttons, so nothing about their place was measured");
   } else {
-    const control = written.find((r) => r.row === 38);
+    const control = written.find((r) => r.row === ROWS[0]);
     if (!control) {
-      fail("wk: probe dead — the written-down arm never printed the 38 row");
+      fail(`wk: probe dead — the written-down arm never printed the ${ROWS[0]} row`);
     } else if (off(control) === 0) {
       fail(
-        "wk: probe dead — the old written-down 12 already centres the trio on a 38 row in this probe, so the " +
+        `wk: probe dead — the old written-down 12 already centres the trio on a ${ROWS[0]} row in this probe, so the ` +
           "measured arm cannot tell khor's arithmetic from any other number",
       );
     }
     const app = run("measured");
     console.log(
       `wk: lights, the app       ${app
-        .map((r) => `${r.row} → ${r.centre} (差 ${off(r).toFixed(2)}, 间距 ${r.spacing}, 留宽 ${r.room})`)
+        .map((r) => `${r.row} → centre ${r.centre} (差 ${off(r).toFixed(2)}), x ${r.left}…${r.right}, y ${r.top}…${r.bottom}, 间距 ${r.spacing}, 留宽 ${r.room}`)
         .join(" · ")}`,
     );
     for (const row of ROWS) {
@@ -526,12 +550,28 @@ if (said.pdf?.loadFailed) {
       if (off(r) !== 0) {
         fail(
           `wk: on a ${row}-tall row the three buttons' centre landed at ${r.centre}, and the row's centre is ` +
-            `${row / 2} — 差 ${off(r).toFixed(2)}, not 0 (「三颗按钮真的居中」, src-tauri/src/traffic.rs inset_y)`,
+            `${row / 2} — 差 ${off(r).toFixed(2)}, not 0 (「三颗按钮的中心 y 与第一行中心 y 差 0」, src-tauri/src/traffic.rs inset_y)`,
         );
       }
+      if (r.left === undefined || r.right === undefined || r.top === undefined || r.bottom === undefined || r.room === undefined) {
+        fail(`wk: on a ${row}-tall row the probe printed no frame for the trio (${JSON.stringify(r)}) — 「第一颗的左边缘」 and 「不和搜索框相交」 need it`);
+        continue;
+      }
+      if (r.left !== glyphLeft) {
+        fail(
+          `wk: the first button's left edge is at x=${r.left} and the rail's glyph box starts at x=${glyphLeft} ` +
+            `((--rail-w ${railW} − --rail-item ${railItem}) / 2) — 差 ${Math.abs(r.left - glyphLeft).toFixed(2)}, not 0 (src-tauri/src/traffic.rs X)`,
+        );
+      }
+      if (r.top < 0 || r.bottom > row) {
+        fail(`wk: on a ${row}-tall row the trio spans y ${r.top}…${r.bottom} — 「按钮的 frame 整个落在左块第一行里」`);
+      }
+      if (r.right >= r.room) {
+        fail(`wk: the trio ends at x=${r.right} and the search box starts at x=${r.room} — 「不和搜索框相交」 (src-tauri/src/traffic.rs room)`);
+      }
     }
-    // The SDK's own size and spacing, on every row height: this round
-    // moves the trio, it does not redraw it (第十轮's ruling that the
+    // The SDK's own size and spacing, on every row height: khor places
+    // the trio, it does not redraw it (第十轮's ruling that the
     // system's buttons are the system's).
     const spacings = new Set(app.map((r) => `${r.spacing}/${r.button}`));
     if (app.length > 0 && spacings.size !== 1) {

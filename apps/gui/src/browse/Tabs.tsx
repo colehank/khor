@@ -28,6 +28,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
+import { Region } from "@/components/Region";
 import { cn } from "@/lib/utils";
 
 export function Tabs({
@@ -40,6 +41,7 @@ export function Tabs({
   tail,
   stripData,
   bodyClass,
+  frame = true,
   children,
 }: {
   faces: TabFace[];
@@ -54,6 +56,15 @@ export function Tabs({
   stripData?: Record<string, string>;
   /** How the region under the strip sits in its column. */
   bodyClass?: string;
+  /**
+   * Whether the strip is a region's first row with the board under it
+   * (`Region`, docs/SHELL.md 第十三轮 第 5 条) — the sessions landing.
+   * `false` where the strip heads one column among others (the
+   * workspace's middle column, between its tree and its sessions): the
+   * body is the card's colour flat under the strip, so the open tab
+   * still joins what it opens.
+   */
+  frame?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -71,36 +82,42 @@ export function Tabs({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [open]);
-  return (
+  const strip = (
+    <div {...stripData} className="flex min-w-0 flex-1 flex-col">
+      <TabStrip
+        faces={faces}
+        active={active}
+        onFocus={onFocus}
+        onClose={onClose}
+        onNew={onNew}
+        head={head}
+        tail={tail}
+        onSwitch={() => setOpen((o) => !o)}
+        switching={open}
+      />
+    </div>
+  );
+  const body = open ? (
+    <TabSwitcher
+      faces={faces}
+      active={active}
+      onFocus={(id) => {
+        onFocus(id);
+        setOpen(false);
+      }}
+      onClose={onClose}
+    />
+  ) : (
+    children
+  );
+  return frame ? (
+    <Region head={strip} className={bodyClass}>
+      {body}
+    </Region>
+  ) : (
     <>
-      <div {...stripData} className="flex flex-none flex-col">
-        <TabStrip
-          faces={faces}
-          active={active}
-          onFocus={onFocus}
-          onClose={onClose}
-          onNew={onNew}
-          head={head}
-          tail={tail}
-          onSwitch={() => setOpen((o) => !o)}
-          switching={open}
-        />
-      </div>
-      <div className={cn("min-h-0 flex-1", bodyClass)}>
-        {open ? (
-          <TabSwitcher
-            faces={faces}
-            active={active}
-            onFocus={(id) => {
-              onFocus(id);
-              setOpen(false);
-            }}
-            onClose={onClose}
-          />
-        ) : (
-          children
-        )}
-      </div>
+      <div className="flex h-pane-head flex-none">{strip}</div>
+      <div className={cn("min-h-0 flex-1 bg-card", bodyClass)}>{body}</div>
     </>
   );
 }

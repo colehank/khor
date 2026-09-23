@@ -1200,28 +1200,13 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 // three buttons to an older spacing and put them back whenever AppKit
 // laid the title bar out again (`window_buttons.rs`, and a frame-change
 // observer on top of it). **Nothing of the system's is moved now**: the
-// window has a row of its own at the top, and `trafficLightPosition`
+// left block's first row is where they stand (第十三轮 — the window's
+// own row of 第十轮 lasted three rounds), and `trafficLightPosition`
 // places the buttons inside it once, at the SDK's own size and spacing,
 // with the number `traffic` measures (第十一轮 — it lived in
-// `tauri.conf.json` for one round, written down and wrong). One row,
-// three platforms.
-
-/// **How tall khor's own title row is** (docs/SHELL.md 第十轮),
-/// duplicated here from `src/styles/tokens.css`'s `--title-bar` for the
-/// one thing CSS cannot do: tell macOS where to put the three system
-/// buttons so they sit on this row's centre. `check-boot.mjs` reads both
-/// and refuses a disagreement — the same arrangement the window's two
-/// grounds already have.
-#[cfg(desktop)]
-const TITLE_BAR: f64 = 38.0;
-
-/// How far the trio starts from the window's left edge, and the gap
-/// after it before the row draws anything — the row keeps
-/// `traffic::room` of width clear for both.
-#[cfg(desktop)]
-const TRAFFIC_X: f64 = 20.0;
-#[cfg(desktop)]
-const TRAFFIC_GAP: f64 = 12.0;
+// `tauri.conf.json` for one round, written down and wrong). The row's
+// height, where the trio starts and the gap after it are `traffic`'s
+// three constants, held to `tokens.css` by `check-boot.mjs`.
 
 /// The window itself, **built here rather than in `tauri.conf.json`**.
 ///
@@ -1249,8 +1234,8 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             .hidden_title(true);
         if let Some(lights) = traffic::measure() {
             win = win.traffic_light_position(tauri::LogicalPosition::new(
-                TRAFFIC_X,
-                traffic::inset_y(TITLE_BAR, &lights),
+                traffic::X,
+                traffic::inset_y(traffic::PANE_HEAD, &lights),
             ));
         }
     }
@@ -1258,17 +1243,18 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// How much of the row's left end macOS's three buttons stand in, in CSS
-/// pixels — what the face sets `--traffic` from. **Zero where the system
-/// draws no buttons over the row** (Windows draws its own at the other
-/// end, Linux keeps its decorations, a browser has no window).
+/// How much of the left block's first row macOS's three buttons stand
+/// in, in CSS pixels — what the face sets `--traffic` from, and where
+/// the search box starts. **Zero where the system draws no buttons over
+/// the row** (Windows draws its own at the tab strip's end, Linux keeps
+/// its decorations, a browser has no window).
 #[cfg(desktop)]
 #[tauri::command]
 fn traffic_room() -> f64 {
     #[cfg(target_os = "macos")]
     {
         traffic::measure()
-            .map(|m| traffic::room(TRAFFIC_X, TRAFFIC_GAP, &m))
+            .map(|m| traffic::room(traffic::X, traffic::GAP, &m))
             .unwrap_or(0.0)
     }
     #[cfg(not(target_os = "macos"))]

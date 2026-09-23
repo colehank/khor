@@ -291,11 +291,14 @@ export function TabStrip({
       // from the element it is written on. Tabs, the "+" and the head
       // are children of one or the other and keep every press.
       data-tauri-drag-region="deep"
-      // **The band is darker and the open tab is the page's own
-      // colour**, which is the whole of how a tab says it is in front:
-      // its bottom edge has no edge, so it reads as continuous with what
-      // is under it, and the ones that are not open sit *in* the band
-      // behind it. That is Chrome's arrangement, and it is not a
+      // **The band is the app's ground and the open tab is the board's
+      // colour** (docs/SHELL.md 第十三轮 第 5 条: the band wears nothing
+      // of its own since the board under it floats on `--background`,
+      // and the open tab is `--card` with its top corners rounded and
+      // no bottom edge, joined to the board), which is the whole of how
+      // a tab says it is in front: it reads as continuous with what is
+      // under it, and the ones that are not open sit transparent on the
+      // ground behind it. That is Chrome's arrangement, and it is not a
       // stylistic borrowing — it is the only one where "in front" is
       // said by the same surface that the content is on.
       //
@@ -351,7 +354,7 @@ export function TabStrip({
       // tab when it is crowded is the switcher, which has its own — and
       // the switcher is offered exactly when the strip has stopped
       // showing every tab.
-      className="flex h-pane-head flex-none items-end gap-1 bg-muted/40 px-2 pt-tab-lip"
+      className="flex h-pane-head min-w-0 flex-1 items-end gap-1 px-in pt-tab-lip"
     >
       {head}
       {/* The scroller and the two fades over its ends. **No scrollbar**
@@ -363,14 +366,14 @@ export function TabStrip({
         <div
           data-tab-fade="left"
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-linear-to-r from-muted to-transparent"
+          className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-linear-to-r from-background to-transparent"
         />
       )}
       {cut.right && (
         <div
           data-tab-fade="right"
           aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-linear-to-l from-muted to-transparent"
+          className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-linear-to-l from-background to-transparent"
         />
       )}
       <div
@@ -418,8 +421,8 @@ export function TabStrip({
                 // once every stub is at the floor does the strip overflow.
                 // The tab in front never gives.
                 on
-                  ? "min-w-tab max-w-tab-on flex-none bg-background text-foreground"
-                  : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-background/50",
+                  ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
+                  : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
               )}
             >
               <TabOpen menu={f.menu}>
@@ -536,55 +539,45 @@ export function TabStrip({
                   <IconEye className="size-3.5" />
                 </Button>
               )}
-              <Button
-                size="icon"
-                variant="ghost"
+              <button
+                type="button"
                 data-tab-close={f.id}
                 aria-label={gui.close_tab}
+                // **The ×'s own cell** (docs/SHELL.md 第十三轮 第 6 条, the
+                // user's VS Code screenshot:「标签页的 x 按钮不要覆盖在
+                // 文字上, 就是标签页的一块」). Every tab is a face, a
+                // name and this cell — `--ctl-sm` wide, the tab's whole
+                // height, **always there**: the name is a flex item
+                // before it and truncates in front of it, so it can never
+                // run under the ×. That is the arrangement the cell
+                // replaces: a 44-wide close that, on a stub, sat
+                // `absolute` over the name's end on a patch of `--muted`,
+                // which was the × drawn on top of the word.
+                //
                 // Drawn on the open tab and under the pointer, the session
                 // rows' rule: a close on every tab at once is the strip's
                 // loudest repetition, and the open one needs it always
-                // because that is the tab a person is finished with.
-                //
-                // **`min-*`, not a `size-*`** — and the class it replaces
-                // is the proof: `size-ctl-sm` never took effect here.
-                // `cn()` cannot lift `h-ctl-md`/`w-ctl-md` off the icon
-                // variant (tailwind-merge does not read `ctl-*` as a
-                // size, `button.tsx` says so with its own measurement),
-                // so both survived and the stylesheet's order decided —
-                // this button measured 30, the icon size, not the 24 it
-                // asked for. A floor beats a height without having to
-                // remove it. The glyph keeps its own size; what grows is
-                // the box, and the ghost wash paints that box, so what
-                // lights up is what can be pressed.
-                //
-                // What it costs, said out loud: the close takes 44 of a
-                // stub's 160 where it took 30, and the half that holds
-                // the face and the name gives them up. On the open tab
-                // it costs nothing — that tab is as wide as its name
-                // plus this.
-                //
-                // **A close that outweighs the open is the tab telling a
-                // finger the wrong thing**, and at 160 the open half is
-                // still the bigger one (102 was the width where they
-                // crossed, back when tabs shrank; fixed stubs never reach
-                // it).
+                // because that is the tab a person is finished with. Not
+                // in front and not hovered, the cell keeps its width and
+                // paints nothing — so a stub never changes shape when the
+                // pointer arrives.
                 //
                 // **A tab with a draft keeps its mark drawn**, dot or
                 // not: the dot *is* the report that something is waiting
                 // here, and a report that only appears under a pointer
-                // is one a phone never sees.
+                // is one a phone never sees — it stands in the cell.
                 //
-                // **On a stub it takes no width** (第三轮 第 1 条): a
-                // compressed stub is a face and two or three characters,
-                // and a close reserved beside them would be most of it.
-                // So on a tab not in front the × lies over the name's end,
-                // under the pointer, on the tab's own ground — and a draft's
-                // dot stays drawn there, the report that must not need a
-                // pointer.
+                // A bare `<button>` rather than the icon `Button`: that
+                // variant carries `w-ctl-md`, and `cn()` cannot lift a
+                // `ctl-*` width off (`button.tsx` measured that), so a
+                // cell that asked for `--ctl-sm` would have got whichever
+                // the stylesheet emitted last. Under the floor on purpose,
+                // and the face gate names it so (第十三轮): the cell's width
+                // is the ruling's, and a finger has the switcher's close
+                // at the floor.
                 className={cn(
-                  "min-h-touch min-w-touch flex-none",
-                  !on && "absolute top-0 right-0 bg-muted",
+                  "flex h-full w-ctl-sm flex-none items-center justify-center rounded-sm text-muted-foreground outline-none",
+                  "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
                   !on &&
                     !f.dirty &&
                     "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
@@ -607,7 +600,7 @@ export function TabStrip({
                 ) : (
                   <IconClose />
                 )}
-              </Button>
+              </button>
             </div>
           );
         })}

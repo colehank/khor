@@ -82,6 +82,16 @@
   --background: #f4f4ef;
   --foreground: rgba(26, 26, 20, 0.94);
   --card: #fcfcfa;
+  /* **The left block's own ground** (docs/SHELL.md 第十三轮 第 1 条:
+     「竖栏和列表一种底色, 体现出侧边栏和侧边栏内容是一体的」): the rail
+     and every list column sit on it, under a first row of the same
+     material. A third ground beside the page's and the card's, darker
+     than both on the light theme and darker than both on the dark one,
+     which is what makes the block read as one piece of furniture and
+     the board on the right read as lifted off the page.
+     `check-palette` reads a row's two lines against it; `check-boot`
+     holds the first frame to it. */
+  --side: #ebebe5;
   --card-foreground: rgba(26, 26, 20, 0.94);
   --popover: #fcfcfa;
   --popover-foreground: rgba(26, 26, 20, 0.94);
@@ -93,7 +103,14 @@
   --secondary: rgba(26, 26, 20, 0.06);
   --secondary-foreground: rgba(26, 26, 20, 0.78);
   --muted: rgba(26, 26, 20, 0.06);
-  --muted-foreground: rgba(26, 26, 20, 0.62);
+  /* 0.63, up from 0.62 on 2026-09-23 (docs/SHELL.md 第十三轮): the lists
+     moved onto `--side`, a darker ground than the card's, and a row's
+     second line on a **selected** row there — this ink over `--accent`
+     over `--side` — measured 4.40, under the 4.5 a line of text needs.
+     One point of alpha puts it at 4.54; lightening `--side` instead
+     would have moved the user's chosen ground for a gain of 0.04.
+     `check-palette` reads it. */
+  --muted-foreground: rgba(26, 26, 20, 0.63);
   /* The ink a conversation is read in — softer than `--foreground`, and
    * worn only by prose. Measures 12.07 on this theme's paper, where
    * `--foreground` measures 13.60.
@@ -533,8 +550,15 @@
    * hue goes as deep as the paper needs it to (77.6°, the same hue and
    * saturation as `--lq3`, taken down in lightness) and the mark is
    * green on both grounds — deep green on paper, the brand's own green
-   * at night, where the ground is dark enough to carry it. */
-  --rail-on-ink: #35401c;
+   * at night, where the ground is dark enough to carry it.
+   *
+   * `#303a19`, one step deeper than the `#35401c` of 2026-08-31, since
+   * 2026-09-23 (docs/SHELL.md 第十三轮): the rail moved onto `--side`,
+   * which is darker paper than `--background`, and a hovered open glyph
+   * — this ink over the hover wash over `--side` — read 8.21 against a
+   * resting 6.32, under the 2 margin check-rail asks for. Same hue,
+   * taken down another notch: 10.06 open, 8.95 hovered. */
+  --rail-on-ink: #303a19;
   --icon-body: 0.7;
 
   /* **Tombstone: `--rail-on` was the block behind whichever rail item
@@ -744,24 +768,39 @@
      15px of air, and the glyphs read as crowded before anyone got as
      far as their colour. */
   --rail-w: 64px;
-  /* **The window's own row** (docs/SHELL.md 第十轮): one band across the
-     top of the window, above the rail and every pane, carrying the three
-     global things — where you are, one search, the network in a line.
-     38 by the ruling; one source, like `--pane-head`. */
-  --title-bar: 38px;
-  /* How wide the row's middle column is — the search. Fixed rather than
-     fluid so it sits still while the crumbs beside it grow and shrink;
-     360 by the ruling (docs/SHELL.md 第十一轮), 240 once the window is
-     too narrow to spend that much on it, and after that it gives way
-     (the column is `auto`). */
-  --search-box: 360px;
-  /* How wide a strip that row leaves at its left end for **the system's
-     own three buttons**, which khor never moves or resizes: macOS puts
-     them inside this row (tauri's `trafficLightPosition`) and this is
-     the width they stand in.
+  /* One glyph box on the rail: a `--icon-rail` glyph (32) with eight
+     of padding each side (`RailItem`'s `px-2`). Written down because the
+     next token is measured from its edge. */
+  --rail-item: 48px;
+  /* Where the rail's glyph box starts: that box centred in the rail.
+     **The left block's first row starts its controls here too**
+     (docs/SHELL.md 第十三轮 第 2 条) — the search box's left edge on
+     the rail's glyph box, and on macOS the first of the three buttons —
+     which is why it is derived and not picked. `src-tauri/src/traffic.rs`
+     carries the same number for the window, and `check-boot` holds the
+     two together. */
+  --side-inset: calc((var(--rail-w) - var(--rail-item)) / 2);
+  /* **A menu hung from the seated box starts at the list, not at the
+     box** (第十三轮): the box starts on the rail's glyph box, so a menu
+     hung straight down from its left edge — the omnibox's candidates,
+     ⌘K's hits — would lie over the rail's glyphs, and a press meant for
+     the rail would land on a candidate (the face gate caught it on the
+     devices glyph, under 「待批」). This is how far in from the box's
+     left edge the list column starts: the rail's width less where the
+     box began, never negative (on macOS the box already starts past
+     the rail). `--menu-inset` is what a menu reads, `0` everywhere but
+     the seat, which sets it to this. */
+  --seat-menu-inset: max(0px, calc(var(--rail-w) - max(var(--traffic), var(--side-inset))));
+  --menu-inset: 0px;
+  /* How wide the left block's first row keeps clear at its left end for
+     **the system's own three buttons**, which khor never moves or
+     resizes: macOS puts them inside this row (tauri's
+     `trafficLightPosition`) and this is the width they stand in — from
+     `--side-inset`, the trio, and one `--gap-in` before the search box.
      Zero on every other face, and that is the whole of「不改行为」for
      this one: the web face, Windows (its own three are drawn at the
-     right end) and Linux (system decorations) leave no strip here. */
+     tab strip's right end) and Linux (system decorations) leave no
+     strip here. */
   --traffic: 0px;
   --list-w: 288px;
   /* The list pane's drag bounds. The floor is where the PaneBar stops
@@ -818,13 +857,15 @@
   --tab-w-on: min(420px, 100%);
   /* …and the floor a stub is pressed down to before the strip gives up
    * and overflows (docs/SHELL.md 第三轮 第 1 条:「先压，再溢出」): a face,
-   * the tab gap and two or three characters. Every stub shrinks by the
-   * same amount, so they are still one width — 2026-09-02's
-   * 「未选中固定长度」 is about stubs not following their names, and
-   * they still do not. The × takes no room on a stub (it lies over the
-   * name's end under the pointer), which is what lets the floor be this
-   * low. */
-  --tab-w-min: 80px;
+   * the tab gap, two or three characters **and the ×'s own cell**
+   * (第十三轮 第 6 条:「标签页的 x 按钮不要覆盖在文字上, 就是标签页的
+   * 一块」— the cell is `--ctl-sm` wide and always there, so the name
+   * ends before it rather than running under it; 80 was the floor while
+   * the × lay over the name's end). Every stub shrinks by the same
+   * amount, so they are still one width — 2026-09-02's 「未选中固定
+   * 长度」 is about stubs not following their names, and they still do
+   * not. */
+  --tab-w-min: 104px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted
@@ -1306,23 +1347,13 @@
  *
  * Unlayered, beside `:root` itself: `@layer base` would lose to the
  * declaration above however specific this selector is. */
-/* A window too narrow for 360 of search gives the middle column less
-   before it gives the crumbs anything (docs/SHELL.md 第十一轮). A media
-   query rather than the app's `data-narrow`: this is about the window's
-   width and nothing else. */
-@media (max-width: 900px) {
-  :root {
-    --search-box: 240px;
-  }
-}
-
 :root[data-traffic] {
   /* A starting value only, and deliberately close: the app measures the
      buttons and writes the real width onto this element at startup
      (`api.ts` trafficRoom, docs/SHELL.md 第十一轮), because their size is
      the SDK's rather than khor's. What this number buys is the first
-     frame, before that answer comes back. */
-  --traffic: 92px;
+     frame, before that answer comes back (this Mac: 8 + 60 + 8). */
+  --traffic: 76px;
 }
 
 /* ── Dark, once, hung on an attribute rather than on a media query ──
@@ -1353,6 +1384,7 @@
   --background: #0f0f0e;
   --foreground: rgba(238, 238, 231, 0.96);
   --card: #191917;
+  --side: #151513;
   --card-foreground: rgba(238, 238, 231, 0.96);
   --popover: #191917;
   --popover-foreground: rgba(238, 238, 231, 0.96);
@@ -1550,6 +1582,7 @@
   --color-badge-foreground: var(--badge-foreground);
   --color-avatar-edge: var(--avatar-edge);
   --color-rail-ink: var(--rail-ink);
+  --color-side: var(--side);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -1563,8 +1596,8 @@
   --spacing-touch: var(--touch);
   --spacing-rail: var(--rail-w);
   --spacing-traffic: var(--traffic);
-  --spacing-title-bar: var(--title-bar);
-  --spacing-search-box: var(--search-box);
+  --spacing-side-inset: var(--side-inset);
+  --spacing-rail-item: var(--rail-item);
   --spacing-list: var(--list-w);
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);

@@ -528,7 +528,9 @@ try {
       const el = document.querySelector(sel);
       return el ? el.getBoundingClientRect().width : 0;
     };
-    return Math.round(w('[data-browse-landing="page"]') - w("[data-browse-tabs]"));
+    // The column stands in the left block since 第十三轮 (docs/SHELL.md),
+    // outside the landing's own box — what the landing spans is the page.
+    return Math.round(w('[data-browse-landing="page"]'));
   });
   // The two landings spend the same room on a column, because it is the
   // same component at the same seam (`components/ListPane`, 第 6 条).

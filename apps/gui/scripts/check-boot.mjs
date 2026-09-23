@@ -45,35 +45,35 @@ if (probe.length < 2) {
   process.exit(1);
 }
 
-const want = { background: token("background"), card: token("card") };
+const want = { background: token("background"), card: token("card"), side: token("side") };
 
 // What the boot frame uses, in source order: body (light), rail
-// (light), column (light), then the dark trio in the media query.
+// (light), column (light), then the dark trio under the stamp. **The
+// rail and the column are one ground now** (docs/SHELL.md 第十三轮 第 1
+// 条: 「竖栏和列表一种底色」) — `--side`, on both.
 const found = [...html.matchAll(/background:\s*(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1]);
-if (found.length !== 5) {
-  fail(`expected 5 colours in the boot frame, found ${found.length}: ${found.join(", ")}`);
+if (found.length !== 6) {
+  fail(`expected 6 colours in the boot frame (ground, rail, column — light then dark), found ${found.length}: ${found.join(", ")}`);
 } else {
-  const [bodyLight, columnLight, darkGround, darkColumn] = [
-    found[0],
-    found[2],
-    found[3],
-    found[4],
-  ];
+  const [bodyLight, railLight, columnLight, darkGround, darkRail, darkColumn] = found;
   const eq = (a, b) => a.toLowerCase() === b.toLowerCase();
   if (!eq(bodyLight, want.background.light)) {
     fail(`the light ground is ${bodyLight}, --background is ${want.background.light}`);
   }
-  if (!eq(found[1], want.background.light)) {
-    fail(`the light rail is ${found[1]}, --background is ${want.background.light}`);
+  if (!eq(railLight, want.side.light)) {
+    fail(`the light rail is ${railLight}, --side is ${want.side.light}`);
   }
-  if (!eq(columnLight, want.card.light)) {
-    fail(`the light column is ${columnLight}, --card is ${want.card.light}`);
+  if (!eq(columnLight, want.side.light)) {
+    fail(`the light column is ${columnLight}, --side is ${want.side.light}`);
   }
   if (!eq(darkGround, want.background.dark)) {
     fail(`the dark ground is ${darkGround}, --background is ${want.background.dark}`);
   }
-  if (!eq(darkColumn, want.card.dark)) {
-    fail(`the dark column is ${darkColumn}, --card is ${want.card.dark}`);
+  if (!eq(darkRail, want.side.dark)) {
+    fail(`the dark rail is ${darkRail}, --side is ${want.side.dark}`);
+  }
+  if (!eq(darkColumn, want.side.dark)) {
+    fail(`the dark column is ${darkColumn}, --side is ${want.side.dark}`);
   }
 }
 
@@ -88,28 +88,48 @@ const rust = readFileSync(
   join(here, "..", "src-tauri", "src", "lib.rs"),
   "utf8",
 );
-// **The title row's height, in the one place CSS cannot reach**
-// (docs/SHELL.md 第十一轮): macOS's three buttons are placed by a number
-// worked out from this height, and that number is handed to tauri when
-// the window is built — in Rust, where `--title-bar` is not readable. So
-// the height is written twice and this refuses a disagreement, the same
-// arrangement the two grounds above have.
+// **The left block's first row, in the one place CSS cannot reach**
+// (docs/SHELL.md 第十三轮 第 2 条): macOS's three buttons are placed by
+// numbers worked out from this row's height, from where the rail's
+// glyph box starts, and from the gap before the search box — handed to
+// tauri when the window is built, in Rust, where no token is readable.
+// So three numbers are written twice, each read here from both files,
+// and a disagreement is refused: the same arrangement the two grounds
+// above have. `--pane-head` is a calc of two tokens, so it is summed
+// here rather than matched as a literal.
+const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"), "utf8");
 {
-  const inCss = /--title-bar:\s*([0-9.]+)px/.exec(css);
-  const inRust = /const TITLE_BAR: f64 = ([0-9.]+);/.exec(rust);
-  if (!inCss || !inRust) {
-    fail(
-      `the row's height is declared in tokens.css (--title-bar: ${inCss?.[1] ?? "missing"}) and in ` +
-        `src-tauri/src/lib.rs (TITLE_BAR = ${inRust?.[1] ?? "missing"}) — one of them is not there, so ` +
-        "nothing below compares them",
-    );
-  } else if (parseFloat(inCss[1]) !== parseFloat(inRust[1])) {
-    fail(
-      `the title row is ${inCss[1]}px in tokens.css and ${inRust[1]} in src-tauri/src/lib.rs — the window's ` +
-        "three buttons would be centred on a row that is not the one drawn",
-    );
-  } else {
-    console.log(`title row: ${inCss[1]}px in tokens.css and in src-tauri`);
+  const px = (name) => {
+    const m = new RegExp(`--${name}:\\s*([0-9.]+)px;`).exec(css);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const rs = (name) => {
+    const m = new RegExp(`pub const ${name}: f64 = ([0-9.]+);`).exec(traffic);
+    return m ? parseFloat(m[1]) : null;
+  };
+  const touch = px("touch");
+  const lip = px("tab-lip");
+  const railW = px("rail-w");
+  const railItem = px("rail-item");
+  const gapIn = px("gap-in");
+  const calc = /--pane-head:\s*calc\(var\(--touch\)\s*\+\s*var\(--tab-lip\)\);/.test(css);
+  const pairs = [
+    ["the first row's height", "PANE_HEAD", calc && touch !== null && lip !== null ? touch + lip : null, "--touch + --tab-lip (--pane-head)"],
+    ["the first button's left edge", "X", railW !== null && railItem !== null ? (railW - railItem) / 2 : null, "(--rail-w − --rail-item) / 2, the rail's glyph box"],
+    ["the gap before the search box", "GAP", gapIn, "--gap-in"],
+  ];
+  for (const [what, name, inCss, from] of pairs) {
+    const inRust = rs(name);
+    if (inCss === null || inRust === null) {
+      fail(
+        `${what} is declared in tokens.css (${from}: ${inCss ?? "missing"}) and in src-tauri/src/traffic.rs ` +
+          `(${name} = ${inRust ?? "missing"}) — one of them is not there, so nothing compares them`,
+      );
+    } else if (inCss !== inRust) {
+      fail(`${what} is ${inCss} by tokens.css (${from}) and ${inRust} in src-tauri/src/traffic.rs ${name} — the window's three buttons would be placed on a row that is not the one drawn`);
+    } else {
+      console.log(`first row: ${name} ${inRust} in src-tauri and in tokens.css (${from})`);
+    }
   }
 }
 
@@ -189,7 +209,7 @@ if (bad) {
   process.exit(1);
 }
 console.log(
-  `boot gate: the first frame's 5 colours and the window's 2 grounds all match --background and ` +
-    `--card, and the theme stamp (${STAMP}, mirror ${JSON.stringify(mirrorInTs)}) is spelled the ` +
+  `boot gate: the first frame's 6 colours match --background and --side, the window's 2 grounds match ` +
+    `--background, the first row's three numbers agree with src-tauri, and the theme stamp (${STAMP}, mirror ${JSON.stringify(mirrorInTs)}) is spelled the ` +
     `same in the frame, the module and the palette`,
 );

@@ -60,12 +60,13 @@
       mounts and full immediately after, so the sibling rule below hides
       this the moment the real thing exists.
 
-      ⚠️ **The four colours here are the only place in this app where a
+      ⚠️ **The six colours here are the only place in this app where a
       palette value is written twice.** They have to be: `tokens.css` is
       a separate request and this frame is about what happens before any
-      request comes back. They are `--background` and `--card` from
-      `src/styles/tokens.css`, light first and dark under the same media
-      query it uses. If those change and these do not, the window
+      request comes back. They are `--background` and `--side` from
+      `src/styles/tokens.css` (the rail and the list are one block on one
+      ground since docs/SHELL.md 第十三轮), light first and dark under the
+      same stamp it uses. If those change and these do not, the window
       flashes the old colour for a quarter second and then settles — a
       flicker with no error anywhere, which is why they are named here
       rather than left as bare hex.
@@ -84,22 +85,24 @@
          take. Empty on purpose: a skeleton with fake rows in it is a
          guess about what the list holds, and this frame knows nothing. */
       #boot i:first-child {
-        width: 44px;
-        background: #f4f4ef;
+        width: 64px;
+        background: #ebebe5;
       }
       #boot i:last-child {
-        width: 260px;
-        background: #fcfcfa;
+        width: 288px;
+        background: #ebebe5;
       }
       #root:not(:empty) ~ #boot {
         display: none;
       }
-      :root[data-theme="dark"] body,
-      :root[data-theme="dark"] #boot i:first-child {
+      :root[data-theme="dark"] body {
         background: #0f0f0e;
       }
+      :root[data-theme="dark"] #boot i:first-child {
+        background: #151513;
+      }
       :root[data-theme="dark"] #boot i:last-child {
-        background: #191917;
+        background: #151513;
       }
     </style>
     <div id="root"></div>

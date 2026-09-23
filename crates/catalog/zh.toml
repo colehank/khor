@@ -2051,16 +2051,13 @@ config-no-such-key = "没有这个设置项: {0}(khor config list 列全部)"
 config-no-such-value = "{0} 收不了「{1}」,它收 {2}"
 
 [gui]
-# 窗口顶上那一行(docs/SHELL.md 第十轮)。网络一句话:台数在前,不对劲的在后。
-# Windows 上窗口自己的三颗按钮(docs/SHELL.md 第十轮;macOS 用系统的,Linux 用原生装饰)。
+# Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"
 window-maximize = "最大化 / 还原"
 window-close = "关闭窗口"
-net-line-all = "{0} 台机器 · 都连得上"
-net-line-quiet = "{0} 台机器 · {1} 台连不上"
-net-line-paused = "{0} 台机器 · 暂停了 {1} 台"
-net-line-alone = "就这一台机器"
-# 全局搜索(⌘K;命令行是 khor find)。
+# 左块第一行那一个搜索框的两种范围(docs/SHELL.md 第十三轮):打字只筛这一列;
+# ⌘K 或 ⇥ 放大到全部(命令行是 khor find)。框里那枚小字标出现在是哪种。
+search-all = "搜全部"
 find-everything = "搜索全部"
 find-hint = "会话、机器、工作区、标签页、设置页"
 find-nothing = "什么都没找到"

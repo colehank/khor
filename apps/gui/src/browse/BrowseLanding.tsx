@@ -66,6 +66,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconClose } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
+import { Region } from "@/components/Region";
 import type { RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { Button } from "@/components/ui/button";
@@ -466,6 +467,7 @@ export function BrowseLanding({
    */
   const head = (
     <PaneBar
+      seat="side"
       searchLabel={kind.words.search}
       query={query}
       onQuery={setQuery}
@@ -506,8 +508,9 @@ export function BrowseLanding({
         <div className="min-h-0 flex-1 overflow-hidden">
           {switching ? (
             // The narrow face's tab screen is this landing's sidebar,
-            // one screen wide — so it wears the same head.
-            <div className="flex h-full min-h-0 flex-col bg-card">
+            // one screen wide — so it wears the same head (seated in the
+            // first row, 第十三轮) and the sidebar's ground.
+            <div className="flex h-full min-h-0 flex-col bg-side">
               {head}
               <div className="min-h-0 flex-1">{tabList}</div>
             </div>
@@ -520,23 +523,27 @@ export function BrowseLanding({
   }
 
   return (
-    <section data-browse-landing={kind.kind} className="flex h-full min-h-0">
+    <section data-browse-landing={kind.kind} className="flex h-full min-h-0 min-w-0 flex-col">
+      {/* Written here, drawn in the left block (第十三轮): the tabs
+          column beside the rail, its head in the block's first row. */}
       <ListPane
         mark="data-browse-tabs"
         name={kind.words.segment}
         pane={pane}
         narrow={false}
         seam={{ "data-list-seam": "" }}
+        seat="side"
         head={head}
         // The switcher holds its own scroller.
         scroll={false}
       >
         {tabList}
       </ListPane>
-      <div className="flex min-w-0 flex-1 flex-col">
-        {tabs.ready && address()}
-        <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
-      </div>
+      {/* The address bar is this landing's first row on the right, and
+          the page is the board under it. */}
+      <Region head={tabs.ready ? <div className="flex min-w-0 flex-1 flex-col">{address()}</div> : undefined}>
+        <div className="h-full min-h-0 overflow-hidden">{body}</div>
+      </Region>
     </section>
   );
 }

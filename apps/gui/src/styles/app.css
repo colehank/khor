@@ -212,6 +212,15 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
+/* **The board is the whole screen on the narrow face** (docs/SHELL.md 第
+   十三轮 第 8 条:「窄档…其余不变」): the margin and the corner that lift
+   it off the ground on the wide face are the wide face's. Keyed on the
+   root's `data-narrow`, which the shell stamps from the one breakpoint. */
+:root[data-narrow] [data-board] {
+  margin: 0;
+  border-radius: 0;
+}
+
 /* Two selectors because the two properties inherit differently:
    `scrollbar-color` inherits, so the root reaches every pane;
    `scrollbar-width` does not, so it has to be said everywhere. */

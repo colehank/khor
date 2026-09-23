@@ -308,6 +308,12 @@ try {
         ring: g("--ring"),
         card: g("--card"),
         bg: g("--background"),
+        // The left block's own ground (docs/SHELL.md 第十三轮): the rail
+        // and every list sit on it, so the row's title, its second line
+        // and the selected row's tint are all read against it.
+        side: g("--side"),
+        ink: g("--foreground"),
+        inkMuted: g("--muted-foreground"),
         lq3: g("--lq3"),
         accent: g("--accent"),
         words: Object.fromEntries(
@@ -320,6 +326,34 @@ try {
       };
     });
     if (!t.primary || !t.ring || !t.lq3) throw new Error(`probe dead in ${scheme}: tokens did not resolve`);
+
+    // ── the left block's ground (docs/SHELL.md 第十三轮 第 1 条) ────
+    //
+    // 「竖栏和列表一种底色」 — a third ground beside the page's and the
+    // card's, and everything a list row says is read on it: the title
+    // in `--foreground`, the second line in `--muted-foreground`, both
+    // also on the selected row's `--accent` tint over it. Text, so the
+    // text floor; and it has to *be* a third ground, not one of the two
+    // under another name.
+    if (!t.side) {
+      fail(`${scheme}: --side does not resolve — the left block has no ground of its own (src/styles/tokens.css)`);
+    } else {
+      const sideRgb = flatten(parse(t.side), rgb(t.bg));
+      const tinted = flatten(parse(t.accent), sideRgb);
+      const onSide = {
+        title: contrast(flatten(parse(t.ink), sideRgb), sideRgb),
+        sub: contrast(flatten(parse(t.inkMuted), sideRgb), sideRgb),
+        titleOn: contrast(flatten(parse(t.ink), tinted), tinted),
+        subOn: contrast(flatten(parse(t.inkMuted), tinted), tinted),
+      };
+      console.log(`${scheme}: on --side ${t.side}: title ${say(onSide.title)}, sub ${say(onSide.sub)}; selected: title ${say(onSide.titleOn)}, sub ${say(onSide.subOn)}`);
+      for (const [what, ratio] of Object.entries(onSide)) {
+        if (ratio < TEXT_FLOOR) fail(`${scheme}: a row's ${what} reads ${say(ratio)} on the left block's ground, under ${TEXT_FLOOR}`);
+      }
+      if (same(t.side, t.card) || same(t.side, t.bg)) {
+        fail(`${scheme}: --side is ${t.side}, the same as --card ${t.card} or --background ${t.bg} — the left block is meant to read as its own material`);
+      }
+    }
 
     const label = contrast(rgb(t.fg), rgb(t.primary));
     const onCard = contrast(flatten(parse(t.ring), rgb(t.card)), rgb(t.card));
@@ -535,7 +569,7 @@ try {
   }
 
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
-  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen");
+  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, and a row reads on the left block's ground");
 } catch (e) {
   fail(String(e));
 } finally {

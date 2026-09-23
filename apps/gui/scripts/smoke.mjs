@@ -4673,7 +4673,7 @@ for line in sys.stdin:
   if ((await page.locator(`[data-row="${acpOpened}"]`).count()) !== 0) {
     throw new Error(`the stub's conversation ${acpOpened} is open on beta's list before anybody imported it`);
   }
-  await page.locator("[data-list] [data-pane-new]").first().click();
+  await page.locator("[data-side-head] [data-pane-new]").first().click();
   await page.locator('[data-new-item="import"]').click();
   await until("the import panel with all three", 20_000, async () => {
     for (const id of [tmuxRowId, "tui/imp01", acpRow]) {

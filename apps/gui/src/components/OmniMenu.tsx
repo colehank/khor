@@ -12,7 +12,7 @@
 // and ↑↓/Tab/Enter belong to the field it is in; what crosses to the other
 // window is the list and which row is lit, and what comes back is a press.
 // That is why the window is built unable to take focus.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { hear, hideMenu, inApp, menuPick, menuRows, showMenu, sizeMenu } from "@/api";
 import type { Avatar } from "@/gen/bindings/Avatar";
@@ -90,16 +90,18 @@ export function OmniMenu({
   rows,
   onPick,
   className,
+  style,
 }: {
   rows: MenuRows;
   onPick: (key: string) => void;
   className?: string;
+  style?: CSSProperties;
 }) {
   const flat = rows.groups.flatMap((a) => a.candidates);
   return (
     <div
       data-omni-menu
-      style={{ maxHeight: MENU_TALLEST }}
+      style={{ maxHeight: MENU_TALLEST, ...style }}
       className={cn("overflow-y-auto border bg-popover p-1", className)}
     >
       {rows.groups.map((a) => (

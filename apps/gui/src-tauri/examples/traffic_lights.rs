@@ -1,25 +1,30 @@
-//! Does the number khor works out really centre macOS's three buttons on
-//! its title row? (docs/SHELL.md 第十一轮; `npm run wk` runs this.)
+//! Do the numbers khor works out really put macOS's three buttons in the
+//! left block's first row? (docs/SHELL.md 第十一轮, 第十三轮; `npm run wk`
+//! runs this.)
 //!
 //! A real AppKit window in khor's style, and **tao's own placement
 //! repeated on it**: `trafficLightPosition`'s `y` sets the system title
 //! bar container's height to `button height + y` with the container
 //! pinned to the window's top, and the buttons keep their own place
 //! inside it (`tao::platform_impl::macos::view::inset_traffic_lights` —
-//! the seven lines this repeats). khor cannot call that at run time (it
-//! is taken when the window is built), so what this measures is the
-//! arithmetic: given the rule, does `traffic::inset_y` put the trio's
-//! centre on the row's centre — for more than one row height, since the
+//! the seven lines this repeats); `x` moves them sideways. khor cannot
+//! call that at run time (it is taken when the window is built), so what
+//! this measures is the arithmetic: given the rule, does `traffic::inset_y`
+//! put the trio's centre on the row's centre, does `traffic::X` put the
+//! first button's left edge on the rail's glyph box, and does the trio
+//! end before `traffic::room` — for more than one row height, since the
 //! height is a token that can move and the button size is the SDK's.
 //!
 //! One JSON line per row height: the height asked for, the trio's centre
-//! measured from the window's top, and the spacing between the buttons
-//! (which nothing here may change).
+//! and frame measured from the window's top-left down, the spacing
+//! between the buttons (which nothing here may change) and the width the
+//! row keeps clear before the search box.
 //!
 //! Two arms, and the first is the point. `written-down` is the number
-//! `tauri.conf.json` carried until this round (`y: 12`) — without it,
-//! 「the trio is centred」 and 「this window centres it anyway」 read the
-//! same. `measured` is what khor now works out.
+//! `tauri.conf.json` carried until 第十一轮 (`y: 12`) — without it, 「the
+//! trio is centred」 and 「this window centres it anyway」 read the same.
+//! `measured` is what khor now works out. The row heights come after the
+//! arm, so the gate can ask for the token's value and one beside it.
 
 #[cfg(target_os = "macos")]
 #[path = "../src/traffic.rs"]
@@ -35,7 +40,16 @@ fn main() {
     use objc2::{class, msg_send};
     use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-    let mode = std::env::args().nth(1).unwrap_or_else(|| "measured".into());
+    let mut args = std::env::args().skip(1);
+    let mode = args.next().unwrap_or_else(|| "measured".into());
+    let rows: Vec<f64> = {
+        let asked: Vec<f64> = args.filter_map(|a| a.parse().ok()).collect();
+        if asked.is_empty() {
+            vec![traffic::PANE_HEAD, traffic::PANE_HEAD + 12.0]
+        } else {
+            asked
+        }
+    };
 
     unsafe {
         let app: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
@@ -74,15 +88,15 @@ fn main() {
         let holder: *mut AnyObject = msg_send![close, superview];
         let container: *mut AnyObject = msg_send![holder, superview];
 
-        for row in [38.0f64, 52.0] {
-            let y = if mode == "written-down" {
-                12.0
+        for row in rows {
+            let (x, y) = if mode == "written-down" {
+                (20.0, 12.0)
             } else {
-                traffic::inset_y(row, &lights)
+                (traffic::X, traffic::inset_y(row, &lights))
             };
             // tao's placement, repeated: the container's height becomes
             // the button's plus `y`, its top stays at the window's top,
-            // and the buttons are moved only sideways.
+            // and the buttons are moved only sideways, from `x`.
             let c: NSRect = msg_send![close, frame];
             let win_frame: NSRect = msg_send![win, frame];
             let mut bar: NSRect = msg_send![container, frame];
@@ -95,31 +109,38 @@ fn main() {
             };
             for (i, b) in [close, mini, zoom].into_iter().enumerate() {
                 let mut r: NSRect = msg_send![b, frame];
-                r.origin.x = 20.0 + i as f64 * space;
+                r.origin.x = x + i as f64 * space;
                 let _: () = msg_send![b, setFrameOrigin: r.origin];
             }
             spin(0.3);
 
             // Where the trio actually landed, in the window's own
-            // coordinates, top down — the question the user asked.
-            let in_window: NSRect = {
-                let b: NSRect = msg_send![close, bounds];
-                msg_send![close, convertRect: b, toView: std::ptr::null_mut::<AnyObject>()]
+            // coordinates, top-left down — the question the user asked.
+            let in_window = |b: *mut AnyObject| -> NSRect {
+                let bounds: NSRect = msg_send![b, bounds];
+                msg_send![b, convertRect: bounds, toView: std::ptr::null_mut::<AnyObject>()]
             };
             let content: *mut AnyObject = msg_send![win, contentView];
             let content_box: NSRect = msg_send![content, bounds];
-            let centre =
-                content_box.size.height - (in_window.origin.y + in_window.size.height / 2.0);
+            let first = in_window(close);
+            let last = in_window(zoom);
+            let top = content_box.size.height - (first.origin.y + first.size.height);
+            let bottom = content_box.size.height - first.origin.y;
+            let centre = (top + bottom) / 2.0;
             let after: NSRect = msg_send![mini, frame];
             let close_now: NSRect = msg_send![close, frame];
             println!(
-                "{{\"row\":{row},\"centre\":{:.2},\"spacing\":{:.2},\"button\":{:.2},\"y\":{y:.2},\"room\":{:.2}}}",
+                "{{\"row\":{row},\"centre\":{:.2},\"top\":{:.2},\"bottom\":{:.2},\"left\":{:.2},\"right\":{:.2},\"spacing\":{:.2},\"button\":{:.2},\"x\":{x:.2},\"y\":{y:.2},\"room\":{:.2}}}",
                 centre,
+                top,
+                bottom,
+                first.origin.x,
+                last.origin.x + last.size.width,
                 after.origin.x - close_now.origin.x,
                 close_now.size.height,
                 // What the row must keep clear for the trio, by the same
                 // measurement — the face's `--traffic` (`traffic_room`).
-                traffic::room(20.0, 12.0, &lights)
+                traffic::room(traffic::X, traffic::GAP, &lights)
             );
         }
         let _: () = msg_send![win, close];

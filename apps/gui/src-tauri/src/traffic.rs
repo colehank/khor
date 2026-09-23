@@ -1,10 +1,12 @@
-//! Where macOS's three window buttons sit in khor's own title row
-//! (docs/SHELL.md 第十一轮), **measured rather than written down**.
+//! Where macOS's three window buttons sit in the left block's first row
+//! (docs/SHELL.md 第十一轮, 第十三轮), **measured rather than written
+//! down** — and the three numbers the row is drawn from, written here
+//! once for the one side that cannot read a token.
 //!
 //! # What `trafficLightPosition`'s `y` actually means
 //!
 //! Not 「how far from the top」. tao (`view.rs::inset_traffic_lights`)
-//! sets the system title-bar container's height to `button height + y`
+//! sets the system title bar container's height to `button height + y`
 //! and pins that container to the top of the window; the buttons keep
 //! their own place **inside** the container, and AppKit's origin is at
 //! the bottom. So with `b` the button's own offset from the container's
@@ -18,7 +20,9 @@
 //! `y: 12` therefore put the centre at 10 on a row 38 tall, whose centre
 //! is 19 — the whole trio nine points high (measured 2026-09-23 on this
 //! Mac by `examples/traffic_lights.rs`: `bh` 14, `b` 9; and what the
-//! user saw).
+//! user saw). The row is `--pane-head` (48) since 第十三轮 — the left
+//! block's first row, the same token the tab band wears — and the
+//! arithmetic is unchanged.
 //!
 //! # Why it is measured
 //!
@@ -30,6 +34,25 @@
 //! answer. **It is still tao's mechanism**: tao re-applies this number
 //! on every draw, which is what keeps the buttons in place; khor only
 //! makes the number the right one.
+
+/// **How tall the left block's first row is** (docs/SHELL.md 第十三轮 第
+/// 1 条), duplicated here from `src/styles/tokens.css`'s `--pane-head`
+/// (`--touch` + `--tab-lip`) for the one thing CSS cannot do: tell macOS
+/// where to put the three system buttons so they sit on this row's
+/// centre. `check-boot.mjs` reads both and refuses a disagreement — the
+/// same arrangement the window's two grounds already have.
+pub const PANE_HEAD: f64 = 48.0;
+
+/// **Where the first button's left edge goes**: the rail's own glyph
+/// box — a `--rail-item` box centred in `--rail-w`, `(64 − 48) / 2` (第
+/// 十三轮 第 2 条:「三颗按钮的第一颗左边缘 = 竖栏图标框的左边缘」). Read
+/// against `tokens.css` by `check-boot.mjs`.
+pub const X: f64 = 8.0;
+
+/// The gap after the trio before the row draws the search box —
+/// `--gap-in`, the distance between the parts of one thing. Read against
+/// `tokens.css` by `check-boot.mjs`.
+pub const GAP: f64 = 8.0;
 
 #[cfg(target_os = "macos")]
 use objc2::runtime::AnyObject;
@@ -43,7 +66,7 @@ use objc2_foundation::{NSPoint, NSRect, NSSize};
 pub struct Lights {
     /// One button's height — the SDK's, never khor's.
     pub button: f64,
-    /// A button's own offset from the bottom of the title-bar container,
+    /// A button's own offset from the bottom of the title bar container,
     /// which is the term `y` has to carry (see the module head).
     pub inside: f64,
     /// How wide the trio is, first button's left edge to the last one's
@@ -120,10 +143,11 @@ mod tests {
 
     /// **The arithmetic, against the numbers that were actually wrong.**
     /// This Mac draws a 14-tall button sitting 9 above its container's
-    /// bottom; on a 38 row that makes 21 the answer, for a centre of 19
-    /// — and `12`, which is what the config said, puts that centre at
-    /// 10, nine points high (docs/SHELL.md 第十一轮's reading; the same
-    /// numbers `npm run wk` reads off a real window).
+    /// bottom; on the 48 row (`PANE_HEAD`) that makes 26 the answer, for
+    /// a centre of 24 — and `12`, which is what the config said, puts
+    /// that centre at 10, fourteen points high (docs/SHELL.md 第十一轮's
+    /// reading on the 38 row it had then; the same numbers `npm run wk`
+    /// reads off a real window).
     #[test]
     fn the_inset_puts_the_trio_on_the_rows_centre() {
         let now = Lights {
@@ -132,20 +156,23 @@ mod tests {
             span: 60.0,
         };
         let centre = |y: f64| y - now.inside + now.button / 2.0;
-        assert_eq!(inset_y(38.0, &now), 21.0);
-        assert_eq!(centre(inset_y(38.0, &now)), 19.0);
+        assert_eq!(inset_y(PANE_HEAD, &now), 26.0);
+        assert_eq!(centre(inset_y(PANE_HEAD, &now)), 24.0);
         // What `12` produced.
         assert_eq!(centre(12.0), 10.0);
         // A taller row moves it, and an older SDK's smaller button does
         // too — which is the whole reason this is not a constant.
-        assert_eq!(centre(inset_y(48.0, &now)), 24.0);
+        assert_eq!(centre(inset_y(60.0, &now)), 30.0);
         let older = Lights {
             button: 12.0,
             inside: 6.0,
             span: 52.0,
         };
         let older_centre = |y: f64| y - older.inside + older.button / 2.0;
-        assert_eq!(older_centre(inset_y(38.0, &older)), 19.0);
-        assert_eq!(room(20.0, 12.0, &older), 84.0);
+        assert_eq!(older_centre(inset_y(PANE_HEAD, &older)), 24.0);
+        // The room the row keeps clear: from the rail's glyph box, the
+        // trio, and one gap — where the search box starts.
+        assert_eq!(room(X, GAP, &older), 68.0);
+        assert_eq!(room(X, GAP, &now), 76.0);
     }
 }

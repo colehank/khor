@@ -106,7 +106,8 @@ import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
-import { TitleBar, type Crumb } from "@/components/TitleBar";
+import { Region } from "@/components/Region";
+import { SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
 
@@ -329,6 +330,13 @@ function RailItem({
         // Measured before this: every rail item was 44×30, under every
         // guideline's floor (`check-face.mjs` now holds the line).
         "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+        // **`w-rail-item`** (docs/SHELL.md 第十三轮 第 2 条): the glyph
+        // box's width is a token now, because the first row's controls
+        // — and macOS's three buttons — start on this box's left edge,
+        // and `src-tauri/src/traffic.rs` carries that edge as a number.
+        // It is what the box measured already (a `--icon-rail` glyph and
+        // eight of padding each side); the token only names it.
+        "w-rail-item",
         // **Pointing at an item paints the ground, never the glyph.**
         // The `ghost` variant carries `hover:text-foreground`, which on
         // this rail made a hovered *resting* item heavier than the open
@@ -395,6 +403,10 @@ export default function App() {
    * fetched is drawn.
    */
   const lock = useLock();
+  // The two seats of the left block (docs/SHELL.md 第十三轮): where a
+  // landing's head and its list column go. Made here, above every early
+  // return, because they are a hook and the block is drawn below.
+  const seats = useSideSeats();
   // 设置 (docs/MORE.md), read once here and handed down through a
   // context: the four keys this batch lands are read on four screens
   // that are not each other's children (`src/settings.ts`).
@@ -1311,7 +1323,17 @@ export default function App() {
         // twelve — the bar overflowed and the whole page scrolled
         // sideways (check-tabs found it). `justify-around` still spreads
         // whatever room is left, so the group reads as one.
-        narrow ? "flex-row justify-around gap-1 border-t py-1" : "w-rail flex-col gap-row border-r py-3",
+        // **On the block's ground** (第十三轮 第 1 条): the rail and the
+        // list are one material, and the rule at the rail's right edge
+        // is the one line the user kept (「还是要有线」) — from under the
+        // block's first row, where this nav starts, to the foot.
+        // **No `border-r` on the wide rail**: the line between the
+        // rail and the list is drawn on the list's seat (`App`'s
+        // `[data-side-list-seat]`), so this nav is the full `--rail-w`
+        // and its glyph boxes sit at `--side-inset` — the very edge the
+        // first row's controls start on. A border here made the rail's
+        // content box one narrower and the glyph half a pixel off.
+        narrow ? "flex-row justify-around gap-1 border-t bg-side py-1" : "w-rail flex-col gap-row bg-side py-3",
       )}
     >
       {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l) => (
@@ -1408,7 +1430,7 @@ export default function App() {
             data-rail-more
             data-on={foldedOn}
             className={cn(
-              "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+              "group relative h-auto min-h-touch min-w-touch w-rail-item flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
               "hover:text-rail-ink",
               foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
             )}
@@ -1598,8 +1620,10 @@ export default function App() {
       pane={listPane}
       narrow={narrow}
       seam={{ "data-list-seam": "" }}
+      seat="side"
       head={
       <PaneBar
+        seat="side"
         // Files and browser search machines, because machines are what
         // they list — so they borrow the machine pane's label rather
         // than growing one that names a thing the box cannot find.
@@ -2118,29 +2142,6 @@ export default function App() {
     );
   }
 
-  // 你在哪, for the window's own row (docs/SHELL.md 第十轮): the
-  // machine, the page, and the thing open in it. Built here because
-  // this is the only place that holds all three — a row cannot ask a
-  // pane what it is showing.
-  const meName = devices.find((d) => d.me)?.shown ?? "";
-  const hereNow: string | null = morePage
-    ? null
-    : landing === "sessions"
-      ? (selectedRow?.title ?? null)
-      : landing === "devices"
-        ? (openDevice?.shown ?? null)
-        : landing === "workspaces"
-          ? (openWs ? (openWs.path.split("/").pop() ?? openWs.path) : null)
-          : null;
-  const crumbs: Crumb[] = [
-    { key: "machine", label: meName, onPress: () => setMorePage("identity") },
-    {
-      key: "page",
-      label: morePage ? moreName(morePage) : paneName,
-      onPress: morePage ? () => setMorePage(null) : undefined,
-    },
-    ...(hereNow ? [{ key: "here", label: hereNow }] : []),
-  ].filter((c) => c.label !== "");
   /** A hit from ⌘K: go where it lives (`Node::find`'s kinds). */
   const jump = (hit: { kind: string; id: string; note: string | null }) => {
     setMorePage(null);
@@ -2168,13 +2169,19 @@ export default function App() {
       setMorePage(hit.id as MorePage);
     }
   };
-  const titleBar = (
-    <TitleBar
+  // **The left block's first row** (docs/SHELL.md 第十三轮): macOS's
+  // buttons, the one search box, the landing's 「+」. `bare` where there
+  // is no column beside the rail to search — a 「…」 page, or the list
+  // put away — since a box in a rail's width is a slit; ⌘K still widens
+  // over it. The narrow face always has the row: there the list is the
+  // screen and its head has nowhere else to be.
+  const sideHead = (
+    <SideHead
       narrow={narrow}
-      crumbs={crumbs}
-      devices={devices}
+      bare={!narrow && (morePage !== null || listPane.collapsed)}
+      seatRef={seats.setHead}
+      claimed={seats.claimed}
       onJump={jump}
-      onNetwork={() => setMorePage("network")}
     />
   );
 
@@ -2185,14 +2192,16 @@ export default function App() {
   return (
     <SettingsProvider value={settings.rows}>
     <SettingsRereadProvider value={settings.reread}>
+    <SideSeatsProvider value={seats.seats}>
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
-          {titleBar}
-          {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮): a
+          {sideHead}
+          {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of
-              the screen clear for macOS's three buttons. The window's own
-              row above does that now, on every face and every platform. */}
+              the screen clear for macOS's three buttons; then the
+              window's own row. The block's first row above does that
+              now, on every face and every platform. */}
           {/* `key` is what makes the arrival visible: a CSS animation
               runs when an element is inserted, and without a changing
               key React would reuse this box and the new screen would
@@ -2256,58 +2265,74 @@ export default function App() {
         </div>
       ) : (
         <div className="flex h-dvh flex-col">
-          {titleBar}
           <div className="flex min-h-0 flex-1">
-          {rail}
-          {/* A 「…」 page takes the whole region beside the rail, and the
-              reason is structural rather than cosmetic: it is neither
-              half of the list-and-detail pair. The landing under it
-              keeps its state — closing the page puts it back exactly as
-              it was. */}
-          {morePage ? (
-            <div className="min-w-0 flex-1">{morePageEl}</div>
-          ) : quotas ? (
-            <div className="min-w-0 flex-1">
-              <QuotaLanding
-                narrow={false}
-                // **The shell's own seam, not a `w-72` of its own**
-                // (第 6 条 / 第 4 条). Sharing `listPane` is what makes
-                // the rail's second press work here: the thing the rail
-                // toggles and the thing this landing draws are now one
-                // object. It also means a width dragged on the sessions
-                // pane is the width here — which is the right answer
-                // for the same reason the ground is: a person drags a
-                // sidebar, not five sidebars.
-                pane={listPane}
-                query={queries.quota}
-                onQuery={setQuery}
-                words={words.quota}
-                onToggleWord={toggleWord}
-              />
+          {/* **One block down the left** (docs/SHELL.md 第十三轮 第 1 条):
+              the rail and the list on one ground, a first row across
+              both. The landing's list column seats itself in the second
+              row beside the rail (`ListPane` seat="side"), wherever the
+              landing wrote it — 額度's and 浏览's are written inside
+              their landings, the shell's own is `list` below.
+              `min-w-traffic`: with the list put away the block is the
+              rail alone, and macOS's three buttons must still fit in
+              its first row. */}
+          <aside data-side className="flex min-w-traffic flex-none flex-col bg-side">
+            {sideHead}
+            <div className="flex min-h-0 flex-1">
+              {rail}
+              {/* **The line** (「还是要有线」): between the rail and the
+                  list, from under the first row to the foot — on the
+                  seat rather than on the rail, so it stays when the list
+                  is put away and the rail keeps its full width. */}
+              <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 border-l" />
             </div>
+          </aside>
+          {/* **The right side**: the app's ground, a first row at the
+              same height as the block's, and a board floating under it
+              (`Region`). A 「…」 page and a landing with nothing to head
+              the row get a blank band; the sessions strip and the
+              browsing address bar are rows of their own. */}
+          <main data-main className="flex min-w-0 flex-1 flex-col bg-background">
+          {morePage ? (
+            <Region>{morePageEl}</Region>
+          ) : quotas ? (
+            <QuotaLanding
+              narrow={false}
+              // **The shell's own seam, not a `w-72` of its own**
+              // (第 6 条 / 第 4 条). Sharing `listPane` is what makes
+              // the rail's second press work here: the thing the rail
+              // toggles and the thing this landing draws are now one
+              // object. It also means a width dragged on the sessions
+              // pane is the width here — which is the right answer
+              // for the same reason the ground is: a person drags a
+              // sidebar, not five sidebars.
+              pane={listPane}
+              query={queries.quota}
+              onQuery={setQuery}
+              words={words.quota}
+              onToggleWord={toggleWord}
+            />
           ) : browses ? (
-            // The whole width beside the rail, and that width is the
-            // point: what the machine column used to spend is now the
-            // content's (see `browsingLanding`).
-            <div className="min-w-0 flex-1">{browsingLanding}</div>
+            browsingLanding
           ) : (
             <>
-              {/* …and the seam between list and detail comes with it:
+              {/* Written here, drawn in the block (`ListPane` seat="side"):
                   a pane and the thing that sizes it are one component
-                  now (`ListPane`), which is what kept 额度 from having
+                  (`ListPane`), which is what kept 额度 from having
                   either for four batches. */}
               {list}
-              {/* The open sessions as tabs over the pane (iTerm's
+              {/* The open sessions as tabs over the board (iTerm's
                   arrangement), only on the sessions landing and only
-                  when something is open — an empty strip is a band
-                  saying nothing. The strip closes a *view*; the header's
-                  关闭 ends the session, and the gone-row rule then
-                  closes the tab. `ref` is the band's width source. */}
-              <div ref={detailBox} className="flex min-w-0 flex-1 flex-col">
-                {/* **`Tabs`, the one tab strip** (docs/SHELL.md 第四轮 第 9
-                    条): the strip, the count that opens and closes the
-                    switcher, the switcher over the detail. This side says
-                    what focusing and closing a tab does. */}
+                  when something is open — otherwise the row is a blank
+                  band over the board. The strip closes a *view*; the
+                  header's 关闭 ends the session, and the gone-row rule
+                  then closes the tab. `ref` is the band's width source.
+                  A workspace draws its own three columns and their
+                  heads, so it takes the region raw. */}
+              {/* `min-h-0`: this is a column inside `main`'s column now
+                  (it was a row's item), and a flex item's default
+                  min-height is its content — the file scroller would
+                  grow to its whole file and never scroll. */}
+              <div ref={detailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <Tabs
                     faces={tabFaces}
@@ -2321,18 +2346,22 @@ export default function App() {
                   >
                     {detail}
                   </Tabs>
+                ) : landing === "workspaces" && openWs ? (
+                  detail
                 ) : (
-                  <div className="min-h-0 flex-1">{detail}</div>
+                  <Region>{detail}</Region>
                 )}
               </div>
             </>
           )}
+          </main>
           </div>
           {sheets}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       )}
     </TooltipProvider>
+    </SideSeatsProvider>
     </SettingsRereadProvider>
     </SettingsProvider>
   );

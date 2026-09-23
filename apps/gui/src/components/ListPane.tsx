@@ -28,6 +28,7 @@
 //            rail toggles `pane` and every pane has one).
 import type { ReactNode } from "react";
 
+import { SideListSeat } from "@/components/SideHead";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,8 @@ export function ListPane({
   mountSeamFirst = false,
   head,
   scroll = true,
+  seat,
+  ground,
   className,
   children,
 }: {
@@ -81,6 +84,23 @@ export function ListPane({
    * its own, and the sessions column swaps its list for a whole session.
    */
   scroll?: boolean;
+  /**
+   * `"side"`: this is **the** sidebar — the column beside the rail —
+   * and it is one block with it (docs/SHELL.md 第十三轮 第 1 条): the
+   * block's ground rather than the card's, no rule at its right edge
+   * (the change of ground is the edge), and on the wide face it stands
+   * in the block under the first row wherever the landing wrote it
+   * (`SideListSeat`). The workspace's own two columns pass nothing and
+   * keep the card.
+   */
+  seat?: "side";
+  /**
+   * `"side"` without a seat: on the block's ground, in its own place
+   * — the workspace's tree and its sessions column, which are sidebars
+   * of the page they stand in (2026-09-20 第 6 条: every secondary
+   * sidebar on one ground) but not the one beside the rail.
+   */
+  ground?: "side";
   className?: string;
   children: ReactNode;
 }) {
@@ -120,15 +140,17 @@ export function ListPane({
         )}
       />
     ) : null;
-  return (
+  const onSide = seat === "side";
+  const pane_ = (
     <>
       {mountSeamFirst && rule}
       <section
         {...{ [mark]: "" }}
         aria-label={name}
         className={cn(
-          "flex h-full min-h-0 flex-col overflow-hidden bg-card",
-          !narrow && !away && (side === "left" ? "border-r" : "border-l"),
+          "flex h-full min-h-0 flex-col overflow-hidden",
+          onSide || ground === "side" ? "bg-side" : "bg-card",
+          !narrow && !away && !onSide && (side === "left" ? "border-r" : "border-l"),
           className,
         )}
         style={narrow || pane === null ? undefined : { width: away ? 0 : pane.width }}
@@ -149,4 +171,5 @@ export function ListPane({
       {!mountSeamFirst && rule}
     </>
   );
+  return onSide && !narrow ? <SideListSeat>{pane_}</SideListSeat> : pane_;
 }

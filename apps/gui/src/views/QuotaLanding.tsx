@@ -44,6 +44,7 @@ import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
+import { Region } from "@/components/Region";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -1300,6 +1301,7 @@ export function QuotaLanding({
   // holds the work — search, the three axes, the grouping, and 登记.
   const bar = (
     <PaneBar
+      seat="side"
       searchLabel={gui.search_quota}
       query={query}
       onQuery={onQuery}
@@ -1773,7 +1775,7 @@ export function QuotaLanding({
   );
 
   return (
-    <section data-quota-landing aria-label={gui.accounts_tab} className="flex h-full min-w-0 flex-col">
+    <section data-quota-landing aria-label={gui.accounts_tab} className="flex h-full min-h-0 min-w-0 flex-col">
       {error && (
         <div data-quota-error className="border-b px-3 py-1.5 text-sm text-destructive">
           {error}
@@ -1830,33 +1832,38 @@ export function QuotaLanding({
             </div>
           </div>
         ) : (
-          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow head={bar}>
+          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bar}>
             {list}
           </ListPane>
         )
       ) : (
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col">
           {/* The bar belongs to the list column, not to the landing:
               what it narrows is the list, and a bar spanning the detail
               too would say it narrows that as well. Same seat it has on
               the sessions pane — **and since 2026-09-20 it is literally
               the same component** (第 6 条): the ground, the head's
               height, the scroller and the seam all come from
-              `ListPane`, and what is left here is the bar and the rows. */}
+              `ListPane`, and what is left here is the bar and the rows.
+              **Both are drawn in the left block** (第十三轮), written
+              here: the column beside the rail, the bar in the block's
+              first row. What stays on this side is the card, on the
+              region's board. */}
           <ListPane
             mark="data-quota-pane"
             name={gui.accounts_tab}
             pane={pane}
             narrow={false}
             seam={{ "data-list-seam": "" }}
+            seat="side"
             head={bar}
           >
             {list}
           </ListPane>
-          <div className="min-w-0 flex-1 overflow-y-auto">
+          <Region className="overflow-y-auto">
             {detail}
             {subDetail}
-          </div>
+          </Region>
         </div>
       )}
       {/* ⚠️ **Tombstone: the subscription band is gone from the foot.**
