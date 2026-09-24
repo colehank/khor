@@ -897,3 +897,32 @@ agent-codex / agent-cursor / agent），原话「这有一堆icon库可以参考
 - tabs / palette / rail：照旧全绿，`--side` 两套主题的对比度过线。
 - boot：`--pane-head` 与 Rust 那份相等。
 - 先看它红，红句记进 handoff。本轮末装四台（本机 + hinton / turing / lecun）。
+
+## 第十四轮：标签下没有第二行；没有标签的页没有空带；节点钉住自己的 cwd（2026-09-24，khor-58）
+
+用户看了装好的第十三轮：
+
+> 「session标签页下还有个标题, 不要了, 标签页下就是状态bar然后就是内容. 以及, 工作区打开某个git目录显示了 "xxx does not appear to be a git repository", 别人就是一个git目录, 头像也正确识别了. 此外, 这一行不要显示任何内容. 也就是任何标签页下方都不要有副标题.」
+> 「全app的非标签页抽象有问题. 现在机器、额度和浏览器的顶部都空了一截出来, 这应该属于是非标签页的抽象没做好.」
+
+查过的真相（2026-09-24，khor-58）：
+
+- 会话标签下那一行是 `DetailPane` 的头：会话名的输入框 + 「工作区 · 类型」。2026-09-02 撤过一半（状态词、机器脸、两个按钮），名字和事实留下了；标签现在把身份说了一遍，这行是第二遍。它底下那条一像素高的带是 `DayStrip`（这个会话的一天）——用户说的「状态 bar」就是它。
+- 工作区那句「does not appear to be a git repository」是 `FileView` 问 `git diff` 画改动条时的 refusal，印在标签下。**不是 git 的判断，是进程的 cwd 已被删除**：装机脚本在导出目录里 `nohup` 起 app，随后删了导出目录；gix 打开仓库时经过 cwd，即使路径是绝对的。命令行进一个已删目录再问，一字不差复现。`is_checkout` 只是一个 stat，所以头像照旧对。三台 Linux 的常驻由 onset 起，不受影响。
+- 机器、额度、「…」、没开会话的会话页顶上那截空带，是 `Region` 在没有头时也画一条 `--pane-head` 高的空行（第十三轮第 5 条被读成「右边永远有第一行」）。会话空页的板里还多一个空的头。
+
+### 落法
+
+1. **标签下没有第二行**：`DetailPane` 宽档不再画头（名字、事实全去）；顺序是标签条 → `DayStrip` 那条带 → 内容。改名走标签（`TabStrip` 的 `EditableName` 已支持会话标签）。窄档没有标签条，头只留返回键 + 脸 + 名字，事实不留。没开会话时板里没有头。
+2. **标签下不印任何句子**：`FileView` 里 refusal（`diffError`）、「只读了前 N 行」（`took`）、「改动太多」（`git_more`）三行都撤掉；这些是「改动条为什么没画」的解释，用户裁定标签下不放副标题。读不到就不画条，和「不是 checkout」一个样子（工作区批⑦已是这个规矩）。`took` / `git_more` 若有别处仍需知道，进标签的 hover title，不占行。
+3. **没有标签的页没有空带**：`Region` 的第一行只在有头时存在（标签条、地址栏）；`head` 缺席就不画那一行，板从顶上起，四周仍是 `--gap-in`。窄档不变。机器、额度、「…」、没开会话的会话页、没开工作区的工作区页，都按此。Windows 的三颗只跟着有头的行走；没头的页在 Windows 上仍需一处放它们——`Region` 无头时在板的右上角外面留一条只有三颗的窄行（只 Windows，其余平台高度为 0）。
+4. **节点钉住自己的 cwd**：`Node::open`（或 app / serve 启动最早处）`set_current_dir` 到一个稳定目录（store 根或 `/`），并记一句；从此启动者的 cwd 是什么、之后被删没删，都与仓库读写无关。
+5. **装机脚本**：起 app 前 `cd` 到仓库目录，不在导出目录里起（scratchpad 的 install5.sh，领队自己改）。
+
+### 门
+
+- face（宽档）：会话开着时 `[data-detail-header]` 不存在，`[data-detail-day]` 的顶 = 标签条的底；窄档 `[data-detail-header]` 里没有 `[data-detail-facts]`。
+- face：打开一个文件后，标签条底到正文顶之间没有任何带文字的行（量 `[data-file-view]` 的第一个子元素就是正文）。
+- face：机器页、额度页、「…」页、没开会话的会话页，`[data-region-head]` 不存在，`[data-board]` 的顶 = `--gap-in`；会话开着时 `[data-region-head]` 存在。
+- cargo test：进程从一个已删除的 cwd 启动节点，`git::status` 仍能读一个临时仓库（先红：现在的 `gix::open` 从已删 cwd 报「does not appear to be a git repository」）。
+- 先看它红，红句记进 handoff。本轮末装四台。
