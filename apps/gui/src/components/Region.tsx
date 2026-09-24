@@ -3,9 +3,11 @@
 // the two are one line across the window — and under it **a board
 // floating on the app's ground**: `--card`, `--gap-in` from the region's
 // edges, `--radius` at the corners. The row holds the tabs where a
-// landing has them, and stays as a blank band where it does not, because
-// it is also where Windows' own three buttons live and where the
-// window is dragged by.
+// landing has them — **and where a landing has none there is no row**
+// (第十四轮 第 3 条): the board starts at the top, `--gap-in` from it
+// like every other side. The blank of the row is where the window is
+// dragged by and, on Windows, where its own three buttons live; a page
+// with no row gives those three a thin row of their own instead.
 //
 // **The open tab is the board's colour and joins it** — that is the
 // whole of how a tab says it is in front (`TabStrip`): its bottom edge
@@ -54,22 +56,28 @@ export function WindowControls() {
 
 export function Region({
   head,
-  narrow = false,
   className,
   children,
 }: {
-  /** What the first row holds — a tab strip, an address bar. Absent,
-      the row is a blank band on the wide face and nothing on the
-      narrow one (第 8 条:「窄档…其余不变」). */
+  /** What the first row holds — a tab strip, an address bar.
+      **Absent, there is no row**: the board starts at the top
+      (第十四轮 第 3 条). */
   head?: ReactNode;
-  narrow?: boolean;
   /** How the board lays its content out. */
   className?: string;
   children: ReactNode;
 }) {
   return (
     <>
-      {(head !== undefined || !narrow) && (
+      {/* **The row exists only where something heads it** (第十四轮 第
+          3 条, 2026-09-24:「现在机器、额度和浏览器的顶部都空了一截出来,
+          这应该属于是非标签页的抽象没做好」). 第十三轮 第 5 条 said the
+          right side has a first row at `--pane-head`, and that was read
+          as「always」— so a machine page, a 额度 page, 「…」 and a
+          sessions page with nothing open each wore an empty band as
+          tall as a tab strip. A band is the *tabs'* row; a page with no
+          tabs has no row, and its board starts at the top. */}
+      {head !== undefined && (
         <div
           data-region-head
           // The blank of this row moves the window (第八轮 第 59 条);
@@ -78,6 +86,22 @@ export function Region({
           className="flex h-pane-head flex-none items-end select-none"
         >
           <div className="flex min-w-0 flex-1 self-stretch">{head}</div>
+          <WindowControls />
+        </div>
+      )}
+      {/* **Windows still needs somewhere to put its three.** macOS has
+          the system's buttons over the left block and Linux keeps its
+          decorations, so only that desktop is left without a home for
+          them when the row above is gone. It gets a thin row of its
+          own — the three and nothing else, above the board's top
+          corner — and every other platform gets nothing at all, which
+          is a height of zero (第十四轮 第 3 条). */}
+      {head === undefined && windowsApp && (
+        <div
+          data-window-row
+          data-tauri-drag-region="deep"
+          className="flex h-ctl-lg flex-none items-stretch justify-end select-none"
+        >
           <WindowControls />
         </div>
       )}
@@ -91,7 +115,16 @@ export function Region({
           a definite height is what the wrapper this replaces was. */}
       <div
         data-board
-        className={cn("mx-in mb-in min-h-0 flex-1 overflow-hidden rounded-lg bg-card", className)}
+        className={cn(
+          "mx-in mb-in min-h-0 flex-1 overflow-hidden rounded-lg bg-card",
+          // **Only where nothing heads it.** Under a tab strip the board
+          // is joined to the open tab and any gap there would be a seam
+          // through the one thing that says which tab is in front
+          // (`TabStrip`); with no strip above, the top is an edge like
+          // the other three and wears the same `--gap-in`.
+          head === undefined && "mt-in",
+          className,
+        )}
       >
         {children}
       </div>

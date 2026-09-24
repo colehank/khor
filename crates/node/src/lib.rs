@@ -14,6 +14,7 @@ pub mod chat;
 pub mod code;
 pub mod codexagent;
 pub mod config;
+pub mod cwd;
 pub mod day;
 pub mod doctor;
 pub mod face;
@@ -819,6 +820,14 @@ impl Node {
 
     /// Opens with an explicit machine name (pre-cleaning).
     pub fn open_as(root: PathBuf, name: &str) -> Result<Node, String> {
+        // **Before anything reads a path** (第十四轮 第 4 条): if this
+        // process is standing in a directory that has been deleted, it
+        // steps onto `/` first — `gix` goes through the current
+        // directory even for an absolute path, and khor refused a plain
+        // checkout because of it. Only when adrift: opening a node is
+        // not a reason to move a process that is standing somewhere
+        // real (`cwd`'s head).
+        cwd::pin_if_adrift();
         claim_store(&root)?;
         let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
             .map_err(|e| e.to_string())?;
@@ -3779,7 +3788,12 @@ impl Node {
         // host inherits this process's directory — so the answer is
         // here, and asking for it as an argument would only give every
         // caller a chance to pass a different one.
-        if let Ok(cwd) = std::env::current_dir() {
+        //
+        // **The directory the process started in, not the one it is in
+        // now** (第十四轮 第 4 条): opening a node pins the process to a
+        // directory that cannot be deleted, and reading it back here
+        // would put every `khor run` in `/`.
+        if let Some(cwd) = crate::cwd::standing() {
             self.live.learn_place(&id, &cwd)?;
         }
         let dir = self

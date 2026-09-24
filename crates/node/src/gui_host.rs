@@ -522,7 +522,10 @@ pub fn gui_host_main(
         .map_err(|e| e.to_string())?;
 
     let command = cmd.join(" ");
-    let cwd = std::env::current_dir().unwrap_or_else(|_| std::env::temp_dir());
+    // The opener spawned this ghost standing in the person's own
+    // directory; `cwd::standing` is that directory even after a node
+    // has pinned the process elsewhere (第十四轮 第 4 条).
+    let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
     let resume = std::env::var(RESUME_ENV).ok();
     let (handle, mut events) = rt
         .block_on(async {
@@ -564,7 +567,7 @@ pub fn gui_host_main(
         // spawned the ghost with `current_dir`, so the answer is right
         // here and needs no argument passed down
         // (`khor_core::Session::place`).
-        if let Ok(cwd) = std::env::current_dir() {
+        if let Some(cwd) = crate::cwd::standing() {
             live.learn_place(&id, &cwd)?;
         }
         // Register wrote the spawn's 忙碌; a fresh GUI session is a

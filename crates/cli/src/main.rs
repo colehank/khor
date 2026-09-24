@@ -1160,7 +1160,7 @@ fn pull(rest: &[String]) -> Result<(), String> {
         [machine, path] => (
             machine,
             path,
-            std::env::current_dir().map_err(|e| e.to_string())?,
+            khor_node::cwd::standing().ok_or_else(|| msg::no_standing_dir().to_string())?,
         ),
         [machine, path, dir] => (machine, path, std::path::PathBuf::from(dir)),
         _ => return Err(usage_text().into()),
@@ -1408,7 +1408,17 @@ fn here(dir: &str) -> Result<String, String> {
     if p.is_absolute() {
         return Ok(dir.to_owned());
     }
-    match std::fs::canonicalize(p) {
+    // **Joined onto where the person was standing**, not onto the
+    // process's directory: opening a node pins that to a directory
+    // nothing can delete (第十四轮 第 4 条), and `.` would then name
+    // `/` for anyone who opened a node first. Today every caller
+    // parses its arguments before the node opens; this is what keeps
+    // that from being load-bearing.
+    let joined = match khor_node::cwd::standing() {
+        Some(base) => base.join(p),
+        None => p.to_path_buf(),
+    };
+    match std::fs::canonicalize(&joined) {
         Ok(abs) => Ok(abs.display().to_string()),
         // Not this machine's path, or not there: handed on as typed so
         // the refusal comes from the one place that knows which.

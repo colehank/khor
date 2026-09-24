@@ -1584,6 +1584,12 @@ serve-copy-swept = "[{0}] 本地副本被清掉了(多半是 /tmp 清理器),拷
 # The keeper follows its serve into a new generation by exec; this is
 # the one line it writes when that exec did not happen.
 serve-keeper-stayed = "[{0}] serve 换了新版,keeper 自己没换过去({1}),先用旧的接着看"
+# 第十四轮 第 4 条:节点开起来就站到一个不会消失的目录上。装机脚本在导出
+# 目录里起 app 再把那个目录删掉,进程从此站在空处,gix 打开仓库要经过当前
+# 目录,于是一个明明是仓库的目录被回绝。说一句,好让日志里看得出站在哪。
+cwd-pinned = "站到 {0};从此读仓库不看进程是在哪儿起的"
+no-standing-dir = "说不出这条命令是在哪个目录里起的(多半是那个目录被删了);把落点写出来再来一次"
+cwd-pin-failed = "站不到 {0}({1});还站在起它的那个目录上,那个目录要是被删了,读仓库会被回绝"
 borrow-self = "这就是本机的网,不用借;要直连就直接开"
 # A page opened in the app is a second webview parented to the window, and
 # `Window::add_child` exists on desktop alone — mobile needs a native

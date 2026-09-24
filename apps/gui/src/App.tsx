@@ -86,7 +86,6 @@ import {
 } from "@/lib/session-filter";
 import { draftCount, watchDrafts } from "@/lib/drafts";
 import { cn } from "@/lib/utils";
-import { groupLabel, placeLabels } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
 import { holding, LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
@@ -1124,15 +1123,11 @@ export default function App() {
       },
     };
   }, [sessionMachine, sessionRoot, sessionDevice, sessionKnown, seeInSession]);
-  // The open row's workspace, in the same words the list's chips and
-  // headings use (`placeLabels` over every row, so two checkouts that
-  // share a leaf stay told apart). Resolved here because only the
-  // shell holds every row; the detail header just prints it.
-  const placeWord = useMemo(() => {
-    if (!selectedRow?.place) return null;
-    const names = placeLabels(rows.map((r) => `at:${r.place ?? ""}`));
-    return names.get(`at:${selectedRow.place}`) ?? groupLabel(`at:${selectedRow.place}`);
-  }, [rows, selectedRow]);
+  // ⚠️ **The open row's workspace word left with the detail header**
+  // (第十四轮 第 1 条): 「工作区 · 类型」 was the tab's own content said
+  // a second time one row lower, and the user struck the whole row out.
+  // The list's own chips and headings still name a workspace
+  // (`SessionsList`, `placeLabels`); that is where it is said once.
   // A session that is gone stops being the selected one, and on the
   // narrow face the screen goes back to the list.
   //
@@ -1764,7 +1759,6 @@ export default function App() {
       days={selectedRow ? days[selectedRow.id] : undefined}
       onBack={() => setScreen("list")}
       onNew={() => openNewSession()}
-      placeWord={placeWord}
       // The way to the other open tabs on the face that has no strip:
       // the count is the button (`TabCount`), and pressing it swaps
       // this pane for the switcher. Wide has the strip above the pane,

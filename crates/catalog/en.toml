@@ -979,6 +979,9 @@ serve-shielding = "[{0}] {1} is on a network drive — keeper is moving to a loc
 serve-shield-failed = "[{0}] local copy failed ({1}), running in place"
 serve-copy-swept = "[{0}] the local copy was swept away (probably a /tmp cleaner), copying a fresh one to hand off"
 serve-keeper-stayed = "[{0}] serve moved to the new build but the keeper couldn't follow ({1}); it keeps watching on the old one"
+cwd-pinned = "standing in {0}; reading a repository no longer depends on where the process was started"
+no-standing-dir = "can't tell which directory this command was started in (most likely it was deleted); name where the file should land and run it again"
+cwd-pin-failed = "could not stand in {0} ({1}); still standing where it was started, and if that directory is deleted a repository read will be refused"
 borrow-self = "That's this machine's own network — no need to borrow it; open it directly for a direct connection"
 page-needs-desktop = "Opening a web page from another machine's network only works on desktop for now"
 

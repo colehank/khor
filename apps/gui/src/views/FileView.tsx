@@ -136,6 +136,7 @@ export function FileView({
   saveAt = 0,
   readAt = 0,
   goLine = null,
+  onNote,
 }: {
   machine: string;
   /** Absolute, on that machine. */
@@ -194,6 +195,16 @@ export function FileView({
    *
    * A counter, because two returns are two questions. */
   readAt?: number;
+  /** **What this file's tab should whisper on hover**, or `null` when
+      it has nothing to add (第十四轮 第 2 条).
+
+      One sentence today: the diff stopped short of the whole file
+      (`git_more`). It used to be a row under the tab strip, and the
+      user's ruling took every such row away — 「任何标签页下方都不要有
+      副标题」 — so what is left of it goes where a tab already says the
+      long form of things, its `title`. Reported upward rather than
+      drawn here, because the tab is the pane's (`WorkspacePane`). */
+  onNote?: (note: string | null) => void;
   /** A line somebody asked for from outside — a path with a `:12` on it
       pressed in a conversation (工作区第五轮 第 35 条).
    *
@@ -256,10 +267,14 @@ export function FileView({
   const [error, setError] = useState<string | null>(null);
   const [took, setTook] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitDiff | null>(null);
-  // Kept apart from `diff` for the same reason the workspace head keeps
-  // its refusal apart from its branch: no bars and no answer look
-  // identical on screen, and one of them says the file is unchanged.
-  const [diffError, setDiffError] = useState<string | null>(null);
+  // ⚠️ **Tombstone: `diffError`** (第十四轮 第 2 条). It was kept apart
+  // from `diff` so the refusal could be printed — no bars and no answer
+  // look identical on screen, and the old rule was that khor must not
+  // let the second pass for the first. The user's ruling is that the
+  // row is worse than the ambiguity:「任何标签页下方都不要有副标题」.
+  // So a diff khor could not read is drawn the way a directory that is
+  // not a checkout is drawn — **nothing** — and the state it was held
+  // in is gone with the row that read it.
   /** Which hunk is expanded, by index. **One at a time and closed by
       default** — 「打开是当前状态,git 状态显示在左侧,点击左侧状态后,
       才展开 diff」(the user, 2026-09-11). A file that opened already
@@ -364,15 +379,30 @@ export function FileView({
   useEffect(() => {
     let live = true;
     setDiff(null);
-    setDiffError(null);
     setShown(null);
     fetchGitDiff(machine, path)
       .then((d) => live && setDiff(d))
-      .catch((e: unknown) => live && setDiffError(String(e instanceof Error ? e.message : e)));
+      // **Swallowed on purpose** (第十四轮 第 2 条): a diff khor could
+      // not read leaves the gutter empty, which is what a file with no
+      // changes looks like too. The alternative was a sentence under
+      // the tab strip, and that is the thing the user struck out.
+      .catch(() => {});
     return () => {
       live = false;
     };
   }, [machine, path, diffAt]);
+
+  // **The one thing the vanished rows still had to say**, handed to
+  // the tab that owns this file so it can wear it as a hover title
+  // (第十四轮 第 2 条). In an effect rather than during the render,
+  // because it is a report out of this component and a parent's state
+  // may not be set while a child is rendering. Cleared on the way out,
+  // or a tab that stopped being the front one would keep whispering
+  // about a diff nobody is looking at.
+  useEffect(() => {
+    onNote?.(diff?.more === true ? cli.git_more : null);
+    return () => onNote?.(null);
+  }, [onNote, diff?.more]);
 
   /** What the view is showing and would write back. Falls back to the
       file's own text so the read-only paths need no second branch.
@@ -1021,7 +1051,12 @@ export function FileView({
   return (
     // `relative`: the one notice this view still has floats at the foot
     // of the column rather than standing over the file (see it below).
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    //
+    // **Named so the gate can measure what is directly under the tab
+    // strip** (第十四轮 第 2 条 的门): on an ordinary file the first
+    // child of this box is the file itself, and any band of words that
+    // came back would be exactly the thing the user struck out.
+    <div data-file-view className="relative flex min-h-0 flex-1 flex-col">
       {/* **源码 / 预览 has no strip of its own any more** (2026-09-16):
           the switch is one glyph at the far end of the tab strip, drawn
           by `WorkspacePane` beside the three column switches, and this
@@ -1068,21 +1103,35 @@ export function FileView({
           <Button variant="outline" size="sm" onClick={take} className="ml-auto">
             {gui.file_take}
           </Button>
+          {/* Where it landed, **on the row whose button sent it** — a
+              press with no answer is a press nobody can check, and this
+              row is already here and already about the same file
+              (第十四轮 第 2 条 took a row of its own away, not the
+              report). */}
+          {took !== null && <span className="flex-none">{took}</span>}
         </div>
       )}
-      {took !== null && (
-        <div className="border-b px-3 py-1.5 text-aux text-muted-foreground">{took}</div>
-      )}
-      {/* Said out loud rather than left as an empty gutter: a file with
-          no bars reads as a file that matches HEAD, and that is exactly
-          the claim khor cannot make when it could not read the
-          repository. Same rule as the workspace head's. */}
-      {diffError !== null && (
-        <div className="border-b px-3 py-1.5 text-aux text-muted-foreground">{diffError}</div>
-      )}
-      {diff?.more === true && (
-        <div className="border-b px-3 py-1.5 text-aux text-muted-foreground">{cli.git_more}</div>
-      )}
+      {/* ⚠️ **Tombstone: the three sentences under the tab strip**
+          (第十四轮 第 2 条, 2026-09-24:「工作区打开某个git目录显示了
+          "xxx does not appear to be a git repository"…此外, 这一行不要
+          显示任何内容. 也就是任何标签页下方都不要有副标题」— the user).
+
+          They were git's refusal, 「the file landed in …」 and 「too many
+          changes to draw」: three explanations of why the gutter is not
+          showing what it might have. The refusal was the one that gave
+          the rule away — it was never git's judgment about the
+          repository (第十四轮 第 4 条: a deleted working directory), and
+          it printed a lie one row under the tab on a screen whose whole
+          job is the file.
+
+          **Unreadable is drawn as no bars**, which is the rule the
+          workspace's own head already follows for a directory that is
+          not a checkout (工作区批⑦): khor says nothing about HEAD rather
+          than saying something wrong about it. What is still worth
+          knowing — a diff that stopped short — rides the tab's hover
+          title (`onNote` below), where it costs no row. Where the file
+          landed is reported by the row whose button did it (the cut row
+          above, and the 取走 cards). */}
       {/* Three columns that scroll as one, **and every line is a block
           of its own** (工作区批⑨).
 

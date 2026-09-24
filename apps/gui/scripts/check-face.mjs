@@ -2475,7 +2475,10 @@ try {
     },
     {
       name: "session detail",
-      anchor: "[data-detail-header]",
+      // **The pane, not its header** (第十四轮 第 1 条): the wide face
+      // has no header any more, and a stop anchored on one would read
+      // 「probe dead」 on every run.
+      anchor: "[data-detail-pane]",
       go: async () => (await open("sessions")) && press("[data-list] [data-row-open]"),
     },
     // The map rides along on the wide face, where it is what the pane
@@ -20184,7 +20187,14 @@ try {
         const item = q("[data-rail-item]");
         const search = q("[data-side-head] [data-omnibox]") ?? q("[data-side-head] [data-pane-search]");
         const plus = q("[data-side-head] [data-pane-new]");
+        // **The right side's first row, where there is one** (第十四轮
+        // 第 3 条). 第十三轮 asked for it on every landing and got an
+        // empty band over 机器 / 额度 / 「…」; the row belongs to the
+        // tabs, so a landing with no tabs has no row and its board
+        // starts at the top.
         const region = q("[data-region-head]");
+        const board = q("[data-board]");
+        const main = q("[data-main]");
         const missing = [
           !aside && "[data-side]",
           !head && "[data-side-head]",
@@ -20193,7 +20203,8 @@ try {
           !list && pane,
           !item && "[data-rail-item]",
           !search && "[data-side-head] [data-pane-search]",
-          !region && "[data-region-head]",
+          !board && "[data-board]",
+          !main && "[data-main]",
         ].filter(Boolean);
         if (missing.length) return { missing };
         const r = (el) => el.getBoundingClientRect();
@@ -20219,7 +20230,13 @@ try {
           item: +r(item).left.toFixed(2),
           search: +r(search).left.toFixed(2),
           plus: !!plus,
-          region: { h: +r(region).height.toFixed(2), bottom: +r(region).bottom.toFixed(2) },
+          region: region
+            ? { h: +r(region).height.toFixed(2), bottom: +r(region).bottom.toFixed(2) }
+            : null,
+          // Where the board begins, and what is above it: a row's
+          // bottom, or the region's own top plus `--gap-in`.
+          boardTop: +r(board).top.toFixed(2),
+          mainTop: +r(main).top.toFixed(2),
         };
       }, pane);
       if (block.missing) {
@@ -20256,10 +20273,26 @@ try {
       }
       if (!block.plus) fail(`on ${tab} the first row has no [data-pane-new] — 「三颗按钮、搜索框、＋」`);
       if (!block.head.drag) fail(`on ${tab} the block's first row does not carry the window drag — its blank is 顶部空白`);
-      if (block.region.h !== paneHead || block.region.bottom !== block.head.bottom) {
+      if (block.region) {
+        // 第十三轮 第 5 条, unchanged where a row exists: the same token
+        // as the left block's row, so the two read as one line.
+        if (block.region.h !== paneHead || block.region.bottom !== block.head.bottom) {
+          fail(
+            `on ${tab} the right side's first row is ${block.region.h} tall ending at ${block.region.bottom}, the left's ends at ${block.head.bottom} — ` +
+              "「和右边标签条同一个 token，左右一条线齐」",
+          );
+        }
+        if (block.boardTop !== block.region.bottom) {
+          fail(
+            `on ${tab} the board starts at ${block.boardTop} and the row above it ends at ${block.region.bottom} — ` +
+              "under a strip the board is joined to the open tab, with nothing between them",
+          );
+        }
+      } else if (block.boardTop !== +(block.mainTop + gapIn).toFixed(2)) {
+        // 第十四轮 第 3 条:「板从顶上起、四周仍 --gap-in」.
         fail(
-          `on ${tab} the right side's first row is ${block.region.h} tall ending at ${block.region.bottom}, the left's ends at ${block.head.bottom} — ` +
-            "「和右边标签条同一个 token，左右一条线齐」",
+          `on ${tab} nothing heads the right side and the board starts at ${block.boardTop}, ${+(block.boardTop - block.mainTop).toFixed(2)} under it ` +
+            `(--gap-in is ${gapIn}) — 「没有标签的页没有空带」: no row, and the board's top edge is like its other three`,
         );
       }
     }
@@ -20517,6 +20550,216 @@ try {
       fail("narrow drew no [data-side-head] — the first row is every face's");
     } else if (phone.h !== paneHead || phone.top !== 0 || !phone.search || !phone.plus || phone.old !== 0) {
       fail(`narrow's first row reads ${JSON.stringify(phone)} — 「窄档：第一行照旧是搜索 + ＋」, at --pane-head ${paneHead}, and nothing of the old row`);
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+  }
+
+  // ── 第十四轮:标签下没有第二行;没有标签的页没有空带 (docs/SHELL.md) ──
+  //
+  // 2026-09-24, on the installed 第十三轮:「session标签页下还有个标题,
+  // 不要了, 标签页下就是状态bar然后就是内容…此外, 这一行不要显示任何内容.
+  // 也就是任何标签页下方都不要有副标题」and「全app的非标签页抽象有问题.
+  // 现在机器、额度和浏览器的顶部都空了一截出来」.
+  //
+  // Two rules, measured here: **a tab is followed by the thing it
+  // names**, never by a second line about it; and **the right side's
+  // first row belongs to the tabs**, so a page with no tabs has no row.
+  {
+    const px = (name) =>
+      page.evaluate((n) => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:absolute;visibility:hidden;height:var(${n});width:var(${n})`;
+        document.body.appendChild(el);
+        const v = el.getBoundingClientRect().height;
+        el.remove();
+        return +v.toFixed(2);
+      }, name);
+    const gapIn = await px("--gap-in");
+
+    // ── (a) wide: the strip, the day's band, the session ──
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+    await open("sessions");
+    if (!(await press("[data-list] [data-row-open]"))) {
+      fail("probe dead: no session row to open — 第十四轮 (a) would pass on an empty landing");
+    } else {
+      await wait(400);
+      const wide = await page.evaluate(() => {
+        const pane = document.querySelector("[data-detail-pane]");
+        const day = document.querySelector("[data-detail-day]");
+        const strip = document.querySelector("[data-region-head]");
+        if (!pane || !day || !strip) {
+          return { missing: [!pane && "[data-detail-pane]", !day && "[data-detail-day]", !strip && "[data-region-head]"].filter(Boolean) };
+        }
+        const r = (el) => el.getBoundingClientRect();
+        return {
+          header: document.querySelectorAll("[data-detail-pane] [data-detail-header]").length,
+          facts: document.querySelectorAll("[data-detail-facts]").length,
+          dayTop: +r(day).top.toFixed(2),
+          stripBottom: +r(strip).bottom.toFixed(2),
+        };
+      });
+      if (wide.missing) {
+        fail(`probe dead: an open session on the wide face has no ${wide.missing.join(" / ")}`);
+      } else {
+        console.log(`第十四轮 · wide session: ${JSON.stringify(wide)}`);
+        if (wide.header !== 0 || wide.facts !== 0) {
+          fail(
+            `an open session still draws ${wide.header} [data-detail-header] and ${wide.facts} [data-detail-facts] on the wide face — ` +
+              "「session标签页下还有个标题, 不要了」: the strip already says the name, the face and the state (src/views/DetailPane.tsx)",
+          );
+        }
+        if (wide.dayTop !== wide.stripBottom) {
+          fail(
+            `the day's band starts at ${wide.dayTop} and the tab strip ends at ${wide.stripBottom} — ` +
+              "「标签页下就是状态bar然后就是内容」: nothing stands between them",
+          );
+        }
+      }
+    }
+
+    // ── (b) a file under its own tab: the first thing under the strip
+    //        is the file ──
+    if (!(await atTree())) {
+      fail("probe dead: no workspace tree to open a file from — 第十四轮 (b) measured nothing");
+    } else {
+      await press('[data-file="one.rs"] button');
+      const under = await until(8_000, async () => (await page.locator("[data-file-view]").count()) === 1);
+      if (!under) {
+        fail("probe dead: opening a file drew no [data-file-view] — the band under the strip was never measured");
+      } else {
+        const first = await page.evaluate(() => {
+          const view = document.querySelector("[data-file-view]");
+          const kids = [...view.children];
+          const say = (el) =>
+            el
+              ? `${el.tagName.toLowerCase()}${[...el.attributes].map((a) => `[${a.name}]`).join("")} ${JSON.stringify((el.textContent ?? "").trim().slice(0, 60))}`
+              : null;
+          // The body is the file's scroller (源码) or its rendering
+          // (预览). **Held by the first child rather than being it**: the
+          // scroller sits inside the box that also carries the overview
+          // ruler, so the claim is 「the first thing in this view is the
+          // one that holds the file」, and any band of words above it
+          // would be a child of its own, before this one.
+          const body = view.querySelector("[data-file-scroll], [data-file-preview]");
+          const top = kids[0] ?? null;
+          return {
+            first: say(top),
+            isBody: !!body && !!top && (top === body || top.contains(body)),
+            hasBody: !!body,
+            n: kids.length,
+          };
+        });
+        console.log(`第十四轮 · under the file's tab: ${JSON.stringify(first)}`);
+        if (!first.hasBody) {
+          fail("probe dead: the open file drew no [data-file-scroll] / [data-file-preview] — nothing to measure the band against");
+        } else if (!first.isBody) {
+          fail(
+            `under the file's tab the first thing is ${first.first}, not the file — ` +
+              "「任何标签页下方都不要有副标题」 (src/views/FileView.tsx)",
+          );
+        }
+      }
+    }
+
+    // ── (c) a page with no tabs has no row, and its board starts
+    //        --gap-in from the top ──
+    //
+    // The sessions landing is measured with **nothing open**, which is
+    // the state the user saw the empty band in; the walk above leaves
+    // tabs behind, so they are cleared and the page reloaded.
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const headless = async (where) => {
+      const read = await page.evaluate(() => {
+        const board = document.querySelector("[data-board]");
+        const main = document.querySelector("[data-main]");
+        if (!board || !main) return { missing: [!board && "[data-board]", !main && "[data-main]"].filter(Boolean) };
+        const r = (el) => el.getBoundingClientRect();
+        return {
+          rows: document.querySelectorAll("[data-region-head]").length,
+          gap: +(r(board).top - r(main).top).toFixed(2),
+        };
+      });
+      if (read.missing) {
+        fail(`probe dead: ${where} drew no ${read.missing.join(" / ")}`);
+        return;
+      }
+      console.log(`第十四轮 · ${where}: ${JSON.stringify(read)}`);
+      if (read.rows !== 0 || read.gap !== gapIn) {
+        fail(
+          `${where} draws ${read.rows} [data-region-head] and starts its board ${read.gap} under the region (--gap-in ${gapIn}) — ` +
+            "「没有标签的页没有空带」: no tabs, no row, and the board's top is an edge like the other three (src/components/Region.tsx)",
+        );
+      }
+    };
+    for (const tab of ["devices", "quota", "sessions"]) {
+      if (!(await open(tab))) {
+        fail(`probe dead: the ${tab} landing is not on the rail`);
+        continue;
+      }
+      await wait(300);
+      await headless(`the ${tab} landing`);
+    }
+    // 「…」 is a page rather than a landing: the rail's own button opens
+    // the menu and a row on it opens the page (`App.tsx` morePages —
+    // network, settings, security, doctor).
+    if ((await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'))) {
+      await wait(400);
+      await headless("the 「…」 page");
+    } else {
+      fail("probe dead: 「…」 did not open a page — its empty band was never measured");
+    }
+    // **Shut whatever is still open.** A menu left up is a modal layer,
+    // and the next press lands on it — that is how the first red run of
+    // this section ended, with every rail glyph reading 「html intercepts
+    // pointer events」 (the round-13 section keeps the same habit).
+    await page.keyboard.press("Escape");
+    await wait(300);
+
+    // ── (d) …and a session *is* tabs, so opening one brings the row
+    //        back. The rule is「no tabs, no row」, not「never a row」. ──
+    await open("sessions");
+    if (!(await press("[data-list] [data-row-open]"))) {
+      fail("probe dead: no session row to open — (d) would pass on an empty landing");
+    } else {
+      await wait(400);
+      const back = await page.locator("[data-region-head] [data-session-tabs]").count();
+      if (back !== 1) {
+        fail(`opening a session drew ${back} tab strips in a [data-region-head] — a page with tabs keeps its row`);
+      }
+    }
+
+    // ── (e) narrow: the header stays, and only what the strip would
+    //        have carried is in it ──
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(400);
+    await press(rail("sessions"));
+    await wait(300);
+    if (!(await press("[data-list] [data-row-open]"))) {
+      fail("probe dead: no session row on the narrow face — 第十四轮 (e) measured nothing");
+    } else {
+      await wait(400);
+      const phone = await page.evaluate(() => {
+        const h = document.querySelector("[data-detail-header]");
+        if (!h) return null;
+        return {
+          back: !!h.querySelector("[data-back]"),
+          face: !!h.querySelector("[data-halo]"),
+          name: !!h.querySelector("[data-editable-name], [data-title-input]"),
+          facts: h.querySelectorAll("[data-detail-facts]").length,
+        };
+      });
+      console.log(`第十四轮 · narrow detail head: ${JSON.stringify(phone)}`);
+      if (!phone) {
+        fail("the narrow detail lost its header — 「窄档头只留返回键 + 脸 + 名字」, and back is the only way out of that screen");
+      } else if (!phone.back || !phone.face || !phone.name || phone.facts !== 0) {
+        fail(
+          `the narrow detail's header reads ${JSON.stringify(phone)} — back, the face and the name, and no 「工作区 · 类型」`,
+        );
+      }
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);

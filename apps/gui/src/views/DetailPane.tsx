@@ -14,7 +14,7 @@ import { ChatView } from "@/views/ChatView";
 import { DayStrip } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
-import { groupLabel, word } from "@/words";
+import { word } from "@/words";
 
 /**
  * **One session, one face.** A session is held in exactly one form —
@@ -179,7 +179,6 @@ export function DetailPane({
   onNew,
   empty,
   tabs,
-  placeWord,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -205,13 +204,14 @@ export function DetailPane({
       a browser keeps it; absent on wide, where the strip above this
       pane already shows every tab. */
   tabs?: ReactNode;
-  /** The row's workspace, in the words the list's chips use — resolved
-      by the shell (`placeLabels` needs every row) and only printed
-      here. Null for a row with no place. */
-  placeWord?: string | null;
 }) {
   return (
-    <section className="flex h-full min-w-0 flex-col">
+    // **The pane's own anchor** (第十四轮 第 1 条). Until this round
+    // every gate and every smoke step reached the open session through
+    // `[data-detail-header]` — a row that exists on one face only now,
+    // so「the pane」 needed a name of its own rather than a landmark
+    // inside it.
+    <section data-detail-pane className="flex h-full min-w-0 flex-col">
       {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
           changed is that it may no longer clip. Everything in it that can
           be pressed now carries the finger floor (tokens.css `--touch`),
@@ -220,21 +220,35 @@ export function DetailPane({
           lights up would be cut off, which is the one thing the floor's
           own rule forbids ("按下的底色要画在扩后的盒上"). So the bar is
           the height of the tallest thing a finger must land on. */}
-      {/* The pane's top row, so its blank moves the window (第八轮 第 59
-          条). Every control in here is a child and keeps its press. */}
-      <header
-        data-detail-header
-        data-tauri-drag-region="deep"
-        className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
-      >
-        {/* The back button exists only on the narrow face: there the
-            list is genuinely off-screen, so "back" has somewhere to go.
-            Wide keeps the list on screen — nothing to go back from.
-            **The narrow face's only exit, so it is the one control in
-            this app that must not be under the floor** — it was an
-            icon-only 30, and there is no second way out of a detail
-            screen on a phone. */}
-        {narrow && (
+      {/* ⚠️ **On the wide face there is no header at all** (第十四轮 第
+          1 条, 2026-09-24:「session标签页下还有个标题, 不要了, 标签页下
+          就是状态bar然后就是内容」). What stood here — the name in an
+          editable box, and 「工作区 · 类型」 beside it — was the tab's
+          own content said a second time, one row lower: the strip above
+          already carries this session's face, its state halo and its
+          name, and renaming is done in the tab itself (`TabStrip`'s
+          `EditableName`). The user's rule is wider than this pane:
+          **no tab anywhere gets a subtitle under it**.
+
+          So the wide order is: the strip, the day's band, the session.
+
+          The narrow face has no strip, so it keeps a header — and only
+          what the strip would have carried: the way back, the face, the
+          name. The facts do not come back with it; they were the half
+          the user struck out. */}
+      {narrow && (
+        <header
+          data-detail-header
+          data-tauri-drag-region="deep"
+          className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
+        >
+          {/* The back button exists only on the narrow face: there the
+              list is genuinely off-screen, so "back" has somewhere to
+              go. Wide keeps the list on screen — nothing to go back
+              from. **The narrow face's only exit, so it is the one
+              control in this app that must not be under the floor** —
+              it was an icon-only 30, and there is no second way out of
+              a detail screen on a phone. */}
           <Button
             variant="ghost"
             size="icon"
@@ -245,56 +259,42 @@ export function DetailPane({
           >
             <IconBack />
           </Button>
-        )}
-        {/* The row's identity assembly, only where the strip is not
-            there to carry it: on wide the front tab wears this exact
-            face — halo for the state, corner mark for the kind — a few
-            pixels up, and repeating it here was the header's old
-            crowding (2026-09-02:「都和标签内容重复了」— the state word,
-            the machine face and name, 复制 id and 关闭 all left
-            together; the copy and the close live in the row's menu
-            now). Narrow has no strip, so the face stays, or an open
-            session's state would be on no screen at all. */}
-        {narrow && row && (
-          <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} />
-        )}
-        {/* `min-w-0` (inside EditableName) is what lets it actually
-            truncate: a flex child will not shrink below its content
-            without it, so on the narrow face the title would push the
-            facts off the end of the header instead of clipping itself.
-            Keyed by the row so switching sessions drops any half-typed
-            edit — a draft belongs to the row it was typed over. */}
-        {row ? (
-          <EditableName
-            key={row.id}
-            id={row.id}
-            title={row.title}
-            className="min-w-0 font-title"
-            inputClassName="flex-1 font-title"
-          />
-        ) : (
-          <span className="min-w-0 truncate font-title" />
-        )}
-        {/* What the title is *of* — the workspace and the kind, which
-            the user named as the header's whole remaining content
-            (「标题应该就是session名,所属工作区,session类型」). Both in
-            the list's own words: the place label the shell resolved
-            (`placeLabels`, handed in as `placeWord`) and the
-            category's group word — so a heading here and a chip there
-            cannot spell one fact two ways. */}
-        {row && (
-          <span data-detail-facts className="min-w-0 shrink truncate text-sm text-muted-foreground">
-            {[placeWord, groupLabel(`cat:${row.category ?? ""}`)].filter(Boolean).join(" · ")}
-          </span>
-        )}
-        <span className="min-w-0 flex-1" />
-        {tabs}
-      </header>
-      {/* The session's day, as a band the width of the pane, directly
-          under the header: it is a fact about *this* session and reads
-          beside its name and word. Full-bleed and in its own box, so
-          the runs' reach-up hit boxes (`DayStrip`) land on the header's
-          bottom edge rather than on nothing. Absent with no row — the
+          {/* The row's identity assembly, only where the strip is not
+              there to carry it: on wide the front tab wears this exact
+              face — halo for the state, corner mark for the kind — and
+              repeating it here was the header's old crowding
+              (2026-09-02:「都和标签内容重复了」). Narrow has no strip,
+              so the face stays, or an open session's state would be on
+              no screen at all. */}
+          {row && (
+            <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} />
+          )}
+          {/* `min-w-0` (inside EditableName) is what lets it actually
+              truncate: a flex child will not shrink below its content
+              without it. Keyed by the row so switching sessions drops
+              any half-typed edit — a draft belongs to the row it was
+              typed over. */}
+          {row ? (
+            <EditableName
+              key={row.id}
+              id={row.id}
+              title={row.title}
+              className="min-w-0 font-title"
+              inputClassName="flex-1 font-title"
+            />
+          ) : (
+            <span className="min-w-0 truncate font-title" />
+          )}
+          <span className="min-w-0 flex-1" />
+          {tabs}
+        </header>
+      )}
+      {/* The session's day, as a band the width of the pane, and on the
+          wide face **the first thing under the tab strip** — 「标签页下
+          就是状态bar然后就是内容」. It is a fact about *this* session
+          and reads beside its name and word. Full-bleed and in its own
+          box, so the runs' reach-up hit boxes (`DayStrip`) land on the
+          edge above rather than on nothing. Absent with no row — the
           empty state has no day. */}
       {row && (
         <div data-detail-day className="relative h-1 flex-none">

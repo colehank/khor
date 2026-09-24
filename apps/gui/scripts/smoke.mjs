@@ -2456,7 +2456,13 @@ for line in sys.stdin:
   await openLanding("sessions");
   await until("rows on the session list", 10_000, async () => (await page.locator("[data-row]").count()) > 0);
   await row.locator("[data-row-open]").click();
-  if ((await page.locator("[data-detail-header]").count()) !== 1) throw new Error("probe dead: no detail header");
+  // **The wide face has a pane and no header** (第十四轮 第 1 条): the
+  // tab strip above it already carries the name, the face and the state,
+  // and a second row saying them again is what the user struck out.
+  if ((await page.locator("[data-detail-pane]").count()) !== 1) throw new Error("probe dead: no detail pane");
+  if ((await page.locator("[data-detail-header]").count()) !== 0) {
+    throw new Error("a header is back under the session tab on the wide face — 「标签页下方不要有副标题」");
+  }
   if ((await page.locator("[data-back]").count()) !== 0) throw new Error("back button on the wide face");
   // Shrinking mid-detail keeps the detail up (Telegram's behavior) —
   // and there, with the list genuinely off-screen, back exists.
@@ -5723,8 +5729,7 @@ for line in sys.stdin:
   let afterTakeover = "";
   await until("the resumed agent answering from the same id", 20_000, async () => {
     afterTakeover = await page
-      .locator("[data-detail-header]")
-      .locator("..")
+      .locator("[data-detail-pane]")
       .innerText()
       .catch(() => "");
     return afterTakeover.includes("echo: hello taken");
@@ -5860,7 +5865,7 @@ for line in sys.stdin:
   );
   await say(page, "hello wizard");
   await until("the reply streamed through the shim", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes("echo: hello wizard");
   });
   // 25c-2) what can be set, through the shim: the menu lists claude's
@@ -5956,7 +5961,7 @@ for line in sys.stdin:
   );
   await say(page, "hello far");
   await until("the far reply, round through alpha's shim and the pipe", 40_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes("echo: hello far");
   });
   // Back to the wizard's own conversation: what follows replays it
@@ -5965,7 +5970,9 @@ for line in sys.stdin:
   await page.locator(`[data-row="${wizardRow}"] [data-row-open]`).click();
   await until("the wizard's conversation back on the pane", 20_000, async () =>
     (await page.locator("[data-chat-input]").count()) === 1 &&
-    (await page.locator("[data-detail-header]").innerText().catch(() => "")).includes("wizard-one"),
+    // The name is the **tab's** now (第十四轮 第 1 条), which is where
+    // renaming a session has lived since 第十三轮.
+    (await page.locator('[data-session-tabs] [data-tab][data-on="true"]').innerText().catch(() => "")).includes("wizard-one"),
   );
   // Markdown is the agent's medium, and the fake echoes what it was
   // told — so one line of it makes the round trip and must arrive
@@ -6053,7 +6060,7 @@ for line in sys.stdin:
   });
   await page.locator("[data-chat-input]").press("Enter");
   await until("the command reaching the agent as a line", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes("echo: /compact");
   });
 
@@ -6091,7 +6098,7 @@ for line in sys.stdin:
   // another line. A pane that merely repainted would fail here.
   await say(page, "after the stop");
   await until("the same conversation answering after a stop", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes("echo: after the stop");
   });
 
@@ -6177,7 +6184,7 @@ for line in sys.stdin:
     (await saidCount()) > beforeIme,
   );
   await until("the composed line reaching the agent", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes(`echo: ${composed}`);
   });
 
@@ -6338,7 +6345,7 @@ for line in sys.stdin:
   // And it was a draft, not a corpse: it sends.
   await page.locator(boxSel).press("Enter");
   await until("the draft going out once the turn was over", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes(`echo: ${draft}`);
   });
 
@@ -6351,7 +6358,7 @@ for line in sys.stdin:
     const filler = `filler ${i} ${"x".repeat(200)}`;
     await say(page, filler);
     await until(`filler ${i} answered`, 20_000, async () => {
-      const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+      const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
       return t.includes(`echo: ${filler}`);
     });
   }
@@ -6566,7 +6573,7 @@ for line in sys.stdin:
     return (await page.locator("[data-ask-answer]").count()) === 1;
   });
   await until("the allow reaching the fake claude", 20_000, async () => {
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes("verdict:allow");
   });
   // 25k) 帧上限的恢复 (批⑤): a conversation that overflowed one
@@ -6665,7 +6672,7 @@ for line in sys.stdin:
   await until("the conversation surviving the move", 40_000, async () => {
     const why = await page.locator('[data-menu-note="to-a-chat"]').innerText().catch(() => "");
     if (why) throw new Error(why);
-    const t = await page.locator("[data-detail-header]").locator("..").innerText().catch(() => "");
+    const t = await page.locator("[data-detail-pane]").innerText().catch(() => "");
     return t.includes("the fake's own past");
   });
 

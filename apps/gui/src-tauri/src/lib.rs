@@ -2482,6 +2482,17 @@ fn set_machine_paused(machine: String, on: bool) -> Result<String, String> {
 }
 
 pub fn run() {
+    // **Stand somewhere that cannot be deleted, before anything else**
+    // (docs/SHELL.md 第十四轮 第 4 条). The install script starts this
+    // binary with `nohup` from inside the export directory and then
+    // removes that directory, so the app spends its whole life standing
+    // nowhere — and `gix` goes through the current directory on its way
+    // to a repository, which is why the workspace printed 「… does not
+    // appear to be a git repository」 over a plain checkout. The app is
+    // the process that owns its own directory, so it is the one that
+    // moves outright; `Node::open` only rescues a process that is
+    // already adrift.
+    khor_node::cwd::pin();
     // 语言, before anything is drawn or printed (docs/MORE.md 语言).
     // The face resolves its own (`src/lang.ts`, from the same key); this
     // is the Rust half — every sentence that crosses back as text, a

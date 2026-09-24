@@ -230,7 +230,10 @@ try {
   const openRow = async (id) => {
     await page.locator(`[data-row="${id}"] [data-row-open]`).click();
     return until(`the band for ${id}`, 25_000, async () => {
-      const on = await page.locator("[data-detail-header]").count();
+      // **The pane, not a header** (第十四轮 第 1 条): the wide face
+      // draws no header over an open session any more, and the band is
+      // the first thing in the pane instead.
+      const on = await page.locator("[data-detail-pane]").count();
       return on > 0 && (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1;
     });
   };
@@ -261,21 +264,18 @@ try {
       });
 
       const px = (n) => Math.round(n * 100) / 100;
-      const header = document.querySelector("[data-detail-header]");
+      const pane = document.querySelector("[data-detail-pane]");
       const strip = document.querySelector("[data-detail-day] [data-day-strip]");
-      const h = header && header.getBoundingClientRect();
+      const h = pane && pane.getBoundingClientRect();
       const st = strip && strip.getBoundingClientRect();
-      // Where the header's **content** begins: its padding is the inset,
-      // and the band must start left of it — a band inside the padded
-      // flow would say the day begins where the title does.
-      const inset = header ? parseFloat(getComputedStyle(header).paddingLeft) : 0;
       const box = {
         paneL: h ? px(h.left) : null,
         paneR: h ? px(h.right) : null,
+        paneT: h ? px(h.top) : null,
+        stripT: st ? px(st.top) : null,
         stripL: st ? px(st.left) : null,
         stripR: st ? px(st.right) : null,
         stripH: st ? px(st.height) : null,
-        contentL: h ? px(h.left + inset) : null,
         runs: strip ? strip.childElementCount : 0,
       };
       return { wants, marks, box };
@@ -492,23 +492,24 @@ try {
   // ── 3) one axis ───────────────────────────────────────────────────
   //
   // One band at a time now, so "the strips share an axis" is the pane's
-  // own edges: each session's band spans the header it sits under, and
-  // starts left of where that header's content begins — full-bleed, so
-  // the day and the title do not claim the same left edge for different
-  // reasons. And the same edges for every session, which is what makes
-  // two sessions' days comparable when read one after the other.
+  // own edges: each session's band spans the pane it sits in, and is
+  // **the first thing in it** — 「标签页下就是状态bar然后就是内容」
+  // (第十四轮 第 1 条; before that round it sat under a header and the
+  // claim was that it started left of that header's padded content).
+  // And the same edges for every session, which is what makes two
+  // sessions' days comparable when read one after the other.
   for (const b of seen.boxes) {
     if (b.stripL === null) {
-      fail(`③ ${b.id} has no band under its header`);
+      fail(`③ ${b.id} has no band in its pane`);
       continue;
     }
     if (b.stripL !== b.paneL || b.stripR !== b.paneR) {
-      fail(`③ ${b.id} band spans ${b.stripL}..${b.stripR}, its header spans ${b.paneL}..${b.paneR}`);
+      fail(`③ ${b.id} band spans ${b.stripL}..${b.stripR}, its pane spans ${b.paneL}..${b.paneR}`);
     }
-    if (!(b.stripL < b.contentL)) {
+    if (b.stripT !== b.paneT) {
       fail(
-        `③ ${b.id} band starts at ${b.stripL}, at or past where the header's content begins (${b.contentL}) — ` +
-          "it is inside the padded flow rather than full-bleed",
+        `③ ${b.id} band starts ${+(b.stripT - b.paneT).toFixed(2)} below the top of its pane — ` +
+          "「标签页下就是状态bar然后就是内容」: nothing stands between the tab strip and the band",
       );
     }
   }
@@ -525,7 +526,7 @@ try {
   );
   console.log(`heights: 不知道 ${hair}, word ${block} — one axis`);
   console.log(
-    `axis: ${seen.boxes.map((b) => `${b.id} ${b.stripL}..${b.stripR} h${b.stripH} ⊢${b.contentL} ${b.runs} runs`).join(", ")}`,
+    `axis: ${seen.boxes.map((b) => `${b.id} ${b.stripL}..${b.stripR} h${b.stripH} ⊤${b.stripT}/${b.paneT} ${b.runs} runs`).join(", ")}`,
   );
 
   // ── 4) a browser that has been here before ────────────────────────

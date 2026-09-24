@@ -470,6 +470,12 @@ export function WorkspacePane({
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
+  /** What the open file's view has to add to its tab's hover title —
+      today, that its diff stopped short (第十四轮 第 2 条). Held here
+      because the tab is this pane's; reported by `FileView`'s `onNote`.
+      Null on every other tab, so it never travels to a file it is not
+      about. */
+  const [fileNote, setFileNote] = useState<string | null>(null);
   /** Bumped to ask the open file to read itself again (工作区批⑩). Its
       own counter rather than `gitAt`'s, because the two are asked of
       different machines' answers about different things — and one of
@@ -1248,6 +1254,10 @@ export function WorkspacePane({
         // two tabs called `mod.rs` apart. The absolute path is the
         // hover title's, and both are on the menu.
         sub: under(root, path),
+        // What the open file has left to whisper — today, a diff that
+        // stopped short (第十四轮 第 2 条). Only the front tab has a
+        // view to report it, so only the front tab wears it.
+        note: key === file ? fileNote : null,
         // A diff has nothing to type in, so it never carries a dot.
         dirty: !isDiff && drafts.has(key),
         preview: preview === key,
@@ -1279,7 +1289,7 @@ export function WorkspacePane({
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tabs, machine, root, drafts, preview, shut, face],
+    [tabs, machine, root, drafts, preview, shut, face, file, fileNote],
   );
 
   /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
@@ -1687,6 +1697,9 @@ export function WorkspacePane({
               // and a mark this pane patched by hand would be a second
               // opinion about a fact git already has.
               onSaved={() => setGitAt((n) => n + 1)}
+              // The one sentence that outlived the rows under the strip
+              // (第十四轮 第 2 条), worn by this file's own tab.
+              onNote={setFileNote}
               // **Asked to save from outside**, by the sheet that
               // catches a tab being closed over a draft. A counter,
               // because two asks are two saves.

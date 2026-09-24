@@ -88,6 +88,11 @@ export type TabFace = {
       to the workspace root. Absent on a tab whose name is already the
       whole of what there is to say. */
   sub?: string;
+  /** One more sentence for the hover title, from whatever this tab's
+      view has to add — a diff that stopped short of the whole file
+      (第十四轮 第 2 条). **Not drawn anywhere on the strip**: it is the
+      long form, and the long form is what a `title` is for. */
+  note?: string | null;
   /** Something is typed here and not saved. The close mark becomes a
       filled dot, VS Code's arrangement, and goes back to a × the moment
       a save lands. */
@@ -393,7 +398,15 @@ export function TabStrip({
               // Machine first, then where on it — the same order the
               // address bar commits them in, and the same order the
               // sentence reads: this tab is *on* that machine.
-              title={[f.machine, f.path].filter(Boolean).join(": ") || undefined}
+              // **And whatever this tab's view has left to whisper**
+              // (第十四轮 第 2 条): the sentences that used to stand in
+              // a row under the strip now ride here, after the address,
+              // on the one tab they are about.
+              title={
+                [[f.machine, f.path].filter(Boolean).join(": "), f.note]
+                  .filter(Boolean)
+                  .join(" · ") || undefined
+              }
               className={cn(
                 // `h-touch`, not `h-ctl-md`: the tab is the target, so the
                 // tab is what has to be tall enough to land on — and it is

@@ -687,7 +687,11 @@ fn host_serving(
     ] {
         builder.env_remove(marker);
     }
-    if let Ok(cwd) = std::env::current_dir() {
+    // Where the person was standing when they started this process, not
+    // where the process stands now — opening a node pins that to a
+    // directory nothing can delete (第十四轮 第 4 条), and a shell born
+    // in `/` is a shell nobody asked for.
+    if let Some(cwd) = crate::cwd::standing() {
         builder.cwd(cwd);
     }
     let mut child = pty
