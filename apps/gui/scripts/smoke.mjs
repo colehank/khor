@@ -4191,6 +4191,29 @@ for line in sys.stdin:
   //      is `check-face` 4Z's; the tab pin on a real node is
   //      `check-tabs`' 置顶 block.
 
+  // 28b) round 17 (docs/SHELL.md 第十七轮 §1): the more glyph opens the
+  //      More page itself, and every door the old menu had — network,
+  //      general (settings), security, doctor — is a row of that page's
+  //      list, reachable on the real app, on both faces.
+  for (const size of [{ width: 1400, height: 900 }, { width: 390, height: 720 }]) {
+    await page.setViewportSize(size);
+    for (const key of ["network", "settings", "security", "doctor"]) {
+      await page.locator("[data-rail-more]").click();
+      await until(`More's list (${size.width})`, 10_000, async () =>
+        (await page.locator(`[data-more-list] [data-more-open="${key}"]`).count()) === 1,
+      );
+      if ((await page.locator('[role="menu"]').count()) !== 0) {
+        throw new Error(`round 17: pressing the more glyph at ${size.width} opened a menu — it opens More directly`);
+      }
+      await page.locator(`[data-more-list] [data-more-open="${key}"]`).click();
+      await until(`More -> ${key} (${size.width})`, 10_000, async () =>
+        (await page.locator(`[data-more-page="${key}"]`).count()) === 1,
+      );
+      await page.locator("[data-more-close]").click();
+    }
+    console.log(`  ok  28b: More reaches network, general, security and doctor at ${size.width}`);
+  }
+
   // 29) the mark opens the mesh and what it cost — on both faces.
   //
   //     The narrow half is the point of it: with the map living in the

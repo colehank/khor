@@ -27,7 +27,17 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+        // An ordinary push button (第十七轮, docs/design-system
+        // components/Button): `fill-strong` under `foreground`. Since
+        // 第十五轮 `--primary` is `--brand-strong`, and a default that
+        // painted it made every unmarked button on every page a solid
+        // olive block — the brand voltage in a place it is not allowed.
+        default: "bg-fill-strong text-foreground hover:bg-fill-strong/80",
+        // **The** one primary act of a dialog or a sheet, and nowhere
+        // else: at most one per dialog, never two in a row. `check-face`
+        // (第十七轮) goes red on a primary outside `[role=dialog]` /
+        // `[data-sheet]`, and on two in one.
+        primary: "bg-primary text-primary-foreground hover:bg-primary/90",
         secondary: "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
         ghost: "hover:bg-secondary hover:text-foreground",
         destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",

@@ -365,7 +365,7 @@ export function DirPicker({
           )}
         </div>
         <DialogFooter>
-          <Button
+          <Button variant="primary"
             data-dir-picker-take
             disabled={typed.trim() === "" || taking}
             onClick={take}

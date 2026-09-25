@@ -121,7 +121,7 @@ export function JoinDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-join-dialog>
+      <DialogContent sheet data-join-dialog>
         <DialogHeader>
           <DialogTitle>{gui.join_with_a_ticket}</DialogTitle>
         </DialogHeader>
@@ -139,7 +139,7 @@ export function JoinDialog({
           </div>
         )}
         <DialogFooter>
-          <Button data-join disabled={!ticket.trim() || joining} onClick={join}>
+          <Button variant="primary" data-join disabled={!ticket.trim() || joining} onClick={join}>
             {gui.join}
           </Button>
         </DialogFooter>

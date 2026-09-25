@@ -1782,6 +1782,8 @@
   --spacing-base: var(--gap-base);
   --spacing-row-1: var(--row-1);
   --spacing-row-2: var(--row-2);
+  --spacing-switch-w: var(--switch-w);
+  --spacing-switch-h: var(--switch-h);
   --spacing-touch: var(--touch);
   --spacing-rail: var(--rail-w);
   --spacing-traffic: var(--traffic);

@@ -1971,8 +1971,8 @@ try {
   // answer.
   const configValues = { theme: "auto", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
   const CONFIG_SHAPE = [
-    ["theme", "appearance", "settings", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
-    ["lang", "language", "settings", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
+    ["theme", "appearance", "appearance", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
+    ["lang", "language", "appearance", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
     // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
     ["tabs-limit", "general", "settings", "标签页上限", [["off", "关"], ...Array.from({ length: 47 }, (_, i) => [String(i + 4), String(i + 4)])]],
     ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
@@ -2340,6 +2340,16 @@ try {
     return true;
   };
   const press = (sel) => pressNth(sel, 0);
+  // A settings value, chosen the way a person chooses it since round 17:
+  // through the row's native select (`components/settings/PopupRow`).
+  // True when the select was there to choose from.
+  const choose = async (name, value) => {
+    const sel = page.locator(`[data-setting-select="${name}"]`);
+    if ((await sel.count()) === 0) return false;
+    await sel.first().selectOption(value);
+    await wait(150);
+    return true;
+  };
   /**
    * The mark's place, in the two presses it takes since 2026-09-19
    * (docs/MORE.md): the avatar opens this machine's identity card, and
@@ -2675,7 +2685,7 @@ try {
       // > node's own table, so a `config_rows` that drifted still says
       // > *probe dead* here rather than passing.
       name: "settings",
-      anchor: '[data-config-row="theme"] [data-config-choice]',
+      anchor: '[data-config-row="theme"] select',
       // **Two presses on both faces since 2026-09-19** (docs/MORE.md):
       // 设置 stopped being the one thing behind 「…」 — it is one of
       // three — so the wide rail's own glyph opens the same menu the
@@ -2684,7 +2694,7 @@ try {
       // mark) pressed straight through to a dialog; there is no dialog
       // any more.
       go: async () =>
-        (await press("[data-rail-more]")) && press('[data-more-open="settings"]'),
+        (await press("[data-rail-more]")) && press('[data-more-open="appearance"]'),
       // Closed by its own button rather than Escape: a page is not a
       // dialog and does not answer that key, and leaving it open would
       // hand the next stop a full-region surface over its landing.
@@ -9139,12 +9149,19 @@ try {
           `probe dead: ${missing.map((p) => p.pane).join(", ")} never drew on the ${scheme} pass — ` +
             "nothing about the grounds was measured",
         );
-      } else if (new Set(panes.map((p) => p.ground)).size !== 1) {
-        fail(
-          `the secondary sidebars sit on ${panes.length} panes and ${new Set(panes.map((p) => p.ground)).size} grounds ` +
-            `on the ${scheme} theme (${panes.map((p) => `${p.pane} ${p.ground}`).join(", ")}) — ` +
-            "「整体app的视觉一致… 这看起来没有用统一的逻辑进行编写」 (src/components/ListPane.tsx)",
-        );
+      } else {
+        // An open workspace's tree and sessions panes are the board (D8), so
+        // they share the board's ground; every L2 sidebar shares the side's.
+        const board = ["[data-ws-tree]", "[data-ws-sessions]"];
+        for (const group of [panes.filter((p) => !board.includes(p.pane)), panes.filter((p) => board.includes(p.pane))]) {
+          if (new Set(group.map((p) => p.ground)).size !== 1) {
+            fail(
+              `the secondary sidebars sit on ${group.length} panes and ${new Set(group.map((p) => p.ground)).size} grounds ` +
+                `on the ${scheme} theme (${group.map((p) => `${p.pane} ${p.ground}`).join(", ")}) — ` +
+                "「整体app的视觉一致… 这看起来没有用统一的逻辑进行编写」 (src/components/ListPane.tsx)",
+            );
+          }
+        }
       }
     }
     await page.emulateMedia({ colorScheme: "light" });
@@ -9974,13 +9991,11 @@ try {
     await page.reload({ waitUntil: "load" });
     await wait(900);
     const toSettings = (await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'));
-    const limitOpen = page.locator('[data-config-open="tabs-limit"]');
+    const limitOpen = page.locator('[data-setting-select="tabs-limit"]');
     if (!toSettings || (await limitOpen.count()) === 0) {
       fail("probe dead: no 标签页上限 row with a menu on the settings page (src/views/more/ConfigRows.tsx)");
     } else {
-      await limitOpen.click();
-      await wait(200);
-      await press('[data-config-choice="tabs-limit:4"]');
+      await choose("tabs-limit", "4");
       await until(3_000, async () =>
         (await page.locator('[data-config-row="tabs-limit"]').getAttribute("data-value")) === "4",
       );
@@ -11365,46 +11380,54 @@ try {
         fail(`probe dead: ${posture} has no 「…」 in the rail to press`);
         continue;
       }
-      const menu = await page.evaluate(() => {
-        const box = document.querySelector("[data-rail-more-menu]");
-        if (!box) return null;
+      await wait(300);
+      // 第十七轮 §1: the more glyph opens More itself - a detail page with its
+      // sections listed beside it — and no menu pops at all.
+      const more = await page.evaluate(() => {
+        const list = document.querySelector("[data-more-list]");
         return {
-          pages: [...box.querySelectorAll("[data-more-open]")].map((e) => e.getAttribute("data-more-open")),
-          landings: [...box.querySelectorAll("[data-more-landing]")].map((e) =>
-            e.getAttribute("data-more-landing"),
-          ),
-          rule: box.querySelectorAll("[data-more-rule]").length,
+          menus: document.querySelectorAll('[role="menu"], [data-rail-more-menu]').length,
+          list: !!list,
+          pages: list ? [...list.querySelectorAll("[data-more-open]")].map((e) => e.getAttribute("data-more-open")) : [],
+          landings: list
+            ? [...list.querySelectorAll("[data-more-landing]")].map((e) => e.getAttribute("data-more-landing"))
+            : [],
+          kind: document.querySelector("[data-main] [data-region-kind]")?.getAttribute("data-region-kind") ?? null,
+          page: document.querySelector("[data-more-page]")?.getAttribute("data-more-page") ?? null,
         };
       });
-      if (!menu) {
-        fail(`probe dead: ${posture} · pressing 「…」 opened no menu`);
-        continue;
-      }
-      console.log(`「…」 ${posture}: pages ${JSON.stringify(menu.pages)} landings ${JSON.stringify(menu.landings)} rule ${menu.rule}`);
-      if (menu.pages.join(",") !== "network,settings,security,doctor") {
+      console.log(`round 17 · more ${posture}: ${JSON.stringify(more)}`);
+      if (more.menus !== 0) {
         fail(
-          `${posture}: 「…」 offers ${JSON.stringify(menu.pages)} — 网络 / 通用 / 安全 / 自检, ` +
-            "in that order (docs/MORE.md 第二轮 地图; src/App.tsx morePages)",
+          `${posture}: pressing the more glyph put ${more.menus} menu(s) on screen — it opens More directly, ` +
+            "no menu pops (docs/SHELL.md round 17 §1)",
+        );
+        await page.keyboard.press("Escape");
+        await wait(200);
+      }
+      if (!more.list) {
+        fail(`${posture}: pressing the more glyph drew no [data-more-list] — More's sections are its L2 (round 17 §1)`);
+      } else if (more.pages.join(",") !== "settings,appearance,network,security,identity,doctor") {
+        fail(
+          `${posture}: More lists ${JSON.stringify(more.pages)} — general / appearance / network / security / ` +
+            "identity / diagnostics, in that order (round 17 §1; src/views/more/MorePage.tsx morePageOrder)",
         );
       }
-      // The folded landings are the narrow bar's alone, and the rule
-      // between them and the pages is what says the two are not one
-      // list: a landing is where you are, a page is opened over it.
-      if (posture === "narrow" && (menu.landings.length === 0 || menu.rule !== 1)) {
+      // Wide: the page is on screen beside the list, and it is a detail page.
+      if (posture === "wide" && (more.kind !== "detail" || more.page !== "settings")) {
         fail(
-          `narrow: the fold carries ${menu.landings.length} landing(s) and ${menu.rule} rule(s) — ` +
-            "the landings past the fourth belong above the three pages, with a rule between " +
-            "(App.tsx NARROW_SHOWN)",
+          `wide: the more glyph landed on data-region-kind=${JSON.stringify(more.kind)} showing ` +
+            `${JSON.stringify(more.page)} — More is an A page and its overview is General (10-layout.md)`,
         );
       }
-      if (posture === "wide" && (menu.landings.length !== 0 || menu.rule !== 0)) {
-        fail(
-          `wide: the 「…」 menu carries ${menu.landings.length} landing(s) and ${menu.rule} rule(s) — ` +
-            "every landing has a seat on this rail, so there is nothing folded to separate",
-        );
+      // The landings the narrow bar folds away still have a door: the
+      // head of More's list, where the old menu carried them.
+      if (posture === "narrow" && more.landings.length === 0) {
+        fail("narrow: More's list carries none of the folded landings — past the fourth they have no other door");
       }
-      await page.keyboard.press("Escape");
-      await wait(300);
+      if (posture === "wide" && more.landings.length !== 0) {
+        fail(`wide: More's list carries ${more.landings.length} landing(s) — every landing has a seat on this rail`);
+      }
 
       // Each page, opened and closed: what it replaces, what its head
       // carries, and that the landing under it is still the one that was
@@ -12363,7 +12386,7 @@ try {
       // The sections MORE.md names, by the node's own section keys —
       // never by their words, which would be reading the catalog to
       // check the catalog.
-      for (const want of ["appearance", "language", "session", "workspace", "store", "about"]) {
+      for (const want of ["session", "workspace", "store", "about"]) {
         if (!drew.sections.includes(want)) {
           fail(`设置 has no 「${want}」 section — it drew ${JSON.stringify(drew.sections)}`);
         }
@@ -12386,6 +12409,11 @@ try {
       // left to a reading.
       if (drew.sections.includes("confirm")) {
         fail("危险动作二次确认 is drawn on 设置 — docs/MORE.md puts it under 安全");
+      }
+      // Round 17 §1: theme and language are More -> Appearance's, and a
+      // section on two pages is the thing this page's rules are against.
+      if (drew.sections.includes("appearance") || drew.sections.includes("language")) {
+        fail(`General still draws ${JSON.stringify(drew.sections)} — appearance and language live on More -> Appearance (round 17 §1)`);
       }
       if (!drew.rows.some(([n]) => n === "session-form") || !drew.rows.some(([n]) => n === "files-click")) {
         fail(`设置 drew rows ${JSON.stringify(drew.rows)} — 会话 and 工作区 each have one key`);
@@ -12417,6 +12445,8 @@ try {
       // hop behind the emulation (`src/theme.ts`'s matchMedia
       // listener); a reading taken straight after `emulateMedia` is the
       // theme being left. smoke's `flipTheme` is the same wait.
+      // Theme and language are on Appearance since round 17 (§1).
+      if (!(await press('[data-more-open="appearance"]'))) fail("probe dead: More -> Appearance did not open");
       await page.emulateMedia({ colorScheme: "dark" });
       await until(5_000, async () =>
         (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark",
@@ -12436,7 +12466,7 @@ try {
         );
       }
 
-      await press('[data-config-choice="theme:light"]');
+      await choose("theme", "light");
       const lit = await until(5_000, async () =>
         (await page.locator('[data-config-row="theme"][data-value="light"]').count()) === 1,
       );
@@ -12468,7 +12498,7 @@ try {
       // Back to 跟系统, and the desktop wins again — the other
       // direction, which is what says this is a choice rather than a
       // one-way door.
-      await press('[data-config-choice="theme:auto"]');
+      await choose("theme", "auto");
       await until(5_000, async () =>
         (await page.locator('[data-config-row="theme"][data-value="auto"]').count()) === 1,
       );
@@ -12506,7 +12536,7 @@ try {
               .querySelector('[data-rail-item][data-landing="sessions"]')
               ?.getAttribute("aria-label") ?? null,
           head:
-            document.querySelector('[data-more-page="settings"] h1')?.textContent?.trim() ?? null,
+            document.querySelector('[data-more-page] h1')?.textContent?.trim() ?? null,
           html: document.documentElement.lang,
         }));
       const inZh = await speaks();
@@ -12520,7 +12550,7 @@ try {
         );
       }
 
-      await press('[data-config-choice="lang:en"]');
+      await choose("lang", "en");
       const spoke = await until(5_000, async () =>
         (await page.locator('[data-config-row="lang"][data-value="en"]').count()) === 1,
       );
@@ -12556,7 +12586,7 @@ try {
       // Back to 跟系统, and this browser's own language wins again —
       // the other direction, which is what says this is a choice
       // rather than a one-way door.
-      await press('[data-config-choice="lang:auto"]');
+      await choose("lang", "auto");
       await until(5_000, async () =>
         (await page.locator('[data-config-row="lang"][data-value="auto"]').count()) === 1,
       );
@@ -12568,8 +12598,9 @@ try {
 
       // Set it, and wait for the **store's** answer to come back round
       // through the shell: the page paints from the re-read, never from
-      // what it just sent.
-      await press('[data-config-choice="session-form:term"]');
+      // what it just sent. (Back on General: session-form is its row.)
+      await press('[data-more-open="settings"]');
+      await choose("session-form", "term");
       const took = await until(5_000, async () =>
         (await page.locator('[data-config-row="session-form"][data-value="term"]').count()) === 1,
       );
@@ -12594,7 +12625,7 @@ try {
       // wizard it has always met.
       await press("[data-rail-more]");
       await press('[data-more-open="settings"]');
-      await press('[data-config-choice="session-form:chat"]');
+      await choose("session-form", "chat");
       await until(5_000, async () =>
         (await page.locator('[data-config-row="session-form"][data-value="chat"]').count()) === 1,
       );
@@ -21133,6 +21164,222 @@ try {
     }
     await page.keyboard.press("Escape");
     await wait(200);
+
+    // ── round 17 (docs/SHELL.md 第十七轮) ──────────────────────────
+    //
+    // Five claims, each written before the change it guards and seen
+    // red against the tree it replaced (docs/handoff/001.md 第十七轮):
+    //   (a) every selectable setting on More is one of the four row kinds,
+    //       and a popup row opens the system's menu (a native select);
+    //   (b) the brand-strong push button is a dialog's or a sheet's, at
+    //       most one each, and never on a page;
+    //   (c) no board holds a row of buttons: two or more buttons side by
+    //       side as direct children of one box inside [data-board];
+    //   (d) a create form is a sheet hanging from R0's lower edge, with
+    //       no scrim over the window;
+    //   (e) an open workspace is three panes on a flush board, each
+    //       pane's head --pane-head tall.
+    {
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(300);
+
+      // (a) the four row kinds, on every section of More.
+      for (const key of ["settings", "appearance", "network", "security", "identity", "doctor"]) {
+        if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
+          fail(`probe dead: round 17 (a) could not open More -> ${key}`);
+          await page.keyboard.press("Escape");
+          await wait(200);
+          continue;
+        }
+        await wait(400);
+        const rows = await page.evaluate(() => {
+          const el = document.querySelector("[data-more-page]");
+          if (!el) return null;
+          const kinds = [...el.querySelectorAll("[data-setting-row]")].map((r) => ({
+            kind: r.getAttribute("data-setting-row"),
+            select: r.querySelectorAll("select").length,
+          }));
+          // A setting drawn some other way: an old ladder switch, a Radix
+          // trigger, or a config row that is not one of the four.
+          const loose = [
+            ...el.querySelectorAll("[data-config-choice], [data-config-open], [data-config-row]:not([data-setting-row])"),
+          ].length;
+          return { kinds, loose };
+        });
+        console.log(`round 17 (a) · ${key}: ${JSON.stringify(rows)}`);
+        if (!rows) {
+          fail(`round 17 (a): More -> ${key} drew no [data-more-page]`);
+          continue;
+        }
+        const bad = rows.kinds.filter((r) => !["switch", "popup", "nav", "action"].includes(r.kind));
+        if (bad.length) fail(`round 17 (a): More -> ${key} has row kind(s) ${JSON.stringify(bad)} — four kinds only`);
+        const blind = rows.kinds.filter((r) => r.kind === "popup" && r.select !== 1);
+        if (blind.length) {
+          fail(`round 17 (a): More -> ${key} has ${blind.length} popup row(s) without a native select — the system draws the menu`);
+        }
+        if (rows.loose) {
+          fail(`round 17 (a): More -> ${key} draws ${rows.loose} setting control(s) outside the four row kinds (src/components/settings)`);
+        }
+        if ((key === "settings" || key === "appearance") && rows.kinds.length === 0) {
+          fail(`round 17 (a): More -> ${key} has no [data-setting-row] at all — its config keys are drawn as rows`);
+        }
+      }
+
+      // (b) + (c) walked over every landing's first screen and More.
+      const reads = [
+        ["sessions", async () => open("sessions")],
+        ["devices", async () => open("devices")],
+        ["a machine", async () => (await open("devices")) && press("[data-list] [data-side-row]")],
+        ["quota", async () => open("quota")],
+        ["workspaces", async () => open("workspaces")],
+        ["browser", async () => open("browser")],
+        ["more", async () => (await press("[data-rail-more]")) && press('[data-more-open="settings"]')],
+      ];
+      for (const [where, go] of reads) {
+        if (!(await go())) {
+          fail(`probe dead: round 17 (b/c) could not reach ${where}`);
+          continue;
+        }
+        await wait(400);
+        const r = await page.evaluate(() => {
+          const shown = (el) => {
+            const b = el.getBoundingClientRect();
+            return b.width > 0 && b.height > 0 && getComputedStyle(el).visibility !== "hidden";
+          };
+          // The brand-strong fill, read off a probe so the gate holds no colour.
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
+          document.body.appendChild(probe);
+          const brand = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const primaries = [...document.querySelectorAll("button")].filter(
+            (b) => shown(b) && !b.closest('[role="dialog"], [data-sheet], [role="switch"]') && b.getAttribute("role") !== "switch" &&
+              getComputedStyle(b).backgroundColor === brand && !b.closest("[data-more-list], [data-side-row], [data-list], [data-rail]"),
+          );
+          const board = document.querySelector("[data-main] [data-board]");
+          const rows = [];
+          if (board) {
+            for (const box of board.querySelectorAll("*")) {
+              let run = 0;
+              for (const c of box.children) {
+                // A push button (`ui/button`), not a map's seat or a row: the
+                // claim is about a row of buttons, the shape D9 retires.
+                const isBtn = c.getAttribute("data-slot") === "button" && shown(c) && c.getAttribute("role") !== "switch";
+                run = isBtn ? run + 1 : 0;
+                if (run === 2) rows.push(`${box.tagName.toLowerCase()}${[...box.attributes].filter((a) => a.name.startsWith("data-")).map((a) => `[${a.name}]`).join("")}`);
+              }
+            }
+          }
+          return { primaries: primaries.map((b) => b.outerHTML.slice(0, 80)), rows };
+        });
+        console.log(`round 17 (b/c) · ${where}: primary ${r.primaries.length}, button rows ${JSON.stringify(r.rows)}`);
+        if (r.primaries.length) {
+          fail(
+            `round 17 (b): ${where} paints ${r.primaries.length} brand-strong button(s) outside a dialog or sheet — ` +
+              `the primary is a dialog's one act, a page's buttons are fill-strong (${JSON.stringify(r.primaries)})`,
+          );
+        }
+        if (r.rows.length) {
+          fail(
+            `round 17 (c): ${where} has a row of buttons in the board at ${JSON.stringify([...new Set(r.rows)])} — ` +
+              "page buttons live at R0's right end, row acts in the context menu (D9)",
+          );
+        }
+      }
+
+      // (b) inside a dialog or sheet: at most one primary.
+      // (d) the create forms are sheets hanging from R0.
+      const forms = [
+        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && (await press("[data-pane-new]")) && press('[data-new-item="new"]')],
+        ["import", "[data-import-dialog]", async () => (await open("sessions")) && (await press("[data-pane-new]")) && press('[data-new-item="import"]')],
+      ];
+      for (const [what, sel, go] of forms) {
+        if (!(await go()) || !(await until(4_000, async () => (await page.locator(sel).count()) === 1))) {
+          fail(`probe dead: round 17 (d) could not open the ${what} form`);
+          await page.keyboard.press("Escape");
+          continue;
+        }
+        await wait(300);
+        const s = await page.evaluate((sel) => {
+          const el = document.querySelector(sel);
+          const head = document.querySelector("[data-main] [data-region-head]");
+          const main = document.querySelector("[data-main]");
+          const board = document.querySelector("[data-main] [data-board]");
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
+          document.body.appendChild(probe);
+          const brand = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const vw = window.innerWidth;
+          const vh = window.innerHeight;
+          const scrims = [...document.querySelectorAll("body *")].filter((n) => {
+            const b = n.getBoundingClientRect();
+            const cs = getComputedStyle(n);
+            return cs.position === "fixed" && b.width >= vw - 1 && b.height >= vh - 1 && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+          }).length;
+          return {
+            sheet: el?.hasAttribute("data-sheet") ?? false,
+            top: el ? +el.getBoundingClientRect().top.toFixed(1) : null,
+            r0: head ? +head.getBoundingClientRect().bottom.toFixed(1) : null,
+            w: el ? el.getBoundingClientRect().width : null,
+            board: board ? board.getBoundingClientRect().width : null,
+            inMain: !!(main && el && main.contains(el)),
+            scrims,
+            primaries: el ? [...el.querySelectorAll("button")].filter((b) => getComputedStyle(b).backgroundColor === brand).length : 0,
+          };
+        }, sel);
+        console.log(`round 17 (d) · ${what}: ${JSON.stringify(s)}`);
+        if (!s.sheet) fail(`round 17 (d): the ${what} form is a centred dialog — a create form is a sheet from R0 (D10)`);
+        if (s.top === null || s.r0 === null || Math.abs(s.top - s.r0) > 0.5) {
+          fail(`round 17 (d): the ${what} sheet's top is ${s.top}, R0's bottom is ${s.r0} — it hangs from R0's lower edge`);
+        }
+        if (s.w !== null && s.board !== null && s.w > s.board + 0.5) {
+          fail(`round 17 (d): the ${what} sheet is ${s.w} wide over a ${s.board} board — no wider than the board`);
+        }
+        if (s.scrims) fail(`round 17 (d): the ${what} sheet brought ${s.scrims} window-wide scrim(s) — a sheet dims nothing`);
+        if (s.primaries > 1) fail(`round 17 (b): the ${what} form paints ${s.primaries} primary buttons — one per dialog or sheet`);
+        await page.keyboard.press("Escape");
+        if (!(await until(2_000, async () => (await page.locator(sel).count()) === 0))) {
+          fail(`round 17 (d): Esc left the ${what} sheet open`);
+        }
+      }
+
+      // (e) the open workspace: three panes, flush board, heads at --pane-head.
+      if (!(await open("workspaces")) || !(await press("[data-ws-row]"))) {
+        fail("probe dead: round 17 (e) could not open a workspace");
+      } else {
+        await wait(500);
+        if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+        if ((await page.locator("[data-ws-sessions]").count()) === 0) await press("[data-ws-sessions-switch]");
+        await wait(400);
+        const w = await page.evaluate(() => {
+          const board = document.querySelector("[data-main] [data-board]");
+          const panes = ["[data-ws-tree]", "[data-ws-mid]", "[data-ws-sessions]"].map((s) => {
+            const p = board?.querySelector(s);
+            const h = p?.firstElementChild;
+            return p ? { head: h ? +h.getBoundingClientRect().height.toFixed(1) : null } : null;
+          });
+          const cs = board ? getComputedStyle(board) : null;
+          return {
+            flush: board?.hasAttribute("data-board-flush") ?? false,
+            radius: cs?.borderTopLeftRadius ?? null,
+            margin: cs?.marginLeft ?? null,
+            panes,
+          };
+        });
+        console.log(`round 17 (e) · workspace: ${JSON.stringify(w)}`);
+        if (!w.flush || w.radius !== "0px" || w.margin !== "0px") {
+          fail(`round 17 (e): the open workspace's board keeps margin ${w.margin} and corner ${w.radius} — its panes are the board (D8)`);
+        }
+        w.panes.forEach((p, i) => {
+          const name = ["navigator", "editor", "inspector"][i];
+          if (!p) fail(`round 17 (e): the open workspace has no ${name} pane in the board`);
+          else if (i !== 1 && p.head !== paneHead) {
+            fail(`round 17 (e): the ${name} pane's head is ${p.head} tall, --pane-head is ${paneHead}`);
+          }
+        });
+      }
+    }
 
     // ── (b) one width, one owner ──
     //

@@ -2866,6 +2866,8 @@ settings = "通用"
 # 接缝;而屏幕上该写的是系统设置里会写的那个词。
 network = "网络"
 security = "安全"
+# 第十七轮: the one word an error state offers (`components/RegionState`).
+region_retry = "重试"
 doctor = "自检"
 # 头像开的那一页。**不叫「我」**——khor 里没有账号,一台机器就是一个身份,
 # 页名说的就是这台机器自己。

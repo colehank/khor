@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
@@ -55,9 +55,7 @@ export function MachineCard({
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
-  onNewSession,
-  onBrowseFiles,
-  onBorrowWeb,
+  actions,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
@@ -67,14 +65,10 @@ export function MachineCard({
   hooksFailed: boolean;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
-  /** 开会话 — the sessions pane's own wizard, with this machine already
-      picked (2026-09-06:「会话是对应会话页的新建 session」). Opening a
-      dialog cannot fail, so nothing comes back. */
-  onNewSession: (row: DeviceRow) => void;
-  onBrowseFiles: (row: DeviceRow) => void;
-  /** 借网 — this machine's network, opened from where you stand
-      (docs/NET.md 借网). Local navigation, so it cannot fail. */
-  onBorrowWeb: (row: DeviceRow) => void;
+  /** The page's own buttons on the narrow face, which has no R0 over a
+      detail screen: they sit at the right end of the back bar, the same
+      place R0 puts them wide (第十七轮 §3). */
+  actions?: ReactNode;
 }) {
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
@@ -108,6 +102,8 @@ export function MachineCard({
           >
             <IconBack />
           </Button>
+          <span className="flex-1" />
+          {actions}
         </header>
       )}
       {row && (
@@ -130,9 +126,6 @@ export function MachineCard({
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
           onUninstallHooks={onUninstallHooks}
-          onNewSession={onNewSession}
-          onBrowseFiles={onBrowseFiles}
-          onBorrowWeb={onBorrowWeb}
         />
       )}
     </section>
@@ -148,30 +141,19 @@ function Body({
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
-  onNewSession,
-  onBrowseFiles,
-  onBorrowWeb,
 }: {
   row: DeviceRow;
   hooks: HooksState | null;
   hooksFailed: boolean;
   onInstallHooks: () => void;
   onUninstallHooks: () => void;
-  onNewSession: (row: DeviceRow) => void;
-  onBrowseFiles: (row: DeviceRow) => void;
-  onBorrowWeb: (row: DeviceRow) => void;
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
   const { load, why, shown, asking, seen } = useLoad(row, sort);
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
-            <Head
-              row={row}
-              onNewSession={onNewSession}
-              onBrowseFiles={onBrowseFiles}
-              onBorrowWeb={onBorrowWeb}
-            />
+            <Head row={row} />
             <Readings row={row} day={load?.cpu_day ?? null} top={load?.top ?? []} />
             <Busy
               load={load}
@@ -225,17 +207,7 @@ function Body({
  * 右键机器选择」): one gesture for one job across both lists beats a
  * button that only one of the two surfaces has.
  */
-function Head({
-  row,
-  onNewSession,
-  onBrowseFiles,
-  onBorrowWeb,
-}: {
-  row: DeviceRow;
-  onNewSession: (row: DeviceRow) => void;
-  onBrowseFiles: (row: DeviceRow) => void;
-  onBorrowWeb: (row: DeviceRow) => void;
-}) {
+function Head({ row }: { row: DeviceRow }) {
   const v = row.vitals;
   const days = v ? Math.floor(v.vitals.uptime_s / 86_400) : 0;
   const hours = v ? Math.floor(v.vitals.uptime_s / 3_600) : 0;
@@ -340,12 +312,10 @@ function Head({
             )}
           </div>
         )}
-        <Verbs
-          row={row}
-          onNewSession={onNewSession}
-          onBrowseFiles={onBrowseFiles}
-          onBorrowWeb={onBorrowWeb}
-        />
+        {/* The three verbs left this row for R0's right end
+            (docs/SHELL.md 第十七轮 §3, D9: page buttons live in the
+            toolbar, the board holds no row of buttons). `App` seats
+            `MachineVerbs` in the `Region`'s action slot. */}
       </div>
     </div>
   );
@@ -387,7 +357,7 @@ function Head({
  * why it lands even though `cn()` cannot take the size class off
  * (`ui/button.tsx` has the scar).
  */
-function Verbs({
+export function MachineVerbs({
   row,
   onNewSession,
   onBrowseFiles,
@@ -409,7 +379,7 @@ function Verbs({
         <Tooltip key={key}>
           <TooltipTrigger asChild>
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
               aria-label={word}
               data-verb={key}

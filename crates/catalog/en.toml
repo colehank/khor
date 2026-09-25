@@ -1373,6 +1373,8 @@ git-added = "These lines aren't in HEAD"
 settings = "General"
 network = "Network"
 security = "Security"
+# 第十七轮: the one word an error state offers (`components/RegionState`).
+region_retry = "Retry"
 # "Doctor" (self-check), matching the CLI's own dev-tool-idiom naming rather than a literal "self-check"
 doctor = "Doctor"
 # The identity-card page title. Distinct from `machine-here`'s "This

@@ -43,22 +43,50 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
+  sheet = false,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content>) {
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  /** **A sheet, not a dialog** (docs/SHELL.md 第十七轮 §4, D10): a
+      create or import form drops from R0's lower edge — its top is R0's
+      bottom, its width no more than the board's, and nothing dims the
+      window (no overlay). Esc and the close mark close it the way they
+      close a dialog. A confirmation that destroys something stays a
+      dialog. */
+  sheet?: boolean;
+}) {
+  // The sheet hangs inside the right side (`[data-main]`, positioned by
+  // the shell), so `top-pane-head` is R0's bottom whichever page is up.
+  // With no right side (the narrow face) it hangs from the window's
+  // first row instead, which is the same height.
+  const main =
+    sheet && typeof document !== "undefined" ? document.querySelector<HTMLElement>("[data-main]") : null;
   return (
-    <DialogPrimitive.Portal data-slot="dialog-portal">
-      <DialogOverlay />
+    <DialogPrimitive.Portal data-slot="dialog-portal" container={main ?? undefined}>
+      {!sheet && <DialogOverlay />}
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-sheet={sheet ? "" : undefined}
         // Radix asks for a description or an explicit opt-out. Our
         // dialogs opt out by default: a paragraph explaining what the
         // dialog is for is exactly the decorative copy docs/UX.md bans.
         // Callers that genuinely have one can pass their own.
         aria-describedby={undefined}
+        // A sheet leaves the rest of the window live, so a press outside
+        // it is not a request to close it.
+        onInteractOutside={sheet ? (e) => e.preventDefault() : undefined}
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-card p-6 shadow-lg outline-none sm:max-w-lg",
-          "duration-[var(--dur-180)] ease-[var(--ease-out)]",
-          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+          sheet
+            ? cn(
+                "top-pane-head inset-x-in z-50 mx-auto grid max-w-lg gap-4 rounded-b-lg border border-t-0 bg-card p-6 shadow-lg outline-none",
+                main ? "absolute" : "fixed",
+                "duration-[var(--dur-180)] ease-[var(--ease-out)]",
+                "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+              )
+            : cn(
+                "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-card p-6 shadow-lg outline-none sm:max-w-lg",
+                "duration-[var(--dur-180)] ease-[var(--ease-out)]",
+                "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+              ),
           className,
         )}
         {...props}
