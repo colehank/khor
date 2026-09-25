@@ -274,9 +274,10 @@ pub struct DeviceRow {
 ///
 /// **The age is not decoration and it is not optional.** A number with no
 /// age is read as the present, so a machine that has been off since
-/// yesterday would show yesterday's CPU as if it were now. `age_ms` is
-/// zero exactly when the reading was taken to answer this call, which is
-/// the case for this machine and no other.
+/// yesterday would show yesterday's CPU as if it were now. This
+/// machine's reading has an age too since 2026-09-25 (docs/SHELL.md
+/// 第十六轮): it is the background sampler's last round, a few seconds
+/// old at most, and no longer taken to answer the call.
 ///
 /// The row carries `None` when the machine has never answered at all.
 /// That is a third state on purpose: "not asked yet" and "asked an hour
@@ -305,11 +306,17 @@ pub struct VitalsReading {
     /// so the per-volume rows the card grew on 2026-09-02 paint the
     /// same judgment the single disk ring always did.
     pub volume_strains: Vec<Option<khor_core::Strain>>,
+    /// Mount points whose numbers did not come in time this round — the
+    /// row keeps its last numbers, or has none yet and is not drawn.
+    /// Only ever filled for this machine (`khor_node::vitals::local`);
+    /// a peer's reading crosses the wire without it.
+    pub stale: Vec<String>,
 }
 
 impl VitalsReading {
     fn of(vitals: Vitals, age_ms: u64) -> VitalsReading {
         VitalsReading {
+            stale: Vec::new(),
             mem_strain: vitals.mem.strain(),
             disk_strain: vitals.disk.and_then(|d| d.strain()),
             vram_strain: vitals
@@ -944,11 +951,32 @@ pub fn day_strips(
 
 /// Async only because of the road reading: it is the resident's answer,
 /// fetched once for the whole table (`khor_node::Node::hops`).
+///
+/// **Nothing in here waits for a disk** (docs/SHELL.md 第十六轮): this
+/// machine's reading and watched rows are the background sampler's last
+/// round, and the file reads (the store, the caches) go on a blocking
+/// thread rather than the async one the app polls this on every two
+/// seconds.
 pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
-    let n = open(root)?;
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    let hops = n.hops().await;
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || rows_of_devices(&root, &n, hops))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn rows_of_devices(
+    root: &Path,
+    n: &Node,
+    hops: Vec<(String, khor_node::Hop)>,
+) -> Result<Vec<DeviceRow>, String> {
     let me = n.device_str().to_owned();
     let all = n.devices()?;
-    let hops = n.hops().await;
+    let mine = n.local_vitals();
     // The ring is as big as the network minus this machine, and the
     // seats are handed out in the order the node listed them — so a
     // machine keeps its seat for as long as the list keeps its shape,
@@ -988,12 +1016,18 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
             }),
             face: n.face_of(&d),
             pinned: d.pinned,
-            // Sampled for this machine, read from the last visit for
-            // every other. Which one it was is readable from `age_ms`
-            // alone, so no second field says it twice.
-            vitals: n
-                .vitals_of(&d.id)
-                .map(|(vitals, age_ms)| VitalsReading::of(vitals, age_ms)),
+            // The background sampler's last round for this machine,
+            // the last visit for every other; `me` says which.
+            vitals: if d.id == me {
+                mine.clone().map(|r| {
+                    let mut reading = VitalsReading::of(r.vitals, r.age_ms);
+                    reading.stale = r.stale;
+                    reading
+                })
+            } else {
+                n.vitals_of(&d.id)
+                    .map(|(vitals, age_ms)| VitalsReading::of(vitals, age_ms))
+            },
             watched: n
                 .watched_of(&d.id)
                 .map(|(rows, age_ms)| WatchedReading { rows, age_ms }),

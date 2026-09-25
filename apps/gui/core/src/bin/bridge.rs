@@ -34,6 +34,24 @@ fn main() {
     // startup: the browser face resolves its own, and this is the Rust
     // half behind it — refusals and 自检 rows cross back as text.
     khor_node::config::apply_lang(&root);
+    // This machine's readings, before the first request can ask for
+    // them (docs/SHELL.md 第十六轮). `BRIDGE_SLOW_VOLUME_MS` is the
+    // `npm run fast` gate's seam: two volumes that do not exist, one of
+    // which takes that long to answer — a sleeping disk without a real
+    // disk in it.
+    match std::env::var("BRIDGE_SLOW_VOLUME_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+    {
+        Some(ms) => {
+            khor_node::vitals::local::install(
+                &root,
+                std::sync::Arc::new(SlowVolume(std::time::Duration::from_millis(ms))),
+                khor_node::vitals::local::EVERY,
+            );
+        }
+        None => khor_node::vitals::local::start(&root),
+    }
     let port: u16 = std::env::var("BRIDGE_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -134,6 +152,27 @@ fn main() {
                 ),
         );
         let _ = req.respond(resp);
+    }
+}
+
+/// The disks `BRIDGE_SLOW_VOLUME_MS` puts under this bridge: one that
+/// answers at once and one that answers after the given time. Neither
+/// exists, so a gate run never touches a real disk.
+struct SlowVolume(std::time::Duration);
+
+impl khor_node::vitals::local::Probe for SlowVolume {
+    fn mounts(&self) -> Vec<String> {
+        vec![
+            "/khor-gate-fast-volume".into(),
+            "/khor-gate-slow-volume".into(),
+        ]
+    }
+
+    fn space(&self, mount: &str) -> Option<(u64, u64)> {
+        if mount == "/khor-gate-slow-volume" {
+            std::thread::sleep(self.0);
+        }
+        Some((500 << 30, 200 << 30))
     }
 }
 

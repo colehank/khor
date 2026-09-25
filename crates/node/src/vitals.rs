@@ -11,9 +11,10 @@ use std::sync::{Mutex, OnceLock};
 use khor_core::{Fill, Vitals, Volume, WatchedDir};
 
 pub(crate) mod gpu;
+pub mod local;
 pub mod model;
 
-/// Everything a reading is taken from, kept alive between calls.
+/// The CPU and memory half of a reading, kept alive between calls.
 ///
 /// # Why it outlives the call at all
 ///
@@ -43,71 +44,65 @@ pub mod model;
 ///
 /// So the window becomes the gap between whoever asked last and whoever
 /// is asking now. The **first** sample in a process has no predecessor
-/// and pays [`sysinfo::MINIMUM_CPU_UPDATE_INTERVAL`] once, so that a
-/// one-shot `khor devices` reports the present rather than an average
-/// since boot.
+/// and pays [`sysinfo::MINIMUM_CPU_UPDATE_INTERVAL`] once.
 ///
-/// # Why the disks are in here too, and what it costs
+/// # Why the disks are no longer in here
 ///
-/// `Disks` is kept for a different reason: it is **expensive exactly
-/// once**. Measured the same day, same machine, four mounted volumes:
-///
-/// ```text
-/// Disks::new_with_refreshed_list  #0  1.186 s
-///                                 #1  14.5 ms
-///                                 #2  13.7 ms
-/// ```
-///
-/// A fresh list per sample would pay that 1.2 s on the first reading of
-/// every process — and it did, inside a request handler, where it stalled
-/// the QUIC connection long enough that two real-connection tests timed
-/// out at twenty seconds. Refreshing a list that already exists is the
-/// 14 ms path, and the list is refreshed rather than reused verbatim so a
-/// volume plugged in after start still shows up.
-///
-/// **Everything here blocks**, which is why the one caller inside async
-/// code goes through `spawn_blocking` (`link.rs`, `Request::Vitals`).
+/// They were, and that was the 2026-09-24 slowness (docs/SHELL.md 挂账
+/// 第 3 条): one `Disks::refresh` is one `statfs` per volume **in a row,
+/// under this lock**, and a USB disk that has gone to sleep answers its
+/// `statfs` in 3.65 s. Every request that wanted a reading queued behind
+/// it — `khor devices` measured 10–36 s. The disks are read by
+/// [`local`] now, one thread per volume with a limit each, and only the
+/// background sampler waits for them.
 struct Sampler {
     sys: sysinfo::System,
-    disks: sysinfo::Disks,
 }
 
 static SAMPLER: OnceLock<Mutex<Sampler>> = OnceLock::new();
 
-/// Takes a reading of this machine. **Blocking** — see [`Sampler`].
+/// Takes a whole reading of this machine now. **Blocking** — up to
+/// [`local::VOLUME_LIMIT`] for the disks on top of the CPU window — so
+/// it belongs on a blocking thread, and **no request path calls it**:
+/// they read [`local::reading`], which the background sampler keeps.
 ///
 /// `home` is khor's root, and it decides only which filesystem gets
 /// reported — see [`disk_under`].
 pub fn sample(home: &Path) -> Vitals {
+    let table = local::Reader::new(local::real_probe()).table(local::VOLUME_LIMIT);
+    compose(home, &table)
+}
+
+/// One reading from one disk table: the table is whatever the caller
+/// managed to read (with stale rows for the volumes that did not answer
+/// in time); the CPU, memory and GPU are read here, now.
+pub(crate) fn compose(home: &Path, table: &[local::Mount]) -> Vitals {
     // The first reading of the pair is taken when the sampler is made
     // (`sampler`): nothing is read out of it, it exists so the reading
     // below has something to subtract. A panic in another sampler left
     // the numbers, not the lock's invariant, in doubt: the worst a
     // poisoned `Sampler` holds is a stale previous reading, which the
     // refresh below replaces.
-    let mut s = sampler();
-
-    s.sys.refresh_cpu_usage();
-    s.sys.refresh_memory();
-    // `true`: a volume that was unmounted since the last reading leaves
-    // the list. Keeping it would report a disk that is not there, which
-    // is worse than reporting none.
-    s.disks.refresh(true);
-    let cpu_pct = s.sys.global_cpu_usage();
-    let cores = s.sys.cpus().len() as u32;
-    let mem = Fill {
-        used: s.sys.used_memory(),
-        total: s.sys.total_memory(),
+    //
+    // **Released before the GPU is asked**: the GPU keeps nothing
+    // between readings, so it has no use for the `Sampler` — and
+    // holding the lock across a call into a vendor driver would make
+    // every other sampler in the process wait behind it for nothing.
+    let (cpu_pct, cores, mem) = {
+        let mut s = sampler();
+        s.sys.refresh_cpu_usage();
+        s.sys.refresh_memory();
+        (
+            s.sys.global_cpu_usage(),
+            s.sys.cpus().len() as u32,
+            Fill {
+                used: s.sys.used_memory(),
+                total: s.sys.total_memory(),
+            },
+        )
     };
-    let disk = disk_under(&s.disks, home);
-    let volumes = tidy_volumes(volumes_of(&s.disks), home);
-    // **Released before the GPU is asked**, and the ordering is the
-    // whole reason these are locals rather than fields written inline.
-    // The GPU keeps nothing between readings, so it has no use for the
-    // `Sampler` — and holding the lock across a call into a vendor
-    // driver would make every other sampler in the process wait behind
-    // it for nothing.
-    drop(s);
+    let disk = disk_under(table, home);
+    let volumes = tidy_volumes(volumes_of(table), home);
     let (gpu, gpus) = gpu::sample_all();
     // The version of the binary doing the sampling — which is the one
     // running on this machine, whatever else is on its disk.
@@ -128,7 +123,13 @@ pub fn sample(home: &Path) -> Vitals {
 
 /// The rows for a machine's watch list (2026-09-06 关注目录): each path
 /// as given, and the listed volume it sits on. **Blocking**, like
-/// [`sample`], and behind the same lock for the same disk list.
+/// [`sample`]; request paths read [`local::watched`] instead.
+pub fn watched(paths: &[String]) -> Vec<WatchedDir> {
+    let table = local::Reader::new(local::real_probe()).table(local::VOLUME_LIMIT);
+    paths.iter().map(|p| watched_one(&table, p)).collect()
+}
+
+/// One watched path against one disk table.
 ///
 /// Which volume: the mounted disk whose mount point is the longest
 /// prefix of the canonical path — [`disk_under`]'s rule — **and whose
@@ -138,13 +139,7 @@ pub fn sample(home: &Path) -> Vitals {
 /// longest listed prefix is `/`, and the root's fill under `/proc/1`
 /// is a reading about the wrong disk. Such a path comes back as the
 /// third shape (`missing: false`, no volume) and the faces say so.
-pub fn watched(paths: &[String]) -> Vec<WatchedDir> {
-    let mut s = sampler();
-    s.disks.refresh(true);
-    paths.iter().map(|p| watched_one(&s.disks, p)).collect()
-}
-
-fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
+pub(crate) fn watched_one(table: &[local::Mount], path: &str) -> WatchedDir {
     let p = Path::new(path);
     let row = |missing: bool, volume: Option<Volume>| WatchedDir {
         path: path.to_owned(),
@@ -155,37 +150,44 @@ fn watched_one(disks: &sysinfo::Disks, path: &str) -> WatchedDir {
         return row(true, None);
     };
     let real = p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    let Some(d) = disks
-        .list()
-        .iter()
-        .filter(|d| real.starts_with(d.mount_point()))
-        .max_by_key(|d| d.mount_point().as_os_str().len())
-    else {
+    let Some(d) = under(table, &real) else {
         return row(false, None);
     };
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        if let Ok(m) = std::fs::metadata(d.mount_point())
+        if let Ok(m) = std::fs::metadata(&d.mount)
             && m.dev() != meta.dev()
         {
             return row(false, None);
         }
     }
-    let total = d.total_space();
-    if total == 0 {
+    #[cfg(not(unix))]
+    let _ = meta;
+    let Some((total, available)) = d.space else {
         return row(false, None);
-    }
+    };
     row(
         false,
         Some(Volume {
-            mount: d.mount_point().to_string_lossy().into_owned(),
+            mount: d.mount.clone(),
             fill: Fill {
-                used: total.saturating_sub(d.available_space()),
+                used: total.saturating_sub(available),
                 total,
             },
         }),
     )
+}
+
+/// The table row a path sits under: the longest mount point that is a
+/// prefix of it, **read or not** — a volume that did not answer in time
+/// is still the one the path is on, and falling back to its parent
+/// would report the wrong disk's numbers.
+fn under<'t>(table: &'t [local::Mount], path: &Path) -> Option<&'t local::Mount> {
+    table
+        .iter()
+        .filter(|d| path.starts_with(&d.mount))
+        .max_by_key(|d| d.mount.len())
 }
 
 /// The process-wide sampler, made on first use — see [`Sampler`].
@@ -195,10 +197,7 @@ fn sampler() -> std::sync::MutexGuard<'static, Sampler> {
             let mut sys = sysinfo::System::new();
             sys.refresh_cpu_usage();
             std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-            Mutex::new(Sampler {
-                sys,
-                disks: sysinfo::Disks::new_with_refreshed_list(),
-            })
+            Mutex::new(Sampler { sys })
         })
         .lock()
         .unwrap_or_else(|p| p.into_inner())
@@ -217,18 +216,17 @@ fn sampler() -> std::sync::MutexGuard<'static, Sampler> {
 /// working.
 ///
 /// `None` when no mount point contains the path — the caller paints
-/// nothing rather than a zero, because `0 of 0` reads as an empty disk.
-fn disk_under(disks: &sysinfo::Disks, home: &Path) -> Option<Fill> {
+/// nothing rather than a zero, because `0 of 0` reads as an empty disk —
+/// and `None` too when that volume has never answered in time: its
+/// parent's numbers would be a reading about another disk.
+fn disk_under(table: &[local::Mount], home: &Path) -> Option<Fill> {
     // Canonicalized so the comparison is between real paths: a home
     // reached through a symlink (this repo's `target/` is one) lives on
     // the filesystem the link points at, not the one holding the link.
     let path = home.canonicalize().unwrap_or_else(|_| home.to_path_buf());
-    disks
-        .list()
-        .iter()
-        .filter(|d| path.starts_with(d.mount_point()))
-        .max_by_key(|d| d.mount_point().as_os_str().len())
-        .map(|d| Fill {
+    under(table, &path)
+        .and_then(|d| d.space)
+        .map(|(total, available)| Fill {
             // **Used is derived from what is free, not read as its own
             // number**, and the two are genuinely different on APFS.
             // Measured here 2026-08-17 on `/System/Volumes/Data`:
@@ -238,8 +236,8 @@ fn disk_under(disks: &sysinfo::Disks, home: &Path) -> Option<Fill> {
             // (what is left, out of how much), so `used` is the
             // complement of available and the two halves of this `Fill`
             // always sum to the total, which is what a bar draws.
-            used: d.total_space().saturating_sub(d.available_space()),
-            total: d.total_space(),
+            used: total.saturating_sub(available),
+            total,
         })
 }
 
@@ -277,23 +275,26 @@ pub(crate) fn keeps_volume(mount: &str) -> bool {
 }
 
 /// Every volume worth a row, raw — [`tidy_volumes`] finishes the list.
-fn volumes_of(disks: &sysinfo::Disks) -> Vec<Volume> {
-    disks
-        .list()
+///
+/// A volume that has never answered in time has no numbers and so no
+/// row; it is named in the reading's `stale` list instead
+/// ([`local::Reading`]). One that answered before and not this time
+/// keeps its last numbers here and is named there too.
+fn volumes_of(table: &[local::Mount]) -> Vec<Volume> {
+    table
         .iter()
         .filter_map(|d| {
-            let total = d.total_space();
+            let (total, available) = d.space?;
             if total == 0 {
                 return None;
             }
-            let mount = d.mount_point().to_string_lossy().into_owned();
-            keeps_volume(&mount).then(|| Volume {
-                mount,
+            keeps_volume(&d.mount).then(|| Volume {
+                mount: d.mount.clone(),
                 // Used as the complement of available — `disk_under`'s
                 // APFS note is the reason, and two derivations of one
                 // number on one screen would disagree.
                 fill: Fill {
-                    used: total.saturating_sub(d.available_space()),
+                    used: total.saturating_sub(available),
                     total,
                 },
             })
@@ -395,7 +396,7 @@ mod tests {
     /// (docs/handoff 否定式断言之前先证明测法还活着).
     #[test]
     fn a_path_under_no_mount_point_reports_no_disk() {
-        let disks = sysinfo::Disks::new_with_refreshed_list();
+        let disks = local::Reader::new(local::real_probe()).table(local::VOLUME_LIMIT);
 
         let found = disk_under(&disks, Path::new(".")).expect("this directory is on a filesystem");
         assert!(

@@ -45,6 +45,7 @@ import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { Region } from "@/components/Region";
+import { useKept } from "@/lib/kept";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -880,9 +881,6 @@ function storedGroup(): string {
   }
 }
 
-/** What the landing was showing, kept across a remount (see `board`). */
-const kept: { board: AccountRing[] | null; picked: string | null } = { board: null, picked: null };
-
 export function QuotaLanding({
   narrow,
   pane,
@@ -938,18 +936,11 @@ export function QuotaLanding({
   // subscription row hid it, being drawn from `App`'s own state; it went
   // on 2026-09-22 (第七轮 第 3 条) and every row on a phone stopped
   // opening.
-  const [board, setBoardState] = useState<AccountRing[] | null>(() => kept.board);
-  const [picked, setPickedState] = useState<string | null>(() => kept.picked);
-  const setBoard = (next: AccountRing[] | null | ((was: AccountRing[] | null) => AccountRing[] | null)) =>
-    setBoardState((was) => {
-      const now = typeof next === "function" ? next(was) : next;
-      kept.board = now;
-      return now;
-    });
-  const setPicked = (id: string | null) => {
-    kept.picked = id;
-    setPickedState(id);
-  };
+  //
+  // Kept in `lib/kept` since 第十六轮 (it was a module-level object
+  // here), beside the machine card's answers and this page's details.
+  const [board, setBoard] = useKept<AccountRing[] | null>("quota.board", null);
+  const [picked, setPicked] = useKept<string | null>("quota.picked", null);
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
@@ -969,7 +960,10 @@ export function QuotaLanding({
       beat** — `api`'s `fetchUsage` carries why, and the short of it is
       that the first pass over the transcripts is 18.5 s. `null` is the
       state `UsageHalf` draws nothing at all for. */
-  const [usage, setUsage] = useState<Usage | null>(null);
+  // Kept across a remount (`lib/kept`, 第十六轮): coming back to a
+  // subscription's detail draws the last tally at once and asks again
+  // in place, instead of an empty chart for the length of the walk.
+  const [usage, setUsage] = useKept<Usage | null>("quota.usage", null);
   const hidden = useHidden();
 
   useEffect(() => {

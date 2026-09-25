@@ -2596,9 +2596,16 @@ impl Node {
     /// (`history::CpuHistory`). Load-modify-save each beat, the
     /// `record_day` arrangement: the file is never behind by more than
     /// one sample, and a resident that dies takes at most one with it.
-    /// **Blocking** — the sampler's rule.
+    /// **Blocking** — it waits, at most one list-and-volume round, for
+    /// the background sampler's first reading; it never takes one itself,
+    /// so the disks are asked by one thread only (docs/SHELL.md 第十六轮).
+    /// No reading in that time is no record for this beat.
     pub fn record_cpu(root: &Path) {
-        let v = vitals::sample(root);
+        let Some(v) = vitals::local::reading_within(root, std::time::Duration::from_secs(5))
+            .map(|r| r.vitals)
+        else {
+            return;
+        };
         let pct = |f: &khor_core::Fill| {
             (f.total > 0).then(|| (f.used as f64 / f.total as f64 * 100.0) as f32)
         };
@@ -3363,19 +3370,48 @@ impl Node {
 
     /// What a machine last said about itself, and how old that is.
     ///
-    /// **This machine answers by sampling, everyone else from cache**, and
-    /// the age is what tells them apart at the far end: zero means the
-    /// reading was taken to answer this call. A machine nobody has heard
-    /// from yet is `None` — a third state, distinct from an old reading,
-    /// because "not asked yet" and "asked an hour ago" are different
-    /// things to be told (docs/SESSION.md 离线).
+    /// **Every machine answers from memory, this one included**: this
+    /// machine's reading is the background sampler's last round
+    /// ([`vitals::local`]), aged like any other, and never taken inside
+    /// the call — a sleeping disk made that call take ten seconds
+    /// (docs/SHELL.md 第十六轮). A machine nobody has heard from yet, or
+    /// this one before its sampler's first round, is `None` — a third
+    /// state, distinct from an old reading, because "not asked yet" and
+    /// "asked an hour ago" are different things to be told
+    /// (docs/SESSION.md 离线).
     pub fn vitals_of(&self, device_id: &str) -> Option<(khor_core::Vitals, u64)> {
         if device_id == self.device_str() {
-            return Some((vitals::sample(&self.root), 0));
+            return self.local_vitals().map(|r| (r.vitals, r.age_ms));
         }
         let text = fs::read_to_string(self.vitals_dir().join(device_id)).ok()?;
         let report: VitalsReport = serde_json::from_str(&text).ok()?;
         Some((report.vitals, now_ms().saturating_sub(report.at_ms)))
+    }
+
+    /// This machine's reading as the background sampler last took it,
+    /// with the volumes that did not answer in time
+    /// ([`vitals::local::Reading`]). `None` before its first round.
+    pub fn local_vitals(&self) -> Option<vitals::local::Reading> {
+        vitals::local::reading(&self.root)
+    }
+
+    /// [`Node::local_vitals`], waiting up to `wait` for the sampler's
+    /// first round — for a verb that prints once and leaves, where
+    /// 「还没问过」 would be a strange thing to say about this machine.
+    /// **Blocking.**
+    pub fn local_vitals_within(&self, wait: std::time::Duration) -> Option<vitals::local::Reading> {
+        vitals::local::reading_within(&self.root, wait)
+    }
+
+    /// This machine's watched directories, waiting up to `wait` for a
+    /// round that covers the whole list. **Blocking**, for the reason
+    /// [`Node::local_vitals_within`] is.
+    pub fn local_watched_within(
+        &self,
+        wait: std::time::Duration,
+    ) -> Option<(Vec<khor_core::WatchedDir>, u64)> {
+        let paths = self.watch_of(self.device_str());
+        vitals::local::watched_within(&self.root, &paths, wait)
     }
 
     // ── what machines say about their watched directories ─────
@@ -3408,13 +3444,15 @@ impl Node {
         )
     }
 
-    /// A machine's watched directories and how old the answer is —
-    /// sampled now for this machine, read from the last visit for every
-    /// other. `None` for a peer that never answered (an older khor
-    /// refuses the op, and that reads as no rows, never as empty ones).
+    /// A machine's watched directories and how old the answer is — the
+    /// background sampler's last round for this machine
+    /// ([`vitals::local::watched`]), the last visit for every other.
+    /// `None` for a peer that never answered (an older khor refuses the
+    /// op, and that reads as no rows, never as empty ones), and for this
+    /// machine before its sampler has looked.
     pub fn watched_of(&self, device_id: &str) -> Option<(Vec<khor_core::WatchedDir>, u64)> {
         if device_id == self.device_str() {
-            return Some((vitals::watched(&self.watch_of(device_id)), 0));
+            return vitals::local::watched(&self.root, &self.watch_of(device_id));
         }
         let text = fs::read_to_string(self.watched_dir().join(device_id)).ok()?;
         let report: WatchedReport = serde_json::from_str(&text).ok()?;
