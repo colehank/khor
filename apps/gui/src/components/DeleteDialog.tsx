@@ -93,7 +93,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
           </div>
         )}
         <DialogFooter>
-          <Button data-delete-go disabled={going} onClick={press} className="min-h-touch">
+          <Button variant="primary" data-delete-go disabled={going} onClick={press} className="min-h-touch">
             {gui.delete}
           </Button>
         </DialogFooter>

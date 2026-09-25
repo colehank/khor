@@ -33,7 +33,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { ConfigSections } from "@/views/more/ConfigRows";
-import { MoreFrame, MoreSection, MoreSwitch } from "@/views/more/MorePage";
+import { PopupRow } from "@/components/settings/PopupRow";
+import { SwitchRow } from "@/components/settings/SwitchRow";
+import { MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 export function SecurityPage({
   onClose,
@@ -110,13 +112,14 @@ export function SecurityPage({
           <p className="text-callout text-muted-foreground">{gui.backend_unreachable}</p>
         ) : (
           <>
-            <MoreSwitch
+            <SwitchRow
+              name="lock"
               mark={{ "data-security-switch": "lock" }}
               label={gui.lock_switch}
+              hint={gui.lock_switch_note}
               on={lock.on}
-              onPress={() => after(setLock(!lock.on))}
+              onToggle={() => after(setLock(!lock.on))}
             />
-            <p className="text-caption text-muted-foreground">{gui.lock_switch_note}</p>
 
             <div className="flex flex-wrap items-center gap-2">
               <Input
@@ -160,18 +163,16 @@ export function SecurityPage({
             {/* The ladder the node keeps, painted in its order — a page
                 with rungs of its own would offer a setting `khor lock
                 timeout` refuses by name. */}
-            <h3 className="mt-2 text-callout font-label text-muted-foreground">{gui.lock_idle}</h3>
-            <div className="flex flex-wrap gap-1">
-              {lock.timeouts.map((m) => (
-                <MoreSwitch
-                  key={m}
-                  mark={{ "data-security-switch": `timeout-${m}` }}
-                  label={m === 0 ? gui.lock_idle_never_pick : gui.lock_idle_pick(m)}
-                  on={lock.timeout_min === m}
-                  onPress={() => after(setLockTimeout(m))}
-                />
-              ))}
-            </div>
+            <PopupRow
+              name="lock-timeout"
+              label={gui.lock_idle}
+              value={String(lock.timeout_min)}
+              choices={lock.timeouts.map((m) => ({
+                value: String(m),
+                label: m === 0 ? gui.lock_idle_never_pick : gui.lock_idle_pick(m),
+              }))}
+              onPick={(v) => after(setLockTimeout(Number(v)))}
+            />
 
             {lock.on && (
               <Button

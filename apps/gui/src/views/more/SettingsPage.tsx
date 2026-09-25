@@ -23,7 +23,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchAbout, launchOn, type About } from "@/api";
-import { Button } from "@/components/ui/button";
+import { ActionRow } from "@/components/settings/ActionRow";
 import { gui } from "@/gen/catalog";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
@@ -86,16 +86,15 @@ export function SettingsPage({
             </MoreFact>
             {/* The machine's own opener, the same road 「在那台机器上
                 打开」 takes — empty `machine` is this one (`files::launch`). */}
-            <Button
-              variant="outline"
-              data-store-open
-              onClick={() => {
+            <ActionRow
+              name="store-open"
+              label={gui.store_path}
+              actionLabel={gui.store_open}
+              mark={{ "data-store-open": "" }}
+              onPress={() => {
                 void launchOn("", about.root).catch(() => {});
               }}
-              className="min-h-touch self-start"
-            >
-              {gui.store_open}
-            </Button>
+            />
           </MoreSection>
 
           <MoreSection name="about" label={gui.settings_about}>

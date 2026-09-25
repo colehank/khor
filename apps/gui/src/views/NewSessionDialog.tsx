@@ -342,7 +342,7 @@ export function NewSessionDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-new-session-dialog>
+      <DialogContent sheet data-new-session-dialog>
         <DialogHeader>
           <DialogTitle>{gui.new_session}</DialogTitle>
         </DialogHeader>
@@ -727,11 +727,11 @@ export function NewSessionDialog({
         </div>
         <DialogFooter>
           {kind === "tell" ? (
-            <Button data-tell-send disabled={!text.trim() || opening} onClick={send}>
+            <Button variant="primary" data-tell-send disabled={!text.trim() || opening} onClick={send}>
               {gui.send_it}
             </Button>
           ) : (
-            <Button data-new-session-create disabled={opening} onClick={create}>
+            <Button variant="primary" data-new-session-create disabled={opening} onClick={create}>
               {gui.create}
             </Button>
           )}

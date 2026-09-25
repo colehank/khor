@@ -83,7 +83,7 @@ export function CloseDraftDialog({
             {quit ? gui.quit_drop : gui.tab_close_drop}
           </Button>
           {!quit && (
-            <Button data-close-save onClick={onSave} className="min-h-touch">
+            <Button variant="primary" data-close-save onClick={onSave} className="min-h-touch">
               {gui.tab_close_save}
             </Button>
           )}

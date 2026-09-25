@@ -30,13 +30,9 @@ import {
   IconBrowser,
   IconDevices,
   IconFiles,
-  IconGear,
-  IconNetwork,
   IconMore,
-  IconPulse,
   IconQuota,
   IconSessions,
-  IconShield,
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
@@ -45,13 +41,6 @@ import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -94,13 +83,14 @@ import { DevicesList } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList } from "@/views/WorkspacesList";
 import { LockScreen } from "@/views/LockScreen";
-import { moreName, type MorePage } from "@/views/more/MorePage";
+import { moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
+import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { NetworkPage } from "@/views/more/NetworkPage";
 import { IdentityPage } from "@/views/more/IdentityPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
-import { MachineCard } from "@/views/MachineCard";
+import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { MandalaMap } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
@@ -1261,43 +1251,11 @@ export default function App() {
   // 「…」trigger lights for it, because the rail must always answer
   // 我在哪一页, even for a page whose own glyph is off the bar.
   //
-  // **…or one of the three pages it opens** (docs/MORE.md). Three of
-  // the four 「…」 pages are behind this one glyph on both faces; the
-  // fourth (身份) is behind the avatar and lights that one instead.
+  // **…or one of the more sections** (docs/SHELL.md 第十七轮 §1).
+  // 身份 is behind the avatar and lights that one instead.
   const foldedOn =
     (morePage !== null && morePage !== "identity") ||
     (narrow && landings().slice(NARROW_SHOWN).some((l) => l.key === landing));
-  /**
-   * The three doors 「…」 opens, in the order docs/MORE.md lists them.
-   *
-   * Built once and drawn by both faces: the wide rail's own menu and
-   * the narrow bar's fold are the same three rows, under the folded
-   * landings on narrow and alone on wide. A second spelling per face is
-   * how one press comes to mean two things.
-   */
-  const morePages: { key: MorePage; glyph: ReactNode }[] = [
-    // 网络 first: it is the page the other three are not about, and the
-    // one the user asked for by name (docs/MORE.md 第二轮).
-    { key: "network", glyph: <IconNetwork /> },
-    { key: "settings", glyph: <IconGear /> },
-    { key: "security", glyph: <IconShield /> },
-    { key: "doctor", glyph: <IconPulse /> },
-  ];
-  const moreItems = morePages.map((p) => (
-    <DropdownMenuItem
-      key={p.key}
-      data-more-open={p.key}
-      data-on={morePage === p.key}
-      className="min-h-touch gap-2"
-      onSelect={() => setMorePage(p.key)}
-    >
-      {/* Rail glyphs at a menu's size: the folded landings above these
-          bring their own rail glyph, and two icon sizes in one list
-          read as two families (`components/icons`). */}
-      <span className="size-5! [&_svg]:size-full">{p.glyph}</span>
-      {moreName(p.key)}
-    </DropdownMenuItem>
-  ));
   const rail = (
     <nav
       // **Named, because two things now ask for it by name**: the gate
@@ -1425,49 +1383,28 @@ export default function App() {
 
           The trigger's classes mirror `RailItem`'s button — one look for
           every rail seat; the reasons live there. */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            aria-label={gui.rail_more}
-            data-rail-item
-            data-rail-more
-            data-on={foldedOn}
-            className={cn(
-              "group relative h-auto min-h-touch min-w-touch w-rail-item flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
-              "hover:text-rail-ink",
-              foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
-            )}
-          >
-            <IconMore />
-          </Button>
-        </DropdownMenuTrigger>
-        {/* Up from the bottom bar, out to the side of the column rail —
-            the side the rail is not against, either way. */}
-        <DropdownMenuContent side={narrow ? "top" : "right"} data-rail-more-menu>
-          {narrow &&
-            landings().slice(NARROW_SHOWN).map((l) => (
-              <DropdownMenuItem
-                key={l.key}
-                data-more-landing={l.key}
-                data-on={morePage === null && landing === l.key}
-                className="min-h-touch gap-2"
-                onSelect={() => {
-                  setMorePage(null);
-                        setLanding(l.key);
-                  setScreen("list");
-                  setSwitchingTabs(false);
-                  listPane.expand();
-                }}
-              >
-                {l.glyph}
-                {l.name}
-              </DropdownMenuItem>
-            ))}
-          {narrow && <DropdownMenuSeparator data-more-rule />}
-          {moreItems}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* 「…」 opens 更多 directly — no menu popup (docs/SHELL.md 第十七轮 §1).
+          On narrow, folded landings still need a way in: they get it via
+          the dedicated MoreNarrowMenu rendered outside the rail below.  */}
+      <Button
+        variant="ghost"
+        aria-label={gui.rail_more}
+        data-rail-item
+        data-rail-more
+        data-on={foldedOn}
+        onClick={() => {
+          setMorePage((prev) => prev ?? "settings");
+          setSwitchingTabs(false);
+          setScreen("list");
+        }}
+        className={cn(
+          "group relative h-auto min-h-touch min-w-touch w-rail-item flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+          "hover:text-rail-ink",
+          foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
+        )}
+      >
+        <IconMore />
+      </Button>
       {/* This machine, at the foot of the rail — **and it is the way
           into the mesh now**.
           「不要右上角的 icon 了吧。取而代之,用左下角的点击作为原来的
@@ -1518,7 +1455,9 @@ export default function App() {
         narrow={narrow}
         onClick={() => {
           setMorePage("identity");
-          setScreen("list");
+          // A page, not 更多's section list: on the narrow face "list"
+          // would show the six rows instead of this machine.
+          setScreen("detail");
           setSwitchingTabs(false);
         }}
         // Whitespace is the whole separator, and it is deliberately not
@@ -1764,6 +1703,35 @@ export default function App() {
         : paneName;
   // (Both browsing landings' starting points moved in with the shell,
   // which reads the device table itself — `BrowseLanding`.)
+  /** The machine card's three verbs, **at R0's right end**
+      (docs/SHELL.md 第十七轮 §3, D9): page buttons live in the toolbar,
+      never as a row in the board. Only while a machine is open. */
+  const machineVerbs =
+    landing === "devices" && openDevice ? (
+      <MachineVerbs
+        row={openDevice}
+        // The sessions pane's own wizard, opened with this machine picked
+        // (2026-09-06:「会话是对应会话页的新建 session」).
+        onNewSession={(row) => openNewSession(row.name)}
+        // This machine's disk: home, not a workspace — the pane takes an
+        // empty path as that machine's home.
+        onBrowseFiles={(row) => {
+          setMorePage(null);
+          setLanding("workspaces");
+          setOpenWs({ device: row.id, machine: row.name, path: "" });
+          setScreen("detail");
+        }}
+        // This machine's network, in a new tab of the browser landing
+        // (docs/NET.md 借网).
+        onBorrowWeb={(row) => {
+          setMorePage(null);
+          setLanding("browser");
+          pageTabs.open(row.id, "");
+          setScreen("detail");
+        }}
+      />
+    ) : undefined;
+
   const detail = sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
@@ -1898,38 +1866,10 @@ export default function App() {
       hooksFailed={hooksFailed}
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
-      // The sessions pane's own wizard, opened with this machine picked
-      // (2026-09-06:「会话是对应会话页的新建 session」). It used to open
-      // a bare shell over there in one press; the wizard is where the
-      // four answers are, and the landing the fresh row is on is where
-      // `onOpened` takes the person.
-      onNewSession={(row) => openNewSession(row.name)}
-      // This machine's disk, in a **new** tab. Not the open one: the
-      // request came from somewhere else entirely, so whatever that tab
-      // was showing is not part of it — replacing it would throw away a
-      // place the person did not ask to leave (`useBrowseTabs.open` says
-      // the same from the other side).
-      onBrowseFiles={(row) => {
-        setMorePage(null);
-        setLanding("workspaces");
-        // Home, not a workspace: this machine may have no checkouts at
-        // all and the request is still「show me its disk」. The pane
-        // takes an empty path as that machine's home, so browsing a
-        // directory that is nobody's project needs no second door.
-        setOpenWs({ device: row.id, machine: row.name, path: "" });
-        setScreen("detail");
-      }}
-      // This machine's network, in a new tab of the browser landing —
-      // the same judgment as the disk above it, and the address bar is
-      // what an empty place opens to (docs/NET.md 借网).
-      onBorrowWeb={(row) => {
-        setMorePage(null);
-        setLanding("browser");
-        pageTabs.open(row.id, "");
-        setScreen("detail");
-      }}
+      actions={narrow ? machineVerbs : undefined}
     />
   ) : null;
+
 
   const sheets = (
     <>
@@ -2038,6 +1978,8 @@ export default function App() {
       />
     ) : morePage === "settings" ? (
       <SettingsPage onClose={() => setMorePage(null)} onSettingChanged={settings.reread} />
+    ) : morePage === "appearance" ? (
+      <AppearancePage onClose={() => setMorePage(null)} onSettingChanged={settings.reread} />
     ) : morePage === "security" ? (
       <SecurityPage
         onClose={() => setMorePage(null)}
@@ -2062,6 +2004,63 @@ export default function App() {
         }}
       />
     );
+
+  /**
+   * **更多's L2** (docs/SHELL.md 第十七轮 §1): its six sections, in the
+   * spec's order, as a list beside the page — System Settings' shape.
+   * 「…」 used to open a menu of four pages; it opens this landing now,
+   * and every door that menu had is a row here (网络 / 通用 / 安全 / 自检)
+   * or, on the narrow bar, one of the folded landings at the top.
+   *
+   * `data-more-open` keeps the key the menu items wore, so every walk
+   * that pressed 「…」 then a page still presses the same two things.
+   */
+  const moreList = (
+    <nav data-more-list aria-label={gui.rail_more} className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1">
+      {narrow &&
+        landings()
+          .slice(NARROW_SHOWN)
+          .map((l) => (
+            <button
+              key={l.key}
+              type="button"
+              data-more-landing={l.key}
+              data-on={false}
+              onClick={() => {
+                setMorePage(null);
+                setLanding(l.key);
+                setScreen("list");
+                setSwitchingTabs(false);
+                listPane.expand();
+              }}
+              className="mx-in flex min-h-touch items-center gap-row rounded-md px-3 text-start text-body hover:bg-fill"
+            >
+              <span className="size-5 flex-none [&_svg]:size-full">{l.glyph}</span>
+              {l.name}
+            </button>
+          ))}
+      {morePageOrder.map((p) => (
+        <button
+          key={p}
+          type="button"
+          data-more-open={p}
+          data-on={morePage === p}
+          onClick={() => {
+            setMorePage(p);
+            setScreen("detail");
+          }}
+          className={cn(
+            "mx-in flex min-h-touch items-center gap-row rounded-md px-3 text-start text-body",
+            // The selected row wears the brand only while it is the one
+            // on screen — on the narrow list the page is a screen away.
+            morePage === p && !narrow ? "bg-brand-strong text-on-brand" : "hover:bg-fill",
+          )}
+        >
+          {moreName(p)}
+        </button>
+      ))}
+    </nav>
+  );
 
   /**
    * The two browsing landings, which are neither half of the
@@ -2179,6 +2178,7 @@ export default function App() {
       setLanding("browser");
     } else {
       setMorePage(hit.id as MorePage);
+      setScreen("detail");
     }
   };
   // **The left block's first row** (docs/SHELL.md 第十三轮): macOS's
@@ -2230,7 +2230,7 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div
-            key={morePage ? `more:${morePage}` : browses ? landing : screen}
+            key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : browses ? landing : screen}
             data-screen={morePage ? "more" : browses ? landing : screen}
             ref={detailBox}
             className="min-h-0 flex-1 overflow-hidden"
@@ -2245,7 +2245,9 @@ export default function App() {
                 They are opened over the whole region, the way the
                 mark's place used to be, and take the same silence. */}
             {morePage
-              ? morePageEl
+              ? screen === "detail"
+                ? morePageEl
+                : moreList
               : quotas
                 ? (
                     // 额度 is an inbox now, so it takes the inbox
@@ -2305,7 +2307,7 @@ export default function App() {
           <aside
             data-side
             className="flex min-w-traffic flex-none flex-col bg-side"
-            style={{ "--list-w": `${morePage !== null || listPane.collapsed ? 0 : listPane.width}px` } as CSSProperties}
+            style={{ "--list-w": `${listPane.collapsed && morePage === null ? 0 : listPane.width}px` } as CSSProperties}
           >
             {sideHead}
             <div className="flex min-h-0 flex-1">
@@ -2314,7 +2316,9 @@ export default function App() {
                   list, from under the first row to the foot — on the
                   seat rather than on the rail, so it stays when the list
                   is put away and the rail keeps its full width. */}
-              <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1 border-l" />
+              <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1 border-l">
+                {morePage !== null && moreList}
+              </div>
             </div>
           </aside>
           {/* **The right side**: the app's ground, a first row at the
@@ -2322,9 +2326,14 @@ export default function App() {
               (`Region`). A 「…」 page and a landing with nothing to head
               the row get a blank band; the sessions strip and the
               browsing address bar are rows of their own. */}
-          <main data-main className="flex min-w-0 flex-1 flex-col bg-background">
+          <main data-main className="relative flex min-w-0 flex-1 flex-col bg-background">
           {morePage ? (
-            <Region kind="detail" title={moreName(morePage)} history={moreTrail}>
+            <Region
+              kind="detail"
+              title={moreName(morePage)}
+              history={moreTrail}
+              caption={stale ? gui.backend_unreachable : undefined}
+            >
               {morePageEl}
             </Region>
           ) : quotas ? (
@@ -2392,6 +2401,11 @@ export default function App() {
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
                     history={landing === "devices" ? deviceTrail : landing === "workspaces" ? wsTrail : undefined}
+                    actions={machineVerbs}
+                    flush={landing === "workspaces" && openWs !== null}
+                    // 过期 / 离线 (第十七轮 §6): what is on the board is the
+                    // last answer, and R0 says so — never a banner inside.
+                    caption={stale ? gui.backend_unreachable : undefined}
                   >
                     {detail}
                   </Region>

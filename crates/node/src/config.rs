@@ -55,13 +55,13 @@ pub const SECTIONS: &[Section] = &[
     // sees the effect of before they have finished reading the row.
     Section {
         name: "appearance",
-        page: "settings",
+        page: "appearance",
     },
     // 语言, under 外观: the two are what this whole page is written in,
     // and a person looking for either is looking at the top of it.
     Section {
         name: "language",
-        page: "settings",
+        page: "appearance",
     },
     // 通用: what holds for every landing at once — the tab strips are
     // the first thing on it (docs/SHELL.md 第三轮 第 4 条).

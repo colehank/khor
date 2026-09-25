@@ -98,10 +98,14 @@ export function PageHead({
   title,
   history,
   actions,
+  caption,
 }: {
   title: ReactNode;
   history?: PageHistory;
   actions?: ReactNode;
+  /** A stale or offline region's one line (第十七轮 §6, 20-states.md):
+      「3 分钟前的读数」 at R0's right end, never a banner in the board. */
+  caption?: ReactNode;
 }) {
   const back = history?.back;
   const forward = history?.forward;
@@ -149,7 +153,16 @@ export function PageHead({
       <h1 data-page-title className="min-w-0 flex-1 truncate px-1 text-title-sm font-title">
         {title}
       </h1>
-      {actions && <div className="flex flex-none items-center gap-1">{actions}</div>}
+      {caption && (
+        <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
+          {caption}
+        </span>
+      )}
+      {actions && (
+        <div data-page-actions className="flex flex-none items-center gap-1">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -160,6 +173,9 @@ export function Region({
   title,
   history,
   actions,
+  caption,
+  busy,
+  flush,
   className,
   children,
 }: {
@@ -174,8 +190,19 @@ export function Region({
       absent. */
   title?: ReactNode;
   history?: PageHistory;
-  /** The page's own buttons at R0's right end (第十七轮 fills this). */
+  /** The page's own buttons at R0's right end (第十七轮 §3). */
   actions?: ReactNode;
+  /** A stale region's caption at R0's right end (`PageHead`). */
+  caption?: ReactNode;
+  /** Refreshing content already seen: a 2 px brand bar along R0's
+      bottom edge, the content left as it was (第十七轮 §6). */
+  busy?: boolean;
+  /** **The board is the panes' own** (第十七轮 §5, D8): an open
+      workspace is B inside R1 — three panes, each with a head at
+      `--pane-head`, hairlines between them — so the board wears no
+      margin and no corner of its own, and a hairline under R0 is the
+      one edge between the two. */
+  flush?: boolean;
   /** How the board lays its content out. */
   className?: string;
   children: ReactNode;
@@ -188,12 +215,13 @@ export function Region({
         // (`shell.ts`): its blank moves the window, and what is pressable
         // inside it keeps its press by tauri's own rule.
         {...WINDOW_DRAG}
-        className="flex h-pane-head flex-none items-end select-none"
+        className="relative flex h-pane-head flex-none items-end select-none"
       >
         <div className="flex min-w-0 flex-1 self-stretch">
-          {head ?? <PageHead title={title} history={history} actions={actions} />}
+          {head ?? <PageHead title={title} history={history} actions={actions} caption={caption} />}
         </div>
         <WindowControls />
+        {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand-strong" />}
       </div>
       {/* The board. On narrow it is the whole screen and wears no
           margin and no corner (`app.css`, keyed on `data-narrow`).
@@ -206,7 +234,15 @@ export function Region({
           **Joined to R0 with nothing between** — under a strip the open
           tab and the board are one piece, and under a page's name there
           is no second line (第十四轮 第 1 条). */}
-      <div data-board className={cn("mx-in mb-in min-h-0 flex-1 overflow-hidden rounded-xl bg-card", className)}>
+      <div
+        data-board
+        data-board-flush={flush ? "" : undefined}
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden bg-card",
+          flush ? "border-t" : "mx-in mb-in rounded-xl",
+          className,
+        )}
+      >
         {children}
       </div>
     </div>

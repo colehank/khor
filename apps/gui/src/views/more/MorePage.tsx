@@ -20,20 +20,33 @@ import { useState, type ReactNode } from "react";
 
 import { IconChevronRight, IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { gui } from "@/gen/catalog";
-import { cn } from "@/lib/utils";
+import { config, gui } from "@/gen/catalog";
 
 /**
- * Which of the four is open. `null` is none — the landing underneath is
+ * Which section of 更多 is open. `null` is none — the landing underneath is
  * what shows.
  *
  * The keys are the values of `data-more-page`, so what a gate reaches
  * for and what the shell switches on are one string.
+ *
+ * Section order in L2 (spec 第十七轮 §1): 通用(settings), 外观(appearance),
+ * 网络(network), 安全(security), 身份(identity), 诊断(doctor).
  */
-export type MorePage = "network" | "settings" | "security" | "doctor" | "identity";
+export type MorePage = "settings" | "appearance" | "network" | "security" | "identity" | "doctor";
 
-/** The four names, in one place, so the menu item and the page head
-    cannot come to call the same page two things.
+/** The ordered list of all 更多 sections, for the L2 section list.
+    The order is the spec order; items are {key, label}. */
+export const morePageOrder: readonly MorePage[] = [
+  "settings",
+  "appearance",
+  "network",
+  "security",
+  "identity",
+  "doctor",
+];
+
+/** The section names, in one place, so the list item and the page head
+    cannot come to call the same section two things.
 
     ⚠️ **A function, not a `const`** (批 D3): these are catalog reads,
     and a module-level record would keep whichever language the page
@@ -41,11 +54,12 @@ export type MorePage = "network" | "settings" | "security" | "doctor" | "identit
     pages, one file over, had already changed. */
 export const moreName = (page: MorePage): string =>
   ({
-    network: gui.network,
     settings: gui.settings,
+    appearance: config.appearance,
+    network: gui.network,
     security: gui.security,
-    doctor: gui.doctor,
     identity: gui.identity,
+    doctor: gui.doctor,
   })[page];
 
 /**
@@ -203,53 +217,10 @@ export function MoreFold({
   );
 }
 
-/**
- * One toggle in this app's one control family: a `Button` wearing its
- * own state, the way the relay switch and the face options do. There is
- * no checkbox in `ui/`, and this is not the place to start a second
- * family.
- *
- * **`mark` rather than a `name` prop**, because the two callers are read
- * by two different gates under two different attributes — the lock
- * switch answers to `data-security-switch` (check-face has pressed it
- * since 批 C) and a settings choice to `data-config-choice`. One
- * attribute for both would have meant renaming one of them on a page
- * nothing else about this change touches.
- */
-export function MoreSwitch({
-  mark,
-  label,
-  on,
-  onPress,
-}: {
-  mark: Record<string, string>;
-  label: string;
-  on: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      {...mark}
-      data-on={on}
-      aria-pressed={on}
-      onClick={onPress}
-      className={cn(
-        // A ring in both states: off is the state this ships in and the
-        // state somebody has to discover it in (`NetSettings`'s own
-        // measurement, 2026-09-18).
-        // Both axes: 「永不」 is two characters, and `px-2` around them
-        // is 38 wide — under the floor on the axis nobody thinks to
-        // check (the 修 button on 自检 learned the same thing).
-        "min-h-touch min-w-touch self-start rounded-md px-2 text-caption",
-        on ? "text-primary ring-2 ring-primary" : "text-muted-foreground ring-1 ring-border",
-      )}
-    >
-      {label}
-    </Button>
-  );
-}
+// ⚠️ 墓碑 (第十七轮): `MoreSwitch` — a `Button` wearing its own on/off
+// state, one per choice in a ladder — stood here. Every setting is one of
+// the four rows in `components/settings` now (SwitchRow, PopupRow,
+// NavRow, ActionRow), and a ladder of buttons was the shape they replace.
 
 /**
  * A fact with a name: the left half names it, the right half is the

@@ -164,7 +164,7 @@ export function RemoveDialog({
           </div>
         )}
         <DialogFooter>
-          <Button data-remove-go disabled={going} onClick={press} className="min-h-touch">
+          <Button variant="primary" data-remove-go disabled={going} onClick={press} className="min-h-touch">
             {gui.delete}
           </Button>
         </DialogFooter>

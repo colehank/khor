@@ -21,24 +21,25 @@
 import { useState } from "react";
 
 import { setConfig, type ConfigRow } from "@/api";
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { PopupRow } from "@/components/settings/PopupRow";
 import { gui } from "@/gen/catalog";
-import { useSettings } from "@/settings";
-import { MoreSection, MoreSwitch, type MorePage } from "@/views/more/MorePage";
+import { RegionState } from "@/components/RegionState";
+import { useSettings, useSettingsReread } from "@/settings";
+import { MoreSection, type MorePage } from "@/views/more/MorePage";
 
-/** How many choices still read as a ladder of switches. Past this a row
-    is a menu: 标签页上限 has 48 (off, 4…50 — docs/SHELL.md 第三轮), and
-    48 switches wrapping down the page is a wall, not a setting. */
-const LADDER_MAX = 8;
-
-/** One setting: its name on the left, its ladder under it. */
+/**
+ * One setting, as the one row kind a closed set of choices is
+ * (docs/SHELL.md 第十七轮 §2): `current value ⌃⌄`, and the system's menu
+ * when pressed.
+ *
+ * ⚠️ 墓碑 (第十七轮): up to eight choices were a ladder of `MoreSwitch`
+ * buttons and past eight a Radix menu. Two shapes for one question, and
+ * the second was a menu khor drew itself — the thing 「系统的东西交给系统
+ * 画」 forbids. Both are one native `<select>` now.
+ *
+ * `data-config-row` / `data-value` carry the **key**, not the word, so a
+ * gate never reads the catalog to check the catalog.
+ */
 function Row({
   row,
   onPick,
@@ -47,50 +48,14 @@ function Row({
   onPick: (name: string, value: string) => void;
 }) {
   return (
-    // `data-value` carries the **key**, not the word: verification that
-    // had to read the label would be reading the catalog to check the
-    // catalog (`MoreSection`'s own split).
-    <div data-config-row={row.name} data-value={row.value} className="flex flex-col gap-1">
-      <span className="text-callout">{row.label}</span>
-      {row.choices.length > LADDER_MAX ? (
-        // **The same keys either way**: each item wears the anchor a
-        // switch would, so a gate presses `data-config-choice` whichever
-        // shape the row took.
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="secondary"
-              size="sm"
-              data-config-open={row.name}
-              className="min-h-touch min-w-touch self-start"
-            >
-              {row.choices.find((c) => c.value === row.value)?.label ?? row.value}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto">
-            <DropdownMenuRadioGroup value={row.value} onValueChange={(v) => onPick(row.name, v)}>
-              {row.choices.map((c) => (
-                <DropdownMenuRadioItem key={c.value} value={c.value} data-config-choice={`${row.name}:${c.value}`}>
-                  {c.label}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-      <div className="flex flex-wrap gap-1">
-        {row.choices.map((c) => (
-          <MoreSwitch
-            key={c.value}
-            mark={{ "data-config-choice": `${row.name}:${c.value}` }}
-            label={c.label}
-            on={row.value === c.value}
-            onPress={() => onPick(row.name, c.value)}
-          />
-        ))}
-      </div>
-      )}
-    </div>
+    <PopupRow
+      name={row.name}
+      label={row.label}
+      value={row.value}
+      choices={row.choices.map((c) => ({ value: c.value, label: c.label }))}
+      onPick={(v) => onPick(row.name, v)}
+      mark={{ "data-config-row": row.name, "data-value": row.value }}
+    />
   );
 }
 
@@ -107,6 +72,7 @@ export function ConfigSections({
   onChanged: () => void;
 }) {
   const rows = useSettings();
+  const reread = useSettingsReread();
   const [error, setError] = useState<string | null>(null);
 
   // Two-argument `then`, and the re-read is never in the chain: a read
@@ -122,7 +88,9 @@ export function ConfigSections({
   };
 
   if (rows === null) {
-    return <p className="text-callout text-muted-foreground">{gui.backend_unreachable}</p>;
+    // 出错 (第十七轮 §6): the machine's own sentence where the rows would
+    // be, and 重试 — never a row painted from a default this file kept.
+    return <RegionState state="error" message={gui.backend_unreachable} onRetry={reread} />;
   }
 
   const mine = rows.filter((r) => r.page === page);

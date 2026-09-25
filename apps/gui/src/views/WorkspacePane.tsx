@@ -1437,7 +1437,6 @@ export function WorkspacePane({
         {(narrow ? screen === "tree" : tree) && (
           <ListPane
             mark="data-ws-tree"
-            ground="side"
             // **A region's name, not a control's** — and that
             // distinction is why `workspace-tree` came back into the
             // catalog after being retired in 2026-09-16 (the key's own
@@ -1492,6 +1491,7 @@ export function WorkspacePane({
             head={
             <div
               data-tree-head
+              data-pane-head
               // **A pane's head height, not `--ctl-md`.** The ruling
               // wrote 「高 --ctl-md」 and the search box inside is the
               // finger's floor itself (44), so a 30-tall row would have
@@ -1733,7 +1733,6 @@ export function WorkspacePane({
         {(narrow ? screen === "sessions" : sessions) && (
           <ListPane
             mark="data-ws-sessions"
-            ground="side"
             name={gui.workspace_sessions}
             // The shell, like the tree one column over and like every
             // list pane in the app (2026-09-20 第 6 条). **`side`
@@ -1932,7 +1931,7 @@ export function WorkspacePane({
                 >
                   {gui.code_consent_no}
                 </Button>
-                <Button size="sm" data-code-go onClick={go} className="min-h-touch">
+                <Button variant="primary" size="sm" data-code-go onClick={go} className="min-h-touch">
                   {gui.code_consent_go}
                 </Button>
               </DialogFooter>

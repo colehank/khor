@@ -2227,7 +2227,7 @@ function EditDialog({
           )}
         </div>
         <DialogFooter>
-          <Button data-quota-save disabled={busy} onClick={save}>
+          <Button variant="primary" data-quota-save disabled={busy} onClick={save}>
             {gui.accounts_edit}
           </Button>
         </DialogFooter>
@@ -2292,7 +2292,7 @@ function RegisterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-quota-dialog>
+      <DialogContent sheet data-quota-dialog>
         <DialogHeader>
           <DialogTitle>{gui.accounts_register}</DialogTitle>
         </DialogHeader>
@@ -2410,7 +2410,7 @@ function RegisterDialog({
           )}
         </div>
         <DialogFooter>
-          <Button data-quota-create disabled={busy} onClick={create}>
+          <Button variant="primary" data-quota-create disabled={busy} onClick={create}>
             {gui.accounts_register}
           </Button>
         </DialogFooter>
