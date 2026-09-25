@@ -79,8 +79,8 @@ const parts: Components = {
   p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
   // Three levels of heading, then flat: a chat turn that needs a fourth
   // is not a document the pane should try to typeset.
-  h1: ({ children }) => <h1 className="mt-3 mb-1 text-lg font-title first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="mt-3 mb-1 text-base font-title first:mt-0">{children}</h2>,
+  h1: ({ children }) => <h1 className="mt-3 mb-1 text-title-md font-title first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mt-3 mb-1 text-body font-title first:mt-0">{children}</h2>,
   h3: ({ children }) => <h3 className="mt-2 mb-1 font-title first:mt-0">{children}</h3>,
   h4: ({ children }) => <h4 className="mt-2 mb-1 font-title first:mt-0">{children}</h4>,
   h5: ({ children }) => <h5 className="mt-2 mb-1 font-title first:mt-0">{children}</h5>,
@@ -119,7 +119,7 @@ const parts: Components = {
   // is kept as its own correction because a note that describes the
   // *previous* state reads exactly like a note describing this one.)
   pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-code">
+    <pre className="my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-mono">
       {children}
     </pre>
   ),
@@ -127,7 +127,7 @@ const parts: Components = {
   // inside its own frame rather than pushing the conversation sideways.
   table: ({ children }) => (
     <div className="my-2 overflow-x-auto">
-      <table className="w-full border-collapse text-aux">{children}</table>
+      <table className="w-full border-collapse text-callout">{children}</table>
     </div>
   ),
   th: ({ children }) => <th className="border px-2 py-1 text-left font-title">{children}</th>,
@@ -166,7 +166,7 @@ const codePart =
     // `[pre_&]` variant asks the DOM instead of guessing from the class.
     const fenced = /language-/.test(className ?? "");
     const dress = cn(
-      "font-mono text-code",
+      "font-mono text-mono",
       !fenced && "rounded-sm bg-muted px-1 py-0.5 [pre_&]:bg-transparent [pre_&]:p-0",
     );
     const lang = fenced ? langOf(className ?? "", node, openAt) : null;

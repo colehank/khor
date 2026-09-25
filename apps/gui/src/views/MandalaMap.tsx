@@ -218,7 +218,7 @@ export function MandalaMap({
                   key={row.id}
                   data-edge-word={row.id}
                   data-hop={row.hop}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm bg-background px-1 text-xs text-muted-foreground"
+                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm bg-background px-1 text-caption text-muted-foreground"
                   style={{
                     left: `${(me.seat.left + row.seat.left) / 2}%`,
                     top: `${(me.seat.top + row.seat.top) / 2}%`,
@@ -277,8 +277,8 @@ const CAPTION_W = "min(36cqmin, calc(var(--avatar-xl) * 2))";
    the no-container-units fallback. A fluid size cannot carry a stepped
    token line-height, so the ratio is unitless — both token pairs sit
    at ~1.44 (16/11, 18/12.5), this simply keeps that ratio moving. */
-const TEXT_NAME = "clamp(var(--text-sm), 2.6cqmin, var(--text-lg))";
-const TEXT_FINE = "clamp(var(--text-xs), 2.2cqmin, var(--text-sm))";
+const TEXT_NAME = "clamp(var(--text-callout), 2.6cqmin, var(--text-title-md))";
+const TEXT_FINE = "clamp(var(--text-caption), 2.2cqmin, var(--text-callout))";
 const TEXT_RATIO = "1.44";
 
 /**
@@ -377,7 +377,7 @@ function Seat({
             text of one size. */}
         <span
           data-seat-name
-          className="max-w-full truncate text-sm"
+          className="max-w-full truncate text-callout"
           style={{ fontSize: TEXT_NAME, lineHeight: TEXT_RATIO }}
         >
           {row.name}
@@ -390,7 +390,7 @@ function Seat({
         {waiting > 0 && (
           <span
             data-seat-blocked
-            className="max-w-full truncate text-xs tabular-nums"
+            className="max-w-full truncate text-caption tabular-nums"
             style={{
               fontSize: TEXT_FINE,
               lineHeight: TEXT_RATIO,
@@ -409,7 +409,7 @@ function Seat({
             aged !== null && (
               <span
                 data-seat-age
-                className="max-w-full truncate text-xs text-muted-foreground"
+                className="max-w-full truncate text-caption text-muted-foreground"
                 style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
               >
                 {cli.vitals_taken(aged)}
@@ -418,7 +418,7 @@ function Seat({
           ) : (
             <span
               data-seat-never
-              className="max-w-full truncate text-xs text-muted-foreground"
+              className="max-w-full truncate text-caption text-muted-foreground"
               style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
             >
               {cli.vitals_never}

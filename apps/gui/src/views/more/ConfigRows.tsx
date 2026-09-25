@@ -51,7 +51,7 @@ function Row({
     // had to read the label would be reading the catalog to check the
     // catalog (`MoreSection`'s own split).
     <div data-config-row={row.name} data-value={row.value} className="flex flex-col gap-1">
-      <span className="text-sm">{row.label}</span>
+      <span className="text-callout">{row.label}</span>
       {row.choices.length > LADDER_MAX ? (
         // **The same keys either way**: each item wears the anchor a
         // switch would, so a gate presses `data-config-choice` whichever
@@ -122,7 +122,7 @@ export function ConfigSections({
   };
 
   if (rows === null) {
-    return <p className="text-sm text-muted-foreground">{gui.backend_unreachable}</p>;
+    return <p className="text-callout text-muted-foreground">{gui.backend_unreachable}</p>;
   }
 
   const mine = rows.filter((r) => r.page === page);
@@ -130,7 +130,7 @@ export function ConfigSections({
   return (
     <>
       {error && (
-        <div data-config-error className="text-sm text-destructive">
+        <div data-config-error className="text-callout text-destructive">
           {error}
         </div>
       )}

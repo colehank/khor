@@ -186,7 +186,7 @@ export function PathCrumbs({ at, onGo, onEdit }: CrumbProps) {
               // coarse-pointer sentence; with a mouse there is nothing
               // to place.
               className={cn(
-                "inline-flex min-h-touch pointer-coarse:min-w-touch cursor-pointer items-center rounded-sm px-0.5 text-sm whitespace-nowrap hover:bg-muted",
+                "inline-flex min-h-touch pointer-coarse:min-w-touch cursor-pointer items-center rounded-sm px-0.5 text-callout whitespace-nowrap hover:bg-muted",
                 i === 0 && !last ? "justify-center" : "justify-start",
                 last && "grow shrink-0",
               )}

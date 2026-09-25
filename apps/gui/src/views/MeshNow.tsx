@@ -88,12 +88,12 @@ export function MeshNow({
             </Button>
           </div>
           {waiting.length === 0 ? (
-            <div data-now-clear className="text-sm text-muted-foreground">
+            <div data-now-clear className="text-callout text-muted-foreground">
               {gui.none_waiting}
             </div>
           ) : (
             <>
-              {/* The count, at the one display size (--text-hero): when
+              {/* The count, at the one display size (--text-title-lg since 第十五轮): when
                   anything waits, how much is the reason this screen
                   exists, so the number is the visual protagonist — body
                   weight (rank must not be said twice) in the state's own
@@ -102,7 +102,7 @@ export function MeshNow({
                   would be a loud way of saying nothing. */}
               <div
                 data-now-hero
-                className="mb-in text-hero tabular-nums"
+                className="mb-in text-title-lg tabular-nums"
                 style={{ color: "var(--state-blocked)" }}
               >
                 {waiting.length}
@@ -120,8 +120,8 @@ export function MeshNow({
                   className="flex min-h-touch w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
                 >
                   <MachineAvatar face={r.face} className="size-kind-mark flex-none" />
-                  <span className="min-w-0 flex-1 truncate text-sm">{r.title}</span>
-                  <span className="flex-none text-xs" style={{ color: "var(--state-blocked)" }}>
+                  <span className="min-w-0 flex-1 truncate text-callout">{r.title}</span>
+                  <span className="flex-none text-caption" style={{ color: "var(--state-blocked)" }}>
                     {word(r.word)}
                   </span>
                 </button>
@@ -156,14 +156,14 @@ export function MeshNow({
                 )}
               >
                 <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
-                <span data-now-name className="min-w-0 truncate text-sm">
+                <span data-now-name className="min-w-0 truncate text-callout">
                   {d.name}
                 </span>
                 {/* The road, the machines list's own word for it
                     (`connectionWord`): 本机 for this one, never a
                     bracket on the name. */}
                 {connectionWord(d) && (
-                  <span data-now-connection className="flex-none text-aux text-muted-foreground">
+                  <span data-now-connection className="flex-none text-callout text-muted-foreground">
                     {connectionWord(d)}
                   </span>
                 )}
@@ -181,5 +181,5 @@ export function MeshNow({
     first section seats it inside a flex row where a margin of its own
     would knock it off the row's centre line. */
 function Heading({ text, className }: { text: string; className?: string }) {
-  return <div className={cn("text-xs font-label text-muted-foreground", className)}>{text}</div>;
+  return <div className={cn("text-caption font-label text-muted-foreground", className)}>{text}</div>;
 }

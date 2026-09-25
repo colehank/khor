@@ -95,12 +95,12 @@ export function CopyId({
         // The finger floor again (tokens.css `--touch`), on a target
         // whose ink is twelve small characters — the one on this card
         // most likely to be missed.
-        className="flex min-h-touch min-w-0 items-center gap-in rounded-md text-sm text-muted-foreground hover:text-foreground data-[said=failed]:text-state-failed"
+        className="flex min-h-touch min-w-0 items-center gap-in rounded-md text-callout text-muted-foreground hover:text-foreground data-[said=failed]:text-state-failed"
       >
         <span data-card-id className="truncate">
           {id.slice(0, 12)}
         </span>
-        {said && <span className="flex-none text-aux">{said === "copied" ? gui.copied : gui.copy_failed}</span>}
+        {said && <span className="flex-none text-callout">{said === "copied" ? gui.copied : gui.copy_failed}</span>}
       </button>
     );
   }
@@ -239,7 +239,6 @@ export function DetailPane({
       {narrow && (
         <header
           data-detail-header
-          data-tauri-drag-region="deep"
           className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
         >
           {/* The back button exists only on the narrow face: there the
@@ -342,7 +341,7 @@ export function DetailPane({
         // to pick for. Handed in by `App` (see the prop).
         empty
       ) : (
-        <div className="grid flex-1 place-items-center text-center text-sm text-muted-foreground">
+        <div className="grid flex-1 place-items-center text-center text-callout text-muted-foreground">
           {row ? (
             // The same two tiers the list row draws, on the pane that
             // has nothing but them: the word is what this pane exists to
@@ -350,10 +349,10 @@ export function DetailPane({
             // read as two lines of equal news about a session nobody can
             // see.
             <div>
-              <div className="text-fact" style={{ color: `var(--state-${row.word})` }}>
+              <div className="text-body" style={{ color: `var(--state-${row.word})` }}>
                 {word(row.word)}
               </div>
-              <div className="text-aux">{row.kind}</div>
+              <div className="text-callout">{row.kind}</div>
             </div>
           ) : (
             // Not a dead end: the sentence says what this pane is

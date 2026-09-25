@@ -140,7 +140,7 @@ function PageAddress({ tab, at, onEdit }: RestProps) {
         // So the two jobs are two elements now, and neither can undo the
         // other: the button is the finger's floor and centres what is in
         // it, the row inside is the baseline the three spans share.
-        className="flex min-h-touch min-w-0 flex-1 cursor-text items-center gap-0 text-left text-sm"
+        className="flex min-h-touch min-w-0 flex-1 cursor-text items-center gap-0 text-left text-callout"
       >
         <span className="flex min-w-0 flex-1 items-baseline gap-0">
           <span className="flex-none text-muted-foreground">{before}</span>

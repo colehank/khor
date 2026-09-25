@@ -315,7 +315,7 @@ export function SessionsList({
     // (`aux`) — state is never colour alone, so the word stays.
     trailing: (
       <span className="flex flex-none flex-col items-end gap-1 text-muted-foreground">
-        <span className="flex items-center gap-1 text-fact">
+        <span className="flex items-center gap-1 text-body">
           <span data-word-text style={{ color: `var(--state-${r.word})` }}>
             {word(r.word)}
           </span>
@@ -335,11 +335,11 @@ export function SessionsList({
         </span>
         {r.at_ms > 0 &&
           (r.quiet ? (
-            <span data-quiet-note className="text-aux">
+            <span data-quiet-note className="text-callout">
               {quietFor(r.at_ms)}
             </span>
           ) : (
-            <span className="text-aux tabular-nums">{ago(r.at_ms)}</span>
+            <span className="text-callout tabular-nums">{ago(r.at_ms)}</span>
           ))}
       </span>
     ),

@@ -199,7 +199,7 @@ export function FilesPane({
           // this pane has to say — in the node's own sentence, at the
           // size of something meant to be read, not as a footnote under
           // an empty directory that was never opened.
-          <div data-cannot-reach className="p-4 text-fact">
+          <div data-cannot-reach className="p-4 text-body">
             {error}
           </div>
         ) : !listing ? null : (
@@ -215,13 +215,13 @@ export function FilesPane({
                 // raising, and the wash it lights up with is painted on
                 // the row itself — grown, the lit box and the pressable
                 // box stay the same box.
-                className="flex min-h-touch w-full items-center gap-2 border-b px-4 py-2 text-left text-sm text-muted-foreground hover:bg-muted/50"
+                className="flex min-h-touch w-full items-center gap-2 border-b px-4 py-2 text-left text-callout text-muted-foreground hover:bg-muted/50"
               >
                 {gui.up_dir}
               </button>
             )}
             {listing.entries.length === 0 && (
-              <div data-empty className="p-4 text-sm text-muted-foreground">
+              <div data-empty className="p-4 text-callout text-muted-foreground">
                 {gui.empty_dir}
               </div>
             )}
@@ -272,7 +272,7 @@ export function FilesPane({
                     // half its old height inside a taller stripe that
                     // lights up. The hover wash is the row's, and the
                     // row is exactly as tall as this.
-                    className="flex min-h-touch min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-sm"
+                    className="flex min-h-touch min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-callout"
                   >
                     <span className="min-w-0 flex-1 truncate">{e.name}/</span>
                     <Mark mark={marks?.get(full)} dir />
@@ -305,7 +305,7 @@ export function FilesPane({
                   // down and only after a press, which is the harder
                   // version of the same bug to see.
                   className={cn(
-                    "group flex min-h-touch items-center gap-3 px-4 text-sm",
+                    "group flex min-h-touch items-center gap-3 px-4 text-callout",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -339,7 +339,7 @@ export function FilesPane({
                         (2026-09-16): a file is the same file whichever
                         tree it was found in. **20, not the tree's 24**:
                         this pane's rows are the finger's floor rather
-                        than 28, and its text is the ordinary `text-sm`
+                        than 28, and its text is the ordinary `text-callout`
                         — the icon is sized to the line it sits on, and
                         「基本占满这一行」 is the rule both are obeying,
                         not one number carried across. */}
@@ -355,7 +355,7 @@ export function FilesPane({
                     <span
                       data-took={took.state}
                       className={cn(
-                        "max-w-[50%] truncate text-xs",
+                        "max-w-[50%] truncate text-caption",
                         took.state === "failed" ? "text-state-failed" : "text-muted-foreground",
                       )}
                     >
@@ -416,7 +416,7 @@ export function FilesPane({
             {listing.truncated && (
               // The cap is however many rows actually came — the number
               // belongs to the node, and a copy here would drift.
-              <div className="p-4 text-xs text-muted-foreground">
+              <div className="p-4 text-caption text-muted-foreground">
                 {cli.dir_truncated(listing.entries.length)}
               </div>
             )}

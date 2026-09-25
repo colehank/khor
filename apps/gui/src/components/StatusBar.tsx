@@ -41,7 +41,7 @@ export function StatusBar({
           data-status-item={i.id}
           data-word={i.word}
           data-settled={i.settled}
-          className="pointer-events-auto flex max-w-80 items-center gap-2 rounded-md border bg-popover px-2 py-1 text-sm shadow-md"
+          className="pointer-events-auto flex max-w-80 items-center gap-2 rounded-md border bg-popover px-2 py-1 text-callout shadow-md"
         >
           <span data-word-text style={{ color: `var(--state-${i.word})` }} className="flex-none">
             {word(i.word)}

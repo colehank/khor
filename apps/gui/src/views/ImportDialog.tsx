@@ -150,7 +150,7 @@ export function ImportDialog({
             defaults to `min-width: auto`, and one long directory would
             widen the whole dialog past its edge. */}
         <div className="flex min-w-0 flex-col gap-3">
-          <p data-import-note className="text-xs text-muted-foreground">
+          <p data-import-note className="text-caption text-muted-foreground">
             {gui.import_note}
           </p>
           {(machines.length > 1 || places.length > 1) && (
@@ -186,7 +186,7 @@ export function ImportDialog({
             </div>
           )}
           {rows !== null && shown.length === 0 && (
-            <span data-import-empty className="text-sm text-muted-foreground">
+            <span data-import-empty className="text-callout text-muted-foreground">
               {gui.import_empty}
             </span>
           )}
@@ -201,19 +201,19 @@ export function ImportDialog({
                     data-import-form={r.form}
                     data-on={on}
                     className={cn(
-                      "flex min-h-touch min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-muted/50",
+                      "flex min-h-touch min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-callout hover:bg-muted/50",
                       on && "bg-accent",
                     )}
                   >
                     <input type="checkbox" checked={on} onChange={() => toggle(r.id)} className="flex-none" />
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span className="truncate">{r.title || r.place || r.id}</span>
-                      <span className="truncate text-xs text-muted-foreground">
+                      <span className="truncate text-caption text-muted-foreground">
                         {[r.machine, formWord(r.form), r.place ?? ""].filter((w) => w !== "").join(" · ")}
                       </span>
                     </span>
                     {r.at_ms > 0 && (
-                      <span className="flex-none text-xs tabular-nums text-muted-foreground">
+                      <span className="flex-none text-caption tabular-nums text-muted-foreground">
                         {ago(r.at_ms)}
                       </span>
                     )}
@@ -223,7 +223,7 @@ export function ImportDialog({
             </div>
           )}
           {registered.length > 0 && (
-            <div data-import-agents className="flex min-w-0 flex-col gap-1 text-sm">
+            <div data-import-agents className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.import_agents}</span>
               {registered.map((a) => {
                 const mark = markOf(said[a.name]);
@@ -245,7 +245,7 @@ export function ImportDialog({
                     <span className="min-w-0 flex-1 truncate">
                       {a.name}
                       {sentence !== null && (
-                        <span data-agent-seen-text className="ml-2 text-xs text-muted-foreground">
+                        <span data-agent-seen-text className="ml-2 text-caption text-muted-foreground">
                           {sentence}
                         </span>
                       )}
@@ -266,7 +266,7 @@ export function ImportDialog({
             </div>
           )}
           {error !== null && (
-            <span data-import-error className="text-sm text-destructive">
+            <span data-import-error className="text-callout text-destructive">
               {error}
             </span>
           )}

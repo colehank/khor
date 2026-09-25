@@ -1231,7 +1231,28 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     {
         win = win
             .title_bar_style(tauri::utils::TitleBarStyle::Overlay)
-            .hidden_title(true);
+            .hidden_title(true)
+            // **The left block on the system's sidebar material** (docs/
+            // SHELL.md 第十五轮 第 7 条, D4): AppKit's own
+            // `NSVisualEffectView` in its sidebar material behind the
+            // webview, which only shows where the page paints nothing —
+            // the left block, whose ground goes transparent on this
+            // platform alone (`app.css` `:root[data-material]`); the
+            // right side, the board and R0 keep painting their own.
+            // `FollowsWindowActiveState`: it goes flat with the window
+            // behind another, as every Mac sidebar does.
+            //
+            // The window has to be transparent for the material to be
+            // seen, and on macOS that is tauri's `macos-private-api`
+            // (`Cargo.toml`, `tauri.conf.json` — the cost is written
+            // there: no Mac App Store).
+            .transparent(true)
+            .effects(
+                tauri::window::EffectsBuilder::new()
+                    .effect(tauri::window::Effect::Sidebar)
+                    .state(tauri::window::EffectState::FollowsWindowActiveState)
+                    .build(),
+            );
         if let Some(lights) = traffic::measure() {
             win = win.traffic_light_position(tauri::LogicalPosition::new(
                 traffic::X,
@@ -1330,7 +1351,15 @@ fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
     };
     // Nothing to do if the platform refuses: the failure is the old
     // behaviour, which is a flash rather than a fault.
+    //
+    // **Not on macOS since 第十五轮** (D4): the window there is
+    // transparent over the sidebar material (`build_the_window`), and an
+    // opaque ground on the webview would paint over the material for good
+    // — the material itself is what stands in the window before the page.
+    #[cfg(not(target_os = "macos"))]
     let _ = w.set_background_color(Some(ground));
+    #[cfg(target_os = "macos")]
+    let _ = ground;
 }
 
 /// Back, forward and reload for one tab's page.

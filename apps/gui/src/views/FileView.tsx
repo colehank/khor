@@ -106,11 +106,11 @@ function Away({
 }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-      <span className="text-fact text-foreground">{word}</span>
+      <span className="text-body text-foreground">{word}</span>
       <Button variant="outline" size="sm" onClick={onTake} className="mt-1 min-h-touch min-w-touch">
         {gui.file_take}
       </Button>
-      {took !== null && <span className="text-aux text-muted-foreground">{took}</span>}
+      {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
     </div>
   );
 }
@@ -872,7 +872,7 @@ export function FileView({
   // ── the three screens that are not a code view ──────────────────
   if (kindOf(path) !== "text") {
     if (lookError !== null) {
-      return <div className="p-4 text-aux text-muted-foreground">{lookError}</div>;
+      return <div className="p-4 text-callout text-muted-foreground">{lookError}</div>;
     }
     if (look === null) return <div className="flex-1" />;
     if (look.cut) {
@@ -918,7 +918,7 @@ export function FileView({
       return (
         <div className="flex min-h-0 flex-1 flex-col">
           {look.empty ? (
-            <div className="flex flex-1 items-center justify-center p-6 text-fact text-foreground">
+            <div className="flex flex-1 items-center justify-center p-6 text-body text-foreground">
               {gui.doc_empty}
             </div>
           ) : (
@@ -945,7 +945,7 @@ export function FileView({
               sentence about a different reason. */}
           <div
             data-doc-note={look.kind}
-            className="flex-none border-t px-3 py-1.5 text-aux text-muted-foreground"
+            className="flex-none border-t px-3 py-1.5 text-callout text-muted-foreground"
           >
             {look.kind === "pdf" ? gui.pdf_as_words : gui.doc_plain}
           </div>
@@ -956,21 +956,21 @@ export function FileView({
   }
 
   if (error !== null) {
-    return <div className="p-4 text-aux text-muted-foreground">{error}</div>;
+    return <div className="p-4 text-callout text-muted-foreground">{error}</div>;
   }
   if (file === null) return <div className="flex-1" />;
 
   if (file.binary) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <span className="text-fact text-foreground">{gui.file_not_text}</span>
-        <span className="text-aux text-muted-foreground tabular-nums">
+        <span className="text-body text-foreground">{gui.file_not_text}</span>
+        <span className="text-callout text-muted-foreground tabular-nums">
           {sizeWord(file.total)}
         </span>
         <Button variant="outline" size="sm" onClick={take} className="mt-1">
           {gui.file_take}
         </Button>
-        {took !== null && <span className="text-aux text-muted-foreground">{took}</span>}
+        {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
       </div>
     );
   }
@@ -998,7 +998,7 @@ export function FileView({
    * **Asked of the bar, not computed from the line height.** The bar is
    * already sitting where CSS put it, so its `offsetTop` is the answer
    * by construction — a second arithmetic here would be a copy of
-   * `--text-code--line-height` that nothing keeps in step, and the day
+   * `--text-mono--line-height` that nothing keeps in step, and the day
    * the token moved one of the two would be wrong. Found **by the line
    * it names**, not by position in the list: a hunk whose lines this
    * buffer no longer has draws no bar at all, and counting would then
@@ -1092,7 +1092,7 @@ export function FileView({
           the column, floating over the file rather than pushing it
           (`data-file-notice` below). */}
       {file.cut && (
-        <div className="flex items-center gap-3 border-b px-3 py-1.5 text-aux text-muted-foreground">
+        <div className="flex items-center gap-3 border-b px-3 py-1.5 text-callout text-muted-foreground">
           <span className="tabular-nums">
             {gui.file_cut(sizeWord(file.text.length), sizeWord(file.total))}
           </span>
@@ -1217,7 +1217,7 @@ export function FileView({
             // bar used to carry the divider on its own right, which left
             // the sheet's padding as a blank gap past the line; now the
             // bar sits in that gap, VS Code's arrangement.
-            className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-code leading-code text-muted-foreground tabular-nums"
+            className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-mono leading-mono text-muted-foreground tabular-nums"
           >
             {/* No spacer for the peek any more: it floats over the
                 text rather than taking a row, so the numbering beside
@@ -1320,7 +1320,7 @@ export function FileView({
           // the card must not eat presses meant for the code under it.
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-2"
         >
-          <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-1.5 text-aux text-muted-foreground shadow-md">
+          <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-1.5 text-callout text-muted-foreground shadow-md">
             {typeof saved === "string" && <span data-save-state="refused">{saved}</span>}
             {clashes !== null && (
               <span data-merged={clashes}>
@@ -1396,7 +1396,7 @@ export function FileView({
 function Table({ text, sep }: { text: string; sep: string }) {
   const rows = useMemo(() => parseDelimited(text, sep), [text, sep]);
   return (
-    <table data-table className="w-full border-collapse text-code">
+    <table data-table className="w-full border-collapse text-mono">
       <tbody>
         {rows.map((row, i) => (
           <tr key={i} className="border-b">
@@ -1427,7 +1427,7 @@ const PAINT_IDLE = 120;
     goes red about. `anywhere` rather than `break-word`: a 400-character
     path with no space in it has to fold somewhere, and the alternative
     is the sideways scroll the ruling took away. */
-const WRAP = "font-mono text-code leading-code whitespace-pre-wrap [overflow-wrap:anywhere]";
+const WRAP = "font-mono text-mono leading-mono whitespace-pre-wrap [overflow-wrap:anywhere]";
 
 /**
  * The file's one surface: the painted text, with a transparent editor
@@ -1530,7 +1530,7 @@ function Sheet({
           <div
             key={i}
             data-line={i + 1}
-            className="min-h-[var(--text-code--line-height)]"
+            className="min-h-[var(--text-mono--line-height)]"
           >
             {paint === null ? (
               line
@@ -1702,7 +1702,7 @@ function Gutter({
                     // centres the notch on the boundary rather than a
                     // second arithmetic subtracting half its height.
                     top: edge,
-                    height: "calc(var(--text-code--line-height) / 4)",
+                    height: "calc(var(--text-mono--line-height) / 4)",
                     transform: "translateY(-50%)",
                   }
                 : { top: from, height: to - from }
@@ -1798,7 +1798,7 @@ function Peek({
       <div data-peek={hunk.at} className={cn("border-y px-3", peekInk(hunk))}>
         {gone ? (
           hunk.was.map((line, i) => (
-            <div key={i} className="min-h-[var(--text-code--line-height)]">
+            <div key={i} className="min-h-[var(--text-mono--line-height)]">
               {line}
             </div>
           ))
@@ -1807,7 +1807,7 @@ function Peek({
           // opening empty** — the bar is pressable everywhere it is drawn
           // (`Gutter`), and a press that produced a blank block would be
           // the dead target that rule exists to avoid.
-          <div className="min-h-[var(--text-code--line-height)]">{gui.git_added}</div>
+          <div className="min-h-[var(--text-mono--line-height)]">{gui.git_added}</div>
         )}
       </div>
     </div>

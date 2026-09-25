@@ -79,11 +79,18 @@ export function LockScreen({
       // The whole window, and its own drag region: with the title bar
       // gone (第八轮 第 58 条) this is the only surface there is, so
       // without one a locked window could not be moved at all.
+      //
+      // **The one component that marks a drag region itself, by name**
+      // (docs/SHELL.md 第十五轮 第 3 条). Everywhere else the shell marks
+      // L0, L1 and R0 once (`components/shell.ts`) — but a locked window
+      // draws no shell: `App` returns this instead of L and R, so there
+      // is nothing of the shell's to carry the handle. `check-face`
+      // (第十五轮 e) allows this file and the shell's, and nothing else.
       data-tauri-drag-region="deep"
       className="flex h-dvh flex-col items-center justify-center gap-group bg-background p-pane"
     >
       <MachineAvatar face={me?.face ?? null} className="size-avatar-xl" />
-      <div data-lock-name className="text-title font-title">
+      <div data-lock-name className="text-title-md font-title">
         {me?.shown ?? ""}
       </div>
       <form
@@ -113,7 +120,7 @@ export function LockScreen({
           className="min-h-touch w-full text-center"
         />
         {wrong && (
-          <div data-lock-wrong className="text-sm text-destructive">
+          <div data-lock-wrong className="text-callout text-destructive">
             {gui.lock_wrong}
           </div>
         )}

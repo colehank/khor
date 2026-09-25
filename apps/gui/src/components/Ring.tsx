@@ -306,7 +306,7 @@ export function Ring({
       {children != null && (
         <span
           data-ring-center
-          className="col-start-1 row-start-1 font-title tabular-nums text-fact"
+          className="col-start-1 row-start-1 font-title tabular-nums text-body"
         >
           {children}
         </span>

@@ -98,6 +98,15 @@ export function SideListSeat({ children }: { children: ReactNode }) {
   return createPortal(children, seats.list);
 }
 
+/**
+ * 「Search everything」, asked for from inside a seated head — the
+ * magnifier a column's box shrinks to when the block is too narrow for
+ * it (`PaneBar`, 第十五轮 第 4 条). An event on the window rather than a
+ * callback down the tree: the head is the landing's, written inside the
+ * landing, and the one who can widen is this row.
+ */
+export const FIND_ALL = "khor:find-all";
+
 /** The word a hit's kind is shown by — never the key itself. */
 function kindWord(kind: string): string {
   switch (kind) {
@@ -168,8 +177,13 @@ export function SideHead({
       e.preventDefault();
       widen("");
     };
+    const all = () => widen("");
     window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener(FIND_ALL, all);
+    return () => {
+      window.removeEventListener("keydown", key);
+      window.removeEventListener(FIND_ALL, all);
+    };
   }, [widen]);
 
   // ⇥ in the column's box widens it to everything, carrying the word
@@ -243,12 +257,9 @@ export function SideHead({
   return (
     <div
       data-side-head
-      // The blank of this row is what moves the window, on every
-      // platform that lets a page say so (第八轮 第 59 条's rule; the
-      // seated head and the box inside are children and keep every
-      // press).
-      data-tauri-drag-region="deep"
-      className="relative flex min-h-pane-head flex-none items-center bg-side select-none"
+      // `min-w-0`: the row is the block's width and never sets it
+      // (第十五轮 第 4 条) — what is seated in it gives way instead.
+      className="relative flex min-h-pane-head min-w-0 flex-none items-center bg-side select-none"
       style={{ paddingLeft: START }}
     >
       {/* The landing's head sits here. `hidden` while the box is widened
@@ -272,10 +283,13 @@ export function SideHead({
           data-global-search
           aria-label={gui.find_everything}
           onClick={() => widen("")}
-          className={cn("min-h-touch flex-none justify-start gap-2 text-muted-foreground", narrow ? "min-w-touch" : "h-7 flex-1")}
+          // `h-ctl-md`: the look of a macOS search field (28,
+          // tokens.css `--ctl-md`); the finger's floor is the hit
+          // area around it, `min-h-touch`.
+          className={cn("min-h-touch flex-none justify-start gap-2 text-muted-foreground", narrow ? "min-w-touch" : "h-ctl-md min-w-0 flex-1")}
         >
           <IconSearch />
-          {!narrow && <span className="min-w-0 flex-1 truncate text-left text-xs">{gui.find_everything}</span>}
+          {!narrow && <span className="min-w-0 flex-1 truncate text-left text-caption">{gui.find_everything}</span>}
         </Button>
       )}
       {open && (
@@ -283,11 +297,13 @@ export function SideHead({
         // floor on its width, so a block narrowed to the rail alone
         // (a 「…」 page) still gets a box a word fits in — it reaches
         // over the ground beside, which is the one thing here allowed
-        // to.
+        // to. **The floor is the token `--list-w-min`**, not `--list-w`:
+        // that one is the block's live width now (第十五轮 第 4 条),
+        // which is zero exactly where this floor is needed.
         <div
           ref={seat}
           data-search-seat
-          className="absolute inset-y-0 z-50 flex min-w-list items-center bg-side pr-1"
+          className="absolute inset-y-0 z-50 flex min-w-list-min items-center bg-side pr-1"
           style={{ left: START, right: 0 }}
         >
           <div className="relative flex min-w-0 flex-1 items-center">
@@ -323,7 +339,7 @@ export function SideHead({
             {/* Which range the box is on, in one small word (第 4 条). */}
             <kbd
               data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-xs text-muted-foreground"
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-caption text-muted-foreground"
             >
               {gui.search_all}
             </kbd>
@@ -342,7 +358,7 @@ export function SideHead({
                 style={{ left: "var(--seat-menu-inset)" }}
               >
                 {shown.length === 0 && (
-                  <span data-search-none className="px-2 py-2 text-sm text-muted-foreground">
+                  <span data-search-none className="px-2 py-2 text-callout text-muted-foreground">
                     {gui.find_nothing}
                   </span>
                 )}
@@ -357,15 +373,15 @@ export function SideHead({
                     data-on={i === at}
                     onClick={() => go(h)}
                     className={cn(
-                      "flex min-h-touch min-w-0 items-center gap-2 px-2 text-left text-sm hover:bg-muted/50",
+                      "flex min-h-touch min-w-0 items-center gap-2 px-2 text-left text-callout hover:bg-muted/50",
                       i === at && "bg-accent",
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate">{h.label}</span>
                     {h.note !== null && (
-                      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{h.note}</span>
+                      <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{h.note}</span>
                     )}
-                    <span className="flex-none text-xs text-muted-foreground">{kindWord(h.kind)}</span>
+                    <span className="flex-none text-caption text-muted-foreground">{kindWord(h.kind)}</span>
                   </button>
                 ))}
               </div>

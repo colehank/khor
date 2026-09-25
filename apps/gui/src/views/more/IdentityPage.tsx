@@ -95,8 +95,8 @@ export function IdentityPage({
                 kind="machine"
                 id={me.id}
                 title={me.shown}
-                className="min-w-0 text-title font-title"
-                inputClassName="min-w-0 text-title font-title"
+                className="min-w-0 text-title-md font-title"
+                inputClassName="min-w-0 text-title-md font-title"
               />
             </div>
           )}
@@ -134,7 +134,7 @@ export function IdentityPage({
                 key={f.key}
                 data-iface={f.key}
                 data-on={f.up}
-                className="flex min-w-0 items-center gap-row py-1 text-sm"
+                className="flex min-w-0 items-center gap-row py-1 text-callout"
               >
                 <span className="min-w-0 flex-1 truncate">{f.name}</span>
                 {/* 当前 first, because it is the one word on this row

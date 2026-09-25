@@ -182,12 +182,12 @@ export function DevicesList({
           kind="machine"
           id={d.id}
           title={d.shown}
-          className="block text-fact"
-          inputClassName="w-full text-fact"
+          className="block text-body"
+          inputClassName="w-full text-body"
           nested
         />
       ) : (
-        <span className="block truncate text-fact">{d.shown}</span>
+        <span className="block truncate text-body">{d.shown}</span>
       ),
       // How this machine is reached — the fact a person picks a row by;
       // this machine's own word is 本机 — and then what the box is, as

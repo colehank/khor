@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import {
   fetchDevices,
@@ -65,6 +65,7 @@ import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { useHistory } from "@/hooks/use-history";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { tabsLimitOf } from "@/browse/tab-limit";
@@ -106,6 +107,7 @@ import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
+import { WINDOW_DRAG } from "@/components/shell";
 import { SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
@@ -366,7 +368,7 @@ function RailItem({
     >
       {children}
       {badge !== undefined && badge > 0 && (
-        <span className="absolute right-1 top-1 min-w-4 rounded-full bg-badge px-1 text-center text-xs leading-4 tabular-nums text-badge-foreground">
+        <span className="absolute right-1 top-1 min-w-4 rounded-full bg-badge px-1 text-center text-caption leading-4 tabular-nums text-badge-foreground">
           {badge}
         </span>
       )}
@@ -458,6 +460,14 @@ export default function App() {
   // condition exists to remove.
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => onFullscreen(setFullscreen), []);
+  // **The left block on the system's sidebar material** (docs/SHELL.md
+  // 第十五轮 第 7 条, D4): only the macOS app has it — its window is
+  // transparent over an `NSVisualEffectView` (`src-tauri` `build_the_window`)
+  // — so only there is the root stamped, and `app.css` lets the block's
+  // ground go clear under the stamp. Every other face keeps `--side`.
+  useEffect(() => {
+    if (trafficLights) document.documentElement.setAttribute("data-material", "sidebar");
+  }, []);
   useEffect(() => {
     const root = document.documentElement;
     if (trafficLights && !fullscreen) root.setAttribute("data-traffic", "");
@@ -675,6 +685,13 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(null);
+  // ‹ › in R0 (docs/SHELL.md 第十五轮 第 6 条): each 详情 landing walks
+  // what was picked in it — a machine, a workspace, a 「…」 page.
+  // 额度's account is picked inside its landing, and its trail is kept
+  // there (`QuotaLanding`).
+  const deviceTrail = useHistory(selectedDevice, setSelectedDevice, (v) => v ?? "");
+  const wsTrail = useHistory(openWs, setOpenWs, (v) => (v ? `${v.device}:${v.path}` : ""));
+  const moreTrail = useHistory(morePage, setMorePage, (v) => v ?? "");
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
   // there has ever been, eighteen seconds for the first pass on the
@@ -1287,20 +1304,12 @@ export default function App() {
       // that measures the gap at its head (第 58 条) and this attribute
       // right below it (第 59 条).
       data-rail
-      // 「窗口的可拖动部分是顶部空白区域、侧边栏空白区域」 — the user,
-      // 第八轮 第 59 条. With the title bar gone there is no band left
-      // to drag the window by, so the blank of the rail becomes one.
-      //
-      // **The attribute is on this element and nothing inherits it.**
-      // Tauri drags when the element *carrying* the attribute is the
-      // one pressed, so every glyph, tooltip trigger and menu in here
-      // keeps its press — which is the whole reason the drag can be
-      // declared this broadly instead of on a hand-cut strip.
-      //
-      // Inert on the web face and on the two platforms that kept their
-      // system title bar: nothing there reads the attribute, so the
-      // rail behaves exactly as it did.
-      data-tauri-drag-region="deep"
+      // **L1, one of the window's three handles** (「窗口的可拖动部分是
+      // 顶部空白区域、侧边栏空白区域」 — the user, 第八轮 第 59 条),
+      // marked once by the shell (`components/shell.ts`): the rail's
+      // blank moves the window, and every glyph and menu in here keeps
+      // its press by tauri's own rule. Inert on the web face.
+      {...WINDOW_DRAG}
       className={cn(
         "flex items-center select-none",
         // Two gaps, one per face. The column rail holds its items a
@@ -1675,7 +1684,7 @@ export default function App() {
       }
     >
       <>
-        {stale && <div className="p-4 text-sm text-muted-foreground">{gui.backend_unreachable}</div>}
+        {stale && <div className="p-4 text-callout text-muted-foreground">{gui.backend_unreachable}</div>}
         {sessions ? (
           <SessionsList
             rows={rows}
@@ -1744,6 +1753,15 @@ export default function App() {
   // now — the whole mesh, which is what that pane is about — so the space
   // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
+  /** R0's name on a 详情 page (docs/SHELL.md 第十五轮 第 5 条): the picked
+      thing where something is picked, the landing where nothing is.
+      **Said once** — the board under it does not say it again. */
+  const pageTitle =
+    landing === "devices" && openDevice
+      ? openDevice.shown
+      : landing === "workspaces" && openWs
+        ? openWs.path.split("/").filter(Boolean).pop() || openWs.machine
+        : paneName;
   // (Both browsing landings' starting points moved in with the shell,
   // which reads the device table itself — `BrowseLanding`.)
   const detail = sessions ? (
@@ -2169,14 +2187,21 @@ export default function App() {
   // put away — since a box in a rail's width is a slit; ⌘K still widens
   // over it. The narrow face always has the row: there the list is the
   // screen and its head has nowhere else to be.
+  //
+  // **L0 is one of the window's three handles**, marked here by the
+  // shell once (`components/shell.ts`, 第十五轮 第 3 条) — on the row's
+  // container, so whatever a landing seats in it (its search box, its
+  // 「+」) keeps its press and the blank around them moves the window.
   const sideHead = (
-    <SideHead
-      narrow={narrow}
-      bare={!narrow && (morePage !== null || listPane.collapsed)}
-      seatRef={seats.setHead}
-      claimed={seats.claimed}
-      onJump={jump}
-    />
+    <div data-side-l0 {...WINDOW_DRAG} className="flex min-w-0 flex-none flex-col">
+      <SideHead
+        narrow={narrow}
+        bare={!narrow && (morePage !== null || listPane.collapsed)}
+        seatRef={seats.setHead}
+        claimed={seats.claimed}
+        onJump={jump}
+      />
+    </div>
   );
 
   // One shell, two width classes: wide is rail|list|detail all at once,
@@ -2269,7 +2294,19 @@ export default function App() {
               `min-w-traffic`: with the list put away the block is the
               rail alone, and macOS's three buttons must still fit in
               its first row. */}
-          <aside data-side className="flex min-w-traffic flex-none flex-col bg-side">
+          {/* **Its width has one owner** (docs/SHELL.md 第十五轮 第 4 条,
+              挂账 2): `--list-w`, set here from the one seam's state, and
+              `app.css` makes the block `--rail-w` + the line + that. The
+              first row, the list and the ground are all this box's
+              width — before, the block was as wide as its widest child,
+              and the search box's own minimum held the ground out past
+              a list dragged narrow. A landing with no list column (a
+              「…」 page) or a list put away is the rail alone. */}
+          <aside
+            data-side
+            className="flex min-w-traffic flex-none flex-col bg-side"
+            style={{ "--list-w": `${morePage !== null || listPane.collapsed ? 0 : listPane.width}px` } as CSSProperties}
+          >
             {sideHead}
             <div className="flex min-h-0 flex-1">
               {rail}
@@ -2277,7 +2314,7 @@ export default function App() {
                   list, from under the first row to the foot — on the
                   seat rather than on the rail, so it stays when the list
                   is put away and the rail keeps its full width. */}
-              <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 border-l" />
+              <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1 border-l" />
             </div>
           </aside>
           {/* **The right side**: the app's ground, a first row at the
@@ -2287,7 +2324,9 @@ export default function App() {
               browsing address bar are rows of their own. */}
           <main data-main className="flex min-w-0 flex-1 flex-col bg-background">
           {morePage ? (
-            <Region>{morePageEl}</Region>
+            <Region kind="detail" title={moreName(morePage)} history={moreTrail}>
+              {morePageEl}
+            </Region>
           ) : quotas ? (
             <QuotaLanding
               narrow={false}
@@ -2340,10 +2379,22 @@ export default function App() {
                   >
                     {detail}
                   </Tabs>
-                ) : landing === "workspaces" && openWs ? (
-                  detail
                 ) : (
-                  <Region>{detail}</Region>
+                  // **Every other page is 详情 (A)** — pick one, see it:
+                  // R0 is `PageHead`, the picked thing's name or, with
+                  // nothing picked, the landing's. The sessions landing
+                  // with no tab open is B's overview and wears the same
+                  // head (D2). An open workspace comes through here too
+                  // now: its three columns are the board's content, and
+                  // R0 over them is the workspace's name (第十七轮 lays
+                  // the columns out as the board's own panes).
+                  <Region
+                    kind={sessions ? "tabs" : "detail"}
+                    title={pageTitle}
+                    history={landing === "devices" ? deviceTrail : landing === "workspaces" ? wsTrail : undefined}
+                  >
+                    {detail}
+                  </Region>
                 )}
               </div>
             </>

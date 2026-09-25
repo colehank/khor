@@ -146,7 +146,7 @@ export function Mark({
       />
     );
   }
-  const look = cn("flex-none font-mono text-xs", markInk(mark));
+  const look = cn("flex-none font-mono text-caption", markInk(mark));
   if (onPress === undefined) {
     return (
       <span data-git-mark={mark} data-git-weight={mark} className={look}>

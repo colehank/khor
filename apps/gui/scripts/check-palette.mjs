@@ -568,8 +568,157 @@ try {
     await wait(300);
   }
 
+
+  // ── the selected row (docs/SHELL.md 第十五轮 第 2 条, D6) ──────────
+  //
+  // 「选中的列表行是实心品牌深绿、白字；窗口不在前台时变灰」. Every piece
+  // of text in a real selected row — its title, its second line, whatever
+  // stands at its right end — is read against the row's own ground, both
+  // themes, with the window in front and behind. **Full value, no
+  // opacity**: white on `#5d7b06` at 0.92 is 4.42, so any fade on the way
+  // down to a letter is itself a red (docs/design-system ListRow).
+  //
+  // Two session rows are routed in for it: this gate has no backend, and
+  // a list with nothing in it has no selected row to measure. The second
+  // one's word is 忙碌, so a state word stands in the row too.
+  {
+    const now = Date.now();
+    const sRow = (n, word) => ({
+      id: `tui/palette-gate-${n}`,
+      kind: "tui",
+      title: `palette-gate-${n}`,
+      word,
+      at_ms: now,
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: false,
+      attachable: false,
+      last: "the second line of a selected row",
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    });
+    await page.route("**/sessions", (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify([sRow(0, "busy"), sRow(1, "idle")]) }),
+    );
+    // **Motion off**: 忙碌 breathes (its opacity walks while the machine
+    // works), and a breath is motion, not a fade that ranks one line
+    // under another — which is what 「no opacity」 is about. With the
+    // desktop asking for less motion it holds still at full value.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload({ waitUntil: "load" });
+    await wait(1200);
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await wait(200);
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await wait(400);
+    const opener = page.locator("[data-list] [data-row-open]").first();
+    if ((await opener.count()) === 0) throw new Error("probe dead: the routed session rows drew no [data-row-open] — no selected row to measure");
+    await opener.click();
+    await wait(500);
+    const read = () =>
+      page.evaluate(() => {
+        const row = document.querySelector('[data-side-row][data-selected="true"]');
+        if (!row) return null;
+        const bgOf = (el) => {
+          const out = [];
+          for (let e = el; e; e = e.parentElement) {
+            const c = getComputedStyle(e).backgroundColor;
+            if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") out.push(c);
+          }
+          return out;
+        };
+        const texts = [...row.querySelectorAll("*")]
+          .filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== ""))
+          .filter((el) => el.getBoundingClientRect().width > 0)
+          .map((el) => {
+            let fade = 1;
+            for (let e = el; e && e !== row.parentElement; e = e.parentElement) fade *= Number(getComputedStyle(e).opacity);
+            return { text: el.textContent.trim().slice(0, 24), color: getComputedStyle(el).color, fade };
+          });
+        return { grounds: bgOf(row), texts, key: document.documentElement.getAttribute("data-window-key") };
+      });
+
+    /** One reading of the selected row, judged. */
+    const judgeRow = (scheme, state, how, got, base) => {
+      if (!got) {
+        fail(`${scheme} · ${state}: no [data-side-row][data-selected=true] on screen — nothing to measure`);
+        return;
+      }
+      // The row's ground as painted: every layer from the outside in,
+      // over the page's own ground.
+      let ground = rgb(base);
+      for (const c of [...got.grounds].reverse()) ground = flatten(parse(c), ground);
+      const worst = got.texts.map((t) => ({ ...t, ratio: contrast(flatten(parse(t.color), ground), ground) }));
+      const low = worst.filter((t) => t.ratio < TEXT_FLOOR);
+      const faded = worst.filter((t) => t.fade < 1);
+      console.log(
+        `${scheme} · selected row · ${state} (${how}): ground ${ground.map((v) => Math.round(v)).join(",")}, ` +
+          worst.map((t) => `${JSON.stringify(t.text)} ${say(t.ratio)}`).join(", "),
+      );
+      if (worst.length < 2) fail(`${scheme} · ${state}: the selected row shows ${worst.length} piece(s) of text — a title and a second line were routed in`);
+      for (const t of low) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} reads ${say(t.ratio)} on its row, under ${TEXT_FLOOR}`);
+      for (const t of faded) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} is faded to ${t.fade} — every line on a selected row is full-value on-brand, no opacity`);
+      if (state === "front") {
+        const strong = got.grounds[0];
+        if (!got.grounds.length || !strongOf[scheme] || !same(strong, strongOf[scheme])) {
+          fail(`${scheme}: the selected row in front is ${strong ?? "unpainted"}, not --brand-strong ${strongOf[scheme]} (D6)`);
+        }
+      } else if (got.grounds.length && strongOf[scheme] && same(got.grounds[0], strongOf[scheme])) {
+        fail(`${scheme}: the selected row is still --brand-strong with the window behind — macOS greys it (D6)`);
+      }
+    };
+    const strongOf = {};
+    for (const scheme of ["light", "dark"]) {
+      await flipTheme(page, scheme);
+      await wait(200);
+      strongOf[scheme] = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--brand-strong").trim());
+      if (!strongOf[scheme]) fail(`${scheme}: --brand-strong does not resolve — the selected row has no solid to be (src/styles/tokens.css)`);
+    }
+    for (const scheme of ["light", "dark"]) {
+      await flipTheme(page, scheme);
+      await wait(400);
+      const base = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim());
+      for (const state of ["front", "behind"]) {
+        // **Behind, by the road the app itself takes**: the page loses
+        // focus to another tab of the same browser, and `lib/window-key.ts`
+        // hears the `blur`. If this Chrome does not deliver it, the stamp
+        // is set by hand and the line says so.
+        let how = "blur";
+        if (state === "behind") {
+          const other = await browser.newPage();
+          await other.bringToFront();
+          await wait(300);
+          const key = await page.evaluate(() => document.documentElement.getAttribute("data-window-key"));
+          if (key !== "false") {
+            how = "stamped (this Chrome delivered no blur)";
+            await page.evaluate(() => document.documentElement.setAttribute("data-window-key", "false"));
+          }
+          await wait(300);
+          const got = await read();
+          await other.close();
+          await page.bringToFront();
+          await page.evaluate(() => document.documentElement.setAttribute("data-window-key", "true"));
+          await wait(300);
+          judgeRow(scheme, state, how, got, base);
+        } else {
+          await page.evaluate(() => document.documentElement.setAttribute("data-window-key", "true"));
+          await wait(300);
+          judgeRow(scheme, state, "in front", await read(), base);
+        }
+      }
+    }
+  }
+
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
-  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, and a row reads on the left block's ground");
+  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, a row reads on the left block's ground, and a selected row reads in front and behind");
 } catch (e) {
   fail(String(e));
 } finally {

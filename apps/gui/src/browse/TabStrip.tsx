@@ -286,16 +286,6 @@ export function TabStrip({
   return (
     <div
       data-tab-bar
-      // **The stretch of the strip with no tab on it moves the window** (第八轮
-      // 第 59 条:「窗口的可拖动部分是顶部空白区域、侧边栏空白区域」).
-      // The band is the top row of a browsing landing and of a workspace's
-      // file column, so it is that landing's 顶部空白.
-      //
-      // Said twice, here and on the scroller inside, because the blank
-      // after the last tab belongs to the scroller and tauri drags only
-      // from the element it is written on. Tabs, the "+" and the head
-      // are children of one or the other and keep every press.
-      data-tauri-drag-region="deep"
       // **The band is the app's ground and the open tab is the board's
       // colour** (docs/SHELL.md 第十三轮 第 5 条: the band wears nothing
       // of its own since the board under it floats on `--background`,
@@ -384,8 +374,6 @@ export function TabStrip({
       <div
         ref={strip}
         data-tab-strip
-        // The blank after the last tab (第八轮 第 59 条) — see the band.
-        data-tauri-drag-region="deep"
         className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto"
       >
         {faces.map((f) => {
@@ -482,8 +470,8 @@ export function TabStrip({
                     kind={f.rename.kind}
                     id={f.rename.id}
                     title={f.label}
-                    className="min-w-0 flex-1 text-sm"
-                    inputClassName="w-full text-sm"
+                    className="min-w-0 flex-1 text-callout"
+                    inputClassName="w-full text-callout"
                     nested
                     // The hook the width gate measures, kept on the box
                     // that clips rather than on a wrapper around it
@@ -502,7 +490,7 @@ export function TabStrip({
                   <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
                     <span
                       data-tab-name
-                      className={cn("flex min-w-0 text-sm leading-tight", f.preview && "italic")}
+                      className={cn("flex min-w-0 text-callout leading-tight", f.preview && "italic")}
                     >
                       <MidName text={f.label} />
                     </span>
@@ -513,7 +501,7 @@ export function TabStrip({
                         name's text would push it past the name. */}
                     <span
                       data-tab-sub
-                      className="truncate text-xs leading-tight text-muted-foreground"
+                      className="truncate text-caption leading-tight text-muted-foreground"
                     >
                       {f.sub}
                     </span>
@@ -522,7 +510,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 text-sm", f.preview && "italic")}
+                    className={cn("flex min-w-0 flex-1 text-callout", f.preview && "italic")}
                   >
                     <MidName text={f.label} />
                   </span>
@@ -559,7 +547,7 @@ export function TabStrip({
                 // **The ×'s own cell** (docs/SHELL.md 第十三轮 第 6 条, the
                 // user's VS Code screenshot:「标签页的 x 按钮不要覆盖在
                 // 文字上, 就是标签页的一块」). Every tab is a face, a
-                // name and this cell — `--ctl-sm` wide, the tab's whole
+                // name and this cell — `--tab-close` wide, the tab's whole
                 // height, **always there**: the name is a flex item
                 // before it and truncates in front of it, so it can never
                 // run under the ×. That is the arrangement the cell
@@ -589,7 +577,7 @@ export function TabStrip({
                 // is the ruling's, and a finger has the switcher's close
                 // at the floor.
                 className={cn(
-                  "flex h-full w-ctl-sm flex-none items-center justify-center rounded-sm text-muted-foreground outline-none",
+                  "flex h-full w-tab-close flex-none items-center justify-center rounded-sm text-muted-foreground outline-none",
                   "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
                   !on &&
                     !f.dirty &&
@@ -687,7 +675,7 @@ export function TabCount({ n, onPress, open = false }: { n: number; onPress: () 
       // felt every time.
       className="min-h-touch min-w-touch flex-none"
     >
-      <span className="rounded-sm border px-1 text-xs tabular-nums">{n}</span>
+      <span className="rounded-sm border px-1 text-caption tabular-nums">{n}</span>
     </Button>
   );
 }
@@ -775,7 +763,7 @@ export function TabSwitcher({
                     has to find it in whichever seat the tabs are in —
                     `check-tabs` was looking only at the strip's and read
                     the column as a landing with no titles at all. */}
-                <span data-tab-label data-tab-name className="truncate text-sm font-label">
+                <span data-tab-label data-tab-name className="truncate text-callout font-label">
                   {f.label}
                 </span>
                 {/* The whole path under the name: on a phone the strip
@@ -783,7 +771,7 @@ export function TabSwitcher({
                     to carry it. Truncated from the tail — a slashed
                     path read right to left is not a path. */}
                 {f.path && (
-                  <span className="truncate text-xs text-muted-foreground">{f.path}</span>
+                  <span className="truncate text-caption text-muted-foreground">{f.path}</span>
                 )}
               </span>
             </button>

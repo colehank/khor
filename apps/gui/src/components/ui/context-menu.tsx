@@ -55,7 +55,7 @@ function ContextMenuItem({
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
       className={cn(
-        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-callout outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       {...props}
@@ -74,7 +74,7 @@ function ContextMenuLabel({
       // a sentence rather than a heading: no weight of its own (a heading
       // is what stock uses it for), and it wraps — a warning truncated to
       // one line is a warning nobody reads.
-      className={cn("px-2 py-1.5 text-sm whitespace-normal", className)}
+      className={cn("px-2 py-1.5 text-callout whitespace-normal", className)}
       {...props}
     />
   );

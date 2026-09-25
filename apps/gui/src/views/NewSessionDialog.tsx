@@ -363,7 +363,7 @@ export function NewSessionDialog({
               a button that cannot be pressed says so more plainly
               than a refusal after the fact. */}
           {machines.length > 1 && (
-            <div data-new-session-machines className="flex min-w-0 flex-col gap-1 text-sm">
+            <div data-new-session-machines className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.new_session_machine}</span>
               <div className="flex flex-wrap gap-1">
                 {machines.map((d) => (
@@ -395,7 +395,7 @@ export function NewSessionDialog({
               it, and the ones a kind does not ask are absent rather
               than greyed — a greyed field is a question still being
               asked, and a line has no name and no directory. */}
-          <div data-new-session-kinds className="flex min-w-0 flex-col gap-1 text-sm">
+          <div data-new-session-kinds className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.new_session_kind}</span>
             <div className="flex flex-wrap gap-1">
               {(
@@ -437,7 +437,7 @@ export function NewSessionDialog({
               on one screen (the catalog refuses the spelling; this
               refuses the layout). `div`, not `label`: nothing here is
               a field. */}
-          <div data-new-session-agents className="flex flex-col gap-1 text-sm">
+          <div data-new-session-agents className="flex flex-col gap-1 text-callout">
             <div className="flex flex-wrap gap-1">
               {/* Vendor names are proper nouns with no catalog entry
                   (words.ts's rule), and a registered agent wears the
@@ -474,12 +474,12 @@ export function NewSessionDialog({
             {browsing && (
               <div data-new-session-registry className="flex min-w-0 flex-col gap-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-xs">{gui.new_session_registry}</span>
+                  <span className="text-caption">{gui.new_session_registry}</span>
                   {/* **When it was taken, on screen.** A pinned table
                       with no date reads as「现在有这些」, which is a
                       claim khor cannot make about a file from one day. */}
                   {taken && (
-                    <span data-registry-taken className="text-xs text-muted-foreground">
+                    <span data-registry-taken className="text-caption text-muted-foreground">
                       {gui.new_session_registry_taken(taken[0], taken[1])}
                     </span>
                   )}
@@ -504,7 +504,7 @@ export function NewSessionDialog({
                         key={k.id}
                         data-registry-row={k.id}
                         data-registry-startable={k.argv !== null}
-                        className="flex min-w-0 flex-col text-xs"
+                        className="flex min-w-0 flex-col text-caption"
                       >
                         <div className="flex min-w-0 items-baseline gap-2">
                           <span className="min-w-0 flex-1 truncate">{k.id}</span>
@@ -566,7 +566,7 @@ export function NewSessionDialog({
               // The open position is otherwise invisible to anyone who
               // never opens a terminal: two buttons look like the whole
               // world, and a third is the one thing they cannot guess.
-              <span data-new-session-more-agents className="text-xs text-muted-foreground">
+              <span data-new-session-more-agents className="text-caption text-muted-foreground">
                 {gui.new_session_more_agents}
               </span>
             )}
@@ -603,7 +603,7 @@ export function NewSessionDialog({
           )}
           {kind !== "tell" && (
             <>
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.new_session_name}</span>
             <Input
               data-new-session-name
@@ -617,7 +617,7 @@ export function NewSessionDialog({
               a control, and every click on a place would also be a
               click on the field. */}
           <div className="flex min-w-0 flex-col gap-1">
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.new_session_dir}</span>
               {/* **The box, and a way to go and look** (工作区批②).
                   Three roads to one field now — typing, 常去的地方
@@ -665,7 +665,7 @@ export function NewSessionDialog({
                 over no rows is a promise of something missing. */}
             {places.length > 0 && (
               <div data-new-session-places className="flex min-w-0 flex-col gap-1">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-caption text-muted-foreground">
                   {gui.new_session_places}
                 </span>
                 <div className="flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto">
@@ -699,7 +699,7 @@ export function NewSessionDialog({
                         // absolute.
                         onClick={() => setDir(p.path)}
                         className={cn(
-                          "flex w-full min-w-0 items-baseline gap-2 rounded px-1 text-left text-xs hover:bg-accent",
+                          "flex w-full min-w-0 items-baseline gap-2 rounded px-1 text-left text-caption hover:bg-accent",
                           dir === p.path && "bg-accent",
                         )}
                       >
@@ -720,7 +720,7 @@ export function NewSessionDialog({
             </>
           )}
           {error && (
-            <p data-new-session-error className="text-sm text-destructive">
+            <p data-new-session-error className="text-callout text-destructive">
               {error}
             </p>
           )}

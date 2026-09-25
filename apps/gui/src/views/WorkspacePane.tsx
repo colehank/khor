@@ -1424,13 +1424,9 @@ export function WorkspacePane({
           and a project gets none. */}
       {root === "" && (
         <div
-          // The browsing face's own top row: its blank moves the window
-          // (第八轮 第 59 条). The crumbs are buttons and keep their
-          // presses — they are children of this box, not this box.
-          data-tauri-drag-region="deep"
           className="flex items-center gap-2 border-b px-3 py-2"
         >
-          <span className="shrink-0 truncate text-fact font-title text-foreground">
+          <span className="shrink-0 truncate text-body font-title text-foreground">
             {machine}
           </span>
           <PathCrumbs at={at} onGo={setAt} onEdit={() => setAt(at)} />
@@ -1496,10 +1492,6 @@ export function WorkspacePane({
             head={
             <div
               data-tree-head
-              // The tree column's top row, so its blank moves the window
-              // (第八轮 第 59 条). Same shape as `PaneBar`'s: the box and
-              // the two switches are children and keep their presses.
-              data-tauri-drag-region="deep"
               // **A pane's head height, not `--ctl-md`.** The ruling
               // wrote 「高 --ctl-md」 and the search box inside is the
               // finger's floor itself (44), so a 30-tall row would have
@@ -1926,7 +1918,7 @@ export function WorkspacePane({
             <>
               <div
                 data-code-consent
-                className="max-w-prose text-fact whitespace-pre-line text-foreground"
+                className="max-w-prose text-body whitespace-pre-line text-foreground"
               >
                 {gui.code_consent}
               </div>
@@ -1946,7 +1938,7 @@ export function WorkspacePane({
               </DialogFooter>
             </>
           ) : (
-            <div data-code-refused className="text-fact text-muted-foreground">
+            <div data-code-refused className="text-body text-muted-foreground">
               {codeError}
             </div>
           )}
@@ -2041,12 +2033,12 @@ function Hits({
       {error !== null && (
         // The machine's own sentence, at the size of something meant to
         // be read — `FileTree`'s rule for a branch that refused.
-        <div data-hits-refused className="p-4 text-fact">
+        <div data-hits-refused className="p-4 text-body">
           {error}
         </div>
       )}
       {found !== null && found.names.length === 0 && found.lines.length === 0 && (
-        <div data-hits-none className="p-4 text-sm text-muted-foreground">
+        <div data-hits-none className="p-4 text-callout text-muted-foreground">
           {gui.search_none}
         </div>
       )}
@@ -2056,7 +2048,7 @@ function Hits({
           type="button"
           data-hit-name={path}
           onClick={() => onOpen(path, null)}
-          className="flex min-h-[var(--tree-row)] w-full items-center gap-2 px-3 text-left text-sm hover:bg-muted/50"
+          className="flex min-h-[var(--tree-row)] w-full items-center gap-2 px-3 text-left text-callout hover:bg-muted/50"
         >
           <FileKindIcon name={basename(path)} className="size-[var(--tree-slot)] flex-none" />
           <span className="min-w-0 flex-1 truncate">{marked(short(path), query)}</span>
@@ -2073,16 +2065,16 @@ function Hits({
           {/* 「显示 `path:line` 与那一行文字」 — where it is above what
               it says, because the second line is what a person reads to
               decide and the first is what they read to place it. */}
-          <span data-hit-where className="truncate text-xs text-muted-foreground">
+          <span data-hit-where className="truncate text-caption text-muted-foreground">
             {short(hit.path)}:{hit.line}
           </span>
-          <span data-hit-text className="truncate font-mono text-xs">
+          <span data-hit-text className="truncate font-mono text-caption">
             {marked(hit.text.trim(), query)}
           </span>
         </button>
       ))}
       {found?.more === true && (
-        <div data-hits-more className="px-3 py-2 text-xs text-muted-foreground">
+        <div data-hits-more className="px-3 py-2 text-caption text-muted-foreground">
           {cli.search_more}
         </div>
       )}

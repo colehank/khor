@@ -373,7 +373,7 @@ export function FileTree({
       write={write}
       open
       onClose={() => setNaming(null)}
-      inputClassName="w-full text-sm"
+      inputClassName="w-full text-callout"
       className="min-w-0 flex-1"
     />
   );
@@ -410,13 +410,13 @@ export function FileTree({
           // own sentence, at the size of something meant to be read
           // (`FilesPane` says the rest). A project khor cannot list is
           // not a project with no files in it.
-          <div data-cannot-reach className="p-4 text-fact">
+          <div data-cannot-reach className="p-4 text-body">
             {rootError}
           </div>
         ) : (
           <>
             {listings.has(root) && rows.length === 0 && (
-              <div data-empty className="p-4 text-sm text-muted-foreground">
+              <div data-empty className="p-4 text-callout text-muted-foreground">
                 {gui.empty_dir}
               </div>
             )}
@@ -426,7 +426,7 @@ export function FileTree({
               <div
                 data-new-name={naming.kind}
                 style={indent(0)}
-                className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm"
+                className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout"
               >
                 {nameBox(made(root, naming.kind), "")}
               </div>
@@ -444,7 +444,7 @@ export function FileTree({
                     key={`${r.full} new`}
                     data-new-name={naming.kind}
                     style={indent(r.depth + 1)}
-                    className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm"
+                    className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout"
                   >
                     {nameBox(
                       made(r.full, naming.kind === "dir" ? "dir" : "file"),
@@ -461,7 +461,7 @@ export function FileTree({
                   // arrangement both panes arrived at from opposite
                   // sides (`FilesPane`'s two rows).
                   className={cn(
-                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm hover:bg-muted/50",
+                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -538,7 +538,7 @@ export function FileTree({
                   // it. The weight stays: two marks of one state cost
                   // nothing and the row is legible without colour.
                   className={cn(
-                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-sm",
+                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout",
                     open === r.full ? "bg-accent" : "hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
@@ -599,7 +599,7 @@ export function FileTree({
                     <span
                       data-took={took.state}
                       className={cn(
-                        "max-w-[50%] truncate text-xs",
+                        "max-w-[50%] truncate text-caption",
                         took.state === "failed" ? "text-state-failed" : "text-muted-foreground",
                       )}
                     >
@@ -638,7 +638,7 @@ export function FileTree({
                 <div
                   key={dir}
                   data-branch-refused={dir}
-                  className="px-4 py-2 text-xs text-muted-foreground"
+                  className="px-4 py-2 text-caption text-muted-foreground"
                 >
                   {why}
                 </div>
@@ -677,7 +677,7 @@ export function FileTree({
                 short look exactly the same. */}
             {[...listings].map(([dir, l]) =>
               l.truncated ? (
-                <div key={dir} className="p-4 text-xs text-muted-foreground">
+                <div key={dir} className="p-4 text-caption text-muted-foreground">
                   {cli.dir_truncated(l.entries.length)}
                 </div>
               ) : null,

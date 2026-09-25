@@ -98,8 +98,12 @@
   /* Ink, not the brand green — see the green doctrine at the top of this
      file. White on this measures 17.47; white on the green it replaces
      measured 2.45, which was the whole reason. */
-  --primary: #1a1a14;
-  --primary-foreground: #ffffff;
+  /* **The main action is the brand again** (docs/design-system/guidelines/40-migration.md, 第十五轮). It went to ink
+   * because the green of the day (#93b04d) carried white at 2.45; the
+   * solid form `--brand-strong` carries it at 4.88, so the post can go
+   * back to olive. The rule it serves is unchanged — one per dialog. */
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--on-brand);
   --secondary: rgba(26, 26, 20, 0.06);
   --secondary-foreground: rgba(26, 26, 20, 0.78);
   --muted: rgba(26, 26, 20, 0.06);
@@ -138,10 +142,22 @@
   /* No code palette of its own since 2026-09-15: the sheet and the
      rendered turns paint with Shiki in GitHub's two themes, and every
      token carries its own colour (`styles/app.css`). */
-  --accent: rgba(143, 179, 30, 0.16);
+  /* `--brand-wash` is the design system's name for this; `--accent`
+   * stays as the name shadcn's components read. */
+  --brand-wash: rgba(143, 179, 30, 0.16);
+  --accent: var(--brand-wash);
+  /* The third ink (docs/design-system README 「三层墨」): times, counts,
+   * key hints, group headers — **never something a person must read**;
+   * it is macOS's tertiaryLabelColor and sits under 4.5 on purpose
+   * (2.79 on `--side` light, 3.67 dark). */
+  --tertiary: rgba(26, 26, 20, 0.45);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
-  --destructive-foreground: #ffffff;
+  /* **What stands on a solid is named for the solid** (`on-*`, 第十五轮):
+   * a white written into a component is wrong the day the dark theme
+   * puts dark ink there. */
+  --on-destructive: #ffffff;
+  --destructive-foreground: var(--on-destructive);
   --border: rgba(26, 26, 20, 0.1);
   --input: rgba(26, 26, 20, 0.1);
   /* The focus ring, ink for the same reason and to the same reading.
@@ -158,8 +174,11 @@
    * ring drawn tight against that button measured 1.00 — invisible on
    * precisely the control that matters most, dark theme included. The
    * gap that fixes that is on the button (`ui/button.tsx`), not here. */
-  --ring: #1a1a14;
-  --radius: 10px;
+  /* 第十五轮 (docs/design-system/guidelines/40-migration.md, 第十五轮): the ring is `--brand-strong` — 4.75 on the card
+   * light, 7.98 dark, over the 3.0 a graphic needs. It still sits a gap
+   * off the primary button it now matches (`ui/button.tsx`), which is
+   * what the paragraph above is about. */
+  --ring: var(--brand-strong);
 
   /* ── the liquid family — the brand's greens ─────────
    *
@@ -185,6 +204,45 @@
   --lq1: #d4e77d;
   --lq2: #b9d75e;
   --lq3: #8fb31e;
+
+  /* ── the brand, solid, and what is written on it (第十五轮, D6) ──
+   *
+   * **The one place the brand is a fill**: where macOS paints its accent
+   * colour — the selected list row while the window is in front, a
+   * switch that is on, the one primary button in a dialog. Everywhere
+   * else the green stays a wash (`--accent`) or an ink (`--rail-on-ink`).
+   *
+   * **The owner's own value, and the draft's arithmetic agrees with
+   * it.** The frozen draft (docs/handoff/design/2026-09-25-draft.md) had
+   * `#5d7b00`, derived from `--lq3`: the same hue, the chroma step the
+   * family took on 2026-09-25, lightness brought down to 0.54 until
+   * white on it passes. The lead then set `#5d7b06` — the solid
+   * selected row in the owner's own mock — and it is the same colour
+   * to the eye: OKLCH L 0.540 / C 0.133 / h 125.0 against the draft's
+   * 0.540 / 0.135 / 124.8, **white on it 4.88** (the draft's 4.89),
+   * over the 4.5 text needs, which `lq3` itself (2.45) never could.
+   * `check-palette` measures a real selected row on it, both themes,
+   * in front and not.
+   *
+   * `--fill` / `--fill-strong` are the two neutral grounds a control or
+   * a row lies on (`--secondary` is `--fill` under shadcn's name); the
+   * strong one is the selected row's ground **while the window is not
+   * in front** — macOS greys a selection the moment the window loses
+   * key, and so does this (`lib/window-key.ts`, `app.css`). */
+  --brand-strong: #5d7b06;
+  --on-brand: #ffffff;
+  /* The hue itself (= `--lq3`), named for the post it holds in the
+   * design system: a source of hue, never a text colour. */
+  --brand: var(--lq3);
+  /* Ink on a `--brand-wash`: 8.98 over the wash on `--side`. */
+  --brand-ink: #2f3b0d;
+  /* ── depth: one shadow for what floats, one for a switch's knob ──
+   * (docs/design-system README 「间距、形状、材质」). The board and the
+   * settings groups are never shadowed — they are card on canvas. */
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.28);
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --fill: rgba(26, 26, 20, 0.06);
+  --fill-strong: rgba(26, 26, 20, 0.1);
 
   /* ── the six words (mandala's doctrine) ─────────────
    * **The four that call you sit a lightness apart from the two that do
@@ -495,7 +553,8 @@
   --day-unwatched: color-mix(in srgb, var(--foreground) 25%, transparent);
 
   --badge: #b23a2e;
-  --badge-foreground: #ffffff;
+  --on-badge: #ffffff;
+  --badge-foreground: var(--on-badge);
 
   /* ── the hairline around a face ───────────────────────
    * The avatar palettes are tuned for dark editors, so they contrast
@@ -674,10 +733,24 @@
      the number was argued once and the dark theme needs its own. */
   --scroll-thumb-strong: rgba(26, 26, 20, 0.5);
 
-  /* ── control heights: three, no fourth ────────────── */
-  --ctl-sm: 24px;
-  --ctl-md: 30px;
-  --ctl-lg: 40px;
+  /* ── control heights: three, no fourth ──────────────
+   * macOS's own (docs/design-system/guidelines/40-migration.md, 第十五轮): 22 a mini push button or a pop-up in a dense
+   * row, 28 a push button, a search field, a pop-up button, 32 a
+   * dialog's buttons. They were 24 / 30 / 40; the 40 was a finger's
+   * height worn by a pointer, and the finger's floor is `--touch`'s job
+   * (the coarse-pointer block at the foot of this file) — the look is
+   * the pointer's.
+   *
+   * ⚠️ 墓碑: for one draft of this round these lived beside the old
+   * three as `--control-sm/md/lg`. Two names for one question is the
+   * thing the design system was written to end; `ctl-*` is its name. */
+  --ctl-sm: 22px;
+  --ctl-md: 28px;
+  --ctl-lg: 32px;
+  /* A list or settings row: one line (32) or title over subtitle (48)
+   * (`components/ListRow`). */
+  --row-1: 32px;
+  --row-2: 48px;
 
   /* ── touch floor ─────────────────────────────────────
    * The smallest hit area a finger can trust: 44 — Apple HIG's minimum
@@ -712,7 +785,17 @@
    * It is not a fourth `--ctl-*`: those are the *look* of a control
    * beside text. This is the height of a region's first row. */
   --tab-lip: 4px;
-  --pane-head: calc(var(--touch) + var(--tab-lip));
+  /* **Written as 48, not summed** (docs/design-system/guidelines/40-migration.md, 第十五轮): the value is the same, but
+   * it is a design decision about the window's first rows, not a
+   * by-product of two other numbers — retuning the finger's floor must
+   * not move the window's head. `--tab-lip` is still the band a tab
+   * stands on, and `src-tauri/src/traffic.rs` carries this 48 too
+   * (`check-boot` holds them together). */
+  --pane-head: 48px;
+  /* A tab's close cell (`components/Tab`): always this wide, the name
+   * truncates before it. It was `--ctl-sm` until the control heights
+   * went to macOS's 22 — a cell is not a control's look. */
+  --tab-close: 24px;
   /* The two switches at the head of the file tree (docs/SHELL.md 第 7
    * 条:「搜索框旁边有这些按钮… 可以小一点来支持显示」). **Smaller than
    * the finger floor on purpose, and only where there is no finger** —
@@ -803,7 +886,10 @@
      beside 12.5px text with air (`--tree-slot`, whose ink is ~17 of the
      28). A coarse pointer puts the floor back below. */
   --tree-row: 28px;
-  --gap-group: 18px; /* between groups that must not read as one list */
+  --gap-xxs: 4px;    /* the grid's step itself */
+  --gap-base: 16px;  /* between paragraphs, between sections of one page */
+  /* 20, not 18 (第十五轮): the one spacing that was off the 4-grid. */
+  --gap-group: 20px; /* between groups that must not read as one list */
   --gap-pane: 24px;  /* a region's own breathing room, against its edge */
 
   /* ── layout ───────────────────────────────────────── */
@@ -1285,7 +1371,20 @@
    * this sits in the middle of it. It moved because the rail glyph
    * moved: leaving it at 28 would have made it *equal* to a landing,
    * which is the one thing the paragraph above says it must not be. */
-  --icon-mark: 30px;
+  /* ⚠️ 墓碑: this was 30, the app mark at the rail's head, which is gone
+   * (nothing reads the token). The design system spends the name on the
+   * inline mark's canvas (docs/design-system/guidelines/40-migration.md, 第十五轮). */
+  --icon-mark: 16px;
+  /* The rest of the size family the design system names
+   * (docs/design-system/tokens.json `size`): a switch (32×18, 第十七轮
+   * draws it), the day's band under a tab (4), a dialog's width (380),
+   * and the one breakpoint (760 — `hooks/use-narrow.ts` holds the same
+   * number for `matchMedia`, which cannot read a custom property). */
+  --switch-w: 32px;
+  --switch-h: 18px;
+  --day-strip: 4px;
+  --dialog-w: 380px;
+  --narrow: 760px;
   /* The session row's corner mark: a frame holding a glyph, sat on the
    * bottom-right of the machine's face. The glyph is a step under the
    * frame, not full-bleed — a glyph filling a rounded frame reads as
@@ -1434,8 +1533,8 @@
   /* Paper, the mirror of light's ink: an ink button cannot be seen on a
      dark ground, so this is the one thing in the palette whose two
      themes are opposites rather than shades. Measures 16.46. */
-  --primary: #eeeee7;
-  --primary-foreground: #0f0f0e;
+  --primary: var(--brand-strong);
+  --primary-foreground: var(--on-brand);
   --secondary: rgba(244, 244, 239, 0.07);
   --secondary-foreground: rgba(238, 238, 231, 0.72);
   --muted: rgba(244, 244, 239, 0.07);
@@ -1460,17 +1559,31 @@
      measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
      has, which is where a dark page starts to glare. */
   --read-ink: rgba(238, 238, 231, 0.86);
-  --accent: rgba(180, 210, 87, 0.14);
+  --brand-wash: rgba(180, 210, 87, 0.14);
+  --accent: var(--brand-wash);
+  --tertiary: rgba(238, 238, 231, 0.42);
   --accent-foreground: rgba(238, 238, 231, 0.96);
   --destructive: #d4756b;
-  --destructive-foreground: #1a1a14;
+  --on-destructive: #1a1a14;
+  --destructive-foreground: var(--on-destructive);
   --border: rgba(238, 238, 231, 0.08);
   --input: rgba(238, 238, 231, 0.08);
-  --ring: #eeeee7;
+  --ring: var(--brand-strong);
 
   --lq1: #f2f7c0;
   --lq2: #dbeb93;
   --lq3: #b4d257;
+  /* The dark half of the solid brand: `--lq3`'s hue and chroma step at
+   * L 0.74, with the dark ink on it rather than white — 8.29, where
+   * white would be 2.4 (the light block says why this pair exists). */
+  --brand-strong: #99bb36;
+  --on-brand: #151513;
+  --brand: var(--lq3);
+  --brand-ink: #dbeb93;
+  --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fill: rgba(244, 244, 239, 0.07);
+  --fill-strong: rgba(244, 244, 239, 0.12);
 
   /* ── the same separation as light, arrived at from the other side ──
    * The light theme pushed the four that call you *down* in lightness
@@ -1562,7 +1675,8 @@
   --model-tail: #6d6d69;
 
   --badge: #d4756b;
-  --badge-foreground: #1a1a14;
+  --on-badge: #1a1a14;
+  --badge-foreground: var(--on-badge);
 
   --avatar-edge: rgba(238, 238, 231, 0.22);
 
@@ -1584,6 +1698,27 @@
   /* Lower than the light theme's .5 for the same reason .22 is lower
      than .25: the same alpha reads louder against near-black. */
   --scroll-thumb-strong: rgba(238, 238, 231, 0.45);
+}
+
+@theme static {
+  /* ── six named radii (docs/design-system/guidelines/40-migration.md, 第十五轮) ──
+   * 4 a key hint · 6 a button, a search field · 8 a row's selection, a
+   * tab's top corners · 10 a settings group, a dialog, a menu · 12 the
+   * board · full a switch, an avatar. **Written, not derived**: it was
+   * one base (`--radius` 10) and `calc` steps off it, so 「what does a
+   * button use」 had no answer but arithmetic, and the board (`lg`, 10)
+   * was not the 12 it is. Nothing is square but a hairline.
+   *
+   * **`@theme static`, not the `inline` block**: these names are both
+   * Tailwind's (`rounded-xl`) and the variables a gate or a stylesheet
+   * reads (`var(--radius-xl)`), and `static` is what emits them on the
+   * root whether or not a utility uses them. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
 }
 
 @theme inline {
@@ -1626,22 +1761,34 @@
   --color-avatar-edge: var(--avatar-edge);
   --color-rail-ink: var(--rail-ink);
   --color-side: var(--side);
+  --color-brand-strong: var(--brand-strong);
+  --color-on-brand: var(--on-brand);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-wash: var(--brand-wash);
+  --color-on-destructive: var(--on-destructive);
+  --color-on-badge: var(--on-badge);
+  --color-tertiary: var(--tertiary);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
 
   /* named sizes → utilities (h-ctl-md, w-rail, size-avatar…) */
   --spacing-ctl-sm: var(--ctl-sm);
   --spacing-ctl-md: var(--ctl-md);
   --spacing-ctl-lg: var(--ctl-lg);
+  --spacing-tab-close: var(--tab-close);
+  --spacing-dialog: var(--dialog-w);
+  --spacing-xxs: var(--gap-xxs);
+  --spacing-base: var(--gap-base);
+  --spacing-row-1: var(--row-1);
+  --spacing-row-2: var(--row-2);
   --spacing-touch: var(--touch);
   --spacing-rail: var(--rail-w);
   --spacing-traffic: var(--traffic);
   --spacing-side-inset: var(--side-inset);
   --spacing-rail-item: var(--rail-item);
   --spacing-list: var(--list-w);
+  --spacing-list-min: var(--list-w-min);
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);
   --spacing-tab-min: var(--tab-w-min);
@@ -1677,24 +1824,66 @@
   --spacing-pane: var(--gap-pane);
   --spacing-tree-step: var(--tree-step);
 
-  /* mandala-adjacent type scale, each size with its one line-height:
-   * a size that floats between leadings is two sizes wearing one name.
-   * ~1.45 through the middle, tighter at the ends — small lines are
-   * annotations that hug their fact, the hero is a number that is
-   * mostly shape. */
-  --text-xs: 11px;
-  --text-xs--line-height: 16px;
-  --text-sm: 12.5px;
-  --text-sm--line-height: 18px;
-  --text-base: 14px;
-  --text-base--line-height: 20px;
-  --text-lg: 17px;
-  --text-lg--line-height: 24px;
-  /* The one display size: a number big enough to be read as a shape
-   * (a quota arc's centre, a spend figure). Not a heading scale — text
-   * has nothing to say at this size. */
-  --text-hero: 26px;
-  --text-hero--line-height: 32px;
+  /* ── the type scale: macOS's text styles, by what a line is ─────
+   * (docs/SHELL.md 第十五轮 第 1 条, docs/DESIGN.md 第五节; the sizes are
+   * the frozen draft's, which this block supersedes.)
+   *
+   * **Named for what a line is, never for how big it is.** The scale
+   * this replaces had two sets side by side — `xs/sm/base/lg` said how
+   * big, `title/fact/aux` said what kind of line — and a screen picked
+   * from either by feel, so the same row title was `text-sm` in one
+   * list and `text-fact` in the next. One set now, the names macOS's own
+   * text styles use, and a component says which kind of line it is:
+   *
+   *   title-lg  22  an empty state's headline — rare
+   *   title-md  17  a dialog's title, a section title inside a page
+   *   title-sm  15  R0's page name (`PageHead`)
+   *   headline  13  a row title that must stand out — 600
+   *   body      13  everything, by default (D1: 14 → 13, macOS's size)
+   *   callout   12  a row's second line, a setting's one-line note
+   *   caption   11  meta: a time, a count, a key hint
+   *   group     11  a group's header in a list or in settings — 600
+   *
+   * `read` (16, below) stays: reading is where size buys comfort, and
+   * D1 moved the chrome, not the conversation. **Fourteen styles and no
+   * fifteenth** (docs/design-system/tokens.json `type`): these eight,
+   * `read` and a document's three heading rungs, `mono` and `term`.
+   * `check-boot` compares every one with that file; `check-type` refuses
+   * a size outside them.
+   *
+   * **Every leading is a whole pixel**, the draft's ratio rounded
+   * (1.38 × 13 = 17.9 → 18, 1.35 × 12 = 16.2 → 16, 1.3 × 11 → 14…):
+   * WebKit snaps some boxes' rows to whole pixels and leaves others
+   * alone, and a fractional leading is a caret walking off its letter
+   * (`--text-code`'s tombstone, `check-wk`). */
+  --text-title-lg: 22px;
+  --text-title-lg--line-height: 28px;
+  --text-title-lg--font-weight: 700;
+  --text-title-md: 17px;
+  --text-title-md--line-height: 22px;
+  --text-title-md--font-weight: 600;
+  --text-title-sm: 15px;
+  --text-title-sm--line-height: 20px;
+  --text-title-sm--font-weight: 600;
+  --text-headline: 13px;
+  --text-headline--line-height: 18px;
+  --text-headline--font-weight: 600;
+  --text-body: 13px;
+  --text-body--line-height: 18px;
+  --text-body--font-weight: 400;
+  --text-callout: 12px;
+  --text-callout--line-height: 16px;
+  --text-callout--font-weight: 400;
+  --text-caption: 11px;
+  --text-caption--line-height: 14px;
+  --text-caption--font-weight: 400;
+  --text-group: 11px;
+  --text-group--line-height: 14px;
+  --text-group--font-weight: 600;
+  /* ⚠️ 墓碑 (第十五轮): `--text-hero` 26/32 stood here — 「the one display
+   * size, a number big enough to be read as a shape」 (a quota arc's
+   * centre, a spend figure). The design system has fourteen styles and
+   * no display size; those numbers wear `title-lg` (22) now. */
 
   /* ── the reading size, and its code ──────────────────
    * **A conversation is not a dashboard, and the scale above is a
@@ -1769,8 +1958,18 @@
    * above 1.5. The prose rhythm loses 0.4px a row to it. */
   --text-read: 16px;
   --text-read--line-height: 24px;
-  --text-code: 14.4px;
-  --text-code--line-height: 22px;
+  --text-read--font-weight: 400;
+  /* **`mono`, 13, since 第十五轮** (docs/design-system/tokens.json: code,
+   * paths, ids). The paragraphs above are the history of `--text-code`
+   * — 14.4 transcribed off a reference conversation's inline code — and
+   * the design system set the one monospace size to macOS's 13 instead.
+   * The leading keeps the rule that made it 22: **a whole number of
+   * pixels** (WebKit snaps a textarea's rows and not a pre's; `check-wk`
+   * lays the pair out and goes red on a fraction), so 13 × 1.5 = 19.5 is
+   * written 20. */
+  --text-mono: 13px;
+  --text-mono--line-height: 20px;
+  --text-mono--font-weight: 400;
 
   /* ── ink weights ─────────────────────────────────────
    * Three pressures of the same pen, named for what a line *does* —
@@ -1804,35 +2003,21 @@
    * twice with one name, and `check-type.mjs` holds the two equal. */
   --time-yield: 2s;
 
-  /* ── three tiers, named for what a line *is* ──────────
-   * The sizes above answer "how big"; these answer "what kind of line
-   * is this", which is the question a component actually has when it is
-   * being laid out. Same three numbers, no new ones — the point is not
-   * a new scale, it is that a screen stops choosing sizes by feel.
-   *
-   *   title — what this thing is called. One per block, and the thing
-   *           a reader's eye should land on first.
-   *   fact  — the value the block exists to report: a reading, a state
-   *           word, a count. What you came to read.
-   *   aux   — everything that qualifies the fact and must never compete
-   *           with it: ids, ages, denominators, hints.
-   *
-   * **What this blocks: a fact that has to be hunted for.** Every one
-   * of these lines is `text-sm text-muted-foreground` today if whoever
-   * wrote it was thinking about density, and once the fact and the
-   * thing qualifying it are the same size and the same colour, the
-   * block has no reading order left — you find the number by knowing
-   * where it usually is.
-   *
-   * **A vocabulary, not a sweep.** The raw sizes stay, and a surface
-   * moves over when it is being reworked anyway; a pass over every
-   * `text-sm` in the app would put one lane's reflow into everybody
-   * else's hunks for a reading nobody asked for. */
-/* ── a document's own ladder (工作区批6) ─────────────────────────
+  /* ⚠️ 墓碑 (第十五轮, 2026-09-25): `--text-title` 17 / `--text-fact` 14 /
+   * `--text-aux` 12.5 stood here — 「three tiers, named for what a line
+   * is」, a vocabulary laid beside the raw `xs/sm/base/lg` scale rather
+   * than instead of it (「a vocabulary, not a sweep」). Two sets is what
+   * let a screen keep choosing by feel. The sweep happened: title →
+   * `title-md`, fact → `body`, aux → `callout`, and the raw four went
+   * the same way (xs → caption, sm → callout, base → body, lg →
+   * title-md). What that block was guarding — a fact that has to be
+   * hunted for — is still the reason a row's second line is `callout`
+   * in `--muted-foreground` and its title is not. */
+  /* ── a document's own ladder (工作区批6) ─────────────────────────
    *
    * **The one surface in this app where somebody else chose the
    * structure.** Everything khor draws has one title and one body, so
-   * `--text-title` at 17 over `--text-read` at 16 is all the step the
+   * `--text-title-md` at 17 over `--text-read` at 16 is all the step the
    * chrome ever needs. A Word file or a README arrives with three or
    * four levels of heading already in it, and a ladder that fine would
    * render them as four sizes nobody can tell apart.
@@ -1845,11 +2030,14 @@
    * Read against `--text-read`, not against each other: 1.4×, 1.2×,
    * 1.06× of 16. */
   --text-doc-h1: 22.4px;
+  --text-doc-h1--line-height: 29px;
+  --text-doc-h1--font-weight: 600;
   --text-doc-h2: 19.2px;
+  --text-doc-h2--line-height: 25px;
+  --text-doc-h2--font-weight: 600;
   --text-doc-h3: 17px;
-  --text-title: 17px;
-  --text-fact: 14px;
-  --text-aux: 12.5px;
+  --text-doc-h3--line-height: 23px;
+  --text-doc-h3--font-weight: 600;
 
   --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 
@@ -1877,6 +2065,7 @@
   --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   --text-term: 14px;
   --text-term--line-height: 20px;
+  --text-term--font-weight: 400;
   /* How much of its own ink a faint (SGR 2) run keeps, the rest being
    * its ground. iTerm's "dimming amount" sits near the middle; a share
    * this side of it keeps a dim hint legible on both grounds while
@@ -1892,7 +2081,8 @@
     background: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
-    font-size: var(--text-base);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
     -webkit-font-smoothing: antialiased;
   }
   /* ── the shell is nailed down ─────────────────────────────────

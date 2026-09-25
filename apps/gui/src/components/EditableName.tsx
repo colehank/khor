@@ -279,7 +279,7 @@ export function EditableName({
         // Under the box and not in front of it: a person who has just
         // typed a name is looking at the box, and a dialog would take
         // the name away to tell them about it.
-        <span data-rename-failed className="min-w-0 text-sm text-state-failed">
+        <span data-rename-failed className="min-w-0 text-callout text-state-failed">
           {refused}
         </span>
       )}

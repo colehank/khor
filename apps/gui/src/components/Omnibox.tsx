@@ -68,7 +68,7 @@ export function OmniChip({
       // only push the box that holds it further past what the tallest
       // thing in it needs. The chip is a token either way — what
       // changed is that it is a token you can hit.
-      className="flex flex-none items-center gap-1 rounded-sm bg-secondary pr-0.5 pl-1.5 text-sm"
+      className="flex flex-none items-center gap-1 rounded-sm bg-secondary pr-0.5 pl-1.5 text-callout"
     >
       {candidate.face !== undefined && candidate.face !== null && (
         <MachineAvatar face={candidate.face} className="size-kind-mark" />
@@ -316,7 +316,7 @@ export function Omnibox({
           // `--touch`). The strip above sheds its padding in exchange,
           // which is why the bar this rides in grows by four and not by
           // fourteen.
-          className="min-h-touch min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground md:text-sm"
+          className="min-h-touch min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted-foreground md:text-callout"
           onFocus={() => setOpen(true)}
           // **Focus is not the only way in, and Escape is why.** Escape
           // with a menu up puts the menu away and leaves the caret where

@@ -301,7 +301,7 @@ export function BrowseLanding({
         ),
       },
       title: (
-        <span data-tab-label data-tab-name className="block truncate text-sm font-label">
+        <span data-tab-label data-tab-name className="block truncate text-callout font-label">
           {t.title || bare || label}
         </span>
       ),
@@ -539,9 +539,15 @@ export function BrowseLanding({
       >
         {tabList}
       </ListPane>
-      {/* The address bar is this landing's first row on the right, and
-          the page is the board under it. */}
-      <Region head={tabs.ready ? <div className="flex min-w-0 flex-1 flex-col">{address()}</div> : undefined}>
+      {/* **文档 (C)** (docs/DESIGN.md 第五节, D7): the row in the column
+          *is* the tab, so there is no strip — R0 is the address bar and
+          the page is the board under it. Until the tabs have been read
+          there is no address to show, and R0 says the landing's name. */}
+      <Region
+        kind="doc"
+        title={kind.words.segment}
+        head={tabs.ready ? <div className="flex min-w-0 flex-1 flex-col">{address()}</div> : undefined}
+      >
         <div className="h-full min-h-0 overflow-hidden">{body}</div>
       </Region>
     </section>

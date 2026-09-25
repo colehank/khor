@@ -361,11 +361,11 @@ function MachineNodeCard({
               this machine, and the face is how it is recognised
               (docs/UX.md 两端对齐的是事实: 同一台机器同一张脸). */}
           <MachineAvatar face={row.face} className="size-avatar flex-none" />
-          <span data-node-card-name className="min-w-0 truncate text-fact">
+          <span data-node-card-name className="min-w-0 truncate text-body">
             {row.name}
           </span>
           {connectionWord(row) && (
-            <span data-node-card-connection className="flex-none text-aux text-muted-foreground">
+            <span data-node-card-connection className="flex-none text-callout text-muted-foreground">
               {connectionWord(row)}
             </span>
           )}
@@ -379,14 +379,14 @@ function MachineNodeCard({
               <Ring fraction={t.fraction} color={t.color}>
                 {t.fraction === null ? null : `${Math.round(t.fraction * 100)}%`}
               </Ring>
-              <span className="text-aux text-muted-foreground">{trackName(t.id)}</span>
+              <span className="text-callout text-muted-foreground">{trackName(t.id)}</span>
             </span>
           ))}
         </div>
       ) : (
         // Never reached is not a reading of zero, and empty tracks would
         // say khor asked and got zeros (docs/SESSION.md 离线).
-        <div data-node-card-never className="pt-in text-aux text-muted-foreground">
+        <div data-node-card-never className="pt-in text-callout text-muted-foreground">
           {cli.vitals_never}
         </div>
       )}
@@ -395,7 +395,7 @@ function MachineNodeCard({
           and the list's own empty word already says it in one line. */}
       <div data-node-card-sessions className="mt-in border-t pt-in">
         {rows.length === 0 ? (
-          <div data-count-none className="text-aux text-muted-foreground">
+          <div data-count-none className="text-callout text-muted-foreground">
             {gui.empty_sessions}
           </div>
         ) : (
@@ -437,7 +437,7 @@ function MachineNodeCard({
       {/* Only once it is worth saying, the seat's own rule (`ageIfOld`):
           a reading taken a moment ago saying 「0 秒前」 reads as a fault. */}
       {aged !== null && (
-        <div data-node-card-age className="pt-in text-aux text-muted-foreground">
+        <div data-node-card-age className="pt-in text-callout text-muted-foreground">
           {cli.vitals_taken(aged)}
         </div>
       )}
@@ -490,13 +490,13 @@ function MachineNodeCard({
           {/* The whole cost in one clause, and **the same clause the row
               menu's confirm uses** — it is one act, so it is one
               sentence (`forget-machine-confirm`). */}
-          <span className="min-w-0 flex-1 text-aux text-muted-foreground">
+          <span className="min-w-0 flex-1 text-callout text-muted-foreground">
             {gui.forget_machine_confirm}
           </span>
         </div>
       )}
       {forgetError && (
-        <div data-node-card-forget-refused className="pt-in text-aux text-destructive">
+        <div data-node-card-forget-refused className="pt-in text-callout text-destructive">
           {forgetError}
         </div>
       )}
@@ -548,10 +548,10 @@ function Count({
 }) {
   const body = (
     <>
-      <span className="text-title tabular-nums" style={tone ? { color: tone } : undefined}>
+      <span className="text-title-md tabular-nums" style={tone ? { color: tone } : undefined}>
         {n}
       </span>
-      <span className="text-aux text-muted-foreground">{word}</span>
+      <span className="text-callout text-muted-foreground">{word}</span>
     </>
   );
   const shell = "flex min-h-touch min-w-touch flex-col items-center justify-center rounded-md px-2";

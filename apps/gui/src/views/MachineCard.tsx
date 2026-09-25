@@ -262,14 +262,14 @@ function Head({
             kind="machine"
             id={row.id}
             title={row.shown}
-            className="min-w-0 text-title font-title"
-            inputClassName="min-w-0 text-title font-title"
+            className="min-w-0 text-title-md font-title"
+            inputClassName="min-w-0 text-title-md font-title"
           />
           {/* The first twelve characters — a prefix to recognise, and
               pressing it puts all sixty-four on the clipboard. */}
           <CopyId id={row.id} face="id" />
         </div>
-        <div className="flex flex-wrap items-center gap-row text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-row text-callout text-muted-foreground">
           {/* Which road this machine is being reached over
               (`khor_core::Hop`), the same reading `khor devices`
               prints, from the same call. Not a liveness signal — it
@@ -312,7 +312,7 @@ function Head({
           of the identity. */}
       <div className="flex flex-col items-end gap-in">
         {v && (
-          <div className="flex flex-wrap justify-end gap-row text-sm text-muted-foreground">
+          <div className="flex flex-wrap justify-end gap-row text-callout text-muted-foreground">
             {/* The version is one of `khor devices`' sentences and keeps
                 its unit; the freshness is the age sentence for a machine
                 reached over the wire (its own unit, counted with the
@@ -481,7 +481,7 @@ function Hooks({
           the catalog entry carries the rest of that judgment, including
           the tombstone for the second line that used to sit here. */}
       {!on && (
-        <div data-hooks-buy className="text-sm text-muted-foreground">
+        <div data-hooks-buy className="text-callout text-muted-foreground">
           {gui.hooks_buy_you}
         </div>
       )}
@@ -574,7 +574,7 @@ function Readings({
   if (!row.vitals) {
     return (
       <Panel>
-        <div data-vitals-never className="text-sm text-muted-foreground">
+        <div data-vitals-never className="text-callout text-muted-foreground">
           {cli.vitals_never}
         </div>
       </Panel>
@@ -622,14 +622,14 @@ function Readings({
   const cpuPeak = day ? peak(day.buckets) : null;
   const memPeak = day ? peak(day.mem) : null;
   const left = (fill: { used: number; total: number }) => cli.fill_left(bytes(Math.max(0, fill.total - fill.used)));
-  //   `--gap-group`, and ⚠️ **this mirror is deliberately not gated,
-  //   because nothing drawn depends on it**: the gap a reader sees is
-  //   applied by the `gap-group` class, and this number only decides
-  //   *where* the four-to-two breakpoint falls. If the token moved to
-  //   20, that breakpoint would shift by a few pixels and every dial
-  //   would still be drawn correctly — which is the opposite of the
-  //   mirrored constants this repo makes gates for.
-  const GAP_GROUP = 18;
+  //   `--gap-group`, **read off the page, not mirrored**. ⚠️ 墓碑: this
+  //   was a literal 18 with a note that nothing drawn depended on it —
+  //   and the shrink below does: `room` is the row less the gaps, so
+  //   when the token moved to 20 (第十五轮) the two dials at 390 and 360
+  //   came out 2px too wide and hung off the row's edge, which is what
+  //   `check-face` (「the row's edges read … -2.0 on the right」) said.
+  const GAP_GROUP =
+    Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-group")) || 20;
   //   **How many dials fit on a line, and how big each one is** —
   //   2026-09-09, the user:「机器的环,要铺平宽度,现在左右空太多。窄屏
   //   不允许一行只有一个环。我们一共四个,窄屏就一行两个」.
@@ -1043,13 +1043,13 @@ function Drawers({
         // it had neither, so the drawer's heading sat 13px below the
         // reading words — two things that have to be the same line
         // (`[data-ring-slot]`, and the assertion that caught it).
-        className="flex h-full flex-col text-sm tabular-nums"
+        className="flex h-full flex-col text-callout tabular-nums"
       >
         {heads[open] && (
           <div
             data-drawer-head
             data-drawer-kind={heads[open].kind}
-            className="mb-in flex items-center gap-in text-aux text-muted-foreground"
+            className="mb-in flex items-center gap-in text-callout text-muted-foreground"
           >
             <Glyph fraction={heads[open].fraction} strain={heads[open].strain} />
             <span>{heads[open].word}</span>
@@ -1280,7 +1280,7 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
   if (paths.length === 0 && !editable) return null;
   return (
     <>
-      <div data-watch-head hidden={!open} className="mt-row mb-in text-aux text-muted-foreground">
+      <div data-watch-head hidden={!open} className="mt-row mb-in text-callout text-muted-foreground">
         {gui.watch_dirs}
       </div>
       <div data-parts="watch" hidden={!open}>
@@ -1347,7 +1347,7 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
               <span data-part-num className="min-h-touch justify-end gap-in text-right text-muted-foreground">
                 {number && <span>{number}</span>}
                 {pending && (
-                  <span data-watch-unsaved className="text-aux">
+                  <span data-watch-unsaved className="text-callout">
                     {gui.watch_unsaved}
                   </span>
                 )}
@@ -1390,7 +1390,7 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
           data-watch-editor
           data-dirty={dirty}
           hidden={!open}
-          className="sticky bottom-0 mt-in flex flex-col gap-in bg-card pt-in text-sm"
+          className="sticky bottom-0 mt-in flex flex-col gap-in bg-card pt-in text-callout"
         >
           <div className="flex min-w-0 items-center gap-in">
             <Input
@@ -1416,7 +1416,7 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
             </Button>
           </div>
           {failed !== null && (
-            <div data-watch-error className="text-sm text-destructive">
+            <div data-watch-error className="text-callout text-destructive">
               {failed}
             </div>
           )}
@@ -1931,9 +1931,9 @@ function Top({
         data-top-cols={shown.join(" ")}
         data-top-frs={shown.map((k) => `${k}:${COLS[k].fr}`).join(" ")}
         style={{ gridTemplateColumns: tracks }}
-        className="text-sm tabular-nums"
+        className="text-callout tabular-nums"
       >
-        <div data-top-heads className="bg-card text-aux text-muted-foreground">
+        <div data-top-heads className="bg-card text-callout text-muted-foreground">
           {/* **The order the user named** (2026-09-05:「PID · 状态 ·
               USER · 时长 · CPU时间 · CPU · GPU · 内存 · 显存 · 读写 ·
               命令」): the pid you type next, then what the process *is*,
@@ -1972,7 +1972,7 @@ function Top({
           ))}
         </div>
         {why ? (
-          <div data-load-why className="py-row text-sm text-muted-foreground" style={{ gridColumn: `span ${cells}` }}>
+          <div data-load-why className="py-row text-callout text-muted-foreground" style={{ gridColumn: `span ${cells}` }}>
             {why}
           </div>
         ) : (
@@ -2654,7 +2654,7 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           })}
         </svg>
       </div>
-      <div className="flex flex-wrap items-baseline justify-between gap-row text-aux text-muted-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-row text-callout text-muted-foreground">
         <span className="flex flex-wrap items-baseline gap-in">
           {/* **Not optional.** See the head: a picture that quietly
               dropped two thirds of its rows draws the same as an idle
@@ -3475,14 +3475,14 @@ function Dial({
               terminal. Read aloud, not drawn. */}
           <span data-metric-face="back" className="sr-only">
             {lines.map((line, i) => (
-              <span key={i} className="text-sm tabular-nums">
+              <span key={i} className="text-callout tabular-nums">
                 {line}
               </span>
             ))}
             <span
               data-vitals-detail={name}
               data-strain={strain ?? undefined}
-              className="text-aux tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
+              className="text-callout tabular-nums text-muted-foreground data-[strain]:text-strain data-[strain=critical]:font-label"
             >
               {sentence}
             </span>
@@ -3501,7 +3501,7 @@ function Dial({
           four sides. The word and not the arc, because the arc is a
           reading and a reading may not be dimmed to mean something
           about the interface. */}
-      <span data-dial-word data-on={open ? "true" : "false"} className={cn("text-sm", open && "font-title text-foreground")}>
+      <span data-dial-word data-on={open ? "true" : "false"} className={cn("text-callout", open && "font-title text-foreground")}>
         {word}
       </span>
     </div>

@@ -408,9 +408,9 @@ export function UsageHalf({
       // ever grows something to press, that ruling has to be looked at
       // again.**
       <div data-usage-half data-usage-mute data-usage-source={source} className="flex flex-col gap-row">
-        <p data-usage-title className="text-aux font-title text-muted-foreground">{gui.usage_title}</p>
+        <p data-usage-title className="text-callout font-title text-muted-foreground">{gui.usage_title}</p>
         <Panel>
-          <p className="text-sm text-muted-foreground">{why}</p>
+          <p className="text-callout text-muted-foreground">{why}</p>
         </Panel>
       </div>
     );
@@ -437,7 +437,7 @@ export function UsageHalf({
           says what this one is, and the block above it is **money**
           while this is tokens. Delete this line and the only thing
           separating the two quantities is a horizontal rule. */}
-      <p data-usage-title className="text-aux font-title text-muted-foreground">{gui.usage_title}</p>
+      <p data-usage-title className="text-callout font-title text-muted-foreground">{gui.usage_title}</p>
       {/* **One card, not two flat sections** (`components/Panel`, the
           machine card's own). The two zones are two *parts of one
           subject* — the same models, drawn over days and then listed —
@@ -603,7 +603,7 @@ function Trend({
           readings next to it, so it is one to build deliberately rather
           than to bolt on. **Until then this is written, not tested.** */}
       {days.length === 0 ? (
-        <p data-usage-empty className="flex h-full items-center text-sm text-muted-foreground">
+        <p data-usage-empty className="flex h-full items-center text-callout text-muted-foreground">
           {gui.usage_window_empty}
         </p>
       ) : view === "day" ? (
@@ -816,7 +816,7 @@ function Trend({
           ⚠️ **Tombstone: the sentence 「柱高是当天的输入加输出,柱里的
           分段是各个模型」 was here and is gone** (2026-09-08, the user
           did not want it). Its key went with it — see `zh.toml`. */}
-      <ul data-usage-key className="flex flex-wrap gap-x-3 gap-y-0.5 text-aux text-muted-foreground">
+      <ul data-usage-key className="flex flex-wrap gap-x-3 gap-y-0.5 text-callout text-muted-foreground">
         {/* **A square swatch, with no corner of its own.** It carried
             an arbitrary 2px corner until 2026-09-08, and the type gate
             was red on it for as long (it reads that class as a radius
@@ -1158,7 +1158,7 @@ function Stats({
           machine card's foot says about its halo (`top-plot-halo`).
           The window sits here too: it is a fact about what was drawn,
           not a title over it. */}
-      <div className="flex flex-wrap items-baseline justify-between gap-x-row text-aux text-muted-foreground">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-row text-callout text-muted-foreground">
         {/* ⚠️ **The facts about the window on the left, the sentence
             about the drawing on the right** — the machine card's foot
             reads that way round (`off` first, then what the dot's size
@@ -1200,7 +1200,7 @@ function Stats({
           `SideCut` draws a veil at whichever edge is actually cut, and
           only while it is (用户 2026-09-10 选「丁」: 一个字都不写). */}
       <SideCut>
-        <table className="w-full border-collapse text-aux tabular-nums">
+        <table className="w-full border-collapse text-callout tabular-nums">
           <thead>
             {/* **The rule goes under the row, not under each cell** —
                 the machine card draws it that way, and the difference
@@ -1301,8 +1301,8 @@ function Stats({
           [String(days.length), gui.usage_sum_days],
         ].map(([v, w]) => (
           <div key={w}>
-            <dd className="font-title text-base">{v}</dd>
-            <dt className="text-aux text-muted-foreground">{w}</dt>
+            <dd className="font-title text-body">{v}</dd>
+            <dt className="text-callout text-muted-foreground">{w}</dt>
           </div>
         ))}
       </dl>

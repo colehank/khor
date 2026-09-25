@@ -7,6 +7,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 import { followSystemTheme, mirroredPref, wearTheme } from "./theme";
 import { mirroredLang, speakLang } from "./lang";
+import { followWindowKey } from "./lib/window-key";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -37,6 +38,8 @@ followSystemTheme();
 // (`App.tsx`), and the two agree on every launch but the first after
 // somebody changes it.
 speakLang(mirroredLang());
+
+followWindowKey();
 
 // The keyless screen this file used to paint is the server's job now
 // (记住一次批): the page itself sits behind the key, so a browser with

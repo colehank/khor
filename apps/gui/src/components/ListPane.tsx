@@ -151,9 +151,15 @@ export function ListPane({
           "flex h-full min-h-0 flex-col overflow-hidden",
           onSide || ground === "side" ? "bg-side" : "bg-card",
           !narrow && !away && !onSide && (side === "left" ? "border-r" : "border-l"),
+          // **The sidebar beside the rail takes the block's width, and
+          // sets none of its own** (docs/SHELL.md 第十五轮 第 4 条): the
+          // one number is `--list-w` on the block (`App`, `app.css`),
+          // and a second `style.width` here is how the block and its
+          // list came to disagree (挂账 2).
+          onSide && !narrow && "min-w-0 flex-1",
           className,
         )}
-        style={narrow || pane === null ? undefined : { width: away ? 0 : pane.width }}
+        style={narrow || pane === null || onSide ? undefined : { width: away ? 0 : pane.width }}
       >
         {head}
         {scroll ? (

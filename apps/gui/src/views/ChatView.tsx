@@ -1387,7 +1387,7 @@ export function ChatView({
             do, and because a face that cannot read a field is the
             reason attaching one of them would otherwise need code. */}
         {title && (
-          <div data-chat-title className="pb-1 text-lg font-title text-foreground">
+          <div data-chat-title className="pb-1 text-title-md font-title text-foreground">
             {title}
           </div>
         )}
@@ -1417,7 +1417,7 @@ export function ChatView({
             construction, and「3/7」is a number nobody acts on beside
             the steps themselves. */}
         {plan.length > 0 && (
-          <div data-chat-plan className="pb-1 text-xs">
+          <div data-chat-plan className="pb-1 text-caption">
             <div className="pb-0.5 text-muted-foreground">{gui.chat_plan}</div>
             {plan.map((e, i) => (
               <div
@@ -1432,7 +1432,7 @@ export function ChatView({
           </div>
         )}
         {facts && items.length === 0 && (facts.needsLogin || !facts.replays) && (
-          <div data-chat-facts className="pb-1 text-xs text-muted-foreground">
+          <div data-chat-facts className="pb-1 text-caption text-muted-foreground">
             {facts.needsLogin ? gui.chat_needs_login : gui.chat_no_replay}
           </div>
         )}
@@ -1500,7 +1500,7 @@ export function ChatView({
                   data-tool-kind={item.kind}
                   data-tool-open={more ? (shown ? "yes" : "no") : undefined}
                   data-word={running(item.status) ? "busy" : undefined}
-                  className="font-mono text-code"
+                  className="font-mono text-mono"
                 >
                   {more ? (
                     <button
@@ -1581,7 +1581,7 @@ export function ChatView({
             <div
               key={i}
               data-chat-ask
-              className="flex flex-col gap-1.5 border-l-2 pl-2 text-xs"
+              className="flex flex-col gap-1.5 border-l-2 pl-2 text-caption"
               style={{ borderColor: "var(--state-blocked)" }}
             >
               <span style={{ color: "var(--state-blocked)" }}>
@@ -1623,13 +1623,13 @@ export function ChatView({
               )}
             </div>
           ) : (
-            <div key={i} className="text-xs" style={{ color: "var(--state-errored)" }}>
+            <div key={i} className="text-caption" style={{ color: "var(--state-errored)" }}>
               {item.text}
             </div>
           ),
         )}
         {waiting && (
-          <div data-chat-thinking className="flex items-center gap-1.5 text-xs">
+          <div data-chat-thinking className="flex items-center gap-1.5 text-caption">
             <ToolDot status="in_progress" />
             {turnSince === null ? (
               <span data-chat-busy-for style={{ color: "var(--state-busy)" }}>
@@ -1681,7 +1681,7 @@ export function ChatView({
         // rather than one of them growing a button inside the pane that
         // merely looks at it.
         <div className="flex-none border-t p-2">
-          <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+          <div className="flex items-center gap-2 px-2 py-1.5 text-callout">
             <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
               {gone ? gui.chat_no_record : gui.chat_readonly}
             </span>
@@ -1731,7 +1731,7 @@ export function ChatView({
         {settings && (settings.modes || settings.options.length > 0) && (
           <div
             data-chat-settings
-            className="flex flex-wrap items-center justify-end gap-1 px-2 pb-1 text-xs"
+            className="flex flex-wrap items-center justify-end gap-1 px-2 pb-1 text-caption"
           >
             {settings.modes && (
               <DropdownMenu>
@@ -1762,7 +1762,7 @@ export function ChatView({
                         <span className="flex flex-col">
                           <span>{modeWord(m.id, settings.modes?.availableModes ?? [])}</span>
                           {m.description && (
-                            <span className="text-xs text-muted-foreground">{m.description}</span>
+                            <span className="text-caption text-muted-foreground">{m.description}</span>
                           )}
                         </span>
                       </DropdownMenuRadioItem>
@@ -1823,7 +1823,7 @@ export function ChatView({
                             <span className="flex flex-col">
                               <span>{v.value.name}</span>
                               {v.value.description && (
-                                <span className="text-xs text-muted-foreground">
+                                <span className="text-caption text-muted-foreground">
                                   {v.value.description}
                                 </span>
                               )}
@@ -1845,7 +1845,7 @@ export function ChatView({
           <div
             data-chat-mode
             data-mode-id={mode}
-            className="flex justify-end px-2 pb-1 text-xs"
+            className="flex justify-end px-2 pb-1 text-caption"
             style={{ color: "var(--state-blocked)" }}
           >
             {modeSaid(mode)}
@@ -1856,7 +1856,7 @@ export function ChatView({
             data-chat-usage
             data-usage-used={usage.used}
             data-usage-size={usage.size}
-            className="flex justify-end gap-2 px-2 pb-1 text-xs text-muted-foreground"
+            className="flex justify-end gap-2 px-2 pb-1 text-caption text-muted-foreground"
           >
             <span data-usage-share>
               {gui.chat_context(String(Math.round((usage.used / usage.size) * 100)))}
@@ -1867,7 +1867,7 @@ export function ChatView({
           </div>
         )}
         {gone ? (
-          <div className="px-2 py-1.5 text-sm text-muted-foreground">{gui.chat_over}</div>
+          <div className="px-2 py-1.5 text-callout text-muted-foreground">{gui.chat_over}</div>
         ) : (
           // While a turn runs the send is refused and the way out sits
           // next to it: a turn that never ends used to leave 关闭 the
@@ -1890,7 +1890,7 @@ export function ChatView({
               the clipboard, so this undoes the attaching and not the
               having. */}
           {(shots.length > 0 || docs.length > 0 || shotErr) && (
-            <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-xs">
+            <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
               {shots.map(([, data], i) => (
                 <span
                   key={i}
@@ -1950,7 +1950,7 @@ export function ChatView({
                     data-slash-item={c.name}
                     data-on={n === pick}
                     className={cn(
-                      "flex w-full cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1 text-left text-sm",
+                      "flex w-full cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1 text-left text-callout",
                       n === pick && "bg-accent",
                     )}
                     // The box must not lose focus to the press, or the
@@ -1960,7 +1960,7 @@ export function ChatView({
                   >
                     <span>/{c.name}</span>
                     {c.description && (
-                      <span className="truncate text-xs text-muted-foreground">
+                      <span className="truncate text-caption text-muted-foreground">
                         {c.description}
                       </span>
                     )}
