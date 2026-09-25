@@ -581,7 +581,14 @@ async fn check_vscode() -> (Health, String, Option<String>) {
 
 /// How much room is left on the volume the store sits on.
 async fn check_disk(root: PathBuf) -> (Health, String, Option<String>) {
-    let v = tokio::task::spawn_blocking(move || crate::vitals::sample(&root)).await;
+    // The background sampler's reading (`vitals::local`), waited for if
+    // this is the first ask — the disks are asked by one thread only.
+    let v = tokio::task::spawn_blocking(move || {
+        crate::vitals::local::reading_within(&root, std::time::Duration::from_secs(5))
+            .map(|r| r.vitals)
+            .unwrap_or_else(|| crate::vitals::sample(&root))
+    })
+    .await;
     let Ok(v) = v else {
         return (
             Health::Unmeasured,

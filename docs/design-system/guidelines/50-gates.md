@@ -48,6 +48,7 @@
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run day` | `check-day.mjs`,会话行那条状态条真的上没上屏(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
 | `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
+| `npm run fast` | `check-fast.mjs`,「快」那三行(`30-behavior.md`):bridge 下挂一块 `statfs` 要 10 秒的**假**卷(`BRIDGE_SLOW_VOLUME_MS`,不碰真盘),机器页 1 秒内列出这台机器、1 秒内出带读数的卡片;离开再回来,**第一帧**就有卡片、读数和进程行(自起 vite + bridge + 系统 Chrome) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge`) |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |

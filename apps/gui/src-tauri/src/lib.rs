@@ -2535,6 +2535,10 @@ pub fn run() {
         Ok(face) => eprintln!("khor web face: {}", face.addr),
         Err(e) => eprintln!("{e}"),
     }
+    // This machine's readings, from before the first screen asks for
+    // them (docs/SHELL.md 第十六轮): the machine page reads the
+    // sampler's last round and never waits for a disk.
+    khor_node::vitals::local::start(&Node::root_from_env());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

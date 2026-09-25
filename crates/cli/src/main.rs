@@ -2833,7 +2833,20 @@ fn hop_word(hop: khor_node::Hop, is_me: bool) -> &'static str {
 /// here first because anything the app shows has to be reachable from a
 /// terminal (docs/KHOR.md: CLI equals GUI).
 fn vitals_line(n: &Node, device_id: &str) -> String {
-    let Some((v, age)) = n.vitals_of(device_id) else {
+    // This machine's reading is the background sampler's (docs/SHELL.md
+    // 第十六轮). A verb prints once, so it waits for the first round —
+    // bounded, each volume by its own limit — rather than printing
+    // 「还没问过」 about the machine it is running on. Its age is not
+    // said: the round was taken for this very call, which is the one
+    // case the age sentence below stays quiet for.
+    let me = device_id == n.device_str();
+    let reading = if me {
+        n.local_vitals_within(std::time::Duration::from_secs(5))
+            .map(|r| (r.vitals, 0))
+    } else {
+        n.vitals_of(device_id)
+    };
+    let Some((v, age)) = reading else {
         return cli::vitals_never().to_owned();
     };
     let mut parts = vec![
@@ -2917,7 +2930,12 @@ fn vitals_line(n: &Node, device_id: &str) -> String {
     // carries it. The card draws its rows from the list and lets the
     // answer fill them in, so it drops that path at once — and the two
     // faces are held to one count.
-    if let Some((rows, _)) = n.watched_of(device_id) {
+    let watched = if me {
+        n.local_watched_within(std::time::Duration::from_secs(5))
+    } else {
+        n.watched_of(device_id)
+    };
+    if let Some((rows, _)) = watched {
         let listed = n.watch_of(device_id);
         for r in rows.iter().filter(|r| listed.contains(&r.path)) {
             parts.push(match (&r.volume, r.missing) {

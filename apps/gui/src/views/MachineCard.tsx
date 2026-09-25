@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cli, gui } from "@/gen/catalog";
 import { tickSet } from "@/lib/ruler";
+import { useKept } from "@/lib/kept";
 import { cn } from "@/lib/utils";
 import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
@@ -326,11 +327,16 @@ function Head({
                 count of readings against the terminal still holds. A
                 middle dot between the two, and only when both are there. */}
             {v.vitals.version && <span data-vitals-unit="version">{gui.card_version(v.vitals.version)}</span>}
-            {v.vitals.version && v.age_ms > 0 && <span aria-hidden="true">·</span>}
-            {v.age_ms > 0 ? (
+            {v.vitals.version && !row.me && v.age_ms > 0 && <span aria-hidden="true">·</span>}
+            {/* This machine's reading has an age too since 第十六轮 (the
+                background sampler's last round, seconds old); it keeps
+                the clock of when it was taken rather than an age
+                sentence, which is the face a reading from elsewhere
+                wears. */}
+            {!row.me && v.age_ms > 0 ? (
               <span data-vitals-age>{gui.card_age(ago(Date.now() - v.age_ms))}</span>
             ) : (
-              <span data-updated>{cli.updated_at(clock(Date.now()))}</span>
+              <span data-updated>{cli.updated_at(clock(Date.now() - v.age_ms))}</span>
             )}
           </div>
         )}
@@ -3041,7 +3047,13 @@ function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
  * every five seconds.
  */
 function useLoad(row: DeviceRow | null, sort: Sort) {
-  const [load, setLoad] = useState<Load | null>(null);
+  // **Kept per machine across the card's unmount** (`lib/kept`,
+  // docs/SHELL.md 第十六轮): coming back to the machine page draws the
+  // last answer in the first frame and asks again in place. Before, the
+  // card started at null on every mount and was empty until the ask came
+  // back — every return to the page was a blank card first.
+  const keyOf = row?.id ?? "";
+  const [load, setLoad] = useKept<Load | null>(`machine.load:${keyOf}`, null);
   const [why, setWhy] = useState<string | null>(null);
   // **Whether this machine's khor puts an age on a process — a fact
   // about the far side, kept here rather than read off the rows on
@@ -3073,7 +3085,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   // took it from three to seven: seven `useState`s, seven resets and
   // seven merge lines is seven chances for the reset and the merge to
   // disagree about which columns exist.
-  const [seen, setSeen] = useState<Seen>(SEEN_NONE);
+  const [seen, setSeen] = useKept<Seen>(`machine.seen:${keyOf}`, SEEN_NONE);
   // **Which order the rows on screen are actually in.**
   //
   // Not the same thing as the order somebody just asked for, and the
@@ -3090,7 +3102,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   //
   // So the rows are drawn in the order of the answer that produced
   // them, and this is that order. `null` until the first one lands.
-  const [shown, setShown] = useState<Sort | null>(null);
+  const [shown, setShown] = useKept<Sort | null>(`machine.shown:${keyOf}`, null);
   const id = row?.id ?? null;
   const me = row?.me ?? false;
   const name = row?.name ?? "";
@@ -3101,11 +3113,12 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
   // the same answer. The day did not change; only the order did. So
   // the old answer stays on screen until the new one lands, and the
   // only thing that empties the card is picking a different machine.
+  //
+  // (Since 第十六轮 the three answers are kept per machine, so a new
+  // machine switches to *its* last answer rather than to nothing; only
+  // the refusal is this mount's own.)
   useEffect(() => {
-    setLoad(null);
     setWhy(null);
-    setShown(null);
-    setSeen(SEEN_NONE);
   }, [id]);
   useEffect(() => {
     if (id === null) return;

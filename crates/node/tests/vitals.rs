@@ -154,15 +154,18 @@ async fn a_machine_reports_its_readings_without_stalling_the_link() {
         "the reading should be from this visit, not {age} ms ago"
     );
 
-    // …and beta's own reading is taken now, which is the one place
-    // `age_ms` is zero. This is what tells "sampled for you" apart from
-    // "remembered from a visit" at the far end, so it is asserted rather
-    // than assumed.
-    let (_, mine) = beta
-        .vitals_of(beta.device_str())
-        .expect("this machine can always answer");
-    assert_eq!(
-        mine, 0,
-        "this machine samples on demand, so its reading has no age"
+    // …and beta's own reading is its background sampler's (docs/SHELL.md
+    // 第十六轮): not taken for this call, so it has an age, and that age
+    // is at most a beat or so — a reading from this machine that was
+    // minutes old would be a sampler that stopped.
+    let mine =
+        tokio::task::spawn_blocking(move || beta.local_vitals_within(Duration::from_secs(10)))
+            .await
+            .unwrap()
+            .expect("this machine's sampler answers within ten seconds");
+    assert!(
+        mine.age_ms < 10_000,
+        "this machine's reading is {} ms old — its sampler is not keeping up",
+        mine.age_ms
     );
 }

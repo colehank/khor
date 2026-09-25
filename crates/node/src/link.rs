@@ -272,6 +272,11 @@ impl Node {
         // there is no reactor to stall until there is a serve.
         crate::reactor::watch();
 
+        // This machine's readings, taken in the background from here on
+        // (docs/SHELL.md 第十六轮): a peer's ask, the app's device table
+        // and the CPU day all read what it last wrote down.
+        crate::vitals::local::start(self.root());
+
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
         let node = std::sync::Arc::new(self);
@@ -1555,21 +1560,27 @@ impl Node {
                 if self.devices_loaded()?.doc.get(remote).is_none() {
                     return Err(msg::not_paired().into());
                 }
-                // Taken here, now — the answer is only ever about the
-                // moment the asker gets it (`khor_core::Vitals`).
+                // The background sampler's last round, at most one beat
+                // old (`vitals::local`, docs/SHELL.md 第十六轮) — no
+                // longer taken to answer, because a sleeping disk made
+                // the taking ten seconds long.
                 //
-                // **Off the reactor**, because sampling blocks: measured
-                // at 1.9 s the first time in a process (the disk list
-                // costs 1.2 s once) and ~215 ms after. Called inline it
-                // stalled the QUIC connection this very reply travels on,
-                // and the two real-connection avatar tests timed out at
-                // twenty seconds — the same shape as the ledger's
-                // "serve 里任何会等 DIAL_TIMEOUT 的事不能内联在 select
-                // 循环", arriving through a sleep instead of a dial.
+                // **Off the reactor** all the same: before the first
+                // round this waits for it, and a serve that has not got
+                // one within a few seconds takes one itself — still
+                // bounded, each volume by its own limit. Called inline a
+                // sample stalled the QUIC connection this very reply
+                // travels on, and the two real-connection avatar tests
+                // timed out at twenty seconds (the ledger's "serve 里任何
+                // 会等 DIAL_TIMEOUT 的事不能内联在 select 循环").
                 let root = self.root().to_path_buf();
-                let vitals = tokio::task::spawn_blocking(move || crate::vitals::sample(&root))
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let vitals = tokio::task::spawn_blocking(move || {
+                    crate::vitals::local::reading_within(&root, std::time::Duration::from_secs(3))
+                        .map(|r| r.vitals)
+                        .unwrap_or_else(|| crate::vitals::sample(&root))
+                })
+                .await
+                .map_err(|e| e.to_string())?;
                 Ok(Response::Vitals { vitals })
             }
             Request::Watched => {
@@ -1578,13 +1589,23 @@ impl Node {
                 }
                 // The list is this machine's own row in the table — the
                 // asker wrote it there, and it arrived on the sync round
-                // before this request. Sampled here, now, off the
-                // reactor for the `Vitals` arm's reason (the disk list
-                // blocks).
+                // before this request. Read from the background
+                // sampler, which a new list wakes for a round; off the
+                // reactor for the `Vitals` arm's reason.
                 let paths = self.watch_of(self.device_str());
-                let rows = tokio::task::spawn_blocking(move || crate::vitals::watched(&paths))
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let root = self.root().to_path_buf();
+                let rows = tokio::task::spawn_blocking(move || {
+                    crate::vitals::local::watched_within(
+                        &root,
+                        &paths,
+                        std::time::Duration::from_secs(3),
+                    )
+                    .filter(|(rows, _)| rows.len() == paths.len())
+                    .map(|(rows, _)| rows)
+                    .unwrap_or_else(|| crate::vitals::watched(&paths))
+                })
+                .await
+                .map_err(|e| e.to_string())?;
                 Ok(Response::Watched { rows })
             }
             Request::Usage => {
