@@ -12,9 +12,9 @@
       <path d="M512 144 L880 512 L512 880 L144 512 Z"/>
     </clipPath>
     <linearGradient id="lq" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f2f6cb"/>
-      <stop offset="0.45" stop-color="#dce9a6"/>
-      <stop offset="1" stop-color="#b7cf75"/>
+      <stop offset="0" stop-color="#f2f7c0"/>
+      <stop offset="0.45" stop-color="#dbeb93"/>
+      <stop offset="1" stop-color="#b4d257"/>
     </linearGradient>
     <linearGradient id="bgv2" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#141410"/>
@@ -22,35 +22,35 @@
     </linearGradient>
     <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.05"/>
-      <stop offset="1" stop-color="#eef7cd" stop-opacity="0.02"/>
+      <stop offset="1" stop-color="#edf8c2" stop-opacity="0.02"/>
     </linearGradient>
     <radialGradient id="wash">
-      <stop offset="0" stop-color="#dff0a8" stop-opacity="0.30"/>
-      <stop offset="0.55" stop-color="#c0d97e" stop-opacity="0.09"/>
-      <stop offset="1" stop-color="#c0d97e" stop-opacity="0"/>
+      <stop offset="0" stop-color="#ddf294" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#bddc61" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#bddc61" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="edge" x1="0" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#f4fad8" stop-opacity="0.70"/>
+      <stop offset="0" stop-color="#f4fbcf" stop-opacity="0.70"/>
       <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.10"/>
-      <stop offset="1" stop-color="#c6dd85" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#c3e06a" stop-opacity="0.30"/>
     </linearGradient>
     <linearGradient id="rimD" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fbfdf0" stop-opacity="0.90"/>
+      <stop offset="0" stop-color="#fbfded" stop-opacity="0.90"/>
       <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.14"/>
-      <stop offset="1" stop-color="#e4efb6" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#e3f1a7" stop-opacity="0.50"/>
     </linearGradient>
     <linearGradient id="glassTop" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
       <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
     <radialGradient id="gl">
-      <stop offset="0" stop-color="#dce9a6" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#dce9a6" stop-opacity="0"/>
+      <stop offset="0" stop-color="#dbeb93" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#dbeb93" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="bead" cx="0.5" cy="0.5" r="0.6" fx="0.35" fy="0.3">
-      <stop offset="0" stop-color="#f8fbdd"/>
-      <stop offset="0.5" stop-color="#dde9a7"/>
-      <stop offset="1" stop-color="#9fba55"/>
+      <stop offset="0" stop-color="#f8fcd5"/>
+      <stop offset="0.5" stop-color="#dceb95"/>
+      <stop offset="1" stop-color="#9bbd29"/>
     </radialGradient>
     <filter id="f3" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
     <filter id="f14" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="14"/></filter>
@@ -61,8 +61,8 @@
 
   <!-- L1 底光 -->
   <rect width="1024" height="1024" fill="url(#bgv2)"/>
-  <ellipse cx="340" cy="290" rx="330" ry="260" fill="#dce9a6" opacity="0.14" filter="url(#f48)"/>
-  <ellipse cx="720" cy="790" rx="310" ry="230" fill="#b7cf75" opacity="0.09" filter="url(#f48)"/>
+  <ellipse cx="340" cy="290" rx="330" ry="260" fill="#dbeb93" opacity="0.14" filter="url(#f48)"/>
+  <ellipse cx="720" cy="790" rx="310" ry="230" fill="#b4d257" opacity="0.09" filter="url(#f48)"/>
   <circle cx="512" cy="512" r="400" fill="url(#gl)"/>
 
   <!-- L2 玻璃面 -->
@@ -70,14 +70,14 @@
   <g clip-path="url(#dia)">
     <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="url(#plate)"/>
     <circle cx="512" cy="512" r="330" fill="url(#wash)"/>
-    <ellipse cx="360" cy="330" rx="340" ry="280" fill="#eaf6c2" opacity="0.22" filter="url(#f70)"/>
+    <ellipse cx="360" cy="330" rx="340" ry="280" fill="#e9f8b4" opacity="0.22" filter="url(#f70)"/>
     <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="url(#edge)" stroke-width="20" filter="url(#f3)"/>
   </g>
 
   <!-- L3 玻璃环 -->
   <g filter="url(#f18)" opacity="0.55">
-    <circle cx="512" cy="512" r="172" fill="none" stroke="#dce9a6" stroke-width="22"/>
-    <circle cx="512" cy="512" r="62" fill="#dce9a6"/>
+    <circle cx="512" cy="512" r="172" fill="none" stroke="#dbeb93" stroke-width="22"/>
+    <circle cx="512" cy="512" r="62" fill="#dbeb93"/>
   </g>
   <path d="M512 144 L880 512 L512 880 L144 512 Z" fill="none" stroke="url(#rimD)" stroke-width="7" stroke-linejoin="round"/>
   <circle cx="512" cy="512" r="368" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="32"/>

@@ -26,6 +26,10 @@ export const STROKE = { rail: 1.4, sm: 1.5, bold: 1.9 } as const;
 // The cut shape's width: the cut line is the front form's outline
 // widened to 3, leaving a (3 - 1.4) / 2 = 0.8 gap on each side.
 const CUT = 3;
+// The same idea on the 16 canvas, where the line is 1.5: (2.6 - 1.5) / 2
+// leaves 0.55 either side. Not 3 scaled by 16/24 (= 2.0), because the
+// gap has to read at the size it is drawn, not stay proportional.
+const CUT16 = 2.6;
 
 type IconProps = { className?: string };
 
@@ -227,9 +231,15 @@ export function IconMore({ className }: IconProps) {
 export function IconGear({ className }: IconProps) {
   return (
     <RailGlyph className={className}>
-      <circle cx="12" cy="12" r="8.6" strokeDasharray="1.9 2.85" />
-      <circle cx="12" cy="12" r="6.4" />
-      <circle cx="12" cy="12" r="2.6" />
+      {/* The dash pattern CLOSES. At r 7.7 the circumference is 48.38,
+          so eight teeth are 3.02 on and 3.02 off, turned half a tooth
+          so one sits at twelve o'clock. The previous pattern (1.9 /
+          2.85 on r 8.6) came to 11.4 teeth — the seam where it failed
+          to close is what read as unfinished. The teeth overlap the rim
+          by 0.2 so the two merge into one cog profile. */}
+      <circle cx="12" cy="12" r="7.7" strokeDasharray="3.02 3.02" transform="rotate(-101.24 12 12)" />
+      <circle cx="12" cy="12" r="6.5" />
+      <circle data-body cx="12" cy="12" r="2.8" />
     </RailGlyph>
   );
 }
@@ -238,9 +248,25 @@ export function IconGear({ className }: IconProps) {
     one mark of the three that says「kept out」 rather than「looked at」. */
 export function IconShield({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
-      <path d="M12 3.2 4.6 6.1v5.3c0 4.2 3 7.6 7.4 9.4 4.4-1.8 7.4-5.2 7.4-9.4V6.1Z" />
-      <path d="M12 10.4v3.4" />
+    <RailGlyph
+      className={className}
+      cut={
+        <>
+          <circle cx="12" cy="10.5" r="1.5" fill="black" />
+          <path d="M12 11.4v3.2" stroke="black" strokeWidth="2.1" />
+        </>
+      }
+    >
+      {(cutId) => (
+        // The keyhole is PUNCHED THROUGH the plate, the way the rack's
+        // lamps are. It was a 3.4-long stub floating on an empty
+        // outline, which is the shape of a drawing that stopped early.
+        <path
+          data-body
+          mask={`url(#${cutId})`}
+          d="M12 3.2 4.7 6.0v5.5c0 4.3 2.9 7.8 7.3 9.6 4.4-1.8 7.3-5.3 7.3-9.6V6.0Z"
+        />
+      )}
     </RailGlyph>
   );
 }
@@ -251,24 +277,58 @@ export function IconShield({ className }: IconProps) {
     rail is two places to press to find out which. */
 export function IconNetwork({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
-      <circle cx="12" cy="5.2" r="2.4" />
-      <circle cx="5.4" cy="17.4" r="2.4" />
-      <circle cx="18.6" cy="17.4" r="2.4" />
-      <path d="M10.3 7.1 6.7 15.2" />
-      <path d="M13.7 7.1l3.6 8.1" />
-      <path d="M7.8 17.4h8.4" />
+    <RailGlyph
+      className={className}
+      cut={
+        <>
+          <circle cx="12" cy="5.4" r="2.45" fill="black" stroke="black" strokeWidth={CUT} />
+          <circle cx="5.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={CUT} />
+          <circle cx="18.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={CUT} />
+        </>
+      }
+    >
+      {(cutId) => (
+        <>
+          {/* The edges are drawn WHOLE, centre to centre, and the nodes
+              cut them — so every gap is the family's 0.8 instead of
+              three pairs of endpoints placed by hand. The old ones sat
+              0.5, 0.6 and 1.1 apart, which is what made the joins look
+              untidy without looking obviously wrong. */}
+          <path mask={`url(#${cutId})`} d="M12 5.4 5.5 17.2M12 5.4l6.5 11.8M5.5 17.2h13" />
+          {/* The hub is the solid one: this machine. */}
+          <circle data-body cx="12" cy="5.4" r="2.45" />
+          <circle cx="5.5" cy="17.2" r="2.45" />
+          <circle cx="18.5" cy="17.2" r="2.45" />
+        </>
+      )}
     </RailGlyph>
   );
 }
+
+/** The reading, drawn once: it is both the front form and the shape
+    that cuts the plate behind it, and two copies would drift. */
+const PULSE_TRACE = "M6.6 12.2h2.5l1.9-4.6 2.6 9 1.8-4.4h2.8";
 
 /** 自检 = a pulse across a frame: a list of readings taken, which is what
     the page is. Not a stethoscope — khor checks itself, nobody holds it. */
 export function IconPulse({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
-      <rect x="3.4" y="4.6" width="17.2" height="14.8" rx="2.6" />
-      <path d="M6.6 12h2.8l1.7-3.6 2.4 7.2 1.5-3.6h2.4" />
+    <RailGlyph
+      className={className}
+      cut={<path d={PULSE_TRACE} stroke="black" strokeWidth={CUT} />}
+    >
+      {(cutId) => (
+        <>
+          {/* Same construction as the conversation and the sphere: the
+              reading is the front form and the plate is masked by it,
+              so the trace runs in its own channel rather than being
+              drawn on top of a box. The old swing (−3.6 / +7.2) was too
+              small to read at rail size; this one reaches the plate's
+              own inset. */}
+          <rect data-body mask={`url(#${cutId})`} x="3.4" y="5" width="17.2" height="14" rx="2.8" />
+          <path d={PULSE_TRACE} />
+        </>
+      )}
     </RailGlyph>
   );
 }
@@ -284,8 +344,16 @@ function Mark({
   className,
   weight = "sm",
   icon,
+  cut,
   children,
-}: IconProps & { weight?: "sm" | "bold"; icon?: string; children: ReactNode }) {
+}: IconProps & {
+  weight?: "sm" | "bold";
+  icon?: string;
+  cut?: ReactNode;
+  children: ReactNode | ((cutId: string) => ReactNode);
+}) {
+  const uid = useId().replace(/:/g, "");
+  const cutId = `markcut-${uid}`;
   return (
     <svg
       // Which mark this is, for the few gates that must find one by what
@@ -300,7 +368,13 @@ function Mark({
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      {children}
+      {cut && (
+        <mask id={cutId}>
+          <rect x="0" y="0" width="16" height="16" fill="white" />
+          {cut}
+        </mask>
+      )}
+      {typeof children === "function" ? children(cutId) : children}
     </svg>
   );
 }
@@ -310,11 +384,32 @@ function Mark({
     (docs/SHELL.md 第四轮 第 2 条:「文件夹, 是 git 仓库时换分支」). */
 export function IconBranch({ className }: IconProps) {
   return (
-    <Mark className={className}>
-      <circle cx="4.5" cy="3.5" r="1.6" />
-      <circle cx="4.5" cy="12.5" r="1.6" />
-      <circle cx="11.5" cy="5" r="1.6" />
-      <path d="M4.5 5.1v5.8M11.5 6.6c0 3-4.8 2.5-6.7 4.4" />
+    <Mark
+      className={className}
+      cut={
+        <>
+          <circle cx="4.6" cy="3.4" r="1.55" fill="black" stroke="black" strokeWidth={CUT16} />
+          <circle cx="4.6" cy="12.6" r="1.55" fill="black" stroke="black" strokeWidth={CUT16} />
+          <circle cx="11.4" cy="4.8" r="1.55" fill="black" stroke="black" strokeWidth={CUT16} />
+        </>
+      }
+    >
+      {(cutId) => (
+        <>
+          {/* Trunk and side road are drawn whole and the commits cut
+              them. The old side road never actually met the trunk — it
+              stopped 1.9 short and pointed at it, which is the one thing
+              a merge may not do. */}
+          <path
+            mask={`url(#${cutId})`}
+            d="M4.6 3.4v9.2M11.4 4.8v2.8a3.1 3.1 0 0 1-3.1 3.1H4.6"
+          />
+          <circle cx="4.6" cy="3.4" r="1.55" />
+          <circle cx="4.6" cy="12.6" r="1.55" />
+          {/* The branch head is the solid commit. */}
+          <circle data-body cx="11.4" cy="4.8" r="1.55" />
+        </>
+      )}
     </Mark>
   );
 }
@@ -343,8 +438,12 @@ export function IconForward({ className }: IconProps) {
 export function IconReload({ className }: IconProps) {
   return (
     <Mark className={className}>
-      <path d="M13 8a5 5 0 1 1-1.5-3.6" />
-      <path d="M13 2.6V5h-2.4" />
+      {/* 306° of ring, and a head that is a real arrowhead. The old one
+          made its head from two strokes meeting at a right angle, which
+          at 16px reads as a corner, not as a point. The arc stops under
+          the triangle so its round cap has nowhere to show. */}
+      <path d="M11.15 4.25A4.9 4.9 0 1 1 6.82 3.25" />
+      <path d="M8.48 2.61 6.87 4.9 5.77 1.9Z" fill="currentColor" stroke="none" />
     </Mark>
   );
 }
@@ -370,11 +469,28 @@ export function IconPlus({ className }: IconProps) {
     what separates it from `IconMore` (three dots, "there is more"). */
 export function IconFilter({ className }: IconProps) {
   return (
-    <Mark className={className}>
-      <path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11" />
-      <circle cx="5.5" cy="4.5" r="1.7" fill="currentColor" />
-      <circle cx="11" cy="8" r="1.7" fill="currentColor" />
-      <circle cx="7" cy="11.5" r="1.7" fill="currentColor" />
+    <Mark
+      className={className}
+      cut={
+        <>
+          <circle cx="5.4" cy="4" r="2.4" fill="black" />
+          <circle cx="10.6" cy="8" r="2.4" fill="black" />
+          <circle cx="7.2" cy="12" r="2.4" fill="black" />
+        </>
+      }
+    >
+      {(cutId) => (
+        <>
+          {/* The rails are drawn full width and the knobs cut them, so a
+              rail stops 0.55 short of its knob instead of running under
+              it. The knobs take the family's body density rather than
+              full ink — three discs at full ink read as three holes. */}
+          <path mask={`url(#${cutId})`} d="M2.6 4h10.8M2.6 8h10.8M2.6 12h10.8" />
+          <circle data-body cx="5.4" cy="4" r="1.65" />
+          <circle data-body cx="10.6" cy="8" r="1.65" />
+          <circle data-body cx="7.2" cy="12" r="1.65" />
+        </>
+      )}
     </Mark>
   );
 }
@@ -499,8 +615,18 @@ export function IconAttach({ className }: IconProps) {
 export function IconPin({ className, pinned = false }: IconProps & { pinned?: boolean }) {
   return (
     <Mark className={cn("origin-center", pinned && "-rotate-45", className)} icon="pin">
-      <path d="M9.6 1.9l4.5 4.5-1.6.5-.6 2.6-4.9-4.9 2.6-.6.4-2.1z" />
-      <path d="M7 9L2.7 13.3" />
+      {/* A real tack — head, collar, shaft, needle — drawn UPRIGHT
+          inside a group turned 45°, so `pinned`'s `-rotate-45` above
+          takes it back to upright rather than to some third angle. The
+          old one was a quadrilateral and a line: a shape with no tack
+          in it. The head carries the body density. */}
+      <g transform="rotate(45 8 8)">
+        <path
+          data-body
+          d="M6.2 3h3.6a1 1 0 0 1 1 1v.9a1 1 0 0 1-1 1h-.4l.58 2.9h.92a.85.85 0 0 1 0 1.7H5.1a.85.85 0 0 1 0-1.7h.92l.58-2.9H6.2a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"
+        />
+        <path d="M8 10.6v2.6" />
+      </g>
     </Mark>
   );
 }
@@ -529,7 +655,17 @@ export function IconTerminal({ className }: IconProps) {
 export function IconChat({ className }: IconProps) {
   return (
     <Mark className={className}>
-      <path d="M13.2 8.6c0 2.3-2.2 4.2-5 4.2-.6 0-1.2-.1-1.7-.2l-3 1.2.9-2.4c-.9-.8-1.4-1.7-1.4-2.8 0-2.3 2.2-4.2 5-4.2s5 1.9 5 4.2z" />
+      {/* **This IS the rail's front bubble**, `BUBBLE_FRONT` taken to
+          the 16 canvas (×0.906, shifted −0.47 / +0.1): same corner
+          radius, same tail, same corner where the tail turns. One thing
+          drawn twice was the whole problem — the hand-made version had
+          a rounded nub where this has a point, and at 16px a rounded
+          nub is just a bulge. It carries the body density like every
+          other closed form in the family. */}
+      <path
+        data-body
+        d="M5.24 3.54H10.76A2.54 2.54 0 0 1 13.3 6.08V8.98A2.54 2.54 0 0 1 10.76 11.52H7.68L5.33 13.87V11.52A2.54 2.54 0 0 1 2.7 8.98V6.08A2.54 2.54 0 0 1 5.24 3.54Z"
+      />
     </Mark>
   );
 }

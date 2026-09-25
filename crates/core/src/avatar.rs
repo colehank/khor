@@ -467,12 +467,19 @@ pub struct Preset {
 #[rustfmt::skip]
 pub const PRESETS: [Preset; 7] = [
     // Ours. **The three liquid greens are kept verbatim** (`--lq1/2/3`
+    //
+    // 2026-09-25: all three moved one chroma step (OKLCH, lightness and
+    // hue held exactly, C × 1.28). `apps/gui/src/styles/tokens.css`
+    // carries the same three values and moved in the same commit — one
+    // identity painted two colours by two files is worse than either
+    // colour. The derivation below is unaffected: `pick` orders by
+    // contrast, and holding lightness holds every contrast in it.
     // in the GUI theme), plus two "inks" of *different* hues — the old
     // structure was already "one ink + three papers", this only splits
     // that one ink in two. Span goes 10° → 200° with the "a dark stroke
     // pressed onto paper" composition untouched.
     Preset { id: "liquid", colors: [
-        "#f2f6cb", "#dce9a6", "#b7cf75", "#7d2540", "#3f4482",
+        "#f2f7c0", "#dbeb93", "#b4d257", "#7d2540", "#3f4482",
     ]},
     Preset { id: "monokai", colors: [
         "#f92672", "#a6e22e", "#fd971f", "#e6db74", "#ae81ff",
@@ -1880,9 +1887,9 @@ mod tests {
     fn on_the_old_palette_the_rule_degenerates_to_ink() {
         const INK: &str = "#1d2107";
         let palette = Palette::parse(&[
-            "#f2f6cb".into(),
-            "#dce9a6".into(),
-            "#b7cf75".into(),
+            "#f2f7c0".into(),
+            "#dbeb93".into(),
+            "#b4d257".into(),
             INK.into(),
             // The old set had four slots; a second copy of the ink fills
             // the fifth. It does not affect this criterion, which asks
@@ -2137,17 +2144,17 @@ mod tests {
     /// Palette parsing: **no leniency**, on every path including serde.
     #[test]
     fn palette_parsing_is_strict() {
-        let ok = ["#f2f6cb", "#DCE9A6", "#b7cf75", "#7d2540", "#3f4482"].map(String::from);
+        let ok = ["#f2f7c0", "#DBEB93", "#b4d257", "#7d2540", "#3f4482"].map(String::from);
         let p = Palette::parse(&ok).unwrap();
         // Uppercase normalizes to lowercase: both ends receive the same
         // string, and TS/Swift compare colors literally
-        assert_eq!(p.colors()[1], "#dce9a6");
+        assert_eq!(p.colors()[1], "#dbeb93");
 
         let four: Vec<String> = ok[..4].to_vec();
         assert!(Palette::parse(&four).is_none(), "four slots were accepted");
         let six: Vec<String> = ok.iter().cloned().chain(["#000000".into()]).collect();
         assert!(Palette::parse(&six).is_none(), "six slots were accepted");
-        for bad in ["#fff", "f2f6cb", "#gggggg", "rgb(1,2,3)", ""] {
+        for bad in ["#fff", "f2f7c0", "#gggggg", "rgb(1,2,3)", ""] {
             let mut v = ok.to_vec();
             v[2] = bad.into();
             assert!(Palette::parse(&v).is_none(), "{bad} was accepted");
@@ -2158,7 +2165,7 @@ mod tests {
         // validator there would be a second thing to drift.
         assert!(
             AvatarStyle::from_json(
-                r##"{"palette":["#fff","#dce9a6","#b7cf75","#7d2540","#3f4482"],
+                r##"{"palette":["#fff","#dbeb93","#b4d257","#7d2540","#3f4482"],
                      "variant":"marble","shape":"circle"}"##
             )
             .is_none(),
@@ -2166,7 +2173,7 @@ mod tests {
         );
         assert!(
             AvatarStyle::from_json(
-                r##"{"palette":["#f2f6cb","#dce9a6","#b7cf75","#7d2540","#3f4482"],
+                r##"{"palette":["#f2f7c0","#dbeb93","#b4d257","#7d2540","#3f4482"],
                      "variant":"holodeck","shape":"circle"}"##
             )
             .is_none(),
@@ -2536,10 +2543,10 @@ mod tests {
     ///   dy:     16594 / 8 = 2074, % 8 = 2, hundreds digit 0 (even) → -2
     ///   scale:  2074 / 8 = 259, % 4 = 3 → 1.2 + 0.3 = 1.5
     /// color chain q = 2987074 / 360 = 8297
-    ///   ground: 8297 % 5 = 2 → liquid[2] = #b7cf75; q = 1659
-    ///   first:  the other four by contrast against #b7cf75, descending, are
-    ///           [#7d2540, #3f4482, #f2f6cb, #dce9a6]; 1659 % 2 = 1 → #3f4482; q = 829
-    ///   second: of what is left [#7d2540, #f2f6cb, #dce9a6]; 829 % 3 = 1 → #f2f6cb
+    ///   ground: 8297 % 5 = 2 → liquid[2] = #b4d257; q = 1659
+    ///   first:  the other four by contrast against #b4d257, descending, are
+    ///           [#7d2540, #3f4482, #f2f7c0, #dbeb93]; 1659 % 2 = 1 → #3f4482; q = 829
+    ///   second: of what is left [#7d2540, #f2f7c0, #dbeb93]; 829 % 3 = 1 → #f2f7c0
     /// ```
     #[test]
     fn golden_face() {
@@ -2547,7 +2554,7 @@ mod tests {
         let a = avatar(&seed_of("abcd"), &golden_style());
         assert_eq!(a.canvas, 80.0);
         assert_eq!(a.radius_ratio, 0.3);
-        assert_eq!(a.background, "#b7cf75");
+        assert_eq!(a.background, "#b4d257");
         let AvatarPaint::Marble { blur, veins } = &a.paint else {
             panic!("the golden style's variant is marble");
         };
@@ -2569,7 +2576,7 @@ mod tests {
         );
         assert_eq!(
             f(&veins[1]),
-            (Vein::Sweep, 1.2, -102.0, 4.0, 7.0, true, "#f2f6cb".into())
+            (Vein::Sweep, 1.2, -102.0, 4.0, 7.0, true, "#f2f7c0".into())
         );
     }
 
@@ -2581,7 +2588,7 @@ mod tests {
             ..golden_style()
         };
         let a = avatar(&seed_of("abcd"), &style);
-        assert_eq!(a.background, "#b7cf75");
+        assert_eq!(a.background, "#b4d257");
         let AvatarPaint::Bauhaus { shapes } = &a.paint else {
             panic!("the variant should be bauhaus");
         };
@@ -2628,7 +2635,7 @@ mod tests {
                 0.0,
                 -18.0,
                 -18.0,
-                "#f2f6cb".into()
+                "#f2f7c0".into()
             )
         );
         assert_eq!(
@@ -2656,7 +2663,7 @@ mod tests {
         };
         let a = avatar(&seed_of("abcd"), &style);
         assert_eq!(a.canvas, BEAM_CANVAS, "beam's canvas is 36, not 80");
-        assert_eq!(a.background, "#b7cf75");
+        assert_eq!(a.background, "#b4d257");
         let AvatarPaint::Beam {
             wrapper_rx,
             wrapper_scale,

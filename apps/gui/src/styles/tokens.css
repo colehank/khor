@@ -138,7 +138,7 @@
   /* No code palette of its own since 2026-09-15: the sheet and the
      rendered turns paint with Shiki in GitHub's two themes, and every
      token carries its own colour (`styles/app.css`). */
-  --accent: rgba(147, 176, 77, 0.16);
+  --accent: rgba(143, 179, 30, 0.16);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
   --destructive-foreground: #ffffff;
@@ -161,10 +161,30 @@
   --ring: #1a1a14;
   --radius: 10px;
 
-  /* ── the liquid family — the brand's greens ───────── */
-  --lq1: #d5e595;
-  --lq2: #bcd47b;
-  --lq3: #93b04d;
+  /* ── the liquid family — the brand's greens ─────────
+   *
+   * **Chroma raised one step on 2026-09-25, and nothing else moved.**
+   * Solved in OKLCH: lightness and hue held exactly, chroma × 1.28
+   * (`--lq3` C 0.131 → 0.167, against a ceiling of 0.176 at that
+   * lightness). Because only chroma moved, **every contrast in the file
+   * is the number it was** — white on the filled green still measures
+   * 4.88, and `check-palette`'s two 「not the identity green again」
+   * rules still compare against a `--lq3` no `--primary` or `--ring`
+   * equals.
+   *
+   * The reason is the same one the rail's open glyph had: the greens
+   * were derived by moving through HSV, which spends lightness and
+   * saturation but lets chroma fall where it may. They were sitting at
+   * roughly three quarters of the green their own lightness could
+   * carry, and the grey that buys read as a tint of khaki rather than
+   * as a brand.
+   *
+   * `crates/core/src/avatar.rs` carries the same three values and must
+   * move in the SAME COMMIT: one identity painted two colours by two
+   * files is worse than either colour. */
+  --lq1: #d4e77d;
+  --lq2: #b9d75e;
+  --lq3: #8fb31e;
 
   /* ── the six words (mandala's doctrine) ─────────────
    * **The four that call you sit a lightness apart from the two that do
@@ -557,8 +577,31 @@
    * which is darker paper than `--background`, and a hovered open glyph
    * — this ink over the hover wash over `--side` — read 8.21 against a
    * resting 6.32, under the 2 margin check-rail asks for. Same hue,
-   * taken down another notch: 10.06 open, 8.95 hovered. */
-  --rail-on-ink: #303a19;
+   * taken down another notch: 10.06 open, 8.95 hovered.
+   *
+   * **`#2d3e00` since 2026-09-25, and the whole change is CHROMA.**
+   * The complaint was that the open item does not read as highlighted,
+   * and the cause was not the margin — it was how the deep green was
+   * derived. 「Same hue and saturation as `--lq3`, taken down in
+   * lightness」 is an HSV move, and lowering V at fixed S **throws
+   * chroma away**: `#303a19` measures C 0.054 in OKLCH, against a
+   * ceiling of 0.084 at its own lightness. It was spending 64% of the
+   * green available to it, which is why it read as「another dark ink」
+   * rather than as green.
+   *
+   * Solved in OKLCH instead: hold the hue (124.8°), take the MAXIMUM
+   * chroma the lightness allows, and let lightness land wherever the
+   * gate needs it. That is C 0.086 — **59% more green at the same
+   * weight**. Nothing else moved: `--rail-ink` is untouched, so both
+   * of check-rail's resting floors read exactly what they read before,
+   * and the margins keep their headroom (9.75 open / 8.67 hovered,
+   * against the 8.32 the gate asks for).
+   *
+   * The dark side had far more room and was wasting more of it
+   * (`#dce9a6`, C 0.088 against a ceiling of 0.228). Same treatment at
+   * the same lightness: 14.48 open, 12.22 hovered (as check-rail
+   * measures them), against a required 10.51. */
+  --rail-on-ink: #2d3e00;
   --icon-body: 0.7;
 
   /* **Tombstone: `--rail-on` was the block behind whichever rail item
@@ -1417,7 +1460,7 @@
      measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
      has, which is where a dark page starts to glare. */
   --read-ink: rgba(238, 238, 231, 0.86);
-  --accent: rgba(183, 207, 117, 0.14);
+  --accent: rgba(180, 210, 87, 0.14);
   --accent-foreground: rgba(238, 238, 231, 0.96);
   --destructive: #d4756b;
   --destructive-foreground: #1a1a14;
@@ -1425,9 +1468,9 @@
   --input: rgba(238, 238, 231, 0.08);
   --ring: #eeeee7;
 
-  --lq1: #f2f6cb;
-  --lq2: #dce9a6;
-  --lq3: #b7cf75;
+  --lq1: #f2f7c0;
+  --lq2: #dbeb93;
+  --lq3: #b4d257;
 
   /* ── the same separation as light, arrived at from the other side ──
    * The light theme pushed the four that call you *down* in lightness
@@ -1528,7 +1571,7 @@
   --rail-ink: rgba(238, 238, 231, 0.72);
   /* Night has room for the brand green itself: this is `--lq3`'s dark
    * value, the same green the faces are drawn from. */
-  --rail-on-ink: #dce9a6;
+  --rail-on-ink: #c6f560;
   /* (`--rail-on`'s dark half went with the light one on 2026-08-31 —
      the rail has no block any more. The tombstone, with both
      percentages and why they differed, is on the light theme's side.) */

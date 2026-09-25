@@ -11,9 +11,9 @@
       <stop offset="1" stop-color="#080807"/>
     </linearGradient>
     <radialGradient id="bead" cx="0.5" cy="0.5" r="0.6" fx="0.35" fy="0.3">
-      <stop offset="0" stop-color="#f8fbdd"/>
-      <stop offset="0.5" stop-color="#dde9a7"/>
-      <stop offset="1" stop-color="#9fba55"/>
+      <stop offset="0" stop-color="#f8fcd5"/>
+      <stop offset="0.5" stop-color="#dceb95"/>
+      <stop offset="1" stop-color="#9bbd29"/>
     </radialGradient>
   </defs>
   <g clip-path="url(#sqm)">
