@@ -147,7 +147,7 @@ export function DiffView({
 
   if (refused !== null) {
     return (
-      <div data-diff-refused className="p-3 text-sm text-state-failed">
+      <div data-diff-refused className="p-3 text-callout text-state-failed">
         {refused}
       </div>
     );
@@ -195,7 +195,7 @@ function Side({
     <div className={cn("flex flex-col", className)}>
       <div
         data-diff-side={which}
-        className="flex-none border-b px-3 py-1 text-xs text-muted-foreground"
+        className="flex-none border-b px-3 py-1 text-caption text-muted-foreground"
       >
         {label}
       </div>
@@ -204,24 +204,24 @@ function Side({
           <pre
             data-diff-numbers={which}
             aria-hidden="true"
-            className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-code leading-code text-muted-foreground tabular-nums"
+            className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-mono leading-mono text-muted-foreground tabular-nums"
           >
             {rows.map((r, i) => (
-              <div key={i} className="min-h-[var(--text-code--line-height)]">
+              <div key={i} className="min-h-[var(--text-mono--line-height)]">
                 {/* A hole carries no number: it is not a line of this
                     file, and numbering it would say it was. */}
                 {r.num === null ? " " : r.num}
               </div>
             ))}
           </pre>
-          <pre className="min-w-0 flex-1 font-mono text-code leading-code whitespace-pre-wrap [overflow-wrap:anywhere]">
+          <pre className="min-w-0 flex-1 font-mono text-mono leading-mono whitespace-pre-wrap [overflow-wrap:anywhere]">
             {rows.map((r, i) => (
               <div
                 key={i}
                 data-diff-line={r.num ?? ""}
                 data-diff-changed={r.changed || undefined}
                 className={cn(
-                  "min-h-[var(--text-code--line-height)] px-3",
+                  "min-h-[var(--text-mono--line-height)] px-3",
                   // **Both sides are tinted, and with the same ink.**
                   // The question this view answers is「where is this
                   // file different」, and a colour that meant「added」on

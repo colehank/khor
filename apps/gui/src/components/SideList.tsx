@@ -218,7 +218,7 @@ export function SideList({
 
   if (shown.length === 0) {
     return (
-      <div data-side-list {...mark} data-empty className="p-4 text-sm text-muted-foreground">
+      <div data-side-list {...mark} data-empty className="p-4 text-callout text-muted-foreground">
         {rows.length === 0 ? empty : none}
       </div>
     );
@@ -248,7 +248,7 @@ export function SideList({
           {/* Always drawn, empty where a row has nothing to say under its
               name — an empty block takes no height, and every row keeps
               one shape. */}
-          <span data-side-sub className="block min-w-0 truncate text-aux text-muted-foreground">
+          <span data-side-sub className="block min-w-0 truncate text-callout text-muted-foreground">
             {r.sub}
           </span>
         </span>
@@ -282,7 +282,7 @@ export function SideList({
             {...headData?.(r.group)}
             aria-expanded={open}
             onClick={() => toggle(r.group)}
-            className="flex min-h-touch w-full items-center gap-1 px-4 text-left text-xs font-label text-muted-foreground hover:bg-secondary"
+            className="flex min-h-touch w-full items-center gap-1 px-4 text-left text-caption font-label text-muted-foreground hover:bg-secondary"
           >
             {/* The family's only chevron, turned: down is open, right
                 is shut. */}
@@ -303,11 +303,13 @@ export function SideList({
             data-side-menu={r.menu.length > 0}
             data-selected={!!r.selected}
             {...r.rowData}
-            className={cn(
-              "flex w-full items-center hover:bg-secondary",
-              r.selected && "bg-accent hover:bg-accent",
-              r.dim && "opacity-55",
-            )}
+            // **Selected is painted by `app.css`, keyed on
+            // `data-selected`** (第十五轮 第 2 条, D6): the brand's solid
+            // green with its own ink while the window is in front, grey
+            // with the ordinary ink when it is not — two states and an
+            // ink that changes with them, which a class here could not
+            // say without knowing about the window.
+            className={cn("flex w-full items-center", !r.selected && "hover:bg-secondary", r.dim && !r.selected && "opacity-55")}
           >
             {/* **The menu's trigger is the button, not the strip around
                 it**: the trigger carries the long press's
@@ -342,7 +344,7 @@ export function SideList({
           data-old-fold
           data-open={showOld}
           onClick={() => setShowOld((v) => !v)}
-          className="flex min-h-touch w-full items-center px-4 py-2 text-left text-xs text-muted-foreground hover:bg-secondary"
+          className="flex min-h-touch w-full items-center px-4 py-2 text-left text-caption text-muted-foreground hover:bg-secondary"
         >
           {showOld ? old.less : old.more(aged.length)}
         </button>

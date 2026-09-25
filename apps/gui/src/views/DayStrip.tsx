@@ -171,7 +171,7 @@ export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
       {peek && (
         <span
           data-day-peek
-          className="absolute bottom-full z-10 mb-1 -translate-x-1/2 rounded-md border bg-popover px-1.5 py-0.5 text-xs whitespace-nowrap text-popover-foreground shadow-sm"
+          className="absolute bottom-full z-10 mb-1 -translate-x-1/2 rounded-md border bg-popover px-1.5 py-0.5 text-caption whitespace-nowrap text-popover-foreground shadow-sm"
           style={{ left: peek.x }}
         >
           {peek.text}

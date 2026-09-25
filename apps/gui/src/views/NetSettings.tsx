@@ -76,7 +76,7 @@ export function NetSettings() {
 
   if (!choices) {
     return error ? (
-      <div data-relays-error className="text-sm text-destructive">
+      <div data-relays-error className="text-callout text-destructive">
         {error}
       </div>
     ) : null;
@@ -84,11 +84,11 @@ export function NetSettings() {
 
   return (
     <div data-net-settings className="flex flex-col gap-2">
-      <h2 className="text-sm font-label text-muted-foreground">{gui.relays_mine}</h2>
+      <h2 className="text-callout font-label text-muted-foreground">{gui.relays_mine}</h2>
 
       {choices.mine.map((url) => (
         <div key={url} data-relay-mine className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-sm">{url}</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-callout">{url}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -125,7 +125,7 @@ export function NetSettings() {
       </form>
 
       {error && (
-        <div data-relays-error className="text-sm text-destructive">
+        <div data-relays-error className="text-callout text-destructive">
           {error}
         </div>
       )}
@@ -149,7 +149,7 @@ export function NetSettings() {
           // between the input and the note under it. The ring is what
           // says「按得动」; its weight and ink are what say which way it
           // is set.
-          "min-h-touch self-start rounded-md px-2 text-xs",
+          "min-h-touch self-start rounded-md px-2 text-caption",
           choices.only_mine
             ? "text-primary ring-2 ring-primary"
             : "text-muted-foreground ring-1 ring-border",
@@ -159,14 +159,14 @@ export function NetSettings() {
         {gui.relays_only_mine}
       </Button>
 
-      <p data-relays-note className="text-xs text-muted-foreground">
+      <p data-relays-note className="text-caption text-muted-foreground">
         {gui.relays_after_restart}
       </p>
 
-      <h2 className="mt-2 text-sm font-label text-muted-foreground">{gui.relays_in_use}</h2>
+      <h2 className="mt-2 text-callout font-label text-muted-foreground">{gui.relays_in_use}</h2>
       <ul data-relays-in-use className="flex flex-col gap-1">
         {choices.in_use.map((url) => (
-          <li key={url} className="truncate font-mono text-xs text-muted-foreground">
+          <li key={url} className="truncate font-mono text-caption text-muted-foreground">
             {url}
           </li>
         ))}

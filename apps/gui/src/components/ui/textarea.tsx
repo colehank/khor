@@ -5,12 +5,12 @@
 // `--chat-box` (tokens.css) so a box that grows still stops.
 //
 // **The third is that it no longer names a size at all.** Stock ships
-// `text-base md:text-sm`, a step down at the wide breakpoint, and this
+// `text-body md:text-callout`, a step down at the wide breakpoint, and this
 // app is the wrong home for it twice over:
 //
 //   - **The step buys nothing it was designed to buy.** Upstream it is
 //     an iOS guard — mobile Safari zooms the page when a field under 16
-//     takes focus, and stock's `text-base` *is* 16. This app's scale
+//     takes focus, and stock's `text-body` *is* 16. This app's scale
 //     redefines that token to 14 (tokens.css), so the narrow branch was
 //     already under the threshold and the zoom it exists to prevent was
 //     never being prevented.
@@ -21,7 +21,7 @@
 //     is what made the difference in size the louder of the two.
 //
 // **Overriding it from the caller was not an option, which is the part
-// worth writing down.** `cn()` cannot beat `md:text-sm`: tailwind-merge
+// worth writing down.** `cn()` cannot beat `md:text-callout`: tailwind-merge
 // files a bare `text-read` and a `md:`-prefixed size in different
 // groups, so both survive into the markup and the breakpoint one wins
 // above 768 — the same family of silent loss as the custom spacing

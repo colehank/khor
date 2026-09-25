@@ -111,7 +111,7 @@ export function Tabs({
     children
   );
   return frame ? (
-    <Region head={strip} className={bodyClass}>
+    <Region kind="tabs" head={strip} className={bodyClass}>
       {body}
     </Region>
   ) : (

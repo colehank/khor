@@ -68,7 +68,7 @@ export function CloseDraftDialog({
         <DialogHeader>
           <DialogTitle>{gui.file_unsaved}</DialogTitle>
         </DialogHeader>
-        <div data-close-draft-says className="text-sm">
+        <div data-close-draft-says className="text-callout">
           {quit ? gui.quit_drafts(quitting) : gui.tab_close_draft(name ?? "")}
         </div>
         <DialogFooter>

@@ -89,16 +89,14 @@ export function MoreFrame({
       aria-label={moreName(page)}
       className="flex h-full min-h-0 flex-col bg-card"
     >
-      {/* The head row, so its blank moves the window — the rule every
-          landing's first row keeps (第八轮 第 59 条). `deep` is what
-          makes the whole row draggable while the close button keeps
-          its press: tauri excludes controls under a deep region. */}
+      {/* The page's own head, inside the board. It moves no window
+          since 第十五轮: R0 above the board does, marked by the shell
+          (`components/shell.ts`). */}
       <header
         data-more-head
-        data-tauri-drag-region="deep"
         className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
       >
-        <h1 className="min-w-0 flex-1 truncate text-title font-title">{moreName(page)}</h1>
+        <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
         <Button
           variant="ghost"
           size="icon"
@@ -147,7 +145,7 @@ export function MoreSection({
 }) {
   return (
     <section data-more-section={name} className="flex min-w-0 flex-col gap-2">
-      <h2 className="text-sm font-label text-muted-foreground">{label}</h2>
+      <h2 className="text-callout font-label text-muted-foreground">{label}</h2>
       {children}
     </section>
   );
@@ -195,7 +193,7 @@ export function MoreFold({
         // The finger floor on both axes: 「高级」 is two characters, and
         // the marker beside them does not make a target (`MoreSwitch`'s
         // own measurement).
-        className="flex min-h-touch cursor-pointer list-none items-center gap-in text-sm font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
+        className="flex min-h-touch cursor-pointer list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
       >
         <IconChevronRight className="size-4 flex-none transition-transform group-open:rotate-90" />
         {label}
@@ -244,7 +242,7 @@ export function MoreSwitch({
         // Both axes: 「永不」 is two characters, and `px-2` around them
         // is 38 wide — under the floor on the axis nobody thinks to
         // check (the 修 button on 自检 learned the same thing).
-        "min-h-touch min-w-touch self-start rounded-md px-2 text-xs",
+        "min-h-touch min-w-touch self-start rounded-md px-2 text-caption",
         on ? "text-primary ring-2 ring-primary" : "text-muted-foreground ring-1 ring-border",
       )}
     >
@@ -271,7 +269,7 @@ export function MoreFact({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-row text-sm">
+    <div className="flex min-w-0 flex-wrap items-center gap-row text-callout">
       <span className="flex-none text-muted-foreground">{label}</span>
       <span data-more-fact={name} className="min-w-0 break-all">
         {children}

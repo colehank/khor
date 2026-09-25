@@ -74,7 +74,7 @@ export function AxisLabel({
     //   and 「√ 总量」 at the other. **A bracket says 「this belongs to
     //   that」 in a way a space cannot**, and it reads the same at
     //   either corner, so the order stops depending on the seat.
-    <span data-plot-pick={which} className="flex items-baseline gap-0 text-aux">
+    <span data-plot-pick={which} className="flex items-baseline gap-0 text-callout">
       <span data-plot-label={which} className="px-in font-title text-foreground">
         {word}
       </span>
@@ -275,7 +275,7 @@ export function PlotSettings({
         >
           {rows.map((r) => (
             <div key={r.key} data-plot-set={r.key} className="flex items-center gap-in">
-              <span className="shrink-0 text-aux text-muted-foreground">{r.word}</span>
+              <span className="shrink-0 text-callout text-muted-foreground">{r.word}</span>
               <span className="flex flex-wrap">
                 {r.options.map((o) => (
                   <button
@@ -286,7 +286,7 @@ export function PlotSettings({
                     aria-pressed={o.key === r.chosen}
                     onClick={() => onPick(r.key, o.key)}
                     className={cn(
-                      "inline-flex min-h-touch min-w-touch items-center justify-center px-in text-aux hover:text-foreground",
+                      "inline-flex min-h-touch min-w-touch items-center justify-center px-in text-callout hover:text-foreground",
                       o.key === r.chosen ? "font-title text-foreground" : "text-muted-foreground",
                     )}
                   >

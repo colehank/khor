@@ -97,7 +97,7 @@ export function SecurityPage({
   return (
     <MoreFrame page="security" onClose={onClose}>
       {error && (
-        <div data-security-error className="text-sm text-destructive">
+        <div data-security-error className="text-callout text-destructive">
           {error}
         </div>
       )}
@@ -107,7 +107,7 @@ export function SecurityPage({
             ladder and the floor are the node's, and inventing either
             here would be this page offering a rung `khor lock` refuses. */}
         {lock === null ? (
-          <p className="text-sm text-muted-foreground">{gui.backend_unreachable}</p>
+          <p className="text-callout text-muted-foreground">{gui.backend_unreachable}</p>
         ) : (
           <>
             <MoreSwitch
@@ -116,7 +116,7 @@ export function SecurityPage({
               on={lock.on}
               onPress={() => after(setLock(!lock.on))}
             />
-            <p className="text-xs text-muted-foreground">{gui.lock_switch_note}</p>
+            <p className="text-caption text-muted-foreground">{gui.lock_switch_note}</p>
 
             <div className="flex flex-wrap items-center gap-2">
               <Input
@@ -155,12 +155,12 @@ export function SecurityPage({
                 </Button>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">{gui.lock_pin_floor(lock.pin_min)}</p>
+            <p className="text-caption text-muted-foreground">{gui.lock_pin_floor(lock.pin_min)}</p>
 
             {/* The ladder the node keeps, painted in its order — a page
                 with rungs of its own would offer a setting `khor lock
                 timeout` refuses by name. */}
-            <h3 className="mt-2 text-sm font-label text-muted-foreground">{gui.lock_idle}</h3>
+            <h3 className="mt-2 text-callout font-label text-muted-foreground">{gui.lock_idle}</h3>
             <div className="flex flex-wrap gap-1">
               {lock.timeouts.map((m) => (
                 <MoreSwitch
@@ -194,14 +194,14 @@ export function SecurityPage({
 
       <MoreSection name="web-key" label={gui.web_key_section}>
         {key === null ? (
-          <p className="text-sm text-muted-foreground">{gui.web_key_none}</p>
+          <p className="text-callout text-muted-foreground">{gui.web_key_none}</p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             {/* **Masked until somebody asks.** This page can be on a
                 screen somebody else is looking at, or in a recording;
                 a key that is simply printed is a key that leaks by
                 being opened. */}
-            <span data-web-key className="min-w-0 flex-1 truncate font-mono text-sm">
+            <span data-web-key className="min-w-0 flex-1 truncate font-mono text-callout">
               {showKey ? key : "•".repeat(key.length)}
             </span>
             <Button
@@ -234,7 +234,7 @@ export function SecurityPage({
           {gui.web_key_rotate}
         </Button>
         {rotated && (
-          <p data-web-key-rotated className="text-xs text-muted-foreground">
+          <p data-web-key-rotated className="text-caption text-muted-foreground">
             {gui.web_key_rotated}
           </p>
         )}
@@ -253,7 +253,7 @@ export function SecurityPage({
             be undone. The machine's own name is the confirmation and
             **the node is what checks it** — a rule here as well would be
             two rules about one irreversible act. */}
-        <p data-reset-warn className="text-sm text-destructive">
+        <p data-reset-warn className="text-callout text-destructive">
           {gui.reset_warn}
         </p>
         <div className="flex flex-wrap items-center gap-2">

@@ -38,6 +38,17 @@ const ALLOW = [
 
 const NUMBER_WEIGHT =
   /\bfont-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)\b/;
+// **One type scale, named for what a line is** (docs/SHELL.md 第十五轮
+// 第 1 条): `title-lg/md/sm`, `headline`, `body`, `callout`, `caption`,
+// `group`, `read` and `doc-h1/2/3`, `mono` and `term` — the fourteen of
+// docs/design-system/tokens.json. The sets it replaced — Tailwind's
+// `xs/sm/base/lg/xl…` and this app's `title/fact/aux/hero/code` — are
+// refused by name, because each of them still *works*: Tailwind ships
+// its four, so a stray `text-sm` compiles, renders at Tailwind's 14 and
+// passes every other check. `ui/` is held to it too; it is vendored,
+// but it is also the app's buttons and inputs.
+const OLD_SCALE = /(?<![\w-])text-(xs|sm|base|lg|[2-9]?xl|title|fact|aux|hero|code)(?![\w-])/;
+const OLD_SCALE_VAR = /var\(--text-(xs|sm|base|lg|title|fact|aux|hero|code)(--line-height)?\)/;
 const ARBITRARY_TYPE = /\b(text|font|rounded)-\[[^\]]*\d[^\]]*\]/;
 const CSS_LITERAL = /\b(font-size|font-weight|border-radius)\s*:\s*[\d.]/;
 
@@ -54,8 +65,18 @@ function walk(dir) {
 
 function check(path) {
   const rel = relative(root, path).replaceAll("\\", "/");
-  if (ALLOW.some((rx) => rx.test(rel))) return;
   if (!/\.(tsx?|css|html)$/.test(rel)) return;
+  if (rel !== "src/styles/tokens.css" && !rel.startsWith("src/gen/") && !rel.startsWith("src/day/")) {
+    readFileSync(path, "utf8")
+      .split("\n")
+      .forEach((line, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+        if (OLD_SCALE.test(line) || OLD_SCALE_VAR.test(line)) {
+          offenders.push(`${rel}:${i + 1}: the old type scale — ${line.trim()} (use title-lg/md/sm, headline, body, callout, caption, group)`);
+        }
+      });
+  }
+  if (ALLOW.some((rx) => rx.test(rel))) return;
   const css = rel.endsWith(".css") || rel.endsWith(".html");
   readFileSync(path, "utf8")
     .split("\n")
@@ -110,7 +131,8 @@ if (!cssYield || !tsYield) {
   // is a size, `--text-x--line-height` is its leading.
   const sizes = [...css.matchAll(/^\s*--text-([a-z0-9-]+):/gm)]
     .map((m) => m[1])
-    .filter((n) => !n.endsWith("--line-height"));
+    // `--text-x--line-height`, `--text-x--font-weight`: a size's companions.
+    .filter((n) => !n.includes("--"));
 
   // The probe. A parse that found nothing would let the loop below pass
   // by doing nothing, and「all sizes survive」would be a sentence about
@@ -138,13 +160,13 @@ if (!cssYield || !tsYield) {
     }
     // 2) the sizes really joined the size group rather than being made
     //    inert: two of them in one call must still resolve to the last.
-    const twoOwn = cn("text-read", "text-aux");
-    if (twoOwn !== "text-aux") {
-      offenders.push(`merge: cn("text-read", "text-aux") = "${twoOwn}", want "text-aux"`);
+    const twoOwn = cn("text-read", "text-callout");
+    if (twoOwn !== "text-callout") {
+      offenders.push(`merge: cn("text-read", "text-callout") = "${twoOwn}", want "text-callout"`);
     }
-    const ownAndStock = cn("text-read", "text-sm");
+    const ownAndStock = cn("text-body", "text-sm");
     if (ownAndStock !== "text-sm") {
-      offenders.push(`merge: cn("text-read", "text-sm") = "${ownAndStock}", want "text-sm"`);
+      offenders.push(`merge: cn("text-body", "text-sm") = "${ownAndStock}", want "text-sm"`);
     }
     // 3) nothing that already worked was broken by the registration.
     for (const [call, want] of [

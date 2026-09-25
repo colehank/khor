@@ -54,7 +54,7 @@ export function InviteDialog({
           <DialogTitle>{gui.make_a_ticket}</DialogTitle>
         </DialogHeader>
         {error ? (
-          <div data-dialog-error className="text-sm text-destructive">
+          <div data-dialog-error className="text-callout text-destructive">
             {error}
           </div>
         ) : (
@@ -77,7 +77,7 @@ export function InviteDialog({
                 Drawn only once there is a ticket, because until then
                 there is nothing for it to be true of. */}
             {ticket && (
-              <div data-ticket-window className="text-sm text-muted-foreground">
+              <div data-ticket-window className="text-callout text-muted-foreground">
                 {cli.invite_window(ticket.minutes)}
               </div>
             )}
@@ -134,7 +134,7 @@ export function JoinDialog({
           onKeyDown={(e) => e.key === "Enter" && join()}
         />
         {error && (
-          <div data-dialog-error className="text-sm text-destructive">
+          <div data-dialog-error className="text-callout text-destructive">
             {error}
           </div>
         )}

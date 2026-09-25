@@ -289,13 +289,13 @@ export function WorkspacesList({
               starts at a base of zero and takes only the leftover, so
               the name is the one item that shrinks, and only once the
               branch has given up everything it had. */}
-          <span data-ws-name className="min-w-0 truncate text-fact font-title text-foreground">
+          <span data-ws-name className="min-w-0 truncate text-body font-title text-foreground">
             {r.name}
           </span>
           {/* **The branch, or nothing at all** — not a repository, a
               machine that could not be asked, a detached HEAD: all
               three arrive here as nothing. */}
-          <span data-ws-git className="min-w-0 flex-1 truncate text-right text-aux text-muted-foreground">
+          <span data-ws-git className="min-w-0 flex-1 truncate text-right text-callout text-muted-foreground">
             {git && git.branch !== ""
               ? changed > 0
                 ? `${git.branch} · ${gui.ws_marked(changed)}`
@@ -360,8 +360,8 @@ export function WorkspacesList({
         label={groupLabel}
         empty={
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-            <span className="text-fact font-title text-foreground">{gui.workspaces_empty}</span>
-            <span className="text-aux text-muted-foreground">{gui.workspaces_how}</span>
+            <span className="text-body font-title text-foreground">{gui.workspaces_empty}</span>
+            <span className="text-callout text-muted-foreground">{gui.workspaces_how}</span>
           </div>
         }
         // **A list emptied by the box is not an empty list** (ruling 50):
@@ -370,7 +370,7 @@ export function WorkspacesList({
         none={
           <div
             data-ws-none-match
-            className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center text-fact text-muted-foreground"
+            className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center text-body text-muted-foreground"
           >
             {gui.workspace_none_match}
           </div>

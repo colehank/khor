@@ -3001,6 +3001,10 @@ back = "返回"
 page-back = "上一页"
 page-forward = "下一页"
 page-reload = "重新加载"
+# R0 的 ‹ ›(docs/SHELL.md 第十五轮 第 5 条):**走的是这个落点里选过的东西**,
+# 像系统设置——不是网页的历史(那是上面的 上一页/下一页)。⌘[ ⌘] 同义。
+history-back = "后退"
+history-forward = "前进"
 # The mandala map's region name. No page carries a title (docs/UX.md), so
 # this is read aloud and takes no room. It names what the picture is of —
 # the machines — rather than the picture, because「坛城」 is how the layout

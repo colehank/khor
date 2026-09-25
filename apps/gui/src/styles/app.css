@@ -219,13 +219,101 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
+/* **A selected row, the way a Mac sidebar draws one** (docs/SHELL.md
+   第十五轮 第 2 条, D6: 「选中的列表行是实心品牌深绿、白字；窗口不在前台
+   时变灰」). Every list in the app is `SideList`, and its row says
+   `data-selected`; this is the one place that paints it.
+
+   In front: `--brand-strong` under `--on-brand`, and **the ink is
+   re-pointed rather than recoloured** — a row's title, second line and
+   right end are written in `--foreground` / `--muted-foreground` /
+   `--tertiary` like every other row, so those are pointed at `--on-brand`
+   and whatever the row holds follows. Behind (`data-window-key="false"`,
+   `lib/window-key.ts`): `--fill-strong` and every line in `--foreground`
+   (ListRow 「字回到 ink」 — measured: the second line's
+   `--muted-foreground` on `--fill-strong` over `--side` is 4.37 and 忙碌
+   3.71, light, under the 4.5 `check-palette` holds a selected row to).
+
+   **Everything but the face.** The face (`[data-side-face]`) keeps its
+   own inks: its kind mark is `--muted-foreground` on its own frame and
+   its halo is the state's colour, and re-pointing on the whole row
+   turned both white (`smoke`: 「the idle row's halo paints #ffffff」,
+   「the idle row's kind mark paints rgb(255, 255, 255)」). The rail's
+   「开着」 is not this: it stays a wash with `--rail-on-ink`. */
+:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] {
+  background-color: var(--brand-strong);
+}
+:root[data-window-key="false"] [data-side-row][data-selected="true"] {
+  background-color: var(--fill-strong);
+}
+:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] > :not([data-side-open]),
+:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-side-open] > :not([data-side-face]) {
+  color: var(--on-brand);
+  --foreground: var(--on-brand);
+  --muted-foreground: var(--on-brand);
+  --tertiary: var(--on-brand);
+}
+:root[data-window-key="false"] [data-side-row][data-selected="true"] > :not([data-side-open]),
+:root[data-window-key="false"] [data-side-row][data-selected="true"] [data-side-open] > :not([data-side-face]) {
+  --muted-foreground: var(--foreground);
+  --tertiary: var(--foreground);
+}
+/* The state word too: on the solid it is the row's own ink, as every
+   label in a selected macOS row is. `!important` because the word's
+   colour is written inline from its token; the halo on the face keeps
+   saying the state. */
+:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-word-text] {
+  color: var(--on-brand) !important;
+}
+:root[data-window-key="false"] [data-side-row][data-selected="true"] [data-word-text] {
+  color: var(--foreground) !important;
+}
+:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-side-title] {
+  /* `headline`: the selected row's title steps up in weight, not size. */
+  font-weight: var(--text-headline--font-weight);
+}
+
+/* **The system's sidebar material behind the left block** (docs/SHELL.md
+   第十五轮 第 7 条, D4). Stamped on the macOS app alone (`App`), whose
+   window is transparent over AppKit's sidebar `NSVisualEffectView`
+   (`src-tauri` `build_the_window`): the page paints nothing where the
+   material should show — the document's own ground and the block's
+   `--side` go clear, **inside the block only** (a workspace's tree in the
+   board keeps its `--side`). The right side (`[data-main]`, `bg-background`),
+   the board and R0 paint their own, so the material is the left block's
+   and nothing else's. **Not a translucent colour**: where the material is
+   absent (every other face, and the narrow face, which has no block) the
+   ground stays the opaque `--side` / `--background` it was. */
+:root[data-material="sidebar"]:not([data-narrow]),
+:root[data-material="sidebar"]:not([data-narrow]) body {
+  background: transparent;
+}
+:root[data-material="sidebar"]:not([data-narrow]) [data-side] {
+  --side: transparent;
+}
+
+/* **The left block's width, from one number** (docs/SHELL.md 第十五轮
+   第 4 条, 挂账 2:「设置侧边栏宽度的时候, 背后的背景没有跟着变」).
+   The rail, the line beside it, and the list's width — `--list-w`, which
+   `App` sets on this element from the one seam's state (0 where there is
+   no list column, or it is put away). Its first row, its list and its
+   ground are this box, so they are one width by construction; before,
+   the block took its widest child's width and the search box's own
+   minimum held the ground out past a list dragged narrow. The narrow face
+   has no block (one screen at a time), so no rule for it. */
+[data-side] {
+  width: calc(var(--rail-w) + var(--hair) + var(--list-w));
+}
+
 /* **The board is the whole screen on the narrow face** (docs/SHELL.md 第
    十三轮 第 8 条:「窄档…其余不变」): the margin and the corner that lift
    it off the ground on the wide face are the wide face's. Keyed on the
    root's `data-narrow`, which the shell stamps from the one breakpoint. */
 :root[data-narrow] [data-board] {
   margin: 0;
-  border-radius: 0;
+  /* `initial` (a square corner) rather than a literal 0: this file names
+     no radius of its own (`check-type`). */
+  border-radius: initial;
 }
 
 /* Two selectors because the two properties inherit differently:
@@ -1000,7 +1088,7 @@ input[type="search"]::-webkit-search-decoration {
  * bring its own scale; every length below is a token this app already
  * has, which is the reason not to.
  *
- * Sized off `--text-read`, not `--text-code`: this is prose, and the
+ * Sized off `--text-read`, not `--text-mono`: this is prose, and the
  * measure and leading a person reads paragraphs at are the ones
  * `check-read` already measures on the conversation. */
 .prose-khor {
@@ -1033,15 +1121,15 @@ input[type="search"]::-webkit-search-decoration {
 .prose-khor a { color: var(--foreground); text-decoration: underline; }
 .prose-khor code {
   font-family: var(--font-mono);
-  font-size: var(--text-code);
+  font-size: var(--text-mono);
   background: var(--muted);
   border-radius: var(--radius-sm);
   padding: 0.1em 0.3em;
 }
 .prose-khor pre {
   font-family: var(--font-mono);
-  font-size: var(--text-code);
-  line-height: var(--text-code--line-height);
+  font-size: var(--text-mono);
+  line-height: var(--text-mono--line-height);
   background: var(--muted);
   border-radius: var(--radius-sm);
   padding: 0.6em 0.8em;
@@ -1063,7 +1151,7 @@ input[type="search"]::-webkit-search-decoration {
   display: block;
   overflow-x: auto;
   border-collapse: collapse;
-  font-size: var(--text-aux);
+  font-size: var(--text-callout);
 }
 .prose-khor :is(th, td) {
   border: var(--hair) solid var(--border);

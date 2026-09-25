@@ -4,18 +4,18 @@
 
 | # | token | tokens.css 今天 | 这份系统 | 为什么 |
 |---|---|---|---|---|
-| D1 | `body` 字号 | `--text-base: 14px` | **13px** | 跟 macOS 对齐。`read` 保持 16，长读的地方不跟着降。 |
-| D6 | 选中行 | `--accent`（16% 的淡底）+ `ink` | **`brand-strong` 实心 + `on-brand`** | 原生 app 的选中行是实心强调色。淡底那一版在 `side` 上让副标题只剩 4.40。 |
-| — | 主操作 | `--primary: #1a1a14`（墨） | **`brand-strong`** | 当初把主操作改成墨，是因为 `#93b04d` 对白只有 2.45。`brand-strong` 对白 4.88，岗位可以回到橄榄绿。 |
-| — | 焦点环 | `--ring: #1a1a14`（墨） | **`ring: #5d7b06 / #99bb36`** | 同上。在 `card` 上亮 4.75 / 暗 7.98，都过 3:1。 |
-| — | 控件高度 | `--ctl-sm/md/lg: 24 / 30 / 40` | **22 / 28 / 32** | 对齐 macOS 的控件高度；40 只在指针是手指时由 `touch` 44 接管。 |
-| — | 圆角 | `--radius: 10px` 一档 + calc 派生 | **六档具名：4 / 6 / 8 / 10 / 12 / full** | 一档基数 + `calc` 的派生法让「按钮用几」这种问题没有答案。 |
-| — | 设置组间距 | `--gap-group: 18px` | **20px** | 让 4 的倍数不留例外。 |
-| — | R0/L0 高度 | `--pane-head: calc(44 + 4) = 48` | **`pane-head: 48px` 直写** | 值一样，但它是一个设计决定，不该是两个别的数算出来的副产品。 |
-| D2 | 没有标签的页 R0 | 各页各拼 | **后退/前进 + `title-sm` 标题** | 照「系统设置」。 |
-| D3 | L2 列表空白 | 能拖窗口 | **不能拖** | Finder 和系统设置都不能；竖栏空白照旧能拖。 |
-| D4 | 左块底 | `--side` 实色 | **macOS 用 `sidebar` 材质**，其余平台 `side` | 半透明透出桌面，是「随系统装的 app」最明显的一处。 |
-| D7–D10 | 页面结构 | 六种各自拼 | **三种页型 + sheet + R0 右端按钮** | 见《骨架与三种页型》。 |
+| D1 | `body` 字号 | `--text-base: 14px` | **13px** | 跟 macOS 对齐。`read` 保持 16，长读的地方不跟着降。 **已落地（第十五轮）**：八个界面档 + read/doc-h/mono/term 共 14 个 type style 进了 `tokens.css`，旧的 `xs/sm/base/lg`、`title/fact/aux`、`hero`、`code` 撤掉，`check-type` 按名拒收；`read` 的行高仍是 24（`check-boot` 里的具名例外，待定）。 |
+| D6 | 选中行 | `--accent`（16% 的淡底）+ `ink` | **`brand-strong` 实心 + `on-brand`** | 原生 app 的选中行是实心强调色。淡底那一版在 `side` 上让副标题只剩 4.40。 **已落地（第十五轮）**：`app.css` 按 `data-selected` 画，窗口不在前时 `fill-strong` + 全行 `ink`；`check-palette` 两主题 × 前台/失焦量。 |
+| — | 主操作 | `--primary: #1a1a14`（墨） | **`brand-strong`** | 当初把主操作改成墨，是因为 `#93b04d` 对白只有 2.45。`brand-strong` 对白 4.88，岗位可以回到橄榄绿。 **已落地（第十五轮）**：`--primary: var(--brand-strong)`。 |
+| — | 焦点环 | `--ring: #1a1a14`（墨） | **`ring: #5d7b06 / #99bb36`** | 同上。在 `card` 上亮 4.75 / 暗 7.98，都过 3:1。 **已落地（第十五轮）**。 |
+| — | 控件高度 | `--ctl-sm/md/lg: 24 / 30 / 40` | **22 / 28 / 32** | 对齐 macOS 的控件高度；40 只在指针是手指时由 `touch` 44 接管。 **已落地（第十五轮）**：值改了；按钮与设置行按新高度重排在第十七轮。 |
+| — | 圆角 | `--radius: 10px` 一档 + calc 派生 | **六档具名：4 / 6 / 8 / 10 / 12 / full** | 一档基数 + `calc` 的派生法让「按钮用几」这种问题没有答案。 **已落地（第十五轮）**：`@theme static` 里六个直写值，板用 `radius-xl`。 |
+| — | 设置组间距 | `--gap-group: 18px` | **20px** | 让 4 的倍数不留例外。 **已落地（第十五轮）**。 |
+| — | R0/L0 高度 | `--pane-head: calc(44 + 4) = 48` | **`pane-head: 48px` 直写** | 值一样，但它是一个设计决定，不该是两个别的数算出来的副产品。 **已落地（第十五轮）**；`traffic.rs` 的 48 由 `check-boot` 对。 |
+| D2 | 没有标签的页 R0 | 各页各拼 | **后退/前进 + `title-sm` 标题** | 照「系统设置」。 **已落地（第十五轮）**：`PageHead`（`components/Region.tsx`）。 |
+| D3 | L2 列表空白 | 能拖窗口 | **不能拖** | Finder 和系统设置都不能；竖栏空白照旧能拖。 **已落地（第十五轮）**：外壳在 L0、L1、R0 各标一次（`components/shell.ts`），face 拖动普查。 |
+| D4 | 左块底 | `--side` 实色 | **macOS 用 `sidebar` 材质**，其余平台 `side` | 半透明透出桌面，是「随系统装的 app」最明显的一处。 **代码已落地（第十五轮），真窗口待领队看**：`transparent` + `Effect::Sidebar` + `macOSPrivateApi`，左块 `--side` 只在 `:root[data-material]` 的 `[data-side]` 里清空。 |
+| D7–D10 | 页面结构 | 六种各自拼 | **三种页型 + sheet + R0 右端按钮** | 见《骨架与三种页型》。 **第十五轮只落了页型骨架**（`Region kind`、`data-region-kind`）；sheet、R0 右端按钮在第十七轮。 |
 | **D11** | 竖栏打开态 | `--rail-on-ink: #303a19 / #dce9a6`，彩度只用掉该亮度上限的 64% | **`#2d3e00` / `#c6f560`**，同色相取最大彩度（+59% / +107%） | **已落地**。`--rail-ink` 一个字没动——`check-rail` 的 `LINE_FLOOR`/`FLOOR` 把静止态钉死了。组件早就在读 `var(--rail-on-ink)`（`App.tsx:363/1430`），所以**只改 `tokens.css` 两个值**，不动 `app.css`。 |
 | **D12** | `data-body` 的作用域 | `[data-rail-item] svg [data-body]`——只在竖栏里生效 | **`svg [data-body]` 普遍生效** | **已落地**（`app.css` 一行）。实心块是家族的**密度**规则，不是状态标记；状态标记是叠在它上面的 `fill-opacity: 1`，那一条仍然只在竖栏里。不放宽的话，重画后带实心块的 `gear` `shield` `network` `pulse`（出现在「…」菜单里）会是空心的。 |
 | **D13** | 品牌绿家族 | `--lq1/2/3`、`--accent` 的现值 | **整族彩度 ×1.28**：`brand` #93b04d → **#8fb31e**，`brand-strong` #5f7a1f → **#5d7b06**，`lq1` #d5e595 → **#d4e77d**，`lq2` #bcd47b → **#b9d75e**（暗色同理） | 在 OKLCH 里锁死亮度和色相，只动彩度，所以**所有对比度一个没变**（白在 brand-strong 上 4.89 → 4.88）。原来那层灰扒掉之后，选中行才像个强调色而不是军绿。**已落地**，`tokens.css` 八个值 + `crates/core/src/avatar.rs` 二十八处（含那段用 hex 写的选色推演）。按 `pick()` 复算过：ground 仍是 `liquid[2]`、first 仍是 `#3f4482`，**选色顺序完全没变**，只是换了写法。 |

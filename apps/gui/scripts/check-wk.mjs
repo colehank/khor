@@ -105,8 +105,8 @@ const token = (name) => {
   }
   return m[1].trim();
 };
-const codeSize = token("--text-code");
-const codeLeading = token("--text-code--line-height");
+const codeSize = token("--text-mono");
+const codeLeading = token("--text-mono--line-height");
 
 // ── the two blocks that nail the shell down (docs/SHELL.md 第 1 条) ──
 //
@@ -330,7 +330,7 @@ if (said.pdf?.loadFailed) {
       `on this WebKit the editor's rows stop matching the painted sheet at row ${sh.first.row} ` +
         `(editor ${sh.first.editH}px, sheet ${sh.first.sheetH}px, leading ${codeLeading}) — ` +
         "the caret sits on a neighbour's letter from there; a leading that is not a whole " +
-        "number of pixels is two leadings here (tokens.css --text-code--line-height)",
+        "number of pixels is two leadings here (tokens.css --text-mono--line-height)",
     );
   } else if (sh.sheetH !== sh.editH) {
     fail(`sheet ${sh.sheetH}px against editor ${sh.editH}px over ${sh.rows} rows — the two layers do not agree`);

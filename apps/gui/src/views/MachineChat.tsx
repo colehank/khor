@@ -156,7 +156,7 @@ export function MachineChat({ id }: { id: string }) {
             The measure is an em, so it and `text-read` ride together. */}
         <div data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
         {log && log.broken > 0 && (
-          <div data-chat-broken className="text-center text-xs text-muted-foreground">
+          <div data-chat-broken className="text-center text-caption text-muted-foreground">
             {cli.broken_blocks(log.broken)}
           </div>
         )}
@@ -175,12 +175,12 @@ export function MachineChat({ id }: { id: string }) {
           visible state), and a refusal in the backend's sentence where
           the act was started. Neither renders over nothing. */}
       {sendingFile && !inApp && (
-        <div data-uploading className="flex-none border-t px-3 py-1 text-xs text-muted-foreground">
+        <div data-uploading className="flex-none border-t px-3 py-1 text-caption text-muted-foreground">
           {gui.uploading}
         </div>
       )}
       {fileError && (
-        <div data-file-error className="flex-none border-t px-3 py-1 text-xs text-state-failed">
+        <div data-file-error className="flex-none border-t px-3 py-1 text-caption text-state-failed">
           {gui.send_file_failed}: {fileError}
         </div>
       )}
@@ -290,7 +290,7 @@ function MsgLine({
   return (
     <>
       {stamp && (
-        <div data-msg-stamp className="pt-1 text-center text-xs tabular-nums text-muted-foreground">
+        <div data-msg-stamp className="pt-1 text-center text-caption tabular-nums text-muted-foreground">
           {stamp}
         </div>
       )}
@@ -300,12 +300,12 @@ function MsgLine({
             re-resolved (`Sender`'s rule), and only where it informs:
             own messages sit on their own side already. */}
         {!m.from_me && (
-          <div data-msg-from className="mb-0.5 text-xs text-muted-foreground">
+          <div data-msg-from className="mb-0.5 text-caption text-muted-foreground">
             {m.from}
           </div>
         )}
         {m.retracted ? (
-          <div className="text-xs text-muted-foreground">{cli.retracted}</div>
+          <div className="text-caption text-muted-foreground">{cli.retracted}</div>
         ) : m.text !== null ? (
           <div
             data-msg-text
@@ -321,7 +321,7 @@ function MsgLine({
         ) : (
           // A body kind this build cannot read — said out loud rather
           // than rendered blank (`MsgBody::Unknown`'s rule).
-          <div className="text-xs text-muted-foreground">{cli.unknown_body(m.unknown ?? "")}</div>
+          <div className="text-caption text-muted-foreground">{cli.unknown_body(m.unknown ?? "")}</div>
         )}
       </div>
     </div>
@@ -362,7 +362,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
       data-msg-files
       data-word={m.word ?? undefined}
       className={cn(
-        "flex flex-col gap-1 rounded-lg px-3 py-2 text-sm",
+        "flex flex-col gap-1 rounded-lg px-3 py-2 text-callout",
         m.from_me ? "bg-accent" : "border bg-card",
       )}
     >
@@ -378,19 +378,19 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
             <div data-file-name className="truncate font-title">
               {f.name}
             </div>
-            <div className="text-xs tabular-nums text-muted-foreground">{fmtSize(f.size)}</div>
+            <div className="text-caption tabular-nums text-muted-foreground">{fmtSize(f.size)}</div>
           </div>
         </div>
       ))}
       {m.delivery && (
-        <span data-file-delivery={m.delivery} className="text-xs text-muted-foreground">
+        <span data-file-delivery={m.delivery} className="text-caption text-muted-foreground">
           {deliveryWords()[m.delivery] ?? m.delivery}
         </span>
       )}
       {m.word && (
         <div className="flex items-center justify-between gap-2">
           {m.word && (
-            <span data-file-word className="text-xs" style={{ color: `var(--state-${m.word})` }}>
+            <span data-file-word className="text-caption" style={{ color: `var(--state-${m.word})` }}>
               {word(m.word)}
             </span>
           )}

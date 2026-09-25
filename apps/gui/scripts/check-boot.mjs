@@ -13,6 +13,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
+import { compareFiles } from "./design-tokens.mjs";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(here, "..", "index.html"), "utf8");
 const css = readFileSync(join(here, "..", "src", "styles", "tokens.css"), "utf8");
@@ -112,9 +114,14 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
   const railW = px("rail-w");
   const railItem = px("rail-item");
   const gapIn = px("gap-in");
-  const calc = /--pane-head:\s*calc\(var\(--touch\)\s*\+\s*var\(--tab-lip\)\);/.test(css);
+  // `--pane-head` is written as 48 since 第十五轮 — a decision about
+  // the window's first rows, not the sum of the finger's floor and a
+  // tab's lip (docs/design-system/guidelines/40-migration.md).
+  const paneHead = px("pane-head");
+  void touch;
+  void lip;
   const pairs = [
-    ["the first row's height", "PANE_HEAD", calc && touch !== null && lip !== null ? touch + lip : null, "--touch + --tab-lip (--pane-head)"],
+    ["the first row's height", "PANE_HEAD", paneHead, "--pane-head"],
     ["the first button's left edge", "X", railW !== null && railItem !== null ? (railW - railItem) / 2 : null, "(--rail-w − --rail-item) / 2, the rail's glyph box"],
     ["the gap before the search box", "GAP", gapIn, "--gap-in"],
   ];
@@ -131,6 +138,74 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
       console.log(`first row: ${name} ${inRust} in src-tauri and in tokens.css (${from})`);
     }
   }
+}
+
+// ── and the design system's own values (第十五轮) ─────────────────
+//
+// `docs/design-system/tokens.json` decides a value; tokens.css is where
+// the app reads it. Every token the design system names is compared,
+// both themes (`design-tokens.mjs` says how, and names its exceptions).
+{
+  const json = join(here, "..", "..", "..", "docs", "design-system", "tokens.json");
+  let r = null;
+  try {
+    r = compareFiles(json, join(here, "..", "src", "styles", "tokens.css"));
+  } catch (e) {
+    fail(`cannot compare with docs/design-system/tokens.json (${String(e).split("\n")[0]}) — the design system and the app are not being held together`);
+  }
+  if (r) {
+    if (r.checked < 150) fail(`probe dead: only ${r.checked} design tokens were compared — tokens.json's shape moved and this reads past it`);
+    for (const b of r.bad) fail(`design system: ${b}`);
+    for (const m of r.met) console.log(`design system · named exception · ${m}`);
+    if (!r.bad.length) console.log(`design system: ${r.checked} tokens of docs/design-system/tokens.json agree with tokens.css, both themes`);
+  }
+}
+
+// ── the left block's first frame, by platform (第十五轮 第 7 条, D4) ──
+//
+// On the macOS app the left block stands on the system's sidebar
+// material, so its ground is **clear** there and opaque everywhere else.
+// That is four things in four files, and each is read here:
+//
+//   - the window is built transparent with the sidebar effect, inside
+//     the macOS half of `build_the_window` (src-tauri/src/lib.rs);
+//   - tauri's private API is switched on in both places tauri-build
+//     holds together (tauri.conf.json, src-tauri/Cargo.toml);
+//   - the webview is not painted an opaque ground on macOS, or the
+//     material would never show (`paint_the_window_before_the_page`);
+//   - the page clears `--side` only inside `[data-side]` and only under
+//     the stamp `App` sets on the macOS app — **and `--side` itself
+//     stays an opaque colour in both themes**: a translucent `--side`
+//     would be the fake material this round forbids.
+{
+  const before = bad;
+  const conf = JSON.parse(readFileSync(join(here, "..", "src-tauri", "tauri.conf.json"), "utf8"));
+  const cargo = readFileSync(join(here, "..", "src-tauri", "Cargo.toml"), "utf8");
+  const appCss = readFileSync(join(here, "..", "src", "styles", "app.css"), "utf8");
+  const appTsx = readFileSync(join(here, "..", "src", "App.tsx"), "utf8");
+  const build = rust.match(/fn build_the_window[\s\S]*?\n}\n/)?.[0] ?? "";
+  const mac = build.match(/#\[cfg\(target_os = "macos"\)\]\s*\{[\s\S]*?\n {4}\}/)?.[0] ?? "";
+  if (!/\.transparent\(true\)/.test(mac) || !/Effect::Sidebar/.test(mac)) {
+    fail("the macOS window is not built transparent with the sidebar effect (src-tauri/src/lib.rs build_the_window) — D4's material has nothing to show through");
+  }
+  if (conf.app?.macOSPrivateApi !== true || !/features = \[[^\]]*"macos-private-api"/.test(cargo)) {
+    fail("tauri's macos-private-api is not on in both tauri.conf.json (app.macOSPrivateApi) and src-tauri/Cargo.toml — a transparent window needs it");
+  }
+  const paint = rust.match(/fn paint_the_window_before_the_page[\s\S]*?\n}\n/)?.[0] ?? "";
+  if (!/#\[cfg\(not\(target_os = "macos"\)\)\]\s*let _ = w\.set_background_color/.test(paint)) {
+    fail("the window's ground is painted on macOS too (paint_the_window_before_the_page) — an opaque webview covers the material for good");
+  }
+  if (!/:root\[data-material="sidebar"\][^{]*\[data-side\]\s*\{\s*--side:\s*transparent;/.test(appCss)) {
+    fail("app.css does not clear --side inside [data-side] under :root[data-material=\"sidebar\"] — the block paints over the material");
+  }
+  if (!/if \(trafficLights\) document\.documentElement\.setAttribute\("data-material", "sidebar"\)/.test(appTsx)) {
+    fail("App.tsx does not stamp data-material=\"sidebar\" on the macOS app alone (trafficLights) — the clear ground would reach faces with no material");
+  }
+  for (const theme of ["light", "dark"]) {
+    const v = want.side[theme];
+    if (!/^#[0-9a-f]{6}$/i.test(v)) fail(`--side (${theme}) is ${v} — it must stay opaque; a translucent ground is not the material`);
+  }
+  if (bad === before) console.log("left block: macOS window transparent over the sidebar material, --side cleared in the block under the stamp only, opaque elsewhere");
 }
 
 const painted = [...rust.matchAll(/Color\(0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0xff\)/g)].map(

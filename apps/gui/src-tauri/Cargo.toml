@@ -29,7 +29,13 @@ tokio.workspace = true
 # `unstable` is for `Window::add_child`: a browsing tab's page is a second
 # webview parented to this window, because khor's own interface is already
 # a webview and a site cannot be put inside it (docs/NET.md 借网).
-tauri = { version = "2", features = ["unstable"] }
+#
+# `macos-private-api` is the transparent window the sidebar material needs
+# (docs/SHELL.md 第十五轮 第 7 条, D4; `tauri.conf.json`'s
+# `macOSPrivateApi`, which tauri-build holds equal to this line). It is a
+# no-op off macOS. **Its cost: an app that uses it cannot go on the Mac
+# App Store** — khor ships outside it.
+tauri = { version = "2", features = ["unstable", "macos-private-api"] }
 # The native file picker behind 发文件 (GUI 发文件批). The official v2
 # plugin and nothing homegrown, because the one thing the desktop form
 # needs is a REAL local path to hand `Node::send` — a webview's

@@ -99,7 +99,7 @@ function FaceOption({
       aria-pressed={on}
       onClick={onPick}
       className={cn(
-        "flex-col gap-1 rounded-md px-2 py-2 text-xs text-muted-foreground",
+        "flex-col gap-1 rounded-md px-2 py-2 text-caption text-muted-foreground",
         // Full ink marks the current one, the same way the rail marks
         // the landing you are on — one mark for "this is where you are",
         // not a second vocabulary. **It used to say "the brand color"
@@ -273,7 +273,7 @@ export function FaceSettings({
   return (
     <div data-face-settings className="flex flex-col gap-group">
       {error && (
-        <div data-dialog-error className="text-sm text-destructive">
+        <div data-dialog-error className="text-callout text-destructive">
           {error}
         </div>
       )}

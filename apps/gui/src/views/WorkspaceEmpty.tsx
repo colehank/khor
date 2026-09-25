@@ -91,24 +91,24 @@ export function WorkspaceEmpty({
     <div data-ws-empty={root} className="min-h-0 flex-1 overflow-auto p-[var(--gap-pane)]">
       <div className="flex flex-col gap-[var(--gap-row)]">
         <div className="flex flex-col gap-[var(--gap-in)]">
-          <div data-ws-empty-name className="font-title text-lg">
+          <div data-ws-empty-name className="font-title text-title-md">
             {root === "" ? machine : basename(root)}
           </div>
           {/* Machine and path on one line, in the order everything else
               in khor spells them (`机器:路径`, the tab's hover title and
               the workspace list's own second line). */}
-          <div className="text-sm text-muted-foreground">
+          <div className="text-callout text-muted-foreground">
             {root === "" ? "" : `${machine}:${root}`}
           </div>
           {branch !== "" && (
-            <div data-ws-empty-branch className="font-mono text-xs text-muted-foreground">
+            <div data-ws-empty-branch className="font-mono text-caption text-muted-foreground">
               {branch}
             </div>
           )}
         </div>
         {recent.length > 0 && (
           <div className="flex flex-col gap-[var(--gap-in)]">
-            <div className="text-xs text-muted-foreground">{gui.ws_empty_recent}</div>
+            <div className="text-caption text-muted-foreground">{gui.ws_empty_recent}</div>
             <div className="flex flex-col">
               {recent.map((p) => (
                 <button
@@ -117,7 +117,7 @@ export function WorkspaceEmpty({
                   data-ws-recent={p}
                   onClick={() => onOpen(p)}
                   className={cn(
-                    "flex min-h-touch w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-sm",
+                    "flex min-h-touch w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-callout",
                     "hover:bg-muted/50",
                   )}
                 >
@@ -127,7 +127,7 @@ export function WorkspaceEmpty({
                       a person can tell apart. Relative to the root for
                       the tab strip's reason: the absolute one is the
                       same forty characters on every line. */}
-                  <span className="min-w-0 flex-[2] truncate text-right text-xs text-muted-foreground">
+                  <span className="min-w-0 flex-[2] truncate text-right text-caption text-muted-foreground">
                     {root !== "" && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p}
                   </span>
                 </button>

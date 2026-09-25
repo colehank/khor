@@ -16,7 +16,7 @@ import { Fragment, type CSSProperties } from "react";
 
 import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Omnibox, type OmniAxis } from "@/components/Omnibox";
-import { SideSeat } from "@/components/SideHead";
+import { FIND_ALL, SideSeat } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
@@ -136,18 +137,6 @@ export function PaneBar({
   const bar = (
     <div
       data-pane-bar
-      // **The blank of this bar moves the window** (第八轮 第 59 条:
-      // 「窗口的可拖动部分是顶部空白区域、侧边栏空白区域」). This is the
-      // top row of every list pane, so on the landings that have one it
-      // *is* the 顶部空白 — the strip of it the search box and the
-      // menus do not occupy.
-      //
-      // Declared on the bar rather than on a cut-out strip beside the
-      // controls, because tauri drags only when the element carrying
-      // the attribute is itself the one pressed: the box, the filter
-      // menu and the "+" are children and keep every press they had.
-      // Inert on the web face, which reads no such attribute.
-      data-tauri-drag-region="deep"
       // `min-h`, not `h`: chips make the box taller than one row, and a
       // bar with a fixed height would clip them or squeeze the list.
       //
@@ -165,7 +154,9 @@ export function PaneBar({
       // with the block under it.
       className={cn(
         "flex min-h-pane-head flex-none items-center gap-1",
-        seat === "side" ? "min-w-0 flex-1 pr-1" : "border-b px-2",
+        // `@container/bar`: the search slot below asks how wide this
+        // bar is, not how wide the window is (第十五轮 第 4 条).
+        seat === "side" ? "@container/bar min-w-0 flex-1 pr-1" : "border-b px-2",
       )}
       // A menu hung from this box starts at the list column, not over
       // the rail (tokens.css `--seat-menu-inset`).
@@ -176,6 +167,27 @@ export function PaneBar({
           always had. Not a second control and not a second box — the
           alternative is what this file's head warns about, two search
           fields that look alike and behave differently. */}
+      {/* **Too narrow for a box, the box is a magnifier** (docs/SHELL.md
+          第十五轮 第 4 条:「放不下时缩到只剩放大镜（按钮形态，仍能点开搜
+          索）」). The block's width has one owner now, so a list dragged
+          narrow is a first row that narrow too — and the box gives way
+          rather than holding the block open. Pressed, it opens the one
+          search at its wide range, which is the search a column this
+          narrow has room for (`SideHead`). Only in the block's row: a
+          bar in a column of its own has that column's width to spend. */}
+      {seat === "side" && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={gui.find_everything}
+          data-search-magnifier
+          onClick={() => window.dispatchEvent(new Event(FIND_ALL))}
+          className="hidden min-h-touch min-w-touch flex-none @max-3xs/bar:flex"
+        >
+          <IconSearch />
+        </Button>
+      )}
+      <div className={cn("flex min-w-0 flex-1 items-center", seat === "side" && "@max-3xs/bar:hidden")}>
       {axes && axes.length > 0 && filter ? (
         <Omnibox
           label={searchLabel}
@@ -215,13 +227,14 @@ export function PaneBar({
           {seat === "side" && (
             <kbd
               data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-xs text-muted-foreground"
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-caption text-muted-foreground"
             >
               ⌘K
             </kbd>
           )}
         </div>
       )}
+      </div>
 
       {filter && filterLabel && (
         <DropdownMenu>

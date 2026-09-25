@@ -70,6 +70,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { useHistory } from "@/hooks/use-history";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
@@ -941,6 +942,9 @@ export function QuotaLanding({
   // here), beside the machine card's answers and this page's details.
   const [board, setBoard] = useKept<AccountRing[] | null>("quota.board", null);
   const [picked, setPicked] = useKept<string | null>("quota.picked", null);
+  // ‹ › in R0 walk the accounts picked here (docs/SHELL.md 第十五轮 第 6
+  // 条) — this landing's selection, kept by this landing.
+  const trail = useHistory(picked, setPicked, (v) => v ?? "");
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
@@ -1246,14 +1250,14 @@ export function QuotaLanding({
       // **The title is somebody's own word** (「标题是用户可以自己起的」),
       // so the line under it carries what the row *is*: 类型 · 提供商.
       title: (
-        <span data-quota-name className="block truncate text-fact">
+        <span data-quota-name className="block truncate text-body">
           {r.name}
         </span>
       ),
       sub: <span data-quota-sub-line>{subLine(r)}</span>,
       // **The right end is when this was read**, not what it says.
       trailing: (
-        <span data-quota-age-cell className="flex-none text-xs tabular-nums text-muted-foreground">
+        <span data-quota-age-cell className="flex-none text-caption tabular-nums text-muted-foreground">
           {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
         </span>
       ),
@@ -1424,7 +1428,7 @@ export function QuotaLanding({
             push the bar into a gutter, and the bar is the point. */}
         <dl
           data-quota-parts
-          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-row gap-y-1.5 text-sm"
+          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-row gap-y-1.5 text-callout"
         >
           {dials.map((d) => (
             // `contents`, so the three cells line up in the grid while
@@ -1444,10 +1448,10 @@ export function QuotaLanding({
                   置」 — the same 「39%7」 the older comment on this block
                   warns about, re-made the moment the reset moved in
                   here. Caught by that very gate, 2026-09-07. */}
-              <dt className="flex min-w-0 items-baseline gap-2 text-fact">
+              <dt className="flex min-w-0 items-baseline gap-2 text-body">
                 <span data-quota-window-name className="truncate">{d.word}</span>
                 {d.resets_at !== null && (
-                  <span className="flex-none text-aux text-muted-foreground">
+                  <span className="flex-none text-callout text-muted-foreground">
                     {gui.quota_resets(until(d.resets_at * 1000))}
                   </span>
                 )}
@@ -1497,7 +1501,7 @@ export function QuotaLanding({
       {current.credits && (
         <dl
           data-quota-credits
-          className="grid grid-cols-[auto_1fr] gap-x-row gap-y-1 text-sm"
+          className="grid grid-cols-[auto_1fr] gap-x-row gap-y-1 text-callout"
         >
           <dt className="text-muted-foreground">{gui.quota_credits}</dt>
           <dd data-quota-credits-on={current.credits.enabled}>
@@ -1591,7 +1595,7 @@ export function QuotaLanding({
         >
           {centre(acc)}
         </Face>
-        <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm">
+        <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-callout">
         {acc.reading.trouble ? (
           <>
             <dt className="text-muted-foreground">{gui.accounts_state}</dt>
@@ -1675,7 +1679,7 @@ export function QuotaLanding({
                 <dt className="text-muted-foreground">{gui.accounts_models}</dt>
                 <dd data-quota-models className="flex flex-wrap gap-1">
                   {acc.reading.models.map((m) => (
-                    <span key={m} className="rounded bg-secondary px-1.5 font-mono text-xs">
+                    <span key={m} className="rounded bg-secondary px-1.5 font-mono text-caption">
                       {m}
                     </span>
                   ))}
@@ -1736,7 +1740,7 @@ export function QuotaLanding({
         return (
           <>
             {acc.reading.log_capped != null && u.rows !== null && (
-              <div data-quota-days-capped className="text-xs text-muted-foreground">
+              <div data-quota-days-capped className="text-caption text-muted-foreground">
                 {gui.accounts_log_capped(acc.reading.log_capped)}
               </div>
             )}
@@ -1760,7 +1764,7 @@ export function QuotaLanding({
   );
 
   const empty = (
-    <div className="flex flex-col items-start gap-3 p-4 text-sm text-muted-foreground">
+    <div className="flex flex-col items-start gap-3 p-4 text-callout text-muted-foreground">
       <span data-quota-empty>{board === null ? "" : gui.accounts_empty}</span>
       <Button size="sm" data-quota-register className="min-h-touch" onClick={() => setRegistering(true)}>
         {gui.accounts_register}
@@ -1771,15 +1775,24 @@ export function QuotaLanding({
   return (
     <section data-quota-landing aria-label={gui.accounts_tab} className="flex h-full min-h-0 min-w-0 flex-col">
       {error && (
-        <div data-quota-error className="border-b px-3 py-1.5 text-sm text-destructive">
+        <div data-quota-error className="border-b px-3 py-1.5 text-callout text-destructive">
           {error}
         </div>
       )}
       {rows.length === 0 ? (
         // Nothing registered and no subscription read: a search box
         // over an empty list is a control with nothing to do, and the
-        // one thing there is to do is the button in `empty`.
-        empty
+        // one thing there is to do is the button in `empty`. **Still a
+        // page with an R0** on the wide face (第十五轮 第 5 条) — the
+        // window's handle and the landing's name are the shell's, not
+        // something an empty landing can go without.
+        narrow ? (
+          empty
+        ) : (
+          <Region kind="detail" title={gui.accounts_tab}>
+            {empty}
+          </Region>
+        )
       ) : narrow ? (
         // **One screen at a time, with a way back** — the same pair the
         // sessions landing draws (2026-09-06: 额度 became an inbox, so
@@ -1791,9 +1804,6 @@ export function QuotaLanding({
           <div className="flex min-h-0 flex-1 flex-col">
             <header
               data-detail-header
-              // The screen's top row (第八轮 第 59 条), like every other
-              // `data-detail-header`.
-              data-tauri-drag-region="deep"
               className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
             >
               {/* **The only exit from this screen**, so it carries the
@@ -1854,7 +1864,9 @@ export function QuotaLanding({
           >
             {list}
           </ListPane>
-          <Region className="overflow-y-auto">
+          {/* 详情 (A): R0 names the account on the board, the board
+              reads it. */}
+          <Region kind="detail" title={current?.name ?? gui.accounts_tab} history={trail} className="overflow-y-auto">
             {detail}
             {subDetail}
           </Region>
@@ -1930,20 +1942,20 @@ function CardHead({ row }: { row: Row }) {
           was spending its first line telling them what they already
           knew. The plan is the exception because nobody chose it: it
           comes off the login. */}
-      <span className="min-w-0 truncate text-title">{row.name}</span>
+      <span className="min-w-0 truncate text-title-md">{row.name}</span>
       {row.plan && (
         <span
           data-quota-plan
           // **Bordered, not tinted.** The mock fills this chip with
           // `--accent`, and `--accent` is also what paints the selected
           // row — so a tinted chip would sit on its own colour.
-          // `text-xs`, and that is the *only* spelling of this size.
+          // `text-caption`, and that is the *only* spelling of this size.
           // The row's copy of this chip wrote the pixel count out as an
           // arbitrary value instead; measured 2026-09-07 on the live
           // page, both computed the same font-size to the pixel — so it
           // was never a second size, only a second name for one, which
           // is what the px and type gates refuse by name.
-          className="flex-none rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+          className="flex-none rounded-full border px-2 py-0.5 text-caption text-muted-foreground"
         >
           {row.plan}
         </span>
@@ -1952,7 +1964,7 @@ function CardHead({ row }: { row: Row }) {
           wrapper: one row, two ends. */}
       <span
         data-quota-age={row.age_ms ?? 0}
-        className="ml-auto flex-none text-xs text-muted-foreground"
+        className="ml-auto flex-none text-caption text-muted-foreground"
       >
         {row.age_ms === null
           ? gui.accounts_read_here
@@ -2086,12 +2098,12 @@ function EditDialog({
           <DialogTitle>{gui.accounts_edit}</DialogTitle>
         </DialogHeader>
         <div className="flex min-w-0 flex-col gap-3">
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_name}</span>
             <Input data-quota-edit-name value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           {!isSub && acc.reading.provider === "newapi" && (
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.accounts_address}</span>
               <Input
                 data-quota-edit-address
@@ -2102,7 +2114,7 @@ function EditDialog({
             </label>
           )}
           {!isSub && (
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_key}</span>
             <Input
               data-quota-edit-key
@@ -2117,7 +2129,7 @@ function EditDialog({
               value={key}
               onChange={(e) => setKey(e.target.value)}
             />
-            <span data-quota-edit-key-note className="text-xs text-muted-foreground">
+            <span data-quota-edit-key-note className="text-caption text-muted-foreground">
               {gui.accounts_key_keep}
             </span>
           </label>
@@ -2146,7 +2158,7 @@ function EditDialog({
 
               **Nothing here converts anything**; the figure is
               untouched, and this must not grow into a rate feature. */}
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_unit}</span>
             <Input
               data-quota-edit-unit
@@ -2183,7 +2195,7 @@ function EditDialog({
                     data-quota-unit-pick={m}
                     onClick={() => setUnit(m)}
                     className={cn(
-                      "flex-none rounded-full border px-2 py-0.5 text-xs",
+                      "flex-none rounded-full border px-2 py-0.5 text-caption",
                       on ? "border-foreground/40 bg-accent text-foreground" : "text-muted-foreground",
                     )}
                   >
@@ -2192,12 +2204,12 @@ function EditDialog({
                 );
               })}
             </span>
-            <span data-quota-edit-unit-note className="text-xs text-muted-foreground">
+            <span data-quota-edit-unit-note className="text-caption text-muted-foreground">
               {gui.accounts_unit_blank(DEFAULT_MARK)}
             </span>
           </label>
           {!isSub && BUDGETED.includes(acc.reading.provider) && (
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.accounts_budget}</span>
               <Input
                 data-quota-edit-budget
@@ -2209,7 +2221,7 @@ function EditDialog({
             </label>
           )}
           {error && (
-            <p data-quota-edit-error className="text-sm text-destructive">
+            <p data-quota-edit-error className="text-callout text-destructive">
               {error}
             </p>
           )}
@@ -2296,7 +2308,7 @@ function RegisterDialog({
               narrows 哪家 to the vendors whose login khor knows how
               to find, and carries the choice over rather than leaving a
               provider selected that the kind cannot use. */}
-          <div className="flex flex-col gap-1 text-sm">
+          <div className="flex flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.quota_kind}</span>
             <div className="flex flex-wrap gap-1">
               {["bill", "sub"].map((k) => (
@@ -2319,7 +2331,7 @@ function RegisterDialog({
               ))}
             </div>
           </div>
-          <div className="flex flex-col gap-1 text-sm">
+          <div className="flex flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_provider}</span>
             <div className="flex flex-wrap gap-1">
               {PROVIDERS.filter((p) => (kind === "sub" ? SUBSCRIBED.includes(p) : !SUB_ONLY.includes(p))).map((p) => (
@@ -2336,12 +2348,12 @@ function RegisterDialog({
               ))}
             </div>
           </div>
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_name}</span>
             <Input data-quota-name value={name} onChange={(e) => setName(e.target.value)} />
           </label>
           {kind !== "sub" && provider === "newapi" && (
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.accounts_address}</span>
               <Input
                 data-quota-address
@@ -2358,11 +2370,11 @@ function RegisterDialog({
                same debt the two lines under the key box pay, in the
                other direction: there is nothing to paste because what
                reads this is the login already on this machine. */
-            <p data-quota-sub-note className="text-xs text-muted-foreground">
+            <p data-quota-sub-note className="text-caption text-muted-foreground">
               {gui.accounts_sub_note(vendorOf(provider).name)}
             </p>
           ) : (
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_key}</span>
             <Input
               data-quota-key
@@ -2374,13 +2386,13 @@ function RegisterDialog({
             {/* The two facts the form owes a person before they paste a
                 secret: where it goes, and which kind of key can read
                 usage at all. */}
-            <span className="text-xs text-muted-foreground">
+            <span className="text-caption text-muted-foreground">
               {NEEDS_ADMIN.includes(provider) ? `${gui.accounts_key_stays} ${gui.accounts_needs_admin}` : gui.accounts_key_stays}
             </span>
           </label>
           )}
           {kind !== "sub" && BUDGETED.includes(provider) && (
-            <label className="flex min-w-0 flex-col gap-1 text-sm">
+            <label className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.accounts_budget}</span>
               <Input
                 data-quota-budget
@@ -2392,7 +2404,7 @@ function RegisterDialog({
             </label>
           )}
           {error && (
-            <p data-quota-dialog-error className="text-sm text-destructive">
+            <p data-quota-dialog-error className="text-callout text-destructive">
               {error}
             </p>
           )}

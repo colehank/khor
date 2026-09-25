@@ -132,7 +132,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
           <span
             data-doctor-verdict={bad.length === 0 ? "well" : "wants"}
             className={cn(
-              "min-w-0 text-sm font-label",
+              "min-w-0 text-callout font-label",
               bad.length === 0 ? "text-muted-foreground" : "text-state-errored",
             )}
           >
@@ -152,7 +152,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
       </div>
 
       {error && (
-        <div data-doctor-error className="text-sm text-destructive">
+        <div data-doctor-error className="text-callout text-destructive">
           {error}
         </div>
       )}
@@ -167,7 +167,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
               key={r.key}
               data-doctor-card={r.key}
               data-doctor-state={r.state}
-              className="flex min-w-0 flex-wrap items-center gap-row rounded-lg border p-3 text-sm"
+              className="flex min-w-0 flex-wrap items-center gap-row rounded-lg border p-3 text-callout"
             >
               <span className="min-w-0 flex-none font-label">{r.name}</span>
               <span
@@ -206,7 +206,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
         <MoreFold name="doctor-well" label={cli.doctor_well_count(well.length)}>
           {[...new Set(well.map((r) => r.group))].map((g) => (
             <div key={g} data-doctor-group={g} className="flex min-w-0 flex-col">
-              <span className="text-aux font-label text-muted-foreground">
+              <span className="text-callout font-label text-muted-foreground">
                 {well.find((r) => r.group === g)?.group_label}
               </span>
               {well
@@ -216,7 +216,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
                     key={r.key}
                     data-doctor-row={r.key}
                     data-doctor-state={r.state}
-                    className="flex min-w-0 flex-wrap items-center gap-row border-b py-2 text-sm last:border-b-0"
+                    className="flex min-w-0 flex-wrap items-center gap-row border-b py-2 text-callout last:border-b-0"
                   >
                     <span className="min-w-0 flex-none font-label">{r.name}</span>
                     <span

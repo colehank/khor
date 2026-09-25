@@ -106,7 +106,7 @@ export function OmniMenu({
     >
       {rows.groups.map((a) => (
         <div key={a.key}>
-          <div data-omni-axis={a.key} className="px-2 py-1 text-xs text-muted-foreground">
+          <div data-omni-axis={a.key} className="px-2 py-1 text-caption text-muted-foreground">
             {a.label}
           </div>
           {a.candidates.map((c) => {
@@ -124,7 +124,7 @@ export function OmniMenu({
                   // row and the row is the floor tall, so what the
                   // arrow keys highlight is exactly what a press
                   // lands on (tokens.css `--touch`).
-                  "flex min-h-touch w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-sm",
+                  "flex min-h-touch w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-callout",
                   n === rows.at && "bg-accent",
                   c.dim && "text-muted-foreground",
                 )}
@@ -151,7 +151,7 @@ export function OmniMenu({
                     that would still be beside the thing it is
                     about. */}
                 {c.hint && (
-                  <span data-omni-hint className="flex-none text-xs text-muted-foreground">
+                  <span data-omni-hint className="flex-none text-caption text-muted-foreground">
                     {c.hint}
                   </span>
                 )}

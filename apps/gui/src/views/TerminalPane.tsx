@@ -587,9 +587,9 @@ export function TerminalPane({ id }: { id: string }) {
                 step(e.shiftKey ? -1 : 1);
               }
             }}
-            className="h-ctl-sm w-48 bg-transparent px-2 text-sm outline-none"
+            className="h-ctl-sm w-48 bg-transparent px-2 text-callout outline-none"
           />
-          <span data-term-find-hits className="min-w-12 text-right text-xs tabular-nums text-muted-foreground">
+          <span data-term-find-hits className="min-w-12 text-right text-caption tabular-nums text-muted-foreground">
             {hitsText}
           </span>
           <Button size="icon" variant="ghost" data-term-find-prev aria-label={gui.match_prev} onClick={() => step(-1)}>
@@ -618,7 +618,7 @@ export function TerminalPane({ id }: { id: string }) {
             termRef.current?.scrollToBottom();
             termRef.current?.focus();
           }}
-          className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-popover px-3 py-1 text-xs shadow-md"
+          className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-popover px-3 py-1 text-caption shadow-md"
         >
           {freshBelow ? gui.new_below : gui.to_bottom}
         </button>
@@ -629,14 +629,14 @@ export function TerminalPane({ id }: { id: string }) {
         // to say.
         <div
           data-term-why
-          className="absolute inset-0 grid place-items-center px-6 text-center text-sm text-muted-foreground"
+          className="absolute inset-0 grid place-items-center px-6 text-center text-callout text-muted-foreground"
         >
           {why}
         </div>
       ) : (
         <div
           className={cn(
-            "pointer-events-none absolute right-2 z-10 flex flex-col items-end gap-1 text-xs",
+            "pointer-events-none absolute right-2 z-10 flex flex-col items-end gap-1 text-caption",
             // Under the search bar while that is up, so the two never
             // overprint each other.
             finding ? "top-12" : "top-1",

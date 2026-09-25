@@ -103,7 +103,7 @@ export function NewTabPage({
         return (
           <div key={`${place.device}:${place.place}`}>
             {first && (
-              <div data-places-section="recent" className="px-3 pt-2 pb-1 text-xs text-muted-foreground">
+              <div data-places-section="recent" className="px-3 pt-2 pb-1 text-caption text-muted-foreground">
                 {kind.words.recent}
               </div>
             )}
@@ -127,17 +127,17 @@ export function NewTabPage({
                 className="flex min-h-touch min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left"
               >
                 <MachineAvatar face={face} className="size-kind-mark flex-none" />
-                <span className="flex-none text-sm font-label">{leaf}</span>
-                <span className="flex-none text-xs text-muted-foreground">{place.name}</span>
+                <span className="flex-none text-callout font-label">{leaf}</span>
+                <span className="flex-none text-caption text-muted-foreground">{place.name}</span>
                 <span
                   title={place.place}
-                  className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+                  className="min-w-0 flex-1 truncate text-caption text-muted-foreground"
                 >
                   {place.place}
                 </span>
                 {/* How lately, on the rows that have a "lately". */}
                 {place.at_ms !== null && (
-                  <span className="flex-none text-xs tabular-nums text-muted-foreground">
+                  <span className="flex-none text-caption tabular-nums text-muted-foreground">
                     {ago(place.at_ms)}
                   </span>
                 )}

@@ -224,7 +224,7 @@ export function DirPicker({
               two with a lookup table in between. What *is* shared is the
               word — one heading, one catalog key. */}
           {machines.length > 1 && (
-            <div data-dir-picker-machines className="flex min-w-0 flex-col gap-1 text-sm">
+            <div data-dir-picker-machines className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.new_session_machine}</span>
               <div className="flex flex-wrap gap-1">
                 {machines.map((d) => {
@@ -279,7 +279,7 @@ export function DirPicker({
               one that decides. */}
           {places.length > 0 && (
             <div data-dir-picker-places className="flex min-w-0 flex-col gap-1">
-              <span className="text-xs text-muted-foreground">{gui.new_session_places}</span>
+              <span className="text-caption text-muted-foreground">{gui.new_session_places}</span>
               <div className="flex max-h-24 min-w-0 flex-col gap-1 overflow-y-auto">
                 {places.map((p) => (
                   <button
@@ -287,7 +287,7 @@ export function DirPicker({
                     type="button"
                     data-dir-picker-place={p.path}
                     onClick={() => go(p.path)}
-                    className="flex min-h-touch w-full min-w-0 items-center rounded px-1 text-left text-xs hover:bg-accent"
+                    className="flex min-h-touch w-full min-w-0 items-center rounded px-1 text-left text-caption hover:bg-accent"
                   >
                     <span className="truncate">{p.shown}</span>
                   </button>
@@ -302,11 +302,11 @@ export function DirPicker({
               // meant to be read — `FilesPane`'s rule: a listing that
               // did not happen is the whole of what this half has to
               // say, never a footnote under an empty box.
-              <div data-dir-picker-cannot className="p-3 text-fact">
+              <div data-dir-picker-cannot className="p-3 text-body">
                 {cannot}
               </div>
             ) : listing === null ? null : dirs.length === 0 ? (
-              <div data-dir-picker-none className="p-3 text-sm text-muted-foreground">
+              <div data-dir-picker-none className="p-3 text-callout text-muted-foreground">
                 {gui.dir_picker_none}
               </div>
             ) : (
@@ -324,7 +324,7 @@ export function DirPicker({
                     // rarely what somebody came for and must stay
                     // reachable when they are.
                     className={cn(
-                      "flex min-h-touch w-full items-center gap-2 border-b px-3 text-left text-sm last:border-b-0 hover:bg-muted/50",
+                      "flex min-h-touch w-full items-center gap-2 border-b px-3 text-left text-callout last:border-b-0 hover:bg-muted/50",
                       e.name.startsWith(".") && "text-muted-foreground",
                     )}
                   >
@@ -336,13 +336,13 @@ export function DirPicker({
             {listing?.truncated && (
               // The cap is however many rows actually came — the number
               // belongs to the node, and a copy here would drift.
-              <div className="p-3 text-xs text-muted-foreground">
+              <div className="p-3 text-caption text-muted-foreground">
                 {cli.dir_truncated(listing.entries.length)}
               </div>
             )}
           </div>
 
-          <label className="flex min-w-0 flex-col gap-1 text-sm">
+          <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.dir_picker_typed}</span>
             <Input
               data-dir-picker-path
@@ -359,7 +359,7 @@ export function DirPicker({
               one invented here — the two callers refuse for different
               reasons and both already have words for them. */}
           {refused !== null && (
-            <div data-dir-picker-refused className="text-sm text-destructive">
+            <div data-dir-picker-refused className="text-callout text-destructive">
               {refused}
             </div>
           )}

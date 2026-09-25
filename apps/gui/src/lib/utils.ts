@@ -46,12 +46,22 @@ import { extendTailwindMerge } from "tailwind-merge";
 // right that a `--text-*` token which tailwind-merge files as a colour
 // is a trap waiting for whoever first writes `text-doc-h1` in a
 // component.
+//
+// The eight macOS text styles joined on 第十五轮 and `title`/`fact`/`aux`
+// left (tokens.css, the type scale's tombstone). The table above is the
+// measurement from before, kept as it was taken. **`body` is on this list
+// though Tailwind knows no such size**: without it `text-body` would be
+// filed as a colour like every other name here was.
 const OWN_SIZES = [
-  "title",
-  "fact",
-  "aux",
-  "hero",
-  "code",
+  "title-lg",
+  "title-md",
+  "title-sm",
+  "headline",
+  "body",
+  "callout",
+  "caption",
+  "group",
+  "mono",
   "read",
   "term",
   "doc-h1",

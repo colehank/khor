@@ -2782,7 +2782,7 @@ try {
   const UNDER_FLOOR = {
     "data-tab-close": [
       "src/browse/TabStrip.tsx",
-      "the ×'s own cell on a tab, `--ctl-sm` wide by the ruling (docs/SHELL.md " +
+      "the ×'s own cell on a tab, `--tab-close` wide by the ruling (docs/SHELL.md " +
         "第十三轮 第 6 条:「就是标签页的一块」— the user's VS Code screenshot, " +
         "where the close is a small square at the tab's end and the name stops " +
         "before it). A 44-wide cell would be most of a stub pressed to its " +
@@ -11421,7 +11421,9 @@ try {
             drew: !!pageEl,
             // A landing's list pane, and the 「…」 glyph's own lit state.
             list: document.querySelectorAll("[data-list]").length,
-            drag: head?.getAttribute("data-tauri-drag-region") ?? null,
+            // R0 over the page carries the drag since 第十五轮 (the shell
+            // marks it once); the page's own head inside the board does not.
+            drag: pageEl?.closest("[data-region]")?.querySelector(":scope > [data-region-head]")?.getAttribute("data-tauri-drag-region") ?? null,
             close: pageEl?.querySelectorAll("[data-more-close]").length ?? 0,
             lit: document.querySelector("[data-rail-more]")?.getAttribute("data-on") ?? null,
             // 一样东西只住一处 (docs/MORE.md 第二轮): a list of the
@@ -11444,9 +11446,12 @@ try {
               "region beside the rail, it does not float over the landing (src/App.tsx morePageEl)",
           );
         }
-        if (up.drag !== "deep") {
+        // Wide only: on the narrow face a page is one screen under L0,
+        // which is the top row and carries the drag (第十五轮 (a) walks
+        // it); there is no R0 over a page there.
+        if (posture === "wide" && up.drag !== "deep") {
           fail(
-            `${posture}: ${key}'s head carries data-tauri-drag-region=${JSON.stringify(up.drag)} — ` +
+            `${posture}: R0 over ${key} carries data-tauri-drag-region=${JSON.stringify(up.drag)} — ` +
               "第八轮 第 59 条: every landing's top row moves the window, and so does a page's",
           );
         }
@@ -20143,8 +20148,11 @@ try {
       }, name);
     const paneHead = await tokenPx("--pane-head");
     const gapIn = await tokenPx("--gap-in");
-    const radius = await tokenPx("--radius");
-    const ctlSm = await tokenPx("--ctl-sm");
+    // The board's corner is `--radius-xl` since the radii were named
+    // (第十五轮), and the ×'s cell is `--tab-close` since `--ctl-sm` went
+    // to macOS's 22 — a cell is not a control's look.
+    const radius = await tokenPx("--radius-xl");
+    const ctlSm = await tokenPx("--tab-close");
     const tabMin = await tokenPx("--tab-w-min");
     const side = await colourOf("--side");
     const card = await colourOf("--card");
@@ -20215,7 +20223,9 @@ try {
             top: +r(head).top.toFixed(2),
             h: +r(head).height.toFixed(2),
             bottom: +r(head).bottom.toFixed(2),
-            drag: head.hasAttribute("data-tauri-drag-region"),
+            // Marked on the shell's L0 container since 第十五轮, the row
+            // itself carries nothing.
+            drag: head.closest("[data-tauri-drag-region='deep']") !== null,
           },
           // The line between the rail and the list is the list seat's
           // left edge — it stays when the list is put away.
@@ -20475,7 +20485,7 @@ try {
         if (c.nameRight > c.cellLeft + 0.5) {
           fail(`${where}: on tab ${c.id} (${c.when}, ${c.w} wide) the name's box ends at ${c.nameRight} and the ×'s cell starts at ${c.cellLeft} — 「不要覆盖在文字上, 就是标签页的一块」`);
         }
-        if (c.cellW !== ctlSm) fail(`${where}: on tab ${c.id} (${c.when}) the ×'s cell is ${c.cellW} wide, --ctl-sm is ${ctlSm}`);
+        if (c.cellW !== ctlSm) fail(`${where}: on tab ${c.id} (${c.when}) the ×'s cell is ${c.cellW} wide, --tab-close is ${ctlSm}`);
         if (c.cellRight > c.tabRight + 0.5) fail(`${where}: on tab ${c.id} the ×'s cell runs past the tab (${c.cellRight} > ${c.tabRight})`);
         if (c.when === "hover" && !c.shown) fail(`${where}: under the pointer tab ${c.id} still hides its × — 悬停时画出来`);
         if (c.on && !c.shown) fail(`${where}: the open tab ${c.id} hides its × (${c.when}) — the tab in front always shows it`);
@@ -20515,9 +20525,12 @@ try {
     const onTheRow = await page.evaluate(() => {
       const seen = new Set();
       for (let x = 2; x < window.innerWidth; x += 4) {
-        const el = document.elementFromPoint(x, 6);
-        if (!el || !el.hasAttribute("data-tauri-drag-region")) continue;
-        seen.add(el.closest("[data-side-head]") ? "side" : el.closest("[data-region-head]") ? "region" : el.tagName.toLowerCase());
+        // The containers carry it since 第十五轮 (the shell marks L0 and
+        // R0 once), so a point is on a row that drags when an ancestor
+        // does — 第十五轮 (a) judges each point by tauri's own walk.
+        const el = document.elementFromPoint(x, 6)?.closest("[data-tauri-drag-region]") ?? null;
+        if (!el) continue;
+        seen.add(el.querySelector("[data-side-head]") || el.closest("[data-side-head]") ? "side" : el.closest("[data-region-head]") ? "region" : el.tagName.toLowerCase());
       }
       return [...seen];
     });
@@ -20666,6 +20679,12 @@ try {
     // ── (c) a page with no tabs has no row, and its board starts
     //        --gap-in from the top ──
     //
+    // ⚠️ **Reversed by 第十五轮 第 5 条 (D2, 2026-09-25)**: every page has
+    // R0 — a page without tabs wears ‹ › and its name there, like System
+    // Settings — so what 第十四轮 asked for (no empty band) is now asked
+    // the other way round: one row, **not empty**, and the board joined
+    // under it. The page names are 第十五轮 (c)'s to measure.
+    //
     // The sessions landing is measured with **nothing open**, which is
     // the state the user saw the empty band in; the walk above leaves
     // tabs behind, so they are cleared and the page reloaded.
@@ -20678,9 +20697,11 @@ try {
         const main = document.querySelector("[data-main]");
         if (!board || !main) return { missing: [!board && "[data-board]", !main && "[data-main]"].filter(Boolean) };
         const r = (el) => el.getBoundingClientRect();
+        const head = document.querySelector("[data-region-head]");
         return {
           rows: document.querySelectorAll("[data-region-head]").length,
-          gap: +(r(board).top - r(main).top).toFixed(2),
+          gap: head ? +(r(board).top - r(head).bottom).toFixed(2) : null,
+          named: !!head?.querySelector("[data-page-title], [data-session-tabs], [data-tab-strip], input"),
         };
       });
       if (read.missing) {
@@ -20688,10 +20709,11 @@ try {
         return;
       }
       console.log(`第十四轮 · ${where}: ${JSON.stringify(read)}`);
-      if (read.rows !== 0 || read.gap !== gapIn) {
+      void gapIn;
+      if (read.rows !== 1 || read.gap !== 0 || !read.named) {
         fail(
-          `${where} draws ${read.rows} [data-region-head] and starts its board ${read.gap} under the region (--gap-in ${gapIn}) — ` +
-            "「没有标签的页没有空带」: no tabs, no row, and the board's top is an edge like the other three (src/components/Region.tsx)",
+          `${where} draws ${read.rows} [data-region-head], its board ${read.gap} under it, named ${read.named} — ` +
+            "R0 on every page (D2, SHELL.md round 15 item 5): one row with the page's name in it, and the board joined under it (src/components/Region.tsx)",
         );
       }
     };
@@ -20763,6 +20785,472 @@ try {
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
+  }
+
+  // ── 第十五轮:外壳一处拥有骨架——拖动、宽度、R0、页型、字 (docs/SHELL.md) ──
+  //
+  // 2026-09-24, on the installed 第十四轮:「侧边栏和页面上方的地方也没办法
+  // 拽住拖动了」「设置侧边栏宽度的时候, 背后的背景没有跟着变」. Both were
+  // the same hole (SHELL.md 挂账): each component marked its own drag
+  // region and the left block had two width sources. The rules this
+  // section holds (docs/DESIGN.md 第五节):
+  //
+  //   (a) **drag census** — every landing, every region, an 8×2 grid of
+  //       points judged by tauri's own algorithm: L0, L1, R0 blanks move
+  //       the window; nothing in L2 or R1 does;
+  //   (b) **one width owner** — the seam dragged to three widths, and the
+  //       block, its first row, its list and its painted ground agree;
+  //   (c) **R0 on every page** — `[data-region-kind]` on each region's
+  //       root, R0 at `--pane-head`, nothing with words between R0 and
+  //       the board;
+  //   (d) **body 13** — the shell's body size is `--text-body` and the
+  //       reading surfaces are still `--text-read`;
+  //   (e) **static** — `data-tauri-drag-region` is written in one shell
+  //       file (and LockScreen's named exception), nowhere else.
+  //
+  // ⚠️ The web face cannot drag a window. What this measures is the
+  // attribute tauri reads and the algorithm it reads it with — the lead
+  // still presses the real window (SHELL.md 第十五轮 门, last line).
+  {
+    const px = (name) =>
+      page.evaluate((n) => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:absolute;visibility:hidden;height:var(${n});width:var(${n})`;
+        document.body.appendChild(el);
+        const v = el.getBoundingClientRect().height;
+        el.remove();
+        return +v.toFixed(2);
+      }, name);
+    const colour = (name) =>
+      page.evaluate((n) => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:absolute;visibility:hidden;background-color:var(${n})`;
+        document.body.appendChild(el);
+        const c = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return c;
+      }, name);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+    const paneHead = await px("--pane-head");
+
+    // ── (e) static: one file writes the attribute ──
+    {
+      const src = join(gui, "src");
+      const files = [];
+      const walk = (d) => {
+        for (const n of readdirSync(d)) {
+          const p = join(d, n);
+          if (statSync(p).isDirectory()) walk(p);
+          else if (/\.(tsx?|css|html)$/.test(n)) files.push(p);
+        }
+      };
+      walk(src);
+      const writers = files
+        .filter((p) => readFileSync(p, "utf8").includes("data-tauri-drag-region"))
+        .map((p) => relative(gui, p).replaceAll("\\", "/"));
+      // The shell's one file, and the lock screen: a locked window has no
+      // shell at all (no L, no R), and it must still move.
+      const ALLOWED = ["src/components/shell.ts", "src/views/LockScreen.tsx"];
+      const extra = writers.filter((w) => !ALLOWED.includes(w));
+      console.log(`round 15 · drag attribute written in: ${writers.join(", ") || "nothing"}`);
+      if (extra.length) {
+        fail(
+          `data-tauri-drag-region is written in ${extra.length} file(s) outside the shell: ${extra.join(", ")} — ` +
+            "drag belongs to the shell: it marks L0, L1 and R0 once each; a component never marks its own (docs/design-system/guidelines/10-layout.md)",
+        );
+      }
+      if (!writers.includes("src/components/shell.ts")) {
+        fail("probe dead: src/components/shell.ts does not write data-tauri-drag-region — the shell marks nothing, so nothing drags");
+      }
+    }
+
+    // ── (a) the drag census ──
+    //
+    // **tauri 2.11.5's own judgment, verbatim** (`src/window/scripts/drag.js`,
+    // `isDragRegion` and `isClickableElement`), extended by one word: where
+    // it answers false because a control was met first, this says
+    // "control" — those points are excluded from 「must drag」, since a
+    // press on a control has to stay a press. If the vendored copy in the
+    // cargo registry is on this machine, the two are compared first, so a
+    // tauri bump that changes the rule turns this red rather than stale.
+    const DRAG_JS = `
+  const TAURI_DRAG_REGION_ATTR = 'data-tauri-drag-region'
+  const CLICKABLE_TAGS = new Set([
+    'A',
+    'BUTTON',
+    'INPUT',
+    'SELECT',
+    'TEXTAREA',
+    'LABEL',
+    'SUMMARY'
+  ])
+  const INTERACTIVE_ROLES = new Set([
+    'button',
+    'link',
+    'menuitem',
+    'tab',
+    'checkbox',
+    'radio',
+    'switch',
+    'option'
+  ])
+
+  function isClickableElement(el) {
+    return (
+      CLICKABLE_TAGS.has(el.tagName)
+      || (el.hasAttribute('contenteditable')
+        && el.getAttribute('contenteditable') !== 'false')
+      || (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1')
+      || INTERACTIVE_ROLES.has(el.getAttribute('role'))
+    )
+  }
+`;
+    {
+      const home = process.env.CARGO_HOME ?? join(process.env.HOME ?? "", ".cargo");
+      const reg = join(home, "registry", "src");
+      let vendored = null;
+      try {
+        for (const idx of readdirSync(reg)) {
+          const p = join(reg, idx, "tauri-2.11.5", "src", "window", "scripts", "drag.js");
+          try {
+            vendored = readFileSync(p, "utf8");
+            break;
+          } catch {
+            // not in this index
+          }
+        }
+      } catch {
+        // no registry on this machine
+      }
+      const squash = (s) => s.replace(/\s+/g, " ").trim();
+      if (vendored === null) {
+        console.log("round 15 · tauri 2.11.5 drag.js not in the cargo registry here — judging with the copy in this file");
+      } else if (!squash(vendored).includes(squash(DRAG_JS))) {
+        fail("tauri 2.11.5's drag.js no longer contains the clickable rule this census copies — re-copy it before trusting (a)");
+      } else if (!/if \(attr === 'deep'\) return true/.test(vendored)) {
+        fail("tauri 2.11.5's drag.js no longer answers 'deep' with a drag — the census below is judging by a rule tauri dropped");
+      }
+    }
+    const census = async (where) =>
+      page.evaluate(
+        ([src, head]) => {
+          // eslint-disable-next-line no-new-func
+          const isClickableElement = new Function(`${src}; return isClickableElement`)();
+          const judge = (x, y) => {
+            const top = document.elementFromPoint(x, y);
+            if (!top) return { verdict: "none", el: null };
+            const path = [];
+            for (let el = top; el; el = el.parentElement) path.push(el);
+            for (const el of path) {
+              const attr = el.getAttribute("data-tauri-drag-region");
+              if (isClickableElement(el) && attr === null) return { verdict: "control", el: top };
+              if (attr === null) continue;
+              if (attr === "false") return { verdict: "none", el: top };
+              if (attr === "deep") return { verdict: "drag", el: top };
+              if (attr === "" || attr === "true") return { verdict: el === top ? "drag" : "none", el: top };
+            }
+            return { verdict: "none", el: top };
+          };
+          const q = (s) => document.querySelector(s);
+          const aside = q("[data-side]");
+          const sideHead = q("[data-side-head]");
+          const rail = q("[data-rail]");
+          const seat = q("[data-side-list-seat]");
+          const main = q("[data-main]");
+          const board = main ? [...main.querySelectorAll("[data-board]")].find((b) => b.getBoundingClientRect().width > 0) : null;
+          const missing = [
+            !aside && "[data-side]",
+            !sideHead && "[data-side-head]",
+            !rail && "[data-rail]",
+            !seat && "[data-side-list-seat]",
+            !main && "[data-main]",
+            !board && "[data-board]",
+          ].filter(Boolean);
+          if (missing.length) return { missing };
+          const r = (el) => el.getBoundingClientRect();
+          const m = r(main);
+          const areas = {
+            L0: r(sideHead),
+            L1: r(rail),
+            L2: r(seat),
+            // R0 is a place, not an element: the first --pane-head of the
+            // right side. A page that draws nothing there has a board or a
+            // blank in it, and that is exactly what this must catch.
+            R0: { left: m.left, top: m.top, width: m.width, height: head },
+            R1: r(board),
+          };
+          const say = (el) =>
+            el
+              ? `${el.tagName.toLowerCase()}${[...el.attributes]
+                  .filter((a) => a.name.startsWith("data-") || a.name === "role" || a.name === "aria-label")
+                  .slice(0, 3)
+                  .map((a) => `[${a.name}${a.value ? `=${a.value.slice(0, 24)}` : ""}]`)
+                  .join("")}`
+              : "nothing";
+          const out = {};
+          for (const [name, a] of Object.entries(areas)) {
+            const tally = { drag: 0, control: 0, none: 0 };
+            const bad = [];
+            if (a.width < 2 || a.height < 2) {
+              out[name] = { tally, bad, empty: true };
+              continue;
+            }
+            for (let i = 0; i < 8; i++) {
+              for (let j = 0; j < 2; j++) {
+                const x = a.left + ((i + 0.5) * a.width) / 8;
+                const y = a.top + ((j + 0.5) * a.height) / 2;
+                const { verdict, el } = judge(x, y);
+                tally[verdict]++;
+                const must = name === "L0" || name === "L1" || name === "R0";
+                if ((must && verdict === "none") || (!must && verdict === "drag")) {
+                  bad.push(`(${Math.round(x)},${Math.round(y)}) ${verdict} on ${say(el)}`);
+                }
+              }
+            }
+            out[name] = { tally, bad };
+          }
+          return { areas: out };
+        },
+        [DRAG_JS, paneHead],
+      );
+    const judgeCensus = (where, got) => {
+      if (got.missing) {
+        fail(`probe dead: on ${where} the shell has no ${got.missing.join(" / ")} — the census has nothing to walk`);
+        return;
+      }
+      const line = Object.entries(got.areas)
+        .map(([n, a]) => `${n} ${a.empty ? "—" : `${a.tally.drag}d/${a.tally.control}c/${a.tally.none}n`}`)
+        .join(" · ");
+      console.log(`round 15 · drag census · ${where}: ${line}`);
+      for (const [name, a] of Object.entries(got.areas)) {
+        if (!a.bad.length) continue;
+        const must = name === "L0" || name === "L1" || name === "R0";
+        fail(
+          `on ${where} ${a.bad.length}/16 points in ${name} ${must ? "do not move the window" : "move the window"}: ${a.bad.slice(0, 4).join("; ")}` +
+            (a.bad.length > 4 ? ` (+${a.bad.length - 4})` : "") +
+            ` — the blanks of L0, L1 and R0 move the window; nothing in L2 or R1 does (10-layout.md, tauri 2.11.5 drag.js)`,
+        );
+      }
+    };
+    // Every landing, and each in the state a person meets it in. Tabs
+    // are cleared and the page reloaded first, so 「会话·无标签」 and
+    // 「工作区·没开」 are the states they say.
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const STOPS = [
+      ["sessions · no tab", async () => open("sessions")],
+      ["sessions · a tab open", async () => (await open("sessions")) && press("[data-list] [data-row-open]")],
+      ["devices", async () => open("devices")],
+      ["devices · one picked", async () => (await open("devices")) && press("[data-list] [data-row-open]")],
+      ["quota", async () => open("quota")],
+      ["browser", async () => open("browser")],
+      ["workspaces · none open", async () => open("workspaces")],
+      ["workspaces · one open", async () => (await open("workspaces")) && openWs()],
+      ["「…」", async () => (await press("[data-rail-more]")) && press('[data-more-open="settings"]')],
+    ];
+    for (const [where, go] of STOPS) {
+      if (!(await go())) {
+        fail(`probe dead: could not reach ${where} for the drag census`);
+        await page.keyboard.press("Escape");
+        continue;
+      }
+      await wait(400);
+      await page.mouse.move(700, 450);
+      judgeCensus(where, await census(where));
+    }
+    await page.keyboard.press("Escape");
+    await wait(200);
+
+    // ── (c) R0 on every page, one component, three kinds ──
+    const KINDS = [
+      ["sessions · no tab", "tabs", async () => {
+        await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        return open("sessions");
+      }],
+      ["sessions · a tab open", "tabs", async () => (await open("sessions")) && press("[data-list] [data-row-open]")],
+      ["devices", "detail", async () => open("devices")],
+      ["quota", "detail", async () => open("quota")],
+      ["browser", "doc", async () => open("browser")],
+      ["workspaces", "detail", async () => open("workspaces")],
+      ["「…」", "detail", async () => (await press("[data-rail-more]")) && press('[data-more-open="settings"]')],
+    ];
+    for (const [where, kind, go] of KINDS) {
+      if (!(await go())) {
+        fail(`probe dead: could not reach ${where} to read its R0`);
+        await page.keyboard.press("Escape");
+        continue;
+      }
+      await wait(400);
+      const read = await page.evaluate(() => {
+        const main = document.querySelector("[data-main]");
+        const region = main?.querySelector("[data-region-kind]");
+        if (!main || !region) return { missing: [!main && "[data-main]", !region && "[data-main] [data-region-kind]"].filter(Boolean) };
+        const head = region.querySelector(":scope > [data-region-head]");
+        const board = region.querySelector(":scope > [data-board]");
+        if (!head || !board) return { kind: region.getAttribute("data-region-kind"), missing: [!head && "[data-region-head]", !board && "[data-board]"].filter(Boolean) };
+        const r = (el) => el.getBoundingClientRect();
+        const hb = r(head).bottom;
+        const bt = r(board).top;
+        // Anything with words of its own standing between the two.
+        const between = [...main.querySelectorAll("*")]
+          .filter((el) => {
+            if (head.contains(el) || board.contains(el)) return false;
+            const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== "");
+            if (!own) return false;
+            const b = r(el);
+            return b.height > 0 && b.bottom > hb + 0.5 && b.top < bt - 0.5;
+          })
+          .map((el) => `${el.tagName.toLowerCase()} ${JSON.stringify(el.textContent.trim().slice(0, 30))}`);
+        return {
+          kind: region.getAttribute("data-region-kind"),
+          top: +(r(head).top - r(main).top).toFixed(2),
+          h: +r(head).height.toFixed(2),
+          gap: +(bt - hb).toFixed(2),
+          title: head.querySelector("[data-page-title]")?.textContent?.trim() ?? null,
+          between,
+        };
+      });
+      console.log(`round 15 · R0 · ${where}: ${JSON.stringify(read)}`);
+      if (read.missing) {
+        fail(`on ${where} the right side has no ${read.missing.join(" / ")} — R0 is on every page, from one component (src/components/Region.tsx)`);
+        continue;
+      }
+      if (read.kind !== kind) fail(`${where} declares itself data-region-kind=${JSON.stringify(read.kind)}, its page type is ${kind} (10-layout.md, the three page types)`);
+      if (read.top !== 0 || read.h !== paneHead) {
+        fail(`on ${where} R0 is ${read.h} tall from ${read.top}, --pane-head is ${paneHead} — one row, at the top, the height of L0`);
+      }
+      if (read.gap !== 0 || read.between.length) {
+        fail(`on ${where} the board starts ${read.gap} under R0 with ${JSON.stringify(read.between)} between — nothing stands between R0 and R1`);
+      }
+      if (kind === "detail" && !read.title) {
+        fail(`on ${where} R0 carries no [data-page-title] — a page without tabs wears back/forward and its name in R0 (PageHead)`);
+      }
+    }
+    await page.keyboard.press("Escape");
+    await wait(200);
+
+    // ── (b) one width, one owner ──
+    //
+    // The seam is dragged with a real pointer to three widths; each time
+    // the block, its first row, its list and the paint of its ground must
+    // end at one x, and the search box must not reach past it.
+    if (!(await open("sessions"))) {
+      fail("probe dead: no sessions landing to drag the seam on");
+    } else {
+      const side = await colour("--side");
+      for (const want of [200, 288, 420]) {
+        const at = await page.evaluate(() => {
+          const s = document.querySelector("[data-list-seam]");
+          const l = document.querySelector("[data-list]");
+          if (!s || !l) return null;
+          const sr = s.getBoundingClientRect();
+          return { x: sr.left + sr.width / 2, y: sr.top + sr.height / 2, left: l.getBoundingClientRect().left };
+        });
+        if (!at) {
+          fail("probe dead: no [data-list-seam] beside [data-list] — the one handle for the block's width");
+          break;
+        }
+        await page.mouse.move(at.x, at.y);
+        await page.mouse.down();
+        await page.mouse.move(at.x + 5, at.y, { steps: 2 });
+        await page.mouse.move(at.left + want, at.y, { steps: 6 });
+        await page.mouse.up();
+        // Off the seam: under the pointer it lights up (`hover:bg-border`),
+        // and the ground's paint is read along the line it stands on.
+        await page.mouse.move(900, 450);
+        await wait(300);
+        const read = await page.evaluate((side) => {
+          const q = (s) => document.querySelector(s);
+          const aside = q("[data-side]");
+          const head = q("[data-side-head]");
+          const list = q("[data-list]");
+          // Whichever shape the search is in at this width: the box, or
+          // the magnifier it shrinks to (第十五轮 第 4 条).
+          const box = [...document.querySelectorAll(
+            "[data-side-head] [data-pane-search], [data-side-head] [data-global-search], [data-side-head] [data-search-magnifier]",
+          )].find((el) => el.getBoundingClientRect().width > 0) ?? null;
+          const r = (el) => el.getBoundingClientRect();
+          // The ground as painted: walk right along a blank line of the
+          // list until the paint stops being --side.
+          // An ancestor paints this point only where its own box covers
+          // it: the seam overhangs the block by its hit margin, and its
+          // parent's ground does not travel with it.
+          const paint = (x, y) => {
+            for (let el = document.elementFromPoint(x, y); el; el = el.parentElement) {
+              const b = el.getBoundingClientRect();
+              if (x < b.left || x >= b.right) continue;
+              const bg = getComputedStyle(el).backgroundColor;
+              if (bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") return bg;
+            }
+            return null;
+          };
+          const y = r(list).top + r(list).height * 0.85;
+          let x = r(aside).left + 1;
+          while (x < window.innerWidth && paint(x + 0.5, y) === side) x++;
+          return {
+            list: +r(list).width.toFixed(1),
+            aside: +r(aside).right.toFixed(1),
+            head: +r(head).right.toFixed(1),
+            l2: +r(list).right.toFixed(1),
+            ground: x,
+            box: box ? +r(box).right.toFixed(1) : null,
+          };
+        }, side);
+        console.log(`round 15 · width ${want}: ${JSON.stringify(read)}`);
+        if (Math.abs(read.list - want) > 2) {
+          fail(`dragging the seam to ${want} left the list ${read.list} wide — the drag did not take, so the rest of this stop measures nothing`);
+          continue;
+        }
+        const ends = [read.aside, read.head, read.l2, read.ground];
+        if (Math.max(...ends) - Math.min(...ends) > 1.5) {
+          fail(
+            `at list width ${want} the block ends at ${read.aside}, its first row at ${read.head}, the list at ${read.l2} and the painted ground at ${read.ground} — ` +
+              "one owner of the width: L0, L2 and the block's ground follow the seam together (SHELL.md, the 2026-09-24 debts, item 2)",
+          );
+        }
+        if (read.box === null) {
+          fail(`at list width ${want} the first row shows neither a search box nor its magnifier — the search has to stay reachable`);
+        } else if (read.box > read.aside + 0.5) {
+          fail(`at list width ${want} the search box ends at ${read.box}, past the block's edge ${read.aside} — it shrinks, it does not push`);
+        }
+      }
+      // Back to the token's width, so what follows meets the default.
+      await page.evaluate(() => window.localStorage.removeItem("khor.list-width"));
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
+
+    // ── (d) body 13, reading 16 ──
+    const type = await page.evaluate(() => {
+      const probe = (cls) => {
+        const el = document.createElement("span");
+        el.className = cls;
+        el.textContent = "x";
+        document.body.appendChild(el);
+        const s = getComputedStyle(el).fontSize;
+        el.remove();
+        return parseFloat(s);
+      };
+      return {
+        body: parseFloat(getComputedStyle(document.body).fontSize),
+        tokenBody: probe("text-body"),
+        read: probe("text-read"),
+        row: (() => {
+          const t = document.querySelector("[data-list] [data-side-row] [data-row-open]");
+          return t ? parseFloat(getComputedStyle(t).fontSize) : null;
+        })(),
+      };
+    });
+    console.log(`round 15 · type: ${JSON.stringify(type)}`);
+    if (type.body !== 13 || type.tokenBody !== 13) {
+      fail(`the shell's body reads ${type.body}px and text-body ${type.tokenBody}px — D1: body 14 → 13, macOS's size`);
+    }
+    if (type.read !== 16) fail(`text-read is ${type.read}px — the reading surfaces stay at 16 (D1: the reading surfaces keep --read)`);
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);

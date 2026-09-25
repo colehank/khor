@@ -73,10 +73,10 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
         <DialogHeader>
           <DialogTitle>{gui.delete}</DialogTitle>
         </DialogHeader>
-        <div data-delete-says className="text-sm">
+        <div data-delete-says className="text-callout">
           {pending?.says}
         </div>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+        <label className="flex items-center gap-2 text-callout text-muted-foreground">
           <input
             data-delete-never-ask
             type="checkbox"
@@ -88,7 +88,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
           {gui.never_ask}
         </label>
         {refused !== null && (
-          <div data-delete-refused className="text-sm text-destructive">
+          <div data-delete-refused className="text-callout text-destructive">
             {refused}
           </div>
         )}

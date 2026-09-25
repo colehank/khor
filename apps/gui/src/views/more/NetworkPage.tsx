@@ -103,7 +103,7 @@ export function NetworkPage({
         {alone ? (
           <div
             data-net-alone
-            className="flex h-full items-center justify-center p-pane text-sm text-muted-foreground"
+            className="flex h-full items-center justify-center p-pane text-callout text-muted-foreground"
           >
             {gui.identity_alone}
           </div>
@@ -169,17 +169,17 @@ export function NetworkPage({
           )}
         </div>
         {about?.paused && (
-          <p data-net-paused className="text-sm text-muted-foreground">
+          <p data-net-paused className="text-callout text-muted-foreground">
             {gui.identity_paused_now}
           </p>
         )}
         {said?.map((line) => (
-          <p key={line} data-net-left className="text-sm text-muted-foreground">
+          <p key={line} data-net-left className="text-callout text-muted-foreground">
             {line}
           </p>
         ))}
         {error && (
-          <p data-net-error className="text-sm text-destructive">
+          <p data-net-error className="text-callout text-destructive">
             {error}
           </p>
         )}
@@ -200,7 +200,7 @@ export function NetworkPage({
           {/* The whole cost in one clause, and it is not red like the
               reset's: leaving is undone by a ticket, and painting the
               two the same colour would say they are the same size. */}
-          <p data-net-leave-warn className="text-sm text-muted-foreground">
+          <p data-net-leave-warn className="text-callout text-muted-foreground">
             {gui.identity_leave_warn}
           </p>
           <div className="flex flex-wrap items-center gap-2">
@@ -252,7 +252,7 @@ export function NetworkPage({
             </Button>
           </div>
           {error && (
-            <p data-net-leave-refused className="text-sm text-destructive">
+            <p data-net-leave-refused className="text-callout text-destructive">
               {error}
             </p>
           )}

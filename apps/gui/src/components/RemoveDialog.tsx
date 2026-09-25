@@ -138,12 +138,12 @@ export function RemoveDialog({
         <DialogHeader>
           <DialogTitle>{gui.delete}</DialogTitle>
         </DialogHeader>
-        <div data-remove-says className="text-sm">
+        <div data-remove-says className="text-callout">
           {word}
         </div>
         {/* Not drawn where being wrong is permanent (file head). */}
         {kind !== "gone" && (
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <label className="flex items-center gap-2 text-callout text-muted-foreground">
             <input
               data-remove-never-ask
               type="checkbox"
@@ -159,7 +159,7 @@ export function RemoveDialog({
           </label>
         )}
         {refused !== null && (
-          <div data-remove-refused className="text-sm text-destructive">
+          <div data-remove-refused className="text-callout text-destructive">
             {refused}
           </div>
         )}

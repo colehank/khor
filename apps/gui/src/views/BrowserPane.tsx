@@ -416,7 +416,7 @@ export function BrowserPane({
           data-cannot-reach={opening.state === "failed" ? "" : undefined}
           className={cn(
             "flex-none px-4 py-3",
-            opening.state === "failed" ? "text-fact" : "text-sm text-muted-foreground",
+            opening.state === "failed" ? "text-body" : "text-callout text-muted-foreground",
           )}
         >
           {opening.word}
