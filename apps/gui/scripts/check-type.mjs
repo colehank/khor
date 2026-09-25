@@ -167,7 +167,7 @@ if (!cssYield || !tsYield) {
 }
 
 if (offenders.length) {
-  console.error("type outside tokens — use a token (docs/DESIGN.md):\n" + offenders.join("\n"));
+  console.error("type outside tokens — use a token (docs/design-system/guidelines/50-gates.md):\n" + offenders.join("\n"));
   process.exit(1);
 }
 console.log("type gate: tokens own the letterforms, and cn() keeps them");

@@ -941,24 +941,26 @@ agent-codex / agent-cursor / agent），原话「这有一堆icon库可以参考
 
 另：两轮验收都只看了网页脸截图——网页脸不认拖动、碰不到那块盘，这三件验收时看不见（领队的问题）。
 
-## 第十五、十六、十七轮总述：照 DESIGN.md 第五节，把外壳收成一处（2026-09-25，khor-58）
+## 第十五、十六、十七轮总述：照 docs/design-system，把外壳收成一处（2026-09-25，khor-58）
 
 > 「这些问题可以记下，关键是，我们似乎一直缺乏一个系统的 design system 来控制」
 > 「再优化一下，做出来就像是苹果原生 app 一样……但适配到我们的品牌色」
 > 「还有一些抽象，比如非标签页和标签页的是不是也得考虑一下？」
 > D1–D10：「全部按照建议」（2026-09-25）。
 
-规矩在 `docs/DESIGN.md` 第五节，数值出处是冻结草稿 `docs/handoff/design/2026-09-25-draft.md`（进了 `tokens.css` 就作废）。上面「挂账（2026-09-24）」的四件事分进这三轮。十五、十六可并行（十六几乎全在后端）；十七排在十五之后。**三轮都完才装机**；每轮末领队在真 app 里走一遍，不只看网页脸。
+**2026-09-25 改口**：规矩与数值的出处是用户交来的 `docs/design-system/`（`README.md`、`guidelines/10–40`、`tokens.json`、`components/*/README.md`；Claude Code 走 `.claude/skills/khor-design`）。原先指的「DESIGN.md 第五节」和冻结草稿已作废删除；与下文冲突时以 design-system 为准。上面「挂账（2026-09-24）」的四件事分进这三轮。十五、十六可并行（十六几乎全在后端）；十七排在十五之后。**三轮都完才装机**；每轮末领队在真 app 里走一遍，不只看网页脸。
 
 ## 第十五轮：外壳一处拥有骨架——拖动、宽度、R0、页型、字与选中（2026-09-25，khor-58）
 
 ### 落法
 
-1. **token 先行**（`tokens.css`，数取草稿，理由写进注释）：
-   - `--brand-strong` / `--on-brand` 两个主题（亮 `#5d7b00`/白，暗 `#99bb36`/`#151513`；由 `--lq3` 同一 OKLCH 彩度步算出，注释写明白字 4.89）。
-   - 字号语义档：`title-lg/md/sm`、`headline`、`body`、`callout`、`caption`、`group`，`read`、`mono` 沿用现档。**正文 `--text-base` 14 → 13**（D1），`read` 不动。旧的 `text-title/fact/aux` 映到新档或撤掉，不留两套；`check-type` / `check-face` 跟着改判据。
-   - 控件高 `--control-sm/md/lg`、行高 `--row-1/--row-2`；`--touch` 的「粗指针才撑到 44」规矩照旧。
-2. **选中行实心**（D6）：L2 所有列表的选中行 `--brand-strong` 底、`--on-brand` 字；窗口失焦（`blur` / tauri focus 事件）时 `--fill-strong` 底、正常墨。导轨的「开着」不变（仍是 wash + `--rail-on-ink`）。`check-palette` 加：选中行上的字 ≥ 4.5，两个主题、前台与失焦两态。
+1. **token 先行**：`tokens.css` 按 `docs/design-system/guidelines/40-migration.md` 那张表的**全部**未落地行改完（D11–D13 已落地），值取 `tokens.json`，理由写进注释：
+   - 「新增的 token」一节全部：`brand-strong`（亮 `#5d7b06`）`brand-ink` `on-brand` `on-destructive` `on-badge`、`size` 一族、`radius-*` 六档具名、`duration`/`easing` 的用途说明。写死的 `#fff` 换成 `on-*`。
+   - `--primary` 与 `--ring` 从墨改为 `brand-strong`；控件高 22/28/32；`--gap-group` 20；`--pane-head` 直写 48。
+   - **新门**：`check-boot`（或它 import 的一段）读 `docs/design-system/tokens.json`，与 `tokens.css` 逐个比对两个主题的值——`30-behavior` 写着这道门，今天它并不存在。先红（今天至少 `--text-base`、`--ring`、`--primary` 对不上）。
+   - 字号只从 `tokens.json` 的 14 个 type style 里取（语义名）。**正文 `--text-base` 14 → 13**（D1），`read` 不动。旧的 `text-title/fact/aux` 映到新档或撤掉，不留两套；`check-type` / `check-face` 跟着改判据。
+   - `--touch` 的「粗指针才撑到 44」规矩照旧。
+2. **选中行实心**（D6，`components/ListRow`）：L2 所有列表的选中行 `--brand-strong` 底、标题/副标题/时间**全用满值** `--on-brand`（不许降透明度，0.92 就跌破 4.5）；窗口失焦（`blur` / tauri focus 事件）时 `--fill-strong` 底、正常墨。导轨的「开着」不变（仍是 wash + `--rail-on-ink`）。`check-palette` 加：选中行三种文字对 `brand-strong` 一起量 ≥ 4.5，两个主题、前台与失焦两态。
 3. **拖动归外壳**（D3，挂账 1）：删掉所有组件里的 `data-tauri-drag-region`（`SideHead`、`Region`、`PaneBar`、`TabStrip`、`AddressBar`、`DetailPane`、`WorkspacePane`、`QuotaLanding`、`MorePage`、`LockScreen`、`App.tsx`），改由外壳在 **L0、L1、R0 三块的容器上各标一次 `deep`**；L2、R1 不标。可点控件靠 tauri 自己的规则排除；若某个非控件元素挡了拖动，给它补语义（`role`/`tabindex`），不在组件里标 `false`。`LockScreen` 整窗无外壳，保留它自己那一处并在注释里写为什么是例外。
 4. **宽度一个主人**（挂账 2）：宽度只存在 L 上（一个 state、一个 CSS 变量 `--list-w`），`aside[data-side]` 的宽 = `--rail-w` + `--list-w`，`ListPane` 不再自己设 `style.width`；L0 的搜索框 `min-width: 0`，放不下时缩到只剩放大镜（按钮形态，仍能点开搜索）。
 5. **R0 每页都有**（D2，改第十四轮第 3 条）：新组件 `PageHead`，是 R0 在「没有标签的页」上的唯一实现：‹ ›（有历史才出现）· 页名（`title-sm`）· 右端页面按钮槽（本轮只留槽，按钮在十七轮搬）。机器、额度、「…」、没开会话的会话页、没开工作区的工作区页都用它；第十四轮 Windows 那条「只有三颗的窄行」随之撤掉，三颗回到 R0 右端。
@@ -989,7 +991,7 @@ agent-codex / agent-cursor / agent），原话「这有一堆icon库可以参考
 
 - cargo test：假一个 `statfs` 要 10 s 的卷（测试注入点，不碰真盘），`vitals_of(自己)` 在 50 ms 内返回，且那个卷带 `stale`；并行 20 个 `list_devices` 的总耗时 < 1 s。红：今天第一个就卡 10 s。
 - cargo test：采样器起来前 `vitals_of(自己)` 是 `None`，起来后 age 随时间长。
-- face（或新 `npm run fast`，加进 DESIGN.md 第二节的表）：假 home 里给 bridge 注入同样的慢卷；机器页首次打开 1 s 内出卡片；离开再回来**第一帧**就有卡片（没有空帧）。红：今天第二次仍是空帧。
+- face（或新 `npm run fast`，加进 `docs/design-system/guidelines/50-gates.md` 的表）：假 home 里给 bridge 注入同样的慢卷；机器页首次打开 1 s 内出卡片；离开再回来**第一帧**就有卡片（没有空帧）。红：今天第二次仍是空帧。
 - 本机真窗口（领队）：插着 My Book 休眠时开机器页、额度页，掐表。
 
 ## 第十七轮：页面按页型重排——「更多」是设置、按钮上 R0、新建是 sheet、工作区是板里三栏（2026-09-25，khor-58）
@@ -1003,7 +1005,7 @@ agent-codex / agent-cursor / agent），原话「这有一堆icon库可以参考
 3. **页面按钮上 R0 右端**（D9）：新会话、机器那三个按钮、注册账户、导入等挪进 `PageHead` 的按钮槽 / 标签条右端的 ＋；板里不再有一排按钮。行的动作只在右键菜单。
 4. **新建类是 sheet**（D10）：`NewSessionDialog`、`ImportDialog`、注册账户、`PairDialogs` 中的表单类改为从 R0 下缘落下的 sheet（宽 ≤ 板宽、贴 R0 下沿、无全屏遮罩、Esc 关）；删除确认仍是对话框。
 5. **工作区是板里的 B**（D8）：开着工作区时板内三栏——导航（文件树）、编辑（文件标签条 + 文件）、检查器（它的会话）；每栏头与 R0 等高，栏间细线。`WorkspacePane` 自己那套外壳撤掉。
-6. **区域五态**（DESIGN.md 第五节）：一个 `RegionState` 组件给「从没加载过（骨架）/ 刷新中（保留旧内容 + R0 底 2px 品牌色条）/ 过期（R0 右端 caption）/ 空 / 出错（带重试）」，机器、额度、更多、会话总览都用它。
+6. **区域五态**（`guidelines/20-states.md`，`components/RegionState`）：一个 `RegionState` 组件给「从没加载过（骨架）/ 刷新中（保留旧内容 + R0 底 2px 品牌色条）/ 过期（R0 右端 caption）/ 空 / 出错（带重试）」，机器、额度、更多、会话总览都用它。
 
 ### 门
 
@@ -1013,4 +1015,4 @@ agent-codex / agent-cursor / agent），原话「这有一堆icon库可以参考
 - face：工作区开着时板内三栏，每栏头高 = `--pane-head`。
 - face：机器页断网 / 慢源 / 空 / 出错四态各一张，DOM 标记对得上。
 - smoke：「…」里原有入口（自检、安全、网络、设置）逐项能从更多页到达。
-- 本机真窗口（领队）：三轮全绿后装四台，按 DESIGN.md 第五节末那张清单走一遍。
+- 本机真窗口（领队）：三轮全绿后装四台，按 `guidelines/30-behavior.md` 末行走一遍。

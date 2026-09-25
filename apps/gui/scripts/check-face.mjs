@@ -2141,7 +2141,7 @@ try {
   // while a search box was 18 tall, a row's pin 30×30, a card's three
   // verbs 24 tall and the ledger's rows 29. The assertion was true; it
   // was true about the rail. That is the same 假绿 the density section
-  // below was born from (docs/DESIGN.md 二: 断言成立,只是成立在别处),
+  // below was born from (docs/design-system/guidelines/50-gates.md: 断言成立,只是成立在别处),
   // and the same shape twice in one day is what makes it a family
   // rather than an accident.
   //

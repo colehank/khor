@@ -3,8 +3,9 @@
 //
 // **Why this exists at all.** 2026-08-27 three gates — `check-tabs`,
 // `smoke`, `web-face` — had no `npm run` entry. They worked; nothing
-// could start them by name. `docs/DESIGN.md` 四 pointed at one of them
-// as「守门在 scripts/check-tabs.mjs 第 0 节」while `npm run tabs`
+// could start them by name. `docs/DESIGN.md` 四 (since 2026-09-25
+// `docs/design-system/guidelines/60-browse-shell.md`) pointed at one of
+// them as「守门在 scripts/check-tabs.mjs 第 0 节」while `npm run tabs`
 // answered `Missing script: "tabs"`. The same afternoon `docs/DESIGN.md`
 // 二 was titled「两道守门」while five entries existed, and somebody
 // (me) wrote「守门都绿」in a commit message having run two of them.
@@ -23,7 +24,7 @@
 //      file that exists — a typo'd entry fails at the moment somebody
 //      trusts it, which is the worst moment;
 //   3. no silent gate: every npm script that starts one of these is
-//      named in `docs/DESIGN.md`, so the list in the doc cannot fall
+//      named in `docs/design-system/guidelines/50-gates.md`, so the list in the doc cannot fall
 //      behind the list in `package.json` without going red. Matching is
 //      on the entry name (`npm run face`), not on prose, so rewriting
 //      the section around it is free and adding a gate is not.
@@ -47,7 +48,7 @@ import { fileURLToPath } from "node:url";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const scriptsDir = join(gui, "scripts");
-const doc = join(gui, "..", "..", "docs", "DESIGN.md");
+const doc = join(gui, "..", "..", "docs", "design-system", "guidelines", "50-gates.md");
 
 let bad = 0;
 const fail = (m) => {
@@ -122,7 +123,7 @@ for (const name of starts.keys()) {
   if (said.includes(`npm run ${name}`)) continue;
   fail(
     `silent gate: \`npm run ${name}\` starts ${starts.get(name).join(", ")} ` +
-      `and docs/DESIGN.md never names it. Put it in the table in 二 — a gate ` +
+      `and docs/design-system/guidelines/50-gates.md never names it. Put it in the table there — a gate ` +
       `nobody knows about is one nobody runs, which is how「守门都绿」gets ` +
       `written about two of five.`,
   );

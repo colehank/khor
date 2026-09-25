@@ -155,7 +155,7 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
 // it is the one claim the rest of this file cannot make. Every assertion
 // below would pass just as well on a shell with `fetchLs` wired straight
 // into it; what would be gone is the reason the browser landing can be a
-// descriptor instead of a second copy (docs/DESIGN.md 浏览型外壳).
+// descriptor instead of a second copy (docs/design-system/guidelines/60-browse-shell.md).
 //
 // **The probe is proved alive first**: the same finder is pointed at the
 // instance, which must name those very things. Without that, "the shell
