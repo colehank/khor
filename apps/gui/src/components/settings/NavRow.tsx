@@ -30,7 +30,7 @@ export function NavRow({
       disabled={disabled}
       onClick={onPress}
       className={cn(
-        "flex min-h-row-1 w-full items-center gap-row px-3 py-1.5 text-left",
+        "flex min-h-row-1 w-full items-center gap-row px-row py-in text-left",
         "hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         "disabled:cursor-not-allowed disabled:opacity-50",
       )}
@@ -38,7 +38,7 @@ export function NavRow({
       <div className="flex min-w-0 flex-1 flex-col gap-0">
         <span className="text-body">{label}</span>
         {hint && (
-          <span className="text-caption text-muted-foreground">{hint}</span>
+          <span className="text-callout text-muted-foreground">{hint}</span>
         )}
       </div>
       {/* components/SettingsGroup `nav`: the value in `body` secondary,

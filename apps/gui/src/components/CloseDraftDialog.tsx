@@ -68,7 +68,7 @@ export function CloseDraftDialog({
         <DialogHeader>
           <DialogTitle>{gui.file_unsaved}</DialogTitle>
         </DialogHeader>
-        <div data-close-draft-says className="text-callout">
+        <div data-close-draft-says className="text-body text-muted-foreground">
           {quit ? gui.quit_drafts(quitting) : gui.tab_close_draft(name ?? "")}
         </div>
         <DialogFooter>
@@ -76,14 +76,14 @@ export function CloseDraftDialog({
               where a dialog's least destructive answer sits in this app
               already (`RemoveDialog`'s single button is the act, and
               the way out is the sheet's own close). */}
-          <Button variant="ghost" data-close-keep onClick={onKeep} className="min-h-touch">
+          <Button data-close-keep onClick={onKeep}>
             {quit ? gui.quit_keep : gui.tab_close_keep}
           </Button>
-          <Button variant="outline" data-close-drop onClick={onDrop} className="min-h-touch">
+          <Button data-close-drop onClick={onDrop}>
             {quit ? gui.quit_drop : gui.tab_close_drop}
           </Button>
           {!quit && (
-            <Button variant="primary" data-close-save onClick={onSave} className="min-h-touch">
+            <Button variant="primary" data-close-save onClick={onSave}>
               {gui.tab_close_save}
             </Button>
           )}

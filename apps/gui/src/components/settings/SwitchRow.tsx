@@ -31,7 +31,7 @@ export function SwitchRow({
   mark?: Record<string, string>;
 }) {
   return (
-    <div data-setting-row="switch" data-setting-row-name={name} className="flex min-h-row-1 items-center gap-row px-3 py-1.5">
+    <div data-setting-row="switch" data-setting-row-name={name} className="flex min-h-row-1 items-center gap-row px-row py-in">
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-body">{label}</span>
         {hint && <span className="text-callout text-muted-foreground">{hint}</span>}
@@ -55,7 +55,7 @@ export function SwitchRow({
         >
           <span
             className={cn(
-              "absolute top-0.5 bottom-0.5 aspect-square rounded-full bg-card shadow-knob transition-[left,right]",
+              "absolute top-0.5 bottom-0.5 aspect-square rounded-full bg-white shadow-knob transition-[left,right]",
               on ? "right-0.5" : "left-0.5",
             )}
           />

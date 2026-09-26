@@ -35,7 +35,7 @@ export function PopupRow({
       data-setting-row="popup"
       data-setting-row-name={name}
       {...mark}
-      className="flex min-h-row-1 items-center gap-row px-3 py-1.5"
+      className="flex min-h-row-1 items-center gap-row px-row py-in"
     >
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-body">{label}</span>

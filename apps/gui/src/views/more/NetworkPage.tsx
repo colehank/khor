@@ -117,10 +117,10 @@ export function NetworkPage({
           first, which is the order a person reads. */}
       <div className="flex flex-none flex-col gap-2 border-t p-pane">
         <div data-net-acts className="flex flex-wrap items-center gap-in">
-          <Button variant="outline" data-net-invite onClick={onInvite} className="min-h-touch">
+          <Button data-net-invite onClick={onInvite} className="min-h-touch">
             {gui.make_a_ticket}
           </Button>
-          <Button variant="outline" data-net-join onClick={onJoin} className="min-h-touch">
+          <Button data-net-join onClick={onJoin} className="min-h-touch">
             {gui.join_with_a_ticket}
           </Button>
           {/* Both of these are about a network this machine is in, so
@@ -129,7 +129,6 @@ export function NetworkPage({
               nobody to be quiet towards is an act with no audience. */}
           {!alone && about && (
             <Button
-              variant="outline"
               data-net-pause
               data-paused={about.paused ? "" : undefined}
               onClick={() => {

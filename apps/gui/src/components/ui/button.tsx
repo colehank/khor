@@ -23,7 +23,10 @@ const buttonVariants = cva(
   // ring offset has to be *told* its colour, and a button on a card
   // would then get a gap painted in the page's colour instead of the
   // card's — right in the one place the ring is hardest to see.
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-callout font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  // docs/design-system components/Button (2026-09-26): `radius-sm` 6,
+  // `body` 13 at 400, parts `gap-xxs` apart, 0.4 when disabled, a press
+  // that gives `--press` (app.css) — and no shadow on any of them.
+  "inline-flex items-center justify-center gap-xxs whitespace-nowrap rounded-sm text-body font-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -38,11 +41,11 @@ const buttonVariants = cva(
         // (第十七轮) goes red on a primary outside `[role=dialog]` /
         // `[data-sheet]`, and on two in one.
         primary: "bg-primary text-primary-foreground hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
-        ghost: "hover:bg-secondary hover:text-foreground",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
-        outline: "border border-border bg-transparent shadow-sm hover:bg-secondary",
-        link: "text-primary underline-offset-4 hover:underline",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-fill-strong",
+        // `plain`: no ground, `secondary` ink, `fill` under the pointer.
+        ghost: "text-muted-foreground hover:bg-fill hover:text-foreground",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                link: "text-primary underline-offset-4 hover:underline",
       },
       // **None of these carries the finger floor, and that is on
       // purpose.** These three are the *look* of an inline control
@@ -57,9 +60,9 @@ const buttonVariants = cva(
       // gate (`scripts/check-face.mjs` §3) is what finds the ones whose
       // author forgot; this scale is not the place to guess.
       size: {
-        default: "h-ctl-md px-4 py-2",
-        sm: "h-ctl-sm rounded-md px-3 text-caption",
-        lg: "h-ctl-lg rounded-md px-8",
+        default: "h-ctl-md px-row",
+        sm: "h-ctl-sm px-in text-callout",
+        lg: "h-ctl-lg px-base",
         icon: "h-ctl-md w-ctl-md",
         // Sized by what is inside it — for a button that stacks a mark
         // over a word, where the three fixed heights are all too short.

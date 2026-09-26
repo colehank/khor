@@ -73,7 +73,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
         <DialogHeader>
           <DialogTitle>{gui.delete}</DialogTitle>
         </DialogHeader>
-        <div data-delete-says className="text-callout">
+        <div data-delete-says className="text-body text-muted-foreground">
           {pending?.says}
         </div>
         <label className="flex items-center gap-2 text-callout text-muted-foreground">
@@ -93,7 +93,19 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
           </div>
         )}
         <DialogFooter>
-          <Button variant="primary" data-delete-go disabled={going} onClick={press} className="min-h-touch">
+          {/* components/Dialog: 取消 on the left as a push button, and the
+              one act on the right — `destructive`, since it throws a thing
+              away; the olive `primary` is for acts that make something. */}
+          <Button
+            data-delete-keep
+            onClick={() => {
+              reset();
+              onDone();
+            }}
+          >
+            {gui.delete_keep}
+          </Button>
+          <Button variant="destructive" data-delete-go disabled={going} onClick={press}>
             {gui.delete}
           </Button>
         </DialogFooter>

@@ -83,7 +83,9 @@ function DialogContent({
                 "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
               )
             : cn(
-                "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border bg-card p-6 shadow-lg outline-none sm:max-w-lg",
+                // components/Dialog: `dialog-w` 380, `popover` under `float` and
+                // a hairline, `radius-lg`, parts `gap-row` apart.
+                "fixed top-1/2 left-1/2 z-50 grid w-dialog max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
                 "duration-[var(--dur-180)] ease-[var(--ease-out)]",
                 "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
               ),
@@ -112,6 +114,7 @@ function DialogContent({
             is the vendored shell, and a dialog body that draws a 24-high
             button is still a 24-high button — the face gate walks the
             sheets and says so. */}
+        {sheet && (
         <DialogPrimitive.Close
           data-slot="dialog-close"
           aria-label={gui.close}
@@ -119,6 +122,7 @@ function DialogContent({
         >
           <IconClose />
         </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );
@@ -128,7 +132,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-left", className)}
+      className={cn("flex flex-col gap-row text-left", className)}
       {...props}
     />
   );
@@ -138,7 +142,7 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)}
+      className={cn("mt-xxs flex flex-row justify-end gap-in [&_button]:h-ctl-lg", className)}
       {...props}
     />
   );
@@ -148,7 +152,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-title-md leading-none font-semibold", className)}
+      className={cn("text-title-md font-title", className)}
       {...props}
     />
   );
@@ -161,7 +165,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-callout text-muted-foreground", className)}
+      className={cn("text-body text-muted-foreground", className)}
       {...props}
     />
   );

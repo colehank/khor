@@ -5,8 +5,10 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuLabel,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -128,7 +130,7 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
           e.preventDefault();
         }}
       >
-        {items.map((a) => (
+        {items.map((a, i) => (
           <Fragment key={a.key}>
             {a.confirm && armed === a.key && (
               <ContextMenuLabel data-menu-confirm={a.key} className="text-muted-foreground">
@@ -152,6 +154,9 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
               // become 钉不上 and the colour was still the ordinary one.
               className={cn(
                 "min-h-touch",
+                // 删除 in `destructive` ink, not on its ground
+                // (components/Menu); the highlight still turns it white.
+                a.label === gui.delete && !a.failed && "text-destructive",
                 a.failed && "text-state-failed focus:text-state-failed",
               )}
               onSelect={(e) => {
@@ -171,6 +176,9 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
                 {a.note}
               </ContextMenuLabel>
             )}
+            {/* 置顶 · 删除, a line, then what is this kind's own
+                (components/Menu「头两项永远是置顶、删除，然后一条分隔线」). */}
+            {a.label === gui.delete && i < items.length - 1 && <ContextMenuSeparator />}
           </Fragment>
         ))}
       </ContextMenuContent>

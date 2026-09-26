@@ -138,7 +138,7 @@ export function RemoveDialog({
         <DialogHeader>
           <DialogTitle>{gui.delete}</DialogTitle>
         </DialogHeader>
-        <div data-remove-says className="text-callout">
+        <div data-remove-says className="text-body text-muted-foreground">
           {word}
         </div>
         {/* Not drawn where being wrong is permanent (file head). */}
@@ -164,7 +164,11 @@ export function RemoveDialog({
           </div>
         )}
         <DialogFooter>
-          <Button variant="primary" data-remove-go disabled={going} onClick={press} className="min-h-touch">
+          {/* 取消 then the one act, `destructive` (components/Dialog). */}
+          <Button data-remove-keep onClick={() => onOpenChange(false)}>
+            {gui.delete_keep}
+          </Button>
+          <Button variant="destructive" data-remove-go disabled={going} onClick={press}>
             {gui.delete}
           </Button>
         </DialogFooter>

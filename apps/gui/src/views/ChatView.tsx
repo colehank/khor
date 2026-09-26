@@ -1609,7 +1609,6 @@ export function ChatView({
                     <Button
                       key={oid}
                       size="sm"
-                      variant="outline"
                       data-ask-option={oid}
                       onClick={() => {
                         setAnswered((prev) => new Set(prev).add(item.ask));

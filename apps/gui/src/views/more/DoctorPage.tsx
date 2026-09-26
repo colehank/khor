@@ -140,7 +140,6 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
           </span>
         )}
         <Button
-          variant="outline"
           data-doctor-again
           disabled={asking}
           onClick={ask}
@@ -181,7 +180,6 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
               </span>
               {r.fix && (
                 <Button
-                  variant="outline"
                   size="sm"
                   data-doctor-fix={r.key}
                   onClick={() => mend(r.key)}

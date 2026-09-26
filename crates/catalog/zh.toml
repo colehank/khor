@@ -2653,6 +2653,9 @@ file-remove-gone = "「{0}」直接删掉,找不回来;目录连里面的一起�
 # machines ask every time and this word is simply not drawn there.
 # 删除之前那一问里的勾(侧边栏的删除窗和文件树的删除窗共用一个词,用户的原话)。
 never-ask = "不再提醒"
+# The way out of a confirm dialog, left of its one act (docs/design-system
+# components/Dialog: 「取消在它左边，是普通按钮」). 2026-09-26.
+delete-keep = "取消"
 # 树上右键新建 (工作区第五轮 第 36 条). **Two words, not one with a
 # 「文件/目录」 switch**: which of the two is being made decides what can
 # go inside it, and a menu that asked afterwards would be asking about a
@@ -2969,7 +2972,7 @@ web-key-rotated = "换好了;之前发出去的链接全都作废了"
 # 两边共用(`forget-machine-confirm`)。墓碑:它叫过「移除设备」。
 # 重置身份。红字、输机器名——这一页上唯一一件撤不回来的事。
 reset-section = "重置身份"
-reset-warn = "删掉这台机器的身份钥匙、重新铸一把。**对全网来说这就是换了一台机器**:别的机器还认着旧的、不认新的,要回去得重新配对。"
+reset-warn = "删掉这台机器的身份钥匙、重新铸一把。对全网来说这就是换了一台机器:别的机器还认着旧的、不认新的,要回去得重新配对。"
 reset-type-name = "把机器名原样打一遍"
 reset-do = "确认重置"
 # ── the machine's own relays, on the settings screen ──

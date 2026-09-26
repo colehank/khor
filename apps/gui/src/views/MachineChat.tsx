@@ -396,7 +396,6 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
           )}
           {m.word === "blocked" && (
             <Button
-              variant="outline"
               size="sm"
               data-accept-file
               data-failed={failed}

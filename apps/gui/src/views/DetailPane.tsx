@@ -55,7 +55,7 @@ export function CopyId({
   face = "verb",
 }: {
   id: string;
-  variant?: "ghost" | "outline";
+  variant?: "ghost" | "default";
   /** **What the control looks like, never what it does.**
       `verb` is a button in a row of buttons and reads 复制 id.
       `id` is the id itself, standing where a machine's name needs it

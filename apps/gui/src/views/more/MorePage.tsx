@@ -20,6 +20,7 @@ import { useState, type ReactNode } from "react";
 
 import { IconChevronRight, IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
 
 /**
@@ -101,7 +102,10 @@ export function MoreFrame({
     <section
       data-more-page={page}
       aria-label={moreName(page)}
-      className="flex h-full min-h-0 flex-col bg-card"
+      // Settings groups are cards on the canvas (components/SettingsGroup),
+      // so a page of rows stands on `background`; a picture (网络's map)
+      // keeps the board's `card`.
+      className={cn("flex h-full min-h-0 flex-col", bleed ? "bg-card" : "bg-background")}
     >
       {/* The page's own head, inside the board. It moves no window
           since 第十五轮: R0 above the board does, marked by the shell
@@ -158,9 +162,16 @@ export function MoreSection({
   children: ReactNode;
 }) {
   return (
-    <section data-more-section={name} className="flex min-w-0 flex-col gap-2">
-      <h2 className="text-callout font-label text-muted-foreground">{label}</h2>
-      {children}
+    // components/SettingsGroup: the name above the card and outside it
+    // (`group` 11/600 tertiary, in by `gap-row`), the card `card` on the
+    // page's `canvas` at `radius-lg`, one hairline between rows starting
+    // where the text does. `app.css` `[data-settings-card]` draws the
+    // lines and pads whatever in it is not a settings row.
+    <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
+      <h2 className="ml-row text-group text-tertiary">{label}</h2>
+      <div data-settings-card className="flex min-w-0 flex-col">
+        {children}
+      </div>
     </section>
   );
 }
@@ -240,9 +251,9 @@ export function MoreFact({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-row text-callout">
-      <span className="flex-none text-muted-foreground">{label}</span>
-      <span data-more-fact={name} className="min-w-0 break-all">
+    <div className="flex min-w-0 items-center gap-row text-body">
+      <span className="flex-1">{label}</span>
+      <span data-more-fact={name} className="min-w-0 break-all text-right text-muted-foreground">
         {children}
       </span>
     </div>

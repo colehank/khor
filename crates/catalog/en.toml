@@ -1323,6 +1323,8 @@ file-remove-trash = "Move \"{0}\" to the trash"
 file-remove-dir = "Move \"{0}\" and everything in it to the trash"
 file-remove-gone = "Delete \"{0}\" outright — it can't be recovered; a directory takes everything inside it too."
 never-ask = "Don't ask again"
+# The way out of a confirm dialog, left of its one act. 2026-09-26.
+delete-keep = "Cancel"
 file-new = "New file"
 dir-new = "New directory"
 # Ambiguous: the Chinese comment says this borrows `rename`'s verb for the
@@ -1455,7 +1457,7 @@ web-key-rotated = "Done; every link handed out before this one is dead"
 # The one thing on this page that cannot be undone: red, and it wants the
 # machine's name typed out.
 reset-section = "Reset identity"
-reset-warn = "Deletes this machine's identity key and mints a new one. **To the network this is another machine**: every paired machine still knows the old one and will not know the new one, and getting back means pairing again."
+reset-warn = "Deletes this machine's identity key and mints a new one. To the network this is another machine: every paired machine still knows the old one and will not know the new one, and getting back means pairing again."
 reset-type-name = "Type the machine name exactly"
 reset-do = "Confirm reset"
 relays-mine = "My relays"

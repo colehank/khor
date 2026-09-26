@@ -447,7 +447,6 @@ function MachineNodeCard({
           here and nothing about this machine being 「not mine」. */}
       <div className="mt-in flex flex-wrap items-center gap-row border-t pt-in">
         <Button
-          variant="outline"
           size="sm"
           data-node-card-avatar={row.id}
           onClick={() => setEditing(true)}

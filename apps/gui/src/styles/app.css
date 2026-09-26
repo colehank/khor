@@ -288,7 +288,7 @@ input[type="search"]::-webkit-search-decoration {
 :root[data-material="sidebar"]:not([data-narrow]) body {
   background: transparent;
 }
-:root[data-material="sidebar"]:not([data-narrow]) [data-side] {
+:root[data-material="sidebar"]:not([data-narrow]) aside[data-side] {
   --side: transparent;
 }
 
@@ -301,7 +301,11 @@ input[type="search"]::-webkit-search-decoration {
    the block took its widest child's width and the search box's own
    minimum held the ground out past a list dragged narrow. The narrow face
    has no block (one screen at a time), so no rule for it. */
-[data-side] {
+/* `aside`, not a bare `[data-side]`: Radix stamps `data-side="right"`
+   on every tooltip, menu and popover it places, and the bare attribute
+   gave each of them the left block's width (2026-09-26: the rail's
+   「机器」 hint drawn 353 wide). */
+aside[data-side] {
   width: calc(var(--rail-w) + var(--hair) + var(--list-w));
 }
 
@@ -1213,4 +1217,44 @@ input[type="search"]::-webkit-search-decoration {
 .overflow-y-auto,
 .overflow-y-scroll {
   overscroll-behavior: contain;
+}
+
+/* ── settings groups (docs/design-system components/SettingsGroup) ──
+   A card on the page's canvas; one hairline between rows, starting at
+   `gap-row` from the left the way macOS starts it at the text. Rows
+   bring their own padding; anything else set in a card (a warning, a
+   PIN field, a key) gets a row's padding so it stands on the same
+   left edge. */
+[data-settings-card] {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+[data-settings-card] > :not([data-setting-row], button) {
+  padding: var(--gap-in) var(--gap-row);
+}
+/* A bare button in a card is the act of the row above it: it keeps its
+   own look, stands on the text's left edge, and draws no line over it. */
+[data-settings-card] > button {
+  align-self: flex-start;
+  margin: 0 var(--gap-row) var(--gap-in);
+}
+[data-settings-card] > * + * {
+  position: relative;
+}
+[data-settings-card] > * + *:not(button)::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--gap-row);
+  right: 0;
+  height: var(--hair);
+  background: var(--border);
+}
+
+/* **The page's name is said once** (components/Toolbar「身份只出现一次」):
+   inside a board, R0 already carries it and the way back, so the
+   frame's own head is only for the narrow face, where there is no R0. */
+[data-board] [data-more-head] {
+  display: none;
 }

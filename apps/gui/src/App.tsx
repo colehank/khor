@@ -28,6 +28,7 @@ import {
 import { MachineAvatar } from "@/components/Avatar";
 import {
   IconBrowser,
+  IconClose,
   IconDevices,
   IconFiles,
   IconMore,
@@ -2333,6 +2334,22 @@ export default function App() {
               title={moreName(morePage)}
               history={moreTrail}
               caption={stale ? gui.backend_unreachable : undefined}
+              // The way out, at R0's right end with the page's other
+              // buttons (components/Toolbar, D9) — not a second head in
+              // the board, which would say the page's name twice. The
+              // narrow face has no R0 and keeps the frame's own head.
+              actions={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={gui.close}
+                  data-more-close
+                  onClick={() => setMorePage(null)}
+                  className="min-h-touch min-w-touch"
+                >
+                  <IconClose />
+                </Button>
+              }
             >
               {morePageEl}
             </Region>

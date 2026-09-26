@@ -326,7 +326,6 @@ export function FaceSettings({
           </div>
 
           <Button
-            variant="outline"
             data-face-shuffle
             onClick={shuffle}
             className="min-h-touch"

@@ -427,7 +427,6 @@ function Hooks({
   return (
     <div data-hooks data-installed={on} className="flex flex-col gap-2 pt-pane">
       <Button
-        variant="outline"
         size="sm"
         data-hooks-toggle
         data-failed={failed}
@@ -1370,11 +1369,10 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
               onChange={(e) => setTyped(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
             />
-            <Button variant="outline" size="sm" data-watch-add className="min-h-touch" disabled={!typed.trim()} onClick={add}>
+            <Button size="sm" data-watch-add className="min-h-touch" disabled={!typed.trim()} onClick={add}>
               {gui.watch_add}
             </Button>
             <Button
-              variant="outline"
               size="sm"
               data-watch-save
               data-failed={failed !== null}

@@ -176,7 +176,6 @@ export function SecurityPage({
 
             {lock.on && (
               <Button
-                variant="outline"
                 data-security-lock-now
                 onClick={onLockNow}
                 className="mt-2 min-h-touch self-start"
@@ -210,14 +209,13 @@ export function SecurityPage({
               size="sm"
               data-web-key-show
               onClick={() => setShowKey((was) => !was)}
-              className="min-h-touch"
+              className="min-h-touch min-w-touch"
             >
               {showKey ? gui.web_key_hide : gui.web_key_show}
             </Button>
           </div>
         )}
         <Button
-          variant="outline"
           data-web-key-rotate
           onClick={() => {
             setError(null);

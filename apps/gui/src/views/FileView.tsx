@@ -107,7 +107,7 @@ function Away({
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
       <span className="text-body text-foreground">{word}</span>
-      <Button variant="outline" size="sm" onClick={onTake} className="mt-1 min-h-touch min-w-touch">
+      <Button size="sm" onClick={onTake} className="mt-1 min-h-touch min-w-touch">
         {gui.file_take}
       </Button>
       {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
@@ -967,7 +967,7 @@ export function FileView({
         <span className="text-callout text-muted-foreground tabular-nums">
           {sizeWord(file.total)}
         </span>
-        <Button variant="outline" size="sm" onClick={take} className="mt-1">
+        <Button size="sm" onClick={take} className="mt-1">
           {gui.file_take}
         </Button>
         {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
@@ -1100,7 +1100,7 @@ export function FileView({
               is the same fact twice, and「只读了开头」has already told
               the half that explains this one. */}
           <span data-read-only>{gui.file_read_only}</span>
-          <Button variant="outline" size="sm" onClick={take} className="ml-auto">
+          <Button size="sm" onClick={take} className="ml-auto">
             {gui.file_take}
           </Button>
           {/* Where it landed, **on the row whose button sent it** — a
@@ -1343,7 +1343,6 @@ export function FileView({
             {typeof saved === "string" && (
               <span className="flex shrink-0 gap-2">
                 <Button
-                  variant="outline"
                   size="sm"
                   data-take-theirs
                   disabled={saving}
@@ -1353,7 +1352,6 @@ export function FileView({
                   {gui.file_take_theirs}
                 </Button>
                 <Button
-                  variant="outline"
                   size="sm"
                   data-merge
                   disabled={saving}
@@ -1363,7 +1361,6 @@ export function FileView({
                   {gui.file_merge}
                 </Button>
                 <Button
-                  variant="outline"
                   size="sm"
                   data-keep-mine
                   disabled={saving}
