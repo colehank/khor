@@ -286,10 +286,10 @@ export function SideHead({
           // `h-ctl-md`: the look of a macOS search field (28,
           // tokens.css `--ctl-md`); the finger's floor is the hit
           // area around it, `min-h-touch`.
-          className={cn("min-h-touch flex-none justify-start gap-2 text-muted-foreground", narrow ? "min-w-touch" : "h-ctl-md min-w-0 flex-1")}
+          className={cn("min-h-touch flex-none justify-start gap-in text-tertiary", narrow ? "min-w-touch" : "h-ctl-md min-w-0 flex-1 rounded-sm bg-fill px-2 hover:bg-fill")}
         >
           <IconSearch />
-          {!narrow && <span className="min-w-0 flex-1 truncate text-left text-caption">{gui.find_everything}</span>}
+          {!narrow && <span className="min-w-0 flex-1 truncate text-left text-body font-body">{gui.find_everything}</span>}
         </Button>
       )}
       {open && (
@@ -307,7 +307,7 @@ export function SideHead({
           style={{ left: START, right: 0 }}
         >
           <div className="relative flex min-w-0 flex-1 items-center">
-            <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground" />
+            <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
             <Input
               ref={box}
               data-search-box
@@ -318,7 +318,7 @@ export function SideHead({
               role="combobox"
               aria-expanded={shown.length > 0}
               aria-controls="khor-search-rows"
-              className="min-h-touch border-0 bg-transparent pr-12 pl-7 shadow-none focus-visible:ring-0"
+              className="min-h-touch rounded-sm border-0 bg-fill pr-12 pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body"
               onChange={(e) => setWord(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") {
@@ -339,7 +339,7 @@ export function SideHead({
             {/* Which range the box is on, in one small word (第 4 条). */}
             <kbd
               data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-caption text-muted-foreground"
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border px-xxs text-caption text-tertiary"
             >
               {gui.search_all}
             </kbd>

@@ -338,7 +338,7 @@ export function WorkspacesList({
             aria-hidden="true"
             className="flex min-w-touch flex-none items-center justify-center self-stretch text-muted-foreground"
           >
-            <IconChevronRight className={cn("size-4 transition-transform", !treeOpen && "rotate-180")} />
+            <IconChevronRight className={cn("size-3 transition-transform", !treeOpen && "rotate-180")} />
           </span>
         ) : undefined,
       // Whether this row's tree is out, said on the line rather than only

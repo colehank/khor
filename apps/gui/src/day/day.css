@@ -131,8 +131,8 @@
   font-style: normal;
   cursor: pointer;
   padding: 0 5px;
-  min-height: var(--touch);
-  min-width: var(--touch);
+  min-height: var(--hit);
+  min-width: var(--hit);
 }
 .dayblk .sw button:hover {
   color: var(--mut);

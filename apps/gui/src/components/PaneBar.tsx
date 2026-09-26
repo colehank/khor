@@ -153,7 +153,7 @@ export function PaneBar({
       // 条: the search box's left edge is that line) and is one piece
       // with the block under it.
       className={cn(
-        "flex min-h-pane-head flex-none items-center gap-1",
+        "flex min-h-pane-head flex-none items-center gap-in",
         // `@container/bar`: the search slot below asks how wide this
         // bar is, not how wide the window is (第十五轮 第 4 条).
         seat === "side" ? "@container/bar min-w-0 flex-1 pr-1" : "border-b px-2",
@@ -200,7 +200,7 @@ export function PaneBar({
         />
       ) : (
         <div className="relative min-w-0 flex-1">
-          <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-muted-foreground" />
+          <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
           <Input
             data-pane-search
             type="search"
@@ -218,7 +218,7 @@ export function PaneBar({
             // would have been whichever the stylesheet emitted last
             // (`button.tsx` wrote that trap down first).
             className={cn(
-              "min-h-touch border-0 bg-transparent pl-7 shadow-none focus-visible:ring-0",
+              "min-h-touch rounded-sm border-0 bg-fill pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body",
               seat === "side" && "pr-10",
             )}
           />
@@ -227,7 +227,7 @@ export function PaneBar({
           {seat === "side" && (
             <kbd
               data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-sm border px-1 text-caption text-muted-foreground"
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border px-xxs text-caption text-tertiary"
             >
               ⌘K
             </kbd>

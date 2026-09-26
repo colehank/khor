@@ -26,7 +26,7 @@ import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "rea
 
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark } from "@/components/FaceMark";
-import { IconBack } from "@/components/icons";
+import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
@@ -232,7 +232,7 @@ export function SideList({
         data-side-open
         {...r.openData}
         onClick={r.onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 py-2 pr-2 pl-4 text-left"
+        className="flex min-h-row-2 min-w-0 flex-1 items-center gap-row px-in py-1 text-left"
       >
         <FaceMark
           face={r.face}
@@ -265,7 +265,7 @@ export function SideList({
             right under the heading. The seam's colour: `border-t` is
             `--color-border`, the same token `ListPane`'s seam wears. */}
         {prev?.group === "pin" && r.group !== "pin" && (
-          <div data-side-list-rule aria-hidden className="mx-4 border-t" />
+          <div data-side-list-rule aria-hidden className="mx-in my-xxs border-t" />
         )}
         {/* A heading starts where the group changes between neighbouring
             rows: the rows arrive grouped, so this notices a boundary
@@ -282,17 +282,18 @@ export function SideList({
             {...headData?.(r.group)}
             aria-expanded={open}
             onClick={() => toggle(r.group)}
-            className="flex min-h-touch w-full items-center gap-1 px-4 text-left text-caption font-label text-muted-foreground hover:bg-secondary"
+            className="flex min-h-touch w-full items-center gap-xxs rounded-md px-in pt-in pb-xxs text-left text-group text-tertiary"
           >
-            {/* The family's only chevron, turned: down is open, right
-                is shut. */}
-            <IconBack className={cn("flex-none", open ? "-rotate-90" : "rotate-180")} />
-            <span className="min-w-0 truncate">{label(r.group)}</span>
-            {!open && (
-              <span data-group-size className="tabular-nums">
-                {size}
-              </span>
-            )}
+            {/* The family's chevron at 12 (components/GroupHeader), right
+                when shut and turned a quarter when open — it is centred
+                on 8,8, so turned it IS `chevronDown`. Not the back arrow
+                turned: that path sits 0.4 off centre, which is what read
+                as crooked (2026-09-26「展开按钮的icon甚至都没有整齐」). */}
+            <IconChevronRight className={cn("size-3 flex-none transition-transform", open && "rotate-90")} />
+            <span data-group-label className="min-w-0 truncate">{label(r.group)}</span>
+            <span data-group-size className="ml-auto flex-none font-body tabular-nums">
+              {size}
+            </span>
           </button>
         )}
         {open && (
@@ -309,7 +310,7 @@ export function SideList({
             // with the ordinary ink when it is not — two states and an
             // ink that changes with them, which a class here could not
             // say without knowing about the window.
-            className={cn("flex w-full items-center", !r.selected && "hover:bg-secondary", r.dim && !r.selected && "opacity-55")}
+            className={cn("flex w-full items-center rounded-md", !r.selected && "hover:bg-fill", r.dim && !r.selected && "opacity-55")}
           >
             {/* **The menu's trigger is the button, not the strip around
                 it**: the trigger carries the long press's
@@ -333,7 +334,7 @@ export function SideList({
     return list.map((r, i) => one(r, list[i - 1], size.get(r.group) ?? 0));
   };
   return (
-    <div ref={box} data-side-list {...mark}>
+    <div ref={box} data-side-list {...mark} className="px-in pb-in">
       <DeleteDialog pending={pending} onDone={() => setPending(null)} />
       {run(fresh)}
       {/* The fold at the foot. A control, not a heading: its word is
@@ -344,7 +345,7 @@ export function SideList({
           data-old-fold
           data-open={showOld}
           onClick={() => setShowOld((v) => !v)}
-          className="flex min-h-touch w-full items-center px-4 py-2 text-left text-caption text-muted-foreground hover:bg-secondary"
+          className="flex min-h-row-1 w-full items-center rounded-md px-in text-left text-caption text-tertiary hover:bg-fill"
         >
           {showOld ? old.less : old.more(aged.length)}
         </button>

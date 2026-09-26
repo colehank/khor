@@ -764,6 +764,14 @@
    * inline controls beside text; this is a floor under anything a finger
    * must land on, and the two move for different reasons. */
   --touch: 44px;
+  /* **The floor a control actually gets** (2026-09-26, the user's
+   * 「丑，太丑了」 after every control on a Mac stood 44 tall): with a
+   * mouse it is the default control height, `--ctl-md`; a finger puts
+   * `--touch` back (the coarse-pointer block at the foot of this file).
+   * design-system `components/Button`: 「指针是手指时热区涨到 touch 44，
+   * 样子不变」— the 44 was only ever the finger's number.
+   * `min-h-touch` / `min-w-touch` / `size-touch` all read this. */
+  --hit: var(--ctl-md);
   /* ── the top row of a pane, and the sliver a tab sits on ──────
    *
    * **One number, two surfaces, because they are one line of the
@@ -1784,7 +1792,7 @@
   --spacing-row-2: var(--row-2);
   --spacing-switch-w: var(--switch-w);
   --spacing-switch-h: var(--switch-h);
-  --spacing-touch: var(--touch);
+  --spacing-touch: var(--hit);
   --spacing-rail: var(--rail-w);
   --spacing-traffic: var(--traffic);
   --spacing-side-inset: var(--side-inset);
@@ -2131,6 +2139,7 @@
    the face with a finger. */
 @media (pointer: coarse) {
   :root {
+    --hit: var(--touch);
     --tree-row: var(--touch);
     /* …and the tree head's two switches, for the same reason and by
        the same road (docs/SHELL.md 第 7 条: 「宽档可以小,窄档(触屏)按

@@ -34,7 +34,7 @@
 import { useEffect, type ReactNode } from "react";
 
 import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
-import { IconBack, IconClose } from "@/components/icons";
+import { IconBack, IconClose, IconForward } from "@/components/icons";
 import { WINDOW_DRAG } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
@@ -147,7 +147,7 @@ export function PageHead({
           onClick={forward}
           className="min-h-touch min-w-touch flex-none"
         >
-          <IconBack className="rotate-180" />
+          <IconForward />
         </Button>
       )}
       <h1 data-page-title className="min-w-0 flex-1 truncate px-1 text-title-sm font-title">

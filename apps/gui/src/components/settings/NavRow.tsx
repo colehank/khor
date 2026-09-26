@@ -3,6 +3,7 @@
 // Pressing it pushes to the sub-page; R0 then shows a ‹ back button.
 //
 // `data-setting-row="nav"` is the gate anchor.
+import { IconChevronRight } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 export function NavRow({
@@ -40,9 +41,11 @@ export function NavRow({
           <span className="text-caption text-muted-foreground">{hint}</span>
         )}
       </div>
-      <div className="flex flex-none items-center gap-1 text-caption text-muted-foreground">
+      {/* components/SettingsGroup `nav`: the value in `body` secondary,
+          then the family's chevron at 12 in tertiary — not a typed ›. */}
+      <div className="flex flex-none items-center gap-in text-body text-muted-foreground">
         {value && <span>{value}</span>}
-        <span>›</span>
+        <IconChevronRight className="size-3 text-tertiary" />
       </div>
     </button>
   );

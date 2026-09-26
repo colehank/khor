@@ -1295,7 +1295,7 @@ export default function App() {
         // and its glyph boxes sit at `--side-inset` — the very edge the
         // first row's controls start on. A border here made the rail's
         // content box one narrower and the glyph half a pixel off.
-        narrow ? "flex-row justify-around gap-1 border-t bg-side py-1" : "w-rail flex-col gap-row bg-side py-3",
+        narrow ? "flex-row justify-around gap-1 border-t bg-side py-1" : "w-rail flex-col gap-xxs bg-side pt-xxs pb-row",
       )}
     >
       {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l) => (

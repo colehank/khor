@@ -314,8 +314,8 @@ export function SessionsList({
     // The right column: the state word (this row's `fact`) over the age
     // (`aux`) — state is never colour alone, so the word stays.
     trailing: (
-      <span className="flex flex-none flex-col items-end gap-1 text-muted-foreground">
-        <span className="flex items-center gap-1 text-body">
+      <span className="flex flex-none flex-col items-end gap-xxs text-caption text-tertiary">
+        <span className="flex items-center gap-xxs">
           <span data-word-text style={{ color: `var(--state-${r.word})` }}>
             {word(r.word)}
           </span>

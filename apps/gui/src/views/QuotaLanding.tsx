@@ -1257,7 +1257,7 @@ export function QuotaLanding({
       sub: <span data-quota-sub-line>{subLine(r)}</span>,
       // **The right end is when this was read**, not what it says.
       trailing: (
-        <span data-quota-age-cell className="flex-none text-caption tabular-nums text-muted-foreground">
+        <span data-quota-age-cell className="flex-none text-caption tabular-nums text-tertiary">
           {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
         </span>
       ),

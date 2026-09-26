@@ -6,6 +6,7 @@
 //
 // `data-setting-row="popup"` is the gate anchor; the `<select>` inside it
 // is what a gate checks to prove the system menu is the one that opens.
+import { IconChevronDown, IconChevronUp } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 export function PopupRow({
@@ -40,16 +41,22 @@ export function PopupRow({
         <span className="text-body">{label}</span>
         {hint && <span className="text-callout text-muted-foreground">{hint}</span>}
       </div>
-      <div className="relative flex-none">
+      <div className="group relative flex-none">
         <div
           aria-hidden
           className={cn(
-            "flex h-ctl-sm items-center gap-1 rounded-sm bg-fill px-2 text-callout text-secondary-foreground",
+            // components/PopupButton: clear ground, `fill` under the
+            // pointer, the value in `body` ink, and a `radius-xs` chip
+            // holding the family's two chevrons at 10 — not the ⌃⌄ keys.
+            "flex h-ctl-md items-center gap-in rounded-sm pr-xxs pl-in text-body group-hover:bg-fill",
             disabled && "opacity-50",
           )}
         >
           <span className="tabular-nums">{current}</span>
-          <span className="text-muted-foreground">⌃⌄</span>
+          <span className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground">
+            <IconChevronUp className="-mb-0.5 size-2.5" />
+            <IconChevronDown className="-mt-0.5 size-2.5" />
+          </span>
         </div>
         <select
           data-setting-select={name}

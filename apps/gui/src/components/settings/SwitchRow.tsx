@@ -45,7 +45,7 @@ export function SwitchRow({
         disabled={disabled}
         onClick={onToggle}
         {...mark}
-        className="-my-2 -mr-2 flex min-h-touch min-w-touch flex-none cursor-pointer items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
+        className="-my-2 -mr-2 flex min-h-touch min-w-touch flex-none cursor-pointer items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span
           className={cn(

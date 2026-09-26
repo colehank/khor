@@ -281,7 +281,7 @@ export function Omnibox({
           // distance between the field's edge and the target — bought
           // at the cost of every bar this control rides in. Wrapped
           // chips still have `gap-1` between rows.
-          "flex min-h-touch w-full flex-wrap items-center gap-1 rounded-md px-2",
+          "flex min-h-touch w-full flex-wrap items-center gap-xxs rounded-sm bg-fill px-2",
           "focus-within:ring-2 focus-within:ring-ring/50",
         )}
         // A click anywhere on the strip lands in the box — the chips do
@@ -294,7 +294,7 @@ export function Omnibox({
           }
         }}
       >
-        {lead ?? <IconSearch className="pointer-events-none flex-none text-muted-foreground" />}
+        {lead ?? <IconSearch className="pointer-events-none flex-none text-tertiary" />}
         {chips.map((c) => (
           <OmniChip key={c.key} candidate={c} onRemove={() => onToggle(c.key)} />
         ))}

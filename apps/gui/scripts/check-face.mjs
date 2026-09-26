@@ -5980,7 +5980,11 @@ try {
         const vb = svg.viewBox.baseVal;
         const k = svg.getBoundingClientRect().height / (vb.height || 1);
         const r = b.getBoundingClientRect();
+        // The floor this pointer gets (tokens.css `--hit`, 2026-09-26):
+        // `--ctl-md` under a mouse, `--touch` under a finger.
+        const hit = Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hit")) || 0);
         return {
+          hit,
           box: [Math.round(r.width), Math.round(r.height)].join("x"),
           ink: Math.round(Math.max(bb.width, bb.height) * k * 10) / 10,
         };
@@ -5988,7 +5992,7 @@ try {
       console.log(`the 预览 switch: ${JSON.stringify(eye)}`);
       if (eye === null) {
         fail("probe void: no 预览 switch on screen to measure (src/views/WorkspacePane.tsx)");
-      } else if (eye.ink < 13 || eye.ink > 15 || eye.box !== "44x44") {
+      } else if (eye.ink < 13 || eye.ink > 15 || eye.box !== `${eye.hit}x${eye.hit}`) {
         fail(
           `the 预览 eye is ${eye.box} around ${eye.ink}px of ink — 「一个小眼睛, size-3.5」 in a box a ` +
             "finger can land on (src/browse/TabStrip.tsx)",
@@ -14558,7 +14562,9 @@ try {
   if (byKind.length !== 2 || !byKind.includes("kind:sub") || !byKind.includes("kind:bill")) {
     fail(`分组 by 类型 draws ${JSON.stringify(byKind)} — one 订阅 heading and one 计费 heading were expected`);
   }
-  const kindHead = (await page.locator('[data-quota-group="kind:sub"]').textContent())?.trim();
+  // The heading's word, not its count (the count is always drawn since
+  // 2026-09-26, components/GroupHeader).
+  const kindHead = (await page.locator('[data-quota-group="kind:sub"] [data-group-label]').textContent())?.trim();
   if (kindHead !== subTickWord) {
     fail(`the 订阅 heading says ${JSON.stringify(kindHead)} and its tick says ${JSON.stringify(subTickWord)} — one value, two spellings`);
   }
