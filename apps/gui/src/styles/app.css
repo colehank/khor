@@ -14,7 +14,7 @@
    one place a reader could find it and still be wrong. */
 /* **Not scoped to the rail.** The filled half is the icon FAMILY's
    density rule, not a rail state: the marks in the「…」menu (设置,
-   安全, 网络, 自检) carry one too, and scoped here they drew hollow —
+   安全, 网络, 诊断) carry one too, and scoped here they drew hollow —
    `fill` defaults to none, so a `[data-body]` outside a rail item got
    no fill at all. The rail state is the rule directly below, which
    pushes that same fill to solid; keeping the two apart is what lets

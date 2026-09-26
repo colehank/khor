@@ -1377,8 +1377,8 @@ network = "Network"
 security = "Security"
 # 第十七轮: the one word an error state offers (`components/RegionState`).
 region_retry = "Retry"
-# "Doctor" (self-check), matching the CLI's own dev-tool-idiom naming rather than a literal "self-check"
-doctor = "Doctor"
+# "Diagnostics": the owner named this page 「诊断」 on 2026-09-27 (was 「自检」 / "Doctor"); the key stays `doctor`.
+doctor = "Diagnostics"
 # The identity-card page title. Distinct from `machine-here`'s "This
 # machine" (a machine list/card's own-row label) — "About this machine"
 # reads as a page title, matching how such pages are usually named.

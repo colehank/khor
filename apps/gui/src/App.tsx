@@ -2022,7 +2022,7 @@ export default function App() {
    * **更多's L2** (docs/SHELL.md 第十七轮 §1): its six sections, in the
    * spec's order, as a list beside the page — System Settings' shape.
    * 「…」 used to open a menu of four pages; it opens this landing now,
-   * and every door that menu had is a row here (网络 / 通用 / 安全 / 自检)
+   * and every door that menu had is a row here (网络 / 通用 / 安全 / 诊断)
    * or, on the narrow bar, one of the folded landings at the top.
    *
    * `data-more-open` keeps the key the menu items wore, so every walk

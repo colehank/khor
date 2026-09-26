@@ -875,7 +875,7 @@ export const fetchAbout = () => call<About>("about");
  */
 export const setWindowTheme = (theme: "light" | "dark") =>
   inApp ? call<null>("set_window_theme", { theme }) : Promise.resolve(null);
-/** 自检 (docs/MORE.md): twelve checks, each with a three-second budget
+/** 诊断 (docs/MORE.md): twelve checks, each with a three-second budget
     of its own, so the whole call is bounded at that — a relay that
     swallows packets costs one row, never the page. */
 export const fetchDoctor = () => call<DoctorRow[]>("doctor");

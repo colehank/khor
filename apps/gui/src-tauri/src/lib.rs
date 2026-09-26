@@ -2397,7 +2397,7 @@ fn reset_identity(name: String) -> Result<(), String> {
     khor_gui_core::reset_identity(&Node::root_from_env(), &name)
 }
 
-/// 自检's checklist (`khor_gui_core::doctor`). Async: each check has a
+/// 诊断's checklist (`khor_gui_core::doctor`). Async: each check has a
 /// three-second budget of its own, and a blocking command would hold the
 /// window for however long the slowest one takes.
 #[tauri::command]
@@ -2525,7 +2525,7 @@ pub fn run() {
     // 语言, before anything is drawn or printed (docs/MORE.md 语言).
     // The face resolves its own (`src/lang.ts`, from the same key); this
     // is the Rust half — every sentence that crosses back as text, a
-    // refusal or a 自检 row, is written in it.
+    // refusal or a 诊断 row, is written in it.
     khor_node::config::apply_lang(&Node::root_from_env());
     // If this process was re-exec'd as a session host, be one — the app
     // spawns hosts through its own binary (`host.rs main_if_host`).
