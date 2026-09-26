@@ -1872,7 +1872,7 @@ try {
     resetTried.push(JSON.parse(r.request().postData() || "{}").name);
     r.fulfill({ contentType: "application/json", body: "null" });
   });
-  // 自检's checklist (docs/MORE.md). **All four states are routed**,
+  // 诊断's checklist (docs/MORE.md). **All four states are routed**,
   // because the one thing this page must never do is paint 未量 as ok —
   // and a fixture with only healthy rows could not tell the two apart.
   // `asked` counts the calls: 「再查一遍」 and a mend are both an ask,
@@ -11940,7 +11940,7 @@ try {
     await wait(300);
   }
 
-  // ── 4D) 自检那一页 (docs/MORE.md 自检) ────────────────────────────
+  // ── 4D) 诊断那一页 (docs/MORE.md 自检) ────────────────────────────
   //
   // 「自检是对app自身状态全面自检查」 — the user, 2026-09-18. The page is
   // the node's checklist and 「再查一遍」; every judgment on it is
@@ -11957,7 +11957,7 @@ try {
     await wait(300);
     const before = doctorAsked.length;
     if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="doctor"]'))) {
-      fail("probe dead: 「…」 → 自检 did not open");
+      fail("probe dead: 「…」 → 诊断 did not open");
     } else {
       await until(5_000, async () => (await page.locator("[data-doctor-card]").count()) > 0);
       const list = await page.evaluate(() => {
@@ -11987,26 +11987,26 @@ try {
       const wanted = DOCTOR_ROWS.filter((r) => r.state !== "ok").map((r) => r.key);
       if (list.keys.join(",") !== wanted.join(",")) {
         fail(
-          `自检 leads with ${JSON.stringify(list.keys)} against the node's troubled ` +
+          `诊断 leads with ${JSON.stringify(list.keys)} against the node's troubled ` +
             `${JSON.stringify(wanted)} — 「只列有问题的」, and 未量 is one of them ` +
             "(src/views/more/DoctorPage.tsx)",
         );
       }
       if (list.states.join(",") !== DOCTOR_ROWS.filter((r) => r.state !== "ok").map((r) => r.state).join(",")) {
-        fail(`自检 painted states ${JSON.stringify(list.states)}`);
+        fail(`诊断 painted states ${JSON.stringify(list.states)}`);
       }
       // **The healthy ones are one line, and it is shut.** A `<details>`
       // that kept its body mounted would be a page still laying twelve
       // rows out, dressed as a page that does not.
       if (list.fold !== 1 || list.foldOpen !== false || list.wellRows !== 0) {
         fail(
-          `自检 folded the healthy checks as ${JSON.stringify({ fold: list.fold, open: list.foldOpen, rows: list.wellRows })} — ` +
+          `诊断 folded the healthy checks as ${JSON.stringify({ fold: list.fold, open: list.foldOpen, rows: list.wellRows })} — ` +
             "「正常的收成一行「N 项正常」,点开才展开」 (docs/MORE.md 第二轮)",
         );
       }
       if (list.verdict !== "wants" || !list.said) {
         fail(
-          `自检 opened on the verdict ${JSON.stringify(list.verdict)} / ${JSON.stringify(list.said)} ` +
+          `诊断 opened on the verdict ${JSON.stringify(list.verdict)} / ${JSON.stringify(list.said)} ` +
             "while the node answered three troubled checks — 「顶上一句结论」",
         );
       }
@@ -12015,7 +12015,7 @@ try {
       const wantedFixes = DOCTOR_ROWS.filter((r) => r.state !== "ok").map((r) => r.fix !== null);
       if (list.fixes.join(",") !== wantedFixes.join(",")) {
         fail(
-          `自检 offered a remedy on ${JSON.stringify(list.fixes)} against the node's ` +
+          `诊断 offered a remedy on ${JSON.stringify(list.fixes)} against the node's ` +
             `${JSON.stringify(wantedFixes)} — 「能修的带一个「修复」」, and only those`,
         );
       }
@@ -12051,19 +12051,19 @@ try {
       }
       if (well.groups.join(",") !== byGroup.map(([g]) => g).join(",")) {
         fail(
-          `自检 filed the healthy checks under ${JSON.stringify(well.groups)} against the node's ` +
+          `诊断 filed the healthy checks under ${JSON.stringify(well.groups)} against the node's ` +
             `${JSON.stringify(byGroup.map(([g]) => g))} — 「分三组:本机、网络、工具」, and which ` +
             "group a check is in is `khor_node::doctor::group`'s to say",
         );
       }
       if (JSON.stringify(well.under) !== JSON.stringify(byGroup.map(([, keys]) => keys))) {
         fail(
-          `自检 put ${JSON.stringify(well.under)} under those headings against ` +
+          `诊断 put ${JSON.stringify(well.under)} under those headings against ` +
             `${JSON.stringify(byGroup.map(([, keys]) => keys))}`,
         );
       }
       if (well.rows !== DOCTOR_ROWS.filter((r) => r.state === "ok").length) {
-        fail(`自检 opened onto ${well.rows} healthy check(s) of ${DOCTOR_ROWS.filter((r) => r.state === "ok").length}`);
+        fail(`诊断 opened onto ${well.rows} healthy check(s) of ${DOCTOR_ROWS.filter((r) => r.state === "ok").length}`);
       }
       // **The four words are four.** 未量 sharing ok's word is the one
       // way this page can lie, and it is the sentence 「未量不是 ok」 is
@@ -12074,20 +12074,20 @@ try {
       const unmeasured = list.words[list.states.indexOf("unmeasured")];
       const spoken = new Set(list.words);
       if (!unmeasured) {
-        fail("自检 says nothing for a check nobody could take — 「『未量』不是 ok」");
+        fail("诊断 says nothing for a check nobody could take — 「『未量』不是 ok」");
       }
       if (spoken.size !== new Set(list.states).size) {
-        fail(`自检 spells ${list.states.length} states with ${spoken.size} word(s): ${JSON.stringify([...spoken])}`);
+        fail(`诊断 spells ${list.states.length} states with ${spoken.size} word(s): ${JSON.stringify([...spoken])}`);
       }
       // **未量 is not filed with the healthy**, which is the same claim
       // one level up: the fold holds the checks that passed, and a page
       // that folded 未量 in with them would have hidden the one row a
       // person most needs to see the absence of.
       if (well.under.flat().includes("relays")) {
-        fail("自检 folded 未量 in with 正常的 — 「看过了」 and 「没看成」 are not one line");
+        fail("诊断 folded 未量 in with 正常的 — 「看过了」 and 「没看成」 are not one line");
       }
       await press("[data-more-fold-open]");
-      if (list.again !== 1) fail(`自检 draws ${list.again} 「再查一遍」`);
+      if (list.again !== 1) fail(`诊断 draws ${list.again} 「再查一遍」`);
       // **Asked on arrival, and then left alone.** The count on arrival
       // is 1 or 2 rather than exactly 1, and the 2 is this gate's own
       // environment: vite serves the dev build, `main.tsx` wraps the app
@@ -12097,7 +12097,7 @@ try {
       // this one.
       const onArrival = doctorAsked.length - before;
       if (onArrival < 1 || onArrival > 2) {
-        fail(`opening 自检 asked the node ${onArrival} time(s) — it is asked when the page opens`);
+        fail(`opening 诊断 asked the node ${onArrival} time(s) — it is asked when the page opens`);
       }
       // **Not polled**, and this is the half that is a product claim: a
       // checklist spawns processes, dials relays and walks the store, so
@@ -12108,7 +12108,7 @@ try {
       await wait(2_600);
       if (doctorAsked.length !== settled) {
         fail(
-          `自检 asked ${doctorAsked.length - settled} more time(s) while nobody pressed anything — ` +
+          `诊断 asked ${doctorAsked.length - settled} more time(s) while nobody pressed anything — ` +
             "a checklist is asked for, never polled (src/views/more/DoctorPage.tsx)",
         );
       }
@@ -12166,16 +12166,16 @@ try {
       console.log(`doctor · 一切正常: ${JSON.stringify({ troubled, ...allWell })}`);
       if (!allWell.said || allWell.said === troubled) {
         fail(
-          `自检 says ${JSON.stringify(allWell.said)} on a machine with nothing wrong and ` +
+          `诊断 says ${JSON.stringify(allWell.said)} on a machine with nothing wrong and ` +
             `${JSON.stringify(troubled)} on one with three — a verdict that reads the same either ` +
             "way is not a verdict",
         );
       }
       if (allWell.cards !== 0) {
-        fail(`自检 still draws ${allWell.cards} card(s) with nothing wrong — 「只列有问题的」`);
+        fail(`诊断 still draws ${allWell.cards} card(s) with nothing wrong — 「只列有问题的」`);
       }
       if (allWell.fold !== 1) {
-        fail("自检 on a healthy machine drew no 「N 项正常」 line — the checks were still taken");
+        fail("诊断 on a healthy machine drew no 「N 项正常」 line — the checks were still taken");
       }
       doctorNow = DOCTOR_ROWS;
     }

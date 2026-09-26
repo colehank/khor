@@ -751,7 +751,7 @@ pub fn answer(
             crate::reset_identity(root, &arg("name")?)?;
             Ok("null".to_owned())
         }
-        // 自检 (docs/MORE.md). Twelve checks, each under its own
+        // 诊断 (docs/MORE.md). Twelve checks, each under its own
         // timeout — so this arm can take three seconds and never more.
         "doctor" => to_json(&rt.block_on(crate::doctor(root))?),
         // …and one check's remedy, by the check's own key.

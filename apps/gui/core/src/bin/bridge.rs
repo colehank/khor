@@ -32,7 +32,7 @@ fn main() {
     let root = Node::root_from_env();
     // 语言 (docs/MORE.md), the same call every other binary makes at
     // startup: the browser face resolves its own, and this is the Rust
-    // half behind it — refusals and 自检 rows cross back as text.
+    // half behind it — refusals and 诊断 rows cross back as text.
     khor_node::config::apply_lang(&root);
     // This machine's readings, before the first request can ask for
     // them (docs/SHELL.md 第十六轮). `BRIDGE_SLOW_VOLUME_MS` is the

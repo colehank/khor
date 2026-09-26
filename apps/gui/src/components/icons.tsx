@@ -309,7 +309,7 @@ export function IconNetwork({ className }: IconProps) {
     that cuts the plate behind it, and two copies would drift. */
 const PULSE_TRACE = "M6.6 12.2h2.5l1.9-4.6 2.6 9 1.8-4.4h2.8";
 
-/** 自检 = a pulse across a frame: a list of readings taken, which is what
+/** 诊断 = a pulse across a frame: a list of readings taken, which is what
     the page is. Not a stethoscope — khor checks itself, nobody holds it. */
 export function IconPulse({ className }: IconProps) {
   return (

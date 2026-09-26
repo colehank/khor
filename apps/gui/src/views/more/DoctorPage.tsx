@@ -1,4 +1,4 @@
-// 自检 (docs/MORE.md 第二轮 自检页): a verdict, then only what is wrong.
+// 诊断 (docs/MORE.md 第二轮 自检页): a verdict, then only what is wrong.
 //
 // **The page is the node's answer and 「重新检查」 and nothing else.**
 // Every judgment — which checks exist, what each one came out as, what it

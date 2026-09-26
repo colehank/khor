@@ -1260,7 +1260,7 @@ pub struct About {
     /// (docs/MORE.md). It rides here rather than on a call of its own
     /// because it is the same kind of fact as `root` and is read the
     /// same way: a walk of `.khor/` with no node opened
-    /// (`doctor::store_bytes`, which 自检 already does).
+    /// (`doctor::store_bytes`, which 诊断 already does).
     pub store_bytes: u64,
     /// Which of khor's interfaces are up on this machine — the desktop
     /// app, the web face (docs/MORE.md 头像页: 本机开着哪几张脸).
@@ -1414,7 +1414,7 @@ pub fn set_config(root: &Path, name: &str, value: &str) -> Result<Vec<ConfigRow>
     Ok(config_rows(root))
 }
 
-/// One row of 自检 (docs/MORE.md), as the page draws it.
+/// One row of 诊断 (docs/MORE.md), as the page draws it.
 ///
 /// **Not `khor_node::doctor::Check` itself**, and the reason is where
 /// the words are: the node answers a key and a sentence, and the page

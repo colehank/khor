@@ -41,8 +41,9 @@ export const EXCEPTIONS = {
     "tokens.css writes it as color-mix(--foreground 50%, transparent); tokens.json's format cannot hold a function and carries an rgba() stand-in (40-migration, the section on what was not carried over)",
   "color:day-unwatched":
     "color-mix in tokens.css, an rgba() stand-in in tokens.json — the same note as git-mark",
-  "type:read:line":
-    "read's leading is 24 (1.5), the owner's 2026-08-30 choice to match the reference product whole, measured by check-read; tokens.json says 1.6 and SHELL.md round 15 says read does not move — the owner decides which one moves",
+  // `type:read:line` was named here while tokens.json said 1.6 and
+  // tokens.css 24px. The owner settled it on 2026-09-27: read is 1.5
+  // (24 on 16), final — both files say so now, and the gate requires it.
 };
 
 function stripComments(css) {
