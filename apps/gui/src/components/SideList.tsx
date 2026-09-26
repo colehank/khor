@@ -24,6 +24,7 @@
 // did all of this; the other four had each grown part of it.
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import { EmptyState, RegionState } from "@/components/RegionState";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
@@ -143,6 +144,7 @@ export function finds(query: string, text: string): boolean {
 
 export function SideList({
   rows,
+  loading = false,
   query = "",
   label,
   empty,
@@ -153,6 +155,8 @@ export function SideList({
   headData,
 }: {
   rows: SideRow[];
+  /** The column has not been answered yet: a skeleton, not `empty`. */
+  loading?: boolean;
   /** What is in the head's box. */
   query?: string;
   /** A group's heading, from its key. */
@@ -216,10 +220,17 @@ export function SideList({
       .join("\n"),
   );
 
+  if (loading && rows.length === 0) {
+    return (
+      <div data-side-list {...mark} data-loading>
+        <RegionState state="loading-never" />
+      </div>
+    );
+  }
   if (shown.length === 0) {
     return (
-      <div data-side-list {...mark} data-empty className="p-4 text-callout text-muted-foreground">
-        {rows.length === 0 ? empty : none}
+      <div data-side-list {...mark} data-empty className="flex min-h-0 flex-1 flex-col">
+        <EmptyState>{rows.length === 0 ? empty : none}</EmptyState>
       </div>
     );
   }

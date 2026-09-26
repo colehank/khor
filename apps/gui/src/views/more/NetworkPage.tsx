@@ -37,6 +37,7 @@
 // paragraph and a text box for an act almost nobody performs.
 import { useEffect, useState } from "react";
 
+import { EmptyState } from "@/components/RegionState";
 import { fetchAbout, leaveNetwork, setPaused, type About, type DeviceRow, type SessionRow } from "@/api";
 import { Button } from "@/components/ui/button";
 import {
@@ -101,12 +102,7 @@ export function NetworkPage({
           question there is at that moment. */}
       <div className="min-h-0 min-w-0 flex-1">
         {alone ? (
-          <div
-            data-net-alone
-            className="flex h-full items-center justify-center p-pane text-callout text-muted-foreground"
-          >
-            {gui.identity_alone}
-          </div>
+          <EmptyState data-net-alone>{gui.identity_alone}</EmptyState>
         ) : (
           <MarkPlace rows={rows} devices={devices} onChanged={onChanged} onPickWaiting={onPickWaiting} />
         )}

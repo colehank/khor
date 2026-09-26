@@ -10,13 +10,13 @@ import {
   type ChatMsgRow,
   type MachineLog,
 } from "@/api";
+import { StatusWord } from "@/components/StatusWord";
 import { IconAttach } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
-import { word } from "@/words";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
     list reads, and two different clocks would show two conversations. */
@@ -390,9 +390,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
       {m.word && (
         <div className="flex items-center justify-between gap-2">
           {m.word && (
-            <span data-file-word className="text-caption" style={{ color: `var(--state-${m.word})` }}>
-              {word(m.word)}
-            </span>
+            <StatusWord data-file-word word={m.word} />
           )}
           {m.word === "blocked" && (
             <Button

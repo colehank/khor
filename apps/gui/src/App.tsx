@@ -557,6 +557,11 @@ export default function App() {
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
+  // Whether either list has been answered once (components/RegionState):
+  // until then an empty array is 「not read yet」, drawn as a skeleton,
+  // and never as 「there are none」.
+  const [rowsRead, setRowsRead] = useState(false);
+  const [devicesRead, setDevicesRead] = useState(false);
   // The sessions a person has open, as tabs, and which is in front:
   // `selected` is the front tab (`useSessionTabs` — iTerm's arrangement,
   // asked for 2026-09-02). Opening a row opens or focuses its tab;
@@ -729,6 +734,7 @@ export default function App() {
         .then((rows) => {
           if (!live) return;
           setRows(rows);
+          setRowsRead(true);
           setStale(false);
         })
         .catch(() => live && setStale(true));
@@ -763,7 +769,11 @@ export default function App() {
     let live = true;
     const tick = () => {
       fetchDevices()
-        .then((rows) => live && setDevices(rows))
+        .then((rows) => {
+          if (!live) return;
+          setDevices(rows);
+          setDevicesRead(true);
+        })
         // Silent on purpose: 「后端连不上」 belongs to the rows above,
         // which asks more often and would already be saying it.
         .catch(() => {});
@@ -842,6 +852,8 @@ export default function App() {
     const [s, d] = await Promise.all([fetchSessions(arrangeBy), fetchDevices()]);
     setRows(s);
     setDevices(d);
+    setRowsRead(true);
+    setDevicesRead(true);
   }, [arrangeBy]);
 
   // Two-argument `then` for the same reason the pins use it: the
@@ -1626,6 +1638,7 @@ export default function App() {
         {sessions ? (
           <SessionsList
             rows={rows}
+            loading={!rowsRead}
             query={queries.sessions}
             words={words.sessions}
             selected={selected}
@@ -1663,6 +1676,7 @@ export default function App() {
         ) : (
           <DevicesList
             rows={devices}
+            loading={!devicesRead}
             query={queries[landing]}
             onPin={onPinDevice}
             onForget={onForgetDevice}

@@ -39,6 +39,7 @@ import {
   type QuotaWindow,
   type Usage,
 } from "@/api";
+import { EmptyState, RegionState } from "@/components/RegionState";
 import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
@@ -1759,14 +1760,22 @@ export function QuotaLanding({
     </div>
   );
 
-  const empty = (
-    <div className="flex flex-col items-start gap-3 p-4 text-callout text-muted-foreground">
-      <span data-quota-empty>{board === null ? "" : gui.accounts_empty}</span>
-      <Button size="sm" data-quota-register className="min-h-touch" onClick={() => setRegistering(true)}>
-        {gui.accounts_register}
-      </Button>
-    </div>
-  );
+  // Never read yet: the skeleton, not a blank (components/RegionState).
+  // Read and empty: one sentence and its one button (components/EmptyState).
+  const empty =
+    board === null ? (
+      <RegionState state="loading-never" />
+    ) : (
+      <EmptyState
+        action={
+          <Button data-quota-register className="min-h-touch" onClick={() => setRegistering(true)}>
+            {gui.accounts_register}
+          </Button>
+        }
+      >
+        <span data-quota-empty>{gui.accounts_empty}</span>
+      </EmptyState>
+    );
 
   return (
     <section data-quota-landing aria-label={gui.accounts_tab} className="flex h-full min-h-0 min-w-0 flex-col">

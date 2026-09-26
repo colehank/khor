@@ -166,7 +166,7 @@ export function Region({
           {head ?? <PageHead title={title} actions={actions} caption={caption} />}
         </div>
         <WindowControls />
-        {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand-strong" />}
+        {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand" />}
       </div>
       {/* The board. On narrow it is the whole screen and wears no
           margin and no corner (`app.css`, keyed on `data-narrow`).

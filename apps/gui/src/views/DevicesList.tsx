@@ -62,6 +62,7 @@ export function visibleDevices(rows: DeviceRow[], query: string) {
  */
 export function DevicesList({
   rows,
+  loading = false,
   query,
   onPin,
   onForget,
@@ -73,6 +74,8 @@ export function DevicesList({
   pauseRefused,
 }: {
   rows: DeviceRow[];
+  /** Not answered yet: a skeleton rather than 「there are none」. */
+  loading?: boolean;
   query: string;
   /** Resolves when the pin took and rejects when it did not — the menu
       reads which to decide between closing and staying open (`RowMenu`). */
@@ -230,6 +233,7 @@ export function DevicesList({
   return (
     <SideList
       rows={side}
+      loading={loading}
       query={query}
       label={groupLabel}
       // An empty device table cannot happen — this machine is always in

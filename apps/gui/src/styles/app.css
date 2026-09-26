@@ -1258,3 +1258,12 @@ aside[data-side] {
 [data-board] [data-more-head] {
   display: none;
 }
+
+/* **The tab in front joins the board** (components/Board `joined`,
+   components/Tab): when it is the first tab it stands right over the
+   board's top-left corner, and that corner goes square so the tab and
+   the board read as one piece. Any other tab in front stands on the
+   board's straight edge, where there is no corner to take off. */
+[data-region-kind="tabs"]:has([data-tab-strip] > [data-tab]:first-child[data-on="true"]) > [data-board] {
+  border-top-left-radius: 0;
+}

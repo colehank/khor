@@ -459,7 +459,7 @@ export function TabStrip({
                     both lines it has the pair itself as its measure,
                     which is where a session tab's avatar already
                     stands. */}
-                {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-kind-mark flex-none" />}
+                {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-4 flex-none" />}
                 {f.glyph && f.sub && <span className="flex-none">{f.glyph}</span>}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
@@ -470,7 +470,7 @@ export function TabStrip({
                     kind={f.rename.kind}
                     id={f.rename.id}
                     title={f.label}
-                    className="min-w-0 flex-1 text-callout"
+                    className="min-w-0 flex-1 text-body"
                     inputClassName="w-full text-callout"
                     nested
                     // The hook the width gate measures, kept on the box
@@ -490,7 +490,7 @@ export function TabStrip({
                   <span data-tab-label className="flex min-w-0 flex-1 flex-col justify-center">
                     <span
                       data-tab-name
-                      className={cn("flex min-w-0 text-callout leading-tight", f.preview && "italic")}
+                      className={cn("flex min-w-0 text-body leading-tight", f.preview && "italic")}
                     >
                       <MidName text={f.label} />
                     </span>
@@ -510,7 +510,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 text-callout", f.preview && "italic")}
+                    className={cn("flex min-w-0 flex-1 text-body", f.preview && "italic")}
                   >
                     <MidName text={f.label} />
                   </span>

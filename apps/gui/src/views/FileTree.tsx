@@ -22,6 +22,7 @@
 // class of memory as a column width, not a decision about the mesh.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
+import { EmptyState } from "@/components/RegionState";
 import { fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
 import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
@@ -416,9 +417,7 @@ export function FileTree({
         ) : (
           <>
             {listings.has(root) && rows.length === 0 && (
-              <div data-empty className="p-4 text-callout text-muted-foreground">
-                {gui.empty_dir}
-              </div>
+              <EmptyState data-empty>{gui.empty_dir}</EmptyState>
             )}
             {/* A name being typed into the root itself, which has no
                 row of its own to hang under. */}

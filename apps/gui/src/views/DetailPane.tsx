@@ -4,6 +4,7 @@ import {
   type DayRun,
   type SessionRow,
 } from "@/api";
+import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
 import { EditableName } from "@/components/EditableName";
 import { IconBack } from "@/components/icons";
@@ -14,7 +15,6 @@ import { ChatView } from "@/views/ChatView";
 import { DayStrip } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
-import { word } from "@/words";
 
 /**
  * **One session, one face.** A session is held in exactly one form —
@@ -349,9 +349,7 @@ export function DetailPane({
             // read as two lines of equal news about a session nobody can
             // see.
             <div>
-              <div className="text-body" style={{ color: `var(--state-${row.word})` }}>
-                {word(row.word)}
-              </div>
+              <StatusWord word={row.word} />
               <div className="text-callout">{row.kind}</div>
             </div>
           ) : (

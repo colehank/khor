@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { StatusWord } from "@/components/StatusWord";
 import { takeover, takeoverTerm, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionMark } from "@/components/BrandIcons";
@@ -9,7 +10,7 @@ import { EditableName } from "@/components/EditableName";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { closeWarning } from "@/views/DetailPane";
-import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf, word } from "@/words";
+import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -77,6 +78,7 @@ export function visibleSessions(rows: SessionRow[], query: string, ticked: strin
 // function in here, and adding one is the bug.**
 export function SessionsList({
   rows,
+  loading = false,
   query,
   words,
   selected,
@@ -88,6 +90,8 @@ export function SessionsList({
   showVia = true,
 }: {
   rows: SessionRow[];
+  /** Not answered yet: a skeleton rather than 「there are none」. */
+  loading?: boolean;
   query: string;
   words: string[];
   selected: string | null;
@@ -316,9 +320,7 @@ export function SessionsList({
     trailing: (
       <span className="flex flex-none flex-col items-end gap-xxs text-caption text-tertiary">
         <span className="flex items-center gap-xxs">
-          <span data-word-text style={{ color: `var(--state-${r.word})` }}>
-            {word(r.word)}
-          </span>
+          <StatusWord word={r.word} />
           {r.unread > 0 && (
             <span
               data-unread
@@ -371,6 +373,7 @@ export function SessionsList({
   return (
     <SideList
       rows={side}
+      loading={loading}
       query={query}
       filtered={words.length > 0}
       label={(g) => placeNames.get(g) ?? groupLabel(g)}

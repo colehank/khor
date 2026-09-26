@@ -22,6 +22,7 @@
 // this app has nowhere that collects messages.
 import { useEffect, useState } from "react";
 
+import { EmptyState } from "@/components/RegionState";
 import { fetchLs, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
@@ -221,9 +222,7 @@ export function FilesPane({
               </button>
             )}
             {listing.entries.length === 0 && (
-              <div data-empty className="p-4 text-callout text-muted-foreground">
-                {gui.empty_dir}
-              </div>
+              <EmptyState data-empty>{gui.empty_dir}</EmptyState>
             )}
             {listing.entries.map((e) => {
               const full = `${listing.path === "/" ? "" : listing.path}/${e.name}`;

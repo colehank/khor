@@ -32,6 +32,7 @@ import {
   type GitStatus,
   type WorkspaceRow,
 } from "@/api";
+import { EmptyState } from "@/components/RegionState";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBranch, IconChevronRight, IconFiles } from "@/components/icons";
 import { type RowAction } from "@/components/RowMenu";
@@ -368,12 +369,7 @@ export function WorkspacesList({
         // 「还没有工作区」 under a typed word would be khor telling somebody
         // they have no projects while three are one backspace away.
         none={
-          <div
-            data-ws-none-match
-            className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center text-body text-muted-foreground"
-          >
-            {gui.workspace_none_match}
-          </div>
+          <EmptyState data-ws-none-match>{gui.workspace_none_match}</EmptyState>
         }
       />
     </div>
