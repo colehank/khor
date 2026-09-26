@@ -12,7 +12,7 @@
 | — | 圆角 | `--radius: 10px` 一档 + calc 派生 | **六档具名：4 / 6 / 8 / 10 / 12 / full** | 一档基数 + `calc` 的派生法让「按钮用几」这种问题没有答案。 **已落地（第十五轮）**：`@theme static` 里六个直写值，板用 `radius-xl`。 |
 | — | 设置组间距 | `--gap-group: 18px` | **20px** | 让 4 的倍数不留例外。 **已落地（第十五轮）**。 |
 | — | R0/L0 高度 | `--pane-head: calc(44 + 4) = 48` | **`pane-head: 48px` 直写** | 值一样，但它是一个设计决定，不该是两个别的数算出来的副产品。 **已落地（第十五轮）**；`traffic.rs` 的 48 由 `check-boot` 对。 |
-| D2 | 没有标签的页 R0 | 各页各拼 | **后退/前进 + `title-sm` 标题** | 照「系统设置」。 **已落地（第十五轮）**：`PageHead`（`components/Region.tsx`）。 |
+| D2 | 没有标签的页 R0 | 各页各拼 | **`title-sm` 标题 + 右端页面按钮，不带后退/前进** | 第十五轮先照「系统设置」加了 ‹ ›；2026-09-26 负责人撤掉：「机器等非标签页左上角不用有返回与前进，就是标题就行」。`PageHead`（`components/Region.tsx`）。 |
 | D3 | L2 列表空白 | 能拖窗口 | **不能拖** | Finder 和系统设置都不能；竖栏空白照旧能拖。 **已落地（第十五轮）**：外壳在 L0、L1、R0 各标一次（`components/shell.ts`），face 拖动普查。 |
 | D4 | 左块底 | `--side` 实色 | **macOS 用 `sidebar` 材质**，其余平台 `side` | 半透明透出桌面，是「随系统装的 app」最明显的一处。 **代码已落地（第十五轮），真窗口待领队看**：`transparent` + `Effect::Sidebar` + `macOSPrivateApi`，左块 `--side` 只在 `:root[data-material]` 的 `[data-side]` 里清空。 |
 | D7–D10 | 页面结构 | 六种各自拼 | **三种页型 + sheet + R0 右端按钮** | 见《骨架与三种页型》。 **第十五轮只落了页型骨架**（`Region kind`、`data-region-kind`）；sheet、R0 右端按钮在第十七轮。 |

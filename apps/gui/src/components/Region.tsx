@@ -10,8 +10,8 @@
 //
 // **One component, one prop saying which of three pages this is**:
 //
-//   detail  A 详情 — pick one thing, see it. R0 is `PageHead`: ‹ › over
-//           this landing's selections, the page's name, the page's own
+//   detail  A 详情 — pick one thing, see it. R0 is `PageHead`: the
+//           page's name, the page's own
 //           buttons at the right end. 机器, 额度, 「…」, 工作区.
 //   tabs    B 标签 — open several, switch. R0 is the tab strip; with no
 //           tab open it is `PageHead` with the landing's name. 会话.
@@ -31,12 +31,11 @@
 // **The open tab is the board's colour and joins it** — that is the
 // whole of how a tab says it is in front (`TabStrip`): its bottom edge
 // has no edge, and the board is what it is continuous with.
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 
 import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
-import { IconBack, IconClose, IconForward } from "@/components/icons";
+import { IconClose } from "@/components/icons";
 import { WINDOW_DRAG } from "@/components/shell";
-import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -79,78 +78,26 @@ export function WindowControls() {
 export type RegionKind = "detail" | "tabs" | "doc";
 
 /**
- * ‹ › over **what was picked in this landing** — not a web page's
- * history (that is the address bar's, `AddressBar`) but the list's, the
- * way System Settings walks the panes you opened. Each half is absent
- * where there is nowhere to go, and then its button is not drawn.
- */
-export type PageHistory = { back?: () => void; forward?: () => void };
-
-/**
- * **R0 on a page with no tabs** (D2): ‹ › where there is a history, the
- * page's name in `title-sm`, and a slot at the right end for the page's
- * own buttons (第十七轮 moves them in; this round leaves the slot).
- *
- * ⌘[ and ⌘] walk the same history — bound while this head is on screen,
- * which is while its page is.
+ * **R0 on a page with no tabs** (D2): the page's name in `title-sm`,
+ * and a slot at the right end for the page's own buttons. **No ‹ ›**
+ * (2026-09-26, 「机器等非标签页左上角不用有返回与前进，就是标题就行」):
+ * a detail page is reached from its list, which is always beside it,
+ * so a history over what was picked walked what the list already shows.
  */
 export function PageHead({
   title,
-  history,
   actions,
   caption,
 }: {
   title: ReactNode;
-  history?: PageHistory;
   actions?: ReactNode;
   /** A stale or offline region's one line (第十七轮 §6, 20-states.md):
       「3 分钟前的读数」 at R0's right end, never a banner in the board. */
   caption?: ReactNode;
 }) {
-  const back = history?.back;
-  const forward = history?.forward;
-  useEffect(() => {
-    if (!back && !forward) return;
-    const key = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
-      if (e.key === "[" && back) {
-        e.preventDefault();
-        back();
-      } else if (e.key === "]" && forward) {
-        e.preventDefault();
-        forward();
-      }
-    };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [back, forward]);
   return (
-    <div data-page-head className="flex min-w-0 flex-1 items-center gap-1 self-stretch px-in">
-      {back && (
-        <Button
-          variant="ghost"
-          size="icon"
-          data-history-back
-          aria-label={gui.history_back}
-          onClick={back}
-          className="min-h-touch min-w-touch flex-none"
-        >
-          <IconBack />
-        </Button>
-      )}
-      {forward && (
-        <Button
-          variant="ghost"
-          size="icon"
-          data-history-forward
-          aria-label={gui.history_forward}
-          onClick={forward}
-          className="min-h-touch min-w-touch flex-none"
-        >
-          <IconForward />
-        </Button>
-      )}
-      <h1 data-page-title className="min-w-0 flex-1 truncate px-1 text-title-sm font-title">
+    <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
+      <h1 data-page-title className="min-w-0 flex-1 truncate text-title-sm font-title">
         {title}
       </h1>
       {caption && (
@@ -159,7 +106,7 @@ export function PageHead({
         </span>
       )}
       {actions && (
-        <div data-page-actions className="flex flex-none items-center gap-1">
+        <div data-page-actions className="flex flex-none items-center gap-in">
           {actions}
         </div>
       )}
@@ -171,7 +118,6 @@ export function Region({
   kind,
   head,
   title,
-  history,
   actions,
   caption,
   busy,
@@ -189,7 +135,6 @@ export function Region({
       the picked thing's name when something is. Read where `head` is
       absent. */
   title?: ReactNode;
-  history?: PageHistory;
   /** The page's own buttons at R0's right end (第十七轮 §3). */
   actions?: ReactNode;
   /** A stale region's caption at R0's right end (`PageHead`). */
@@ -218,7 +163,7 @@ export function Region({
         className="relative flex h-pane-head flex-none items-end select-none"
       >
         <div className="flex min-w-0 flex-1 self-stretch">
-          {head ?? <PageHead title={title} history={history} actions={actions} caption={caption} />}
+          {head ?? <PageHead title={title} actions={actions} caption={caption} />}
         </div>
         <WindowControls />
         {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand-strong" />}

@@ -55,7 +55,6 @@ import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
-import { useHistory } from "@/hooks/use-history";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { tabsLimitOf } from "@/browse/tab-limit";
@@ -314,14 +313,20 @@ function RailItem({
         // (Numbers here carry no unit on purpose: `check-px.mjs` reads
         // lines rather than syntax, so a number-and-unit is a build
         // error even inside a comment.)
-        // **`min-h-touch min-w-touch`** — the finger floor (tokens.css
+        // **`h-rail-item`, a square** (components/Rail, 2026-09-26): the
+        // box is the rail's own 48 on every pointer, not the control
+        // floor — when the floor dropped to `--ctl-md` for a mouse the
+        // rail shrank with it to a 32 pitch, tighter than the design
+        // (「侧边栏的icon间距过小」). Items stand `gap-xxs` apart.
+        // The history of the floor, kept for the width below:
+        // **`min-w-touch`** — the finger floor (tokens.css
         // `--touch`): the hit area grows to 44, the glyph keeps its
         // `--icon-rail` size, and because the selected block and the
         // hover wash paint this very button box, the highlight is the
         // hit area — nothing is pressable that does not light up whole.
         // Measured before this: every rail item was 44×30, under every
         // guideline's floor (`check-face.mjs` now holds the line).
-        "group relative h-auto min-h-touch min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+        "group relative h-rail-item min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
         // **`w-rail-item`** (docs/SHELL.md 第十三轮 第 2 条): the glyph
         // box's width is a token now, because the first row's controls
         // — and macOS's three buttons — start on this box's left edge,
@@ -676,13 +681,6 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(null);
-  // ‹ › in R0 (docs/SHELL.md 第十五轮 第 6 条): each 详情 landing walks
-  // what was picked in it — a machine, a workspace, a 「…」 page.
-  // 额度's account is picked inside its landing, and its trail is kept
-  // there (`QuotaLanding`).
-  const deviceTrail = useHistory(selectedDevice, setSelectedDevice, (v) => v ?? "");
-  const wsTrail = useHistory(openWs, setOpenWs, (v) => (v ? `${v.device}:${v.path}` : ""));
-  const moreTrail = useHistory(morePage, setMorePage, (v) => v ?? "");
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
   // there has ever been, eighteen seconds for the first pass on the
@@ -1399,7 +1397,7 @@ export default function App() {
           setScreen("list");
         }}
         className={cn(
-          "group relative h-auto min-h-touch min-w-touch w-rail-item flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
+          "group relative h-rail-item min-w-touch w-rail-item flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
           "hover:text-rail-ink",
           foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
         )}
@@ -2332,7 +2330,6 @@ export default function App() {
             <Region
               kind="detail"
               title={moreName(morePage)}
-              history={moreTrail}
               caption={stale ? gui.backend_unreachable : undefined}
               // The way out, at R0's right end with the page's other
               // buttons (components/Toolbar, D9) — not a second head in
@@ -2417,7 +2414,6 @@ export default function App() {
                   <Region
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
-                    history={landing === "devices" ? deviceTrail : landing === "workspaces" ? wsTrail : undefined}
                     actions={machineVerbs}
                     flush={landing === "workspaces" && openWs !== null}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the

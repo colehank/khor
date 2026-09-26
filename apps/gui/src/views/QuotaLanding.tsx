@@ -70,7 +70,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
-import { useHistory } from "@/hooks/use-history";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
@@ -942,9 +941,6 @@ export function QuotaLanding({
   // here), beside the machine card's answers and this page's details.
   const [board, setBoard] = useKept<AccountRing[] | null>("quota.board", null);
   const [picked, setPicked] = useKept<string | null>("quota.picked", null);
-  // ‹ › in R0 walk the accounts picked here (docs/SHELL.md 第十五轮 第 6
-  // 条) — this landing's selection, kept by this landing.
-  const trail = useHistory(picked, setPicked, (v) => v ?? "");
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
@@ -1866,7 +1862,7 @@ export function QuotaLanding({
           </ListPane>
           {/* 详情 (A): R0 names the account on the board, the board
               reads it. */}
-          <Region kind="detail" title={current?.name ?? gui.accounts_tab} history={trail} className="overflow-y-auto">
+          <Region kind="detail" title={current?.name ?? gui.accounts_tab} className="overflow-y-auto">
             {detail}
             {subDetail}
           </Region>

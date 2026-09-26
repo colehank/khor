@@ -48,7 +48,10 @@ function TooltipContent({
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 w-max max-w-64 origin-(--radix-tooltip-content-transform-origin) rounded-md border bg-popover px-2 py-1 text-caption text-balance text-popover-foreground shadow-md",
+          // docs/design-system components/Tooltip: as wide as its word
+          // (`w-max`, at most 256), `caption` on `popover` with a hairline,
+          // `radius-sm`, and the `float` shadow — it is a thing that floats.
+          "z-50 w-max max-w-64 origin-(--radix-tooltip-content-transform-origin) rounded-sm border bg-popover px-in py-xxs text-caption text-balance text-popover-foreground shadow-(--shadow-float)",
           "duration-[var(--dur-120)] ease-[var(--ease-out)]",
           "animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
