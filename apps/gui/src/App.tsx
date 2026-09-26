@@ -39,7 +39,7 @@ import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
-import { PaneBar, type PaneAction } from "@/components/PaneBar";
+import { PageActions, PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
 import {
@@ -1612,7 +1612,6 @@ export default function App() {
               }
             : undefined
         }
-        actionsLabel={gui.new_item}
         // Nothing gets created from the files or browser panes yet, and
         // an empty "+" is worse than no "+": it is a menu that teaches
         // people not to open menus.
@@ -1914,6 +1913,7 @@ export default function App() {
       <NewSessionDialog
         open={sheet === "new"}
         onOpenChange={(o) => setSheet(o ? "new" : null)}
+        onImport={() => setSheet("import")}
         machine={newSessionOn}
         dir={newSessionAt}
         // The freshly-opened session is what the person came to see —
@@ -2428,7 +2428,17 @@ export default function App() {
                   <Region
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
-                    actions={machineVerbs}
+                    // The machine's verbs while one is open; with nothing
+                    // picked, the landing's own acts — 新会话 / 导入 on
+                    // 会话, 邀请 / 加入 on 机器 (D9: page buttons are R0's).
+                    actions={
+                      machineVerbs ??
+                      (sessions ? (
+                        <PageActions actions={sessionActions} />
+                      ) : landing === "devices" ? (
+                        <PageActions actions={deviceActions} />
+                      ) : undefined)
+                    }
                     flush={landing === "workspaces" && openWs !== null}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.

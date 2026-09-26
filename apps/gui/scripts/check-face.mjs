@@ -5319,8 +5319,7 @@ try {
   // in `smoke` types into it — so this asserts the picker writes there
   // rather than replacing it.
   await press(rail("sessions"));
-  await press("[data-pane-new]");
-  await press('[data-new-item="new"]');
+  await press("[data-side-head] [data-pane-new]");
   const wizard = await until(5_000, async () =>
     (await page.locator("[data-new-session-pick]").count()) === 1,
   );
@@ -12340,8 +12339,7 @@ try {
       // is already open collapses its list, and the 新建 button lives in
       // that list's own head (the helper's own note, 2026-09-02).
       await open("sessions");
-      await press("[data-pane-new]");
-      await press('[data-new-item="new"]');
+      await press("[data-side-head] [data-pane-new]");
       if (!(await until(5_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 1))) {
         return null;
       }
@@ -21296,8 +21294,10 @@ try {
       // (b) inside a dialog or sheet: at most one primary.
       // (d) the create forms are sheets hanging from R0.
       const forms = [
-        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && (await press("[data-pane-new]")) && press('[data-new-item="new"]')],
-        ["import", "[data-import-dialog]", async () => (await open("sessions")) && (await press("[data-pane-new]")) && press('[data-new-item="import"]')],
+        // ＋ is one act (新会话); 导入 is offered on that sheet
+        // (2026-09-26), since a strip of tabs leaves R0 no room for it.
+        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
+        ["import", "[data-import-dialog]", async () => (await open("sessions")) && (await press("[data-side-head] [data-pane-new]")) && press('[data-new-session-dialog] [data-new-item="import"]')],
       ];
       for (const [what, sel, go] of forms) {
         if (!(await go()) || !(await until(4_000, async () => (await page.locator(sel).count()) === 1))) {

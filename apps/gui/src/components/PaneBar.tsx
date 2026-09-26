@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
@@ -46,6 +47,20 @@ export type FilterOption = { key: string; label: string; axis?: string };
 
 export type PaneAction = { key: string; label: string; onSelect: () => void };
 
+/** A landing's own acts as R0 buttons (components/Toolbar, D9): push
+    `sm`, one per act, in the order the landing lists them. */
+export function PageActions({ actions }: { actions: PaneAction[] }) {
+  return (
+    <>
+      {actions.map((a) => (
+        <Button key={a.key} size="sm" data-new-item={a.key} onClick={a.onSelect} className="min-h-touch min-w-touch flex-none">
+          {a.label}
+        </Button>
+      ))}
+    </>
+  );
+}
+
 /** One way of laying the list out; `key` is the backend's arrangement
     key, never a word this layer invented. */
 export type ArrangeOption = { key: string; label: string };
@@ -58,7 +73,6 @@ export function PaneBar({
   axes,
   onSubmit,
   actions,
-  actionsLabel,
   filterLabel,
   arrange,
   create,
@@ -115,7 +129,6 @@ export function PaneBar({
    * that greys out or does nothing teaches people not to open the menu.
    */
   actions?: PaneAction[];
-  actionsLabel?: string;
   /**
    * The pane's **one** creation road, drawn as a plain "+" rather than
    * a menu. Given instead of `actions`, never beside it: two plus signs
@@ -134,6 +147,7 @@ export function PaneBar({
    */
   create?: { label: string; mark?: string; disabled?: boolean; onSelect?: () => void };
 }) {
+  const narrow = useNarrow();
   const bar = (
     <div
       data-pane-bar
@@ -299,16 +313,17 @@ export function PaneBar({
         </DropdownMenu>
       )}
 
-      {actions && actions.length > 0 && actionsLabel && (
+      {/* **＋ is one act** (components/SideHead「＋ 只有一个动作（新建当前
+          落地页的东西）…别做成下拉」, 2026-09-26): the landing's first
+          action, pressed straight through. The rest of the landing's
+          acts are buttons at R0's right end (`PageActions`), where page
+          buttons live (D9). */}
+      {actions && actions.length > 1 && narrow ? (
+        // The narrow face has no R0, so the acts that live there on the
+        // wide face come back under ＋ as the menu they were.
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={actionsLabel}
-              data-pane-new
-              className="min-h-touch min-w-touch"
-            >
+            <Button variant="ghost" size="icon" aria-label={gui.new_item} data-pane-new className="min-h-touch min-w-touch">
               <IconPlus />
             </Button>
           </DropdownMenuTrigger>
@@ -320,6 +335,17 @@ export function PaneBar({
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+      ) : actions && actions.length > 0 && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={actions[0].label}
+          data-pane-new
+          onClick={actions[0].onSelect}
+          className="min-h-touch min-w-touch"
+        >
+          <IconPlus />
+        </Button>
       )}
 
       {create && (

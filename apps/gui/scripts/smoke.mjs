@@ -1186,7 +1186,6 @@ for line in sys.stdin:
   if ((await page.locator('[data-device="alpha"]').count()) !== 0) {
     throw new Error("alpha is in the table before pairing — the control is void");
   }
-  await page.locator("[data-pane-new]").click();
   await page.locator('[data-new-item="join"]').click();
   await page.locator("[data-ticket-input]").fill(ticketA);
   await page.locator("[data-join]").click();
@@ -1216,7 +1215,6 @@ for line in sys.stdin:
 
   // 3) the GUI mints a real ticket — proven by a third machine joining
   //    with it from the CLI, not by the string looking ticket-shaped.
-  await page.locator("[data-pane-new]").click();
   await page.locator('[data-new-item="invite"]').click();
   const guiTicket = await until("a ticket from the GUI", 20_000, async () => {
     const err = await page.locator("[data-dialog-error]").count();
@@ -1279,8 +1277,7 @@ for line in sys.stdin:
   //    "+" menu's separate door went with the old dialog: pick alpha in
   //    在哪台, pick 留言 in 类型, and the third step is the line itself.
   await assertUntitled("sessions");
-  await page.locator("[data-pane-new]").click();
-  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-side-head] [data-pane-new]").click();
   await until("the wizard offering alpha", 10_000, async () =>
     (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
   );
@@ -4702,8 +4699,8 @@ for line in sys.stdin:
   if ((await page.locator(`[data-row="${acpOpened}"]`).count()) !== 0) {
     throw new Error(`the stub's conversation ${acpOpened} is open on beta's list before anybody imported it`);
   }
-  await page.locator("[data-side-head] [data-pane-new]").first().click();
-  await page.locator('[data-new-item="import"]').click();
+  await page.locator("[data-side-head] [data-pane-new]").click();
+  await page.locator('[data-new-session-dialog] [data-new-item="import"]').click();
   await until("the import panel with all three", 20_000, async () => {
     for (const id of [tmuxRowId, "tui/imp01", acpRow]) {
       if ((await page.locator(`[data-import-row="${id}"]`).count()) !== 1) return false;
@@ -5821,8 +5818,7 @@ for line in sys.stdin:
   plantPlace("pl-gone", "aaaaaaa1-0000-4000-8000-000000000003", placeGone);
 
   await openLanding("sessions");
-  await page.locator("[data-pane-new]").click();
-  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-side-head] [data-pane-new]").click();
   await until("常去的地方 offering the planted checkout", 20_000, async () =>
     (await page.locator(`[data-place="${placeRepo}"]`).count()) === 1,
   );
@@ -5864,8 +5860,7 @@ for line in sys.stdin:
   const wizDir = join(SCRATCH, "wizard-cwd");
   mkdirSync(wizDir, { recursive: true });
   await openLanding("sessions");
-  await page.locator("[data-pane-new]").click();
-  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-side-head] [data-pane-new]").click();
   await page.locator("[data-new-session-dir]").fill(wizDir);
   await page.locator("[data-new-session-name]").fill("wizard-one");
   // The conversation form is the default (the ruling); just create.
@@ -5950,8 +5945,7 @@ for line in sys.stdin:
     );
   }
   await openLanding("sessions");
-  await page.locator("[data-pane-new]").click();
-  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-side-head] [data-pane-new]").click();
   await until("the machine row offering alpha", 10_000, async () =>
     (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
   );
@@ -6879,8 +6873,7 @@ for line in sys.stdin:
   // not take over was the one khor opened itself.
   const termDir = join(SCRATCH, "wizard-term-cwd");
   mkdirSync(termDir, { recursive: true });
-  await page.locator("[data-pane-new]").click();
-  await page.locator('[data-new-item="new"]').click();
+  await page.locator("[data-side-head] [data-pane-new]").click();
   await page.locator("[data-new-session-dir]").fill(termDir);
   await page.locator("[data-new-session-name]").fill("wizard-term");
   await page.locator("[data-new-session-term]").click();
