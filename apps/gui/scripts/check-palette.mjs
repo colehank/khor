@@ -282,11 +282,11 @@ try {
     await wait(200);
     await page.locator('[data-rail-item][data-landing="devices"]').click();
     await wait(400);
-    await page.locator("[data-pane-new]").click();
-    await wait(400);
-    const items = page.locator('[role="menuitem"]');
-    if ((await items.count()) < 2) throw new Error("probe dead: the devices pane's + menu did not open");
-    await items.last().click();
+    // 用邀请加入 is a button at R0's right end on the machines overview
+    // (2026-09-26: ＋ is one act, the landing's other acts live in R0).
+    const joinButton = page.locator('[data-new-item="join"]');
+    if ((await joinButton.count()) !== 1) throw new Error("probe dead: no 用邀请加入 button at R0's right end");
+    await joinButton.click();
     await wait(600);
     if ((await join.count()) !== 1) throw new Error("probe dead: no primary button in the join dialog");
     await page.locator("[data-ticket-input]").fill("not-a-real-ticket");
@@ -665,14 +665,12 @@ try {
       );
       if (worst.length < 2) fail(`${scheme} · ${state}: the selected row shows ${worst.length} piece(s) of text — a title and a second line were routed in`);
       for (const t of low) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} reads ${say(t.ratio)} on its row, under ${TEXT_FLOOR}`);
-      for (const t of faded) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} is faded to ${t.fade} — every line on a selected row is full-value on-brand, no opacity`);
-      if (state === "front") {
-        const strong = got.grounds[0];
-        if (!got.grounds.length || !strongOf[scheme] || !same(strong, strongOf[scheme])) {
-          fail(`${scheme}: the selected row in front is ${strong ?? "unpainted"}, not --brand-strong ${strongOf[scheme]} (D6)`);
-        }
-      } else if (got.grounds.length && strongOf[scheme] && same(got.grounds[0], strongOf[scheme])) {
-        fail(`${scheme}: the selected row is still --brand-strong with the window behind — macOS greys it (D6)`);
+      for (const t of faded) fail(`${scheme} · selected row · ${state}: ${JSON.stringify(t.text)} is faded to ${t.fade} — every line on a selected row is full-value, no opacity`);
+      // Never the brand, in front or behind (2026-09-27: the owner found
+      // the solid 「太亮」, and 额度's rings vanished on it). A grey block,
+      // as the Finder draws a sidebar's selection.
+      if (got.grounds.length && strongOf[scheme] && same(got.grounds[0], strongOf[scheme])) {
+        fail(`${scheme} · ${state}: the selected row is painted --brand-strong — a selection is a grey block now (app.css, 2026-09-27)`);
       }
     };
     const strongOf = {};

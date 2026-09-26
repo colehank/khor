@@ -219,57 +219,36 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
-/* **A selected row, the way a Mac sidebar draws one** (docs/SHELL.md
-   第十五轮 第 2 条, D6: 「选中的列表行是实心品牌深绿、白字；窗口不在前台
-   时变灰」). Every list in the app is `SideList`, and its row says
-   `data-selected`; this is the one place that paints it.
+/* **A selected row: a grey block, not the brand** (2026-09-27, the
+   owner: 选中行「太亮」; and 额度's rings vanished on the solid — their
+   pale track has nothing to stand on over `--brand-strong`). This
+   supersedes D6's 「实心品牌深绿、白字」: a sidebar is navigation, and
+   the Finder draws its selection as a neutral block. The brand stays
+   where it marks a state the eye must find — the rail's open glyph, an
+   open switch, the focus ring, a dialog's one act.
 
-   In front: `--brand-strong` under `--on-brand`, and **the ink is
-   re-pointed rather than recoloured** — a row's title, second line and
-   right end are written in `--foreground` / `--muted-foreground` /
-   `--tertiary` like every other row, so those are pointed at `--on-brand`
-   and whatever the row holds follows. Behind (`data-window-key="false"`,
-   `lib/window-key.ts`): `--fill-strong` and every line in `--foreground`
-   (ListRow 「字回到 ink」 — measured: the second line's
+   Every list in the app is `SideList`, its row says `data-selected`, and
+   this is the one place that paints it: `--fill-strong` in front and
+   behind, and **every line in `--foreground`** — the second line's
    `--muted-foreground` on `--fill-strong` over `--side` is 4.37 and 忙碌
-   3.71, light, under the 4.5 `check-palette` holds a selected row to).
+   3.71 (light), under the 4.5 `check-palette` holds a selected row to.
+   The state stays said by the face's halo. In front the title steps up
+   to `headline`'s weight, which is how the window's being in front shows.
 
-   **Everything but the face.** The face (`[data-side-face]`) keeps its
-   own inks: its kind mark is `--muted-foreground` on its own frame and
-   its halo is the state's colour, and re-pointing on the whole row
-   turned both white (`smoke`: 「the idle row's halo paints #ffffff」,
-   「the idle row's kind mark paints rgb(255, 255, 255)」). The rail's
-   「开着」 is not this: it stays a wash with `--rail-on-ink`. */
-:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] {
-  background-color: var(--brand-strong);
-}
-:root[data-window-key="false"] [data-side-row][data-selected="true"] {
+   **Everything but the face** (`[data-side-face]`) keeps its own inks: a
+   quota row's ring and a session's kind mark and halo are drawn there. */
+[data-side-row][data-selected="true"] {
   background-color: var(--fill-strong);
 }
-:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] > :not([data-side-open]),
-:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-side-open] > :not([data-side-face]) {
-  color: var(--on-brand);
-  --foreground: var(--on-brand);
-  --muted-foreground: var(--on-brand);
-  --tertiary: var(--on-brand);
-}
-:root[data-window-key="false"] [data-side-row][data-selected="true"] > :not([data-side-open]),
-:root[data-window-key="false"] [data-side-row][data-selected="true"] [data-side-open] > :not([data-side-face]) {
+[data-side-row][data-selected="true"] > :not([data-side-open]),
+[data-side-row][data-selected="true"] [data-side-open] > :not([data-side-face]) {
   --muted-foreground: var(--foreground);
   --tertiary: var(--foreground);
 }
-/* The state word too: on the solid it is the row's own ink, as every
-   label in a selected macOS row is. `!important` because the word's
-   colour is written inline from its token; the halo on the face keeps
-   saying the state. */
-:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-word-text] {
-  color: var(--on-brand) !important;
-}
-:root[data-window-key="false"] [data-side-row][data-selected="true"] [data-word-text] {
+[data-side-row][data-selected="true"] [data-word-text] {
   color: var(--foreground) !important;
 }
 :root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-side-title] {
-  /* `headline`: the selected row's title steps up in weight, not size. */
   font-weight: var(--text-headline--font-weight);
 }
 

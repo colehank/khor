@@ -2066,7 +2066,7 @@ export default function App() {
             "mx-in flex min-h-touch items-center gap-row rounded-md px-3 text-start text-body",
             // The selected row wears the brand only while it is the one
             // on screen — on the narrow list the page is a screen away.
-            morePage === p && !narrow ? "bg-brand-strong text-on-brand" : "hover:bg-fill",
+            morePage === p && !narrow ? "bg-fill-strong font-title" : "hover:bg-fill",
           )}
         >
           {moreName(p)}
