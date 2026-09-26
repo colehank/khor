@@ -42,8 +42,12 @@ export function Tabs({
   stripData,
   bodyClass,
   frame = true,
+  caption,
   children,
 }: {
+  /** A stale region's one line at R0's right end, after the strip
+      (`Region caption`; components/RegionState). Framed strips only. */
+  caption?: ReactNode;
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
@@ -111,7 +115,7 @@ export function Tabs({
     children
   );
   return frame ? (
-    <Region kind="tabs" head={strip} className={bodyClass}>
+    <Region kind="tabs" head={strip} caption={caption} className={bodyClass}>
       {body}
     </Region>
   ) : (

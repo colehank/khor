@@ -137,7 +137,8 @@ export function Region({
   title?: ReactNode;
   /** The page's own buttons at R0's right end (第十七轮 §3). */
   actions?: ReactNode;
-  /** A stale region's caption at R0's right end (`PageHead`). */
+  /** A stale region's caption at R0's right end — in the `PageHead`, or
+      after `head` where R0 is a strip or an address bar. */
   caption?: ReactNode;
   /** Refreshing content already seen: a 2 px brand bar along R0's
       bottom edge, the content left as it was (第十七轮 §6). */
@@ -165,6 +166,19 @@ export function Region({
         <div className="flex min-w-0 flex-1 self-stretch">
           {head ?? <PageHead title={title} actions={actions} caption={caption} />}
         </div>
+        {/* **Every R0 can say it is stale**, not only a `PageHead`: on a
+            tab strip (B) or an address bar (C) the caption sits at the
+            row's right end after them, outside the strip — so the strip
+            measures what is left and compresses its tabs into that,
+            rather than being pushed past the edge. */}
+        {head && caption && (
+          <span
+            data-region-caption
+            className="flex-none self-center truncate px-row text-caption text-tertiary tabular-nums"
+          >
+            {caption}
+          </span>
+        )}
         <WindowControls />
         {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand" />}
       </div>

@@ -3532,9 +3532,17 @@ for line in sys.stdin:
   //     of what the rest of the app has is a standing complaint, not a
   //     one-off (docs/handoff/001.md).
   //
+  //     ⚠️ **Rewritten 2026-09-27, and the product is what moved.** The
+  //     card had its own editable name under R0's title — the same name
+  //     twice on one screen (「身份只出现一次… 板里不许再有第二个标题」,
+  //     components/Toolbar). The card's copy went; the name is said once,
+  //     in R0 (`[data-page-title]`), and the gesture lives on the list
+  //     row, the same `EditableName`. So the rename is driven from the
+  //     row and R0 is what must follow it.
+  //
   //     Three things asserted, and the third is the one with teeth:
   //
-  //       1. the card wears the new name;
+  //       1. R0 over the card wears the new name;
   //       2. so does the list row — a rename is network-wide, not a
   //          nickname on the screen that typed it;
   //       3. **`[data-device="alpha"]` is still there.** That attribute
@@ -3544,41 +3552,17 @@ for line in sys.stdin:
   //          line is the only one that would notice. Write the label
   //          into `F_NAME` and it goes red; write it into `F_LABEL` and
   //          nothing on disk moves at all.
-  const cardName = page.locator("[data-machine-card] [data-machine-name]");
-  if ((await cardName.count()) !== 1) throw new Error("probe dead: the card has no editable name");
-  if ((await cardName.innerText()).trim() !== "alpha") {
-    throw new Error(`the card names this machine "${(await cardName.innerText()).trim()}", not alpha`);
+  const pageTitle = page.locator("[data-region-head] [data-page-title]");
+  if ((await pageTitle.count()) !== 1) throw new Error("probe dead: the machine page has no R0 title");
+  if ((await pageTitle.innerText()).trim() !== "alpha") {
+    throw new Error(`R0 names this machine "${(await pageTitle.innerText()).trim()}", not alpha`);
   }
-  await cardName.dblclick();
-  const nameBox = page.locator("[data-machine-card] [data-title-input]");
-  await until("the name editor", 5_000, async () => (await nameBox.count()) === 1);
-  await nameBox.fill("北京服务器");
-  await nameBox.press("Enter");
-  await until("the card to wear the new name", 10_000, async () =>
-    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "北京服务器",
-  );
-  await until("the list row to wear it too", 15_000, async () =>
-    (await page.locator('[data-device="alpha"]').innerText()).includes("北京服务器"),
-  );
-  if ((await page.locator('[data-device="alpha"]').count()) !== 1) {
-    throw new Error("renaming a machine moved its channel — chat, seen and pins are all keyed on that");
+  if ((await page.locator("[data-machine-card] [data-machine-name]").count()) !== 0) {
+    throw new Error("the card still draws the machine's name under R0's — identity is said once");
   }
-  //     And the eraser: an emptied box gives the machine its reported
-  //     name back. Without this arm a rename that could not be undone
-  //     would pass everything above.
-  await page.locator("[data-machine-card] [data-machine-name]").dblclick();
-  await until("the name editor again", 5_000, async () => (await nameBox.count()) === 1);
-  await nameBox.fill("");
-  await nameBox.press("Enter");
-  await until("the machine to wear its own name again", 10_000, async () =>
-    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "alpha",
-  );
-
-  //     **And the list row renames too** (2026-09-11:「session 现在列表
-  //     双击名称即可重命名,我需要机器也一样」). The card above proves
-  //     the write works; this proves the *gesture* reaches the row —
-  //     two different things, and the row is the one with a trap in it:
-  //     the name sits inside the button that opens the row, so a
+  //     **The row renames** (2026-09-11:「session 现在列表双击名称即可
+  //     重命名,我需要机器也一样」), and the row is the one with a trap in
+  //     it: the name sits inside the button that opens the row, so a
   //     double-click that did not stop propagating would open the row
   //     over and over instead of opening an editor.
   const rowName = page.locator('[data-device="alpha"] [data-machine-name]');
@@ -3586,30 +3570,31 @@ for line in sys.stdin:
   await rowName.dblclick();
   const rowBox = page.locator('[data-device="alpha"] [data-title-input]');
   await until("the row's name editor", 5_000, async () => (await rowBox.count()) === 1);
-  await rowBox.fill("从列表改的");
+  await rowBox.fill("北京服务器");
   await rowBox.press("Enter");
-  await until("the row to wear it", 10_000, async () =>
-    (await page.locator('[data-device="alpha"]').innerText()).includes("从列表改的"),
+  await until("the list row to wear it", 15_000, async () =>
+    (await page.locator('[data-device="alpha"]').innerText()).includes("北京服务器"),
   );
-  //     The card is the other half of the same fact — one machine, one
-  //     name, wherever it is drawn.
-  await until("the card to agree", 10_000, async () =>
-    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "从列表改的",
-  );
+  //     R0 is the other half of the same fact — one machine, one name,
+  //     wherever it is drawn.
+  await until("R0 to agree", 10_000, async () => (await pageTitle.innerText()).trim() === "北京服务器");
+  if ((await page.locator('[data-device="alpha"]').count()) !== 1) {
+    throw new Error("renaming a machine moved its channel — chat, seen and pins are all keyed on that");
+  }
+  //     And the eraser: an emptied box gives the machine its reported
+  //     name back. Without this arm a rename that could not be undone
+  //     would pass everything above.
   await page.locator('[data-device="alpha"] [data-machine-name]').dblclick();
   await until("the row's editor again", 5_000, async () => (await rowBox.count()) === 1);
   await rowBox.fill("");
   await rowBox.press("Enter");
-  await until("alpha back to its own name", 10_000, async () =>
-    (await page.locator("[data-machine-card] [data-machine-name]").innerText()).trim() === "alpha",
-  );
+  await until("alpha back to its own name", 10_000, async () => (await pageTitle.innerText()).trim() === "alpha");
 
-  //     One machine, one picture — the same rule the rail and the row
-  //     already answer to, now with a third place to be wrong in.
-  const cardFace = page.locator("[data-machine-card] [data-face]");
-  if ((await cardFace.count()) !== 1) throw new Error("probe dead: no face on the card");
-  if ((await faceOf(cardFace)) !== (await faceOf(page.locator('[data-device="alpha"] [data-face]')))) {
-    throw new Error("alpha wears one face in the list and another on its card");
+  //     One machine, one picture — and **one place for it on this page**:
+  //     the row beside the card wears the face, and the card's own large
+  //     copy went with its name (2026-09-27, identity said once).
+  if ((await page.locator("[data-machine-card] [data-face]").count()) !== 0) {
+    throw new Error("the card draws the machine's face again beside the row that already wears it");
   }
 
   //     The readings are drawn, and **how many of them there are is not

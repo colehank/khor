@@ -24,11 +24,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { doctorFix, fetchDoctor, type DoctorRow } from "@/api";
-import { IconReload } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { ActionRow } from "@/components/settings/ActionRow";
 import { cli } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { MoreFold, MoreFrame } from "@/views/more/MorePage";
+import { MoreFold, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 /**
  * The ink one state wears.
@@ -123,90 +122,93 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
 
   return (
     <MoreFrame page="doctor" onClose={onClose}>
-      {/* The verdict, and the one button, on one line. **The sentence
-          comes before the list** because it is the answer to the
-          question a person opened this page with; the list is what they
-          read next only if the sentence says to. */}
-      <div className="flex flex-wrap items-center justify-between gap-row">
-        {rows && (
-          <span
-            data-doctor-verdict={bad.length === 0 ? "well" : "wants"}
-            className={cn(
-              "min-w-0 text-callout font-label",
-              bad.length === 0 ? "text-muted-foreground" : "text-state-errored",
-            )}
-          >
-            {bad.length === 0 ? cli.doctor_all_well : cli.doctor_needs_you(bad.length)}
-          </span>
-        )}
-        <Button
-          data-doctor-again
-          disabled={asking}
-          onClick={ask}
-          className="min-h-touch flex-none gap-in"
-        >
-          <IconReload />
-          {cli.doctor_again}
-        </Button>
-      </div>
+      {/* **Settings groups, like every other 「…」 page**
+          (components/SettingsGroup). The first group has no name — R0
+          already says 诊断 — and holds the verdict with 重新检查 as its
+          one act, then one row per problem. **The sentence comes before
+          the list** because it is the answer to the question a person
+          opened this page with; the rows are what they read next only if
+          the sentence says to.
 
-      {error && (
-        <div data-doctor-error className="text-callout text-destructive">
-          {error}
-        </div>
-      )}
-
-      {/* One card per problem. **Not a row in a table**: a table's shape
-          says 「these are the twelve things」, and what this page has to
-          say is 「these two want you」. */}
-      {bad.length > 0 && (
-        <ul data-doctor-list className="flex min-w-0 flex-col gap-row">
-          {bad.map((r) => (
-            <li
-              key={r.key}
-              data-doctor-card={r.key}
-              data-doctor-state={r.state}
-              className="flex min-w-0 flex-wrap items-center gap-row rounded-lg border p-3 text-callout"
-            >
-              <span className="min-w-0 flex-none font-label">{r.name}</span>
+          ⚠️ 墓碑 (2026-09-27): each problem was a bordered card of its
+          own (`rounded-lg border p-3`) under a free-standing verdict
+          line. A box with a border is the one depth this system does not
+          have — depth is `card` on `canvas` — and a stack of them was a
+          settings page drawn its own way. */}
+      <MoreSection name="doctor" mark={{ "data-doctor-list": "" }}>
+        <ActionRow
+          name="doctor-again"
+          label={
+            rows ? (
               <span
-                data-doctor-word
-                className={cn("flex-none", INK[r.state] ?? "text-muted-foreground")}
+                data-doctor-verdict={bad.length === 0 ? "well" : "wants"}
+                className={cn("font-label", bad.length === 0 ? "text-muted-foreground" : "text-state-errored")}
               >
+                {bad.length === 0 ? cli.doctor_all_well : cli.doctor_needs_you(bad.length)}
+              </span>
+            ) : (
+              ""
+            )
+          }
+          hint={error ? <span data-doctor-error className="text-destructive">{error}</span> : undefined}
+          actionLabel={cli.doctor_again}
+          disabled={asking}
+          onPress={ask}
+          mark={{ "data-doctor-again": "" }}
+        />
+        {/* One row per problem: its name and its word on the title line,
+            the machine's own sentence under it, and 修复 where khor can
+            mend it — on the spot, so no ellipsis. A check khor cannot
+            mend has no button, and a button that refuses is worse than
+            none, so that row is a fact, not an action row. */}
+        {bad.map((r) => {
+          const title = (
+            <span className="flex min-w-0 flex-wrap items-baseline gap-row">
+              <span className="min-w-0 font-label">{r.name}</span>
+              <span data-doctor-word className={cn("flex-none text-callout", INK[r.state] ?? "text-muted-foreground")}>
                 {stateWord()[r.state] ?? r.state}
               </span>
-              <span data-doctor-said className="min-w-0 flex-1 break-all text-muted-foreground">
-                {fixed[r.key] ?? r.said}
-              </span>
-              {r.fix && (
-                <Button
-                  size="sm"
-                  data-doctor-fix={r.key}
-                  onClick={() => mend(r.key)}
-                  // Both axes of the finger floor: the word is two
-                  // characters, so `sm` leaves it under the floor on the
-                  // axis nobody thinks to check.
-                  className="min-h-touch min-w-touch flex-none"
-                >
-                  {cli.doctor_mend}
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+            </span>
+          );
+          const said = (
+            <span data-doctor-said className="break-all">
+              {fixed[r.key] ?? r.said}
+            </span>
+          );
+          return r.fix ? (
+            <ActionRow
+              key={r.key}
+              name={`doctor-${r.key}`}
+              rowMark={{ "data-doctor-card": r.key, "data-doctor-state": r.state }}
+              label={title}
+              hint={said}
+              actionLabel={cli.doctor_mend}
+              onPress={() => mend(r.key)}
+              mark={{ "data-doctor-fix": r.key }}
+            />
+          ) : (
+            <div key={r.key} data-doctor-card={r.key} data-doctor-state={r.state} className="flex min-w-0 flex-col">
+              <span className="text-body">{title}</span>
+              <span className="text-callout text-muted-foreground">{said}</span>
+            </div>
+          );
+        })}
+      </MoreSection>
 
       {/* …and everything that is fine, in one line that opens.
           **Grouped by the node's own grouping** (`doctor::group`), which
           rides on the row — a page that sorted these into 本机 / 网络 /
-          工具 itself would be a second table of that fact. */}
+          工具 itself would be a second table of that fact. Each group is
+          a settings group of facts. */}
       {well.length > 0 && (
         <MoreFold name="doctor-well" label={cli.doctor_well_count(well.length)}>
           {[...new Set(well.map((r) => r.group))].map((g) => (
-            <div key={g} data-doctor-group={g} className="flex min-w-0 flex-col">
-              <span className="text-callout font-label text-muted-foreground">
-                {well.find((r) => r.group === g)?.group_label}
-              </span>
+            <MoreSection
+              key={g}
+              name={`doctor-${g}`}
+              label={well.find((r) => r.group === g)?.group_label}
+              mark={{ "data-doctor-group": g }}
+            >
               {well
                 .filter((r) => r.group === g)
                 .map((r) => (
@@ -214,18 +216,15 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
                     key={r.key}
                     data-doctor-row={r.key}
                     data-doctor-state={r.state}
-                    className="flex min-w-0 flex-wrap items-center gap-row border-b py-2 text-callout last:border-b-0"
+                    className="flex min-w-0 flex-wrap items-baseline gap-row text-body"
                   >
-                    <span className="min-w-0 flex-none font-label">{r.name}</span>
-                    <span
-                      data-doctor-said
-                      className="min-w-0 flex-1 break-all text-muted-foreground"
-                    >
+                    <span className="min-w-0 flex-none">{r.name}</span>
+                    <span data-doctor-said className="min-w-0 flex-1 break-all text-callout text-muted-foreground">
                       {r.said}
                     </span>
                   </div>
                 ))}
-            </div>
+            </MoreSection>
           ))}
         </MoreFold>
       )}

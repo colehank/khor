@@ -50,6 +50,9 @@ export type SideRow = {
   /** A session's state ring. */
   halo?: string;
   title: ReactNode;
+  /** The row's name as plain text, for the delete window's question
+      (「删除 mandala？」) — `title` is a drawing, and may be an editor. */
+  name?: string;
   sub?: ReactNode;
   /** The right end of the row, inside what opens it. */
   trailing?: ReactNode;
@@ -207,11 +210,11 @@ export function SideList({
   // default, which asks.
   const asking = useSetting("confirm-delete") !== "off";
   const [pending, setPending] = useState<Pending | null>(null);
-  const menuOf = (items: RowAction[]): RowAction[] =>
-    items.map((a) =>
+  const menuOf = (r: SideRow): RowAction[] =>
+    r.menu.map((a) =>
       a.ask === undefined || !asking
         ? a
-        : { ...a, confirm: undefined, run: () => setPending({ says: a.ask ?? "", run: a.run }) },
+        : { ...a, confirm: undefined, run: () => setPending({ name: r.name, says: a.ask ?? "", run: a.run }) },
     );
   const box = useRowFlip(
     (showOld ? [...fresh, ...aged] : fresh)
@@ -328,7 +331,7 @@ export function SideList({
                 `onPointerDown`, and a press handler on a bare `<div>` is
                 a target only a pointer can find. On the button, focus
                 reaches it and the keyboard's Menu key opens it. */}
-            {r.menu.length > 0 ? <RowMenu items={menuOf(r.menu)}>{button}</RowMenu> : button}
+            {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
             {r.after}
           </div>
         )}

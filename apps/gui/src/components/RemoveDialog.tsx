@@ -136,7 +136,7 @@ export function RemoveDialog({
     >
       <DialogContent data-remove-dialog>
         <DialogHeader>
-          <DialogTitle>{gui.delete}</DialogTitle>
+          <DialogTitle>{gui.delete_named(name)}</DialogTitle>
         </DialogHeader>
         <div data-remove-says className="text-body text-muted-foreground">
           {word}

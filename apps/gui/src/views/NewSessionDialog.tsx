@@ -733,7 +733,7 @@ export function NewSessionDialog({
         <DialogFooter>
           {onImport && kind !== "tell" && (
             <Button data-new-item="import" className="mr-auto" onClick={onImport}>
-              {gui.import_sessions}
+              {gui.import_sessions_ask}
             </Button>
           )}
           {kind === "tell" ? (

@@ -155,10 +155,18 @@ export function MoreFrame({
 export function MoreSection({
   name,
   label,
+  mark,
   children,
 }: {
   name: string;
-  label: string;
+  /** The group's name over its card. **Absent for a page's first group
+      when the page's own name already says it** (System Settings' top
+      group has none either) — a heading that repeats R0 is the second
+      title the Toolbar rule refuses. */
+  label?: string;
+  /** Extra anchors on the card — a page's older gates find its rows by
+      the list they sit in. */
+  mark?: Record<string, string>;
   children: ReactNode;
 }) {
   return (
@@ -168,8 +176,8 @@ export function MoreSection({
     // where the text does. `app.css` `[data-settings-card]` draws the
     // lines and pads whatever in it is not a settings row.
     <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
-      <h2 className="ml-row text-group text-tertiary">{label}</h2>
-      <div data-settings-card className="flex min-w-0 flex-col">
+      {label && <h2 className="ml-row text-group text-tertiary">{label}</h2>}
+      <div data-settings-card {...mark} className="flex min-w-0 flex-col">
         {children}
       </div>
     </section>
@@ -232,6 +240,12 @@ export function MoreFold({
 // state, one per choice in a ladder — stood here. Every setting is one of
 // the four rows in `components/settings` now (SwitchRow, PopupRow,
 // NavRow, ActionRow), and a ladder of buttons was the shape they replace.
+//
+// ⚠️ 墓碑 (2026-09-27): `NavRow` was written with those three and never
+// had a caller — no setting on these pages opens a page of its own, and
+// a row kind with no row is a promise. It went; the fourth kind stays in
+// the spec (components/SettingsGroup `nav`) for the first setting that
+// genuinely has a sub-page, which is when it should be written again.
 
 /**
  * A fact with a name: the left half names it, the right half is the

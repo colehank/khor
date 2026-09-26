@@ -3131,6 +3131,24 @@ unpin = "取消置顶"
 # 「移出工作区」、「撤掉」(额度账户)。`build.rs` 不许一段文案挂两个名字,
 # 所以是一个键,不是四个键同一段字。
 delete = "删除"
+# 确认窗的标题是一个问句,点名具体哪一个(components/Dialog:「删除 mandala？」)。
+# 按钮仍是动词 `delete`。
+delete-named = "删除 {0}？"
+# 还会再问一次的动作带省略号(components/Button、Menu):R0 的页面按钮、
+# 打开确认窗或表单的设置行。当场做完的那一份(对话框标题、对话框里的
+# 按钮)仍用不带省略号的原词,所以是另一个键,不是改原词。
+new-session-ask = "新会话…"
+import-sessions-ask = "导入…"
+make-a-ticket-ask = "邀请设备…"
+join-with-a-ticket-ask = "加入网络…"
+accounts-register-ask = "登记…"
+identity-leave-ask = "离开网络…"
+reset-ask = "重置…"
+rename-ask = "改名…"
+lock-set-pin-ask = "设一个 PIN…"
+lock-change-pin-ask = "换一个 PIN…"
+# 重置身份的确认窗标题:问句,点名哪一台。
+reset-title = "重置 {0} 的身份？"
 # The title's own control: double-click it and it becomes this input.
 # The label names the action; the input needs no hint text because the
 # current title is already in it, selected — typing replaces, Enter

@@ -27,9 +27,11 @@
 // here rather than carried in the answer.
 import { useEffect, useState } from "react";
 
-import { fetchAbout, inApp, type About, type DeviceRow } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
-import { EditableName } from "@/components/EditableName";
+import { fetchAbout, inApp, renameMachine, type About, type DeviceRow } from "@/api";
+import { ActionRow } from "@/components/settings/ActionRow";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { CopyId } from "@/views/DetailPane";
@@ -75,46 +77,58 @@ export function IdentityPage({
   // so about itself; everything else is a browser, which is the web
   // face — and in neither case is it something the node can be asked.
   const hereKey = inApp ? "app" : "web";
+  const [renaming, setRenaming] = useState(false);
 
   return (
     <MoreFrame page="identity" onClose={onClose}>
-      <div className="flex flex-wrap items-start gap-row">
-        {/* The same derivation as the rail's foot and as this machine's
-            row: one machine, one face, painted from what it reported.
-            Bigger here, not different (`MachineCard`'s head). */}
-        <MachineAvatar face={me?.face ?? null} className="size-avatar-lg" />
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {me && (
-            <div className="flex min-w-0 flex-wrap items-center gap-row">
-              {/* The editor every other name in this app uses — the
-                  machine subject, which `MachineCard` already reaches
-                  for. `shown`, never `name`: the first is what this
-                  machine is called, the second is what the network
-                  files it under. */}
-              <EditableName
-                kind="machine"
-                id={me.id}
-                title={me.shown}
-                className="min-w-0 text-title-md font-title"
-                inputClassName="min-w-0 text-title-md font-title"
-              />
-            </div>
-          )}
-          {me && (
-            <MoreFact name="id" label={gui.identity_id}>
-              {/* Twelve characters to recognise; pressing puts all
-                  sixty-four on the clipboard (`CopyId`'s `id` face). */}
-              <CopyId id={me.id} face="id" />
-            </MoreFact>
-          )}
-          <MoreFact name="version" label={gui.identity_version}>
-            {/* **This binary's**, never a claim about anybody else's:
-                the device table carries no version, and `khor doctor`
-                is where another machine's is asked for over the wire. */}
-            <span className="tabular-nums">{about?.version ?? ""}</span>
+      {/* **One settings group, no name of its own** — R0 says 身份. The
+          machine's name is a row whose act is 改名… (it asks for the new
+          name, so the ellipsis), then the id and the version as facts.
+
+          ⚠️ 墓碑 (2026-09-27): this was a head of its own — the face at
+          `avatar-lg` and the name as a `title-md` heading editable by
+          double-click — which is a second title in the board and a
+          setting drawn outside the four row kinds. The face is the
+          editor's subject just below (`FaceSettings` draws it large), so
+          the copy up here went; the rename is the row. `shown`, never
+          `name`: the first is what this machine is called, the second
+          is what the network files it under. */}
+      <MoreSection name="machine">
+        {me && (
+          <ActionRow
+            name="rename"
+            label={<span data-identity-name>{me.shown}</span>}
+            actionLabel={gui.rename_ask}
+            onPress={() => setRenaming(true)}
+            mark={{ "data-identity-rename": "" }}
+          />
+        )}
+        {me && (
+          <MoreFact name="id" label={gui.identity_id}>
+            {/* Twelve characters to recognise; pressing puts all
+                sixty-four on the clipboard (`CopyId`'s `id` face). */}
+            <CopyId id={me.id} face="id" />
           </MoreFact>
-        </div>
-      </div>
+        )}
+        <MoreFact name="version" label={gui.identity_version}>
+          {/* **This binary's**, never a claim about anybody else's:
+              the device table carries no version, and `khor doctor`
+              is where another machine's is asked for over the wire. */}
+          <span className="tabular-nums">{about?.version ?? ""}</span>
+        </MoreFact>
+      </MoreSection>
+      {me && (
+        <RenameDialog
+          open={renaming}
+          id={me.id}
+          name={me.shown}
+          onClose={() => setRenaming(false)}
+          onRenamed={() => {
+            setRenaming(false);
+            onRestyled();
+          }}
+        />
+      )}
 
       {/* 头像 (docs/MORE.md 头像页: 脸编辑器). **Empty machine — this
           one**: the page is about this machine, and the same editor
@@ -160,5 +174,87 @@ export function IdentityPage({
         </MoreSection>
       )}
     </MoreFrame>
+  );
+}
+
+/**
+ * 改名…: the name in a box, and the one act that writes it — the same
+ * writer the list row's double-click uses (`renameMachine`, behind
+ * `EditableName`). An emptied box gives the machine its reported name
+ * back, as it does there. A refusal stays in the window in the node's
+ * own sentence, under the box, so the fix is an edit.
+ */
+function RenameDialog({
+  open,
+  id,
+  name,
+  onClose,
+  onRenamed,
+}: {
+  open: boolean;
+  id: string;
+  name: string;
+  onClose: () => void;
+  onRenamed: () => void;
+}) {
+  const [typed, setTyped] = useState(name);
+  const [going, setGoing] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) {
+      setTyped(name);
+      setRefused(null);
+      setGoing(false);
+    }
+  }, [open, name]);
+  const write = () => {
+    if (going) return;
+    setGoing(true);
+    setRefused(null);
+    renameMachine(id, typed.trim()).then(
+      () => {
+        setGoing(false);
+        onRenamed();
+      },
+      (e: unknown) => {
+        setGoing(false);
+        setRefused(String(e instanceof Error ? e.message : e) || gui.rename_failed);
+      },
+    );
+  };
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent data-identity-rename-dialog>
+        <DialogHeader>
+          <DialogTitle>{gui.rename}</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            write();
+          }}
+        >
+          <Input
+            data-identity-rename-input
+            autoComplete="off"
+            aria-label={gui.rename}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            className="min-h-touch w-full"
+          />
+        </form>
+        {refused !== null && (
+          <p data-identity-rename-refused className="text-callout text-destructive">
+            {refused}
+          </p>
+        )}
+        <DialogFooter>
+          <Button onClick={onClose}>{gui.delete_keep}</Button>
+          <Button variant="primary" disabled={going} onClick={write}>
+            {gui.rename}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

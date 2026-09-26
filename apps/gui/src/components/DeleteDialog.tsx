@@ -21,6 +21,10 @@ import { gui } from "@/gen/catalog";
 import { useSettingsReread } from "@/settings";
 
 export type Pending = {
+  /** Which one — the row's name as the list prints it. The title is a
+      question naming it (components/Dialog:「删除 mandala？」); absent,
+      the title falls back to the bare verb. */
+  name?: string;
   /** What deleting this row does. */
   says: string;
   /** The act. Rejecting keeps the window open with the node's own
@@ -71,7 +75,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
     >
       <DialogContent data-delete-dialog>
         <DialogHeader>
-          <DialogTitle>{gui.delete}</DialogTitle>
+          <DialogTitle>{pending?.name ? gui.delete_named(pending.name) : gui.delete}</DialogTitle>
         </DialogHeader>
         <div data-delete-says className="text-body text-muted-foreground">
           {pending?.says}

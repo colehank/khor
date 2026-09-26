@@ -298,6 +298,7 @@ export function SessionsList({
         nested
       />
     ),
+    name: r.title,
     // The preview line: the newest thing said or shown, and the machine
     // a reported row came from — both 「where this row has been」.
     sub:

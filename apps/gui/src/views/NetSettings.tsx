@@ -23,10 +23,12 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { fetchRelays, setRelays, type RelayChoices } from "@/api";
+import { ActionRow } from "@/components/settings/ActionRow";
+import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { cn } from "@/lib/utils";
+import { MoreSection } from "@/views/more/MorePage";
 
 /**
  * **Mounting is opening, since 2026-09-19.** This took an `open` prop
@@ -82,22 +84,24 @@ export function NetSettings() {
     ) : null;
   }
 
+  // **Two settings groups** (components/SettingsGroup), not a column of
+  // its own headings and chips: 自己的中继 is rows — each relay an
+  // action row whose one act is 去掉 (on the spot, so no ellipsis), the
+  // box that adds one, and the 只用自己的 switch under the list it
+  // governs; 在用 is facts, no controls.
   return (
-    <div data-net-settings className="flex flex-col gap-2">
-      <h2 className="text-callout font-label text-muted-foreground">{gui.relays_mine}</h2>
-
+    <div data-net-settings className="flex flex-col gap-group">
+      <MoreSection name="relays-mine" label={gui.relays_mine}>
       {choices.mine.map((url) => (
-        <div key={url} data-relay-mine className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-mono text-callout">{url}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="min-h-touch"
-            onClick={() => write(choices.mine.filter((u) => u !== url), choices.only_mine)}
-          >
-            {gui.remove}
-          </Button>
-        </div>
+        <ActionRow
+          key={url}
+          name="relay"
+          rowMark={{ "data-relay-mine": url }}
+          label={<span className="block truncate font-mono">{url}</span>}
+          actionLabel={gui.remove}
+          variant="ghost"
+          onPress={() => void write(choices.mine.filter((u) => u !== url), choices.only_mine)}
+        />
       ))}
 
       <form
@@ -132,45 +136,29 @@ export function NetSettings() {
 
       {/* The switch, under the list it governs rather than above it:
           it is an answer to「加了这台之后原来那些还在不在」, and that
-          question does not exist until there is a row. Pressed-state on
-          a `Button` because this app has one control family and no
-          checkbox in it — the same reason the face options are buttons. */}
-      <Button
-        variant="ghost"
-        size="sm"
-        data-relays-only-mine
-        data-on={choices.only_mine}
-        aria-pressed={choices.only_mine}
-        className={cn(
-          // **A ring in both states, not only when it is on.** Off is
-          // the state this control ships in and the state somebody has
-          // to discover it in — and measured on the glass (2026-09-18),
-          // a ghost button with no edge reads as one more line of prose
-          // between the input and the note under it. The ring is what
-          // says「按得动」; its weight and ink are what say which way it
-          // is set.
-          "min-h-touch self-start rounded-md px-2 text-caption",
-          choices.only_mine
-            ? "text-primary ring-2 ring-primary"
-            : "text-muted-foreground ring-1 ring-border",
-        )}
-        onClick={() => write(choices.mine, !choices.only_mine)}
-      >
-        {gui.relays_only_mine}
-      </Button>
+          question does not exist until there is a row. **A switch**
+          (components/Switch): it is on or off and takes at once.
+          ⚠️ 墓碑 (2026-09-27): it was a ringed `Button` wearing its own
+          pressed state — 「this app has no checkbox」 — which is the
+          one-off on/off look the four row kinds replaced. The note that
+          says when it takes is the row's `note`. */}
+      <SwitchRow
+        name="relays-only-mine"
+        label={gui.relays_only_mine}
+        hint={<span data-relays-note>{gui.relays_after_restart}</span>}
+        on={choices.only_mine}
+        onToggle={() => void write(choices.mine, !choices.only_mine)}
+        mark={{ "data-relays-only-mine": "" }}
+      />
+      </MoreSection>
 
-      <p data-relays-note className="text-caption text-muted-foreground">
-        {gui.relays_after_restart}
-      </p>
-
-      <h2 className="mt-2 text-callout font-label text-muted-foreground">{gui.relays_in_use}</h2>
-      <ul data-relays-in-use className="flex flex-col gap-1">
+      <MoreSection name="relays-in-use" label={gui.relays_in_use} mark={{ "data-relays-in-use": "" }}>
         {choices.in_use.map((url) => (
-          <li key={url} className="truncate font-mono text-caption text-muted-foreground">
+          <div key={url} className="truncate font-mono text-callout text-muted-foreground">
             {url}
-          </li>
+          </div>
         ))}
-      </ul>
+      </MoreSection>
     </div>
   );
 }

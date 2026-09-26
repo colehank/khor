@@ -52,7 +52,7 @@
 // file knows what a place looks like: no slash, no URL, no listing. All
 // of that arrives through `kind`, which is what lets the second
 // browsing landing be a descriptor rather than a second copy of this.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { fetchPageIcons, forgetRecent, openLink, recentVisit, type DeviceRow } from "@/api";
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
@@ -107,7 +107,11 @@ export function BrowseLanding({
   tabs,
   narrow,
   pane,
+  caption,
 }: {
+  /** 过期 / 离线: the shell's one line for R0's right end, after the
+      address bar (`Region caption`; components/RegionState). */
+  caption?: ReactNode;
   /**
    * Which kind of browsing this is.
    *
@@ -305,6 +309,7 @@ export function BrowseLanding({
           {t.title || bare || label}
         </span>
       ),
+      name: t.title || bare || label,
       sub: bare || undefined,
       // What the row shows — its name and its place — and nothing else.
       find: `${label} ${t.title} ${t.path}`,
@@ -547,6 +552,7 @@ export function BrowseLanding({
         kind="doc"
         title={kind.words.segment}
         head={tabs.ready ? <div className="flex min-w-0 flex-1 flex-col">{address()}</div> : undefined}
+        caption={caption}
       >
         <div className="h-full min-h-0 overflow-hidden">{body}</div>
       </Region>

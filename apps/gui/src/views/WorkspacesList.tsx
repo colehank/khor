@@ -305,6 +305,7 @@ export function WorkspacesList({
           </span>
         </span>
       ),
+      name: r.name,
       // Where it is, in full — the machine and the absolute path are one
       // fact, and this pair is what the CLI prints. **Not shortened to
       // `~`**: whose home that is, is a fact about the far machine.

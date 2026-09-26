@@ -30,9 +30,11 @@ import {
   type LockFacts,
 } from "@/api";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { gui } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 import { ConfigSections } from "@/views/more/ConfigRows";
+import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { MoreFrame, MoreSection } from "@/views/more/MorePage";
@@ -72,6 +74,8 @@ export function SecurityPage({
   const [showKey, setShowKey] = useState(false);
   const [rotated, setRotated] = useState(false);
   const [typedName, setTypedName] = useState("");
+  const [pinning, setPinning] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const me = devices.find((d) => d.me) ?? null;
 
@@ -121,44 +125,22 @@ export function SecurityPage({
               onToggle={() => after(setLock(!lock.on))}
             />
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                data-security-pin
-                type="password"
-                inputMode="numeric"
-                autoComplete="off"
-                aria-label={lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}
-                placeholder={lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                className="min-h-touch min-w-0 flex-1"
-              />
-              <Button
-                data-security-pin-save
-                // The floor is the node's number, carried on the answer
-                // so this box refuses with the same one the node would
-                // (`LockFacts::pin_min`) rather than a copy of it.
-                disabled={pin.length < lock.pin_min}
-                onClick={() => {
-                  after(setLockPin(pin));
-                  setPin("");
-                }}
-                className="min-h-touch"
-              >
-                {gui.lock_pin_save}
-              </Button>
-              {lock.has_pin && (
-                <Button
-                  variant="ghost"
-                  data-security-pin-clear
-                  onClick={() => after(setLockPin(""))}
-                  className="min-h-touch"
-                >
-                  {gui.lock_pin_clear}
-                </Button>
-              )}
-            </div>
-            <p className="text-caption text-muted-foreground">{gui.lock_pin_floor(lock.pin_min)}</p>
+            {/* **The PIN is an action row** (components/SettingsGroup):
+                its act asks for the digits, so it opens a window and
+                wears the ellipsis. ⚠️ 墓碑 (2026-09-27): a password box
+                and two buttons stood in the card here, a form drawn in
+                a row's place. */}
+            <ActionRow
+              name="lock-pin"
+              label={gui.lock_pin}
+              hint={lock.has_pin ? cli.lock_pin_set : cli.lock_pin_none}
+              actionLabel={lock.has_pin ? gui.lock_change_pin_ask : gui.lock_set_pin_ask}
+              onPress={() => {
+                setPin("");
+                setPinning(true);
+              }}
+              mark={{ "data-security-pin-open": "" }}
+            />
 
             {/* The ladder the node keeps, painted in its order — a page
                 with rungs of its own would offer a setting `khor lock
@@ -196,24 +178,22 @@ export function SecurityPage({
         {key === null ? (
           <p className="text-callout text-muted-foreground">{gui.web_key_none}</p>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            {/* **Masked until somebody asks.** This page can be on a
-                screen somebody else is looking at, or in a recording;
-                a key that is simply printed is a key that leaks by
-                being opened. */}
-            <span data-web-key className="min-w-0 flex-1 truncate font-mono text-callout">
-              {showKey ? key : "•".repeat(key.length)}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              data-web-key-show
-              onClick={() => setShowKey((was) => !was)}
-              className="min-h-touch min-w-touch"
-            >
-              {showKey ? gui.web_key_hide : gui.web_key_show}
-            </Button>
-          </div>
+          // **Masked until somebody asks.** This page can be on a
+          // screen somebody else is looking at, or in a recording; a key
+          // that is simply printed is a key that leaks by being opened.
+          // An action row: the key is its title, 显示 / 遮住 its act.
+          <ActionRow
+            name="web-key"
+            label={
+              <span data-web-key className="block truncate font-mono">
+                {showKey ? key : "•".repeat(key.length)}
+              </span>
+            }
+            actionLabel={showKey ? gui.web_key_hide : gui.web_key_show}
+            variant="ghost"
+            onPress={() => setShowKey((was) => !was)}
+            mark={{ "data-web-key-show": "" }}
+          />
         )}
         <Button
           data-web-key-rotate
@@ -247,15 +227,106 @@ export function SecurityPage({
           is what this page is for: the keys and the acts that cost
           something. */}
 
-      <MoreSection name="reset" label={gui.reset_section}>
-        {/* Red, because this is the one thing on this page that cannot
-            be undone. The machine's own name is the confirmation and
-            **the node is what checks it** — a rule here as well would be
-            two rules about one irreversible act. */}
-        <p data-reset-warn className="text-callout text-destructive">
-          {gui.reset_warn}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
+      {/* **A dangerous act is an action row with an ellipsis, and the
+          real confirmation is in a window** (components/SettingsGroup:
+          「危险的动作（清除、重置）用 action 行 + 一个带省略号的按钮」).
+          ⚠️ 墓碑 (2026-09-27): the name box and the red button stood in
+          the card, a form in a row's place. */}
+      {/* No group name: the row's own title says it, and a heading
+          over a one-row card saying the same words is the same fact
+          twice. */}
+      <MoreSection name="reset">
+        <ActionRow
+          name="reset"
+          label={gui.reset_section}
+          hint={gui.reset_warn}
+          actionLabel={gui.reset_ask}
+          disabled={!me}
+          onPress={() => {
+            setError(null);
+            setTypedName("");
+            setResetting(true);
+          }}
+          mark={{ "data-reset-open": "" }}
+        />
+      </MoreSection>
+
+      {lock !== null && (
+        <Dialog open={pinning} onOpenChange={setPinning}>
+          <DialogContent data-security-pin-dialog>
+            <DialogHeader>
+              <DialogTitle>{lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}</DialogTitle>
+            </DialogHeader>
+            <p className="text-callout text-muted-foreground">{gui.lock_pin_floor(lock.pin_min)}</p>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (pin.length < lock.pin_min) return;
+                after(setLockPin(pin));
+                setPin("");
+                setPinning(false);
+              }}
+            >
+              <Input
+                data-security-pin
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                aria-label={lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                className="min-h-touch w-full"
+              />
+            </form>
+            <DialogFooter>
+              {/* Taking the PIN away is the other thing this window can
+                  do, on the left and plain — the one primary act is 存下. */}
+              {lock.has_pin && (
+                <Button
+                  variant="ghost"
+                  data-security-pin-clear
+                  onClick={() => {
+                    after(setLockPin(""));
+                    setPinning(false);
+                  }}
+                  className="mr-auto"
+                >
+                  {gui.lock_pin_clear}
+                </Button>
+              )}
+              <Button onClick={() => setPinning(false)}>{gui.delete_keep}</Button>
+              <Button
+                variant="primary"
+                data-security-pin-save
+                // The floor is the node's number, carried on the answer
+                // so this box refuses with the same one the node would
+                // (`LockFacts::pin_min`) rather than a copy of it.
+                disabled={pin.length < lock.pin_min}
+                onClick={() => {
+                  after(setLockPin(pin));
+                  setPin("");
+                  setPinning(false);
+                }}
+              >
+                {gui.lock_pin_save}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      <Dialog open={resetting} onOpenChange={setResetting}>
+        <DialogContent data-reset-dialog>
+          <DialogHeader>
+            <DialogTitle>{gui.reset_title(me?.shown ?? "")}</DialogTitle>
+          </DialogHeader>
+          {/* Red, because this is the one thing on this page that cannot
+              be undone. The machine's own name is the confirmation and
+              **the node is what checks it** — a rule here as well would
+              be two rules about one irreversible act. */}
+          <p data-reset-warn className="text-callout text-destructive">
+            {gui.reset_warn}
+          </p>
           <Input
             data-reset-name
             autoComplete="off"
@@ -263,28 +334,38 @@ export function SecurityPage({
             placeholder={gui.reset_type_name}
             value={typedName}
             onChange={(e) => setTypedName(e.target.value)}
-            className="min-h-touch min-w-0 flex-1"
+            className="min-h-touch w-full"
           />
-          <Button
-            variant="ghost"
-            data-reset-do
-            // The box is checked here only so the button is not live
-            // over an empty field; the answer that counts is the node's
-            // (`lock::reset_identity` refuses by name).
-            disabled={typedName.trim() !== (me?.shown ?? "") || !me}
-            onClick={() => {
-              setError(null);
-              resetIdentity(typedName).then(
-                () => onReset(),
-                (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
-              );
-            }}
-            className="min-h-touch text-destructive"
-          >
-            {gui.reset_do}
-          </Button>
-        </div>
-      </MoreSection>
+          {error && (
+            <p data-reset-refused className="text-callout text-destructive">
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setResetting(false)}>{gui.delete_keep}</Button>
+            <Button
+              variant="destructive"
+              data-reset-do
+              // The box is checked here only so the button is not live
+              // over an empty field; the answer that counts is the node's
+              // (`lock::reset_identity` refuses by name).
+              disabled={typedName.trim() !== (me?.shown ?? "") || !me}
+              onClick={() => {
+                setError(null);
+                resetIdentity(typedName).then(
+                  () => {
+                    setResetting(false);
+                    onReset();
+                  },
+                  (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
+                );
+              }}
+            >
+              {gui.reset_do}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MoreFrame>
   );
 }

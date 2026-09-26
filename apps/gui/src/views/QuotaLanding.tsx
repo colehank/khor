@@ -892,7 +892,11 @@ export function QuotaLanding({
   screen = "list",
   onOpen,
   onBack,
+  stale = false,
 }: {
+  /** The shell cannot reach khor: what is on the board is the last
+      answer, and R0's caption says so (components/RegionState). */
+  stale?: boolean;
   narrow: boolean;
   /**
    * The list column's width, **the shell's and not this landing's**
@@ -944,7 +948,8 @@ export function QuotaLanding({
   const [picked, setPicked] = useKept<string | null>("quota.picked", null);
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
   // The landing's one act: ＋ in L0 and a button at R0's right end (D9).
-  const quotaActions = [{ key: "register", label: gui.accounts_register, onSelect: () => setRegistering(true) }];
+  // It opens a sheet, so it wears the ellipsis (components/Button).
+  const quotaActions = [{ key: "register", label: gui.accounts_register_ask, onSelect: () => setRegistering(true) }];
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
       keeps for the machine list, and for its reason: what failed
@@ -1253,6 +1258,7 @@ export function QuotaLanding({
           {r.name}
         </span>
       ),
+      name: r.name,
       sub: <span data-quota-sub-line>{subLine(r)}</span>,
       // **The right end is when this was read**, not what it says.
       trailing: (
@@ -1351,7 +1357,8 @@ export function QuotaLanding({
   const dials = current && isSub ? subDials(current) : [];
   const subDetail = current && isSub && (
     <div data-quota-detail={current.id} className="flex flex-col gap-row p-row">
-      <CardHead row={current} />
+      {/* No head: the name is R0's, the plan and the age are R0's
+          caption (`ReadCaption`). */}
       {/* **The dial, and what it is made of beside it.** Every window
           used to be a ring of its own, side by side — which drew the
           same quantity at four radii and left 「哪个最先卡住我」 to be
@@ -1571,7 +1578,8 @@ export function QuotaLanding({
 
   const detail = acc && current && !isSub && (
     <div data-quota-detail={acc.reading.account} className="flex flex-col gap-row p-row">
-      <CardHead row={current} />
+      {/* No head: the name is R0's, the plan and the age are R0's
+          caption (`ReadCaption`). */}
       {/* **The same two columns the subscription's card has**: the dial
           on the left, this reading's own figures on the right
           (2026-09-07:「首节表盘 | 事实两栏,单读数的卡右边不许空」).
@@ -1761,14 +1769,42 @@ export function QuotaLanding({
 
   // Never read yet: the skeleton, not a blank (components/RegionState).
   // Read and empty: one sentence and its one button (components/EmptyState).
+  // **R0's right end** (components/RegionState): stale — the shell
+  // cannot reach khor, or this landing's own poll was refused over a
+  // board already read — says so; otherwise the open account's plan and
+  // the age of its reading (`ReadCaption`).
+  const caption =
+    stale || (error && board !== null) ? (
+      <span data-quota-stale title={error ?? undefined}>
+        {stale ? gui.backend_unreachable : error}
+      </span>
+    ) : current ? (
+      <ReadCaption row={current} />
+    ) : undefined;
+
+  // Never answered and refused: the machine's own sentence where the
+  // empty state sits, and 重试 (components/RegionState `error`).
   const empty =
-    board === null ? (
+    board === null && error ? (
+      <RegionState
+        state="error"
+        message={error}
+        onRetry={() => {
+          fetchQuotaBoard()
+            .then((rows) => {
+              setBoard(rows);
+              setError(null);
+            })
+            .catch((e) => setError(String(e instanceof Error ? e.message : e)));
+        }}
+      />
+    ) : board === null ? (
       <RegionState state="loading-never" />
     ) : (
       <EmptyState
         action={
           <Button data-quota-register className="min-h-touch" onClick={() => setRegistering(true)}>
-            {gui.accounts_register}
+            {gui.accounts_register_ask}
           </Button>
         }
       >
@@ -1778,11 +1814,12 @@ export function QuotaLanding({
 
   return (
     <section data-quota-landing aria-label={gui.accounts_tab} className="flex h-full min-h-0 min-w-0 flex-col">
-      {error && (
-        <div data-quota-error className="border-b px-3 py-1.5 text-callout text-destructive">
-          {error}
-        </div>
-      )}
+      {/* ⚠️ 墓碑 (2026-09-27): a red strip (`data-quota-error`) stood
+          here over the whole landing whenever a poll was refused. With
+          a board already read that is 过期 — the last answer stays and
+          R0's caption says so (`caption` below); with none it is the
+          error state in the board (`empty`). Never a banner
+          (components/RegionState). */}
       {rows.length === 0 ? (
         // Nothing registered and no subscription read: a search box
         // over an empty list is a control with nothing to do, and the
@@ -1793,7 +1830,7 @@ export function QuotaLanding({
         narrow ? (
           empty
         ) : (
-          <Region kind="detail" title={gui.accounts_tab}>
+          <Region kind="detail" title={gui.accounts_tab} caption={stale ? gui.backend_unreachable : undefined}>
             {empty}
           </Region>
         )
@@ -1823,16 +1860,18 @@ export function QuotaLanding({
               >
                 <IconBack />
               </Button>
-              {/* **And nothing else — the name is not repeated here.**
-                  It was, for one screenshot: the bar said the row's
-                  name and the body's first line said it again, one
-                  above the other. That is the same duplication
-                  2026-09-02 took out of the session header
-                  (「都和标签内容重复了」), and the answer is the same —
-                  the content titles itself, so the bar is the way out
-                  and only that. `DetailPane` keeps an identity in its
-                  bar for the opposite reason: a terminal body has no
-                  title of its own to read. */}
+              {/* **The name, said once, here** — the narrow face's R0.
+                  ⚠️ Rewritten 2026-09-27: this bar used to hold the way
+                  back and nothing else, because the card's first line
+                  titled the card and a name here was the same word
+                  twice. The card lost that line (「身份只出现一次」,
+                  components/Toolbar), so the one place left to say it
+                  is this bar, as wide R0 does — with the reading's
+                  caption at its right end. */}
+              <span className="min-w-0 flex-1 truncate text-title-sm font-title">{current.name}</span>
+              <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
+                {caption}
+              </span>
             </header>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {detail}
@@ -1870,7 +1909,13 @@ export function QuotaLanding({
           </ListPane>
           {/* 详情 (A): R0 names the account on the board, the board
               reads it. */}
-          <Region kind="detail" title={current?.name ?? gui.accounts_tab} actions={<PageActions actions={quotaActions} />} className="overflow-y-auto">
+          <Region
+            kind="detail"
+            title={current?.name ?? gui.accounts_tab}
+            actions={<PageActions actions={quotaActions} />}
+            caption={caption}
+            className="overflow-y-auto"
+          >
             {detail}
             {subDetail}
           </Region>
@@ -1906,77 +1951,53 @@ export function QuotaLanding({
 
 
 /**
- * A card's first line: what this is, and **when it was read**.
+ * What R0's right end says about the account on the board: its plan,
+ * and **when it was read** (`Region caption`).
  *
- * # Why the age is back, and why the tombstone that removed it stands
+ * # Why the age is here, and why the tombstone that removed it stands
  *
  * `zh.toml` carries a tombstone from 2026-08-28: the line naming whose
  * login the reading came through was taken off, and 「同一刀去掉的还有
  * 读数年龄」. **That judgment was true of the thing it was about** — a
  * small grey sentence explaining khor's own plumbing, under a number.
+ * The age came back on 2026-09-06 because the machine card said how old
+ * its reading was in the same seat, and two cards disagreeing about
+ * whether age is a fact worth having is not restraint. What the two
+ * share is the seat and the age, not the pair of keys — khor's version
+ * says nothing about a vendor's reading, so it is not copied.
  *
- * What changed is not the judgment, it is the **shape around it**: on
- * 2026-09-06 the machine card grew a head whose right end says
- * 「Khor 0.1.14 · 12 秒前」 (`card-version` / `card-age`,
- * `MachineCard`). Once one card in this app says how old its reading is
- * in that seat, a second card that does not is not restraint — it is
- * two cards disagreeing about whether age is a fact worth having. So
- * the age comes back **in that seat**, and the old tombstone is
- * superseded rather than declared wrong: it recorded a real removal,
- * and this records why the removal stopped being right.
- *
- * The version half is deliberately not copied. 「Khor 0.1.14」 is a fact
- * about a machine running khor; behind this card there is a *vendor*,
- * and khor's version says nothing about the reading. **What the two
- * cards share is the seat and the age, not the pair of keys.**
+ * ⚠️ 墓碑 (2026-09-27): **the seat moved from the card's head to R0.**
+ * The card had a first line of its own — the account's name in
+ * `title-md`, the plan as a bordered chip, the age at the far end —
+ * while R0 above already carried the name. 「身份只出现一次… 板里不许再
+ * 有第二个标题」 (components/Toolbar, Board): the name went, and what it
+ * carried went to R0's right end, where a reading's age is said on every
+ * page (「3 分钟前的读数」, components/RegionState). The plan rides
+ * with it because nobody chose it — it comes off the login — so it is a
+ * fact about the reading, not something the list row already said.
  *
  * The words are the ones the figures list was already using
  * (`accounts-read-here` / `accounts-read-from`), moved, not rewritten.
  */
-function CardHead({ row }: { row: Row }) {
+function ReadCaption({ row }: { row: Row }) {
   // Who took it: the machine holding an account's key, or the machine
   // whose login the subscription was read through.
   const reader = row.account ? row.account.home_name : fromWord(row.from);
   return (
-    <div data-quota-head className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-      {/* **Name and plan, and nothing else** (2026-09-06: 「卡头不再写
-          类型 · 厂商 · 来源 · 密钥在哪台」). Every one of those four was
-          something the person had just chosen on the way in — the list
-          row they pressed, the account they registered — so the card
-          was spending its first line telling them what they already
-          knew. The plan is the exception because nobody chose it: it
-          comes off the login. */}
-      <span className="min-w-0 truncate text-title-md">{row.name}</span>
+    <>
       {row.plan && (
-        <span
-          data-quota-plan
-          // **Bordered, not tinted.** The mock fills this chip with
-          // `--accent`, and `--accent` is also what paints the selected
-          // row — so a tinted chip would sit on its own colour.
-          // `text-caption`, and that is the *only* spelling of this size.
-          // The row's copy of this chip wrote the pixel count out as an
-          // arbitrary value instead; measured 2026-09-07 on the live
-          // page, both computed the same font-size to the pixel — so it
-          // was never a second size, only a second name for one, which
-          // is what the px and type gates refuse by name.
-          className="flex-none rounded-full border px-2 py-0.5 text-caption text-muted-foreground"
-        >
-          {row.plan}
-        </span>
+        <>
+          <span data-quota-plan>{row.plan}</span>
+          <span aria-hidden="true"> · </span>
+        </>
       )}
-      {/* Pushed to the far end by the growing gap, not by a second
-          wrapper: one row, two ends. */}
-      <span
-        data-quota-age={row.age_ms ?? 0}
-        className="ml-auto flex-none text-caption text-muted-foreground"
-      >
-        {row.age_ms === null
-          ? gui.accounts_read_here
-          : gui.accounts_read_from(reader, lasting(row.age_ms))}
+      <span data-quota-age={row.age_ms ?? 0}>
+        {row.age_ms === null ? gui.accounts_read_here : gui.accounts_read_from(reader, lasting(row.age_ms))}
       </span>
-    </div>
+    </>
   );
 }
+
 
 /**
  * 编辑 for a registered account.

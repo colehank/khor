@@ -367,7 +367,7 @@ export function DetailPane({
                   className="min-h-touch"
                   onClick={onNew}
                 >
-                  {gui.new_session}
+                  {gui.new_session_ask}
                 </Button>
               )}
             </div>

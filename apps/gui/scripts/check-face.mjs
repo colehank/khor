@@ -13063,8 +13063,15 @@ try {
     fail(`the refused account's trouble is not a person's sentence — got ${JSON.stringify(troubleSaid)}`);
   }
   // …and a peer's reading names its reader with an age.
+  //
+  // ⚠️ **Read off R0's caption since 2026-09-27, and the product is what
+  // moved.** The age sat in the card's own head line under the account's
+  // name; that head went (「身份只出现一次… 板里不许再有第二个标题」,
+  // components/Toolbar) and the age went to R0's right end, the seat a
+  // reading's age has on every page (components/RegionState). The row
+  // pressed above is acc-trouble, so the caption is its.
   const readBy = await page
-    .locator('[data-quota-detail="acc-trouble"] [data-quota-age]')
+    .locator("[data-region-caption] [data-quota-age]")
     .textContent();
   if (!readBy?.includes("peer")) {
     fail(`a peer's reading does not name its reader — got ${JSON.stringify(readBy)}`);
@@ -13229,12 +13236,17 @@ try {
         cut: line ? line.scrollWidth > line.clientWidth + 1 : null,
       };
     });
-    const headChips = await page.locator("[data-quota-detail] [data-quota-plan]").count();
-    const headChip = (await page.locator("[data-quota-detail] [data-quota-plan]").textContent().catch(() => null))?.trim();
+    //   ⚠️ **Rewritten 2026-09-27: the plan is read off R0's caption.**
+    //   The card's head line — name, plan chip, age — went
+    //   (「身份只出现一次… 板里不许再有第二个标题」, components/Toolbar):
+    //   the name is R0's title, and the plan rides with the reading's age
+    //   at R0's right end. Still once per surface, still equality.
+    const headChips = await page.locator("[data-region-caption] [data-quota-plan]").count();
+    const headChip = (await page.locator("[data-region-caption] [data-quota-plan]").textContent().catch(() => null))?.trim();
     const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
     if (headChips !== 1 || headChip !== quotaPlan) {
       fail(
-        `the card head draws ${headChips} plan chips reading ${JSON.stringify(headChip)}, not one saying ${JSON.stringify(quotaPlan)}`,
+        `R0's caption draws ${headChips} plans reading ${JSON.stringify(headChip)}, not one saying ${JSON.stringify(quotaPlan)}`,
       );
     } else if (rowPlan.chipOnRow !== 0) {
       fail(

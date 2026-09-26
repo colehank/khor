@@ -78,6 +78,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/settings/Switch";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
@@ -1772,19 +1773,21 @@ export function ChatView({
             )}
             {settings.options.map((o) =>
               o.type === "boolean" ? (
-                <button
-                  key={o.id}
-                  type="button"
-                  role="switch"
-                  aria-checked={o.currentValue === true}
-                  data-chat-option={o.id}
-                  data-on={o.currentValue === true}
-                  title={o.description ?? undefined}
-                  className="rounded-md border border-border px-1.5 py-0.5 hover:bg-accent data-[on=true]:border-primary data-[on=true]:text-primary"
-                  onClick={() => chatSetOption(id, o.id, o.currentValue !== true).catch(() => {})}
-                >
-                  {o.name}
-                </button>
+                // **A genuine on/off, so the one Switch look**
+                // (components/Switch): the agent's own name for it beside
+                // the switch, the switch itself carrying no words. It was
+                // a bordered chip that turned olive-ringed when on — a
+                // second drawing of on/off that only this row had.
+                <span key={o.id} title={o.description ?? undefined} className="flex items-center gap-xxs">
+                  <span>{o.name}</span>
+                  <Switch
+                    on={o.currentValue === true}
+                    label={o.name}
+                    onToggle={() => void chatSetOption(id, o.id, o.currentValue !== true).catch(() => {})}
+                    mark={{ "data-chat-option": o.id }}
+                    className="-my-3"
+                  />
+                </span>
               ) : (
                 <DropdownMenu key={o.id}>
                   <DropdownMenuTrigger asChild>

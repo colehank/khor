@@ -22,6 +22,7 @@ import { useState } from "react";
 
 import { setConfig, type ConfigRow } from "@/api";
 import { PopupRow } from "@/components/settings/PopupRow";
+import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
 import { RegionState } from "@/components/RegionState";
 import { useSettings, useSettingsReread } from "@/settings";
@@ -47,6 +48,26 @@ function Row({
   row: ConfigRow;
   onPick: (name: string, value: string) => void;
 }) {
+  const mark = { "data-config-row": row.name, "data-value": row.value };
+  // **Two states, on and off, is a switch** (components/SettingsGroup:
+  // switch is 「一件立刻生效、只有两种状态的事」; the spec's own example
+  // is 删除前确认). A popup offering 开 / 关 was the pick-one-of-several
+  // control dressed over a yes/no. Decided by the node's value keys, not
+  // by the words, so a key that grows a third value falls back to the
+  // popup by itself.
+  const keys = row.choices.map((c) => c.value).sort().join(",");
+  if (keys === "off,on") {
+    const on = row.value === "on";
+    return (
+      <SwitchRow
+        name={row.name}
+        label={row.label}
+        on={on}
+        onToggle={() => onPick(row.name, on ? "off" : "on")}
+        rowMark={mark}
+      />
+    );
+  }
   return (
     <PopupRow
       name={row.name}
@@ -54,7 +75,7 @@ function Row({
       value={row.value}
       choices={row.choices.map((c) => ({ value: c.value, label: c.label }))}
       onPick={(v) => onPick(row.name, v)}
-      mark={{ "data-config-row": row.name, "data-value": row.value }}
+      mark={mark}
     />
   );
 }

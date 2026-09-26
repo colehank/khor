@@ -84,7 +84,7 @@ export function MeshNow({
               className="ms-auto min-h-touch"
               onClick={onNew}
             >
-              {gui.new_session}
+              {gui.new_session_ask}
             </Button>
           </div>
           {waiting.length === 0 ? (

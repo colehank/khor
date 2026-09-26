@@ -90,7 +90,8 @@ import { NetworkPage } from "@/views/more/NetworkPage";
 import { IdentityPage } from "@/views/more/IdentityPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
-import { MachineCard, MachineVerbs } from "@/views/MachineCard";
+import { MachineCaption, MachineCard, MachineVerbs } from "@/views/MachineCard";
+import { RegionState } from "@/components/RegionState";
 import { MandalaMap } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
@@ -1249,13 +1250,16 @@ export default function App() {
   const sessionActions: PaneAction[] = [
     // First, because opening a session is the pane's first act
     // (会话身份批B: 建 session 是第一动作).
-    { key: "new", label: gui.new_session, onSelect: () => openNewSession() },
+    // Every one of these opens a sheet, so each wears the ellipsis
+    // (components/Button:「还会再问一次的动作，文案带省略号」) — the
+    // `-ask` keys; the sheet's own title keeps the bare word.
+    { key: "new", label: gui.new_session_ask, onSelect: () => openNewSession() },
     // What khor found and has not put on the list (docs/SHELL.md 第八轮).
-    { key: "import", label: gui.import_sessions, onSelect: () => setSheet("import") },
+    { key: "import", label: gui.import_sessions_ask, onSelect: () => setSheet("import") },
   ];
   const deviceActions: PaneAction[] = [
-    { key: "invite", label: gui.make_a_ticket, onSelect: () => setSheet("invite") },
-    { key: "join", label: gui.join_with_a_ticket, onSelect: () => setSheet("join") },
+    { key: "invite", label: gui.make_a_ticket_ask, onSelect: () => setSheet("invite") },
+    { key: "join", label: gui.join_with_a_ticket_ask, onSelect: () => setSheet("join") },
   ];
 
   // Whether the open landing is one the narrow bar folded away — the
@@ -1633,7 +1637,12 @@ export default function App() {
       }
     >
       <>
-        {stale && <div className="p-4 text-callout text-muted-foreground">{gui.backend_unreachable}</div>}
+        {/* ⚠️ 墓碑 (2026-09-27): 「够不着本机的 khor」 stood here as a
+            banner over the list. Stale / offline is one `caption` line
+            at R0's right end (components/RegionState, 20-states.md),
+            never a banner — every landing's R0 carries it now: `Region
+            caption` on the detail pages and the overviews, the tab
+            strip's `tail` on 会话 with tabs open, and 额度's own Region. */}
         {sessions ? (
           <SessionsList
             rows={rows}
@@ -1867,6 +1876,12 @@ export default function App() {
         listOpen={!narrow && !listPane.collapsed}
       />
     ) : null
+  ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
+    // A machine asked for (⌘K) before the device table has answered
+    // once: its card has never been read, so the board shows the
+    // skeleton (components/RegionState) — not the map, which is the
+    // answer to 「nothing picked」.
+    <RegionState state="loading-never" />
   ) : landing === "devices" && !openDevice ? (
     <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />
   ) : landing === "devices" ? (
@@ -2126,6 +2141,7 @@ export default function App() {
       // 2 条): the tabs are a pane here now, so this landing has the
       // same seam and the same 「再按一次收起」 as every other one.
       pane={narrow ? null : listPane}
+      caption={stale ? gui.backend_unreachable : undefined}
     />
   );
 
@@ -2271,6 +2287,7 @@ export default function App() {
                     // to be the other half of a pair.)
                     <QuotaLanding
                       narrow
+                      stale={stale}
                       // Narrow has one screen and nothing beside it, so
                       // there is no width to remember and no seam to
                       // drag — `ListPane` takes the same `null` every
@@ -2367,6 +2384,7 @@ export default function App() {
           ) : quotas ? (
             <QuotaLanding
               narrow={false}
+              stale={stale}
               // **The shell's own seam, not a `w-72` of its own**
               // (第 6 条 / 第 4 条). Sharing `listPane` is what makes
               // the rail's second press work here: the thing the rail
@@ -2413,6 +2431,9 @@ export default function App() {
                     }}
                     onClose={sessionTabs.close}
                     stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
+                    // 过期 / 离线 on B's R0: after the strip, which then
+                    // compresses its tabs into what is left.
+                    caption={stale ? gui.backend_unreachable : undefined}
                   >
                     {detail}
                   </Tabs>
@@ -2442,7 +2463,15 @@ export default function App() {
                     flush={landing === "workspaces" && openWs !== null}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
-                    caption={stale ? gui.backend_unreachable : undefined}
+                    // An open machine otherwise says which khor it runs
+                    // and how old its reading is (`MachineCaption`).
+                    caption={
+                      stale ? (
+                        gui.backend_unreachable
+                      ) : landing === "devices" && openDevice?.vitals ? (
+                        <MachineCaption row={openDevice} />
+                      ) : undefined
+                    }
                   >
                     {detail}
                   </Region>

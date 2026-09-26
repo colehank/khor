@@ -2,8 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
-import { EditableName } from "@/components/EditableName";
-import { MachineAvatar } from "@/components/Avatar";
+import { RegionState } from "@/components/RegionState";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
@@ -44,8 +43,8 @@ import { ago, hopWord, lasting } from "@/words";
  * panes still list machines with nowhere to send you, and their rows
  * stay exactly as they were until their own batches give them one.
  *
- * No title here either (docs/UX.md). The machine's name is the content,
- * not a heading over it.
+ * No title here (components/Toolbar「身份只出现一次」): the machine's
+ * name is R0's, and the card starts with its facts.
  */
 export function MachineCard({
   row,
@@ -75,12 +74,10 @@ export function MachineCard({
       {/* **A strip only where something has to live in it.** Back exists
           on the narrow face, where the list really is off-screen; wide
           keeps the list beside this, so there is nothing to go back
-          from. And the strip carries no name: the machine's name is the
-          first thing in the card below, so putting it here too would be
-          the same word twice on one screen — which is what a page title
-          is, whatever it is called (docs/UX.md 所有页面不要标题). The
-          session detail's header is not a counter-example: what it shows
-          is not repeated under it. */}
+          from. ⚠️ Rewritten 2026-09-27: the strip carried no name while
+          the card's first line was the name; that line is gone (the
+          name is R0's, said once — components/Toolbar), so on narrow,
+          where there is no R0, this strip is where it is said. */}
       {narrow && (
         // **`min-h`, not `h`** — the same move the session detail's bar
         // made, for the same reason: the bar's look is still `--ctl-lg`,
@@ -102,7 +99,10 @@ export function MachineCard({
           >
             <IconBack />
           </Button>
-          <span className="flex-1" />
+          {/* **The name, once, here** — the narrow face's R0. The card
+              lost its own name line (「身份只出现一次」,
+              components/Toolbar), so this bar says it, as wide R0 does. */}
+          <span className="min-w-0 flex-1 truncate text-title-sm font-title">{row?.shown ?? ""}</span>
           {actions}
         </header>
       )}
@@ -150,19 +150,40 @@ function Body({
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
   const { load, why, shown, asking, seen } = useLoad(row, sort);
+  // **A region that has never been read shows its skeleton, not a blank
+  // or half a card** (components/RegionState `loading-never`, the state
+  // the lists already wear). Two holes it fills: a machine with no
+  // reading in the device table and no process answer yet (the whole
+  // card below the facts line), and the process table before its first
+  // answer (its own slot). **Anything kept wins**: the readings come
+  // with the device row and the process table from `useKept`, so a
+  // machine seen before draws its last content on the first frame and
+  // never this — the fast gate's second claim.
+  const answered = load !== null || why !== null;
+  const never = !row.vitals && !answered;
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
             <Head row={row} />
-            <Readings row={row} day={load?.cpu_day ?? null} top={load?.top ?? []} />
-            <Busy
-              load={load}
-              why={why}
-              sort={shown ?? sort}
-              asking={asking}
-              onSort={setSort}
-              seen={seen}
-            />
+            {never ? (
+              <RegionState state="loading-never" />
+            ) : (
+              <>
+                <Readings row={row} day={load?.cpu_day ?? null} top={load?.top ?? []} />
+                {answered ? (
+                  <Busy
+                    load={load}
+                    why={why}
+                    sort={shown ?? sort}
+                    asking={asking}
+                    onSort={setSort}
+                    seen={seen}
+                  />
+                ) : (
+                  <RegionState state="loading-never" />
+                )}
+              </>
+            )}
           {/* The subscription's arcs left this card on 2026-09-02
               (「机器页面不需要有token usage的环」) — the 额度 landing's
               foot is their one home now, where 额度 is read.
@@ -189,135 +210,108 @@ function Body({
 }
 
 /**
- * The card's head: who this machine is, what you can do on it, and
- * which khor it is running.
+ * The card's first line: the facts about this machine that are not its
+ * name — the id (small, **and** the control that copies it: `CopyId`'s
+ * `id` face, because a string already on screen does not need a button
+ * to fetch it), the road it is reached over, and how long it has been
+ * up.
  *
- * **Three lines and one row of verbs** (2026-09-03 to the user's
- * layout): the name with the id beside it small, under it the road and
- * how long the machine has been up, and on the right the verbs over
- * the version. The id is small **and** the control that copies it —
- * `CopyId`'s `id` face — because a string already on screen does not
- * need a button to fetch it.
+ * ⚠️ 墓碑 (2026-09-27): **this was a head, and it said who the machine
+ * is a second time.** The face at `avatar-lg` and the name in
+ * `title-md` (editable by double-click) sat over the id, while R0 above
+ * already carried the name — 「身份只出现一次… 板里不许再有第二个标题」
+ * (components/Toolbar, Board). What went where:
  *
- * **The version moved up here from a foot** and brought the freshness
- * with it: both are facts about the *answer*, not about the machine's
- * hardware, and they belong beside the machine's name for the same
- * reason a letter's date belongs at its head. The pin went the other
- * way — off the card entirely (2026-09-03:「置顶统一和 session 一样,
- * 右键机器选择」): one gesture for one job across both lists beats a
- * button that only one of the two surfaces has.
+ * - the name — gone; R0 says it. Renaming stays on the list row, whose
+ *   title is the same `EditableName` (double-click, F2), and on 身份 for
+ *   this machine;
+ * - the big face — gone; it was identity and nothing else, and the list
+ *   row beside it wears the same face;
+ * - the version and the freshness — **to R0's right end**
+ *   (`MachineCaption`), the seat every page uses for how old what it
+ *   shows is (「3 分钟前的读数」, components/RegionState);
+ * - the id, the road, the uptime — here, as the card's first line: they
+ *   are readings about the machine, not a title over it.
+ *
+ * The pin went off the card before that (2026-09-03:「置顶统一和 session
+ * 一样, 右键机器选择」).
  */
 function Head({ row }: { row: DeviceRow }) {
   const v = row.vitals;
   const days = v ? Math.floor(v.vitals.uptime_s / 86_400) : 0;
   const hours = v ? Math.floor(v.vitals.uptime_s / 3_600) : 0;
   return (
-    <div className="flex flex-wrap items-start gap-row">
-      {/* The same derivation as its row and as the rail's foot: one
-          machine, one face, painted from what that machine said about
-          itself. Bigger here, not different. */}
-      <MachineAvatar face={row.face} className="size-avatar-lg" />
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-row">
-          {/* **The same editor sessions use** (`EditableName`), not a
-              second one — the machine page keeps growing its own copy
-              of things the rest of the app already has, and that is on
-              the ledger as a standing complaint rather than a one-off.
-              Double-click, F2, or Enter; an emptied box gives the
-              machine its reported name back.
+    <div data-machine-facts className="flex flex-wrap items-center gap-row text-callout text-muted-foreground">
+      {/* The first twelve characters — a prefix to recognise, and
+          pressing it puts all sixty-four on the clipboard. */}
+      <CopyId id={row.id} face="id" />
+      {/* Which road this machine is being reached over
+          (`khor_core::Hop`), the same reading `khor devices` prints, from
+          the same call. Not a liveness signal — it lags the far end going
+          away by minutes; the freshness at R0's right end is what says
+          whether this machine has been heard from.
 
-              `row.shown` and never `row.name`: the first is what this
-              machine is called, the second is what the network files it
-              under, and the whole reason renaming is safe is that the
-              two are different fields. */}
-          <EditableName
-            kind="machine"
-            id={row.id}
-            title={row.shown}
-            className="min-w-0 text-title-md font-title"
-            inputClassName="min-w-0 text-title-md font-title"
-          />
-          {/* The first twelve characters — a prefix to recognise, and
-              pressing it puts all sixty-four on the clipboard. */}
-          <CopyId id={row.id} face="id" />
-        </div>
-        <div className="flex flex-wrap items-center gap-row text-callout text-muted-foreground">
-          {/* Which road this machine is being reached over
-              (`khor_core::Hop`), the same reading `khor devices`
-              prints, from the same call. Not a liveness signal — it
-              lags the far end going away by minutes; the freshness on
-              the right is what says whether this machine has been heard
-              from.
-
-              Three shapes for one slot. This machine reaches itself
-              over nothing, so its word is 本机 and it is deliberately
-              **not** `data-hop` — smoke asserts the own card carries no
-              road. A satellite has no road of its own; its sponsor
-              speaks for it (附属机器批). */}
-          {row.me ? (
-            <span data-machine-here className="flex-none">
-              {gui.machine_here}
-            </span>
-          ) : row.sponsor ? (
-            <span data-via-sponsor={row.sponsor} className="flex-none">
-              {cli.via_sponsor(row.sponsor)}
-            </span>
-          ) : (
-            row.hop && (
-              <span data-hop={row.hop} className="flex-none">
-                {hopWord(row.hop)}
-              </span>
-            )
-          )}
-          {v && v.vitals.uptime_s > 0 && (
-            <span data-uptime className="flex-none">
-              {days >= 1 ? cli.uptime_days(days) : cli.uptime_hours(hours)}
-            </span>
-          )}
-        </div>
-      </div>
-      {/* **The facts sit over the verbs** (2026-09-03:「把操作按钮那一行
-          与版本、时间一行交换位置」). Both halves of the head then read
-          the same way down: what this is on the left, what it says on
-          the right, and the things you can press along the bottom of
-          both — rather than a row of buttons cutting across the middle
-          of the identity. */}
-      <div className="flex flex-col items-end gap-in">
-        {v && (
-          <div className="flex flex-wrap justify-end gap-row text-callout text-muted-foreground">
-            {/* The version is one of `khor devices`' sentences and keeps
-                its unit; the freshness is the age sentence for a machine
-                reached over the wire (its own unit, counted with the
-                readings) and the present's clock for this one.
-
-                **The words are the card's, the units are the CLI's**
-                (2026-09-06:「Khor xxx N 秒前」): `card-version` and
-                `card-age` say the same two facts `khor devices` prints
-                as `vitals-version` and `vitals-taken`, shorter, because
-                on this card the dials under this line already say what
-                the age is an age of. The unit marks stay, so the smoke's
-                count of readings against the terminal still holds. A
-                middle dot between the two, and only when both are there. */}
-            {v.vitals.version && <span data-vitals-unit="version">{gui.card_version(v.vitals.version)}</span>}
-            {v.vitals.version && !row.me && v.age_ms > 0 && <span aria-hidden="true">·</span>}
-            {/* This machine's reading has an age too since 第十六轮 (the
-                background sampler's last round, seconds old); it keeps
-                the clock of when it was taken rather than an age
-                sentence, which is the face a reading from elsewhere
-                wears. */}
-            {!row.me && v.age_ms > 0 ? (
-              <span data-vitals-age>{gui.card_age(ago(Date.now() - v.age_ms))}</span>
-            ) : (
-              <span data-updated>{cli.updated_at(clock(Date.now() - v.age_ms))}</span>
-            )}
-          </div>
-        )}
-        {/* The three verbs left this row for R0's right end
-            (docs/SHELL.md 第十七轮 §3, D9: page buttons live in the
-            toolbar, the board holds no row of buttons). `App` seats
-            `MachineVerbs` in the `Region`'s action slot. */}
-      </div>
+          Three shapes for one slot. This machine reaches itself over
+          nothing, so its word is 本机 and it is deliberately **not**
+          `data-hop` — smoke asserts the own card carries no road. A
+          satellite has no road of its own; its sponsor speaks for it
+          (附属机器批). */}
+      {row.me ? (
+        <span data-machine-here className="flex-none">
+          {gui.machine_here}
+        </span>
+      ) : row.sponsor ? (
+        <span data-via-sponsor={row.sponsor} className="flex-none">
+          {cli.via_sponsor(row.sponsor)}
+        </span>
+      ) : (
+        row.hop && (
+          <span data-hop={row.hop} className="flex-none">
+            {hopWord(row.hop)}
+          </span>
+        )
+      )}
+      {v && v.vitals.uptime_s > 0 && (
+        <span data-uptime className="flex-none">
+          {days >= 1 ? cli.uptime_days(days) : cli.uptime_hours(hours)}
+        </span>
+      )}
     </div>
+  );
+}
+
+/**
+ * **What R0's right end says about an open machine** (`Region caption`):
+ * which khor it runs and how old its reading is — 「Khor 0.1.14 · 12 秒前」
+ * (2026-09-06:「Khor xxx N 秒前」). Moved here from the card's head on
+ * 2026-09-27 (see `Head`'s tombstone).
+ *
+ * The version is one of `khor devices`' sentences and keeps its unit;
+ * the freshness is the age sentence for a machine reached over the wire
+ * (its own unit, counted with the readings) and the present's clock for
+ * this one — this machine's reading has an age too since 第十六轮 (the
+ * background sampler's last round, seconds old), but it keeps the clock
+ * of when it was taken rather than an age sentence, which is the face a
+ * reading from elsewhere wears. **The words are the card's, the units
+ * are the CLI's**: `card-version` and `card-age` say the same two facts
+ * `khor devices` prints as `vitals-version` and `vitals-taken`, so the
+ * smoke's count of readings against the terminal still holds (it counts
+ * the page, and R0 is on the page). A middle dot between the two, and
+ * only when both are there. Nothing for a machine never read.
+ */
+export function MachineCaption({ row }: { row: DeviceRow }) {
+  const v = row.vitals;
+  if (!v) return null;
+  return (
+    <>
+      {v.vitals.version && <span data-vitals-unit="version">{gui.card_version(v.vitals.version)}</span>}
+      {v.vitals.version && <span aria-hidden="true"> · </span>}
+      {!row.me && v.age_ms > 0 ? (
+        <span data-vitals-age>{gui.card_age(ago(Date.now() - v.age_ms))}</span>
+      ) : (
+        <span data-updated>{cli.updated_at(clock(Date.now() - v.age_ms))}</span>
+      )}
+    </>
   );
 }
 

@@ -192,6 +192,7 @@ export function DevicesList({
       ) : (
         <span className="block truncate text-body">{d.shown}</span>
       ),
+      name: d.shown,
       // How this machine is reached — the fact a person picks a row by;
       // this machine's own word is 本机 — and then what the box is, as
       // the machine names itself (`vitals.model.name`: 「型号文字进机器行

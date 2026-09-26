@@ -114,10 +114,10 @@ export function NetworkPage({
       <div className="flex flex-none flex-col gap-2 border-t p-pane">
         <div data-net-acts className="flex flex-wrap items-center gap-in">
           <Button data-net-invite onClick={onInvite} className="min-h-touch">
-            {gui.make_a_ticket}
+            {gui.make_a_ticket_ask}
           </Button>
           <Button data-net-join onClick={onJoin} className="min-h-touch">
-            {gui.join_with_a_ticket}
+            {gui.join_with_a_ticket_ask}
           </Button>
           {/* Both of these are about a network this machine is in, so
               neither is drawn on a machine that is in none: `Node::leave`
@@ -159,7 +159,10 @@ export function NetworkPage({
               }}
               className="min-h-touch text-destructive"
             >
-              {gui.identity_leave_do}
+              {/* It opens the window that asks for the name: the
+                  ellipsis (components/Button). The window's own title
+                  and button keep the bare verb. */}
+              {gui.identity_leave_ask}
             </Button>
           )}
         </div>
