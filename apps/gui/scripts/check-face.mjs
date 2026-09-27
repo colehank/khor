@@ -20021,11 +20021,13 @@ try {
         fail(`the dials come out ${boxes.join(" / ")} across — none may be bigger than the ${full} the widest posture draws`);
       }
       //   ⚠️ **And the shrink is not free-running**: only the narrow
-      //   postures may be under it, and never by more than the room
-      //   asks. A quarter under would mean the size had gone back to
-      //   being a share of the row.
-      if (boxes.some((b) => b < full * 0.7)) {
-        fail(`the dials come out ${boxes.join(" / ")} across against a full ${full} — a dial that gives up a third of itself is a share again, not a number`);
+      //   postures may be under it, and never below the floor
+      //   `MachineCard` keeps four in a line with (`FOUR_ACROSS_FLOOR`,
+      //   0.6). It was 0.7 until 2026-09-28, when the owner allowed the
+      //   floor to move so that a middling row keeps four at an even gap
+      //   (「允许一行缩小的底线变化，主要是满足和谐的间距」).
+      if (boxes.some((b) => b < full * 0.6 - 0.5)) {
+        fail(`the dials come out ${boxes.join(" / ")} across against a full ${full} — under the 0.6 floor, the size has gone back to being a share of the row`);
       }
     }
     console.log(`dial row: ${seenDials.join(" · ")}`);

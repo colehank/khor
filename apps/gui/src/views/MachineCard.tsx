@@ -591,8 +591,13 @@ function Readings({
   //   when the token moved to 20 (第十五轮) the two dials at 390 and 360
   //   came out 2px too wide and hung off the row's edge, which is what
   //   `check-face` (「the row's edges read … -2.0 on the right」) said.
-  /** How small the dials may go to keep four in a line (2026-09-28). */
-  const FOUR_ACROSS_FLOOR = 0.8;
+  /** How small the dials may go to keep four in a line (2026-09-28).
+      0.8 first; the owner's 934-wide window (a ~540 row) still fell to
+      2 × 2 with the pair at the two edges, and 「允许一行缩小的底线变化，
+      主要是满足和谐的间距」 — so 0.6: four in a line at the standard gap
+      down to a ~490 row. The centre reading still has to fit its ring at
+      the drawn size (`check-face` ④ measures that at every width). */
+  const FOUR_ACROSS_FLOOR = 0.6;
   const GAP_GROUP =
     Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-group")) || 20;
   //   **How many dials fit on a line, and how big each one is** —
@@ -638,12 +643,13 @@ function Readings({
   //   Four across while four boxes and three of the smallest gaps fit;
   //   otherwise two. **Still declared, never `flex-wrap`** — see below.
   //
-  //   **Four across down to 80% of that size** (2026-09-28, the owner
+  //   **Four across down to 60% of that size** (2026-09-28, the owner
   //   chose it over 2 × 2 with more air: 「避免 3+1，就是 2 或 4」 — and
   //   of the two, four in a line). A ~650 row, the common one with the
-  //   list beside the card, holds four at ~82%; at full size it fell to
-  //   2 × 2 with ~360 between the pair. Below 80% the row is narrow
-  //   enough that two at full size read better than four small ones.
+  //   list beside the card, holds four at ~82%, a ~540 one at ~67%; at
+  //   full size both fell to 2 × 2 with the pair pushed to the edges.
+  //   Below 60% the row is narrow enough that two read better than four
+  //   small ones.
   const cols = (vitalsW - 3 * GAP_GROUP) / 4 >= FOUR_ACROSS_FLOOR * dialBox ? 4 : 2;
   //   **And where two do not fit either, the dial gives way** — the
   //   only rung left once 「one alone on a line」 is forbidden outright
