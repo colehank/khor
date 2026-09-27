@@ -41,8 +41,6 @@
 //! rename-proof. Nothing here returns an error, because there is
 //! nothing a caller could do with one.
 
-use std::process::Command;
-
 /// This machine's stable id, hashed. `None` when the platform will not
 /// say — see the module head on why that is not an error.
 ///
@@ -84,6 +82,10 @@ fn raw_id() -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn raw_id() -> Option<String> {
+    // Imported here, the one platform that forks for its answer: at the
+    // top of the file it was unused on Linux and warned on every build
+    // there.
+    use std::process::Command;
     let out = Command::new("ioreg")
         .args(["-rd1", "-c", "IOPlatformExpertDevice"])
         .output()
@@ -103,7 +105,6 @@ fn raw_id() -> Option<String> {
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn raw_id() -> Option<String> {
-    let _ = Command::new("true");
     None
 }
 
