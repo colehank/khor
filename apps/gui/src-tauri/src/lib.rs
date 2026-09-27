@@ -2444,14 +2444,24 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
         } else {
             tauri::Theme::Light
         };
-        for (label, w) in app.webview_windows() {
-            if label != "main" && !label.starts_with("code:") {
-                continue;
+        // **On the main thread, always** (2026-09-27: switching 浅色 →
+        // 深色 left the whole left block white). `setAppearance:` is
+        // AppKit, and AppKit only honours it on the main thread; from a
+        // command's thread the window's own property changed but the
+        // sidebar material under the page (`build_the_window`'s
+        // `Effect::Sidebar`) never redrew, so the block kept the light
+        // material under the dark page's white ink.
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            for (label, w) in handle.webview_windows() {
+                if label != "main" && !label.starts_with("code:") {
+                    continue;
+                }
+                if let Ok(win) = w.ns_window() {
+                    wear_appearance(win, wanted);
+                }
             }
-            if let Ok(win) = w.ns_window() {
-                wear_appearance(win, wanted);
-            }
-        }
+        });
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, theme);
