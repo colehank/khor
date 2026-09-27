@@ -591,6 +591,8 @@ function Readings({
   //   when the token moved to 20 (第十五轮) the two dials at 390 and 360
   //   came out 2px too wide and hung off the row's edge, which is what
   //   `check-face` (「the row's edges read … -2.0 on the right」) said.
+  /** How small the dials may go to keep four in a line (2026-09-28). */
+  const FOUR_ACROSS_FLOOR = 0.8;
   const GAP_GROUP =
     Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-group")) || 20;
   //   **How many dials fit on a line, and how big each one is** —
@@ -635,7 +637,14 @@ function Readings({
   const dialBox = DIAL_CARD_SIZE * hugRatio(DIAL_CARD_SIZE, DIAL_CARD_STROKE);
   //   Four across while four boxes and three of the smallest gaps fit;
   //   otherwise two. **Still declared, never `flex-wrap`** — see below.
-  const cols = vitalsW >= 4 * dialBox + 3 * GAP_GROUP ? 4 : 2;
+  //
+  //   **Four across down to 80% of that size** (2026-09-28, the owner
+  //   chose it over 2 × 2 with more air: 「避免 3+1，就是 2 或 4」 — and
+  //   of the two, four in a line). A ~650 row, the common one with the
+  //   list beside the card, holds four at ~82%; at full size it fell to
+  //   2 × 2 with ~360 between the pair. Below 80% the row is narrow
+  //   enough that two at full size read better than four small ones.
+  const cols = (vitalsW - 3 * GAP_GROUP) / 4 >= FOUR_ACROSS_FLOOR * dialBox ? 4 : 2;
   //   **And where two do not fit either, the dial gives way** — the
   //   only rung left once 「one alone on a line」 is forbidden outright
   //   and the size is fixed. Measured 2026-09-09: two boxes plus the
@@ -1046,9 +1055,21 @@ function Drawers({
         <div
           ref={scroll}
           data-drawer-scroll
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
           style={{ scrollSnapType: "y proximity" }}
         >
+        {/* **One pitch in every drawer, and the rows sit in the middle**
+            (2026-09-28, the owner: CPU's bars read comfortably, the
+            disk's were spaced too far). The rows used to share the slot's
+            height (`minmax(row, 1fr)`), so four volumes plus the watch
+            editor were pulled 43 apart against CPU's 29 — and pushed past
+            the slot, so the drawer scrolled with a row to spare. Now every
+            row keeps `--drawer-row`, and what is left of the slot goes
+            above and below the block (`my-auto`: a centre that collapses
+            to the top when the rows overflow, so they still scroll),
+            which also keeps 09-04's 「不要…下面空掉了」 — no hole under
+            the last row. */}
+        <div data-drawer-body className="my-auto">
         <div data-parts="cpu" hidden={open !== "cpu"}>
           {busiest("cpu").map((r, _i, all) => (
             <Occupant
@@ -1159,6 +1180,7 @@ function Drawers({
             no khor to answer `Watched` — an editor there would save a
             list nothing reads). */}
         <WatchList row={row} watched={watched} open={open === "disk"} />
+        </div>
         </div>
       </div>
       {/* **Nothing under the drawer.** A sentence used to sit here

@@ -1075,7 +1075,7 @@
    * The old `--drawer-h` is gone with it: it was a height written for a
    * block that stood on its own (four rows plus its heading), and the
    * drawer does not decide its own height any more. */
-  --slot-head-h: var(--touch);
+  --slot-head-h: var(--hit);
   --slot-h: 232px;
   /* The three columns every part row shares. Named widths rather than
    * content sizing, because the point of the grid is that the bar's two

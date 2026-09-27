@@ -592,33 +592,14 @@ aside[data-side] {
   scroll-snap-align: start;
 }
 
-/* **A drawer fills its slot too, the same way the 24-hour figure does.**
-   2026-09-04:「不要满足最高高度,而导致部分图下面空掉了」 was said of the
-   readings; the drawers share that slot and had the same fault, worse:
-   measured on the real fleet, the GPU drawer's last row sat **152px**
-   above the floor on a machine with one card, and the 磁盘 drawer 121px
-   with two volumes, against 13px for the six-row ones. A block that
-   changes how much of itself it uses when you press a different ring is
-   the thing the fixed slot was for.
-
-   `grid-auto-rows: minmax(row, 1fr)` is the whole mechanism, and it is
-   the drawer's version of what the heat band does with its row pitch:
-   **the rows keep their own height as a floor and share whatever is
-   over it.** Two cards spread over the slot rather than huddling at its
-   top; six rows hit the floor, the sum exceeds the box and it scrolls,
-   exactly as before.
-
-   **The pitch is what grows, not the ink.** A bar keeps its own height
-   and its own two edges; what changes is the air around it — the same
-   trade as the band, and for the same reason: the row's *height* is not
-   encoding anything, so it is the free dimension. */
-[data-drawer]:not([data-tight]) [data-parts] {
-  min-height: 100%;
-  grid-auto-rows: minmax(var(--drawer-row), 1fr);
-}
-[data-drawer]:not([data-tight]) [data-parts] [data-part] > * {
-  height: 100%;
-}
+/* **A drawer's rows keep one pitch** (2026-09-04 wanted no hole under
+   the last row: the GPU drawer's last row had sat 152px above the floor
+   with one card). ⚠️ **Retired 2026-09-28**: `min-height: 100%; grid-auto-rows:
+   minmax(var(--drawer-row), 1fr)` — the rows shared the slot's height.
+   It spread two volumes 43 apart against CPU's 29 and pushed the disk
+   drawer (rows + the watch editor) past its slot. Every drawer now keeps
+   one pitch and its block is centred in the slot (`data-drawer-body`,
+   `MachineCard`), which still leaves no hole under the last row. */
 
 /* **A tight drawer drops the shared grid entirely.** Keyed off the
    drawer's *own* width (`use-tight.ts`), not the window's: the card has

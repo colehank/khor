@@ -16127,15 +16127,23 @@ try {
           if (!open || drawer.hidden) return null;
           const rows = [...open.querySelectorAll("[data-part]")];
           if (!rows.length) return { which: drawer.dataset.drawer, rows: 0 };
-          const cells = rows.flatMap((r) => [...r.children]).map((c) => c.getBoundingClientRect());
-          const body = open.closest("[data-drawer-scroll]") ?? open;
+          //   The block, not the rows (2026-09-28): the rows and what
+          //   follows them (the disk's watch editor) are one block,
+          //   centred in the scroll box (`data-drawer-body`), so the air
+          //   is measured around that block.
+          const scroll = open.closest("[data-drawer-scroll]");
+          const block = open.closest("[data-drawer-body]");
+          if (!scroll || !block) return { which: drawer.dataset.drawer, rows: -1 };
+          const s = scroll.getBoundingClientRect();
+          const b = block.getBoundingClientRect();
           return {
             which: drawer.dataset.drawer,
             rows: rows.length,
-            gap: +(slot.getBoundingClientRect().bottom - Math.max(...cells.map((r) => r.bottom))).toFixed(1),
-            headGap: +(Math.min(...cells.map((r) => r.top)) - body.getBoundingClientRect().top).toFixed(1),
+            gap: +(s.bottom - b.bottom).toFixed(1),
+            headGap: +(b.top - s.top).toFixed(1),
           };
         });
+        if (one && one.rows === -1) fail(`probe dead: the ${one.which} drawer has no [data-drawer-body] inside its [data-drawer-scroll]`);
         if (one && one.rows > 0) air.push(one);
       }
       // Leave the slot back on the day, which is where this section found it.
@@ -16158,19 +16166,17 @@ try {
         await wait(350);
         const bent = await page.evaluate(() => {
           const open = document.querySelector("[data-machine-card] [data-parts]:not([hidden])");
-          if (!open) return null;
-          open.style.alignContent = "start";
-          open.style.gridAutoRows = "min-content";
-          const slot = document.querySelector("[data-machine-card] [data-ring-slot]");
-          const rows = [...open.querySelectorAll("[data-part]")];
-          const cells = rows.flatMap((r) => [...r.children]).map((c) => c.getBoundingClientRect());
-          const body = open.closest("[data-drawer-scroll]") ?? open;
-          const out = {
-            gap: +(slot.getBoundingClientRect().bottom - Math.max(...cells.map((r) => r.bottom))).toFixed(1),
-            headGap: +(Math.min(...cells.map((r) => r.top)) - body.getBoundingClientRect().top).toFixed(1),
-          };
-          open.style.removeProperty("align-content");
-          open.style.removeProperty("grid-auto-rows");
+          const scroll = open?.closest("[data-drawer-scroll]");
+          const block = open?.closest("[data-drawer-body]");
+          if (!open || !scroll || !block) return null;
+          // Pin the block to the top — the lopsided shape this is for.
+          block.style.marginTop = "0";
+          block.style.marginBottom = "auto";
+          const s = scroll.getBoundingClientRect();
+          const b = block.getBoundingClientRect();
+          const out = { gap: +(s.bottom - b.bottom).toFixed(1), headGap: +(b.top - s.top).toFixed(1) };
+          block.style.removeProperty("margin-top");
+          block.style.removeProperty("margin-bottom");
           return out;
         });
         const openDial = page.locator('[data-machine-card] [data-dial][data-open="true"]').first();
@@ -16187,7 +16193,10 @@ try {
       if (air.length < 2) {
         fail(`probe dead: only ${air.length} drawers had rows to measure, so 「the air is shared」 was not tested`);
       } else {
-        const parked = air.filter((a) => Math.abs(a.headGap - a.gap) > 1);
+        //   A block taller than its box scrolls, and then it starts at
+        //   the top by design — only a block that fits can have its air
+        //   parked at one end.
+        const parked = air.filter((a) => a.gap >= 0 && a.headGap >= 0 && Math.abs(a.headGap - a.gap) > 1);
         if (parked.length) {
           const w = parked[0];
           fail(
