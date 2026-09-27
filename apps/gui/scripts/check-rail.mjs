@@ -77,23 +77,27 @@ const PORT = Number(process.env.RAIL_PORT ?? 1449);
 
 // The floor for the solid half of a glyph, against whatever it sits on.
 const FLOOR = 3.0;
-// How much heavier the open glyph has to be than a resting one.
+// **What says 「open」 is the hue, not the weight** (2026-09-27).
 //
-// **This replaced `BLOCK_FLOOR` on 2026-08-31**, when the open item
-// stopped wearing a block at all. That constant was 1.15 — a floor for
-//「there is something there」on a plate nobody reads. The complaint it
-// came from was「选中态几乎没有实体表达」and the answer was a block;
-// the complaint that replaced it was「选中是整个 icon 变色,而不是
-// icon 的背景变色」, so the same demand for a substantial open state
-// now has to be met by the ink.
+// Until this day the open glyph had to be heavier than a resting one by
+// a margin of 2.0 (`GLYPH_MARGIN`). On the light ground a resting glyph
+// is already a dark grey (6.32), so 「heavier」 forced the open ink down
+// to `#2d3e00` — 9.31, a green nobody could see: the owner asked why
+// the open item had no colour at all. A Mac sidebar says 「selected」 by
+// turning the glyph the accent colour, not by making it darker, so that
+// is the rule now:
 //
-// **2.0 is a ratio of ratios, not a contrast**: the open glyph is
-// asserted to clear a resting one by that margin, measured against the
-// same ground. Today it clears by ~4.4 (13.12 against 8.76 dark,
-// 13.60 against 6.59 light), so the margin is not tight — it is the
-// level below which two items on one rail stop being distinguishable
-// now that nothing else tells them apart.
-const GLYPH_MARGIN = 2.0;
+//   - the open glyph is a real colour: OKLCH chroma of its line at
+//     least `OPEN_CHROMA`, while a resting one stays grey (under
+//     `REST_CHROMA`), hovered or not;
+//   - and it is still a legible graphic: its line clears `FLOOR` (3.0,
+//     WCAG 1.4.11) on the rail's ground, resting and pointed at.
+//
+// Light `--rail-on-ink` is `--brand-strong` #5d7b06 (3.90 on `--side`,
+// C ≈ 0.14), the green of an open switch and the focus ring; dark stays
+// #c6f560. The retired rule's tombstone is `GLYPH_MARGIN` in git.
+const OPEN_CHROMA = 0.08;
+const REST_CHROMA = 0.03;
 // And the outline's own floor: what it measured *before* the ink was
 // given its own token (4.73 light, 5.51 dark), rounded down a step. The
 // body's problem must not be paid for out of the layer that was already
@@ -193,6 +197,22 @@ const READ = (sel) => `(() => {
   };
 })()`;
 
+/** OKLCH chroma of an sRGB triple (0–255): how much colour, as opposed
+    to grey, a glyph's ink carries once composited. */
+function chroma([r, g, b]) {
+  const lin = (c) => {
+    c /= 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  const [R, G, B] = [lin(r), lin(g), lin(b)];
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+  const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+  const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return Math.hypot(a, bb);
+}
+
 function measure(read) {
   // The backdrop, composited from the furthest ancestor inwards. White
   // is the seed only so a page that paints nothing at all still yields
@@ -210,6 +230,7 @@ function measure(read) {
     // fill-opacity on top of it, and anything dimming the subtree.
     body: contrast(flatten([ink[0], ink[1], ink[2], ink[3] * read.fillOpacity * read.dim], backdrop), backdrop),
     line: contrast(flatten([line[0], line[1], line[2], line[3] * read.strokeOpacity * read.dim], backdrop), backdrop),
+    hue: chroma(flatten([line[0], line[1], line[2], line[3] * read.strokeOpacity * read.dim], backdrop)),
   };
 }
 
@@ -535,12 +556,21 @@ try {
     // to tell them apart.
     const openLine = measure(await page.evaluate(READ('[data-rail-item][data-on="true"] svg [data-body]')));
     const restLine = measure(await page.evaluate(READ('[data-rail-item][data-on="false"] svg [data-body]')));
-    console.log(`${scheme}: open glyph line ${say(openLine.line)} against resting ${say(restLine.line)}`);
-    if (!(openLine.line > restLine.line + GLYPH_MARGIN)) {
+    console.log(
+      `${scheme}: open glyph line ${say(openLine.line)} C ${openLine.hue.toFixed(3)}; ` +
+        `resting ${say(restLine.line)} C ${restLine.hue.toFixed(3)}`,
+    );
+    if (!(openLine.hue >= OPEN_CHROMA)) {
       fail(
-        `${scheme}: the open glyph measures ${say(openLine.line)} against a resting ${say(restLine.line)} — ` +
-          `under a ${GLYPH_MARGIN} margin, and it is the only thing saying which item is open`,
+        `${scheme}: the open glyph's line has chroma ${openLine.hue.toFixed(3)}, under ${OPEN_CHROMA} — ` +
+          `it reads as one more grey, and the hue is the only thing saying which item is open`,
       );
+    }
+    if (!(restLine.hue < REST_CHROMA)) {
+      fail(`${scheme}: a resting glyph carries chroma ${restLine.hue.toFixed(3)} — resting glyphs are grey, so open can be the colour`);
+    }
+    if (!(openLine.line >= FLOOR)) {
+      fail(`${scheme}: the open glyph's line is ${say(openLine.line)} on the rail, under the ${FLOOR} a graphic needs`);
     }
 
     // **Being pointed at and being open now live on different channels**
@@ -564,10 +594,10 @@ try {
     const hoveredLine = measure(
       await page.evaluate(READ('[data-rail-item][data-on="false"]:hover svg [data-body]')),
     );
-    if (hoveredLine.line !== null && hoveredLine.line >= openLine.line) {
+    if (hoveredLine.line !== null && hoveredLine.hue >= REST_CHROMA) {
       fail(
-        `${scheme}: a hovered resting glyph measures ${say(hoveredLine.line)} against the open ` +
-          `${say(openLine.line)} — pointing at an item must not make it look like the open one`,
+        `${scheme}: a hovered resting glyph carries chroma ${hoveredLine.hue.toFixed(3)} — ` +
+          `pointing at an item must not make it look like the open one`,
       );
     }
 
@@ -591,15 +621,14 @@ try {
     );
     if (openHovered.line === null) {
       fail(`${scheme}: the open glyph could not be read while hovered`);
-    } else if (!(openHovered.line > restLine.line + GLYPH_MARGIN)) {
+    } else if (!(openHovered.hue >= OPEN_CHROMA) || !(openHovered.line >= FLOOR)) {
       fail(
-        `${scheme}: hovered, the open glyph measures ${say(openHovered.line)} against a resting ` +
-          `${say(restLine.line)} — under the ${GLYPH_MARGIN} margin, so pointing at it costs ` +
-          `the one thing that says it is open`,
+        `${scheme}: hovered, the open glyph measures ${say(openHovered.line)} at chroma ` +
+          `${openHovered.hue.toFixed(3)} — pointing at it costs the colour that says it is open`,
       );
     } else {
       console.log(
-        `${scheme}: open glyph hovered ${say(openHovered.line)}, still clear of resting ${say(restLine.line)}`,
+        `${scheme}: open glyph hovered ${say(openHovered.line)} C ${openHovered.hue.toFixed(3)}, still the colour`,
       );
     }
     await away();

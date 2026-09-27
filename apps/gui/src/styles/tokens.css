@@ -659,8 +659,19 @@
    * The dark side had far more room and was wasting more of it
    * (`#dce9a6`, C 0.088 against a ceiling of 0.228). Same treatment at
    * the same lightness: 14.48 open, 12.22 hovered (as check-rail
-   * measures them), against a required 10.51. */
-  --rail-on-ink: #2d3e00;
+   * measures them), against a required 10.51.
+   *
+   * **`#5d7b06` (light) since 2026-09-27 — lighter, not deeper, and the
+   * margin above is retired.** On paper even the maximum-chroma deep
+   * olive read as no colour at all (the owner:「选中没有颜色」): at 9.31
+   * the eye sees darkness, not hue. The open glyph now says 「open」 the
+   * way a Mac sidebar does — by being the accent colour — so it is
+   * `--brand-strong`, the green of an open switch and the focus ring:
+   * 4.08 on the rail, 3.63 hovered (over the 3.0 a graphic needs), C 0.133
+   * against a resting grey of C 0.010. check-rail now holds the hue
+   * (`OPEN_CHROMA`) and the graphic floor, not a weight margin. Dark is
+   * unchanged. */
+  --rail-on-ink: #5d7b06;
   --icon-body: 0.7;
 
   /* **Tombstone: `--rail-on` was the block behind whichever rail item

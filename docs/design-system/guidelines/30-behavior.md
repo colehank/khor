@@ -16,7 +16,7 @@
 | R0 和 R1 之间除了「一天」什么都没有 | 沿用第十四轮的门 |
 | 选中行是灰块、字一律满值 `ink` | `check-palette` 把选中行三种文字对它的底一起量，任何一个低于 4.5 变红；底是 `brand-strong` 也变红 |
 | 竖栏未打开的字形，描边不低于 4.7 / 5.5，实心块不低于 3.0 | `check-rail` 的 `LINE_FLOOR` 与 `FLOOR` |
-| 竖栏打开的字形比未打开的高出 2.0，**静止和被指着时都要过** | `check-rail` 的 `GLYPH_MARGIN`，两种底各量一次 |
+| 竖栏打开的字形是品牌色（彩度 ≥ 0.08）、未打开的是灰（< 0.03），打开的描边 ≥ 3.0，**静止和被指着时都要过** | `check-rail` 的 `OPEN_CHROMA` / `REST_CHROMA` / `FLOOR`，两种底各量一次 |
 | 实心块永远比描边浅 | `check-rail`：`body < line`，否则「两种密度」这个主张就被删掉了 |
 | 界面里不出现颜色字面量，一律引用 token 名 | `check-px.mjs` / `check-palette.mjs`：一个散落的像素值或色值就是构建错误 |
 | 只有一套图标字形 | `check-icons.mjs`：从外部图标包 import 就变红，并且报出是哪个包 |
