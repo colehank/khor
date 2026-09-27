@@ -65,7 +65,6 @@ import {
   agentsKnown,
   agentsKnownTaken,
   fetchDevices,
-  fetchPlaces,
   openSession,
   openTermOn,
   registerKnownAgent,
@@ -73,9 +72,8 @@ import {
   type AgentRow,
   type DeviceRow,
   type KnownAgent,
-  type PlaceRow,
 } from "@/api";
-import { DirPicker } from "@/components/DirPicker";
+import { PathField, settledPath } from "@/components/PathField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -88,7 +86,6 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { connectionWord } from "@/words";
-import { cn } from "@/lib/utils";
 
 /** 类型 — the wizard's second step. Three, and no fourth (the ruling):
     a line left in the machine's window, an agent session, a bare shell. */
@@ -116,12 +113,12 @@ export function NewSessionDialog({
   machine?: string;
   /** 目录, answered before the dialog opens — the workspace column's
       「+」 names that project's directory (工作区批⑩). Empty is every
-      other door, and means that machine's home.
+      other door: the box opens empty, and empty means that machine's
+      home.
    *
    * **Answered, not decided**: it lands in the same box a person types
-   * into, so the shortcut can be typed over, replaced from 常去的地方,
-   * or walked away from in the picker. A prefill that could not be
-   * changed would be a fifth question asked somewhere else. */
+   * into, so it can be typed over. A prefill that could not be changed
+   * would be a fifth question asked somewhere else. */
   dir?: string;
 }) {
   /** 在哪台 — which machine the session is born on. Every paired
@@ -130,17 +127,10 @@ export function NewSessionDialog({
       answers, which `openSession` reads as this machine. */
   const [machines, setMachines] = useState<DeviceRow[]>([]);
   const [machine, setMachine] = useState("");
-  const [dir, setDir] = useState("~");
-  /** The directory picker is up (工作区批②). A second dialog over this
-      one rather than a step inside it: the wizard asks four questions
-      and this is a detour from one of them, so it has to be able to end
-      without answering — and the answers already given must still be
-      here when it does. */
-  const [picking, setPicking] = useState(false);
-  /** 常去的地方. Empty until the read lands, and empty is also the
-      honest answer on a machine with no recorded conversations — there
-      is nothing to say about it either way, so nothing is said. */
-  const [places, setPlaces] = useState<PlaceRow[]>([]);
+  /** 目录. **Empty until typed in** (2026-09-27:「涉及到目录的，都不要
+      推荐任何路径，简单一个输入框，用户可以边写边自动推荐」) — and empty
+      is that machine's home to every verb this sends it to. */
+  const [dir, setDir] = useState("");
   const [title, setTitle] = useState("");
   /** 类型 — the second step. Opens on 智能体, the kind this dialog was
       born for; a person who came to leave a line is one press away. */
@@ -185,9 +175,7 @@ export function NewSessionDialog({
     // The caller's directory, or that machine's home. Read at opening
     // for `picked`'s reason: the prop only ever changes together with
     // `open` (`App.openNewSession`).
-    setDir(at === "" ? "~" : at);
-    setPicking(false);
-    setPlaces([]);
+    setDir(at);
     setTitle("");
     setKind("agent");
     setText("");
@@ -210,15 +198,6 @@ export function NewSessionDialog({
     setQuery("");
     setAttaching(null);
     let live = true;
-    // **Read on opening, like the registry above it.** A place list
-    // cached across openings would be answering with where this person
-    // worked before the conversation they just finished — and this
-    // whole surface exists because the freshest place is usually the
-    // one they want. A failure here is left silent on purpose: the
-    // 目录 box is still right there and still takes anything, so a
-    // shortcut that could not be built is not a fact worth a red line
-    // (the registry's failure *is*, because「你没接过 agent」and「我读
-    // 不到」are different next steps).
     // The machine table, read once per opening like the registry: it
     // syncs from other machines, and a paired machine that arrived
     // since the last opening is exactly the one a person came to pick.
@@ -240,26 +219,6 @@ export function NewSessionDialog({
       live = false;
     };
   }, [open, picked, at]);
-
-  // **The places follow the machine.** 常去的地方 are read from where
-  // the session is about to be born, and a machine change resets the
-  // box to that machine's home — a path typed for this disk means
-  // nothing on that one. A failure is left silent on purpose: the 目录
-  // box is still right there and still takes anything, so a shortcut
-  // that could not be built is not a fact worth a red line (the
-  // registry's failure *is*, because「你没接过 agent」and「我读不到」
-  // are different next steps).
-  useEffect(() => {
-    if (!open) return;
-    let live = true;
-    setPlaces([]);
-    fetchPlaces(machine)
-      .then((rows) => live && setPlaces(rows))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [open, machine]);
 
   const registered = (name: string) => known.some((a) => a.name === name);
 
@@ -323,7 +282,7 @@ export function NewSessionDialog({
     if (opening) return;
     setOpening(true);
     setError(null);
-    (kind === "shell" ? openTermOn(target, title, dir) : openSession(dir, title, form, agent, machine))
+    (kind === "shell" ? openTermOn(target, title, settledPath(dir)) : openSession(settledPath(dir), title, form, agent, machine))
       .then((id) => {
         onOpenChange(false);
         onOpened(id);
@@ -360,8 +319,8 @@ export function NewSessionDialog({
         <div className="flex min-w-0 flex-col gap-3">
           {/* **在哪台, first — before the directory, because the
               directory is a fact about the machine.** The whole net's
-              machines, this one marked; picking one makes the places
-              below, the box and the agent all that machine's. Drawn
+              machines, this one marked; picking one makes the box,
+              its completions and the agent all that machine's. Drawn
               only when there is a choice to make. A satellite is
               offered greyed: it has no khor of its own to host an
               agent (`open --on` reaches it over ssh for a shell), and
@@ -381,7 +340,9 @@ export function NewSessionDialog({
                     disabled={d.sponsor !== null}
                     onClick={() => {
                       setMachine(d.name);
-                      setDir("~");
+                      // A path typed for this disk means nothing on
+                      // that one.
+                      setDir("");
                     }}
                   >
                     {d.name}
@@ -617,110 +578,23 @@ export function NewSessionDialog({
               onKeyDown={(e) => e.key === "Enter" && create()}
             />
           </label>
-          {/* The box and its shortcuts, in one column. **Not one
-              `label`**: a `button` inside a `label` is a control inside
-              a control, and every click on a place would also be a
-              click on the field. */}
-          <div className="flex min-w-0 flex-col gap-1">
-            <label className="flex min-w-0 flex-col gap-1 text-callout">
-              <span className="text-muted-foreground">{gui.new_session_dir}</span>
-              {/* **The box, and a way to go and look** (工作区批②).
-                  Three roads to one field now — typing, 常去的地方
-                  below, and the picker — and that is not three ways to
-                  do one thing: the box reaches anything but needs the
-                  path known, the shortcuts reach what is already worked
-                  in, and the picker is the only one that can reach a
-                  directory nobody has been to yet, on a machine that is
-                  not this one. **Nothing is replaced**: the box is
-                  still where the answer lands, and everything else
-                  writes into it. */}
-              <div className="flex min-w-0 items-center gap-1">
-                <Input
-                  data-new-session-dir
-                  value={dir}
-                  onChange={(e) => setDir(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && create()}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  data-new-session-pick
-                  className="min-h-touch min-w-touch flex-none"
-                  onClick={() => setPicking(true)}
-                >
-                  {gui.dir_picker_open}
-                </Button>
-              </div>
-            </label>
-            {/* **常去的地方: the first question, answered before it is
-                asked.** A person walks into a directory and then starts
-                something there, so the directories they already work in
-                sit right under the box — picking one is a click instead
-                of a typed path.
-
-                Under the box rather than above it, and the box keeps
-                taking anything: this is a shortcut, not a menu. A place
-                that is not on the list (a directory nobody has opened a
-                conversation in yet) has to stay typeable, and a list
-                that replaced the box would have made those unreachable.
-
-                Nothing is drawn when there is nothing — an empty list
-                is the honest state of a fresh machine, and a heading
-                over no rows is a promise of something missing. */}
-            {places.length > 0 && (
-              <div data-new-session-places className="flex min-w-0 flex-col gap-1">
-                <span className="text-caption text-muted-foreground">
-                  {gui.new_session_places}
-                </span>
-                <div className="flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto">
-                  {places.map((p) => {
-                    // **The last component is the name, the rest is
-                    // where it lives** — the reason the path is not printed
-                    // whole: the end of a path is what a person
-                    // recognises, and it is the end a narrow dialog
-                    // cuts off.
-                    //
-                    // Cutting from the *left* instead was tried and is
-                    // wrong: `direction: rtl` reorders the neutral
-                    // characters a path is made of, and printed
-                    // `~/Desktop/working/tokens` as
-                    // `Desktop/working/tokens/~`. Splitting says the
-                    // same thing without asking the bidi algorithm
-                    // anything.
-                    const cut = p.shown.lastIndexOf("/");
-                    const name = cut < 0 ? p.shown : p.shown.slice(cut + 1);
-                    const parent = cut <= 0 ? "" : p.shown.slice(0, cut);
-                    return (
-                      <button
-                        key={p.path}
-                        type="button"
-                        data-place={p.path}
-                        data-on={dir === p.path}
-                        // The whole path goes into the box, not the
-                        // shortened one: `~` is how a person reads it
-                        // and `openSession` does expand it, but a place
-                        // is picked by identity and the identity is
-                        // absolute.
-                        onClick={() => setDir(p.path)}
-                        className={cn(
-                          "flex w-full min-w-0 items-baseline gap-2 rounded px-1 text-left text-caption hover:bg-accent",
-                          dir === p.path && "bg-accent",
-                        )}
-                      >
-                        <span className="shrink-0 truncate">{name}</span>
-                        <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                          {parent}
-                        </span>
-                        <span className="shrink-0 tabular-nums text-muted-foreground">
-                          {gui.new_session_places_count(p.sessions)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+          {/* **One box, completing as it is typed in** (2026-09-27).
+              It had 常去的地方 under it and a 「挑…」 picker beside it;
+              the ruling took both — nothing is offered before a
+              character is typed, and what is offered after is the
+              chosen machine's own directories (`PathField`). **Not a
+              `label`**: the completions are buttons, and a button
+              inside a label is a control inside a control. */}
+          <div className="flex min-w-0 flex-col gap-1 text-callout">
+            <span className="text-muted-foreground">{gui.new_session_dir}</span>
+            <PathField
+              data-new-session-dir
+              aria-label={gui.new_session_dir}
+              machine={machine}
+              value={dir}
+              onValueChange={setDir}
+              onSubmit={create}
+            />
           </div>
             </>
           )}
@@ -748,25 +622,6 @@ export function NewSessionDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    {/* **A sibling of the wizard, not a child of its content.** Both are
-        portalled, so what decides the stacking is Radix's dismissable
-        layer stack either way; a sibling keeps the wizard's own DOM the
-        shape every probe in `smoke` already walks.
-
-        **It answers into the box.** A directory on another machine is
-        two answers, so picking one that is not where the wizard is
-        pointed moves 在哪台 with it — otherwise the box would hold a
-        path that means nothing on the machine still selected, which is
-        exactly what the machine row's own reset exists to prevent. */}
-    <DirPicker
-      open={picking}
-      onOpenChange={setPicking}
-      machine={machine}
-      onPick={(pick) => {
-        if (pick.machine !== machine) setMachine(pick.machine);
-        setDir(pick.path);
-      }}
-    />
     </>
   );
 }

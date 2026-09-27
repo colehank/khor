@@ -79,12 +79,6 @@ pub fn answer(
         // pixel width, and a default would be this layer inventing a
         // resolution for a screen it cannot see.
         "day_strips" => to_json(&crate::day_strips(root, num("cells")? as u32)?),
-        // `machine` absent means this one — the wizard's default; a
-        // name is the machine the session is about to be born on.
-        "places" => to_json(&rt.block_on(crate::places(
-            root,
-            &opt_str("machine")?.unwrap_or_default(),
-        ))?),
         // One read of one local table, no arguments: a workspace is a
         // decision and decisions replicate, so there is no machine to
         // ask (`workspaces` module head).

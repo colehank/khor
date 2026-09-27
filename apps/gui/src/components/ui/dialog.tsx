@@ -92,6 +92,19 @@ function DialogContent({
           className,
         )}
         {...props}
+        // **An open list inside it takes the first Escape.** Radix hears
+        // Escape on the document before the focused box does, so a
+        // combobox showing its suggestions (`PathField`) could not close
+        // them without closing the whole sheet. `aria-expanded` is the
+        // box's own statement that a list is open.
+        onEscapeKeyDown={(e) => {
+          const t = e.target instanceof Element ? e.target : null;
+          if (t?.closest('[role="combobox"][aria-expanded="true"]')) {
+            e.preventDefault();
+            return;
+          }
+          props.onEscapeKeyDown?.(e);
+        }}
       >
         {children}
         {/* **The box is a finger's, the glyph stays a glyph.** This was
