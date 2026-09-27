@@ -106,9 +106,14 @@ export function OmniMenu({
     >
       {rows.groups.map((a) => (
         <div key={a.key}>
-          <div data-omni-axis={a.key} className="px-2 py-1 text-caption text-muted-foreground">
-            {a.label}
-          </div>
+          {/* An axis with no label is a list of one kind — the path
+              box's completions (`PathField`), where a caption over the
+              rows would repeat what the box already says. */}
+          {a.label !== "" && (
+            <div data-omni-axis={a.key} className="px-2 py-1 text-caption text-muted-foreground">
+              {a.label}
+            </div>
+          )}
           {a.candidates.map((c) => {
             const n = flat.indexOf(c);
             return (

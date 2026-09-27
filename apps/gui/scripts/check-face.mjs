@@ -3135,72 +3135,15 @@ try {
     );
   }
 
-  // ── 3b) the breadcrumb spends the floor only on the finger ────────
-  // Section 3 above now asks its question of a hand. This asks the other
-  // half of the same question, and it exists because section 3 **cannot
-  // fail on it**: a control that is 44 wide for everybody clears the
-  // finger's floor forever, and the screen it ruins is the one section 3
-  // has stopped visiting.
-  //
-  // What ruins it: a step in a path is as wide as its name, and a floor
-  // applied to all of them makes the gap after a step **inversely
-  // proportional to the length of its name** — 40px of nothing after
-  // `/`, 26 after `nfs`, 4 after `workingdir`. That is not spacing, it
-  // reads as damage, and it is what a person actually said out loud
-  // (「目录显示很丑,有很多奇怪的空格」, 2026-08-29).
-  //
-  // **So the assertion is on the spread, not on the width.** Any fixed
-  // padding is fine and the number is the stylesheet's business; what
-  // may not happen is one step being padded more than another *because
-  // its name is shorter*. Written as「every step is its own natural
-  // width」the check would be a second copy of `px-0.5` living in this
-  // file, red the day somebody changes the padding for a good reason.
-  //
-  // The two halves are one section on purpose: the finger half is what
-  // keeps「no floor at all」from passing, and the mouse half is what
-  // keeps「the floor for everybody」from passing. Either alone is a
-  // green that argues for the other bug.
-  const crumbSpend = () =>
-    page.evaluate(() => {
-      const crumbs = [...document.querySelectorAll("[data-crumb]")].map((el) => {
-        const box = el.getBoundingClientRect();
-        // The name's own width, measured on the text rather than
-        // computed from a font: a Range over the button's contents is
-        // what the browser actually laid out.
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const text = range.getBoundingClientRect();
-        return {
-          label: (el.textContent || "").trim(),
-          // The last step is not a step: it takes the blank tail so
-          // that pressing the empty part of the bar opens the editor
-          // (`components/PathCrumbs.tsx` says why it is one target and not two), so
-          // its width is about the bar, not about its name.
-          rest: el.hasAttribute("data-address-rest"),
-          text: Math.round(text.width * 10) / 10,
-          box: Math.round(box.width * 10) / 10,
-        };
-      });
-      return {
-        floor: parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--touch")),
-        coarse: matchMedia("(pointer: coarse)").matches,
-        crumbs,
-      };
-    });
-  // **Where a breadcrumb still lives** (工作区批⑦). A workspace's tree
-  // has no address bar any more — 「取消面包屑。工作区不允许回退到工作区
-  // 之外的地方」 — so the crumbs this section is about are the directory
-  // picker's, which is the surface left whose whole question is 「which
-  // directory」. Same component, same rule, and a screen somebody
-  // actually reaches; the alternative was measuring a control the
-  // product no longer draws.
-  const atCrumbs = async () => {
-    await page.keyboard.press("Escape");
-    await wait(150);
-    await open("workspaces");
-    await press("[data-ws-add]");
-    return until(3_000, async () => (await page.locator("[data-crumb]").count()) > 0);
-  };
+  // ── 3b) (retired 2026-09-27) the breadcrumb's floor ──────────────
+  // This measured `PathCrumbs` in the directory picker — the last
+  // surface a person could reach it on after 工作区批⑦ cut the crumbs
+  // from a workspace's tree. The picker's tree and crumbs went with the
+  // owner's ruling (「"+" 弹出的窗口，涉及到目录的，都不要推荐任何路径，简单
+  // 一个输入框」), so there is no breadcrumb left on a reachable screen to
+  // measure; `WorkspacePane` still draws one for `root === ""`, which no
+  // door opens today. Bring this back from git history with the first
+  // door that draws a breadcrumb again.
   /** One workspace open, on its tree — the door every section below
       opens a file through. */
   const atTree = async () => {
@@ -3213,69 +3156,13 @@ try {
     return until(5_000, async () => (await page.locator("[data-file]").count()) > 0);
   };
   await page.setViewportSize({ width: 1400, height: 900 });
-  const spend = {};
-  for (const [posture, coarse] of [
-    ["finger", true],
-    ["mouse", false],
-  ]) {
-    await cdp.send("Emulation.setTouchEmulationEnabled", coarse ? { enabled: true, maxTouchPoints: 1 } : { enabled: false });
-    await wait(300);
-    if (!(await atCrumbs())) {
-      fail(`probe dead: no breadcrumb in the directory picker under a ${posture}`);
-      continue;
-    }
-    const seen = await crumbSpend();
-    if (seen.coarse !== coarse) {
-      fail(`probe void: asked for a ${posture} and got pointer coarse=${seen.coarse} — the override did not take`);
-      continue;
-    }
-    spend[posture] = seen;
-    console.log(
-      `crumbs · ${posture}: ` +
-        seen.crumbs
-          .map((c) => `${JSON.stringify(c.label)} ${c.text}→${c.box}${c.rest ? " (the tail)" : ""}`)
-          .join(", "),
-    );
-  }
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+  await wait(300);
   // …and the pointer is back, which sections 5 and 5b are measured
   // under. Asserted rather than assumed: this is the moment smoke.mjs
   // §14 was lost at.
   if (!(await page.evaluate(() => matchMedia("(hover: hover)").matches))) {
     fail("the pointer never came back after section 3 — everything below this line is measuring a screen with no hover");
-  }
-  if (!spend.finger || !spend.mouse) {
-    fail("probe dead: the breadcrumb was not read in both postures, so neither half below judged");
-  } else {
-    const steps = (s) => s.crumbs.filter((c) => !c.rest);
-    // Both halves are vacuous on a path whose every name is already
-    // wider than the floor — there would be nothing for a floor to
-    // raise and nothing for a mouse to hand back. The fixture's path is
-    // `/home/peer/work`, so this holds; it is asserted because a fixture
-    // is a thing somebody edits.
-    if (steps(spend.finger).length < 3) {
-      fail(`probe dead: ${steps(spend.finger).length} steps in the breadcrumb — the fixture's path is too shallow to judge`);
-    } else if (!steps(spend.mouse).some((c) => c.text < spend.mouse.floor)) {
-      fail("probe void: every step's name is already wider than the floor, so neither half of this section is about anything — deepen the fixture's path");
-    } else {
-      for (const c of steps(spend.finger)) {
-        if (c.box + 0.5 < spend.finger.floor) {
-          fail(`with a finger, the step ${JSON.stringify(c.label)} is ${c.box} wide against a ${spend.finger.floor} floor — ${whereIs("data-crumb")}`);
-        }
-      }
-      const slack = steps(spend.mouse).map((c) => Math.round((c.box - c.text) * 10) / 10);
-      const spread = Math.round((Math.max(...slack) - Math.min(...slack)) * 10) / 10;
-      console.log(`crumbs · with a mouse the slack after each step is ${JSON.stringify(slack)}, spread ${spread}`);
-      // 1px of spread is sub-pixel text metrics, not a floor: a floor
-      // shows up here as tens of pixels (40 after `/`, 4 after a long
-      // name) because it is the *difference* from the name's width.
-      if (spread > 1) {
-        fail(
-          `with a mouse the steps are padded unevenly — slack ${JSON.stringify(slack)}, spread ${spread}px. ` +
-            `A step's gap must not depend on the length of its name; that is a touch floor being spent on a ` +
-            `screen with no finger on it (src/components/PathCrumbs.tsx).`,
-        );
-      }
-    }
   }
 
   // ── 3c) one listing, one row ──────────────────────────────────────
@@ -5211,93 +5098,87 @@ try {
     }
   }
 
-  // ── 4g) the directory picker ──────────────────────────────────────
+  // ── 4g) the directory box ─────────────────────────────────────────
   //
-  // **One dialog answers 哪台机器上的哪个目录, and two surfaces open
-  // it** (工作区批②): the workspace pane's 「+」 and the session
-  // wizard's 目录 box. It is the same act at both ends, so it is the
-  // same screen — and the two ends differ only in what they do with the
-  // answer.
+  // **Every 「+」 sheet that asks for a directory is one box that
+  // completes as it is typed in** (2026-09-27:「"+" 弹出的窗口，涉及到目录
+  // 的，都不要推荐任何路径，简单一个输入框，用户可以边写边自动推荐」). The
+  // workspace 「+」 and the session wizard both draw it (`PathField`).
   //
   // Claims:
-  //   i. the 「+」 opens it;
-  //  ii. it lists **directories only** — a picker offering files is
-  //      offering something it cannot answer with;
-  // iii. stepping into one really asks that machine about that path.
-  //      The breadcrumb alone would not prove it: a breadcrumb is drawn
-  //      from what this face believes, and what this face believes is
-  //      exactly what a picker that never asked would also show;
-  //  iv. confirming declares **what was picked**, and the row turns up;
-  //   v. the wizard's way in writes into its 目录 box — the box stays
-  //      the answer, the picker is a second road to it;
+  //   i. the 「+」 opens it, and **nothing is offered before typing** —
+  //      no tree, no places, no suggestions under an empty box;
+  //  ii. typing on a picked machine asks **that** machine about the
+  //      parent of what was typed, and offers **directories only**;
+  // iii. Tab takes the completion into the box;
+  //  iv. confirming declares **what was typed**, and the row turns up;
+  //   v. the wizard's box completes the same way;
   //  vi. and it is usable on a phone.
   const dirPicker = async () => {
     await open("workspaces");
     await press("[data-ws-add]");
     return until(5_000, async () => (await page.locator("[data-dir-picker]").count()) === 1);
   };
-  if (!(await dirPicker())) {
-    fail("probe dead: the workspace 「+」 opened no picker (src/components/DirPicker.tsx)");
-  } else {
-    const rows = await page.$$eval("[data-dir-picker-row]", (els) =>
-      els.map((e) => e.getAttribute("data-dir-picker-row")),
+  const offered = () =>
+    page.$$eval("[data-path-suggestions] [data-omni-item]", (els) =>
+      els.map((e) => e.getAttribute("data-omni-item")),
     );
-    // The fixture's listing is two directories among several files
-    // (`target` joined it for ruling 28 — it is a directory git ignores,
-    // and a picker has no opinion about that: it offers directories).
-    if (JSON.stringify(rows) !== JSON.stringify(["src", "target"])) {
+  if (!(await dirPicker())) {
+    fail("probe dead: the workspace 「+」 opened no sheet (src/components/DirPicker.tsx)");
+  } else {
+    const before = await page.evaluate(() => ({
+      box: document.querySelector("[data-dir-picker-path]")?.value ?? null,
+      offered: document.querySelectorAll("[data-dir-picker] button[data-omni-item], [data-dir-picker] [data-place]").length,
+    }));
+    if (before.box !== "" || before.offered !== 0) {
       fail(
-        `the picker drew ${JSON.stringify(rows)} — only directories belong in a dialog whose whole ` +
-          "question is which directory (src/components/DirPicker.tsx)",
+        `the sheet opened on ${JSON.stringify(before)} — a directory box offers nothing before it is ` +
+          "typed in, the owner's ruling of 2026-09-27 (src/components/DirPicker.tsx)",
       );
     }
-    // A machine that is not the one it opened on, because the picker's
+    // A machine that is not the one it opened on, because the sheet's
     // reason to exist is that the directory may be somewhere else.
     await press('[data-dir-picker-machine="peer"]');
-    await until(3_000, async () => askedLs.some((a) => a.machine === "peer"));
-    if (!askedLs.some((a) => a.machine === "peer" && a.path === "")) {
+    await page.locator("[data-dir-picker-path]").click();
+    await page.locator("[data-dir-picker-path]").fill(`${pin.path}/s`);
+    const listed = await until(5_000, async () => (await offered()).length > 0);
+    const rows = await offered();
+    if (!listed || !askedLs.some((a) => a.machine === "peer" && a.path === pin.path)) {
       fail(
-        `picking a machine did not walk back to its home — asked ${JSON.stringify(askedLs.slice(-3))}, ` +
-          "and a path typed for one disk means nothing on another (src/components/DirPicker.tsx)",
+        `typing ${pin.path}/s asked ${JSON.stringify(askedLs.slice(-3))} — completion must list the ` +
+          "typed parent on the picked machine (src/components/PathField.tsx)",
+      );
+    }
+    // The fixture's listing has two directories among several files;
+    // only `src` starts with 「s」, and `shot.png` / `sheet.docx` are
+    // files a directory box has no use for.
+    if (JSON.stringify(rows) !== JSON.stringify(["src"])) {
+      fail(
+        `the box offered ${JSON.stringify(rows)} for 「s」 — directories only, by prefix ` +
+          "(src/components/PathField.tsx)",
       );
     }
     const into = `${pin.path}/src`;
-    await press('[data-dir-picker-row="src"]');
-    const walked = await until(5_000, async () =>
-      askedLs.some((a) => a.machine === "peer" && a.path === into),
-    );
-    if (!walked) {
-      fail(
-        `stepping into a directory asked for ${JSON.stringify(askedLs.slice(-3))} and never for ` +
-          `${into} — the breadcrumb is drawn from what this face believes, so it moves either way ` +
-          "(src/components/DirPicker.tsx)",
-      );
-    }
-    const crumb = await page.$$eval("[data-dir-picker] [data-crumb]", (els) =>
-      els.map((e) => e.getAttribute("data-crumb")).pop(),
-    );
-    if (crumb !== into) {
-      fail(`…and the breadcrumb stayed at 「${crumb}」 rather than following (src/components/DirPicker.tsx)`);
-    }
+    await page.locator("[data-dir-picker-path]").press("Tab");
     const box = await page.locator("[data-dir-picker-path]").inputValue();
-    if (box !== into) {
-      fail(
-        `the box says 「${box}」 where the walk is ${into} — the box is what gets confirmed, so a ` +
-          "walk it did not follow is a click that picks somewhere else (src/components/DirPicker.tsx)",
-      );
+    if (box !== `${into}/`) {
+      fail(`Tab left 「${box}」 in the box rather than ${into}/ (src/components/PathField.tsx)`);
     }
 
-    await press("[data-dir-picker-take]");
+    // Enter with no completion lit is the sheet's own Enter — the list
+    // now hangs open over the next level (and over the confirm), which
+    // is exactly when a person presses it.
+    await page.locator("[data-dir-picker-path]").press("Enter");
     const declared = await until(5_000, async () => addedWs.length > 0);
     if (!declared) {
       fail("probe dead: 「选这个目录」 declared nothing (src/App.tsx)");
     } else if (addedWs[0].machine !== "peer" || addedWs[0].path !== into) {
       fail(
-        `the 「+」 declared ${JSON.stringify(addedWs[0])} — it must be the pair the picker was ` +
-          "standing on, machine and path (src/App.tsx)",
+        `the 「+」 declared ${JSON.stringify(addedWs[0])} — it must be the machine picked and the ` +
+          "path typed, without the slash a completion leaves (src/App.tsx)",
       );
     }
-    console.log(`dir picker: rows ${JSON.stringify(rows)}, declared ${JSON.stringify(addedWs[0])}`);
+    console.log(`dir box: offered ${JSON.stringify(rows)}, declared ${JSON.stringify(addedWs[0])}`);
     // …and the list is re-read, which is the half a successful call
     // does not prove: the pane bar lives above the list and the list
     // owns every read it makes (`App`'s `wsAdded`).
@@ -5310,38 +5191,60 @@ try {
           "told the list to look again (src/App.tsx, src/views/WorkspacesList.tsx)",
       );
     }
-    if ((await page.locator("[data-dir-picker]").count()) !== 0) {
-      fail("the picker stayed open after it was answered (src/components/DirPicker.tsx)");
+    // Waited for, not read once: a sheet leaves on a fade, and the list
+    // above can be re-read inside it.
+    if (!(await until(3_000, async () => (await page.locator("[data-dir-picker]").count()) === 0))) {
+      fail("the sheet stayed open after it was answered (src/components/DirPicker.tsx)");
     }
   }
 
-  // The wizard's way in. **The box is still the answer** — every probe
-  // in `smoke` types into it — so this asserts the picker writes there
-  // rather than replacing it.
+  // The wizard's box: empty on the 「+」, and completing the same way.
   await press(rail("sessions"));
   await press("[data-side-head] [data-pane-new]");
   const wizard = await until(5_000, async () =>
-    (await page.locator("[data-new-session-pick]").count()) === 1,
+    (await page.locator("[data-new-session-dir]").count()) === 1,
   );
   if (!wizard) {
-    fail("probe dead: the wizard drew no way into the picker (src/views/NewSessionDialog.tsx)");
+    fail("probe dead: the wizard drew no 目录 box (src/views/NewSessionDialog.tsx)");
   } else {
-    await press("[data-new-session-pick]");
-    if (!(await until(5_000, async () => (await page.locator("[data-dir-picker]").count()) === 1))) {
-      fail("the wizard's 「挑…」 opened no picker (src/views/NewSessionDialog.tsx)");
-    } else {
-      await press('[data-dir-picker-row="src"]');
-      await press("[data-dir-picker-take]");
-      const wrote = await until(
-        5_000,
-        async () => (await page.locator("[data-new-session-dir]").inputValue()) !== "~",
+    const was = await page.locator("[data-new-session-dir]").inputValue();
+    if (was !== "" || (await page.locator("[data-new-session-pick], [data-new-session-places]").count()) !== 0) {
+      fail(
+        `the wizard's 目录 opened on 「${was}」 with its old shortcuts ` +
+          `(${await page.locator("[data-new-session-pick], [data-new-session-places]").count()}) — ` +
+          "nothing is offered before typing (src/views/NewSessionDialog.tsx)",
       );
+    }
+    await page.locator("[data-new-session-dir]").click();
+    await page.locator("[data-new-session-dir]").fill(`${pin.path}/T`);
+    // Case-insensitive: 「T」 finds `target`.
+    const hung = await until(5_000, async () => JSON.stringify(await offered()) === '["target"]');
+    if (!hung) {
+      fail(
+        `the wizard's box offered ${JSON.stringify(await offered())} for 「T」 — a case-folded prefix ` +
+          "of the typed parent's directories (src/components/PathField.tsx)",
+      );
+    } else {
+      await page.locator("[data-new-session-dir]").press("ArrowDown");
+      await page.locator("[data-new-session-dir]").press("Enter");
       const said = await page.locator("[data-new-session-dir]").inputValue();
-      console.log(`wizard picked: ${said}`);
-      if (!wrote || !said.endsWith("/src")) {
+      console.log(`wizard completed: ${said}`);
+      if (said !== `${pin.path}/target/`) {
+        fail(`↓ Enter left 「${said}」 in the wizard's box (src/components/PathField.tsx)`);
+      }
+      // The first Escape closes the list and not the sheet.
+      await page.locator("[data-new-session-dir]").fill(`${pin.path}/s`);
+      await until(5_000, async () => (await offered()).length > 0);
+      await page.keyboard.press("Escape");
+      await wait(150);
+      const after = {
+        sheet: await page.locator("[data-new-session-dialog]").count(),
+        list: (await offered()).length,
+      };
+      if (after.sheet !== 1 || after.list !== 0) {
         fail(
-          `the picker answered into 「${said}」 — the 目录 box is where the answer lands and every ` +
-            "other road already writes there (src/views/NewSessionDialog.tsx)",
+          `Escape over an open list left ${JSON.stringify(after)} — it closes the list first and the ` +
+            "sheet second (src/components/ui/dialog.tsx)",
         );
       }
     }
@@ -5349,40 +5252,14 @@ try {
     await page.keyboard.press("Escape");
   }
 
-  // …and on a phone. The dialog's own shell handles the width
-  // (`ui/dialog` is `w-full max-w-[calc(100%-2rem)]`), so what is
-  // measured here is that the body still fits inside it: a picker whose
-  // list or footer hangs out of the sheet is one a finger cannot finish.
-  // **Both faces, and all four edges.** The first spelling measured
-  // 390 only and only left/right; on the desktop face the breadcrumb
-  // (born `flex-1` on an address bar) grew *down*, took the sheet, and
-  // pushed the listing and the path box below its foot — every box was
-  // inside the sheet sideways and the person saw nothing (2026-09-15).
-  // **A long listing, or the sheet never reaches its cap.** With one
-  // subdirectory the dialog is content-sized and every layout looks
-  // right; the desk's home has forty, the sheet hits `max-h-[90vh]`,
-  // and only then does a part that grows steal the room from the
-  // parts that do not. Answered here on top of the shared `ls` route
-  // (later registrations match first) and taken off again below.
-  const many = Array.from({ length: 40 }, (_, i) => ({
-    name: `dir-${String(i).padStart(2, "0")}`,
-    dir: true,
-    size: 0,
-    at_ms: Date.now(),
-  }));
-  const longLs = (r) => {
-    const body = r.request().postDataJSON() ?? {};
-    return r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ path: body.path || "/home/peer", entries: many, truncated: false }),
-    });
-  };
-  await page.route("**/ls", longLs);
+  // …and on a phone. What is measured is that the sheet's body fits
+  // inside it on both faces: a sheet whose box or confirm hangs out of
+  // it is one a finger cannot finish.
   for (const [width, height] of [[1400, 900], [390, 844]]) {
     await page.setViewportSize({ width, height });
     await wait(200);
     if (!(await dirPicker())) {
-      fail(`probe dead: the 「+」 opened no picker at ${width} (src/components/DirPicker.tsx)`);
+      fail(`probe dead: the 「+」 opened no sheet at ${width} (src/components/DirPicker.tsx)`);
       continue;
     }
     const fit = await page.evaluate(() => {
@@ -5397,28 +5274,26 @@ try {
         sheet: { w: px(box.width), h: px(box.height) },
         over: px(Math.max(0, box.right - window.innerWidth) + Math.max(0, -box.left)),
         takeIn: inside(rect("[data-dir-picker-take]")),
-        rowIn: inside(rect("[data-dir-picker-row]")),
         pathIn: inside(rect("[data-dir-picker-path]")),
         tall: px(Math.max(0, box.bottom - window.innerHeight)),
       };
     });
-    console.log(`dir picker at ${width}: ${JSON.stringify(fit)}`);
+    console.log(`dir box at ${width}: ${JSON.stringify(fit)}`);
     if (fit.over > 0 || fit.tall > 0) {
       fail(
-        `the picker hangs ${fit.over} past the side and ${fit.tall} past the foot at ${width} — a sheet ` +
+        `the sheet hangs ${fit.over} past the side and ${fit.tall} past the foot at ${width} — a sheet ` +
           "that does not fit the screen is one a finger cannot finish (src/components/DirPicker.tsx)",
       );
     }
-    if (!fit.takeIn || !fit.rowIn || !fit.pathIn) {
+    if (!fit.takeIn || !fit.pathIn) {
       fail(
-        `at ${width} the picker's ${!fit.rowIn ? "listing" : !fit.pathIn ? "path box" : "confirm"} sits outside its own sheet ` +
+        `at ${width} the sheet's ${!fit.pathIn ? "path box" : "confirm"} sits outside its own sheet ` +
           "(src/components/DirPicker.tsx)",
       );
     }
     await page.keyboard.press("Escape");
     await wait(150);
   }
-  await page.unroute("**/ls", longLs);
   await page.setViewportSize({ width: 1400, height: 900 });
   await wait(200);
 

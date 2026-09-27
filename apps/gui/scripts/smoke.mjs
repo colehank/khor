@@ -5766,74 +5766,41 @@ for line in sys.stdin:
   );
 
 
-  // 25b-2) 常去的地方 (工作区批, 2026-09-01): the wizard's first
-  //        question, answered before it is asked. The list is
-  //        **derived** from the vendors' own records — nobody creates
-  //        or names a place — so this plants records and reads the
-  //        dialog, which is the only way to tell a derivation from a
-  //        list somebody typed.
-  //
-  //        Three claims, and the middle one is the design:
-  //
-  //         1. a recorded working directory shows up as a place;
-  //         2. **two depths of one checkout are ONE place**, with the
-  //            counts summed — the reason the key is the project root
-  //            and not the cwd (measured on the author's machine: the
-  //            same tree was open at two depths at once);
-  //         3. a place whose directory is gone is not offered, because
-  //            starting a session there cannot work.
-  //
-  //        Claim 3 is also the control arm for claims 1 and 2: without
-  //        it, a section that simply printed every recorded cwd would
-  //        pass them both.
+  // 25b-2) the wizard's 目录 box completes as it is typed in
+  //        (2026-09-27:「涉及到目录的，都不要推荐任何路径，简单一个输入框，
+  //        用户可以边写边自动推荐」). It opens empty with nothing under it;
+  //        typing the scratch path lists that directory on this machine
+  //        through the real `ls`, and Tab takes the completion.
   const placeRepo = join(SCRATCH, "place-repo");
-  mkdirSync(join(placeRepo, ".git"), { recursive: true });
   mkdirSync(join(placeRepo, "apps/deep"), { recursive: true });
-  const placeGone = join(SCRATCH, "place-that-was-deleted");
-  const plantPlace = (slug, uuid, cwd) => {
-    const dir = join(B, ".claude", "projects", slug);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, `${uuid}.jsonl`),
-      JSON.stringify({ type: "user", cwd, message: { role: "user", content: "x" } }) + "\n",
-    );
-  };
-  plantPlace("pl-root", "aaaaaaa1-0000-4000-8000-000000000001", placeRepo);
-  plantPlace("pl-deep", "aaaaaaa1-0000-4000-8000-000000000002", join(placeRepo, "apps/deep"));
-  plantPlace("pl-gone", "aaaaaaa1-0000-4000-8000-000000000003", placeGone);
-
   await openLanding("sessions");
   await page.locator("[data-side-head] [data-pane-new]").click();
-  await until("常去的地方 offering the planted checkout", 20_000, async () =>
-    (await page.locator(`[data-place="${placeRepo}"]`).count()) === 1,
+  await until("the wizard's 目录 box", 10_000, async () =>
+    (await page.locator("[data-new-session-dir]").count()) === 1,
   );
-  const placesSaid = await page.evaluate(() => ({
-    rows: [...document.querySelectorAll("[data-place]")].map((e) => ({
-      path: e.getAttribute("data-place"),
-      text: e.innerText.replace(/\s*\n\s*/g, " | "),
-    })),
-  }));
-  const deep = placesSaid.rows.filter((r) => r.path.startsWith(placeRepo));
-  if (deep.length !== 1) {
-    throw new Error(
-      `two depths of one checkout must be one place, got ${JSON.stringify(deep)}`,
-    );
+  if ((await page.locator("[data-new-session-dir]").inputValue()) !== "") {
+    throw new Error("the wizard's 目录 box must open empty — nothing is offered before typing");
   }
-  if (!deep[0].text.includes("2 ")) {
-    throw new Error(`both depths must be counted into it: ${deep[0].text}`);
+  if ((await page.locator("[data-path-suggestions]").count()) !== 0) {
+    throw new Error("the wizard offered directories before anything was typed");
   }
-  if (placesSaid.rows.some((r) => r.path === placeGone)) {
-    throw new Error("a place whose directory is gone must not be offered to start in");
-  }
-  // Picking one is the whole point: it fills the box the create button
-  // reads, absolute, so nothing downstream has to expand a `~`.
-  await page.locator(`[data-place="${placeRepo}"]`).click();
+  await page.locator("[data-new-session-dir]").click();
+  await page.locator("[data-new-session-dir]").fill(join(SCRATCH, "place-r"));
+  await until("the scratch checkout offered as a completion", 20_000, async () =>
+    (await page.locator('[data-path-suggestions] [data-omni-item="place-repo"]').count()) === 1,
+  );
+  await page.locator("[data-new-session-dir]").press("Tab");
   const picked = await page.locator("[data-new-session-dir]").inputValue();
-  if (picked !== placeRepo) {
-    throw new Error(`picking a place must fill 目录 with it: ${picked}`);
+  if (picked !== `${placeRepo}/`) {
+    throw new Error(`Tab must take the completion into 目录: ${picked}`);
   }
+  //        …and the next level is offered from there.
+  await until("the completed directory's own subdirectory offered", 20_000, async () =>
+    (await page.locator('[data-path-suggestions] [data-omni-item="apps"]').count()) === 1,
+  );
   await page.keyboard.press("Escape");
-  await until("the places dialog closed", 10_000, async () =>
+  await page.keyboard.press("Escape");
+  await until("the wizard closed", 10_000, async () =>
     (await page.locator("[data-new-session-dialog]").count()) === 0,
   );
 
@@ -5904,10 +5871,10 @@ for line in sys.stdin:
   //        to from beta's face. Four claims on one road:
   //        1. the machine row offers every paired machine, this one
   //           marked by default;
-  //        2. picking alpha lists *alpha's* places — planted on alpha,
-  //           and beta's own place must not be on that list (the
-  //           control arm: a wizard that kept reading this machine's
-  //           records would pass claim 2 with the wrong list);
+  //        2. picking alpha empties the 目录 box, and typing in it
+  //           completes from **alpha's** listing (`ls` routed there —
+  //           the scratch disk is shared, so what this proves is that
+  //           the far road answers, not whose disk it is);
   //        3. 建立 answers a row alpha owns (alpha's own `sessions`
   //           lists it) — the four answers crossed as a name and were
   //           resolved over there (`Request::OpenAgent`);
@@ -5919,16 +5886,6 @@ for line in sys.stdin:
   //           what an unreachable one looks like too.
   const farDir = join(SCRATCH, "far-cwd");
   mkdirSync(farDir, { recursive: true });
-  const farPlace = join(SCRATCH, "far-place-repo");
-  mkdirSync(join(farPlace, ".git"), { recursive: true });
-  {
-    const dir = join(A, ".claude", "projects", "far-pl");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "bbbbbbb1-0000-4000-8000-000000000001.jsonl"),
-      JSON.stringify({ type: "user", cwd: farPlace, message: { role: "user", content: "x" } }) + "\n",
-    );
-  }
   await openLanding("sessions");
   await page.locator("[data-side-head] [data-pane-new]").click();
   await until("the machine row offering alpha", 10_000, async () =>
@@ -5937,13 +5894,16 @@ for line in sys.stdin:
   if ((await page.locator('[data-new-session-machine="beta"]').getAttribute("data-on")) !== "true") {
     throw new Error("this machine must be the wizard's default");
   }
+  await page.locator("[data-new-session-dir]").fill(join(SCRATCH, "place-repo"));
   await page.locator('[data-new-session-machine="alpha"]').click();
-  await until("alpha's own places listed for alpha", 20_000, async () =>
-    (await page.locator(`[data-place="${farPlace}"]`).count()) === 1,
-  );
-  if ((await page.locator(`[data-place="${placeRepo}"]`).count()) !== 0) {
-    throw new Error("beta's own place listed under alpha — the wizard is still reading this machine's records");
+  if ((await page.locator("[data-new-session-dir]").inputValue()) !== "") {
+    throw new Error("a path typed for beta's disk survived picking alpha");
   }
+  await page.locator("[data-new-session-dir]").click();
+  await page.locator("[data-new-session-dir]").fill(join(SCRATCH, "far-c"));
+  await until("alpha completing the far directory", 30_000, async () =>
+    (await page.locator('[data-path-suggestions] [data-omni-item="far-cwd"]').count()) === 1,
+  );
   await page.locator("[data-new-session-dir]").fill(farDir);
   await page.locator("[data-new-session-name]").fill("far-one");
   await page.locator("[data-new-session-create]").click();
@@ -7401,27 +7361,27 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   await until("the directory picker", 10_000, async () =>
     (await page.locator("[data-dir-picker]").count()) === 1,
   );
-  // **This machine first, then alpha.** `""` is what the picker sends
+  // **This machine first, then alpha.** `""` is what the sheet sends
   // for 本机, and `ls_with` refused it as 「这个机器名进不了路径」 until
   // 2026-09-15 — the row on the desk drew nothing while the far ones
-  // worked, which no fixture could see.
+  // worked, which no fixture could see. The box completes from `ls`
+  // (2026-09-27), so a completion is that listing answering.
   await page.locator('[data-dir-picker-machine="beta"]').click();
-  await until("the picker listing this machine's own home", 20_000, async () =>
-    (await page.locator("[data-dir-picker-row]").count()) > 0 &&
-    (await page.locator("[data-dir-picker-cannot]").count()) === 0,
+  await page.locator("[data-dir-picker-path]").click();
+  await page.locator("[data-dir-picker-path]").fill(join(wsDir, "s"));
+  await until("this machine completing its own directory", 20_000, async () =>
+    (await page.locator('[data-path-suggestions] [data-omni-item="sub"]').count()) === 1,
   );
   await page.locator('[data-dir-picker-machine="alpha"]').click();
-  //      Typed rather than walked from the home the picker opens on:
-  //      that home is this developer's own, and the path below is under
-  //      the scratch directory. The box is the road for exactly this
-  //      (`components/DirPicker` — the tree is the shortcut, the box is
-  //      the floor), and Enter walks it, so what comes back is alpha's
-  //      listing of that directory and not this face's idea of one.
-  await page.locator("[data-dir-picker-path]").fill(wsDir);
-  await page.locator("[data-dir-picker-path]").press("Enter");
+  //      Typed: the scratch directory is not under anybody's home, and
+  //      the box is the only road there is. What completes is alpha's
+  //      listing of that directory, not this face's idea of one.
+  await page.locator("[data-dir-picker-path]").click();
+  await page.locator("[data-dir-picker-path]").fill(join(wsDir, "s"));
   await until("alpha listing the directory it was asked about", 20_000, async () =>
-    (await page.locator('[data-dir-picker-row="sub"]').count()) === 1,
+    (await page.locator('[data-path-suggestions] [data-omni-item="sub"]').count()) === 1,
   );
+  await page.locator("[data-dir-picker-path]").fill(wsDir);
   await page.locator("[data-dir-picker-take]").click();
   await until("the picker answered and closed", 20_000, async () =>
     (await page.locator("[data-dir-picker]").count()) === 0,

@@ -2070,7 +2070,7 @@ find-nothing = "什么都没找到"
 sessions-tab = "会话"
 new-session = "新会话"
 # Which machine the session is born on — this one first, then every
-# paired machine. The directory, the places and the agent all become
+# paired machine. The directory, its completions and the agent all become
 # that machine's the moment one is picked.
 new-session-machine = "在哪台"
 # The strip of open sessions over the pane (aria name): the sessions
@@ -2391,20 +2391,11 @@ machine-here = "本机"
 card-version = "Khor {0}"
 card-age = "{0}前"
 new-session-dir = "目录"
-# **The wizard's first question, answered before it is asked.** A
-# person walks into a directory and then starts something there — so
-# the places they already work in sit under the 目录 box, newest first,
-# and picking one is a click instead of a typed path.
-#
-# Derived, never declared (`khor_node::place`): nobody creates or names
-# a place, so there is nothing here that can go stale.
-new-session-places = "常去的地方"
-# The count beside a place: every khor session that ran there —
-# conversations from the vendors' records, terminals from khor's own
-# registry. It was 「段对话」 while only the first half was counted;
-# 会话 is the word now that a shell counts too, and it is the word the
-# list calls each of these rows.
-new-session-places-count = "{0} 个会话"
+# The placeholder in every directory box a 「+」 opens (`PathField`).
+# **Says what to type**, because the box is all there is: 2026-09-27
+# 「涉及到目录的，都不要推荐任何路径，简单一个输入框，用户可以边写边自动
+# 推荐」 — no places listed under it, completions only once typing starts.
+dir-path-hint = "目录路径"
 new-session-name = "名字"
 new-session-agent = "智能体"
 # The wizard's second step (2026-09-06:「点击后就是选机器、选类型(这就包括留言、
@@ -2568,31 +2559,13 @@ tab-remove-confirm = "这个标签页会关掉"
 # the file (2026-09-16), and the places inside a file are drawn now
 # rather than counted.
 ws-marked = "{0} 个文件改过"
-# 跨机器目录选择器 (工作区批②), shared by the workspace 「+」 and the new
-# session wizard. **One dialog and one set of words**, because it
-# answers one question in both places — 哪台机器上的哪个目录 — and two
-# spellings of it would be two screens people have to learn.
+# 跨机器目录 (工作区批②), the workspace 「+」's sheet: which machine, and
+# one path box that completes as it is typed in (2026-09-27).
 dir-picker = "挑一个目录"
 # The confirm. **Says 这个 rather than 好 or 确定**, because what is
-# being confirmed is the directory now in the box, and the box can hold
-# something the tree above it never listed: a person who typed a path
-# must be able to read the button as being about what they typed.
+# being confirmed is the directory now in the box: a person who typed a
+# path must be able to read the button as being about what they typed.
 dir-picker-take = "选这个目录"
-# The wizard's way in, beside the 目录 box. Short, because it sits on a
-# line with a text field and the field is the thing with the room.
-# **The box stays** — this is a second road to the same field, not a
-# replacement (`views/NewSessionDialog`).
-dir-picker-open = "挑…"
-# A directory with nothing under it the picker can step into. **Not
-# `empty-dir`**, which means 「there is nothing in here at all」: this
-# one is said over a directory that may be full of files, and only
-# directories are steppable here.
-dir-picker-none = "这里面没有下一层目录"
-# Over the path box at the foot. The tree is the shortcut; this is the
-# floor under it — any directory has to be reachable, including one
-# nobody can click to (a machine whose home is not above it, a path
-# somebody pasted from elsewhere).
-dir-picker-typed = "或者直接写路径"
 # A file whose bytes are not text. **Says what it is, not what went
 # wrong** — nothing went wrong, and 「打不开」 would read as a failure
 # of khor rather than as a fact about the file.

@@ -23,13 +23,6 @@ fn day_strips(
     khor_gui_core::day_strips(&Node::root_from_env(), cells)
 }
 
-/// 常去的地方 for the wizard's first question
-/// (`khor_gui_core::places`).
-#[tauri::command]
-async fn places(machine: Option<String>) -> Result<Vec<khor_gui_core::PlaceRow>, String> {
-    khor_gui_core::places(&Node::root_from_env(), machine.as_deref().unwrap_or("")).await
-}
-
 /// The workspace landing's whole list, off this machine's own table
 /// (`khor_gui_core::workspaces::workspaces`) — no machine is asked.
 #[tauri::command]
@@ -2732,7 +2725,6 @@ pub fn run() {
             sessions,
             widen,
             day_strips,
-            places,
             workspaces,
             ws_add,
             ws_rm,

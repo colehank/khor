@@ -690,30 +690,6 @@ pub fn find(root: &Path, word: &str) -> Result<Vec<FindHit>, String> {
         .collect())
 }
 
-/// One directory the person works in, for the wizard's first question
-/// (`khor_node::place`).
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct PlaceRow {
-    /// Absolute, and what gets sent back when it is picked.
-    pub path: String,
-    /// The same path as a person reads it, home written `~`. Shortened
-    /// here rather than in the face: it depends on whose home this is,
-    /// which is a fact about the machine and not about the screen.
-    pub shown: String,
-    /// How many recorded conversations place themselves here. Shown as
-    /// a count and never as a total — `Node::places` says what it does
-    /// and does not see.
-    pub sessions: u32,
-    #[ts(type = "number")]
-    pub last_ms: i64,
-}
-
-/// How many places the wizard is offered. **A shortlist, not a
-/// history**: it exists to save typing a path that is one click away,
-/// and a person whose place is not in it types it in the box that is
-/// still right there.
-const PLACES_SHOWN: usize = 8;
-
 /// One ring on the 额度 page: an account's reading, whose it is and how
 /// old it is, with the strain decided by the node (`accounts::strain_of`)
 /// so the face only paints.
@@ -853,26 +829,6 @@ pub fn update_account(
     unit: Option<&str>,
 ) -> Result<(), String> {
     open(root)?.update_account(id, name, base_url, key, budget, unit)
-}
-
-/// 常去的地方, newest first, **on the machine the wizard names**
-/// (`khor_node::Node::places_on`; empty means this one). `shown` comes
-/// from the answering machine — whose home a path is under is its
-/// fact, not this screen's. An older khor over there answers with no
-/// list, and the wizard says nothing where it has nothing.
-pub async fn places(root: &Path, machine: &str) -> Result<Vec<PlaceRow>, String> {
-    let n = open(root)?;
-    Ok(n.places_on(machine)
-        .await?
-        .into_iter()
-        .take(PLACES_SHOWN)
-        .map(|(path, shown, sessions, last_ms)| PlaceRow {
-            path,
-            shown,
-            sessions,
-            last_ms,
-        })
-        .collect())
 }
 
 /// What a machine is busy with — its process top and CPU day

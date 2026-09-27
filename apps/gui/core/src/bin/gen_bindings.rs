@@ -55,9 +55,6 @@ fn main() {
     // Not reachable through any row above: the wizard asks for the
     // agent list on its own, so nothing embeds it.
     khor_gui_core::AgentRow::export_all_to(&dir).expect("export AgentRow");
-    // The wizard's first question, asked on its own beat; no row embeds
-    // it.
-    khor_gui_core::PlaceRow::export_all_to(&dir).expect("export PlaceRow");
     // The workspace landing asks per machine on its own beat; no row
     // embeds it either.
     khor_gui_core::workspaces::WorkspaceRow::export_all_to(&dir).expect("export WorkspaceRow");

@@ -10,7 +10,6 @@ import { msg } from "./gen/catalog";
 // different menus for one idea, which is the failure `OmniChip`'s
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
-import type { PlaceRow } from "./gen/bindings/PlaceRow";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -70,7 +69,6 @@ import type { WatchedDir } from "./gen/bindings/WatchedDir";
 
 export type {
   AccountRing,
-  PlaceRow,
   TabRow,
   TabsOpen,
   WorkspaceRow,
@@ -240,12 +238,6 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   );
 }
 
-/** 常去的地方 — the directories a machine's own records say work
-    happened in, folded to project roots and newest first
-    (`khor_node::place`). `machine` empty is this one; a name asks that
-    machine, because it is where the wizard is about to start something
-    (`Node::places_on`). */
-export const fetchPlaces = (machine = "") => call<PlaceRow[]>("places", { machine });
 /** Every workspace, pinned first then by path
     (`khor_gui_core::workspaces`).
 
