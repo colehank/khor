@@ -185,7 +185,7 @@ function ColorWell({
       aria-label={avatar.axis_palette_slot(index + 1)}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
-      className="size-touch cursor-pointer rounded-md border bg-transparent p-0"
+      className="size-[var(--touch)] cursor-pointer rounded-md border bg-transparent p-0"
     />
   );
 }

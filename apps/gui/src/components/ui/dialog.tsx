@@ -114,8 +114,10 @@ function DialogContent({
             drops by the same amount the box gained on each side, so the
             cross does not move a pixel from where it has always sat.
             (`top-4 right-4` around a 16 box put the mark's centre 24 in
-            from both edges; `top-0.5 right-0.5` around a `--touch` box
-            puts it in the same place.)
+            from both edges; the inset is `24 − box/2` so the mark stays
+            there whatever the box is — `--hit` is 28 under a mouse and
+            44 under a finger since 2026-09-26, and a fixed inset moved
+            the cross 8 into the corner when the box shrank.)
 
             The feedback is on the glyph rather than a plate behind it,
             and that is not the trap tokens.css warns about: hovering
@@ -131,7 +133,7 @@ function DialogContent({
         <DialogPrimitive.Close
           data-slot="dialog-close"
           aria-label={gui.close}
-          className="absolute top-0.5 right-0.5 grid size-touch place-items-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0"
+          className="absolute top-[calc(24px-var(--hit)/2)] right-[calc(24px-var(--hit)/2)] grid size-touch place-items-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0"
         >
           <IconClose />
         </DialogPrimitive.Close>

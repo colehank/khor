@@ -2057,13 +2057,20 @@ async fn open_code_window(
     // drawn before it had been. Setting the appearance outright is the
     // deterministic form of what merely reading it happened to do.
     //
-    // **Per window, not through tauri's `theme`.** On macOS that call
-    // sets NSApp's appearance for every window, and an app with an
-    // appearance of its own stops following the desktop — khor's whole
-    // face would have frozen in the scheme it had at that moment.
+    // **NSApp's appearance, on the main thread** (2026-09-27). Since
+    // `set_window_theme` wears the choice on NSApp, that is what this
+    // window copies; `auto` leaves NSApp clear, so it copies the desktop.
+    // This is an async command — off the main thread — and AppKit only
+    // honours `setAppearance:` there (the same fault that left the main
+    // window's sidebar light under a dark page, ebacbe2).
     #[cfg(target_os = "macos")]
-    if let Ok(win) = made.ns_window() {
-        wear_the_apps_appearance(win);
+    {
+        let for_main = made.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(win) = for_main.ns_window() {
+                wear_the_apps_appearance(win);
+            }
+        });
     }
     // **The switch goes dark when the window does** (「窗口关掉 = 图标
     // 灭」). Nothing else can tell the face: the window is not the
@@ -2453,13 +2460,16 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
         // AppKit only on the main thread (ebacbe2).
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
-            handle.set_theme(wanted);
+            wear_on_the_app(wanted);
             for (label, w) in handle.webview_windows() {
-                if label != "main" && !label.starts_with("code:") {
-                    continue;
-                }
-                if let Ok(win) = w.ns_window() {
+                let Ok(win) = w.ns_window() else { continue };
+                if label == "main" {
                     follow_the_app(win);
+                } else if label.starts_with("code:") {
+                    // An editor window is given NSApp's appearance
+                    // outright: one left to resolve it lazily came up
+                    // with a light title bar over a dark page (2026-09-18).
+                    wear_the_apps_appearance(win);
                 }
             }
         });
@@ -2483,6 +2493,31 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, theme);
+}
+
+/// Sets NSApp's appearance **now** — `None` clears it, so the app follows
+/// the desktop. Not tauri's `AppHandle::set_theme`: that posts to the
+/// event loop, and the editor windows read NSApp's appearance right
+/// after this and would copy the old one. Main thread only.
+#[cfg(target_os = "macos")]
+fn wear_on_the_app(theme: Option<tauri::Theme>) {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    unsafe {
+        let nsapp: *mut AnyObject = msg_send![class!(NSApplication), sharedApplication];
+        let appearance: *mut AnyObject = match theme {
+            Some(t) => {
+                let name = match t {
+                    tauri::Theme::Dark => c"NSAppearanceNameDarkAqua",
+                    _ => c"NSAppearanceNameAqua",
+                };
+                let ns: *mut AnyObject = msg_send![class!(NSString), stringWithUTF8String: name.as_ptr()];
+                msg_send![class!(NSAppearance), appearanceNamed: ns]
+            }
+            None => std::ptr::null_mut(),
+        };
+        let _: () = msg_send![nsapp, setAppearance: appearance];
+    }
 }
 
 /// Clears one NSWindow's own appearance, so it wears NSApp's.
