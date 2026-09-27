@@ -16,7 +16,7 @@ import { Fragment, type CSSProperties } from "react";
 
 import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Omnibox, type OmniAxis } from "@/components/Omnibox";
-import { FIND_ALL, SideSeat } from "@/components/SideHead";
+import { SideSeat } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -181,27 +181,13 @@ export function PaneBar({
           always had. Not a second control and not a second box — the
           alternative is what this file's head warns about, two search
           fields that look alike and behave differently. */}
-      {/* **Too narrow for a box, the box is a magnifier** (docs/SHELL.md
-          第十五轮 第 4 条:「放不下时缩到只剩放大镜（按钮形态，仍能点开搜
-          索）」). The block's width has one owner now, so a list dragged
-          narrow is a first row that narrow too — and the box gives way
-          rather than holding the block open. Pressed, it opens the one
-          search at its wide range, which is the search a column this
-          narrow has room for (`SideHead`). Only in the block's row: a
-          bar in a column of its own has that column's width to spend. */}
-      {seat === "side" && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={gui.find_everything}
-          data-search-magnifier
-          onClick={() => window.dispatchEvent(new Event(FIND_ALL))}
-          className="hidden min-h-touch min-w-touch flex-none @max-3xs/bar:flex"
-        >
-          <IconSearch />
-        </Button>
-      )}
-      <div className={cn("flex min-w-0 flex-1 items-center", seat === "side" && "@max-3xs/bar:hidden")}>
+      {/* **Always a box, never a button** (2026-09-27, the owner: 「搜索
+          应该是个筐而非按钮」). It used to turn into a magnifier button
+          when the list was dragged narrower than 256 (第十五轮 第 4 条);
+          now the box itself gives way — it has no minimum width, so the
+          block's width still has one owner — and what goes first is the
+          ⌘K hint inside it, then the placeholder's words. */}
+      <div className="flex min-w-0 flex-1 items-center">
       {axes && axes.length > 0 && filter ? (
         <Omnibox
           label={searchLabel}
@@ -233,7 +219,7 @@ export function PaneBar({
             // (`button.tsx` wrote that trap down first).
             className={cn(
               "min-h-touch rounded-sm border-0 bg-fill pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body",
-              seat === "side" && "pr-10",
+              seat === "side" && "pr-10 @max-3xs/bar:pr-2",
             )}
           />
           {/* Which range the box is on (第十三轮 第 4 条): typing narrows
@@ -241,7 +227,7 @@ export function PaneBar({
           {seat === "side" && (
             <kbd
               data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border px-xxs text-caption text-tertiary"
+              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border px-xxs text-caption text-tertiary @max-3xs/bar:hidden"
             >
               ⌘K
             </kbd>
