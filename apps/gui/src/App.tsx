@@ -27,13 +27,18 @@ import {
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import {
+  IconAppearance,
   IconBrowser,
   IconClose,
   IconDevices,
   IconFiles,
+  IconGear,
   IconMore,
+  IconNetwork,
+  IconPulse,
   IconQuota,
   IconSessions,
+  IconShield,
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
@@ -386,6 +391,16 @@ function RailItem({
     </Tooltip>
   );
 }
+
+/** The glyph beside each 「…」 page in its list (`identity` wears this
+    machine's face instead, drawn where the list is). */
+const MORE_GLYPH: Record<Exclude<MorePage, "identity">, (p: { className?: string }) => ReactNode> = {
+  settings: IconGear,
+  appearance: IconAppearance,
+  network: IconNetwork,
+  security: IconShield,
+  doctor: IconPulse,
+};
 
 export default function App() {
   const narrow = useNarrow();
@@ -2084,6 +2099,22 @@ export default function App() {
             morePage === p && !narrow ? "bg-fill-strong font-title" : "hover:bg-fill",
           )}
         >
+          {/* The page's glyph (2026-09-27): the four drawn for these
+              doors, 外观's light-and-dark, and 这台机器's own face — the
+              same face the rail's foot wears for it. 20 wide, the size
+              the narrow list gives a landing's glyph. */}
+          <span data-more-glyph={p} className="flex size-5 flex-none items-center justify-center text-rail-ink">
+            {p === "identity" ? (
+              // A face is a full disc and a glyph is not: at 16 it reads
+              // the same size as the drawn marks beside it.
+              <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-4" />
+            ) : (
+              (() => {
+                const Glyph = MORE_GLYPH[p];
+                return <Glyph className="size-full" />;
+              })()
+            )}
+          </span>
           {moreName(p)}
         </button>
       ))}

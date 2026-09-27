@@ -244,6 +244,20 @@ export function IconGear({ className }: IconProps) {
   );
 }
 
+/** 外观 = light and dark: a ring, and the half of it that is dark as the
+    family's one solid piece (2026-09-27, for the 「…」 list — the one
+    page there that had no glyph). The half disc sits inside the ring
+    with the family's 0.8 gap on its round side (r 7.7 − 0.7 − 0.8 =
+    6.2), so the two read as a frame and a fill rather than one blot. */
+export function IconAppearance({ className }: IconProps) {
+  return (
+    <RailGlyph className={className}>
+      <circle cx="12" cy="12" r="7.7" />
+      <path data-body d="M12 5.8a6.2 6.2 0 0 1 0 12.4Z" />
+    </RailGlyph>
+  );
+}
+
 /** 安全 = a shield. The plate a lock hangs on everywhere else, and the
     one mark of the three that says「kept out」 rather than「looked at」. */
 export function IconShield({ className }: IconProps) {
