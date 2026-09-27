@@ -873,7 +873,7 @@ export const fetchAbout = () => call<About>("about");
  * only `matchMedia` can answer, and a second resolver on the Rust side
  * would be two answers that disagree whenever one is late.
  */
-export const setWindowTheme = (theme: "light" | "dark") =>
+export const setWindowTheme = (theme: "light" | "dark" | "auto") =>
   inApp ? call<null>("set_window_theme", { theme }) : Promise.resolve(null);
 /** 诊断 (docs/MORE.md): twelve checks, each with a three-second budget
     of its own, so the whole call is bounded at that — a relay that

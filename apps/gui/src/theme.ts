@@ -90,7 +90,11 @@ export function wearTheme(next: ThemePref | null): void {
   // before any HTML exists and its title bar is AppKit's, so neither
   // follows an attribute on a document. Nothing outside the app has a
   // window of its own (`api.ts` `setWindowTheme` is a no-op there).
-  if (inApp) void setWindowTheme(dark ? "dark" : "light").catch(() => {});
+  //
+  // **The choice, not the resolved theme** (2026-09-27): the app wears
+  // `dark` / `light` on NSApp and clears it for `auto`, so AppKit follows
+  // the desktop by itself — see `set_window_theme`.
+  if (inApp) void setWindowTheme(pref).catch(() => {});
 }
 
 /**

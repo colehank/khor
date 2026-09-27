@@ -2431,40 +2431,59 @@ fn about() -> khor_gui_core::About {
 /// that kept the desktop's appearance while the page went light is the
 /// half-and-half screen this whole key exists to avoid.
 ///
-/// **Takes the resolved theme, never the choice**: `auto` is a question
-/// only `matchMedia` can answer, and answering it a second time here
-/// would be two resolvers that disagree the moment one of them is late.
+/// **Takes the choice, and wears it on the app, not on one window**
+/// (2026-09-27). `dark` / `light` set NSApp's appearance; `auto` clears
+/// it, so the whole app — every window, and the sidebar material under
+/// the left block — follows the desktop by itself, and the page's
+/// `prefers-color-scheme` follows with it.
+///
+/// It used to set the resolved theme on each window. The owner twice
+/// found the left block light under a dark page: a window's own
+/// appearance was being reset to nil behind khor's back (measured — it
+/// read `nil` when the window next came to the front), and a nil window
+/// follows NSApp, which nothing had set. Set on NSApp there is nothing to
+/// fall back to but the choice. The windows' own appearance is cleared
+/// so none of them can hold on to an older one. And `auto` resolved into
+/// a fixed window theme had a second fault: the desktop turning dark at
+/// sunset no longer reached a window that had been told 「light」.
 #[tauri::command]
 fn set_window_theme(app: tauri::AppHandle, theme: String) {
     #[cfg(target_os = "macos")]
     {
         use tauri::Manager;
-        let wanted = if theme == "dark" {
-            tauri::Theme::Dark
-        } else {
-            tauri::Theme::Light
+        let wanted = match theme.as_str() {
+            "dark" => Some(tauri::Theme::Dark),
+            "light" => Some(tauri::Theme::Light),
+            _ => None,
         };
-        // **On the main thread, always** (2026-09-27: switching 浅色 →
-        // 深色 left the whole left block white). `setAppearance:` is
-        // AppKit, and AppKit only honours it on the main thread; from a
-        // command's thread the window's own property changed but the
-        // sidebar material under the page (`build_the_window`'s
-        // `Effect::Sidebar`) never redrew, so the block kept the light
-        // material under the dark page's white ink.
+        // AppKit only on the main thread (ebacbe2).
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
+            handle.set_theme(wanted);
             for (label, w) in handle.webview_windows() {
                 if label != "main" && !label.starts_with("code:") {
                     continue;
                 }
                 if let Ok(win) = w.ns_window() {
-                    wear_appearance(win, wanted);
+                    follow_the_app(win);
                 }
             }
         });
     }
     #[cfg(not(target_os = "macos"))]
     let _ = (app, theme);
+}
+
+/// Clears one NSWindow's own appearance, so it wears NSApp's.
+#[cfg(target_os = "macos")]
+fn follow_the_app(win: *mut std::ffi::c_void) {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    unsafe {
+        let w = win as *mut AnyObject;
+        let none: *mut AnyObject = std::ptr::null_mut();
+        let _: () = msg_send![w, setAppearance: none];
+    }
 }
 
 #[tauri::command]
