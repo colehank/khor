@@ -14,7 +14,7 @@
 // keeping a copy of it.
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchConfig, type ConfigRow } from "@/api";
+import { fetchConfig, hear, type ConfigRow } from "@/api";
 
 /** ⚠️ **Not `useSettings`** — that one is `src/settings.ts`, which reads
     the answer out of the context this hook fills. Two functions with one
@@ -49,6 +49,26 @@ export function useStoredSettings(): Settings {
   }, [asked]);
 
   const reread = useCallback(() => setAsked((n) => n + 1), []);
+
+  // **Coming back to the window re-reads the store** (2026-09-27). The
+  // store has other writers — `khor config set`, the web face, another
+  // window — and a setting changed there used to reach this face only
+  // after a restart. Focus is when somebody looks again, so it is when
+  // what is on screen should catch up. The native gate
+  // (`scripts/check-native.mjs`) switches theme this way, without
+  // pressing anything in the window.
+  //
+  // Two roads to one fact: the page's `focus` (a browser face), and the
+  // app's `window:focused` — WKWebView does not hand the page a `focus`
+  // when the app comes back to the front, so the window says it.
+  useEffect(() => {
+    window.addEventListener("focus", reread);
+    const drop = hear<null>("window:focused", reread);
+    return () => {
+      window.removeEventListener("focus", reread);
+      drop();
+    };
+  }, [reread]);
 
   return { rows, reread };
 }

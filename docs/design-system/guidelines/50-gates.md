@@ -50,6 +50,7 @@
 | `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run fast` | `check-fast.mjs`,「快」那三行(`30-behavior.md`):bridge 下挂一块 `statfs` 要 10 秒的**假**卷(`BRIDGE_SLOW_VOLUME_MS`,不碰真盘),机器页 1 秒内列出这台机器、1 秒内出带读数的卡片;离开再回来,**第一帧**就有卡片、读数和进程行(自起 vite + bridge + 系统 Chrome) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge`) |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
+| `npm run native` | `check-native.mjs`,**AppKit 画的东西**:在临时 `KHOR_HOME`(不碰负责人的 store)里起**构建好的** app,用 `khor config set theme` 切深 / 浅 / 跟系统再把窗口切回前台,每一步截窗口量两件事——三颗窗口按钮左缘在 `traffic::X`、中心在第一行中心;左块的材质与板的深浅跟着主题。只在 macOS;不动鼠标、不按键,但会把窗口提到前台几秒(2026-09-27 左块变白、按钮跑位之后加的) | 不拿(但**要求先构建**:`npm run build` 再 `cargo build --profile local -p khor-gui -p khor-cli`) |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
 | `npm run smoke` | `smoke.mjs`,整条验收,**真连**(三个 home) | 不拿 |
@@ -118,6 +119,7 @@
   路只核到源码级。真答它要起 app,而这仓所有浏览器守门跑的都是网页脸,
   够不着原生子 webview。
 - **动了导轨** → 加 `npm run rail`;
+- **动了主题、窗口外观、`src-tauri` 里的窗口或标题栏** → 构建后加 `npm run native`;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,
   而这两条要起真网,先问一句机器上有没有别人在跑;

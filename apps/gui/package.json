@@ -26,7 +26,8 @@
     "smoke": "node scripts/smoke.mjs",
     "web-face": "node scripts/web-face.mjs",
     "gates": "node scripts/check-gates.mjs",
-    "boot": "node scripts/check-boot.mjs"
+    "boot": "node scripts/check-boot.mjs",
+    "native": "node scripts/check-native.mjs"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.3.7",

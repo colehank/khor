@@ -1254,6 +1254,34 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             ));
         }
     }
+    // **A store named by `KHOR_HOME` gets a page store of its own**
+    // (2026-09-27). The webview's localStorage is keyed by the app, not
+    // by khor's store, so a second khor on another store — the native
+    // gate's, or anyone's second profile — read and wrote the owner's
+    // open tabs, list width and theme mirror (found when the gate's app
+    // came up showing the owner's session tabs). Unset, nothing changes:
+    // the default store keeps the page store it has always had.
+    if let Some(explicit) = std::env::var_os("KHOR_HOME") {
+        // FNV-1a, spelled out: std's hasher may change between Rust
+        // releases, and a changed id is a profile whose page store is
+        // silently gone after a toolchain update.
+        let fnv = |seed: u64, bytes: &[u8]| {
+            bytes.iter().fold(seed, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+        };
+        let bytes = explicit.as_encoded_bytes();
+        let mut id = [0u8; 16];
+        id[..8].copy_from_slice(&fnv(0xcbf2_9ce4_8422_2325, bytes).to_le_bytes());
+        id[8..].copy_from_slice(&fnv(0x6c62_272e_07bb_0142, bytes).to_le_bytes());
+        #[cfg(target_os = "macos")]
+        {
+            win = win.data_store_identifier(id);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = id;
+            win = win.data_directory(std::path::PathBuf::from(&explicit).join("webview"));
+        }
+    }
     win.build()?;
     Ok(())
 }
@@ -2741,6 +2769,13 @@ pub fn run() {
                             && menu_up().load(std::sync::atomic::Ordering::Relaxed)
                         {
                             let _ = if *here { menu.show() } else { menu.hide() };
+                        }
+                        // The page re-reads the store when the window is
+                        // back in front (`use-settings`): WKWebView gives
+                        // it no `focus` of its own for that.
+                        if *here && window.label() == "main" {
+                            use tauri::Emitter;
+                            let _ = window.emit_to("main", "window:focused", ());
                         }
                     }
                     _ => {}
