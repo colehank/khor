@@ -80,6 +80,58 @@ pub fn inset_y(row_h: f64, m: &Lights) -> f64 {
     row_h / 2.0 + m.inside - m.button / 2.0
 }
 
+/// What the buttons measured at startup, kept so the trio can be put
+/// back after AppKit moves it (`place`).
+static MEASURED: std::sync::OnceLock<Lights> = std::sync::OnceLock::new();
+
+/// Keeps a measurement for `place`.
+pub fn remember(m: Lights) {
+    let _ = MEASURED.set(m);
+}
+
+/// Puts the three buttons where the builder put them: left edge at `X`,
+/// centred on the first row. **Needed because AppKit lays the title bar
+/// out again whenever the window's appearance changes**, and that
+/// returns the buttons to its default spot; tao only re-insets them from
+/// its view's `drawRect:`, which a theme change does not reach (2026-09-27,
+/// the owner: 「系统的三个按钮和每个侧边导航没有对齐」). The same moves as
+/// tao's `inset_traffic_lights`. Main thread only.
+#[cfg(target_os = "macos")]
+pub fn place(win: *mut std::ffi::c_void) {
+    let Some(m) = MEASURED.get() else { return };
+    let (x, y) = (X, inset_y(PANE_HEAD, m));
+    unsafe {
+        let w = win as *mut AnyObject;
+        let close: *mut AnyObject = msg_send![w, standardWindowButton: 0usize];
+        let mini: *mut AnyObject = msg_send![w, standardWindowButton: 1usize];
+        let zoom: *mut AnyObject = msg_send![w, standardWindowButton: 2usize];
+        if close.is_null() || mini.is_null() || zoom.is_null() {
+            return;
+        }
+        let sup: *mut AnyObject = msg_send![close, superview];
+        if sup.is_null() {
+            return;
+        }
+        let container: *mut AnyObject = msg_send![sup, superview];
+        if container.is_null() {
+            return;
+        }
+        let close_rect: NSRect = msg_send![close, frame];
+        let win_frame: NSRect = msg_send![w, frame];
+        let mut bar: NSRect = msg_send![container, frame];
+        bar.size.height = close_rect.size.height + y;
+        bar.origin.y = win_frame.size.height - bar.size.height;
+        let _: () = msg_send![container, setFrame: bar];
+        let mini_rect: NSRect = msg_send![mini, frame];
+        let step = mini_rect.origin.x - close_rect.origin.x;
+        for (i, b) in [close, mini, zoom].into_iter().enumerate() {
+            let r: NSRect = msg_send![b, frame];
+            let origin = NSPoint::new(x + i as f64 * step, r.origin.y);
+            let _: () = msg_send![b, setFrameOrigin: origin];
+        }
+    }
+}
+
 /// How much width the row must keep clear at its left end: the margin,
 /// the trio, and a gap before whatever the row draws first.
 pub fn room(x: f64, gap: f64, m: &Lights) -> f64 {

@@ -1254,6 +1254,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
                     .build(),
             );
         if let Some(lights) = traffic::measure() {
+            traffic::remember(lights);
             win = win.traffic_light_position(tauri::LogicalPosition::new(
                 traffic::X,
                 traffic::inset_y(traffic::PANE_HEAD, &lights),
@@ -2467,6 +2468,23 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
                 if let Ok(win) = w.ns_window() {
                     follow_the_app(win);
                 }
+            }
+        });
+        // **And put the three buttons back.** An appearance change makes
+        // AppKit lay the title bar out again, which returns the buttons
+        // to its default spot — 8 above the row's centre, off the rail's
+        // glyph box (2026-09-27, the owner: 「系统的三个按钮和每个侧边导航
+        // 没有对齐」; and since startup wears a theme, they were off from
+        // the first frame). tao insets them only from its view's
+        // `drawRect:`, which a theme change does not reach — so
+        // `traffic::place` does tao's moves itself, queued
+        // behind the theme change on the main thread.
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Some(w) = handle.get_webview_window("main")
+                && let Ok(win) = w.ns_window()
+            {
+                traffic::place(win);
             }
         });
     }
