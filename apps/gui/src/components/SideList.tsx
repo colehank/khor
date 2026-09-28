@@ -45,8 +45,10 @@ export type SideRow = {
   pinned: boolean;
   /** The face, already sized. */
   face: ReactNode;
-  /** The corner mark and what it says (a key, for the gates). */
-  badge?: { mark: string; icon: ReactNode; data?: Record<string, string> };
+  /** The corner mark and what it says (a key, for the gates). `beside`
+      stands it next to the face rather than on it — for a face with
+      words in its middle (`FaceMark`). */
+  badge?: { mark: string; icon: ReactNode; data?: Record<string, string>; beside?: boolean };
   /** A session's state ring. */
   halo?: string;
   title: ReactNode;
@@ -210,11 +212,20 @@ export function SideList({
   // default, which asks.
   const asking = useSetting("confirm-delete") !== "off";
   const [pending, setPending] = useState<Pending | null>(null);
+  // **The word says whether a question follows** (docs/design-system
+  // 「带省略号表示还会再问一次」): 「删除…」 while the window will come
+  // up, the plain word once 不再提醒 has taken it away — it is the same
+  // press either way, and only one of the two labels is true at a time.
   const menuOf = (r: SideRow): RowAction[] =>
     r.menu.map((a) =>
       a.ask === undefined || !asking
         ? a
-        : { ...a, confirm: undefined, run: () => setPending({ name: r.name, says: a.ask ?? "", run: a.run }) },
+        : {
+            ...a,
+            label: a.askLabel ?? a.label,
+            confirm: undefined,
+            run: () => setPending({ name: r.name, says: a.ask ?? "", run: a.run }),
+          },
     );
   const box = useRowFlip(
     (showOld ? [...fresh, ...aged] : fresh)
@@ -254,6 +265,7 @@ export function SideList({
           badge={r.badge?.icon}
           mark={r.badge?.mark}
           badgeData={r.badge?.data}
+          beside={r.badge?.beside}
         />
         <span className="min-w-0 flex-1">
           <span data-side-title className="block min-w-0">

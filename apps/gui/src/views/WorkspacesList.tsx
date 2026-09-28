@@ -244,6 +244,8 @@ export function WorkspacesList({
         // row comes off the list and the directory is not touched (the
         // user, 2026-09-14) — the fact 移出 used to carry in the word.
         label: gui.delete,
+        askLabel: gui.delete_ask,
+        destructive: true,
         ask: gui.ws_remove_confirm,
         note: refused.get(k),
         run: run(() => wsRm(r.device, r.path)),
@@ -332,15 +334,27 @@ export function WorkspacesList({
       // The tree's state, on the open row only — a drawing, not a
       // button (「『<』保留为状态展示」), pointing at the tree when it is
       // out and back at this list when it is folded.
+      //
+      // **Its cell is on every row, empty on all but the open one**
+      // (2026-09-28 audit 第 14 条). Drawn only where it was needed, the
+      // cell arrived with the selection and took its width out of the
+      // row: the right column — 「main · 5 个文件改过」 over 「1 分钟」 —
+      // jumped 28px left the moment a row was chosen. Selection paints;
+      // it does not move what is in the row. `w-ctl-md` rather than the
+      // touch floor it had: it is a drawing, not a target, and a finger
+      // needs no room around something it cannot press.
       after:
-        isOpen && onTree !== undefined ? (
-          <span
-            data-ws-tree-mark
-            data-on={treeOpen}
-            aria-hidden="true"
-            className="flex min-w-touch flex-none items-center justify-center self-stretch text-muted-foreground"
-          >
-            <IconChevronRight className={cn("size-3 transition-transform", !treeOpen && "rotate-180")} />
+        onTree !== undefined ? (
+          <span data-ws-tree-cell aria-hidden="true" className="flex w-ctl-md flex-none self-stretch">
+            {isOpen && (
+              <span
+                data-ws-tree-mark
+                data-on={treeOpen}
+                className="flex flex-1 items-center justify-center text-muted-foreground"
+              >
+                <IconChevronRight className={cn("size-3 transition-transform", !treeOpen && "rotate-180")} />
+              </span>
+            )}
           </span>
         ) : undefined,
       // Whether this row's tree is out, said on the line rather than only

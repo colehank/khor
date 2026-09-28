@@ -32,7 +32,12 @@
 //      home is the 额度 landing's foot, where section 8 proves the
 //      finder the absences lean on;
 //   6. zero page errors while measuring — a half-drawn page answers
-//      probes too (the browser-check false-green family).
+//      probes too (the browser-check false-green family);
+//   7. the lists hold their edges (2026-09-28 audit, 「列表四处错位」 at
+//      the foot): a tab's face inside its tab, one right edge for the
+//      session rows' words and for a workspace row's column selected or
+//      not, a 额度 reading clear of its corner, and 拉过来 drawn only
+//      where somebody is.
 //
 // The routed rows are shaped by hand from the bindings. If the shape
 // drifts, the list draws nothing, the title probe finds no element, and
@@ -9525,8 +9530,8 @@ try {
     }
   }
 
-  // The word every sidebar's second menu item reads, kept for the map
-  // card's own button further down (「网络页地图卡改成『删除』」).
+  // The word every sidebar's last (destructive) menu item reads, kept for
+  // the map card's own button further down (「网络页地图卡改成『删除』」).
   let sidebarDelete = null;
   // ── 4S) 第二轮:每条侧边栏长一个样 (docs/SHELL.md, 2026-09-21) ─────
   //
@@ -9583,7 +9588,11 @@ try {
       await at.click({ button: "right" });
       await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
       const items = await page.locator("[data-row-menu] [data-menu-item]").evaluateAll((els) =>
-        els.map((e) => ({ key: e.getAttribute("data-menu-item"), word: (e.textContent ?? "").trim() })),
+        els.map((e) => ({
+          key: e.getAttribute("data-menu-item"),
+          word: (e.textContent ?? "").trim(),
+          destructive: e.getAttribute("data-destructive") === "true",
+        })),
       );
       await listen(`${sel} menu`);
       await page.keyboard.press("Escape");
@@ -9652,17 +9661,25 @@ try {
       } else if (r.bare.length < 2) {
         fail(
           `the ${r.landing} sidebar's row menu reads ${JSON.stringify(r.bare.map((i) => i.word))} — ` +
-            "every row carries 置顶 and 删除 as its first two",
+            "every row carries 置顶 first and 删除 last",
+        );
+      } else if (!r.bare.at(-1).destructive || r.bare.slice(0, -1).some((i) => i.destructive)) {
+        // **删除 is last, alone** (2026-09-28 audit 第 16 条, Apple HIG):
+        // it was the second item until then, between 置顶 and a column's
+        // own. The separator before it is `RowMenu`'s, keyed on the flag.
+        fail(
+          `the ${r.landing} sidebar's row menu reads ${JSON.stringify(r.bare.map((i) => [i.word, i.destructive]))} — ` +
+            "the destructive item goes last, in its own group (src/components/RowMenu.tsx)",
         );
       }
     }
     const full = read.filter((r) => r.bare && r.bare.length >= 2);
-    sidebarDelete = full.find((r) => r.landing === "devices")?.bare[1].word ?? null;
-    for (const n of [0, 1]) {
-      const words = new Map(full.map((r) => [r.landing, r.bare[n].word]));
+    sidebarDelete = full.find((r) => r.landing === "devices")?.bare.at(-1).word ?? null;
+    for (const [n, where] of [[0, "first"], [-1, "last"]]) {
+      const words = new Map(full.map((r) => [r.landing, r.bare.at(n).word]));
       if (new Set(words.values()).size !== 1) {
         fail(
-          `item ${n + 1} of the row menus reads ${JSON.stringify(Object.fromEntries(words))} — ` +
+          `the ${where} item of the row menus reads ${JSON.stringify(Object.fromEntries(words))} — ` +
             "「置顶与删除的操作统一为置顶与删除」, the same word in the same place in every sidebar",
         );
       }
@@ -10111,13 +10128,14 @@ try {
       { landing: "browser", pane: "[data-browse-tabs]" },
       { landing: "quota", pane: "[data-quota-pane]" },
     ];
-    // The second item of every row menu is 删除 (第二轮), whatever its key.
+    // Every row menu's 删除 is its destructive item, whatever its key —
+    // last since 2026-09-28 (audit 第 16 条), second before that (第二轮).
     const deleteOn = async (pane) => {
       const row = page.locator(`${pane} [data-side-row][data-side-menu="true"]:not([data-me="true"]) [data-side-open]`).last();
       if ((await row.count()) === 0) return false;
       await row.click({ button: "right" });
       await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 1);
-      await page.locator("[data-row-menu] [data-menu-item]").nth(1).click();
+      await page.locator('[data-row-menu] [data-menu-item][data-destructive="true"]').click();
       return true;
     };
     const says = {};
@@ -10669,8 +10687,10 @@ try {
     await page.keyboard.press("Escape");
     await wait(200);
     console.log(`devices 4P · menus: peer ${JSON.stringify(peerKeys)}, gate ${JSON.stringify(gateKeys)}`);
-    if (JSON.stringify(peerKeys.slice(0, 3)) !== JSON.stringify(["pin", "forget", "pause"])) {
-      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 「置顶、删除、暂停 / 恢复」 (docs/SHELL.md 第五轮 第 10 条)`);
+    // 置顶, 暂停 / 恢复, then 删除 last behind its line (2026-09-28 audit
+    // 第 16 条; it was 置顶、删除、暂停 by 第五轮 第 10 条 until then).
+    if (JSON.stringify(peerKeys) !== JSON.stringify(["pin", "pause", "forget"])) {
+      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
     }
     if (JSON.stringify(gateKeys.slice(0, 2)) !== JSON.stringify(["pin", "pause"])) {
       fail(`this machine's row menu reads ${JSON.stringify(gateKeys)} — 置顶, then 暂停 (no 删除 on its own row)`);
@@ -11497,9 +11517,14 @@ try {
           }));
           console.log(`网络 ${posture} · 机器卡: ${JSON.stringify(card)}`);
           // **One act, one word** (docs/SHELL.md 第二轮): the card's button
-          // runs what the machine row's second item runs, so it reads what
+          // runs what the machine row's last item runs, so it reads what
           // that item reads — compared with the row menu, not the catalog.
-          if (card.word !== null && sidebarDelete !== null && card.word !== sidebarDelete) {
+          // **The ellipsis is not part of the word**: the menu's 「删除…」
+          // says a window follows (2026-09-28 audit 第 16 条), and the
+          // card's button, which forgets on one press with its sentence
+          // printed beside it, rightly carries none.
+          const verb = (w) => w.replace(/…$/, "");
+          if (card.word !== null && sidebarDelete !== null && verb(card.word) !== verb(sidebarDelete)) {
             fail(
               `${posture}: the machine's card says ${JSON.stringify(card.word)} for the act the row menu calls ` +
                 `${JSON.stringify(sidebarDelete)} — 「同一个动作在整个 app 里只有一个词」 (src/views/MarkPlace.tsx)`,
@@ -14275,7 +14300,7 @@ try {
       );
     }
     //   …and the registration this machine made itself wears the same
-    //   menu every row does: 置顶 and 删除 first, 编辑 beside them.
+    //   menu every row does: 置顶 first, 编辑, 删除 last (audit 第 16 条).
     await routeStanding();
     await goToQuota();
     await page.locator('[data-quota-row="acc-sub-here"]').click({ button: "right" });
@@ -14285,8 +14310,8 @@ try {
       .evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
     await page.keyboard.press("Escape");
     console.log(`quota 7·3 · this machine's subscription menu ${JSON.stringify(items)}`);
-    if (JSON.stringify(items.slice(0, 2)) !== JSON.stringify(["pin", "remove"]) || !items.includes("edit")) {
-      fail(`this machine's own subscription row offers ${JSON.stringify(items)} — 置顶, 删除, then 编辑, like every other row`);
+    if (JSON.stringify(items) !== JSON.stringify(["pin", "edit", "remove"])) {
+      fail(`this machine's own subscription row offers ${JSON.stringify(items)} — 置顶, 编辑, then 删除 last, like every other row`);
     }
 
     //   **One row is one card.** 「Has an account」 used to mean 「is not
@@ -21709,6 +21734,296 @@ try {
       fail(`the shell's body reads ${type.body}px and text-body ${type.tokenBody}px — D1: body 14 → 13, macOS's size`);
     }
     if (type.read !== 16) fail(`text-read is ${type.read}px — the reading surfaces stay at 16 (D1: the reading surfaces keep --read)`);
+  }
+
+  // ── 列表四处错位 (2026-09-28 UI 审计 第 6/7/8/14/15 条) ─────────────
+  //
+  // Five bugs from one audit of the lists, each a thing a ruler can see:
+  //
+  //   (6)  a session tab's face — halo and corner mark included — stays
+  //        inside the tab's box, and the narrow header's inside the header
+  //        (it was the list row's 32 + halo in a 28 tab: 6px over the top);
+  //   (7)  every session row's state word ends on one right edge, the
+  //        age's (a row with a machine chip had its word 22px to the left),
+  //        and a machine with no face draws no blank disc as its chip;
+  //   (8)  a 额度 row's number is whole — inside its dial's box and clear
+  //        of the provider mark (「39%」「124$」 lost their last glyph under it);
+  //   (14) a workspace row's right column ends on the same edge selected
+  //        or not (the open row's 「›」 used to push it 28px left);
+  //   (15) a file row's 拉过来 is drawn on the hovered, the focused and the
+  //        open row, and on every row under a finger — hidden elsewhere, but
+  //        never out of the keyboard's reach.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const edge = (a, b) => Math.abs(a - b) <= 0.5;
+    // How far the halo reaches past the face: gap + ring, read off the page.
+    const ring = await page.evaluate(() => {
+      const el = document.createElement("div");
+      el.style.cssText = "position:absolute;visibility:hidden;width:calc(var(--halo-gap) + var(--halo-w))";
+      document.body.appendChild(el);
+      const w = el.getBoundingClientRect().width;
+      el.remove();
+      return w;
+    });
+    if (!(ring > 0)) fail(`probe void: --halo-gap + --halo-w read ${ring} — the halo's reach is what (6) adds to the face`);
+    /** Every face assembly under `host`, as its ink's box (face, halo, corner) against the box it must stay in. */
+    const fits = (host, box) =>
+      page.evaluate(
+        ([host, box, ring]) =>
+          [...document.querySelectorAll(host)].flatMap((h) => {
+            const outer = (box === null ? h : h.closest(box) ?? h).getBoundingClientRect();
+            return [...h.querySelectorAll("[data-side-face]")].map((f) => {
+              const r = f.getBoundingClientRect();
+              const reach = f.querySelector("[data-halo]") ? ring : 0;
+              const ink = { top: r.top - reach, bottom: r.bottom + reach, left: r.left - reach, right: r.right + reach };
+              const badge = f.querySelector("[data-side-badge]")?.getBoundingClientRect();
+              if (badge) {
+                ink.top = Math.min(ink.top, badge.top);
+                ink.bottom = Math.max(ink.bottom, badge.bottom);
+                ink.right = Math.max(ink.right, badge.right);
+              }
+              const n = (v) => +v.toFixed(1);
+              return {
+                box: [n(outer.top), n(outer.bottom), n(outer.left), n(outer.right)],
+                ink: [n(ink.top), n(ink.bottom), n(ink.left), n(ink.right)],
+              };
+            });
+          }),
+        [host, box, ring],
+      );
+    const inside = (m) =>
+      m.ink[0] >= m.box[0] - 0.5 && m.ink[1] <= m.box[1] + 0.5 && m.ink[2] >= m.box[2] - 0.5 && m.ink[3] <= m.box[3] + 0.5;
+
+    // (6) wide: the strip.
+    await open("sessions");
+    await until(5_000, async () => (await page.locator("[data-list] [data-row-open]").count()) > 1);
+    await press("[data-list] [data-row-open]");
+    await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-face]").count()) > 0);
+    const tabs = await fits("[data-session-tabs] [data-tab]", null);
+    console.log(`lists (6) · session tab ink vs tab [top,bottom,left,right]: ${JSON.stringify(tabs)}`);
+    if (tabs.length === 0) {
+      fail("probe dead: no session tab with a face on the strip — (6) measured nothing (src/browse/TabStrip.tsx)");
+    }
+    for (const m of tabs.filter((m) => !inside(m))) {
+      fail(
+        `a session tab's face reaches ${JSON.stringify(m.ink)} out of its tab ${JSON.stringify(m.box)} — ` +
+          "a tab's glyph is sized for a tab, halo and corner inside its box (src/components/SessionFace.tsx)",
+      );
+    }
+
+    // (7) the state words and the ages, one right edge.
+    const words = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-list] [data-row]")].map((row) => {
+        const w = row.querySelector("[data-status-word]");
+        // The right column: the word's line, then the age under it.
+        const col = w?.parentElement?.parentElement ?? null;
+        const age = col && col.lastElementChild !== w?.parentElement ? col.lastElementChild : null;
+        return {
+          id: row.getAttribute("data-row"),
+          via: row.querySelector("[data-via]") !== null,
+          word: w ? +w.getBoundingClientRect().right.toFixed(1) : null,
+          age: age ? +age.getBoundingClientRect().right.toFixed(1) : null,
+        };
+      }),
+    );
+    const blanks = await page.locator("[data-list] [data-via] [data-face-blank]").count();
+    console.log(`lists (7) · word / age right edges: ${JSON.stringify(words)} · blank chips ${blanks}`);
+    const measured = words.filter((w) => w.word !== null);
+    if (measured.length < 2 || !measured.some((w) => w.via) || !measured.some((w) => !w.via)) {
+      fail(
+        `probe dead: ${measured.length} session row(s) with a word, ${measured.filter((w) => w.via).length} with a machine chip — ` +
+          "(7) needs both kinds of row to compare",
+      );
+    } else {
+      const edgeOf = measured[0].word;
+      const off = measured.filter((w) => !edge(w.word, edgeOf) || (w.age !== null && !edge(w.word, w.age)));
+      if (off.length) {
+        fail(
+          `session rows end their state word on ${JSON.stringify(off.map((w) => [w.id, w.word, w.age]))} against ${edgeOf} — ` +
+            "every row's word and age share one right edge, chip or no chip (src/views/SessionsList.tsx)",
+        );
+      }
+    }
+    if (blanks !== 0) {
+      fail(
+        `${blanks} session row(s) draw an empty disc for the machine they run through — a machine with no face ` +
+          "wears the machine glyph there, not a blank that reads as a broken picture (src/views/SessionsList.tsx)",
+      );
+    }
+
+    // (8) the 额度 rows' numbers.
+    await open("quota");
+    await until(5_000, async () => (await page.locator("[data-quota-row] [data-dial-face] text").count()) > 1);
+    const dials = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
+        const svg = row.querySelector("[data-dial-face]");
+        const text = svg?.querySelector("text");
+        const badge = row.querySelector("[data-side-badge]");
+        if (!svg || !text || (text.textContent ?? "").trim() === "") return [];
+        const n = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.right.toFixed(1), +r.bottom.toFixed(1)];
+        return [
+          {
+            id: row.getAttribute("data-quota-row"),
+            says: text.textContent,
+            text: n(text.getBoundingClientRect()),
+            svg: n(svg.getBoundingClientRect()),
+            badge: badge ? n(badge.getBoundingClientRect()) : null,
+          },
+        ];
+      }),
+    );
+    console.log(`lists (8) · dial numbers [l,t,r,b]: ${JSON.stringify(dials)}`);
+    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a number in the dial — (8) measured nothing`);
+    for (const d of dials) {
+      const [l, t, r, b] = d.text;
+      const clipped = l < d.svg[0] - 0.5 || r > d.svg[2] + 0.5 || t < d.svg[1] - 0.5 || b > d.svg[3] + 0.5;
+      const covered =
+        d.badge !== null && l < d.badge[2] - 0.5 && r > d.badge[0] + 0.5 && t < d.badge[3] - 0.5 && b > d.badge[1] + 0.5;
+      if (clipped) {
+        fail(`the ${d.id} dial's 「${d.says}」 runs to ${JSON.stringify(d.text)} past its box ${JSON.stringify(d.svg)} — the number is clipped (src/components/Face.tsx)`);
+      }
+      if (covered) {
+        fail(
+          `the ${d.id} dial's 「${d.says}」 at ${JSON.stringify(d.text)} runs under the provider mark at ${JSON.stringify(d.badge)} — ` +
+            "the reading stays whole beside the mark, not under it (src/views/QuotaLanding.tsx, src/components/FaceMark.tsx)",
+        );
+      }
+    }
+
+    // (14) the workspace rows' right column, selected or not.
+    await open("workspaces");
+    await until(5_000, async () => (await page.locator("[data-ws-row]").count()) >= 3);
+    await openWs();
+    await until(5_000, async () => (await page.locator('[data-ws-row][data-selected="true"]').count()) === 1);
+    await page.mouse.move(2, 2);
+    await wait(300);
+    const cols = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-ws-line]")].map((line) => ({
+        on: line.querySelector('[data-ws-row][data-selected="true"]') !== null,
+        git: +(line.querySelector("[data-ws-git]")?.getBoundingClientRect().right ?? NaN).toFixed(1),
+        touched: +(line.querySelector("[data-ws-touched]")?.getBoundingClientRect().right ?? NaN).toFixed(1),
+      })),
+    );
+    console.log(`lists (14) · workspace right column edges: ${JSON.stringify(cols)}`);
+    const onRow = cols.find((c) => c.on);
+    const offRows = cols.filter((c) => !c.on);
+    if (!onRow || offRows.length === 0 || cols.some((c) => Number.isNaN(c.git) || Number.isNaN(c.touched))) {
+      fail("probe dead: no open workspace row beside a closed one, or a row without its right column — (14) measured nothing");
+    } else {
+      const bad = offRows.filter((c) => !edge(c.git, onRow.git) || !edge(c.touched, onRow.touched));
+      if (bad.length) {
+        fail(
+          `the open workspace row's right column ends at ${onRow.git}/${onRow.touched}, the others at ` +
+            `${JSON.stringify(bad.map((c) => [c.git, c.touched]))} — selecting a row must not move what is in it ` +
+            "(src/views/WorkspacesList.tsx)",
+        );
+      }
+    }
+
+    // (15) 拉过来: on the hovered, focused and open row; everywhere under a finger.
+    await until(5_000, async () => (await page.locator("[data-ws-tree] [data-file] [data-take]").count()) > 1);
+    // **By position, not by name**: a name is not unique in a tree (an
+    // expanded `src/` holds its own `notes.md`), and a probe keyed on it
+    // measures two rows as one.
+    const TAKE = "[data-ws-tree] [data-file] [data-take]";
+    const takes = () =>
+      page.evaluate((sel) => {
+        return [...document.querySelectorAll(sel)].map((b, i) => {
+          const cs = getComputedStyle(b);
+          return {
+            i,
+            name: b.getAttribute("data-take"),
+            open: b.closest("[data-file]")?.getAttribute("data-open") === "true",
+            opacity: +cs.opacity,
+            reach: b.tabIndex >= 0 && cs.visibility !== "hidden" && cs.display !== "none" && !b.disabled,
+          };
+        });
+      }, TAKE);
+    const takeAt = (i) => page.locator(TAKE).nth(i);
+    const rowAt = (i) => page.locator("[data-ws-tree] [data-file]:has([data-take])").nth(i);
+    const rest = await takes();
+    console.log(`lists (15) · at rest: ${JSON.stringify(rest)}`);
+    const quiet = rest.filter((t) => !t.open && t.opacity > 0.01);
+    if (rest.length < 2) {
+      fail("probe dead: fewer than two 拉过来 in the tree — (15) measured nothing");
+    } else {
+      if (quiet.length) {
+        fail(
+          `${quiet.length} of ${rest.length} file rows draw 拉过来 with nobody on them (${JSON.stringify(quiet.map((t) => t.name))}) — ` +
+            "the row's action shows on hover, focus or the open row, the way VS Code shows one (src/views/FileTree.tsx)",
+        );
+      }
+      const unreachable = rest.filter((t) => !t.reach);
+      if (unreachable.length) {
+        fail(`拉过来 on ${JSON.stringify(unreachable.map((t) => t.name))} is out of the keyboard's reach — hidden by opacity, never by removal (src/views/FileTree.tsx)`);
+      }
+      const [a, b] = rest.filter((t) => !t.open).map((t) => t.i);
+      await rowAt(a).hover();
+      await wait(400);
+      const hovered = (await takes())[a];
+      await page.mouse.move(2, 2);
+      await takeAt(b).focus();
+      await wait(400);
+      const focused = (await takes())[b];
+      await page.evaluate(() => document.activeElement?.blur());
+      // Opening a file makes its row the open one; its action stays drawn.
+      await rowAt(a).locator("button:not([data-take])").first().click();
+      await page.mouse.move(2, 2);
+      await wait(600);
+      const opened = (await takes())[a];
+      console.log(`lists (15) · hovered ${JSON.stringify(hovered)} · focused ${JSON.stringify(focused)} · open ${JSON.stringify(opened)}`);
+      if (!(hovered?.opacity >= 0.99)) fail(`拉过来 on a hovered file row reads opacity ${hovered?.opacity} — hover shows it (src/views/FileTree.tsx)`);
+      if (!(focused?.opacity >= 0.99)) fail(`拉过来 with the keyboard on it reads opacity ${focused?.opacity} — focus shows it (src/views/FileTree.tsx)`);
+      if (!(opened?.opacity >= 0.99)) fail(`拉过来 on the open file's row reads opacity ${opened?.opacity} — the selected row keeps its action drawn (src/views/FileTree.tsx)`);
+    }
+    // …and a finger has no hover to summon it with.
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    if (!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches))) {
+      fail("probe void: the finger did not take — (15)'s coarse half measured a mouse");
+    }
+    await open("workspaces");
+    await until(5_000, async () => (await page.locator("[data-ws-row]").count()) >= 3);
+    await openWs();
+    await until(5_000, async () => (await page.locator("[data-ws-tree] [data-file] [data-take]").count()) > 1);
+    await wait(400);
+    const finger = await takes();
+    const hidden = finger.filter((t) => t.opacity < 0.99);
+    console.log(`lists (15) · under a finger: ${finger.length} 拉过来, ${hidden.length} not drawn`);
+    if (finger.length < 2) fail("probe dead: fewer than two 拉过来 under a finger — (15)'s coarse half measured nothing");
+    if (hidden.length) {
+      fail(`under a finger ${hidden.length} 拉过来 are not drawn (${JSON.stringify(hidden.map((t) => t.name))}) — no hover there, so always drawn (src/views/FileTree.tsx)`);
+    }
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    if (!(await page.evaluate(() => matchMedia("(hover: hover)").matches))) {
+      fail("the pointer never came back after (15)'s finger — what follows would measure a screen with no hover");
+    }
+
+    // (6) narrow: the header that stands in for the strip.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("sessions");
+    await until(5_000, async () => (await page.locator("[data-list] [data-row-open]").count()) > 0);
+    await press("[data-list] [data-row-open]");
+    await until(3_000, async () => (await page.locator("[data-detail-header] [data-side-face]").count()) > 0);
+    const head = await fits("[data-detail-header]", null);
+    console.log(`lists (6) · narrow header ink vs header: ${JSON.stringify(head)}`);
+    if (head.length === 0) fail("probe dead: the narrow detail header drew no face — (6)'s narrow half measured nothing");
+    for (const m of head.filter((m) => !inside(m))) {
+      fail(
+        `the narrow header's face reaches ${JSON.stringify(m.ink)} out of the header ${JSON.stringify(m.box)} — ` +
+          "it is the strip's face, sized for a tab (src/views/DetailPane.tsx)",
+      );
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);

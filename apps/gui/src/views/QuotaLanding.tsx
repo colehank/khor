@@ -1182,17 +1182,20 @@ export function QuotaLanding({
               throw e;
             }),
       },
-      // 删除 second and 编辑 after it — every sidebar's first two are
-      // 置顶 and 删除, in that order (docs/SHELL.md 第二轮). It was 撤掉
-      // and third until then.
+      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
+      // 删除 last, behind a line — every sidebar's menu opens on 置顶 and
+      // closes on 删除 (2026-09-28 audit 第 16 条, Apple HIG). It was the
+      // second item from docs/SHELL.md 第二轮 until then, and 撤掉 and
+      // third before that.
       {
         key: "remove",
         label: gui.delete,
+        askLabel: gui.delete_ask,
+        destructive: true,
         ask: gui.accounts_remove_confirm,
         note: removeRefused.get(id),
         run: () => remove(id),
       },
-      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
     ];
   };
 
@@ -1249,8 +1252,12 @@ export function QuotaLanding({
           {centreOf(r)}
         </Face>
       ),
-      // The provider on the corner — what this reading is *of*.
-      badge: { mark: r.provider, icon: <M className="size-kind-mark-glyph" /> },
+      // The provider on the corner — what this reading is *of*. **Beside
+      // the dial, not on it** (`FaceMark` `beside`): the reading is
+      // printed in the dial's middle and runs to its lower right, which
+      // is exactly where a corner sits — 「39%」「124$」 lost their last
+      // glyph under it (2026-09-28 audit 第 8 条).
+      badge: { mark: r.provider, icon: <M className="size-kind-mark-glyph" />, beside: true },
       // **The title is somebody's own word** (「标题是用户可以自己起的」),
       // so the line under it carries what the row *is*: 类型 · 提供商.
       title: (

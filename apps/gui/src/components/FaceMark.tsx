@@ -26,6 +26,8 @@ export function FaceMark({
   mark,
   halo,
   badgeData,
+  badgeClass = "size-kind-mark",
+  beside = false,
   className,
 }: {
   face: ReactNode;
@@ -39,6 +41,20 @@ export function FaceMark({
   /** Extra anchors on the corner, for the surfaces that were measured
       by an older name (`data-kind-mark` on a session's). */
   badgeData?: Record<string, string>;
+  /** The corner's frame. A list row's by default; a tab hands in its
+      own, smaller one with a face sized for a tab (`SessionFace`). */
+  badgeClass?: string;
+  /**
+   * **The corner stands beside the face instead of on it** — for a face
+   * whose middle carries words: the 额度 dial prints its reading there,
+   * and a corner laid over the dial's lower right sat on the number's
+   * last glyph (2026-09-28 audit 第 8 条:「39%」「124$」 lost it). The
+   * box grows by the corner's width on the right and the corner sits in
+   * that room, so the reading is whole and the arc is not covered
+   * either — the dial's box already hugs its ink (`Face` `ratio`), so
+   * there is no blank corner of it to stand in.
+   */
+  beside?: boolean;
   className?: string;
 }) {
   return (
@@ -46,7 +62,7 @@ export function FaceMark({
     // pixels under the face and the mark's corner offset bites into
     // that gap instead of the face (mandala's .badged-face fix, the
     // flex spelling of display:block+line-height:0).
-    <span data-side-face className={cn("relative flex flex-none", className)}>
+    <span data-side-face className={cn("relative flex flex-none", beside && "pr-kind-mark", className)}>
       {face}
       {halo !== undefined && (
         // Behind nothing and in front of nothing — it paints outside the
@@ -63,7 +79,10 @@ export function FaceMark({
         <span
           data-side-badge={mark ?? ""}
           {...badgeData}
-          className="absolute -right-0.5 -bottom-0.5 grid size-kind-mark place-items-center rounded-sm bg-card text-muted-foreground"
+          className={cn(
+            "absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-sm bg-card text-muted-foreground",
+            badgeClass,
+          )}
         >
           {badge}
         </span>

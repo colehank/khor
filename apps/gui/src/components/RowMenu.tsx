@@ -8,7 +8,6 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -34,6 +33,17 @@ export type RowAction = {
       delete window every sidebar shares — with 不再提醒 — instead of a
       second press on the menu. */
   ask?: string;
+  /** The label while that window will follow the press — the catalog's
+      ellipsis form (「删除…」, docs/design-system「带省略号表示还会再问
+      一次」). `SideList` wears it only while `confirm-delete` is on;
+      ticked off, nothing follows and the plain `label` is the truth. */
+  askLabel?: string;
+  /** **It destroys something**: drawn in `destructive` ink, and put last,
+      in a group of its own behind a separator — wherever the caller
+      listed it (2026-09-28 audit 第 16 条, Apple HIG). Said by the
+      caller rather than guessed from the word, because the word is the
+      catalog's and may change. */
+  destructive?: boolean;
   /** Something the caller wants said here right now — a refusal that
       came back from the node, in the node's own sentence. It is the
       caller's state, not this menu's: what failed outlives one opening
@@ -50,6 +60,12 @@ export type RowAction = {
       (docs/UX.md 做了但没变化 / 失败). */
   run: () => Promise<void> | void;
 };
+
+/** The caller's order, with the destructive items moved to the end —
+    stable within each half, so a column's own sequence survives. */
+function ordered(items: RowAction[]): RowAction[] {
+  return [...items.filter((a) => !a.destructive), ...items.filter((a) => a.destructive)];
+}
 
 /**
  * The row's actions, on right-click and on long-press.
@@ -130,8 +146,13 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
           e.preventDefault();
         }}
       >
-        {items.map((a, i) => (
+        {ordered(items).map((a, i, all) => (
           <Fragment key={a.key}>
+            {/* **The destructive group is last, behind one line**
+                (components/Menu, Apple HIG): a hand running down the
+                menu reaches everything else first, and the one item
+                that cannot be taken back is not between two that can. */}
+            {a.destructive && i > 0 && !all[i - 1].destructive && <ContextMenuSeparator />}
             {a.confirm && armed === a.key && (
               <ContextMenuLabel data-menu-confirm={a.key} className="text-muted-foreground">
                 {a.confirm}
@@ -139,6 +160,7 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
             )}
             <ContextMenuItem
               data-menu-item={a.key}
+              data-destructive={a.destructive === true}
               data-armed={armed === a.key}
               // The finger floor (tokens.css `--touch`), on the item
               // rather than on some box inside it, so what lights up
@@ -156,7 +178,7 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
                 "min-h-touch",
                 // 删除 in `destructive` ink, not on its ground
                 // (components/Menu); the highlight still turns it white.
-                a.label === gui.delete && !a.failed && "text-destructive",
+                a.destructive && !a.failed && "text-destructive",
                 a.failed && "text-state-failed focus:text-state-failed",
               )}
               onSelect={(e) => {
@@ -176,9 +198,6 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
                 {a.note}
               </ContextMenuLabel>
             )}
-            {/* 置顶 · 删除, a line, then what is this kind's own
-                (components/Menu「头两项永远是置顶、删除，然后一条分隔线」). */}
-            {a.label === gui.delete && i < items.length - 1 && <ContextMenuSeparator />}
           </Fragment>
         ))}
       </ContextMenuContent>
