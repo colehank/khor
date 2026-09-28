@@ -2061,6 +2061,29 @@ vscode-never-answered = "VS Code 始终没有报告监听地址"
 config-no-such-key = "没有这个设置项：{0}（khor config list 列全部）"
 config-no-such-value = "{0} 不接受「{1}」，可选值：{2}"
 
+# ── khor 的动词交给智能体当工具 (`khor_node::mcp`, docs/AGENT.md) ──
+# 读它们的是模型,再由模型转述给人,所以和别的字一样住在这里。看的三件
+# 写明「不动任何东西」,动的三件把后果写在名字旁边——待批问人的那一句
+# 就是从这里来的,人得答得了。
+mcp-devices = "网里的每台机器，以及它们此刻的 CPU/内存/磁盘/GPU。只看，不动任何东西。"
+mcp-sessions = "网里所有 session：id、状态词、标题、在哪台机器上。只看，不动任何东西。"
+mcp-ls = "列出某台机器上的一个目录。不给 path 就是那台机器的主目录。只看，不动任何东西。"
+mcp-ls-machine = "机器名（devices 里列出的那个）"
+mcp-ls-path = "绝对路径；省略则为主目录"
+mcp-open = "在某台机器上开一个持久 session 运行一条命令。**这会在那台机器上启动一个进程。**"
+mcp-open-machine = "在哪台机器上开"
+mcp-open-command = "要运行的命令（交给那台机器的 shell）"
+mcp-open-title = "这一行的名字；省略则取命令本身"
+mcp-open-cwd = "在哪个目录里运行；省略则为那台机器的主目录"
+mcp-close = "关闭一个 session。**这会结束那台机器上的进程。**"
+mcp-close-session = "要关闭的 session 的 id"
+mcp-tell = "给某台机器的窗口留一句话。**对方会看到它。**"
+# 列目录被截断时的最后一行:不许悄悄截断,这条规矩对模型也成立。
+mcp-listing-cut = "…（还有更多，没有列全）"
+mcp-open-needs-command = "open 需要一条命令"
+mcp-closed = "session 已关闭"
+mcp-told = "留言已送达"
+
 [gui]
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"
