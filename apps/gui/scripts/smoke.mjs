@@ -2328,8 +2328,15 @@ for line in sys.stdin:
   }
   const groupKeys = () =>
     page.locator("[data-group]").evaluateAll((els) => els.map((e) => e.dataset.group));
+  // The heading's name only: since 6eb24b1 (design batch 1) a heading
+  // also carries its count at the right end, and `innerText` of the
+  // whole heading read 「忙碌\n1」 against the CLI's 「忙碌」.
   const groupTexts = () =>
-    page.locator("[data-group]").evaluateAll((els) => els.map((e) => e.innerText.trim()));
+    page
+      .locator("[data-group]")
+      .evaluateAll((els) =>
+        els.map((e) => (e.querySelector("[data-group-label]") ?? e).textContent.trim()),
+      );
   const openMenu = async () => {
     if ((await menu.count()) === 0) await page.locator("[data-pane-filter]").click();
     await until("the filter menu", 5_000, async () => (await menu.count()) === 1);
@@ -3056,7 +3063,10 @@ for line in sys.stdin:
     );
   };
   const closeSettings = async () => {
-    await page.locator("[data-more-close]").click();
+    // R0's ×: the page's own head also carries one, drawn only on the
+    // narrow face (`app.css` hides `[data-board] [data-more-head]`), so an
+    // unscoped locator finds two.
+    await page.locator("[data-region-head] [data-more-close]").click();
     await until("the settings page closed", 10_000, async () => (await sheet.count()) === 0);
     await until("rows behind it", 15_000, async () => (await page.locator("[data-row]").count()) > 0);
   };
@@ -4024,6 +4034,18 @@ for line in sys.stdin:
     //    those alone passes against a server that answers everything or
     //    nothing.
     const bare = url.slice(0, url.indexOf("?"));
+    //    **Past the download first.** This run's home is new, so
+    //    `serve-web` fetches its server now, and until that lands it
+    //    answers *everyone* 202 with 「…is downloading, please wait」 —
+    //    token or not, nothing behind it (measured 2026-09-28 with code
+    //    1.139: six polls of 202/202, then 403 bare and 302 with the
+    //    token). Asserting during that window read the notice as 「the
+    //    token gates nothing」. Waited on the tokened link, so the wait
+    //    itself cannot be satisfied by the refusal it is about to test.
+    await until("VS Code's server to finish downloading", 180_000, async () => {
+      const s = await fetch(url, { redirect: "manual" }).then((r) => r.status).catch(() => 0);
+      return s !== 0 && s !== 202;
+    });
     const shut = await fetch(bare).then((r) => r.status).catch(() => 0);
     if (shut !== 403) {
       throw new Error(`VS Code answered ${shut} without a token, wanted 403 — the token gates nothing`);
@@ -4224,7 +4246,7 @@ for line in sys.stdin:
       );
       // Wide: R0's 「×」. Narrow: 「‹」 in the window's first row, one
       // screen back to More's list (10-layout 窄档, 2026-09-28).
-      await page.locator(size.width < 760 ? "[data-side-head] [data-more-back]" : "[data-more-close]").click();
+      await page.locator(size.width < 760 ? "[data-side-head] [data-more-back]" : "[data-region-head] [data-more-close]").click();
     }
     console.log(`  ok  28b: More reaches network, general, security and doctor at ${size.width}`);
   }
@@ -4273,7 +4295,7 @@ for line in sys.stdin:
       throw new Error(`the 网络 page's R0 has no ${door} — its two pairing doors are its page buttons`);
     }
   }
-  await page.locator("[data-more-close]").click();
+  await page.locator("[data-region-head] [data-more-close]").click();
 
   //     The map, on the machines overview: nothing picked, so a fresh
   //     page.
@@ -5408,11 +5430,16 @@ for line in sys.stdin:
   //      which is exactly the job that line was put there to do: the
   //      claim「no editors」would otherwise have gone on passing against
   //      a page with no tabs on it at all.
+  //      ⚠️ **`[data-browse-tabs]`, not `[data-browse-landing]`**
+  //      (2026-09-28): the column is seated in the left block since
+  //      第十三轮 (`SideListSeat` portals it out of the landing's
+  //      section), so the landing-scoped locator counted zero rows and
+  //      the probe-dead line above fired — its job, again.
   await openLanding("browser");
-  const browseTabs = await page.locator("[data-browse-landing] [data-switch-tab]").count();
+  const browseTabs = await page.locator("[data-browse-tabs] [data-switch-tab]").count();
   if (browseTabs === 0) throw new Error("probe dead: the browser landing drew no tabs to check");
   const strays = await page
-    .locator("[data-browse-landing] [data-switch-tab] [data-session-title]")
+    .locator("[data-browse-tabs] [data-switch-tab] [data-session-title]")
     .count();
   if (strays !== 0) throw new Error(`${strays} of ${browseTabs} browsing tab(s) grew a rename editor`);
   await openLanding("sessions");
@@ -7056,11 +7083,21 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //   the reading came from alpha's own key rather than beta's — the
   //   whole point of the bearer check a few lines up. Restored, and
   //   both halves are asserted.
+  //   ⚠️ **Two places since 身份只出现一次** (2026-09-28 found): the
+  //   card's name line went, and who read it and how long ago rides at
+  //   R0's right end (`QuotaLanding` `ReadCaption`, `data-quota-age`). The
+  //   figures stay in the detail; the reader is read where it is drawn.
+  let seen = "";
   await until("the good account's figures, and alpha as the reader", 10_000, async () => {
     const d = page.locator(`[data-quota-detail="${goodId}"]`);
     if ((await d.count()) !== 1) return false;
-    const text = await d.innerText();
-    return text.includes("0.90 / 2.00$") && text.includes("alpha");
+    const figures = await d.innerText();
+    const by = page.locator("[data-region-head] [data-quota-age]");
+    const reader = (await by.count()) === 1 ? await by.innerText() : "";
+    seen = `detail ${JSON.stringify(figures)} · R0 ${JSON.stringify(reader)}`;
+    return figures.includes("0.90 / 2.00$") && reader.includes("alpha");
+  }).catch((e) => {
+    throw new Error(`${e.message} — saw ${seen}`);
   });
   const board = cli(envB, "quota");
   if (!board.includes("gw-good") || !board.includes("45%")) {
@@ -7145,11 +7182,15 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
       throw new Error(`the Codex row does not read the week's 31%: ${JSON.stringify(await codexRow.innerText())}`);
     });
   await codexRow.click();
+  //      The plan rides in R0's caption with the reading's age
+  //      (`QuotaLanding` `ReadCaption`, 身份只出现一次) — the detail is
+  //      asked only that it is this account's.
+  const planSeat = page.locator("[data-region-head] [data-quota-plan]");
   await until("the Codex card with its plan", 10_000, async () => {
     const d = page.locator(`[data-quota-detail="${codexId}"]`);
-    return (await d.count()) === 1 && (await d.innerText()).includes("Plus");
+    return (await d.count()) === 1 && (await planSeat.count()) === 1 && (await planSeat.innerText()).includes("Plus");
   }).catch(async () => {
-    throw new Error(`the Codex card does not name the plan: ${await page.locator("[data-quota-detail]").first().innerText().catch(() => "")}`);
+    throw new Error(`the Codex card does not name the plan: R0 says ${JSON.stringify(await planSeat.first().innerText().catch(() => ""))}`);
   });
   await until("beta's own subscription on its list as a registration", 30_000, async () => {
     const ids = await ownSub();
@@ -7168,8 +7209,11 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   const subMenu = await page
     .locator("[data-row-menu] [data-menu-item]")
     .evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
-  if (JSON.stringify(subMenu.slice(0, 2)) !== JSON.stringify(["pin", "remove"]) || !subMenu.includes("edit")) {
-    throw new Error(`beta's subscription offers ${JSON.stringify(subMenu)} — 置顶, 删除, then 编辑, like every other row`);
+  // Menu/README since 2026-09-28 (负责人): 置顶 first, 删除 last in a
+  // group of its own, this kind's own items between — it was 「置顶, 删除
+  // first」 until then.
+  if (subMenu[0] !== "pin" || subMenu[subMenu.length - 1] !== "remove" || !subMenu.includes("edit")) {
+    throw new Error(`beta's subscription offers ${JSON.stringify(subMenu)} — 置顶 first, 编辑 between, 删除 last, like every other row`);
   }
   await page.locator('[data-row-menu] [data-menu-item="remove"]').click();
   if (await until("the delete question", 3_000, async () =>
