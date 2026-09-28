@@ -16,7 +16,7 @@
 // wherever you were. That is the same structural line the mark's place
 // sits on, and it is why the open page is held apart from the landing
 // rather than being another value of it.
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { IconChevronRight, IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
@@ -63,6 +63,14 @@ export const moreName = (page: MorePage): string =>
     doctor: gui.doctor,
   })[page];
 
+/** The name the page's head says, for the sections inside it: a group
+    named the same is the head said twice, and `MoreSection` leaves that
+    name off. A context rather than a prop because the sections that can
+    echo it are not all spelled on the page — `ConfigSections` draws the
+    node's (`khor_node::config::SECTIONS`), and 通用 and 外观 each open on
+    a section named after their page. */
+const PageName = createContext<string | null>(null);
+
 /**
  * The frame: a head with the page's name and its way out, and a column
  * of sections under it.
@@ -99,48 +107,50 @@ export function MoreFrame({
   children?: ReactNode;
 }) {
   return (
-    <section
-      data-more-page={page}
-      aria-label={moreName(page)}
-      // Settings groups are cards on the canvas (components/SettingsGroup),
-      // so a page of rows stands on `background`; a picture (网络's map)
-      // keeps the board's `card`.
-      className={cn("flex h-full min-h-0 flex-col", bleed ? "bg-card" : "bg-background")}
-    >
-      {/* The page's own head, inside the board. It moves no window
-          since 第十五轮: R0 above the board does, marked by the shell
-          (`components/shell.ts`). */}
-      <header
-        data-more-head
-        className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
+    <PageName.Provider value={moreName(page)}>
+      <section
+        data-more-page={page}
+        aria-label={moreName(page)}
+        // Settings groups are cards on the canvas (components/SettingsGroup),
+        // so a page of rows stands on `background`; a picture (网络's map)
+        // keeps the board's `card`.
+        className={cn("flex h-full min-h-0 flex-col", bleed ? "bg-card" : "bg-background")}
       >
-        <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={gui.close}
-          data-more-close
-          onClick={onClose}
-          // The only way out of this page on the narrow face, which is
-          // the reason it carries the finger floor rather than the
-          // icon size (`DetailPane`'s back button, same argument).
-          className="min-h-touch min-w-touch"
+        {/* The page's own head, inside the board. It moves no window
+            since 第十五轮: R0 above the board does, marked by the shell
+            (`components/shell.ts`). */}
+        <header
+          data-more-head
+          className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
         >
-          <IconClose />
-        </Button>
-      </header>
-      {bleed ? (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-pane">
-          {/* Capped at a reading measure and centred: these pages are
-              prose and rows rather than a table, and a settings row
-              stretched across a 1400 window puts its label and its
-              control at opposite ends of the screen. */}
-          <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
-        </div>
-      )}
-    </section>
+          <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={gui.close}
+            data-more-close
+            onClick={onClose}
+            // The only way out of this page on the narrow face, which is
+            // the reason it carries the finger floor rather than the
+            // icon size (`DetailPane`'s back button, same argument).
+            className="min-h-touch min-w-touch"
+          >
+            <IconClose />
+          </Button>
+        </header>
+        {bleed ? (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+        ) : (
+          <div className="min-h-0 flex-1 overflow-y-auto p-pane">
+            {/* Capped at a reading measure and centred: these pages are
+                prose and rows rather than a table, and a settings row
+                stretched across a 1400 window puts its label and its
+                control at opposite ends of the screen. */}
+            <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
+          </div>
+        )}
+      </section>
+    </PageName.Provider>
   );
 }
 
@@ -162,13 +172,16 @@ export function MoreSection({
   /** The group's name over its card. **Absent for a page's first group
       when the page's own name already says it** (System Settings' top
       group has none either) — a heading that repeats R0 is the second
-      title the Toolbar rule refuses. */
+      title the Toolbar rule refuses. A name equal to the page's is
+      dropped here whoever passed it (`check-face` 4I). */
   label?: string;
   /** Extra anchors on the card — a page's older gates find its rows by
       the list they sit in. */
   mark?: Record<string, string>;
   children: ReactNode;
 }) {
+  const page = useContext(PageName);
+  const shown = label && label !== page ? label : undefined;
   return (
     // components/SettingsGroup: the name above the card and outside it
     // (`group` 11/600 tertiary, in by `gap-row`), the card `card` on the
@@ -176,7 +189,7 @@ export function MoreSection({
     // where the text does. `app.css` `[data-settings-card]` draws the
     // lines and pads whatever in it is not a settings row.
     <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
-      {label && <h2 className="ml-row text-group text-tertiary">{label}</h2>}
+      {shown && <h2 className="ml-row text-group text-tertiary">{shown}</h2>}
       <div data-settings-card {...mark} className="flex min-w-0 flex-col">
         {children}
       </div>
@@ -265,9 +278,11 @@ export function MoreFact({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-row text-body">
+    // `data-more-row`: a row of a settings card like the four kinds —
+    // their height, their trailing edge (app.css, `check-face` 4I).
+    <div data-more-row className="flex min-w-0 items-center gap-row text-body">
       <span className="flex-1">{label}</span>
-      <span data-more-fact={name} className="min-w-0 break-all text-right text-muted-foreground">
+      <span data-more-fact={name} data-setting-trail className="min-w-0 break-all text-right text-muted-foreground">
         {children}
       </span>
     </div>

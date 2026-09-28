@@ -35,25 +35,31 @@ export function PopupRow({
       data-setting-row="popup"
       data-setting-row-name={name}
       {...mark}
-      className="flex min-h-row-1 items-center gap-row px-row py-in"
+      className="flex items-center gap-row px-row py-in"
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-w-0 flex-1 flex-col", disabled && "opacity-40")}>
         <span className="text-body">{label}</span>
-        {hint && <span className="text-callout text-muted-foreground">{hint}</span>}
+        {hint && <span data-setting-note className="text-callout text-muted-foreground">{hint}</span>}
       </div>
-      <div className="group relative flex-none">
+      {/* `-mr-xxs`: the chevron chip — what is drawn at rest — ends on
+          the row's trailing edge with the switches, buttons and values
+          (`check-face` 4I); the `pr-xxs` inset is only seen under the
+          pointer, where the `fill` may spill that far into the row's
+          padding. */}
+      <div className="group relative -mr-xxs flex-none">
         <div
           aria-hidden
           className={cn(
             // components/PopupButton: clear ground, `fill` under the
             // pointer, the value in `body` ink, and a `radius-xs` chip
             // holding the family's two chevrons at 10 — not the ⌃⌄ keys.
-            "flex h-ctl-md items-center gap-in rounded-sm pr-xxs pl-in text-body group-hover:bg-fill",
-            disabled && "opacity-50",
+            // Disabled at the push button's 0.4, the label beside it too.
+            "flex h-ctl-md items-center gap-in rounded-sm pr-xxs pl-in text-body",
+            disabled ? "opacity-40" : "group-hover:bg-fill",
           )}
         >
           <span className="tabular-nums">{current}</span>
-          <span className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground">
+          <span data-setting-trail className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground">
             <IconChevronUp className="-mb-0.5 size-2.5" />
             <IconChevronDown className="-mt-0.5 size-2.5" />
           </span>
@@ -66,7 +72,7 @@ export function PopupRow({
           onChange={(e) => onPick(e.target.value)}
           // Centred on the drawn button and at least the finger floor
           // tall: the look is the pointer's, the hit area the finger's.
-          className="absolute inset-x-0 top-1/2 h-full min-h-touch -translate-y-1/2 cursor-pointer opacity-0"
+          className="absolute inset-x-0 top-1/2 h-full min-h-touch -translate-y-1/2 cursor-pointer opacity-0 disabled:cursor-default"
         >
           {choices.map((c) => (
             <option key={c.value} value={c.value}>

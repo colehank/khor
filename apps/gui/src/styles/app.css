@@ -1193,6 +1193,16 @@ aside[data-side] {
 [data-settings-card] > :not([data-setting-row], button) {
   padding: var(--gap-in) var(--gap-row);
 }
+/* **One height for every one-line row, whatever it holds**: a control
+   (`ctl-md`) and the row's padding above and below it. A switch, a fact
+   and a line of text are as tall as a row with a popup or a button in
+   it; only a note under the title grows a row (`check-face` 4I).
+   ⚠️ 墓碑 (2026-09-28): rows were as tall as what they held — 44 with a
+   button, 34 with a switch or a value, 24 for the interface list — so
+   one group's rows could be three heights. */
+[data-settings-card] > :is([data-setting-row], [data-more-row]) {
+  min-height: calc(var(--ctl-md) + 2 * var(--gap-in));
+}
 /* A bare button in a card is the act of the row above it: it keeps its
    own look, stands on the text's left edge, and draws no line over it. */
 [data-settings-card] > button {
@@ -1210,6 +1220,23 @@ aside[data-side] {
   right: 0;
   height: var(--hair);
   background: var(--border);
+}
+
+/* **A colour well is its colour, edge to edge** (FaceSettings
+   `ColorWell`): the engines draw `<input type=color>` as a swatch inset
+   in a bordered box — a square in a square. The inset and the swatch's
+   own border go; the input's `avatar-edge` hairline is the one edge. */
+[data-color-slot]::-webkit-color-swatch-wrapper {
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+[data-color-slot]::-webkit-color-swatch {
+  border: 0;
+  border-radius: var(--radius-full);
+}
+[data-color-slot]::-moz-color-swatch {
+  border: 0;
+  border-radius: var(--radius-full);
 }
 
 /* **The page's name is said once** (components/Toolbar「身份只出现一次」):

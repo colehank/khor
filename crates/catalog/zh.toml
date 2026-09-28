@@ -2925,6 +2925,10 @@ lock-switch = "锁上这台机器的界面"
 lock-switch-note = "锁的是 app 窗口和网页脸,不锁命令行"
 lock-set-pin = "设一个 PIN"
 lock-change-pin = "换一个 PIN"
+# PIN 那一行的值,在「设一个 PIN…」按钮左边。**行名已经是「PIN」**,所以
+# 值只说状态,不再说一遍 PIN。
+lock-pin-is-set = "已设置"
+lock-pin-not-set = "未设置"
 lock-pin-floor = "至少 {0} 位"
 lock-pin-save = "存下"
 lock-pin-clear = "撤掉 PIN"

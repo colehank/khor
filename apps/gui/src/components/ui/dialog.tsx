@@ -77,7 +77,12 @@ function DialogContent({
         className={cn(
           sheet
             ? cn(
-                "top-pane-head inset-x-in z-50 mx-auto grid max-w-lg gap-4 rounded-b-lg border border-t-0 bg-card p-6 shadow-lg outline-none",
+                // **It floats, so it wears what floats** — `popover` under
+                // `float` — not the board's `card` under a stock shadow.
+                // ⚠️ 墓碑 (2026-09-28): on the dark theme `card` *is* the
+                // board, and the sheet sat on it flush, the same colour,
+                // with nothing to say it was in front (`check-face` 4I).
+                "top-pane-head inset-x-in z-50 mx-auto grid max-w-lg gap-4 rounded-b-lg border border-t-0 bg-popover p-6 shadow-(--shadow-float) outline-none",
                 main ? "absolute" : "fixed",
                 "duration-[var(--dur-180)] ease-[var(--ease-out)]",
                 "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",

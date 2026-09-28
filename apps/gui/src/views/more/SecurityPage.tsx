@@ -32,7 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { cli, gui } from "@/gen/catalog";
+import { gui } from "@/gen/catalog";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
@@ -75,6 +75,10 @@ export function SecurityPage({
   const [rotated, setRotated] = useState(false);
   const [typedName, setTypedName] = useState("");
   const [pinning, setPinning] = useState(false);
+  // The PIN window was opened by the lock switch rather than the PIN
+  // row: saving sets the PIN **and then turns the lock on**, which is
+  // what the person pressed the switch for.
+  const [arming, setArming] = useState(false);
   const [resetting, setResetting] = useState(false);
 
   const me = devices.find((d) => d.me) ?? null;
@@ -100,6 +104,30 @@ export function SecurityPage({
     [onLockChanged],
   );
 
+  // Saving from the PIN window. From the switch it is two acts in the
+  // node's order — the PIN, then the lock, which `khor_node::lock`
+  // refuses without one — and the facts are re-read either way, so a
+  // lock that refused still shows the PIN that took.
+  const savePin = (typed: string) => {
+    setPin("");
+    setPinning(false);
+    setArming(false);
+    if (!arming || lock === null || lock.on) {
+      after(setLockPin(typed));
+      return;
+    }
+    setError(null);
+    setLockPin(typed)
+      .then(() => setLock(true))
+      .then(
+        () => onLockChanged(),
+        (e: unknown) => {
+          setError(String(e instanceof Error ? e.message : e));
+          onLockChanged();
+        },
+      );
+  };
+
   return (
     <MoreFrame page="security" onClose={onClose}>
       {error && (
@@ -122,21 +150,44 @@ export function SecurityPage({
               label={gui.lock_switch}
               hint={gui.lock_switch_note}
               on={lock.on}
-              onToggle={() => after(setLock(!lock.on))}
+              onToggle={() => {
+                // **With no PIN the switch asks for one first.** The node
+                // refuses a lock with no key (`khor_node::lock::set_on`),
+                // and the PIN row below is not live until the lock is
+                // on — so this is the one road to the lock, and saving
+                // the PIN takes it the rest of the way (`savePin`).
+                if (!lock.on && !lock.has_pin) {
+                  setPin("");
+                  setArming(true);
+                  setPinning(true);
+                  return;
+                }
+                after(setLock(!lock.on));
+              }}
             />
 
             {/* **The PIN is an action row** (components/SettingsGroup):
                 its act asks for the digits, so it opens a window and
                 wears the ellipsis. ⚠️ 墓碑 (2026-09-27): a password box
                 and two buttons stood in the card here, a form drawn in
-                a row's place. */}
+                a row's place.
+
+                **Its state is the row's value** — 已设置 / 未设置 left
+                of the button — not a note under 「PIN」 saying 「PIN 设过
+                了」 (⚠️ 墓碑 2026-09-28, the row said PIN twice).
+
+                **It and the idle row depend on the lock**, the way macOS
+                greys what sits under a switch that is off: there, not
+                live, until the lock is on (`check-face` 4I). */}
             <ActionRow
               name="lock-pin"
               label={gui.lock_pin}
-              hint={lock.has_pin ? cli.lock_pin_set : cli.lock_pin_none}
+              value={lock.has_pin ? gui.lock_pin_is_set : gui.lock_pin_not_set}
               actionLabel={lock.has_pin ? gui.lock_change_pin_ask : gui.lock_set_pin_ask}
+              disabled={!lock.on}
               onPress={() => {
                 setPin("");
+                setArming(false);
                 setPinning(true);
               }}
               mark={{ "data-security-pin-open": "" }}
@@ -153,6 +204,7 @@ export function SecurityPage({
                 value: String(m),
                 label: m === 0 ? gui.lock_idle_never_pick : gui.lock_idle_pick(m),
               }))}
+              disabled={!lock.on}
               onPick={(v) => after(setLockTimeout(Number(v)))}
             />
 
@@ -175,29 +227,43 @@ export function SecurityPage({
       <ConfigSections page="security" onChanged={onSettingChanged} />
 
       <MoreSection name="web-key" label={gui.web_key_section}>
-        {key === null ? (
-          <p className="text-callout text-muted-foreground">{gui.web_key_none}</p>
-        ) : (
-          // **Masked until somebody asks.** This page can be on a
-          // screen somebody else is looking at, or in a recording; a key
-          // that is simply printed is a key that leaks by being opened.
-          // An action row: the key is its title, 显示 / 遮住 its act.
-          <ActionRow
-            name="web-key"
-            label={
-              <span data-web-key className="block truncate font-mono">
-                {showKey ? key : "•".repeat(key.length)}
+        {/* **One row: the key, and 换一把 as its trailing act**, like
+            every other settings row. ⚠️ 墓碑 (2026-09-28): 换一把 was a
+            bare button under the row, on a line of its own at the left.
+
+            **Masked until somebody asks.** This page can be on a screen
+            somebody else is looking at, or in a recording; a key that is
+            simply printed is a key that leaks by being opened. 显示 /
+            遮住 belongs to the key, so it sits beside it in the title —
+            the way a secure field carries its own reveal — and the
+            row's one act stays at the trailing edge. What 换一把 did is
+            said under the key, as the row's note. */}
+        <ActionRow
+          name="web-key"
+          label={
+            key === null ? (
+              <span className="text-muted-foreground">{gui.web_key_none}</span>
+            ) : (
+              <span className="flex min-w-0 items-center gap-in">
+                <span data-web-key className="min-w-0 truncate font-mono">
+                  {showKey ? key : "•".repeat(key.length)}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-web-key-show
+                  aria-pressed={showKey}
+                  onClick={() => setShowKey((was) => !was)}
+                  className="min-h-touch min-w-touch flex-none"
+                >
+                  {showKey ? gui.web_key_hide : gui.web_key_show}
+                </Button>
               </span>
-            }
-            actionLabel={showKey ? gui.web_key_hide : gui.web_key_show}
-            variant="ghost"
-            onPress={() => setShowKey((was) => !was)}
-            mark={{ "data-web-key-show": "" }}
-          />
-        )}
-        <Button
-          data-web-key-rotate
-          onClick={() => {
+            )
+          }
+          hint={rotated ? <span data-web-key-rotated>{gui.web_key_rotated}</span> : undefined}
+          actionLabel={gui.web_key_rotate}
+          onPress={() => {
             setError(null);
             rotateWebKey().then(
               (fresh) => {
@@ -208,15 +274,8 @@ export function SecurityPage({
               (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
             );
           }}
-          className="min-h-touch self-start"
-        >
-          {gui.web_key_rotate}
-        </Button>
-        {rotated && (
-          <p data-web-key-rotated className="text-caption text-muted-foreground">
-            {gui.web_key_rotated}
-          </p>
-        )}
+          mark={{ "data-web-key-rotate": "" }}
+        />
       </MoreSection>
 
       {/* 配对的机器 left this page on 2026-09-20 (docs/MORE.md 第二轮:
@@ -252,7 +311,13 @@ export function SecurityPage({
       </MoreSection>
 
       {lock !== null && (
-        <Dialog open={pinning} onOpenChange={setPinning}>
+        <Dialog
+          open={pinning}
+          onOpenChange={(open) => {
+            setPinning(open);
+            if (!open) setArming(false);
+          }}
+        >
           <DialogContent data-security-pin-dialog>
             <DialogHeader>
               <DialogTitle>{lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}</DialogTitle>
@@ -262,9 +327,7 @@ export function SecurityPage({
               onSubmit={(e) => {
                 e.preventDefault();
                 if (pin.length < lock.pin_min) return;
-                after(setLockPin(pin));
-                setPin("");
-                setPinning(false);
+                savePin(pin);
               }}
             >
               <Input
@@ -294,7 +357,14 @@ export function SecurityPage({
                   {gui.lock_pin_clear}
                 </Button>
               )}
-              <Button onClick={() => setPinning(false)}>{gui.delete_keep}</Button>
+              <Button
+                onClick={() => {
+                  setPinning(false);
+                  setArming(false);
+                }}
+              >
+                {gui.delete_keep}
+              </Button>
               <Button
                 variant="primary"
                 data-security-pin-save
@@ -302,11 +372,7 @@ export function SecurityPage({
                 // so this box refuses with the same one the node would
                 // (`LockFacts::pin_min`) rather than a copy of it.
                 disabled={pin.length < lock.pin_min}
-                onClick={() => {
-                  after(setLockPin(pin));
-                  setPin("");
-                  setPinning(false);
-                }}
+                onClick={() => savePin(pin)}
               >
                 {gui.lock_pin_save}
               </Button>

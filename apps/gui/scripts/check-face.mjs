@@ -1832,9 +1832,15 @@ try {
   // around: with the lock on, a face draws the lock screen and nothing
   // else.
   let lockOn = false;
+  // Whether a PIN is set. **The node's two rules about it are kept
+  // here too** (`khor_node::lock`): the lock refuses to come on without
+  // one, and taking the PIN away turns the lock off — so section 4I can
+  // walk the one road a machine with no PIN has to the lock (the switch
+  // asks for the PIN first) and see the refusal if that road breaks.
+  let hasPin = true;
   const lockFacts = () => ({
     on: lockOn,
-    has_pin: true,
+    has_pin: hasPin,
     timeout_min: 5,
     timeouts: [0, 1, 5, 15, 60],
     pin_min: 6,
@@ -1849,13 +1855,22 @@ try {
     // The node's own contract: a wrong PIN is `false`, never a refusal.
     r.fulfill({ contentType: "application/json", body: JSON.stringify(pin === "123456") });
   });
+  const lockAsked = [];
   await page.route("**/set_lock", (r) => {
-    lockOn = JSON.parse(r.request().postData() || "{}").on;
+    const on = JSON.parse(r.request().postData() || "{}").on;
+    lockAsked.push(on);
+    if (on && !hasPin) {
+      return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("set a PIN first") });
+    }
+    lockOn = on;
     r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) });
   });
-  await page.route("**/set_lock_pin", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) }),
-  );
+  await page.route("**/set_lock_pin", (r) => {
+    const pin = JSON.parse(r.request().postData() || "{}").pin ?? "";
+    hasPin = pin !== "";
+    if (!hasPin) lockOn = false;
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) });
+  });
   await page.route("**/set_lock_timeout", (r) =>
     r.fulfill({ contentType: "application/json", body: JSON.stringify(lockFacts()) }),
   );
@@ -12546,6 +12561,298 @@ try {
       }
       await press("[data-more-close]");
     }
+  }
+
+  // ── 4I) 「…」的页: 一条右缘、一种行高、组名不复述页名; 浮层在暗色里浮得起来 ──
+  //
+  // Found by the 2026-09-28 UI audit, each one a thing that had shipped:
+  // every switch stood 8 past the trailing edge the popups, buttons and
+  // values share (the switch's hit box was pulled right, and with a
+  // mouse the box is the track's own width); 「khor 的界面」 was a list
+  // of 24-high lines inside one padded box while every other group's
+  // rows were a control tall; 通用 and 外观 each opened on a group
+  // named 通用 / 外观 under a head that already said so; the lock's PIN
+  // and idle rows were live with the lock off; and in the dark theme a
+  // dialog, a sheet, a menu and the search results were painted the
+  // board's own colour, so nothing floated — a shadow does not show on
+  // a ground this dark, which is why macOS lifts them with a lighter
+  // surface instead.
+  //
+  // **Measured, not looked at**: these are numbers a screenshot shows
+  // only to somebody already squinting, and every one of them went out
+  // once.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await wait(300);
+    await open("sessions");
+
+    // What each page must have drawn before it is read — an anchor the
+    // page only has once its answers are in, so a slow `about` cannot
+    // read as a page with no rows.
+    const READY = {
+      settings: '[data-more-fact="store-path"]',
+      appearance: '[data-config-row="theme"]',
+      network: '[data-more-page="network"]',
+      security: '[data-config-row="confirm-delete"]',
+      identity: "[data-iface]",
+      doctor: "[data-doctor-again]",
+    };
+    const seen = [];
+    for (const [key, ready] of Object.entries(READY)) {
+      if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
+        fail(`probe dead: 4I could not open 「…」 → ${key}`);
+        continue;
+      }
+      if (!(await until(5_000, async () => (await page.locator(ready).count()) > 0))) {
+        fail(`probe dead: 4I · ${key} never drew ${ready}`);
+        continue;
+      }
+      await wait(200);
+      const read = await page.evaluate((k) => {
+        const el = document.querySelector(`[data-more-page="${k}"]`);
+        if (!el) return null;
+        const title = (el.getAttribute("aria-label") ?? "").trim();
+        const heads = [...el.querySelectorAll("[data-more-section] > h2")].map((h) => (h.textContent ?? "").trim());
+        const rows = [];
+        for (const card of el.querySelectorAll("[data-settings-card]")) {
+          const cb = card.getBoundingClientRect();
+          if (cb.width === 0) continue;
+          for (const row of card.querySelectorAll("[data-setting-row], [data-more-row]")) {
+            const rb = row.getBoundingClientRect();
+            if (rb.width === 0 || rb.height === 0) continue;
+            // The drawn control, not its hit area: a switch's track, a
+            // popup's chevron chip, a button, a fact's value.
+            const trail = row.querySelector("[data-setting-trail], [data-switch-track]");
+            rows.push({
+              name:
+                row.getAttribute("data-setting-row-name") ??
+                row.getAttribute("data-iface") ??
+                row.querySelector("[data-more-fact]")?.getAttribute("data-more-fact") ??
+                "?",
+              kind: row.getAttribute("data-setting-row") ?? "fact",
+              off: trail ? Math.round((cb.right - trail.getBoundingClientRect().right) * 10) / 10 : null,
+              h: Math.round(rb.height * 10) / 10,
+              note: row.querySelector("[data-setting-note]") !== null,
+            });
+          }
+        }
+        return { title, heads, rows };
+      }, key);
+      if (!read) {
+        fail(`probe dead: 4I · 「…」 → ${key} drew no [data-more-page]`);
+        continue;
+      }
+      console.log(`4I · ${key}: ${JSON.stringify(read)}`);
+      // (a) a group's name that is the page's own name is the page's
+      // head said twice (components/Toolbar 「身份只出现一次」).
+      const echo = read.heads.filter((h) => h === read.title);
+      if (!read.title) fail(`probe dead: 4I · ${key} has no aria-label to compare its group names with`);
+      if (echo.length) {
+        fail(
+          `4I · ${key}: a group is named ${JSON.stringify(echo[0])}, the page's own name — a heading ` +
+            "that repeats the head is the second title (views/more/MorePage MoreSection)",
+        );
+      }
+      for (const r of read.rows) seen.push({ page: key, ...r });
+    }
+
+    // (b) one trailing edge for every row kind, on every page.
+    const kinds = new Set(seen.map((r) => r.kind));
+    for (const want of ["switch", "popup", "action", "fact"]) {
+      if (!kinds.has(want)) {
+        fail(`probe dead: 4I saw no ${want} row on any 「…」 page — the trailing edge is compared across the kinds`);
+      }
+    }
+    const blind = seen.filter((r) => r.off === null);
+    if (blind.length) {
+      fail(
+        `probe dead: 4I · ${blind.map((r) => `${r.page}/${r.name}`).join(", ")} carry no drawn trailing ` +
+          "control ([data-setting-trail] / [data-switch-track]) — the edge below cannot see them",
+      );
+    }
+    const offs = seen.filter((r) => r.off !== null);
+    const mode = (xs) => {
+      const n = new Map();
+      for (const x of xs) n.set(x, (n.get(x) ?? 0) + 1);
+      return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    };
+    const edge = mode(offs.map((r) => r.off));
+    const stray = offs.filter((r) => Math.abs(r.off - edge) > 1);
+    console.log(`4I · trailing edge: ${edge} from the card's right, ${offs.length} row(s), ${stray.length} off it`);
+    if (stray.length) {
+      fail(
+        `4I · rows end their control away from the one trailing edge (${edge} in from the card): ` +
+          stray.map((r) => `${r.page}/${r.name} (${r.kind}) at ${r.off}`).join(", ") +
+          " — every row kind shares one right edge (components/SettingsGroup)",
+      );
+    }
+    // (c) one height for every one-line row, whatever its kind. A note
+    // grows a row, and that is the only thing that may.
+    const lone = seen.filter((r) => !r.note);
+    const tall = mode(lone.map((r) => r.h));
+    const odd = lone.filter((r) => Math.abs(r.h - tall) > 1);
+    console.log(`4I · one-line rows: ${lone.length}, ${tall} tall, ${odd.length} not`);
+    if (odd.length) {
+      fail(
+        `4I · one-line rows of another height (most are ${tall}): ` +
+          odd.map((r) => `${r.page}/${r.name} (${r.kind}) ${r.h}`).join(", ") +
+          " — a row is one control tall whatever it holds (components/SettingsGroup)",
+      );
+    }
+
+    // (d) the lock's own rows are dependent on it: with the lock off
+    // the PIN and the idle timeout are there but not live, the way
+    // macOS greys the settings under a switch that is off. And the one
+    // road a machine with **no** PIN has to the lock stays open: the
+    // switch asks for the PIN first (`khor_node::lock` refuses a lock
+    // with no key, so disabling the PIN row alone would be a dead end).
+    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="security"]'))) {
+      fail("probe dead: 4I could not open 「…」 → 安全");
+    } else {
+      const deps = () =>
+        page.evaluate(() => ({
+          lock: document.querySelector('[data-security-switch="lock"]')?.getAttribute("aria-checked") ?? null,
+          pin: document.querySelector('[data-setting-row-name="lock-pin"] [data-setting-trail]')?.disabled ?? null,
+          idle: document.querySelector('[data-setting-select="lock-timeout"]')?.disabled ?? null,
+          dialog: document.querySelectorAll("[data-security-pin-dialog]").length,
+        }));
+      const off = await deps();
+      console.log(`4I · lock off: ${JSON.stringify(off)}`);
+      if (off.lock !== "false" || off.pin === null || off.idle === null) {
+        fail(`probe dead: 4I · 安全 reads ${JSON.stringify(off)} — the fixture ships the lock off with its two rows`);
+      } else if (off.pin !== true || off.idle !== true) {
+        fail(
+          `4I · with the lock off, the PIN row is ${off.pin ? "dead" : "live"} and the idle row is ` +
+            `${off.idle ? "dead" : "live"} — both depend on the lock and are disabled while it is off`,
+        );
+      }
+      await press('[data-security-switch="lock"]');
+      await until(3_000, async () => (await deps()).lock === "true");
+      const on = await deps();
+      console.log(`4I · lock on: ${JSON.stringify(on)}`);
+      if (on.lock !== "true" || on.pin !== false || on.idle !== false) {
+        fail(`4I · with the lock on the rows read ${JSON.stringify(on)} — the PIN and the idle timeout are live`);
+      }
+      // Take the PIN away (it turns the lock off with it, the node's
+      // rule), then ask for the lock again with no PIN.
+      await press('[data-setting-row-name="lock-pin"] [data-setting-trail]');
+      await until(3_000, async () => (await page.locator("[data-security-pin-clear]").count()) === 1);
+      await press("[data-security-pin-clear]");
+      await until(3_000, async () => (await deps()).lock === "false" && !hasPin);
+      const asked = lockAsked.length;
+      await press('[data-security-switch="lock"]');
+      const asks = await until(3_000, async () => (await deps()).dialog === 1);
+      const refused = lockAsked.slice(asked).filter((x) => x === true).length;
+      console.log(`4I · no PIN, switch pressed: ${JSON.stringify({ dialog: asks, refused })}`);
+      if (!asks || refused) {
+        fail(
+          `4I · with no PIN the lock switch ${asks ? "opened the PIN window" : "opened no PIN window"} and ` +
+            `sent ${refused} refused request(s) — the switch asks for the PIN first, since the PIN row ` +
+            "is not live until the lock is on",
+        );
+      } else {
+        await page.locator("[data-security-pin]").fill("654321");
+        await press("[data-security-pin-save]");
+        const took = await until(3_000, async () => (await deps()).lock === "true");
+        if (!took || !hasPin) {
+          fail(`4I · saving the PIN from the switch left the lock ${JSON.stringify(await deps())} — the PIN and then the lock`);
+        }
+      }
+      // Put the fixture back: PIN set, lock off.
+      hasPin = true;
+      if ((await deps()).lock === "true") {
+        await press('[data-security-switch="lock"]');
+        await until(3_000, async () => (await deps()).lock === "false");
+      }
+      await page.keyboard.press("Escape");
+      await press("[data-more-close]");
+    }
+
+    // (e) the floating surfaces lift in the dark. Against the board's
+    // own ground, in L* rather than contrast — the claim is that a
+    // person sees an edge where the surface meets the board. 4 is the
+    // step `canvas` → `card` takes (4.4), the step that makes the board
+    // itself read as lifted.
+    const LIFT = 4;
+    await page.emulateMedia({ colorScheme: "dark" });
+    await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark");
+    await wait(200);
+    const lift = (sel) =>
+      page.evaluate((s) => {
+        const lstar = (css) => {
+          const m = css.match(/[\d.]+/g);
+          if (!m) return null;
+          const [r, g, b] = m.slice(0, 3).map((v) => {
+            const c = Number(v) / 255;
+            return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          });
+          const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          return y > 0.008856 ? 116 * Math.cbrt(y) - 16 : 903.3 * y;
+        };
+        const el = document.querySelector(s);
+        const board = document.querySelector("[data-main] [data-board]");
+        if (!el || !board) return null;
+        const surface = getComputedStyle(el).backgroundColor;
+        const ground = getComputedStyle(board).backgroundColor;
+        return { surface, ground, d: Math.round((lstar(surface) - lstar(ground)) * 100) / 100 };
+      }, sel);
+    const surfaces = [
+      ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
+      [
+        "a dialog (改名…)",
+        "[data-identity-rename-dialog]",
+        async () => {
+          if (!(await press("[data-rail-mark]"))) return false;
+          if (!(await until(3_000, async () => (await page.locator("[data-identity-rename]").count()) > 0))) return false;
+          return press("[data-identity-rename]");
+        },
+      ],
+      [
+        "a row's context menu",
+        '[role="menu"]',
+        async () => {
+          if (!(await open("sessions"))) return false;
+          const row = page.locator("[data-list] [data-row-open]").first();
+          if ((await row.count()) === 0) return false;
+          await row.click({ button: "right" });
+          await wait(300);
+          return true;
+        },
+      ],
+      [
+        "the search results",
+        "[data-search-rows]",
+        async () => {
+          if (!(await open("sessions"))) return false;
+          await page.keyboard.press("Meta+k");
+          if (!(await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1))) return false;
+          await page.locator("[data-search-box]").fill("face");
+          return true;
+        },
+      ],
+    ];
+    for (const [what, sel, go] of surfaces) {
+      if (!(await go()) || !(await until(3_000, async () => (await page.locator(sel).count()) > 0))) {
+        fail(`probe dead: 4I · ${what} (${sel}) never opened in the dark`);
+      } else {
+        const got = await lift(sel);
+        console.log(`4I · dark · ${what}: ${JSON.stringify(got)}`);
+        if (!got) {
+          fail(`probe dead: 4I · ${what} or the board could not be read`);
+        } else if (!(got.d >= LIFT)) {
+          fail(
+            `4I · in the dark ${what} is ${got.surface} on a ${got.ground} board — ${got.d} L* apart, ` +
+              `under the ${LIFT} a floating surface needs to read as above the board (--popover, tokens.css)`,
+          );
+        }
+      }
+      await page.keyboard.press("Escape");
+      await wait(250);
+      if ((await page.locator("[data-more-page]").count()) > 0) await press("[data-more-close]");
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light");
   }
 
   // ── 5) a dense screen has a reading order ─────────────────────────
