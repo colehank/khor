@@ -116,29 +116,8 @@ export function DevicesList({
       failed: pinFailed.has(d.id),
       run: () => onPin(d),
     },
-    // **Not on this machine's own row.** `Node::forget_device` refuses
-    // it by name — a table cannot be left from the inside — so the
-    // item would exist only to be refused, an offer whose one answer
-    // is no.
-    ...(d.me
-      ? []
-      : [
-          {
-            key: "forget",
-            // **删除, the word every sidebar's second item says**
-            // (docs/SHELL.md 第二轮), and the map's card says it too —
-            // one act (`Node::forget_device`), one word. What deleting
-            // a machine *means* is the sentence between the two presses.
-            //
-            // What the user once called 断开 is 暂停 below (第四轮: 「机器的
-            // 断开指的是暂停」), which khor now has for one machine too.
-            label: gui.delete,
-            ask: gui.forget_machine_confirm,
-            note: forgetRefused.get(d.id),
-            run: () => onForget(d),
-          },
-        ]),
-    // **暂停 / 恢复, after 置顶 and 删除** (docs/SHELL.md 第五轮 第 10 条).
+    // **暂停 / 恢复, after 置顶** (docs/SHELL.md 第五轮 第 10 条; 删除 moved
+    // behind it to the foot on 2026-09-28, audit 第 16 条).
     // On another machine's row it is this machine no longer talking to
     // that one — it runs on as it was; on this machine's own row it is
     // `khor pause`. Either way the word is what pressing it does, so it
@@ -154,6 +133,30 @@ export function DevicesList({
           },
         ]
       : []),
+    // **Not on this machine's own row.** `Node::forget_device` refuses
+    // it by name — a table cannot be left from the inside — so the
+    // item would exist only to be refused, an offer whose one answer
+    // is no.
+    ...(d.me
+      ? []
+      : [
+          {
+            key: "forget",
+            // **删除, the word every sidebar's last item says**, and the
+            // map's card says it too — one act (`Node::forget_device`),
+            // one word. What deleting a machine *means* is the sentence
+            // in the window that follows.
+            //
+            // What the user once called 断开 is 暂停 above (第四轮: 「机器的
+            // 断开指的是暂停」), which khor now has for one machine too.
+            label: gui.delete,
+            askLabel: gui.delete_ask,
+            destructive: true,
+            ask: gui.forget_machine_confirm,
+            note: forgetRefused.get(d.id),
+            run: () => onForget(d),
+          },
+        ]),
   ];
   // **The rows are `SideList`'s** (docs/SHELL.md 第四轮): the node's
   // order (pinned first), the pinned group and its fold, the box's one

@@ -130,11 +130,14 @@ export type TabFace = {
 
 /** The face a tab wears: the session assembly when it is a session,
     the bare machine face when it is a place. One decision, both the
-    strip and the switcher read it. */
-function TabAvatar({ f, bare }: { f: TabFace; bare: string }) {
+    strip and the switcher read it — **at the size of the seat**: the
+    strip's tab is 28 tall and takes the assembly at a tab's size
+    (`SessionFace` `tab`, halo and corner inside the tab's box); the
+    switcher's rows are list rows and keep a row's. */
+function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
   if (f.glyph) return <span className="flex-none">{f.glyph}</span>;
   return f.session ? (
-    <SessionFace face={f.face} {...f.session} />
+    <SessionFace face={f.face} {...f.session} size={seat} />
   ) : (
     <MachineAvatar face={f.face} className={bare} />
   );
@@ -459,7 +462,7 @@ export function TabStrip({
                     both lines it has the pair itself as its measure,
                     which is where a session tab's avatar already
                     stands. */}
-                {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-4 flex-none" />}
+                {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-4 flex-none" seat="tab" />}
                 {f.glyph && f.sub && <span className="flex-none">{f.glyph}</span>}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
@@ -753,7 +756,7 @@ export function TabSwitcher({
               // the target and was the parent's.
               className="flex min-h-touch min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
             >
-              <TabAvatar f={f} bare="size-avatar flex-none" />
+              <TabAvatar f={f} bare="size-avatar flex-none" seat="row" />
               <span className="flex min-w-0 flex-1 flex-col">
                 {/* **The same two names the strip's label wears**, because
                     it is the same fact: what this tab is called, as

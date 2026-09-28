@@ -6,10 +6,30 @@ import { FaceMark } from "@/components/FaceMark";
 /** The corner mark on a session's face: the shape is `sessionMark`'s
     one judgment; this only sizes it. (Moved here from `SessionsList`
     with the assembly around it.) */
-function KindMark({ kind, category }: { kind: string; category: string | null }) {
+function KindMark({ kind, category, className }: { kind: string; category: string | null; className: string }) {
   const M = sessionMark(kind, category);
-  return <M className="size-kind-mark-glyph" />;
+  return <M className={className} />;
 }
+
+/**
+ * The two sizes the assembly is drawn at, each whole: the face, the
+ * corner's frame and the glyph in it move together, because a row's
+ * corner on a tab's face is bigger than the face (tokens.css
+ * `--kind-mark-tab`).
+ *
+ * **`tab` is for a strip's tab and for what stands in for one** (the
+ * narrow detail header). It exists because the row's size was used
+ * there and did not fit: 32 plus the halo is 40, and a tab is 28 — the
+ * ring stood 6 over the tab's top edge (2026-09-28 audit 第 6 条).
+ * `check-face` measures the whole ink — halo and corner — against the
+ * tab's box and the header's.
+ */
+const SIZES = {
+  row: { face: "size-avatar", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
+  // `size-4`: the bare machine face a browsing tab wears beside it
+  // (`TabStrip`'s `bare`) — one tab, one face size, whichever kind.
+  tab: { face: "size-4", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
+} as const;
 
 /**
  * One session's identity, assembled the one way it is drawn anywhere:
@@ -46,6 +66,7 @@ export function SessionFace({
   word,
   kind,
   category,
+  size = "row",
   className,
 }: {
   face: Avatar | null;
@@ -53,18 +74,22 @@ export function SessionFace({
   word: string;
   kind: string;
   category: string | null;
+  /** A list row's (the switcher's rows too) or a tab's — see `SIZES`. */
+  size?: keyof typeof SIZES;
   className?: string;
 }) {
+  const s = SIZES[size];
   // **`FaceMark` with a halo and a kind mark** (docs/SHELL.md 第四轮 第 2
   // 条): the assembly this file used to draw by hand is the one every
   // sidebar row wears now; a session's is the only one with a halo.
   return (
     <FaceMark
-      face={<MachineAvatar face={face} className="size-avatar" />}
+      face={<MachineAvatar face={face} className={s.face} />}
       halo={word}
       mark={category ?? kind}
       badgeData={{ "data-kind-mark": category ?? kind }}
-      badge={<KindMark kind={kind} category={category} />}
+      badgeClass={s.frame}
+      badge={<KindMark kind={kind} category={category} className={s.glyph} />}
       className={className}
     />
   );

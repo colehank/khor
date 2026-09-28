@@ -1423,6 +1423,21 @@
    * `--avatar` 32 is the same proportion VS Code gives a badge. */
   --kind-mark: 18px;
   --kind-mark-glyph: 14px;
+  /* **The same corner on a tab's face** (2026-09-28 audit 第 6 条). A tab
+   * wears the row's assembly — halo for the state, corner for the kind
+   * (2026-09-02) — but on a tab's 16 face, not the row's 32: the row's
+   * 32 plus its halo is 40, in a tab 28 tall, and it stood 6 over the
+   * tab's top edge. At 16 the halo reaches 24 and the corner has to
+   * shrink with the face — an 18 frame on a 16 face is bigger than the
+   * face it marks.
+   *
+   * 12/10 rather than the row's proportion (9/7): the row's corner grew
+   * from 11 to 14 because 11 was unreadable, and 7 would repeat that
+   * mistake at a smaller size. 10 is the smallest the three shapes
+   * (chat / terminal / agent) stay apart at; the frame keeps the row's
+   * one-step margin around it. */
+  --kind-mark-tab: 12px;
+  --kind-mark-tab-glyph: 10px;
   /* The gap between a tab's face and the name beside it (第 3 条:
    * 「标签页上的标题距离头像稍远一些, 现在有些拥挤」— the user,
    * 2026-09-20). It was 4 — the same 4 the tab puts between the name
@@ -1830,6 +1845,8 @@
   --spacing-icon-mark: var(--icon-mark);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
+  --spacing-kind-mark-tab: var(--kind-mark-tab);
+  --spacing-kind-mark-tab-glyph: var(--kind-mark-tab-glyph);
   /* `min-h-pane-head` on a pane's top row, `h-pane-head` on the tab
      band, `pt-tab-lip` on the sliver above a tab — 第 5 条's one token
      reaching both surfaces. */

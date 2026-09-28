@@ -234,16 +234,23 @@ export function useRemoveFlow({
       },
     );
 
+  /** Whether pressing 删除 on this path raises the sheet. The tick only
+      ever covered the recoverable road, so it only ever skips that one
+      (`RemoveDialog`) — a delete that cannot be undone always asks. */
+  const asks = (isDir: boolean) => kindOf(isDir) === "gone" || !neverAsks();
+
   const actions = (full: string, isDir: boolean): RowAction[] => [
     {
       key: "remove",
-      label: gui.delete,
+      // 「删除…」 exactly when the sheet will follow, the plain word when
+      // it will not (2026-09-28 audit 第 16 条; the ellipsis rule in
+      // docs/design-system). Last, behind a line (`destructive`).
+      label: asks(isDir) ? gui.delete_ask : gui.delete,
+      destructive: true,
       run: () => {
         setRefused(null);
         const kind = kindOf(isDir);
-        // The tick only ever covered the recoverable road, so it only
-        // ever skips that one (`RemoveDialog`).
-        if (kind !== "gone" && neverAsks()) return go(full);
+        if (!asks(isDir)) return go(full);
         setGoing({ path: full, kind });
       },
     },

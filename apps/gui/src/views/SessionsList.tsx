@@ -7,6 +7,7 @@ import { sessionMark } from "@/components/BrandIcons";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { EditableName } from "@/components/EditableName";
+import { IconDevices } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { closeWarning } from "@/views/DetailPane";
@@ -226,10 +227,12 @@ export function SessionsList({
       },
     ];
   };
-  // **置顶, 删除, then this column's own** (docs/SHELL.md 第二轮:「右键头两项
-  // 永远是置顶与删除」). Every sidebar's menu starts with the same two
-  // words in the same places, so a hand that learned them on one list
-  // finds them on the next.
+  // **置顶 first, this column's own, then 删除 last behind a line**
+  // (2026-09-28 audit 第 16 条, Apple HIG; it was 置顶, 删除 first —
+  // docs/SHELL.md 第二轮). Every sidebar's menu opens on the same word
+  // and closes on the same word, so a hand that learned them on one list
+  // finds them on the next — and the one that cannot be taken back is no
+  // longer between 置顶 and 复制 ID.
   const actions = (r: SessionRow): RowAction[] => [
     {
       key: "pin",
@@ -250,18 +253,6 @@ export function SessionsList({
       failed: pinFailed.has(r.id),
       run: () => onPin(r),
     },
-    {
-      key: "close",
-      // 删除, and what deleting *this* row does is the sentence
-      // between the two presses — this row's own, from the one place
-      // that map lives (`DetailPane.closeWarning`). Writing the kinds
-      // out again here would be a second source that compiles, runs,
-      // and says the wrong thing.
-      label: gui.delete,
-      ask: closeWarning(r.kind, r.imported),
-      note: closeRefused.get(r.id),
-      run: () => onClose(r),
-    },
     ...turnInto(r),
     {
       // The id is paste material, not reading material. The menu
@@ -271,6 +262,20 @@ export function SessionsList({
       key: "copy-id",
       label: gui.copy_id,
       run: () => navigator.clipboard.writeText(r.id),
+    },
+    {
+      key: "close",
+      // 删除, and what deleting *this* row does is the sentence
+      // between the two presses — this row's own, from the one place
+      // that map lives (`DetailPane.closeWarning`). Writing the kinds
+      // out again here would be a second source that compiles, runs,
+      // and says the wrong thing.
+      label: gui.delete,
+      askLabel: gui.delete_ask,
+      destructive: true,
+      ask: closeWarning(r.kind, r.imported),
+      note: closeRefused.get(r.id),
+      run: () => onClose(r),
     },
   ];
   const Mark = (r: SessionRow) => {
@@ -318,10 +323,35 @@ export function SessionsList({
       ) : undefined,
     // The right column: the state word (this row's `fact`) over the age
     // (`aux`) — state is never colour alone, so the word stays.
+    //
+    // **The word ends the line, so it and the age share one right edge
+    // down the whole list** (2026-09-28 audit 第 7 条). The machine chip
+    // and the unread count used to come after it, and a row that carried
+    // one had its word 22px left of the rows that did not — a column of
+    // words that did not line up. Whatever else rides this line stands
+    // to the word's left.
     trailing: (
       <span className="flex flex-none flex-col items-end gap-xxs text-caption text-tertiary">
         <span className="flex items-center gap-xxs">
-          <StatusWord word={r.word} />
+          {showVia && r.via && (
+            <span
+              data-via={r.via}
+              data-via-glyph={r.via_face ? undefined : ""}
+              className="grid size-kind-mark flex-none place-items-center"
+            >
+              {/* **No face, the machine glyph** — not `MachineAvatar`'s
+                  blank. At a row's 32 the blank holds a seat until the
+                  face lands; at 18 beside a word it read as a picture
+                  that failed to load (audit 第 7 条). A thing with no
+                  identity wears a glyph, never an invented face
+                  (components/Avatar「要缩写的场合…用一个字形」). */}
+              {r.via_face ? (
+                <MachineAvatar face={r.via_face} className="size-kind-mark" />
+              ) : (
+                <IconDevices className="size-kind-mark-glyph" />
+              )}
+            </span>
+          )}
           {r.unread > 0 && (
             <span
               data-unread
@@ -330,11 +360,7 @@ export function SessionsList({
               {r.unread}
             </span>
           )}
-          {showVia && r.via && (
-            <span data-via={r.via} className="flex flex-none">
-              <MachineAvatar face={r.via_face} className="size-kind-mark" />
-            </span>
-          )}
+          <StatusWord word={r.word} />
         </span>
         {r.at_ms > 0 &&
           (r.quiet ? (

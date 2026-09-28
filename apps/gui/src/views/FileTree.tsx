@@ -610,7 +610,24 @@ export function FileTree({
                         size="sm"
                         variant="ghost"
                         data-take={r.name}
-                        className="min-h-[var(--tree-row)] min-w-touch flex-none"
+                        // **Drawn where somebody is, VS Code's row-action
+                        // rule** (2026-09-28 audit 第 15 条): the row under
+                        // the pointer, the row the keyboard is in, the open
+                        // row — and every row under a finger, which has no
+                        // hover to summon it with. On every row at once it
+                        // was the loudest word in the tree, repeated down
+                        // a column that is about names.
+                        //
+                        // **Hidden by opacity, never removed**: it stays in
+                        // the tab order, and the focus that lands on it is
+                        // what draws it (`group-focus-within`). Its place is
+                        // kept too, so a row does not change shape when the
+                        // pointer arrives.
+                        className={cn(
+                          "min-h-[var(--tree-row)] min-w-touch flex-none transition-opacity",
+                          open !== r.full &&
+                            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
+                        )}
                         onClick={() => take(r.full)}
                       >
                         {gui.take_file}

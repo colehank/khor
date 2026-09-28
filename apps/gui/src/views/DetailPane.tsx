@@ -264,9 +264,12 @@ export function DetailPane({
               repeating it here was the header's old crowding
               (2026-09-02:「都和标签内容重复了」). Narrow has no strip,
               so the face stays, or an open session's state would be on
-              no screen at all. */}
+              no screen at all. **At a tab's size**, because it is the
+              tab's face standing in for the strip: the row's 32 and its
+              halo made 40 in a 32-tall header and stood out of it at both
+              edges (2026-09-28 audit 第 6 条). */}
           {row && (
-            <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} />
+            <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="tab" />
           )}
           {/* `min-w-0` (inside EditableName) is what lets it actually
               truncate: a flex child will not shrink below its content

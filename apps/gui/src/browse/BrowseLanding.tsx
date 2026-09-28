@@ -207,15 +207,15 @@ export function BrowseLanding({
   const me = devices.find((d) => d.me) ?? null;
 
   /**
-   * A tab's own menu: **置顶, 删除, then what this column has of its own**
-   * (docs/SHELL.md 第二轮:「每一行都有右键菜单,头两项永远是置顶、删除,
-   * 顺序固定」).
+   * A tab's own menu: **置顶, what this column has of its own, then 删除
+   * last behind a line** (2026-09-28 audit 第 16 条, Apple HIG; until then
+   * docs/SHELL.md 第二轮's 「头两项永远是置顶、删除」).
    *
-   * 删除 asks nothing first. What it does to a tab is close it — the
-   * same act as the × beside it, which has never asked — and a question
-   * on one road and not the other would make the cheap act read as the
-   * costly one depending on where it was pressed. A pinned tab is
-   * refused by the node; that sentence is the note.
+   * ⚠️ This paragraph used to say 删除 asks nothing first, on the × beside
+   * it never asking. 第四轮 (「删除这些, 都要弹出一个弹窗」) made every
+   * column's 删除 raise the one window, this one's included
+   * (`tab_remove_confirm`); the × still does not ask, like Chrome's. A
+   * pinned tab is refused by the node; that sentence is the note.
    *
    * No 「在系统浏览器中打开」: the ruling asked for it where a road
    * already exists, and none does — a page here leaves through the
@@ -248,13 +248,6 @@ export function BrowseLanding({
         note: refused.get(k("pin")),
         run: () => answered("pin")(tabs.pin(t.id, !t.pinned)),
       },
-      {
-        key: "close",
-        label: gui.delete,
-        ask: gui.tab_remove_confirm,
-        note: refused.get(k("close")),
-        run: () => answered("close")(tabs.close(t.id)),
-      },
       // A tab pointed nowhere has nothing to copy, and an item that
       // would put an empty string on the clipboard is not offered.
       ...(t.path
@@ -266,6 +259,16 @@ export function BrowseLanding({
       ...(t.path && deviceOf(t.device)?.me
         ? [{ key: "open-outside", label: gui.open_in_browser, run: () => openLink(t.path).then(() => {}) }]
         : []),
+      // 删除 last, behind a line (2026-09-28 audit 第 16 条, Apple HIG).
+      {
+        key: "close",
+        label: gui.delete,
+        askLabel: gui.delete_ask,
+        destructive: true,
+        ask: gui.tab_remove_confirm,
+        note: refused.get(k("close")),
+        run: () => answered("close")(tabs.close(t.id)),
+      },
     ];
   };
 
