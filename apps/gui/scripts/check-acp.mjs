@@ -214,6 +214,13 @@ const probe = () => {
       fg.g * a + bg.g * (1 - a),
     )}, ${Math.round(fg.b * a + bg.b * (1 - a))})`;
   };
+  /** What a control says it is set to: a popup button's drawn value
+      (its `<select>` carries the anchor, and the select's own text is
+      every option's), anything else its own words. */
+  const faceOf = (el) => {
+    const drawn = el.tagName === "SELECT" ? el.closest("[data-popup-button]")?.querySelector("[data-popup-value]") : null;
+    return ((drawn ?? el).textContent ?? "").trim();
+  };
   const lines = [...document.querySelectorAll("[data-chat-tool]")].map((el) => {
     const text = el.querySelector("[data-word-text]") ?? el;
     const fg = rgba(getComputedStyle(text).color);
@@ -305,15 +312,22 @@ const probe = () => {
     column: !!document.querySelector("[data-chat-column]"),
     // The settings row: the mode menu's face and every option control,
     // each with what it says it is set to.
+    //
+    // **A choice is a popup button since 2026-09-28** (components/
+    // PopupButton): the anchor sits on its native `<select>`, whose own
+    // text is *every* option's — so what the control says it is set to
+    // is read off the drawn face (`data-popup-value`), which a select
+    // holding the right value and drawing the wrong word would fail.
     modeMenu: (() => {
       const el = document.querySelector("[data-chat-mode-menu]");
-      return el ? { text: (el.textContent ?? "").trim(), id: el.getAttribute("data-mode-id") } : null;
+      return el ? { text: faceOf(el), id: el.getAttribute("data-mode-id"), tag: el.tagName.toLowerCase() } : null;
     })(),
     options: [...document.querySelectorAll("[data-chat-option]")].map((el) => ({
       id: el.getAttribute("data-chat-option"),
-      text: (el.textContent ?? "").trim(),
+      text: faceOf(el),
       on: el.getAttribute("aria-checked"),
       value: el.getAttribute("data-value"),
+      tag: el.tagName.toLowerCase(),
     })),
   };
 };
@@ -562,6 +576,14 @@ try {
         fail(`settings: the mode menu wears ${JSON.stringify(m.modeMenu)}, wanted ${words.chat_mode_plan}/plan`);
       } else {
         console.log(`settings · mode menu: ${m.modeMenu.text}`);
+      }
+      // **A choice among values opens the system's menu** (components/
+      // PopupButton, 「系统的东西交给系统画」): the mode and a listed
+      // select are native `<select>`s, not menus of this app's drawing.
+      for (const [what, got] of [["the mode menu", m.modeMenu], ["the model select", m.options.find((o) => o.id === "model")]]) {
+        if (got && got.tag !== "select") {
+          fail(`settings: ${what} is a <${got.tag}> — a choice among values is a popup button over the system's menu`);
+        }
       }
       if (m.mode !== null) {
         fail(`settings: the marker drew ${JSON.stringify(m.mode)} beside a menu wearing the same word`);

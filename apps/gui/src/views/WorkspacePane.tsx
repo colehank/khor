@@ -1567,7 +1567,9 @@ export function WorkspacePane({
                   // `ctl-md`, the magnifier at the left in `tertiary`.
                   // It was a borderless line — the one search box in the
                   // app that did not read as one. Not L0's, so no ⌘K.
-                  className="min-h-touch rounded-sm border-0 bg-fill pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body"
+                  // The look is `ui/input`'s own since 2026-09-28
+                  // (components/TextField); room for the magnifier here.
+                  className="pl-7"
                 />
               </div>
               {switches}

@@ -423,7 +423,10 @@ export function SideHead({
               role="combobox"
               aria-expanded={shown.length > 0}
               aria-controls="khor-search-rows"
-              className="min-h-touch rounded-sm border-0 bg-fill pr-12 pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body"
+              // The text field's own look (`ui/input`, components/
+              // TextField) — `fill`, `radius-sm`, the `ring` on focus —
+              // with room for the magnifier and the range word.
+              className="pr-12 pl-7"
               onChange={(e) => setWord(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") {
@@ -480,9 +483,13 @@ export function SideHead({
                     data-search-kind={h.kind}
                     data-on={i === at}
                     onClick={() => go(h)}
+                    // The picked hit is a chosen row — `fill-strong`,
+                    // like a selected list row — and the pointer's is
+                    // `fill`. The brand wash is for the row being
+                    // located to (README 颜色, `check-face` 4K).
                     className={cn(
-                      "flex min-h-touch min-w-0 items-center gap-2 px-2 text-left text-callout hover:bg-muted/50",
-                      i === at && "bg-accent",
+                      "flex min-h-touch min-w-0 items-center gap-2 px-2 text-left text-callout hover:bg-fill",
+                      i === at && "bg-fill-strong",
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate">{h.label}</span>

@@ -529,16 +529,18 @@ export function FileTree({
                   // user). It was the name going bold and nothing else,
                   // which from across a column is not a state: bold is
                   // read as a kind of file before it is read as
-                  // 「this one is in front」. `bg-accent` is what the
-                  // workspace list and the sessions list already mark
-                  // their front row with — one gesture, one look — and
-                  // it goes on the row rather than on the button so the
-                  // indent is inside the wash, the way VS Code paints
-                  // it. The weight stays: two marks of one state cost
-                  // nothing and the row is legible without colour.
+                  // 「this one is in front」. `fill-strong` is what the
+                  // workspace list and the sessions list mark their
+                  // selected row with (components/ListRow, 2026-09-27) —
+                  // one gesture, one look; it was the brand wash, which
+                  // is the row being located to (README 颜色, 4K). It
+                  // goes on the row rather than on the button so the
+                  // indent is inside it, the way VS Code paints it. The
+                  // weight stays: two marks of one state cost nothing
+                  // and the row is legible without colour.
                   className={cn(
                     "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout",
-                    open === r.full ? "bg-accent" : "hover:bg-muted/50",
+                    open === r.full ? "bg-fill-strong" : "hover:bg-fill",
                     faded && "text-muted-foreground",
                   )}
                 >

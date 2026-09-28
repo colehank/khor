@@ -273,7 +273,12 @@ export function EditableName({
         }}
         onBlur={shut}
         onFocus={(e) => e.currentTarget.select()}
-        className={cn("min-w-0 rounded-sm bg-secondary px-1 outline-none", inputClassName)}
+        // The text field's ground and ring (components/TextField,
+        // 2026-09-28) at the size of the name it stands in for.
+        className={cn(
+          "min-w-0 rounded-sm bg-fill px-1 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring",
+          inputClassName,
+        )}
       />
       {refused !== null && (
         // Under the box and not in front of it: a person who has just

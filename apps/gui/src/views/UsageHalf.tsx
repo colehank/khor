@@ -727,7 +727,10 @@ function Trend({
               data-usage-peak-day={days[busiest]}
               x={cx(busiest) + (busiest > days.length * 0.75 ? -4 : 4)}
               y={y(totals[busiest]) - 5}
-              fontSize={8.5}
+              // On the type scale's floor, like every tick word here
+              // (`PLOT.tick`, caption 11) — it drew at 8.5, under it
+              // (2026-09-28, `check-face` 8a ⓪).
+              fontSize={PLOT.tick}
               fontWeight={700}
               textAnchor={busiest > days.length * 0.75 ? "end" : "start"}
               fill="currentColor"
@@ -1016,7 +1019,12 @@ function Stats({
     { input: 0, output: 0, cached_input: 0, cache_write: 0 },
   );
 
-  const taken: { x0: number; y0: number; x1: number; y1: number }[] = [];
+  // The y ticks' gutter is taken before any name is seated: a name at
+  // the floor's size set over 「78」 in the gutter reads as neither
+  // (2026-09-28 — at 8.5 the overlap was small enough to go unseen).
+  const taken: { x0: number; y0: number; x1: number; y1: number }[] = [
+    { x0: 0, y0: 0, x1: PLOT.padL - 2, y1: H },
+  ];
 
   return (
     <section
@@ -1104,7 +1112,7 @@ function Stats({
           .map((p) => {
             const on = hot?.model === (p.r.model ?? "");
             const r = dotRadius(Number.isFinite(p.z) ? p.z : 0, zmax, span);
-            const berthed = berth(X(p.x), Y(p.y), r, p.r.word.length * 5.1 + 2, taken, W, H - 16);
+            const berthed = berth(X(p.x), Y(p.y), r, labelWidth(p.r.word), taken, W, H - 16);
             return (
               // **It says it is a target**, the way the machine card's
               // points do: a role and a name, so a reader who cannot
@@ -1134,7 +1142,10 @@ function Stats({
                   <text
                     x={berthed.x}
                     y={berthed.y}
-                    fontSize={8.5}
+                    // The floor, not under it (it was 8.5; `check-face`
+                    // 8a ⓪). A crowded corner drops names — `berth`
+                    // returns nothing — and the point keeps its `title`.
+                    fontSize={PLOT.tick}
                     fontWeight={on ? 800 : 600}
                     textAnchor={berthed.anchor}
                     fill="currentColor"
@@ -1332,10 +1343,27 @@ const cell = (key: string, v: number) =>
   !Number.isFinite(v) ? "—" : key === "rate" ? pct(v) : key === "reuse" ? `${v.toFixed(1)}×` : key === "days" ? String(v) : count(v);
 
 /**
+ * How wide a model's name draws at the label size, near enough to seat
+ * it: a Latin letter is about 0.62 of the size at the labels' weight, a
+ * CJK character a whole one (「未记录模型」 was measured as five Latin
+ * letters and overlapped its neighbour).
+ */
+function labelWidth(word: string): number {
+  let em = 0;
+  for (const ch of word) em += (ch.codePointAt(0) ?? 0) >= 0x2e80 ? 1 : 0.62;
+  return em * PLOT.tick + 2;
+}
+
+/**
  * A label goes to the first of four berths that does not overlap one
  * already placed. Ten-odd models is few enough that this always
  * settles; **with many more the right answer is fewer labels, not
  * smaller type**, so this returns nothing rather than shrinking.
+ *
+ * The offsets are fractions of the label size (`PLOT.tick`), so the
+ * boxes are the words' own: a baseline 0.4 of the size below the
+ * point's centre sits the word's middle on it; a box runs from 0.9 of
+ * the size above the baseline to a quarter below it.
  */
 function berth(
   cx: number,
@@ -1346,15 +1374,16 @@ function berth(
   W2: number,
   H2: number,
 ): { x: number; y: number; anchor: "middle" | "start" | "end" } | null {
+  const size = PLOT.tick;
   const tries: [number, number, "middle" | "start" | "end"][] = [
     [cx, cy - r - 6, "middle"],
-    [cx + r + 5, cy + 3.5, "start"],
-    [cx - r - 5, cy + 3.5, "end"],
-    [cx, cy + r + 11, "middle"],
+    [cx + r + 5, cy + size * 0.4, "start"],
+    [cx - r - 5, cy + size * 0.4, "end"],
+    [cx, cy + r + size * 1.3, "middle"],
   ];
   for (const [x, y, anchor] of tries) {
     const x0 = anchor === "middle" ? x - w / 2 : anchor === "end" ? x - w : x;
-    const box = { x0, y0: y - 8, x1: x0 + w, y1: y + 2 };
+    const box = { x0, y0: y - size * 0.9, x1: x0 + w, y1: y + size * 0.25 };
     if (box.x0 < 2 || box.x1 > W2 - 2 || box.y0 < 2 || box.y1 > H2 - 2) continue;
     if (taken.some((t) => !(box.x1 < t.x0 || box.x0 > t.x1 || box.y1 < t.y0 || box.y0 > t.y1))) continue;
     taken.push(box);

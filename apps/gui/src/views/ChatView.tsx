@@ -68,17 +68,9 @@ import {
 import { IconBack } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/settings/Switch";
+import { PopupButton } from "@/components/ui/popup-button";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
@@ -1731,45 +1723,32 @@ export function ChatView({
         {settings && (settings.modes || settings.options.length > 0) && (
           <div
             data-chat-settings
-            className="flex flex-wrap items-center justify-end gap-1 px-2 pb-1 text-caption"
+            className="flex flex-wrap items-center justify-end gap-x-row gap-y-1 px-2 pb-1 text-callout"
           >
+            {/* **A choice among values is a popup button** (components/
+                PopupButton, 2026-09-28): the system's menu, never a menu
+                of our own drawing. They were Radix dropdowns with radio
+                items — a hand-drawn menu standing in for 「pick one」.
+                The mode's own description rides on its menu item and
+                on the button's tooltip, which is what a native menu can
+                carry. Not a segmented control, because the list is the
+                agent's and it grows. */}
             {settings.modes && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    data-chat-mode-menu
-                    data-mode-id={settings.modes.currentModeId}
-                    className="rounded-md border border-border px-1.5 py-0.5 hover:bg-accent"
-                    style={{
-                      color:
-                        settings.modes.currentModeId === "default"
-                          ? undefined
-                          : "var(--state-blocked)",
-                    }}
-                  >
-                    {modeWord(settings.modes.currentModeId, settings.modes.availableModes)}
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>{gui.chat_mode}</DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={settings.modes.currentModeId}
-                    onValueChange={(v) => chatSetMode(id, v).catch(() => {})}
-                  >
-                    {settings.modes.availableModes.map((m) => (
-                      <DropdownMenuRadioItem key={m.id} value={m.id} data-mode-option={m.id}>
-                        <span className="flex flex-col">
-                          <span>{modeWord(m.id, settings.modes?.availableModes ?? [])}</span>
-                          {m.description && (
-                            <span className="text-caption text-muted-foreground">{m.description}</span>
-                          )}
-                        </span>
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <PopupButton
+                label={gui.chat_mode}
+                value={settings.modes.currentModeId}
+                choices={settings.modes.availableModes.map((m) => ({
+                  value: m.id,
+                  label: modeWord(m.id, settings.modes?.availableModes ?? []),
+                  note: m.description ?? undefined,
+                  mark: { "data-mode-option": m.id },
+                }))}
+                onPick={(v) => void chatSetMode(id, v).catch(() => {})}
+                mark={{ "data-chat-mode-menu": "", "data-mode-id": settings.modes.currentModeId }}
+                // The mode's ink, as the marker wears it: anything but
+                // the ordinary mode is 「something is different here」.
+                className={settings.modes.currentModeId === "default" ? undefined : "text-state-blocked"}
+              />
             )}
             {settings.options.map((o) =>
               o.type === "boolean" ? (
@@ -1779,7 +1758,7 @@ export function ChatView({
                 // a bordered chip that turned olive-ringed when on — a
                 // second drawing of on/off that only this row had.
                 <span key={o.id} title={o.description ?? undefined} className="flex items-center gap-xxs">
-                  <span>{o.name}</span>
+                  <span className="text-muted-foreground">{o.name}</span>
                   <Switch
                     on={o.currentValue === true}
                     label={o.name}
@@ -1789,53 +1768,25 @@ export function ChatView({
                   />
                 </span>
               ) : (
-                <DropdownMenu key={o.id}>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      data-chat-option={o.id}
-                      data-value={String(o.currentValue ?? "")}
-                      title={o.description ?? undefined}
-                      className="rounded-md border border-border px-1.5 py-0.5 hover:bg-accent"
-                    >
-                      {o.name}
-                      {": "}
-                      {valuesOf(o).find((v) => v.value.value === o.currentValue)?.value.name ??
-                        String(o.currentValue ?? "")}
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>{o.name}</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup
-                      value={String(o.currentValue ?? "")}
-                      onValueChange={(v) => chatSetOption(id, o.id, v).catch(() => {})}
-                    >
-                      {valuesOf(o).map((v, i, all) => (
-                        <div key={v.value.value}>
-                          {v.heading !== null && v.heading !== all[i - 1]?.heading && (
-                            <>
-                              {i > 0 && <DropdownMenuSeparator />}
-                              <DropdownMenuLabel>{v.heading}</DropdownMenuLabel>
-                            </>
-                          )}
-                          <DropdownMenuRadioItem
-                            value={v.value.value}
-                            data-option-value={v.value.value}
-                          >
-                            <span className="flex flex-col">
-                              <span>{v.value.name}</span>
-                              {v.value.description && (
-                                <span className="text-caption text-muted-foreground">
-                                  {v.value.description}
-                                </span>
-                              )}
-                            </span>
-                          </DropdownMenuRadioItem>
-                        </div>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                // The agent's name for it beside the button, the way the
+                // switch wears its own; the values and their headings
+                // (a group per heading) are the system menu's.
+                <span key={o.id} title={o.description ?? undefined} className="flex items-center gap-xxs">
+                  <span className="text-muted-foreground">{o.name}</span>
+                  <PopupButton
+                    label={o.name}
+                    value={String(o.currentValue ?? "")}
+                    choices={valuesOf(o).map((v) => ({
+                      value: v.value.value,
+                      label: v.value.name,
+                      note: v.value.description ?? undefined,
+                      group: v.heading ?? undefined,
+                      mark: { "data-option-value": v.value.value },
+                    }))}
+                    onPick={(v) => void chatSetOption(id, o.id, v).catch(() => {})}
+                    mark={{ "data-chat-option": o.id, "data-value": String(o.currentValue ?? "") }}
+                  />
+                </span>
               ),
             )}
           </div>
@@ -1956,7 +1907,10 @@ export function ChatView({
                     data-on={n === pick}
                     className={cn(
                       "flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-callout",
-                      n === pick && "bg-accent",
+                      // The picked command is a chosen row — `fill-strong`,
+                      // like a selected list row; the brand wash is for
+                      // the row being located to (README 颜色, 4K).
+                      n === pick && "bg-fill-strong",
                     )}
                     // The box must not lose focus to the press, or the
                     // completion would land in a box nobody is typing in.

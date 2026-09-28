@@ -45,8 +45,9 @@ import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
-import { IconClose, IconEye, IconPlus } from "@/components/icons";
+import { IconBack, IconClose, IconEye, IconPlus } from "@/components/icons";
 import { PaneBar } from "@/components/PaneBar";
+import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -711,11 +712,17 @@ export function TabSwitcher({
   onClose,
   search = true,
   seat,
+  onBack,
 }: {
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
+  /** The narrow shell's switcher is a screen of its own, and every such
+      screen has its way back: 「‹」 in the window's first row, beside the
+      switcher's box (`NarrowHead`, 2026-09-28). It had none — picking a
+      tab or pressing the rail were the only ways off it. */
+  onBack?: () => void;
   /** Whether the switcher wears its own search box (docs/SHELL.md 第三轮
       第 3 条:「切换器头上加搜索框」). */
   search?: boolean;
@@ -728,9 +735,42 @@ export function TabSwitcher({
   // By what a row shows — the name and where it is — and nothing else.
   const q = query.trim().toLowerCase();
   const shown = q === "" ? faces : faces.filter((f) => `${f.label} ${f.path}`.toLowerCase().includes(q));
+  const box = search && (
+    <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} seat={onBack ? "head" : seat} />
+  );
   return (
     <div data-tab-switcher className="flex h-full min-h-0 flex-col">
-      {search && <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} seat={seat} />}
+      {onBack ? (
+        <NarrowHead>
+          {(seated) => {
+            const back = (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={gui.back}
+                data-back
+                onClick={onBack}
+                className="min-h-touch min-w-touch flex-none"
+              >
+                <IconBack />
+              </Button>
+            );
+            return seated ? (
+              <>
+                {back}
+                {box}
+              </>
+            ) : (
+              <div className="flex min-h-pane-head flex-none items-center gap-in border-b px-2">
+                {back}
+                {box}
+              </div>
+            );
+          }}
+        </NarrowHead>
+      ) : (
+        box
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {shown.map((f) => (
           <div

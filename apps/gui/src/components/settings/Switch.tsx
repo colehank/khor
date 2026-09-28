@@ -1,9 +1,14 @@
 // Switch — the one on/off look in the app (docs/design-system
 // components/Switch): a `--switch-w` × `--switch-h` track, `--brand-strong`
 // when on (one of the places the brand voltage is allowed) and
-// `--fill-strong` when off, and a white knob wearing the one exception
-// shadow, `knob`. The button itself is the touch-sized hit target; the
-// track is drawn inside it.
+// `--fill-strong` when off, and a white knob — the `--knob` face, white
+// in both themes — wearing the one exception shadow, `shadow-knob`. The
+// button itself is the touch-sized hit target; the track is drawn
+// inside it.
+//
+// Disabled is half-strength and **the arrow stays**: AppKit does not
+// swap the cursor over a disabled control, and the greying already says
+// 「not now」 (`check-face` §11b).
 //
 // The switch carries no words: its title sits beside it (a settings row,
 // a chat option's name), and `label` is what a screen reader hears.
@@ -37,7 +42,7 @@ export function Switch({
       onClick={onToggle}
       {...mark}
       className={cn(
-        "flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:opacity-50",
         className,
       )}
     >
@@ -52,7 +57,7 @@ export function Switch({
       >
         <span
           className={cn(
-            "absolute top-0.5 bottom-0.5 aspect-square rounded-full bg-white shadow-knob transition-[left,right]",
+            "absolute top-0.5 bottom-0.5 aspect-square rounded-full bg-knob shadow-knob transition-[left,right]",
             on ? "right-0.5" : "left-0.5",
           )}
         />

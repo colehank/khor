@@ -5815,17 +5815,20 @@ for line in sys.stdin:
   if ((await page.locator("[data-chat-mode-menu]").getAttribute("data-mode-id")) !== "default") {
     throw new Error("probe dead: the session did not open in claude's default mode, so a change proves nothing");
   }
-  await page.locator("[data-chat-mode-menu]").click();
+  // A popup button over the system's menu since 2026-09-28: the anchor
+  // is its `<select>`, so the four modes are its options and picking is
+  // `selectOption`; what it says it is set to is its drawn face.
   await until("claude's four modes listed", 5_000, async () =>
     (await page.locator("[data-mode-option]").count()) === 4,
   );
-  await page.locator('[data-mode-option="plan"]').click();
+  await page.locator("[data-chat-mode-menu]").selectOption("plan");
   await until("the fake put in plan mode, by its own mark", 10_000, async () =>
     existsSync(join(wizDir, "fake.mode")) && readFileSync(join(wizDir, "fake.mode"), "utf8") === "plan",
   );
   await until("the menu wearing plan's word after the round trip", 10_000, async () => {
     const el = page.locator("[data-chat-mode-menu]");
-    return (await el.getAttribute("data-mode-id")) === "plan" && (await el.innerText()).trim() === catalogWords.chat_mode_plan;
+    const face = await el.evaluate((s) => (s.closest("[data-popup-button]")?.querySelector("[data-popup-value]")?.textContent ?? "").trim());
+    return (await el.getAttribute("data-mode-id")) === "plan" && face === catalogWords.chat_mode_plan;
   });
   if ((await page.locator("[data-chat-mode]").count()) !== 0) {
     throw new Error("the marker drew beside a menu wearing the same word");

@@ -210,8 +210,10 @@ export function ImportDialog({
                     data-import-form={r.form}
                     data-on={on}
                     className={cn(
-                      "flex min-h-touch min-w-0 items-center gap-2 rounded-md px-2 text-callout hover:bg-muted/50",
-                      on && "bg-accent",
+                      // Ticked is chosen: `fill-strong`, the pointer's
+                      // `fill` — not the brand wash (README 颜色, 4K).
+                      "flex min-h-touch min-w-0 items-center gap-2 rounded-md px-2 text-callout hover:bg-fill",
+                      on && "bg-fill-strong",
                     )}
                   >
                     <input type="checkbox" checked={on} onChange={() => toggle(r.id)} className="flex-none" />

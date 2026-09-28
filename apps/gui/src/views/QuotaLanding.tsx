@@ -2238,7 +2238,9 @@ function EditDialog({
                     onClick={() => setUnit(m)}
                     className={cn(
                       "flex-none rounded-full border px-2 py-0.5 text-caption",
-                      on ? "border-foreground/40 bg-accent text-foreground" : "text-muted-foreground",
+                      // The one in force is chosen: `fill-strong`, not
+                      // the brand wash (README 颜色, 4K).
+                      on ? "border-foreground/40 bg-fill-strong text-foreground" : "text-muted-foreground",
                     )}
                   >
                     {m}

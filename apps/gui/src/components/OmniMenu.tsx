@@ -125,12 +125,13 @@ export function OmniMenu({
                 className={cn(
                   // A menu row is chosen with a finger as often as
                   // with the keyboard, and the two ways have to aim
-                  // at the same thing: `bg-accent` marks the picked
-                  // row and the row is the floor tall, so what the
-                  // arrow keys highlight is exactly what a press
-                  // lands on (tokens.css `--touch`).
+                  // at the same thing: `fill-strong` marks the picked
+                  // row (a chosen row, like a selected list row — not
+                  // the brand wash, README 颜色) and the row is the floor
+                  // tall, so what the arrow keys highlight is exactly
+                  // what a press lands on (tokens.css `--touch`).
                   "flex min-h-touch w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-callout",
-                  n === rows.at && "bg-accent",
+                  n === rows.at && "bg-fill-strong",
                   c.dim && "text-muted-foreground",
                 )}
                 // The box must not lose focus to the press — the caret

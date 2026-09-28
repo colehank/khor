@@ -99,7 +99,10 @@ export function MeshNow({
                   // tall, and they are the rows that exist because
                   // something is waiting on a person — the last place in
                   // the app where a press should be able to miss.
-                  className="flex min-h-touch w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent"
+                  // Under the pointer the neutral `fill`, never the
+                  // brand wash — that is the row being located to
+                  // (README 颜色, `check-face` 4K).
+                  className="flex min-h-touch w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-fill"
                 >
                   <MachineAvatar face={r.face} className="size-kind-mark flex-none" />
                   <span className="min-w-0 flex-1 truncate text-callout">{r.title}</span>
@@ -131,7 +134,7 @@ export function MeshNow({
                   // same reason they are worth stating once: a list of
                   // rows 30 tall is the shape where a press lands on the
                   // neighbour (tokens.css `--touch`).
-                  "flex min-h-touch items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-accent",
+                  "flex min-h-touch items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-fill",
                   // Never answered = greyed, the card's vitals_never fact
                   // painted instead of said; no word is invented for it.
                   !d.vitals && "opacity-50",

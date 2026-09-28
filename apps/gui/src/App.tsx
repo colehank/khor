@@ -1623,8 +1623,10 @@ export default function App() {
         setScreen("detail");
       }}
       onClose={sessionTabs.close}
-      // Only the narrow face draws this screen; its box is L0's there.
+      // Only the narrow face draws this screen; its box is L0's there,
+      // beside the way back to the tab that was in front.
       seat="side"
+      onBack={() => setSwitchingTabs(false)}
     />
   );
   const paneName = landings().find((l) => l.key === landing)!.name;

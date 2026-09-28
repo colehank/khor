@@ -1231,7 +1231,7 @@ aside[data-side] {
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
-[data-settings-card] > :not([data-setting-row], button) {
+[data-settings-card] > :not([data-setting-row]) {
   padding: var(--gap-in) var(--gap-row);
 }
 /* **One height for every one-line row, whatever it holds**: a control
@@ -1244,16 +1244,15 @@ aside[data-side] {
 [data-settings-card] > :is([data-setting-row], [data-more-row]) {
   min-height: calc(var(--ctl-md) + 2 * var(--gap-in));
 }
-/* A bare button in a card is the act of the row above it: it keeps its
-   own look, stands on the text's left edge, and draws no line over it. */
-[data-settings-card] > button {
-  align-self: flex-start;
-  margin: 0 var(--gap-row) var(--gap-in);
-}
+/* ⚠️ 墓碑 (2026-09-28): a rule here set a bare button in a card on the
+   text's left edge with no line over it — the act of the row above.
+   Every such act became a row's own trailing button (`ActionRow`), and
+   the rule and the two `button` exceptions beside it had no user left
+   (every 「…」 page walked: no card has a button for a child). */
 [data-settings-card] > * + * {
   position: relative;
 }
-[data-settings-card] > * + *:not(button)::before {
+[data-settings-card] > * + *::before {
   content: "";
   position: absolute;
   top: 0;

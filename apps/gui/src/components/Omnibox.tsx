@@ -296,7 +296,10 @@ export function Omnibox({
           // at the cost of every bar this control rides in. Wrapped
           // chips still have `gap-1` between rows.
           "flex min-h-touch w-full flex-wrap items-center gap-xxs rounded-sm bg-fill px-2",
-          "focus-within:ring-2 focus-within:ring-ring/50",
+          // The text field's focus ring (components/TextField,
+          // 2026-09-28): 2 px of `ring` flush outside the strip — it was
+          // a half-strength glow here and nothing on the plain box.
+          "focus-within:outline-2 focus-within:outline-offset-0 focus-within:outline-ring",
         )}
         // A click anywhere on the strip lands in the box — the chips do
         // not take focus, so the whole thing behaves as one field.
