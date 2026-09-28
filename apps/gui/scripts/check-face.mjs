@@ -11356,7 +11356,7 @@ try {
           fail(`probe dead: ${posture} · 「…」 → ${key} did not open`);
           continue;
         }
-        const up = await page.evaluate((k) => {
+        const up = await page.evaluate(({ k, narrow }) => {
           const pageEl = document.querySelector(`[data-more-page="${k}"]`);
           const head = pageEl?.querySelector("[data-more-head]") ?? null;
           return {
@@ -11366,7 +11366,11 @@ try {
             // R0 over the page carries the drag since 第十五轮 (the shell
             // marks it once); the page's own head inside the board does not.
             drag: pageEl?.closest("[data-region]")?.querySelector(":scope > [data-region-head]")?.getAttribute("data-tauri-drag-region") ?? null,
-            close: pageEl?.querySelectorAll("[data-more-close]").length ?? 0,
+            // Wide: the 「×」 the page's frame carries. Narrow: the 「‹」
+            // its head wears in the window's first row (2026-09-28).
+            close: narrow
+              ? document.querySelectorAll("[data-side-head] [data-more-back]").length
+              : (pageEl?.querySelectorAll("[data-more-close]").length ?? 0),
             lit: document.querySelector("[data-rail-more]")?.getAttribute("data-on") ?? null,
             // 一样东西只住一处 (docs/MORE.md 第二轮): a list of the
             // machines this one has paired with. It was on the identity
@@ -11376,7 +11380,7 @@ try {
               "[data-paired-machine], [data-security-machine], [data-security-forget]",
             ).length,
           };
-        }, key);
+        }, { k: key, narrow: posture === "narrow" });
         console.log(`page ${posture} · ${key}: ${JSON.stringify(up)}`);
         if (!up.drew) {
           fail(`${posture}: 「…」 → ${key} drew no [data-more-page="${key}"] — 「进一步点击都是独立的界面」`);
@@ -11409,18 +11413,35 @@ try {
               "网络 page's map and nowhere else (docs/MORE.md 第二轮: 已配对的机器从头像卡和安全页都拿掉)",
           );
         }
-        await press("[data-more-close]");
-        const back = await page.evaluate(() => ({
-          page: document.querySelectorAll("[data-more-page]").length,
-          landing:
-            document.querySelector('[data-rail-item][data-landing="sessions"]')?.getAttribute("data-on") ??
-            null,
-        }));
-        if (back.page !== 0 || back.landing !== "true") {
-          fail(
-            `${posture}: closing ${key} left ${JSON.stringify(back)} — the landing it was opened ` +
-              "over comes back as it was (src/App.tsx morePage is held apart from landing)",
-          );
+        if (posture === "narrow") {
+          // **「‹」 is one screen back, to More's list** (10-layout 窄档:
+          // 「列表一屏 ⇄ 详情一屏，R0 左上角是返回」, 2026-09-28) — it was
+          // a 「×」 straight back to the landing, the one detail screen
+          // on the narrow face whose way out was not 「返回」.
+          await press("[data-side-head] [data-more-back]");
+          const back = await page.evaluate(() => ({
+            page: document.querySelectorAll("[data-more-page]").length,
+            list: document.querySelectorAll("[data-more-open]").length,
+          }));
+          if (back.page !== 0 || back.list === 0) {
+            fail(`narrow: 「‹」 on ${key} left ${JSON.stringify(back)} — it goes back to More's list`);
+          }
+          // …and the landing underneath is still the one it was opened over.
+          await press(rail("sessions"));
+        } else {
+          await press("[data-more-close]");
+          const back = await page.evaluate(() => ({
+            page: document.querySelectorAll("[data-more-page]").length,
+            landing:
+              document.querySelector('[data-rail-item][data-landing="sessions"]')?.getAttribute("data-on") ??
+              null,
+          }));
+          if (back.page !== 0 || back.landing !== "true") {
+            fail(
+              `${posture}: closing ${key} left ${JSON.stringify(back)} — the landing it was opened ` +
+                "over comes back as it was (src/App.tsx morePage is held apart from landing)",
+            );
+          }
         }
       }
 
@@ -12826,7 +12847,29 @@ try {
         if (!el || !board) return null;
         const surface = getComputedStyle(el).backgroundColor;
         const ground = getComputedStyle(board).backgroundColor;
-        return { surface, ground, d: Math.round((lstar(surface) - lstar(ground)) * 100) / 100 };
+        // **…and it wears the one floating language** (2026-09-28): the
+        // `float` shadow and the `radius-lg` corner, read back against
+        // what the tokens resolve to here. The sheet's top edge is R0's,
+        // so its corner is read at the bottom.
+        const probe = document.createElement("div");
+        probe.style.cssText =
+          "position:absolute;visibility:hidden;box-shadow:var(--shadow-float);border-radius:var(--radius-lg)";
+        document.body.appendChild(probe);
+        const want = { shadow: getComputedStyle(probe).boxShadow, radius: getComputedStyle(probe).borderTopLeftRadius };
+        probe.remove();
+        const cs = getComputedStyle(el);
+        const radius = el.hasAttribute("data-sheet") ? cs.borderBottomLeftRadius : cs.borderTopLeftRadius;
+        return {
+          surface,
+          ground,
+          d: Math.round((lstar(surface) - lstar(ground)) * 100) / 100,
+          // Tailwind lays its ring layers (all `0 0 0 0 transparent`)
+          // in front of the shadow, so the float is one of the layers.
+          shadow: cs.boxShadow.includes(want.shadow),
+          shadowWorn: cs.boxShadow.replace(/rgba\(0, 0, 0, 0\) 0px 0px 0px 0px,? ?/g, "").trim(),
+          radius,
+          wantRadius: want.radius,
+        };
       }, sel);
     const surfaces = [
       ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
@@ -12862,6 +12905,17 @@ try {
           return true;
         },
       ],
+      [
+        // The box's own completions (2026-09-28): the chips a landing
+        // narrows by, hung under L0's box. They wore `rounded-md`.
+        "a box's completions",
+        "[data-side-head] [data-omni-menu]",
+        async () => {
+          if (!(await open("sessions"))) return false;
+          await page.locator("[data-side-head] [data-omni-input]").click();
+          return true;
+        },
+      ],
     ];
     for (const [what, sel, go] of surfaces) {
       if (!(await go()) || !(await until(3_000, async () => (await page.locator(sel).count()) > 0))) {
@@ -12871,11 +12925,19 @@ try {
         console.log(`4I · dark · ${what}: ${JSON.stringify(got)}`);
         if (!got) {
           fail(`probe dead: 4I · ${what} or the board could not be read`);
-        } else if (!(got.d >= LIFT)) {
-          fail(
-            `4I · in the dark ${what} is ${got.surface} on a ${got.ground} board — ${got.d} L* apart, ` +
-              `under the ${LIFT} a floating surface needs to read as above the board (--popover, tokens.css)`,
-          );
+        } else {
+          if (!(got.d >= LIFT)) {
+            fail(
+              `4I · in the dark ${what} is ${got.surface} on a ${got.ground} board — ${got.d} L* apart, ` +
+                `under the ${LIFT} a floating surface needs to read as above the board (--popover, tokens.css)`,
+            );
+          }
+          if (!got.shadow || got.radius !== got.wantRadius) {
+            fail(
+              `4I · ${what} floats with ${got.shadow ? "the" : "another"} shadow and a ${got.radius} corner — ` +
+                `one floating language: \`popover\`, \`float\`, \`radius-lg\` ${got.wantRadius} (components/Menu, 20-states)`,
+            );
+          }
         }
       }
       await page.keyboard.press("Escape");
@@ -12884,6 +12946,261 @@ try {
     }
     await page.emulateMedia({ colorScheme: "light" });
     await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light");
+  }
+
+  // ── 4J) 一种搜索框、窄档一条头、一种浮层 (2026-09-28 控件统一) ──────
+  //
+  // Three things the 2026-09-28 audit found shipped, each measurable:
+  //
+  //   (a) **one search field.** L0's box was three anatomies — 会话 and
+  //       额度 drew a box with no ⌘K (the chip-narrowing omnibox), the
+  //       other landings a box with it, and the open workspace's file
+  //       tree a borderless line. Every search field on screen must be
+  //       one height, one corner and one ground, and every box in L0
+  //       wears the ⌘K hint at a wide window (components/SearchField).
+  //   (b) **one header on a narrow detail screen, with the way back in
+  //       it.** At 390 a detail screen drew L0's magnifier over the real
+  //       `‹ title` head; an open workspace had no title and no way back;
+  //       a 「…」 page had 「×」 where every other detail screen has 「‹」
+  //       (10-layout 窄档:「列表一屏 ⇄ 详情一屏，R0 左上角是返回」).
+  //   (c) **one floating language** — `popover`, the `float` shadow and
+  //       `radius-lg` (components/Menu, 20-states 浮层). Menus and search
+  //       results wore `rounded-md`, and five surfaces a shadow of
+  //       Tailwind's own scale. The rendered half is measured on what
+  //       this fixture can open; the static half reads every file.
+  {
+    // ── (a) one search field ──
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const readFields = () =>
+      page.evaluate(() => {
+        const out = [];
+        const seen = new Set();
+        for (const el of document.querySelectorAll(
+          "[data-pane-search], [data-tree-search], [data-search-box], [data-global-search]",
+        )) {
+          // The painted box: an omnibox's strip holds the input; every
+          // other field is its own box.
+          const box = el.closest("[data-omnibox]") ?? el;
+          if (seen.has(box)) continue;
+          seen.add(box);
+          const r = box.getBoundingClientRect();
+          if (r.width === 0 || r.height === 0) continue;
+          const cs = getComputedStyle(box);
+          const l0 = box.closest("[data-side-head]");
+          const hint = l0
+            ? [...l0.querySelectorAll("[data-search-scope]")].some((k) => {
+                const kr = k.getBoundingClientRect();
+                return kr.width > 0 && kr.left >= r.left - 0.5 && kr.right <= r.right + 0.5;
+              })
+            : null;
+          out.push({
+            field:
+              (el.hasAttribute("data-tree-search") && "tree") ||
+              (el.hasAttribute("data-search-box") && "widened") ||
+              (el.hasAttribute("data-global-search") && "global") ||
+              (box !== el ? "omnibox" : "box"),
+            h: Math.round(r.height * 10) / 10,
+            radius: cs.borderTopLeftRadius,
+            bg: cs.backgroundColor,
+            l0: !!l0,
+            hint,
+          });
+        }
+        return out;
+      });
+    const fields = [];
+    const FIELD_STOPS = [
+      ["sessions", () => open("sessions")],
+      ["devices", () => open("devices")],
+      ["workspaces", () => open("workspaces")],
+      ["quota", () => open("quota")],
+      ["browser", () => open("browser")],
+      ["a workspace open", async () => (await open("workspaces")) && openWs()],
+    ];
+    for (const [where, go] of FIELD_STOPS) {
+      if (!(await go())) {
+        fail(`probe dead: 4J (a) could not reach ${where}`);
+        continue;
+      }
+      await wait(400);
+      const got = await readFields();
+      console.log(`4J (a) · ${where}: ${JSON.stringify(got)}`);
+      if (got.length === 0) fail(`probe dead: 4J (a) · ${where} shows no search field at all`);
+      for (const f of got) fields.push({ where, ...f });
+    }
+    // …and the box ⌘K widens into, which is L0's too.
+    await open("sessions");
+    await page.keyboard.press("Meta+k");
+    if (await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1)) {
+      await wait(200);
+      for (const f of await readFields()) if (f.field === "widened") fields.push({ where: "⌘K", ...f });
+    } else {
+      fail("probe dead: 4J (a) · ⌘K widened no box");
+    }
+    await page.keyboard.press("Escape");
+    await wait(200);
+    if (!fields.some((f) => f.field === "tree")) {
+      fail("probe dead: 4J (a) never saw the file tree's search box — the one that was a borderless line");
+    }
+    const like = fields.find((f) => f.field === "box" && f.l0) ?? fields[0];
+    if (like) {
+      const off = fields.filter((f) => f.h !== like.h || f.radius !== like.radius || f.bg !== like.bg);
+      console.log(
+        `4J (a) · ${fields.length} search field(s), the model ${JSON.stringify({ h: like.h, radius: like.radius, bg: like.bg })}, ${off.length} off it`,
+      );
+      for (const f of off) {
+        fail(
+          `4J (a) · the ${f.field} search field on ${f.where} is ${f.h} tall, corner ${f.radius}, ground ${f.bg} — ` +
+            `every search field is one control: ${like.h} tall, ${like.radius}, ${like.bg} (components/SearchField)`,
+        );
+      }
+      for (const f of fields.filter((f) => f.l0 && !f.hint)) {
+        fail(
+          `4J (a) · the ${f.field} box in L0 on ${f.where} carries no ⌘K hint at a wide window — ` +
+            "every L0 box wears it and it is the first thing to go when narrowed (components/SearchField)",
+        );
+      }
+    }
+
+    // ── (b) narrow: one header, and the way back in it ──
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const readHead = () =>
+      page.evaluate(() => {
+        const vis = (el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        };
+        const l0 = document.querySelector("[data-side-head]");
+        const inL0 = (sel) => (l0 ? [...l0.querySelectorAll(sel)].filter(vis).length : 0);
+        return {
+          back: inL0("[data-back], [data-ws-back], [data-more-back]"),
+          search: inL0("[data-pane-search], [data-global-search], [data-search-box]"),
+          title: l0 ? (l0.innerText ?? "").trim().split("\n")[0].slice(0, 40) : null,
+          // A second head row under L0: the detail's own bar, or a
+          // 「…」 page's frame head, standing on its own line.
+          second: [...document.querySelectorAll("[data-detail-header], [data-more-head]")]
+            .filter(vis)
+            .filter((h) => !l0?.contains(h)).length,
+          // What stands where the way back belongs: 「×」 on a 「…」 page.
+          close: [...document.querySelectorAll("[data-more-close]")].filter(vis).length,
+        };
+      });
+    const DETAIL_STOPS = [
+      ["a session", async () => (await open("sessions")) && press("[data-list] [data-row-open]")],
+      ["a machine", async () => (await open("devices")) && pressNth("[data-list] [data-row-open]", 1)],
+      ["a workspace", async () => (await open("workspaces")) && openWs()],
+      [
+        "an account",
+        async () =>
+          (await open("quota")) &&
+          (await until(5_000, async () => (await page.locator('[data-quota-row="acc-sub-here"]').count()) > 0)) &&
+          press('[data-quota-row="acc-sub-here"]'),
+      ],
+      ["「…」 → 安全", async () => (await press("[data-rail-more]")) && press('[data-more-open="security"]')],
+    ];
+    for (const [where, go] of DETAIL_STOPS) {
+      if (!(await go())) {
+        fail(`probe dead: 4J (b) could not open ${where} on the narrow face`);
+        continue;
+      }
+      await wait(500);
+      const got = await readHead();
+      console.log(`4J (b) · narrow · ${where}: ${JSON.stringify(got)}`);
+      if (got.search !== 0 || got.second !== 0) {
+        fail(
+          `4J (b) · narrow · ${where}: the top row holds ${got.search} search field(s) and ${got.second} more head ` +
+            "row(s) stand under it — a detail screen has one header, the `‹ title` one, in the window's first row " +
+            "(10-layout 窄档; components/SideHead NarrowHead)",
+        );
+      }
+      if (got.back !== 1 || got.close !== 0) {
+        fail(
+          `4J (b) · narrow · ${where}: the first row carries ${got.back} way(s) back and ${got.close} 「×」 — ` +
+            "「列表一屏 ⇄ 详情一屏，R0 左上角是返回」: one 「‹」, on every detail screen (10-layout)",
+        );
+      }
+    }
+    // …and the 「‹」 on a 「…」 page goes one screen back — to 更多's list.
+    await press("[data-more-back]");
+    const backed = await page.evaluate(() => ({
+      page: document.querySelectorAll("[data-more-page]").length,
+      list: document.querySelectorAll("[data-more-open]").length,
+    }));
+    console.log(`4J (b) · narrow · 「‹」 off 安全: ${JSON.stringify(backed)}`);
+    if (backed.page !== 0 || backed.list === 0) {
+      fail(`4J (b) · narrow: 「‹」 on a 「…」 page left ${JSON.stringify(backed)} — it goes back to 更多's list, one screen`);
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+
+    // ── (c) static: one floating language, in every file ──
+    //
+    // Read off the class strings, because most floating surfaces only
+    // exist after a keystroke this fixture cannot make (a slash command,
+    // a terminal's find, a save that met a change on disk). Three rules:
+    //   1. no shadow from Tailwind's own scale — `float` (and `knob` for
+    //      a face in a track) are the only two (README 「材质」);
+    //   2. what wears `float` wears `radius-lg` (components/Menu);
+    //   3. what wears `popover` wears `float` (20-states 浮层).
+    // Exceptions are named, each with its reason, and printed every run.
+    {
+      const FLOAT_EXCEPT = {
+        "src/components/ui/tooltip.tsx": "a tooltip is `radius-sm` (components/Tooltip)",
+        "src/views/DayStrip.tsx": "the day's readout is a tooltip, `radius-sm` (components/Tooltip)",
+        "src/components/ui/dialog.tsx": "the sheet hangs from R0: its top edge is R0's, only its lower corners round (`rounded-b-lg`)",
+        "src/views/FileView.tsx": "the peek is a band across the whole column over the code — no corner to round",
+      };
+      const POPOVER_EXCEPT = {
+        "src/components/OmniMenu.tsx":
+          "the menu's own box; whoever hangs it gives the `float` and the corner, and the floated menu is a window of its own",
+      };
+      const files = [];
+      const walkSrc = (d) => {
+        for (const n of readdirSync(d)) {
+          const p = join(d, n);
+          if (statSync(p).isDirectory()) {
+            if (n !== "gen") walkSrc(p);
+          } else if (/\.tsx?$/.test(n)) files.push(p);
+        }
+      };
+      walkSrc(join(gui, "src"));
+      const bad = [];
+      const met = new Set();
+      for (const f of files) {
+        const rel = relative(gui, f);
+        readFileSync(f, "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+            for (const m of line.matchAll(/"([^"]*)"/g)) {
+              const cls = m[1];
+              const at = `${rel}:${i + 1}`;
+              if (!rel.startsWith("src/components/ui/") && /(^|\s|:)shadow-(xs|sm|md|lg|xl|2xl)(\s|$)/.test(cls)) {
+                bad.push(`${at} wears a shadow of Tailwind's own scale (${cls.match(/shadow-\w+/)[0]}) — the one shadow is \`float\``);
+              }
+              if (cls.includes("shadow-(--shadow-float)") && !/(^|\s)rounded-lg(\s|$)/.test(cls)) {
+                if (FLOAT_EXCEPT[rel]) met.add(rel);
+                else bad.push(`${at} floats at ${(cls.match(/rounded-\S+/) ?? ["no corner"])[0]} — what floats is \`radius-lg\` (components/Menu)`);
+              }
+              if (/(^|\s)bg-popover(\s|$)/.test(cls) && !cls.includes("shadow-(--shadow-float)")) {
+                if (POPOVER_EXCEPT[rel]) met.add(rel);
+                else bad.push(`${at} wears \`popover\` with no \`float\` — a surface on the floating ground floats (20-states)`);
+              }
+            }
+          });
+      }
+      for (const rel of met) console.log(`4J (c) · named exception · ${rel}: ${FLOAT_EXCEPT[rel] ?? POPOVER_EXCEPT[rel]}`);
+      console.log(`4J (c) · ${files.length} file(s) read, ${bad.length} floating surface(s) off the one language`);
+      for (const b of bad) fail(`4J (c) · ${b}`);
+      if (files.length < 50) fail(`probe dead: 4J (c) read ${files.length} source file(s) — the walk is not reaching src/`);
+    }
   }
 
   // ── 5) a dense screen has a reading order ─────────────────────────

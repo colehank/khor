@@ -219,7 +219,7 @@ export function PathField({
               at,
             }}
             onPick={take}
-            className="absolute top-full z-20 mt-1 w-full rounded-md shadow-(--shadow-float)"
+            className="absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float)"
           />
         </div>
       )}

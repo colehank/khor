@@ -570,7 +570,9 @@ export function TerminalPane({ id }: { id: string }) {
       {finding && (
         <div
           data-term-find
-          className="absolute right-2 top-1 z-20 flex items-center gap-1 rounded-md border bg-popover p-1 shadow-md"
+          // Floats over the screen, so the one floating language
+          // (20-states 浮层, 2026-09-28): `popover`, `float`, `radius-lg`.
+          className="absolute right-2 top-1 z-20 flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
         >
           <input
             data-term-find-input
@@ -618,7 +620,9 @@ export function TerminalPane({ id }: { id: string }) {
             termRef.current?.scrollToBottom();
             termRef.current?.focus();
           }}
-          className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-full border bg-popover px-3 py-1 text-caption shadow-md"
+          // The same floating language as the find bar above it —
+          // it was a pill with a shadow of its own (2026-09-28).
+          className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-lg border bg-popover px-3 py-1 text-caption shadow-(--shadow-float)"
         >
           {freshBelow ? gui.new_below : gui.to_bottom}
         </button>

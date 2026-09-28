@@ -234,7 +234,10 @@ function NodeCard({
     <div
       data-node-card
       className={cn(
-        "absolute inset-x-4 bottom-4 mx-auto max-w-md rounded-lg border bg-background p-4 shadow-lg",
+        // Floats over the map: `popover`, `float`, `radius-lg` (20-states
+        // 浮层, 2026-09-28) — it was the window's `canvas` under
+        // Tailwind's `shadow-lg`.
+        "absolute inset-x-4 bottom-4 mx-auto max-w-md rounded-lg border bg-popover p-4 shadow-(--shadow-float)",
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2",
       )}
     >

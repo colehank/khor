@@ -30,6 +30,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -40,9 +41,9 @@ import { createPortal } from "react-dom";
 
 import { find as findAll, type FindHit } from "@/api";
 import { IconSearch } from "@/components/icons";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
 
 /**
@@ -54,6 +55,10 @@ type Seats = {
   head: HTMLDivElement | null;
   list: HTMLDivElement | null;
   claim: () => () => void;
+  /** The narrow detail screen's head that holds the row now — the
+      deepest of those that asked (`NarrowHead`), or none. */
+  top: string | null;
+  claimHead: (id: string, depth: number) => () => void;
 };
 
 const SeatsContext = createContext<Seats | null>(null);
@@ -67,7 +72,20 @@ export function useSideSeats() {
     setClaims((n) => n + 1);
     return () => setClaims((n) => n - 1);
   }, []);
-  const seats = useMemo<Seats>(() => ({ head, list, claim }), [head, list, claim]);
+  const [heads, setHeads] = useState<{ id: string; depth: number; at: number }[]>([]);
+  const order = useRef(0);
+  const claimHead = useCallback((id: string, depth: number) => {
+    order.current += 1;
+    const at = order.current;
+    setHeads((h) => [...h.filter((x) => x.id !== id), { id, depth, at }]);
+    return () => setHeads((h) => h.filter((x) => x.id !== id));
+  }, []);
+  // The deepest wins; between two at one depth, the later one.
+  const top =
+    heads.length === 0
+      ? null
+      : heads.reduce((a, b) => (b.depth > a.depth || (b.depth === a.depth && b.at > a.at) ? b : a)).id;
+  const seats = useMemo<Seats>(() => ({ head, list, claim, top, claimHead }), [head, list, claim, top, claimHead]);
   return { seats, setHead, setList, claimed: claims > 0 };
 }
 
@@ -83,8 +101,72 @@ export function SideSeat({ children }: { children: ReactNode }) {
   const seats = useContext(SeatsContext);
   useLayoutEffect(() => seats?.claim(), [seats]);
   if (!seats) return <>{children}</>;
-  if (!seats.head) return null;
+  // A narrow detail screen's head holds the row (`NarrowHead`): the
+  // landing's box has no job on a screen that is not its list.
+  if (!seats.head || seats.top !== null) return null;
   return createPortal(children, seats.head);
+}
+
+/**
+ * How deep a narrow head sits: a screen inside a screen (a session
+ * opened in a workspace's column) is one deeper than the workspace's
+ * own, and the deeper head is the one the row shows.
+ */
+const HeadDepth = createContext(0);
+
+/** Everything under this is one screen deeper than what wraps it. */
+export function DeeperHeads({ children }: { children: ReactNode }) {
+  const depth = useContext(HeadDepth);
+  return <HeadDepth.Provider value={depth + 1}>{children}</HeadDepth.Provider>;
+}
+
+/** The row a seated head is laid out as: the way back at its left,
+    the title taking what is left, the screen's own buttons at the
+    right. `self-stretch` so the whole row's blank is the head's. */
+export const HEAD_IN_ROW = "flex min-w-0 flex-1 items-center gap-in self-stretch pr-1";
+
+/**
+ * **A narrow detail screen's head, seated in the window's first row**
+ * (10-layout 窄档: 「列表一屏 ⇄ 详情一屏，R0 左上角是返回」; 2026-09-28).
+ *
+ * On the narrow face a detail screen used to draw two bars: L0 holding
+ * a magnifier with nothing to search, then its own `‹ title` bar under
+ * it. The search has no job on a detail screen, and L0 is the row that
+ * already does everything a head needs done — it stands clear of
+ * macOS's three buttons (`--traffic`) and it moves the window (the
+ * shell marks it once, `shell.ts`). So the head sits **in** it, the way
+ * a landing's search box does on its list screen (`SideSeat`).
+ *
+ * `children` is told whether it is seated, because the same head is
+ * drawn in place wherever there is no narrow shell around it — the wide
+ * face's workspace column keeps its session's bar inside the column.
+ * The deepest head asking wins the row (`DeeperHeads`).
+ */
+export function NarrowHead({ children }: { children: (seated: boolean) => ReactNode }) {
+  const seats = useContext(SeatsContext);
+  const narrow = useNarrow();
+  const depth = useContext(HeadDepth);
+  const id = useId();
+  const seated = seats !== null && narrow;
+  const claim = seats?.claim;
+  const claimHead = seats?.claimHead;
+  useLayoutEffect(() => {
+    if (!seated || !claim || !claimHead) return;
+    const off = claim();
+    const offHead = claimHead(id, depth);
+    return () => {
+      off();
+      offHead();
+    };
+  }, [seated, claim, claimHead, id, depth]);
+  if (!seated) return <>{children(false)}</>;
+  if (!seats.head || seats.top !== id) return null;
+  return createPortal(
+    <div data-screen-head className={HEAD_IN_ROW}>
+      {children(true)}
+    </div>,
+    seats.head,
+  );
 }
 
 /**
@@ -106,6 +188,25 @@ export function SideListSeat({ children }: { children: ReactNode }) {
  * landing, and the one who can widen is this row.
  */
 export const FIND_ALL = "khor:find-all";
+
+/**
+ * The ⌘K hint at a seated search field's right end (components/
+ * SearchField): `caption` in `tertiary` on a `radius-xs` keycap. **The
+ * first thing to go when the block is narrowed** — `@container/bar`
+ * is the row the box stands in, so it hides before the placeholder's
+ * words are cut, and on the narrow face (a phone has no ⌘) it is not
+ * drawn at all.
+ */
+export function SearchHint({ children = "⌘K" }: { children?: ReactNode }) {
+  return (
+    <kbd
+      data-search-scope
+      className="pointer-events-none flex-none rounded-xs border px-xxs text-caption text-tertiary @max-3xs/bar:hidden"
+    >
+      {children}
+    </kbd>
+  );
+}
 
 /** The word a hit's kind is shown by — never the key itself. */
 function kindWord(kind: string): string {
@@ -271,26 +372,34 @@ export function SideHead({
           setSeatEl(el);
         }}
         data-side-seat
-        hidden={open || bare}
+        // …and while nobody sits in it: an empty seat is still `flex-1`,
+        // and it took half the row from the 「搜索全部」 box beside it
+        // (the narrow 更多 list, 2026-09-28).
+        hidden={open || bare || !claimed}
         className="flex min-w-0 flex-1 items-center"
       />
       {!claimed && !open && !bare && (
         // Nobody is seated (a screen with no column): the row still has
         // the one search, at its wide range.
-        <Button
-          variant="ghost"
-          size={narrow ? "icon" : "sm"}
-          data-global-search
-          aria-label={gui.find_everything}
-          onClick={() => widen("")}
-          // `h-ctl-md`: the look of a macOS search field (28,
-          // tokens.css `--ctl-md`); the finger's floor is the hit
-          // area around it, `min-h-touch`.
-          className={cn("min-h-touch flex-none justify-start gap-in text-tertiary", narrow ? "min-w-touch" : "h-ctl-md min-w-0 flex-1 rounded-sm bg-fill px-2 hover:bg-fill")}
-        >
-          <IconSearch />
-          {!narrow && <span className="min-w-0 flex-1 truncate text-left text-body font-body">{gui.find_everything}</span>}
-        </Button>
+        // **A box, never a magnifier button** (components/SearchField,
+        // 2026-09-27「搜索应该是个筐而非按钮」; 2026-09-28 it was still a
+        // bare magnifier on the narrow face). The one field look —
+        // `fill`, `radius-sm`, `ctl-md`, the magnifier at the left and
+        // ⌘K at the right — pressed, it widens into the real box.
+        <div className="@container/bar flex min-w-0 flex-1 items-center pr-1">
+          <button
+            type="button"
+            data-global-search
+            data-search-field
+            aria-label={gui.find_everything}
+            onClick={() => widen("")}
+            className="flex h-ctl-md min-h-touch min-w-0 flex-1 cursor-text items-center gap-in rounded-sm bg-fill px-2 text-left text-tertiary"
+          >
+            <IconSearch className="flex-none" />
+            <span className="min-w-0 flex-1 truncate text-body">{gui.find_everything}</span>
+            {!narrow && <SearchHint />}
+          </button>
+        </div>
       )}
       {open && (
         // The widened box, in the row's own place. `absolute` with a
@@ -311,6 +420,7 @@ export function SideHead({
             <Input
               ref={box}
               data-search-box
+              data-search-field
               data-scope="all"
               value={word}
               placeholder={gui.find_hint}
@@ -354,7 +464,7 @@ export function SideHead({
                 // Search results float (20-states 浮层): `popover` under
                 // `float`, which on the dark theme is lighter than what
                 // it hangs over — `card` was the board's own colour.
-                className="absolute top-full right-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-md border bg-popover shadow-(--shadow-float)"
+                className="absolute top-full right-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border bg-popover shadow-(--shadow-float)"
                 // From the list column's edge, not the box's: hung
                 // straight down they would lie over the rail's glyphs
                 // (tokens.css `--seat-menu-inset`).

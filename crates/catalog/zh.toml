@@ -2556,6 +2556,14 @@ workspaces-how = "点击上方的 +，选择一台机器上的目录"
 # The 「+」 on the workspace pane. It opens the cross-machine directory
 # picker (工作区批②).
 ws-add = "添加工作区"
+# The same act on the landing's overview, where it is a button that
+# opens the picker — so it wears the ellipsis (components/Button).
+ws-add-ask = "添加工作区…"
+# 工作区落地页的总览 (2026-09-28). Its list is 「最近打开」 (`ws-empty-
+# recent`, the same two words the middle column uses) once this face has
+# opened one; before that it is the workspaces by when their tree last
+# changed, and says so.
+ws-now-changed = "最近改动"
 # On a row the word is `delete` (docs/SHELL.md 第二轮). ⚠️ 墓碑:it said
 # 移出工作区 until 2026-09-21, because 删除 beside a directory name reads
 # as touching the directory (user, 2026-09-14). The user overruled that

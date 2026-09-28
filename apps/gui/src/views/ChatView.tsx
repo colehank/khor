@@ -1943,7 +1943,10 @@ export function ChatView({
             {menu.length > 0 && (
               <div
                 data-slash-menu
-                className="absolute bottom-full left-0 mb-1 max-h-40 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
+                // One floating language (components/Menu, 2026-09-28):
+                // `popover`, `float`, `radius-lg` — it wore `shadow-md`
+                // and `rounded-md`, a menu of its own drawing.
+                className="absolute bottom-full left-0 mb-1 max-h-40 w-full overflow-y-auto rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
               >
                 {menu.map((c, n) => (
                   <button

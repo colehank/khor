@@ -8,6 +8,7 @@ import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
 import { EditableName } from "@/components/EditableName";
 import { IconBack } from "@/components/icons";
+import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { YIELD_MS } from "@/lib/tempo";
@@ -236,10 +237,16 @@ export function DetailPane({
           what the strip would have carried: the way back, the face, the
           name. The facts do not come back with it; they were the half
           the user struck out. */}
+      {/* **Seated in the window's first row on the narrow face**
+          (`NarrowHead`, 2026-09-28): it was a second bar under L0's
+          magnifier. Where there is no narrow shell — a workspace's
+          session column on the wide face — it stays a bar in place. */}
       {narrow && (
+        <NarrowHead>
+        {(seated) => (
         <header
           data-detail-header
-          className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
+          className={seated ? "flex min-w-0 flex-1 items-center gap-2 self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"}
         >
           {/* The back button exists only on the narrow face: there the
               list is genuinely off-screen, so "back" has somewhere to
@@ -281,8 +288,8 @@ export function DetailPane({
               key={row.id}
               id={row.id}
               title={row.title}
-              className="min-w-0 font-title"
-              inputClassName="flex-1 font-title"
+              className={seated ? "min-w-0 text-title-sm font-title" : "min-w-0 font-title"}
+              inputClassName={seated ? "flex-1 text-title-sm font-title" : "flex-1 font-title"}
             />
           ) : (
             <span className="min-w-0 truncate font-title" />
@@ -290,6 +297,8 @@ export function DetailPane({
           <span className="min-w-0 flex-1" />
           {tabs}
         </header>
+        )}
+        </NarrowHead>
       )}
       {/* The session's day, as a band the width of the pane, and on the
           wide face **the first thing under the tab strip** — 「标签页下

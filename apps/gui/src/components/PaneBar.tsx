@@ -16,7 +16,7 @@ import { Fragment, type CSSProperties } from "react";
 
 import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Omnibox, type OmniAxis } from "@/components/Omnibox";
-import { SideSeat } from "@/components/SideHead";
+import { SearchHint, SideSeat } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -197,12 +197,18 @@ export function PaneBar({
           chosen={filter.chosen}
           onToggle={filter.onToggle}
           onSubmit={onSubmit}
+          field
+          // **The same ⌘K the plain box wears** (components/SearchField:
+          // one anatomy in L0). Sessions and 额度 narrow by chips, and
+          // their box was the one L0 box with no hint (2026-09-28 audit).
+          trail={seat === "side" ? <SearchHint /> : undefined}
         />
       ) : (
         <div className="relative min-w-0 flex-1">
           <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
           <Input
             data-pane-search
+            data-search-field
             type="search"
             aria-label={searchLabel}
             placeholder={searchLabel}
@@ -225,12 +231,9 @@ export function PaneBar({
           {/* Which range the box is on (第十三轮 第 4 条): typing narrows
               this column; the word says how to widen it. */}
           {seat === "side" && (
-            <kbd
-              data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border px-xxs text-caption text-tertiary @max-3xs/bar:hidden"
-            >
-              ⌘K
-            </kbd>
+            <span className="pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2">
+              <SearchHint />
+            </span>
           )}
         </div>
       )}

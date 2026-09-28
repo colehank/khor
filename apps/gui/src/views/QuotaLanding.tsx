@@ -46,6 +46,7 @@ import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PageActions, PaneBar, type FilterOption } from "@/components/PaneBar";
 import { Region } from "@/components/Region";
+import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
@@ -1853,9 +1854,13 @@ export function QuotaLanding({
         // the fold you are already looking at.
         screen === "detail" && current ? (
           <div className="flex min-h-0 flex-1 flex-col">
+            {/* In the window's first row, not a second bar under it
+                (`NarrowHead`, 2026-09-28). */}
+            <NarrowHead>
+            {(seated) => (
             <header
               data-detail-header
-              className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
+              className={seated ? "flex min-w-0 flex-1 items-center gap-2 self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"}
             >
               {/* **The only exit from this screen**, so it carries the
                   finger floor outright — the rule `DetailPane`'s back
@@ -1883,6 +1888,8 @@ export function QuotaLanding({
                 {caption}
               </span>
             </header>
+            )}
+            </NarrowHead>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {detail}
               {subDetail}

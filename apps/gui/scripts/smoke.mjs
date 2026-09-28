@@ -4197,7 +4197,9 @@ for line in sys.stdin:
       await until(`More -> ${key} (${size.width})`, 10_000, async () =>
         (await page.locator(`[data-more-page="${key}"]`).count()) === 1,
       );
-      await page.locator("[data-more-close]").click();
+      // Wide: R0's 「×」. Narrow: 「‹」 in the window's first row, one
+      // screen back to More's list (10-layout 窄档, 2026-09-28).
+      await page.locator(size.width < 760 ? "[data-side-head] [data-more-back]" : "[data-more-close]").click();
     }
     console.log(`  ok  28b: More reaches network, general, security and doctor at ${size.width}`);
   }

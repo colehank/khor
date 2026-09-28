@@ -34,6 +34,7 @@
 - `size` 一族 27 个：`pane-head` `rail-w` `row-1` `row-2` `tab-lip` `dialog-w` `narrow` 等等，把散在组件里的尺寸收回一处。
 - `duration` `easing` 两族：`dur-120/180/240/420`、`ease-out` `ease-move`，原来在 `tokens.css` 里有值但没有用途说明。
 - `radius-*` 六档具名。
+- `segment`（2026-09-28）——分段控件选中那一段的面：亮 `#ffffff`、暗 `rgba(244,244,239,0.16)`。不用 `card`，因为暗色的 `card` 比落在 sheet 上的槽还暗。`tokens.css` 同一个 commit 加的，`check-boot` 对，`check-palette` 量「比槽亮 ≥ 4 L\*、上面的字 ≥ 4.5」。
 
 ## 没有搬过来的
 

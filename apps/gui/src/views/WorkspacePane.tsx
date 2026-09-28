@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconCode, IconSearch, IconSessions } from "@/components/icons";
+import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
@@ -93,6 +94,7 @@ export function WorkspacePane({
   narrow,
   treePane,
   listOpen,
+  onBack,
 }: {
   machine: string;
   /** Whether this workspace is on the machine khor is running on.
@@ -187,6 +189,9 @@ export function WorkspacePane({
       fifth column's existence is what decides the sessions' default,
       and only the shell knows about it. */
   listOpen: boolean;
+  /** Out of this workspace, back to the list — the narrow face's first
+      screen's way back (the shell's `screen`). */
+  onBack?: () => void;
 }) {
   // Where the tree is standing. Starts at the workspace and walks down;
   // `root` changing is a different workspace, not a step.
@@ -1407,6 +1412,38 @@ export function WorkspacePane({
     // — which is what lets a conversation in the right-hand column turn
     // a path into a press on the middle one (ruling 35, `linkHome`).
     <LinkHomeProvider value={linkHome}>
+    {/* **The narrow face's head: 「‹」 and the workspace's name**, in the
+        window's first row like every other detail screen's (`NarrowHead`,
+        2026-09-28 — an open workspace on a phone had neither a name nor a
+        way out). 「‹」 is one screen back: from the tree to the list,
+        from a file or the sessions to the tree / the file. The two backs
+        the file strip and the sessions column each drew for themselves
+        (ruling 33) are this one now. A session opened in the column is
+        a screen deeper, and its own head takes the row (`DeeperHeads`). */}
+    {narrow && (
+      <NarrowHead>
+        {() => (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={gui.back}
+              {...(screen === "tree" ? { "data-back": "" } : { "data-ws-back": "" })}
+              onClick={() =>
+                screen === "tree" ? onBack?.() : screen === "sessions" ? showSessions(false) : setScreen("tree")
+              }
+              className="min-h-touch min-w-touch flex-none"
+            >
+              <IconBack />
+            </Button>
+            <span data-ws-head-name className="min-w-0 flex-1 truncate text-title-sm font-title">
+              {root === "" ? machine : basename(root)}
+            </span>
+          </>
+        )}
+      </NarrowHead>
+    )}
+    <DeeperHeads>
     <div className="flex h-full min-h-0 flex-col">
       {/* **The head row is gone** (工作区批⑧). It held the workspace's
           name, its branch, how far the branch was from its remote, a
@@ -1504,9 +1541,10 @@ export function WorkspacePane({
               className="flex min-h-pane-head flex-none items-center gap-0.5 border-b pr-1 pl-2"
             >
               <div className="relative min-w-0 flex-1">
-                <IconSearch className="pointer-events-none absolute top-1/2 left-1 -translate-y-1/2 text-muted-foreground" />
+                <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
                 <Input
                   data-tree-search
+                  data-search-field
                   type="search"
                   aria-label={gui.tree_search}
                   placeholder={gui.tree_search}
@@ -1519,7 +1557,12 @@ export function WorkspacePane({
                   // there: the vendored control's own `h-ctl-md` cannot
                   // be lifted off by `cn()`, so a floor is what beats it
                   // without fighting it.
-                  className="min-h-touch border-0 bg-transparent pl-6 shadow-none focus-visible:ring-0"
+                  // **The one search-field look** (components/
+                  // SearchField, 2026-09-28): `fill`, `radius-sm`,
+                  // `ctl-md`, the magnifier at the left in `tertiary`.
+                  // It was a borderless line — the one search box in the
+                  // app that did not read as one. Not L0's, so no ⌘K.
+                  className="min-h-touch rounded-sm border-0 bg-fill pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body"
                 />
               </div>
               {switches}
@@ -1642,20 +1685,6 @@ export function WorkspacePane({
             // board is the sessions landing's), so the file lies flat
             // under it on the card's colour.
             frame={false}
-            head={
-              narrow ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-ws-back
-                  aria-label={gui.back}
-                  onClick={() => setScreen("tree")}
-                  className="mb-1 min-h-touch min-w-touch flex-none"
-                >
-                  <IconBack />
-                </Button>
-              ) : undefined
-            }
           >
           {file === null ? (
             // 中栏没有标签时 (ruling 37). Not a blank: where this is,
@@ -1777,25 +1806,11 @@ export function WorkspacePane({
                 cannot show its tabs is a switcher you have to switch
                 to. The back arrow is the way out, the shell's own
                 gesture on its narrow face. */}
-            {/* The way back to the file, for the head of the strip's
-                reason one column over (ruling 33) — and only while this
-                column is showing its list: standing **in** a session,
-                the back that matters is the one out of that session,
-                which `DetailPane` draws itself. */}
-            {narrow && picked === null && (
-              <div className="flex flex-none items-center border-b px-1 py-1">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  data-ws-back
-                  aria-label={gui.back}
-                  onClick={() => showSessions(false)}
-                  className="min-h-touch min-w-touch"
-                >
-                  <IconBack />
-                </Button>
-              </div>
-            )}
+            {/* ⚠️ 墓碑 (2026-09-28): the way back to the file stood here
+                on the narrow face, a row of its own over the column's
+                list (ruling 33). It is the pane's head in the window's
+                first row now (`NarrowHead` above); standing **in** a
+                session, that session's own head takes the row. */}
             {picked === null ? (
               // **The sessions landing's bar and the sessions landing's
               // list, both of them the real ones** (工作区批⑩:
@@ -1970,6 +1985,7 @@ export function WorkspacePane({
         }}
       />
     </div>
+    </DeeperHeads>
     </LinkHomeProvider>
   );
 }
