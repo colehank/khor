@@ -220,9 +220,9 @@ function drawHeat(svg, T, W, narrow, fill){
   // AXIS 是**最后一笔墨到图底还剩多少**,两张图的这个数是一组、要一起改:
   // 热力带(时间轴 + 明度图例)、叠放(轴名 + 计数,`FOOT`)。它们凑在一起是为了
   // 让两张图**画到同一条底线上** —— 高度一样只是容器一样,墨停在不同的地方,
-  // 读者看到的仍然是一块空地(2026-09-04)。31 → 40 在 2026-09-28:字从 7–7.5
+  // 读者看到的仍然是一块空地(2026-09-04)。31 → 38 在 2026-09-28:字从 7–7.5
   // 升到 `caption` 11,时间轴和图例各要多一行字高。
-  const TOP = 5, AXIS = narrow?22:40;
+  const TOP = 5, AXIS = narrow?19:38;
   const X0=GL, X1=W-GR, PW=X1-X0, slot=PW/N;
   // **余量放在行距上,不放在带的厚度上。** `CH` 是那条带的厚度,而带是
   // **明度编码的载体** —— 同一支灰在一条更胖的带上读起来就是另一个数,
@@ -317,7 +317,7 @@ function drawHeat(svg, T, W, narrow, fill){
        are each swatch's tooltip, and any exact moment is one hover away
        in the readout. */
     const S = 9, CELL = 13;
-    const ly = yb+24, base = ly+S;
+    const ly = yb+25, base = ly+S;
     const ramp = BANDS.map((b,k)=>['r'+(k+1), k===0?'<'+b:BANDS[k-1]+'–'+b])
       .concat([['r'+(BANDS.length+1), BANDS[BANDS.length-1]+'+']]);
     const word = (x,s,delay,extra={}) => txt(svg,{x,y:base,'font-size':cap,'font-weight':600,
@@ -372,11 +372,11 @@ function drawPara(svg, T, W, narrow, fill){
   // 不改变任何一个读数落在轴上的比例——一条 15% 的线在更长的轴上还是
   // 15%,只是分得开一点。这是三张图里最便宜的一处:它本来就是最高的那张,
   // 要补的那点最少。
-  // 40 = 轴名 + 它下面那行计数到图底的距离。**和热力带的同一个数是一组**
-  // —— 见 `drawHeat` 里 `AXIS` 那一段(31 → 40,2026-09-28,两行字都到了
+  // 38 = 轴名 + 它下面那行计数到图底的距离。**和热力带的同一个数是一组**
+  // —— 见 `drawHeat` 里 `AXIS` 那一段(31 → 38,2026-09-28,两行字都到了
   // `caption` 11)。
   const {cap} = TYPE;
-  const FOOT = 40;
+  const FOOT = 38;
   const BOT0 = narrow?122:116, nat = BOT0 + FOOT;
   const H = fill > nat ? fill : nat;
   const PAD = narrow?26:44, TOP=14, BOT=H-FOOT;
