@@ -154,6 +154,40 @@ fn zh_sentences_use_full_width_punctuation() {
     );
 }
 
+/// **A duration and its 前 / 后 are one word.** Every duration a zh
+/// sentence receives comes off the `age-*` ladder (「2 分钟」, 「3 天」),
+/// which already ends in its unit — so a template writing `{1} 前` puts a
+/// space between two hanzi: 「gate 读的,2 分钟 前」, seen on the 额度 page
+/// 2026-09-28. `{0}前` is how `card-age` and `vitals-taken` always wrote it.
+#[test]
+fn a_duration_is_not_spaced_from_its_before_or_after() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/zh.toml");
+    let doc: toml::Table = std::fs::read_to_string(path)
+        .expect("zh.toml must exist")
+        .parse()
+        .expect("zh.toml must parse");
+    let spaced = regex_free_find(&doc, &["} 前", "} 后"]);
+    assert!(
+        spaced.is_empty(),
+        "a placeholder spaced from 前/后 in zh.toml (a duration already ends in its unit, write `{{0}}前`):\n{}",
+        spaced.join("\n")
+    );
+}
+
+fn regex_free_find(doc: &toml::Table, needles: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (section, table) in doc {
+        let Some(table) = table.as_table() else { continue };
+        for (key, v) in table {
+            let Some(text) = v.as_str() else { continue };
+            if needles.iter().any(|n| text.contains(n)) {
+                out.push(format!("{section}.{key}: {text}"));
+            }
+        }
+    }
+    out
+}
+
 /// The rule's own arm, run on sentences whose answer is known — without
 /// it a checker that never fires passes the catalog test above.
 #[test]

@@ -3,7 +3,7 @@
 // talks to the dev bridge, and a phone talks to the web face this page
 // was served from. Never a hand-written mock — the backend is the same
 // Rust in all three.
-import { msg } from "./gen/catalog";
+import { gui, msg } from "./gen/catalog";
 // **The menu's shape is the menu's, not the wire's.** What crosses
 // here is exactly what the list component already defines; a second
 // spelling of a row would be one restyle away from drawing two
@@ -176,23 +176,73 @@ const webKey: string | null = (() => {
 // khor answers a refusal as a JSON string, and its refusals are whole
 // sentences meant for a person — handing the raw body onward puts the
 // encoding's quotation marks around one.
+//
+// **A body that is not one of khor's sentences is not painted.** An
+// empty body or a page of HTML (a proxy's error page, a dev server's
+// 404) is somebody else's answer; what reaches the glass is the
+// catalog's sentence, with the raw body kept as the error's `cause`.
 const unwrap = (body: string): string => {
   try {
     const v: unknown = JSON.parse(body);
-    return typeof v === "string" ? v : body;
+    if (typeof v === "string") return v;
   } catch {
-    return body;
+    /* not JSON — judged below */
   }
+  const plain = body.trim();
+  return plain === "" || plain.startsWith("<") ? gui.backend_garbled : plain;
 };
 
+/**
+ * `fetch`, with a failure to reach khor said in the catalog's words.
+ *
+ * 2026-09-28: 「Failed to fetch」 was painted as-is at the top of the
+ * browse board and in red inside the new-session sheet. That string is
+ * the browser's, and it is the same for every way the request did not
+ * arrive (no bridge, a refused port, CORS) — so it carries nothing a
+ * person can act on beyond 「khor did not answer」, which is exactly
+ * what `backend-unreachable` already says. **One seam, so every
+ * `e.message` downstream gets the sentence without each view learning
+ * to translate.** The browser's own error rides along as `cause` for
+ * whoever debugs it.
+ */
+async function reach(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    throw new Error(gui.backend_unreachable, { cause: e });
+  }
+}
+
+/** The answer's JSON, or the catalog's sentence when it is not JSON —
+    a `SyntaxError: Unexpected token '<'` is the parser talking, not
+    khor. */
+async function answer<T>(r: Response): Promise<T> {
+  const body = await r.text();
+  try {
+    return JSON.parse(body) as T;
+  } catch (e) {
+    throw new Error(gui.backend_garbled, { cause: e });
+  }
+}
+
 async function post<T>(url: string, headers: Record<string, string>, args?: Record<string, unknown>): Promise<T> {
-  const r = await fetch(url, {
+  const r = await reach(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(args ?? {}),
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
-  return (await r.json()) as T;
+  return answer<T>(r);
+}
+
+/**
+ * What a failed call says to a person: the error's own message, which
+ * after `reach`/`unwrap` is always either khor's sentence or the
+ * catalog's. `String(e)` on an `Error` prints 「Error: …」, the class
+ * name in front of the sentence — so every view reads it through here.
+ */
+export function said(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 /**
@@ -641,7 +691,7 @@ export const pickAndSendFile = (machine: string) =>
 export const uploadFile = async (machine: string, file: File): Promise<string> => {
   const q = `machine=${encodeURIComponent(machine)}&name=${encodeURIComponent(file.name)}`;
   const url = bridge ? `http://127.0.0.1:${bridge}/upload?${q}` : `/api/upload?${q}`;
-  const r = await fetch(url, {
+  const r = await reach(url, {
     method: "POST",
     // Same rule as `call`: the header rides when the key is held; a
     // bare page leans on the remembered cookie (记住一次批).
@@ -649,7 +699,7 @@ export const uploadFile = async (machine: string, file: File): Promise<string> =
     body: file,
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
-  return (await r.json()) as string;
+  return answer<string>(r);
 };
 /** Every ACP agent this person registered (批⑥, `khor agents add`).
     **khor's own two are not in here** — they are not registrations, and

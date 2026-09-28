@@ -24,7 +24,7 @@
 // boxes holding one file is how two of them end up disagreeing.
 import { useEffect, useMemo, useState } from "react";
 
-import { fetchFileText, fetchGitDiff } from "@/api";
+import { fetchFileText, fetchGitDiff, said } from "@/api";
 import { gui } from "@/gen/catalog";
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { cn } from "@/lib/utils";
@@ -133,7 +133,7 @@ export function DiffView({
         setNow(text.binary ? [] : text.text.split("\n"));
         setHunks(diff.hunks);
       },
-      (e: unknown) => live && setRefused(String(e)),
+      (e: unknown) => live && setRefused(said(e)),
     );
     return () => {
       live = false;

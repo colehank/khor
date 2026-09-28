@@ -30,6 +30,7 @@ import {
   fetchGitDiff,
   mergeFileText,
   pullFile,
+  said,
   saveFileText,
   type FileText,
   type GitDiff,
@@ -364,7 +365,7 @@ export function FileView({
         // disk is the loss this whole arrangement exists to stop.
         if (draft === undefined) setEdit({ text: f.text, was: f.digest });
       })
-      .catch((e: unknown) => live && setError(String(e)));
+      .catch((e: unknown) => live && setError(said(e)));
     // Cancelled by ignoring the answer, not by aborting the dial: the
     // slice is already crossing and dropping it on the floor costs the
     // far machine nothing it has not already spent.
@@ -866,7 +867,7 @@ export function FileView({
     setTook(null);
     pullFile(machine, path)
       .then((dest) => setTook(gui.took_file(dest)))
-      .catch((e: unknown) => setTook(String(e)));
+      .catch((e: unknown) => setTook(said(e)));
   };
 
   // ── the three screens that are not a code view ──────────────────
