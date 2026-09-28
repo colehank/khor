@@ -60,7 +60,7 @@
 // front for a few seconds and hands focus to Finder in between.
 import { spawn, execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -121,11 +121,33 @@ const env = { ...process.env, KHOR_HOME: home, TMUX_TMPDIR: scratch };
 delete env.TMUX;
 const setTheme = (t) => execFileSync(cliBin, ["config", "set", "theme", t], { env, encoding: "utf8" });
 
+/** The page store this run's `KHOR_HOME` gets (src-tauri `lib.rs`: the
+    FNV-1a pair over the path's bytes, little-endian, as the WebKit data
+    store's UUID). Named exactly, so the cleanup takes this run's store
+    and never a neighbour's — another gate may be up on another scratch
+    home at the same time. It used to be left behind, one per run. */
+const pageStore = (() => {
+  const fnv = (seed) => {
+    let h = seed;
+    for (const b of Buffer.from(home)) h = ((h ^ BigInt(b)) * 0x100000001b3n) & 0xffffffffffffffffn;
+    return h;
+  };
+  const bytes = Buffer.alloc(16);
+  bytes.writeBigUInt64LE(fnv(0xcbf29ce484222325n), 0);
+  bytes.writeBigUInt64LE(fnv(0x6c62272e07bb0142n), 8);
+  const x = bytes.toString("hex");
+  const uuid = `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+  return join(homedir(), "Library", "WebKit", "khor-gui", "WebsiteDataStore", uuid);
+})();
+
 let child = null;
 const done = () => {
   if (child && child.exitCode === null) child.kill("SIGTERM");
-  if (process.env.KEEP_NATIVE) console.log(`kept ${scratch}`);
-  else rmSync(scratch, { recursive: true, force: true });
+  if (process.env.KEEP_NATIVE) console.log(`kept ${scratch} and ${pageStore}`);
+  else {
+    rmSync(scratch, { recursive: true, force: true });
+    rmSync(pageStore, { recursive: true, force: true });
+  }
 };
 process.on("exit", done);
 process.on("SIGINT", () => process.exit(130));
