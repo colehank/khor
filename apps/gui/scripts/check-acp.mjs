@@ -808,8 +808,12 @@ try {
     });
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(700);
-    await page.locator("[data-pane-new]").first().click();
-    await page.locator(`[data-new-item="${door}"]`).click();
+    // The door is R0's page action of that name. Since 2026-09-27
+    // (9fb1833) the wide 「+」 is one act that opens the new-session sheet
+    // itself, and that sheet carries its own 导入 button under the same
+    // `data-new-item="import"` — so an unscoped locator found two, and a
+    // walk through 「+」 would leave the sheet over R0's doors.
+    await page.locator(`[data-region-head] [data-new-item="${door}"]`).click();
     await wait(400);
     if (attachId !== null) {
       await page.locator("[data-new-session-add-agent]").click();
