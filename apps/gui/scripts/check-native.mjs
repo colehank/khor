@@ -78,8 +78,14 @@ const fail = (m) => {
 };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// **The newer of the two, not the first that exists** (2026-09-28): the
+// owner's installed app lives at target/local, so 「local first」 measured
+// yesterday's binary whenever today's was built under debug — a whole
+// run red about code that was no longer the code, with only a note.
 const pick = (name) =>
-  [join(repo, "target", "local", name), join(repo, "target", "debug", name)].find((p) => existsSync(p));
+  [join(repo, "target", "local", name), join(repo, "target", "debug", name)]
+    .filter((p) => existsSync(p))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 const guiBin = process.env.KHOR_GUI_BIN ?? pick("khor-gui");
 const cliBin = process.env.KHOR_BIN ?? pick("khor");
 if (!guiBin || !cliBin) {
