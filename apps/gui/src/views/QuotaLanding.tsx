@@ -46,6 +46,7 @@ import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PageActions, PaneBar, type FilterOption } from "@/components/PaneBar";
 import { Region } from "@/components/Region";
+import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
@@ -69,6 +70,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { PopupButton } from "@/components/ui/popup-button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { FormLabel, SheetForm } from "@/components/ui/sheet-form";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -1850,9 +1854,13 @@ export function QuotaLanding({
         // the fold you are already looking at.
         screen === "detail" && current ? (
           <div className="flex min-h-0 flex-1 flex-col">
+            {/* In the window's first row, not a second bar under it
+                (`NarrowHead`, 2026-09-28). */}
+            <NarrowHead>
+            {(seated) => (
             <header
               data-detail-header
-              className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"
+              className={seated ? "flex min-w-0 flex-1 items-center gap-2 self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"}
             >
               {/* **The only exit from this screen**, so it carries the
                   finger floor outright — the rule `DetailPane`'s back
@@ -1880,6 +1888,8 @@ export function QuotaLanding({
                 {caption}
               </span>
             </header>
+            )}
+            </NarrowHead>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {detail}
               {subDetail}
@@ -2328,7 +2338,7 @@ function RegisterDialog({
         <DialogHeader>
           <DialogTitle>{gui.accounts_register}</DialogTitle>
         </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-3">
+        <SheetForm data-quota-form>
           {/* **类型 first, because it decides what the rest of this form
               even is** — a subscription has no key, no address and no
               budget, and a form that asked for them and then refused
@@ -2340,60 +2350,57 @@ function RegisterDialog({
               narrows 哪家 to the vendors whose login khor knows how
               to find, and carries the choice over rather than leaving a
               provider selected that the kind cannot use. */}
-          <div className="flex flex-col gap-1 text-callout">
-            <span className="text-muted-foreground">{gui.quota_kind}</span>
-            <div className="flex flex-wrap gap-1">
-              {["bill", "sub"].map((k) => (
-                <Button
-                  key={k}
-                  size="sm"
-                  variant={kind === k ? "secondary" : "ghost"}
-                  data-quota-kind-pick={k}
-                  data-on={kind === k}
-                  onClick={() => {
-                    setKind(k);
-                    if (k === "sub" && !SUBSCRIBED.includes(provider)) {
-                      setProvider(SUBSCRIBED[0] as Provider);
-                    }
-                    if (k !== "sub" && SUB_ONLY.includes(provider)) setProvider("newapi");
-                  }}
-                >
-                  {kindWord(k)}
-                </Button>
-              ))}
-            </div>
+          {/* **Two fixed choices → a segmented control; a vendor list
+              that is eight long → the system's menu** (components/
+              SegmentedControl, PopupButton; 2026-09-28 — both were rows
+              of grey pills). */}
+          <FormLabel>{gui.quota_kind}</FormLabel>
+          <div className="flex min-w-0">
+            <SegmentedControl
+              label={gui.quota_kind}
+              value={kind}
+              onChange={(k) => {
+                setKind(k);
+                if (k === "sub" && !SUBSCRIBED.includes(provider)) {
+                  setProvider(SUBSCRIBED[0] as Provider);
+                }
+                if (k !== "sub" && SUB_ONLY.includes(provider)) setProvider("newapi");
+              }}
+              options={["bill", "sub"].map((k) => ({
+                key: k,
+                label: kindWord(k),
+                mark: { "data-quota-kind-pick": k },
+              }))}
+            />
           </div>
-          <div className="flex flex-col gap-1 text-callout">
-            <span className="text-muted-foreground">{gui.accounts_provider}</span>
-            <div className="flex flex-wrap gap-1">
-              {PROVIDERS.filter((p) => (kind === "sub" ? SUBSCRIBED.includes(p) : !SUB_ONLY.includes(p))).map((p) => (
-                <Button
-                  key={p}
-                  size="sm"
-                  variant={provider === p ? "secondary" : "ghost"}
-                  data-quota-provider={p}
-                  data-on={provider === p}
-                  onClick={() => setProvider(p)}
-                >
-                  {providerWord(p)}
-                </Button>
-              ))}
-            </div>
+          <FormLabel>{gui.accounts_provider}</FormLabel>
+          <div className="flex min-w-0">
+            <PopupButton
+              look="field"
+              label={gui.accounts_provider}
+              value={provider}
+              onPick={(p) => setProvider(p as Provider)}
+              mark={{ "data-quota-provider-select": "" }}
+              choices={PROVIDERS.filter((p) => (kind === "sub" ? SUBSCRIBED.includes(p) : !SUB_ONLY.includes(p))).map((p) => ({
+                value: p,
+                label: providerWord(p),
+                mark: { "data-quota-provider": p },
+              }))}
+            />
           </div>
-          <label className="flex min-w-0 flex-col gap-1 text-callout">
-            <span className="text-muted-foreground">{gui.accounts_name}</span>
-            <Input data-quota-name value={name} onChange={(e) => setName(e.target.value)} />
-          </label>
+          <FormLabel htmlFor="khor-quota-name">{gui.accounts_name}</FormLabel>
+          <Input id="khor-quota-name" data-quota-name value={name} onChange={(e) => setName(e.target.value)} />
           {kind !== "sub" && provider === "newapi" && (
-            <label className="flex min-w-0 flex-col gap-1 text-callout">
-              <span className="text-muted-foreground">{gui.accounts_address}</span>
+            <>
+              <FormLabel htmlFor="khor-quota-address">{gui.accounts_address}</FormLabel>
               <Input
+                id="khor-quota-address"
                 data-quota-address
                 value={baseUrl}
                 placeholder="https://"
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
-            </label>
+            </>
           )}
           {kind === "sub" ? (
             /* **The note is the key box's replacement, not decoration.**
@@ -2402,13 +2409,14 @@ function RegisterDialog({
                same debt the two lines under the key box pay, in the
                other direction: there is nothing to paste because what
                reads this is the login already on this machine. */
-            <p data-quota-sub-note className="text-caption text-muted-foreground">
+            <p data-quota-sub-note className="col-start-2 text-caption text-muted-foreground">
               {gui.accounts_sub_note(vendorOf(provider).name)}
             </p>
           ) : (
-          <label className="flex min-w-0 flex-col gap-1 text-callout">
-            <span className="text-muted-foreground">{gui.accounts_key}</span>
+          <>
+            <FormLabel htmlFor="khor-quota-key">{gui.accounts_key}</FormLabel>
             <Input
+              id="khor-quota-key"
               data-quota-key
               type="password"
               autoComplete="off"
@@ -2417,30 +2425,31 @@ function RegisterDialog({
             />
             {/* The two facts the form owes a person before they paste a
                 secret: where it goes, and which kind of key can read
-                usage at all. */}
-            <span className="text-caption text-muted-foreground">
+                usage at all. Under the box, in its column. */}
+            <span className="col-start-2 text-caption text-muted-foreground">
               {NEEDS_ADMIN.includes(provider) ? `${gui.accounts_key_stays} ${gui.accounts_needs_admin}` : gui.accounts_key_stays}
             </span>
-          </label>
+          </>
           )}
           {kind !== "sub" && BUDGETED.includes(provider) && (
-            <label className="flex min-w-0 flex-col gap-1 text-callout">
-              <span className="text-muted-foreground">{gui.accounts_budget}</span>
+            <>
+              <FormLabel htmlFor="khor-quota-budget">{gui.accounts_budget}</FormLabel>
               <Input
+                id="khor-quota-budget"
                 data-quota-budget
                 inputMode="decimal"
                 value={budget}
                 placeholder={gui.accounts_budget_hint}
                 onChange={(e) => setBudget(e.target.value)}
               />
-            </label>
+            </>
           )}
           {error && (
-            <p data-quota-dialog-error className="text-callout text-destructive">
+            <p data-quota-dialog-error className="col-span-2 text-callout text-destructive">
               {error}
             </p>
           )}
-        </div>
+        </SheetForm>
         <DialogFooter>
           <Button variant="primary" data-quota-create disabled={busy} onClick={create}>
             {gui.accounts_register}

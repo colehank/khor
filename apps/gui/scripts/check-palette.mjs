@@ -315,6 +315,10 @@ try {
         // What floats (the join dialog open right now is one), and the
         // red a refusal inside one is written in.
         popover: g("--popover"),
+        // A segmented control's track and its chosen face
+        // (components/SegmentedControl, 2026-09-28).
+        fill: g("--fill"),
+        segment: g("--segment"),
         destructive: g("--destructive"),
         dialog: getComputedStyle(document.querySelector('[data-slot="dialog-content"]') ?? document.body).backgroundColor,
         ink: g("--foreground"),
@@ -415,6 +419,37 @@ try {
       }
       if (!same(t.dialog, t.popover)) {
         fail(`${scheme}: the open dialog is painted ${t.dialog}, not --popover ${t.popover} (components/ui/dialog.tsx)`);
+      }
+    }
+
+    // ── the chosen segment is a face above its track ──────────────
+    //
+    // A segmented control is a `--fill` track with the chosen segment a
+    // `--segment` face in it (components/SegmentedControl). **The face
+    // has to be lighter than the track on both themes**, or the chosen
+    // one reads as a hole — which is what `--card` does on the dark
+    // theme, where the card is darker than a track laid over a sheet,
+    // and why the face has a token of its own. Measured on the two
+    // grounds the control stands on: a sheet (`--popover`) and the
+    // board (`--card`). 4 L* is the step that reads as lifted
+    // (`--card` over `--background` is 4.4), and the words on the face
+    // are text.
+    if (!t.fill || !t.segment) {
+      fail(`${scheme}: --fill or --segment does not resolve (src/styles/tokens.css)`);
+    } else {
+      for (const [where, ground] of [["a sheet", t.popover], ["the board", t.card]]) {
+        const track = flatten(parse(t.fill), rgb(ground));
+        const face = flatten(parse(t.segment), track);
+        const up = lstar(face) - lstar(track);
+        const ink = contrast(flatten(parse(t.ink), face), face);
+        console.log(`${scheme}: segmented control on ${where}: face ${say(up)} L* over its track, ink ${say(ink)} on it`);
+        if (!(up >= 4)) {
+          fail(
+            `${scheme}: on ${where} the chosen segment (--segment ${t.segment}) is ${say(up)} L* over its ` +
+              "track — under 4 it does not read as a face lifted out of the track (components/SegmentedControl)",
+          );
+        }
+        if (ink < TEXT_FLOOR) fail(`${scheme}: the chosen segment's words read ${say(ink)} on ${where}, under ${TEXT_FLOOR}`);
       }
     }
 

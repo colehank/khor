@@ -710,6 +710,7 @@ export function TabSwitcher({
   onFocus,
   onClose,
   search = true,
+  seat,
 }: {
   faces: TabFace[];
   active: string;
@@ -718,6 +719,10 @@ export function TabSwitcher({
   /** Whether the switcher wears its own search box (docs/SHELL.md 第三轮
       第 3 条:「切换器头上加搜索框」). */
   search?: boolean;
+  /** `"side"`: the box sits in the window's first row (`PaneBar`) — the
+      narrow shell's switcher is a screen of its own, and a second box
+      under L0's would be two search fields on one screen (2026-09-28). */
+  seat?: "side";
 }) {
   const [query, setQuery] = useState("");
   // By what a row shows — the name and where it is — and nothing else.
@@ -725,7 +730,7 @@ export function TabSwitcher({
   const shown = q === "" ? faces : faces.filter((f) => `${f.label} ${f.path}`.toLowerCase().includes(q));
   return (
     <div data-tab-switcher className="flex h-full min-h-0 flex-col">
-      {search && <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} />}
+      {search && <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} seat={seat} />}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {shown.map((f) => (
           <div

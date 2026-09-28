@@ -1285,7 +1285,9 @@ for line in sys.stdin:
   await until("the wizard offering alpha", 10_000, async () =>
     (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
   );
-  await page.locator('[data-new-session-machine="alpha"]').click();
+  // The machines are a popup since 2026-09-28 — the system's menu,
+  // picked through its `<select>`; the kinds are a segmented control.
+  await page.locator("[data-new-session-machine-select]").selectOption("alpha");
   await page.locator('[data-new-session-kind="tell"]').click();
   //     The kind step is a step: 名字 and 目录 are not asked for a line.
   if ((await page.locator("[data-new-session-name], [data-new-session-dir]").count()) !== 0) {
@@ -4220,7 +4222,9 @@ for line in sys.stdin:
       await until(`More -> ${key} (${size.width})`, 10_000, async () =>
         (await page.locator(`[data-more-page="${key}"]`).count()) === 1,
       );
-      await page.locator("[data-more-close]").click();
+      // Wide: R0's 「×」. Narrow: 「‹」 in the window's first row, one
+      // screen back to More's list (10-layout 窄档, 2026-09-28).
+      await page.locator(size.width < 760 ? "[data-side-head] [data-more-back]" : "[data-more-close]").click();
     }
     console.log(`  ok  28b: More reaches network, general, security and doctor at ${size.width}`);
   }
@@ -5855,7 +5859,7 @@ for line in sys.stdin:
     throw new Error("this machine must be the wizard's default");
   }
   await page.locator("[data-new-session-dir]").fill(join(SCRATCH, "place-repo"));
-  await page.locator('[data-new-session-machine="alpha"]').click();
+  await page.locator("[data-new-session-machine-select]").selectOption("alpha");
   if ((await page.locator("[data-new-session-dir]").inputValue()) !== "") {
     throw new Error("a path typed for beta's disk survived picking alpha");
   }
@@ -7329,13 +7333,13 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   // 2026-09-15 — the row on the desk drew nothing while the far ones
   // worked, which no fixture could see. The box completes from `ls`
   // (2026-09-27), so a completion is that listing answering.
-  await page.locator('[data-dir-picker-machine="beta"]').click();
+  await page.locator("[data-dir-picker-machine-select]").selectOption("beta");
   await page.locator("[data-dir-picker-path]").click();
   await page.locator("[data-dir-picker-path]").fill(join(wsDir, "s"));
   await until("this machine completing its own directory", 20_000, async () =>
     (await page.locator('[data-path-suggestions] [data-omni-item="sub"]').count()) === 1,
   );
-  await page.locator('[data-dir-picker-machine="alpha"]').click();
+  await page.locator("[data-dir-picker-machine-select]").selectOption("alpha");
   //      Typed: the scratch directory is not under anybody's home, and
   //      the box is the only road there is. What completes is alpha's
   //      listing of that directory, not this face's idea of one.

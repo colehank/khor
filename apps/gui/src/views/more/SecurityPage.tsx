@@ -129,7 +129,29 @@ export function SecurityPage({
   };
 
   return (
-    <MoreFrame page="security" onClose={onClose}>
+    <MoreFrame
+      page="security"
+      onClose={onClose}
+      // **「立即锁定」 is this page's button, at R0's right end** (D9;
+      // 2026-09-28). It is not a setting — nothing about it is kept —
+      // and it is not any row's act: the switch above says whether the
+      // lock exists, this uses it. ⚠️ 墓碑: a lone push button under the
+      // idle row, left-aligned in the card — the shape 「重新生成」 had
+      // just been moved out of. Only while the lock is on: before that
+      // there is nothing to lock with (`khor_node::lock` refuses).
+      actions={
+        lock?.on ? (
+          <Button
+            size="sm"
+            data-security-lock-now
+            onClick={onLockNow}
+            className="min-h-touch min-w-touch flex-none"
+          >
+            {gui.lock_now}
+          </Button>
+        ) : undefined
+      }
+    >
       {error && (
         <div data-security-error className="text-callout text-destructive">
           {error}
@@ -208,15 +230,6 @@ export function SecurityPage({
               onPick={(v) => after(setLockTimeout(Number(v)))}
             />
 
-            {lock.on && (
-              <Button
-                data-security-lock-now
-                onClick={onLockNow}
-                className="mt-2 min-h-touch self-start"
-              >
-                {gui.lock_now}
-              </Button>
-            )}
           </>
         )}
       </MoreSection>

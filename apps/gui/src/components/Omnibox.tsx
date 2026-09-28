@@ -108,6 +108,8 @@ export function Omnibox({
   autoFocus,
   onLeave,
   float,
+  field = false,
+  trail,
 }: {
   /** Names the box and stands in as its placeholder — the pane's, not
       this component's, for the same reason the plain box took it. */
@@ -162,6 +164,17 @@ export function Omnibox({
    * and the list is drawn here (`useFloatedMenu`).
    */
   float?: boolean;
+  /**
+   * **This box is a list's search field** (docs/design-system
+   * components/SearchField): the strip is marked `data-search-field`
+   * and its words wear the field's type — `body`, the placeholder in
+   * `tertiary` — so a landing's box reads the same whether it can
+   * narrow by chips or not. The address bar is not a search field and
+   * keeps its own.
+   */
+  field?: boolean;
+  /** What stands at the strip's right end — a seated box's ⌘K hint. */
+  trail?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState(0);
@@ -274,6 +287,7 @@ export function Omnibox({
     <div ref={strip} className="relative min-w-0 flex-1">
       <div
         data-omnibox
+        data-search-field={field ? "" : undefined}
         className={cn(
           // The strip is as tall as the floor and no taller: the box
           // inside it is the thing a finger lands on, so the padding
@@ -316,7 +330,10 @@ export function Omnibox({
           // `--touch`). The strip above sheds its padding in exchange,
           // which is why the bar this rides in grows by four and not by
           // fourteen.
-          className="min-h-touch min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-muted-foreground md:text-callout"
+          className={cn(
+            "min-h-touch min-w-0 flex-1 bg-transparent text-body outline-none",
+            field ? "placeholder:text-tertiary" : "placeholder:text-muted-foreground md:text-callout",
+          )}
           onFocus={() => setOpen(true)}
           // **Focus is not the only way in, and Escape is why.** Escape
           // with a menu up puts the menu away and leaves the caret where
@@ -411,6 +428,7 @@ export function Omnibox({
             }
           }}
         />
+        {trail}
       </div>
       {/* **Here only when it is not floating.** The floated one is the
           same component in the app's own small window, put there by
@@ -419,7 +437,7 @@ export function Omnibox({
         <OmniMenu
           rows={{ groups: offered, at }}
           onPick={press}
-          className="absolute top-full z-20 mt-1 rounded-md shadow-(--shadow-float)"
+          className="absolute top-full z-20 mt-1 rounded-lg shadow-(--shadow-float)"
           // From the list column's edge where the box is seated in the
           // left block's first row, from the box's own edge anywhere
           // else (tokens.css `--menu-inset`).

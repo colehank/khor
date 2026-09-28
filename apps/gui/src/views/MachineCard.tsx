@@ -18,6 +18,7 @@ import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
+import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -84,7 +85,11 @@ export function MachineCard({
         // but a 44 target inside a fixed 40 would light up a band that
         // is cut off, and the floor's own rule is that what paints the
         // pressed state paints the grown box (tokens.css `--touch`).
-        <header className="flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3">
+        // Seated in the window's first row (`NarrowHead`, 2026-09-28):
+        // it was a second bar under L0's magnifier.
+        <NarrowHead>
+        {(seated) => (
+        <header className={seated ? "flex min-w-0 flex-1 items-center gap-2 self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"}>
           {/* The narrow face's only way back to the machine list, and it
               was an icon-only 30 square. There is no second exit from a
               detail screen on a phone, so this is the one control on
@@ -105,6 +110,8 @@ export function MachineCard({
           <span className="min-w-0 flex-1 truncate text-title-sm font-title">{row?.shown ?? ""}</span>
           {actions}
         </header>
+        )}
+        </NarrowHead>
       )}
       {row && (
         // **Keyed by the machine**, so every piece of state on this card

@@ -240,13 +240,23 @@
   --brand: var(--lq3);
   /* Ink on a `--brand-wash`: 8.98 over the wash on `--side`. */
   --brand-ink: #2f3b0d;
-  /* ── depth: one shadow for what floats, one for a switch's knob ──
+  /* ── depth: one shadow for what floats, one for a face in a track ──
+   * (a switch's knob, the chosen segment of a segmented control)
    * (docs/design-system README 「间距、形状、材质」). The board and the
    * settings groups are never shadowed — they are card on canvas. */
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.28);
   --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.25);
   --fill: rgba(26, 26, 20, 0.06);
   --fill-strong: rgba(26, 26, 20, 0.1);
+  /* The chosen segment of a segmented control (docs/design-system
+   * components/SegmentedControl, 2026-09-28): a face sitting in the
+   * `--fill` track, lifted by `--shadow-knob` — the switch's knob's
+   * relative. **Not `--card`**: on the dark theme the card is darker
+   * than a track laid over a sheet, and a chosen segment would read as
+   * a hole. Light is white over the track (+5.8 L*), dark a lighter
+   * wash over it (+13.6 L* on a sheet); ink on it 14.87 / 6.40
+   * (`check-palette`). */
+  --segment: #ffffff;
 
   /* ── the six words (mandala's doctrine) ─────────────
    * **The four that call you sit a lightness apart from the two that do
@@ -1635,6 +1645,7 @@
   --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.4);
   --fill: rgba(244, 244, 239, 0.07);
   --fill-strong: rgba(244, 244, 239, 0.12);
+  --segment: rgba(244, 244, 239, 0.16);
 
   /* ── the same separation as light, arrived at from the other side ──
    * The light theme pushed the four that call you *down* in lightness
@@ -1816,6 +1827,7 @@
   --color-on-brand: var(--on-brand);
   --color-fill: var(--fill);
   --color-fill-strong: var(--fill-strong);
+  --color-segment: var(--segment);
   --color-brand-ink: var(--brand-ink);
   --color-brand-wash: var(--brand-wash);
   --color-on-destructive: var(--on-destructive);

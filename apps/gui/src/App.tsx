@@ -24,6 +24,7 @@ import {
   type DeviceRow,
   type HooksState,
   type SessionRow,
+  type WorkspaceRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import {
@@ -87,6 +88,7 @@ import { PAGES } from "@/views/PagesKind";
 import { DevicesList } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList } from "@/views/WorkspacesList";
+import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
 import { moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
 import { AppearancePage } from "@/views/more/AppearancePage";
@@ -1621,6 +1623,8 @@ export default function App() {
         setScreen("detail");
       }}
       onClose={sessionTabs.close}
+      // Only the narrow face draws this screen; its box is L0's there.
+      seat="side"
     />
   );
   const paneName = landings().find((l) => l.key === landing)!.name;
@@ -1634,6 +1638,20 @@ export default function App() {
   // things for themselves and had already drifted on the first; what is
   // left here is what only this landing knows — what the bar holds and
   // which list is under it.
+  /** Open one workspace, from its row or from the overview. **The id
+      stands in where there is no name.** A row whose machine has left
+      the device table carries an empty `machine`, and an empty machine
+      means「this one」to every verb the node has — so the pane would
+      browse *this* disk under another machine's path. The hex resolves
+      to no machine at all, so every question the pane asks refuses by
+      name and it paints refusals, which is the true answer
+      (`views/WorkspacesList` holds the same line for the row's two
+      corners). */
+  const openWorkspace = (r: WorkspaceRow) => {
+    setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
+    setScreen("detail");
+  };
+
   const list = (
     <ListPane
       mark="data-list"
@@ -1730,19 +1748,7 @@ export default function App() {
             // there is no column to fold.
             treeOpen={!treePane.collapsed}
             onTree={narrow ? undefined : () => treePane.toggle()}
-            onOpen={(r) => {
-              // **The id stands in where there is no name.** A row whose
-              // machine has left the device table carries an empty
-              // `machine`, and an empty machine means「this one」to
-              // every verb the node has — so the pane would browse
-              // *this* disk under another machine's path. The hex
-              // resolves to no machine at all, so every question the
-              // pane asks refuses by name and it paints refusals, which
-              // is the true answer (`views/WorkspacesList` holds the
-              // same line for the row's two corners).
-              setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
-              setScreen("detail");
-            }}
+            onOpen={openWorkspace}
           />
         ) : (
           <DevicesList
@@ -1941,8 +1947,15 @@ export default function App() {
         onRevealSeen={() => setReveal(null)}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
+        onBack={() => setScreen("list")}
       />
-    ) : null
+    ) : narrow ? null : (
+      // **The landing's overview** (10-layout 「每个落地页有一个总览」,
+      // 2026-09-28): the workspaces this face opened last, each with its
+      // machine, path, branch and last change — the board was a blank
+      // slab here. Wide only: on the narrow face the list is the screen.
+      <WorkspacesNow devices={devices} onOpen={openWorkspace} onAdd={() => setSheet("ws-add")} />
+    )
   ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
     // A machine asked for (⌘K) before the device table has answered
     // once: its card has never been read, so the board shows the
@@ -2052,14 +2065,23 @@ export default function App() {
    * that one answer. There is no path by which two of them could be
    * showing different styles.
    */
+  /** Out of a 「…」 page. **Wide**: back to the landing it was opened
+      over (R0's 「×」). **Narrow**: one screen back, to 更多's list — the
+      page's head there is 「‹」 like every detail screen's (10-layout
+      窄档, 2026-09-28), and 「‹」 that skipped the list would not be
+      「返回」. */
+  const leaveMorePage = () => (narrow ? setScreen("list") : setMorePage(null));
   const morePageEl =
     morePage === null ? null : morePage === "network" ? (
       <NetworkPage
         devices={devices}
-        onClose={() => setMorePage(null)}
-        // Narrow has no R0 over a 「…」 page: its buttons go in the
-        // page's own head. Wide has them in R0 (below).
-        actions={narrow ? <PageActions actions={deviceActions} /> : undefined}
+        onClose={leaveMorePage}
+        // 网络's own buttons, 邀请设备… / 加入网络… (the machines
+        // overview's two). **One mechanism on both faces**: the page
+        // hands them to its frame, which seats them with `PageAction` —
+        // at R0's right end on the wide face, at the end of the page's
+        // head in the window's first row on the narrow one.
+        actions={<PageActions actions={deviceActions} />}
         onChanged={() => {
           // The device table is the thing that changed, and every
           // surface on this screen paints off it — the rail's foot, the
@@ -2069,12 +2091,12 @@ export default function App() {
         }}
       />
     ) : morePage === "settings" ? (
-      <SettingsPage onClose={() => setMorePage(null)} onSettingChanged={settings.reread} />
+      <SettingsPage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "appearance" ? (
-      <AppearancePage onClose={() => setMorePage(null)} onSettingChanged={settings.reread} />
+      <AppearancePage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "security" ? (
       <SecurityPage
-        onClose={() => setMorePage(null)}
+        onClose={leaveMorePage}
         lock={lock.facts}
         onLockChanged={lock.reread}
         onLockNow={lock.now}
@@ -2086,11 +2108,11 @@ export default function App() {
         }}
       />
     ) : morePage === "doctor" ? (
-      <DoctorPage onClose={() => setMorePage(null)} />
+      <DoctorPage onClose={leaveMorePage} />
     ) : (
       <IdentityPage
         devices={devices}
-        onClose={() => setMorePage(null)}
+        onClose={leaveMorePage}
         onRestyled={() => {
           refresh().catch(() => {});
         }}
@@ -2452,22 +2474,19 @@ export default function App() {
               // buttons (components/Toolbar, D9) — not a second head in
               // the board, which would say the page's name twice. The
               // narrow face has no R0 and keeps the frame's own head.
+              // A page's own buttons (网络's two, 安全's 立即锁定) are
+              // seated before this by the page itself (`PageAction`).
               actions={
-                <>
-                  {/* 网络's own buttons (2026-09-28): 邀请设备… / 加入网络…,
-                      the machines overview's two, before the way out. */}
-                  {morePage === "network" && <PageActions actions={deviceActions} />}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={gui.close}
-                    data-more-close
-                    onClick={() => setMorePage(null)}
-                    className="min-h-touch min-w-touch"
-                  >
-                    <IconClose />
-                  </Button>
-                </>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={gui.close}
+                  data-more-close
+                  onClick={() => setMorePage(null)}
+                  className="min-h-touch min-w-touch"
+                >
+                  <IconClose />
+                </Button>
               }
             >
               {morePageEl}

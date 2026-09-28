@@ -31,7 +31,8 @@
 // **The open tab is the board's colour and joins it** — that is the
 // whole of how a tab says it is in front (`TabStrip`): its bottom edge
 // has no edge, and the board is what it is continuous with.
-import { type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
 import { IconClose } from "@/components/icons";
@@ -74,6 +75,28 @@ export function WindowControls() {
   );
 }
 
+/**
+ * Where a page's own buttons go (D9: page buttons live at R0's right
+ * end). `undefined` is 「no R0 around this」 — the narrow face, where a
+ * page's head is its own (`NarrowHead`) — and there the buttons stay
+ * where they were written.
+ */
+const ActionsSeat = createContext<HTMLElement | null | undefined>(undefined);
+
+/**
+ * **A page's button, drawn in R0 by the page that owns it** (2026-09-28,
+ * 安全's 「立即锁定」). A 「…」 page is built inside the board, and the
+ * one row that holds page buttons is R0 above it — which the shell
+ * draws. This lets the page say what its buttons are and the shell say
+ * where they stand, the way `SideSeat` does for a landing's search.
+ */
+export function PageAction({ children }: { children: ReactNode }) {
+  const seat = useContext(ActionsSeat);
+  if (seat === undefined) return <>{children}</>;
+  if (seat === null) return null;
+  return createPortal(children, seat);
+}
+
 /** Which of the three page types a region is (docs/DESIGN.md 第五节). */
 export type RegionKind = "detail" | "tabs" | "doc";
 
@@ -88,12 +111,16 @@ export function PageHead({
   title,
   actions,
   caption,
+  seatRef,
 }: {
   title: ReactNode;
   actions?: ReactNode;
   /** A stale or offline region's one line (第十七轮 §6, 20-states.md):
       「3 分钟前的读数」 at R0's right end, never a banner in the board. */
   caption?: ReactNode;
+  /** Where the page's own buttons are seated (`PageAction`), before
+      the shell's. */
+  seatRef?: (el: HTMLElement | null) => void;
 }) {
   return (
     <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
@@ -105,8 +132,9 @@ export function PageHead({
           {caption}
         </span>
       )}
-      {actions && (
+      {(actions || seatRef) && (
         <div data-page-actions className="flex flex-none items-center gap-in">
+          {seatRef && <span ref={seatRef} data-page-actions-seat className="contents" />}
           {actions}
         </div>
       )}
@@ -153,6 +181,7 @@ export function Region({
   className?: string;
   children: ReactNode;
 }) {
+  const [seat, setSeat] = useState<HTMLElement | null>(null);
   return (
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
@@ -164,7 +193,7 @@ export function Region({
         className="relative flex h-pane-head flex-none items-end select-none"
       >
         <div className="flex min-w-0 flex-1 self-stretch">
-          {head ?? <PageHead title={title} actions={actions} caption={caption} />}
+          {head ?? <PageHead title={title} actions={actions} caption={caption} seatRef={setSeat} />}
         </div>
         {/* **Every R0 can say it is stale**, not only a `PageHead`: on a
             tab strip (B) or an address bar (C) the caption sits at the
@@ -202,7 +231,7 @@ export function Region({
           className,
         )}
       >
-        {children}
+        <ActionsSeat.Provider value={head ? undefined : seat}>{children}</ActionsSeat.Provider>
       </div>
     </div>
   );

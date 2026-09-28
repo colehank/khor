@@ -19,7 +19,7 @@
 // reason: a beat is a dial plus a walk of somebody else's disk for an
 // answer that is almost always the one already on screen, and coming
 // back to the window is the moment staleness starts to mislead.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   fetchCheckout,
@@ -50,6 +50,78 @@ import { IGNORED } from "@/views/fileRow";
     contain, so no pair of rows can collide here. */
 function keyOf(r: { device: string; path: string }): string {
   return `${r.device}\u0000${r.path}`;
+}
+
+/**
+ * **What this list has learned, for the landing's overview**
+ * (`WorkspacesNow`, 2026-09-28). The branch and the last change are one
+ * question each to a far machine, and the overview beside the list
+ * shows the same rows — asking twice would be two walks of somebody
+ * else's disk for one answer. So the list, which already asks, publishes
+ * what it heard, and the overview reads it. Module-level on purpose:
+ * one list is on screen at a time, and the overview must still read it
+ * across the list's remounts.
+ */
+export type WorkspaceFacts = {
+  list: WorkspaceRow[];
+  marks: Record<string, GitStatus>;
+  times: Record<string, number>;
+  read: boolean;
+};
+let facts: WorkspaceFacts = { list: [], marks: {}, times: {}, read: false };
+const listeners = new Set<() => void>();
+function publish(next: WorkspaceFacts) {
+  facts = next;
+  for (const l of listeners) l();
+}
+export function useWorkspaceFacts(): WorkspaceFacts {
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l);
+      return () => {
+        listeners.delete(l);
+      };
+    },
+    () => facts,
+  );
+}
+/** The key a row's facts are filed under — `keyOf`, for the overview. */
+export const factKey = (r: { device: string; path: string }) => keyOf(r);
+
+/**
+ * **Which workspaces this face opened, newest first** (the overview's
+ * 「最近打开」). A habit about one screen, like the middle column's own
+ * recent files (`WorkspaceEmpty`), so it lives in this browser's
+ * storage and never in a replicated document; storage refusing costs
+ * the list and nothing else.
+ */
+const OPENED_KEY = "khor.ws-opened";
+const OPENED_MAX = 8;
+export function storedWsOpened(): { device: string; path: string }[] {
+  try {
+    const raw = window.localStorage.getItem(OPENED_KEY);
+    const list: unknown = raw === null ? [] : JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter(
+        (o): o is { device: string; path: string } =>
+          typeof o === "object" && o !== null && typeof o.device === "string" && typeof o.path === "string",
+      )
+      .slice(0, OPENED_MAX);
+  } catch {
+    return [];
+  }
+}
+function rememberWsOpened(device: string, path: string) {
+  const now = [{ device, path }, ...storedWsOpened().filter((o) => o.device !== device || o.path !== path)].slice(
+    0,
+    OPENED_MAX,
+  );
+  try {
+    window.localStorage.setItem(OPENED_KEY, JSON.stringify(now));
+  } catch {
+    /* the overview's list is lost and nothing else is */
+  }
 }
 
 export function WorkspacesList({
@@ -134,6 +206,20 @@ export function WorkspacesList({
   useEffect(() => {
     void reload();
   }, [reload, round, reloadAt]);
+
+  // What the overview beside this list reads (`WorkspaceFacts`).
+  useEffect(() => {
+    publish({ list, marks, times, read });
+  }, [list, marks, times, read]);
+
+  // An opened workspace — by this list, the overview or ⌘K: whatever
+  // opened it, the selection is where it shows. A machine's whole disk
+  // (`path` empty, 看它的文件) is not a workspace and is not kept.
+  const openedDevice = selected?.device ?? null;
+  const openedPath = selected?.path ?? null;
+  useEffect(() => {
+    if (openedDevice !== null && openedPath) rememberWsOpened(openedDevice, openedPath);
+  }, [openedDevice, openedPath]);
 
   useEffect(() => {
     if (hidden) return;

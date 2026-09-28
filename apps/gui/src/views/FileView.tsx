@@ -1324,7 +1324,10 @@ export function FileView({
           // the card must not eat presses meant for the code under it.
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-2"
         >
-          <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-md border bg-card px-3 py-1.5 text-callout text-muted-foreground shadow-md">
+          {/* Floating over the file, so the one floating language
+              (20-states 浮层, 2026-09-28): it was the board's `card`
+              under a shadow of Tailwind's scale. */}
+          <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-lg border bg-popover px-3 py-1.5 text-callout text-muted-foreground shadow-(--shadow-float)">
             {typeof saved === "string" && <span data-save-state="refused">{saved}</span>}
             {clashes !== null && (
               <span data-merged={clashes}>
@@ -1793,7 +1796,11 @@ function Peek({
       // off the named element has to find the colour, not the paper.
       // The two boxes are the same rectangle, so every measurement of
       // place and height is the same either way.
-      className="absolute inset-x-0 z-10 bg-background shadow-sm"
+      //
+      // **The floating ground and the one shadow** (2026-09-28): it
+      // floats over the code like anything else that floats; a band
+      // across the whole column, so it has no corner to round.
+      className="absolute inset-x-0 z-10 bg-popover shadow-(--shadow-float)"
       style={{ top }}
     >
       <div data-peek={hunk.at} className={cn("border-y px-3", peekInk(hunk))}>

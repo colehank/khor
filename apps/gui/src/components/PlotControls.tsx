@@ -271,7 +271,10 @@ export function PlotSettings({
           //   The honest answer to a panel with no room is the other
           //   direction, a different gesture rather than a nudge, and
           //   the gate measures both.
-          className="absolute left-0 right-auto top-full z-10 mt-in flex w-max flex-col gap-in rounded-md border bg-card px-row py-row"
+          //   **It floats over the figure** (2026-09-28): `popover`,
+          //   `float`, `radius-lg` — it was the card's own `card`, flat
+          //   on the drawing it covers.
+          className="absolute left-0 right-auto top-full z-10 mt-in flex w-max flex-col gap-in rounded-lg border bg-popover px-row py-row shadow-(--shadow-float)"
         >
           {rows.map((r) => (
             <div key={r.key} data-plot-set={r.key} className="flex items-center gap-in">

@@ -18,7 +18,9 @@
 // rather than being another value of it.
 import { createContext, useContext, useState, type ReactNode } from "react";
 
-import { IconChevronRight, IconClose } from "@/components/icons";
+import { IconBack, IconChevronRight, IconClose } from "@/components/icons";
+import { PageAction } from "@/components/Region";
+import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { config, gui } from "@/gen/catalog";
 
@@ -88,12 +90,14 @@ export function MoreFrame({
   children,
 }: {
   page: MorePage;
-  /** Back to the landing this was opened over. */
+  /** Out of the page: back to the landing it was opened over on the
+      wide face, one screen back to 更多's list on the narrow one (the
+      shell decides which, `App` `leaveMorePage`). */
   onClose: () => void;
-  /** The page's own buttons, before the way out — **only where this
-      head is the page's R0**, the narrow face (wide puts them in R0 with
-      every page's buttons, D9, and hides this head). 网络's 邀请设备… /
-      加入网络…. */
+  /** The page's own buttons (D9) — 网络's 邀请设备… / 加入网络…, 安全's
+      立即锁定. **One mechanism on both faces** (`PageAction`): at R0's
+      right end on the wide face, at the end of the page's head in the
+      window's first row on the narrow one (`NarrowHead`). */
   actions?: ReactNode;
   // ⚠️ 墓碑 (2026-09-28): `bleed` stood here — the body filling the frame
   // instead of a reading column, for the one page that was a picture
@@ -114,33 +118,62 @@ export function MoreFrame({
         // so a page of rows stands on `background`.
         className="flex h-full min-h-0 flex-col bg-background"
       >
-        {/* The page's own head, inside the board. It moves no window
-            since 第十五轮: R0 above the board does, marked by the shell
-            (`components/shell.ts`). */}
-        <header
-          data-more-head
-          className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
-        >
-          <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
-          {actions && (
-            <div data-page-actions className="flex flex-none items-center gap-in">
-              {actions}
-            </div>
-          )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={gui.close}
-            data-more-close
-            onClick={onClose}
-            // The only way out of this page on the narrow face, which is
-            // the reason it carries the finger floor rather than the
-            // icon size (`DetailPane`'s back button, same argument).
-            className="min-h-touch min-w-touch"
-          >
-            <IconClose />
-          </Button>
-        </header>
+        {/* The page's own head. **On the wide face it is not drawn**
+            (`app.css` `[data-board] [data-more-head]`): R0 above the
+            board already says the name and holds the way out, and only
+            the page's buttons travel up there (`PageAction`).
+
+            **On the narrow face it is the window's first row**
+            (`NarrowHead`, 2026-09-28) — 「‹」 and the name, like every
+            other detail screen there. ⚠️ 墓碑: it was 「×」 in a bar of
+            its own under L0's magnifier, the one detail screen whose way
+            out was not 「返回」 (10-layout 窄档: 「列表一屏 ⇄ 详情一屏，
+            R0 左上角是返回」). 「‹」 goes one screen back, to 更多's list. */}
+        <NarrowHead>
+          {(seated) =>
+            seated ? (
+              <header data-more-head className="flex min-w-0 flex-1 items-center gap-in self-stretch">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={gui.back}
+                  data-more-back
+                  onClick={onClose}
+                  className="min-h-touch min-w-touch flex-none"
+                >
+                  <IconBack />
+                </Button>
+                <h1 className="min-w-0 flex-1 truncate text-title-sm font-title">{moreName(page)}</h1>
+                {/* No R0 on this face: `PageAction` leaves them here,
+                    in the one place a page's buttons are — the end of its
+                    head row, the same slot R0's `data-page-actions` is. */}
+                {actions && (
+                  <div data-page-actions className="flex flex-none items-center gap-in">
+                    <PageAction>{actions}</PageAction>
+                  </div>
+                )}
+              </header>
+            ) : (
+              <header
+                data-more-head
+                className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
+              >
+                <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
+                {actions && <PageAction>{actions}</PageAction>}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={gui.close}
+                  data-more-close
+                  onClick={onClose}
+                  className="min-h-touch min-w-touch"
+                >
+                  <IconClose />
+                </Button>
+              </header>
+            )
+          }
+        </NarrowHead>
         <div className="min-h-0 flex-1 overflow-y-auto p-pane">
           {/* Capped at a reading measure and centred: these pages are
               prose and rows rather than a table, and a settings row
