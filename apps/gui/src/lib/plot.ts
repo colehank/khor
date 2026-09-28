@@ -50,25 +50,42 @@ import { useEffect, useRef, useState } from "react";
  * compares what was drawn, not what was imported.
  */
 export const PLOT = {
-  /** Room for the y ticks' words. 46 fits 「3.8G」 and 「240.5%」, which
-      are the widest either page produces. */
-  padL: 46,
+  /** Room for the y ticks' words. 50 fits 「3.8G」 and 「240.5%」, which
+      are the widest either page produces — at `tick` 11 since
+      2026-09-28 (46 fitted them at 10). */
+  padL: 50,
   padR: 14,
   /** The two label strips, outside the plotting area and outside the
-      tick gutters: 22 at the top for the vertical label, 34 at the
-      bottom for the horizontal one and its ticks. A label inside the
-      data area trades one collision for a worse one — points can be
-      anywhere, tick numbers cannot. */
-  padT: 22,
+      tick gutters: at the top the figure's **head** — the vertical
+      label at its left, the settings button at its right — and 34 at
+      the bottom for the horizontal label and its ticks. A label inside
+      the data area trades one collision for a worse one — points can be
+      anywhere, tick numbers cannot.
+
+      ⚠️ **The head is one finger tall (`touch`), and that is the fix,
+      2026-09-28.** It was 22, and a 44px button cannot sit centred on a
+      22px strip without 11px of it reaching into the data (the gate
+      caught exactly that once: the button swallowed the press meant for
+      `claude-opus-5`). So the button went to a corner outside the strip
+      instead, and on the machine card it read as 「a lone ••• floating at
+      the top-left」, level with nothing. With the head as tall as the
+      button, the label and the button share one centre line and neither
+      touches the data. What it costs is 22px of drawing, and each page
+      gave its box that much more height rather than its data less. */
+  padT: 44,
   padB: 34,
   /** A margin at both ends of each axis, **in pixels rather than as a
       fraction of the ruler**: the two extreme readings sit exactly on
       `at = 0` and `at = 1`, and a dot drawn on the frame line is half a
       dot. Eight clears the dot and its press target. */
   inset: 8,
-  /** Tick words. 10, the machine card's — the 額度 card drew 8, which
-      on its scaled canvas rendered near 9 and looked like neither. */
-  tick: 10,
+  /** Tick words, at `caption` 11 — the floor of the type scale
+      (docs/design-system 字). It was 10, the machine card's own, and the
+      額度 card drew 8 before that; both were under the floor, and
+      `check-face` now measures every word on the machine card against
+      it. A number rather than the token because the drawing places
+      words with it (`xTickY`); the gate is what keeps the two equal. */
+  tick: 11,
   /** How many ticks an axis carries, ends included. Seven is the
       machine card's count; the 額度 card drew five, so the same axis
       told two different stories about how finely it could be read. */
@@ -108,7 +125,7 @@ export function tickFractions(n: number = PLOT.ticks): number[] {
  * deliberately close to what either page gives a figure, so the first
  * paint is not a figure of a different shape jumping into place.
  */
-export function usePlotBox(initial: { w: number; h: number } = { w: 900, h: 170 }) {
+export function usePlotBox(initial: { w: number; h: number } = { w: 900, h: 200 }) {
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(initial);
   useEffect(() => {
@@ -207,21 +224,32 @@ export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   const middle = { display: "flex", alignItems: "center" } as const;
   if (which === "y") return { left: PLOT.padL, top: 0, height: PLOT.padT, ...middle };
   if (which === "x") return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
-  //   ⚠️ **Top-left, in the column the y ticks' words own** (the user,
-  //   2026-09-10:「三个点的x、y、面积设置按钮,放在图的左上角」). It
-  //   spent one afternoon at bottom-left and one at top-right; what the
-  //   three corners taught is worth keeping:
+  //   ⚠️ **The head row's right end** (2026-09-28, from a walk of the
+  //   whole face: 「a lone ••• floating at the card's top-left corner —
+  //   controls belong in the card's head row, right end, aligned with the
+  //   head's text」). The head is `padT` tall, which is exactly the
+  //   button, so the button *is* the strip's height: its centre is the y
+  //   label's centre, it ends where the data begins, and its glyph's
+  //   right edge lands on the data's right edge (`padR` is 14, the glyph
+  //   16 centred in 44). That is the corner where this app puts a
+  //   thing's options everywhere else.
   //
-  //   - **Inside the data is not a seat.** Centred on the top strip,
-  //     11px of a 44px hit area reaches into the plotting area, and the
-  //     gate caught it in one run: the button 「intercepts pointer
-  //     events」 for `claude-opus-5` and the press never landed. So the
-  //     box ends exactly where the data begins (`padT`).
-  //   - **`left: 0`, not `left: padL`.** `padL` is where the y label
-  //     sits; the 46px to its left is the gutter the tick words use,
-  //     and above those words nothing is drawn at all. A 44px button
-  //     fits there without moving anything.
-  return { left: 0, top: PLOT.padT - PLOT.touch };
+  //   ⚠️ **Tombstone: top-left, `{ left: 0, top: padT - touch }`,
+  //   2026-09-10 → 2026-09-28** (the user then:「三个点的x、y、面积设置
+  //   按钮,放在图的左上角」). It spent one afternoon at bottom-left and
+  //   one at top-right before that; what the corners taught still holds
+  //   and is why this seat is safe now:
+  //
+  //   - **Inside the data is not a seat.** Centred on a 22px strip, 11px
+  //     of a 44px hit area reached into the plotting area, and the gate
+  //     caught it in one run: the button 「intercepts pointer events」
+  //     for `claude-opus-5` and the press never landed. The box still
+  //     ends exactly where the data begins — because the strip is now
+  //     the button's own height (`padT`), not because the button hides
+  //     in a corner.
+  //   - A seat above the drawing, in a corner level with nothing, is
+  //     what the 2026-09-28 walk read as floating.
+  return { right: 0, top: 0 };
 }
 
 /**

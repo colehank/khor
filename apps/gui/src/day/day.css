@@ -115,11 +115,17 @@
 .dayblk .ro {
   flex: none;
 }
+/* **The words outside the figure are on the app's type scale**
+   (2026-09-28): the switch and the readout were 10px, under `caption`
+   11 — the floor of 「字」 in docs/design-system. They take `callout`,
+   the size the drawer's heading in this same slot already wears
+   (`MachineCard`'s `data-drawer-head`), so the slot's first line is one
+   size whichever of the two is showing. */
 .dayblk .sw {
   order: -1;
   flex: none;
   height: var(--slot-head-h);
-  font-size: 10px;
+  font-size: var(--text-callout);
   color: var(--fnt);
   white-space: nowrap;
   letter-spacing: 0.02em;
@@ -151,11 +157,11 @@
   width: 100%;
 }
 .dayblk .ro {
-  font-size: 10px;
+  font-size: var(--text-callout);
   color: var(--mut);
   margin-top: 6px;
-  min-height: 14px;
-  line-height: 1.4;
+  min-height: var(--text-callout--line-height);
+  line-height: var(--text-callout--line-height);
   font-variant-numeric: tabular-nums;
 }
 .dayblk .ro b {

@@ -2466,7 +2466,9 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           swallows a press meant for a point that lands there. The
           corners are where points are rarest, and the alternative —
           shrinking the target — is the floor this card does not break. */}
-      <div ref={box} className="relative h-44 w-full">
+      {/* h-50, not h-44: the head strip grew to a finger's height
+          (`PLOT.padT`, 2026-09-28) and the drawing kept its area. */}
+      <div ref={box} className="relative h-50 w-full">
         <span className="pointer-events-none absolute inset-0">
           {/* The hit area is 44 tall and the strip is not, so each
               label is centred on its strip and overflows it invisibly.

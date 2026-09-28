@@ -77,6 +77,28 @@ let N = 288;
  *  positions everything measured were right, and nothing asked whether
  *  the words were there. */
 let WORDS = {};
+/** The two type sizes this figure writes in, **read off the page's own
+ *  tokens at every render** (`--text-caption`, `--text-callout`) — the
+ *  fifth thing that changed on the way in, 2026-09-28.
+ *
+ *  The prototype wrote its words at 6.5–10.5px: row names at 8.5, the
+ *  clock at 7.5, the shade legend at 7, the gap word at 6.5. On a
+ *  gallery page read up close that was a style; on a machine card it
+ *  is text under the app's floor (`caption` 11, docs/design-system 字),
+ *  and the one place on the card where a person had to lean in. So
+ *  every word here is `cap` or `call`, and **the geometry makes room
+ *  for them rather than the words shrinking to fit the geometry** —
+ *  the gutters, the foot and the legend below moved; the band's
+ *  thickness `CH`, which carries the reading, did not.
+ *
+ *  Numbers, not `var()`, because the drawing measures with them (a
+ *  label's width decides where the next one goes). The fallbacks are
+ *  the tokens' own values, for a mount that runs before the stylesheet. */
+let TYPE = { cap: 11, call: 12 };
+/** A run of Latin/digits at `size`, wide enough to place the next thing
+ *  after it. An estimate — SVG has no layout — and a generous one: the
+ *  legend is the only caller and air is cheaper than a collision. */
+const textW = (s, size) => String(s).length * size * 0.62;
 /** The window: when the oldest bucket opens, and how wide one is. */
 let T0 = 0;
 let BUCKET_MS = 300000;
@@ -191,13 +213,16 @@ function runs(keyAt){
    多卡折叠：上厚条 = 最忙的卡，下薄条 = 最闲的卡。两条不同色 = 各卡不一致。
    ══════════════════════════════════════════════════════════════════ */
 function drawHeat(svg, T, W, narrow, fill){
-  const GL = narrow?46:56, GR = narrow?42:58;
+  const {cap} = TYPE;
+  // GL 52 at narrow (was 46): a row name at `cap` bold is 「GPU ×4」 wide.
+  const GL = narrow?52:56, GR = narrow?42:58;
   const CH = narrow?13:11, HB = Math.round(CH*0.64);
   // AXIS 是**最后一笔墨到图底还剩多少**,两张图的这个数是一组、要一起改:
-  // 热力带 31(时间轴 + 明度图例)、叠放 31(轴名 + 计数)。它们凑在一起是为了
+  // 热力带(时间轴 + 明度图例)、叠放(轴名 + 计数,`FOOT`)。它们凑在一起是为了
   // 让两张图**画到同一条底线上** —— 高度一样只是容器一样,墨停在不同的地方,
-  // 读者看到的仍然是一块空地(2026-09-04)。
-  const TOP = 5, AXIS = narrow?18:31;
+  // 读者看到的仍然是一块空地(2026-09-04)。31 → 40 在 2026-09-28:字从 7–7.5
+  // 升到 `caption` 11,时间轴和图例各要多一行字高。
+  const TOP = 5, AXIS = narrow?22:40;
   const X0=GL, X1=W-GR, PW=X1-X0, slot=PW/N;
   // **余量放在行距上,不放在带的厚度上。** `CH` 是那条带的厚度,而带是
   // **明度编码的载体** —— 同一支灰在一条更胖的带上读起来就是另一个数,
@@ -217,7 +242,7 @@ function drawHeat(svg, T, W, narrow, fill){
 
   T.forEach((t,r)=>{
     const y = rowY(r);
-    txt(svg,{x:X0-8,y:y+CH/2+3,'font-size':narrow?8:8.5,'font-weight':700,
+    txt(svg,{x:X0-8,y:y+CH/2+cap*0.36,'font-size':cap,'font-weight':700,
       'text-anchor':'end',class:'lab fade',style:`animation-delay:${r*.05}s`}, t.name);
 
     const g = el(svg,'g',{class:'wipe',style:`animation-delay:${r*.06}s`,'data-day-row':t.key||t.name});
@@ -247,13 +272,17 @@ function drawHeat(svg, T, W, narrow, fill){
           'data-day-from':a,'data-day-to':b});
     }
 
+    // **The gap says its word on hover, not inside the band** (2026-09-28).
+    // The prototype printed it at 6.5px inside the 11px band; at the
+    // app's floor (`cap` 11) a word no longer fits inside the band it
+    // names, and the dashed outline is already the mark. The word rides
+    // on the outline as its tooltip, and the readout under the figure
+    // says it for the moment under the cursor (`readout`).
     if(GAPMARK) gapSegs(t).forEach(([a,b])=>{
       if(b-a<3) return;
-      el(svg,'rect',{x:px(a),y,width:Math.max(1,px(b)-px(a)),height:CH,fill:'none',
+      const gap = el(svg,'rect',{x:px(a),y,width:Math.max(1,px(b)-px(a)),height:CH,fill:'none',
         'stroke-width':.8,'stroke-dasharray':'2 2.5',class:'hair fade'});
-      if(b-a>=22 && !narrow)
-        txt(svg,{x:(px(a)+px(b))/2,y:y+CH/2+2.5,'font-size':6.5,'font-weight':600,
-          'text-anchor':'middle',class:'fnt fade'},WORDS.gap);
+      el(gap,'title',{}).textContent = WORDS.gap;
     });
 
     const pk = peakOf(t);
@@ -262,10 +291,13 @@ function drawHeat(svg, T, W, narrow, fill){
       el(svg,'rect',{x:X0+pk.i*slot-(bw-slot)/2,y:y-2,width:bw,height:CH+4,rx:1.5,
         fill:'none','stroke-width':1,'stroke-dasharray':'2 2',class:'inkline fade',
         style:'animation-delay:.9s'});
-      txt(svg,{x:X1+8,y:y+CH/2+4,'font-size':narrow?10:10.5,'font-weight':800,
+      // The peak and its unit, both on the scale: the number at `call`,
+      // the `%` at `cap` right after it (the unit used to be 7px).
+      const call = TYPE.call;
+      txt(svg,{x:X1+8,y:y+CH/2+call*0.36,'font-size':call,'font-weight':800,
         class:((t.strain&&pk.v>=90)?'sf':'ink')+' fade',style:'animation-delay:.95s',
         'data-day-peak':t.key||t.name}, Math.round(pk.v));
-      txt(svg,{x:X1+8+(narrow?19:20),y:y+CH/2+4,'font-size':7,'font-weight':600,
+      txt(svg,{x:X1+8+textW(Math.round(pk.v),call)+1,y:y+CH/2+call*0.36,'font-size':cap,'font-weight':600,
         class:'fnt fade',style:'animation-delay:.95s'},'%');
     }
   });
@@ -273,25 +305,41 @@ function drawHeat(svg, T, W, narrow, fill){
   const yb = rowY(T.length)+1;
   timeAxis(svg, X0, X1, slot, yb, narrow);
   if(!narrow){
-    const LG=BANDS.map((b,k)=>['r'+(k+1), k===0?'<'+b:BANDS[k-1]+'–'+b])
+    /* **The legend is a ramp with its two ends named** (2026-09-28).
+       The prototype named every one of the eight steps — 「<3 3–8 8–20
+       20–45 45–70 70–80 80–90 90+」 — at 7px. At the app's floor that
+       row is ~560px of words, wider than the figure is at a middle
+       width, and shrinking it back under 11 is the one answer the type
+       scale rules out. So the eight swatches sit edge to edge as one
+       ramp, and only its ends carry a number: what the legend has to
+       say is **lighter is less, darker is more, and red is the strain
+       line** — which the ramp says whole. The seven inner boundaries
+       are each swatch's tooltip, and any exact moment is one hover away
+       in the readout. */
+    const S = 9, CELL = 13;
+    const ly = yb+24, base = ly+S;
+    const ramp = BANDS.map((b,k)=>['r'+(k+1), k===0?'<'+b:BANDS[k-1]+'–'+b])
       .concat([['r'+(BANDS.length+1), BANDS[BANDS.length-1]+'+']]);
-    const ly = yb+22; let lx = X0;
-    txt(svg,{x:X0-8,y:ly+7,'font-size':7,'font-weight':600,'text-anchor':'end',
-      class:'fnt fade',style:'animation-delay:1s'},WORDS.shade);
-    LG.forEach(([c,s],k)=>{
-      el(svg,'rect',{x:lx,y:ly,width:7,height:7,rx:1.5,class:c+' fade',
-        style:`animation-delay:${1+k*.03}s`});
-      txt(svg,{x:lx+10,y:ly+7,'font-size':7,'font-weight':600,class:'fnt fade',
-        style:`animation-delay:${1+k*.03}s`},s);
-      lx += 10 + s.length*4.8 + 13;
+    const word = (x,s,delay,extra={}) => txt(svg,{x,y:base,'font-size':cap,'font-weight':600,
+      class:'fnt fade',style:`animation-delay:${delay}s`,...extra},s);
+    word(X0-8, WORDS.shade, 1, {'text-anchor':'end'});
+    let lx = X0;
+    const lo = ramp[0][1], hi = ramp[ramp.length-1][1];
+    word(lx, lo, 1);
+    lx += textW(lo,cap) + 4;
+    ramp.forEach(([c,s],k)=>{
+      const cell = el(svg,'rect',{x:lx+k*CELL,y:ly,width:CELL-1,height:S,class:c+' fade',
+        style:`animation-delay:${1+k*.03}s`,'data-day-ramp':s});
+      el(cell,'title',{}).textContent = s;
     });
-    el(svg,'rect',{x:lx,y:ly,width:7,height:7,rx:1.5,class:'st fade',
+    lx += ramp.length*CELL + 3;
+    word(lx, hi, 1.1);
+    lx += textW(hi,cap) + 16;
+    el(svg,'rect',{x:lx,y:ly,width:S,height:S,rx:1.5,class:'st fade',
       style:'animation-delay:1.2s'});
-    txt(svg,{x:lx+10,y:ly+7,'font-size':7,'font-weight':600,class:'fnt fade',
-      style:'animation-delay:1.2s'},WORDS.strainLegend);
+    word(lx+S+4, WORDS.strainLegend, 1.2);
     if(T.some(t=>t.kind==='range'))
-      txt(svg,{x:X1,y:ly+7,'font-size':7,'font-weight':600,'text-anchor':'end',
-        class:'fnt fade',style:'animation-delay:1.25s'},WORDS.cards||'');
+      word(X1, WORDS.cards||'', 1.25, {'text-anchor':'end'});
   }
   return {
     top: TOP-3, bot: yb, X0, X1, slot,
@@ -324,9 +372,11 @@ function drawPara(svg, T, W, narrow, fill){
   // 不改变任何一个读数落在轴上的比例——一条 15% 的线在更长的轴上还是
   // 15%,只是分得开一点。这是三张图里最便宜的一处:它本来就是最高的那张,
   // 要补的那点最少。
-  // 31 = 轴名 + 它下面那行计数到图底的距离。**和热力带的同一个数是一组**
-  // —— 见 `drawHeat` 里 `AXIS` 那一段。
-  const FOOT = 31;
+  // 40 = 轴名 + 它下面那行计数到图底的距离。**和热力带的同一个数是一组**
+  // —— 见 `drawHeat` 里 `AXIS` 那一段(31 → 40,2026-09-28,两行字都到了
+  // `caption` 11)。
+  const {cap} = TYPE;
+  const FOOT = 40;
   const BOT0 = narrow?122:116, nat = BOT0 + FOOT;
   const H = fill > nat ? fill : nat;
   const PAD = narrow?26:44, TOP=14, BOT=H-FOOT;
@@ -334,10 +384,13 @@ function drawPara(svg, T, W, narrow, fill){
   const mapY = v => BOT - v/100*(BOT-TOP);
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`); svg.setAttribute('height',H);
   const short = n>6;
+  // A word centred on a y, for the ticks on an axis: its baseline sits
+  // a third of the size below the mark.
+  const mid = y => y + cap*0.36;
 
   el(svg,'line',{x1:AX[0],y1:mapY(90),x2:AX[n-1],y2:mapY(90),'stroke-width':.8,
     'stroke-dasharray':'3 3',class:'sk fade',opacity:.7});
-  txt(svg,{x:AX[0]-6,y:mapY(90)+3,'font-size':7,'font-weight':700,'text-anchor':'end',
+  txt(svg,{x:AX[0]-6,y:mid(mapY(90)),'font-size':cap,'font-weight':700,'text-anchor':'end',
     class:'sf fade'},'90');
 
   T.forEach((t,k)=>{
@@ -348,14 +401,14 @@ function drawPara(svg, T, W, narrow, fill){
       'stroke-width':1,class:'hair fade'}));
     if(!short) [0,50].forEach(gv=>{
       el(svg,'line',{x1:x-3,y1:mapY(gv),x2:x+3,y2:mapY(gv),'stroke-width':.7,class:'hair fade'});
-      txt(svg,{x:x-6,y:mapY(gv)+3,'font-size':6.5,'font-weight':600,'text-anchor':'end',
+      txt(svg,{x:x-6,y:mid(mapY(gv)),'font-size':cap,'font-weight':600,'text-anchor':'end',
         class:'fnt fade'},String(gv));
     });
-    txt(svg,{x,y:BOT+21,'font-size':short?7.5:(narrow?8:8.5),'font-weight':800,
+    txt(svg,{x,y:BOT+6+cap+4,'font-size':cap,'font-weight':800,
       'text-anchor':'middle',class:'lab fade',style:`animation-delay:${k*.04}s`,
       'data-day-row':t.key||t.name}, short ? t.short : t.name);
     const got = (t.kind==='range'?t.hi:t.v).filter(v=>v!=null).length;
-    txt(svg,{x,y:BOT+30,'font-size':6.5,'font-weight':600,'text-anchor':'middle',
+    txt(svg,{x,y:BOT+6+2*cap+7,'font-size':cap,'font-weight':600,'text-anchor':'middle',
       class:'fnt fade',style:`animation-delay:${.08+k*.04}s`}, got+'/'+N);
   });
 
@@ -472,13 +525,17 @@ function drawPara(svg, T, W, narrow, fill){
        most it got」. */
     const b = boxOf(t);
     const obstacle = b ? (b.framed ? b.top - 2.2 : b.bar - 2.8) : null;
-    let ly = mapY(pk.v)+3.5;
-    if(obstacle!=null && ly + 2 > obstacle) ly = obstacle - 2;
-    txt(svg,{x:AX[k]+(left?-8:8),y:ly.toFixed(2),'font-size':short?8:(narrow?8.5:9),
+    let ly = mid(mapY(pk.v));
+    if(obstacle!=null && ly + 2.5 > obstacle) ly = obstacle - 2.5;
+    txt(svg,{x:AX[k]+(left?-8:8),y:ly.toFixed(2),'font-size':cap,
       'font-weight':800,'text-anchor':left?'end':'start',
       class:(strained?'sf':'ink')+' fade','data-day-peak-label':t.key||t.name,
       style:`paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:${.9+k*.04}s`},
-      short?Math.round(pk.v)+'%':WORDS.peakAt(Math.round(pk.v)+'%',hhmm(pk.i)));
+      // **Narrow says the number only** (2026-09-28): at `cap` 11 a
+      // 「峰值 95% · 09:58」 is wider than two axes are apart under 520,
+      // and two neighbours' labels ran into each other. The moment is
+      // one brush away in the readout; the wide figure keeps it.
+      (short||narrow)?Math.round(pk.v)+'%':WORDS.peakAt(Math.round(pk.v)+'%',hhmm(pk.i)));
     peakY[k]=mapY(pk.v);
   });
 
@@ -491,8 +548,8 @@ function drawPara(svg, T, W, narrow, fill){
       rec.base={cls:'inkline draw',op:'1',w:'2'};
       const lv=topOf(T[n-1],last);
       if(lv!=null){
-        const y=mapY(lv), clash = peakY[n-1]!=null && Math.abs(peakY[n-1]-y)<13;
-        txt(svg,{x:AX[n-1]+(n>1?-8:8),y:clash?y+14:y-8,'font-size':8.5,'font-weight':800,
+        const y=mapY(lv), clash = peakY[n-1]!=null && Math.abs(peakY[n-1]-y)<cap+4;
+        txt(svg,{x:AX[n-1]+(n>1?-8:8),y:clash?y+cap+5:y-8,'font-size':cap,'font-weight':800,
           'text-anchor':n>1?'end':'start',class:'ink fade',
           style:'paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:1s'},
           WORDS.now);
@@ -505,14 +562,17 @@ function drawPara(svg, T, W, narrow, fill){
 }
 
 function timeAxis(svg, X0, X1, slot, yb, narrow){
+  const {cap} = TYPE;
+  // 别撞上右端的「现在」: half an 「hh:mm」 plus 「现在」 plus air, at `cap`.
+  const clear = textW('00:00',cap)/2 + 2*cap + 6;
   (narrow?TICKS_N:TICKS_W).forEach(Hh=>{
     const x=X0+iOfHour(Hh)*slot;
-    if(x > X1-(narrow?36:30)) return;               // 别撞上右端的「现在」
+    if(x > X1-clear) return;
     el(svg,'line',{x1:x,y1:yb,x2:x,y2:yb+4,'stroke-width':.7,class:'hair fade','data-day-hour':''});
-    txt(svg,{x,y:yb+13,'font-size':narrow?7:7.5,'font-weight':600,'text-anchor':'middle',
+    txt(svg,{x,y:yb+4+cap,'font-size':cap,'font-weight':600,'text-anchor':'middle',
       class:'fnt fade'},String(Hh).padStart(2,'0')+':00');
   });
-  txt(svg,{x:X1,y:yb+13,'font-size':narrow?7:7.5,'font-weight':700,'text-anchor':'end',
+  txt(svg,{x:X1,y:yb+4+cap,'font-size':cap,'font-weight':700,'text-anchor':'end',
     class:'lab fade'},WORDS.now);
 }
 
@@ -635,6 +695,12 @@ export function mount(host, opts) {
     const h = Math.round(ch.clientHeight);
     st.W = w;
     st.H = h;
+    // The type scale, off the tokens this page is wearing (see `TYPE`).
+    const cs = getComputedStyle(host);
+    TYPE = {
+      cap: parseFloat(cs.getPropertyValue('--text-caption')) || 11,
+      call: parseFloat(cs.getPropertyValue('--text-callout')) || 12,
+    };
     const narrow = w < 520;
     const T = tracks(st.series, false);
     svg.innerHTML = '';
