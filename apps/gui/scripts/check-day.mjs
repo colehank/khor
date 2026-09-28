@@ -150,7 +150,18 @@ const usage = await fakeUsage();
 const fakeHomeDir = join(home, "home");
 mkdirSync(fakeHomeDir, { recursive: true });
 const faked = fakeHome(fakeHomeDir, usage.url);
-execFileSync(FIXTURE, [home], { stdio: "inherit" });
+// The fixture names the rows it put on the list (`row <id>`), so a row
+// that never reaches the screen is reported as that, by name. Without
+// it the only symptom was a strip with one word, and the probes below
+// blamed the fixture's window: from SHELL.md 第八轮 until 2026-09-28 the
+// fixture's three rows were never imported, stayed off the list, and
+// this gate said 「day_fixture's window moved past it」.
+const fixtureOut = String(execFileSync(FIXTURE, [home], { stdio: ["ignore", "pipe", "inherit"] }));
+process.stdout.write(fixtureOut);
+const fixtureRows = fixtureOut
+  .split("\n")
+  .filter((l) => l.startsWith("row "))
+  .map((l) => l.slice(4).trim());
 
 let bridge, vite, browser;
 const listening = async (port, what, ms) => {
@@ -227,6 +238,18 @@ try {
     fail("a day strip is back on a list row — the band belongs under the open session's header");
   }
   const rowIds = await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row));
+  // **Every row the fixture made is on the list**, before any band is
+  // read: the day under test lives on those rows, and a band is read by
+  // opening its row. A tui row is on the list only once khor started it
+  // or somebody imported it (docs/SHELL.md 第八轮).
+  if (fixtureRows.length === 0) fail("probe dead: day_fixture named no rows — nothing says which days to look for");
+  const offList = fixtureRows.filter((id) => !rowIds.includes(id));
+  if (offList.length) {
+    fail(
+      `probe dead: day_fixture's ${offList.join(", ")} never reached the session list (saw ${rowIds.join(", ") || "nothing"}) ` +
+        "— their days are in the record and nobody can open them",
+    );
+  }
   const openRow = async (id) => {
     await page.locator(`[data-row="${id}"] [data-row-open]`).click();
     return until(`the band for ${id}`, 25_000, async () => {

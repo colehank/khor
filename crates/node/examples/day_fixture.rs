@@ -29,6 +29,22 @@
 //! forward and every cell falls off the front, leaving a home that looks
 //! empty for no visible reason. A fixture has to be built where it will
 //! be read — anchored to the clock, not to zero.
+//!
+//! # And the one after it: a row nobody put on the list
+//!
+//! Since docs/SHELL.md 第八轮 the session list is the user's choice
+//! (`khor_sync::roster`): a terminal or an agent is on it only once khor
+//! started it or somebody **imported** it. A `tui` row registered the way
+//! a hook registers one is an import *candidate*, not a row. The commit
+//! that made that rule taught `tests/day_record.rs` to import its rows
+//! and did not teach this fixture, so the three rows below stayed in the
+//! registry, off the list — no row to open, no band to read — and the
+//! gate saw only the device's own conversation and reported a single
+//! word, which read as the day window having moved rather than as rows
+//! that never reached the screen. So the rows go through
+//! [`Node::import`], the same call the import panel and `khor import`
+//! make, and the gate is told which rows to expect (`row <id>` on
+//! stdout) so a row that goes missing is named as missing.
 
 use std::path::PathBuf;
 
@@ -57,6 +73,10 @@ fn main() -> Result<(), String> {
             Some(std::process::id()),
             None,
         )?;
+        // Imported while this process — the pid on record — is still
+        // alive, so each row is a living candidate, which is all the
+        // import panel ever offers.
+        node.import(id)?;
     }
 
     let now_ms = std::time::SystemTime::now()
@@ -118,5 +138,15 @@ fn main() -> Result<(), String> {
     }
     record.save(&home)?;
     println!("{}", home.display());
+    // What the gate should find on the list. Checked against the list
+    // here first, so a rule that keeps a row off it fails this fixture
+    // by name instead of reaching the gate as a thin strip.
+    let listed = node.sessions()?;
+    for (id, _) in rows {
+        if !listed.iter().any(|v| v.session.id.0 == id) {
+            return Err(format!("{id} was imported and is not on the list"));
+        }
+        println!("row {id}");
+    }
     Ok(())
 }
