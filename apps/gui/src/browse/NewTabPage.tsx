@@ -124,7 +124,7 @@ export function NewTabPage({
                 // list of one-line rows, so nothing but the floor decides
                 // how tall a row is, and the hover paints exactly what
                 // opens (tokens.css `--touch`). Measured before: 34.
-                className="flex min-h-touch min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left"
+                className="flex min-h-touch min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-left"
               >
                 <MachineAvatar face={face} className="size-kind-mark flex-none" />
                 <span className="flex-none text-callout font-label">{leaf}</span>

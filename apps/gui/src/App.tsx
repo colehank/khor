@@ -104,7 +104,8 @@ import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
-import { SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
 
@@ -1521,6 +1522,53 @@ export default function App() {
     </nav>
   );
 
+  // **The keyboard and the menu bar** (`lib/shortcuts`, 2026-09-28): the
+  // map and the rules are there; what is here is what only the shell can
+  // do — walk the rail, open a 「…」 page, and lend the session tabs to
+  // ⌘W and ⌃⇥ while they are the strip on screen.
+  useTabHost(
+    landing === "sessions" && morePage === null && openTabs.length > 0
+      ? {
+          count: openTabs.length,
+          front: selected !== null,
+          close: () => {
+            if (selected !== null) sessionTabs.close(selected);
+          },
+          step: (by) => {
+            const at = openTabs.indexOf(selected ?? "");
+            const next = openTabs[(at + by + openTabs.length) % openTabs.length];
+            if (next === undefined) return;
+            sessionTabs.focus(next);
+            setSwitchingTabs(false);
+            setScreen("detail");
+          },
+        }
+      : null,
+  );
+  useShortcuts({
+    locked: !lock.settled || lock.locked,
+    // What the rail's glyph does on a first press (the second press folds
+    // the list, which a key repeated by accident should not).
+    go: (i) => {
+      const l = landings()[i];
+      if (!l) return;
+      setMorePage(null);
+      setLanding(l.key);
+      setScreen("list");
+      setSwitchingTabs(false);
+      listPane.expand();
+    },
+    settings: () => {
+      setMorePage("settings");
+      setScreen("detail");
+      setSwitchingTabs(false);
+    },
+    closePage: morePage !== null ? () => setMorePage(null) : null,
+    lock: lock.facts?.on ? lock.now : null,
+    find: () => window.dispatchEvent(new Event(FIND_ALL)),
+    import: () => setSheet("import"),
+  });
+
   const sessions = landing === "sessions";
   /** Whether this landing browses (docs/UX.md 浏览型) — the two that do
       share one shell and have no list pane at all. */
@@ -2059,7 +2107,13 @@ export default function App() {
    * that pressed 「…」 then a page still presses the same two things.
    */
   const moreList = (
-    <nav data-more-list aria-label={gui.rail_more} className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1">
+    <nav
+      data-more-list
+      aria-label={gui.rail_more}
+      // ↑ ↓ Home End between the sections, System Settings' sidebar.
+      onKeyDown={(e) => walkList(e, "[data-more-landing], [data-more-open]")}
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1"
+    >
       {narrow &&
         landings()
           .slice(NARROW_SHOWN)

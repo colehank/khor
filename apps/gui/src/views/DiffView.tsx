@@ -147,7 +147,7 @@ export function DiffView({
 
   if (refused !== null) {
     return (
-      <div data-diff-refused className="p-3 text-callout text-state-failed">
+      <div data-diff-refused data-selectable className="p-3 text-callout text-state-failed">
         {refused}
       </div>
     );
@@ -199,7 +199,8 @@ function Side({
       >
         {label}
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      {/* Code selects (app.css 选字与手); its numbers keep `select-none`. */}
+      <div data-selectable className="min-h-0 flex-1 overflow-auto">
         <div className="flex min-w-full items-start py-2">
           <pre
             data-diff-numbers={which}

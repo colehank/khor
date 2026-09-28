@@ -25,6 +25,47 @@ svg [data-body] {
   transition: fill-opacity var(--dur-180) var(--ease-out);
 }
 
+/* ── 选字与手: chrome is not text (2026-09-28) ─────────────────────
+   **A Mac app's chrome does not select.** Dragging across Finder's
+   sidebar paints no blue, and a double-click on a row's name opens the
+   row, never selects a word. So the page's default is `none`, and text
+   selects where a person reads or copies it — **marked one way,
+   `data-selectable`**, on the reading surface itself:
+
+     the conversation (`ChatView`'s column), Markdown wherever it is
+     drawn, a file / a diff / code, the machine's own messages, and the
+     values people copy — a fact's value (an id, a version, a path),
+     the web key, a relay's address, a check's detail and its error.
+
+   A field is always text (it would not take a caret otherwise — WebKit
+   stops typing into an input under a `none` ancestor), and the terminal
+   is xterm's: it selects on its own canvas and needs nothing here.
+   **Inside a reading surface a button is still chrome** — a copy button's
+   word is not part of the paragraph — except a link in the prose, which
+   is the paragraph's own words.
+
+   In `@layer base`, so a `select-none` utility still wins inside a
+   reading surface (line numbers beside code), and a `select-text` one
+   inside chrome. `check-face` §11a reads the computed value on both
+   sides. */
+@layer base {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  [contenteditable]:not([contenteditable="false"]),
+  [data-selectable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  [data-selectable] :is(button, [role="button"]):not([data-md-link], [data-link]) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
 [data-rail-item][data-on="true"] svg [data-body] {
   fill-opacity: 1;
 }

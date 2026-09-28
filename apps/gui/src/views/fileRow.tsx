@@ -166,7 +166,7 @@ export function Mark({
         e.stopPropagation();
         onPress();
       }}
-      className={cn(look, "cursor-pointer")}
+      className={look}
     >
       {mark}
     </button>

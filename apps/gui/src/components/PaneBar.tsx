@@ -32,6 +32,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
+import { useNewAct } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
@@ -148,6 +149,13 @@ export function PaneBar({
   create?: { label: string; mark?: string; disabled?: boolean; onSelect?: () => void };
 }) {
   const narrow = useNarrow();
+  // **⌘N is this 「+」** (`lib/shortcuts`, 2026-09-28) — the landing's one
+  // 「+」 is the one seated in the first row, so only that bar lends it,
+  // by its own name (the menu bar's 新建 item reads it).
+  const primary = actions?.[0] ?? (create?.onSelect && !create.disabled ? create : null);
+  useNewAct(
+    seat === "side" && primary?.onSelect ? { label: primary.label, run: primary.onSelect } : null,
+  );
   const bar = (
     <div
       data-pane-bar

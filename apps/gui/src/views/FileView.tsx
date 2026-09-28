@@ -1192,6 +1192,9 @@ export function FileView({
         // page that does not scroll while its inner scroller does is the
         // same file off the right edge with one more thing in the way.
         data-file-scroll
+        // Code is read and copied: it selects (app.css 选字与手); the
+        // line numbers beside it keep their own `select-none`.
+        data-selectable
         // **The engine's own scroll anchoring is off here** — this view
         // anchors the top line itself when the sheet re-wraps (`read()`
         // above), and Blink's anchoring on top of that is two hands on
@@ -1686,7 +1689,7 @@ function Gutter({
               // the same way and stay the colour it is naming, so the
               // bar is drawn at full strength and the one that is open
               // is told apart by the ring instead.
-              "absolute left-0 w-full cursor-pointer",
+              "absolute left-0 w-full",
               hunkInk(h),
               shown === i && "ring-1 ring-foreground/40",
             )}
@@ -1920,7 +1923,7 @@ function Ruler({
                 // mark came down from .6 and the thumb went up to half
                 // ink (`--scroll-thumb-strong`) — the thing that has to
                 // be readable is the one you drag.
-                "absolute inset-x-0.5 min-h-[var(--overview-mark)] cursor-pointer rounded-xs opacity-50",
+                "absolute inset-x-0.5 min-h-[var(--overview-mark)] rounded-xs opacity-50",
                 hunkInk(h),
               )}
               style={{

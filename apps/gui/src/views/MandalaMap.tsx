@@ -461,7 +461,7 @@ function Seat({
         // hover plate would sit wrong behind half of them. Growing works
         // on any shape, and the selected seat stays grown so that "which
         // one is open" is answered without a second kind of mark.
-        "cursor-pointer motion-safe:transition-transform hover:scale-110 data-[on=true]:scale-110",
+        "motion-safe:transition-transform hover:scale-110 data-[on=true]:scale-110",
         // The face is round or nearly so, so the focus ring follows it
         // rather than boxing it.
         "rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring",

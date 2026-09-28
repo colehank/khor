@@ -72,7 +72,7 @@ export function PopupRow({
           onChange={(e) => onPick(e.target.value)}
           // Centred on the drawn button and at least the finger floor
           // tall: the look is the pointer's, the hit area the finger's.
-          className="absolute inset-x-0 top-1/2 h-full min-h-touch -translate-y-1/2 cursor-pointer opacity-0 disabled:cursor-default"
+          className="absolute inset-x-0 top-1/2 h-full min-h-touch -translate-y-1/2 opacity-0"
         >
           {choices.map((c) => (
             <option key={c.value} value={c.value}>

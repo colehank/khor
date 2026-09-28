@@ -239,7 +239,7 @@ export function MoreFold({
         // The finger floor on both axes: 「高级」 is two characters, and
         // the marker beside them does not make a target (`MoreSwitch`'s
         // own measurement).
-        className="flex min-h-touch cursor-pointer list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
+        className="flex min-h-touch list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
       >
         <IconChevronRight className="size-3 flex-none transition-transform group-open:rotate-90" />
         {label}
@@ -282,7 +282,7 @@ export function MoreFact({
     // their height, their trailing edge (app.css, `check-face` 4I).
     <div data-more-row className="flex min-w-0 items-center gap-row text-body">
       <span className="flex-1">{label}</span>
-      <span data-more-fact={name} data-setting-trail className="min-w-0 break-all text-right text-muted-foreground">
+      <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 break-all text-right text-muted-foreground">
         {children}
       </span>
     </div>
