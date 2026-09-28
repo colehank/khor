@@ -7305,9 +7305,10 @@ try {
   //
   // Claims:
   //   i. at a width where it cannot fit, the location is cut, its first
-  //      word is still the machine and its last segment is whole, and
-  //      its text is the whole value (what a selection copies, what a
-  //      screen reader reads);
+  //      word is still the machine and its last segment is whole, 「…」
+  //      butts against that segment with no blank between, and its text
+  //      is the whole value (what a selection copies, what a screen
+  //      reader reads);
   //  ii. hovering it says the whole value, and so does focusing it;
   // iii. a location that fits opens no tooltip.
   {
@@ -7342,12 +7343,44 @@ try {
       await wait(200);
       const cut = await page.evaluate((sel) => {
         const el = document.querySelector(sel);
-        const [head, tail] = el.children;
+        const kids = [...el.children];
+        const head = kids[0];
+        const tail = kids[kids.length - 1];
         const r = (n) => n.getBoundingClientRect();
+        const round = (v) => Math.round(v * 10) / 10;
+        // The head's own words, as laid out — a `text-overflow` cut
+        // reads wider than its box here, since the range is not clipped.
+        const range = document.createRange();
+        range.selectNodeContents(head);
+        const words = range.getBoundingClientRect().width;
+        // One 「…」 in the head's own font.
+        const cs = getComputedStyle(head);
+        const probe = document.createElement("span");
+        Object.assign(probe.style, {
+          position: "absolute",
+          visibility: "hidden",
+          whiteSpace: "pre",
+          fontStyle: cs.fontStyle,
+          fontWeight: cs.fontWeight,
+          fontSize: cs.fontSize,
+          fontFamily: cs.fontFamily,
+        });
+        probe.textContent = "…";
+        document.body.append(probe);
+        const ell = r(probe).width;
+        probe.remove();
         return {
           text: el.textContent,
-          cut: head.scrollWidth > head.clientWidth + 1,
-          ellipsis: getComputedStyle(head).textOverflow,
+          cut: el.hasAttribute("data-cut") || head.scrollWidth > head.clientWidth + 1,
+          after: getComputedStyle(head, "::after").content,
+          // `text-overflow` at work on the head: it drops whole
+          // characters and keeps the box, which is the blank before the
+          // tail the owner saw (「acme-corporation/… /billing-worker」).
+          overflowCut: head.scrollWidth > head.clientWidth + 0.5,
+          // The tail's left edge against the head's right edge…
+          seam: round(r(tail).left - r(head).right),
+          // …and what the head's box holds beyond its words and its 「…」.
+          blank: round(r(head).width - words - ell),
           headSays: head.textContent,
           tailSays: tail.textContent,
           tailWhole: tail.scrollWidth <= tail.clientWidth + 1 && r(tail).right <= r(el).right + 0.5,
@@ -7361,10 +7394,23 @@ try {
         if (cut.text !== whole) {
           fail(`R0's location holds ${JSON.stringify(cut.text)} — the whole value, only drawn cut (src/views/WorkspacePane.tsx)`);
         }
-        if (cut.ellipsis !== "ellipsis" || !cut.headSays.startsWith(`${long.machine}:`) || !cut.machineFirst) {
+        if (cut.after !== '"…"' || !cut.headSays.startsWith(`${long.machine}:`) || !cut.machineFirst) {
           fail(
-            `R0's location cut reads ${JSON.stringify(cut)} — the machine stays first and the ellipsis is in the ` +
-              "middle (src/views/WorkspacePane.tsx subtitle)",
+            `R0's location cut reads ${JSON.stringify(cut)} — the machine stays first and the ellipsis is the head's ` +
+              "own, in the middle (src/views/WorkspacePane.tsx useMiddleCut)",
+          );
+        }
+        // **「…」 butts against the tail** (2026-09-28, the lead: the shot
+        // read 「acme-corporation/… /billing-worker」). The boxes meeting
+        // is not enough — they met then too; the blank was inside the
+        // head's box, after a `text-overflow` ellipsis. So both: the
+        // edges within half a pixel, and nothing in the head beyond its
+        // words and its ellipsis.
+        if (cut.overflowCut || Math.abs(cut.seam) > 0.5 || Math.abs(cut.blank) > 1) {
+          fail(
+            `R0's cut location leaves a gap before its tail: seam ${cut.seam}px, ${cut.blank}px of blank in the head ` +
+              `beyond its words and 「…」${cut.overflowCut ? ", cut by text-overflow" : ""} — 「…/billing-worker」, ` +
+              "nothing between (src/views/WorkspacePane.tsx useMiddleCut)",
           );
         }
         if (cut.tailSays !== `/${long.name}` || !cut.tailWhole) {
@@ -7407,7 +7453,12 @@ try {
     await wait(200);
     const fits = await page.evaluate((sel) => {
       const el = document.querySelector(sel);
-      return el === null ? null : { said: el.textContent, cut: el.children[0].scrollWidth > el.children[0].clientWidth + 1 };
+      return el === null
+        ? null
+        : {
+            said: el.textContent,
+            cut: el.hasAttribute("data-cut") || el.children[0].scrollWidth > el.children[0].clientWidth + 1,
+          };
     }, where);
     if (fits === null || fits.cut) {
       fail(`probe void: R0's location at 1400 is ${JSON.stringify(fits)} — (iii) needs one that fits`);
@@ -8819,8 +8870,12 @@ try {
   //      opens the same in-place box **under that folder**, opened,
   //      with the caret in it, and the name reaches the machine at that
   //      path;
-  // vii. with a file pressed last (nothing selected), 新建目录 opens the
-  //      box **at the root**, above the first row.
+  // vii. with a file pressed last, 新建目录 opens the box **in the
+  //      folder that file is in** (VS Code's rule; 2026-09-28 the first
+  //      cut sent it to the root);
+  // viii. with nothing selected — the blank under the rows pressed — or
+  //      a file at the root pressed, the box opens **at the root**,
+  //      above the first row.
   {
     await atTree();
     const dirRow = '[data-file-tree] [data-depth="0"] [data-dir="src"]';
@@ -9048,30 +9103,66 @@ try {
           );
         }
       }
-      // vii) a file pressed last: nothing selected, so the root.
+      // vii) a file pressed last: the folder it is in. `src` is open
+      // from (vi), so one of its own files is on screen one level in.
       await page.keyboard.press("Escape");
       await wait(150);
-      await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
-      await wait(300);
-      await plusMenu("dir");
-      const atRoot = await boxAt();
-      console.log(`＋ → 新建目录 after a file was pressed: ${JSON.stringify(atRoot)}`);
-      if (atRoot === null) {
-        fail("＋ → 新建目录 grew no box on the tree (src/views/FileTree.tsx make)");
-      } else if (atRoot.kind !== "dir" || !atRoot.atTop || atRoot.under !== null || !atRoot.caret) {
-        fail(
-          `with no folder selected, ＋ → 新建目录 put a ${atRoot.kind} box ${atRoot.atTop ? "at the top" : "among the rows"} ` +
-            `under ${JSON.stringify(atRoot.under)}, caret ${atRoot.caret} — it goes to the workspace's root, VS Code's ` +
-            "rule (src/views/FileTree.tsx picked)",
-        );
+      const inner = '[data-file-tree] [data-depth="1"][data-file="notes.md"] > button';
+      if (!(await press(inner))) {
+        fail("probe dead: no file inside src on the tree to press for (vii) (src/views/FileTree.tsx)");
+      } else {
+        await wait(300);
+        await plusMenu("dir");
+        const beside = await boxAt();
+        console.log(`＋ → 新建目录 after src/notes.md was pressed: ${JSON.stringify(beside)}`);
+        if (beside === null) {
+          fail("＋ → 新建目录 grew no box on the tree (src/views/FileTree.tsx make)");
+        } else if (beside.kind !== "dir" || beside.under !== "src" || beside.underDepth !== "0" || beside.underOpen !== "true" || !beside.caret) {
+          fail(
+            `with src/notes.md pressed last, ＋ → 新建目录 put a ${beside.kind} box under ${JSON.stringify(beside.under)} ` +
+              `(depth ${beside.underDepth}, open ${beside.underOpen}), caret ${beside.caret} — a file selected means the ` +
+              "folder it is in, VS Code's rule (src/views/FileTree.tsx picked)",
+          );
+        }
       }
-      // Esc, not Enter: a directory made at the root would stand first
-      // in every listing the sections below read.
-      await page.keyboard.press("Escape");
-      await wait(200);
-      if ((await page.locator("[data-file-tree] [data-new-name]").count()) !== 0) {
-        fail("Esc left ＋'s name box open — Esc puts it back (src/components/EditableName.tsx)");
-      }
+      // viii) nothing selected — the blank under the rows pressed — is
+      // the root. A file at the root is the root too: the folder it is in.
+      const atTheRoot = async (how, pick) => {
+        await page.keyboard.press("Escape");
+        await wait(150);
+        const got = await pick();
+        // The blank opens a file box of its own at the root: Esc it, so
+        // the box read below is ＋'s.
+        await page.keyboard.press("Escape");
+        await wait(200);
+        if (!got) {
+          fail(`probe dead: could not press ${how} for (viii) (src/views/FileTree.tsx)`);
+          return;
+        }
+        await plusMenu("dir");
+        const atRoot = await boxAt();
+        console.log(`＋ → 新建目录 after ${how}: ${JSON.stringify(atRoot)}`);
+        if (atRoot === null) {
+          fail("＋ → 新建目录 grew no box on the tree (src/views/FileTree.tsx make)");
+        } else if (atRoot.kind !== "dir" || !atRoot.atTop || atRoot.under !== null || !atRoot.caret) {
+          fail(
+            `after ${how}, ＋ → 新建目录 put a ${atRoot.kind} box ${atRoot.atTop ? "at the top" : "among the rows"} ` +
+              `under ${JSON.stringify(atRoot.under)}, caret ${atRoot.caret} — it goes to the workspace's root ` +
+              "(src/views/FileTree.tsx picked)",
+          );
+        }
+        // Esc, not Enter: a directory made at the root would stand
+        // first in every listing the sections below read.
+        await page.keyboard.press("Escape");
+        await wait(200);
+        if ((await page.locator("[data-file-tree] [data-new-name]").count()) !== 0) {
+          fail("Esc left ＋'s name box open — Esc puts it back (src/components/EditableName.tsx)");
+        }
+      };
+      await atTheRoot("the blank under the rows was pressed", () => press("[data-file-tree] [data-tree-blank]"));
+      await atTheRoot("a file at the root was pressed", () =>
+        press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button'),
+      );
     }
   }
 

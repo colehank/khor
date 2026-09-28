@@ -16,7 +16,7 @@
 // whole landing of their own on the rail; the tree and the file have no
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   onWebFace,
@@ -1461,16 +1461,12 @@ export function WorkspacePane({
   const where = `${machine}:${root}`;
   /** **Cut in the middle, keeping the machine and the last segment**
       (Finder's path, Xcode's title): the head of the path takes the
-      ellipsis and the directory's own name never does. Two spans, one
-      text — selecting across them copies the whole value, and a screen
-      reader reads it whole. */
-  const cutAt = where.lastIndexOf("/");
-  const whereHead = cutAt > 0 ? where.slice(0, cutAt) : "";
-  const whereTail = cutAt > 0 ? where.slice(cutAt) : where;
-  /** Whether the head of the path is cut right now, asked when the
-      pointer arrives: the tooltip is the whole value, and over a value
-      showing in full it would only be noise. */
-  const whereCut = useRef<HTMLSpanElement | null>(null);
+      ellipsis and the directory's own name never does (`useMiddleCut`). */
+  const cutAt = Math.max(where.lastIndexOf("/"), 0);
+  const fit = useMiddleCut(where, cutAt);
+  const whereCut = fit.keep < cutAt;
+  /** The tooltip is the whole value, and only while the value is cut:
+      over a value showing in full it would be noise. */
   const [whereTip, setWhereTip] = useState(false);
   const subtitle = (
     <div data-ws-subtitle className="flex min-w-0 flex-1 items-center gap-xxs text-callout text-muted-foreground">
@@ -1493,13 +1489,7 @@ export function WorkspacePane({
           <span aria-hidden="true" className="flex-none">·</span>
         </>
       )}
-      <Tooltip
-        open={whereTip}
-        onOpenChange={(on) => {
-          const el = whereCut.current;
-          setWhereTip(on && el !== null && el.scrollWidth > el.clientWidth);
-        }}
-      >
+      <Tooltip open={whereTip && whereCut} onOpenChange={setWhereTip}>
         <TooltipTrigger asChild>
           {/* **Selectable, and a focus stop so it can be.** R0 moves the
               window (`shell.ts`, `deep`): a press on plain text there
@@ -1509,15 +1499,35 @@ export function WorkspacePane({
               `data-selectable`: a path is a value people copy
               (30-behavior 选字与手). */}
           <span
+            ref={fit.ref}
             data-ws-head-where={where}
+            data-cut={whereCut ? "" : undefined}
             data-selectable
             tabIndex={0}
-            className="flex min-w-0 overflow-hidden rounded-xs focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+            // `flex-1`: the room it is given is the rest of the line,
+            // whatever it holds — the width the cut is fitted to.
+            className="flex min-w-0 flex-1 overflow-hidden whitespace-nowrap rounded-xs focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
           >
-            <span ref={whereCut} className="min-w-0 truncate">
-              {whereHead}
+            {/* **The ellipsis butts against the tail** (2026-09-28). A
+                `text-overflow` ellipsis on the head left up to a glyph of
+                blank between 「…」 and 「/billing-worker」 — it drops
+                whole characters and keeps the box. So the head is cut to
+                fit by measure (`useMiddleCut`), draws its own 「…」 as
+                an `::after` (not text: never copied, never selectable),
+                and the characters it gave up stay in the text at no
+                width — a selection copies the whole value and a screen
+                reader reads it whole. */}
+            <span data-ws-where-head className={cn("flex-none", whereCut && "after:content-['…']")}>
+              {where.slice(0, fit.keep)}
             </span>
-            <span className="flex-none whitespace-nowrap">{whereTail}</span>
+            {whereCut && (
+              <span className="w-0 flex-none overflow-hidden">
+                {where.slice(fit.keep, cutAt)}
+              </span>
+            )}
+            <span data-ws-where-tail className="min-w-0 truncate">
+              {where.slice(cutAt)}
+            </span>
           </span>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="break-all">
@@ -2194,6 +2204,66 @@ export function WorkspacePane({
     </DeeperHeads>
     </LinkHomeProvider>
   );
+}
+
+/** One canvas for every measure, made on first use. */
+let ruler: CanvasRenderingContext2D | null = null;
+
+/**
+ * **How much of a value's head fits in front of its tail**, with 「…」
+ * between them (R0's location, 2026-09-28): the tail is `value` from
+ * `cut` on (the last segment, `/billing-worker`), the head everything
+ * before it. Answers `keep` — the head's first `keep` characters are
+ * drawn, then the ellipsis, then the tail; `keep === cut` is the whole
+ * value, uncut.
+ *
+ * **Measured, not left to `text-overflow`**: that drops whole characters
+ * and keeps its box, so the ellipsis stood up to a glyph away from the
+ * tail (「acme-corporation/… /billing-worker」). Here the head is exactly
+ * as wide as what it draws. The machine (`peer:`) is never given up; if
+ * even that and the tail do not fit, the tail truncates at its end.
+ * Re-measured whenever the box is resized — dragging the window, the
+ * list's seam, the R0 buttons coming and going.
+ */
+function useMiddleCut(value: string, cut: number) {
+  const [box, setBox] = useState<HTMLElement | null>(null);
+  const [keep, setKeep] = useState(cut);
+  useLayoutEffect(() => {
+    if (box === null || cut <= 0) {
+      setKeep(cut);
+      return;
+    }
+    const fit = () => {
+      const room = box.clientWidth;
+      if (room <= 0) return;
+      ruler ??= document.createElement("canvas").getContext("2d");
+      if (ruler === null) return;
+      const cs = getComputedStyle(box);
+      ruler.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const wide = (s: string) => ruler?.measureText(s).width ?? 0;
+      // A pixel spare: the canvas and the line can round a kern apart.
+      const fits = (s: string) => wide(s) <= room - 1;
+      if (fits(value)) {
+        setKeep(cut);
+        return;
+      }
+      const tail = value.slice(cut);
+      const floor = Math.min(value.indexOf(":") + 1, cut);
+      let lo = floor;
+      let hi = cut - 1;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (fits(`${value.slice(0, mid)}…${tail}`)) lo = mid;
+        else hi = mid - 1;
+      }
+      setKeep(lo);
+    };
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(box);
+    return () => watch.disconnect();
+  }, [box, value, cut]);
+  return { ref: setBox, keep };
 }
 
 /** How long the box waits after the last keystroke before it asks

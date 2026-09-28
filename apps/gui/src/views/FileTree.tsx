@@ -406,18 +406,20 @@ export function FileTree({
     return out;
   }, [listings, expanded, root]);
 
-  /** Where the head's ＋ makes a name (2026-09-28): **into the folder
-      selected in the tree, otherwise the workspace's root** — VS Code's
-      rule as the owner put it. 「Selected」 is the last row pressed here:
-      a folder's press picks it, a file's press or the blank under the
-      rows picks nothing (the root). A folder that has since gone —
-      renamed, deleted, folded out of sight under a parent — is not a
-      place a box can be drawn, so the root takes it. */
-  const [picked, setPicked] = useState<string | null>(null);
+  /** Where the head's ＋ makes a name (2026-09-28): **VS Code's rule**.
+      The row pressed last is the selection: a folder means inside it, a
+      file means beside it — the folder it is in — and nothing (the blank
+      under the rows pressed, or nothing pressed yet) means the
+      workspace's root. A row that has since gone — renamed, deleted,
+      folded out of sight under a parent — is not a place a box can be
+      drawn next to, so the root takes it. */
+  const [picked, setPicked] = useState<{ full: string; dir: boolean } | null>(null);
   useEffect(() => {
     if (make == null) return;
     onMakeSeen?.();
-    const into = picked !== null && rows.some((r) => r.dir && r.full === picked) ? picked : root;
+    const row = picked === null ? undefined : rows.find((r) => r.full === picked.full && r.dir === picked.dir);
+    const parent = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+    const into = row === undefined ? root : row.dir ? row.full : parent(row.full);
     // Opened, so the box stands where the row it becomes will stand,
     // among its siblings — what 新建 from a folder's own menu does too
     // once the name is taken (`made`).
@@ -511,11 +513,11 @@ export function FileTree({
                       type="button"
                       data-dir={r.name}
                       data-on={on}
-                      // The folder the head's ＋ makes into (`picked`).
-                      data-picked={picked === r.full ? "" : undefined}
+                      // The row the head's ＋ reads its place off (`picked`).
+                      data-picked={picked?.full === r.full ? "" : undefined}
                       onClick={() => {
                         toggle(r.full);
-                        setPicked(r.full);
+                        setPicked({ full: r.full, dir: true });
                       }}
                       className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
                     >
@@ -587,8 +589,9 @@ export function FileTree({
                       // preview|pin`). **Only an explicit 「pin」 moves
                       // it**, so an answer that has not arrived is the
                       // default rather than a second copy of it.
+                      data-picked={picked?.full === r.full ? "" : undefined}
                       onClick={() => {
-                        setPicked(null);
+                        setPicked({ full: r.full, dir: false });
                         onOpen(r.full, clickPins);
                       }}
                       // 「双击、或在里面打了字,就钉住」— the second
