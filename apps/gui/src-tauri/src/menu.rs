@@ -26,6 +26,9 @@
 //! From the catalog's `[menu]` section (and the rail's five names from
 //! `[gui]`), in the language the process speaks. A language change
 //! rebuilds the menu (`follow_lang`), in 设置 or from `khor config`.
+//! The items AppKit adds by itself, and the app menu's bold name, are not
+//! built here: `Info.plist` (embedded by `main.rs`) and
+//! `speak_at_launch` answer for those.
 //!
 //! # Enabled
 //!
@@ -301,6 +304,92 @@ pub fn set_state(app: &AppHandle, state: MenuState) {
 
 #[cfg(not(target_os = "macos"))]
 pub fn set_state(_app: &AppHandle, _state: MenuState) {}
+
+/// **AppKit's own items speak khor's language** (2026-09-28).
+///
+/// 编辑 and 窗口 carry items khor never wrote — 自动填充, 开始听写…,
+/// 表情与符号, 填充, 居中, 移动与调整大小 … — which AppKit adds, worded in
+/// the localization it picked for this process: the first of the person's
+/// languages that `Info.plist` declares (zh-Hans, en), English when none
+/// is. khor's own words follow `khor config`'s `lang`, which can say
+/// otherwise — an English khor on a Chinese Mac. So when the two would
+/// differ, khor's language is put first in this process's
+/// `AppleLanguages`, **in the argument domain**: in memory, this process
+/// only. Never `defaults write`: the app's domain is named after the
+/// process, and every khor-gui on the machine — the owner's, the native
+/// gate's — would read it.
+///
+/// It is the switch macOS's own per-app language turns (系统设置 › 通用 ›
+/// 语言与地区 › 应用程序), and it reaches what that one reaches: the
+/// system's panels (the file picker, the Touch ID sheet), and the
+/// webviews' `navigator.language` — a browsing tab asks sites for khor's
+/// language first, and the face's `auto` (`src/lang.ts`) lands where the
+/// Rust side's did. When the two already agree, nothing is touched.
+///
+/// **Once, before AppKit is up** (`run`, ahead of the builder).
+/// CoreFoundation settles a bundle's language the first time it is asked
+/// and keeps it: measured, a language switched later and a menu rebuilt
+/// after it still got AppKit's items in the first one. So a language
+/// changed while the app runs rebuilds khor's own items at once
+/// (`follow_lang`), and AppKit's follow at the next launch.
+#[cfg(target_os = "macos")]
+pub fn speak_at_launch() {
+    use khor_catalog::lang::Lang;
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2_foundation::{
+        NSArgumentDomain, NSArray, NSBundle, NSMutableDictionary, NSString, NSUserDefaults,
+        ns_string,
+    };
+    // The two `Info.plist` declares, spelled as it spells them.
+    let wanted = match khor_catalog::lang::current() {
+        Lang::Zh => "zh-Hans",
+        Lang::En => "en",
+    };
+    let defaults = NSUserDefaults::standardUserDefaults();
+    let key = ns_string!("AppleLanguages");
+    let now: Vec<Retained<AnyObject>> = defaults
+        .arrayForKey(key)
+        .map(|a| a.to_vec())
+        .unwrap_or_default();
+    // What AppKit would pick from them. ⚠️ **The person's languages are
+    // handed in, never left to the default** (`forPreferences: nil`):
+    // asked for them, CoreFoundation reads them once and keeps them for
+    // the life of the process — the first build of this asked that way,
+    // and AppKit's items stayed Chinese under an English khor while the
+    // webview had already switched.
+    let declared =
+        NSArray::from_retained_slice(&[NSString::from_str("zh-Hans"), NSString::from_str("en")]);
+    let theirs: Vec<Retained<NSString>> = now
+        .iter()
+        .filter_map(|l| l.clone().downcast::<NSString>().ok())
+        .collect();
+    let would = NSBundle::preferredLocalizationsFromArray_forPreferences(
+        &declared,
+        Some(&NSArray::from_retained_slice(&theirs)),
+    );
+    if would.firstObject().is_some_and(|l| l.to_string() == wanted) {
+        return;
+    }
+    // khor's first, then the person's own order behind it, so what else
+    // they read (a site with no English, say) still has somewhere to go.
+    let mut order: Vec<Retained<AnyObject>> = vec![NSString::from_str(wanted).into()];
+    order.extend(now);
+    let langs = NSArray::from_retained_slice(&order);
+    // SAFETY: a constant Foundation exports, read once.
+    let domain = unsafe { NSArgumentDomain };
+    // The argument domain holds the command line's `-Key value` pairs:
+    // kept, with this one key added.
+    let args =
+        NSMutableDictionary::dictionaryWithDictionary(&defaults.volatileDomainForName(domain));
+    args.insert(key, AsRef::<AnyObject>::as_ref(&*langs));
+    defaults.removeVolatileDomainForName(domain);
+    // SAFETY: `args` is the `NSString → object` dictionary a domain is.
+    unsafe { defaults.setVolatileDomain_forName(&args, domain) };
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn speak_at_launch() {}
 
 /// Rebuilds the menu when the process has changed language since it was
 /// built — after 设置 wrote `lang`, and when the window comes back to the

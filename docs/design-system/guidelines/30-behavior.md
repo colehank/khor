@@ -35,6 +35,7 @@
 | 快捷键照 Mac 的规矩，一次按键只跑一次（见下「键盘」） | `check-face` §11c：⌘1–⌘5 走竖栏、⌘, 开通用、⌘W 先收「…」页再关最前的标签、⌃⇥ / ⌃⇧⇥ / ⇧⌘] / ⇧⌘[ 每次正好一格、⌘N 是「+」且只开一个、输入框里 ⌘ 键照样管用、sheet 开着时什么都不应；网页端不占浏览器的键（直接问 `lib/shortcuts` 的 `actOf`）；`npm run native` 在真 WKWebView 里按：⌘N 两下正好两个标签、⌘W 正好关一个、菜单栏点一次正好一个，⌘W 没有标签可关时窗口还在 |
 | 侧边栏列表键盘走得通：↑↓ Home End 移焦点、有焦点环、不开任何东西；⏎ / Space 打开焦点那一行 | `check-face` §11c |
 | 菜单栏是 khor 自己的：khor · 文件 · 编辑 · 显示 · 窗口，字来自目录，快捷键写在菜单上；编辑菜单在（WKWebView 的 ⌘C / ⌘V 靠它） | `npm run native` 键盘那一段，按 pid 读辅助功能树（旧代码上读到的是 tauri 默认的英文菜单，⌘W 关掉了窗口） |
+| 菜单栏粗体的名字是「khor」；AppKit 自己加的项（自动填充、开始听写…、填充、居中……）和 khor 的字说同一种语言，跟 `khor config` 的 `lang` 走，不只跟系统 | `npm run native` 键盘那一段：按 pid 读 app 菜单的标题、编辑与窗口的每一项，中文里不许有拉丁字母；再以 `lang en` 重起一次，不许有汉字（2026-09-28，旧代码上先红过：粗体是「khor-gui」，编辑 3 项、窗口 8 项英文） |
 | 右键不出 WebKit 自己的菜单（重新载入 / 检查元素）；输入框和选中的字保留系统菜单；行自己的菜单照开 | `check-face` §11d（合成的 `contextmenu` 有没有被 prevent）；`npm run native`：AXShowMenu 问页面和 R0 标题是 0 个菜单、问搜索框是 1 个（把挡菜单那一行拿掉构建一次：页面和 R0 标题都问出了 WebKit 的菜单） |
 | 地图上的线停在圆盘边上、不穿字；跳数词（直连 / 中继）坐在线上、不压别的字 | `check-face`「地图的线」：三个窗口尺寸，每一段线离每个圆盘中心不少于半径、不和任何字的盒子相交，跳数词不和别的字重叠（2026-09-28，旧代码上先红过：线从圆心画到圆心） |
 | 删除一台机器永远先问，和别的删除走同一个窗 | `check-face`「删除一台机器永远先问」：机器行的「删除…」和地图上按一台机器之后出现的任何「删除」，按下都先弹窗、什么都不发（2026-09-28，旧代码上先红过：网络页地图卡一键删除） |
@@ -116,6 +117,12 @@
 **窗口**：最小化 · 缩放 · 显示上一个 / 下一个标签页 ⌃⇧⇥ / ⌃⇥ · 前置全部窗口 · 窗口列表（AppKit 自己填）
 
 没有「帮助」：还没有东西可放，一个空菜单教人别打开菜单。字全部来自目录的 `[menu]` 一节（和竖栏的五个名字），用这台机器现在说的语言；设置里换语言、或在终端 `khor config set lang` 之后窗口回到前面，菜单重搭。Windows 和 Linux 不搭菜单栏——那里的菜单栏会变成窗口里的一行，骨架里没有这一行；那边只有页面的键盘这一条路。
+
+**名字，和 AppKit 自己加的项（2026-09-28）。** app 是以裸二进制跑的（`target/local/khor-gui`，外面没有 `.app`）。一个没有 Info.plist 的进程，AppKit 拿进程名当 app 菜单的粗体标题——读出来是「khor-gui」，不管 `menu.rs` 给那个子菜单起什么名；它自己往编辑、窗口里加的项（自动填充 · 开始听写… · 表情与符号；全部最小化 · 全部缩放 · 填充 · 居中 · 移动与调整大小 · 全屏幕平铺 · 从组中移除窗口 · 排在前面）说英文，因为进程没声明任何语言。现在二进制里嵌着 `src-tauri/Info.plist`（`src/main.rs`，`__TEXT,__info_plist` 段）：`CFBundleName` = khor，声明 zh-Hans 与 en、开发语言 en。**不写 `CFBundleAllowMixedLocalizations`**：AppKit 只在这两种里挑，第三种语言的桌面上它说英文，和 khor 自己的字一样（「非 zh* 一律英文」）。
+
+- **不写 `CFBundleIdentifier`，不改可执行文件的名字，不调 `setProcessName`。** WebKit、CFNetwork、defaults 给自己的目录起名用 `bundleIdentifier`，没有才用进程名。页面的 localStorage 今天在 `~/Library/WebKit/khor-gui/WebsiteData/`（设了 `KHOR_HOME` 的在 `…/khor-gui/WebsiteDataStore/<uuid>/`），缓存在 `~/Library/Caches/khor-gui/`，cookie 在 `~/Library/HTTPStorages/khor-gui.binarycookies`，偏好在 `~/Library/Preferences/khor-gui.plist`。加一个标识符，下次启动就是一个空的页面 store——在临时二进制上量过，数据落进以标识符命名的新目录；`setProcessName` 改不了粗体标题，却把 WebKit 的目录改成了新名字（也量过）。哪天真要打成 `.app`，先迁这几处。
+- **AppKit 的项跟 khor 的语言。** 系统的第一语言挑出来的和 khor 正在说的不同时（中文 Mac 上设成英文的 khor），`menu::speak_at_launch` 在启动时把 khor 的语言放到这个进程 `AppleLanguages` 的最前面——**只放在内存里的参数域**，不写任何偏好文件：app 的偏好域以进程名命名，本机每个 khor-gui（负责人的、原生门的）都会读到。这和 macOS 自己的「按应用设语言」是同一个开关，所以管到的也一样：系统面板（选文件、Touch ID）、webview 的 `navigator.language`——浏览标签页先向网站要 khor 的语言，页面的 `auto` 也落到 Rust 那半边选的那种。两者本来一致时什么都不动。
+- **只在启动时。** CoreFoundation 第一次被问就把一个 bundle 的语言定下来，之后不再改（量过：进程里换语言再重搭菜单，AppKit 的项还是原来那种；私有的清缓存函数也不行）。所以运行中换语言，khor 自己的项立刻跟上，**AppKit 的项下次启动跟上**。
 
 ## Do
 
