@@ -220,8 +220,9 @@ export function FaceSettings({
 }: {
   /** Which machine's avatar this edits — a device id, and **empty is
       this one**. 「头像设置这, 要支持对每台机器的修改」 (the user,
-      2026-09-20): the map opens this same editor on whichever machine
-      was pressed, and a face is 全网同一份 — anyone may set anyone's. */
+      2026-09-20): a machine row's 更改头像… opens this same editor on
+      that machine (the map's card did, until 2026-09-28), and a face is
+      全网同一份 — anyone may set anyone's. */
   machine?: string;
   /** Called after a change took, so the faces elsewhere in the app come
       from the node's new answer rather than from this screen. */

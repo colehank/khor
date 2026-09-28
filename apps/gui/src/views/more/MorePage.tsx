@@ -20,7 +20,6 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { IconChevronRight, IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
 
 /**
@@ -85,21 +84,21 @@ const PageName = createContext<string | null>(null);
 export function MoreFrame({
   page,
   onClose,
-  bleed,
+  actions,
   children,
 }: {
   page: MorePage;
   /** Back to the landing this was opened over. */
   onClose: () => void;
-  /** The body fills the frame instead of standing in a reading column.
-      **One page asks for this and it is not a preference**: 网络 is a
-      picture — 「网络就搞成地图」 — and a picture capped at a reading
-      measure is a map with margins, which is the one layout that makes
-      the seats near the edge unreachable on a phone. Everything else on
-      these pages is prose and rows, and prose stretched across a 1400
-      window puts a label and its control at opposite ends of the
-      screen. */
-  bleed?: boolean;
+  /** The page's own buttons, before the way out — **only where this
+      head is the page's R0**, the narrow face (wide puts them in R0 with
+      every page's buttons, D9, and hides this head). 网络's 邀请设备… /
+      加入网络…. */
+  actions?: ReactNode;
+  // ⚠️ 墓碑 (2026-09-28): `bleed` stood here — the body filling the frame
+  // instead of a reading column, for the one page that was a picture
+  // (网络, 「网络就搞成地图」). 网络 is rows now and the map lives on the
+  // machines overview; no page asks for it.
   /** Optional, and it stays optional on purpose: two of these four pages
       are a head and nothing else until their backend lands (batches B
       and C), and a placeholder section saying so would be the 「灰着的
@@ -112,9 +111,8 @@ export function MoreFrame({
         data-more-page={page}
         aria-label={moreName(page)}
         // Settings groups are cards on the canvas (components/SettingsGroup),
-        // so a page of rows stands on `background`; a picture (网络's map)
-        // keeps the board's `card`.
-        className={cn("flex h-full min-h-0 flex-col", bleed ? "bg-card" : "bg-background")}
+        // so a page of rows stands on `background`.
+        className="flex h-full min-h-0 flex-col bg-background"
       >
         {/* The page's own head, inside the board. It moves no window
             since 第十五轮: R0 above the board does, marked by the shell
@@ -124,6 +122,11 @@ export function MoreFrame({
           className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
         >
           <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
+          {actions && (
+            <div data-page-actions className="flex flex-none items-center gap-in">
+              {actions}
+            </div>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -138,17 +141,13 @@ export function MoreFrame({
             <IconClose />
           </Button>
         </header>
-        {bleed ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto p-pane">
-            {/* Capped at a reading measure and centred: these pages are
-                prose and rows rather than a table, and a settings row
-                stretched across a 1400 window puts its label and its
-                control at opposite ends of the screen. */}
-            <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
-          </div>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto p-pane">
+          {/* Capped at a reading measure and centred: these pages are
+              prose and rows rather than a table, and a settings row
+              stretched across a 1400 window puts its label and its
+              control at opposite ends of the screen. */}
+          <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
+        </div>
       </section>
     </PageName.Provider>
   );

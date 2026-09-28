@@ -6,6 +6,8 @@ import type { CpuDay } from "@/gen/bindings/CpuDay";
 
 /** Every word the drawing says, out of the catalog. */
 export type DayWords = {
+  /** The section's name, at the left end of the switch's row. */
+  title: string;
   cpu: string;
   gpu: string;
   mem: string;

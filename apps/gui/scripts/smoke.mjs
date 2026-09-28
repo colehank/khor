@@ -3358,32 +3358,57 @@ for line in sys.stdin:
   //     One edge per machine that is not this one, and not one more:
   //     a second-hand edge would be khor drawing a road it was never
   //     told about.
+  //
+  //     ⚠️ **Since 2026-09-28 an edge is drawn in stretches** — it stops
+  //     at the discs and breaks round every word on the map (`MandalaMap`
+  //     `layRoads`; `check-face` 「地图的线」) — so one edge can be several
+  //     `<line>`s, all carrying that machine's id, in the square's pixels,
+  //     and none of them touches a seat's centre any more. The claim is
+  //     unchanged and is asserted in the shape it now takes: one edge per
+  //     other machine, and **every stretch on the straight line from the
+  //     middle seat to its own machine's seat** — a star, nothing
+  //     between two other machines.
   const edges = await page.locator("[data-mandala-map] [data-edge]").evaluateAll((els) =>
     els.map((e) => ({
+      id: e.dataset.edge,
       road: e.dataset.road,
-      from: `${e.getAttribute("x1")},${e.getAttribute("y1")}`,
-      to: `${e.getAttribute("x2")},${e.getAttribute("y2")}`,
+      a: [Number(e.getAttribute("x1")), Number(e.getAttribute("y1"))],
+      b: [Number(e.getAttribute("x2")), Number(e.getAttribute("y2"))],
+      side: e.ownerSVGElement?.viewBox?.baseVal?.width ?? 0,
     })),
   );
-  if (edges.length !== machines - 1) {
-    throw new Error(`the map draws ${edges.length} edges for ${machines - 1} other machines`);
+  const edgeIds = new Set(edges.map((e) => e.id));
+  if (edgeIds.size !== machines - 1) {
+    throw new Error(`the map draws edges for ${edgeIds.size} machines, and ${machines - 1} are not this one`);
   }
-  const ends = new Set(edges.map((e) => e.from));
-  if (ends.size !== 1) {
-    throw new Error(
-      `the map's edges start from ${ends.size} different points — a line between two other ` +
-        "machines is a road khor was never told about",
-    );
-  }
-  //     …and that shared end really is the middle seat, not merely a
-  //     point they happen to agree on.
-  const middle = await page
-    .locator('[data-mandala-map] [data-seat][data-seat-me="true"]')
-    .evaluate((el) => el.style.left + "|" + el.style.top);
-  const [mLeft, mTop] = middle.split("|").map((v) => parseFloat(v));
-  const [eLeft, eTop] = [...ends][0].split(",").map(Number);
-  if (Math.abs(mLeft - eLeft) > 0.01 || Math.abs(mTop - eTop) > 0.01) {
-    throw new Error(`edges meet at ${eLeft},${eTop} and the middle seat sits at ${mLeft},${mTop}`);
+  //     Where each seat is, as the map placed it (percent of the square).
+  const seatAt = await seats.evaluateAll((els) =>
+    Object.fromEntries(
+      els.map((e) => [e.dataset.seat, { me: e.dataset.seatMe === "true", at: [parseFloat(e.style.left), parseFloat(e.style.top)] }]),
+    ),
+  );
+  const middleSeat = Object.values(seatAt).find((s) => s.me);
+  if (!middleSeat) throw new Error("probe dead: no middle seat to start the star from");
+  for (const e of edges) {
+    const to = seatAt[e.id];
+    if (!to || to.me || !(e.side > 0)) {
+      throw new Error(`an edge carries ${JSON.stringify(e.id)}, which is not another machine's seat on this map`);
+    }
+    const m = middleSeat.at.map((v) => (v / 100) * e.side);
+    const t = to.at.map((v) => (v / 100) * e.side);
+    const d = [t[0] - m[0], t[1] - m[1]];
+    const len = Math.hypot(d[0], d[1]);
+    for (const p of [e.a, e.b]) {
+      // Off the line by more than a pixel, or past either end of it.
+      const off = Math.abs(d[0] * (p[1] - m[1]) - d[1] * (p[0] - m[0])) / len;
+      const along = (d[0] * (p[0] - m[0]) + d[1] * (p[1] - m[1])) / (len * len);
+      if (off > 1 || along < 0 || along > 1) {
+        throw new Error(
+          `a stretch of ${e.id}'s edge reaches ${p.join(",")}, ${off.toFixed(1)} off the line from the middle ` +
+            "seat to its machine — a line anywhere else is a road khor was never told about",
+        );
+      }
+    }
   }
   //     Every road wears one of the three strokes, and the word beside
   //     it is the same one the machine's own row prints (24 reads that);
@@ -4200,142 +4225,73 @@ for line in sys.stdin:
     console.log(`  ok  28b: More reaches network, general, security and doctor at ${size.width}`);
   }
 
-  // 29) the mark opens the mesh and what it cost — on both faces.
+  // 29) the map lives on the machines overview, and 网络 is a page of
+  //     settings — on both faces (2026-09-28, the owner; it superseded
+  //     2026-09-20's 「网络就搞成地图」).
   //
-  //     The narrow half is the point of it: with the map living in the
-  //     devices pane's detail, a phone can never see it (that pane shows
-  //     the list, and picking a machine shows that machine's card). This
-  //     is the only way in from there, so it is checked there first.
+  //     ⚠️ **What left with the map's second home.** This item used to
+  //     walk to the map through 「…」 → 网络 on both faces, press every
+  //     seat, and add up the session counts on the cards that opened over
+  //     the map against `khor sessions --all` — the independent witness
+  //     for per-machine counts. Those cards retired with the map's place
+  //     on the 网络 page (a seat on the overview opens the machine's own
+  //     page), and the counts with them; a sum over cards that do not
+  //     exist is not kept as a gate on nothing.
   //
-  //     What the map says is compared against the node's own listing —
-  //     the independent witness, and **no number is written in this
-  //     file**: both sides are read and set against each other.
+  //     Narrow: 网络 draws no map, and it replaces the pair.
   await page.setViewportSize({ width: 390, height: 720 });
   await toMesh();
-  await until("the mesh on the narrow face", 15_000, async () =>
-    (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
-  );
-  //     **The daily ledger is gone from this place and is not asserted
-  //     anywhere else.** It used to sit beside the map and be compared,
-  //     day by day, against `khor usage` — the independent witness this
-  //     item was built around. That screen no longer exists in the GUI
-  //     (`khor usage` still prints it), and moving the assertion
-  //     somewhere else would be leaving a gate on a thing that is not
-  //     there. What replaces the witness is below: the session count on
-  //     the map is compared against the node's own list.
-  //
-  //     The anchor stays `[data-mandala-map]` rather than the quota
-  //     panel: these homes have no Claude login, quota answers nothing,
-  //     and that section does not draw at all — waiting on it would fail
-  //     as "probe dead" for a reason that has nothing to do with this.
-  //     …and the list is gone while it is up: this place is not a pane.
-  if ((await page.locator("[data-list]").count()) !== 0) {
-    throw new Error("the mark's place is showing a list beside it; it replaces the pair");
+  if ((await page.locator("[data-mandala-map]").count()) !== 0) {
+    throw new Error("the 网络 page draws the map — it lives on the machines overview only (2026-09-28)");
   }
-  //     The narrow face never shows two things at once, so that check
-  //     alone would be satisfied by a wide shell that kept the list —
-  //     which is why the wide one is checked too, below, where it can
-  //     actually fail.
+  if ((await page.locator("[data-list]").count()) !== 0) {
+    throw new Error("the 网络 page is showing a list beside it; a 「…」 page replaces the pair");
+  }
   //     Pressing a landing comes back out of it.
   await openLanding("devices");
-  if ((await page.locator("[data-mark-place]").count()) !== 0) {
-    throw new Error("the mark's place is still up after a landing was picked");
+  if ((await page.locator('[data-more-page="network"]').count()) !== 0) {
+    throw new Error("the 网络 page is still up after a landing was picked");
   }
 
+  //     Wide: 网络 is rows — the pause switch and the two pairing doors in
+  //     R0 are there (the smoke homes are paired, so 暂停 is drawn), and
+  //     no map.
   await page.setViewportSize({ width: 1080, height: 720 });
   await toMesh();
-  await until("the mesh on the wide face", 15_000, async () =>
-    (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
+  await until("the 网络 page's rows", 15_000, async () =>
+    (await page.locator('[data-more-page="network"] [data-net-pause]').count()) === 1,
   );
-  if ((await page.locator("[data-list]").count()) !== 0) {
-    throw new Error("the wide shell kept the list beside the mesh; this place replaces the pair");
+  if ((await page.locator("[data-mandala-map]").count()) !== 0) {
+    throw new Error("the wide 网络 page draws the map — it lives on the machines overview only");
   }
-  //     **Every face here is pressable, and this assertion is the old
-  //     one turned over rather than deleted.** It used to demand that
-  //     none of them were: there was no card in this space to open into,
-  //     and an affordance that answers nothing teaches people to stop
-  //     trying the ones that do. There is a card now, so the fact worth
-  //     guarding is the opposite one — and a fact that has been
-  //     overturned is guarded by asserting the new one, not by removing
-  //     the old.
+  for (const door of ["invite", "join"]) {
+    if ((await page.locator(`[data-page-actions] [data-new-item="${door}"]`).count()) !== 1) {
+      throw new Error(`the 网络 page's R0 has no ${door} — its two pairing doors are its page buttons`);
+    }
+  }
+  await page.locator("[data-more-close]").click();
+
+  //     The map, on the machines overview: nothing picked, so a fresh
+  //     page.
+  await page.reload();
+  await openLanding("devices");
+  await until("the map on the machines overview", 15_000, async () =>
+    (await page.locator("[data-mandala-map] [data-seat]").count()) > 1,
+  );
+  //     **Every face here is pressable** — pressing one opens that
+  //     machine's page (28 below).
   const seatsHere = await page
-    .locator("[data-mark-place] [data-seat]")
+    .locator("[data-mandala-map] [data-seat]")
     .evaluateAll((els) => els.map((e) => e.tagName));
-  if (seatsHere.length === 0) {
-    throw new Error("probe dead: no seats on the mark's place to press");
-  }
   if (seatsHere.some((t) => t !== "BUTTON")) {
-    throw new Error(`a face here answers nothing: ${JSON.stringify(seatsHere)}`);
-  }
-  //     …and pressing one really opens **that** machine's card, and the
-  //     card carries what that machine is holding. Both halves are read
-  //     off the screen: the name the card prints against the name on the
-  //     seat that was pressed, so "a card opened" and "the right card
-  //     opened" are not the same pass; and the 全部 count, which is the
-  //     four counts that used to hang off one node standing for the
-  //     whole mesh, after they were moved onto the machine they are
-  //     about (「会话是在机器节点点击后看的,不是在地图外面」 — the
-  //     user, 2026-08-28).
-  //
-  //     **The independent witness is the sum.** Each card counts one
-  //     machine's rows; `khor sessions --all` on the same home counts
-  //     every row from the other side. No number is written in this
-  //     file — both sides are read, and a scoping bug in either
-  //     direction (a card showing the whole table, or a machine's rows
-  //     landing on nobody) moves the sum off the total.
-  const seatIds = await page
-    .locator("[data-mark-place] [data-seat]")
-    .evaluateAll((els) => els.map((e) => e.getAttribute("data-seat")));
-  let summed = 0;
-  for (const id of seatIds) {
-    const seatName = (
-      await page.locator(`[data-mark-place] [data-seat="${id}"] [data-seat-name]`).innerText()
-    ).trim();
-    await page.locator(`[data-mark-place] [data-seat="${id}"]`).click();
-    await until(`the card for ${seatName}`, 10_000, async () =>
-      (await page.locator("[data-node-card]").count()) === 1,
-    );
-    const cardName = (await page.locator("[data-node-card-name]").innerText()).trim();
-    if (!cardName.startsWith(seatName)) {
-      throw new Error(`pressed ${seatName} and got the card for ${cardName}`);
-    }
-    //     A machine with nothing on it says so in one sentence rather
-    //     than in four zeros, so the two shapes are read as the two
-    //     shapes — and exactly one of them may be up.
-    const none = (await page.locator("[data-node-card] [data-count-none]").count()) === 1;
-    const counted = (await page.locator('[data-node-card] [data-count="all"]').count()) === 1;
-    if (none === counted) {
-      throw new Error(`${seatName}'s card shows ${none ? "both" : "neither"} the counts and the empty word`);
-    }
-    if (counted) {
-      const n = Number(
-        (await page.locator('[data-node-card] [data-count="all"]').innerText()).replace(/\D+/g, ""),
-      );
-      if (!Number.isFinite(n)) {
-        throw new Error(`${seatName}'s card counts something unreadable`);
-      }
-      summed += n;
-    }
-    await page.keyboard.press("Escape");
-    await until("the card to close", 5_000, async () =>
-      (await page.locator("[data-node-card]").count()) === 0,
-    );
-  }
-  const cliRows = cli(envB, "sessions", "--all").split("\n").filter((l) => l.includes("\t")).length;
-  if (cliRows === 0) {
-    throw new Error("probe dead: khor lists no sessions, so the sum has nothing to disagree with");
-  }
-  if (summed !== cliRows) {
-    throw new Error(`the machine cards count ${summed} sessions between them and \`khor sessions\` lists ${cliRows}`);
+    throw new Error(`a face on the map answers nothing: ${JSON.stringify(seatsHere)}`);
   }
 
-  //     **Waiting is said out on the map, without a press.** The counts
-  //     went behind a press when they moved onto the machines; this one
-  //     fact did not, and may not — it is the one state of the six with
-  //     a person on the other end of it, and a screen that has to be
-  //     searched for an alarm has no alarm. The rail's badge cannot
-  //     stand in: it counts waiting *or* unread and says which of the
-  //     two it means nowhere.
+  //     **Waiting is said out on the map, without a press.** It is the
+  //     one state of the six with a person on the other end of it, and a
+  //     screen that has to be searched for an alarm has no alarm. The
+  //     rail's badge cannot stand in: it counts waiting *or* unread and
+  //     says which of the two it means nowhere.
   //
   //     **Both directions, on every seat.** An implementation that never
   //     drew the line would satisfy the absent half on its own, so what
@@ -4343,7 +4299,7 @@ for line in sys.stdin:
   //     when its count is above zero. Whether anything is waiting on
   //     this particular run is the run's business; 26 below creates the
   //     state on purpose and checks the drawn half there.
-  const seatMarks = await page.locator("[data-mark-place] [data-seat]").evaluateAll((els) =>
+  const seatMarks = await page.locator("[data-mandala-map] [data-seat]").evaluateAll((els) =>
     els.map((e) => ({
       name: e.querySelector("[data-seat-name]")?.textContent.trim() ?? "",
       blocked: Number(e.getAttribute("data-blocked") ?? "-1"),
@@ -6897,14 +6853,17 @@ for line in sys.stdin:
   if (!waitingHome) {
     throw new Error("probe dead: the waiting row does not say which machine it is on");
   }
-  await toMesh();
-  await until("the mark's place", 15_000, async () =>
-    (await page.locator("[data-mark-place] [data-mandala-map]").count()) === 1,
+  //      The map is the machines overview's since 2026-09-28 — nothing
+  //      picked, so a fresh page.
+  await page.reload();
+  await openLanding("devices");
+  await until("the map", 15_000, async () =>
+    (await page.locator("[data-mandala-map] [data-seat]").count()) > 1,
   );
   //      A poll apart: the list saw 待批 first, and the map is fed by
   //      the same table one round later.
   await until(`${waitingHome}'s seat to say something is waiting`, 30_000, async () => {
-    const seat = await page.locator("[data-mark-place] [data-seat]").evaluateAll(
+    const seat = await page.locator("[data-mandala-map] [data-seat]").evaluateAll(
       (els, name) =>
         els
           .filter((e) => e.querySelector("[data-seat-name]")?.textContent.trim() === name)
@@ -6918,8 +6877,8 @@ for line in sys.stdin:
   });
   //      …read at rest: nothing here was pressed open, which is the
   //      whole point — the count has to be legible before anyone asks.
-  if ((await page.locator("[data-node-card]").count()) !== 0) {
-    throw new Error("probe void: a card is open, so this was not read at rest");
+  if ((await page.locator("[data-machine-card]").count()) !== 0) {
+    throw new Error("probe void: a machine is open, so this was not read at rest");
   }
   await openLanding("sessions");
   await until("the list back", 15_000, async () => (await page.locator("[data-row]").count()) > 0);

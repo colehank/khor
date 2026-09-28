@@ -1,6 +1,5 @@
 import type { DeviceRow, SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { connectionWord, word } from "@/words";
@@ -44,13 +43,11 @@ export function MeshNow({
   devices,
   onPick,
   onDevice,
-  onNew,
 }: {
   rows: SessionRow[];
   devices: DeviceRow[];
   onPick: (row: SessionRow) => void;
   onDevice: (row: DeviceRow) => void;
-  onNew: () => void;
 }) {
   const waiting = rows.filter((r) => r.word === "blocked");
   return (
@@ -65,27 +62,12 @@ export function MeshNow({
     <div data-mesh-now className="flex h-full min-h-0 flex-col items-center overflow-y-auto p-6">
       <div className="my-auto flex w-full max-w-md flex-col gap-pane">
         <section data-now-waiting>
-          {/* The section's heading row also holds the one act this
-              screen offers. 新会话 lives here rather than as a fourth
-              block: starting a session is the answer to both faces of
-              this section — nothing waits (start something) and
-              something waits (it sits quietly aside, a ghost). */}
+          {/* ⚠️ 墓碑 (2026-09-28 UI 审计): this heading row also held
+              「新会话…」 at its right end — the same act R0 carries over
+              this overview (D9: 页面级按钮只在 R0 右端，不许两边都有).
+              One act, one place: R0's. */}
           <div className="mb-in flex items-center">
             <Heading text={gui.waiting_on_you} />
-            {/* `min-h-touch`: the one act this screen offers was 24
-                tall. The `sm` look is what a control beside a heading
-                wears; the floor is a different axis and rides on top of
-                it (tokens.css `--touch` — it is not a fourth `--ctl-*`),
-                and the ghost's hover block paints the grown box. */}
-            <Button
-              size="sm"
-              variant="ghost"
-              data-empty-new
-              className="ms-auto min-h-touch"
-              onClick={onNew}
-            >
-              {gui.new_session_ask}
-            </Button>
           </div>
           {waiting.length === 0 ? (
             <div data-now-clear className="text-callout text-muted-foreground">

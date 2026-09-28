@@ -1,4 +1,7 @@
+import { useState } from "react";
+
 import type { DeviceRow } from "@/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { machineMark } from "@/components/BrandIcons";
@@ -6,6 +9,7 @@ import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { connectionWord, groupLabel } from "@/words";
+import { FaceSettings } from "@/views/FaceSettings";
 
 /** Search matches the name people call the machine and the id they
     paste. The id left the row's face (2026-09-02 — the card carries it
@@ -72,6 +76,7 @@ export function DevicesList({
   forgetRefused,
   onPause,
   pauseRefused,
+  onRestyled,
 }: {
   rows: DeviceRow[];
   /** Not answered yet: a skeleton rather than 「there are none」. */
@@ -97,7 +102,12 @@ export function DevicesList({
   onPause?: (row: DeviceRow) => Promise<void>;
   /** The node's sentence for a pause it refused, by row. */
   pauseRefused?: Map<string, string>;
+  /** A face was written from 更改头像… — the shell re-reads the table.
+      Absent, the row offers no 更改头像…. */
+  onRestyled?: () => void;
 }) {
+  // Whose face the editor is open on, if anyone's.
+  const [restyling, setRestyling] = useState<DeviceRow | null>(null);
   const actions = (d: DeviceRow): RowAction[] => [
     {
       key: "pin",
@@ -133,6 +143,21 @@ export function DevicesList({
           },
         ]
       : []),
+    // **更改头像…** (2026-09-28): every machine's face can be set from
+    // here — 全网同一份, anyone may set anyone's (docs/MORE.md 第二轮).
+    // It was a button on the card the map opened over itself; that card
+    // retired with the map's second home, and a row's acts are its menu
+    // (D9). The same editor 这台机器 draws, in a window, on this row's
+    // machine; the ellipsis because a window follows.
+    ...(onRestyled
+      ? [
+          {
+            key: "avatar",
+            label: gui.avatar_change_ask,
+            run: () => setRestyling(d),
+          },
+        ]
+      : []),
     // **Not on this machine's own row.** `Node::forget_device` refuses
     // it by name — a table cannot be left from the inside — so the
     // item would exist only to be refused, an offer whose one answer
@@ -142,10 +167,12 @@ export function DevicesList({
       : [
           {
             key: "forget",
-            // **删除, the word every sidebar's last item says**, and the
-            // map's card says it too — one act (`Node::forget_device`),
-            // one word. What deleting a machine *means* is the sentence
-            // in the window that follows.
+            // **删除, the word every sidebar's last item says** — one act
+            // (`Node::forget_device`), one word. What deleting a machine
+            // *means* is the sentence in the window that follows. **This
+            // is the one way to it** since 2026-09-28: the map's card
+            // forgot a machine on one press, and went with the map's
+            // second home (`check-face` 「删除一台机器永远先问」).
             //
             // What the user once called 断开 is 暂停 above (第四轮: 「机器的
             // 断开指的是暂停」), which khor now has for one machine too.
@@ -234,15 +261,31 @@ export function DevicesList({
       openData: { "data-row-open": "" },
     };
   });
+  // The row it was opened on, re-read off the table so the title follows
+  // a rename and the window goes if the machine does.
+  const restyled = restyling ? (rows.find((d) => d.id === restyling.id) ?? null) : null;
   return (
-    <SideList
-      rows={side}
-      loading={loading}
-      query={query}
-      label={groupLabel}
-      // An empty device table cannot happen — this machine is always in
-      // it — so zero rows is always a filter, said in its own words.
-      none={gui.no_matches}
-    />
+    <>
+      <SideList
+        rows={side}
+        loading={loading}
+        query={query}
+        label={groupLabel}
+        // An empty device table cannot happen — this machine is always in
+        // it — so zero rows is always a filter, said in its own words.
+        none={gui.no_matches}
+      />
+      {/* An errand — 办完就回去 — so a window over the list, not a page.
+          Changing a style keeps it open (the table is re-read, the
+          window stays): only closing it closes it. */}
+      <Dialog open={restyled !== null} onOpenChange={(o) => !o && setRestyling(null)}>
+        <DialogContent data-avatar-dialog={restyled?.id}>
+          <DialogHeader>
+            <DialogTitle>{restyled?.shown ?? ""}</DialogTitle>
+          </DialogHeader>
+          {restyled && <FaceSettings machine={restyled.id} onChanged={() => onRestyled?.()} />}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

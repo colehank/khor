@@ -37,7 +37,13 @@
 //      the foot): a tab's face inside its tab, one right edge for the
 //      session rows' words and for a workspace row's column selected or
 //      not, a 额度 reading clear of its corner, and 拉过来 drawn only
-//      where somebody is.
+//      where somebody is;
+//   8. the map's lines (2026-09-28 audit, 「地图的线」 at the foot): no
+//      drawn stretch of an edge enters a disc or crosses a word on the
+//      map, and no hop word sits on another word — at three window sizes;
+//   9. a machine is never deleted in one press (「删除一台机器永远先问」):
+//      the row menu's 删除… and any 删除 a press on the map offers put the
+//      one delete window up before anything is sent.
 //
 // The routed rows are shaped by hand from the bindings. If the shape
 // drifts, the list draws nothing, the title probe finds no element, and
@@ -2035,16 +2041,36 @@ try {
     forgotten.push(JSON.parse(r.request().postData() || "{}").machine);
     r.fulfill({ contentType: "application/json", body: JSON.stringify("已移除设备: beta") });
   });
-  // 中继, behind 高级 on the 网络 page. Routed so the fold has something
-  // to draw once it is opened — and **only then**: the claim in §4C is
-  // that nothing here is fetched while the fold is shut.
+  // 中继, the 网络 page's second group (open, and read on arrival, since
+  // 2026-09-28 — it sat folded under 高级 until then). **The fixture
+  // holds the list between calls**, 设置's reason: what §4C proves is a
+  // round trip — add one, remove it — and a page painting what it had
+  // just sent would pass over a node that never took it. Refused the
+  // node's way: an address that is not http(s), or only-mine over an
+  // empty list.
   const relaysAsked = [];
+  const relaysSet = [];
+  let relayMine = ["http://relay.gate:4433"];
+  let relayOnly = false;
+  const relayChoices = () => ({
+    mine: relayMine,
+    in_use: relayOnly ? relayMine : [...new Set(["http://relay.gate:4433", ...relayMine])],
+    only_mine: relayOnly,
+  });
   await page.route("**/relays", (r) => {
     relaysAsked.push(Date.now());
-    r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({ mine: ["http://relay.gate:4433"], in_use: ["http://relay.gate:4433"], only_mine: false }),
-    });
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(relayChoices()) });
+  });
+  await page.route("**/set_relays", (r) => {
+    const { urls, only_mine } = JSON.parse(r.request().postData() || "{}");
+    relaysSet.push({ urls, only_mine });
+    if (!urls.every((u) => /^https?:\/\//.test(u)) || (only_mine && urls.length === 0)) {
+      r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(`no: ${urls.join(" ")}`) });
+      return;
+    }
+    relayMine = urls;
+    relayOnly = only_mine;
+    r.fulfill({ contentType: "application/json", body: JSON.stringify(relayChoices()) });
   });
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
@@ -2628,13 +2654,12 @@ try {
       },
     },
     {
-      // The mesh is the 网络 page's body (docs/MORE.md 第二轮), reached
-      // through 「…」. It has had three doors — the app's mark, this
-      // machine's face, a row on the identity card — and this stop is
-      // what keeps「the picture is still reachable」 true across each
-      // move rather than only after the last one.
+      // The 网络 page, reached through 「…」 — a page of settings rows
+      // since 2026-09-28 (the map moved to the machines overview, which
+      // the devices stop above measures). The anchor is its last group's
+      // switch, which is only there once the relays have answered.
       name: "the network page",
-      anchor: "[data-mark-place]",
+      anchor: '[data-more-page="network"] [data-relays-only-mine]',
       go: toMesh,
       after: async () => {
         await press("[data-more-close]");
@@ -10691,9 +10716,11 @@ try {
     await wait(200);
     console.log(`devices 4P · menus: peer ${JSON.stringify(peerKeys)}, gate ${JSON.stringify(gateKeys)}`);
     // 置顶, 暂停 / 恢复, then 删除 last behind its line (2026-09-28 audit
-    // 第 16 条; it was 置顶、删除、暂停 by 第五轮 第 10 条 until then).
-    if (JSON.stringify(peerKeys) !== JSON.stringify(["pin", "pause", "forget"])) {
-      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
+    // 第 16 条; it was 置顶、删除、暂停 by 第五轮 第 10 条 until then) —
+    // and 更改头像… before it since the same day, which came off the
+    // map's retired card (src/views/DevicesList.tsx).
+    if (JSON.stringify(peerKeys) !== JSON.stringify(["pin", "pause", "avatar", "forget"])) {
+      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, 更改头像…, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
     }
     if (JSON.stringify(gateKeys.slice(0, 2)) !== JSON.stringify(["pin", "pause"])) {
       fail(`this machine's row menu reads ${JSON.stringify(gateKeys)} — 置顶, then 暂停 (no 删除 on its own row)`);
@@ -11421,258 +11448,135 @@ try {
         }
       }
 
-      // ── 网络: the page is the picture, and the four acts ───────────
+      // ── 网络: a page of settings rows, its two acts in R0 ──────────
       //
-      // 「网络就搞成地图. 更多里的一个单独的页面」 — the user, 2026-09-20.
-      // **Counted from here, not from zero.** This section runs once
-      // per posture and opens 高级 in each — an absolute count would
-      // read the *previous* posture's opening as this one fetching
-      // while shut (measured: red on the narrow pass at 2 asks, and the
-      // 2 is React's StrictMode double-mount, not a second reader).
+      // 2026-09-28, the owner: the map lives on the machines overview and
+      // nowhere else (10-layout 「机器 → 那张图」), and 网络 is a settings
+      // page like its siblings — 状态 (本机 · 已连接的机器 · 暂停同步),
+      // 中继 (使用中 · 自己的中继 · 只使用自己的中继), 离开网络… — with
+      // 邀请设备… / 加入网络… as the page's own buttons at R0's right end
+      // (D9; the narrow face has no R0 and they sit in the page's head).
+      // It superseded 2026-09-20's 「网络就搞成地图」.
+      //
+      // **What this reads is that every capability the old page had is
+      // still reachable** — the two pairing doors, the pause round trip,
+      // the relays, leaving — and that the map is not drawn twice. Where
+      // each row sits is the acceptance walk's (30-behavior.md).
       const relaysBefore = relaysAsked.length;
       if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="network"]'))) {
         fail(`probe dead: ${posture} · 「…」 → 网络 did not open`);
         continue;
       }
+      await until(3_000, async () => (await page.locator('[data-more-page="network"] [data-relays-only-mine]').count()) > 0);
       const net = await page.evaluate(() => {
         const el = document.querySelector('[data-more-page="network"]');
         if (!el) return null;
-        const fold = el.querySelector('[data-more-fold="advanced"]');
+        // Wide: R0's buttons. Narrow: the page's own head, its R0.
+        const head =
+          document.querySelector("[data-main] [data-region-head] [data-page-actions]") ??
+          el.querySelector("[data-more-head] [data-page-actions]");
+        const body = el.querySelector(":scope > :not([data-more-head])");
         return {
-          // The picture, and it is the body of the page rather than a
-          // row on it.
-          map: el.querySelectorAll("[data-mark-place]").length,
-          acts: ["invite", "join", "pause", "leave"].map(
-            (k) => el.querySelectorAll(`[data-net-${k}]`).length,
-          ),
-          // 中继 is here and is **shut**, and while it is shut its body
-          // is not in the document at all.
-          fold: !!fold,
-          foldOpen: fold ? fold.hasAttribute("open") : null,
-          relayRows: el.querySelectorAll("[data-relay-mine], [data-relay-add]").length,
+          map: document.querySelectorAll("[data-mandala-map], [data-seat], [data-node-card]").length,
+          acts: ["invite", "join"].map((k) => (head ? head.querySelectorAll(`[data-new-item="${k}"]`).length : 0)),
+          // D9: never a row of buttons in the page.
+          inBody: body ? body.querySelectorAll("[data-new-item]").length : null,
+          pause: el.querySelectorAll('[data-net-pause][role="switch"]').length,
+          leave: el.querySelectorAll("[data-net-leave]").length,
+          fold: el.querySelectorAll("[data-more-fold]").length,
+          inUse: el.querySelector("[data-relays-in-use]")?.textContent?.trim() ?? null,
+          mine: el.querySelectorAll("[data-relay-mine]").length,
+          add: el.querySelectorAll("[data-relay-add]").length,
+          onlyMine: el.querySelectorAll("[data-relays-only-mine]").length,
+          me: el.querySelector('[data-more-fact="net-me"]')?.textContent?.trim() ?? null,
+          connected: el.querySelector('[data-more-fact="net-connected"]')?.textContent?.trim() ?? null,
         };
       });
       console.log(`网络 ${posture}: ${JSON.stringify(net)}`);
       if (!net) {
         fail(`${posture}: 「…」 → 网络 drew no page`);
       } else {
-        if (net.map !== 1) {
+        if (net.map !== 0) {
           fail(
-            `${posture}: the 网络 page draws ${net.map} map(s) — 「网络就搞成地图」, and the map ` +
-              "has no other door since the mark's place was retired (views/more/NetworkPage)",
+            `${posture}: the 网络 page draws ${net.map} piece(s) of the map — the map lives on the machines ` +
+              "overview only since 2026-09-28 (views/more/NetworkPage)",
           );
         }
-        if (net.acts.join(",") !== "1,1,1,1") {
+        if (net.acts.join(",") !== "1,1" || net.inBody !== 0) {
           fail(
-            `${posture}: the 网络 page offers ${JSON.stringify(net.acts)} of 邀请设备 / 加入网络 / ` +
-              "暂停·恢复 / 离开网络 — 「页上四个动作」 (docs/MORE.md 第二轮)",
+            `${posture}: 邀请设备… / 加入网络… read ${JSON.stringify(net.acts)} in the page's head and ${net.inBody} ` +
+              "in its body — they are the page's own buttons, at R0's right end and nowhere else (D9)",
           );
         }
-        if (!net.fold) {
-          fail(`${posture}: 中继 is not folded into 高级 on the 网络 page — 「中继折在「高级」里」`);
+        if (net.pause !== 1 || net.leave !== 1) {
+          fail(`${posture}: the 网络 page offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络… — one of each`);
         }
-        if (net.foldOpen !== false) {
+        if (!net.me || !net.me.includes("gate") || !net.connected) {
+          fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
+        }
+        // **中继 is open on arrival and read on arrival** (2026-09-28): the
+        // fold under 高级 went — `relays` is a read of this store, not a
+        // dial — so the rows are there and the call was made.
+        if (net.fold !== 0 || !net.inUse || net.mine === 0 || net.add !== 1 || net.onlyMine !== 1) {
           fail(
-            `${posture}: 高级 is open on arrival (${JSON.stringify(net.foldOpen)}) — ` +
-              "「次要的默认收起」 (docs/MORE.md 第二轮)",
+            `${posture}: 中继 reads ${JSON.stringify({ fold: net.fold, inUse: net.inUse, mine: net.mine, add: net.add, onlyMine: net.onlyMine })} — ` +
+              "使用中, 自己的中继 with its entries and 添加中继…, and 只使用自己的中继, open (views/NetSettings)",
           );
         }
-        // **The claim is not「it is hidden」, it is「it was never
-        // fetched」.** A `<details>` keeps a hidden body mounted, which
-        // for a section that reads on mount is khor dialling on behalf
-        // of a control nobody opened.
-        if (net.relayRows !== 0 || relaysAsked.length !== relaysBefore) {
-          fail(
-            `${posture}: the shut 高级 drew ${net.relayRows} relay row(s) and asked for relays ` +
-              `${relaysAsked.length - relaysBefore} time(s) — a fold that fetches while shut is ` +
-              "not folded",
-          );
+        if (relaysAsked.length === relaysBefore) {
+          fail(`${posture}: the 网络 page drew 中继 without asking for the relays — what it shows is not the node's answer`);
         }
-        const asked = relaysAsked.length;
-        await press("[data-more-fold-open]");
-        await until(3_000, async () => relaysAsked.length > asked);
-        const opened = await page.evaluate(() => ({
-          open: document.querySelector('[data-more-fold="advanced"]')?.hasAttribute("open") ?? null,
-          rows: document.querySelectorAll("[data-relay-mine], [data-relay-add]").length,
-        }));
-        console.log(`网络 ${posture} · 高级: ${JSON.stringify(opened)}`);
-        if (opened.open !== true || opened.rows === 0) {
-          fail(
-            `${posture}: opening 高级 gave ${JSON.stringify(opened)} — the relays are behind it, ` +
-              "not gone (views/NetSettings)",
-          );
-        }
-        await press("[data-more-fold-open]");
 
-        // 移除设备 lives in the card of the machine it is about, and
-        // **nowhere else in the app** (docs/MORE.md 第二轮). Pressing a
-        // seat opens that card.
-        if (!(await press('[data-seat][data-seat-me="false"]'))) {
-          fail(`probe dead: ${posture} · no other machine's seat on the map to press`);
+        // 中继, a round trip: add one through its window, then remove it.
+        const sentBefore = relaysSet.length;
+        await press("[data-relay-add]");
+        const addUp = await until(3_000, async () => (await page.locator("[data-relay-add-url]").count()) > 0);
+        if (!addUp) {
+          fail(`${posture}: 添加中继… opened no window with an address box`);
         } else {
-          await until(3_000, async () => (await page.locator("[data-node-card]").count()) > 0);
-          const card = await page.evaluate(() => ({
-            forget: document.querySelectorAll("[data-node-card-forget]").length,
-            named:
-              document.querySelector("[data-node-card-forget]")?.getAttribute("data-node-card-forget") ??
-              null,
-            word: document.querySelector("[data-node-card-forget]")?.textContent?.trim() ?? null,
-          }));
-          console.log(`网络 ${posture} · 机器卡: ${JSON.stringify(card)}`);
-          // **One act, one word** (docs/SHELL.md 第二轮): the card's button
-          // runs what the machine row's last item runs, so it reads what
-          // that item reads — compared with the row menu, not the catalog.
-          // **The ellipsis is not part of the word**: the menu's 「删除…」
-          // says a window follows (2026-09-28 audit 第 16 条), and the
-          // card's button, which forgets on one press with its sentence
-          // printed beside it, rightly carries none.
-          const verb = (w) => w.replace(/…$/, "");
-          if (card.word !== null && sidebarDelete !== null && verb(card.word) !== verb(sidebarDelete)) {
-            fail(
-              `${posture}: the machine's card says ${JSON.stringify(card.word)} for the act the row menu calls ` +
-                `${JSON.stringify(sidebarDelete)} — 「同一个动作在整个 app 里只有一个词」 (src/views/MarkPlace.tsx)`,
-            );
-          }
-          if (card.forget !== 1) {
-            fail(
-              `${posture}: the machine's card on the map offers ${card.forget} 移除设备 — ` +
-                "「移除设备在地图上那台机器的卡里」 (docs/MORE.md 第二轮)",
-            );
-          }
-          // 每台机器的头像都能改 (docs/MORE.md 第二轮). The card opens
-          // the same editor the 头像 page draws, pointed at **this**
-          // machine — and pressing a style there is an errand inside
-          // the card, so the card is still under it when the errand is
-          // done. Measured because the first wiring handed the editor
-          // 移除设备's callback: every colour press closed the card, an
-          // act that removes nothing wearing the shape of the act that
-          // does.
-          const restyledBefore = restyled.length;
-          await press(`[data-node-card-avatar]`);
-          const editorUp = await until(
-            3_000,
-            async () => (await page.locator('[data-face-axis="variant"] [data-face-option]').count()) > 0,
-          );
-          if (!editorUp) {
-            fail(`probe dead: ${posture} · 头像 on the machine's card never drew the editor`);
+          await page.fill("[data-relay-add-url]", "http://relay.two:4433");
+          await press("[data-relay-add-do]");
+          const added = await until(3_000, async () => (await page.locator('[data-relay-mine="http://relay.two:4433"]').count()) === 1);
+          if (!added || relaysSet.length === sentBefore) {
+            fail(`${posture}: adding a relay sent ${relaysSet.length - sentBefore} write(s) and drew ${added ? "its row" : "no row"}`);
           } else {
-            await pressNth('[data-face-axis="variant"] [data-face-option]', 1);
-            await until(3_000, async () => restyled.length > restyledBefore);
-            const drew = await page.evaluate(() => ({
-              card: document.querySelectorAll("[data-node-card]").length,
-              editor: document.querySelectorAll('[data-face-axis="variant"]').length,
-            }));
-            const forWhom = restyled.at(-1)?.machine ?? null;
-            console.log(`网络 ${posture} · 改头像: ${JSON.stringify({ sent: forWhom, ...drew })}`);
-            const them = devs.find((d) => !d.me);
-            if (forWhom !== them.id) {
-              fail(
-                `${posture}: the card's editor restyled ${JSON.stringify(forWhom)} while it is ` +
-                  `${JSON.stringify(them.id)}'s card — a face is 全网一份, so the one it writes is the ` +
-                  "one you pointed at (docs/MORE.md 第二轮)",
-              );
-            }
-            if (drew.card !== 1) {
-              fail(
-                `${posture}: the machine's card is gone after a restyle (${drew.card} left) — ` +
-                  "改头像 changes a face, it does not put the machine away",
-              );
-            }
-            // **Escape puts away the editor and nothing else.** The
-            // map binds Escape on `window` to close the card, and that
-            // listener does not know a dialog is open over it — so one
-            // press used to take both, and a person dismissing a colour
-            // picker lost the machine they were looking at.
-            //
-            // The instrument needs no arming: both selectors were just
-            // counted non-zero two lines above, in this same run.
-            // Read again *before* the key, so a card that went away on
-            // its own is not reported as a card Escape took.
-            await wait(1_500);
-            const settled = await page.evaluate(() => ({
-              card: document.querySelectorAll("[data-node-card]").length,
-              editor: document.querySelectorAll('[data-face-axis="variant"]').length,
-            }));
-            console.log(`网络 ${posture} · 改完之后: ${JSON.stringify(settled)}`);
-            if (settled.card !== 1 || settled.editor !== 1) {
-              fail(
-                `${posture}: a moment after the restyle the card reads ${JSON.stringify(settled)} — ` +
-                  "the re-read that follows a face write must not put the screen away",
-              );
-            }
-            await page.keyboard.press("Escape");
-            await until(3_000, async () =>
-              page.evaluate(() => document.querySelectorAll('[data-face-axis="variant"]').length === 0),
-            );
-            const afterEsc = await page.evaluate(() => ({
-              card: document.querySelectorAll("[data-node-card]").length,
-              editor: document.querySelectorAll('[data-face-axis="variant"]').length,
-            }));
-            console.log(`网络 ${posture} · 收起编辑器: ${JSON.stringify(afterEsc)}`);
-            if (afterEsc.editor !== 0 || afterEsc.card !== 1) {
-              fail(
-                `${posture}: Escape over the 头像 editor left ${JSON.stringify(afterEsc)} — ` +
-                  "it dismisses the top layer, not the card underneath it",
-              );
-            }
-          }
-
-          const sent = forgotten.length;
-          await press("[data-node-card-forget]");
-          await until(3_000, async () => forgotten.length > sent);
-          if (forgotten.at(-1) !== devs.find((d) => !d.me).name) {
-            fail(
-              `${posture}: 移除设备 sent ${JSON.stringify(forgotten.at(-1))} — the card names the ` +
-                "machine, so nothing else can be what it removes",
-            );
+            await press('[data-relay-mine="http://relay.two:4433"] [data-setting-trail]');
+            const gone = await until(3_000, async () => (await page.locator('[data-relay-mine="http://relay.two:4433"]').count()) === 0);
+            if (!gone) fail(`${posture}: 移除 on a relay of your own left its row on the page`);
           }
         }
 
-        // 暂停 / 恢复 and 离开网络 moved here from the identity card.
-        // The two states are compared **against each other**, read off
-        // the screen — a rename in `zh.toml` then moves the gate with
-        // the product instead of turning it red (this file's rule).
-        const talkingSays = await page.evaluate(
-          () => document.querySelector("[data-net-pause]")?.textContent?.trim() ?? null,
-        );
+        // 暂停同步 — a switch now, and the same round trip: the file says
+        // paused, the switch says it, the page's 本机 says it, and so does
+        // the rail's face (docs/MORE.md 暂停: 「侧栏头像上看得出」).
+        const talking = await page.evaluate(() => document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") ?? null);
         await press("[data-net-pause]");
         await until(2_000, async () =>
-          page.evaluate(() => !!document.querySelector("[data-net-pause][data-paused]")),
+          page.evaluate(() => document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") === "true"),
         );
         const whilePaused = await page.evaluate(() => ({
-          says: document.querySelector("[data-net-pause]")?.textContent?.trim() ?? null,
-          // **The rail, not the page**: a machine deliberately quiet
-          // should not have to be asked, and the rail is the one thing
-          // on screen the whole time (docs/MORE.md 暂停).
+          on: document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") ?? null,
           rail: !!document.querySelector("[data-rail-mark][data-paused]"),
-          said: document.querySelector("[data-net-paused]")?.textContent?.trim() ?? null,
+          state: document.querySelector("[data-net-state]")?.getAttribute("data-net-state") ?? null,
         }));
-        console.log(
-          `网络 ${posture} · 暂停: ${JSON.stringify({ talking: talkingSays, ...whilePaused })}`,
-        );
-        if (!talkingSays || whilePaused.says === talkingSays) {
-          fail(
-            `${posture}: the pause control says ${JSON.stringify(talkingSays)} in both states — ` +
-              "a machine that is talking and one that is not offer different acts",
-          );
+        console.log(`网络 ${posture} · 暂停: ${JSON.stringify({ talking, ...whilePaused, sent: gatePaused })}`);
+        if (talking !== "false" || whilePaused.on !== "true" || gatePaused !== true) {
+          fail(`${posture}: 暂停同步 went ${JSON.stringify(talking)} → ${JSON.stringify(whilePaused.on)} with the node at paused=${gatePaused} — a round trip, the switch showing what the file says`);
         }
         if (!whilePaused.rail) {
-          fail(
-            `${posture}: this machine is paused and the rail's face says nothing — ` +
-              "「侧栏头像上看得出」 (docs/MORE.md 暂停)",
-          );
+          fail(`${posture}: this machine is paused and the rail's face says nothing — 「侧栏头像上看得出」 (docs/MORE.md 暂停)`);
         }
-        if (!whilePaused.said) {
-          fail(`${posture}: a paused machine's 网络 page says nothing about being paused`);
+        if (whilePaused.state !== "paused") {
+          fail(`${posture}: a paused machine's 本机 row says ${JSON.stringify(whilePaused.state)}, not that it is paused`);
         }
         await press("[data-net-pause]");
         await until(2_000, async () =>
-          page.evaluate(() => !document.querySelector("[data-net-pause][data-paused]")),
+          page.evaluate(() => document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") === "false"),
         );
 
-        // 离开网络 is a dialog, and **the confirmation is always there**
+        // 离开网络 is a window, and **the confirmation is always there**
         // (docs/MORE.md: 这一件不可撤回). Live over an empty box would be
-        // one press between looking at a map and being in no network.
+        // one press between reading a page and being in no network.
         await press("[data-net-leave]");
         await until(3_000, async () => (await page.locator("[data-net-leave-name]").count()) > 0);
         const beforeTyping = await page.evaluate(() =>
@@ -11728,6 +11632,51 @@ try {
         }
       }
       await press("[data-more-close]");
+
+      // 每台机器的头像都能改 (docs/MORE.md 第二轮) — **from its row's menu**
+      // since 2026-09-28: 更改头像… opens the same editor 这台机器 draws,
+      // on that row's machine (it was 头像 on the card the map opened,
+      // which went with the map's second home). A face is 全网一份, so the
+      // one it writes is the one you pointed at; a restyle keeps the window
+      // open (the table is re-read under it); Escape takes the window.
+      await open("devices");
+      await wait(400);
+      const theirRow = page.locator('[data-list] [data-side-row][data-side-menu="true"]:not([data-me="true"]) [data-side-open]').first();
+      if ((await theirRow.count()) === 0) {
+        fail(`probe dead: ${posture} · no other machine's row to open 更改头像… on`);
+      } else {
+        await theirRow.click({ button: "right" });
+        await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="avatar"]').count()) > 0);
+        await press('[data-row-menu] [data-menu-item="avatar"]');
+        const editorUp = await until(
+          3_000,
+          async () => (await page.locator('[data-avatar-dialog] [data-face-axis="variant"] [data-face-option]').count()) > 0,
+        );
+        if (!editorUp) {
+          fail(`${posture}: 更改头像… on a machine row opened no editor (src/views/DevicesList.tsx)`);
+        } else {
+          const restyledBefore = restyled.length;
+          await pressNth('[data-avatar-dialog] [data-face-axis="variant"] [data-face-option]', 1);
+          await until(3_000, async () => restyled.length > restyledBefore);
+          const forWhom = restyled.at(-1)?.machine ?? null;
+          const them = devs.find((d) => !d.me);
+          await wait(1_500);
+          const settled = await page.locator("[data-avatar-dialog]").count();
+          console.log(`网络 ${posture} · 更改头像: ${JSON.stringify({ sent: forWhom, open: settled })}`);
+          if (forWhom !== them.id) {
+            fail(
+              `${posture}: 更改头像… restyled ${JSON.stringify(forWhom)} from ${JSON.stringify(them.id)}'s row — ` +
+                "a face is 全网一份, so the one it writes is the one you pointed at (docs/MORE.md 第二轮)",
+            );
+          }
+          if (settled !== 1) {
+            fail(`${posture}: the 头像 window is gone a moment after a restyle — the re-read must not put it away`);
+          }
+          await page.keyboard.press("Escape");
+          const shut = await until(3_000, async () => (await page.locator("[data-avatar-dialog]").count()) === 0);
+          if (!shut) fail(`${posture}: Escape left the 头像 window open`);
+        }
+      }
 
       // …and the avatar's own page, which is the fifth and is not on
       // that menu: it is what pressing this machine's face opens now.
@@ -12621,7 +12570,7 @@ try {
     const READY = {
       settings: '[data-more-fact="store-path"]',
       appearance: '[data-config-row="theme"]',
-      network: '[data-more-page="network"]',
+      network: '[data-more-page="network"] [data-relays-only-mine]',
       security: '[data-config-row="confirm-delete"]',
       identity: "[data-iface]",
       doctor: "[data-doctor-again]",
@@ -12902,7 +12851,12 @@ try {
   // number under it passes. It blocks the flat one, which is the shape
   // that was actually shipped.
   await page.setViewportSize({ width: 1120, height: 1000 });
-  await toMesh();
+  // The map, where it lives since 2026-09-28: the machines overview,
+  // which is what that landing shows with nothing picked — and nothing
+  // un-picks a machine, so a fresh page.
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  await open("devices");
   await wait(900);
   const DENSE = 24;
   const STEP = 1.25;
@@ -12917,9 +12871,13 @@ try {
   // added later is measured without anyone remembering to list it — and
   // if the structure moves out from under this, the probe finds nothing
   // and says so instead of passing.
+  //
+  // (Since 2026-09-28 the place is the map alone, on the machines
+  // overview, and it has no halves; the structural probe stays so a
+  // pane added beside it later is measured without being listed.)
   const regions = await page.evaluate(
     ({ DENSE }) => {
-      const root = document.querySelector("[data-mark-place]");
+      const root = document.querySelector("[data-mandala-map]");
       if (!root) return null;
       const of = (el) => {
         const leaves = [...el.querySelectorAll("*")].filter(
@@ -12941,12 +12899,10 @@ try {
     },
     { DENSE },
   );
-  if (!regions) fail("probe dead: the mark's place never drew, so nothing below measured it");
-  else if (regions.whole.leaves === 0) fail("probe dead: the mark's place drew no text at all");
-  else if (regions.halves.length === 0) {
-    fail("probe dead: the mark's place has no halves to measure — its structure moved");
-  } else {
-    for (const r of [{ name: "the mark's place", ...regions.whole }, ...regions.halves]) {
+  if (!regions) fail("probe dead: the map never drew, so nothing below measured it");
+  else if (regions.whole.leaves === 0) fail("probe dead: the map drew no text at all");
+  else {
+    for (const r of [{ name: "the map", ...regions.whole }, ...regions.halves]) {
       const entries = Object.entries(r.sizes).map(([px, n]) => [Number(px), n]);
       const [modal, modalCount] = entries.slice().sort((a, b) => b[1] - a[1])[0];
       const largest = Math.max(...entries.map(([px]) => px));
@@ -13217,23 +13173,9 @@ try {
       console.log(`dials: arcs ${JSON.stringify(dials.arcW)} across, ${JSON.stringify(dials.toWord)} above their words, gaps ${JSON.stringify(dials.gaps)}, 100%@card ${fit ? fit.widest : "?"} vs inner ${fit ? fit.inner : "?"}`);
     }
   }
-  await toMesh();
-  await wait(400);
-  await page.locator('[data-seat][data-seat-me="true"]').click();
-  const mineNode = await arcsOn("[data-node-card]");
-  if (!mineNode) fail("probe dead: this machine's node card never opened");
-  else if (mineNode.windows !== 0) {
-    fail(`the home node card draws ${mineNode.windows} quota windows`);
-  }
-  await page.keyboard.press("Escape");
-  await wait(300);
-  await page.locator('[data-seat][data-seat-me="false"]').first().click();
-  const peerNode = await arcsOn("[data-node-card]");
-  if (!peerNode) fail("probe dead: the peer's node card never opened");
-  else if (peerNode.windows !== 0) {
-    fail(`a peer's node card draws ${peerNode.windows} quota windows`);
-  }
-  await page.keyboard.press("Escape");
+  // (The map's node card was the third machine surface measured here; it
+  // retired on 2026-09-28 with the map's second home — a seat on the
+  // overview opens the machine card measured above.)
 
   // ── 8) 额度: the three shapes of a reading, and the band ──────────
   // The fixture routes three accounts (`board` above): a fraction, a
@@ -15401,6 +15343,27 @@ try {
       `${trend} [data-plot-pick="view"]`,
     );
     const mineFoot = (await page.locator(`${half} [data-plot-foot]`).count()) > 0;
+    //   **Where each figure's ••• sits in its section's heading row**
+    //   (2026-09-28): its right edge against the row's, and its centre
+    //   against the row's centre — read here on the 額度 card, and on the
+    //   machine card below; compared after both.
+    const seatOf = (btn) =>
+      page.evaluate((s) => {
+        const b = document.querySelector(s);
+        const head = b?.closest("[data-section-head]");
+        if (!b || !head) return null;
+        const r = b.getBoundingClientRect();
+        const h = head.getBoundingClientRect();
+        return {
+          back: +(h.right - r.right).toFixed(1),
+          mid: +((r.top + r.bottom) / 2 - (h.top + h.bottom) / 2).toFixed(1),
+          title: (head.querySelector("h2")?.textContent ?? "").trim(),
+        };
+      }, btn);
+    const quotaSeats = {
+      stats: await seatOf(`${stats} [data-plot-settings]`),
+      trend: await seatOf(`${trend} [data-plot-settings]`),
+    };
     await open("devices");
     await press("[data-list] [data-row-open]");
     await until(8_000, async () => (await page.locator("[data-machine-card] [data-top-plot]").count()) > 0);
@@ -15415,27 +15378,51 @@ try {
       "[data-machine-card] [data-plot-settings]",
       '[data-machine-card] [data-plot-pick="x"]',
     );
-    if (!mine || !theirs || !mineHead || !theirsHead) {
+    //   ⚠️ **2026-09-28: the shape both surfaces share changed, and they
+    //   still share it.** The owner took the boxes off the machine board
+    //   — its parts are sections of the board, one hairline between them,
+    //   each with a small heading row and the figure's ••• at that row's
+    //   right end — and the 額度 card's usage half took the same shape the
+    //   same day (the lead's call, for the owner to confirm), so
+    //   `components/Panel` retired. What is compared now:
+    //
+    //     - **no box on either side**: the walk up from each figure finds
+    //       no bordered ground before the board (`cardOf` is null on both);
+    //     - **one seat for the •••, measured in its section's heading row**
+    //       on all three figures: its right edge against the row's, and
+    //       its centre against the row's centre (`seatOf` below);
+    //     - the column heads, as before.
+    const seats = { ...quotaSeats, machine: await seatOf("[data-machine-card] [data-plot-settings]") };
+    console.log(`one product · ••• in its section's heading row: ${JSON.stringify(seats)}`);
+    if (!seats.machine || !seats.stats || !seats.trend) {
       fail(
-        `probe dead: cards ${JSON.stringify([mine, theirs])} heads ${JSON.stringify([mineHead, theirsHead])} — ` +
-          `two surfaces were not both measured, so 「they are one product」 compared nothing`,
-      );
-    } else if (parseFloat(theirs.radius) <= 0 || parseFloat(theirs.border) <= 0 || !(theirsHead.h > 0)) {
-      fail(
-        `the machine card's own block reads radius ${theirs.radius}, border ${theirs.border}, head ${theirsHead} — ` +
-          `a reference with nothing in it makes every comparison below pass by agreeing about nothing`,
+        `a figure's ••• is not in a section heading row (${JSON.stringify(seats)}) — since 2026-09-28 it sits at the ` +
+          "right end of its section's heading row on both cards (components/SectionHead)",
       );
     } else {
-      for (const k of ["radius", "border", "pad", "bg"]) {
-        if (mine[k] !== theirs[k]) {
-          fail(
-            `the 額度 card's usage block has ${k} ${mine[k]} and the machine card's block has ${theirs[k]} — ` +
-              `these are one product's two surfaces, and 「看起来是两个产品」 is what a reader calls this. ` +
-              `**Both come from \`components/Panel\`; if that is meant to change, change the component** — ` +
-              `a value edited on one side is the drift this measures.`,
-          );
+      for (const k of ["back", "mid"]) {
+        const vs = [seats.machine[k], seats.stats[k], seats.trend[k]];
+        if (Math.max(...vs) - Math.min(...vs) > 0.6) {
+          fail(`the ••• sits ${k} ${JSON.stringify(vs)} (machine / 額度 models / 額度 usage) in its heading row — one seat, both cards`);
         }
       }
+    }
+    //   (No box is the expected reading on both sides now, so `null` is
+    //   the pass, not a dead probe; what proves the two surfaces were
+    //   reached is their column heads and the ••• seats above.)
+    if (!mineHead || !theirsHead) {
+      fail(
+        `probe dead: heads ${JSON.stringify([mineHead, theirsHead])} — ` +
+          `two surfaces were not both measured, so 「they are one product」 compared nothing`,
+      );
+    } else if (theirs !== null || mine !== null) {
+      fail(
+        `a figure sits in a box — machine ${JSON.stringify(theirs)}, 額度 ${JSON.stringify(mine)} — both cards' parts are ` +
+          "sections on the board since 2026-09-28, no border, ground or inset of their own (components/SectionHead)",
+      );
+    } else if (!(theirsHead.h > 0)) {
+      fail(`the machine card's column head reads ${JSON.stringify(theirsHead)} — a reference with nothing in it agrees with anything`);
+    } else {
       if (Math.abs(mineHead.h - theirsHead.h) > 0.5) {
         fail(`a column head is ${mineHead.h} tall on the 額度 card and ${theirsHead.h} on the machine card — one table, two rows of controls`);
       }
@@ -15480,8 +15467,9 @@ try {
         //   **Since 2026-09-28 the seat is pinned top-right** — the head
         //   row's right end (`labelSeat("settings")`) — so its x is read
         //   from the right edge (`back`), per the note above.
-        ["settings seat x", drawnMine.settings?.back, drawnTheirs.settings?.back],
-        ["settings seat y", drawnMine.settings?.y, drawnTheirs.settings?.y],
+        //   ⚠️ **The same evening the ••• left every figure** for the
+        //   right end of its section's heading row, on both cards; its
+        //   seat is compared there (`seatOf`, above), not in the frame.
         ["x label up", drawnMine.xLabel?.up, drawnTheirs.xLabel?.up],
         //   **The third figure.** The bar chart's controls sat in a row
         //   under it until 2026-09-09 — the same control in the same
@@ -15491,8 +15479,6 @@ try {
         //   method has to reach the figure the reader opens first.
         ["bar tick ink", drawnBars?.font, drawnTheirs.font],
         ["bar y-tick gutter", drawnBars?.gutter, drawnTheirs.gutter],
-        ["bar settings seat x", drawnBars?.settings?.back, drawnTheirs.settings?.back],
-        ["bar settings seat y", drawnBars?.settings?.y, drawnTheirs.settings?.y],
         ["bar x label up", drawnBars?.xLabel?.up, drawnTheirs.xLabel?.up],
       ]) {
         const same = typeof mineV === "number" && typeof theirsV === "number" ? Math.abs(mineV - theirsV) <= 0.6 : mineV === theirsV;
@@ -18666,8 +18652,11 @@ try {
           //   2026-09-08**, not inside the label. Counting them where
           //   they used to be would answer 0 forever — a selector that
           //   still matches something and never matches the thing.
-          words: [...plot.querySelectorAll("[data-plot-settings-open] [data-plot-axis]")].length,
-          rows: [...plot.querySelectorAll("[data-plot-settings-open] [data-plot-set]")].map((n) => n.dataset.plotSet).join(","),
+          //   ⚠️ **In the section, not the figure, since 2026-09-28**:
+          //   the ••• and its panel moved to the processes section's
+          //   heading row, so the figure no longer contains them.
+          words: [...(plot.closest("[data-machine-section]") ?? plot).querySelectorAll("[data-plot-settings-open] [data-plot-axis]")].length,
+          rows: [...(plot.closest("[data-machine-section]") ?? plot).querySelectorAll("[data-plot-settings-open] [data-plot-set]")].map((n) => n.dataset.plotSet).join(","),
           //   Collapsed, each axis carries one word — and it has to be
           //   the quantity that axis is *drawn with*, not a fixed
           //   caption. A label reading 「横」 would pass a check that
@@ -22117,6 +22106,249 @@ try {
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
     await wait(900);
+  }
+
+  // ── 地图的线停在圆盘边上、不穿字 (2026-09-28 UI 审计) ───────────────
+  //
+  // The audit's finding, on the machines overview: the dashed relay line
+  // ran through elder's disc, its name and 「1 分钟前的读数」, and the
+  // direct line through gate's disc and its name — every edge was drawn
+  // centre to centre, under everything, and the hop word sat on a chip
+  // that hid only the part of the line behind itself. Measured, not
+  // looked at: **no drawn stretch of any edge enters a disc, and none
+  // crosses a piece of text on the map** (a name, an age, 待批, a hop
+  // word); and a hop word does not sit on another piece of text.
+  //
+  // Read at three window sizes, the smallest one where the square is
+  // under 400 across — the size where captions are largest against the
+  // gaps between seats. (The narrow face has no overview screen: its
+  // machines landing opens on the list, 10-layout's narrow rule.)
+  {
+    const SIZES = [
+      [1400, 900],
+      [1000, 760],
+      [800, 600],
+    ];
+    for (const [w, h] of SIZES) {
+      await page.setViewportSize({ width: w, height: h });
+      // The overview is what the machines landing shows with nothing
+      // picked, and nothing un-picks a machine — so a fresh page.
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await open("devices");
+      // **The biggest window must draw lines** — that is what proves
+      // this probe reads them. On the smallest one a line may have no
+      // stretch left between a caption and the next word, and then it
+      // is not drawn at all: the hop word still says the road, and a
+      // line under a word is the thing this section forbids.
+      const mustDraw = w === SIZES[0][0];
+      if (!(await until(5_000, async () => (await page.locator(mustDraw ? "[data-mandala-map] line[data-edge]" : "[data-mandala-map] [data-seat]").count()) > 0))) {
+        fail(`probe dead: map lines · ${w}×${h} — the machines overview drew ${mustDraw ? "no edge" : "no seat"}`);
+        continue;
+      }
+      await wait(600);
+      const read = await page.evaluate(() => {
+        const map = document.querySelector("[data-mandala-map]");
+        if (!map) return null;
+        const box = (el) => {
+          const r = el.getBoundingClientRect();
+          return { l: r.left, t: r.top, r: r.right, b: r.bottom };
+        };
+        // The disc is the seat's first child — the box the face fills
+        // (`MandalaMap`'s `Seat`: the positioned box is exactly the face).
+        const discs = [...map.querySelectorAll("[data-seat] > :first-child")].map((el) => {
+          const b = box(el);
+          return { who: el.closest("[data-seat]").getAttribute("data-seat").slice(0, 4), x: (b.l + b.r) / 2, y: (b.t + b.b) / 2, rad: (b.r - b.l) / 2 };
+        });
+        const texts = [
+          ...map.querySelectorAll("[data-seat-name], [data-seat-age], [data-seat-never], [data-seat-blocked], [data-edge-word]"),
+        ]
+          .filter((el) => el.getBoundingClientRect().width > 0)
+          .map((el) => ({
+            what: [...el.attributes].find((a) => a.name.startsWith("data-"))?.name ?? "?",
+            text: (el.textContent ?? "").trim(),
+            hop: el.hasAttribute("data-edge-word"),
+            ...box(el),
+          }));
+        const segs = [...map.querySelectorAll("line[data-edge]")].map((ln) => {
+          const m = ln.getScreenCTM();
+          const at = (x, y) => {
+            const p = new DOMPoint(x, y).matrixTransform(m);
+            return { x: p.x, y: p.y };
+          };
+          const n = (a) => Number(ln.getAttribute(a));
+          return { edge: ln.getAttribute("data-edge").slice(0, 4), a: at(n("x1"), n("y1")), b: at(n("x2"), n("y2")) };
+        });
+        return { discs, texts, segs };
+      });
+      if (!read || read.discs.length < 2 || (mustDraw && read.segs.length === 0) || read.texts.length === 0) {
+        fail(`probe dead: map lines · ${w}×${h} read ${JSON.stringify(read && { discs: read.discs.length, segs: read.segs.length, texts: read.texts.length })}`);
+        continue;
+      }
+      // Distance from a point to a segment, and whether a segment
+      // touches a box (Liang–Barsky clip against the box).
+      const toSeg = (p, s) => {
+        const dx = s.b.x - s.a.x;
+        const dy = s.b.y - s.a.y;
+        const len2 = dx * dx + dy * dy;
+        const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - s.a.x) * dx + (p.y - s.a.y) * dy) / len2));
+        return Math.hypot(p.x - (s.a.x + t * dx), p.y - (s.a.y + t * dy));
+      };
+      const crosses = (s, b) => {
+        const dx = s.b.x - s.a.x;
+        const dy = s.b.y - s.a.y;
+        let t0 = 0;
+        let t1 = 1;
+        for (const [p, q] of [
+          [-dx, s.a.x - b.l],
+          [dx, b.r - s.a.x],
+          [-dy, s.a.y - b.t],
+          [dy, b.b - s.a.y],
+        ]) {
+          if (p === 0) {
+            if (q < 0) return false;
+          } else {
+            const r = q / p;
+            if (p < 0) t0 = Math.max(t0, r);
+            else t1 = Math.min(t1, r);
+            if (t0 > t1) return false;
+          }
+        }
+        return t1 - t0 > 1e-6;
+      };
+      // Half a pixel of grace on each claim: anti-aliasing, not layout.
+      const shrink = (b) => ({ l: b.l + 0.5, t: b.t + 0.5, r: b.r - 0.5, b: b.b - 0.5 });
+      const inDisc = [];
+      const onText = [];
+      for (const s of read.segs) {
+        for (const d of read.discs) {
+          const gap = toSeg(d, s);
+          if (gap < d.rad - 0.5) inDisc.push(`${s.edge}→${d.who} (${gap.toFixed(1)} from the centre of a ${d.rad.toFixed(1)} disc)`);
+        }
+        for (const t of read.texts) {
+          if (crosses(s, shrink(t))) onText.push(`${s.edge} through ${t.what} 「${t.text}」`);
+        }
+      }
+      const overlap = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
+      const stacked = [];
+      for (const hop of read.texts.filter((t) => t.hop)) {
+        for (const other of read.texts) {
+          if (other !== hop && overlap(hop, other)) stacked.push(`「${hop.text}」 on 「${other.text}」`);
+        }
+      }
+      console.log(
+        `map lines · ${w}×${h}: ${read.segs.length} stretch(es), ${read.discs.length} discs, ${read.texts.length} texts — ` +
+          `${inDisc.length} into a disc, ${onText.length} across text, ${stacked.length} hop word(s) on text`,
+      );
+      if (inDisc.length) {
+        fail(`map lines · ${w}×${h}: an edge runs into a disc — ${inDisc.join("; ")} — a line stops at the disc's edge (src/views/MandalaMap.tsx)`);
+      }
+      if (onText.length) {
+        fail(`map lines · ${w}×${h}: an edge crosses text — ${onText.join("; ")} — a line never runs under a word (src/views/MandalaMap.tsx)`);
+      }
+      if (stacked.length) {
+        fail(`map lines · ${w}×${h}: a hop word sits on other text — ${stacked.join("; ")} (src/views/MandalaMap.tsx)`);
+      }
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
+  // ── 删除一台机器永远先问 (2026-09-28 UI 审计) ────────────────────────
+  //
+  // The audit's finding: the card that opened over the map when a seat
+  // was pressed had a 「删除」 that forgot the machine on one press, with
+  // no window — while every other 删除 in the app goes through the one
+  // window (docs/SHELL.md 第四轮 「删除一律先问」, `confirm-delete` on).
+  // Measured on **every surface a machine's seat can be pressed on** —
+  // the machines overview and 「…」 → 网络, wherever the map is drawn —
+  // and on the machine row's own menu: whatever 删除 a press there
+  // offers puts the window up and sends nothing until it is answered.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const wordOf = (w) => (w ?? "").trim().replace(/…$/, "");
+    // The row menu's last item is the word 删除 is spelled with in this
+    // run (compared against the screen, not the catalog).
+    await open("devices");
+    await until(5_000, async () => (await page.locator("[data-list] [data-row-open]").count()) >= 2);
+    // 4V's way into a row's 删除: its menu's destructive item.
+    const other = page.locator('[data-list] [data-side-row][data-side-menu="true"]:not([data-me="true"]) [data-side-open]').first();
+    let verb = null;
+    if ((await other.count()) === 0) {
+      fail("probe dead: delete asks · no other machine's row to open a menu on");
+    } else {
+      await other.click({ button: "right" });
+      await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 1);
+      const last = page.locator('[data-row-menu] [data-menu-item][data-destructive="true"]');
+      verb = wordOf(await last.textContent());
+      const before = forgotten.length;
+      await last.click();
+      const asked = await until(3_000, async () => (await page.locator("[data-delete-dialog]").count()) > 0);
+      console.log(`delete asks · row menu: ${JSON.stringify({ verb, asked, sent: forgotten.length - before })}`);
+      if (!asked || forgotten.length !== before) {
+        fail(`delete asks · the machine row's ${JSON.stringify(verb)} ${asked ? "asked" : "did not ask"} and sent ${forgotten.length - before} forget(s) — 删除一律先问 (docs/SHELL.md 第四轮)`);
+      }
+      if (await page.locator("[data-delete-keep]").count()) await press("[data-delete-keep]");
+      else await page.keyboard.press("Escape");
+      await wait(300);
+    }
+    // Every place a seat can be pressed.
+    const maps = [
+      ["the machines overview", async () => {
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        return open("devices");
+      }],
+      ["「…」 → 网络", async () => (await press("[data-rail-more]")) && press('[data-more-open="network"]')],
+    ];
+    let offered = 0;
+    for (const [where, go] of maps) {
+      if (!(await go())) {
+        fail(`probe dead: delete asks · could not reach ${where}`);
+        continue;
+      }
+      await wait(600);
+      const seat = page.locator('[data-seat][data-seat-me="false"]').first();
+      if ((await seat.count()) === 0) {
+        console.log(`delete asks · ${where}: no map here`);
+        continue;
+      }
+      await seat.click();
+      await wait(700);
+      // Any 删除 on screen now that is not a row menu's — a card, a
+      // button in the board. Found by its word, so a new surface that
+      // grows one is measured without being listed here.
+      const deletes = page.locator("[data-main] button, [data-screen] button").filter({
+        hasText: new RegExp(`^\\s*${verb ?? "删除"}…?\\s*$`),
+      });
+      const n = await deletes.count();
+      console.log(`delete asks · ${where}: a seat pressed, ${n} 删除 on screen`);
+      for (let i = 0; i < n; i += 1) {
+        offered += 1;
+        const b = deletes.nth(i);
+        const said = (await b.textContent())?.trim() ?? "";
+        const before = forgotten.length;
+        await b.click();
+        const asked = await until(2_000, async () => (await page.locator("[data-delete-dialog]").count()) > 0);
+        console.log(`delete asks · ${where} · 「${said}」: ${JSON.stringify({ asked, sent: forgotten.length - before })}`);
+        if (!asked || forgotten.length !== before) {
+          fail(
+            `delete asks · ${where}: 「${said}」 ${asked ? "asked" : "did not ask"} and sent ${forgotten.length - before} forget(s) ` +
+              "on one press — every 删除 of a machine goes through the one window (components/DeleteDialog)",
+          );
+        } else if (!said.endsWith("…")) {
+          fail(`delete asks · ${where}: 「${said}」 raises a window and does not say so — 「删除…」 (components/Button)`);
+        }
+        if (await page.locator("[data-delete-keep]").count()) await press("[data-delete-keep]");
+        await page.keyboard.press("Escape");
+        await wait(300);
+      }
+      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    }
+    console.log(`delete asks · ${offered} 删除 offered off the map`);
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
