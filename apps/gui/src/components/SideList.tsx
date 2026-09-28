@@ -29,6 +29,7 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { walkList } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
 
@@ -139,6 +140,15 @@ function useRowFlip(deps: string) {
   }, [deps]);
   return box;
 }
+
+/** Where the keyboard's focus stops in a list: each row's open button,
+    each group's heading, the fold at the foot — in reading order. */
+const WALK = "[data-side-open], [data-side-group], [data-old-fold]";
+
+/** The focus ring on a list's buttons: the brand's ring colour, drawn
+    inside the row so the next row does not cover it (README: the ring is
+    one of `brand-strong`'s three posts). */
+const RING = "rounded-md focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring";
 
 /** Whether a row answers what is typed in the box: a plain substring,
     any case — the reading every box in this app gives a typed word. */
@@ -257,7 +267,7 @@ export function SideList({
         data-side-open
         {...r.openData}
         onClick={r.onOpen}
-        className="flex min-h-row-2 min-w-0 flex-1 items-center gap-row px-in py-1 text-left"
+        className={cn("flex min-h-row-2 min-w-0 flex-1 items-center gap-row px-in py-1 text-left", RING)}
       >
         <FaceMark
           face={r.face}
@@ -308,7 +318,7 @@ export function SideList({
             {...headData?.(r.group)}
             aria-expanded={open}
             onClick={() => toggle(r.group)}
-            className="flex min-h-touch w-full items-center gap-xxs rounded-md px-in pt-in pb-xxs text-left text-group text-tertiary"
+            className={cn("flex min-h-touch w-full items-center gap-xxs rounded-md px-in pt-in pb-xxs text-left text-group text-tertiary", RING)}
           >
             {/* The family's chevron at 12 (components/GroupHeader), right
                 when shut and turned a quarter when open — it is centred
@@ -360,7 +370,15 @@ export function SideList({
     return list.map((r, i) => one(r, list[i - 1], size.get(r.group) ?? 0));
   };
   return (
-    <div ref={box} data-side-list {...mark} className="px-in pb-in">
+    <div
+      ref={box}
+      data-side-list
+      {...mark}
+      // ↑ ↓ Home End walk the rows, the headings and the fold; ⏎ / Space
+      // open the one with the ring — they are buttons (`lib/shortcuts`).
+      onKeyDown={(e) => walkList(e, WALK)}
+      className="px-in pb-in"
+    >
       <DeleteDialog pending={pending} onDone={() => setPending(null)} />
       {run(fresh)}
       {/* The fold at the foot. A control, not a heading: its word is
@@ -371,7 +389,7 @@ export function SideList({
           data-old-fold
           data-open={showOld}
           onClick={() => setShowOld((v) => !v)}
-          className="flex min-h-row-1 w-full items-center rounded-md px-in text-left text-caption text-tertiary hover:bg-fill"
+          className={cn("flex min-h-row-1 w-full items-center rounded-md px-in text-left text-caption text-tertiary hover:bg-fill", RING)}
         >
           {showOld ? old.less : old.more(aged.length)}
         </button>

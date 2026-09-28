@@ -245,7 +245,7 @@ export function SecurityPage({
               <span className="text-muted-foreground">{gui.web_key_none}</span>
             ) : (
               <span className="flex min-w-0 items-center gap-in">
-                <span data-web-key className="min-w-0 truncate font-mono">
+                <span data-web-key data-selectable className="min-w-0 truncate font-mono">
                   {showKey ? key : "•".repeat(key.length)}
                 </span>
                 <Button

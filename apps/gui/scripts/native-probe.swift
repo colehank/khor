@@ -7,6 +7,22 @@
 //   activate-finder              → put another app in front (the window loses focus)
 //   measure <png> <w> <x,y>...   → JSON: scale, the close button's box, and the
 //                                  colour at each logical point
+//   key <pid> <code> [cmd|shift|ctrl|alt]...
+//                                → one key press, **posted to that process only**
+//   axmenu <pid> <AXRole>        → the first page element with that role asked for
+//                                  its context menu (AXShowMenu); "<found> <menus up>"
+//   menus <pid>                  → how many pop-up menu windows that process has up
+//   menubar <pid>                → JSON: that process's menu bar, each item's name,
+//                                  enabled, command key and modifier mask
+//   pick <pid> <menu> <item>     → presses one menu item of that process
+//
+// **Posted to the pid, never to the HID stream** (the keys and menus half
+// of the gate, 2026-09-28): a key sent through the system goes to whatever
+// is in front at that instant, and if the owner clicks into their own khor
+// mid-run the press lands there. Posted to the scratch app's pid, a press
+// can only ever reach the scratch app — if it is not in front the press is
+// dropped, which the gate then reads as a red, not as a keystroke in
+// somebody else's window.
 import AppKit
 import CoreGraphics
 import Foundation
@@ -78,7 +94,134 @@ case "measure":
     : "[\(Double(minX) / scale),\(Double(maxX + 1) / scale),\(Double(minY) / scale),\(Double(maxY + 1) / scale)]"
   print("{\"scale\":\(scale),\"close\":\(close),\"samples\":[\(samples.joined(separator: ","))]}")
 
+case "key":
+  let pid = Int32(args[2])!
+  let code = CGKeyCode(Int(args[3])!)
+  var flags: CGEventFlags = []
+  for f in args.dropFirst(4) {
+    switch f {
+    case "cmd": flags.insert(.maskCommand)
+    case "shift": flags.insert(.maskShift)
+    case "ctrl": flags.insert(.maskControl)
+    case "alt": flags.insert(.maskAlternate)
+    default: break
+    }
+  }
+  // A private source, so the owner's own modifier keys (a ⌘ held down
+  // at that moment) are not folded into the press.
+  let src = CGEventSource(stateID: .privateState)
+  let down = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true)!
+  let up = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false)!
+  down.flags = flags
+  up.flags = flags
+  down.postToPid(pid)
+  spin(0.04)
+  up.postToPid(pid)
+  spin(0.15)
+
+case "menubar", "pick":
+  // The menu bar **through the accessibility API, by pid**. Not System
+  // Events: its `set p to first process whose unix id is …` stores a
+  // reference *by process name*, and every khor-gui on the machine is
+  // named khor-gui — the first run of this read listed the owner's own
+  // app's menus instead of the scratch app's.
+  let pid = Int32(args[2])!
+  let app = AXUIElementCreateApplication(pid)
+  func attr(_ el: AXUIElement, _ name: String) -> AnyObject? {
+    var v: AnyObject?
+    return AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success ? v : nil
+  }
+  func kids(_ el: AXUIElement) -> [AXUIElement] { (attr(el, kAXChildrenAttribute) as? [AXUIElement]) ?? [] }
+  guard let barRef = attr(app, kAXMenuBarAttribute) else { print("{\"error\":\"no menu bar\"}"); exit(0) }
+  let bar = barRef as! AXUIElement
+  if args[1] == "pick" {
+    let (menuTitle, itemTitle) = (args[3], args[4])
+    for top in kids(bar) where (attr(top, kAXTitleAttribute) as? String) == menuTitle {
+      for menu in kids(top) {
+        for item in kids(menu) where (attr(item, kAXTitleAttribute) as? String) == itemTitle {
+          print(AXUIElementPerformAction(item, kAXPressAction as CFString) == .success ? "pressed" : "refused")
+          exit(0)
+        }
+      }
+    }
+    print("missing")
+    exit(0)
+  }
+  var menus: [[String: Any]] = []
+  for top in kids(bar) {
+    var items: [[String: Any]] = []
+    for menu in kids(top) {
+      for item in kids(menu) {
+        items.append([
+          "name": (attr(item, kAXTitleAttribute) as? String) ?? "",
+          "enabled": (attr(item, kAXEnabledAttribute) as? Bool) ?? false,
+          "key": (attr(item, "AXMenuItemCmdChar") as? String) ?? "",
+          "mods": (attr(item, "AXMenuItemCmdModifiers") as? Int) ?? -1,
+        ])
+      }
+    }
+    menus.append(["title": (attr(top, kAXTitleAttribute) as? String) ?? "", "items": items])
+  }
+  let data = try! JSONSerialization.data(withJSONObject: menus)
+  print(String(data: data, encoding: .utf8)!)
+
+case "axmenu":
+  // Asks for the context menu of the first element with this AX role in
+  // the page (`AXShowMenu` — WebKit answers it by sending the page a real
+  // `contextmenu` at that element, `ContextMenuController::showContextMenuAt`,
+  // so a page that prevents it shows nothing), then counts the menus up.
+  // By pid, like everything here. Prints "<found> <menus>".
+  let pid = Int32(args[2])!
+  let role = args[3]
+  let app = AXUIElementCreateApplication(pid)
+  func attr(_ el: AXUIElement, _ name: String) -> AnyObject? {
+    var v: AnyObject?
+    return AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success ? v : nil
+  }
+  func kids(_ el: AXUIElement) -> [AXUIElement] { (attr(el, kAXChildrenAttribute) as? [AXUIElement]) ?? [] }
+  var found: AXUIElement? = nil
+  // **A few tries**: WebKit builds a page's accessibility tree when a
+  // client first asks for it, and that first ask can come back empty.
+  for _ in 0..<6 where found == nil {
+    var queue = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    var seen = 0
+    while !queue.isEmpty && found == nil && seen < 4000 {
+      let el = queue.removeFirst()
+      seen += 1
+      if (attr(el, kAXRoleAttribute) as? String) == role {
+        // Only inside the page: the element must sit under an AXWebArea.
+        var p: AXUIElement? = el
+        while let q = p {
+          if (attr(q, kAXRoleAttribute) as? String) == "AXWebArea" { found = el; break }
+          p = attr(q, kAXParentAttribute).map { $0 as! AXUIElement }
+        }
+        if found != nil { break }
+      }
+      queue.append(contentsOf: kids(el))
+    }
+    if found == nil { spin(0.5) }
+  }
+  guard let el = found else { print("0 0"); exit(0) }
+  _ = AXUIElementPerformAction(el, "AXShowMenu" as CFString)
+  spin(0.8)
+  let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+  let up = list.filter {
+    ($0[kCGWindowOwnerPID as String] as? Int32) == pid && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 101
+  }
+  print("1 \(up.count)")
+
+case "menus":
+  // A context menu is a window of the process that pops it, one level up
+  // from the page (`kCGPopUpMenuWindowLevel`, 101). Counted by level, not
+  // by name: WebKit's and AppKit's menus have no title.
+  let pid = Int32(args[2])!
+  let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+  let up = list.filter {
+    ($0[kCGWindowOwnerPID as String] as? Int32) == pid && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 101
+  }
+  print(up.count)
+
 default:
-  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>...\n".data(using: .utf8)!)
+  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item>\n".data(using: .utf8)!)
   exit(2)
 }

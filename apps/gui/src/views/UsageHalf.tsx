@@ -1127,7 +1127,6 @@ function Stats({
                 data-usage-point-r={r}
                 role="button"
                 aria-label={p.r.word}
-                className="cursor-pointer"
                 onClick={() => onHot(p.r.model ?? "")}
               >
                 <title>{`${p.r.word}\n  ${ax.word()} ${ax.tick(p.x, 1)}\n  ${ay.word()} ${ay.tick(p.y, 1)}`}</title>

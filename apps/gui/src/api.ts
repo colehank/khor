@@ -1498,3 +1498,18 @@ export const termDrop = (id: string, paths: string[]) =>
 export const termResize = (id: string, cols: number, rows: number) =>
   call<null>("term_resize", { id, cols, rows });
 export const termLeave = (id: string) => call<null>("term_leave", { id });
+
+/** What the Mac app's menu bar should say applies right now
+    (`src/lib/shortcuts.ts` → `src-tauri/src/menu.rs`): whether ⌘W has
+    something to close, whether there are tabs to step through, the
+    landing's 「+」 by its own name, whether ⌘L can lock, and whether the
+    face is locked. The app alone — no other face has a menu bar. */
+export type MenuState = {
+  close: boolean;
+  step: boolean;
+  new: string | null;
+  lock: boolean;
+  locked: boolean;
+};
+export const menuState = (state: MenuState) =>
+  inApp ? call<null>("menu_state", { state }) : Promise.resolve(null);

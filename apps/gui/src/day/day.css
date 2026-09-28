@@ -135,7 +135,6 @@
 }
 .dayblk .sw button {
   font-style: normal;
-  cursor: pointer;
   padding: 0 5px;
   min-height: var(--hit);
   min-width: var(--hit);

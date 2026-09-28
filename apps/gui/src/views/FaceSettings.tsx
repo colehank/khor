@@ -206,7 +206,7 @@ function ColorWell({
       onClick={onOpen}
       onChange={(e) => setDraft(e.target.value)}
       className={cn(
-        "size-[var(--touch)] cursor-pointer appearance-none rounded-full border border-avatar-edge bg-transparent p-0",
+        "size-[var(--touch)] appearance-none rounded-full border border-avatar-edge bg-transparent p-0",
         on && "outline-2 outline-offset-2 outline-foreground",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
       )}

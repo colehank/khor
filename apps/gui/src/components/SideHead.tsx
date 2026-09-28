@@ -161,21 +161,16 @@ export function SideHead({
     setOpen(true);
   }, []);
 
-  // ⌘K anywhere in the app — the one shortcut this row owns. Bound on
-  // the window rather than on the box: a person typing in a pane still
-  // means 「search everything」 by it. **Esc on the window too**: the
-  // box's own Esc is the ordinary way out, and this is the one that
-  // still works when focus has wandered off the box (the smoke found
-  // the hits still up over the list after an Esc that went elsewhere).
+  // ⌘K anywhere in the app widens this row — **pressed in `lib/shortcuts`**
+  // since 2026-09-28, where the whole keyboard is, and arriving here as
+  // `FIND_ALL` like the magnifier's press (so the menu bar's 搜索 and the
+  // key are one road). **Esc stays on the window here**: the box's own
+  // Esc is the ordinary way out, and this is the one that still works
+  // when focus has wandered off the box (the smoke found the hits still
+  // up over the list after an Esc that went elsewhere).
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        return;
-      }
-      if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey)) return;
-      e.preventDefault();
-      widen("");
+      if (e.key === "Escape") setOpen(false);
     };
     const all = () => widen("");
     window.addEventListener("keydown", key);

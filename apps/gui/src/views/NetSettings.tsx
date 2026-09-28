@@ -97,7 +97,7 @@ export function NetSettings() {
           key={url}
           name="relay"
           rowMark={{ "data-relay-mine": url }}
-          label={<span className="block truncate font-mono">{url}</span>}
+          label={<span data-selectable className="block truncate font-mono">{url}</span>}
           actionLabel={gui.remove}
           variant="ghost"
           onPress={() => void write(choices.mine.filter((u) => u !== url), choices.only_mine)}
@@ -154,7 +154,7 @@ export function NetSettings() {
 
       <MoreSection name="relays-in-use" label={gui.relays_in_use} mark={{ "data-relays-in-use": "" }}>
         {choices.in_use.map((url) => (
-          <div key={url} className="truncate font-mono text-callout text-muted-foreground">
+          <div key={url} data-selectable className="truncate font-mono text-callout text-muted-foreground">
             {url}
           </div>
         ))}

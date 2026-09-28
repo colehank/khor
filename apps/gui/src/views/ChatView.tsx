@@ -1370,7 +1370,7 @@ export function ChatView({
             the tail of that name is a colour — so it drops the class it
             thinks was superseded. Measured: the paragraph came back at
             the shell's base with the theme's own leading. */}
-        <div data-chat-column className="mx-auto w-full max-w-measure space-y-2 text-read">
+        <div data-chat-column data-selectable className="mx-auto w-full max-w-measure space-y-2 text-read">
         {/* **The agent's own name for this conversation.** Scrolls with
             the conversation rather than sitting in a fixed header: it
             names the thing below it, and a title pinned over a
@@ -1952,7 +1952,7 @@ export function ChatView({
                     data-slash-item={c.name}
                     data-on={n === pick}
                     className={cn(
-                      "flex w-full cursor-pointer items-baseline gap-2 rounded-sm px-2 py-1 text-left text-callout",
+                      "flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-callout",
                       n === pick && "bg-accent",
                     )}
                     // The box must not lose focus to the press, or the

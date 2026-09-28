@@ -55,6 +55,7 @@ import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { reportDrafts } from "@/lib/drafts";
+import { useTabHost } from "@/lib/shortcuts";
 import {
   rememberWords,
   sessionAxes,
@@ -1135,27 +1136,31 @@ export function WorkspacePane({
     drop(waiting);
   }, [waiting, drafts, drop]);
 
-  // ⌘W / Ctrl+W, the one shortcut this strip has. **Both modifiers**,
-  // because one build runs on a mac app, a phone's browser and a
-  // Windows desktop (`FileView`'s save shortcut says the same).
-  //
-  // **Only while a file is in front**, and since 2026-09-16 that is no
-  // longer the same question as 「the editor is not open」: the editor
-  // has a column of its own now (ruling 45) and the file is still on
-  // screen beside it, so the key still means what it says. A press
-  // inside the editor's own webview never reaches this page anyway —
-  // that view has the keyboard, and its ⌘W is VS Code's.
-  useEffect(() => {
-    if (file === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "w" || e.key === "W")) {
-        e.preventDefault();
-        shut(file);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [file, shut]);
+  // ⌘W, ⌃⇥ / ⌃⇧⇥ on this strip: **lent to the app's keyboard**
+  // (`lib/shortcuts`, 2026-09-28) rather than a listener of its own — the
+  // map, the menu bar's 关闭标签页 and 「not under a sheet」 are decided
+  // there once for every strip. ⌘W still asks first when something is
+  // typed in the tab (`shut`). **Only while a file is in front** for ⌘W,
+  // and since 2026-09-16 that is no longer the same question as 「the
+  // editor is not open」: the editor has a column of its own (ruling 45)
+  // and the file is still on screen beside it. A press inside the
+  // editor's own window never reaches this page — its ⌘W is VS Code's.
+  useTabHost(
+    tabs.length > 0
+      ? {
+          count: tabs.length,
+          front: file !== null,
+          close: () => {
+            if (file !== null) shut(file);
+          },
+          step: (by) => {
+            const at = file === null ? -1 : tabs.indexOf(file);
+            const next = tabs[(at + by + tabs.length) % tabs.length];
+            if (next !== undefined) setFile(next);
+          },
+        }
+      : null,
+  );
 
   // **`⌘B` folds and unfolds the tree** (VS Code's key for its side
   // bar), and it is the one way back that no other fold can hide: the

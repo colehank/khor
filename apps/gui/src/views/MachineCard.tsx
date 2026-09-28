@@ -2552,7 +2552,6 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                 role="button"
                 aria-label={cmdText(r)}
                 onClick={() => onPoint(r.pid)}
-                className="cursor-pointer"
               >
 
                 {/* ⚠️ **Tombstone: the halo is gone, 2026-09-08.** It was
@@ -2826,7 +2825,7 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
       //     screenshot; the assertion that the cell grew and shrank was
       //     perfectly happy, because it was true). The row grows in
       //     height instead, and the columns stay where they are.
-      className={cn("flex min-w-0 items-baseline gap-in", cut && "cursor-pointer")}
+      className="flex min-w-0 items-baseline gap-in"
     >
       {/* **One box, one line, one truncation.** The name and the word
           are two spans only so they can wear two inks; they are not two

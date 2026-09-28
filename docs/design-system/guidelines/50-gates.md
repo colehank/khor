@@ -44,13 +44,13 @@
 |---|---|---|
 | `npm run test` | `pretest` → `gen` + `check-shim` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |
-| `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome) | 不拿 |
+| `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome)。`FACE_ONLY=native` 只走第 11 节「像 Mac 的 app」(选字、手、键盘、右键,一分钟) | 不拿 |
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run day` | `check-day.mjs`,会话行那条状态条真的上没上屏(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
 | `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run fast` | `check-fast.mjs`,「快」那三行(`30-behavior.md`):bridge 下挂一块 `statfs` 要 10 秒的**假**卷(`BRIDGE_SLOW_VOLUME_MS`,不碰真盘),机器页 1 秒内列出这台机器、1 秒内出带读数的卡片;离开再回来,**第一帧**就有卡片、读数和进程行(自起 vite + bridge + 系统 Chrome) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge`) |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
-| `npm run native` | `check-native.mjs`,**AppKit 画的东西**:在临时 `KHOR_HOME`(不碰负责人的 store)里起**构建好的** app,用 `khor config set theme` 切深 / 浅 / 跟系统再把窗口切回前台,每一步截窗口量两件事——三颗窗口按钮左缘在 `traffic::X`、中心在第一行中心;左块的材质与板的深浅跟着主题。只在 macOS;不动鼠标、不按键,但会把窗口提到前台几秒(2026-09-27 左块变白、按钮跑位之后加的) | 不拿(但**要求先构建**:`npm run build` 再 `cargo build --profile local -p khor-gui -p khor-cli`) |
+| `npm run native` | `check-native.mjs`,**AppKit 画的东西**:在临时 `KHOR_HOME`(不碰负责人的 store)里起**构建好的** app,用 `khor config set theme` 切深 / 浅 / 跟系统再把窗口切回前台,每一步截窗口量两件事——三颗窗口按钮左缘在 `traffic::X`、中心在第一行中心;左块的材质与板的深浅跟着主题。只在 macOS;不动鼠标,但会把窗口提到前台几秒(2026-09-27 左块变白、按钮跑位之后加的)。**2026-09-28 起多一段键盘**(`NATIVE_ONLY=keys` 单跑、`=theme` 只跑上面那段):按 pid 读菜单栏(五个菜单、编辑菜单那六项、每项写着的快捷键)、用 AXShowMenu 问右键(页面与 R0 标题 0 个菜单,搜索框 1 个)、**按键只投给临时 app 的 pid**(⌘5、⌘N 两下、⌃⇥、⇧⌘[、⌘W、⌘1、没有标签时的 ⌘W),数临时 store 的 `.khor/tabs.json`——一次按键跑两次藏不住;再从菜单栏点一次「新标签页」,正好多一个。⚠️ 读菜单**不用 System Events**:它按进程名找进程,本机每个 khor-gui 都叫 khor-gui,第一版读到的是负责人自己那个 app 的菜单 | 不拿(但**要求先构建**:`npm run build` 再 `cargo build --profile local -p khor-gui -p khor-cli`) |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
 | `npm run smoke` | `smoke.mjs`,整条验收,**真连**(三个 home) | 不拿 |
@@ -120,6 +120,7 @@
   够不着原生子 webview。
 - **动了导轨** → 加 `npm run rail`;
 - **动了主题、窗口外观、`src-tauri` 里的窗口或标题栏** → 构建后加 `npm run native`;
+- **动了快捷键(`src/lib/shortcuts.ts`)、菜单栏(`src-tauri/src/menu.rs`)、`[menu]` 的字、选字或光标的规矩** → `FACE_ONLY=native npm run face`,构建后加 `NATIVE_ONLY=keys npm run native`(它按键,只投给临时 app);
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,
   而这两条要起真网,先问一句机器上有没有别人在跑;
@@ -296,12 +297,18 @@ a trackpad's imprecision and **the web face on an iPad** both live」,
 `PRESSABLE` 没有任何办法看见它。上一节作用域的每一个洞都长在这一条底下,
 所以它值一条断言,不是一句备注。
 
-**判据读的是 handler 本身,不是 `cursor`。** 每一站仍然打印「没有角色却是
-`cursor: pointer`」的个数,而那一行**永远只打印**:一行 hover 样式就能把它
-变成假红,而假红教会人放宽例外。断言这一条读的是 React 挂在元素上的 props
+**判据读的是 handler 本身,不是 `cursor`。** 断言这一条读的是 React 挂在元素上的 props
 (`__reactProps$*` 里的 onClick / onMouseDown / onPointerDown / onDoubleClick)
-——**handler 是人写上去的,没有装饰性的办法得到一个**,这就是它敢断言而
-`cursor` 那条不敢的全部区别。
+——**handler 是人写上去的,没有装饰性的办法得到一个**。`cursor` 当年只是个
+猜「能不能按」的代理,每一站印一个「没有角色却是 `cursor: pointer`」的个数、
+永远不断言(一行 hover 样式就能把它变成假红)。
+
+**2026-09-28 起那个计数改了意思,并且断言。** 规矩变成「手指只属于正文里的
+链接」(`30-behavior.md` 选字与手):控件一律是箭头,于是 `cursor` 跟「能不能按」
+再没有关系,它自己就是一条规矩——每一站、两种姿势,链接(`a[href]`、
+`[role=link]`、`data-md-link`、`data-link`)以外任何元素算出 `pointer` 都红,
+只报每块手形区域的最上面那个元素,并报出写在哪个文件。落地那天旧代码上红了
+77 处,一处一处删掉 `cursor-pointer` 之后绿。
 
 **它是棘轮,不是白纸。** 落地当天跑下来全脸有三个,所以「一律为零」会当场
 红、然后当天被人关掉。三个写进守门里的名单,每条带**它的代价**;名单两个

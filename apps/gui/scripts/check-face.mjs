@@ -2049,6 +2049,14 @@ try {
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
   await wait(800);
 
+  // **`FACE_ONLY=native` walks section 11 alone** (the Mac-app tells, at
+  // the foot) — a minute rather than twelve while those rules are being
+  // worked on. The block below is every other section; section 11 reloads
+  // the page and builds its own helpers, so it stands on nothing declared
+  // in here. The whole gate is still `npm run face` with no switch.
+  walk: {
+  if (process.env.FACE_ONLY === "native") break walk;
+
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
     const probe = (cls) => {
@@ -2181,11 +2189,13 @@ try {
   //     is section 4's job now**, and it is a separate section rather
   //     than a bullet here because the criterion is a different one: not
   //     how big the target is, but whether anything except a mouse can
-  //     tell it is one. The `cursor: pointer` survey printed beside each
-  //     stop stays **printed, never asserted** — a hover style on a row
-  //     would make it a red that teaches people to widen the excuses,
-  //     and section 4 reads the handler itself instead of guessing from
-  //     a cursor;
+  //     tell it is one. Section 4 reads the handler itself instead of
+  //     guessing from a cursor. (The `cursor: pointer` survey beside each
+  //     stop used to be that guess — printed, never asserted, because a
+  //     hover style on a row would have been a false red. **Since
+  //     2026-09-28 it is a rule of its own and asserted**: the hand is a
+  //     link's, so any element off a link computing `pointer` is a red —
+  //     docs/design-system 30-behavior 「选字与手」, section 11 below);
   //   - a target that is big enough and sits under something else.
   //
   // **An excuse and a waiver are not the same thing, and they are kept
@@ -2316,15 +2326,28 @@ try {
         const r = el.getBoundingClientRect();
         targets.push({ ...label(el), w: Math.round(r.width), h: Math.round(r.height) });
       }
-      const pointing = [...document.querySelectorAll("*")].filter(
-        (el) =>
-          getComputedStyle(el).cursor === "pointer" && !el.matches(PRESSABLE) && !el.closest(PRESSABLE),
-      );
+      // **The hand is a link's** (2026-09-28): AppKit draws the arrow over
+      // every control, and the pointing hand only over a link in text.
+      // So what is counted is every element computing `cursor: pointer`
+      // that is not a link in prose — a button, a row, a tab, a switch, a
+      // chart's point. Pressable or not makes no difference any more;
+      // before this rule the survey counted only the *unmarked* ones, as a
+      // guess at bare handlers (section 4 reads those directly).
+      const LINK = 'a[href], [role="link"], [data-md-link], [data-link]';
+      const pointing = [...document.querySelectorAll("*")]
+        .filter(
+          (el) =>
+            getComputedStyle(el).cursor === "pointer" &&
+            !el.closest(LINK) &&
+            // The top of each hand region: a button's own spans inherit
+            // its cursor and would name the same control four times.
+            !(el.parentElement && getComputedStyle(el.parentElement).cursor === "pointer"),
+        )
+        .map(label);
       // Section 4's reading, taken on the same pass: which elements
       // actually carry a press handler, read off React's own props
       // rather than guessed at from a cursor. See section 4 below for
-      // what is done with it and why the cursor survey above stayed a
-      // printed line while this one is asserted.
+      // what is done with it.
       const propsOf = (el) => {
         for (const k in el) if (k.startsWith("__reactProps$")) return el[k];
         return null;
@@ -2343,7 +2366,7 @@ try {
         }
         bare.push({ ...label(el), on: PRESS.filter((k) => typeof p[k] === "function").join("+") });
       }
-      return { floor, targets, excused, pointing: pointing.length, withProps, roledPress, bare };
+      return { floor, targets, excused, pointing, withProps, roledPress, bare };
     }, PRESSABLE);
 
   // The walk. Each stop names the surface, how to get there, and one
@@ -2735,13 +2758,15 @@ try {
   // Every hole in the section above is downstream of this one, which is
   // why closing it is worth an assertion rather than a note.
   //
-  // **The handler is read, not inferred.** The stop lines still print a
-  // `cursor: pointer` survey and that one stays printed: a hover style
-  // on a decorative row makes it a false red, and a false red is how
-  // people learn to widen the excuses. This reads React's own props off
-  // the element (`__reactProps$*`), so a hit is a handler somebody
-  // wrote — there is no decorative way to acquire one, and that is what
-  // makes it safe to assert where the cursor proxy is not.
+  // **The handler is read, not inferred.** The cursor was never the
+  // proxy for this (a hover style on a decorative row would have made it
+  // a false red, and a false red is how people learn to widen the
+  // excuses) — and since 2026-09-28 the cursor says nothing about being
+  // pressable at all: every control wears the arrow, and the stop lines'
+  // cursor count is a rule of its own (the hand is a link's). This reads
+  // React's own props off the element (`__reactProps$*`), so a hit is a
+  // handler somebody wrote — there is no decorative way to acquire one,
+  // and that is what makes it safe to assert.
   //
   // **A ratchet, not a clean sheet.** Run on the tree the day it was
   // written it found three carriers, so an unconditional「zero」would
@@ -3036,8 +3061,17 @@ try {
       console.log(
         `touch ${here}: ${seen.targets.length} judged` +
           (excuses ? `, excused ${excuses}` : "") +
-          (seen.pointing ? `, ${seen.pointing} unmarked cursor:pointer (printed, not asserted)` : ""),
+          (seen.pointing.length ? `, ${seen.pointing.length} cursor:pointer off a link` : ""),
       );
+      // The hand is a link's (see `sweep`). Named by where it is written,
+      // the way a touch red is, and capped so one forgotten class on a
+      // list row does not print forty lines.
+      for (const t of seen.pointing.slice(0, 4)) {
+        fail(
+          `${here}: ${t.tag} 「${t.said}」 (${nameWhere(t)}) computes cursor: pointer — ` +
+            "the pointing hand is a link's; a control wears the arrow (docs/design-system 30-behavior 选字与手)",
+        );
+      }
       // The live probe for section 4, per stop: a negative claim
       // (「nothing here is bare」) is worth nothing until the same reading
       // has hit something it should hit. If React's prop key ever moves,
@@ -22117,6 +22151,384 @@ try {
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
     await wait(900);
+  }
+  } // walk
+
+  // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
+  //
+  // Four things a web page does that a Mac app does not, each read off
+  // the live page (the half only the real WKWebView can answer — the menu
+  // bar, WebKit's own right-click menu, a press that the page and the
+  // menu's accelerator could both run — is `npm run native`):
+  //
+  //   a. **chrome text does not select.** Rows, titles, the rail, the
+  //      first row, tabs compute `user-select: none`; what a person reads
+  //      or copies computes `text` — the transcript, Markdown, a file,
+  //      a fact's value, and every field (docs/design-system
+  //      30-behavior 「选字与手」);
+  //   b. **the pointing hand is a link's.** Nothing on the page computes
+  //      `cursor: pointer` unless it is a link in prose (`[data-md-link]`,
+  //      `[data-link]`); a control is the arrow, the way AppKit draws it;
+  //   c. **the keyboard** (`src/lib/shortcuts.ts`): ⌘1–⌘5 walk the rail,
+  //      ⌘, opens 通用, ⌘W closes the 「…」 page and then the front tab,
+  //      ⌃⇥ / ⌃⇧⇥ / ⇧⌘] / ⇧⌘[ step **one** tab, ⌘N is the landing's
+  //      「+」, ⌘K the search, ⌘ keys still work inside a text field, none
+  //      of them under an open sheet; and a sidebar list walks with
+  //      ↑↓ Home End without opening anything, ⏎ / Space opening the row
+  //      the ring is on. The web face's map (no ⌘W ⌘N ⌘1–5 ⌃⇥ ⇧⌘[ ]: a
+  //      browser owns them) is read off the module itself;
+  //   d. **right-click on chrome brings up no browser menu**; in a text
+  //      field and on selected text the system's stays, and a row's own
+  //      menu still opens.
+  //
+  // Every claim here was red on the code before this section's batch
+  // (2026-09-28): no user-select anywhere, the hand on 18 controls, ⌘1–⌘5
+  // doing nothing, no contextmenu handler at all.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.evaluate(() => localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const mod = (await page.evaluate(() => /mac/i.test(navigator.platform))) ? "Meta" : "Control";
+    const railAt = (k) => `[data-rail-item][data-landing="${k}"]`;
+    const landingNow = () =>
+      page.evaluate(() => document.querySelector('[data-rail-item][data-landing][data-on="true"]')?.getAttribute("data-landing") ?? null);
+    const n = (sel) => page.locator(sel).count();
+    const key = async (combo) => {
+      await page.keyboard.press(combo);
+      await wait(350);
+    };
+    /** A press that can fail without ending the run: a stop it did not
+        reach says 「probe dead」 below instead of a thirty-second throw. */
+    const click = async (sel) => {
+      if ((await n(sel)) === 0) return false;
+      const ok = await page
+        .locator(sel)
+        .first()
+        .click({ timeout: 5_000 })
+        .then(() => true, () => false);
+      await wait(400);
+      return ok;
+    };
+    /** A landing by its rail glyph, never by pressing the open one (that
+        folds its list — the walk's `open` above says why) — and with its
+        list out: an earlier section may have left it put away, which the
+        page remembers across a reload. */
+    const land = async (k) => {
+      if ((await landingNow()) !== k) await click(railAt(k));
+      const away = await page.evaluate(() => (document.querySelector("[data-list]")?.getBoundingClientRect().width ?? 0) < 8);
+      if (away) await click(railAt(k));
+    };
+    const frontTab = () =>
+      page.evaluate(() => document.querySelector('[data-session-tabs] [data-tab][data-on="true"]')?.getAttribute("data-tab") ?? null);
+    const tabIds = () =>
+      page.evaluate(() => [...document.querySelectorAll("[data-session-tabs] [data-tab]")].map((t) => t.getAttribute("data-tab")));
+    const selectOf = (sels) =>
+      page.evaluate(
+        (sels) =>
+          sels.map((s) => {
+            const el = document.querySelector(s);
+            return { s, v: el ? getComputedStyle(el).userSelect : null };
+          }),
+        sels,
+      );
+    const row = (id) => `[data-list] [data-row="${id}"] [data-row-open]`;
+
+    await land("sessions");
+    for (const id of ["tui/face-gate-0", "tui/face-gate-1", "gui/ws-2"]) await click(row(id));
+    const spoke = await until(8_000, async () => (await n("[data-md]")) > 0);
+    const opened = await tabIds();
+    console.log(`mac · three session tabs: ${JSON.stringify(opened)}, conversation drawn ${spoke}`);
+    /** The conversation back in front — (d) reads its prose and its box. */
+    const toChat = async () => {
+      await land("sessions");
+      await click(row("gui/ws-2"));
+      return until(8_000, async () => (await n("[data-md] p")) > 0 && (await n("[data-chat-input]")) > 0);
+    };
+    if (opened.length !== 3 || !spoke) {
+      fail("probe dead: section 11 could not open three session tabs and a conversation — nothing below measured the tabs or the transcript");
+    }
+
+    // ── a) chrome does not select; reading does ──
+    const chrome = await selectOf([
+      "body",
+      "[data-rail-item]",
+      "[data-side-head]",
+      "[data-side-row] [data-side-title]",
+      "[data-side-row] [data-side-sub]",
+      "[data-session-tabs] [data-tab]",
+      "[data-page-title], [data-session-tabs]",
+    ]);
+    const reading = await selectOf([
+      "[data-chat-column]",
+      "[data-md]",
+      "[data-md] p",
+      "[data-chat-input]",
+      "[data-pane-search]",
+    ]);
+    console.log(`mac · user-select on chrome ${JSON.stringify(chrome)}`);
+    console.log(`mac · user-select on reading ${JSON.stringify(reading)}`);
+    for (const { s, v } of chrome) {
+      if (v === null) fail(`probe dead: ${s} is not on the sessions landing — (a) measured nothing there`);
+      else if (v !== "none") fail(`${s} computes user-select ${v} — chrome text is not selectable (src/styles/app.css)`);
+    }
+    for (const { s, v } of reading) {
+      if (v === null) fail(`probe dead: ${s} is not on the sessions landing — (a) measured nothing there`);
+      else if (v !== "text") fail(`${s} computes user-select ${v} — a person reads or types here, so it selects (data-selectable)`);
+    }
+
+    // ── b) the hand is a link's ──
+    const LINK = 'a[href], [role="link"], [data-md-link], [data-link]';
+    const hands = () =>
+      page.evaluate((LINK) => {
+        const off = [];
+        let links = 0;
+        let more = 0;
+        for (const el of document.querySelectorAll("*")) {
+          if (getComputedStyle(el).cursor !== "pointer") continue;
+          if (el.closest(LINK)) {
+            links += 1;
+            continue;
+          }
+          // The top of each hand region only: a button's own spans
+          // inherit its cursor and say nothing new.
+          if (el.parentElement && getComputedStyle(el.parentElement).cursor === "pointer") continue;
+          if (off.length >= 6) {
+            more += 1;
+            continue;
+          }
+          const marks = [...el.attributes].map((a) => a.name).filter((a) => a.startsWith("data-") && a !== "data-slot" && a !== "data-state");
+          off.push(`${el.tagName.toLowerCase()}${marks.length ? `[${marks[0]}]` : ""}${el.getAttribute("role") ? ` role=${el.getAttribute("role")}` : ""}`);
+        }
+        if (more) off.push(`and ${more} more`);
+        return { off, links };
+      }, LINK);
+    const onChat = await hands();
+    console.log(`mac · cursor on the conversation: ${onChat.links} on links, off links ${JSON.stringify(onChat.off)}`);
+    if (onChat.links === 0) fail("probe dead: no link in the conversation computes cursor pointer — (b) has no positive to stand on");
+    if (onChat.off.length) fail(`cursor: pointer off a link on the sessions landing: ${onChat.off.join(", ")} — controls wear the arrow`);
+    for (const [where, go] of [
+      ["the settings page", async () => (await click("[data-rail-more]")) && click('[data-more-open="settings"]')],
+      ["the workspace", async () => {
+        await click('[data-more-close]');
+        await land("workspaces");
+        if (!(await click("[data-ws-row]"))) return false;
+        if ((await n("[data-ws-tree]")) === 0) await click("[data-ws-row]");
+        await until(5_000, async () => (await n('[data-file="one.rs"] > button')) > 0);
+        return click('[data-file="one.rs"] > button');
+      }],
+    ]) {
+      const got = await go();
+      await wait(600);
+      const h = await hands();
+      console.log(`mac · cursor on ${where}: off links ${JSON.stringify(h.off)}`);
+      if (!got) fail(`probe dead: section 11 never reached ${where}`);
+      if (h.off.length) fail(`cursor: pointer off a link on ${where}: ${h.off.join(", ")} — controls wear the arrow`);
+    }
+    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-sheet]", "[data-numbers]", "[data-file] > button"]);
+    console.log(`mac · user-select in the workspace ${JSON.stringify(file)}`);
+    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-sheet]": "text", "[data-numbers]": "none", "[data-file] > button": "none" };
+    for (const { s, v } of file) {
+      if (v === null) fail(`probe dead: ${s} is not in the open workspace`);
+      else if (v !== want[s]) fail(`${s} computes user-select ${v}, not ${want[s]} — code selects, its line numbers and the tree do not`);
+    }
+
+    // ── c) the keyboard ──
+    const walked = [];
+    for (const [i, k] of ["sessions", "devices", "workspaces", "quota", "browser"].entries()) {
+      await key(`${mod}+${i + 1}`);
+      walked.push(await landingNow());
+      if (walked.at(-1) !== k) fail(`${mod}+${i + 1} left ${walked.at(-1)} open, not ${k} — ⌘1–⌘5 are the rail in its order (src/lib/shortcuts.ts)`);
+    }
+    console.log(`mac · ⌘1–⌘5 → ${walked.join(" · ")}`);
+    // ⌘N on 浏览器 is its 「+」, once.
+    const mintedBefore = minted;
+    await key(`${mod}+n`);
+    await until(3_000, async () => minted > mintedBefore);
+    await wait(800);
+    console.log(`mac · ⌘N on the browser landing minted ${minted - mintedBefore} tab(s)`);
+    if (minted - mintedBefore !== 1) fail(`⌘N on the browser landing made ${minted - mintedBefore} tab(s), not one — it is the landing's 「+」`);
+    const rowsBefore = tabRows.length;
+    await key(`${mod}+w`);
+    await until(3_000, async () => tabRows.length < rowsBefore);
+    await wait(800);
+    console.log(`mac · ⌘W on the browser landing: ${rowsBefore} → ${tabRows.length} tab(s)`);
+    if (tabRows.length !== rowsBefore - 1) fail(`⌘W on the browser landing closed ${rowsBefore - tabRows.length} tab(s), not the front one`);
+    // ⌘, opens 通用 over the landing; ⌘W puts it away first.
+    await key(`${mod}+,`);
+    const settingsUp = (await n('[data-more-open="settings"][data-on="true"]')) > 0;
+    await key(`${mod}+w`);
+    const settingsGone = (await n("[data-more-close]")) === 0;
+    console.log(`mac · ⌘, → 通用 ${settingsUp}; ⌘W → put away ${settingsGone}, landing ${await landingNow()}`);
+    if (!settingsUp) fail("⌘, did not open 「…」 › 通用");
+    if (!settingsGone) fail("⌘W with a 「…」 page up did not put it away");
+    // The session tabs: one step per press, both ways, both spellings.
+    await key(`${mod}+1`);
+    const steps = [];
+    const order = await tabIds();
+    for (const combo of ["Control+Tab", "Control+Shift+Tab", `${mod}+Shift+BracketRight`, `${mod}+Shift+BracketLeft`]) {
+      const was = await frontTab();
+      await key(combo);
+      const now = await frontTab();
+      const i = order.indexOf(was);
+      const want = combo.includes("Shift+Tab") || combo.endsWith("Left") ? order[(i - 1 + order.length) % order.length] : order[(i + 1) % order.length];
+      steps.push(`${combo}: ${was} → ${now}`);
+      if (now !== want) fail(`${combo} put ${now} in front, not ${want} — one press is one tab (src/lib/shortcuts.ts)`);
+    }
+    console.log(`mac · tab steps ${JSON.stringify(steps)}`);
+    // ⌘ keys work inside a text field, the way ⌘W works in Safari's
+    // address bar: ⌘2 from the conversation's box still walks the rail.
+    await page.locator("[data-chat-input]").first().focus({ timeout: 2_000 }).catch(() => {});
+    await key(`${mod}+2`);
+    const fromBox = await landingNow();
+    await key(`${mod}+1`);
+    if (fromBox !== "devices") fail(`${mod}+2 typed in the conversation's box left ${fromBox} open — ⌘ keys are not text`);
+    // ⌘W closes the front tab and nothing else.
+    const three = await tabIds();
+    await key(`${mod}+w`);
+    const two = await tabIds();
+    console.log(`mac · ⌘W on the session tabs: ${three.length} → ${two.length}`);
+    if (two.length !== three.length - 1) fail(`⌘W closed ${three.length - two.length} session tab(s), not the front one`);
+    // ⌘K is the search, from anywhere.
+    await key(`${mod}+k`);
+    const searching = await page.evaluate(() => document.activeElement?.hasAttribute("data-search-box") ?? false);
+    await key("Escape");
+    if (!searching) fail(`${mod}+K did not put the cursor in the search box`);
+    // ⌘N on 会话 opens the new-session sheet — and under it nothing else
+    // answers: ⌘2 leaves the landing where it is.
+    await key(`${mod}+n`);
+    const sheet = (await n("[data-new-session-dialog]")) > 0;
+    await key(`${mod}+2`);
+    const under = await landingNow();
+    await key("Escape");
+    await wait(300);
+    console.log(`mac · ⌘N on 会话 → sheet ${sheet}; ⌘2 under it → ${under}`);
+    if (!sheet) fail("⌘N on the sessions landing did not open the new-session sheet — it is the landing's 「+」");
+    if (under !== "sessions") fail(`${mod}+2 under an open sheet walked to ${under} — nothing behind a sheet answers`);
+    // A sidebar list walks with the arrows and opens nothing on the way.
+    const items = '[data-list] [data-side-list] :is([data-side-open], [data-side-group], [data-old-fold])';
+    await page.locator(items).first().focus({ timeout: 2_000 }).catch(() => {});
+    const at = () =>
+      page.evaluate((items) => {
+        const all = [...document.querySelectorAll(items)];
+        const a = document.activeElement;
+        return { i: all.indexOf(a), of: all.length, ring: a ? getComputedStyle(a).outlineStyle : null };
+      }, items);
+    const tabsBefore = (await tabIds()).length;
+    const walk = [];
+    for (const k of ["ArrowDown", "ArrowDown", "End", "Home", "ArrowUp"]) {
+      await key(k);
+      walk.push(await at());
+    }
+    const tabsAfter = (await tabIds()).length;
+    console.log(`mac · list keys ${JSON.stringify(walk)}; tabs ${tabsBefore} → ${tabsAfter}`);
+    const [d1, d2, end, home, up] = walk;
+    if (!(walk.every((w) => w.of >= 3))) fail("probe dead: the sessions list has fewer than three items to walk");
+    else {
+      if (d1.i !== 1 || d2.i !== 2) fail(`↓ moved the focus to ${d1.i} then ${d2.i}, not 1 then 2`);
+      if (end.i !== end.of - 1) fail(`End put the focus on ${end.i}, not the last item ${end.of - 1}`);
+      if (home.i !== 0) fail(`Home put the focus on ${home.i}, not the first item`);
+      if (up.i !== 0) fail(`↑ on the first item moved the focus to ${up.i} — it stays`);
+      if (!walk.every((w) => w.ring && w.ring !== "none")) fail(`a row with the keyboard on it draws no focus ring (${walk.map((w) => w.ring).join(", ")})`);
+    }
+    if (tabsAfter !== tabsBefore) fail(`walking the list with the arrows opened ${tabsAfter - tabsBefore} tab(s) — an arrow moves the focus, ⏎ opens`);
+    // ⏎ opens the row the ring is on (VS Code's list).
+    await page.locator(row("tui/face-gate-1")).focus({ timeout: 2_000 }).catch(() => {});
+    await key("Enter");
+    const entered = await frontTab();
+    await page.locator(row("tui/face-gate-0")).focus({ timeout: 2_000 }).catch(() => {});
+    await key(" ");
+    const spaced = await frontTab();
+    console.log(`mac · ⏎ → ${entered}, Space → ${spaced}`);
+    if (entered !== "tui/face-gate-1") fail(`⏎ on a focused row put ${entered} in front, not that row`);
+    if (spaced !== "tui/face-gate-0") fail(`Space on a focused row put ${spaced} in front, not that row`);
+    // The web face's map, from the module: the browser's keys are not
+    // taken there.
+    const webMap = await page.evaluate(async () => {
+      try {
+        const m = await import("/src/lib/shortcuts.ts");
+        const k = (key, code, mods = {}) => ({ key, code, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods });
+        const cmd = { metaKey: true };
+        const probes = {
+          "⌘W": k("w", "KeyW", cmd),
+          "⌘N": k("n", "KeyN", cmd),
+          "⌘1": k("1", "Digit1", cmd),
+          "⌃⇥": k("Tab", "Tab", { ctrlKey: true }),
+          "⇧⌘]": k("}", "BracketRight", { metaKey: true, shiftKey: true }),
+          "⌘K": k("k", "KeyK", cmd),
+          "⌘,": k(",", "Comma", cmd),
+        };
+        const out = {};
+        for (const [name, ev] of Object.entries(probes)) out[name] = { app: m.actOf(ev, "app", true), web: m.actOf(ev, "web", true) };
+        return out;
+      } catch (e) {
+        return { error: String(e) };
+      }
+    });
+    console.log(`mac · the map, app against web: ${JSON.stringify(webMap)}`);
+    if (webMap.error) fail(`probe dead: src/lib/shortcuts.ts did not load (${webMap.error})`);
+    else {
+      for (const k of ["⌘W", "⌘N", "⌘1", "⌃⇥", "⇧⌘]"]) {
+        if (!webMap[k].app) fail(`the app's map has nothing on ${k}`);
+        if (webMap[k].web) fail(`the web face's map takes ${k} (${webMap[k].web}) — a browser owns that key`);
+      }
+      for (const k of ["⌘K", "⌘,"]) {
+        if (!webMap[k].web || webMap[k].web !== webMap[k].app) fail(`the web face's map does not keep ${k} (${JSON.stringify(webMap[k])})`);
+      }
+    }
+
+    // ── d) right-click ──
+    if (!(await toChat())) fail("probe dead: the conversation did not come back for (d)");
+    const menuOver = (sel, pick = null) =>
+      page.evaluate(
+        ([sel, pick]) => {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          if (pick) {
+            const r = document.createRange();
+            r.selectNodeContents(el);
+            getSelection().removeAllRanges();
+            getSelection().addRange(r);
+          }
+          const box = el.getBoundingClientRect();
+          const e = new MouseEvent("contextmenu", {
+            bubbles: true,
+            cancelable: true,
+            button: 2,
+            clientX: box.left + Math.min(4, box.width / 2),
+            clientY: box.top + Math.min(4, box.height / 2),
+          });
+          el.dispatchEvent(e);
+          if (pick) getSelection().removeAllRanges();
+          return e.defaultPrevented;
+        },
+        [sel, pick],
+      );
+    const kept = {
+      "[data-rail-item]": true,
+      "[data-side-head]": true,
+      "[data-page-title], [data-session-tabs]": true,
+      "[data-md] p": true,
+      "[data-pane-search]": false,
+      "[data-chat-input]": false,
+    };
+    const said = {};
+    for (const [sel, stop] of Object.entries(kept)) {
+      const v = await menuOver(sel);
+      said[sel] = v;
+      if (v === null) fail(`probe dead: ${sel} is not on screen for (d)`);
+      else if (v !== stop) fail(`right-click on ${sel}: ${stop ? "the browser's own menu is let through over chrome" : "a text field lost the system's menu (cut, copy, paste)"}`);
+    }
+    const onSelected = await menuOver("[data-md] p", true);
+    said["selected [data-md] p"] = onSelected;
+    if (onSelected !== false) fail("right-click on selected text lost the system's menu (copy, look up)");
+    // A row's own menu still opens: the app's menus are not WebKit's.
+    await page.locator(row("tui/face-gate-1")).click({ button: "right", timeout: 2_000 }).catch(() => {});
+    await wait(400);
+    const rowMenu = (await n('[role="menu"]')) > 0;
+    await key("Escape");
+    console.log(`mac · right-click prevented: ${JSON.stringify(said)}; a row's own menu opens ${rowMenu}`);
+    if (!rowMenu) fail("right-click on a session row no longer opens its own menu");
   }
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);

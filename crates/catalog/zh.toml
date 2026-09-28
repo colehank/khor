@@ -3818,3 +3818,43 @@ usage-no-cache = "这家不报告缓存"
 # 和机器卡片的 `cli.top-plot-off` 是同一句话说的同一件事,分开两个键是因为
 # 那边数的是进程「行」,这边数的是「模型」——同一个词在两块图上会指错东西。
 usage-scatter-off = "{0} 个模型缺少这两项读数，未绘制"
+
+# ── 菜单栏 (2026-09-28) ─────────────────────────────────────────────
+# macOS 的菜单栏,`apps/gui/src-tauri/src/menu.rs` 照这一节搭。**单开一节**,
+# 因为菜单栏的词是系统的标准词(「显示」「编辑」「关闭窗口」),而 [gui] 里
+# 已经有同字的键(`web-key-show`、`accounts-edit`、`window-close`)各有各的
+# 英文——一节里一个字只能有一个名字(build.rs 第 3 条)。用词照访达和 Safari
+# 的中文菜单:人在别的 app 里学到的词,在这里还是那个词。
+# 五个落地页的名字不在这里:菜单里就是竖栏上那五个词(`gui.sessions-tab` 等)。
+# 「新建…」只在当前落地页没有「+」时出现;有的时候菜单项换成那颗「+」自己
+# 的名字(「新会话…」「新标签页」),菜单说的就是 ⌘N 真会做的事。
+[menu]
+about = "关于 khor"
+settings = "设置…"
+lock = "锁定"
+services = "服务"
+hide = "隐藏 khor"
+hide-others = "隐藏其他"
+show-all = "全部显示"
+quit = "退出 khor"
+file = "文件"
+new = "新建…"
+import = "导入会话…"
+close-tab = "关闭标签页"
+close-window = "关闭窗口"
+edit = "编辑"
+undo = "撤销"
+redo = "重做"
+cut = "剪切"
+copy = "拷贝"
+paste = "粘贴"
+select-all = "全选"
+view = "显示"
+find = "搜索"
+fullscreen = "进入全屏幕"
+window = "窗口"
+minimize = "最小化"
+zoom = "缩放"
+next-tab = "显示下一个标签页"
+prev-tab = "显示上一个标签页"
+front = "前置全部窗口"

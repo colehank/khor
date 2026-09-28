@@ -131,7 +131,9 @@ export function PathLink({ written }: { written: string }) {
       // Underlined like a link and nothing else: it is a link. The
       // dotted variant next door means「this one refused」 (`Link`),
       // and one decoration meaning two things is the ambiguity that
-      // rule exists to avoid.
+      // rule exists to avoid. **And it wears the pointing hand**, which
+      // only a link in prose does (`Markdown`'s `Link` is the other): a
+      // control is the arrow (design-system 30-behavior 选字与手).
       className={cn("cursor-pointer underline underline-offset-2")}
       // **`⌘`+press always goes to the host's own opener** (ruling 35:
       // 「`⌘`+点 或 网址→在宿主机器上打开」; 2026-09-18 ruling 54

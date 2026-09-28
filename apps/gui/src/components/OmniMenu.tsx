@@ -129,7 +129,7 @@ export function OmniMenu({
                   // row and the row is the floor tall, so what the
                   // arrow keys highlight is exactly what a press
                   // lands on (tokens.css `--touch`).
-                  "flex min-h-touch w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-left text-callout",
+                  "flex min-h-touch w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-callout",
                   n === rows.at && "bg-accent",
                   c.dim && "text-muted-foreground",
                 )}

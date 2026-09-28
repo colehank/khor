@@ -264,6 +264,9 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
       type="button"
       data-md-link={href}
       title={href}
+      // **The pointing hand, and one of only two in the app** (the other
+      // is `PathLink`): a link in prose. Every control is the arrow, the
+      // way AppKit draws it (design-system 30-behavior 选字与手).
       className="cursor-pointer underline underline-offset-2"
       onClick={() =>
         (home === null ? openLink(href) : launchOn(home.machine, href)).catch(() =>
@@ -312,7 +315,7 @@ export const Markdown = memo(function Markdown({
     [text],
   );
   return (
-    <div data-md className={cn("min-w-0 break-words", className)}>
+    <div data-md data-selectable className={cn("min-w-0 break-words", className)}>
       <ReactMarkdown
         // **After gfm**, so the addresses it autolinks are already
         // `link` nodes and the path pass leaves them alone.
