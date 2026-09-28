@@ -5,7 +5,10 @@
 // themselves.** A column that is collapsed cannot carry the control
 // that brings it back, so the pair lives in a place that does not move.
 // Left switches the tree, right switches the sessions — the two ends
-// they act on.
+// they act on. **Since 2026-09-28 that place is R0** (the page's own
+// buttons at its right end, D9): the sessions switch stands over the
+// column it opens, VS Code beside it, and R0 says what this is — the
+// name, then 「⎇ 分支 · N 个文件已修改 · 机器:路径」 under it.
 //
 // **Why the sessions column is the one that yields.** Counted across
 // the shell: rail, workspace list, tree, file, sessions is five columns
@@ -41,14 +44,22 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconCode, IconSearch, IconSessions } from "@/components/icons";
+import { IconBack, IconBranch, IconCode, IconPlus, IconSearch, IconSessions } from "@/components/icons";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
+import { PageAction, PageSubtitle } from "@/components/Region";
 import { type RowAction } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
 import { type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
@@ -415,36 +426,35 @@ export function WorkspacePane({
     grew.current = Math.round(sidePane.width);
     void widenWindow(grew.current).then(() => setSessions(true));
   };
-  /** What every switch at the strip's end wears (2026-09-16, rulings 26
-      and 44).
+  /** What both page buttons wear — R0's toolbar buttons, the machine
+      page's three (`MachineVerbs`): a ghost `ctl-md` square whose hit
+      follows `--hit` (28 under a pointer, 44 under a finger).
    *
-   * **Pressed in is the rail's own 「open」 ink** (「并且,点击后要有状态.
-   * 这个icon要变成品牌绿」): `--rail-on-ink`, the same green the rail
-   * lights an open landing with, so 「this one is on」 is one colour in
-   * the whole app. **Not `--lq3` itself** — the brand green measures
-   * 2.22 against paper, under the 3.0 SC 1.4.11 asks of a graphic, and
-   * a 20px glyph that has to be told on from off is a mark in exactly
-   * that sense. The token carries a green deep enough per ground, which
-   * is the argument `RailItem` already made and this borrows whole.
+   * **On is a grey block, `fill-strong`, under full ink** (2026-09-28,
+   * the owner: selected is grey; the brand green has its three posts and
+   * this is none of them). It was `--rail-on-ink` from 2026-09-16
+   * (rulings 26 and 44, 「点击后要有状态.这个icon要变成品牌绿」) — the
+   * rail's open glyph lent to a switch. The state still reads in more
+   * than hue: a block and full ink against no block and muted ink.
    *
-   * Off is muted, as it was: the pair has to differ in more than hue. */
-  /** The look of one switch at the head of the tree.
-   *
-   * **`--ws-switch`, not `--touch`** (docs/SHELL.md 第 7 条:「搜索框
-   * 旁边有这些按钮… 可以小一点来支持显示」— the user, 2026-09-20). Two
-   * 44 boxes were spending 88 pixels of a 288 column on two controls a
-   * mouse lands on at 32, and what is short in that row is the search
-   * box. The finger floor is not given up, it is **conditional**: the
-   * coarse-pointer block in tokens.css puts `--touch` back, which is
-   * the same road `--tree-row` takes and the reason `check-face`
-   * section 3 still measures 44 when it walks the face with a finger. */
-  const switchClass = (on: boolean) =>
-    cn(
-      "min-h-ws-switch min-w-ws-switch",
-      on
-        ? "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]"
-        : "text-muted-foreground",
-    );
+   * ⚠️ 墓碑: `--ws-switch` (32, docs/SHELL.md 第 7 条, 2026-09-20) sized
+   * these while they stood beside the tree's search box and every pixel
+   * of that row was the box's. In R0 they are toolbar buttons like any
+   * other, and the token went with the row they were squeezed into. */
+  const toolClass = "min-h-touch min-w-touch flex-none data-[on=true]:bg-fill-strong data-[on=true]:text-foreground";
+  /** 新建文件 / 新建目录 from the ＋ at the head of the tree (2026-09-28),
+      stamped for the tree to take once (`FileTree`'s `make`). */
+  const [make, setMake] = useState<{ kind: "file" | "dir"; at: number } | null>(null);
+  /** The item chosen on the ＋ menu, held until the menu has let go of
+      the focus. **The box is asked for after the menu closes, not when
+      the item is pressed**: the menu keeps the focus inside itself while
+      it is open, so a box born then never got its caret, and a menu that
+      then handed the focus back to ＋ would have shut it on the spot (it
+      closes on blur, `EditableName`). So the close's own focus hand-back
+      is where the box is asked for, and that hand-back is skipped — the
+      caret goes to the box. A plain dismissal (Esc, a press outside)
+      chose nothing and gives ＋ its focus as usual. */
+  const madeFromMenu = useRef<"file" | "dir" | null>(null);
   /** Which session this column is standing in, by id, or `null` for
       the list. **Dropped when the workspace changes** along with the
       tree's position and the open file: a session belongs to one
@@ -473,6 +483,13 @@ export function WorkspacePane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
   const [git, setGit] = useState<GitStatus | null>(null);
+  /** …and the last **answer**, for R0's second line (2026-09-28).
+      `git` goes back to null while each re-ask is in flight — after a
+      save, on the way back into the window — and a branch that blinked
+      out of the title every time somebody saved would be the head
+      flickering over a fact that did not change. A refusal still
+      clears it: 「不是 checkout」 says nothing, here as in the tree. */
+  const [headGit, setHeadGit] = useState<GitStatus | null>(null);
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -618,8 +635,16 @@ export function WorkspacePane({
     if (root === "") return;
     let live = true;
     fetchGitStatus(machine, root)
-      .then((g) => live && setGit(g))
-      .catch(() => live && setGit(null));
+      .then((g) => {
+        if (!live) return;
+        setGit(g);
+        setHeadGit(g);
+      })
+      .catch(() => {
+        if (!live) return;
+        setGit(null);
+        setHeadGit(null);
+      });
     return () => {
       live = false;
     };
@@ -1335,41 +1360,26 @@ export function WorkspacePane({
     ];
   }
 
-  /** The two switches at the right of the tree's head (2026-09-17
-      ruling 47). **One column each, and neither can be reached from
-      anywhere else**: the sessions fold away, and the editor is a
-      window this face has no other handle on.
+  /** The two switches (2026-09-17 ruling 47). **One column each, and
+      neither can be reached from anywhere else**: the sessions fold
+      away, and the editor is a window this face has no other handle on.
    *
-   * Built once and drawn once, in the head — the strip's far end used
-   * to carry them and does not any more (the ruling: 「取消现在固定在
-   * 标签页位置的」). The ink is 26's and the size is 44's: 20px of
-   * painted mark in a finger-sized box, `--rail-on-ink` when the thing
-   * behind it is open. */
+   * **Where they stand moved twice.** The strip's far end carried them
+   * until ruling 47 (「取消现在固定在标签页位置的」), then the head of
+   * the tree — the one row the narrow face drew before a file was open
+   * (「窄屏进入工作区, 没有到vscode和session的按钮」). **Since 2026-09-28
+   * they are the page's own buttons at R0's right end** (D9, the machine
+   * page's mechanism: `PageAction`), VS Code and then the sessions at
+   * the far right, over the column they open; on the narrow face, the
+   * right end of the window's first row (`NarrowHead`), which is on
+   * every one of the three screens rather than only the tree's. The
+   * tree's head is a search box and ＋ now, like every list's.
+   *
+   * Toolbar buttons, the size of the machine page's three: a 20 glyph in
+   * a `ctl-md` box, `--hit` around it, a `Tooltip` naming each (the
+   * design system's `Toolbar`). On is the grey block (`toolClass`). */
   const switches = (
-    <div data-ws-switches className="flex flex-none items-center gap-0.5">
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={gui.workspace_sessions}
-        data-ws-sessions-switch
-        data-on={sessions}
-        onClick={() => showSessions(!sessions)}
-        className={switchClass(sessions)}
-      >
-        {/* **Equal ink, not equal boxes** (2026-09-16:「右上角的 icon,
-            明显大小不一」, then 「放大一点,但注意四个icon的大小一致性」).
-            The rail's bubble keeps air inside its own canvas and the
-            editor's mark fills its own, so a box each is what makes the
-            *painted* marks match: this one paints about five sevenths
-            of its box and the other fills its own. `check-face`
-            measures the painted extents, never the class.
-
-            **Both came down a step on 2026-09-20** with the box around
-            them (第 7 条). What that ruling asks for is room, and a
-            smaller box holding the same mark would have been the
-            crowding 2026-09-16 was about, one size down. */}
-        <IconSessions className="size-6!" />
-      </Button>
+    <div data-ws-switches className="flex flex-none items-center gap-in">
       {/* **Only where there is an editor to open.** A machine without
           one, and a machine that could not be asked, both answer empty
           and both get no switch — offering a button that fails is worse
@@ -1382,27 +1392,182 @@ export function WorkspacePane({
           not that machine, so the link would name a loopback it cannot
           reach. */}
       {code.version !== "" && root !== "" && !onWebFace && (
-        <Button
-          variant="ghost"
-          size="icon"
-          data-code={codeUp ? "on" : "off"}
-          data-on={codeUp}
-          aria-label={gui.code_tab}
-          title={code.version}
-          // **A window, not a column and not the middle one's other
-          // face** (2026-09-17 ruling 46). Pressing it opens that
-          // machine's editor in a window of its own; pressing it again
-          // brings that window forward rather than making a second.
-          onClick={want}
-          className={switchClass(codeUp)}
-        >
-          {/* The logo fills its canvas, so this is the painted size
-              itself — the bubble beside it needs a larger box to paint
-              the same (see the note on it). */}
-          <IconCode className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              data-code={codeUp ? "on" : "off"}
+              data-on={codeUp}
+              aria-label={gui.code_tab}
+              // **A window, not a column and not the middle one's other
+              // face** (2026-09-17 ruling 46). Pressing it opens that
+              // machine's editor in a window of its own; pressing it
+              // again brings that window forward rather than making a
+              // second — so it is not a toggle and says no `aria-pressed`.
+              onClick={want}
+              className={toolClass}
+            >
+              {/* **Equal ink, not equal boxes** (2026-09-16:「右上角的
+                  icon, 明显大小不一」, then 「注意四个icon的大小一致性」).
+                  The logo fills its canvas and the bubble beside it keeps
+                  air inside its own (about five sevenths of it), so the
+                  bubble's 20 paints about 14 and this box is 14: the two
+                  *painted* marks match, which `check-face` measures —
+                  never the class. */}
+              <span className="flex size-3.5 flex-none [&_svg]:size-full">
+                <IconCode />
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{gui.code_tab}</TooltipContent>
+        </Tooltip>
       )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={gui.ws_sessions_toggle}
+            aria-pressed={sessions}
+            data-ws-sessions-switch
+            data-on={sessions}
+            onClick={() => showSessions(!sessions)}
+            className={toolClass}
+          >
+            {/* The rail's 24-canvas bubble drawn at 20, the toolbar's
+                size (`MachineVerbs`): the box sets the size and the
+                glyph fills it. */}
+            <span className="flex size-5 flex-none [&_svg]:size-full">
+              <IconSessions />
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{gui.ws_sessions_toggle}</TooltipContent>
+      </Tooltip>
     </div>
+  );
+
+  /** R0's second line (2026-09-28): 「⎇ main · 5 个文件已修改 ·
+      peer:/home/peer/work」, **the workspace list row's own words** —
+      its branch corner (`ws-marked`, ignored paths not counted) and its
+      subtitle (`机器:路径`, never shortened to `~`). Built from the
+      status this pane already asked for (`headGit`), so R0 costs the
+      far machine nothing. Not a checkout, or not answered: the location
+      alone. A detached HEAD names no branch, and the count waits on the
+      branch the way the list's corner does. */
+  const branch = headGit !== null && headGit.branch !== "" ? headGit.branch : "";
+  const changed = branch === "" || headGit === null ? 0 : headGit.rows.filter((w) => w.mark !== IGNORED).length;
+  const where = `${machine}:${root}`;
+  /** **Cut in the middle, keeping the machine and the last segment**
+      (Finder's path, Xcode's title): the head of the path takes the
+      ellipsis and the directory's own name never does. Two spans, one
+      text — selecting across them copies the whole value, and a screen
+      reader reads it whole. */
+  const cutAt = where.lastIndexOf("/");
+  const whereHead = cutAt > 0 ? where.slice(0, cutAt) : "";
+  const whereTail = cutAt > 0 ? where.slice(cutAt) : where;
+  /** Whether the head of the path is cut right now, asked when the
+      pointer arrives: the tooltip is the whole value, and over a value
+      showing in full it would only be noise. */
+  const whereCut = useRef<HTMLSpanElement | null>(null);
+  const [whereTip, setWhereTip] = useState(false);
+  const subtitle = (
+    <div data-ws-subtitle className="flex min-w-0 flex-1 items-center gap-xxs text-callout text-muted-foreground">
+      {branch !== "" && (
+        <>
+          {/* The branch keeps its whole name up to half the line; the
+              location is what gives way first. */}
+          <span data-ws-head-branch className="flex min-w-0 max-w-1/2 flex-none items-center gap-xxs">
+            <IconBranch className="size-kind-mark-glyph flex-none" />
+            <span className="truncate">{branch}</span>
+          </span>
+          {changed > 0 && (
+            <>
+              <span aria-hidden="true" className="flex-none">·</span>
+              <span data-ws-head-changed className="flex-none whitespace-nowrap tabular-nums">
+                {gui.ws_marked(changed)}
+              </span>
+            </>
+          )}
+          <span aria-hidden="true" className="flex-none">·</span>
+        </>
+      )}
+      <Tooltip
+        open={whereTip}
+        onOpenChange={(on) => {
+          const el = whereCut.current;
+          setWhereTip(on && el !== null && el.scrollWidth > el.clientWidth);
+        }}
+      >
+        <TooltipTrigger asChild>
+          {/* **Selectable, and a focus stop so it can be.** R0 moves the
+              window (`shell.ts`, `deep`): a press on plain text there
+              starts a drag, not a selection, and tauri leaves alone only
+              what has a tab stop or a role. The stop also brings the
+              whole value up for a keyboard (the tooltip opens on focus).
+              `data-selectable`: a path is a value people copy
+              (30-behavior 选字与手). */}
+          <span
+            data-ws-head-where={where}
+            data-selectable
+            tabIndex={0}
+            className="flex min-w-0 overflow-hidden rounded-xs focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring"
+          >
+            <span ref={whereCut} className="min-w-0 truncate">
+              {whereHead}
+            </span>
+            <span className="flex-none whitespace-nowrap">{whereTail}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="break-all">
+          {where}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+
+  /** The ＋ at the head of the tree (2026-09-28): the same anatomy as
+      every list's head — a search box, then ＋ — and a menu of two,
+      because what a folder holds decides which of the two is being made
+      (the catalog's `file-new` note). Each starts the tree's own
+      in-place name box, the one a folder's right-click opens; where it
+      goes is `FileTree`'s rule (`picked`). No ellipsis: nothing asks
+      again, the name is typed where it will stand. ⌘N stays the
+      landing's 「+」 (添加工作区…). */
+  const treeNew = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label={gui.new_item} data-tree-new className="min-h-touch min-w-touch flex-none">
+          <IconPlus />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={(e) => {
+          const kind = madeFromMenu.current;
+          if (kind === null) return;
+          madeFromMenu.current = null;
+          e.preventDefault();
+          // A search in the box is the tree put away; the box this opens
+          // is drawn on the tree, so the tree comes back first.
+          dropHunt();
+          setMake({ kind, at: Date.now() });
+        }}
+      >
+        {(["file", "dir"] as const).map((kind) => (
+          <DropdownMenuItem
+            key={kind}
+            data-tree-new-item={kind}
+            onSelect={() => {
+              madeFromMenu.current = kind;
+            }}
+          >
+            {kind === "file" ? gui.file_new : gui.dir_new}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   return (
@@ -1424,7 +1589,16 @@ export function WorkspacePane({
         from a file or the sessions to the tree / the file. The two backs
         the file strip and the sessions column each drew for themselves
         (ruling 33) are this one now. A session opened in the column is
-        a screen deeper, and its own head takes the row (`DeeperHeads`). */}
+        a screen deeper, and its own head takes the row (`DeeperHeads`).
+
+        **…and the page's two buttons at its right end** (2026-09-28): the
+        switches R0 carries on the wide face, here on every one of the
+        three screens. Under the name, **the branch and nothing else** —
+        a phone's head has no room for the location — and **not even the
+        branch when it does not fit**: the line is one line tall and wraps
+        what does not fit onto a second one that is clipped, behind an
+        empty first item so that a lone branch can wrap too. Dropped
+        whole rather than cut to 「ma…」. */}
     {narrow && (
       <NarrowHead>
         {() => (
@@ -1441,13 +1615,35 @@ export function WorkspacePane({
             >
               <IconBack />
             </Button>
-            <span data-ws-head-name className="min-w-0 flex-1 truncate text-title-sm font-title">
-              {root === "" ? machine : basename(root)}
-            </span>
+            <div className="flex min-w-0 flex-1 flex-col justify-center">
+              <span data-ws-head-name className="min-w-0 truncate text-title-sm font-title">
+                {root === "" ? machine : basename(root)}
+              </span>
+              {branch !== "" && (
+                <div data-ws-head-sub className="flex h-lh flex-wrap overflow-hidden text-callout text-muted-foreground">
+                  {/* A line tall, or the first line would be 0 high and
+                      the wrapped branch would land inside the clip. */}
+                  <span aria-hidden="true" className="h-lh w-0" />
+                  <span data-ws-head-branch className="flex flex-none items-center gap-xxs whitespace-nowrap">
+                    <IconBranch className="size-kind-mark-glyph flex-none" />
+                    {branch}
+                  </span>
+                </div>
+              )}
+            </div>
+            {switches}
           </>
         )}
       </NarrowHead>
     )}
+    {/* **R0, on the wide face** (2026-09-28): the second title line
+        under the name the shell already put there, and the two switches
+        at the right end. Written here because the facts and the presses
+        are this pane's; seated there by the shell (`Region`). The
+        browsing face (`root` empty) is a machine's disk rather than a
+        workspace, and keeps its own crumbs bar below for 「where」. */}
+    {!narrow && root !== "" && <PageSubtitle>{subtitle}</PageSubtitle>}
+    {!narrow && <PageAction>{switches}</PageAction>}
     <DeeperHeads>
     <div className="flex h-full min-h-0 flex-col">
       {/* **The head row is gone** (工作区批⑧). It held the workspace's
@@ -1458,6 +1654,9 @@ export function WorkspacePane({
           list beside it (docs/WORKSPACE.md 一行的四个角), 「N 个文件
           未存」 became a dot on each tab that has one, and the crumbs
           were cut by the ruling. What is left of the head is the strip.
+          (2026-09-28: the name, the branch, the count and `机器:路径`
+          are said once more, in R0's two title lines — the window's own
+          head, not a row of this pane's; see `subtitle`.)
 
           **Except on the browsing face.** `root === ""` is what
           看它的文件 hands over — a whole machine's disk, where 「where
@@ -1517,19 +1716,17 @@ export function WorkspacePane({
             // remembered from a wide window is applied unread in a
             // narrow one, and that is the case the seam never sees.
             className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}
-            // ── the tree's own head: a box and two switches ───────
+            // ── the tree's own head: a box and ＋ ──────────────────
             // (2026-09-17 ruling 47:「在文件树的侧边上加一个搜索框(可搜
-            // 索文件名与内容)、框的右侧是session和vscode icon」— the
-            // user).
+            // 索文件名与内容)」— the user).
             //
-            // **It is here because the narrow face has no other door.**
-            // 「窄屏进入工作区, 没有到vscode和session的按钮, 仅有打开一个
-            // 文件才能知道」: the switches used to live at the far end of
-            // the tab strip, and the narrow face draws no strip until a
-            // file is open — so a person who had just walked into a
-            // project could not reach either column without first opening
-            // a file they had not come for. The head of the tree is on
-            // every screen the tree is on, which is the first one.
+            // **Every list's anatomy since 2026-09-28**: the search box,
+            // then ＋ (新建文件 / 新建目录, `treeNew`). The two switches
+            // stood where ＋ is from ruling 47 (「框的右侧是session和
+            // vscode icon」) because the narrow face had no other door
+            // to them before a file was open; they are the page's own
+            // buttons now — R0's right end, and on narrow the first
+            // row's (`NarrowHead`), which every screen has.
             head={
             <div
               data-tree-head
@@ -1543,7 +1740,9 @@ export function WorkspacePane({
               // `--pane-head`, which is the same token `PaneBar` and
               // the tab band wear: this *is* a pane's head, and 第 5 条
               // is that the one below it measures the same.
-              className="flex min-h-pane-head flex-none items-center gap-0.5 border-b pr-1 pl-2"
+              // Spaced as `PaneBar` spaces a list's head (`gap-in`,
+              // `px-2`), since this is the same anatomy.
+              className="flex min-h-pane-head flex-none items-center gap-in border-b px-2"
             >
               <div className="relative min-w-0 flex-1">
                 <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
@@ -1572,7 +1771,10 @@ export function WorkspacePane({
                   className="pl-7"
                 />
               </div>
-              {switches}
+              {/* A machine's whole disk (`FilesPane`) has no name box
+                  to open, and an ＋ that could only do nothing is worse
+                  than none (`PaneBar`'s judgment). */}
+              {root !== "" && treeNew}
             </div>
             }
           >
@@ -1635,6 +1837,9 @@ export function WorkspacePane({
                 onGone={drop}
                 onMoved={moved}
                 onMade={() => setGitAt((n) => n + 1)}
+                // The head's ＋ (`treeNew`), taken once.
+                make={make}
+                onMakeSeen={() => setMake(null)}
               />
             )}
           </ListPane>
@@ -1670,10 +1875,9 @@ export function WorkspacePane({
               **Its far end is empty since 2026-09-17** (ruling 47:
               「取消现在固定在标签页位置的」). The two column switches
               moved to the head of the tree, where the narrow face can
-              reach them without opening a file first, and the 预览 eye
-              moved onto the tab it is about. What is left on the strip
-              is tabs and, on the narrow face, the way back to the
-              tree. */}
+              reach them without opening a file first (and on 2026-09-28
+              on to R0's right end), and the 预览 eye moved onto the tab
+              it is about. What is left on the strip is tabs. */}
           {/* **`Tabs`, the one tab strip** (docs/SHELL.md 第四轮 第 9 条): the
               strip, the count that opens and closes the switcher, the
               switcher over the file. This strip was the one seat without
@@ -1694,15 +1898,10 @@ export function WorkspacePane({
             frame={false}
           >
           {file === null ? (
-            // 中栏没有标签时 (ruling 37). Not a blank: where this is,
-            // what branch it is on, and what was open last time.
-            <WorkspaceEmpty
-              root={root}
-              machine={machine}
-              branch={git?.branch ?? ""}
-              recent={recent}
-              onOpen={(p) => open(p, false)}
-            />
+            // 中栏没有标签时 (ruling 37). Not a blank: what was open last
+            // time. Where this is and what branch it is on are R0's
+            // since 2026-09-28 — said once (`WorkspaceEmpty`'s head).
+            <WorkspaceEmpty root={root} recent={recent} onOpen={(p) => open(p, false)} />
           ) : diffOf(file) !== null ? (
             // 点状态字母开出来的那一张 (ruling 38). Read-only, and it
             // is remounted per file the way `FileView` is.

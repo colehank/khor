@@ -103,6 +103,8 @@ export function FileTree({
   onGone,
   onMoved,
   onMade,
+  make,
+  onMakeSeen,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -141,6 +143,13 @@ export function FileTree({
       the tree cannot say so until somebody asks again. The same beat a
       save and a rename ride (`WorkspacePane`'s `gitAt`). */
   onMade?: (path: string) => void;
+  /** 新建文件 / 新建目录 asked for from the ＋ at the head of this tree
+      (2026-09-28), stamped because two presses are two asks. **A
+      one-shot, like the pane's `reveal`**: the tree takes it and says so
+      (`onMakeSeen`), or a remount — the narrow face walking back to the
+      tree — would open a name box nobody asked for. */
+  make?: { kind: "file" | "dir"; at: number } | null;
+  onMakeSeen?: () => void;
 }) {
   /** Every directory this tree has an answer for. The root is asked at
       once; the rest are asked when they are opened. */
@@ -397,6 +406,27 @@ export function FileTree({
     return out;
   }, [listings, expanded, root]);
 
+  /** Where the head's ＋ makes a name (2026-09-28): **into the folder
+      selected in the tree, otherwise the workspace's root** — VS Code's
+      rule as the owner put it. 「Selected」 is the last row pressed here:
+      a folder's press picks it, a file's press or the blank under the
+      rows picks nothing (the root). A folder that has since gone —
+      renamed, deleted, folded out of sight under a parent — is not a
+      place a box can be drawn, so the root takes it. */
+  const [picked, setPicked] = useState<string | null>(null);
+  useEffect(() => {
+    if (make == null) return;
+    onMakeSeen?.();
+    const into = picked !== null && rows.some((r) => r.dir && r.full === picked) ? picked : root;
+    // Opened, so the box stands where the row it becomes will stand,
+    // among its siblings — what 新建 from a folder's own menu does too
+    // once the name is taken (`made`).
+    if (into !== root && !expanded.has(into)) toggle(into);
+    setNaming({ at: into, kind: make.kind });
+    // Only a new ask is a reason to open a box; the rest is read as it is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [make]);
+
   /** How far in one level sits (tokens.css `--tree-step`). */
   const indent = (depth: number) => ({
     paddingLeft: `calc(var(--gap-row) + var(--tree-step) * ${depth})`,
@@ -481,7 +511,12 @@ export function FileTree({
                       type="button"
                       data-dir={r.name}
                       data-on={on}
-                      onClick={() => toggle(r.full)}
+                      // The folder the head's ＋ makes into (`picked`).
+                      data-picked={picked === r.full ? "" : undefined}
+                      onClick={() => {
+                        toggle(r.full);
+                        setPicked(r.full);
+                      }}
                       className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
                     >
                       {/* **12 across, not 16** (2026-09-16:「树里的 > 按钮
@@ -552,7 +587,10 @@ export function FileTree({
                       // preview|pin`). **Only an explicit 「pin」 moves
                       // it**, so an answer that has not arrived is the
                       // default rather than a second copy of it.
-                      onClick={() => onOpen(r.full, clickPins)}
+                      onClick={() => {
+                        setPicked(null);
+                        onOpen(r.full, clickPins);
+                      }}
                       // 「双击、或在里面打了字,就钉住」— the second
                       // press is what says 「I am staying」, and the
                       // browser hands it over as its own event rather
@@ -686,7 +724,10 @@ export function FileTree({
                 type="button"
                 data-tree-blank
                 aria-label={gui.file_new}
-                onClick={() => setNaming({ at: root, kind: "file" })}
+                onClick={() => {
+                  setPicked(null);
+                  setNaming({ at: root, kind: "file" });
+                }}
                 className="min-h-touch w-full"
               />
             </RowMenu>

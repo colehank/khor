@@ -10,9 +10,15 @@
 // nothing (docs/UX.md 设置 — a default that answers beats a decoration).
 //
 // What goes here is what khor already knows and the person came to find
-// out: which project this is, where it is, what branch it is on, and
-// what they had open last time. Every line of it is a fact, and the
-// last group is pressable.
+// out: what they had open last time. Every line of it is a fact, and
+// every line is pressable. With nothing opened yet it says so, in one
+// sentence (20-states 空), rather than going blank.
+//
+// **Not the name, the path or the branch** (2026-09-28). Those stood at
+// the top of this column until R0 learned to say them — the name, then
+// 「⎇ main · 5 个文件已修改 · peer:/home/peer/work」 under it — and a
+// page says who it is once (10-layout「身份只出现一次」). Said twice,
+// the second copy is the one people learn to skip.
 //
 // # The recent list is this face's own
 //
@@ -23,6 +29,7 @@
 // costs the list and nothing else.
 import { gui } from "@/gen/catalog";
 import { FileKindIcon } from "@/components/FileKindIcon";
+import { EmptyState } from "@/components/RegionState";
 import { cn } from "@/lib/utils";
 import { basename } from "@/words";
 
@@ -71,70 +78,50 @@ export function rememberOpened(machine: string, root: string, path: string): str
 
 export function WorkspaceEmpty({
   root,
-  machine,
-  branch,
   recent,
   onOpen,
 }: {
-  /** The workspace's own directory, absolute. Empty on the browsing
-      face, which has no workspace and so no name to say. */
+  /** The workspace's own directory, absolute — what the paths below are
+      said relative to. Empty on the browsing face, where they are whole. */
   root: string;
-  machine: string;
-  /** From the status this pane already holds. Empty means there is no
-      name to say — detached, or no commit yet — and nothing is drawn
-      rather than a word being invented for it (`GitStatus::branch`). */
-  branch: string;
   recent: string[];
   onOpen: (path: string) => void;
 }) {
+  if (recent.length === 0) {
+    return (
+      <div data-ws-empty={root} className="flex min-h-0 flex-1 flex-col">
+        <EmptyState data-ws-empty-none>{gui.ws_empty_none}</EmptyState>
+      </div>
+    );
+  }
   return (
     <div data-ws-empty={root} className="min-h-0 flex-1 overflow-auto p-[var(--gap-pane)]">
-      <div className="flex flex-col gap-[var(--gap-row)]">
-        <div className="flex flex-col gap-[var(--gap-in)]">
-          <div data-ws-empty-name className="font-title text-title-md">
-            {root === "" ? machine : basename(root)}
-          </div>
-          {/* Machine and path on one line, in the order everything else
-              in khor spells them (`机器:路径`, the tab's hover title and
-              the workspace list's own second line). */}
-          <div className="text-callout text-muted-foreground">
-            {root === "" ? "" : `${machine}:${root}`}
-          </div>
-          {branch !== "" && (
-            <div data-ws-empty-branch className="font-mono text-caption text-muted-foreground">
-              {branch}
-            </div>
-          )}
+      <div className="flex flex-col gap-[var(--gap-in)]">
+        <div className="text-caption text-muted-foreground">{gui.ws_empty_recent}</div>
+        <div className="flex flex-col">
+          {recent.map((p) => (
+            <button
+              type="button"
+              key={p}
+              data-ws-recent={p}
+              onClick={() => onOpen(p)}
+              className={cn(
+                "flex min-h-touch w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-callout",
+                "hover:bg-muted/50",
+              )}
+            >
+              <FileKindIcon name={basename(p)} className="size-5 flex-none" />
+              <span className="min-w-0 flex-1 truncate">{basename(p)}</span>
+              {/* The path it sits at, so two `mod.rs` are two rows
+                  a person can tell apart. Relative to the root for
+                  the tab strip's reason: the absolute one is the
+                  same forty characters on every line. */}
+              <span className="min-w-0 flex-[2] truncate text-right text-caption text-muted-foreground">
+                {root !== "" && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p}
+              </span>
+            </button>
+          ))}
         </div>
-        {recent.length > 0 && (
-          <div className="flex flex-col gap-[var(--gap-in)]">
-            <div className="text-caption text-muted-foreground">{gui.ws_empty_recent}</div>
-            <div className="flex flex-col">
-              {recent.map((p) => (
-                <button
-                  type="button"
-                  key={p}
-                  data-ws-recent={p}
-                  onClick={() => onOpen(p)}
-                  className={cn(
-                    "flex min-h-touch w-full min-w-0 items-center gap-2 rounded-sm px-2 text-left text-callout",
-                    "hover:bg-muted/50",
-                  )}
-                >
-                  <FileKindIcon name={basename(p)} className="size-5 flex-none" />
-                  <span className="min-w-0 flex-1 truncate">{basename(p)}</span>
-                  {/* The path it sits at, so two `mod.rs` are two rows
-                      a person can tell apart. Relative to the root for
-                      the tab strip's reason: the absolute one is the
-                      same forty characters on every line. */}
-                  <span className="min-w-0 flex-[2] truncate text-right text-caption text-muted-foreground">
-                    {root !== "" && p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

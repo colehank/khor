@@ -2700,6 +2700,10 @@ file-rename-taken = "这个名称已被使用"
 # a shortcut card** — what a person needs here is where they are and
 # what they were last doing, and both are facts khor already holds.
 ws-empty-recent = "最近打开"
+# 中栏没有标签、这个工作区也还没打开过文件时那一句。2026-09-28 名字、路径、
+# 分支都上了 R0(身份只出现一次),中栏只剩「最近打开」;一个都没有时说这一句,
+# 不留一片白(第 37 条)。说的是事实,不是教人去点哪儿。
+ws-empty-none = "没有打开的文件"
 # 点状态字母看整文件 (工作区第五轮 第 38 条). The two headings over a
 # diff tab's halves. **HEAD keeps its own name** — it is git's word and
 # every other tool the person uses spells it that way (`GitRow`'s
@@ -2763,6 +2767,10 @@ tab-copy-rel = "复制相对路径"
 # 两者的区别可以一句话验:前者要求屏幕上有个东西能按,后者只要求屏幕上有那一栏。
 workspace-tree = "文件树"
 workspace-sessions = "这里的会话"
+# 打开的工作区 R0 右端那颗开关的名字(提示和读屏都是它)。2026-09-28 从树头
+# 挪到 R0,站在它开合的那一栏正上方。**说的是那一栏,不是「显示/隐藏」**:
+# 开着还是关着由那块灰底说,名字只管「这是哪一栏」。
+ws-sessions-toggle = "会话栏"
 # 树那一栏顶上那个框(工作区第六轮 第 47 条:「在文件树的侧边上加一个搜索框
 # (可搜索文件名与内容)」)。**它真的找得到文件**,所以这里可以叫「文件」——
 # 而 `search-devices` 底下那句话说的是另一回事:那两栏列的是机器,一个写着
