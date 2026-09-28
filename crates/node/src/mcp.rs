@@ -28,6 +28,7 @@
 //! `open`, `close` and `tell` say what they do in their titles, so the
 //! question a person is asked is a question they can answer.
 
+use khor_catalog::msg;
 use serde_json::{Value, json};
 
 use crate::Node;
@@ -38,9 +39,13 @@ use crate::Node;
 const PROTOCOL: &str = "2024-11-05";
 
 /// One tool: the name claude sees, what it is for, and its arguments.
+///
+/// **What it is for is the catalog's** (`[msg] mcp-*`): a model reads it
+/// and says it back to a person, in the language khor is speaking — so
+/// it is a word like any other, looked up at the moment it is sent.
 struct Tool {
     name: &'static str,
-    about: &'static str,
+    about: fn() -> &'static str,
     /// Looking, not moving (docs/AGENT.md: 读免批). The split is
     /// declared **here**, beside the thing it describes, and the
     /// allowlist handed to the vendor is generated from it — a second
@@ -61,25 +66,25 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "devices",
         reads: true,
-        about: "网里的每台机器,以及它们此刻的 CPU/内存/磁盘/GPU。看,不动任何东西。",
+        about: msg::mcp_devices,
         schema: no_args,
     },
     Tool {
         name: "sessions",
         reads: true,
-        about: "网里所有 session:id、状态词、标题、在哪台机器上。看,不动任何东西。",
+        about: msg::mcp_sessions,
         schema: no_args,
     },
     Tool {
         name: "ls",
         reads: true,
-        about: "列某台机器上的一个目录。不给 path 就是那台机器的主目录。看,不动任何东西。",
+        about: msg::mcp_ls,
         schema: || {
             json!({
                 "type": "object",
                 "properties": {
-                    "machine": { "type": "string", "description": "机器名(devices 里的那个)" },
-                    "path": { "type": "string", "description": "绝对路径;省略=主目录" }
+                    "machine": { "type": "string", "description": msg::mcp_ls_machine() },
+                    "path": { "type": "string", "description": msg::mcp_ls_path() }
                 },
                 "required": ["machine"],
                 "additionalProperties": false
@@ -89,15 +94,15 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "open",
         reads: false,
-        about: "在某台机器上开一个持久 session 跑一条命令。**这会在那台机器上起一个进程。**",
+        about: msg::mcp_open,
         schema: || {
             json!({
                 "type": "object",
                 "properties": {
-                    "machine": { "type": "string", "description": "在哪台机器上开" },
-                    "command": { "type": "string", "description": "要跑的命令(交给那台机器的 shell)" },
-                    "title": { "type": "string", "description": "这一行叫什么;省略=按命令取" },
-                    "cwd": { "type": "string", "description": "在哪个目录里跑;省略=那台机器的主目录" }
+                    "machine": { "type": "string", "description": msg::mcp_open_machine() },
+                    "command": { "type": "string", "description": msg::mcp_open_command() },
+                    "title": { "type": "string", "description": msg::mcp_open_title() },
+                    "cwd": { "type": "string", "description": msg::mcp_open_cwd() }
                 },
                 "required": ["machine", "command"],
                 "additionalProperties": false
@@ -107,11 +112,11 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "close",
         reads: false,
-        about: "关掉一个 session。**这会结束那台机器上的进程。**",
+        about: msg::mcp_close,
         schema: || {
             json!({
                 "type": "object",
-                "properties": { "session": { "type": "string", "description": "session id" } },
+                "properties": { "session": { "type": "string", "description": msg::mcp_close_session() } },
                 "required": ["session"],
                 "additionalProperties": false
             })
@@ -120,7 +125,7 @@ const TOOLS: &[Tool] = &[
     Tool {
         name: "tell",
         reads: false,
-        about: "给某台机器的窗口留一句话。**对方会看到它。**",
+        about: msg::mcp_tell,
         schema: || {
             json!({
                 "type": "object",
@@ -176,7 +181,7 @@ pub fn serve_stdio(root: std::path::PathBuf) -> Result<(), String> {
             "tools/list" => json!({
                 "tools": TOOLS.iter().map(|t| json!({
                     "name": t.name,
-                    "description": t.about,
+                    "description": (t.about)(),
                     "inputSchema": (t.schema)(),
                 })).collect::<Vec<_>>()
             }),
@@ -200,7 +205,7 @@ pub fn serve_stdio(root: std::path::PathBuf) -> Result<(), String> {
                 let frame = json!({
                     "jsonrpc": "2.0",
                     "id": id,
-                    "error": { "code": -32601, "message": khor_catalog::msg::unknown_action(other) }
+                    "error": { "code": -32601, "message": msg::unknown_action(other) }
                 });
                 writeln!(out, "{frame}").map_err(|e| e.to_string())?;
                 out.flush().map_err(|e| e.to_string())?;
@@ -275,14 +280,15 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
             if truncated {
                 // The no-silent-caps rule reaches the model too: a
                 // listing that was cut must not read as a whole one.
-                out.push_str("…(还有更多,没列全)\n");
+                out.push_str(msg::mcp_listing_cut());
+                out.push('\n');
             }
             Ok(out)
         }
         "open" => {
             let command = s("command");
             if command.is_empty() {
-                return Err("open 要一条命令".into());
+                return Err(msg::mcp_open_needs_command().into());
             }
             let title = if s("title").is_empty() {
                 command.clone()
@@ -303,13 +309,13 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
         "close" => {
             let rt = runtime()?;
             rt.block_on(n.close_anywhere(&crate::SessionId(s("session"))))?;
-            Ok("关掉了".into())
+            Ok(msg::mcp_closed().into())
         }
         "tell" => {
             n.tell(&s("machine"), &s("text"))?;
-            Ok("留言送到了".into())
+            Ok(msg::mcp_told().into())
         }
-        other => Err(khor_catalog::msg::unknown_action(other)),
+        other => Err(msg::unknown_action(other)),
     }
 }
 
@@ -320,7 +326,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(khor_catalog::msg::runtime_wont_start)
+        .map_err(msg::runtime_wont_start)
 }
 
 #[cfg(test)]
@@ -342,6 +348,19 @@ mod tests {
             );
         }
         assert_eq!(free.len(), super::TOOLS.iter().filter(|t| t.reads).count());
+    }
+
+    /// **The words are the catalog's** (`[msg] mcp-*`, both files —
+    /// `khor_catalog`'s build refuses a key only one of them has). What
+    /// is left to hold here is that no tool reads as nothing. The
+    /// language is not switched in this test: it is process-wide, and
+    /// the other unit tests read Chinese while this one runs
+    /// (`tests/lang.rs` switches it, in a process of its own).
+    #[test]
+    fn every_tool_says_what_it_is_for() {
+        for t in super::TOOLS {
+            assert!(!(t.about)().trim().is_empty(), "{} says nothing", t.name);
+        }
     }
 
     /// The names the vendor matches on are `mcp__<server>__<tool>`, and

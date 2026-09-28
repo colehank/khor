@@ -1163,6 +1163,27 @@ vscode-never-answered = "VS Code never said where it's listening"
 config-no-such-key = "No such setting: {0} — khor config list shows them all"
 config-no-such-value = "{0} doesn't take \"{1}\" — it takes {2}"
 
+# khor's verbs as an agent's tools (`khor_node::mcp`). A model reads
+# these and repeats them to a person: the reading three say they change
+# nothing, the acting three say what they do next to their names.
+mcp-devices = "Every machine on the network, with its CPU/memory/disk/GPU right now. Reads only; changes nothing."
+mcp-sessions = "Every session on the network: id, state word, title, and which machine it's on. Reads only; changes nothing."
+mcp-ls = "Lists a directory on a machine. Without a path, that machine's home directory. Reads only; changes nothing."
+mcp-ls-machine = "The machine's name (as devices lists it)"
+mcp-ls-path = "An absolute path; omitted means the home directory"
+mcp-open = "Opens a persistent session on a machine running one command. **This starts a process on that machine.**"
+mcp-open-machine = "Which machine to open it on"
+mcp-open-command = "The command to run (handed to that machine's shell)"
+mcp-open-title = "What the row is called; omitted means the command itself"
+mcp-open-cwd = "Which directory to run in; omitted means that machine's home directory"
+mcp-close = "Closes a session. **This ends the process on that machine.**"
+mcp-close-session = "The id of the session to close"
+mcp-tell = "Leaves a line in a machine's window. **Whoever is there will see it.**"
+mcp-listing-cut = "…(there's more; this listing was cut)"
+mcp-open-needs-command = "open needs a command"
+mcp-closed = "Session closed"
+mcp-told = "Message delivered"
+
 [gui]
 window-minimize = "Minimize"
 window-maximize = "Maximize / restore"

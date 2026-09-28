@@ -90,8 +90,12 @@ export function PaneBar({
    * the box does is the landing's; where it stands is the shell's
    * (`SideHead`). A head with no seat stays at the top of whatever it
    * is in (the tab switcher's box, the workspace's sessions column).
+   *
+   * `"head"`: the box stands in a narrow screen's head (`NarrowHead`),
+   * which already sits in the first row — so no portal, no rule under,
+   * no ⌘K hint and no ⌘N; the narrow tab switcher's, beside its 「‹」.
    */
-  seat?: "side";
+  seat?: "side" | "head";
   query: string;
   onQuery: (q: string) => void;
   /**
@@ -178,7 +182,7 @@ export function PaneBar({
         "flex min-h-pane-head flex-none items-center gap-in",
         // `@container/bar`: the search slot below asks how wide this
         // bar is, not how wide the window is (第十五轮 第 4 条).
-        seat === "side" ? "@container/bar min-w-0 flex-1 pr-1" : "border-b px-2",
+        seat === "side" ? "@container/bar min-w-0 flex-1 pr-1" : seat === "head" ? "min-w-0 flex-1" : "border-b px-2",
       )}
       // A menu hung from this box starts at the list column, not over
       // the rail (tokens.css `--seat-menu-inset`).
@@ -222,19 +226,15 @@ export function PaneBar({
             placeholder={searchLabel}
             value={query}
             onChange={(e) => onQuery(e.target.value)}
-            // `min-h-touch` — the finger floor (tokens.css `--touch`).
-            // The omnibox half of this slot got it with the browse shell;
-            // this is the plain box the panes without axes draw, and it
-            // was still at the `--ctl-md` look's height. `min-h` rather
-            // than a height so it beats the vendored `h-ctl-md` without
-            // fighting it — tailwind-merge does not read `ctl-md` as a
-            // height, so both classes would have survived and the winner
-            // would have been whichever the stylesheet emitted last
-            // (`button.tsx` wrote that trap down first).
-            className={cn(
-              "min-h-touch rounded-sm border-0 bg-fill pl-7 text-body shadow-none placeholder:text-tertiary focus-visible:ring-0 md:text-body",
-              seat === "side" && "pr-10 @max-3xs/bar:pr-2",
-            )}
+            // The look is the text field's own (`ui/input`, components/
+            // TextField, 2026-09-28): `fill`, `radius-sm`, `body`, the
+            // `ring` on focus, and the finger floor (`min-h-touch`,
+            // tokens.css `--touch`) that used to be written here — a
+            // `min-h` because tailwind-merge does not read `ctl-md` as a
+            // height, so only a floor beats `h-ctl-md` (`button.tsx`
+            // wrote that trap down first). What is left here is room for
+            // the magnifier and, seated, the key hint.
+            className={cn("pl-7", seat === "side" && "pr-10 @max-3xs/bar:pr-2")}
           />
           {/* Which range the box is on (第十三轮 第 4 条): typing narrows
               this column; the word says how to widen it. */}

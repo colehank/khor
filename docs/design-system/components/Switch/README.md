@@ -1,6 +1,8 @@
 # Switch
 
-是 / 否。`switch-w` 32 × `switch-h` 18，圆角 `radius-full`，打开时槽是 `brand-strong`，关闭时是 `fill-strong`；那颗钮永远是白的，带 `knob` 这一档阴影——全系统唯一的一处阴影例外。
+是 / 否。`switch-w` 32 × `switch-h` 18，圆角 `radius-full`，打开时槽是 `brand-strong`，关闭时是 `fill-strong`；那颗钮永远是白的——颜色是 `knob` 这个 token（两个主题都是白，2026-09-28 之前组件里写的是字面量 `bg-white`），带 `shadow-knob` 这一档阴影——全系统唯一的一处阴影例外。
+
+灰掉的开关整颗 0.5 透明度，**光标还是箭头**：AppKit 在不可用的控件上不换光标，`not-allowed` 那个带斜杠的圆是网页的说法（`check-face` §11b）。
 
 **只用在一件事立刻生效、而且只有两种状态的时候。** 要在几个里选一个用 `PopupButton`；有自己一页的用导航行；只做一次的动作用按钮。
 

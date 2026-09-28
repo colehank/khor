@@ -13188,6 +13188,114 @@ try {
     }
   }
 
+  // ── 4K) the brand wash has one post (2026-09-28 audit) ─────────────
+  //
+  // `brand-wash` (`bg-accent`) is the olive tint the design gives one
+  // job: the row being located to and the thing you said (README 颜色
+  // 「淡底」). The audit found it doing two others — a pointer's hover
+  // on the sessions overview's machine rows, and the picked row of the
+  // ⌘K hits — where every other list in the app paints the neutral
+  // pair: `fill` under the pointer, `fill-strong` on what is chosen
+  // (components/ListRow). Two halves, and both were red on the code
+  // before the fix:
+  //
+  //   (a) rendered: hover a machine row on the sessions overview, step
+  //       onto a ⌘K hit, and read what each paints against the tokens;
+  //   (b) static: every `bg-accent` / `var(--accent)` / `brand-wash` in
+  //       src/ is one of the named posts, each printed with its reason —
+  //       the rendered half only reaches what this fixture can open, and
+  //       the slash menu, the import list and the file tree's open row
+  //       wore the same wash.
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const paintOf = (name) =>
+      page.evaluate((name) => {
+        const probe = document.createElement("span");
+        probe.style.backgroundColor = `var(--${name})`;
+        document.body.append(probe);
+        const c = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return c;
+      }, name);
+    const tok = { wash: await paintOf("brand-wash"), fill: await paintOf("fill"), strong: await paintOf("fill-strong") };
+    const seen = {};
+    if (await open("sessions")) {
+      const row = page.locator("[data-now-device]").first();
+      if ((await row.count()) > 0) {
+        await row.hover();
+        await wait(250);
+        seen.hover = await row.evaluate((el) => getComputedStyle(el).backgroundColor);
+      }
+      await page.mouse.move(700, 880);
+      await wait(150);
+    }
+    await page.keyboard.press("Meta+k");
+    if (await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1)) {
+      await page.locator("[data-search-box]").fill("face");
+      if (await until(3_000, async () => (await page.locator("[data-search-row]").count()) > 1)) {
+        await page.keyboard.press("ArrowDown");
+        await wait(200);
+        seen.picked = await page.evaluate(() => {
+          const on = document.querySelector('[data-search-row][data-on="true"]');
+          return on ? getComputedStyle(on).backgroundColor : null;
+        });
+      }
+    }
+    await page.keyboard.press("Escape");
+    await wait(200);
+    console.log(`4K · wash ${tok.wash}, fill ${tok.fill}, fill-strong ${tok.strong} · painted ${JSON.stringify(seen)}`);
+    if (!seen.hover) fail("probe dead: 4K (a) never hovered a machine row on the sessions overview");
+    else if (seen.hover !== tok.fill) {
+      fail(
+        `4K (a) · a hovered machine row on the sessions overview paints ${seen.hover}` +
+          `${seen.hover === tok.wash ? " — the brand wash" : ""}; a hover is the neutral \`fill\` (${tok.fill}) ` +
+          "— the wash is for the row being located to (src/views/MeshNow.tsx)",
+      );
+    }
+    if (!seen.picked) fail("probe dead: 4K (a) never picked a ⌘K hit");
+    else if (seen.picked !== tok.strong) {
+      fail(
+        `4K (a) · the picked ⌘K hit paints ${seen.picked}${seen.picked === tok.wash ? " — the brand wash" : ""}; ` +
+          `a chosen row is \`fill-strong\` (${tok.strong}) like a selected list row (src/components/SideHead.tsx)`,
+      );
+    }
+
+    // (b) static. Each post is named with the reason it is one.
+    const WASH_POSTS = {
+      "src/views/MachineChat.tsx": "a message you sent, on the machines' chat — the thing you said",
+      "src/views/WorkspacePane.tsx": "a find hit's mark in a file — the place being located to",
+      "src/styles/app.css": "the table row a pressed point locates, for a moment (`[data-hot]`) — located to",
+    };
+    const WASH = /(^|[\s"'`:])(hover:|focus:|data-\[[^\]]*\]:)?bg-accent(\/\d+)?(?=[\s"'`]|$)|var\(--accent\)|var\(--brand-wash\)|bg-brand-wash/;
+    const off = [];
+    const posted = new Set();
+    for (const f of sources) {
+      if (f.rel === "src/styles/tokens.css") continue;
+      f.lines.forEach((line, i) => {
+        if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+        if (!WASH.test(line)) return;
+        if (WASH_POSTS[f.rel] && !/hover:bg-accent/.test(line)) posted.add(f.rel);
+        else off.push(`${f.rel}:${i + 1}`);
+      });
+    }
+    for (const rel of posted) console.log(`4K (b) · named post · ${rel}: ${WASH_POSTS[rel]}`);
+    console.log(`4K (b) · ${sources.length} file(s) read, ${off.length} wash off its post`);
+    if (sources.length < 50) fail(`probe dead: 4K (b) read ${sources.length} source file(s)`);
+    for (const rel of Object.keys(WASH_POSTS)) {
+      if (!posted.has(rel)) fail(`4K (b) · ${rel} is named as a post of the wash and wears none now — delete its line`);
+    }
+    for (const at of off) {
+      fail(
+        `4K (b) · ${at} paints the brand wash off its post — a hover is \`fill\`, a chosen row \`fill-strong\`; ` +
+          "the wash is only the row being located to and the thing you said (README 颜色)",
+      );
+    }
+  }
+
   // ── 5) a dense screen has a reading order ─────────────────────────
   // **What sections 2 and 3 cannot see.** Section 2 asks whether the
   // three weights exist *somewhere on the page*, which the rail and the
@@ -15208,6 +15316,75 @@ try {
     const all = await read();
     if (all === null) fail("probe dead: no usage half to read");
 
+    //   ⓪ **Every word on the half is at or above the type floor.** The
+    //   machine card's floor (section 10, 「type floor」) carried over:
+    //   the 2026-09-28 audit found this half still drawing the peak
+    //   day's note and the scatter's model names at 8.5px — an SVG
+    //   `fontSize` no static check reads. Measured on the glass, both
+    //   readings of the trend (by day, by model), every element that
+    //   paints a word; invisible text is excused and counted. The floor
+    //   is the page's `--text-caption`.
+    {
+      const floorOfHalf = () =>
+        page.evaluate(() => {
+          const floor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--text-caption"));
+          const el = document.querySelector("[data-quota-detail] [data-usage-half]");
+          if (!el) return { floor, words: 0, excused: 0, under: [], peak: false, names: 0 };
+          let words = 0;
+          let excused = 0;
+          const under = [];
+          for (const n of el.querySelectorAll("*")) {
+            const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim() !== "");
+            if (!own) continue;
+            const r = n.getBoundingClientRect();
+            const cs = getComputedStyle(n);
+            if (r.width <= 1 || r.height <= 1 || cs.visibility === "hidden" || n.closest("[hidden]")) {
+              excused += 1;
+              continue;
+            }
+            words += 1;
+            const px = parseFloat(cs.fontSize);
+            if (px < floor - 0.01) under.push(`${n.tagName.toLowerCase()} ${px}px 「${n.textContent.trim().slice(0, 16)}」`);
+          }
+          return {
+            floor,
+            words,
+            excused,
+            under,
+            peak: !!el.querySelector("[data-usage-peak-day]"),
+            names: el.querySelectorAll("[data-usage-point] text").length,
+            model: !!el.querySelector('[data-usage-chart="model"] text'),
+          };
+        });
+      const byView = {};
+      byView.day = await floorOfHalf();
+      await pickUsage("view", "model");
+      byView.model = await floorOfHalf();
+      await pickUsage("view", "day");
+      for (const [view, v] of Object.entries(byView)) {
+        console.log(`type floor · 额度 usage half · ${view}: ${v.words} words, ${v.excused} excused, ${v.under.length} under ${v.floor}px`);
+        //   Probe alive: the figures' own words are among those measured
+        //   — the day chart's peak note, the model chart's bars, the
+        //   scatter's names — or 「nothing under the floor」 is about the
+        //   table alone.
+        const alive = v.floor >= 11 && v.words >= 20 && v.names > 0 && (view === "day" ? v.peak : v.model);
+        if (!alive) {
+          fail(
+            `type floor · 额度 usage half · ${view}: probe dead — ${v.words} words, floor ${v.floor}, ` +
+              `peak note ${v.peak}, model bars ${v.model}, ${v.names} scatter names`,
+          );
+          continue;
+        }
+        if (v.under.length) {
+          fail(
+            `type floor · 额度 usage half · ${view}: ${v.under.length} words under caption ${v.floor}px — ` +
+              `${v.under.slice(0, 8).join(", ")}${v.under.length > 8 ? " …" : ""}. Bring them onto the scale ` +
+              "(src/views/UsageHalf.tsx, `PLOT.tick` in src/lib/plot.ts)",
+          );
+        }
+      }
+    }
+
     //   ② **Every model gets its own band, and a band never rounds to
     //   nothing.** A model folded into 「其余」 and a model that never
     //   ran are the same screen, so the count on the legend, in the
@@ -15479,7 +15656,12 @@ try {
       hot: [...document.querySelectorAll(`${sel} [data-usage-row][data-hot]`)].map((r) => r.dataset.usageRow),
       rowCursor: getComputedStyle(document.querySelector(`${sel} [data-usage-row]`)).cursor,
     }), half);
-    await page.locator(`${half} [data-usage-point="claude-opus-5"]`).click();
+    //   **Pressed on the dot**, the way a person aims: the point's group
+    //   holds its name too, and since the names came up to the type
+    //   floor (2026-09-28) the group's box is wide enough that its centre
+    //   — where a bare `.click()` lands — fell in the gap between the
+    //   name and the dot, on a grid line.
+    await page.locator(`${half} [data-usage-point="claude-opus-5"] circle`).nth(1).click();
     await wait(200);
     const lit = await hotNow();
     if (lit.hot.length !== 1 || lit.hot[0] !== "claude-opus-5") {
@@ -15993,6 +16175,21 @@ try {
       await wait(400);
       const listed = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
       if (listed !== 2) fail(`the switcher lists ${listed} of 2 open tabs`);
+      // **The way back is the one every narrow screen has** (2026-09-28):
+      // 「‹」 in the window's first row, and it puts the switcher away
+      // onto the tab that was in front. It had none — picking a tab or
+      // pressing the rail were the only ways off this screen.
+      const backs = await page.locator("[data-side-head] [data-back]").count();
+      if (backs !== 1) {
+        fail(`the narrow tab switcher's first row carries ${backs} 「‹」 — a screen on a phone needs its way back (src/browse/TabStrip.tsx)`);
+      } else {
+        await press("[data-side-head] [data-back]");
+        if ((await page.locator("[data-tab-switcher]").count()) !== 0 || (await page.locator("[data-detail-header] [data-halo]").count()) !== 1) {
+          fail("「‹」 on the narrow tab switcher did not land back on the session that was in front");
+        }
+        await narrowCount.click();
+        await wait(400);
+      }
       // Switching really switches: pick the tab that is not in front
       // and a session detail comes back.
       const other = await page
@@ -22613,8 +22810,21 @@ try {
         const off = [];
         let links = 0;
         let more = 0;
+        const barred = [];
         for (const el of document.querySelectorAll("*")) {
-          if (getComputedStyle(el).cursor !== "pointer") continue;
+          const cur = getComputedStyle(el).cursor;
+          // **No 「not-allowed」 either** (2026-09-28): AppKit draws the
+          // arrow over a disabled control — the circle-with-a-bar is a
+          // web page's way of saying 「you cannot」, and a greyed control
+          // already says it. The top of each region only, as below.
+          if (cur === "not-allowed") {
+            if (!(el.parentElement && getComputedStyle(el.parentElement).cursor === "not-allowed")) {
+              const marks = [...el.attributes].map((a) => a.name).filter((a) => a.startsWith("data-") && a !== "data-slot" && a !== "data-state");
+              barred.push(`${el.tagName.toLowerCase()}${marks.length ? `[${marks[0]}]` : ""} (not-allowed)`);
+            }
+            continue;
+          }
+          if (cur !== "pointer") continue;
           if (el.closest(LINK)) {
             links += 1;
             continue;
@@ -22630,6 +22840,7 @@ try {
           off.push(`${el.tagName.toLowerCase()}${marks.length ? `[${marks[0]}]` : ""}${el.getAttribute("role") ? ` role=${el.getAttribute("role")}` : ""}`);
         }
         if (more) off.push(`and ${more} more`);
+        off.push(...barred.slice(0, 6));
         return { off, links };
       }, LINK);
     const onChat = await hands();
@@ -22653,6 +22864,35 @@ try {
       console.log(`mac · cursor on ${where}: off links ${JSON.stringify(h.off)}`);
       if (!got) fail(`probe dead: section 11 never reached ${where}`);
       if (h.off.length) fail(`cursor: pointer off a link on ${where}: ${h.off.join(", ")} — controls wear the arrow`);
+    }
+    //   …and statically, because a disabled control is what wears the
+    //   barred circle and this fixture shows almost none: every file in
+    //   src/ is read for it (2026-09-28 — `Switch`, `Input` and
+    //   `Textarea` carried shadcn's `disabled:cursor-not-allowed`; red on
+    //   that code, three files).
+    {
+      const hits = [];
+      let read = 0;
+      const walkSrc = (d) => {
+        for (const n of readdirSync(d)) {
+          const p = join(d, n);
+          if (statSync(p).isDirectory()) {
+            if (n !== "gen") walkSrc(p);
+          } else if (/\.(tsx?|css)$/.test(n)) {
+            read += 1;
+            readFileSync(p, "utf8")
+              .split("\n")
+              .forEach((line, i) => {
+                if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+                if (/cursor-not-allowed|cursor:\s*not-allowed/.test(line)) hits.push(`${relative(gui, p)}:${i + 1}`);
+              });
+          }
+        }
+      };
+      walkSrc(join(gui, "src"));
+      console.log(`mac · cursor not-allowed in src/: ${read} file(s) read, ${hits.length} hit(s)`);
+      if (read < 50) fail(`probe dead: (b) read ${read} source file(s) for not-allowed`);
+      for (const at of hits) fail(`${at} gives a disabled control the barred circle — AppKit keeps the arrow over a disabled control; the greying says it`);
     }
     const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-sheet]", "[data-numbers]", "[data-file] > button"]);
     console.log(`mac · user-select in the workspace ${JSON.stringify(file)}`);
