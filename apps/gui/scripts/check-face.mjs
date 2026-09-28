@@ -13167,7 +13167,7 @@ try {
             for (const m of line.matchAll(/"([^"]*)"/g)) {
               const cls = m[1];
               const at = `${rel}:${i + 1}`;
-              if (!rel.startsWith("src/components/ui/") && /(^|\s|:)shadow-(xs|sm|md|lg|xl|2xl)(\s|$)/.test(cls)) {
+              if (/(^|\s|:)shadow-(xs|sm|md|lg|xl|2xl)(\s|$)/.test(cls)) {
                 bad.push(`${at} wears a shadow of Tailwind's own scale (${cls.match(/shadow-\w+/)[0]}) — the one shadow is \`float\``);
               }
               if (cls.includes("shadow-(--shadow-float)") && !/(^|\s)rounded-lg(\s|$)/.test(cls)) {

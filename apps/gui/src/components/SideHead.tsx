@@ -198,6 +198,11 @@ export const FIND_ALL = "khor:find-all";
  * drawn at all.
  */
 export function SearchHint({ children = "⌘K" }: { children?: ReactNode }) {
+  // Not on the narrow face (components/SearchField): no keyboard is
+  // assumed there, and every narrow list screen drew it until 2026-09-28
+  // because only the caller at line ~395 asked.
+  const narrow = useNarrow();
+  if (narrow) return null;
   return (
     <kbd
       data-search-scope
