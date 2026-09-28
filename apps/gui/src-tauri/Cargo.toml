@@ -72,6 +72,10 @@ objc2-foundation = "0.3"
 # here costs no package, and `objc2-local-authentication` would have
 # added one for a single class and two selectors.
 block2 = "0.6"
+# Puts `Info.plist` into the bare binary's `__TEXT,__info_plist` section
+# (`src/main.rs`: the app menu's name, AppKit's languages). **Already in
+# the tree under tauri**, which uses it for dev builds — no new package.
+embed_plist = "1"
 
 [features]
 # **On by default, and that is the whole fix for the white window.**

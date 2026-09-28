@@ -2662,6 +2662,10 @@ pub fn run() {
     // If this process was re-exec'd as a session host, be one — the app
     // spawns hosts through its own binary (`host.rs main_if_host`).
     khor_node::host::main_if_host(Node::root_from_env());
+    // AppKit's own menu items in the language just chosen — before the
+    // builder brings AppKit up, which settles it (`menu::speak_at_launch`).
+    // **After `main_if_host`**: a session host draws no menu.
+    menu::speak_at_launch();
     // 本机开着哪几张脸 (docs/MORE.md 头像页): the desktop app is the one
     // face nothing else on this machine can see, so it says so itself.
     // **After `main_if_host`**, or a re-exec'd session host would claim

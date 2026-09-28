@@ -39,6 +39,13 @@
 // the default menu's ⌘W was 「close window」, and closing khor's window
 // stops the node it runs.
 //
+// The same phase reads **the menu bar's name and language**
+// (`appKitSpeaks`): the app menu's bold title is 「khor」, not the process
+// name, and no item under 编辑 / 窗口 — AppKit's own included — is in the
+// other language; then the app is relaunched with `lang en` and read
+// again, so the English case is held on a Chinese desktop too. Red on the
+// code before `src-tauri/Info.plist`: 「khor-gui」 and eleven English items.
+//
 // **The keys phase presses keys**, which the theme phase never did. Each
 // press is posted to the scratch app's pid (`native-probe key`), never to
 // the system's input stream, so a press that arrives while somebody else's
@@ -140,21 +147,24 @@ const lum = ([r, g, b]) => {
 // ── the keys phase ────────────────────────────────────────────────────
 
 /** The words the menu is expected to say, read where they are written:
-    the Chinese catalog's `[menu]` and `[gui]` (the scratch store is set to
-    中文 before launch), as `section.key`. A second copy here would be the
-    one that drifts. */
-const words = (() => {
-  const zh = readFileSync(join(repo, "crates", "catalog", "zh.toml"), "utf8");
+    a catalog's `[menu]` and `[gui]`, as `section.key`. Chinese is the one
+    the scratch store is set to before launch; English is the relaunch at
+    the end of the keys phase. A second copy here would be the one that
+    drifts. */
+const catalog = (lang) => {
+  const text = readFileSync(join(repo, "crates", "catalog", `${lang}.toml`), "utf8");
   const out = {};
   let section = "";
-  for (const line of zh.split("\n")) {
+  for (const line of text.split("\n")) {
     const head = line.match(/^\[([a-z]+)\]$/);
     if (head) section = head[1];
     const m = line.match(/^([a-z0-9-]+) = "((?:[^"\\]|\\.)*)"$/);
     if (m) out[`${section}.${m[1]}`] = JSON.parse(`"${m[2]}"`);
   }
   return out;
-})();
+};
+const words = catalog("zh");
+const wordsEn = catalog("en");
 const said = (key) => {
   const at = key.includes(".") ? key : `menu.${key}`;
   if (!(at in words)) throw new Error(`probe dead: zh.toml has no ${at} — the gate reads the menu's words there`);
@@ -176,6 +186,48 @@ const menuBar = (pid) => {
   const out = JSON.parse(run("menubar", String(pid)));
   if (!Array.isArray(out)) throw new Error(`probe dead: no menu bar read for ${pid} (${JSON.stringify(out)})`);
   return out;
+};
+/** **The whole menu bar speaks one language, under khor's name**
+    (2026-09-28). The owner runs the bare executable, not a `.app`, and a
+    process with no bundle gets two things from AppKit that khor never
+    wrote: the app menu's bold title is the process name (「khor-gui」),
+    and the items AppKit adds by itself — 自动填充 / 开始听写… / 表情与符号
+    under 编辑, 填充 / 居中 / 移动与调整大小 … under 窗口 — come out in
+    English, because a process that declares no localization is spoken to
+    in the development language. `src-tauri/Info.plist`, embedded in the
+    binary, names the app and declares both; `menu::speak_at_launch` puts
+    khor's own language first for AppKit when the system says another.
+
+    The app menu is the one carrying 设置…; its accessibility title is the
+    name AppKit draws in bold (not the submenu's own title, which AppKit
+    ignores — menu.rs says 「khor」 there and the bar said 「khor-gui」).
+    「Foreign」 is any Latin letter in a Chinese menu, any Han character in
+    an English one, after taking out 「khor」 itself — the name, and the
+    window's own title in the window list. */
+const appKitSpeaks = (bar, lang) => {
+  const w = (k) => (lang === "zh" ? words : wordsEn)[`menu.${k}`];
+  const app = bar.find((m) => m.items.some((i) => i.name === w("settings")));
+  console.log(`${lang}: app menu 「${app?.title ?? "(none)"}」: ${app?.items.map((i) => i.name || "—").join(" · ")}`);
+  if (!app) fail(`${lang}: no menu carries 「${w("settings")}」 — the menu bar is not khor's, or not in ${lang}`);
+  else if (app.title !== "khor") {
+    fail(`${lang}: the app menu's bold title is 「${app.title}」, not 「khor」 — the process name, because the binary declares no bundle name (src-tauri/Info.plist)`);
+  }
+  const foreign = lang === "zh" ? /[A-Za-z]/ : /[\u3400-\u9fff]/;
+  for (const title of [w("edit"), w("window")]) {
+    const m = bar.find((x) => x.title === title);
+    if (!m) {
+      fail(`${lang}: the menu bar has no 「${title}」 menu`);
+      continue;
+    }
+    console.log(`${lang}: ${title}: ${m.items.map((i) => i.name || "—").join(" · ")}`);
+    const off = m.items.filter((i) => foreign.test(i.name.replace(/khor/gi, "")));
+    if (off.length) {
+      fail(
+        `${lang}: 「${title}」 has ${off.length} item(s) in another language — ${off.map((i) => `「${i.name}」`).join(" ")} ` +
+          "(AppKit's own, spoken in a language the process did not declare or did not put first)",
+      );
+    }
+  }
 };
 /** Presses one item of one menu, the way a person picks it — by pid. */
 const choose = (pid, menu, item) => {
@@ -275,6 +327,8 @@ async function keysPhase(pid) {
       fail(`keys: 「${m} › ${name}」 shows ${it.key || "no key"} (mask ${it.mods}), not ${key} (mask ${mods})`);
     }
   }
+  // Under khor's name, and AppKit's own items in Chinese too.
+  appKitSpeaks(bar, "zh");
 
   // ── 2. the page's right-click ──
   // Asked through accessibility (`native-probe axmenu`: AXShowMenu, which
@@ -364,18 +418,40 @@ async function keysPhase(pid) {
   else console.log("keys: ⌘W with no tab open: the window stays");
 }
 
+/** Launches the scratch app and waits for its window; the window's
+    `[id, x, y, w, h]`. */
+const launch = async () => {
+  child = spawn(guiBin, [], { env, stdio: "ignore" });
+  for (let i = 0; i < 60; i++) {
+    await wait(500);
+    const w = run("window", String(child.pid));
+    if (w) return w.split(" ").map(Number);
+  }
+  throw new Error("probe dead: the app opened no window within 30 s");
+};
+
+/** **The menu follows khor's language, not only the system's**: the
+    scratch app again, relaunched after `khor config set lang en`. On a
+    Chinese desktop (this machine's) this is the case the Info.plist alone
+    cannot answer — AppKit would speak the system's Chinese under khor's
+    English — and `menu::speak_at_launch` must put English first. Read
+    only, by pid: nothing is pressed and the window is not brought to the
+    front. */
+async function langPhase() {
+  const was = child;
+  was.kill("SIGTERM");
+  for (let i = 0; i < 40 && was.exitCode === null && was.signalCode === null; i++) await wait(250);
+  if (was.exitCode === null && was.signalCode === null) was.kill("SIGKILL");
+  execFileSync(cliBin, ["config", "set", "lang", "en"], { env, encoding: "utf8" });
+  await launch();
+  await wait(1500);
+  appKitSpeaks(menuBar(child.pid), "en");
+}
+
 try {
   execFileSync(cliBin, ["config", "set", "lang", "zh"], { env, encoding: "utf8" });
   setTheme("dark");
-  child = spawn(guiBin, [], { env, stdio: "ignore" });
-  let win = null;
-  for (let i = 0; i < 60 && !win; i++) {
-    await wait(500);
-    const w = run("window", String(child.pid));
-    if (w) win = w.split(" ").map(Number);
-  }
-  if (!win) throw new Error("probe dead: the app opened no window within 30 s");
-  const [id, , , w, h] = win;
+  const [id, , , w, h] = await launch();
   console.log(`window ${id}: ${w}×${h}`);
 
   /** Front, settle, shoot, judge. */
@@ -427,7 +503,10 @@ try {
     setTheme("auto");
     await step("auto", "follows the desktop");
   }
-  if (only !== "theme") await keysPhase(child.pid);
+  if (only !== "theme") {
+    await keysPhase(child.pid);
+    await langPhase();
+  }
 } catch (e) {
   fail(String(e?.message ?? e));
 }
@@ -435,7 +514,8 @@ try {
 if (!bad) {
   console.log(
     "native gate: the window buttons sit on the first row and the left block wears the theme, launched and switched; " +
-      "the menu bar is khor's, a key runs its act once, the chrome has no WebKit menu and ⌘W never closes the window",
+      "the menu bar is khor's, under khor's name and in khor's language (AppKit's own items too, zh and en), " +
+      "a key runs its act once, the chrome has no WebKit menu and ⌘W never closes the window",
   );
 }
 // **Exit on purpose**: the app this gate started keeps the event loop

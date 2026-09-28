@@ -50,7 +50,7 @@
 | `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run fast` | `check-fast.mjs`,「快」那三行(`30-behavior.md`):bridge 下挂一块 `statfs` 要 10 秒的**假**卷(`BRIDGE_SLOW_VOLUME_MS`,不碰真盘),机器页 1 秒内列出这台机器、1 秒内出带读数的卡片;离开再回来,**第一帧**就有卡片、读数和进程行(自起 vite + bridge + 系统 Chrome) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge`) |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
-| `npm run native` | `check-native.mjs`,**AppKit 画的东西**:在临时 `KHOR_HOME`(不碰负责人的 store)里起**构建好的** app,用 `khor config set theme` 切深 / 浅 / 跟系统再把窗口切回前台,每一步截窗口量两件事——三颗窗口按钮左缘在 `traffic::X`、中心在第一行中心;左块的材质与板的深浅跟着主题。只在 macOS;不动鼠标,但会把窗口提到前台几秒(2026-09-27 左块变白、按钮跑位之后加的)。**2026-09-28 起多一段键盘**(`NATIVE_ONLY=keys` 单跑、`=theme` 只跑上面那段):按 pid 读菜单栏(五个菜单、编辑菜单那六项、每项写着的快捷键)、用 AXShowMenu 问右键(页面与 R0 标题 0 个菜单,搜索框 1 个)、**按键只投给临时 app 的 pid**(⌘5、⌘N 两下、⌃⇥、⇧⌘[、⌘W、⌘1、没有标签时的 ⌘W),数临时 store 的 `.khor/tabs.json`——一次按键跑两次藏不住;再从菜单栏点一次「新标签页」,正好多一个。⚠️ 读菜单**不用 System Events**:它按进程名找进程,本机每个 khor-gui 都叫 khor-gui,第一版读到的是负责人自己那个 app 的菜单 | 不拿(但**要求先构建**:`npm run build` 再 `cargo build --profile local -p khor-gui -p khor-cli`) |
+| `npm run native` | `check-native.mjs`,**AppKit 画的东西**:在临时 `KHOR_HOME`(不碰负责人的 store)里起**构建好的** app,用 `khor config set theme` 切深 / 浅 / 跟系统再把窗口切回前台,每一步截窗口量两件事——三颗窗口按钮左缘在 `traffic::X`、中心在第一行中心;左块的材质与板的深浅跟着主题。只在 macOS;不动鼠标,但会把窗口提到前台几秒(2026-09-27 左块变白、按钮跑位之后加的)。**2026-09-28 起多一段键盘**(`NATIVE_ONLY=keys` 单跑、`=theme` 只跑上面那段):按 pid 读菜单栏(五个菜单、编辑菜单那六项、每项写着的快捷键)、用 AXShowMenu 问右键(页面与 R0 标题 0 个菜单,搜索框 1 个)、**按键只投给临时 app 的 pid**(⌘5、⌘N 两下、⌃⇥、⇧⌘[、⌘W、⌘1、没有标签时的 ⌘W),数临时 store 的 `.khor/tabs.json`——一次按键跑两次藏不住;再从菜单栏点一次「新标签页」,正好多一个。同一段还读**菜单栏的名字与语言**:app 菜单的粗体标题是「khor」(不是进程名 khor-gui),编辑、窗口的每一项——AppKit 自己加的那些也算——中文里没有拉丁字母;末了以 `lang en` 重起一次再读,不许有汉字(只读、不按键、不提到前台;在中文桌面上守住「跟 khor 的语言,不只跟系统」)。2026-09-28 旧代码上红过:「khor-gui」、编辑 3 项与窗口 8 项英文。⚠️ 读菜单**不用 System Events**:它按进程名找进程,本机每个 khor-gui 都叫 khor-gui,第一版读到的是负责人自己那个 app 的菜单 | 不拿(但**要求先构建**:`npm run build` 再 `cargo build --profile local -p khor-gui -p khor-cli`) |
 | `npm run palette` | `check-palette.mjs`,两个主题下的可读性 | 不拿 |
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
 | `npm run smoke` | `smoke.mjs`,整条验收,**真连**(三个 home) | 不拿 |
@@ -121,6 +121,7 @@
 - **动了导轨** → 加 `npm run rail`;
 - **动了主题、窗口外观、`src-tauri` 里的窗口或标题栏** → 构建后加 `npm run native`;
 - **动了快捷键(`src/lib/shortcuts.ts`)、菜单栏(`src-tauri/src/menu.rs`)、`[menu]` 的字、选字或光标的规矩** → `FACE_ONLY=native npm run face`,构建后加 `NATIVE_ONLY=keys npm run native`(它按键,只投给临时 app);
+- **动了 `src-tauri/Info.plist`、`src/main.rs` 里嵌它那一行、或 `menu::speak_at_launch`** → 构建后 `NATIVE_ONLY=keys npm run native`;往 Info.plist 里加 `CFBundleIdentifier` 之前先读 `30-behavior.md`「菜单栏」——它会把页面的 localStorage 挪到一个空目录;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,
   而这两条要起真网,先问一句机器上有没有别人在跑;
