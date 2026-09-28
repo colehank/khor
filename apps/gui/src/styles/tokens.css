@@ -835,18 +835,10 @@
    * truncates before it. It was `--ctl-sm` until the control heights
    * went to macOS's 22 — a cell is not a control's look. */
   --tab-close: 24px;
-  /* The two switches at the head of the file tree (docs/SHELL.md 第 7
-   * 条:「搜索框旁边有这些按钮… 可以小一点来支持显示」). **Smaller than
-   * the finger floor on purpose, and only where there is no finger** —
-   * the coarse-pointer block at the foot of this file puts `--touch`
-   * back, the same way `--tree-row` gets it back. What the user is
-   * short of is search box, and two 44 boxes were spending 88 of a
-   * 288 column on two controls that a mouse lands on at 32.
-   *
-   * This supersedes 2026-09-16 ruling 44 (「放大一点」) **for the box
-   * only**: what that ruling was about is the painted mark, which was
-   * spending a third of its box, and the marks still fill these. */
-  --ws-switch: 32px;
+  /* ⚠️ 墓碑: `--ws-switch` (32) sized the two switches at the head of
+   * the file tree (docs/SHELL.md 第 7 条, 2026-09-20). On 2026-09-28
+   * they moved to R0's right end as toolbar buttons (`--hit` like every
+   * other), and the tree's head became a search box and ＋. */
   /* How wide the veil is at the cut edge of a sideways scroller
      (`app.css` `[data-side-cut]`).
      **Derived from the floor above it, not picked.** The narrowest
@@ -1890,7 +1882,6 @@
   --spacing-pane-head: var(--pane-head);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
-  --spacing-ws-switch: var(--ws-switch);
 
   /* the four gaps → utilities (gap-in, mb-group, pt-pane…) */
   --spacing-in: var(--gap-in);
@@ -2206,10 +2197,5 @@
   :root {
     --hit: var(--touch);
     --tree-row: var(--touch);
-    /* …and the tree head's two switches, for the same reason and by
-       the same road (docs/SHELL.md 第 7 条: 「宽档可以小,窄档(触屏)按
-       --touch 走」). `check-face` section 3 walks the whole face with a
-       finger emulated and would find a 32 box otherwise. */
-    --ws-switch: var(--touch);
   }
 }

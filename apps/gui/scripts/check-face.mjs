@@ -3000,10 +3000,24 @@ try {
         "finger on a wide touch screen. It is also the one place where that costs less than it " +
         "looks — unlike the list seam, **both of these columns can be put away and brought back " +
         "without it**: the tree from the workspace's own row in the list and from ⌘B (2026-09-16), the " +
-        "sessions from the switch at the strip's end (`gui.workspace_sessions`), and both of those " +
+        "sessions from the switch at R0's right end (`gui.ws_sessions_toggle`, 2026-09-28), and both of those " +
         "targets do wear the floor. So a touch user loses the *width*, not the column. **It is " +
         "still not「no problem」**: they cannot choose a width at all, and the answer to that is a " +
         "width control that is not a two-pixel strip, not a wider strip.",
+    ],
+    "data-ws-head-where": [
+      "src/views/WorkspacePane.tsx",
+      "the open workspace's `机器:路径` on R0's second line (2026-09-28). **Not a control: a value " +
+        "people read and copy** (30-behavior 选字与手), which carries a tab stop for two reasons that " +
+        "are not pressing — R0 moves the window (`shell.ts` `deep`), and tauri leaves a press to the " +
+        "text selection only on something with a tab stop or a role; and a keyboard brings up the " +
+        "whole value in the tooltip by focusing it. The floor is the wrong criterion because it lives " +
+        "inside R0's 48 under the page's name: 44 of height would push the title pair out of the row " +
+        "that 10-layout fixes at 48. Nothing happens on a press. **What it does not buy:** a finger " +
+        "gets neither the selection nor the tooltip here — the narrow face draws no location at all " +
+        "(its head keeps the branch), and a wide touch screen reads a path it can only see cut in " +
+        "the middle when the window is narrow. The path a file sits under is also on each tab's " +
+        "hover title and its 复制路径, so what a finger misses here is the reading, not the value.",
     ],
     "data-list-seam": [
       "src/App.tsx",
@@ -4290,9 +4304,13 @@ try {
   //   v. the tab's menu closes it, closes the others, and copies the
   //      path both ways;
   //  vi. ⌘W closes the one in front;
-  // vii. the three switches sit at the far end of the strip, and the
-  //      head row that used to carry them is gone whole — no branch, no
-  //      count of unsaved files.
+  // vii. the head row that used to sit over the strip is gone whole — no
+  //      branch, no count of unsaved files — and since 2026-09-28 the
+  //      two switches are R0's page buttons (VS Code, then the sessions
+  //      at the far right; toolbar size, equal ink, a tooltip each, on is
+  //      the grey block and not the brand), R0 says the name over
+  //      「⎇ main · 5 个文件已修改 · peer:/home/peer/work」 inside its 48,
+  //      and the tree's head is exactly a search box and ＋.
   {
     // This section's own reads and writes. 4b-bis left a merge fixture
     // behind and took its `write_text` away with it (4j learned the
@@ -4363,8 +4381,8 @@ try {
       }));
       if (head.strip !== 1) {
         fail(
-          "the middle column drew no tab strip — it is what the head row became, and the three " +
-            "switches ride on it (src/views/WorkspacePane.tsx)",
+          "the middle column drew no tab strip — it is what the head row became " +
+            "(src/views/WorkspacePane.tsx)",
         );
       }
       if (head.drafts !== 0 || head.branch !== 0) {
@@ -4374,57 +4392,113 @@ try {
             "(src/views/WorkspacePane.tsx)",
         );
       }
-      // …and the two switches are **at the head of the tree**
-      // (2026-09-17 ruling 47:「在文件树的侧边上加一个搜索框…框的右侧是
-      // session和vscode icon」— the user). They were at the strip's far
-      // end for two batches, and the narrow face draws no strip until a
-      // file is open: 「窄屏进入工作区, 没有到vscode和session的按钮, 仅有
-      // 打开一个文件才能知道」.
-      const tail = await page.$$eval("[data-tree-head] [data-ws-switches] > button", (els) =>
-        els.map((e) => e.getAttribute("aria-label")),
-      );
-      const strandedEnd = await page.evaluate(() => ({
-        head: document.querySelectorAll("[data-tree-head]").length,
-        box: document.querySelectorAll("[data-tree-head] [data-tree-search]").length,
-        onStrip: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
-        eyeOnStripEnd: document.querySelectorAll(
-          "[data-ws-tab-strip] > div > [data-file-face-switch]",
-        ).length,
-      }));
-      console.log(`tree head: ${JSON.stringify(tail)} beside ${JSON.stringify(strandedEnd)}`);
-      if (strandedEnd.head !== 1 || strandedEnd.box !== 1) {
+      // …and the two switches are **R0's page buttons** (2026-09-28, the
+      // owner's layout: 「work · ⎇ main · 5 个已修改 · peer:/home/peer/work
+      // … [VS Code] [▥ 会话]」). They stood at the strip's far end for two
+      // batches, then at the head of the tree from ruling 47 (「框的右侧是
+      // session和vscode icon」) because the narrow face drew no strip until
+      // a file was open. Now they are the page's own buttons (D9): R0's
+      // right end on the wide face, VS Code first and the sessions at the
+      // far right, over the column they open — and the tree's head is a
+      // search box and ＋, every list's anatomy.
+      const placed = await page.evaluate(() => {
+        const r0 = document.querySelector("[data-main] [data-region-head]");
+        const acts = r0?.querySelector("[data-page-actions]") ?? null;
+        const btns = r0 ? [...r0.querySelectorAll("[data-ws-switches] > button")] : [];
+        const tree = document.querySelector("[data-tree-head]");
+        const inActs = acts ? [...acts.querySelectorAll("button")] : [];
+        return {
+          r0: r0 !== null,
+          inR0: btns.map((b) => b.getAttribute("aria-label")),
+          seated: acts?.querySelectorAll("[data-ws-switches]").length ?? 0,
+          // Read off the glass, left to right — the DOM's order is not
+          // what a person sees once a row is reversed.
+          firstIsCode: (() => {
+            const code = r0?.querySelector("[data-code]");
+            const ses = r0?.querySelector("[data-ws-sessions-switch]");
+            return !!code && !!ses && code.getBoundingClientRect().right <= ses.getBoundingClientRect().left;
+          })(),
+          lastIsSessions: (() => {
+            const ses = r0?.querySelector("[data-ws-sessions-switch]");
+            if (!ses) return false;
+            const right = ses.getBoundingClientRect().right;
+            return inActs.every((b) => b === ses || b.getBoundingClientRect().right <= right - 0.5);
+          })(),
+          inTree: tree ? tree.querySelectorAll("[data-ws-switches], [data-ws-sessions-switch], [data-code]").length : null,
+          treeHeads: document.querySelectorAll("[data-tree-head]").length,
+          treeBox: tree ? tree.querySelectorAll("[data-tree-search]").length : 0,
+          treeInputs: tree ? tree.querySelectorAll("input").length : 0,
+          treeButtons: tree
+            ? [...tree.querySelectorAll("button")].map((b) => (b.hasAttribute("data-tree-new") ? "＋" : b.getAttribute("aria-label") ?? b.tagName))
+            : [],
+          onStrip: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
+          eyeOnStripEnd: document.querySelectorAll("[data-ws-tab-strip] > div > [data-file-face-switch]").length,
+        };
+      });
+      console.log(`workspace head: ${JSON.stringify(placed)}`);
+      if (!placed.r0) {
+        fail("probe dead: the open workspace has no R0 over it (src/components/Region.tsx)");
+      }
+      if (placed.inR0.length !== 2 || placed.seated !== 1) {
         fail(
-          `the tree's column drew ${strandedEnd.head} head(s) and ${strandedEnd.box} search box(es) — ` +
-            "「在文件树的侧边上加一个搜索框(可搜索文件名与内容)、框的右侧是session和vscode icon」 " +
-            "(src/views/WorkspacePane.tsx)",
+          `R0 carries ${placed.inR0.length} workspace switch(es) in ${placed.seated} group(s) at its right end — ` +
+            "VS Code and the sessions are the page's own buttons since 2026-09-28, seated by `PageAction` " +
+            "(D9; src/views/WorkspacePane.tsx)",
+        );
+      } else if (!placed.firstIsCode || !placed.lastIsSessions) {
+        fail(
+          `R0's buttons read ${JSON.stringify(placed.inR0)} — VS Code, then the sessions at the far right, over ` +
+            "the column it opens (src/views/WorkspacePane.tsx)",
         );
       }
-      if (strandedEnd.onStrip !== 0 || strandedEnd.eyeOnStripEnd !== 0) {
+      if (placed.inTree !== 0) {
+        fail(
+          `the tree's head still carries ${placed.inTree} switch(es) — they moved to R0 on 2026-09-28, and the ` +
+            "tree's head is a search box and ＋ (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (placed.treeHeads !== 1 || placed.treeBox !== 1 || placed.treeInputs !== 1) {
+        fail(
+          `the tree's column drew ${placed.treeHeads} head(s) with ${placed.treeBox} search box(es) and ` +
+            `${placed.treeInputs} field(s) — one head, one box (src/views/WorkspacePane.tsx)`,
+        );
+      }
+      if (JSON.stringify(placed.treeButtons) !== JSON.stringify(["＋"])) {
+        fail(
+          `the tree's head holds ${JSON.stringify(placed.treeButtons)} beside its box — exactly ＋, the anatomy of ` +
+            "every list's head (src/views/WorkspacePane.tsx treeNew)",
+        );
+      }
+      if (placed.onStrip !== 0 || placed.eyeOnStripEnd !== 0) {
         fail(
           "the tab strip's far end still carries switches — 「而取消现在固定在标签页位置的」 " +
             "(src/views/WorkspacePane.tsx)",
         );
       }
-      // **One size, one weight** (2026-09-16:「右上角的预览、session、vscode
-      // 等 icon 的大小风格要一致。现在粗细、大小不一」): every glyph at the
-      // strip's end is 14–16 tall and every button the same box.
-      // **Measured as ink, not as boxes.** Equal 16px boxes held an 11px
-      // bubble beside a 16px logo (the rail glyph keeps air in its
-      // canvas, the filled marks fill theirs) and read as three sizes;
-      // what has to match is what is painted.
+      // **Toolbar buttons, the machine page's size, and equal ink**
+      // (2026-09-16:「右上角的预览、session、vscode 等 icon 的大小风格要
+      // 一致。现在粗细、大小不一」). **Measured as ink, not as boxes.**
+      // The bubble keeps air in its 24 canvas and the VS Code mark fills
+      // its own, so equal glyph boxes would read as two sizes; what has
+      // to match is what is painted. The box is R0's toolbar button:
+      // `ctl-md` under a mouse, like the machine page's three
+      // (components/Toolbar, 2026-09-28).
       const tailLook = await page.evaluate(() => {
-        const paint = (v) => {
+        const paint = (v, prop) => {
           const el = document.createElement("span");
-          el.style.color = v;
+          el.style[prop] = v;
           document.body.append(el);
-          const got = getComputedStyle(el).color;
+          const got = getComputedStyle(el)[prop];
           el.remove();
           return got;
         };
-        const btns = [...document.querySelectorAll("[data-tree-head] [data-ws-switches] > button")];
+        const root = getComputedStyle(document.documentElement);
+        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] > button")];
         return {
-          on: paint(getComputedStyle(document.documentElement).getPropertyValue("--rail-on-ink")),
-          body: getComputedStyle(document.body).color,
+          railOn: paint(root.getPropertyValue("--rail-on-ink"), "color"),
+          brand: paint(root.getPropertyValue("--brand-strong"), "color"),
+          block: paint(root.getPropertyValue("--fill-strong"), "backgroundColor"),
+          ctl: Math.round(Number.parseFloat(root.getPropertyValue("--ctl-md"))),
           btns: btns.map((b) => {
             const svg = b.querySelector("svg");
             let ink = 0;
@@ -4440,63 +4514,49 @@ try {
               ink,
               pressed: b.getAttribute("data-on") === "true",
               // Read off the glyph, which is what carries the colour:
-              // the button sets `color` and the svg wears
-              // `currentColor`.
+              // the button sets `color` and the svg wears `currentColor`.
               paintedAs: svg ? getComputedStyle(svg).color : null,
+              ground: getComputedStyle(b).backgroundColor,
             };
           }),
         };
       });
       console.log(`head look: ${JSON.stringify(tailLook)}`);
       const inks = tailLook.btns.map((t) => t.ink);
-      if (new Set(tailLook.btns.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
-        fail(
-          `the tree's head is uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, and ` +
-            "the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
-        );
-      }
-      // **…and the box came down on 2026-09-20** (docs/SHELL.md 第 7 条:
-      // 「搜索框旁边有这些按钮… 可以小一点来支持显示」— the user). Two
-      // finger-sized boxes were spending 88 pixels of this column on two
-      // controls, and what the column is short of is search box.
-      //
-      // ⚠️ **This supersedes 2026-09-16 ruling 44 for the box and not
-      // for the ink.** That ruling ("放大一点") was about marks spending
-      // a third of the boxes they sat in, and it is still what the two
-      // readings above hold: one box each, and the painted marks within
-      // a pixel and a half. What changed is how big「a box」is, which
-      // is why the two rulings are not in conflict — one is about
-      // proportion and this one is about room.
-      //
-      // The floor under a finger is not given up: `--ws-switch` becomes
-      // `--touch` under `(pointer: coarse)`, and section 3 walks this
-      // very head with touch emulated on.
-      const boxes = tailLook.btns.map((t) => t.box);
-      const tall = boxes.map((b) => Number(b.split("x")[1]));
-      if (tall.some((h) => h > 40)) {
-        fail(
-          `the tree's head carries ${boxes.join(", ")} boxes with a mouse on the glass — 「可以小一点来支持` +
-            "显示」, and the finger floor comes back under (pointer: coarse) (src/styles/tokens.css --ws-switch)",
-        );
-      }
-      // The ink follows the box down: a mark that kept its old size in
-      // a smaller box is the crowding ruling 44 was about, one size on.
-      if (inks.some((k) => k < 14 || k > 19)) {
-        fail(
-          `the tree's head paints ${inks.join("/")}px of ink in ${boxes[0]} boxes — the mark keeps its share ` +
-            "of the box it sits in (src/views/WorkspacePane.tsx)",
-        );
+      if (tailLook.btns.length === 0) {
+        fail("probe dead: no switch in R0 to measure (src/views/WorkspacePane.tsx)");
+      } else {
+        if (new Set(tailLook.btns.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
+          fail(
+            `R0's two switches are uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, ` +
+              "and the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
+          );
+        }
+        if (tailLook.btns.some((t) => t.box !== `${tailLook.ctl}x${tailLook.ctl}`)) {
+          fail(
+            `R0's switches are ${tailLook.btns.map((t) => t.box).join(", ")} with a mouse on the glass — a toolbar ` +
+              `button is the ${tailLook.ctl} \`ctl-md\` square, the machine page's size (components/Toolbar)`,
+          );
+        }
+        // The ink of a 24-canvas glyph drawn at 20 — the toolbar's size
+        // (「字形用竖栏同一个 24 画布的形，画成 20」) — which paints about
+        // five sevenths of its box. A mark kept at the tree head's 24,
+        // or shrunk to a row's 16, falls out of the band.
+        if (inks.some((k) => k < 12 || k > 17)) {
+          fail(
+            `R0's switches paint ${inks.join("/")}px of ink — a 20 glyph in a toolbar button paints about 14 ` +
+              "(components/Toolbar; src/views/WorkspacePane.tsx)",
+          );
+        }
       }
       // …and the box bought the search box room, which is the whole of
-      // what the ruling asked for. Measured as a share of the row, so
-      // it survives somebody dragging the column.
+      // what 第 7 条 asked for (2026-09-20:「可以小一点来支持显示」).
+      // With the switches gone to R0 the row holds one ＋, so the box
+      // has more than it had; the floor stays where it was measured.
       //
       // **70, and the number is measured rather than chosen.** Two 44
-      // boxes left the field 64% of a 288 column and two 32 boxes leave
-      // it 73%: the line sits between the two readings, so it is red on
-      // the face the user complained about and green on the one that
-      // answers them. A round 60 would have been green on both — which
-      // is a gate agreeing with whatever it is handed.
+      // boxes left the field 64% of a 288 column and two 32 boxes left
+      // it 73%: the line sits between the two readings.
       const boxShare = await page.evaluate(() => {
         const head = document.querySelector("[data-tree-head]");
         const field = document.querySelector("[data-tree-search]");
@@ -4512,30 +4572,61 @@ try {
             "left for the box (src/views/WorkspacePane.tsx)",
         );
       }
-      // **Pressed in is the rail's own open ink** (2026-09-16 ruling 26:
-      // 「并且,点击后要有状态.这个icon要变成品牌绿」). Read off the glass
-      // against the token, because a class name proves neither half —
-      // and **both** halves are asserted, since a switch painted green
-      // whether or not it is on is the same screen as one that is never
-      // green. So the sessions switch is pressed, read, and pressed
-      // back: a colour claim needs one of each on one run.
-      for (const b of tailLook.btns) {
-        if (!b.pressed && b.paintedAs === tailLook.on) {
+      // **Each names itself on hover** (components/Toolbar: 「每一颗配一个
+      // Tooltip 说它的名字」). Read off the tooltip's own `role`, and
+      // asserted closed before the pointer arrives — a tooltip already
+      // open would pass this without a hover happening. **The pointer
+      // leaves in steps**: Radix keeps a tooltip open over the grace
+      // area between its trigger and its content, and one jump to a far
+      // corner is a single `pointermove` it never gets to judge.
+      const away = async () => {
+        await page.mouse.move(2, 2, { steps: 8 });
+        await wait(250);
+      };
+      for (const sel of ["[data-main] [data-region-head] [data-code]", "[data-main] [data-region-head] [data-ws-sessions-switch]"]) {
+        await away();
+        const before = await page.locator('[role="tooltip"]').count();
+        const name = await page.locator(sel).getAttribute("aria-label").catch(() => null);
+        await page.locator(sel).hover().catch(() => {});
+        await until(2_000, async () => (await page.locator('[role="tooltip"]').count()) > 0);
+        const said = await page.locator('[role="tooltip"]').allTextContents();
+        console.log(`R0 tooltip · ${sel}: ${JSON.stringify(said)} (named ${JSON.stringify(name)}, ${before} open before)`);
+        if (name === null) {
+          fail(`probe dead: no ${sel} in R0 to hover`);
+        } else if (before !== 0) {
+          fail(`${before} tooltip(s) were open before ${sel} was hovered — the probe cannot tell`);
+        } else if (said.length !== 1 || said[0].trim() !== name) {
           fail(
-            `the ${JSON.stringify(b.what)} switch is painted 开着's ink while it is off — then the colour says ` +
-              "nothing (src/views/WorkspacePane.tsx switchClass)",
+            `hovering ${sel} said ${JSON.stringify(said)} — an icon button in R0 names itself, ` +
+              `${JSON.stringify(name)} (components/Toolbar, src/views/WorkspacePane.tsx)`,
+          );
+        }
+      }
+      await away();
+      // **Off is no block and muted ink**, both of them — a colour claim
+      // needs one of each on one run, so the sessions switch is pressed,
+      // read, and pressed back.
+      for (const b of tailLook.btns) {
+        if (!b.pressed && (b.ground === tailLook.block || b.paintedAs === tailLook.railOn)) {
+          fail(
+            `the ${JSON.stringify(b.what)} switch wears ${b.ground}/${b.paintedAs} while it is off — then the on ` +
+              "state says nothing (src/views/WorkspacePane.tsx toolClass)",
           );
         }
       }
       const askedWide = widened.length;
       await press("[data-ws-sessions-switch]");
       await wait(250);
+      await page.mouse.move(2, 2);
+      await wait(200);
       const pressedLook = await page.evaluate(() => {
         const b = document.querySelector("[data-ws-sessions-switch]");
         const svg = b?.querySelector("svg") ?? null;
         return {
           on: b?.getAttribute("data-on") ?? null,
+          aria: b?.getAttribute("aria-pressed") ?? null,
           paintedAs: svg ? getComputedStyle(svg).color : null,
+          ground: b ? getComputedStyle(b).backgroundColor : null,
           column: document.querySelectorAll("[data-ws-sessions]").length,
         };
       });
@@ -4543,14 +4634,31 @@ try {
       if (pressedLook.on !== "true" || pressedLook.column !== 1) {
         fail(
           `pressing the sessions switch left it ${pressedLook.on} with ${pressedLook.column} column(s) — ` +
-            "probe void for the ink below (src/views/WorkspacePane.tsx)",
+            "probe void for the look below (src/views/WorkspacePane.tsx)",
         );
-      } else if (pressedLook.paintedAs !== tailLook.on) {
-        fail(
-          `the pressed-in sessions switch is painted ${pressedLook.paintedAs} where --rail-on-ink is ` +
-            `${tailLook.on} — 「点击后要有状态.这个icon要变成品牌绿」, and it is the same ink the rail ` +
-            "lights an open landing with (src/views/WorkspacePane.tsx switchClass)",
-        );
+      } else {
+        // **On is a grey block, not the brand** (2026-09-28, the owner:
+        // selected is grey; the brand green has three posts and a switch
+        // is none of them). It was `--rail-on-ink` from ruling 26 until
+        // this date — read here against both greens so neither returns.
+        if (pressedLook.ground !== tailLook.block) {
+          fail(
+            `the pressed-in sessions switch stands on ${pressedLook.ground} where --fill-strong is ` +
+              `${tailLook.block} — on is the neutral grey block (src/views/WorkspacePane.tsx toolClass)`,
+          );
+        }
+        if (pressedLook.paintedAs === tailLook.railOn || pressedLook.paintedAs === tailLook.brand) {
+          fail(
+            `the pressed-in sessions switch is painted ${pressedLook.paintedAs}, the brand's green — 「选中是灰」, ` +
+              "and the green has only its three posts (docs/design-system README 颜色; src/views/WorkspacePane.tsx)",
+          );
+        }
+        if (pressedLook.aria !== "true") {
+          fail(
+            `the sessions switch is on and says aria-pressed=${JSON.stringify(pressedLook.aria)} — a toggle tells a ` +
+              "screen reader which way it is (src/views/WorkspacePane.tsx)",
+          );
+        }
       }
       // **…and the window was never asked to grow** (ruling 25). In the
       // app that press widens the window by the column's width; here it
@@ -4567,6 +4675,81 @@ try {
       }
       await press("[data-ws-sessions-switch]");
       await wait(200);
+      // **R0 says what this is, in two lines inside its 48** (2026-09-28):
+      // the name, then 「⎇ main · 5 个文件已修改 · peer:/home/peer/work」
+      // — the workspace list row's own words, from the status the pane
+      // already asked for. Not a row between R0 and R1 (10-layout).
+      const line2 = await page.evaluate(() => {
+        const r0 = document.querySelector("[data-main] [data-region-head]");
+        const title = r0?.querySelector("[data-page-title]") ?? null;
+        const sub = r0?.querySelector("[data-page-subtitle] [data-ws-subtitle]") ?? null;
+        if (!r0 || !title || !sub) return { r0: !!r0, title: !!title, sub: !!sub };
+        const r = (el) => el.getBoundingClientRect();
+        const h = r(r0);
+        const t = r(title);
+        const s = r(sub);
+        const where = sub.querySelector("[data-ws-head-where]");
+        const branch = sub.querySelector("[data-ws-head-branch]");
+        return {
+          name: title.textContent.trim(),
+          branch: branch?.textContent?.trim() ?? null,
+          glyph: branch?.querySelectorAll("svg").length ?? 0,
+          changed: sub.querySelector("[data-ws-head-changed]")?.textContent?.trim() ?? null,
+          where: where?.textContent?.trim() ?? null,
+          order: branch && where ? r(branch).right <= r(where).left : null,
+          select: where ? getComputedStyle(where).userSelect : null,
+          stop: where?.getAttribute("tabindex") ?? null,
+          r0h: Math.round(h.height),
+          head: Math.round(Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--pane-head"))),
+          inside: t.top >= h.top - 0.5 && s.bottom <= h.bottom + 0.5 && s.left >= h.left - 0.5 && s.right <= h.right + 0.5,
+          under: s.top >= t.bottom - 0.5,
+          size: getComputedStyle(sub).fontSize,
+          callout: getComputedStyle(document.documentElement).getPropertyValue("--text-callout").trim(),
+        };
+      });
+      console.log(`R0 second line: ${JSON.stringify(line2)}`);
+      if (line2.name === undefined) {
+        fail(
+          `probe dead: R0 over the open workspace has ${JSON.stringify(line2)} — no second line to read ` +
+            "(src/components/Region.tsx PageSubtitle, src/views/WorkspacePane.tsx)",
+        );
+      } else {
+        const wanted = { name: "work", branch: "main", changed: "5 个文件已修改", where: "peer:/home/peer/work" };
+        for (const [k, v] of Object.entries(wanted)) {
+          if (line2[k] !== v) {
+            fail(
+              `R0 says ${k} ${JSON.stringify(line2[k])} where the workspace list row says ${JSON.stringify(v)} — ` +
+                "the same words, from the status this pane already holds (src/views/WorkspacePane.tsx subtitle)",
+            );
+          }
+        }
+        if (line2.glyph !== 1) {
+          fail(`the branch in R0 wears ${line2.glyph} glyph(s) — one, the branch mark (src/views/WorkspacePane.tsx)`);
+        }
+        if (line2.order !== true) {
+          fail("R0's second line does not read branch first, location last (src/views/WorkspacePane.tsx subtitle)");
+        }
+        if (!line2.inside || !line2.under || line2.r0h !== line2.head) {
+          fail(
+            `R0's two lines stand ${line2.inside ? "inside" : "outside"} a ${line2.r0h}-tall R0 (--pane-head ${line2.head}), ` +
+              `the second ${line2.under ? "under" : "not under"} the name — the title and its subtitle live inside R0's ` +
+              "48, never as a row between R0 and R1 (10-layout.md)",
+          );
+        }
+        if (line2.size !== line2.callout) {
+          fail(`R0's second line is ${line2.size}, not \`callout\` ${line2.callout} — a subtitle's size (README 字)`);
+        }
+        // A path is a value people copy (30-behavior 选字与手) — and R0
+        // moves the window, so it also needs a tab stop, or tauri's
+        // `deep` drag takes the press before the selection can.
+        if (line2.select !== "text" || line2.stop !== "0") {
+          fail(
+            `R0's location computes user-select ${line2.select} with tabindex ${JSON.stringify(line2.stop)} — it ` +
+              "selects (data-selectable) and it is a focus stop, so the drag region leaves it to the selection " +
+              "(src/views/WorkspacePane.tsx subtitle)",
+          );
+        }
+      }
       // **The tab wears the file's kind too** (2026-09-16:「标签页打开了,
       // 最上方也要有 icon」): the same icon the tree drew, not the
       // generic file mark.
@@ -4575,16 +4758,6 @@ try {
         if (tabKinds === 0) {
           fail("an open file's tab carries no kind icon — the tree's icon goes on the tab too (src/views/WorkspacePane.tsx tabFaces)");
         }
-      }
-      // **Two, and the 预览 eye is not one of them**: it rides its own
-      // tab now (ruling 47), and what stands beside the search box is
-      // the pair that each reach something this face has no other
-      // handle on — the sessions column, and the editor's window.
-      if (tail.length !== 2) {
-        fail(
-          `the tree's head carries ${tail.length} switch(es) — 「框的右侧是session和vscode icon」, ` +
-            "two (src/views/WorkspacePane.tsx)",
-        );
       }
       // **The tree folds from its own row, and from ⌘B** (2026-09-16).
       // The first shape of this made the chevron the control and the
@@ -5827,10 +6000,11 @@ try {
         word: one?.textContent?.trim() ?? "",
         // The row of two buttons, gone whole.
         oldRow: document.querySelectorAll("[data-file-face]").length,
-        // …and the column switches are where they moved to: the head
-        // of the tree (ruling 47), never on the strip. This button
-        // standing among them would make a gate about them say three.
-        columns: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
+        // …and the column switches are where they moved to: R0's right
+        // end (2026-09-28; the head of the tree from ruling 47), never
+        // on the strip. This button standing among them would make a
+        // gate about them say three.
+        columns: document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] > button").length,
         onStripSwitches: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
       };
     });
@@ -6010,12 +6184,12 @@ try {
     }
     // **The strip's far end is empty** (ruling 47:「取消现在固定在标签页
     // 位置的」). Both switches moved to the head of the tree, where the
-    // narrow face can reach them without opening a file first — which
-    // is the whole reason the ruling exists.
+    // narrow face could reach them without opening a file first, and on
+    // 2026-09-28 on to R0's right end as the page's own buttons.
     if (asOpened.columns !== 2 || asOpened.onStripSwitches !== 0) {
       fail(
-        `the tree's head carries ${asOpened.columns} column switch(es) and the strip's end carries ` +
-          `${asOpened.onStripSwitches} group(s) — 「框的右侧是session和vscode icon」, and the strip's ` +
+        `R0 carries ${asOpened.columns} column switch(es) and the strip's end carries ` +
+          `${asOpened.onStripSwitches} group(s) — the two are R0's page buttons, and the strip's ` +
           "end is empty (src/views/WorkspacePane.tsx)",
       );
     }
@@ -6227,7 +6401,7 @@ try {
     // already in front.
     const none = await page.evaluate(() => ({
       switches: document.querySelectorAll("[data-file-face-switch]").length,
-      columns: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
+      columns: document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] > button").length,
     }));
     console.log(`.rs face switch: ${JSON.stringify(none)}`);
     if (none.switches !== 0) {
@@ -6238,7 +6412,7 @@ try {
     }
     if (none.columns !== 2) {
       fail(
-        `probe void: the tree's head carries ${none.columns} column switch(es), so 「no face ` +
+        `probe void: R0 carries ${none.columns} column switch(es), so 「no face ` +
           "switch」 above may only mean the whole workspace is missing",
       );
     }
@@ -7121,6 +7295,189 @@ try {
     await page.unroute("**/workspaces", wideList);
   }
 
+  // ── 4o″) R0 的位置从中间截断 (2026-09-28) ──────────────────────────
+  //
+  // R0's second line ends in the location, `机器:路径`, and a real path
+  // is longer than the room. The owner's rule: **cut in the middle**,
+  // keeping the machine and the last segment (the directory's own name),
+  // show the whole value on hover — and only there: over a path showing
+  // in full, a tooltip repeating it is noise.
+  //
+  // Claims:
+  //   i. at a width where it cannot fit, the location is cut, its first
+  //      word is still the machine and its last segment is whole, 「…」
+  //      butts against that segment with no blank between, and its text
+  //      is the whole value (what a selection copies, what a screen
+  //      reader reads);
+  //  ii. hovering it says the whole value, and so does focusing it;
+  // iii. a location that fits opens no tooltip.
+  {
+    const long = {
+      device: pin.device,
+      machine: "peer",
+      path: "/home/peer/projects/clients/acme-corporation/platform/services/billing-worker",
+      name: "billing-worker",
+      pinned: false,
+    };
+    const whole = `${long.machine}:${long.path}`;
+    const longList = (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify([...wsRows, long]) });
+    await page.route("**/workspaces", longList);
+    await page.setViewportSize({ width: 1000, height: 760 });
+    await open("workspaces");
+    await hide(true);
+    await wait(80);
+    await hide(false);
+    const listed = await until(8_000, async () =>
+      (await page.locator("[data-ws-row] [data-ws-name]").allInnerTexts()).includes(long.name),
+    );
+    const row = `[data-ws-line]:has([data-ws-name]:text-is("${long.name}")) [data-ws-row]`;
+    const where = "[data-main] [data-region-head] [data-ws-head-where]";
+    const tips = () => page.locator('[role="tooltip"]').allTextContents();
+    if (!listed || !(await openWs(row))) {
+      fail("probe dead: the long-pathed workspace never reached the list (scripts/check-face.mjs fixture)");
+    } else if (!(await until(5_000, async () => (await page.locator(where).getAttribute("data-ws-head-where").catch(() => null)) === whole))) {
+      fail(`probe dead: R0 never said ${whole} (src/views/WorkspacePane.tsx subtitle)`);
+    } else {
+      await page.mouse.move(2, 2, { steps: 8 });
+      await wait(200);
+      const cut = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        const kids = [...el.children];
+        const head = kids[0];
+        const tail = kids[kids.length - 1];
+        const r = (n) => n.getBoundingClientRect();
+        const round = (v) => Math.round(v * 10) / 10;
+        // The head's own words, as laid out — a `text-overflow` cut
+        // reads wider than its box here, since the range is not clipped.
+        const range = document.createRange();
+        range.selectNodeContents(head);
+        const words = range.getBoundingClientRect().width;
+        // One 「…」 in the head's own font.
+        const cs = getComputedStyle(head);
+        const probe = document.createElement("span");
+        Object.assign(probe.style, {
+          position: "absolute",
+          visibility: "hidden",
+          whiteSpace: "pre",
+          fontStyle: cs.fontStyle,
+          fontWeight: cs.fontWeight,
+          fontSize: cs.fontSize,
+          fontFamily: cs.fontFamily,
+        });
+        probe.textContent = "…";
+        document.body.append(probe);
+        const ell = r(probe).width;
+        probe.remove();
+        return {
+          text: el.textContent,
+          cut: el.hasAttribute("data-cut") || head.scrollWidth > head.clientWidth + 1,
+          after: getComputedStyle(head, "::after").content,
+          // `text-overflow` at work on the head: it drops whole
+          // characters and keeps the box, which is the blank before the
+          // tail the owner saw (「acme-corporation/… /billing-worker」).
+          overflowCut: head.scrollWidth > head.clientWidth + 0.5,
+          // The tail's left edge against the head's right edge…
+          seam: round(r(tail).left - r(head).right),
+          // …and what the head's box holds beyond its words and its 「…」.
+          blank: round(r(head).width - words - ell),
+          headSays: head.textContent,
+          tailSays: tail.textContent,
+          tailWhole: tail.scrollWidth <= tail.clientWidth + 1 && r(tail).right <= r(el).right + 0.5,
+          machineFirst: r(head).left <= r(el).left + 0.5,
+        };
+      }, where);
+      console.log(`R0 location, cut: ${JSON.stringify(cut)}`);
+      if (!cut.cut) {
+        fail(`probe void: ${whole} fits R0 at 1000 wide, so 「cut in the middle」 was never asked (widen the fixture's path)`);
+      } else {
+        if (cut.text !== whole) {
+          fail(`R0's location holds ${JSON.stringify(cut.text)} — the whole value, only drawn cut (src/views/WorkspacePane.tsx)`);
+        }
+        if (cut.after !== '"…"' || !cut.headSays.startsWith(`${long.machine}:`) || !cut.machineFirst) {
+          fail(
+            `R0's location cut reads ${JSON.stringify(cut)} — the machine stays first and the ellipsis is the head's ` +
+              "own, in the middle (src/views/WorkspacePane.tsx useMiddleCut)",
+          );
+        }
+        // **「…」 butts against the tail** (2026-09-28, the lead: the shot
+        // read 「acme-corporation/… /billing-worker」). The boxes meeting
+        // is not enough — they met then too; the blank was inside the
+        // head's box, after a `text-overflow` ellipsis. So both: the
+        // edges within half a pixel, and nothing in the head beyond its
+        // words and its ellipsis.
+        if (cut.overflowCut || Math.abs(cut.seam) > 0.5 || Math.abs(cut.blank) > 1) {
+          fail(
+            `R0's cut location leaves a gap before its tail: seam ${cut.seam}px, ${cut.blank}px of blank in the head ` +
+              `beyond its words and 「…」${cut.overflowCut ? ", cut by text-overflow" : ""} — 「…/billing-worker」, ` +
+              "nothing between (src/views/WorkspacePane.tsx useMiddleCut)",
+          );
+        }
+        if (cut.tailSays !== `/${long.name}` || !cut.tailWhole) {
+          fail(
+            `R0's location ends in ${JSON.stringify(cut.tailSays)}, whole ${cut.tailWhole} — the last segment, the ` +
+              "directory's own name, is never the part that is cut (src/views/WorkspacePane.tsx subtitle)",
+          );
+        }
+      }
+      // ii) hover, then focus — each from nothing open.
+      const before = (await tips()).length;
+      await page.locator(where).hover();
+      await until(2_000, async () => (await tips()).length > 0);
+      const byHover = await tips();
+      await page.mouse.move(2, 2, { steps: 8 });
+      await wait(250);
+      await page.locator(where).focus();
+      await until(2_000, async () => (await tips()).length > 0);
+      const byFocus = await tips();
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
+      await wait(250);
+      console.log(`R0 location, tooltip: ${before} before, hover ${JSON.stringify(byHover)}, focus ${JSON.stringify(byFocus)}`);
+      if (before !== 0) {
+        fail(`${before} tooltip(s) were open before the location was hovered — the probe cannot tell`);
+      } else {
+        if (byHover.length !== 1 || byHover[0].trim() !== whole) {
+          fail(`hovering R0's cut location said ${JSON.stringify(byHover)} — the whole value, ${whole} (src/views/WorkspacePane.tsx)`);
+        }
+        if (byFocus.length !== 1 || byFocus[0].trim() !== whole) {
+          fail(`focusing R0's cut location said ${JSON.stringify(byFocus)} — a keyboard gets the whole value too (src/views/WorkspacePane.tsx)`);
+        }
+      }
+    }
+    await page.unroute("**/workspaces", longList);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+    // iii) a location that fits: no tooltip.
+    await atTree();
+    await page.mouse.move(2, 2, { steps: 8 });
+    await wait(200);
+    const fits = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return el === null
+        ? null
+        : {
+            said: el.textContent,
+            cut: el.hasAttribute("data-cut") || el.children[0].scrollWidth > el.children[0].clientWidth + 1,
+          };
+    }, where);
+    if (fits === null || fits.cut) {
+      fail(`probe void: R0's location at 1400 is ${JSON.stringify(fits)} — (iii) needs one that fits`);
+    } else {
+      await page.locator(where).hover();
+      await wait(500);
+      const noise = await tips();
+      console.log(`R0 location that fits (${fits.said}): hovering opens ${JSON.stringify(noise)}`);
+      if (noise.length !== 0) {
+        fail(
+          `hovering R0's location ${fits.said}, which shows in full, opened ${JSON.stringify(noise)} — a tooltip ` +
+            "repeating what is already there is noise (src/views/WorkspacePane.tsx whereTip)",
+        );
+      }
+      await page.mouse.move(2, 2, { steps: 8 });
+      await wait(200);
+    }
+  }
+
   // ── 4p) 竖线有颜色, 原文就地打开, 滑动条后方一把概览尺 ──────────────
   //
   // 「文件里,有改动或 git 差异的那个竖线,是要有颜色的,和现在的 git 状态
@@ -7868,11 +8225,15 @@ try {
   //   v. and ⌘B is the way to the tree from anywhere — the key that no
   //      fold can hide, spelled for a face that has no columns to fold.
   //
-  // **The switches are on the tree screen since 2026-09-17** (ruling
+  // **The switches are on the first screen since 2026-09-17** (ruling
   // 47:「窄屏进入工作区, 没有到vscode和session的按钮, 仅有打开一个文件
   // 才能知道」— the user). They used to ride the tab strip, which the
   // narrow face does not draw until a file is open, so the only door to
-  // the other screens was behind a file somebody had not come for.
+  // the other screens was behind a file somebody had not come for. They
+  // stood at the head of the tree until 2026-09-28; now they are the
+  // page's buttons at the right end of the window's first row
+  // (`NarrowHead`, the wide face's R0), so **every** screen has them —
+  // and under the name that row says the branch and nothing else.
   {
     const wide = { width: 1400, height: 900 };
     await page.setViewportSize({ width: 390, height: 844 });
@@ -7902,25 +8263,25 @@ try {
         strip: document.querySelectorAll("[data-ws-tab-strip]").length,
         sessions: document.querySelectorAll("[data-ws-sessions]").length,
         back: document.querySelectorAll("[data-ws-back]").length,
-        switches: document.querySelectorAll("[data-tree-head] [data-ws-switches] > button").length,
+        // The page's two buttons, in the window's first row (2026-09-28).
+        switches: document.querySelectorAll("[data-screen-head] [data-ws-switches] > button").length,
+        inTree: document.querySelectorAll("[data-tree-head] [data-ws-switches]").length,
       }));
     /**
-     * How many of the tree head's switches are under the finger's floor
-     * — **asked with a finger on the glass, not at this width.**
+     * How many of the head's switches are under the finger's floor —
+     * **asked with a finger on the glass, not at this width.**
      *
-     * The tree screen is where a phone reaches the other two columns
+     * The first row is where a phone reaches the other two columns
      * from, so these are the targets ruling 47 is actually about, and
      * this is section 3's floor asked here because the screen only
      * exists at this width.
      *
      * ⚠️ **It used to be asked at this width and nothing else, and that
      * was the wrong criterion** (2026-09-20, docs/SHELL.md 第 7 条 made
-     * it matter). 「可以小一点来支持显示」 shrank these to
-     * `--ws-switch`, which the coarse-pointer block puts back to
-     * `--touch` — the same road `--tree-row` takes, and tokens.css says
-     * why in its own words: **the width of the window says nothing
-     * about what is pressing it** (an iPad is wide and has no mouse; a
-     * narrow desktop window has one). So the emulation is turned on for
+     * it matter): **the width of the window says nothing about what is
+     * pressing it** (an iPad is wide and has no mouse; a narrow desktop
+     * window has one). The box follows `--hit`, which the coarse-pointer
+     * block puts back to `--touch`, so the emulation is turned on for
      * the reading and off again after it, rather than the floor being
      * asked of a mouse.
      */
@@ -7929,7 +8290,7 @@ try {
       await wait(300);
       const n = await page.evaluate(
         () =>
-          [...document.querySelectorAll("[data-tree-head] [data-ws-switches] > button")].filter(
+          [...document.querySelectorAll("[data-screen-head] [data-ws-switches] > button")].filter(
             (b) => {
               const r = b.getBoundingClientRect();
               const floor = Number.parseFloat(
@@ -7957,21 +8318,88 @@ try {
           "「一次一屏」 (src/views/WorkspacePane.tsx)",
       );
     }
-    // **…and both doors are on it, both a finger's size** (ruling 47).
-    if (first.switches !== 2) {
+    // **…and both doors are on it, both a finger's size** (ruling 47) —
+    // in the window's first row now, not in the tree's head.
+    if (first.switches !== 2 || first.inTree !== 0) {
       fail(
-        `the narrow tree screen carries ${first.switches} switch(es) — 「窄档的树屏也有这一行」, and ` +
-          "without it a phone reaches neither the sessions nor the editor (src/views/WorkspacePane.tsx)",
+        `the narrow tree screen carries ${first.switches} switch(es) in its first row and ${first.inTree} ` +
+          "in the tree's head — the page's two buttons stand at the right end of 「‹ work」 (NarrowHead), " +
+          "and without them a phone reaches neither the sessions nor the editor (src/views/WorkspacePane.tsx)",
       );
     }
     const small = await underTheFloor();
     console.log(`narrow workspace · switches under the finger's floor, with a finger: ${small}`);
     if (small > 0) {
       fail(
-        `${small} of the tree head's switches are under the finger's floor with touch emulated — ` +
+        `${small} of the head's switches are under the finger's floor with touch emulated — ` +
           "「都是手指大小」, and the coarse-pointer block is what puts it back " +
-          "(src/styles/tokens.css --ws-switch)",
+          "(src/styles/tokens.css --hit)",
       );
+    }
+    // **Under the name, the branch and nothing else** (2026-09-28): a
+    // phone's head has no room for the location, so it is not there at
+    // all — and a branch that does not fit is dropped whole, not cut to
+    // 「ma…」. Both halves are read: the fixture's `main` stands inside
+    // the row, and a branch too long for it stands outside the clip.
+    const narrowLine = () =>
+      page.evaluate(() => {
+        const head = document.querySelector("[data-screen-head]");
+        const sub = head?.querySelector("[data-ws-head-sub]") ?? null;
+        const branch = sub?.querySelector("[data-ws-head-branch]") ?? null;
+        if (!head || !sub || !branch) return { head: !!head, sub: !!sub, branch: !!branch };
+        const s = sub.getBoundingClientRect();
+        const b = branch.getBoundingClientRect();
+        const h = head.getBoundingClientRect();
+        return {
+          said: branch.textContent.trim(),
+          shown: b.top < s.bottom - 0.5 && b.bottom <= s.bottom + 0.5,
+          inHead: s.bottom <= h.bottom + 0.5 && s.top >= h.top - 0.5,
+          where: head.querySelectorAll("[data-ws-head-where], [data-ws-head-changed]").length,
+        };
+      });
+    const line = await narrowLine();
+    console.log(`narrow workspace · the head's second line: ${JSON.stringify(line)}`);
+    if (line.said === undefined) {
+      fail(`probe dead: the narrow head has ${JSON.stringify(line)} — no branch under the name (src/views/WorkspacePane.tsx)`);
+    } else {
+      if (line.said !== "main" || !line.shown || !line.inHead) {
+        fail(
+          `the narrow head's second line says ${JSON.stringify(line.said)}, ${line.shown ? "shown" : "hidden"}, ` +
+            `${line.inHead ? "inside" : "outside"} the row — 「‹ work」 over 「⎇ main」 (src/views/WorkspacePane.tsx)`,
+        );
+      }
+      if (line.where !== 0) {
+        fail(
+          `the narrow head carries ${line.where} location/count element(s) — on a phone the line keeps the ` +
+            "branch alone (src/views/WorkspacePane.tsx)",
+        );
+      }
+      // …and a branch that cannot fit leaves the line empty rather than
+      // cut. Asked of the machine again on the way back to the window
+      // (`gitAt`), with the answer bent for this one read.
+      const LONG = "feature/a-branch-name-far-too-long-for-a-phone-head-to-hold-whole";
+      const longGit = (r) =>
+        r.fulfill({ contentType: "application/json", body: JSON.stringify({ branch: LONG, rows: [], more: false }) });
+      await page.route("**/git_status", longGit);
+      await hide(true);
+      await wait(80);
+      await hide(false);
+      await until(5_000, async () => (await narrowLine()).said === LONG);
+      const cut = await narrowLine();
+      console.log(`narrow workspace · a long branch: ${JSON.stringify(cut)}`);
+      if (cut.said !== LONG) {
+        fail("probe dead: the long branch never reached the narrow head (scripts/check-face.mjs fixture)");
+      } else if (cut.shown) {
+        fail(
+          "a branch too long for the narrow head is still drawn in it — 「放不下就不要」: dropped whole, " +
+            "never cut to a stub (src/views/WorkspacePane.tsx)",
+        );
+      }
+      await page.unroute("**/git_status", longGit);
+      await hide(true);
+      await wait(80);
+      await hide(false);
+      await until(5_000, async () => (await narrowLine()).said === "main");
     }
     // ii/iii) a file, and the way back.
     if (!(await press('[data-file="notes.md"] > button'))) {
@@ -7992,6 +8420,15 @@ try {
             "reach the tree is where this ruling started (src/views/WorkspacePane.tsx)",
         );
       }
+      // The page's buttons are the head's, so the file screen has them
+      // too (2026-09-28) — until then a phone reading a file had to go
+      // back to the tree to reach the sessions.
+      if (onFile.switches !== 2) {
+        fail(
+          `the narrow file screen carries ${onFile.switches} switch(es) in its first row — the page's two ` +
+            "buttons are on every screen of it (src/views/WorkspacePane.tsx NarrowHead)",
+        );
+      }
 
       await press("[data-ws-back]");
       await wait(300);
@@ -8003,9 +8440,9 @@ try {
             "(src/views/WorkspacePane.tsx)",
         );
       }
-      // iv) the sessions, from the **tree** screen's switch — which is
-      // where the switches live now (ruling 47) and is also the screen
-      // this walk is standing on after the 「←」 above.
+      // iv) the sessions, from the switch in the first row, pressed on
+      // the **tree** screen — the screen ruling 47 was about, and the
+      // one this walk is standing on after the 「←」 above.
       await press("[data-ws-sessions-switch]");
       await wait(400);
       const onSessions = await screens();
@@ -8014,6 +8451,12 @@ try {
         fail(
           `the sessions switch left ${JSON.stringify(onSessions)} — on a phone that column is a screen, ` +
             "not a third of one (src/views/WorkspacePane.tsx)",
+        );
+      }
+      if (onSessions.switches !== 2) {
+        fail(
+          `the narrow sessions screen carries ${onSessions.switches} switch(es) in its first row — the page's ` +
+            "two buttons are on every screen of it (src/views/WorkspacePane.tsx NarrowHead)",
         );
       }
       if (onSessions.back === 0) {
@@ -8073,12 +8516,20 @@ try {
 
   // ── 4r) 中栏没有标签时 (工作区第五轮 第 37 条) ────────────────────
   //
-  // 「中栏没有标签时别是一片白」 — the user. What goes there is this
-  // project's name and path, its branch, and what was open last time.
+  // 「中栏没有标签时别是一片白」 — the user. What goes there is what was
+  // open last time, or one sentence saying nothing is.
+  //
+  // **Not the name, the path or the branch since 2026-09-28**: R0 says
+  // them (the name over 「⎇ main · … · peer:/home/peer/work」), and a
+  // page says who it is once (10-layout「身份只出现一次」). Until then
+  // this column headed itself 「work / peer:/home/peer/work / main」 and
+  // (i) asserted exactly that; it asserts the opposite now, with the
+  // list empty and again with it full.
   //
   // Claims:
   //   i. with no tab open the middle column carries `[data-ws-empty]`,
-  //      and the workspace's own name is in it;
+  //      it is not blank, and it holds no second name, path or branch —
+  //      those are in R0;
   //  ii. two files opened and then closed are both in 最近打开;
   // iii. pressing one of those names opens it again.
   {
@@ -8094,39 +8545,63 @@ try {
         await wait(120);
       }
     }
-    const empty = await page.evaluate(() => {
-      const el = document.querySelector("[data-ws-empty]");
-      if (el === null) return null;
-      return {
-        said: el.textContent?.trim().slice(0, 120) ?? "",
-        name: el.querySelector("[data-ws-empty-name]")?.textContent?.trim() ?? null,
-        branch: el.querySelector("[data-ws-empty-branch]")?.textContent?.trim() ?? null,
-        // Nothing drawn for the sake of being drawn: a picture where an
-        // answer belongs is what 「不画插画」 refuses.
-        pictures: el.querySelectorAll("svg, img").length,
-      };
-    });
-    console.log(`empty middle column: ${JSON.stringify(empty)}`);
-    if (empty === null) {
-      fail(
-        "the middle column with no tab open is blank — 「中栏没有标签时别是一片白」 " +
-          "(src/views/WorkspaceEmpty.tsx)",
-      );
-    } else {
-      if (empty.name !== "work") {
+    /** The empty column, read for a second identity: any element whose
+        own words are the name or the branch, or that spells the
+        location — and R0's two lines, which are where they live now. */
+    const emptyColumn = () =>
+      page.evaluate(() => {
+        const el = document.querySelector("[data-ws-empty]");
+        if (el === null) return null;
+        const own = (n) =>
+          [...n.childNodes]
+            .filter((c) => c.nodeType === 3)
+            .map((c) => c.textContent.trim())
+            .join("");
+        const words = [el, ...el.querySelectorAll("*")].map(own).filter(Boolean);
+        const r0 = document.querySelector("[data-main] [data-region-head]");
+        return {
+          said: el.textContent?.trim().slice(0, 120) ?? "",
+          recent: el.querySelectorAll("[data-ws-recent]").length,
+          none: el.querySelectorAll("[data-ws-empty-none]").length,
+          identity: words.filter((w) => w === "work" || w === "main" || w.includes("peer:/home/peer/work")),
+          marks: el.querySelectorAll("[data-ws-empty-name], [data-ws-empty-branch]").length,
+          r0: {
+            name: r0?.querySelector("[data-page-title]")?.textContent?.trim() ?? null,
+            branch: r0?.querySelector("[data-ws-head-branch]")?.textContent?.trim() ?? null,
+            where: r0?.querySelector("[data-ws-head-where]")?.textContent?.trim() ?? null,
+          },
+        };
+      });
+    const judgeEmpty = (empty, when) => {
+      console.log(`empty middle column · ${when}: ${JSON.stringify(empty)}`);
+      if (empty === null) {
         fail(
-          `the empty column names ${JSON.stringify(empty.name)} — this workspace is ` +
-            "peer:/home/peer/work and its name is the one thing a person arriving needs " +
+          "the middle column with no tab open has no [data-ws-empty] — 「中栏没有标签时别是一片白」 " +
             "(src/views/WorkspaceEmpty.tsx)",
         );
+        return;
       }
-      if (empty.branch !== "main") {
+      if (empty.recent === 0 && empty.none !== 1) {
         fail(
-          `the empty column says the branch is ${JSON.stringify(empty.branch)} — the status this ` +
-            "pane already holds says main (src/views/WorkspaceEmpty.tsx)",
+          `the empty column ${when} lists no file and says nothing (${JSON.stringify(empty.said)}) — 「别是一片白」: ` +
+            "最近打开, or the one sentence that nothing is open (src/views/WorkspaceEmpty.tsx)",
         );
       }
-    }
+      if (empty.identity.length > 0 || empty.marks > 0) {
+        fail(
+          `the empty column ${when} says ${JSON.stringify(empty.identity)} (${empty.marks} identity mark(s)) — the ` +
+            "name, the path and the branch are R0's since 2026-09-28, and a page says who it is once " +
+            "(10-layout 身份只出现一次; src/views/WorkspaceEmpty.tsx)",
+        );
+      }
+      if (empty.r0.name !== "work" || empty.r0.branch !== "main" || empty.r0.where !== "peer:/home/peer/work") {
+        fail(
+          `R0 over the empty column says ${JSON.stringify(empty.r0)} — the identity moved there, it was not ` +
+            "dropped (src/views/WorkspacePane.tsx subtitle)",
+        );
+      }
+    };
+    judgeEmpty(await emptyColumn(), "on arrival");
     // ii) two files, opened and closed.
     for (const name of ["notes.md", "one.rs"]) {
       await press(`[data-file-tree] [data-depth="0"][data-file="${name}"] > button`);
@@ -8146,6 +8621,9 @@ try {
       els.map((e) => e.getAttribute("data-ws-recent")),
     );
     console.log(`recent: ${JSON.stringify(recent)}`);
+    // …and still no second identity with the list full, which is the
+    // shape the old head stood over.
+    judgeEmpty(await emptyColumn(), "with 最近打开 full");
     const wanted = ["/home/peer/work/notes.md", "/home/peer/work/one.rs"];
     if (!wanted.every((w) => recent.includes(w))) {
       fail(
@@ -8384,7 +8862,20 @@ try {
   //      reaches that machine as `touch` with the path spelled out;
   // iii. the row that comes back wears `U` — git has never seen it;
   //  iv. a rename onto a name that is taken is refused, **and the
-  //      refusal is under the box** rather than in a sheet.
+  //      refusal is under the box** rather than in a sheet;
+  //   v. the tree's head has a ＋ (2026-09-28, every list's anatomy):
+  //      a menu of exactly 新建文件 and 新建目录, the row menu's own
+  //      words and no ellipsis;
+  //  vi. with a folder selected — the last row pressed — its 新建文件
+  //      opens the same in-place box **under that folder**, opened,
+  //      with the caret in it, and the name reaches the machine at that
+  //      path;
+  // vii. with a file pressed last, 新建目录 opens the box **in the
+  //      folder that file is in** (VS Code's rule; 2026-09-28 the first
+  //      cut sent it to the root);
+  // viii. with nothing selected — the blank under the rows pressed — or
+  //      a file at the root pressed, the box opens **at the root**,
+  //      above the first row.
   {
     await atTree();
     const dirRow = '[data-file-tree] [data-depth="0"] [data-dir="src"]';
@@ -8405,6 +8896,10 @@ try {
       els.map((e) => e.getAttribute("data-menu-item")),
     );
     console.log(`the directory's menu: ${JSON.stringify(items)}`);
+    // The words, for (v): the head's ＋ says the same two.
+    const rowWords = await page.$$eval("[data-row-menu] [data-menu-item]", (els) =>
+      Object.fromEntries(els.map((e) => [e.getAttribute("data-menu-item"), e.textContent?.trim() ?? ""])),
+    );
     for (const want of ["new-file", "new-dir", "rename"]) {
       if (!items.includes(want)) {
         fail(
@@ -8506,6 +9001,168 @@ try {
       }
       await page.keyboard.press("Escape");
       await wait(200);
+    }
+
+    // v) the head's ＋, and what its menu holds.
+    const plus = "[data-tree-head] [data-tree-new]";
+    /** Where the box is and whether the caret is in it: the row right
+        above it (a folder's own row, when the box is that folder's),
+        whether it is the list's first thing (the root's), its level. */
+    const boxAt = () =>
+      page.evaluate(() => {
+        const box = document.querySelector("[data-file-tree] [data-new-name]");
+        if (box === null) return null;
+        const prev = box.previousElementSibling;
+        const list = document.querySelector("[data-file-tree] [data-files-list]");
+        const firstRow = list?.querySelector("[data-depth]") ?? null;
+        return {
+          kind: box.getAttribute("data-new-name"),
+          under: prev?.querySelector("[data-dir]")?.getAttribute("data-dir") ?? null,
+          underDepth: prev?.getAttribute("data-depth") ?? null,
+          underOpen: prev?.querySelector("[data-dir]")?.getAttribute("data-on") ?? null,
+          atTop: firstRow !== null && (box.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          caret: document.activeElement === box.querySelector("[data-title-input]"),
+        };
+      });
+    const plusMenu = async (item) => {
+      await page.keyboard.press("Escape");
+      await wait(150);
+      if (!(await press(plus))) return null;
+      await until(2_000, async () => (await page.locator("[data-tree-new-item]").count()) > 0);
+      const words = await page.$$eval("[data-tree-new-item]", (els) =>
+        els.map((e) => [e.getAttribute("data-tree-new-item"), e.textContent?.trim() ?? ""]),
+      );
+      if (item !== null) await press(`[data-tree-new-item="${item}"]`);
+      await wait(300);
+      return words;
+    };
+    await page.mouse.move(2, 2);
+    const words = await plusMenu(null);
+    console.log(`the tree head's ＋: ${JSON.stringify(words)} beside the row menu's ${JSON.stringify(rowWords)}`);
+    if (words === null) {
+      fail("probe dead: no ＋ at the head of the tree (src/views/WorkspacePane.tsx treeNew)");
+    } else {
+      if (JSON.stringify(words.map(([k]) => k)) !== JSON.stringify(["file", "dir"])) {
+        fail(
+          `the tree head's ＋ offers ${JSON.stringify(words)} — exactly 新建文件 and 新建目录 ` +
+            "(src/views/WorkspacePane.tsx treeNew)",
+        );
+      }
+      const said = Object.fromEntries(words);
+      if (said.file !== rowWords["new-file"] || said.dir !== rowWords["new-dir"]) {
+        fail(
+          `the ＋ says ${JSON.stringify(said)} where a folder's menu says ${JSON.stringify(rowWords)} — one act, ` +
+            "one word (crates/catalog file-new / dir-new)",
+        );
+      }
+      if (words.some(([, w]) => w.includes("…"))) {
+        fail(
+          `the ＋'s items carry an ellipsis (${JSON.stringify(words)}) — nothing asks again, the name is typed ` +
+            "where it will stand (components/Menu)",
+        );
+      }
+      await page.keyboard.press("Escape");
+      await wait(200);
+
+      // vi) a folder selected: its box, under it, opened, caret in.
+      if ((await page.locator("[data-file-tree] [data-new-name]").count()) !== 0) {
+        fail("probe void: a name box was already open before ＋ was pressed — (vi) could not tell whose it is");
+      }
+      await press(dirRow);
+      await wait(250);
+      const picked = await page.locator(`${dirRow}[data-picked]`).count();
+      await plusMenu("file");
+      const inSrc = await boxAt();
+      console.log(`＋ → 新建文件 with src selected (${picked} picked): ${JSON.stringify(inSrc)}`);
+      if (inSrc === null) {
+        fail("＋ → 新建文件 grew no box on the tree — it starts the same in-place box a folder's menu does (src/views/FileTree.tsx make)");
+      } else {
+        if (inSrc.kind !== "file" || inSrc.under !== "src" || inSrc.underDepth !== "0" || inSrc.underOpen !== "true") {
+          fail(
+            `with src selected, ＋ → 新建文件 put a ${inSrc.kind} box under ${JSON.stringify(inSrc.under)} ` +
+              `(depth ${inSrc.underDepth}, open ${inSrc.underOpen}) — it goes into the selected folder, which it ` +
+              "opens (src/views/FileTree.tsx picked)",
+          );
+        }
+        if (!inSrc.caret) {
+          fail(
+            "the box ＋ opened has no caret in it — a box born while the menu holds the focus never gets it, " +
+              "and a focus handed back to ＋ shuts a box that closes on blur (src/views/WorkspacePane.tsx madeFromMenu)",
+          );
+        }
+        const wasMade = made.length;
+        await page.locator("[data-file-tree] [data-new-name] [data-title-input]").fill("y.md").catch(() => {});
+        await page.keyboard.press("Enter");
+        await wait(800);
+        const got = made.slice(wasMade);
+        console.log(`＋ made: ${JSON.stringify(got)}`);
+        if (got.length !== 1 || got[0].kind !== "touch" || got[0].path !== "/home/peer/work/src/y.md") {
+          fail(
+            `the name typed into ＋'s box asked for ${JSON.stringify(got)} — one \`touch\` at ` +
+              "/home/peer/work/src/y.md, the selected folder (src/views/FileTree.tsx made)",
+          );
+        }
+      }
+      // vii) a file pressed last: the folder it is in. `src` is open
+      // from (vi), so one of its own files is on screen one level in.
+      await page.keyboard.press("Escape");
+      await wait(150);
+      const inner = '[data-file-tree] [data-depth="1"][data-file="notes.md"] > button';
+      if (!(await press(inner))) {
+        fail("probe dead: no file inside src on the tree to press for (vii) (src/views/FileTree.tsx)");
+      } else {
+        await wait(300);
+        await plusMenu("dir");
+        const beside = await boxAt();
+        console.log(`＋ → 新建目录 after src/notes.md was pressed: ${JSON.stringify(beside)}`);
+        if (beside === null) {
+          fail("＋ → 新建目录 grew no box on the tree (src/views/FileTree.tsx make)");
+        } else if (beside.kind !== "dir" || beside.under !== "src" || beside.underDepth !== "0" || beside.underOpen !== "true" || !beside.caret) {
+          fail(
+            `with src/notes.md pressed last, ＋ → 新建目录 put a ${beside.kind} box under ${JSON.stringify(beside.under)} ` +
+              `(depth ${beside.underDepth}, open ${beside.underOpen}), caret ${beside.caret} — a file selected means the ` +
+              "folder it is in, VS Code's rule (src/views/FileTree.tsx picked)",
+          );
+        }
+      }
+      // viii) nothing selected — the blank under the rows pressed — is
+      // the root. A file at the root is the root too: the folder it is in.
+      const atTheRoot = async (how, pick) => {
+        await page.keyboard.press("Escape");
+        await wait(150);
+        const got = await pick();
+        // The blank opens a file box of its own at the root: Esc it, so
+        // the box read below is ＋'s.
+        await page.keyboard.press("Escape");
+        await wait(200);
+        if (!got) {
+          fail(`probe dead: could not press ${how} for (viii) (src/views/FileTree.tsx)`);
+          return;
+        }
+        await plusMenu("dir");
+        const atRoot = await boxAt();
+        console.log(`＋ → 新建目录 after ${how}: ${JSON.stringify(atRoot)}`);
+        if (atRoot === null) {
+          fail("＋ → 新建目录 grew no box on the tree (src/views/FileTree.tsx make)");
+        } else if (atRoot.kind !== "dir" || !atRoot.atTop || atRoot.under !== null || !atRoot.caret) {
+          fail(
+            `after ${how}, ＋ → 新建目录 put a ${atRoot.kind} box ${atRoot.atTop ? "at the top" : "among the rows"} ` +
+              `under ${JSON.stringify(atRoot.under)}, caret ${atRoot.caret} — it goes to the workspace's root ` +
+              "(src/views/FileTree.tsx picked)",
+          );
+        }
+        // Esc, not Enter: a directory made at the root would stand
+        // first in every listing the sections below read.
+        await page.keyboard.press("Escape");
+        await wait(200);
+        if ((await page.locator("[data-file-tree] [data-new-name]").count()) !== 0) {
+          fail("Esc left ＋'s name box open — Esc puts it back (src/components/EditableName.tsx)");
+        }
+      };
+      await atTheRoot("the blank under the rows was pressed", () => press("[data-file-tree] [data-tree-blank]"));
+      await atTheRoot("a file at the root was pressed", () =>
+        press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button'),
+      );
     }
   }
 
@@ -10824,7 +11481,7 @@ try {
   });
   if (withCode === null) {
     fail(
-      "a machine that answered `code --version` drew no editor switch — the tab strip's far end is " +
+      "a machine that answered `code --version` drew no editor switch — R0's right end is " +
         "where it belongs (src/views/WorkspacePane.tsx)",
     );
   } else if (!withCode.word) {

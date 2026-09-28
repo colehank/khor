@@ -103,6 +103,8 @@ export function FileTree({
   onGone,
   onMoved,
   onMade,
+  make,
+  onMakeSeen,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -141,6 +143,13 @@ export function FileTree({
       the tree cannot say so until somebody asks again. The same beat a
       save and a rename ride (`WorkspacePane`'s `gitAt`). */
   onMade?: (path: string) => void;
+  /** 新建文件 / 新建目录 asked for from the ＋ at the head of this tree
+      (2026-09-28), stamped because two presses are two asks. **A
+      one-shot, like the pane's `reveal`**: the tree takes it and says so
+      (`onMakeSeen`), or a remount — the narrow face walking back to the
+      tree — would open a name box nobody asked for. */
+  make?: { kind: "file" | "dir"; at: number } | null;
+  onMakeSeen?: () => void;
 }) {
   /** Every directory this tree has an answer for. The root is asked at
       once; the rest are asked when they are opened. */
@@ -397,6 +406,29 @@ export function FileTree({
     return out;
   }, [listings, expanded, root]);
 
+  /** Where the head's ＋ makes a name (2026-09-28): **VS Code's rule**.
+      The row pressed last is the selection: a folder means inside it, a
+      file means beside it — the folder it is in — and nothing (the blank
+      under the rows pressed, or nothing pressed yet) means the
+      workspace's root. A row that has since gone — renamed, deleted,
+      folded out of sight under a parent — is not a place a box can be
+      drawn next to, so the root takes it. */
+  const [picked, setPicked] = useState<{ full: string; dir: boolean } | null>(null);
+  useEffect(() => {
+    if (make == null) return;
+    onMakeSeen?.();
+    const row = picked === null ? undefined : rows.find((r) => r.full === picked.full && r.dir === picked.dir);
+    const parent = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
+    const into = row === undefined ? root : row.dir ? row.full : parent(row.full);
+    // Opened, so the box stands where the row it becomes will stand,
+    // among its siblings — what 新建 from a folder's own menu does too
+    // once the name is taken (`made`).
+    if (into !== root && !expanded.has(into)) toggle(into);
+    setNaming({ at: into, kind: make.kind });
+    // Only a new ask is a reason to open a box; the rest is read as it is.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [make]);
+
   /** How far in one level sits (tokens.css `--tree-step`). */
   const indent = (depth: number) => ({
     paddingLeft: `calc(var(--gap-row) + var(--tree-step) * ${depth})`,
@@ -481,7 +513,12 @@ export function FileTree({
                       type="button"
                       data-dir={r.name}
                       data-on={on}
-                      onClick={() => toggle(r.full)}
+                      // The row the head's ＋ reads its place off (`picked`).
+                      data-picked={picked?.full === r.full ? "" : undefined}
+                      onClick={() => {
+                        toggle(r.full);
+                        setPicked({ full: r.full, dir: true });
+                      }}
                       className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
                     >
                       {/* **12 across, not 16** (2026-09-16:「树里的 > 按钮
@@ -552,7 +589,11 @@ export function FileTree({
                       // preview|pin`). **Only an explicit 「pin」 moves
                       // it**, so an answer that has not arrived is the
                       // default rather than a second copy of it.
-                      onClick={() => onOpen(r.full, clickPins)}
+                      data-picked={picked?.full === r.full ? "" : undefined}
+                      onClick={() => {
+                        setPicked({ full: r.full, dir: false });
+                        onOpen(r.full, clickPins);
+                      }}
                       // 「双击、或在里面打了字,就钉住」— the second
                       // press is what says 「I am staying」, and the
                       // browser hands it over as its own event rather
@@ -686,7 +727,10 @@ export function FileTree({
                 type="button"
                 data-tree-blank
                 aria-label={gui.file_new}
-                onClick={() => setNaming({ at: root, kind: "file" })}
+                onClick={() => {
+                  setPicked(null);
+                  setNaming({ at: root, kind: "file" });
+                }}
                 className="min-h-touch w-full"
               />
             </RowMenu>

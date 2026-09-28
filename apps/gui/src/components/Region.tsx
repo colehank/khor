@@ -97,6 +97,26 @@ export function PageAction({ children }: { children: ReactNode }) {
   return createPortal(children, seat);
 }
 
+/** Where a page's second title line goes, under its name in R0. */
+const SubtitleSeat = createContext<HTMLElement | null | undefined>(undefined);
+
+/**
+ * **A page's second title line, inside R0's 48** (2026-09-28, the open
+ * workspace: branch, changed files, `机器:路径`). The macOS title-and-
+ * subtitle pair — Xcode puts the branch under the project — and not a
+ * row between R0 and R1, which nothing may add (10-layout). Only a page
+ * with a *location* to state wears one (components/Toolbar says when).
+ *
+ * Drawn by the page that owns the facts, seated by the shell, the way
+ * `PageAction` is. **Nothing where there is no R0**: the narrow face's
+ * head is the page's own (`NarrowHead`) and says what fits there itself.
+ */
+export function PageSubtitle({ children }: { children: ReactNode }) {
+  const seat = useContext(SubtitleSeat);
+  if (!seat) return null;
+  return createPortal(children, seat);
+}
+
 /** Which of the three page types a region is (docs/DESIGN.md 第五节). */
 export type RegionKind = "detail" | "tabs" | "doc";
 
@@ -112,6 +132,7 @@ export function PageHead({
   actions,
   caption,
   seatRef,
+  subRef,
 }: {
   title: ReactNode;
   actions?: ReactNode;
@@ -121,12 +142,19 @@ export function PageHead({
   /** Where the page's own buttons are seated (`PageAction`), before
       the shell's. */
   seatRef?: (el: HTMLElement | null) => void;
+  /** Where the page's second title line is seated (`PageSubtitle`).
+      Empty, it takes no room and the name sits alone on R0's middle. */
+  subRef?: (el: HTMLElement | null) => void;
 }) {
   return (
     <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
-      <h1 data-page-title className="min-w-0 flex-1 truncate text-title-sm font-title">
-        {title}
-      </h1>
+      {/* The name over its second line, the pair centred in the 48. */}
+      <div className="flex min-w-0 flex-1 flex-col justify-center">
+        <h1 data-page-title className="min-w-0 truncate text-title-sm font-title">
+          {title}
+        </h1>
+        {subRef && <div ref={subRef} data-page-subtitle className="flex min-w-0 empty:hidden" />}
+      </div>
       {caption && (
         <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
           {caption}
@@ -182,6 +210,7 @@ export function Region({
   children: ReactNode;
 }) {
   const [seat, setSeat] = useState<HTMLElement | null>(null);
+  const [sub, setSub] = useState<HTMLElement | null>(null);
   return (
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
@@ -193,7 +222,9 @@ export function Region({
         className="relative flex h-pane-head flex-none items-end select-none"
       >
         <div className="flex min-w-0 flex-1 self-stretch">
-          {head ?? <PageHead title={title} actions={actions} caption={caption} seatRef={setSeat} />}
+          {head ?? (
+            <PageHead title={title} actions={actions} caption={caption} seatRef={setSeat} subRef={setSub} />
+          )}
         </div>
         {/* **Every R0 can say it is stale**, not only a `PageHead`: on a
             tab strip (B) or an address bar (C) the caption sits at the
@@ -231,7 +262,9 @@ export function Region({
           className,
         )}
       >
-        <ActionsSeat.Provider value={head ? undefined : seat}>{children}</ActionsSeat.Provider>
+        <ActionsSeat.Provider value={head ? undefined : seat}>
+          <SubtitleSeat.Provider value={head ? undefined : sub}>{children}</SubtitleSeat.Provider>
+        </ActionsSeat.Provider>
       </div>
     </div>
   );
