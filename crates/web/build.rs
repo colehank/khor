@@ -29,16 +29,18 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    let dist: PathBuf = [
-        env!("CARGO_MANIFEST_DIR"),
-        "..",
-        "..",
-        "apps",
-        "gui",
-        "dist",
-    ]
-    .iter()
-    .collect();
+    // **Read when the script runs, not baked in when it compiles.**
+    // `env!` froze the path of whichever checkout first compiled this
+    // script into a shared `target` — a git worktree pointed at the main
+    // tree's target did exactly that, and once the worktree was removed
+    // every build in the main tree looked for `dist` in a directory that
+    // no longer existed (2026-09-28). Cargo sets the variable for every
+    // run of a build script.
+    let manifest = std::env::var("CARGO_MANIFEST_DIR")
+        .expect("cargo sets CARGO_MANIFEST_DIR for build scripts");
+    let dist: PathBuf = [manifest.as_str(), "..", "..", "apps", "gui", "dist"]
+        .iter()
+        .collect();
     println!("cargo::rerun-if-changed={}", dist.display());
 
     // The entry point specifically, not the directory: a `dist` left
