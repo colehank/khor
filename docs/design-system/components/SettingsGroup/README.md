@@ -1,6 +1,6 @@
 # SettingsGroup
 
-设置页（更多）里的一组。组名在卡片**外面、上面**，用 `group` 11/600 配 `tertiary`；卡片是 `card` 的底、`radius-lg` 10 的角；行与行之间是 `hairline`，**左端内缩 `gap-row` 12**（和 macOS 一样，分隔线从文字开始，不从卡片边缘开始）。组与组之间 `gap-group` 20。
+设置页（更多）里的一组。**它落在 `canvas` 上，不落在板上**：设置式的「…」页不画板（`Board` 的例外），因为一张 `card` 的组放在 `card` 的板上就没了。组名在卡片**外面、上面**，用 `group` 11/600 配 `tertiary`；卡片是 `card` 的底、`radius-lg` 10 的角；行与行之间是 `hairline`，**左端内缩 `gap-row` 12**（和 macOS 一样，分隔线从文字开始，不从卡片边缘开始）。组与组之间 `gap-group` 20。
 
 ## 四种行，用途是排他的
 

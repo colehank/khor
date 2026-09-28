@@ -660,15 +660,27 @@ export function mount(host, opts) {
   // The one thing this face asks of every control is a finger-sized
   // target, and the gate that measures it looks at the element carrying
   // the press. Ten-pixel words in a gallery need no such thing.
+  //
+  // **A segmented control since 2026-09-28** (docs/design-system
+  // components/SegmentedControl): two fixed readings of one day are the
+  // case it exists for — one track, the chosen reading a face in it —
+  // where the prototype had two words and a dot, the chosen one bold.
+  // It is a radiogroup: one tab stop, the arrow keys move the reading
+  // (the keydown below). The look is `day.css`'s `.sw`, from the app's
+  // tokens, the same numbers the React control reads.
   const drawSwitch = () => {
-    sw.innerHTML = viewsOf()
-      .map(
-        ([v, label], k) =>
-          (k ? '<s>·</s>' : '') +
-          '<button type="button" data-day-view-pick="' + v + '" data-on="' + (v === st.view) +
-          '" aria-pressed="' + (v === st.view) + '">' + label + '</button>',
-      )
-      .join('');
+    sw.innerHTML =
+      '<span class="seg" role="radiogroup">' +
+      viewsOf()
+        .map(([v, label]) => {
+          const on = v === st.view;
+          return (
+            '<button type="button" role="radio" data-day-view-pick="' + v + '" data-on="' + on +
+            '" aria-checked="' + on + '" tabindex="' + (on ? 0 : -1) + '"><span>' + label + '</span></button>'
+          );
+        })
+        .join('') +
+      '</span>';
   };
   // The original showed a sentence here when nothing was under the
   // cursor — 「把鼠标横着扫过去,点一下钉住」. **Not brought over**: this
@@ -803,15 +815,30 @@ export function mount(host, opts) {
 
 
   drawSwitch();
-  sw.addEventListener('click', (ev) => {
-    const b = ev.target.closest('button[data-day-view-pick]');
-    if (!b) return;
-    st.view = b.dataset.dayViewPick;
+  const pickView = (v) => {
+    if (v === st.view) return;
+    st.view = v;
     //   **This one is an arrival**, so it plays the entrance — see
     //   `nofx` in the stylesheet and in `update` below.
     host.classList.remove('nofx');
     drawSwitch();
     render();                                    // st.cur / st.pin kept
+  };
+  sw.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button[data-day-view-pick]');
+    if (!b) return;
+    pickView(b.dataset.dayViewPick);
+  });
+  //   The radiogroup's keys: ← → (and ↑ ↓) move the reading, and the
+  //   focus goes with it to the newly drawn button.
+  sw.addEventListener('keydown', (ev) => {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+    if (!step || !ev.target.closest('button[data-day-view-pick]')) return;
+    ev.preventDefault();
+    const vs = viewsOf().map(([v]) => v);
+    const next = vs[(vs.indexOf(st.view) + step + vs.length) % vs.length];
+    pickView(next);
+    sw.querySelector('button[data-day-view-pick="' + next + '"]')?.focus();
   });
   const ro_ = new ResizeObserver(() => {
     const w = Math.round(ch.clientWidth);

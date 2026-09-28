@@ -28,6 +28,7 @@ import {
   type CandidateRow,
 } from "@/api";
 import { Button } from "@/components/ui/button";
+import { PopupButton } from "@/components/ui/popup-button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -153,36 +154,44 @@ export function ImportDialog({
           <p data-import-note className="text-caption text-muted-foreground">
             {gui.import_note}
           </p>
+          {/* **Two popups, not two rows of pills** (2026-09-28): the
+              machines and the directories are lists that grow, and the
+              system's menu is what holds a long one (components/
+              PopupButton). Side by side, each half the row: they narrow
+              one list together. */}
           {(machines.length > 1 || places.length > 1) && (
-            <div data-import-filters className="flex min-w-0 flex-wrap gap-1">
-              {machines.length > 1 &&
-                ["", ...machines].map((m) => (
-                  <Button
-                    key={`m:${m}`}
-                    size="sm"
-                    variant={machine === m ? "secondary" : "ghost"}
-                    data-import-machine={m}
-                    data-on={machine === m}
-                    onClick={() => setMachine(m)}
-                  >
-                    {m === "" ? gui.import_all_machines : m}
-                  </Button>
-                ))}
-              {places.length > 1 &&
-                ["", ...places].map((p) => (
-                  <Button
-                    key={`p:${p}`}
-                    size="sm"
-                    variant={place === p ? "secondary" : "ghost"}
-                    data-import-place={p}
-                    data-on={place === p}
-                    title={p}
-                    className="max-w-48 min-w-0"
-                    onClick={() => setPlace(p)}
-                  >
-                    <span className="truncate">{p === "" ? gui.import_all_places : (p.split("/").pop() ?? p)}</span>
-                  </Button>
-                ))}
+            <div data-import-filters className="grid min-w-0 grid-cols-2 gap-in">
+              {machines.length > 1 && (
+                <PopupButton
+                  look="field"
+                  label={gui.devices_tab}
+                  value={machine}
+                  onPick={setMachine}
+                  mark={{ "data-import-machine-select": "" }}
+                  choices={["", ...machines].map((m) => ({
+                    value: m,
+                    label: m === "" ? gui.import_all_machines : m,
+                    mark: { "data-import-machine": m },
+                  }))}
+                />
+              )}
+              {places.length > 1 && (
+                <PopupButton
+                  look="field"
+                  label={gui.new_session_dir}
+                  value={place}
+                  onPick={setPlace}
+                  mark={{ "data-import-place-select": "" }}
+                  choices={["", ...places].map((p) => ({
+                    value: p,
+                    // The whole path in the menu, where two `app`s must
+                    // be told apart; its last part on the button.
+                    label: p === "" ? gui.import_all_places : p,
+                    short: p === "" ? undefined : (p.split("/").pop() ?? p),
+                    mark: { "data-import-place": p },
+                  }))}
+                />
+              )}
             </div>
           )}
           {rows !== null && shown.length === 0 && (

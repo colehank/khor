@@ -17,7 +17,6 @@
 import { useEffect, useState } from "react";
 
 import { fetchDevices, type DeviceRow } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
 import { PathField, settledPath } from "@/components/PathField";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +26,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { PopupButton } from "@/components/ui/popup-button";
+import { FormLabel, SheetForm } from "@/components/ui/sheet-form";
 import { gui } from "@/gen/catalog";
 import { connectionWord } from "@/words";
 
@@ -101,50 +102,43 @@ export function DirPicker({
         <DialogHeader>
           <DialogTitle>{gui.dir_picker}</DialogTitle>
         </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-3">
+        <SheetForm>
           {/* 在哪台, first — the directory is a fact about the machine
               (the wizard's order, and its heading). Satellites are
               listed: `Ls` routes through the sponsor, so completion
-              reaches them too. */}
+              reaches them too. **A popup, the wizard's control**: the
+              machines are a list that grows (components/PopupButton). */}
           {machines.length > 1 && (
-            <div data-dir-picker-machines className="flex min-w-0 flex-col gap-1 text-callout">
-              <span className="text-muted-foreground">{gui.new_session_machine}</span>
-              <div className="flex flex-wrap gap-1">
-                {machines.map((d) => {
-                  const on = machine === "" ? d.me : machine === d.name;
-                  return (
-                    <Button
-                      key={d.id}
-                      size="sm"
-                      variant={on ? "secondary" : "ghost"}
-                      data-dir-picker-machine={d.name}
-                      data-on={on}
-                      className="min-h-touch"
-                      onClick={() => {
-                        // A path typed for this disk means nothing on
-                        // that one.
-                        setMachine(d.name);
-                        setTyped("");
-                        setRefused(null);
-                      }}
-                    >
-                      <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
-                      {d.shown}
-                      {connectionWord(d) && (
-                        <span className="text-muted-foreground">{connectionWord(d)}</span>
-                      )}
-                    </Button>
-                  );
-                })}
+            <>
+              <FormLabel>{gui.new_session_machine}</FormLabel>
+              <div data-dir-picker-machines className="flex min-w-0">
+                <PopupButton
+                  look="field"
+                  label={gui.new_session_machine}
+                  value={machine === "" ? (machines.find((d) => d.me)?.name ?? "") : machine}
+                  mark={{ "data-dir-picker-machine-select": "" }}
+                  choices={machines.map((d) => ({
+                    value: d.name,
+                    label: connectionWord(d) ? `${d.shown} ${connectionWord(d)}` : d.shown,
+                    mark: { "data-dir-picker-machine": d.name },
+                  }))}
+                  onPick={(name) => {
+                    // A path typed for this disk means nothing on
+                    // that one.
+                    setMachine(name);
+                    setTyped("");
+                    setRefused(null);
+                  }}
+                />
               </div>
-            </div>
+            </>
           )}
 
           {/* **Not a `label`**: the completions under the box are
               buttons, and a button inside a label is a control inside
               a control. */}
-          <div className="flex min-w-0 flex-col gap-1 text-callout">
-            <span className="text-muted-foreground">{gui.new_session_dir}</span>
+          <FormLabel>{gui.new_session_dir}</FormLabel>
+          <div className="flex min-w-0 flex-col">
             <PathField
               data-dir-picker-path
               aria-label={gui.new_session_dir}
@@ -163,11 +157,11 @@ export function DirPicker({
           {/* What the caller said when it refused. Its sentence, not
               one invented here. */}
           {refused !== null && (
-            <div data-dir-picker-refused className="text-callout text-destructive">
+            <div data-dir-picker-refused className="col-span-2 text-callout text-destructive">
               {refused}
             </div>
           )}
-        </div>
+        </SheetForm>
         <DialogFooter>
           <Button
             variant="primary"

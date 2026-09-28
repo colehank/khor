@@ -5157,8 +5157,11 @@ try {
       );
     }
     // A machine that is not the one it opened on, because the sheet's
-    // reason to exist is that the directory may be somewhere else.
-    await press('[data-dir-picker-machine="peer"]');
+    // reason to exist is that the directory may be somewhere else. The
+    // machines are a popup — the system's menu — since 2026-09-28, so
+    // the pick is the `<select>`'s, not a press on a pill.
+    await page.locator("[data-dir-picker-machine-select]").selectOption("peer");
+    await wait(200);
     await page.locator("[data-dir-picker-path]").click();
     await page.locator("[data-dir-picker-path]").fill(`${pin.path}/s`);
     const listed = await until(5_000, async () => (await offered()).length > 0);
