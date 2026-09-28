@@ -419,7 +419,7 @@ export function Omnibox({
         <OmniMenu
           rows={{ groups: offered, at }}
           onPick={press}
-          className="absolute top-full z-20 mt-1 rounded-md shadow-md"
+          className="absolute top-full z-20 mt-1 rounded-md shadow-(--shadow-float)"
           // From the list column's edge where the box is seated in the
           // left block's first row, from the box's own edge anywhere
           // else (tokens.css `--menu-inset`).

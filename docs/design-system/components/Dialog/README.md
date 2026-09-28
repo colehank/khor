@@ -1,6 +1,6 @@
 # Dialog
 
-确认一件毁掉东西的事。`dialog-w` 380 固定宽，`radius-lg` 10，底 `popover`，`float` + `hairline`。里面从上到下：`title-md` 17 的标题 · 一句话（`body` 配 `secondary`）· 可选的「不再提醒」· 右对齐的按钮。
+确认一件毁掉东西的事。`dialog-w` 380 固定宽，`radius-lg` 10，底 `popover`，`float` + `hairline`。暗色里 `popover` 比板（`card`）亮一档——影子在近黑的底上看不见，浮起来靠的是那块更亮的面；从 R0 落下的 sheet 同样穿 `popover` + `float`，不穿板的 `card`（2026-09-28）。里面从上到下：`title-md` 17 的标题 · 一句话（`body` 配 `secondary`）· 可选的「不再提醒」· 右对齐的按钮。
 
 **一个对话框里只有一个主按钮**：`primary`（`brand-strong`）或者 `destructive`，二选一，不能都有。取消在它左边，是普通按钮。按钮用 `ctl-lg` 32。
 

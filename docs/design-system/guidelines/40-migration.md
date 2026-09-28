@@ -19,6 +19,7 @@
 | **D11** | 竖栏打开态 | `--rail-on-ink: #303a19 / #dce9a6`，彩度只用掉该亮度上限的 64% | **`#5d7b06` / `#c6f560`**（亮色 09-25 先是 `#2d3e00`，09-27 负责人嫌「没有颜色」，门从「比未打开深 2.0」改成「按色相」，亮色换成 `brand-strong`） | **已落地**。`--rail-ink` 一个字没动——`check-rail` 的 `LINE_FLOOR`/`FLOOR` 把静止态钉死了。组件早就在读 `var(--rail-on-ink)`（`App.tsx:363/1430`），所以**只改 `tokens.css` 两个值**，不动 `app.css`。 |
 | **D12** | `data-body` 的作用域 | `[data-rail-item] svg [data-body]`——只在竖栏里生效 | **`svg [data-body]` 普遍生效** | **已落地**（`app.css` 一行）。实心块是家族的**密度**规则，不是状态标记；状态标记是叠在它上面的 `fill-opacity: 1`，那一条仍然只在竖栏里。不放宽的话，重画后带实心块的 `gear` `shield` `network` `pulse`（出现在「…」菜单里）会是空心的。 |
 | **D13** | 品牌绿家族 | `--lq1/2/3`、`--accent` 的现值 | **整族彩度 ×1.28**：`brand` #93b04d → **#8fb31e**，`brand-strong` #5f7a1f → **#5d7b06**，`lq1` #d5e595 → **#d4e77d**，`lq2` #bcd47b → **#b9d75e**（暗色同理） | 在 OKLCH 里锁死亮度和色相，只动彩度，所以**所有对比度一个没变**（白在 brand-strong 上 4.89 → 4.88）。原来那层灰扒掉之后，选中行才像个强调色而不是军绿。**已落地**，`tokens.css` 八个值 + `crates/core/src/avatar.rs` 二十八处（含那段用 hex 写的选色推演）。按 `pick()` 复算过：ground 仍是 `liquid[2]`、first 仍是 `#3f4482`，**选色顺序完全没变**，只是换了写法。 |
+| **D14** | 暗色浮层的底 | `--popover: #191917`（与 `card` 同值） | **`#242422`**，比 `card` 高 5.4 L\*；亮色不动 | 2026-09-28 审计：暗色里新会话 sheet 和板同色、看不出影子，读成平的。`float` 的黑影落在近黑的板上等于没有，macOS 暗色的菜单、弹层、sheet 都比底下的窗口亮。量过的代价：`ink` 12.39、`secondary` 5.72、`destructive` 4.85、最低状态词 6.09，`tertiary` 3.55（在它的例外里）。**已落地**：`tokens.css` 一个值；sheet 从 `bg-card shadow-lg`、侧栏搜索结果从 `bg-card shadow-md`、两处补全菜单从 `shadow-md` 改穿 `popover` + `float`。`check-palette` 守「暗色至少高 4 L\*」和三对 4.5，`check-face` 4I 在暗色里量真的 sheet、对话框、右键菜单、搜索结果。 |
 
 ## 字形
 

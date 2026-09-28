@@ -93,6 +93,10 @@
      holds the first frame to it. */
   --side: #ebebe5;
   --card-foreground: rgba(26, 26, 20, 0.94);
+  /* What floats — a dialog, a sheet, a menu, the search results, a
+     tip. **The card's value on this theme and not on the other**: here
+     `--shadow-float` does the lifting, a soft dark shadow on a light
+     page. The dark block says why it cannot there. */
   --popover: #fcfcfa;
   --popover-foreground: rgba(26, 26, 20, 0.94);
   /* Ink, not the brand green — see the green doctrine at the top of this
@@ -1547,7 +1551,20 @@
   --card: #191917;
   --side: #151513;
   --card-foreground: rgba(238, 238, 231, 0.96);
-  --popover: #191917;
+  /* **A step lighter than the card, because a shadow cannot lift
+     anything here** (2026-09-28). The board is #191917; black at .45
+     on a ground that dark is a darkening nobody sees, so a sheet or a
+     dialog at the card's value sat flush on the board and read as part
+     of it. macOS answers the same problem the same way — its dark
+     menus, popovers and sheets are lighter than the window under them.
+     +5.4 L* over the card, more than the 4.4 the card itself stands
+     over the canvas (`check-face` 4I asks for 4 on the real surfaces).
+     What it costs, measured on it: ink 12.39, secondary 5.72,
+     destructive 4.85, the lowest state word 6.09, secondary on a
+     `fill-strong` chip 4.52 — and `tertiary` 3.55, under the 3.67 it
+     has on the card, inside its written exception (annotations only).
+     `check-palette` holds the 4.5 pairs. */
+  --popover: #242422;
   --popover-foreground: rgba(238, 238, 231, 0.96);
   /* Paper, the mirror of light's ink: an ink button cannot be seen on a
      dark ground, so this is the one thing in the palette whose two

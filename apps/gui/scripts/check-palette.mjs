@@ -312,6 +312,11 @@ try {
         // and every list sit on it, so the row's title, its second line
         // and the selected row's tint are all read against it.
         side: g("--side"),
+        // What floats (the join dialog open right now is one), and the
+        // red a refusal inside one is written in.
+        popover: g("--popover"),
+        destructive: g("--destructive"),
+        dialog: getComputedStyle(document.querySelector('[data-slot="dialog-content"]') ?? document.body).backgroundColor,
         ink: g("--foreground"),
         inkMuted: g("--muted-foreground"),
         lq3: g("--lq3"),
@@ -372,6 +377,46 @@ try {
     // the one the whole decision was about.
     if (same(t.primary, t.lq3)) fail(`${scheme}: the main action is the identity green again (${t.primary})`);
     if (same(t.ring, t.lq3)) fail(`${scheme}: the focus ring is the identity green again (${t.ring})`);
+
+    // ── what floats: a step above the board on the dark theme ──────
+    //
+    // A dialog, a sheet, a menu and the search results wear `--popover`.
+    // On the light theme that is the card's value and `--shadow-float`
+    // lifts it; on the dark one a shadow is black on near-black, and a
+    // popover at the card's value sat flush on the board — the same
+    // colour, nothing to say it was in front (2026-09-28). So there it
+    // must be lighter than the card by a step a person sees: 4 L*, the
+    // step `--card` itself takes over `--background` (4.4). And being
+    // lighter must not cost the words on it — body, second line and a
+    // refusal in `--destructive` — the text floor.
+    if (!t.popover || !t.destructive) {
+      fail(`${scheme}: --popover or --destructive does not resolve (src/styles/tokens.css)`);
+    } else {
+      const pop = rgb(t.popover);
+      const lift = lstar(pop) - lstar(rgb(t.card));
+      const onPop = {
+        ink: contrast(flatten(parse(t.ink), pop), pop),
+        secondary: contrast(flatten(parse(t.inkMuted), pop), pop),
+        destructive: contrast(flatten(parse(t.destructive), pop), pop),
+      };
+      console.log(
+        `${scheme}: on --popover ${t.popover} (${say(lift)} L* over --card): ` +
+          Object.entries(onPop).map(([k, v]) => `${k} ${say(v)}`).join(", ") +
+          ` | the open dialog wears ${t.dialog}`,
+      );
+      for (const [what, ratio] of Object.entries(onPop)) {
+        if (ratio < TEXT_FLOOR) fail(`${scheme}: ${what} reads ${say(ratio)} on --popover, under ${TEXT_FLOOR}`);
+      }
+      if (scheme === "dark" && lift < 4) {
+        fail(
+          `dark: --popover ${t.popover} is ${say(lift)} L* over --card ${t.card} — a shadow cannot lift ` +
+            "anything on a ground this dark, so what floats is lighter than the board by 4 or more",
+        );
+      }
+      if (!same(t.dialog, t.popover)) {
+        fail(`${scheme}: the open dialog is painted ${t.dialog}, not --popover ${t.popover} (components/ui/dialog.tsx)`);
+      }
+    }
 
     // ── the six words, every one of them, on both themes ──────────
     //

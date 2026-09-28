@@ -42,6 +42,9 @@ export function Switch({
       )}
     >
       <span
+        // The drawn control, as opposed to the hit area around it — what
+        // a settings row lines up on its trailing edge (`check-face` 4I).
+        data-switch-track
         className={cn(
           "relative h-switch-h w-switch-w rounded-full transition-colors",
           on ? "bg-brand-strong" : "bg-fill-strong",

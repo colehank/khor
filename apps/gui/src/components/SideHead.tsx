@@ -351,7 +351,10 @@ export function SideHead({
                 id="khor-search-rows"
                 data-search-rows
                 role="listbox"
-                className="absolute top-full right-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-md border bg-card shadow-md"
+                // Search results float (20-states 浮层): `popover` under
+                // `float`, which on the dark theme is lighter than what
+                // it hangs over — `card` was the board's own colour.
+                className="absolute top-full right-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-md border bg-popover shadow-(--shadow-float)"
                 // From the list column's edge, not the box's: hung
                 // straight down they would lie over the rail's glyphs
                 // (tokens.css `--seat-menu-inset`).

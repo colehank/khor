@@ -1429,6 +1429,10 @@ lock-switch = "Lock this machine's interfaces"
 lock-switch-note = "Locks the app window and the web face, never the command line"
 lock-set-pin = "Set a PIN"
 lock-change-pin = "Change the PIN"
+# The PIN row's value, left of its button. **The row is already called
+# 「PIN」**, so the value says only the state.
+lock-pin-is-set = "Set"
+lock-pin-not-set = "Not set"
 lock-pin-floor = "at least {0} characters"
 lock-pin-save = "Save the PIN"
 lock-pin-clear = "Remove the PIN"

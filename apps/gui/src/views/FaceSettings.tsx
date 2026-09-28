@@ -100,19 +100,20 @@ function FaceOption({
       onClick={onPick}
       className={cn(
         "flex-col gap-1 rounded-md px-2 py-2 text-caption text-muted-foreground",
-        // Full ink marks the current one, the same way the rail marks
-        // the landing you are on — one mark for "this is where you are",
-        // not a second vocabulary. **It used to say "the brand color"
-        // and that is no longer what this paints**: green stopped
-        // carrying text app-wide (see the doctrine at the top of
-        // `tokens.css`), and the rail stopped using it for selection at
-        // the same time, so the sentence was false in both of its
-        // halves while the code under it stayed correct.
+        // **The picked one is the selected row's grey block** — the
+        // `fill-strong` a selected list row wears (`radius-md`, the
+        // selection radius), with its word in full `ink`: one language
+        // for "this is the one" across the app, and one that reads on
+        // any face. A block rather than a ring because the thing picked
+        // is a picture: a ring hugs its square button, not the round
+        // face inside it, and a block holds the face and its word as one
+        // thing, the way Finder shows a picked icon.
         //
-        // The ring carries the mark as well as the text, because on this
-        // screen the thing being looked at is a picture and the word
-        // underneath is small.
-        on && "text-primary ring-2 ring-primary",
+        // ⚠️ 墓碑 (2026-09-28): it was `text-primary ring-2 ring-primary`
+        // — an olive ring and an olive word. `brand-strong` has exactly
+        // three posts (the open switch, the focus ring, a dialog's one
+        // primary button) and a picked option is not one of them.
+        on && "bg-fill-strong text-foreground hover:bg-fill-strong",
       )}
     >
       <AvatarFace face={face} className="size-avatar" />
@@ -157,10 +158,15 @@ function FaceOption({
 function ColorWell({
   index,
   value,
+  on,
+  onOpen,
   onCommit,
 }: {
   index: number;
   value: string;
+  /** This is the well the picker was opened from. */
+  on: boolean;
+  onOpen: () => void;
   onCommit: (hex: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -177,15 +183,33 @@ function ColorWell({
     return () => el.removeEventListener("change", commit);
   }, [onCommit]);
 
+  // **A dot of the colour, and nothing around it** — the row the user
+  // drew is 「一排五个色点」. The browser's own well is a square inset in
+  // a bordered box; `app.css` takes the inset and the inner border off,
+  // so the colour fills the whole disc, and `avatar-edge` is the one
+  // hairline — the same edge a face wears, so a pale slot still stands
+  // off a pale card.
+  //
+  // **The well the picker is open for wears an ink ring** — what an
+  // active `NSColorWell` shows, so the eye can go from the colour panel
+  // back to the slot it is changing. Ink, not `brand-strong`: it marks
+  // a choice, and olive has three posts, none of them this; the keyboard
+  // focus ring stays `ring`.
   return (
     <input
       ref={ref}
       type="color"
       data-color-slot={index}
+      data-on={on}
       aria-label={avatar.axis_palette_slot(index + 1)}
       value={draft}
+      onClick={onOpen}
       onChange={(e) => setDraft(e.target.value)}
-      className="size-[var(--touch)] cursor-pointer rounded-md border bg-transparent p-0"
+      className={cn(
+        "size-[var(--touch)] cursor-pointer appearance-none rounded-full border border-avatar-edge bg-transparent p-0",
+        on && "outline-2 outline-offset-2 outline-foreground",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+      )}
     />
   );
 }
@@ -205,6 +229,27 @@ export function FaceSettings({
 }) {
   const [choices, setChoices] = useState<FaceChoices | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which well the picker was opened from (`ColorWell`'s ring). It lets
+  // go the way an active colour well does: when another one is opened,
+  // or a press lands anywhere that is not a well, or Escape. **Not on
+  // commit**: the system panel stays up after a pick, and the ring is
+  // how the eye finds the slot it is still changing.
+  const [editing, setEditing] = useState<number | null>(null);
+  useEffect(() => {
+    if (editing === null) return;
+    const away = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest("[data-color-slot]")) setEditing(null);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditing(null);
+    };
+    document.addEventListener("pointerdown", away, true);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away, true);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [editing]);
 
   const load = useCallback(
     () =>
@@ -321,7 +366,14 @@ export function FaceSettings({
             className="flex flex-wrap justify-center gap-2"
           >
             {choices.colors.map((c, i) => (
-              <ColorWell key={i} index={i} value={c} onCommit={(hex) => pickColor(i, hex)} />
+              <ColorWell
+                key={i}
+                index={i}
+                value={c}
+                on={editing === i}
+                onOpen={() => setEditing(i)}
+                onCommit={(hex) => pickColor(i, hex)}
+              />
             ))}
           </div>
 

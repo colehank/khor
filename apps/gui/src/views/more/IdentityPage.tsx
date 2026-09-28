@@ -142,35 +142,44 @@ export function IdentityPage({
           kept would be a page reporting a probe it never made. */}
       {about !== null && (
         <MoreSection name="faces" label={gui.identity_faces}>
-          <ul className="flex flex-col">
-            {about.faces.map((f) => (
-              <li
-                key={f.key}
-                data-iface={f.key}
-                data-on={f.up}
-                className="flex min-w-0 items-center gap-row py-1 text-callout"
-              >
-                <span className="min-w-0 flex-1 truncate">{f.name}</span>
-                {/* 当前 first, because it is the one word on this row
-                    that is about the reader rather than the machine. */}
+          {/* **Each face is a row of the card**, as tall as every other
+              settings row and with the hairline between them.
+              ⚠️ 墓碑 (2026-09-28): one `<ul>` of 24-high callout lines in
+              one padded box — the group read as a caption, not rows. */}
+          {about.faces.map((f) => (
+            <div
+              key={f.key}
+              data-iface={f.key}
+              data-on={f.up}
+              data-more-row
+              className="flex min-w-0 items-center gap-row text-body"
+            >
+              <span className="flex min-w-0 flex-1 items-baseline gap-in">
+                <span className="min-w-0 truncate">{f.name}</span>
+                {/* 当前 says which of these the reader is looking
+                    through — a note on the name, in `secondary`, the
+                    way macOS marks 「this Mac」 in a list of devices.
+                    ⚠️ 墓碑 (2026-09-28): it was olive, and a marked
+                    choice is not one of `brand-strong`'s three posts. */}
                 {f.key === hereKey && (
-                  <span data-iface-here className="flex-none text-primary">
+                  <span data-iface-here className="flex-none text-muted-foreground">
                     {cli.face_current}
                   </span>
                 )}
-                {/* The whole right-hand side is the node's sentence —
-                    已打开 with the port when there is one, 未打开 when
-                    there is not. Assembled over there so a port can
-                    never be printed beside 未打开 (`FaceRow::said`). */}
-                <span
-                  data-iface-said
-                  className={cn("flex-none", f.up ? "" : "text-muted-foreground")}
-                >
-                  {f.said}
-                </span>
-              </li>
-            ))}
-          </ul>
+              </span>
+              {/* The whole right-hand side is the node's sentence —
+                  已打开 with the port when there is one, 未打开 when
+                  there is not. Assembled over there so a port can
+                  never be printed beside 未打开 (`FaceRow::said`). */}
+              <span
+                data-iface-said
+                data-setting-trail
+                className={cn("flex-none text-right", f.up ? "" : "text-muted-foreground")}
+              >
+                {f.said}
+              </span>
+            </div>
+          ))}
         </MoreSection>
       )}
     </MoreFrame>

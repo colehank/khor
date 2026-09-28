@@ -9,6 +9,7 @@
 import type { ReactNode } from "react";
 
 import { Switch } from "@/components/settings/Switch";
+import { cn } from "@/lib/utils";
 
 export function SwitchRow({
   name,
@@ -37,13 +38,19 @@ export function SwitchRow({
       data-setting-row="switch"
       data-setting-row-name={name}
       {...rowMark}
-      className="flex min-h-row-1 items-center gap-row px-row py-in"
+      className="flex items-center gap-row px-row py-in"
     >
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-w-0 flex-1 flex-col", disabled && "opacity-40")}>
         <span className="text-body">{label}</span>
-        {hint && <span className="text-callout text-muted-foreground">{hint}</span>}
+        {hint && <span data-setting-note className="text-callout text-muted-foreground">{hint}</span>}
       </div>
-      <Switch on={on} label={label} onToggle={onToggle} disabled={disabled} mark={mark} className="-my-2 -mr-2" />
+      {/* **The track ends on the row's trailing edge**, where every
+          other row kind ends its control (`check-face` 4I). The hit box
+          grows to the left of it, never past it: ⚠️ 墓碑 (2026-09-28) —
+          a `-mr-2` here pulled the box right so a finger's 44 would
+          centre on the track, and with a mouse the box *is* the track,
+          so every switch stood 8 past the popups and buttons above it. */}
+      <Switch on={on} label={label} onToggle={onToggle} disabled={disabled} mark={mark} className="-my-2 justify-end" />
     </div>
   );
 }

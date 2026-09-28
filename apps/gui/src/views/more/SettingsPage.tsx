@@ -78,23 +78,25 @@ export function SettingsPage({
       {about !== null && (
         <>
           <MoreSection name="store" label={gui.settings_store}>
-            <MoreFact name="store-path" label={gui.store_path}>
-              {about.root}
-            </MoreFact>
-            <MoreFact name="store-size" label={gui.store_size}>
-              {bytes(about.store_bytes)}
-            </MoreFact>
-            {/* The machine's own opener, the same road 「在那台机器上
-                打开」 takes — empty `machine` is this one (`files::launch`). */}
+            {/* **One row: where it is, and the act on it.** The path is
+                the row's value and 打开这个目录 its button — the machine's
+                own opener, the same road 「在那台机器上打开」 takes; empty
+                `machine` is this one (`files::launch`).
+                ⚠️ 墓碑 (2026-09-28): 「store 在哪儿」 was two rows, one
+                holding the path and one the button, the title twice. */}
             <ActionRow
               name="store-open"
               label={gui.store_path}
+              value={<span data-more-fact="store-path">{about.root}</span>}
               actionLabel={gui.store_open}
               mark={{ "data-store-open": "" }}
               onPress={() => {
                 void launchOn("", about.root).catch(() => {});
               }}
             />
+            <MoreFact name="store-size" label={gui.store_size}>
+              {bytes(about.store_bytes)}
+            </MoreFact>
           </MoreSection>
 
           <MoreSection name="about" label={gui.settings_about}>
