@@ -198,6 +198,10 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
 import { FAKE_TOKEN, codexUrlOf, fakeHome, fakeUsage, keychainAsked, keychainGuard } from "./fake-home.mjs";
+// A word this run compares against, read from the generated catalog
+// rather than spelled here (2026-09-28: the literal it replaced went
+// stale when the catalog was reworded).
+import { gui as catalogWords } from "../src/gen/catalog.ts";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const repo = join(gui, "../..");
@@ -5859,9 +5863,9 @@ for line in sys.stdin:
   await until("the fake put in plan mode, by its own mark", 10_000, async () =>
     existsSync(join(wizDir, "fake.mode")) && readFileSync(join(wizDir, "fake.mode"), "utf8") === "plan",
   );
-  await until("the menu wearing 只看不改 after the round trip", 10_000, async () => {
+  await until("the menu wearing plan's word after the round trip", 10_000, async () => {
     const el = page.locator("[data-chat-mode-menu]");
-    return (await el.getAttribute("data-mode-id")) === "plan" && (await el.innerText()).trim() === "只看不改";
+    return (await el.getAttribute("data-mode-id")) === "plan" && (await el.innerText()).trim() === catalogWords.chat_mode_plan;
   });
   if ((await page.locator("[data-chat-mode]").count()) !== 0) {
     throw new Error("the marker drew beside a menu wearing the same word");

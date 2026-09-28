@@ -397,13 +397,19 @@ export function NewSessionDialog({
           )}
           {kind === "agent" && (
             <>
-          {/* The agent row, directly under the kind that chose it — no
-              label of its own: the pressed 智能体 above is the label,
-              and a second 智能体 under it would be the same word twice
-              on one screen (the catalog refuses the spelling; this
-              refuses the layout). `div`, not `label`: nothing here is
-              a field. */}
+          {/* The agent row, directly under the kind that chose it.
+              ⚠️ **It has a label now, and so does the form row below**
+              (2026-09-28): it sat without one on the argument that the
+              pressed 智能体 above named it — but two unlabelled rows in
+              a sheet whose other rows are all labelled read as loose
+              buttons, not as two more questions. The label is
+              `new-session-agent-pick` rather than 智能体 again, which
+              was the original objection and still stands.
+              `div`, not `label`: nothing here is a field. */}
           <div data-new-session-agents className="flex flex-col gap-1 text-callout">
+            <span data-new-session-label="agent" className="text-muted-foreground">
+              {gui.new_session_agent_pick}
+            </span>
             <div className="flex flex-wrap gap-1">
               {/* Vendor names are proper nouns with no catalog entry
                   (words.ts's rule), and a registered agent wears the
@@ -544,6 +550,10 @@ export function NewSessionDialog({
                   one agent and not another is a fact about the agent,
                   and a button that vanishes reads as khor having lost
                   it. */}
+          <div data-new-session-forms className="flex min-w-0 flex-col gap-1 text-callout">
+          <span data-new-session-label="form" className="text-muted-foreground">
+            {gui.new_session_form}
+          </span>
           <div className="flex gap-1">
             <Button
               size="sm"
@@ -564,6 +574,7 @@ export function NewSessionDialog({
             >
               {gui.view_terminal}
             </Button>
+          </div>
           </div>
             </>
           )}

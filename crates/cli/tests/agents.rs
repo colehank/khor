@@ -319,7 +319,7 @@ fn a_command_opened_without_a_registration_is_filed_as_unplaceable() {
     let (ok, rows, err) = run(&home, &["sessions", "--by", "category"]);
     assert!(ok, "{err}");
     assert!(
-        rows.contains("认不出的"),
+        rows.contains(khor_catalog::category::word("unknown")),
         "a row khor cannot attribute says so: {rows}"
     );
     assert!(

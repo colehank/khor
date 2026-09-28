@@ -78,6 +78,13 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright-core";
 
+// **The words are the catalog's, read from the generated face** — a
+// sentence copied into this file moves out of step the day the catalog
+// is reworded (2026-09-28: 「只看不改」 became 「只读不改」 and three
+// literals here went stale at once). `words` rather than `gui`: that
+// name is this app's directory below.
+import { gui as words } from "../src/gen/catalog.ts";
+
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const PORT = Number(process.env.ACP_PORT ?? 1456);
 const WIDE = 1482;
@@ -440,8 +447,8 @@ try {
   // exists while there is nothing to explain it away, and adding it to
   // a painted conversation would assert the opposite of the rule.
   for (const [label, agentFrame, want] of [
-    ["cannot replay", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, "不回放"],
-    ["needs a login", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: true }, "要先登录"],
+    ["cannot replay", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, words.chat_no_replay],
+    ["needs a login", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: true }, words.chat_needs_login],
     ["ordinary agent", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, null],
   ]) {
     const m = await look({ scheme: "dark", motion: "no-preference", frames: [agentFrame, { kind: "history_end" }] });
@@ -472,9 +479,9 @@ try {
   // satisfied for free by a page that never painted — so the rows
   // around it have to find the very element it must not.
   for (const [id, want] of [
-    ["plan", "只看不改"],
-    ["acceptEdits", "改文件不问"],
-    ["bypassPermissions", "全部不问"],
+    ["plan", words.chat_mode_plan],
+    ["acceptEdits", words.chat_mode_accept_edits],
+    ["bypassPermissions", words.chat_mode_bypass],
     // A mode this face has never heard of is still not the default.
     ["someFutureMode", "someFutureMode"],
     ["default", null],
@@ -551,8 +558,8 @@ try {
     } else {
       if (!m.modeMenu) {
         fail("settings: no mode menu for an agent that listed modes");
-      } else if (m.modeMenu.text !== "只看不改" || m.modeMenu.id !== "plan") {
-        fail(`settings: the mode menu wears ${JSON.stringify(m.modeMenu)}, wanted 只看不改/plan`);
+      } else if (m.modeMenu.text !== words.chat_mode_plan || m.modeMenu.id !== "plan") {
+        fail(`settings: the mode menu wears ${JSON.stringify(m.modeMenu)}, wanted ${words.chat_mode_plan}/plan`);
       } else {
         console.log(`settings · mode menu: ${m.modeMenu.text}`);
       }

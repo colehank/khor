@@ -122,7 +122,7 @@ async function main() {
   await cold.goto(`http://127.0.0.1:${PORT}/`);
   const refusal = await until("khor to say why", 20_000, async () => {
     const text = await cold.locator("body").innerText();
-    return text.includes("钥匙") ? text : null;
+    return text.includes("密钥") ? text : null;
   });
   if (!refusal.includes("khor web")) {
     throw new Error(`the refusal does not say what to do: ${refusal.slice(0, 200)}`);

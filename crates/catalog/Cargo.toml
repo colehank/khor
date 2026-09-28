@@ -9,3 +9,6 @@ toml = "0.8"
 
 [dev-dependencies]
 khor-core.workspace = true
+# The punctuation gate reads zh.toml itself (tests/gate.rs): the generated
+# functions carry the words but not the file's keys in walkable form.
+toml.workspace = true

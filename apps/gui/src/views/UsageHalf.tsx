@@ -551,7 +551,7 @@ function Trend({
   // machine card's. This chart has no counterpart over there, but it
   // sits beside one that does — two figures on one card drawn to two
   // conventions is the same complaint one screen smaller.
-  const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 200 });
+  const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 232 });
   const iw = W - PLOT.padL - PLOT.padR;
   const ih = H - PLOT.padT - PLOT.padB;
   const y = (v: number) => PLOT.padT + ih - (ih * v) / peak;
@@ -580,7 +580,9 @@ function Trend({
           page's own — a stack of ten days needs less air than a scatter
           of labelled models — while everything inside it is
           `lib/plot`'s. */}
-      <div ref={canvas} className="relative h-52 w-full">
+      {/* h-58, not h-52: the head strip grew to a finger's height
+          (`PLOT.padT`, 2026-09-28) and the bars kept their room. */}
+      <div ref={canvas} className="relative h-58 w-full">
       {/* **The window has nothing in it, and that is a sentence, not an
           empty chart.** The three faces this half already had are 「still
           asking」, 「this provider publishes no token report」 and 「that
@@ -949,7 +951,7 @@ function Stats({
   // at `6.59%` and `2.05%` — a pixel offset divided by a viewBox width,
   // because on a scaling canvas a pixel means nothing. The geometry is
   // `lib/plot`'s now, and it is the machine card's.
-  const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 260 });
+  const { box: canvas, w: W, h: H } = usePlotBox({ w: 900, h: 280 });
   const iw = W - PLOT.padL - PLOT.padR - 2 * PLOT.inset;
   const ih = H - PLOT.padT - PLOT.padB - 2 * PLOT.inset;
   const span = dotSpan(pts.length, W - PLOT.padL - PLOT.padR, H - PLOT.padT - PLOT.padB);
@@ -1037,7 +1039,9 @@ function Stats({
           The window this covers moved with them: it is printed at the
           figure's foot, where it is a fact about the drawing rather
           than a title over it. */}
-      <div ref={canvas} className="relative h-64 w-full">
+      {/* h-70, not h-64: the head strip grew to a finger's height
+          (`PLOT.padT`, 2026-09-28) and the scatter kept its area. */}
+      <div ref={canvas} className="relative h-70 w-full">
         {/* **The two quantities, each printed on its own axis** —
             `components/PlotControls`, the machine card's own. They are
             words now, not controls: what changes them is the settings

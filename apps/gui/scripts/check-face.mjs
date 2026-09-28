@@ -576,7 +576,7 @@ try {
     watchSaves.push(body);
     const bad = (body.paths ?? []).find((p) => !String(p).startsWith("/"));
     if (bad) {
-      return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`关注的目录得是绝对路径: ${bad}`) });
+      return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`关注的目录必须是绝对路径：${bad}`) });
     }
     const kept = body.paths.map((p) => String(p).trim());
     watchKept[body.machine] = kept;
@@ -1913,11 +1913,11 @@ try {
   const TOOLS = g("tools", "工具");
   const DOCTOR_ROWS = [
     { key: "version", name: "版本", state: "ok", said: "0.0.0-gate", fix: null, ...MACHINE },
-    { key: "identity", name: "身份钥匙", state: "warn", said: "别人也读得了(权限 644)", fix: "chmod", ...MACHINE },
-    { key: "store", name: "本机数据", state: "ok", said: "打得开、写得进,占 761B", fix: null, ...MACHINE },
-    { key: "serve", name: "常驻", state: "fail", said: "没在跑", fix: "serve", ...NETWORK },
-    { key: "web", name: "网页脸", state: "ok", said: "在听,端口 5467", fix: null, ...NETWORK },
-    { key: "relays", name: "中继", state: "unmeasured", said: "3 秒没答上来", fix: null, ...NETWORK },
+    { key: "identity", name: "身份密钥", state: "warn", said: "其他用户也可读取（权限 644）", fix: "chmod", ...MACHINE },
+    { key: "store", name: "本机数据", state: "ok", said: "可读写，占用 761B", fix: null, ...MACHINE },
+    { key: "serve", name: "常驻", state: "fail", said: "未运行", fix: "serve", ...NETWORK },
+    { key: "web", name: "网页脸", state: "ok", said: "端口 5467 正在监听，密钥存在", fix: null, ...NETWORK },
+    { key: "relays", name: "中继", state: "unmeasured", said: "3 秒内无响应", fix: null, ...NETWORK },
     { key: "launcher", name: "开启器", state: "ok", said: "用 open", fix: null, ...TOOLS },
   ];
   // What the next ask answers. A `let` because §4F asks twice on
@@ -1932,7 +1932,7 @@ try {
   });
   await page.route("**/doctor_fix", (r) => {
     doctorFixed.push(JSON.parse(r.request().postData() || "{}").key);
-    r.fulfill({ contentType: "application/json", body: JSON.stringify("钥匙的权限改回只有你读得了") });
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("已将密钥权限改为仅你可读") });
   });
   // 离开这张网 (docs/MORE.md 离开). The fixture answers the node's two
   // lists and remembers what name was typed at it — the assertion in
@@ -1991,16 +1991,16 @@ try {
   // answer.
   const configValues = { theme: "auto", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
   const CONFIG_SHAPE = [
-    ["theme", "appearance", "appearance", "深浅", [["auto", "跟系统"], ["light", "浅色"], ["dark", "深色"]]],
-    ["lang", "language", "appearance", "界面语言", [["auto", "跟系统"], ["zh", "中文"], ["en", "English"]]],
+    ["theme", "appearance", "appearance", "主题", [["auto", "跟随系统"], ["light", "浅色"], ["dark", "深色"]]],
+    ["lang", "language", "appearance", "界面语言", [["auto", "跟随系统"], ["zh", "中文"], ["en", "English"]]],
     // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
     ["tabs-limit", "general", "settings", "标签页上限", [["off", "关"], ...Array.from({ length: 47 }, (_, i) => [String(i + 4), String(i + 4)])]],
-    ["session-form", "session", "settings", "新会话默认开成", [["chat", "对话"], ["term", "终端"]]],
+    ["session-form", "session", "settings", "新会话默认打开方式", [["chat", "对话"], ["term", "终端"]]],
     ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "保持打开"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-delete", "confirm", "security", "删除", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { appearance: "外观", language: "语言", general: "通用", session: "会话", workspace: "工作区", confirm: "危险动作二次确认" };
+  const SECTION_WORD = { appearance: "外观", language: "语言", general: "通用", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices]) => ({
       name,
@@ -8408,7 +8408,10 @@ try {
     if ((await page.locator('[data-row-menu] [data-menu-item="rename"]').count()) === 1) {
       await press('[data-row-menu] [data-menu-item="rename"]');
       await wait(300);
-      renameRefuses = "那个名字已经有了: /home/peer/work/one.rs";
+      // The machine's sentence, as the route will answer it — compared
+      // below against what the box says, so the two cannot drift apart.
+      const takenSays = "名称已存在：/home/peer/work/one.rs";
+      renameRefuses = takenSays;
       await page.locator("[data-title-input]").fill("one.rs").catch(() => {});
       await page.keyboard.press("Enter");
       await wait(700);
@@ -8421,7 +8424,7 @@ try {
         };
       });
       console.log(`a taken name: ${JSON.stringify(refusal)}`);
-      if (refusal.said === null || !refusal.said.includes("已经有了")) {
+      if (refusal.said === null || !refusal.said.includes(takenSays)) {
         fail(
           `renaming onto a taken name said ${JSON.stringify(refusal.said)} under the box — the ` +
             "machine's own sentence belongs there (src/components/EditableName.tsx)",
@@ -15474,7 +15477,10 @@ try {
         //   disagreed about a rule they were both keeping. **The claim
         //   never changed (one seat, one module); the axes have to
         //   match where the seat is pinned.**
-        ["settings seat x", drawnMine.settings?.x, drawnTheirs.settings?.x],
+        //   **Since 2026-09-28 the seat is pinned top-right** — the head
+        //   row's right end (`labelSeat("settings")`) — so its x is read
+        //   from the right edge (`back`), per the note above.
+        ["settings seat x", drawnMine.settings?.back, drawnTheirs.settings?.back],
         ["settings seat y", drawnMine.settings?.y, drawnTheirs.settings?.y],
         ["x label up", drawnMine.xLabel?.up, drawnTheirs.xLabel?.up],
         //   **The third figure.** The bar chart's controls sat in a row
@@ -15485,7 +15491,7 @@ try {
         //   method has to reach the figure the reader opens first.
         ["bar tick ink", drawnBars?.font, drawnTheirs.font],
         ["bar y-tick gutter", drawnBars?.gutter, drawnTheirs.gutter],
-        ["bar settings seat x", drawnBars?.settings?.x, drawnTheirs.settings?.x],
+        ["bar settings seat x", drawnBars?.settings?.back, drawnTheirs.settings?.back],
         ["bar settings seat y", drawnBars?.settings?.y, drawnTheirs.settings?.y],
         ["bar x label up", drawnBars?.xLabel?.up, drawnTheirs.xLabel?.up],
       ]) {
@@ -17932,6 +17938,93 @@ try {
       })
       .join(", ")}`,
   );
+
+  //     ── every word on the machine card is at or above the type floor
+  //
+  //     2026-09-28, from a walk of the whole face: the 24h figure's row
+  //     names, clock and shade legend rendered at 7–8.5px, the readout
+  //     and the view switch at 10, the scatter's ticks at 10 — all under
+  //     `caption` 11, the floor of 「字」 (docs/design-system/README.md).
+  //     No gate could see it: `check-type` allows `src/day/` (vendored
+  //     numbers are the design) and an SVG `font-size` attribute is not a
+  //     class any static check reads. So it is measured on the glass:
+  //     **every element on the card that paints a word**, HTML leaves and
+  //     SVG `<text>` alike, in both readings of the figure, at a wide
+  //     and a narrow width (the drawing has a narrow branch with its own
+  //     sizes). The floor is read off the page's `--text-caption`, not
+  //     written here.
+  //
+  //     Excused, and counted: text nobody can see — zero-area boxes
+  //     (`sr-only` is 1×1) and anything under `display:none` or
+  //     `visibility:hidden`, which is what a closed drawer is.
+  {
+    const floorAt = async (width) => {
+      await page.setViewportSize({ width, height: 900 });
+      await wait(400);
+      return page.evaluate(async () => {
+        const floor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--text-caption"));
+        const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+        const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+        const out = { floor, views: {} };
+        for (const view of ["heat", "para"]) {
+          pick(view)?.click();
+          await frame();
+          await new Promise((ok) => setTimeout(ok, 150));
+          const card = document.querySelector("[data-machine-card]");
+          if (!card) return { floor, views: null };
+          let words = 0;
+          let excused = 0;
+          const under = [];
+          for (const el of card.querySelectorAll("*")) {
+            const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== "");
+            if (!own) continue;
+            const r = el.getBoundingClientRect();
+            const cs = getComputedStyle(el);
+            if (r.width <= 1 || r.height <= 1 || cs.visibility === "hidden" || el.closest("[hidden]")) {
+              excused += 1;
+              continue;
+            }
+            words += 1;
+            const px = parseFloat(cs.fontSize);
+            if (px < floor - 0.01) {
+              under.push(`${el.tagName.toLowerCase()} ${px}px 「${el.textContent.trim().slice(0, 16)}」`);
+            }
+          }
+          out.views[view] = { words, excused, under, band: !!card.querySelector("[data-day-band] text") };
+        }
+        pick("heat")?.click();
+        await frame();
+        return out;
+      });
+    };
+    for (const width of [1400, 380]) {
+      const read = await floorAt(width);
+      if (!(read.floor >= 11) || !read.views) {
+        fail(`type floor @${width}: probe dead — floor ${read.floor}, card ${read.views ? "drawn" : "missing"}`);
+        continue;
+      }
+      for (const [view, v] of Object.entries(read.views)) {
+        console.log(`type floor @${width} ${view}: ${v.words} words, ${v.excused} excused, ${v.under.length} under ${read.floor}px`);
+        //   Probe alive: the figure's own words have to be among those
+        //   measured, or 「nothing is under the floor」 is about the rest
+        //   of the card only.
+        if (!v.band || v.words < 20) {
+          fail(`type floor @${width} ${view}: probe dead — ${v.words} words measured, figure text ${v.band ? "present" : "absent"}`);
+          continue;
+        }
+        if (v.under.length) {
+          fail(
+            `type floor @${width} ${view}: ${v.under.length} words on the machine card are under caption ` +
+              `${read.floor}px — ${v.under.slice(0, 8).join(", ")}${v.under.length > 8 ? " …" : ""}. ` +
+              "Bring them onto the scale; if a legend cannot fit at the floor, restructure it, do not shrink it " +
+              "(src/day/day-core.js `TYPE`, src/lib/plot.ts `PLOT.tick`)",
+          );
+        }
+      }
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
+  }
 
   //     ── 24h 统计: each axis wears its quartiles, in the right ink order
   //

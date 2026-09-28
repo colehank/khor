@@ -236,8 +236,11 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
                 // hostname, and then the name test marks both rows
                 // 「(本机)」 — the one thing on this line a reader uses
                 // to know where they are (`khor devices` says the same).
+                // The catalog's word, the same one `khor devices` prints:
+                // a literal here drifted from it once (half-width
+                // brackets after the catalog went full-width).
                 let here = if d.id == n.device_str() {
-                    "(本机)"
+                    khor_catalog::cli::this_machine()
                 } else {
                     ""
                 };

@@ -91,6 +91,62 @@ function check(path) {
     });
 }
 
+// ── the machine page's drawings stay on the type scale ───────────────
+//
+// 2026-09-28: the 24h figure wrote its words at 6.5–10.5px and the
+// scatter's ticks at 10 — under `caption` 11, the floor of the scale —
+// and nothing here could say so, because `src/day/` is allowed above
+// (its numbers are the design) and an SVG `font-size` is an attribute,
+// not a class. The allowance stands for geometry; **type is the one
+// number in there that now comes from the tokens** (`TYPE` in
+// `day-core.js`, read off `--text-caption` / `--text-callout`). So:
+//
+//   - a numeric `'font-size'` in `src/day/*.js`, or a numeric
+//     `font-size:` in `src/day/*.css`, is red — the size has to be read
+//     from the scale, not written;
+//   - a numeric `fontSize={…}` in `MachineCard.tsx` is red for the same
+//     reason, and `PLOT.tick` (the ticks both scatters draw) must not be
+//     under `--text-caption`.
+//
+// The rendered half is `check-face`'s 「type floor」 section, which
+// measures every word on the card; this half names the line.
+{
+  const tokens = readFileSync(join(root, "src/styles/tokens.css"), "utf8");
+  const caption = Number(tokens.match(/--text-caption:\s*([\d.]+)px/)?.[1]);
+  if (!(caption > 0)) offenders.push("type floor: probe dead — --text-caption not found in tokens.css");
+  const dayDir = join(root, "src/day");
+  const lines = (rel) => readFileSync(join(root, rel), "utf8").split("\n");
+  for (const name of readdirSync(dayDir)) {
+    const rel = `src/day/${name}`;
+    //   JS: every `'font-size'` value must be one of the scale's names
+    //   (`cap`, `call`, `TYPE.*`) — a ternary of two numbers
+    //   (`narrow?8:8.5`) is a written size too, and was the common
+    //   spelling. CSS: a value that starts with a digit.
+    const css = name.endsWith(".css");
+    if (!css && !name.endsWith(".js")) continue;
+    const written = (line) =>
+      css
+        ? /font-size\s*:\s*[\d.]/.test(line)
+        : [...line.matchAll(/'font-size'\s*:\s*([^,}]+)/g)].some((m) => !/^(cap|call|TYPE\.\w+)$/.test(m[1].trim()));
+    lines(rel).forEach((line, i) => {
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+      if (written(line)) {
+        offenders.push(`${rel}:${i + 1}: a written font size in the 24h figure — read it from the scale (\`TYPE\`, var(--text-*)): ${line.trim()}`);
+      }
+    });
+  }
+  lines("src/views/MachineCard.tsx").forEach((line, i) => {
+    if (/fontSize=\{\s*[\d.]+\s*\}/.test(line)) {
+      offenders.push(`src/views/MachineCard.tsx:${i + 1}: a written SVG font size on the machine card — use PLOT.tick or a token: ${line.trim()}`);
+    }
+  });
+  const tick = Number(readFileSync(join(root, "src/lib/plot.ts"), "utf8").match(/^\s*tick:\s*([\d.]+),/m)?.[1]);
+  if (!(tick > 0)) offenders.push("type floor: probe dead — PLOT.tick not found in src/lib/plot.ts");
+  else if (caption > 0 && tick < caption) {
+    offenders.push(`src/lib/plot.ts: PLOT.tick is ${tick}px, under --text-caption ${caption}px — the scatters' tick words are text too`);
+  }
+}
+
 // The tempo twins. Parsed, not assumed: a gate that greps for the
 // numbers it remembers keeps passing after somebody changes one.
 const cssYield = readFileSync(join(root, "src/styles/tokens.css"), "utf8").match(

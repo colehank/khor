@@ -18,11 +18,11 @@ idle = "空闲"
 # translation. Only the two Khor produces itself, plus the honest gap,
 # need a word here.
 [category]
-khor = "Khor"
+khor = "khor"
 shell = "命令"
 # A row nobody could place. Not "其他" — that reads like a category the
 # row belongs to, and the whole point is that we could not tell.
-unknown = "认不出的"
+unknown = "未识别"
 
 # A machine's face: the three axes a person picks on, and what each one
 # offers. Keys are the stable ones the code already travels under — a
@@ -38,9 +38,10 @@ unknown = "认不出的"
 # 校园网上实测直连 3.8–9.8ms、中继 6.0ms——人从手感上分不出来,所以
 # 「悄悄退回中继」需要一个词才看得见。
 #
-# 五个词里有三个是「没话说」,而它们是三件事:「没在连」是答案、
-# 「serve 没在跑」有解(去起 serve)、「说不出」两者都不是。
+# 五个词里有三个是「没话说」,而它们是三件事:「未连接」是答案、
+# 「serve 未运行」有解(去起 serve)、「未知」两者都不是。
 # 合成任意两个,都会让人去做错的事,或者根本不知道该做什么。
+# (2026-09-28 从「没在连 / serve 没在跑 / 说不出」换成标准词;三件事没变。)
 #
 # 没有「直连+中继」这一档:实测直连开着的时候中继一直也开着(iroh 拿它当
 # 保险,不拆),所以那个词会出现在每一条健康的行上——常年都在的词等于没有词,
@@ -48,10 +49,10 @@ unknown = "认不出的"
 [hop]
 direct = "直连"
 relay = "中继"
-quiet = "没在连"
-# 本机没有常驻,压根没人能读这个数——和「说不出」分开,因为它有解:去起 serve。
-no-serve = "serve 没在跑"
-unsure = "说不出"
+quiet = "未连接"
+# 本机没有常驻,压根没人能读这个数——和「未知」分开,因为它有解:去起 serve。
+no-serve = "serve 未运行"
+unsure = "未知"
 
 [avatar]
 axis-palette = "色板"
@@ -119,15 +120,15 @@ general = "通用"
 workspace = "工作区"
 # 这一节在**安全页**上,不在设置页(docs/MORE.md 把它写在安全那一条下面),
 # 理由是它旁边那几节都是「按下去要付出点什么」的事。
-confirm = "危险动作二次确认"
+confirm = "危险操作二次确认"
 
 # 设置项。名字说的是**这一项管什么**,不是它现在是什么。
-theme = "深浅"
+theme = "主题"
 lang = "界面语言"
 # 标签页上限:超过这个数,再开一个就关掉最久没碰、没置顶、没有未保存改动的那个。
 # 取值 off 或 4–50;数字本身就是词,不进这张表。
 tabs-limit = "标签页上限"
-session-form = "新会话默认开成"
+session-form = "新会话默认打开方式"
 files-click = "单击文件"
 confirm-takeover = "接管会话"
 # 每条侧边栏右键「删除」之前那一问(docs/SHELL.md 第四轮);取代「删除工作区」那一项。
@@ -138,7 +139,7 @@ confirm-delete = "删除"
 # 跟谁,不是「自动」。存下来的是这个选择本身,不是它当下解出来的深或浅:
 # 一份因为那天晚上桌面是深色而存成「深色」的配置,是一台从此不再跟着桌面
 # 走的机器,而没有人说过要这样。
-auto = "跟系统"
+auto = "跟随系统"
 light = "浅色"
 dark = "深色"
 # 两个语言的名字**各用各自的语言写**,而且两份 toml 里一模一样:一个看不懂
@@ -159,219 +160,219 @@ off = "关"
 
 [cli]
 usage = """
-用法: khor <动词>
-  id [--reset 机器名]    本机身份;--reset 把身份钥匙删了重新铸一把——
-                        **对全网来说这就是换了一台机器**,别的机器还认着
-                        旧的、不认新的,要回去得重新配对。所以它要你把
+用法：khor <动词>
+  id [--reset 机器名]    本机身份；--reset 删除身份密钥并重新生成——
+                        **对全网来说这就是换了一台机器**，别的机器还认着
+                        旧的、不认新的，要回去得重新配对。所以它要你把
                         这台机器的名字原样打一遍
   avatar [机器] [--palette 色板] [--colors 五个颜色] [--variant 画法]
          [--shape 形状]
-                        一台机器的头像;不带参数看现在是什么、有哪些可选,
-                        不给机器就是本机。**全网同一份**:谁都能改任何一台,
-                        后写的赢(和改名同一条路)。
-                        旧名 face 还认,下一版撤——头像是头像,
-                        界面是界面(见 faces)
+                        一台机器的头像；不带参数看现在是什么、有哪些可选，
+                        不给机器就是本机。**全网同一份**：谁都能改任何一台，
+                        后写的赢（和改名同一条路）。
+                        旧名 face 还认，下一版撤——头像是头像，
+                        界面是界面（见 faces）
   devices               网里的机器
-  top [机器]            这台机器在忙什么:进程 top 与最近 24 小时 CPU
-  ls <机器> [路径]       看那台机器的目录(不给路径=它的主目录)
+  top [机器]            这台机器在忙什么：进程 top 与最近 24 小时 CPU
+  ls <机器> [路径]       看那台机器的目录（不给路径=它的主目录）
   pull <机器> <文件> [目录]
-                        把那台机器上的文件拉过来(默认落当前目录)
+                        把那台机器上的文件拉过来（默认落当前目录）
   git [status <机器> <仓库路径> | diff <机器> <文件>]
-                        那台机器上的 git 仓库,只读。status 头一行是分支,
-                        往下每行一个和 HEAD 不一样的文件(M 改过 /
-                        A 进了索引 / D 删了 / U 没跟踪);diff 列出一个文件
-                        差在哪几处,行号是文件现在的行号,每处底下是 HEAD
+                        那台机器上的 git 仓库，只读。status 头一行是分支，
+                        往下每行一个和 HEAD 不一样的文件（M 改过 /
+                        A 进了索引 / D 删了 / U 没跟踪）；diff 列出一个文件
+                        差在哪几处，行号是文件现在的行号，每处底下是 HEAD
                         那边原来的那几行
-  places [机器]          那台机器上开过 session 的目录(不给机器=本机)
+  places [机器]          那台机器上开过 session 的目录（不给机器=本机）
   ws ls | add [-m 机器] <目录> | rm [-m 机器] <目录> |
      pin [-m 机器] <目录> | unpin [-m 机器] <目录>
-                        工作区:你自己指定的「哪台机器上的哪个目录」,
+                        工作区：你自己指定的「哪台机器上的哪个目录」，
                         不由 git 或者 session 记录推出来。ls 每行是
-                        置顶标记、名字、机器:路径;add 加一个(不给 -m
-                        就是本机,可以写 . );rm 移出这张表,目录本身
-                        一个字节都不动;pin/unpin 让它排在最前面
-  rm [-m 机器] <路径>     把那个文件或目录删掉。**本机的进废纸篓,别的机器
-                        和卫星是直接删、找不回来**(那边没有废纸篓)。
-                        目录连里面的一起走;路径不存在就拒绝
-  mkdir [-m 机器] <路径>  在那台机器上建一个目录。只建一级,上一级不在就
-                        拒绝;名字已经有了也拒绝,没有 -p 也没有 -f
-  touch [-m 机器] <路径>  在那台机器上建一个空文件。名字已经有了就拒绝,
+                        置顶标记、名字、机器：路径；add 加一个（不给 -m
+                        就是本机，可以写 .）；rm 移出这张表，目录本身
+                        一个字节都不动；pin/unpin 让它排在最前面
+  rm [-m 机器] <路径>     把那个文件或目录删掉。**本机的进废纸篓，别的机器
+                        和卫星是直接删、找不回来**（那边没有废纸篓）。
+                        目录连里面的一起走；路径不存在就拒绝
+  mkdir [-m 机器] <路径>  在那台机器上建一个目录。只建一级，上一级不在就
+                        拒绝；名字已经有了也拒绝，没有 -p 也没有 -f
+  touch [-m 机器] <路径>  在那台机器上建一个空文件。名字已经有了就拒绝，
                         **不会把原来那个清空**
   mv [-m 机器] <原路径> <新路径>
-                        在那台机器上给一个名字改名,跨目录也是这一条。
-                        新名字已经有了就拒绝,不覆盖,没有 -f
+                        在那台机器上给一个名字改名，跨目录也是这一条。
+                        新名字已经有了就拒绝，不覆盖，没有 -f
   launch [-m 机器] <路径|网址>
-                        让那台机器用它自己的开启器打开这个东西(Mac 是
-                        open,Linux 是 xdg-open;`KHOR_LAUNCHER` 可以指
-                        另一个)。**开在那台机器上,不是你面前这台**;
+                        让那台机器用它自己的开启器打开这个东西（Mac 是
+                        open，Linux 是 xdg-open；`KHOR_LAUNCHER` 可以指
+                        另一个）。**开在那台机器上，不是你面前这台**；
                         只收绝对路径和 http/https 网址。`open` 是「在那台
-                        机器上开一个 session」,不是这一条
+                        机器上开一个 session」，不是这一条
   search [-m 机器] <目录> <词>
-                        在那台机器的那个目录下面找这个词:先是名字里带它的
-                        文件(一行一个路径),再是内容里带它的行
-                        (`路径:行号: 那一行`)。不区分大小写,当纯子串,
-                        不是正则;本机这条路尊重 .gitignore,卫星那条
-                        只跳过 .git。最多 50 个名字、200 行、跑 5 秒,
+                        在那台机器的那个目录下面找这个词：先是名字里带它的
+                        文件（一行一个路径），再是内容里带它的行
+                        （`路径:行号: 那一行`）。不区分大小写，当纯子串，
+                        不是正则；本机这条路尊重 .gitignore，卫星那条
+                        只跳过 .git。最多 50 个名字、200 行、跑 5 秒，
                         到顶了在 stderr 上说一句
-  read <机器> <文件>      把文档读成文字打出来:md/csv/tsv 原样(它们本来
-                        就是文本),docx/xlsx/pptx 和它们的旧格式
-                        (doc/xls/ppt)、pdf 转成 markdown。读的是文字和
-                        结构,不是排版
+  read <机器> <文件>      把文档读成文字打出来：md/csv/tsv 原样（它们本来
+                        就是文本），docx/xlsx/pptx 和它们的旧格式
+                        （doc/xls/ppt）、pdf 转成 markdown。读的是文字和
+                        结构，不是排版
   code [--stop] <机器> [仓库路径]
-                        在那台机器上开 VS Code 的网页脸,打印本地链接
-                        (链接里带密钥;不给路径就是它上次开的那个)。
-                        一台机器一个服务端,换项目只是换链接。第一次会从
-                        微软下一份服务端(约 640 MB),之后不用。它不是
-                        session,没有行也不能 close,收摊用 --stop
+                        在那台机器上开 VS Code 的网页脸，打印本地链接
+                        （链接里带密钥；不给路径就是它上次开的那个）。
+                        一台机器一个服务端，换项目只是换链接。第一次会从
+                        微软下一份服务端（约 640 MB），之后不用。它不是
+                        session，没有行也不能 close，收摊用 --stop
   put [--new | --base 底本] <机器> <本地文件> <远端路径>
-                        把本地文件写到那台机器的那个路径上(pull 的反向)。
-                        默认先读一遍再写,中间被人改过就整个拒绝、一个字节
-                        都不落;--new 是另一种说法:那儿本来就不该有文件;
-                        --base 给出你动手前那份,那边变过就三方合并:合得
-                        干净就写进去,有对不上的地方一个字节都不写,把带
-                        标记的结果打到标准输出,退出码 1
-  borrow <机器>         借那台机器的网:起一个本地代理口,浏览器指过来就从
-                        它那儿出去(要 serve 在跑;close 那条 session 收口)
+                        把本地文件写到那台机器的那个路径上（pull 的反向）。
+                        默认先读一遍再写，中间被人改过就整个拒绝、一个字节
+                        都不落；--new 是另一种说法：那儿本来就不该有文件；
+                        --base 给出你动手前那份，那边变过就三方合并：合得
+                        干净就写进去，有对不上的地方一个字节都不写，把带
+                        标记的结果打到标准输出，退出码 1
+  borrow <机器>         借那台机器的网：起一个本地代理口，浏览器指过来就从
+                        它那儿出去（要 serve 在跑；close 那条 session 收口）
   tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
-                        浏览器这块屏幕上开着的标签页。**本机的,不同步**:
-                        开着什么是这块屏幕的事,别的机器不看(常去的地方才跟着人走)。
+                        浏览器这块屏幕上开着的标签页。**本机的，不同步**：
+                        开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
                         ls 每行是当前/置顶标记、序号、id、标题、网址。pin 置顶一个
-                        (排在最上,取消置顶之前 close 不掉),unpin 取消置顶。
-                        都收两样:**序号**是这次列出来的第几个,手敲用它,
-                        关掉一个之后会挪;**id** 认死一个不会挪,脚本用它
-  usage [--days N]      各机器花掉的 token,按天按类别(默认 7 天)
+                        （排在最上，取消置顶之前 close 不掉），unpin 取消置顶。
+                        都收两样：**序号**是这次列出来的第几个，手敲用它，
+                        关掉一个之后会挪；**id** 认死一个不会挪，脚本用它
+  usage [--days N]      各机器花掉的 token，按天按类别（默认 7 天）
   sessions [--by recent|category|device|state|place] [--all]
-                        session 列表(默认最近);换一种排布,置顶永远在最上;
-                        看过的旧会话默认只报条数,--all 全列出来。列表里只有
+                        session 列表（默认最近）；换一种排布，置顶永远在最上；
+                        看过的旧会话默认只报条数，--all 全列出来。列表里只有
                         新建的、导入的和对设备的对话
-  find <词>              一次搜会话、机器、工作区、浏览标签和设置页(窗口里 ⌘K 同一份)
-  import [<序号|id>...]  不带参数列出可导入的会话(外面开的智能体、tmux 会话、
-                        ACP 对话),带序号;带序号或 id 就把它们导进列表
-  tell <机器> <话...>    给机器的窗口留言(永远当字面的话)
+  find <词>              一次搜会话、机器、工作区、浏览标签和设置页（窗口里 ⌘K 同一份）
+  import [<序号|id>...]  不带参数列出可导入的会话（外面开的智能体、tmux 会话、
+                        ACP 对话），带序号；带序号或 id 就把它们导进列表
+  tell <机器> <话...>    给机器的窗口留言（永远当字面的话）
   send <机器> <文件|话...>
-                        给那台机器:是个存在的文件就传文件(摘要先到,
-                        对方许可后才传),不是就当留言;
+                        给那台机器：是个存在的文件就传文件（摘要先到，
+                        对方许可后才传），不是就当留言；
                         话恰好和文件同名时用 tell
-  accept <传输号>        许可并收下全量(在收文件的那台机器上跑)
+  accept <传输号>        许可并收下全量（在收文件的那台机器上跑）
   log <机器>            看那个窗口的消息
   run [--tui] [--title 名] -- <命令...>
-                        临时 session:跟着这个终端活,全程网里可见
+                        临时 session：跟着这个终端活，全程网里可见
   open [-d] [--tui|--gui] [--agent 名字 [--resume id]] [--on 机器] [--title 名] [-- 命令]
-                        持久 session:终端关了还在,能重连(默认接上;-d 只开;
-                        --gui 走 ACP 协议,khor 画对话,给会说这个协议的 agent;
-                        --agent 用登记过的那个 agent(见 agents),自带 --gui;
-                        --resume 续上它自己列出来的某段对话(见 agents sessions);
-                        --on 在别的机器上开,不给命令就用那台自己的 shell;
-                        --gui/--agent 配 --on 在那台机器上起它自己的 agent,
-                        不接命令,也不接 --resume)
-  accounts [ls]         登记过的账号(本机的 Claude Code、Codex 登录第一次读到
-                        时各自动登记一条,删掉后不再自动建);add <名字> --provider
+                        持久 session：终端关了还在，能重连（默认接上；-d 只开；
+                        --gui 走 ACP 协议，khor 画对话，给会说这个协议的 agent；
+                        --agent 用登记过的那个 agent（见 agents），自带 --gui；
+                        --resume 续上它自己列出来的某段对话（见 agents sessions）；
+                        --on 在别的机器上开，不给命令就用那台自己的 shell；
+                        --gui/--agent 配 --on 在那台机器上起它自己的 agent，
+                        不接命令，也不接 --resume）
+  accounts [ls]         登记过的账号（本机的 Claude Code、Codex 登录第一次读到
+                        时各自动登记一条，删掉后不再自动建）；add <名字> --provider
                         newapi|claude|openai|deepseek|moonshot|moonshot-cn|
                         openrouter [--base-url 地址]
-                        [--budget 数] --key 密钥|--key-stdin 登记(密钥只留在这台
-                        机器上);订阅是 add <名字> --provider claude|codex
-                        --kind sub,不填密钥——它读的是这台机器上 Claude Code
-                        或 Codex 的登录,
-                        所以登记在哪台就读哪台;rm <id|名字> 撤掉
-  quota [--why]         每个账号用了多少:本机的现读,别的机器的按上次带回来的;
+                        [--budget 数] --key 密钥|--key-stdin 登记（密钥只留在这台
+                        机器上）；订阅是 add <名字> --provider claude|codex
+                        --kind sub，不填密钥——它读的是这台机器上 Claude Code
+                        或 Codex 的登录，
+                        所以登记在哪台就读哪台；rm <id|名字> 撤掉
+  quota [--why]         每个账号用了多少：本机的现读，别的机器的按上次带回来的；
                         --why 印出本机每家订阅每条取数策略这一回做了什么
-  attach <session>      接上一个持久 session(Ctrl-\\ 断开);
-                        行在哪台机器上就接哪台,不用说
-  takeover <session>    接管一个 agent 会话:结束它的终端,对话从这里继续
+  attach <session>      接上一个持久 session（Ctrl-\\ 断开）；
+                        行在哪台机器上就接哪台，不用说
+  takeover <session>    接管一个 agent 会话：结束它的终端，对话从这里继续
   agents [known | sessions <名字> [--ask] | add <名字> [...] | rm <名字>]
-                        登记会说 ACP 的 agent:不带参数看登记过哪些。
-                        登记一次全网都认得(命令在不在各机器上,起的时候才知道);
+                        登记会说 ACP 的 agent：不带参数看登记过哪些。
+                        登记一次全网都认得（命令在不在各机器上，起的时候才知道）；
                         claude、codex、khor、shell 这四个名字 khor 自己在用。
-                        known 看随包带的 ACP 注册表快照;@<id> 直接用快照里那条命令。
-                        sessions 看它有哪些对话(读记下来的;--ask 才真去问,那会起一个进程);
-                        问过的答案全网同步,别的机器不用再起一遍
-  state <词|--hook>     (给进程钩子用)汇报状态;--hook 从标准输入读 Claude 事件
+                        known 看随包带的 ACP 注册表快照；@<id> 直接用快照里那条命令。
+                        sessions 看它有哪些对话（读记下来的；--ask 才真去问，那会起一个进程）；
+                        问过的答案全网同步，别的机器不用再起一遍
+  state <词|--hook>     （给进程钩子用）汇报状态；--hook 从标准输入读 Claude 事件
   seen <session>        标已读
   rename [-m] <session|机器> [名字...]
-                        给它起个名(全网同一份,盖在它自己的名上);
-                        不给名字=撤销,它自己的名原样露出
-                        -m 改机器名;机器改的只是人看的那个名字,
-                        网络归档用的频道名不动,所以对话和已读都不搬家
+                        给它起个名（全网同一份，盖在它自己的名上）；
+                        不给名字=撤销，它自己的名原样露出
+                        -m 改机器名；机器改的只是人看的那个名字，
+                        网络归档用的频道名不动，所以对话和已读都不搬家
   pin [-m] <session|机器>
-                        置顶(-m 置顶机器);在哪台上置顶都一样,全网同一份。
-                        目录要置顶就把它加成工作区再 ws pin;网页是 tabs pin
+                        置顶（-m 置顶机器）；在哪台上置顶都一样，全网同一份。
+                        目录要置顶就把它加成工作区再 ws pin；网页是 tabs pin
   unpin [-m] <session|机器>
                         取消置顶
-  close <session>       关掉(session 停掉进程;对话收起这一行,历史和
-                        收下的文件都留着,再来消息它自己回来;导入的行只从
-                        列表里拿掉,那边的会话一个字节不动,它回到候选里)
-  serve                 常驻:应答别人、代跑本机动词、每 5 秒同步全网
-                        (顺带把网页脸也开在局域网上,见 web)
-  web [--new]           网页脸的链接:拿手机或者别的电脑打开它,就是整个网。
-                        脸是 serve 开的,这条只发密钥;链接里带密钥,别贴进
-                        会同步的文档。--new 换一把,之前发出去的链接全作废
-  gui                   开桌面 app 的窗口(桌面 app 是装在 khor 旁边的
-                        khor-gui;没装它会告诉你去哪儿拿)
-  faces                 本机开着哪几张 khor 界面:桌面 app 在不在跑、
+  close <session>       关掉（session 停掉进程；对话收起这一行，历史和
+                        收下的文件都留着，再来消息它自己回来；导入的行只从
+                        列表里拿掉，那边的会话一个字节不动，它回到候选里）
+  serve                 常驻：应答别人、代跑本机动词、每 5 秒同步全网
+                        （顺带把网页脸也开在局域网上，见 web）
+  web [--new]           网页脸的链接：拿手机或者别的电脑打开它，就是整个网。
+                        脸是 serve 开的，这条只发密钥；链接里带密钥，别贴进
+                        会同步的文档。--new 换一把，之前发出去的链接全作废
+  gui                   开桌面 app 的窗口（桌面 app 是装在 khor 旁边的
+                        khor-gui；没装它会告诉你去哪儿拿）
+  faces                 本机开着哪几张 khor 界面：桌面 app 在不在跑、
                         网页脸在不在听、听的是哪个端口。**这里的「脸」是
-                        界面,不是头像**——头像那一个是 avatar
-  quit                  收摊:停掉本机的 serve 和所有 session 宿主
-                        (文件都留着,再 serve 就都回来)
+                        界面，不是头像**——头像那一个是 avatar
+  quit                  收摊：停掉本机的 serve 和所有 session 宿主
+                        （文件都留着，再 serve 就都回来）
   hooks [install|uninstall]
-                        看钩子装没装;install 装上、uninstall 卸掉(都只碰
-                        khor 自己那几条,做两遍=做一遍)
+                        看钩子装没装；install 装上、uninstall 卸掉（都只碰
+                        khor 自己那几条，做两遍=做一遍）
   lock [status|on|off|pin|timeout 分钟]
-                        屏幕上那几张脸的打开密码(app 窗口和网页脸)。
+                        屏幕上那几张脸的打开密码（app 窗口和网页脸）。
                         **不锁命令行**——`khor` 后面站着的人已经登进这台
-                        机器了。不带参数=看现在什么样;pin 从标准输入读
-                        一行(不进 argv,也就不进 shell 历史和 ps),
-                        打一行空的=撤掉 PIN,锁也跟着关;timeout 收
-                        0/1/5/15/60(0 是永不)。macOS 的 app 上还能用
-                        Touch ID 开,那是额外的一把:PIN 是每张脸都有的那把
+                        机器了。不带参数=看现在什么样；pin 从标准输入读
+                        一行（不进 argv，也就不进 shell 历史和 ps），
+                        打一行空的=撤掉 PIN，锁也跟着关；timeout 收
+                        0/1/5/15/60（0 是永不）。macOS 的 app 上还能用
+                        Touch ID 开，那是额外的一把：PIN 是每张脸都有的那把
   config [list | get <项> | set <项> <值>]
-                        这台机器自己的偏好(不跟着网走)。不带参数=list,
-                        每行一个设置项和它现在的值——**列的是全部,不是
-                        设过的那几个**;没有这个项、或者这个项不收这个值,
-                        都按名字拒绝,拒绝里带着它收的那几个值
+                        这台机器自己的偏好（不跟着网走）。不带参数=list，
+                        每行一个设置项和它现在的值——**列的是全部，不是
+                        设过的那几个**；没有这个项、或者这个项不收这个值，
+                        都按名字拒绝，拒绝里带着它收的那几个值
   doctor [--json] [--fix 项]
-                        自检:一行一项,名字、状态(好/留意/坏了/未量)、
+                        自检：一行一项，名字、状态（正常/注意/异常/未量）、
                         一句话。**「未量」不是「好」**——它是没量到。
-                        每项各自 3 秒超时,一项卡住不拖累别项。
-                        --json 出原样(GUI 那一页读的是同一份);
-                        --fix 跑那一项的修法(能修的项在行尾写着怎么跑)
-  invite                出一张一次性配对票(要求 serve 在跑)
+                        每项各自 3 秒超时，一项卡住不拖累别项。
+                        --json 出原样（GUI 那一页读的是同一份）；
+                        --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
+  invite                出一张一次性配对票（要求 serve 在跑）
   pair <票>             凭票入网
-  adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网(卫星):身份从你的
-                        known_hosts 来,一切操作经本机代跑;移除还是
-                        forget。要求免密 ssh(有密码提示的连不上)
+  adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网（卫星）：身份从你的
+                        known_hosts 来，一切操作经本机代跑；移除还是
+                        forget。要求免密 ssh（有密码提示的连不上）
   sync                  立即和全网各同步一趟
-  mcp                   把 khor 的动词当工具讲出去(智能体用,不是人敲的)
-  version               本机装的是哪一版(网里各机器的版本看 devices)
-  forget <机器>          把一台机器移出网络:全网都不再认它,它也不再看得见网。
-                        要回来得重新配对(在还认它的那台上出票)
-  leave <本机名>         本机离开网络:先趁还连着把「我走了」发出去,再把
+  mcp                   把 khor 的动词当工具讲出去（智能体用，不是人敲的）
+  version               本机装的是哪一版（网里各机器的版本看 devices）
+  forget <机器>          把一台机器移出网络：全网都不再认它，它也不再看得见网。
+                        要回来得重新配对（在还认它的那台上出票）
+  leave <本机名>         本机离开网络：先趁还连着把「我走了」发出去，再把
                         本机的机器表清到只剩自己、别人留在这儿的东西清掉。
                         本机自己的会话、工作区、身份、设置一样不动。
-                        把本机的名字原样打一遍就是确认(和 forget 同一条规矩)。
+                        把本机的名字原样打一遍就是确认（和 forget 同一条规矩）。
                         拿一张新票 pair 可以再入网
-  pause                 暂停接入网络:不再与别的机器同步,别的机器那边看见这台
-                        离线;本机的会话、工作区、网页脸照常用。关机重开还是暂停的
-  resume                恢复接入:重新同步,下一轮就能对上
-                        pause <机器>:只暂停和那一台的往来——不拨它、不接它、
-                        不和它同步,它自己照常运行;devices 里那一行标(已暂停)。
+  pause                 暂停接入网络：不再与别的机器同步，别的机器那边看见这台
+                        离线；本机的会话、工作区、网页脸照常用。关机重开还是暂停的
+  resume                恢复接入：重新同步，下一轮就能对上
+                        pause <机器>：只暂停和那一台的往来——不拨它、不接它、
+                        不和它同步，它自己照常运行；devices 里那一行标（已暂停）。
                         resume <机器> 接回来
-  watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷(全网同一份,
-                        devices 里那台机器多印每个目录还剩多少);不给目录=清空"""
-this-machine = "(本机)"
+  watch <机器> [目录 ...] 让一台机器盯着这几个目录所在的卷（全网同一份，
+                        devices 里那台机器多印每个目录还剩多少）；不给目录=清空"""
+this-machine = "（本机）"
 # `khor watch` 的回声:这台机器现在盯着的目录,一行一个;清空了就说清空了。
-watching = "{0} 盯着: {1}"
+watching = "{0} 盯着：{1}"
 watching-none = "{0} 没有盯着的目录"
 # Marks the option a machine is wearing, in a list of options. Without
 # it `khor face` prints a catalogue and answers "what am I" nowhere —
 # and the whole reason to run it with no arguments is that question.
-in-use = "(现在)"
+in-use = "（现在）"
 # Said on a row that someone pinned. The list already puts pinned rows on
 # top, and "on top" alone is not readable: without a mark, a row leading
 # the list looks like the most recent one.
-pinned-mark = "(置顶)"
+pinned-mark = "（置顶）"
 # 本机暂停接入时挂在「(本机)」后面的记号(docs/MORE.md 暂停)。和路那一列
 # 分开:路说的是「这台怎么够到那台」,暂停说的是这台机器自己的状态。
-paused-mark = "(已暂停)"
+paused-mark = "（已暂停）"
 # A group heading in a grouped listing. The rule marks it as a heading
 # rather than a row, which matters in a list where every other line is
 # tab-separated data.
@@ -387,12 +388,12 @@ name-separator = "、"
 # 「端口 54670 没人听」没有共同的形状可建模),所以挑词这一步下沉,词本身
 # 还在这儿。CLI 和 GUI 两边读同一份。
 doctor-name-version = "版本"
-doctor-name-identity = "身份钥匙"
+doctor-name-identity = "身份密钥"
 doctor-name-store = "本机数据"
 doctor-name-serve = "常驻"
 doctor-name-web = "网页脸"
 doctor-name-relays = "中继"
-doctor-name-peers = "别的机器"
+doctor-name-peers = "其他机器"
 doctor-name-hooks = "钩子"
 doctor-name-agents = "智能体"
 doctor-name-vscode = "VS Code"
@@ -400,17 +401,17 @@ doctor-name-disk = "磁盘余量"
 doctor-name-launcher = "开启器"
 # 四个状态词。**「未量」不是 ok**:一行绿着的意思是有人看过了,而没看过是
 # 另一件事(docs/SESSION.md 认不出就不落词,落在读数上的那一版)。
-doctor-ok = "好"
-doctor-warn = "留意"
-doctor-fail = "坏了"
+doctor-ok = "正常"
+doctor-warn = "注意"
+doctor-fail = "异常"
 doctor-unmeasured = "未量"
 # 一项自己超时了。名字带着,因为一行消失会读成一切正常。
-doctor-timed-out = "{0} 秒没答上来"
+doctor-timed-out = "{0} 秒内无响应"
 # 修法按下去之后那一句。
-doctor-fixed-chmod = "钥匙的权限改回只有你读得了"
-doctor-fixed-hooks = "钩子重装了"
-doctor-fixed-serve = "起了一个常驻"
-doctor-no-fix = "这一项 khor 修不了: {0}"
+doctor-fixed-chmod = "已将密钥权限改为仅你可读"
+doctor-fixed-hooks = "已重新安装钩子"
+doctor-fixed-serve = "已启动常驻进程"
+doctor-no-fix = "khor 无法修复这一项：{0}"
 # 一行后面那个提示:这一项 khor 能修,而且怎么修。**报的是这一项自己的键**,
 # 因为 `--fix` 收的就是它;印修法自己的键会是一个这条命令不认的词。
 doctor-fixable = "khor doctor --fix {0}"
@@ -453,76 +454,76 @@ face-current = "当前"
 # ── `khor lock` 印出来的几个词 (docs/MORE.md 安全) ─────────────────
 # 一行三段:锁开着没有、有没有钥匙、闲置多久自己锁上。**锁的是屏幕上的
 # 那几张脸,不是这个终端**——`khor` 后面站着的人已经登进这台机器了。
-lock-on = "锁着"
-lock-off = "没锁"
-lock-pin-set = "PIN 设过了"
-lock-pin-none = "还没设 PIN"
-lock-idle-never = "闲置不自己锁"
-lock-idle-after = "闲置 {0} 分钟自己锁"
-identity-reset = "身份钥匙删了;下次开 khor 会铸一把新的,对全网来说这是另一台机器"
+lock-on = "已锁定"
+lock-off = "未锁定"
+lock-pin-set = "已设置 PIN"
+lock-pin-none = "未设置 PIN"
+lock-idle-never = "闲置时不自动锁定"
+lock-idle-after = "闲置 {0} 分钟后自动锁定"
+identity-reset = "身份密钥已删除；下次打开 khor 时会生成新的，对整个网络来说这是另一台机器"
 # ── 各项的话 ──
 # 版本:桌面上是两个二进制(app 是 khor-gui,命令行是 khor),
 # 只升了一个的时候,从哪一边都看不出来。
-doctor-version-split = "命令行是 {0},这一份是 {1}"
+doctor-version-split = "命令行是 {0}，这一份是 {1}"
 doctor-version-no-cli = "这台机器上找不到 khor 命令"
-doctor-identity-ok = "在,只有你读得了"
-doctor-identity-loose = "别人也读得了(权限 {0})"
-doctor-identity-gone = "不在: {0}"
-doctor-identity-unreadable = "读不了: {0}"
-doctor-store-ok = "打得开、写得进,占 {0}"
-doctor-store-shut = "写不进去: {0}"
+doctor-identity-ok = "存在，仅你可读"
+doctor-identity-loose = "其他用户也可读取（权限 {0}）"
+doctor-identity-gone = "不存在：{0}"
+doctor-identity-unreadable = "无法读取：{0}"
+doctor-store-ok = "可读写，占用 {0}"
+doctor-store-shut = "无法写入：{0}"
 # 常驻:文件里记着一个活着的 pid、而且那个 socket 真答话——两半分开报,
 # 因为它们会分开坏,而「没在跑」会把人支使去再起一个。
-doctor-serve-ok = "在跑(pid {0})"
-doctor-serve-none = "没在跑"
-doctor-serve-deaf = "记着 pid {0},可是不答话"
+doctor-serve-ok = "运行中（pid {0}）"
+doctor-serve-none = "未运行"
+doctor-serve-deaf = "记录的 pid 为 {0}，但没有响应"
 # One machine, more than one resident (keeper and child count as one).
 # Named by the pid a person would stop and the store each serves, which
 # is how the two are told apart.
-doctor-serve-many = "这台机器上有 {0} 个 serve:{1}"
-doctor-serve-one-of = "pid {0}(店 {1})"
-doctor-web-ok = "端口 {0} 在听,钥匙在"
-doctor-web-nokey = "端口 {0} 在听,可是钥匙文件不在"
-doctor-web-quiet = "端口 {0} 没人听"
+doctor-serve-many = "这台机器上有 {0} 个 serve：{1}"
+doctor-serve-one-of = "pid {0}（存储 {1}）"
+doctor-web-ok = "端口 {0} 正在监听，密钥存在"
+doctor-web-nokey = "端口 {0} 正在监听，但密钥文件不存在"
+doctor-web-quiet = "端口 {0} 无人监听"
 doctor-relay-ms = "{0} {1}ms"
-doctor-relay-quiet = "{0} 够不着"
-doctor-relays-none = "一台中继都没有"
+doctor-relay-quiet = "{0} 无法连接"
+doctor-relays-none = "没有中继"
 # 对端的版本从读数上来(`khor_core::Vitals::version`),不另问一趟——
 # 所以一台没联系上的机器在这儿没有版本,而那是答案,不是缺口。
 doctor-peer = "{0} {1} {2}"
-doctor-peer-behind = "{0} {1} {2},和这台不一样"
-doctor-peer-mute = "{0} {1},版本说不上"
-doctor-peers-alone = "还没和别的机器配对"
+doctor-peer-behind = "{0} {1} {2}，与本机版本不同"
+doctor-peer-mute = "{0} {1}，版本未知"
+doctor-peers-alone = "尚未与其他机器配对"
 # 本机暂停接入时的自检结论(docs/MORE.md 暂停)。不是警告:它正在做被吩咐的事。
-doctor-peers-paused = "已暂停接入——不再与别的机器同步,别的机器那边看见这台离线。要恢复: khor resume"
-doctor-peers-unread = "读不了机器表"
-doctor-hooks-ok = "claude 的钩子都装着"
-doctor-hooks-part = "{0} 个事件的钩子没装,或者指着另一个 khor"
-doctor-hooks-unread = "读不了 claude 的设置"
-doctor-agents-ok = "登记的 {0} 个命令都找得到"
-doctor-agents-missing = "找不到命令: {0}"
-doctor-agents-none = "没登记过智能体"
-doctor-agents-unread = "读不了智能体登记表"
-doctor-vscode-ready = "{0},服务端下好了"
-doctor-vscode-fetch = "{0},服务端还没下(第一次开会下)"
-doctor-vscode-none = "这台没有 code"
-doctor-disk = "{0} / {1},还剩 {2}"
-doctor-disk-unknown = "说不上这个盘还剩多少"
-doctor-launcher-ok = "用 {0}"
-doctor-launcher-missing = "{0} 不在 PATH 上"
+doctor-peers-paused = "已暂停接入——不再与别的机器同步，别的机器那边看见这台离线。要恢复：khor resume"
+doctor-peers-unread = "无法读取机器列表"
+doctor-hooks-ok = "claude 的钩子均已安装"
+doctor-hooks-part = "{0} 个事件的钩子未安装，或指向另一个 khor"
+doctor-hooks-unread = "无法读取 claude 的设置"
+doctor-agents-ok = "已登记的 {0} 个命令均可找到"
+doctor-agents-missing = "找不到命令：{0}"
+doctor-agents-none = "未登记智能体"
+doctor-agents-unread = "无法读取智能体登记表"
+doctor-vscode-ready = "{0}，服务端已下载"
+doctor-vscode-fetch = "{0}，服务端尚未下载（首次打开时下载）"
+doctor-vscode-none = "这台机器上没有 code"
+doctor-disk = "{0} / {1}，还剩 {2}"
+doctor-disk-unknown = "无法获知这块磁盘的剩余空间"
+doctor-launcher-ok = "使用 {0}"
+doctor-launcher-missing = "{0} 不在 PATH 中"
 doctor-launcher-none = "这台机器没有开启器"
 unread = "未读 {0}"
-unreachable-for = "{0}没联系上"
+unreachable-for = "{0}未联系上"
 # The quiet note (词的保鲜期批): a live word nobody can vouch for has
 # said nothing for this long. Beside the word, never instead of it —
 # the word stays, this says how stale it is (离线轴的第二种情形:
 # 机器够得着,信号断了). {0} is a bare duration off the age ladder.
-quiet-for = "{0}没消息"
+quiet-for = "{0}无消息"
 # Adoption's report (附属机器批): {0} the name, {1} this machine — the
 # sponsor is said out loud because it is the satellite's home from now
 # on, and the promise (全网都看得见) is the CRDT doing what it always
 # does, said so nobody goes checking.
-adopted = "领进来了: {0},经 {1} 说话;全网马上都看得见它"
+adopted = "领进来了：{0}，经 {1} 说话；全网马上都看得见它"
 # A satellite's road column: it has no road of its own — its sponsor
 # speaks for it — so where every other machine shows 直连/中继 this
 # shows who it speaks through (both faces use it; 呈现处标「经 <sponsor>」
@@ -531,8 +532,8 @@ via-sponsor = "经 {0}"
 # The tmux probe's two outcomes, told at adoption so the terminal's
 # nature is no surprise later (docs/SESSION.md 例外墓碑: persistence on
 # a satellite is borrowed from its own tmux, never hosted by khor).
-sat-tmux-yes = "它有 tmux,在它上面开的终端能持久"
-sat-tmux-no = "它没有 tmux,在它上面开的终端是临时的(连接断了就没了)"
+sat-tmux-yes = "它有 tmux，在它上面开的终端能持久"
+sat-tmux-no = "它没有 tmux，在它上面开的终端是临时的（连接断了就没了）"
 # Said only when the number is non-zero. Zero rows and zero unreadable is
 # an idle machine; zero rows and a non-zero count is khor being out of
 # date, and nothing but this line tells the two apart.
@@ -541,12 +542,12 @@ sat-tmux-no = "它没有 tmux,在它上面开的终端是临时的(连接断了�
 # session khor could not describe, and tmux is not an agent and is not
 # read off disk — it is asked. A machine with **no** tmux is not counted
 # here at all, because zero rows is then the truth (adaptor::tmux).
-adaptor-behind = "有 {0} 个正在跑的 session 读不出来,khor 认不得它给的格式"
+adaptor-behind = "有 {0} 个正在运行的 session 无法读取，khor 不认识它的格式"
 # The fold's one line (退场批): dead + looked at + past the threshold
 # stays off the default listing, and this says how many — a count that
 # is silent would read as the rows having been deleted, which they
 # never are.
-old-sessions-hidden = "{0} 条旧会话没列出来(--all 全看)"
+old-sessions-hidden = "{0} 条旧会话没列出来（--all 全看）"
 age-seconds = "{0} 秒"
 age-minutes = "{0} 分钟"
 age-hours = "{0} 小时"
@@ -570,7 +571,7 @@ vitals-name-disk = "磁盘"
 # rather than being left out, because a missing line and a machine that
 # could not answer read the same otherwise — and 「0 / 0」 would read as
 # an empty disk (docs/SESSION.md 认不出就不落词).
-vitals-disk-unknown = "磁盘 说不上"
+vitals-disk-unknown = "磁盘 未知"
 # The graphics hardware, when khor could read it. **There is deliberately
 # no 「说不上」 word to match the disk's above**, and the asymmetry is the
 # judgment: khor's home is always on some filesystem, so failing to name
@@ -588,7 +589,7 @@ vitals-vram = "显存 {0} / {1}"
 # 报的原话,报不出名字的卡由两端各自退回「GPU」那个词。显存跟在同一句里,
 # 不拆第二段——smoke 按两空格数段落,GUI 一卡一环,两边段数要对得上。
 vitals-gpu-card = "{0} {1}%"
-vitals-gpu-card-mem = "{0} {1}%,显存 {2} / {3}"
+vitals-gpu-card-mem = "{0} {1}%，显存 {2} / {3}"
 # The card's day section and the words its dials turn over to
 # (2026-09-03, redesigned twice to the user's references: four dials —
 # CPU, GPU, 内存, 磁盘 — each an aggregate whose parts are a row apiece
@@ -626,7 +627,7 @@ day-view-para = "24h 统计"
 day-at = "{0} · {1}"
 # 一段没人记的桶,写在那段空缺里,也写进游标读数条。**「没采到」不是 0**:
 # 一条画过去的线会声称机器当时在做某件没人量过的事(docs/UX.md 不知道就说不知道)。
-day-gap = "没采到"
+day-gap = "未采集"
 # 时间轴最右端。整点刻度让位给它——两个词落在同一条基线上会读成一句话。
 day-now = "现在"
 # 明度阶的名字。**明度即数据**是这块图的全部读法,而一条没有图例的色阶
@@ -638,10 +639,10 @@ day-strain-legend = "内存/磁盘 {0}+"
 # 叠放那张的刷选读数:在一根轴上上下划,落在那一段的时刻整束亮起来,这一行说
 # 「那些时刻别的指标是多少」。**中位不是平均**:一段刷选里常有几个离群的桶,
 # 平均会被它们拽走,而这一行要答的是「那阵子通常是什么样」。
-day-brush-head = "{0} 的 {1} 个时刻({2} 小时):"
+day-brush-head = "{0} 的 {1} 个时刻（{2} 小时）："
 day-brush-median = "{0} 中位 {1}"
 day-brush-none = "{0} 无数据"
-day-brush-empty = "{0} {1}:没有一个时刻落在这儿"
+day-brush-empty = "{0} {1}：没有落在此区间的时刻"
 cores-sub = "{0} 核"
 gpu-sub-nomem = "{0} 卡"
 # The disk dial's whole, said as **how big and how many** rather than
@@ -673,7 +674,7 @@ vitals-vol = "{0} {1} / {2}"
 # 一条关注的目录一句(khor_core::WatchedDir,2026-09-06):三种形状三句话——在某个卷上、
 # 没有这个目录、在一个 khor 没列出的卷上。第三句不许并进第一句:那种路径的最长列出
 # 前缀是根盘,并进去就是拿根盘的数说另一块盘的事。数字是它所在那个卷自己的读数。
-vitals-watch = "{0} 在 {1},还剩 {2} / {3}"
+vitals-watch = "{0} 在 {1}，还剩 {2} / {3}"
 vitals-watch-missing = "{0} 没有这个目录"
 vitals-watch-unlisted = "{0} 不在任何列出的卷上"
 # The GPU memory column's head, and the word an older node's aggregate
@@ -746,7 +747,7 @@ top-plot-log = "log"
 # 而「没读到」不能画在 0 那个位置——那会把「没看到」变成「最小的那个」,正是这块
 # 图一直在防的邻居值错误。所以那些行**不画**,而不画了多少必须说出来:一张
 # 少了三分之二个点的图,和一台闲着的机器长得一模一样。
-top-plot-off = "{0} 行没有这两个量的读数,没画"
+top-plot-off = "{0} 行没有这两个量的读数，没画"
 # 进程表里那**一列**的名字。2026-09-04:「表的进程和命令合并为一列,就叫命令」。
 # 之前是两列 —— `top-name`(「进程」)加这一列(「命令行」)—— 而它们说的是一件事的
 # 两半:那个识别词只有**挨着它区分的那个名字**时才有意义(三行都写着 `python3`,
@@ -828,7 +829,7 @@ top-st-lockblocked = "等锁"
 # macOS 专有的一档:那台机器连「有没有线程在核上」都不肯说(通常是别人的进程)。
 # **它不是「运行」也不是「休眠」**,而这一档存在的全部意义就是不让它变成那两个
 # 里的任何一个——那正是库犯的错。
-top-st-unclear = "说不准"
+top-st-unclear = "未知"
 # 抽屉的小标题右半:这一组有几样东西。**是数量不是读数**——读数在上面那个环里,
 # 这里回答的是「这个环底下有几张卡 / 几个卷 / 几个占用者」。卷用这个键,卡和核
 # 复用已有的 `gpu-sub-nomem` / `cores-sub`。
@@ -871,7 +872,7 @@ vitals-taken = "{0}前的读数"
 vitals-version = "khor {0}"
 # Never reached since this khor started. Not the same as an old reading,
 # and not 「0%」 either — those send a person to look at different things.
-vitals-never = "还没问到"
+vitals-never = "尚未获取"
 # Tokens spent, one day at a time (khor_core::Tokens). **Four numbers and
 # no total**, because on this machine the cached reads outnumber the
 # output five hundred to one: a sum would be almost entirely cache and
@@ -889,20 +890,20 @@ tokens-output = "输出 {0}"
 # Said when a machine has spent nothing in the window being shown. Not an
 # empty listing: a machine that answered 「nothing」 and a machine that was
 # never asked are different things, and only one of them is news.
-usage-none = "这几天没花"
+usage-none = "近几天没有花费"
 # Never reached since this khor started — the same third state the
 # readings have, and the same reason it needs its own word. It cannot
 # borrow the readings' 「还没问到」 either: same fact, different question,
 # and the catalog refuses two names for one text by design.
-usage-never = "还没问到这台的账"
+usage-never = "尚未获取这台机器的用量"
 # How old the answer is, said on every one that is not this machine's
 # own. Without it a stale answer reads as the present.
-usage-taken = "{0}前的账"
+usage-taken = "{0}前的用量"
 # Records khor found and could not read. Said only when non-zero: a
 # vendor reshaped a file khor reads, and the totals above are therefore
 # missing something. Zero and silence mean the same thing; a non-zero
 # count and silence do not.
-usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
+usage-unreadable = "有 {0} 条读不出来，总数少算了那些"
 # The model row for tokens whose own file never said which model spent
 # them (`khor_core::UsageModelDay::model` is `None`).
 #
@@ -921,8 +922,8 @@ usage-unreadable = "有 {0} 条读不出来,总数少算了那些"
 # Two names for one text is what `build.rs` refuses inside a section and
 # what drift looks like across two — and this word answers the same
 # question on both screens.
-usage-model-unnamed = "没记模型"
-summary-sent = "摘要已发,等对方许可。传输号: {0}"
+usage-model-unnamed = "未记录模型"
+summary-sent = "摘要已发，等对方许可。传输号：{0}"
 # Said before accept goes quiet, and only when this machine does not
 # have the offer yet. A verb that sits silent gets killed and re-run,
 # which is exactly the ten-second guessing this was written to end — so
@@ -931,43 +932,43 @@ summary-sent = "摘要已发,等对方许可。传输号: {0}"
 # costs. Both numbers are read off the thing itself (the device table,
 # `khor_node::link::dial_budget_seconds`); neither is a guess, and a
 # printed worst case that is not true would be worse than no line.
-syncing-for-offer = "本机还没有这笔传输的记录,先同步一轮;有 {0} 台机器要问,联系不上的每台最多 {1} 秒"
-pulled = "收下了,这一趟拉了 {0} 字节"
-pulled-to = "拉了 {0} 字节,落在 {1}"
+syncing-for-offer = "本机还没有这笔传输的记录，先同步一轮；需要询问 {0} 台机器，无法联系的每台最多等待 {1} 秒"
+pulled = "收下了，这一趟拉了 {0} 字节"
+pulled-to = "拉了 {0} 字节，落在 {1}"
 # The no-silent-caps rule at the CLI: a listing cut at the cap must say
 # so, or a directory's first page reads as the whole of it.
-dir-truncated = "目录太大,只列出前 {0} 条"
+dir-truncated = "目录太大，只列出前 {0} 条"
 # What `put` says when it worked. **The digest prefix, not the byte
 # count**: what a caller does next with this is pin another write to
 # it, and the size is a number they already had.
-put-landed = "写好了 {0},现在是 {1}"
+put-landed = "写好了 {0}，现在是 {1}"
 # `put --base` 合干净了。**和 put-landed 分成两句**:一句说的是「照你说的
 # 写了」,这句说的是「那边在你动手期间也改了,两边都在里面了」——把后者
 # 说成前者,等于让人以为自己写上去的就是自己手里那份。
-put-merged = "那边也改过,两边合起来写好了 {0},现在是 {1}"
+put-merged = "那边也改过，两边合起来写好了 {0}，现在是 {1}"
 # `put --base` 合不干净。**没写,而带标记的结果在标准输出上**:khor 不会
 # 把一个还在打架的文件写到别人的机器上,而人手里得有那份合到一半的东西,
 # 否则这条路的出口还是「自己抄一遍」。
-put-clashes = "有 {0} 处两边改了同一行,一个字节都没写;合到一半的结果在标准输出上"
+put-clashes = "有 {0} 处两边改了同一行，一个字节都没写；合到一半的结果在标准输出上"
 # `--new` 和 `--base` 是两种说法,同时说就没有一种是真的。
-put-new-and-base = "--new 说那儿不该有文件,--base 说那儿有你动过的那份,只能挑一个"
+put-new-and-base = "--new 表示那里不应有文件，--base 表示那里有你修改前的版本，只能选一个"
 # 合并要的是整份,而一次只读得下开头那一段。**不合,而不是拿开头当整份合**
 # ——后者写回去就是把那边的文件截断,而且看起来是成功的。
-put-cut-cannot-merge = "那边这个文件 {0} 字节,一次只读得下 {1},合并要整份,没合也没写"
+put-cut-cannot-merge = "那边这个文件 {0} 字节，一次只读得下 {1}，合并要整份，没合也没写"
 # `khor read` on a document with no words in it. **Its own sentence
 # rather than the screen's** (`gui.doc-empty`): this one goes to stderr
 # so a pipe still gets the empty document it asked for, and a sentence
 # that travels to a terminal reads differently from one under a pane.
-read-empty = "这个文档是空的,没有文字"
+read-empty = "这个文档是空的，没有文字"
 # The ceiling a look carries, said in bytes because a terminal is where
 # an exact number is the useful one.
-read-cut = "文件 {0} 字节,只读了前 {1} 字节"
+read-cut = "文件 {0} 字节，只读了前 {1} 字节"
 # Where to point a browser at somebody's VS Code, and which version it
 # is. **The link has the token in it and that is the point** — the far
 # server refuses everything without it, so this line is the editor:
 # pasting it somewhere shared hands the editor over, the same way
 # `khor web` 's link does.
-code-at = "{0}\n  ({1};链接里带密钥,别贴进会同步的文档。收摊: khor code --stop)"
+code-at = "{0}\n  （{1}；链接里带密钥，别贴进会同步的文档。收摊：khor code --stop）"
 code-stopped = "关了 {0} 上的 VS Code"
 # Said before the wait, not after it. **The CLI does not ask** — its
 # precedent is `close` and `forget`: typing the verb is the
@@ -978,7 +979,7 @@ code-stopped = "关了 {0} 上的 VS Code"
 # with [gui]'s `code-consent`: that one is a question with two answers
 # under it and this one is a statement, and one sentence doing both jobs
 # would have to be worded for neither.
-code-fetching = "那台机器上还没有服务端,先下一份(约 640 MB,从微软下,接受他们的服务端许可条款)"
+code-fetching = "那台机器上还没有服务端，先下一份（约 640 MB，从微软下，接受他们的服务端许可条款）"
 # The two git caps. **In [cli] rather than [gui], for `dir-truncated`'s
 # own reason**: both faces say them, and the same fact said twice in two
 # sections is two sentences to keep in step. Said at all because
@@ -991,57 +992,57 @@ code-fetching = "那台机器上还没有服务端,先下一份(约 640 MB,从�
 # a box gets a page of the project rather than the file they meant. The
 # sentence says what to do about it, because 「还有更多」 with no next
 # move is a sentence that only worries people.
-search-more = "还有更多没列出来,词写得更具体一点"
-git-more = "改动太多,下面的没画出来"
-git-status-more = "改动太多,有些文件没标出来"
+search-more = "结果过多，未全部列出；输入更具体的词可缩小范围"
+git-more = "改动过多，其余部分未显示"
+git-status-more = "改动太多，有些文件没标出来"
 # **The pair and its age are one sentence, never two.** khor never
 # fetches — it opens no connection nobody asked for — so 领先/落后 is
 # always「上次 fetch 的时候」, and the number alone has exactly the
 # shape of a fresh one. This is why the pair was cut in 工作区批3 and
 # what let it come back (2026-09-13). {0} 领先, {1} 落后, {2} 距上次
 # fetch 多久。
-git-track = "领先 {0} 落后 {1},按 {2}前那次 fetch"
+git-track = "领先 {0} 落后 {1}，按 {2}前那次 fetch"
 # Only one side has anything, which is the ordinary case: saying
 # 「落后 0」 beside it is a number nobody needs to read.
-git-ahead = "领先 {0},按 {1}前那次 fetch"
-git-behind = "落后 {0},按 {1}前那次 fetch"
+git-ahead = "领先 {0}，按 {1}前那次 fetch"
+git-behind = "落后 {0}，按 {1}前那次 fetch"
 # Borrow prints where the proxy listens because a browser or HTTPS_PROXY
 # points there, and how to collapse it because nothing else says so.
-borrowing = "借着 {0} 的网,代理口在 {1};把浏览器或 HTTPS_PROXY 指过来。收口: khor close {2}"
-broken-blocks = "有 {0} 个块读不出来,这段对话缺了一截"
-serve-banner = "khor serve: {0} 在听,配对与同步都归它"
-web-banner = "网页脸在 {0} 听着;要链接跑 khor web"
+borrowing = "借着 {0} 的网，代理口在 {1}；把浏览器或 HTTPS_PROXY 指过来。收口：khor close {2}"
+broken-blocks = "有 {0} 个块无法读取，这段对话不完整"
+serve-banner = "khor serve：{0} 在听，配对与同步都归它"
+web-banner = "网页脸正在 {0} 监听；运行 khor web 获取链接"
 # `khor hooks`. The file is named on every run, installing or not: khor
 # is writing into something the user owns, and "which file" is the first
 # thing they need to be able to check.
-hooks-file = "钩子写在: {0}"
+hooks-file = "钩子写在：{0}"
 hook-here = "装好了"
 hook-missing = "没装"
 # Not the same as 没装: khor is in that settings file, pointing at a khor
 # somewhere else. Reading the two the same way would make a moved binary
 # look like a working install.
-hook-elsewhere = "装的是另一个 khor: {0}"
+hook-elsewhere = "装的是另一个 khor：{0}"
 # Said only when something is missing. Names what installing buys,
 # because "your hooks are incomplete" without that is a chore with no
 # reason attached.
-hooks-worth-installing = "装上钩子才有「完成」这一档(读盘给不出): khor hooks install"
-hooks-added = "装上了: {0}"
-hooks-repointed = "改指到这个 khor: {0}"
+hooks-worth-installing = "装上钩子才有「完成」这一档（读盘给不出）：khor hooks install"
+hooks-added = "装上了：{0}"
+hooks-repointed = "改指到这个 khor：{0}"
 # The line that makes idempotence visible. Without it a second install
 # looks exactly like a first one, and "装两遍=装一遍" is a claim the user
 # cannot check.
-hooks-already = "本来就有,没动: {0}"
+hooks-already = "本来就有，没动：{0}"
 # Advice, not a mechanism: what claude does with a settings file while it
 # is running is claude's business, and the reliable move is stated
 # instead of guessed at.
-hooks-restart-claude = "已经在跑的 claude 要重开才一定读得到"
+hooks-restart-claude = "已经在运行的 claude 需要重启才能确保读到"
 # `khor hooks uninstall`. Both outcomes get a word for the reason the
 # install side has three lists: **nobody can check somebody else's
 # settings file by hand**, so the run has to say what it did — and
 # "removed nothing" has to be sayable, or twice-removed cannot be shown
 # to equal once-removed.
-hooks-removed = "卸掉了: {0}"
-hooks-none-to-remove = "本来就没装,没动"
+hooks-removed = "卸掉了：{0}"
+hooks-none-to-remove = "本来就没装，没动"
 # The agent registry (批⑥). An empty list says how to fill it, because
 # an empty listing and a broken one look the same otherwise — and the
 # one line a person needs next is the one they cannot guess.
@@ -1049,13 +1050,13 @@ hooks-none-to-remove = "本来就没装,没动"
 # The registration is spelled back as the command they typed rather than
 # as the launch JSON it is stored in: the JSON is what starts the agent,
 # and reading it back is reading an implementation.
-agents-none = "还没登记过 agent: khor agents add <名字> -- <命令...>"
-agents-added = "登记好了: {0}"
-agents-forgotten = "不再登记: {0}"
+agents-none = "还没登记过 agent：khor agents add <名字> -- <命令...>"
+agents-added = "登记好了：{0}"
+agents-forgotten = "不再登记：{0}"
 # Forgetting a name nobody registered is not an error — the caller asked
 # for a world without it, and that is the world. But it must not print
 # 「不再登记」 either, or a typo reads as a success.
-agents-was-not-there = "本来就没登记过: {0}"
+agents-was-not-there = "本来就没登记过：{0}"
 # The snapshot of the ACP registry khor ships with (`khor agents known`).
 # **「khor 起得来」不是「它能用」**:目录只知道一条 argv,而它跑不跑得起来、
 # 要不要先登录、协议实现了哪半边,全都要握手才知道。这行字里不敢有任何
@@ -1064,10 +1065,10 @@ agents-known-startable = "khor 起得来"
 # The other half: khor has no argv for it because it ships a platform
 # binary. **不是「接不了」**——把它装好、把命令告诉 khor,和第一天一样能用。
 # 两句话必须读起来不一样,不然人会以为这些 agent 用不了。
-agents-known-byhand = "自己装,然后 khor agents add <名字> -- <命令...>"
+agents-known-byhand = "自己装，然后 khor agents add <名字> -- <命令...>"
 # Heading for the list, carrying the two things that keep it honest:
 # where it came from and when.
-agents-known-head = "ACP 注册表快照({0},{1} 个,其中 {2} 个 khor 起得来)"
+agents-known-head = "ACP 注册表快照（{0}，{1} 个，其中 {2} 个 khor 起得来）"
 # `khor agents sessions <名字>`:这个 agent 说它有哪些会话(`session/list`)。
 #
 # **下面两句必须读起来完全不同,那是这组文案存在的理由。** 「它答不了」和
@@ -1075,63 +1076,63 @@ agents-known-head = "ACP 注册表快照({0},{1} 个,其中 {2} 个 khor 起得�
 # agent 会被报成全新的。协议里 `session/list` 不是必答项(必答的只有
 # new/prompt/cancel/update),注册表 2026-08-30 实测 32 个里 20 个有,
 # 所以「答不了」是常态,不是故障。
-agents-sessions-cannot = "{0} 不支持列出会话——协议里这一项是可选的,它没实现"
+agents-sessions-cannot = "{0} 不支持列出会话——协议里这一项是可选的，它没实现"
 agents-sessions-none = "{0} 说它一个会话都没有"
 # Head of the listing. 带上问的是谁,因为这条命令会起一个真的 agent 进程。
-agents-sessions-head = "{0} 有 {1} 段对话(记于 {2}):"
+agents-sessions-head = "{0} 有 {1} 段对话（记于 {2}）："
 # Nobody has ever put the question to this agent. **和「它说它没有」是
 # 两回事**——一个没被问过的 agent 报成「没有过去」,人就再也不会去问了。
-agents-sessions-unasked = "还没问过 {0}:khor agents sessions {0} --ask"
+agents-sessions-unasked = "还没问过 {0}：khor agents sessions {0} --ask"
 # The head when the answer was just taken, rather than remembered.
-agents-sessions-asked = "{0} 说它有 {1} 段对话:"
+agents-sessions-asked = "{0} 说它有 {1} 段对话："
 # `khor accounts` / `khor quota` with nothing registered.
-accounts-none = "还没登记过 API 账号(khor accounts add …)"
+accounts-none = "还没登记过 API 账号（khor accounts add …）"
 account-budget-number = "--budget 后面要跟一个数"
-account-name-ambiguous = "有不止一个账号叫 {0},用 id 指"
+account-name-ambiguous = "有不止一个账号叫 {0}，用 id 指"
 # `khor quota`'s figure column when the reading is a trouble key rather
 # than a number (`khor_node::accounts::trouble`).
-quota-trouble = "问不出来({0})"
+quota-trouble = "问不出来（{0}）"
 quota-unlimited = "不限量"
 # `khor find` 什么都没找到。
-find-none = "没找到「{0}」:会话、机器、工作区、浏览标签、设置页都没有"
+find-none = "没找到「{0}」：会话、机器、工作区、浏览标签、设置页都没有"
 # `khor import` 没有候选可列。
-import-none = "没有可导入的会话:外面开的智能体、tmux 会话和 ACP 对话都已经在列表里,或者一个也没有"
+import-none = "没有可导入的会话：外面开的智能体、tmux 会话和 ACP 对话都已经在列表里，或者一个也没有"
 # `khor quota --why`:每家每条取数策略这一回做了什么(khor_node::quota::Outcome)。
 # 策略名是标识符(statusline、oauth-usage、rollout、wham-usage),照原样打印在前面。
-quota-why-unavailable = "这台机器上用不了"
+quota-why-unavailable = "这台机器上不可用"
 quota-why-used = "用了它的读数"
-quota-why-cached = "没去问:这台机器 {0} 秒前的读数还新"
-quota-why-cooling = "没去问:上次失败了,还要歇 {0} 分钟"
-quota-why-failed = "试了,没读到({0})"
+quota-why-cached = "没去问：这台机器 {0} 秒前的读数还新"
+quota-why-cooling = "没去问：上次失败了，还要歇 {0} 分钟"
+quota-why-failed = "试了，没读到（{0}）"
 quota-no-number = "没有数"
 # A prepaid wallet reports what is left, not what was spent.
 quota-remaining = "剩 {0}"
 # `--resume` given without `--agent`. **不猜**:一个光秃秃的 id 说不出
 # 该由谁去起,拿默认的去开会开出一段新对话然后管它叫那段旧的。
-resume-needs-agent = "--resume 要和 --agent 一起用:光有 id 说不出该由哪个 agent 去续"
+resume-needs-agent = "--resume 需要和 --agent 一起使用：只有 id 无法确定由哪个 agent 续接"
 # An agent that has to run *somewhere*, and `--on` names another
 # machine. Refused out loud rather than ignored: a flag that is accepted
 # and does nothing is a session quietly opened on the wrong machine, and
 # nothing on the screen says so.
-gui-not-on-another-machine = "--gui 配 --on 只认 agent 的名字(claude、codex、登记过的),不接命令:那台机器自己去起它"
+gui-not-on-another-machine = "--gui 配 --on 只认 agent 的名字（claude、codex、登记过的），不接命令：那台机器自己去起它"
 # `--resume` names a conversation this machine's registry remembers;
 # another machine's is not on this side's list, so the pair is refused.
-resume-not-on-another-machine = "--resume 不能配 --on:要续的对话得在开它的那台机器上续"
+resume-not-on-another-machine = "--resume 不能配 --on：要续的对话得在开它的那台机器上续"
 # Said on stderr when a ticket is minted: the ticket itself goes to
 # stdout so it can be piped, and the window is something the person has
 # to know without it landing in whatever they paste.
-invite-window = "这张票 {0} 分钟内有效,过了就再出一张"
-paired-ok = "配上了: {0}。它认识的机器现在都在你的机器表里"
-nothing-to-sync = "网里只有本机,没得同步"
-sync-failed-line = "{0}: 没同步上——{1}"
-attached = "接上了: {0}(Ctrl-\\ 断开,session 不会跟着走)"
-detached = "已断开,session 还在: khor attach {0}"
-session-settled = "session 收场了: {0}"
-link-dropped = "连接断了,session 好像还在({0}): khor attach {1}"
+invite-window = "这张配对票 {0} 分钟内有效，过期后需重新生成"
+paired-ok = "配上了：{0}。它认识的机器现在都在你的机器表里"
+nothing-to-sync = "网里只有本机，没得同步"
+sync-failed-line = "{0}：没同步上——{1}"
+attached = "接上了：{0}（Ctrl-\\ 断开，session 不会跟着走）"
+detached = "已断开，session 还在：khor attach {0}"
+session-settled = "session 收场了：{0}"
+link-dropped = "连接断了，session 好像还在（{0}）：khor attach {1}"
 session-closed = "session 关了"
 retracted = "[已撤回]"
 file-chip = "[文件 {0} {1}B]"
-unknown-body = "[这一版还读不出这条:{0}]"
+unknown-body = "[当前版本无法读取这条消息：{0}]"
 
 [msg]
 # ── the watch list (关注目录) ──
@@ -1139,10 +1140,10 @@ unknown-body = "[这一版还读不出这条:{0}]"
 # face say the same sentence. Absolute, because the list is read by the
 # machine named and a relative path is relative to nothing there; no
 # `..`, because a path that walks is a path that names two places.
-watch-path-relative = "关注的目录得是绝对路径: {0}"
-watch-path-dotdot = "关注的目录里不能有 ..: {0}"
-watch-path-empty = "关注的目录不能是空的"
-watch-path-twice = "同一个目录写了两遍: {0}"
+watch-path-relative = "关注的目录必须是绝对路径：{0}"
+watch-path-dotdot = "关注的目录中不能包含 ..：{0}"
+watch-path-empty = "关注的目录不能为空"
+watch-path-twice = "目录重复：{0}"
 
 # ── the machine's own relays (自己的中继) ──
 # Refused at the one write entry (`Node::set_relays`) rather than skipped
@@ -1150,177 +1151,177 @@ watch-path-twice = "同一个目录写了两遍: {0}"
 # already failed, so a typo that is quietly dropped shows up as「有时候
 # 连不上」weeks later, pointing at the network — and the user is looking
 # at a screen that still lists the relay they typed.
-not-a-relay-url = "不是一个中继地址: {0}"
+not-a-relay-url = "不是一个中继地址：{0}"
 # 局域网发现起不来。不致命——n0 那套照常答,只是找隔壁那台还要走一趟
 # 跨洋往返;而它起不来时没有任何症状,所以这句是唯一会说话的东西。
-no-local-lookup = "局域网发现起不来"
+no-local-lookup = "局域网发现无法启动"
 # 「只用我自己那台」和一张空名单合起来是唯一一种「看着像选择、其实不是」
 # 的组合:它把机器留在没有任何中继的状态,只有打洞成了才连得上。拒绝,
 # 而不是悄悄把开关拨回去——一个会自己关掉的开关,是屏幕在谎报状态。
-relays-only-mine-needs-one = "要先加一台自己的中继,才能只用自己的"
+relays-only-mine-needs-one = "需要先添加自己的中继，才能只使用自己的中继"
 
 # ── 打开密码 (docs/MORE.md 安全) ──────────────────────────────────
 # **PIN 是每张脸都有的那把钥匙**,所以没有 PIN 就开不了锁:手机打开的
 # 网页脸没有 Touch ID 可退,一把只长在一台机器上的钥匙会把人关在别的
 # 脸外面。拒绝,而不是悄悄把开关拨回去——上面那条中继的理由,同一条。
-lock-needs-a-pin = "先设一个 PIN,才能打开这个锁"
+lock-needs-a-pin = "需要先设置 PIN，才能开启锁定"
 # 「位」说的是字符,不是数字:一个更长的口令被挡在外面,挡掉的是更强的
 # 那个答案。六是四位数的习惯要跨过去的那道坎。
 lock-pin-too-short = "PIN 至少 {0} 位"
 # 哈希本身读不出来 = khor 坏了,**不是「PIN 不对」**。合成一个词,人会
 # 拿着一个对的 PIN 一直重敲。
-lock-cant-hash = "这台机器的 PIN 记录读不了: {0}"
-lock-no-such-timeout = "没有这一档: {0}(有 {1})"
+lock-cant-hash = "无法读取这台机器的 PIN 记录：{0}"
+lock-no-such-timeout = "没有这个选项：{0}（可选 {1}）"
 # 重置身份要输机器名,而这一句由节点说、不由屏幕说:一个命令行标志加一个
 # 对话框,就是同一件不可逆的事有两套规矩,而漂掉的那一套正是没人跑的那一套。
-reset-wants-the-machine-name = "要重置身份,把机器名原样打一遍: {0}"
-cant-read-stdin = "读不了标准输入: {0}"
+reset-wants-the-machine-name = "要重置身份，需输入机器名称：{0}"
+cant-read-stdin = "无法读取标准输入：{0}"
 # 系统那张验证面板上写的那句话——**它是系统画的,不是 khor 画的**,
 # 所以它得自己说清楚是谁在问。
 lock-system-reason = "解锁 khor"
 
 # ── cli ──
-runtime-wont-start = "起不了运行时: {0}"
-which-session = "不知道汇报给哪个 session:设 KHOR_SESSION 或用 --session"
-not-a-state-word = "不是六词之一: {0}"
-unknown-verb = "不认识的动词: {0}"
-not-a-way-to-arrange = "不是一种排布: {0}。有: {1}"
-attach-needs-tty = "attach 要在终端里跑"
-attach-windows-later = "这一版还接不上(Windows 的 attach 挂账)"
-no-termios = "拿不到终端参数"
-no-raw-mode = "终端切不进原始模式"
-hook-payload-unreadable = "读不了钩子载荷: {0}"
+runtime-wont-start = "无法启动运行时：{0}"
+which-session = "不知道汇报给哪个 session：设 KHOR_SESSION 或用 --session"
+not-a-state-word = "不是六个状态词之一：{0}"
+unknown-verb = "不认识的动词：{0}"
+not-a-way-to-arrange = "不是一种排布：{0}。有：{1}"
+attach-needs-tty = "attach 需要在终端中运行"
+attach-windows-later = "当前版本不支持（Windows 上的 attach 尚未实现）"
+no-termios = "无法获取终端参数"
+no-raw-mode = "终端无法切换到原始模式"
+hook-payload-unreadable = "无法读取钩子载荷：{0}"
 
 # ── identity / tickets (net) ──
-identity-unreadable = "读身份文件失败"
-cant-make-dir-for = "创建目录失败: {0}"
-cant-write-file = "写入失败: {0}"
+identity-unreadable = "读取身份文件失败"
+cant-make-dir-for = "创建目录失败：{0}"
+cant-write-file = "写入失败：{0}"
 cant-set-permissions = "设置文件权限失败"
-identity-too-open = "身份文件权限过于开放({0}),别人能读走它冒充这台机器。\n  修:chmod 600 {1}"
-identity-corrupt = "身份文件损坏(应为 32 字节),删掉它会重新生成——\n  注意重新生成等于换一台机器,已配对的机器需要重新配对:{0}"
+identity-too-open = "身份文件权限过于开放（{0}），其他人可以读取它并冒充这台机器。\n  修复：chmod 600 {1}"
+identity-corrupt = "身份文件已损坏（应为 32 字节），删除后会重新生成——\n  注意：重新生成相当于换了一台机器，已配对的机器需要重新配对：{0}"
 not-a-machine-id-short = "这不是一个机器 id"
-not-a-ticket-base64 = "这不是一张配对票(base64 解不开)"
-not-a-ticket-content = "这不是一张配对票(内容对不上)"
+not-a-ticket-base64 = "这不是有效的配对票（无法解码 base64）"
+not-a-ticket-content = "这不是有效的配对票（内容不匹配）"
 
 # ── document store and wire (sync) ──
-cant-read = "读不了 {0}: {1}"
-cant-make-dir = "建不了目录: {0}"
-cant-write = "写不了 {0}: {1}"
-cant-finish-write = "写不完: {0}"
-cant-sync-disk = "落不了盘: {0}"
-cant-rename = "改不了名: {0}"
-outbound-too-big = "要发出去的这一段有 {0} KiB,超过配对通道单帧上限 {1} KiB。控制流是串行的,这条路只运增量——整段历史请走 ssh 那条(按文件搬,没有单帧上限)"
-inbound-too-big = "收到的这一段有 {0} KiB,超过配对通道单帧上限 {1} KiB。控制流是串行的,这条路只运增量——整段历史请走 ssh 那条(按文件搬,没有单帧上限)"
-delta-not-base64 = "这段增量不是 base64: {0}"
-version-not-base64 = "这个版本号不是 base64: {0}"
-version-undecodable = "解不出版本号: {0}"
-cant-set-peer = "设不上 peer id: {0}"
-cant-export-changes = "导不出增量: {0}"
-cant-export-snapshot = "导不出快照: {0}"
-cant-merge = "合不进来: {0}"
-cant-append = "加不进去: {0}"
-no-such-message = "没有这条: {0}"
+cant-read = "无法读取 {0}：{1}"
+cant-make-dir = "无法创建目录：{0}"
+cant-write = "无法写入 {0}：{1}"
+cant-finish-write = "写入未完成：{0}"
+cant-sync-disk = "无法写入磁盘：{0}"
+cant-rename = "无法重命名：{0}"
+outbound-too-big = "要发出去的这一段有 {0} KiB，超过配对通道单帧上限 {1} KiB。控制流是串行的，这条路只运增量——整段历史请走 ssh 那条（按文件搬，没有单帧上限）"
+inbound-too-big = "收到的这一段有 {0} KiB，超过配对通道单帧上限 {1} KiB。控制流是串行的，这条路只运增量——整段历史请走 ssh 那条（按文件搬，没有单帧上限）"
+delta-not-base64 = "这段增量不是 base64：{0}"
+version-not-base64 = "这个版本号不是 base64：{0}"
+version-undecodable = "无法解析版本号：{0}"
+cant-set-peer = "无法设置 peer id：{0}"
+cant-export-changes = "无法导出增量：{0}"
+cant-export-snapshot = "无法导出快照：{0}"
+cant-merge = "无法合并：{0}"
+cant-append = "无法追加：{0}"
+no-such-message = "没有这条：{0}"
 # 指着一枚不在的标签页(`khor_node::tabs`)。**拒绝而不是顺手建一枚**:
 # 提这个 id 的人对「现在开着什么」的印象已经旧了,底下冒出一行会把这件事盖住。
-no-such-tab = "没有这枚标签页: {0}"
+no-such-tab = "没有这个标签页：{0}"
 # `khor pin -d` / `unpin -d` 退役(docs/SHELL.md 第六轮):「置顶的目录」那一栏撤了,
 # 一个要常去的目录就是一个置顶的工作区。拒绝,退出码非 0,给出做这件事的动词。
-dir-pin-retired = "「置顶的目录」已经退役:目录现在是工作区。用 khor ws add -m {0} {1},再 khor ws pin -m {0} {1}"
+dir-pin-retired = "「置顶的目录」已经退役：目录现在是工作区。用 khor ws add -m {0} {1}，再 khor ws pin -m {0} {1}"
 # 只能登记为订阅的提供商(codex:读的是 Codex 存的 ChatGPT 登录,没有密钥可填)。
-provider-sub-only = "{0} 只能登记订阅:加 --kind sub,不填密钥"
+provider-sub-only = "{0} 只能登记订阅：加 --kind sub，不填密钥"
 # `khor import <序号|id>` 给的不是候选(已经在列表里、已经结束、或者根本没有这个会话)。
-not-a-candidate = "{0} 不在可导入的里面(khor import 看一眼现在有哪些)"
+not-a-candidate = "{0} 不在可导入的列表中（用 khor import 查看）"
 # 本机读到的订阅登录自动建成的那条账户登记的名字(docs/SHELL.md 第七轮 第 3 条)。
 # {0} 是厂商自己的叫法(Claude Code),名字之后和别的登记一样可以改。
 sub-auto-name = "{0} 订阅"
 # 删除一个置顶的标签页(`khor_node::tabs::close`)。置顶就是「别让我顺手关掉它」,
 # 所以先取消置顶才能删——窗口和 `khor tabs close` 都走这一句。
-tab-pinned = "这个标签页已置顶,先取消置顶再删除"
+tab-pinned = "这个标签页已置顶，先取消置顶再删除"
 
 # ── frames (node) ──
-cant-encode-frame = "编不出帧: {0}"
-cant-decode-frame = "解不出帧: {0}"
+cant-encode-frame = "无法编码帧：{0}"
+cant-decode-frame = "无法解码帧：{0}"
 
 # ── local hand-off (node) ──
-serve-unreachable = "递不到 serve: {0}"
-handoff-failed = "递不过去: {0}"
-cant-close-stream = "收不了尾: {0}"
-no-reply-from-serve = "读不到 serve 的答复: {0}"
+serve-unreachable = "无法连接 serve：{0}"
+handoff-failed = "转交失败：{0}"
+cant-close-stream = "无法关闭流：{0}"
+no-reply-from-serve = "无法读取 serve 的回复：{0}"
 # SHELL.md 第五轮 第 2 条: every hand-off has a deadline. {0} is the op's
 # code name (never translated), {1} seconds.
-serve-op-timed-out = "serve 在 {1} 秒内没做完 {0},先不等了"
-serve-op-late = "[{0}] {1} 超过 {2} 秒没做完,放弃并回话"
-cant-open-handoff-port = "开不了递话口: {0}"
-handoff-unreadable = "读不完递话: {0}"
-handoff-wrong-cookie = "递话的暗号对不上,重读 endpoint.json 再来"
-cant-reply = "答不回去: {0}"
-serve-no-handoff-port = "khor serve 在跑(pid {0})但没开递话口,把它升级或先停掉"
-serve-handoff-failed = "khor serve 在跑(pid {0})但递不过去: {1}"
-endpoint-file-garbled = "endpoint.json 读不懂: {0}"
+serve-op-timed-out = "serve 未在 {1} 秒内完成 {0}，已停止等待"
+serve-op-late = "[{0}] {1} 超过 {2} 秒没做完，放弃并回话"
+cant-open-handoff-port = "无法打开递话口：{0}"
+handoff-unreadable = "读不完递话：{0}"
+handoff-wrong-cookie = "递话暗号不匹配，重新读取 endpoint.json 后再试"
+cant-reply = "无法回复：{0}"
+serve-no-handoff-port = "khor serve 正在运行（pid {0}），但没有开启递话口；升级它或先停止它"
+serve-handoff-failed = "khor serve 正在运行（pid {0}），但转交失败：{1}"
+endpoint-file-garbled = "无法解析 endpoint.json：{0}"
 
 # ── the wire between machines (node) ──
-request-unreadable = "读不完请求: {0}"
-cant-write-reply = "写不出应答: {0}"
-bad-invite = "配对码不对,或已经被用过了"
+request-unreadable = "读不完请求：{0}"
+cant-write-reply = "写不出应答：{0}"
+bad-invite = "配对码无效或已被使用"
 # A separate word from the one above, because the two have different
 # fixes: a wrong or spent code means look at what you pasted, an expired
 # one means ask for another. One word for both would send people hunting
 # for a mistake they did not make. {0} is the window in minutes, taken
 # from the constant that enforces it, so the sentence cannot drift from
 # the rule.
-invite-expired = "这张票过期了(出票后 {0} 分钟内有效),让那台机器再出一张: khor invite"
-cant-burn-invite = "销不掉配对码: {0}"
-not-paired = "这台机器不在机器表里,先配对"
+invite-expired = "这张配对票已过期（出票后 {0} 分钟内有效），在那台机器上重新生成一张：khor invite"
+cant-burn-invite = "无法作废配对码：{0}"
+not-paired = "这台机器不在机器列表中，需要先配对"
 # The Ls contract (`khor_node::files`): empty asks for home, anything
 # else is spelled from the root — a relative path would be relative to
 # wherever serve happened to start.
-no-home-dir = "这台机器说不出自己的主目录"
-path-not-absolute = "路径要从根写起: {0}"
-cant-list-dir = "列不出 {0}: {1}"
-unknown-doc = "不认识这种 doc: {0}"
-unknown-action = "不认识的动作: {0}"
-serve-non-answer = "serve 答非所问: {0}"
-peer-non-answer = "对面答非所问: {0}"
-far-table-not-base64 = "对面的机器表不是 base64: {0}"
-no-roads-reported = "它没报过任何地址,等它自己来同步"
-nothing-to-move = "无事,已是同步的"
-moved-bytes = "搬了 {0} 字节"
-no-entropy = "取不到随机数: {0}"
-cant-open-stream = "开不了流: {0}"
-cant-send = "发不出去: {0}"
-no-answer = "读不到应答: {0}"
-serve-not-running-for-invite = "khor serve 没在跑——先在这台机器起 khor serve,票里要带它的地址"
-cant-make-invites-dir = "建不了邀请目录: {0}"
-cant-save-invite = "存不了配对码: {0}"
-cant-reach-named = "连不上 {0}: {1}"
-cant-reach-plain = "连不上: {0}"
-dial-timed-out = "连不上(超时)"
-inviter-unreachable-timeout = "连不上出票的那台机器(超时)"
-inviter-unreachable = "连不上出票的那台机器: {0}"
+no-home-dir = "无法确定这台机器的主目录"
+path-not-absolute = "路径必须是绝对路径：{0}"
+cant-list-dir = "无法列出 {0}：{1}"
+unknown-doc = "无法识别的 doc：{0}"
+unknown-action = "无法识别的操作：{0}"
+serve-non-answer = "serve 返回了意外的答复：{0}"
+peer-non-answer = "对方返回了意外的答复：{0}"
+far-table-not-base64 = "对面的机器表不是 base64：{0}"
+no-roads-reported = "它尚未报告任何地址，等待它主动同步"
+nothing-to-move = "已是最新，无需同步"
+moved-bytes = "传输了 {0} 字节"
+no-entropy = "无法获取随机数：{0}"
+cant-open-stream = "无法打开流：{0}"
+cant-send = "发送失败：{0}"
+no-answer = "无法读取应答：{0}"
+serve-not-running-for-invite = "khor serve 未运行——先在这台机器上启动 khor serve，配对票需要包含它的地址"
+cant-make-invites-dir = "无法创建邀请目录：{0}"
+cant-save-invite = "无法保存配对码：{0}"
+cant-reach-named = "无法连接 {0}：{1}"
+cant-reach-plain = "无法连接：{0}"
+dial-timed-out = "连接超时"
+inviter-unreachable-timeout = "无法连接出票的机器（超时）"
+inviter-unreachable = "无法连接出票的机器：{0}"
 
 # ── transfers (node) ──
-not-a-digest = "这不是一个内容摘要: {0}"
-cant-make-transfers-dir = "建不了传输目录: {0}"
-cant-record-offer = "记不了这份文件: {0}"
-offer-garbled = "传输记录读不懂: {0}"
-cant-finish-reading = "读不完 {0}: {1}"
-offer-lost = "没有这份文件的记录,可能出让方换了机器或删了它"
-offered-file-unreadable = "出让的文件读不到了({0}): {1}"
-offered-file-changed = "出让的文件被动过(大小变了),让对方重新发一次"
-offset-out-of-range = "起点越界: {0} > {1}"
-offered-file-wont-open = "出让的文件打不开: {0}"
-cant-read-slice = "读不完这一片: {0}"
+not-a-digest = "这不是一个内容摘要：{0}"
+cant-make-transfers-dir = "无法创建传输目录：{0}"
+cant-record-offer = "无法记录这个文件：{0}"
+offer-garbled = "无法解析传输记录：{0}"
+cant-finish-reading = "读不完 {0}：{1}"
+offer-lost = "没有这份文件的记录，可能出让方换了机器或删了它"
+offered-file-unreadable = "无法读取出让的文件（{0}）：{1}"
+offered-file-changed = "出让的文件已被修改（大小变了），需要对方重新发送"
+offset-out-of-range = "起点越界：{0} > {1}"
+offered-file-wont-open = "无法打开出让的文件：{0}"
+cant-read-slice = "读不完这一片：{0}"
 # Saving a file back over the wire (`khor_node::files::write_whole`).
 # **Its own sentence rather than `cant-write-file`'s**: that one is the
 # identity file's and says 写入失败, which is about this machine's own
 # store. This is about a file the person was looking at, on a machine
 # that may not be this one, and the path is the thing they need.
-cant-save-file = "存不回去 {0}: {1}"
+cant-save-file = "无法保存 {0}：{1}"
 # The whole point of the digest. **Says what happened, not what to do**
 # — what to do depends on whether the other change was theirs, and khor
 # does not know. Nothing was written, which is the part that has to be
 # unambiguous.
-file-changed-under-you = "这个文件在你编辑期间变了,没有写回去: {0}"
+file-changed-under-you = "这个文件在你编辑期间变了，没有写回去：{0}"
 # 三方合并的冲突标记上,两边各叫什么。**进的是人自己的文件**,所以用的是
 # 他刚在按钮上读到的那两个词,而不是 git 的 HEAD/branch——这里没有分支,
 # 只有「我」和「那边」。
@@ -1330,7 +1331,7 @@ merge-theirs = "那边的"
 # than stitched**: `PathSlice` carries the size and the mtime on every
 # slice exactly so a reader can notice this, and an image assembled out
 # of two different files is a picture that never existed.
-file-moved-while-reading = "这个文件正在被改,读到一半对不上了: {0}"
+file-moved-while-reading = "这个文件正在被修改，读取过程中内容发生了变化：{0}"
 # A document khor can name but could not parse. **Its own sentence
 # rather than 「这不是文本」**: that one is a fact about the bytes, this
 # is a library failing on a file it should have read, and the two send
@@ -1338,14 +1339,14 @@ file-moved-while-reading = "这个文件正在被改,读到一半对不上了: {
 # A file khor was asked to read as words and cannot. **Not the same as
 # `file-not-text`**, which is the file view's own sentence about bytes
 # on a screen; this one is the node refusing a conversion.
-not-a-text-file = "这个文件读不出文字"
-cant-read-document = "这个文档读不开: {0}"
+not-a-text-file = "无法从这个文件读取文字"
+cant-read-document = "无法打开这个文档：{0}"
 # **A scan is not an empty document.** A PDF with no font object in it
 # carries its pages as pictures — twenty of them, in the one on this
 # machine — and 「这个文档里没有内容」 would be a flat lie about it.
 # Said as a fact about the file rather than as a failure, because
 # nothing went wrong: khor reads words, and there are none to read.
-pdf-is-pictures = "这个 PDF 里是图不是文字(扫描件或者整页插图),没有可读的文字层"
+pdf-is-pictures = "这个 PDF 里是图不是文字（扫描件或者整页插图），没有可读的文字层"
 # ⚠️ **`table-cut` was deleted here on 2026-09-15** (工作区批⑤). It
 # capped a csv turned into a markdown table on the node; a csv is a text
 # file now and the table is built by the screen from the buffer it is
@@ -1358,8 +1359,8 @@ pdf-is-pictures = "这个 PDF 里是图不是文字(扫描件或者整页插图)
 # One frame is the ceiling, and the ceiling is worn where the bytes
 # land rather than only at the wire — a path that got here another way
 # must not get past it either.
-too-big-to-write = "要写的内容 {0} 字节,一次最多 {1} 字节"
-recipient-not-in-table = "收文件的机器不在机器表里: {0}"
+too-big-to-write = "要写的内容 {0} 字节，一次最多 {1} 字节"
+recipient-not-in-table = "接收方机器不在机器列表中：{0}"
 # A dial that timed out, named. The tail this line used to carry ("收下由
 # 那台机器执行") is about accepting a transfer, and all five callers are
 # plain dials — so a person attaching a terminal was being told about a
@@ -1385,26 +1386,26 @@ recipient-not-in-table = "收文件的机器不在机器表里: {0}"
 #
 # **It does not say「它刚重启过」** — this end does not know that either.
 # It says what to do if it did.
-machine-unreachable-timeout = "连不上 {0}(超时)——这边试过的路都没通;它要是刚重启过 serve,等一会儿这边会认得它的新地址"
-offerer-unreachable-timeout = "连不上出让方(超时)"
-offerer-unreachable = "连不上出让方: {0}"
-offerer-left-table = "出让方已不在机器表里"
+machine-unreachable-timeout = "无法连接 {0}（超时）——尝试过的路径都不通；如果它刚重启过 serve，稍后这边会识别它的新地址"
+offerer-unreachable-timeout = "无法连接出让方（超时）"
+offerer-unreachable = "无法连接出让方：{0}"
+offerer-left-table = "出让方已不在机器列表中"
 # Two reads of one table can straddle a removal; the second read owns
 # this word. Not recipient-not-in-table: nothing is being received.
-machine-left-table = "这台机器已不在机器表里: {0}"
+machine-left-table = "这台机器已不在机器列表中：{0}"
 # The pull's refusals. Overwriting is the one irreversible act on this
 # path, so an existing name refuses up front; and with no digest, a
 # total or mtime that moved mid-pull is two files, not one.
-dest-exists = "本地已有同名文件,先挪开: {0}"
-file-changed-mid-pull = "文件在拉取途中变了,重新拉一次"
-cant-make-files-dir = "建不了 files 目录: {0}"
-cant-mark-pulling = "记不了拉取标记: {0}"
-cant-read-partial = "读不了断点: {0}"
-cant-open-partial = "开不了断点文件: {0}"
-size-mismatch = "对面报的大小和摘要里的对不上({0} vs {1})"
-empty-slice = "对面送了个空片"
-cant-write-slice = "写不下这一片: {0}"
-digest-mismatch = "内容校验对不上(拉到的 {0}… ≠ 摘要说的 {1}…)"
+dest-exists = "本地已有同名文件，需先移走：{0}"
+file-changed-mid-pull = "文件在拉取过程中发生了变化，需要重新拉取"
+cant-make-files-dir = "无法创建 files 目录：{0}"
+cant-mark-pulling = "无法记录拉取标记：{0}"
+cant-read-partial = "无法读取断点：{0}"
+cant-open-partial = "无法打开断点文件：{0}"
+size-mismatch = "对方报告的大小与摘要不符（{0} vs {1}）"
+empty-slice = "对方发送了空的分片"
+cant-write-slice = "无法写入这一片：{0}"
+digest-mismatch = "内容校验不匹配（拉取到的 {0}… ≠ 摘要中的 {1}…）"
 # Three answers to one miss, because a miss has three causes and they
 # call for three different next moves. `no-such-transfer` is the one
 # with nothing pending behind it — a live session id handed to accept, a
@@ -1418,185 +1419,185 @@ digest-mismatch = "内容校验对不上(拉到的 {0}… ≠ 摘要说的 {1}�
 # sync round: every machine answered and it is still missing = it is
 # missing; somebody did not answer = khor does not know, and 不知道 may
 # not be painted as 没有 (docs/SESSION.md 离线不是第七个词, same rule).
-no-such-transfer = "没有这个传输: {0}"
-transfer-absent-after-sync = "没有这个传输: {0}(网里每台机器都同步过一轮了,这个号多半是错的)"
-transfer-not-synced-yet = "这笔传输还没同步到本机: {0};联系不上 {1} 台机器({2}),它可能还在那边"
-wrong-recipient = "这份文件是发给 {0} 的,这台机器不该收"
-not-a-file-path = "这不是一个文件路径: {0}"
+no-such-transfer = "没有这个传输：{0}"
+transfer-absent-after-sync = "没有这个传输：{0}（网里每台机器都同步过一轮了，这个号多半是错的）"
+transfer-not-synced-yet = "这笔传输尚未同步到本机：{0}；有 {1} 台机器无法联系（{2}），它可能还在那边"
+wrong-recipient = "这个文件是发给 {0} 的，不应由这台机器接收"
+not-a-file-path = "这不是一个文件路径：{0}"
 # 删不掉 (工作区批④). **One key for every reason**, unlike the pairs
 # above that split a refusal by whose fault it was: here the operating
 # system's own words are the whole of what anybody can act on — it does
 # not exist, it is somebody else's, the disk is read-only — and khor has
 # nothing to add to any of them.
-cant-remove = "删不了 {0}: {1}"
-cant-canonicalize = "定不下这个路径: {0}"
+cant-remove = "无法删除 {0}：{1}"
+cant-canonicalize = "无法解析这个路径：{0}"
 # 新建 / 改名撞上一个已经有的名字 (工作区第五轮). **One key for both
 # verbs**, unlike `cant-remove`'s neighbours: 建不了 and 改不了 differ in
 # what the person was doing, and this one does not — the name is taken,
 # and the next move is the same either way (换一个名字). Said before
 # anything is written, because `std::fs::rename` would have overwritten
 # it silently and answered 好了.
-name-taken = "那个名字已经有了: {0}"
+name-taken = "名称已存在：{0}"
 # 建不了目录 (工作区第五轮). `cant-remove`'s rule, from the other end:
 # the operating system's own words are the whole of what anybody can act
 # on. **Only ever one directory** — the parent missing is one of those
 # words, not a reason to go and make it.
-cant-mkdir = "建不了目录 {0}: {1}"
+cant-mkdir = "无法创建目录 {0}：{1}"
 # 改不了名 (工作区第五轮). Names the path as it was, not as it was going
 # to be: the thing still on the disk is the one a person can go and look
 # at, and the new name never existed. **Not `cant-rename`**, which is the
 # document store's own key for a file it could not move into place — one
 # word, one meaning (docs/UX.md 语料库), and a sync landing failing is
 # not somebody's file getting a new name.
-cant-move-name = "改不了名 {0}: {1}"
+cant-move-name = "无法重命名 {0}：{1}"
 # 这台机器上没有开启器 (工作区第五轮，路径与网址可点). **Names the
 # variable rather than the platform**: the answer to this sentence is to
 # set it, and a sentence that said 「这不是 Mac 也不是 Linux」 would leave
 # a person with nothing to do about it.
-no-launcher = "这台机器上没有可以打开东西的程序;用 {0} 指一个"
+no-launcher = "这台机器上没有可用的打开程序；用 {0} 指定一个"
 # Refused before the opener is even looked up: what reached here came out
 # of a model's own words. **One key for all three refusals** — a relative
 # path, a scheme that is an action rather than a page, a name that starts
 # with `-` and would arrive as a flag — because khor is saying the same
 # thing about all three, which is that it will not hand this over.
-not-openable = "这个打不开(只开绝对路径和 http/https 网址): {0}"
+not-openable = "无法打开（只支持绝对路径和 http/https 网址）：{0}"
 # The opener was there and would not start. Its own words, `cant-remove`'s
 # rule again.
-cant-launch = "打不开 {0}: {1}"
+cant-launch = "无法打开 {0}：{1}"
 
 # ── borrowing a machine's network (docs/NET.md 借网) ──
 # The tunnel carries raw bytes to a target the exit machine can reach.
 # Its refusals: an oversized target header is a malformed dialer; a
 # target the exit cannot connect to is the far net's answer, not ours.
 tunnel-target-too-long = "要连的地址太长了"
-tunnel-bad-handshake = "隧道握手读不了: {0}"
-tunnel-bad-status = "隧道回了个不认识的状态: {0}"
-tunnel-no-route = "出口连不上要去的地方: {0}"
+tunnel-bad-handshake = "无法读取隧道握手：{0}"
+tunnel-bad-status = "隧道返回了未知状态：{0}"
+tunnel-no-route = "出口无法连接目标地址：{0}"
 # The borrow row's title, and why a borrow needs a running serve: the
 # proxy is long-lived, so it must live in the process that holds the key.
 borrowing-title = "借 {0} 的网"
-borrow-needs-serve = "借网要 serve 在跑(代理口得住在常驻进程里)"
+borrow-needs-serve = "借网需要 serve 正在运行（代理口运行在常驻进程中）"
 # Same shape, same reason: the pipe to another machine's terminal lives
 # in the resident process, so a one-shot verb has nowhere to put it.
-reach-needs-serve = "接别台机器的终端要 serve 在跑(管子得住在常驻进程里)"
+reach-needs-serve = "连接其他机器的终端需要 serve 正在运行（通道运行在常驻进程中）"
 # Leaving is one act and the whole network learns it, the same way
 # joining is (docs/SHAPE.md 接入一次即在网里). The second sentence is the
 # way back, said here because the machine being removed is usually the
 # one that cannot be told anything. It names *any* machine still in the
 # network on purpose: the tombstone travels, so "one that still knows
 # it" is a place that stops existing.
-forgot = "已删除设备: {0}。要它回来:在网里任一台上 khor invite,拿票到它那台上 khor pair"
+forgot = "已删除设备：{0}。要它回来：在网里任一台上 khor invite，拿票到它那台上 khor pair"
 # `khor leave` 的三句,分开说。第一句是这件事本身,后两句是两种结局——
 # 合成一句就会把「全网都知道了」和「还有几台以为你只是离线」说成同一件事,
 # 而这两种情况剩下要做的事不一样(docs/UX.md 失败要说清是哪一种)。
-left = "已离开网络。这台机器现在不在任何网里,拿一张新票 khor pair 可以重新加入"
-left-told = "这几台收到了: {0}"
-left-untold = "这几台设备没连上,那边还会看见 {1} 离线——要在那边 khor forget {1}: {0}"
+left = "已离开网络。这台机器现在不在任何网里，拿一张新票 khor pair 可以重新加入"
+left-told = "以下设备已收到通知：{0}"
+left-untold = "以下设备未能连接，它们仍会看到 {1} 离线——需在那边运行 khor forget {1}：{0}"
 # You cannot show yourself the door: the table this would be written into
 # is the one being left, so the act has no meaning from the inside. It
 # names the verb that does the whole act instead (`Node::leave`) — a
 # refusal with nowhere to go reads as 「khor can't do this」 when what is
 # true is 「not with this word」. {0} is this machine's own name, because
 # `khor leave` wants it typed back as the confirmation.
-cant-forget-self = "这是本机——一台机器不能删除它自己。要本机离开网络: khor leave {0}"
+cant-forget-self = "这是本机——一台机器不能删除它自己。要本机离开网络：khor leave {0}"
 # `khor leave <本机>` with somebody else's name in it. Not a typo worth
 # guessing at: it is a person reaching for the other verb, so it hands
 # them that verb with the name already in it.
 # **「删除」** (2026-09-21, docs/SHELL.md 第二轮 文案):界面和 CLI 说同一个动词,
 # 而界面上那一项叫「删除」。
-leave-names-another-machine = "{0} 不是本机。要删除这台设备: khor forget {0}"
+leave-names-another-machine = "{0} 不是本机。要删除这台设备：khor forget {0}"
 # Leaving a network you were never in. Refused by name rather than
 # answered with a cheerful nothing — 「离开了」 would be a sentence about
 # an act that did not happen (`lock::set_on` refuses the same shape).
-leave-with-no-network = "这台机器还没入过网——没有网可离。要入网: khor pair <票>"
+leave-with-no-network = "这台机器还没入过网——没有网可离。要入网：khor pair <票>"
 # `khor pause` / `khor resume` (docs/MORE.md 暂停). 暂停不是离开:表还在,
 # 别人那边看见的是这台离线,本机自己照常用。
-paused = "已暂停接入。这台机器不再与别的机器同步,别的机器那边看见的是它离线;本机照常用。要恢复: khor resume"
-resumed = "已恢复接入。这台机器重新与别的机器同步,下一轮就能对上"
+paused = "已暂停接入。这台机器不再与别的机器同步，别的机器那边看见的是它离线；本机照常用。要恢复：khor resume"
+resumed = "已恢复接入。这台机器重新与别的机器同步，下一轮就能对上"
 # 问第二遍。和设置项不一样:把一个偏好设成它已经是的值,不值一句话;
 # 而对一台已经暂停的机器说「暂停」,是这个人不知道它已经停了(`lock::set_on`
 # 拒的是同一个形状)。
-already-paused = "已经是暂停的了。要恢复: khor resume"
-not-paused = "本来就没暂停。要暂停: khor pause"
+already-paused = "已经是暂停的了。要恢复：khor resume"
+not-paused = "本来就没暂停。要暂停：khor pause"
 # 按机器暂停 (SHELL.md 第五轮 第 3 条): this machine stops talking to one
 # other machine; that one keeps running and is told nothing.
-peer-paused = "已暂停和 {0} 的往来:不拨它、不接它、不和它同步;它那边照常运行。要恢复: khor resume {0}"
-peer-resumed = "已恢复和 {0} 的往来,下一轮就能对上"
-peer-already-paused = "和 {0} 的往来已经是暂停的了。要恢复: khor resume {0}"
-peer-not-paused = "和 {0} 的往来本来就没暂停。要暂停: khor pause {0}"
-peer-paused-refusal = "这台机器暂停着(本机这边暂停的),要恢复: khor resume <机器>"
+peer-paused = "已暂停和 {0} 的往来：不拨它、不接它、不和它同步；它那边照常运行。要恢复：khor resume {0}"
+peer-resumed = "已恢复和 {0} 的往来，下一轮就能对上"
+peer-already-paused = "和 {0} 的往来已经是暂停的了。要恢复：khor resume {0}"
+peer-not-paused = "和 {0} 的往来本来就没暂停。要暂停：khor pause {0}"
+peer-paused-refusal = "这台机器暂停着（本机这边暂停的），要恢复：khor resume <机器>"
 # 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
 # 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
-paired-while-paused = "这台机器已暂停接入,配对要先恢复: khor resume"
+paired-while-paused = "这台机器已暂停接入，配对要先恢复：khor resume"
 # The GUI asks for a reach from a synchronous door, so the async call
 # runs on a thread of its own; if that thread dies there is no answer to
 # report and no exception to quote — only the fact that none came.
-reach-thread-died = "接终端的那一趟没回来"
+reach-thread-died = "连接终端的请求没有返回"
 # Same shape as the reach above, for the drop that carries files to
 # another machine before it can paste anything.
-deliver-thread-died = "送文件的那一趟没回来"
+deliver-thread-died = "发送文件的请求没有返回"
 # The files got there — this is the receiving machine not saying where
 # they landed, which is what a khor from before that field on the wire
 # answers. Named as the far machine's age rather than as a failure,
 # because retrying here changes nothing and the person's next move is
 # on that machine, not this one.
-landed-unsaid = "文件送到了,但那台机器没说落在哪(它的 khor 比这台旧),所以没有路径可粘"
+landed-unsaid = "文件已送达，但那台机器没有报告保存位置（它的 khor 版本较旧），因此没有可粘贴的路径"
 # What the keeper writes about a death it watched. A process killed by a
 # signal writes nothing itself — only something standing outside can say
 # how it went, which is the keeper's whole reason to exist. Timestamped
 # because this line lands in a log read hours later, beside lines from
 # other lifetimes (账本: 报故障要带时间戳).
-serve-died-restarting = "[{0}] serve 死了({1}),{2} 秒后再起"
+serve-died-restarting = "[{0}] serve 死了（{1}），{2} 秒后再起"
 died-with-code = "退出码 {0}"
 died-by-signal = "信号 {0}"
 died-unreadably = "死因读不出来"
 # A generation change, watched from the same vantage point. The versions
 # are in the line because the log is read beside lines from other
 # lifetimes — "which khor was this" must not need cross-referencing.
-serve-swapping = "[{0}] 磁盘上的 khor 换代({1} → {2}),serve 温和重启"
+serve-swapping = "[{0}] 磁盘上的 khor 换代（{1} → {2}），serve 温和重启"
 # The gate from the 2026-08-19 incident: a 0-byte file wearing the
 # binary's name took two machines' serve down. Nothing that cannot
 # answer `version` gets to serve.
-serve-swap-refused = "[{0}] 磁盘上的 khor 换了但答不出自己的版本,不换代({1})"
+serve-swap-refused = "[{0}] 磁盘上的 khor 换了但答不出自己的版本，不换代（{1}）"
 swap-no-answer = "跑得起来但没答版本"
 # quit speaks in what happened, not what was asked: a serve that was
 # not running is worth saying out loud, or the quiet success reads as
 # "stopped something".
-quit-serve-stopped = "serve 停了"
-quit-no-serve = "serve 本来就没在跑"
-quit-hosts = "收了 {0} 个 session 宿主"
+quit-serve-stopped = "serve 已停止"
+quit-no-serve = "serve 本来就未运行"
+quit-hosts = "已停止 {0} 个 session 宿主"
 # The serve's own hearing test (批23): a long-lived endpoint can go
 # bidirectionally unreachable while its process looks perfectly healthy.
 # Every observed cure was a restart, so it prescribes itself one; the
 # keeper stands it back up with fresh ears.
-serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了,退下换一双(keeper 会再起)"
-serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任,退场"
+serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，退下换一双（keeper 会再起）"
+serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任，退场"
 # The road question (Op::Hops) never leaves the process, so a late
 # answer means iroh itself is stuck: said here, 说不出 on the card.
-serve-hops-late = "[{0}] 问 iroh 走哪条路,{1} 毫秒内没答上来,先报「说不出」:{2}"
+serve-hops-late = "[{0}] 问 iroh 走哪条路，{1} 毫秒内没答上来，先报「说不出」：{2}"
 # 76's preventive half: on a network filesystem, replacing the binary
 # can kill the running keeper on another machine (SIGBUS suspicion), so
 # the keeper re-execs from a local copy and nothing khor keeps running
 # executes off the network disk.
-serve-shielding = "[{0}] {1} 在网络盘上——keeper 搬进本地副本再跑,那边换文件砸不到这边跑着的进程"
-serve-shield-failed = "[{0}] 本地副本没做成({1}),就在原地跑"
-serve-copy-swept = "[{0}] 本地副本被清掉了(多半是 /tmp 清理器),拷一份新的交棒"
+serve-shielding = "[{0}] {1} 在网络盘上——keeper 搬进本地副本再跑，那边换文件砸不到这边跑着的进程"
+serve-shield-failed = "[{0}] 本地副本没做成（{1}），就在原地跑"
+serve-copy-swept = "[{0}] 本地副本被清掉了（多半是 /tmp 清理器），拷一份新的交棒"
 # The keeper follows its serve into a new generation by exec; this is
 # the one line it writes when that exec did not happen.
-serve-keeper-stayed = "[{0}] serve 换了新版,keeper 自己没换过去({1}),先用旧的接着看"
+serve-keeper-stayed = "[{0}] serve 换了新版，keeper 自己没换过去（{1}），先用旧的接着看"
 # 第十四轮 第 4 条:节点开起来就站到一个不会消失的目录上。装机脚本在导出
 # 目录里起 app 再把那个目录删掉,进程从此站在空处,gix 打开仓库要经过当前
 # 目录,于是一个明明是仓库的目录被回绝。说一句,好让日志里看得出站在哪。
-cwd-pinned = "站到 {0};从此读仓库不看进程是在哪儿起的"
-no-standing-dir = "说不出这条命令是在哪个目录里起的(多半是那个目录被删了);把落点写出来再来一次"
-cwd-pin-failed = "站不到 {0}({1});还站在起它的那个目录上,那个目录要是被删了,读仓库会被回绝"
-borrow-self = "这就是本机的网,不用借;要直连就直接开"
+cwd-pinned = "站到 {0}；从此读仓库不看进程是在哪儿起的"
+no-standing-dir = "说不出这条命令是在哪个目录里起的（多半是那个目录被删了）；把落点写出来再来一次"
+cwd-pin-failed = "站不到 {0}（{1}）；还站在起它的那个目录上，那个目录要是被删了，读仓库会被回绝"
+borrow-self = "这就是本机的网络，无需借网；直接打开即可"
 # A page opened in the app is a second webview parented to the window, and
 # `Window::add_child` exists on desktop alone — mobile needs a native
 # plugin adding a WKWebView or a WebView by hand (定形 单元 3/4).
 # ⚠️ Unlike the `borrow-webview-macos-only` tombstone right below, this one
 # is not reasoning from a feature flag: the API is genuinely absent there.
-page-needs-desktop = "从别台的网开网页,现在只有电脑上能用"
+page-needs-desktop = "通过其他机器的网络打开网页，目前只支持桌面端"
 # 墓碑: `borrow-webview-macos-only` ("从别台的网开网页,现在只有 mac 上能用")
 # was removed here. It refused the borrow on Linux and Windows, reasoning
 # from the Cargo feature — and the feature really is Apple-only. But the
@@ -1605,48 +1606,48 @@ page-needs-desktop = "从别台的网开网页,现在只有电脑上能用"
 # Two platforms were told no about something they could already do.
 
 # ── the session surface (node) ──
-name-not-pathable = "这个名字进不了路径: {0}"
-machine-name-not-pathable = "这个机器名进不了路径: {0}"
-no-such-machine = "机器不存在: {0}。网里现在有: {1}"
-no-such-session = "没有这个 session: {0}"
+name-not-pathable = "这个名称不能用于路径：{0}"
+machine-name-not-pathable = "这个机器名称不能用于路径：{0}"
+no-such-machine = "机器不存在：{0}。网络中现有：{1}"
+no-such-session = "没有这个 session：{0}"
 # A name nobody registered. Names what *is* registered, `no-such-machine`'s
 # rule: the commonest reason to be here is a typo, and a list of the real
 # names answers it without a second command. When nothing is registered
 # at all the CLI says so instead — 「登记过的有: 」 with nothing after it
 # is not a sentence.
-no-such-agent = "没登记过这个 agent: {0}。登记过的有: {1}"
+no-such-agent = "没登记过这个 agent：{0}。登记过的有：{1}"
 # The same refusal when the registry is empty. Its own sentence rather
 # than the one above with nothing after the colon: "you have not named
 # any yet" and "not that one" are different situations with different
 # next steps, and the first one has to say where names come from.
-no-agents-registered = "还没登记过任何 agent(用 khor agents add 登记一个)"
+no-agents-registered = "还没登记过任何 agent（用 khor agents add 登记一个）"
 # The tmux attach bridge's two refusals: a row that is not a tmux one
 # has nothing to stand a host up for, and a session the server no longer
 # lists cannot be attached — saying which is which sends the user to the
 # right place (a stale list vs a wrong click).
-not-a-tmux-row = "这不是一个能接上的 tmux 会话: {0}"
-tmux-session-gone = "那个 tmux 会话已经不在了: {0}"
-no-terminal-here = "这台机器上现在没有它的终端可接: {0}"
+not-a-tmux-row = "这不是可连接的 tmux 会话：{0}"
+tmux-session-gone = "那个 tmux 会话已经不在了：{0}"
+no-terminal-here = "这台机器上目前没有可连接的终端：{0}"
 # Marks where a tool's output was cut. **必须有这一行**——不标的截断是在
 # 谎报工具返回了什么,而人会照着那个不完整的输出下判断。
-tool-output-cut = "(输出太长,后面截掉了)"
+tool-output-cut = "（输出太长，后面截掉了）"
 cagent-allow = "允许"
 cagent-deny = "拒绝"
 cagent-denied = "用户拒绝了这次操作"
-cagent-one-turn = "上一轮还没说完"
-cagent-one-session = "这个垫片只装一个会话"
+cagent-one-turn = "上一轮尚未结束"
+cagent-one-session = "这个垫片只支持一个会话"
 cagent-not-started = "会话还没开始"
-cagent-no-pipe = "接不到 claude 的输出"
+cagent-no-pipe = "无法获取 claude 的输出"
 # A mode change the shim will not even ask claude for: the id is not
 # one of the four it listed (`cagent::MODES`).
-cagent-unknown-mode = "claude 没有「{0}」这一档"
+cagent-unknown-mode = "claude 没有「{0}」模式"
 # claude answered the mode change with an error and no words of its own.
-cagent-mode-refused = "claude 不肯换到这一档"
+cagent-mode-refused = "claude 拒绝切换到这个模式"
 # No control_response inside the wait: the change may or may not have
 # taken, and the face is told it did not — the marker follows claude's
 # word, never the asking.
-cagent-mode-unanswered = "claude 没有答复换档"
-codexagent-no-pipe = "接不到 codex 的输出"
+cagent-mode-unanswered = "claude 没有回应模式切换"
+codexagent-no-pipe = "无法获取 codex 的输出"
 codexagent-bad-answer = "codex 对 {0} 的回答不是垫片认得的形状"
 # Registering an ACP agent (批⑥, `khor_sync::agents`). The name becomes
 # the row's 类, so two of these guard a name khor already answers to —
@@ -1656,9 +1657,9 @@ codexagent-bad-answer = "codex 对 {0} 的回答不是垫片认得的形状"
 # 「记账那半只认 khor 自己认得的」is the honest half of the reason: a
 # session filed under `claude` would look covered by the claude line in
 # 用量, which counts only what the claude adaptor read off disk.
-agent-name-blank = "得给它起个名字"
-agent-name-reserved = "这个名字 khor 自己在用: {0}(claude、codex、khor、shell 都留着)"
-agent-needs-a-command = "得说清它怎么起:khor agents add <名字> -- <命令...>"
+agent-name-blank = "需要为它命名"
+agent-name-reserved = "这个名字 khor 自己在用：{0}（claude、codex、khor、shell 都留着）"
+agent-needs-a-command = "需要指定启动命令：khor agents add <名字> -- <命令...>"
 # 拿注册表快照里的一个 id 去登记(`@<id>`,或者界面上那颗「接进来」),
 # 两种失法。**从 [cli] 挪到这儿是因为它们不再只有一张脸**——2026-08-31
 # 起 `Node::known_argv` 是两张脸共用的那一个判断。
@@ -1666,14 +1667,14 @@ agent-needs-a-command = "得说清它怎么起:khor agents add <名字> -- <命�
 # 下面两句必须读起来不一样:第一句是「没这个东西」,第二句是「有,而且
 # 好好的,只是 khor 没有它的启动命令」。合成一句的话,18 个发二进制的
 # agent 会被读成「接不了」。
-agents-unknown-id = "快照里没有这个 id: {0}(khor agents known 看有哪些)"
-agents-id-not-startable = "{0} 是自己装的那一类,khor 没有它的启动命令——装好之后: khor agents add <名字> -- <命令...>"
+agents-unknown-id = "快照里没有这个 id：{0}（khor agents known 看有哪些）"
+agents-id-not-startable = "{0} 是自己装的那一类，khor 没有它的启动命令——装好之后：khor agents add <名字> -- <命令...>"
 # 续一段对话,而这段对话不在 khor 记下来的那批里。**不是「找不到」,是
 # 「没问到过」**——两张脸都拿记下来的那条记录里的目录去续(`session/load`
 # 得报出这段对话当初开在哪儿,真适配器会拒绝对不上的),所以一个没被记过
 # 的 id 缺的不是它自己,是它的地址。说清下一步是「去问那个 agent」,
 # 不然人会以为这段对话没了。
-resume-unknown-session = "没问到过这段对话: {0}——先问一次 {1}"
+resume-unknown-session = "尚未查询到这段对话：{0}——先查询一次 {1}"
 # khor 要起一个程序,而它的命令在 PATH 上找不到。
 #
 # **这句话存在的理由是它之前说的是别的**,而且是两次,同一个病灶两处
@@ -1693,8 +1694,8 @@ resume-unknown-session = "没问到过这段对话: {0}——先问一次 {1}"
 #
 # **键名不带 agent**:同一句话现在也归终端用,而一个只描述了一半用处的
 # 键名,会掩护下一个把它读窄了的人。
-command-not-found = "找不到这个命令: {0}。khor 在这条 PATH 上找过: {1}。装上它,或者设 KHOR_PATH 指给 khor"
-no-such-dir = "没有这个目录: {0}"
+command-not-found = "找不到命令：{0}。khor 在这个 PATH 中查找过：{1}。安装它，或设置 KHOR_PATH 指向它"
+no-such-dir = "没有这个目录：{0}"
 # Two machines sharing one home (a cluster's NFS export is the usual
 # way) would share one identity. Says whose it is and what to do, in
 # that order — the fix is one line and the user has to know which line.
@@ -1704,24 +1705,24 @@ no-such-dir = "没有这个目录: {0}"
 # a file that exists.
 # A fixed-target pipe could not open its stream. Only ever seen in a
 # log: the terminal protocol has no room to say it.
-tunnel-pipe-failed = "管子接不到 {0}: {1}"
-self-moved = "khor 自己的程序不在 {0} 了(升级或搬走了),重启 serve"
+tunnel-pipe-failed = "通道无法连接到 {0}：{1}"
+self-moved = "khor 程序已不在 {0}（已升级或移动），需重启 serve"
 # What the scheduler is told about itself, appended to the vendor's own
 # system prompt (docs/AGENT.md). Short on purpose: the tools carry their
 # own descriptions, and a long brief competes with the user's actual
 # request for the model's attention. The one thing prose must say is the
 # thing no tool schema can — that the machines are *somebody's*, and
 # that reading is free while moving is not.
-agent-brief = """你接在 khor 上:一张连着这个人所有机器的网。\
-khor 那组工具是你的手——devices/sessions/ls 是看,随便用;\
-open/close/tell 会在别人的机器上留下痕迹,用之前说清楚你要做什么。\
-这些机器是这个人的,不是测试环境。"""
-store-belongs-to = "这个仓是 {0} 的,这台是 {1}。共用 home 的机器各要一份:给这台设 KHOR_HOME"
+agent-brief = """你接在 khor 上：一张连着这个人所有机器的网。\
+khor 那组工具是你的手——devices/sessions/ls 是看，随便用；\
+open/close/tell 会在别人的机器上留下痕迹，用之前说清楚你要做什么。\
+这些机器是这个人的，不是测试环境。"""
+store-belongs-to = "这个仓是 {0} 的，这台是 {1}。共用 home 的机器各要一份：给这台设 KHOR_HOME"
 # A link out of an agent's own words whose scheme is not a page. Says
 # what it is rather than "refused": the address is right there and the
 # face shows it, so the person decides.
-not-a-page = "这不是一个网页地址: {0}"
-takeover-no-record = "没有它的对话记录,接管不了: {0}"
+not-a-page = "这不是一个网页地址：{0}"
+takeover-no-record = "没有它的对话记录，无法接管：{0}"
 # 接管 read backwards — a conversation moving into a terminal — when khor
 # has no way to spell that for this agent. **Not「没有它的对话记录」**,
 # which is the same refusal one direction earlier and sends a person to
@@ -1729,86 +1730,86 @@ takeover-no-record = "没有它的对话记录,接管不了: {0}"
 # (批⑥) has no vendor CLI khor knows how to resume, and that is a limit
 # in khor rather than something missing on disk. Names the two it does
 # know, so the boundary is readable instead of being a guess.
-no-terminal-form = "接不进终端: khor 只认得 claude 和 codex 在终端里接着说的写法,这行对不上它们任何一个: {0}"
+no-terminal-form = "无法转为终端：khor 只识别 claude 和 codex 在终端中续接对话的方式，这一行与两者都不符：{0}"
 wizard-codex-chat-only = "codex 这批只有对话形式"
 # The two forms a registered agent (批⑥) cannot take, each saying which
 # limit it hit rather than sharing one vague "only chat". They are
 # genuinely different walls: one is about starting it, the other about
 # handing it khor's verbs, and a person who wants the second is not
 # helped by being told about the first.
-wizard-registered-no-terminal = "登记的 agent 没有终端形式:khor 只认得 claude 和 codex 在终端里怎么开"
-wizard-registered-no-scheduler = "登记的 agent 还当不了调度员:khor 的动词是按 claude 和 codex 各自的配置递进去的,协议自己那扇门还没接"
-wizard-unknown-agent = "不认识的智能体: {0}"
-takeover-wont-die = "那边的进程没退,接管中止: {0}"
-already-a-chat = "它已经是对话形式了: {0}"
-already-a-terminal = "它已经是终端形式了: {0}"
+wizard-registered-no-terminal = "登记的 agent 没有终端形式：khor 只认得 claude 和 codex 在终端里怎么开"
+wizard-registered-no-scheduler = "登记的 agent 暂时无法担任调度员：khor 的动词按 claude 和 codex 各自的配置传入，协议本身的入口尚未接通"
+wizard-unknown-agent = "不认识的智能体：{0}"
+takeover-wont-die = "原进程未退出，接管已中止：{0}"
+already-a-chat = "它已经是对话形式了：{0}"
+already-a-terminal = "它已经是终端形式了：{0}"
 # The `_host` re-exec convention got malformed arguments — a programming
 # error on the spawning side, never something a user typed.
 host-bad-convention = "宿主参数不合约定"
-no-such-session-because = "没有这个 session: {0}({1})"
-not-a-machine-id = "这不是一个机器 id: {0}"
+no-such-session-because = "没有这个 session：{0}（{1}）"
+not-a-machine-id = "这不是一个机器 id：{0}"
 # A machine's name is a label, not a path segment and not a key, so it
 # takes any text — CJK, spaces, emoji. The one limit is how much of a
 # row it may eat, counted in characters rather than bytes because a CJK
 # name says far more per character than a Latin one.
-label-too-long = "名字太长了,最多 {0} 个字"
-cant-make-peers-dir = "建不了 peers 目录: {0}"
-cant-make-vitals-dir = "建不了 vitals 目录: {0}"
-cant-make-usage-dir = "建不了 usage 目录: {0}"
-bad-channel-name = "频道名不合法: {0}"
-cant-delete = "删不掉: {0}"
-remote-close-not-yet = "这个 session 的 home 是 {0},远程关还没有,去那台关"
+label-too-long = "名称过长，最多 {0} 个字"
+cant-make-peers-dir = "无法创建 peers 目录：{0}"
+cant-make-vitals-dir = "无法创建 vitals 目录：{0}"
+cant-make-usage-dir = "无法创建 usage 目录：{0}"
+bad-channel-name = "频道名不合法：{0}"
+cant-delete = "无法删除：{0}"
+remote-close-not-yet = "这个 session 属于 {0}，暂不支持远程关闭，需在那台机器上关闭"
 # Said about a row khor discovered by reading an agent's own files: it is
 # on the list, so "没有这个 session" would read as a bug in khor instead
 # of a boundary of it.
-not-khors-to-close = "{0} 不是 khor 起的,关不了它;去它自己的窗口里退"
+not-khors-to-close = "{0} 不是由 khor 启动的，无法关闭；在它自己的窗口中退出"
 
 # ── the live kind (node) ──
-not-a-session-id = "这不是一个 session 号: {0}"
-session-already-exists = "这个 session 已经在了: {0}"
-cant-make-session-dir = "建不了 session 目录: {0}"
-failed-is-not-reportable = "失败不由汇报定,由退出码定"
-session-over = "这个 session 已经收场了: {0}"
-cant-read-session-meta = "读不了 session 记录: {0}"
-session-meta-garbled = "session 记录读不懂: {0}"
-cant-read-session-state = "读不了 session 状态: {0}"
-session-state-garbled = "session 状态读不懂: {0}"
-cant-place = "放不下 {0}: {1}"
-wont-start = "起不来 {0}: {1}"
-cant-await-child = "等不到它结束: {0}"
-hook-payload-garbled = "钩子载荷读不懂: {0}"
+not-a-session-id = "这不是一个 session 号：{0}"
+session-already-exists = "这个 session 已经在了：{0}"
+cant-make-session-dir = "无法创建 session 目录：{0}"
+failed-is-not-reportable = "失败不由汇报定，由退出码定"
+session-over = "这个 session 已结束：{0}"
+cant-read-session-meta = "无法读取 session 记录：{0}"
+session-meta-garbled = "无法解析 session 记录：{0}"
+cant-read-session-state = "无法读取 session 状态：{0}"
+session-state-garbled = "无法解析 session 状态：{0}"
+cant-place = "无法放置 {0}：{1}"
+wont-start = "无法启动 {0}：{1}"
+cant-await-child = "无法等待它结束：{0}"
+hook-payload-garbled = "无法解析钩子载荷：{0}"
 hook-payload-no-session = "钩子载荷里没有 session_id"
 
 # ── installing the hook (node) ──
 # Refusals, never repairs: these all mean "this is not the file khor
 # thinks it is", and khor is editing something the user owns.
-settings-garbled = "{0} 读不懂,没有动它: {1}"
-settings-not-an-object = "{0} 不是一个 JSON 对象,没有动它"
-settings-hooks-not-an-object = "{0} 里的 hooks 不是一个对象,没有动它"
-settings-event-not-a-list = "{0} 里 hooks.{1} 不是一个列表,没有动它"
+settings-garbled = "无法解析 {0}，未做修改：{1}"
+settings-not-an-object = "{0} 不是 JSON 对象，未做修改"
+settings-hooks-not-an-object = "{0} 中的 hooks 不是对象，未做修改"
+settings-event-not-a-list = "{0} 中的 hooks.{1} 不是列表，未做修改"
 
 # ── this machine's face (node) ──
 # Refusals by name, never a silent fall back to the factory style: a
 # mistyped option that quietly paints the default looks exactly like the
 # setting not working, and the next thing anyone does is press it again.
-no-such-palette = "没有这套色板: {0}。有: {1}"
-not-a-palette = "一套色板是五个 #rrggbb: {0}"
-not-a-variant = "不是一种画法: {0}。有: {1}"
-not-a-face-shape = "不是一种形状: {0}。有: {1}"
+no-such-palette = "没有这套色板：{0}。有：{1}"
+not-a-palette = "一套色板是五个 #rrggbb：{0}"
+not-a-variant = "不是一种画法：{0}。有：{1}"
+not-a-face-shape = "不是一种形状：{0}。有：{1}"
 
 # ── the persistent host (node) ──
-no-host = "这个 session 没有宿主(临时的,或宿主还没起来)"
-host-file-garbled = "宿主记录读不懂: {0}"
-no-frame = "读不到帧: {0}"
-frame-too-big = "帧超限: {0}"
-half-a-frame = "帧读了一半: {0}"
-cant-find-self = "找不到自己的可执行文件: {0}"
-host-wont-start = "宿主起不来: {0}"
+no-host = "这个 session 没有宿主（临时的，或宿主还没起来）"
+host-file-garbled = "无法解析宿主记录：{0}"
+no-frame = "无法读取帧：{0}"
+frame-too-big = "帧超限：{0}"
+half-a-frame = "帧不完整：{0}"
+cant-find-self = "找不到 khor 自身的可执行文件：{0}"
+host-wont-start = "宿主无法启动：{0}"
 # `khor gui` looks for the desktop app beside itself. Naming the directory
 # it looked in (not just "not found") is what lets a person fix it in one
 # move — the fix is a copy into exactly that place.
-gui-not-installed = "桌面 app 没装在 khor 旁边({0}):把 target/release/khor-gui 拷到那里"
-gui-wont-start = "桌面 app 起不来: {0}"
+gui-not-installed = "桌面 app 没装在 khor 旁边（{0}）：把 target/release/khor-gui 拷到那里"
+gui-wont-start = "桌面 app 无法启动：{0}"
 # **This is now the "it really did hang" answer and nothing else.**
 # A host that dies on the way up leaves its own sentence behind
 # (`khor_node::host::host_error_path`) and the opener says that
@@ -1816,11 +1817,11 @@ gui-wont-start = "桌面 app 起不来: {0}"
 # failure there is, and the commonest of them (`tmux` not on a launchd
 # `PATH`) took about a millisecond. **A sentence about waiting, for
 # something that never waited.**
-host-never-ready = "宿主没在 5 秒内就位"
+host-never-ready = "宿主未在 5 秒内就绪"
 # The host process ended before it was reachable and left nothing
 # behind — the residue of the case above, kept honest: khor says the
 # host is gone rather than inventing a reason for it.
-host-died-mute = "宿主一起来就没了,没留下话"
+host-died-mute = "宿主启动后立即退出，没有留下信息"
 # The conversation host's own wait, which is thirty seconds rather than
 # five: an ACP agent has to boot and answer two requests before it can
 # say a session exists. A separate key rather than a shared one with the
@@ -1831,24 +1832,24 @@ host-died-mute = "宿主一起来就没了,没留下话"
 # **This is now the "it really did hang" answer and nothing else.**
 # Every way an agent can decline out loud has its own sentence below, so
 # reaching this one means no answer of any kind arrived.
-ghost-never-ready = "对话宿主没在 30 秒内就位"
+ghost-never-ready = "对话宿主未在 30 秒内就绪"
 # The three ways an agent can decline to open a session
 # (`khor_acp::Refusal`). One sentence each, because the remedies have
 # nothing to do with each other: log in / this agent is too new for this
 # khor / the command is wrong or it is not an ACP agent at all. Each
 # carries the agent's own words, which is evidence and not the sentence
 # — an agent may say nothing at all, and 「起不来: 」 is not a message.
-agent-wants-a-login = "这个 agent 要先登录才能开会话(它说: {0})"
+agent-wants-a-login = "这个 agent 需要先登录才能开始会话（它的提示：{0}）"
 # An agent has to run beside a khor, and a satellite has none: what
 # `open --on` reaches there over ssh is a shell.
-agent-not-on-a-satellite = "{0} 是附属机器,上面没有 khor,起不了 agent;开终端可以"
+agent-not-on-a-satellite = "{0} 是附属机器，上面没有 khor，无法启动 agent；可以打开终端"
 # Registering an API account (`Node::register_account`). 拒的都拒在名字
 # 上:少了什么就说少了什么,不替人猜。
-account-name-blank = "得给这个账号起个名字"
+account-name-blank = "需要为这个账号命名"
 account-key-blank = "密钥是空的"
-account-needs-address = "new-api 每个站地址不同,得给它的地址"
-account-address-bad = "地址要以 http:// 或 https:// 开头: {0}"
-account-budget-bad = "预算得是个正数"
+account-needs-address = "每个 new-api 站点的地址不同，需要填写地址"
+account-address-bad = "地址要以 http:// 或 https:// 开头：{0}"
+account-budget-bad = "预算必须是正数"
 # ── 订阅这一类的五条拒绝 ─────────────────────────────
 # 2026-09-07 用户:「现在的登记里面,还应该能够登记订阅。」
 #
@@ -1858,7 +1859,7 @@ account-budget-bad = "预算得是个正数"
 # 预算就拒掉,**而不是默默丢掉**:默默丢掉的那一版,人粘完一把密钥、看见
 # 「登记成功」,而那把密钥哪儿都没去。
 # {0} 是那家工具的名字(Claude Code、Codex,docs/SHELL.md 第九轮)。
-account-sub-takes-nothing-else = "订阅读的是这台机器上 {0} 的登录,不收密钥、地址或预算"
+account-sub-takes-nothing-else = "订阅读的是这台机器上 {0} 的登录，不收密钥、地址或预算"
 # 登记订阅时这台机器根本没登录过 Claude Code。**当场拒掉。**
 #
 # 这是登记方唯一能**当场证伪**的一件事(问一次本地凭据,不出网)。放过去的
@@ -1866,59 +1867,59 @@ account-sub-takes-nothing-else = "订阅读的是这台机器上 {0} 的登录,�
 # 只能把它删掉重来——一句验不了的断言写进复制文档,错在哪要在另一台机器的
 # 屏幕上才显形。
 # {0} 工具名,{1} 让它登录的那条命令(claude、codex)。
-account-sub-no-login = "这台机器上没有 {0} 登录,登记不了订阅——先跑一次 {1}"
+account-sub-no-login = "这台机器上没有 {0} 登录，无法登记订阅——先运行一次 {1}"
 # 同一台机器上的第二条订阅。一台机器一份凭据,所以第二条只会是两行一模一样
 # 的数——那正是这一批要消灭的重复,只是换了件衣服由人手动造出来。
-account-sub-already-here = "这台机器上的订阅已经登记过了: {0}"
+account-sub-already-here = "这台机器上的订阅已经登记过了：{0}"
 # 这家没有订阅可读。**认识的那张单子写在句子里**,和 `no-such-provider` 同一
 # 条规矩:拒绝要说得出还剩什么可选。今天单子上只有 claude;codex 那档接上来
 # 是往单子里加一个词,不是改这句话的形状。
-provider-has-no-sub = "{0} 没有可读的订阅;有订阅的是: {1}"
+provider-has-no-sub = "{0} 没有可读的订阅；有订阅的是：{1}"
 # `--kind` 的词。**它和「提供商」是两条轴**:bill 是你填过密钥的账户,
 # sub 是那台机器上已经登录的会话——把订阅做成一个 provider 变体的话,
 # 以后每加一家就要加一对(openai / openai-sub),这句话就是那条轴的入口。
-no-such-kind = "不认识这种登记: {0}。可以是 bill(按量计费)或 sub(订阅)"
+no-such-kind = "不认识这种登记：{0}。可以是 bill（按量计费）或 sub（订阅）"
 # 改一个账户时想换密钥,而密钥不在这台机器上(`Node::update_account`)。
 #
 # **拒掉,而不是把名字和预算改了、悄悄把新密钥丢掉。** 密钥只写在这个账户的
 # 归属机器上——那正是「密钥不出这台机器」这个设计的形状。要是这里默默不写,
 # 屏幕上会显示改成功了,而下一次读还是用旧密钥:一次「做了但没变化」,
 # 而且是在人最不会怀疑的那一处(他刚粘过一把新密钥)。
-account-key-elsewhere = "{0} 的密钥不在这台机器上,换密钥要去它那台"
-no-such-account = "没登记过这个账号: {0}"
-no-such-provider = "不认识这家: {0}。认识的有 newapi、claude、openai、deepseek、moonshot、moonshot-cn、openrouter、codex"
-cant-make-keys-dir = "建不了密钥目录: {0}"
+account-key-elsewhere = "{0} 的密钥不在这台机器上，需要在保存密钥的机器上更换"
+no-such-account = "没登记过这个账号：{0}"
+no-such-provider = "不支持这家提供商：{0}。支持的有 newapi、claude、openai、deepseek、moonshot、moonshot-cn、openrouter、codex"
+cant-make-keys-dir = "无法创建密钥目录：{0}"
 # Resuming a vendor session that another process is running right now
 # (`Node::reopen_gui_as`). 说清是谁在跑、去哪接着说:the alternative it
 # refuses is a second agent on the same transcript, and a row whose
 # word is whichever of the two spoke last.
-resume-running-elsewhere = "这段对话正在别的进程里跑着(pid {0}),不能再起一份;去那边接着说,或者先退出它"
-agent-speaks-another-acp = "这个 agent 说的 ACP 是第 {0} 版,khor 说的是第 1 版"
-agent-wont-talk = "这个 agent 没起来,或者它不说 ACP: {0}"
-host-gone = "宿主没了——session 可能已收场,看 khor sessions"
-cant-open-pty = "开不了 PTY: {0}"
-child-has-no-pid = "孩子没有 pid"
-cant-read-pty = "读不了 PTY: {0}"
-cant-write-pty = "写不了 PTY: {0}"
-cant-listen-loopback = "听不了本机口: {0}"
-wrong-cookie = "暗号不对"
-host-child-wait = "等不到孩子结束: {0}"
+resume-running-elsewhere = "这段对话正在另一个进程中运行（pid {0}），不能再启动一份；在那边继续，或先退出它"
+agent-speaks-another-acp = "这个 agent 说的 ACP 是第 {0} 版，khor 说的是第 1 版"
+agent-wont-talk = "这个 agent 未能启动，或者它不支持 ACP：{0}"
+host-gone = "宿主已退出——session 可能已结束，用 khor sessions 查看"
+cant-open-pty = "无法打开 PTY：{0}"
+child-has-no-pid = "子进程没有 pid"
+cant-read-pty = "无法读取 PTY：{0}"
+cant-write-pty = "无法写入 PTY：{0}"
+cant-listen-loopback = "无法监听本机端口：{0}"
+wrong-cookie = "暗号不正确"
+host-child-wait = "无法等待子进程结束：{0}"
 
 # ── the web face (khor-web) ──
 # 拒绝的话要说清「怎么才对」,因为读到它的人多半在另一台机器上,
 # 手边没有这台机器的终端——只说「不行」等于让他回去猜。
-web-cant-listen = "网页脸起不来,{0} 口占着了: {1}。换一个口:设 KHOR_WEB_PORT 再 khor serve"
-web-no-such-page = "网页脸没有这一页: {0}"
-web-bad-host = "网页脸只认地址,不认名字,而这个请求报的是「{0}」。\n  用 khor web 打印的那个链接;要是你自己搭了反向代理,那条路这一版不支持"
-web-bad-origin = "这个请求是另一个页面({0})发的,网页脸只答自己那一张"
-web-no-key = "这个链接没带密钥。在那台机器上跑 khor web,用它打印的链接打开"
-web-wrong-key = "密钥不对。多半是那台机器换过密钥了——旧链接就此作废,跑一次 khor web 拿新的"
-web-no-key-yet = "这台机器还没有网页脸的密钥(serve 没起来过?)。先 khor serve,再 khor web"
-web-key-empty = "网页脸的密钥文件是空的: {0}。删掉它,重启 serve 会重新发一把"
+web-cant-listen = "网页脸无法启动，端口 {0} 已被占用：{1}。换一个端口：设置 KHOR_WEB_PORT 后再运行 khor serve"
+web-no-such-page = "网页脸没有这一页：{0}"
+web-bad-host = "网页脸只认地址，不认名字，而这个请求报的是「{0}」。\n  用 khor web 打印的那个链接；要是你自己搭了反向代理，那条路这一版不支持"
+web-bad-origin = "这个请求是另一个页面（{0}）发的，网页脸只答自己那一张"
+web-no-key = "这个链接没有包含密钥。在那台机器上运行 khor web，用它输出的链接打开"
+web-wrong-key = "密钥不正确。可能那台机器已重新生成密钥——旧链接已失效，运行一次 khor web 获取新链接"
+web-no-key-yet = "这台机器还没有网页脸的密钥（serve 从未启动过？）。先运行 khor serve，再运行 khor web"
+web-key-empty = "网页脸的密钥文件为空：{0}。删除它后重启 serve，会重新生成密钥"
 # The upload cap's refusal ({0} is the cap in MB). It names the limit
 # and the way around it — bigger things ride `khor send` with a real
 # path on the machine that has them, not a browser upload.
-upload-too-big = "文件太大:网页脸的上传上限是 {0}MB。更大的用那台机器上的 khor send"
+upload-too-big = "文件太大：网页脸的上传上限是 {0}MB。更大的用那台机器上的 khor send"
 # A malformed upload request — the two query arguments are the whole
 # contract, and a missing one is the caller's bug said plainly.
 upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两个参数"
@@ -1926,48 +1927,48 @@ upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两�
 # sits behind the key now). It names the way in AND the promise — open
 # the printed link once, this browser is remembered from then on — so
 # the long ?k= reads as a one-time step, not a toll.
-web-door-shut = "这个地址要密钥。在那台机器上跑 khor web,用它打印的链接打开一次,这个浏览器之后就记住了"
+web-door-shut = "这个地址需要密钥。在那台机器上运行 khor web，用它输出的链接打开一次，之后这个浏览器会记住"
 # ── satellites (附属机器批) ──
 # ssh itself would not start — an environment problem, not the host's.
-ssh-wont-run = "跑不了 ssh: {0}"
+ssh-wont-run = "无法运行 ssh：{0}"
 # The reach failure carries ssh's own words: BatchMode makes password
 # prompts fail fast, and ssh's sentence is what tells "no route" from
 # "wants a password" — khor must not paraphrase a diagnosis it did not
 # make.
-sat-cant-reach = "ssh 够不着 {0}(要求免密):{1}"
+sat-cant-reach = "ssh 无法连接 {0}（需要免密登录）：{1}"
 # The identity rule: khor reads known_hosts, never keyscans — only the
 # trust the user already extended counts, so the fix is theirs to do
 # once by hand.
-sat-not-in-known-hosts = "known_hosts 里没有 {0} 的公钥。先自己 ssh 连它一次(把指纹认下来),再回来领"
+sat-not-in-known-hosts = "known_hosts 里没有 {0} 的公钥。先自己 ssh 连它一次（把指纹认下来），再回来领"
 # The sponsor gate on relayed readings: one row, one speaker — a second
 # machine answering for somebody else's satellite would be a staler
 # second voice on the same row.
-not-my-satellite = "{0} 不是这台机器领的卫星,它的读数归它的 sponsor 说"
+not-my-satellite = "{0} 不是这台机器领的卫星，它的读数归它的 sponsor 说"
 # The gap before the first sample lands: an honest "not yet", never a
 # row of zeros dressed as a reading.
-sat-not-sampled-yet = "还没采到它的读数(sponsor 每分钟采一轮)"
+sat-not-sampled-yet = "还没采到它的读数（sponsor 每分钟采一轮）"
 # A satellite row with no ssh destination on record: adopted by an
 # older khor, or the register lost — either way the fix is re-adopting.
-sat-no-ssh-host = "{0} 是卫星,但表里没有它的 ssh 地址;在 sponsor 那台上重新 adopt 一次"
+sat-no-ssh-host = "{0} 是卫星，但表里没有它的 ssh 地址；在 sponsor 那台上重新 adopt 一次"
 # The file push needs the sponsor's own scp; said with the sponsor's
 # name so the person knows exactly which machine to walk to (一期单
 # sponsor 的单点语义,说破不绕).
-sat-send-elsewhere = "{0} 是经 {1} 说话的卫星;发文件要在 {1} 那台上 khor send"
+sat-send-elsewhere = "{0} 是经 {1} 说话的卫星；发文件要在 {1} 那台上 khor send"
 # **Refused rather than done weakly.** Saving anywhere else in khor
 # holds one promise: the file you are replacing is still the file you
 # read, or nothing is written (`files::write_whole`). Over ssh that
 # 卫星上没有 khor 能算的那种摘要,所以要存,得让**那边**自己比对
 # (工作区批7)。剩下的唯一挡路的事是那台机器连算摘要的命令都没有:
 # sha256sum 或 shasum,再加一个 base64。没有就不写,也不猜。
-sat-no-tools = "{0} 上没有 sha256sum/shasum 或 base64,存下去要靠它自己比对手里这份,比不了就不写"
+sat-no-tools = "{0} 上没有 sha256sum/shasum 或 base64，无法校验写入的内容，因此不写入"
 # What moved, plainly — no offer, no 待批: the far side has no khor to
 # ask, so the bytes just went (to its home directory).
-sat-sent = "送到了 {0} 的主目录,{1} 字节"
-web-key-too-open = "网页脸的密钥权限过于开放({0}),同一台机器上别人能读走它、当你用。\n  修:chmod 600 {1}"
+sat-sent = "已发送到 {0} 的主目录，{1} 字节"
+web-key-too-open = "网页脸的密钥权限过于开放（{0}），同一台机器上的其他用户可以读取并冒用它。\n  修复：chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
-web-face-here = "网页脸在这儿,用手机或者别的电脑打开:"
-web-face-key-note = "链接里带着密钥,别往同步的文档里贴。换一把:khor web --new"
-web-face-rotated = "换了一把新密钥,之前发出去的链接全都作废了。"
+web-face-here = "网页脸地址如下，用手机或其他电脑打开："
+web-face-key-note = "链接中包含密钥，不要粘贴到会同步的文档中。重新生成：khor web --new"
+web-face-rotated = "已重新生成密钥，之前发出的链接全部失效。"
 # 借网在网页脸上做不到,而它做不到的方式很坑:借到的是 khor 那台机器上的
 # 一个本地代理口,只有把浏览器整个指过去才用得上——桌面 app 能给窗口设代理,
 # 一张网页给不了自己设。所以这里必须是一句拒绝,不能是「开了但什么也没发生」
@@ -1976,11 +1977,11 @@ web-face-rotated = "换了一把新密钥,之前发出去的链接全都作废�
 # 还拖了一句「列表和置顶在这儿是好用的」当安慰——三样都是这仓文案判据明写着
 # 不许说的:实现、原因、以及没人要的安慰。**一个人在这儿要的只有一件事:
 # 去哪儿做得成。**
-web-borrow-needs-app = "借网请在桌面 app 里用"
-web-face-not-serving = "serve 没在跑,所以现在没人在听这个地址。先 khor serve"
+web-borrow-needs-app = "借网只能在桌面 app 中使用"
+web-face-not-serving = "serve 未运行，目前没有进程在监听这个地址。先运行 khor serve"
 # serve 活着但脸没起来——和上一条分开,因为该做的事不一样:上一条是「去起 serve」,
 # 这一条是「去看 serve 的输出,那个口八成被占了」。合成一句会把人支去做错的事。
-web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条链接发出去也是打不开的。\n  两种常见原因:那个口被别的东西占着(看一眼 serve 的输出,或设 KHOR_WEB_PORT 换口),\n  或者系统防火墙没放行 khor——macOS 第一次会弹框问「是否允许接受传入连接」,\n  点过「拒绝」或者没人在跟前点,它就会像这样:握手连得上,数据一个字节也不给"
+web-face-down = "serve 在跑，但 {0} 这个地址问不出话来，所以这条链接发出去也是打不开的。\n  两种常见原因：那个口被别的东西占着（看一眼 serve 的输出，或设 KHOR_WEB_PORT 换口），\n  或者系统防火墙没放行 khor——macOS 第一次会弹框问「是否允许接受传入连接」，\n  点过「拒绝」或者没人在跟前点，它就会像这样：握手连得上，数据一个字节也不给"
 # A machine running an older khor answers the process-top / CPU-day
 # op with Refused. Said as a fact about its version, never as "no
 # processes": the empty face is the other reading, and it points at a
@@ -1995,14 +1996,14 @@ web-face-down = "serve 在跑,但 {0} 这个地址问不出话来,所以这条�
 # turned one unreadable word into a whole broken op. A guess that is
 # right about the cause can still send the reader to fix the wrong
 # thing.
-load-predates = "那边的 khor 版本旧,还报不了进程和 CPU 走势"
+load-predates = "那台机器上的 khor 版本较旧，无法报告进程和 CPU 趋势"
 # What the far side actually said. Its own words rather than a guess at
 # what they mean: a refusal that reaches here with a reason in it is the
 # one case where the machine on the other end has already answered the
 # question, and translating that answer into a sentence about its
 # version is how a working machine gets blamed for a frame it merely
 # could not read.
-load-refused = "那台机器没接这次读数:{0}"
+load-refused = "那台机器拒绝了这次读取：{0}"
 # ⚠️ **`workspaces-predates` / `workspaces-refused` were deleted here on
 # 2026-09-14** (工作区批①). They said a machine could not list its
 # workspaces, and nothing asks a machine that any more: the list is a
@@ -2014,7 +2015,7 @@ load-refused = "那台机器没接这次读数:{0}"
 # path on another machine is probed with `Ls`, and that machine's own
 # words about why it could not list it are better than this one
 # (the `load-*` pair's lesson above).
-ws-not-a-dir = "这不是一个目录:{0}"
+ws-not-a-dir = "这不是一个目录：{0}"
 # A path that is not inside any checkout, asked a git question. **Not
 # an error about khor** — it is a fact about where the file is, and the
 # same sentence covers both「你打开的不是仓库」and「这个文件在仓库外」.
@@ -2026,14 +2027,14 @@ no-checkout = "这个路径不在 git 仓库里"
 # Split from each other on the `load-*` pair's measured lesson: a
 # refusal that carries words repeats them, and only a wordless one gets
 # blamed on the version.
-git-predates = "那边的 khor 版本旧,读不了 git"
-git-refused = "那台机器没接这次 git:{0}"
+git-predates = "那台机器上的 khor 版本较旧，无法读取 git"
+git-refused = "那台机器拒绝了这次 git 请求：{0}"
 # An older khor asked to save a file. **Only the wordless refusal gets
 # this** (the `load-*` pair's measured lesson): a refusal that carries
 # words is that machine's own answer about that path, and blaming its
 # version would send somebody to upgrade a machine that was telling
 # them their file had changed.
-write-predates = "那边的 khor 版本旧,存不回去"
+write-predates = "那台机器上的 khor 版本较旧，无法保存"
 # VS Code on a machine (工作区批5). **Says what is missing, not what to
 # do about it**: khor does not ship VS Code and telling somebody to go
 # install it is not khor's sentence to write — the button simply is not
@@ -2041,20 +2042,20 @@ write-predates = "那边的 khor 版本旧,存不回去"
 no-vscode = "那台机器上没有 VS Code"
 # An older khor asked to open an editor. Only the wordless refusal gets
 # this, the `load-*` pair's rule.
-code-predates = "那边的 khor 版本旧,开不了 VS Code"
-cant-start-vscode = "起不了 VS Code 的网页脸: {0}"
+code-predates = "那台机器上的 khor 版本较旧，无法打开 VS Code"
+cant-start-vscode = "无法启动 VS Code 网页版：{0}"
 # `serve-web` prints where it listens and khor reads that line. Both of
 # these are that line not arriving, and they are split because the next
 # move differs: no pipe at all is khor's own bug, a pipe that stayed
 # quiet is usually the first run still fetching 640 MB.
-no-vscode-output = "VS Code 起来了但读不到它的输出"
-vscode-never-answered = "VS Code 一直没说它听在哪儿"
+no-vscode-output = "VS Code 已启动，但无法读取它的输出"
+vscode-never-answered = "VS Code 始终没有报告监听地址"
 # `khor config` 的两种拒绝 (docs/MORE.md 设置)。**分成两句,因为它们把人
 # 送去两个地方**:第一句是「没有这一项」,下一步是去看有哪些项;第二句是
 # 「这一项不收这个值」,下一步是从它自己那几个值里挑一个。合成一句的话,
 # 打错值的人会以为整个设置项都不存在。
-config-no-such-key = "没有这个设置项: {0}(khor config list 列全部)"
-config-no-such-value = "{0} 收不了「{1}」,它收 {2}"
+config-no-such-key = "没有这个设置项：{0}（khor config list 列全部）"
+config-no-such-value = "{0} 不接受「{1}」，可选值：{2}"
 
 [gui]
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
@@ -2066,13 +2067,13 @@ window-close = "关闭窗口"
 search-all = "搜全部"
 find-everything = "搜索全部"
 find-hint = "会话、机器、工作区、标签页、设置页"
-find-nothing = "什么都没找到"
+find-nothing = "未找到结果"
 sessions-tab = "会话"
 new-session = "新会话"
 # Which machine the session is born on — this one first, then every
 # paired machine. The directory, its completions and the agent all become
 # that machine's the moment one is picked.
-new-session-machine = "在哪台"
+new-session-machine = "目标机器"
 # The strip of open sessions over the pane (aria name): the sessions
 # a person has open, iTerm's arrangement.
 session-tabs = "打开的会话"
@@ -2082,9 +2083,9 @@ rail-more = "更多"
 # The rail's sixth landing: registered API accounts as rings. 「额度」
 # not 「用量」— `khor usage` (花了多少) already owns that word.
 accounts-tab = "额度"
-accounts-empty = "还没登记过 API 账号——登记一个,它用了多少就画在这儿"
+accounts-empty = "还没有登记 API 账号。登记后，用量会显示在这里"
 accounts-register = "登记"
-accounts-provider = "哪家"
+accounts-provider = "服务提供商"
 accounts-provider-newapi = "new-api 站"
 accounts-provider-claude = "Claude API"
 accounts-provider-openai = "OpenAI API"
@@ -2097,14 +2098,14 @@ accounts-provider-codex = "Codex"
 # 读订阅登录的那家工具的名字——专名,照厂商的写法(第九轮)。填进 accounts-trouble-*、
 # accounts-sub-note 的 {0}。Codex 就用 accounts-provider-codex:同一段里不许两个键一句话。
 vendor-claude = "Claude Code"
-accounts-name = "叫什么"
+accounts-name = "账号名称"
 accounts-address = "地址"
 accounts-key = "密钥"
 # Said under the key box before a secret is pasted: where it goes.
-accounts-key-stays = "密钥只留在这台机器上,别的机器读这台读到的数。"
+accounts-key-stays = "密钥只保存在这台机器上，其他机器读取的是这台机器的读数。"
 # …and which key can read usage at all: both vendors' usage reports are
 # organisation-level admin calls; a plain API key cannot read them.
-accounts-needs-admin = "这家读用量要 admin 密钥,普通 API 密钥读不到。"
+accounts-needs-admin = "读取这家的用量需要 admin 密钥，普通 API 密钥无法读取。"
 # 编辑框里那一格:这个账户**实际**是按什么单位计的。
 #
 # 2026-09-07 用户裁,原话:「new-api 等 api 平台返回的一般不是准的。他说 usd,
@@ -2132,11 +2133,11 @@ accounts-unit = "单位"
 #
 # 符号本身不进这句文案,是当参数递进来的——`$` 是记号不是词,和 `·`、`¥` 一样,
 # 这个仓的规矩是记号不进目录(它在每一种语言里都是同一个记号,没有可译的东西)。
-accounts-unit-blank = "留空就用 {0}"
+accounts-unit-blank = "留空则使用 {0}"
 accounts-budget = "每月预算"
-accounts-budget-hint = "不填就只记数,不画环"
-accounts-no-budget = "没定预算,只记数"
-accounts-state = "怎么了"
+accounts-budget-hint = "不填则只记录用量，不显示进度环"
+accounts-no-budget = "未设预算，只记录用量"
+accounts-state = "账号状态"
 accounts-spent = "已用"
 accounts-of = "{0} / {1}"
 accounts-unlimited = "不限量"
@@ -2187,8 +2188,8 @@ accounts-models = "模型"
 # 行名挤断了(实测),而且它说的是「谁读的 + 多久以前」——那是**卡头**那一格的活,
 # 行上再说一遍就是同一个事实在一屏里说两处。
 accounts-just-now = "刚刚"
-accounts-read-here = "这台机器刚读的"
-accounts-read-from = "{0} 读的,{1} 前"
+accounts-read-here = "本机刚刚读取"
+accounts-read-from = "{0} 读取于 {1}前"
 # 这两句 2026-09-07 从账户事实栏搬到了**卡头右上**,和机器卡放同一件事的
 # 那个座位对齐。
 #
@@ -2225,7 +2226,7 @@ accounts-read-from = "{0} 读的,{1} 前"
 #
 # **不复用 `forget-machine-confirm`**(2026-09-07 领队裁):离开网络和撤掉一份
 # 登记不是一件事,一句话套两处,其中一处一定读起来不对。
-accounts-remove-confirm = "每台机器都不再有它,密钥得去它那台删"
+accounts-remove-confirm = "所有机器都会移除这个账号；密钥需要在保存它的机器上删除"
 # 右键菜单的第二项。改名字、地址、预算,以及换一把密钥;**厂商不给改**——
 # 它决定这个账户怎么被读,改它等于拿一个旧 id 登记另一个账户。
 accounts-edit = "编辑"
@@ -2237,7 +2238,7 @@ accounts-edit = "编辑"
 # 代价是最高的:人刚粘过一把新密钥,最不会怀疑这一处。
 #
 # 「一档接不上不会变成没有值,它会变成旁边那一档」——这里旁边那一档是「清空」。
-accounts-key-keep = "留空就不换密钥;换密钥只能在存着它那台机器上"
+accounts-key-keep = "留空则不更换密钥；只能在保存密钥的机器上更换"
 
 # DeepSeek / Moonshot 的事实栏那一行:这两家的端点只报一个余额,没有已用、
 # 没有上限、也没有按天的数,所以那张卡右边只有一行数字。
@@ -2249,22 +2250,22 @@ accounts-key-keep = "留空就不换密钥;换密钥只能在存着它那台机�
 # 而解释实现的句子正是这页删过一轮的那一类。
 accounts-balance-only = "只报余额"
 # The trouble keys (`khor_node::accounts::trouble`), one sentence each.
-accounts-trouble-key-refused = "密钥被拒了"
-accounts-trouble-unreachable = "连不上"
-accounts-trouble-unreadable = "读不懂它的回答"
-accounts-trouble-cooling = "刚失败过,歇一会再问"
+accounts-trouble-key-refused = "密钥被拒绝"
+accounts-trouble-unreachable = "无法连接"
+accounts-trouble-unreadable = "无法解析返回的数据"
+accounts-trouble-cooling = "刚刚失败，稍后重试"
 accounts-trouble-no-key = "那台机器上没有这个账号的密钥"
-accounts-trouble-no-reading = "那台机器还没答过"
-accounts-trouble-gateway-too-old = "这个 new-api 站太老,没有 /api/usage/token/(要 v0.9 以上;耗尽的令牌要 v0.10.8 以上才读得到)"
-accounts-trouble-unknown-provider = "这台 khor 不认识这家,升级它才读得到"
+accounts-trouble-no-reading = "那台机器尚未回应"
+accounts-trouble-gateway-too-old = "这个 new-api 站点版本过旧，没有 /api/usage/token/（需要 v0.9 以上；已用尽的令牌需要 v0.10.8 以上才能读取）"
+accounts-trouble-unknown-provider = "这台机器上的 khor 不支持这家提供商，升级后才能读取"
 # 订阅读不出来的两种,**两句话而不是一句**:补法不是同一件事。一句是那台
 # 机器压根没登录过 Claude Code,一句是登录过、凭据过期了。khor 不替人续签
 # (`QuotaTrouble::Stale`:那会是 khor 冒充 Claude Code 去铸令牌),所以两边
 # 的落点都是「去那台机器上跑一次 claude」,而**说清是哪一种,是这句话全部
 # 的价值**——没登录的人要去登录,过期的人只要跑一次。
 # {0} 工具名(Claude Code、Codex),{1} 那条命令(claude、codex)——第九轮起不止一家。
-accounts-trouble-no-login = "那台机器上没有 {0} 登录"
-accounts-trouble-login-stale = "那台机器的 {0} 登录过期了,去它那儿跑一次 {1}"
+accounts-trouble-no-login = "那台机器上没有登录 {0}"
+accounts-trouble-login-stale = "那台机器上的 {0} 登录已过期，在那台机器上运行一次 {1}"
 # ⚠️ 墓碑:accounts-subscription(「Claude Code 订阅」),探测出来的那一行的名字。
 # 2026-09-22 退役(docs/SHELL.md 第七轮 第 3 条):零配置的第一屏现在靠节点自动登记
 # 那条订阅(`Node::adopt_subscriptions`),名字是 [msg] 里的 sub-auto-name,
@@ -2296,7 +2297,7 @@ quota-kind-bill = "计费"
 # 装饰**:一个人看见「登记」却没有地方填密钥,得知道数是从哪来的——和填
 # 密钥前那两句(`accounts-key-stays`)是同一笔交代,方向相反。
 # {0} 是选中的那家工具名(Claude Code、Codex)。
-accounts-sub-note = "订阅读这台机器上 {0} 的登录,不用填密钥"
+accounts-sub-note = "订阅读取这台机器上 {0} 的登录信息，无需填写密钥"
 quota-by = "提供商"
 # 来源 = **这一行的读数从哪来**,每行只有一个值:
 # 订阅行是那台机器的名字(今天只有本机,将来别的机器的 Claude Code 登录跨帧
@@ -2319,16 +2320,19 @@ quota-from-khor = "khor 登记"
 # 信用额(Anthropic 的 usage credits):套餐窗口用满之后按 API 价从预充值里扣。
 # **它不是窗口**——窗口是一段时间的比例、会自己回满,这是钱、不会回满、也没有
 # 重置时刻。所以它只进详情,不上环、不进列表右边那个汇总。
-# **这四个是英文,而且是故意的**(2026-09-06 用户裁):「关着」不是常见的中文
-# app 说法,该英文的地方就英文。这块只留数和状态词,一句解释都没有——
-# 「套餐用满后按 API 价从这里扣」这类话删掉了,它解释的是实现。
-quota-credits = "Credits"
-quota-credits-on = "available"
-quota-credits-off = "unavailable"
+# **2026-09-28 改回中文。** 2026-09-06 用户裁过「这四个是英文」,理由是「关着」
+# 不是常见的中文 app 说法;那一裁要的是**标准说法**,不是英文。整页审下来,
+# 中文界面里一行「Credits  unavailable · out of credits」读起来是漏翻,所以
+# 换成标准词:「额外用量」是 Anthropic 对这笔钱的叫法(extra usage),
+# 「可用 / 不可用」是系统设置里的状态词。这块仍然只留数和状态词,一句解释都
+# 没有——「套餐用满后按 API 价从这里扣」这类话删掉了,它解释的是实现。
+quota-credits = "额外用量"
+quota-credits-on = "可用"
+quota-credits-off = "不可用"
 quota-credits-monthly = "每月上限"
-# `disabled_reason` 的词。认得的映成一个英文状态词,认不得的**原样画出来**
+# `disabled_reason` 的词。认得的映成一个状态词,认不得的**原样画出来**
 # ——一个人能对着读得懂的键做点什么,对着被吞掉的不能。
-quota-credits-out = "out of credits"
+quota-credits-out = "额度已用完"
 # 按哪条轴分组。**和会话那边的「排布」是两件事,所以不共用那个词**:
 # 会话的排布问节点要一个新顺序(`Arrange`,组头是节点给的);这里一行都不
 # 重排,只在同一条列表上换一处切口。一个词同时解释两件事,正是这仓里
@@ -2388,7 +2392,7 @@ machine-here = "本机"
 # word is said by position and saying it again is the same fact twice.
 # The capital K is the user's — the product's name on a card's masthead,
 # not the command's spelling.
-card-version = "Khor {0}"
+card-version = "khor {0}"
 card-age = "{0}前"
 new-session-dir = "目录"
 # The placeholder in every directory box a 「+」 opens (`PathField`).
@@ -2396,7 +2400,7 @@ new-session-dir = "目录"
 # 「涉及到目录的，都不要推荐任何路径，简单一个输入框，用户可以边写边自动
 # 推荐」 — no places listed under it, completions only once typing starts.
 dir-path-hint = "目录路径"
-new-session-name = "名字"
+new-session-name = "名称"
 new-session-agent = "智能体"
 # The wizard's second step (2026-09-06:「点击后就是选机器、选类型(这就包括留言、
 # 智能体、shell)、起名字、定目录」). Three kinds and no fourth: 留言 wears
@@ -2405,11 +2409,22 @@ new-session-agent = "智能体"
 # machine, not 终端, which is the *window* a session appears in
 # (`view-terminal`, and the 2026-09-03 ruling behind it). claude's own
 # terminal form stays under 智能体 as the 对话/终端 switch.
-# **「哪种」, not 「类型」**: the 额度 page's axis already spells 类型
-# (`quota-kind`), and the catalog refuses one text under two names —
-# rightly, a refusal by name has to be distinct. 哪种 also reads in
-# step with 在哪台 above it: which machine, which kind.
-new-session-kind = "哪种"
+# **「会话类型」, not 「类型」**: the 额度 page's axis already spells 类型
+# (`quota-kind`), and the catalog refuses one text under two names.
+# It was 「哪种」 until 2026-09-28, in step with 「在哪台」 above it — both
+# spoken questions where every other form label is a noun, and the
+# owner's rule is standard terms (「修复」 not 「修好它」).
+new-session-kind = "会话类型"
+# **Every choice row in the sheet has a label** (2026-09-28): the agent
+# row and the form row were the two without one, and a row of buttons
+# with no name reads as loose buttons. Not 「智能体」 for the agent row —
+# that is the pressed kind right above it, and the catalog refuses the
+# spelling twice; 「使用的智能体」 names what is being picked. The form
+# row borrows the settings page's own phrase (`config.session-form`,
+# 「新会话默认打开方式」), so the default and the per-session choice are
+# one idea in one wording.
+new-session-agent-pick = "使用的智能体"
+new-session-form = "打开方式"
 new-session-kind-shell = "shell"
 # Said under the 智能体 buttons **only when nothing is registered and
 # the registry really answered** (批⑥). Without it the open position is
@@ -2420,53 +2435,53 @@ new-session-kind-shell = "shell"
 # Not shown while the answer is still coming, and not shown when it
 # failed — "you have none" and "we could not ask" are different facts,
 # and the second one has its own line.
-new-session-more-agents = "别的 agent 用 khor agents add 接进来"
+new-session-more-agents = "其他 agent 用 khor agents add 接入"
 # 随包带的 ACP 注册表快照,就地展开在智能体那一行底下(`khor agents
 # known` 的同一份数据)。**在界面上开这扇门的理由,和上面那句是同一个**:
 # 只用界面的人没有第二条路知道这 40 个的存在。
-new-session-add-agent = "接一个"
-new-session-registry = "khor 认得的 agent"
+new-session-add-agent = "添加…"
+new-session-registry = "khor 支持的 agent"
 # 出处和日期,和 CLI 那份头一样带着——**一张会过期的表必须自己说出它是
 # 什么时候的**,不然它读起来像「现在有这些」。
-new-session-registry-taken = "{0} 的快照,共 {1} 个"
-new-session-search = "找 agent"
-new-session-attach = "接进来"
+new-session-registry-taken = "{0} 的快照，共 {1} 个"
+new-session-search = "搜索 agent"
+new-session-attach = "接入"
 # 已经登记过的那些。画成一个不可点的状态而不是把它们藏掉:藏掉的话
 # 「我明明记得有这个」会让人以为快照缩水了。
 new-session-attached = "已接入"
 # 另外 18 个:khor 没有它们的启动命令,因为它们发的是各平台的二进制。
 # **和「接不了」必须读起来不一样**(cli 那两句同一个理由):装好之后
 # 用命令行把命令告诉 khor,和第一天一样能用。
-new-session-byhand = "自己装,再用命令行接进来"
+new-session-byhand = "需自行安装，再用命令行接入"
 # ⚠️ 墓碑:new-session-seen(「已有的对话——点一段接着走」),新建向导里那一节的标题。
 # 2026-09-22 那一节挪进导入(docs/SHELL.md 第八轮:一个动作一个位置),标题换成 import-agents;
 # 底下「问一次」和三句回答的键照旧用。
 # 导入(docs/SHELL.md 第八轮):「+」的第二项,和它打开的那个面板。
 import-sessions = "导入"
 import-title = "导入会话"
-import-note = "khor 找到了、还没放进列表的会话。导入后出现在列表里;从列表删掉时,那边的会话一个字节不动。"
+import-note = "khor 找到的、尚未加入列表的会话。导入后会出现在列表中；从列表删除时，原会话不受影响。"
 import-empty = "没有可导入的会话"
 import-all-machines = "所有机器"
 import-all-places = "所有目录"
 import-go = "导入 {0} 个"
-import-form-tui = "智能体·终端形态(观察)"
+import-form-tui = "智能体·终端形态（观察）"
 import-form-gui = "智能体·对话形态"
 import-agents = "ACP 智能体记下的对话"
 # 删除一行导入的会话:只是从列表拿掉(第八轮 第 3 条)。
-close-warn-imported = "只是从列表里拿掉,那边的会话一个字节不动,还能再导入"
+close-warn-imported = "只从列表中移除，原会话不受影响，之后还能再导入"
 # 起一个真的 agent 进程:对真的 `@claude-acp` 实测 1.5 秒(npm 包已缓存)、
 # 冷启 5.64 秒;读记下来的同一个答案 0.017 秒。**所以它是一颗人按的按钮,
 # 永远不跟着轮询走。**
-new-session-seen-ask = "问一次"
-new-session-seen-asking = "问着…"
+new-session-seen-ask = "查询"
+new-session-seen-asking = "查询中…"
 # 下面三句必须读起来完全不同,那是这组文案存在的理由,也是这一批最容易
 # 塌的地方——**一个空列表会把前两种压成同一个**,而人的下一步三个方向:
 # 去问 / 别再问 / 开新的。后端本来就是三态(`Option<AgentAnswer>`),
 # 界面上不许压平。
-new-session-seen-unasked = "还没问过它"
-new-session-seen-cannot = "它列不出自己的对话——协议里这一项是可选的"
-new-session-seen-none = "它说它一段对话都没有"
-chat-readonly = "只读——它正在自己的终端里跑"
+new-session-seen-unasked = "尚未查询"
+new-session-seen-cannot = "它不支持列出对话（协议中这一项是可选的）"
+new-session-seen-none = "它没有任何对话"
+chat-readonly = "只读——它正在自己的终端中运行"
 # The running turn, in the conversation, with how long it has been
 # running. **The duration is the whole reason this sentence exists.**
 #
@@ -2492,11 +2507,11 @@ chat-busy-for = "忙碌 {0}"
 # only one of the two directions — read on the reverse move it was
 # simply wrong. The labels now name the destination and these say the
 # cost, which is the same division of labour the close confirm uses.
-takeover-busy = "它正忙,接管会打断这一轮;那边的终端会结束,对话从这里继续"
-takeover-calm = "那边的终端会结束,对话从这里继续"
-takeover-term = "对话面会结束,它回到一个终端里,对话接着往下走"
-takeover-term-busy = "它正说着,接管会打断这一轮;对话面会结束,它回到一个终端里"
-create = "建立"
+takeover-busy = "它正忙，接管会打断当前这一轮；原终端会关闭，对话在这里继续"
+takeover-calm = "原终端会关闭，对话在这里继续"
+takeover-term = "对话界面会关闭，它回到终端中继续对话"
+takeover-term-busy = "它正在回复，接管会打断当前这一轮；对话界面会关闭，它回到终端中"
+create = "创建"
 # 「机器」, not 「设备」 (2026-08-23 ruling): one concept had two words —
 # the landing said 设备 while the mark's aria and 「给机器留言」 said 机器 —
 # and docs/UX.md says one fact, one word. 机器 is the one already living
@@ -2532,7 +2547,7 @@ workspaces-empty = "还没有工作区"
 # derived list and then true of nothing; 「khor ws add」 was true but
 # pointed off the screen, because 批② had not built the picker behind
 # the 「+」 yet. It has now, so this points at the 「+」.
-workspaces-how = "按上面的 + 挑一台机器上的目录"
+workspaces-how = "点击上方的 +，选择一台机器上的目录"
 # ⚠️ **`workspaces-sessions` was deleted here on 2026-09-14** (工作区
 # 批①). It counted the vendor records that folded into a derived row,
 # and the row is not derived any more — what a row says now is where it
@@ -2540,7 +2555,7 @@ workspaces-how = "按上面的 + 挑一台机器上的目录"
 #
 # The 「+」 on the workspace pane. It opens the cross-machine directory
 # picker (工作区批②).
-ws-add = "加一个工作区"
+ws-add = "添加工作区"
 # On a row the word is `delete` (docs/SHELL.md 第二轮). ⚠️ 墓碑:it said
 # 移出工作区 until 2026-09-21, because 删除 beside a directory name reads
 # as touching the directory (user, 2026-09-14). The user overruled that
@@ -2549,33 +2564,33 @@ ws-add = "加一个工作区"
 # 删除一个工作区之前那一问的那一句(`confirm-delete`,docs/SHELL.md 第四轮)。
 # 墓碑:它曾默认不问(`confirm-ws-remove` 默认 off,「这一下什么都没毁掉」);
 # 第四轮起每条侧边栏的删除都先问,勾「不再提醒」一起关掉。
-ws-remove-confirm = "只是从这张表上拿掉,目录本身不动"
+ws-remove-confirm = "只从列表中移除，目录本身不变"
 # 浏览标签右键「删除」之前那一问的那一句;标签上的 × 不问,照 Chrome。
-tab-remove-confirm = "这个标签页会关掉"
+tab-remove-confirm = "这个标签页将被关闭"
 # The workspace row's git corner, beside the branch: how many files
 # differ from HEAD on that machine. **Files and not hunks** — 处 is the
 # word for a place inside one file, and this counts the files. There
 # used to be a `git-hunks` here to point at; it went with the strip over
 # the file (2026-09-16), and the places inside a file are drawn now
 # rather than counted.
-ws-marked = "{0} 个文件改过"
+ws-marked = "{0} 个文件已修改"
 # 跨机器目录 (工作区批②), the workspace 「+」's sheet: which machine, and
 # one path box that completes as it is typed in (2026-09-27).
-dir-picker = "挑一个目录"
+dir-picker = "选择目录"
 # The confirm. **Says 这个 rather than 好 or 确定**, because what is
 # being confirmed is the directory now in the box: a person who typed a
 # path must be able to read the button as being about what they typed.
-dir-picker-take = "选这个目录"
+dir-picker-take = "选择此目录"
 # A file whose bytes are not text. **Says what it is, not what went
 # wrong** — nothing went wrong, and 「打不开」 would read as a failure
 # of khor rather than as a fact about the file.
-file-not-text = "这不是文本"
+file-not-text = "不是文本文件"
 # One slice is what a look costs (`khor_node::Link::read_head` measured
 # why). Both sizes, because「开头」without the whole size does not say
 # how much is missing.
-file-cut = "只读了开头 {0},整个文件 {1}"
+file-cut = "只读取了开头 {0}，文件共 {1}"
 # The way out of both of the above, and the one khor already has.
-file-take = "取下来"
+file-take = "下载到本机"
 # ⚠️ 墓碑:`file-remove`「删掉」(工作区批④)2026-09-21 退休。文件行和确认框
 # 那颗按钮说的都是 `delete`「删除」——一个动作一个词(docs/SHELL.md 第二轮),
 # 删的是文件还是一台机器,由确认那一句说,不由动词说。
@@ -2600,7 +2615,7 @@ file-face-preview = "预览"
 # PDF_HERE`). **Says what is on screen, not what is missing**: 「这台
 # 上看不了 PDF」 would be a complaint about the machine, and what is
 # actually there is the document's text, which is worth reading.
-pdf-as-words = "这台上的浏览器不画 PDF,给的是抽出来的文字,不是版式"
+pdf-as-words = "这里的浏览器无法显示 PDF，显示的是提取出的文字，不含版式"
 # The three sentences a person confirms, and they are **three keys
 # rather than one with a slot in it** because what they promise is not
 # the same thing. 「进废纸篓」 is reversible and 「直接删」 is not, and a
@@ -2608,18 +2623,18 @@ pdf-as-words = "这台上的浏览器不画 PDF,给的是抽出来的文字,不�
 # those two a detail of wording rather than the whole of what is being
 # agreed to. The user's own framing (2026-09-14):「跟 VS Code 一样,
 # 可以不再提醒」— and VS Code asks differently for the two as well.
-file-remove-trash = "「{0}」放进废纸篓"
+file-remove-trash = "「{0}」将移到废纸篓"
 # A directory says out loud that it does not go alone. VS Code's 删除
 # takes the tree; so does khor's, and the one moment to say so is
 # before the press.
-file-remove-dir = "「{0}」连里面的东西一起放进废纸篓"
+file-remove-dir = "「{0}」及其中的内容将移到废纸篓"
 # Every other machine, every satellite — and this machine too on a
 # platform with no recycle bin (iOS, Android). **One sentence for all
 # three**, because the fact is the same one: there is nowhere to get it
 # back from. Which of the two roads it is comes from the node
 # (`khor_gui_core::files::trash_here`), never from a guess about the
 # platform made on the screen.
-file-remove-gone = "「{0}」直接删掉,找不回来;目录连里面的一起走"
+file-remove-gone = "「{0}」将被永久删除，无法恢复；目录会连同其中的内容一起删除"
 # The tick. **Only ever offered beside the recycle bin sentence** — an
 # act that cannot be undone must not be silenceable by a tick somebody
 # ticked once about something else (`views/FilesPane`), so the far
@@ -2645,7 +2660,7 @@ dir-new = "新建目录"
 # The refusal under the box is **the node's own**, never a word from
 # here: 「那个名字已经有了」 and 「改不了名 …」 are different facts and
 # only the machine holding the disk knows which one it is.
-file-rename-taken = "换一个名字"
+file-rename-taken = "这个名称已被使用"
 # 中栏没有标签时 (工作区第五轮 第 37 条). **Not an illustration and not
 # a shortcut card** — what a person needs here is where they are and
 # what they were last doing, and both are facts khor already holds.
@@ -2659,22 +2674,22 @@ diff-head = "HEAD"
 diff-work = "工作副本"
 # What pressing the letter does, for a screen reader. The letter itself
 # is one character and reads as itself; this says what happens next.
-diff-open = "看这个文件跟 HEAD 差在哪儿"
+diff-open = "查看与 HEAD 的差异"
 # 退出时还有草稿 (工作区第五轮 第 39 条). **Counts files, not changes**:
 # a person about to quit is deciding whether to lose work, and 「3 个
 # 文件没存」 is a thing they can picture. The singular is not spelled
 # separately — 1 个文件 is how Chinese says it.
-quit-drafts = "还有 {0} 个文件没存"
+quit-drafts = "还有 {0} 个文件未保存"
 # **Two exits here, not the three a tab gets.** 存了再关 is missing on
 # purpose: saving N files across N tabs is N saves, each with its own
 # digest contract and its own way to be refused (`files::write_whole`),
 # and a button that saved four of five and then quit would be the worst
 # answer khor could give. So the offer is 「go back and deal with it」
 # or 「lose it knowingly」, and going back is one press from every tab.
-quit-drop = "不存,退出"
+quit-drop = "不保存并退出"
 # 「别退」而不是「取消」, `tab-close-keep` 的同一条理由:这两个按钮回答
 # 的是「要不要退」。
-quit-keep = "别退"
+quit-keep = "不退出"
 # 会话里的路径与网址 (工作区第五轮 第 35 条). The hover word on a path
 # or an address khor drew as pressable. **Says which machine**, because
 # that is the whole of what is surprising about it: the thing opens on
@@ -2686,12 +2701,12 @@ link-open-on = "在 {0} 上打开"
 # 关一个有草稿的标签要问一句。**三个出口,三句话**,不是一句加两个词:
 # 存下去、丢掉、留在原地是三件不同的事,而中间那件不可撤销。句子里带文件
 # 名,因为一个人可能开着七个标签,「还没存」说的是哪一个是全部的问题。
-tab-close-draft = "「{0}」还没存"
-tab-close-save = "存了再关"
-tab-close-drop = "不存,关掉"
+tab-close-draft = "「{0}」尚未保存"
+tab-close-save = "保存并关闭"
+tab-close-drop = "不保存"
 # 「别关」而不是「取消」:这三个按钮回答的是「要不要关」,而不是
 # 「刚才那一步作不作数」——取消是后者的词。
-tab-close-keep = "别关"
+tab-close-keep = "继续编辑"
 # 标签右键。**「关闭」借的是 `close`**(语料库一句一键):关一个标签和关
 # 一个会话是同一个动词,写第二个键就得写第二句话。
 tab-close-others = "关闭其他"
@@ -2720,7 +2735,7 @@ workspace-sessions = "这里的会话"
 tree-search = "搜索文件"
 # 框里有字、两头都没有命中。**说的是「这儿没有」,不是「没找到」**:后者
 # 听起来像 khor 找失败了,而实际情况是这个工作区里确实没有这几个字。
-search-none = "这里没有"
+search-none = "此处无结果"
 # 工作区列表那个框筛完剩 0 条(工作区第六轮 第 50 条)。和 `search-none`
 # 分开两句:那一句说的是一个项目里的文件,这一句说的是你声明过的工作区,
 # 两个列表空掉的原因不一样,下一步也不一样。
@@ -2732,15 +2747,15 @@ search-workspaces = "搜索工作区"
 # because the thing it is not is what a person would otherwise assume:
 # a Word file on screen looks like a Word file, and this is its words
 # and its structure with the layout thrown away.
-doc-plain = "读的是文字和结构,不是排版"
+doc-plain = "显示的是文字和结构，不含排版"
 # The document parsed and has no words in it. A real answer — a blank
 # template does exactly this — and it needs saying, because a blank
 # pane reads as khor being broken.
-doc-empty = "这个文档里没有文字"
+doc-empty = "这个文档中没有文字"
 # Too big to carry across for a look. **An image gets nothing rather
 # than half**: half a picture is a broken picture, where half a
 # document is still a document.
-look-too-big = "这个文件 {0},太大了,看不了。取下来再打开"
+look-too-big = "这个文件 {0}，太大，无法预览。下载到本机后再打开"
 # The third thing a workspace's middle column can be (工作区批5). **The
 # product's own name, untranslated**: it is what is written on the icon
 # in their dock, and a translated one would be khor naming somebody
@@ -2758,9 +2773,9 @@ code-tab = "VS Code"
 # What it deliberately does not say is how to undo it — the answer is
 # 「khor code --stop」and the person reading a consent card is not
 # looking for it yet.
-code-consent = "第一次要往那台机器上下一份服务端,约 640 MB,从微软下。\n同时表示接受微软的服务端许可条款。"
-code-consent-go = "下吧"
-code-consent-no = "先不"
+code-consent = "首次使用需要在那台机器上从微软下载服务端（约 640 MB）。\n继续即表示接受微软的服务端许可条款。"
+code-consent-go = "开始下载"
+code-consent-no = "暂不"
 # The branch the workspace's head says, when git has a name to say. A
 # label, not a word of khor's — HEAD is detached often enough that the
 # absence has to be silent rather than explained.
@@ -2803,29 +2818,29 @@ file-unsaved = "未存"
 # (`file-take-theirs` 以下几个键)。
 # 保存被拒之后的两个出口。**不是合并**:三方合并是另一批,而一个只会说
 # 「它变了」的死胡同,是这两条要替掉的东西。
-file-take-theirs = "重新读(丢掉我改的)"
-file-keep-mine = "按我的存(盖掉那边的改动)"
+file-take-theirs = "重新读取（放弃我的修改）"
+file-keep-mine = "保存我的版本（覆盖对方的修改）"
 # 第三个出口(工作区批7)。**按下去不写盘**:两边的改动合进框里,存还是那
 # 一下要你自己按——khor 不在没人按存的时候动文件,合并不是例外。标的代价
 # 是真的:两边改了同一行的地方,khor 不替人挑。
-file-merge = "合起来(同一行的地方你来定)"
+file-merge = "合并（冲突处由你决定）"
 # 合完了,一处都没打架。**说的是「都进来了」而不是「成功」**:人接下来要
 # 做的判断是「这是不是我要的」,而框里现在有一半是他没写过的字。
-file-merged-clean = "那边的改动也合进来了,存还是你按"
+file-merged-clean = "已合并对方的修改，是否保存仍由你决定"
 # 合完了,有打架的地方。数字要说出来:标记在文里,不数一遍人就得自己找。
-file-merged-clashes = "合进来了,{0} 处两边改了同一行,标在文里等你定"
+file-merged-clashes = "已合并，{0} 处冲突已在文中标出，等你处理"
 # A file khor only has the beginning of cannot be edited, because what
 # a save writes back is what is on screen. Said beside the cut line
 # rather than as a second strip — it is the same fact, and 「只读了开头」
 # already told half of it.
-file-read-only = "只能看"
+file-read-only = "只读"
 # The gutter goes quiet while a file is unsaved, and this is why.
 # **Drawn stale it would be wrong, not merely old**: the bars name line
 # numbers, and one typed line moves every line under it — so a bar that
 # stayed put would point at code it is not about. Recomputing per
 # keystroke is a round trip per keystroke, which is not a thing khor
 # will do to somebody else's machine.
-git-stale = "存了才知道改在哪儿"
+git-stale = "保存后才能显示改动位置"
 # **`git-was` 撤掉了**(2026-09-16):原来那块「HEAD 里原来是」的标题,在
 # 文件底下的面板上。面板没了——「点击后,不要在下面一行显示情况。就地显示。
 # 跟 vscode 一样」——旧的几行现在就躺在替掉它们的那几行正上方,一片红底
@@ -2853,7 +2868,7 @@ identity-id = "机器 id"
 identity-version = "khor 版本"
 # 网络页在这台机器还没配过对时说的那一句。**留在这儿而不是画一张空地图**:
 # 一张一个点的图答不了「怎么再加一台」,而那正是这时候唯一的问题。
-identity-alone = "还没和别的机器配对过"
+identity-alone = "尚未与其他机器配对"
 # 折起来的那一格,网络页的中继和头像编辑器的形状共用一个词
 # (docs/MORE.md 第二轮:中继折在「高级」里)。**默认收起**——
 # 「不是所有的设置都要去铺在界面上」。
@@ -2868,7 +2883,7 @@ identity-faces = "khor 的界面"
 # 太尴尬了」):每一条都先过一遍「系统设置里会不会这么写」。
 # 它们从头像卡搬到了网络页:说的是这台机器和这张网的关系,
 # 不是这台机器是谁。暂停排在离开前面——可逆的在不可逆的前面。
-identity-pause-warn = "暂停后不再与别的设备同步,别的设备那边看见这台离线;本机的会话、工作区照常用。设备表不动——这不是离开网络,随时可以恢复。"
+identity-pause-warn = "暂停后不再与其他设备同步，其他设备会看到这台机器离线；本机的会话、工作区照常使用。设备列表不变——这不是离开网络，随时可以恢复。"
 # 「暂停」「恢复」: the network page says them about this machine, and a
 # machine row's menu about that machine (docs/SHELL.md 第五轮 第 10 条) —
 # one act, one word, which is why the key lost its `identity-` prefix.
@@ -2877,9 +2892,9 @@ resume = "恢复"
 # A machine row this machine has stopped talking to (第 10 条), under its
 # name; the row is also drawn grey.
 machine-paused = "已暂停"
-identity-paused-now = "已暂停——别的设备那边看见这台离线"
-identity-leave-warn = "本机从网络中退出:设备表清到只剩自己,别的设备留在这儿的数据一并清掉。本机自己的会话、工作区、身份、设置不受影响;拿一张新票 pair 可以重新加入。"
-identity-leave-type-name = "把这台机器的名字原样打一遍"
+identity-paused-now = "已暂停——其他设备会看到这台机器离线"
+identity-leave-warn = "本机将退出网络：设备列表只保留本机，其他设备留在这里的数据一并清除。本机的会话、工作区、身份、设置不受影响；用一张新的配对票 pair 可以重新加入。"
+identity-leave-type-name = "输入这台机器的名称以确认"
 identity-leave-do = "离开网络"
 # 头像页上编辑器那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
@@ -2893,19 +2908,19 @@ settings-face = "头像"
 # ⚠️ **在 `[gui]` 而不是 `[avatar]`。** 那一节装的是一张脸的**选项**(色板、
 # 画法、形状的 id)和三根轴的名字,`crates/catalog/tests/gate.rs` 会走一遍,
 # 要求「这儿有词的,都得是有人挑得到的东西」。这是一颗按钮的标签,不是选项。
-face-shuffle = "换一组配色"
+face-shuffle = "随机配色"
 # ── 设置页里只读的两节 (docs/MORE.md 设置:存储 / 关于) ─────────────
 # 两节都不判断任何事:路径和占用是 `doctor::store_bytes` 已经在量的,
 # 版本是编译期常量。**所以一台 store 打不开的机器上它们照样答得出来**
 # ——而那正是人最需要知道「这一份 khor 是哪一版、住在哪」的时刻。
 settings-store = "存储"
 settings-about = "关于"
-store-path = "store 在哪儿"
+store-path = "存储位置"
 store-size = "占用"
 # 打开 store 所在的目录,走各平台自己的开启器(mac 上就是访达)。
 # **不叫「在访达中显示」**:同一个按钮在 Linux 上开的是别的东西,
 # 而一个按钮不该在半数机器上说错自己做了什么。
-store-open = "打开这个目录"
+store-open = "打开目录"
 # `About` 里的版本,在设置页上借身份卡那一行的词(`identity-version`):
 # 同一个事实,同一个名字。
 # ── 安全那一页,和锁屏 (docs/MORE.md 安全) ─────────────────────────
@@ -2913,52 +2928,52 @@ store-open = "打开这个目录"
 # ——等你的有几条、谁刚说了话,那些是内容,而内容正是被锁住的东西。
 lock-pin = "PIN"
 lock-open = "解锁"
-lock-wrong = "不对"
+lock-wrong = "PIN 不正确"
 # macOS 的 app 上多的那把钥匙。网页脸上这个按钮整个不画:浏览器里没有这
 # 回事,而一个按下去会拒绝的按钮比没有按钮更糟。
-lock-system = "用系统验证"
+lock-system = "使用系统验证"
 # ── 安全页的各节 ──
 lock-section = "打开密码"
 # 开关那一行的名字。**说的是「锁不锁这几张脸」,不是「现在锁没锁」**:
 # 后者是每张脸自己的事,一个设置项答不了。
-lock-switch = "锁上这台机器的界面"
-lock-switch-note = "锁的是 app 窗口和网页脸,不锁命令行"
-lock-set-pin = "设一个 PIN"
-lock-change-pin = "换一个 PIN"
-# PIN 那一行的值,在「设一个 PIN…」按钮左边。**行名已经是「PIN」**,所以
-# 值只说状态,不再说一遍 PIN。
+lock-switch = "锁定这台机器的界面"
+lock-switch-note = "锁定 app 窗口和网页脸，不锁定命令行"
+lock-set-pin = "设置 PIN"
+lock-change-pin = "更改 PIN"
+# PIN 那一行的值，在「设置 PIN…」按钮左边。**行名已经是「PIN」**，所以
+# 值只说状态，不再说一遍 PIN。
 lock-pin-is-set = "已设置"
 lock-pin-not-set = "未设置"
 lock-pin-floor = "至少 {0} 位"
-lock-pin-save = "存下"
-lock-pin-clear = "撤掉 PIN"
-lock-idle = "闲置多久自己锁"
+lock-pin-save = "保存 PIN"
+lock-pin-clear = "移除 PIN"
+lock-idle = "闲置后自动锁定"
 lock-idle-never-pick = "永不"
 lock-idle-pick = "{0} 分钟"
-lock-now = "现在锁上"
+lock-now = "立即锁定"
 # 网页脸的钥匙那一节。**默认遮住**:这一页可能正被人看着,或者正在被录屏。
-web-key-section = "网页脸钥匙"
+web-key-section = "网页脸密钥"
 web-key-show = "显示"
-web-key-hide = "遮住"
-web-key-rotate = "换一把"
-web-key-none = "这台机器还没开过网页脸"
+web-key-hide = "隐藏"
+web-key-rotate = "重新生成"
+web-key-none = "这台机器尚未开启过网页脸"
 # 换钥匙之后那一句。不是装饰:之前发出去的每一条链接从这一刻起全都打不开,
 # 而那正是这个动作的全部意思。
-web-key-rotated = "换好了;之前发出去的链接全都作废了"
+web-key-rotated = "已重新生成，之前发出的链接全部失效"
 # 网络页上那台机器的卡里那颗按钮,和机器行菜单同一个词 `delete`
 # (docs/SHELL.md 第二轮:「网络页地图卡改成『删除』」),按下去之后的那一句
 # 两边共用(`forget-machine-confirm`)。墓碑:它叫过「移除设备」。
 # 重置身份。红字、输机器名——这一页上唯一一件撤不回来的事。
 reset-section = "重置身份"
-reset-warn = "删掉这台机器的身份钥匙、重新铸一把。对全网来说这就是换了一台机器:别的机器还认着旧的、不认新的,要回去得重新配对。"
-reset-type-name = "把机器名原样打一遍"
+reset-warn = "删除这台机器的身份密钥并重新生成。对整个网络来说，这相当于换了一台机器：其他机器只认旧身份，需要重新配对。"
+reset-type-name = "输入机器名称以确认"
 reset-do = "确认重置"
 # ── the machine's own relays, on the settings screen ──
 # 「中继」 alone is already taken by the path word (直连/中继 on a row),
 # and it has to stay that — this heading is about the *list*, not about
 # which road a connection took, so it says whose list it is.
 relays-mine = "自己的中继"
-relays-add = "加一台"
+relays-add = "添加中继"
 # The placeholder is the answer to「这一格要填什么」, which a label
 # cannot give without becoming an explanation (docs/UX.md 文案).
 relays-hint = "http://地址:端口"
@@ -2966,17 +2981,17 @@ relays-hint = "http://地址:端口"
 # `khor serve` and every standing connection keep the one they started
 # with. Without this line the screen shows a change that took and a
 # network that did not move, and nothing anywhere connects the two.
-relays-after-restart = "新加的要等 khor serve 重起才用上"
+relays-after-restart = "新添加的中继在 khor serve 重启后生效"
 # What the machine is dialling on right now, the built-in tier included.
 # Separate from the list above because nothing here can be removed — a
 # row with a dead delete button and no reason next to it is worse than
 # no row.
-relays-in-use = "在用"
+relays-in-use = "使用中"
 # The exclusive switch. It reads as a sentence rather than a label
 # because what it does is not guessable from a noun: 「中继」 alone would
 # leave「加了这台之后原来那些还在不在」unanswered, which is the only
 # question this control exists to answer.
-relays-only-mine = "只用自己的"
+relays-only-mine = "只使用自己的中继"
 back = "返回"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —
@@ -2990,8 +3005,8 @@ page-reload = "重新加载"
 # was arrived at and not something anybody needs to be told.
 mesh-map = "网里的机器"
 from-device = "来自 {0}"
-pick-a-session = "选一个 session"
-empty-sessions = "还没有 session"
+pick-a-session = "选择一个会话"
+empty-sessions = "还没有会话"
 # The big canvas behind no selection: the network's now — **two**
 # headings and what stands under each. 等你的事 is the blocked rows —
 # the word's own definition (docs/SESSION.md 待批: an approval this
@@ -3008,14 +3023,20 @@ empty-sessions = "还没有 session"
 #
 # `today` 这个键还活着,别当它是遗留:`MachineChat` 拿它做日期分隔。
 # 花了多少去 `khor usage`,那是它现在唯一被画出来的地方。
-waiting-on-you = "等你的事"
-none-waiting = "没有等你的事"
+waiting-on-you = "待处理"
+none-waiting = "没有待处理的事项"
 today = "今天"
 # The conversation's day line, one word back: 今天 above serves both
 # (same fact, same word). Days further back print their own date — a
 # word per day would be a calendar rewritten in prose.
 yesterday = "昨天"
-backend-unreachable = "够不着本机的 khor"
+# **These two are what a failed call says when khor itself did not say
+# anything** (`api.ts`: `reach` and `unwrap`, 2026-09-28). The browser's
+# own 「Failed to fetch」 and a parser's 「Unexpected token '<'」 were
+# painted as-is before — English on a Chinese face, and nothing a person
+# can act on. khor's own refusals still arrive as its own sentences.
+backend-unreachable = "无法连接本机的 khor"
+backend-garbled = "无法解析本机 khor 的答复"
 # The pane bar. No page carries a title (docs/UX.md); the pane's name
 # lives in an aria-label, and what shows is the work you can do here.
 search-sessions = "搜索会话"
@@ -3046,7 +3067,7 @@ axis-category = "类别"
 # The chip's own control, on the search box. A chip is one token — it
 # goes whole or not at all — so this names taking it off, and it is the
 # pointer's way of doing what backspace does from the keyboard.
-remove = "去掉"
+remove = "移除"
 # How the list is laid out. One heading and four choices, sharing the
 # filter's menu because both answer "what am I looking at" — the
 # difference is that ticking words removes rows and this rearranges
@@ -3067,7 +3088,7 @@ axis-place = "地方"
 # land here and are said as one**, because the next move is the same
 # for both: a conversation with another machine never had a directory,
 # and a session khor could not place has one nobody wrote down. Not
-# 「认不出的」 — that word belongs to the category axis and says "we
+# 「未识别」 — that word belongs to the category axis and says "we
 # could not tell", which is only half of what this group holds.
 group-placeless = "不在任何地方"
 # **What a stretch of the day strip says when the pointer rests on
@@ -3079,11 +3100,11 @@ day-span = "{0} {1}–{2}"
 # A stretch khor was not watching — the app was not running, or the
 # machine had not reported. Not 空闲: idle is a word about the session,
 # and this is a gap in khor's own record.
-day-unwatched = "没在看"
+day-unwatched = "未查看"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.
-no-matches = "没有匹配的"
+no-matches = "没有匹配项"
 # The row action. Two words because the button has two jobs, and the one
 # it names is the one it will do next — a button labelled by its current
 # state tells you what is, not what pressing it does.
@@ -3128,9 +3149,9 @@ join-with-a-ticket-ask = "加入网络…"
 accounts-register-ask = "登记…"
 identity-leave-ask = "离开网络…"
 reset-ask = "重置…"
-rename-ask = "改名…"
-lock-set-pin-ask = "设一个 PIN…"
-lock-change-pin-ask = "换一个 PIN…"
+rename-ask = "重命名…"
+lock-set-pin-ask = "设置 PIN…"
+lock-change-pin-ask = "更改 PIN…"
 # 重置身份的确认窗标题:问句,点名哪一台。
 reset-title = "重置 {0} 的身份？"
 # The title's own control: double-click it and it becomes this input.
@@ -3138,11 +3159,11 @@ reset-title = "重置 {0} 的身份？"
 # current title is already in it, selected — typing replaces, Enter
 # keeps, Esc backs out, and an emptied box takes the name back so the
 # session's own title shows again.
-rename = "改名"
+rename = "重命名"
 # …and what the edit says when the write did not take. Said where it was
 # typed, the pin's rule: a failed rename and a missed Enter must not
 # wear one face (docs/UX.md 做了但没变化 / 失败).
-rename-failed = "改不了名"
+rename-failed = "无法重命名"
 # The folded tail (退场批): dead, looked-at rows past the threshold sit
 # behind this one line at the list's end. Two words because the control
 # has two jobs, and the one it shows is what pressing it does next —
@@ -3177,7 +3198,7 @@ unpin-failed = "取消置顶失败"
 # **加一个字它就变两行,而不会有任何东西提醒你。** 一个正好卡住的约束和一个
 # 有余量的约束长得一模一样——这是这仓「不会失败的检验」那一族的另一面。
 # 数记在这儿,是为了让下一个想加字的人**先知道自己在花什么**。
-forget-machine-confirm = "全网都不再认它,它也不再看得见网"
+forget-machine-confirm = "整个网络将不再识别它，它也无法再访问网络"
 # The disk drawer's editor (2026-09-06:「磁盘点击后,可以有一个编辑,用户可以在
 # 这增删目录,而后更新关注磁盘」): a heading over the list, a verb per row,
 # one to add, one to save. **Directories, not volumes** — a person names
@@ -3190,9 +3211,9 @@ forget-machine-confirm = "全网都不再认它,它也不再看得见网"
 # the same act on the same kind of thing (the catalog refuses a second
 # key for one text, and here it is right to).
 watch-dirs = "关注的目录"
-watch-add = "加入"
+watch-add = "添加"
 watch-save = "保存"
-watch-save-failed = "存不上"
+watch-save-failed = "无法保存"
 # The one-column ruling (2026-09-06:「一个路径只出现一次」): a path added
 # but not yet saved, or a saved one taken out but not yet saved, wears
 # this beside its number — the row is the same row, the word is its
@@ -3213,22 +3234,22 @@ watch-unsaved = "未保存"
 # **`open-term-on-failed` 撤掉了,没有替代键**(2026-09-06):开会话不再直接
 # 在那台机器上起 shell,而是打开新建会话对话框——打开一个对话框失败不了;
 # 那台机器不在的拒句落在对话框里,四个答案都在那儿,人改得了。
-open-term-on = "开会话"
-browse-files = "看文件"
+open-term-on = "打开会话"
+browse-files = "浏览文件"
 # The third verb, the one the browser landing is for (docs/NET.md 借网):
 # this machine's network, borrowed from where you are standing.
 borrow-web = "借网"
 # The hook, on this machine's own card. Two names because the button has
 # two jobs and shows the one it will do next — the same rule the pin
 # follows.
-install-hooks = "装钩子"
-uninstall-hooks = "卸钩子"
+install-hooks = "安装钩子"
+uninstall-hooks = "卸载钩子"
 # …and what each says when the write did not take. Same reason the pin
 # has a pair of these: 做了但没变化 and 失败 may not wear one face
 # (docs/UX.md), and it is said on the button that was pressed because
 # this app has nowhere that collects messages.
-install-hooks-failed = "装不上"
-uninstall-hooks-failed = "卸不掉"
+install-hooks-failed = "安装失败"
+uninstall-hooks-failed = "卸载失败"
 # Why anybody would press it. **完成 is the whole of what the hook buys**
 # — `adaptor::claude::hook` maps SessionStart/UserPromptSubmit/Stop/
 # Notification, and `Stop` is the only source of 完成 **for discovered
@@ -3251,7 +3272,7 @@ uninstall-hooks-failed = "卸不掉"
 # the reason to press, after pressing it is a remark about a thing
 # already true — and a remark nobody asked for is 装饰性说明, which this
 # repo zeroes rather than shortens.
-hooks-buy-you = "装了它,会话答完一轮才会显示「完成」"
+hooks-buy-you = "安装后，会话回答完一轮才会显示「完成」"
 # **Tombstone: `hooks-are-local`「改的是这台机器上的 claude」is gone.**
 # Its stated reason was that a control which silently applies to one
 # machine out of a list gets pressed on the wrong one — a real risk,
@@ -3267,21 +3288,21 @@ hooks-buy-you = "装了它,会话答完一轮才会显示「完成」"
 # 那个对话框自己有标题(新会话)和机器行(在哪台),两句都没了主语。`message-text`
 # 留下——它既是那一档的词,也是留言框的名字,一件事一个词。
 message-text = "留言"
-send-it = "发出"
+send-it = "发送"
 make-a-ticket = "邀请设备"
 join-with-a-ticket = "加入网络"
 ticket = "配对票"
-paste-a-ticket = "把票贴在这里"
-join = "入网"
+paste-a-ticket = "在此粘贴配对票"
+join = "加入"
 close = "关闭"
 # The chat input's hint. Not a label: the box is the pane's only
 # control, and the hint says what typing here reaches.
-chat-input = "对它说…"
+chat-input = "输入消息…"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the
 # one that says so, the same rule the pin follows.
-chat-over = "对话结束了"
+chat-over = "对话已结束"
 # A discovered session whose transcript could not be found or read. Not
 # chat-over: nothing ended — there is simply no record to paint.
 chat-no-record = "没有找到这段对话的记录"
@@ -3296,28 +3317,28 @@ chat-stop = "停止"
 # 白的对话读起来像「还没人说过话」,而实情是这个 agent 不会回放——
 # 上面可能有过很多话,只是这扇窗看不到。29/32 的注册表 agent 会回放,
 # 剩下的不会,所以这句话是接第三方 agent 之后才真正用得上的。
-chat-no-replay = "这个 agent 不回放以前的对话——之前说过什么,这里看不到"
+chat-no-replay = "这个 agent 不支持回放历史对话，之前的内容无法显示"
 # When the agent advertises ways to log in. Said as a likely cause, not
 # as a verdict: khor 没法替谁走完某家的登录流程,能做的是在第一句话之前
 # 就说清楚为什么什么都没有,而不是让人对着一个不回话的框猜。
-chat-needs-login = "这个 agent 要先登录才开得了对话"
+chat-needs-login = "这个 agent 需要先登录才能开始对话"
 # The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
 # 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
-chat-plan = "在做的事"
+chat-plan = "计划"
 # The agent's current mode, when it is not the ordinary one. **只在不是
 # 默认档的时候出现**——一个常年挂着的标记等于没有标记,而这三档恰恰是
 # 「这次不一样」才要说的。
 #
 # 词用 agent 自己的口径,不另起中文名:`plan` 在 claude 那边就叫计划模式,
 # 用户在别处见过它,这个面没有资格改名。
-chat-mode-plan = "只看不改"
-chat-mode-accept-edits = "改文件不问"
-chat-mode-bypass = "全部不问"
+chat-mode-plan = "只读不改"
+chat-mode-accept-edits = "自动接受编辑"
+chat-mode-bypass = "全部自动批准"
 # The ordinary mode's word — **only inside the mode menu**, where every
 # listed mode needs a name to be picked by; the marker above the box
 # still stays silent for it. 说的是它和别的档差在哪(改之前会问一句),
 # 不是「默认」——「默认」告诉不了人它会做什么。
-chat-mode-default = "改前会问"
+chat-mode-default = "编辑前询问"
 # The mode menu's heading, over the list of modes the agent offers.
 chat-mode = "模式"
 # The diff panel's two halves inside an opened tool line. 一个字的标签,
@@ -3332,10 +3353,10 @@ chat-image = "图 {0}"
 # 它有名字,而图没有,这就是两者该长得不一样的地方。
 chat-file = "{0}"
 # The file was too big. 同样带两个数,理由和图片那条一样。
-chat-file-too-big = "{0} 有 {1}KB,超过 {2}KB 发不出去"
+chat-file-too-big = "{0} 有 {1}KB，超过 {2}KB 发不出去"
 # The image was too big to send. **带上两个数**——一句「太大了」会让人
 # 反复试;知道多大和上限多少,一次就够。
-chat-image-too-big = "这张图 {0}MB,超过 {1}MB 发不出去"
+chat-image-too-big = "这张图 {0}MB，超过 {1}MB 发不出去"
 # This conversation's own context, as a share of the window the agent
 # reported. **Not a token count**: the numbers are six digits long and
 # nobody acts on them, while "how full" is the one thing a person
@@ -3376,12 +3397,12 @@ new-below = "下面有新的"
 # 「没进去」rather than 「失败」: nothing broke. Another window is
 # holding the turn, which is a fact about the conversation and not an
 # error of this person's.
-chat-refused-turn-in-flight = "另一扇窗正在说话,刚才那句没发出去,还给你了"
-chat-refused-no-turn = "现在没有在跑的轮"
+chat-refused-turn-in-flight = "另一个窗口正在对话，刚才的消息未发送，已退回输入框"
+chat-refused-no-turn = "当前没有进行中的回合"
 # A mode or an option the agent would not take (`refused::SETTING_REFUSED`).
 # 「没收」: the control on screen stays where it was, so the sentence is
 # about the agent's answer, not about anything having broken here.
-chat-refused-setting = "这一项 agent 没收,还是原来那样"
+chat-refused-setting = "agent 未接受这项设置，保持不变"
 # Ending a session, from the pane that is showing it. **One sentence per
 # kind, because 关闭 does genuinely different things** — read off the
 # three `KindSurface::close` implementations rather than guessed:
@@ -3400,22 +3421,22 @@ chat-refused-setting = "这一项 agent 没收,还是原来那样"
 # A confirm that said only "关掉它" would be true of all three and
 # useful for none: the thing a person is deciding is what they are about
 # to lose, and that is the part that differs.
-close-warn-live = "关掉它,它正在跑的进程会停下"
+close-warn-live = "关闭后，正在运行的进程会停止"
 # ACP 对话那一行(gui 形态,docs/SHELL.md 第八轮):删掉的是 khor 里这一行和它起的 agent 进程,
 # 对话本身还在那个 agent 那里,在「导入」里还能再找回来。
-close-warn-gui = "删掉的是 khor 里这一行,对话本身还在那个 agent 那里,可以再导入"
+close-warn-gui = "只删除 khor 中的这一行，对话仍保留在该 agent 中，可以再次导入"
 # chat 收起批 rewrote this again (传输并入对话批 had it down to "costs
 # nothing", which described a close that visibly did nothing — the one
 # face docs/UX.md forbids). Now the sentence carries the two facts a
 # person needs before pressing: the row will leave, and leaving is not
 # losing — it comes back with the next message, ledger intact.
-close-warn-chat = "关掉它,这行先收起;历史和收下的文件都留着,它再来消息就回来"
-close-warn-transfer = "关掉它,这次传下来的文件会删掉;这一行会留着"
+close-warn-chat = "关闭后这一行会收起；历史记录和已接收的文件都会保留，有新消息时会重新出现"
+close-warn-transfer = "关闭后，这次传输的文件会被删除；这一行会保留"
 # A kind khor has no sentence for. Kinds are an open set
 # (`khor_core::kind` — new ones must appear without touching that
 # crate), so this is the honest answer for one that arrives later:
 # it says the part that is true of every close and claims nothing else.
-close-warn = "关掉它,这一步撤不回来"
+close-warn = "关闭后无法撤销"
 #
 # **None of them promises the close will work.** Whether a row can be
 # closed at all is `Node::close`'s judgment: a session khor merely
@@ -3433,8 +3454,8 @@ copy-id = "复制 ID"
 # 浏览标签右键菜单里的那一项(docs/SHELL.md 第二轮),`copy-id` 的邻居:
 # 网址是拿去贴的东西。
 copy-url = "复制网址"
-copied = "复制好了"
-copy-failed = "复制不了"
+copied = "已复制"
+copy-failed = "无法复制"
 # The files pane. 上一级 is a place to go, not a "back": the list on
 # the left never left, so the only direction this pane owns is up the
 # tree. An empty directory says so — silence would read as broken.
@@ -3444,8 +3465,8 @@ empty-dir = "空目录"
 # place (下载目录) was chosen silently; the failure wears its own words
 # on the row that was pressed (the pin's rule — this app has nowhere
 # that collects messages).
-take-file = "拉过来"
-took-file = "落在 {0}"
+take-file = "下载"
+took-file = "已保存到 {0}"
 # The file chip's verb in a machine's conversation (传输并入对话批):
 # what `khor accept` does, as a thing to press on the waiting message.
 # Only the receiver's 待批 chip offers it — the word is the state
@@ -3463,22 +3484,22 @@ took-file = "落在 {0}"
 # 所以这句话只说这一端确实知道的事:**按下去了,还没回来**。它不说
 # 「在同步」——那是这一侧猜不出来的。一个 disabled 而不出声的按钮和一个
 # 坏掉的按钮,在人眼里是同一个东西。
-accept-file-working = "在收…"
-accept-file = "收下"
-accept-file-failed = "收不下"
+accept-file-working = "接收中…"
+accept-file = "接收"
+accept-file-failed = "接收失败"
 # The sender's file chip states where the offer stands (发端中性词批):
 # a neutral fact, NOT a state word — it never joins the six, never
 # ranks, never presses the row (待批只属于收端, that iron rule is not
 # touched). Three moments of one handover, each named by what has
 # happened, not by what anyone must do.
-file-not-taken = "还没收"
-file-being-taken = "对方在收"
-file-taken = "收下了"
+file-not-taken = "未接收"
+file-being-taken = "对方接收中"
+file-taken = "已接收"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a
 # real path, in a browser the bytes upload to the sending machine first
 # — one word either way, because it is one act.
-send-file = "发文件"
+send-file = "发送文件"
 # The upload's visible in-between (browser faces only — the app hands
 # over a path and has no upload). Absent, a big file looks like a dead
 # button until the chip appears (docs/UX.md 做了但没变化).
@@ -3487,7 +3508,7 @@ uploading = "上传中…"
 # One word for both leg failures — the upload and the send behind it —
 # because the person's next step is the same: try again or go smaller,
 # and the refusal sentence beside it says which it was.
-send-file-failed = "发不出去"
+send-file-failed = "发送失败"
 # ── the file landing's tabs (标签页一期) ──────────────
 # The landing is a browser now: tabs across the top, one address bar
 # under them, and a fresh tab that offers the places already gone to.
@@ -3524,18 +3545,18 @@ address-page = "机器和网址"
 # refuses at build time anyway). The key stopped saying `dirs` when the
 # browser landing started using it: a name that says one landing while
 # two read it is the kind of quiet lie 引用过期 is made of.
-recent-places = "最近去过"
+recent-places = "最近访问"
 # The browser landing (docs/NET.md 借网). The address bar names the exit
 # so the user knows a page opened here leaves through that machine, not
 # this one. Open builds the window; the empty state and the no-pins state
 # each say what would be there.
-web-address = "网址,从 {0} 的网开"
+web-address = "网址（通过 {0} 的网络打开）"
 web-open = "打开"
-web-opening = "正在借 {0} 的网开…"
-web-opened = "在 {0} 的网里开了"
+web-opening = "正在通过 {0} 的网络打开…"
+web-opened = "已通过 {0} 的网络打开"
 # 本机直接上网(docs/SHELL.md 第四轮 第 5 条):不借谁的网,就没有「谁的网」可说。
 web-opening-here = "正在打开…"
-web-opened-here = "打开了"
+web-opened-here = "已打开"
 # 浏览标签右键里的一项,只在从本机出去的标签上:借网的页面交给系统浏览器
 # 就换了出口,那不是同一个页面。
 open-in-browser = "在系统浏览器中打开"
@@ -3544,7 +3565,7 @@ open-in-browser = "在系统浏览器中打开"
 # 借网在地址栏里选机器)。
 # The terminal ended — the host's child exited or the connection tore.
 # Both are one fact to a face (docs/handoff 终端画屏).
-term-over = "这个终端结束了"
+term-over = "终端已结束"
 # The two forms a session can be held in. Nouns, not verbs — and now
 # only the new-session dialog says them, where they are a choice about
 # a session that does not exist yet.
@@ -3611,10 +3632,10 @@ quota-resets = "{0}后重置"
 # 五种「没有数」,每一种对应一件不同的事可做。**不能合并成一句「读不到」**:
 # 前两种是用户动一下就好,第三种是等,后两种是别人的事。
 quota-no-login = "这台机器没登录 Claude Code"
-quota-stale = "登录过期了,在终端跑一次 claude"
-quota-cooling = "被限流了,{0} 分钟后再问"
-quota-unreadable = "这份余量读不出来"
-quota-unreachable = "问不到余量"
+quota-stale = "登录已过期，在终端中运行一次 claude"
+quota-cooling = "已被限流，{0} 分钟后重试"
+quota-unreadable = "无法读取余量"
+quota-unreachable = "无法获取余量"
 
 # 主页按开一台机器的卡片之后,四个计数的头一个:这台机器上一共几个 session。
 #
@@ -3648,7 +3669,7 @@ sessions-all = "全部"
 # 的时候它会静静地指错列表。**这也是它不复用 `remove`(「去掉」)的原因**:
 # 那个词在补全菜单和状态条上说的是「拿掉这一条」,而这一行旁边就写着一个
 # 真实的目录路径,单说「去掉」的读法里有一个是「把那个目录去掉」。
-forget-place = "从{0}里去掉"
+forget-place = "从{0}中移除"
 # The terminal's own search (⌘F while it has the keys): where in the
 # scrollback a word is. 终端 names the surface the way `search-sessions`
 # and `search-devices` name theirs; the count beside the field is two
@@ -3681,7 +3702,7 @@ match-next = "下一个"
 # 这块是 token」**。上面那半讲的是钱和额度,这半讲的是 token,两者之间只隔一条
 # 横线;把这行也删掉,等于把唯一区分它们的那句话删了。机器卡片不需要,是因为
 # 那张卡整张都在讲同一台机器。
-usage-title = "花掉的 token"
+usage-title = "token 用量"
 # 趋势区的两个视角。按天是一天一根堆叠柱,按模型是一根柱一个模型。
 usage-view-day = "按天"
 usage-view-model = "按模型"
@@ -3761,10 +3782,10 @@ usage-sum-days = "窗口天数"
 #
 # 这家压根不出 token 报表(钱包只报余额,登记的订阅只报百分比)。
 # **这是常见答案,不是故障**,所以措辞里不能有「失败」的味道。
-usage-no-report = "这家不报 token,只报钱"
+usage-no-report = "这家只报告费用，不报告 token"
 # 答话那台 khor 比「按模型切分」这件事旧(`Usage::models` 空着,而
 # `Usage::days` 不空)。**它和「没花过」区别得开**,后者两个都空。
-usage-no-models = "那台机器答不出按模型的切分"
+usage-no-models = "那台机器无法按模型拆分"
 # 这一窗里一行都没有,而别的窗里有。2026-09-09 加,在这之前它**根本没有词**
 # ——那种屏幕上整块什么都不画,而「还没答」也是什么都不画,于是**一个还在
 # 加载的样子被拿来说「这个窗口没花费」**,那是这仓那条「一档接不上会变成
@@ -3773,7 +3794,7 @@ usage-no-models = "那台机器答不出按模型的切分"
 # ⚠️ **这三句(不报 token / 答不出切分 / 这一窗没有)能并排存在,靠的是
 # 主语各不相同**:厂商、答话那台机器、窗口。不是措辞不同,是说的不是同一
 # 件事。改词的人先看这一句。
-usage-window-empty = "这个窗口里没有花费"
+usage-window-empty = "这段时间内没有花费"
 # 这家的 token 报表里没有缓存那两个数(new-api 的日志只有 prompt/completion,
 # `ModelTokenDay::cache_split` 是 false)。于是四列缓存整列不画——**而不画
 # 和不报是两件事**:读的人看得见那几列不在,看不见为什么不在,而「这家不报」
@@ -3782,7 +3803,7 @@ usage-window-empty = "这个窗口里没有花费"
 # ⚠️ **主语和 `usage-no-report` 是同一个(厂商),所以用同一个词「这家」。**
 # 初稿写的是「这个来源不报缓存」,而「来源」在这一页是另一根轴的词
 # (`quota-by`,指这条登记从哪台机器来的)——同一屏上一个东西两个称呼。
-usage-no-cache = "这家不报缓存"
+usage-no-cache = "这家不报告缓存"
 # **点的面积是哪个量**,两页共用。X 和 Y 不在这句里——它们印在自己那根轴上。
 # **面积承载数值,所以半径取它的平方根**:半径直接读数会让 4 倍的值看着大 16 倍。
 # ⚠️ **墓碑:`plot-area-is`(「面积 = {0}」)没了,2026-09-10,没有替代键。**
@@ -3796,4 +3817,4 @@ usage-no-cache = "这家不报缓存"
 #
 # 和机器卡片的 `cli.top-plot-off` 是同一句话说的同一件事,分开两个键是因为
 # 那边数的是进程「行」,这边数的是「模型」——同一个词在两块图上会指错东西。
-usage-scatter-off = "{0} 个模型这两个量读不到,没画"
+usage-scatter-off = "{0} 个模型缺少这两项读数，未绘制"

@@ -5039,25 +5039,24 @@ mod watch_tests {
             vec!["/data/models", "/", "/scratch"],
             "trimmed, and a trailing slash goes — but not the root's"
         );
-        assert!(
-            tidy_watch(&["models".into()])
-                .unwrap_err()
-                .contains("绝对路径")
+        // Each refusal by its own sentence, read from the catalog: a
+        // fragment spelled here went stale the day the catalog was
+        // reworded (2026-09-28, 「不能是空的」 → 「不能为空」).
+        assert_eq!(
+            tidy_watch(&["models".into()]).unwrap_err(),
+            khor_catalog::msg::watch_path_relative("models")
         );
-        assert!(
-            tidy_watch(&["/data/../etc".into()])
-                .unwrap_err()
-                .contains("..")
+        assert_eq!(
+            tidy_watch(&["/data/../etc".into()]).unwrap_err(),
+            khor_catalog::msg::watch_path_dotdot("/data/../etc")
         );
-        assert!(
-            tidy_watch(&["  ".into()])
-                .unwrap_err()
-                .contains("不能是空的")
+        assert_eq!(
+            tidy_watch(&["  ".into()]).unwrap_err(),
+            khor_catalog::msg::watch_path_empty()
         );
-        assert!(
-            tidy_watch(&["/data".into(), "/data/".into()])
-                .unwrap_err()
-                .contains("两遍")
+        assert_eq!(
+            tidy_watch(&["/data".into(), "/data/".into()]).unwrap_err(),
+            khor_catalog::msg::watch_path_twice("/data")
         );
     }
 }
