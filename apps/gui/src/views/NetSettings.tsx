@@ -1,17 +1,26 @@
-// The machine's own relays — the settings screen's second section.
+// 中继 — the 网络 page's second group (docs/MORE.md; 2026-09-28).
 //
-// **Two lists, and they are not the same kind of thing.** 自己的中继 is
-// what the user typed here and the only part anything on this screen can
-// remove. 在用 is every relay the machine actually binds with, the
-// built-in tier included — shown because a screen that lists only what
-// you typed is blank on a fresh machine and says nothing about the relay
-// the connection is really standing on, and shown *without* controls
-// because a delete button that refuses is worse than no button.
+// **Two lists, and they are not the same kind of thing.** 使用中 is
+// every relay the machine actually binds with, the built-in tier
+// included — shown because a screen that lists only what you typed is
+// blank on a fresh machine and says nothing about the relay the
+// connection is really standing on, and shown *as a fact* because a
+// delete button that refuses is worse than no button. 自己的中继 is what
+// the user added here and the only part this group can remove.
 //
-// The screen holds no relay state of its own: every write goes through
-// `setRelays` and paints the answer, the same rule the face axes above
-// run on. "Did it take" is never a question this layer answers from
-// memory.
+// **Open on arrival, and read on arrival** (2026-09-28). It sat folded
+// under 高级 for a week, mounted only when the fold opened — on the
+// judgment that reading it was 「a machine dialling on behalf of a
+// control nobody opened」. It is not: `relays` reads this store's
+// relay file and the configured tier (`khor_gui_core::relays`), with no
+// network at all, the same kind of read as `about`. And the page it
+// was folded on is two short groups now, one screen with room to spare
+// — so the owner's sketch has it open, and a fold here would hide the
+// one fact (使用中) a person opens this page to check.
+//
+// The group holds no relay state of its own: every write goes through
+// `setRelays` and paints the answer. "Did it take" is never a question
+// this layer answers from memory.
 //
 // ⚠️ **The one thing here that is not visible in the data:** the list is
 // read when a node opens. The app opens one per call so it sees a change
@@ -26,21 +35,23 @@ import { fetchRelays, setRelays, type RelayChoices } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { MoreSection } from "@/views/more/MorePage";
+import { MoreFact, MoreSection } from "@/views/more/MorePage";
 
-/**
- * **Mounting is opening, since 2026-09-19.** This took an `open` prop
- * while the settings screen was a dialog that stayed mounted with its
- * body hidden; the settings **page** is drawn only while it is the
- * thing on screen, so the mount is the event and a prop repeating it
- * would be a second answer to one question.
- */
+/** Mounting is reading: the page is drawn only while it is on screen. */
 export function NetSettings() {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
-  const [typed, setTyped] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // The add window: its box, the node's refusal of what was in it, and
+  // whether it was opened by the only-mine switch — then saving adds
+  // the relay **and** turns the switch on, which is what the person
+  // pressed the switch for (安全's PIN-then-lock, the same road).
+  const [adding, setAdding] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [refused, setRefused] = useState<string | null>(null);
+  const [arming, setArming] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -58,107 +69,138 @@ export function NetSettings() {
 
   // One door for every change — add and remove both send the whole list,
   // because that is the shape the node takes (`Node::set_relays`
-  // replaces). Two paths that could disagree about what the list is
-  // would be two paths to disagree about.
-  const write = useCallback(async (next: string[], onlyMine: boolean) => {
-    setError(null);
+  // replaces). The node's own sentence names the entry it refused.
+  const write = useCallback(async (next: string[], onlyMine: boolean, onRefuse: (why: string) => void) => {
     try {
       setChoices(await setRelays(next, onlyMine));
       return true;
     } catch (e) {
-      // The node's own sentence, which names the entry it refused. A
-      // message invented here would be a second opinion about a rule
-      // this layer does not hold — unwrapped the way every other
-      // surface in this app unwraps one, because `String(someError)`
-      // puts an English 「Error: 」 in front of a Chinese sentence.
-      setError(String(e instanceof Error ? e.message : e));
+      onRefuse(String(e instanceof Error ? e.message : e));
       return false;
     }
   }, []);
 
-  if (!choices) {
-    return error ? (
-      <div data-relays-error className="text-callout text-destructive">
-        {error}
-      </div>
-    ) : null;
-  }
+  const openAdd = (arm: boolean) => {
+    setTyped("");
+    setRefused(null);
+    setArming(arm);
+    setAdding(true);
+  };
 
-  // **Two settings groups** (components/SettingsGroup), not a column of
-  // its own headings and chips: 自己的中继 is rows — each relay an
-  // action row whose one act is 去掉 (on the spot, so no ellipsis), the
-  // box that adds one, and the 只用自己的 switch under the list it
-  // governs; 在用 is facts, no controls.
   return (
-    <div data-net-settings className="flex flex-col gap-group">
-      <MoreSection name="relays-mine" label={gui.relays_mine}>
-      {choices.mine.map((url) => (
-        <ActionRow
-          key={url}
-          name="relay"
-          rowMark={{ "data-relay-mine": url }}
-          label={<span data-selectable className="block truncate font-mono">{url}</span>}
-          actionLabel={gui.remove}
-          variant="ghost"
-          onPress={() => void write(choices.mine.filter((u) => u !== url), choices.only_mine)}
-        />
-      ))}
-
-      <form
-        className="flex items-center gap-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const url = typed.trim();
-          if (!url) return;
-          // Cleared only on success: a refused address stays in the box
-          // next to the sentence saying why, so the fix is an edit and
-          // not a retype.
-          if (await write([...choices.mine, url], choices.only_mine)) setTyped("");
-        }}
-      >
-        <Input
-          data-relay-add
-          className="min-w-0 flex-1 font-mono"
-          placeholder={gui.relays_hint}
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-        />
-        <Button type="submit" size="sm" className="min-h-touch" disabled={!typed.trim()}>
-          {gui.relays_add}
-        </Button>
-      </form>
-
+    <MoreSection name="relays" label={gui.net_relays} mark={{ "data-net-settings": "" }}>
       {error && (
         <div data-relays-error className="text-callout text-destructive">
           {error}
         </div>
       )}
+      {choices && (
+        <>
+          {/* 使用中: a fact, one address a line — nothing here can be
+              removed, so nothing here offers to. */}
+          <MoreFact name="relays-in-use" label={gui.relays_in_use}>
+            <span data-relays-in-use className="flex flex-col items-end font-mono">
+              {choices.in_use.map((url) => (
+                <span key={url}>{url}</span>
+              ))}
+            </span>
+          </MoreFact>
 
-      {/* The switch, under the list it governs rather than above it:
-          it is an answer to「加了这台之后原来那些还在不在」, and that
-          question does not exist until there is a row. **A switch**
-          (components/Switch): it is on or off and takes at once.
-          ⚠️ 墓碑 (2026-09-27): it was a ringed `Button` wearing its own
-          pressed state — 「this app has no checkbox」 — which is the
-          one-off on/off look the four row kinds replaced. The note that
-          says when it takes is the row's `note`. */}
-      <SwitchRow
-        name="relays-only-mine"
-        label={gui.relays_only_mine}
-        hint={<span data-relays-note>{gui.relays_after_restart}</span>}
-        on={choices.only_mine}
-        onToggle={() => void write(choices.mine, !choices.only_mine)}
-        mark={{ "data-relays-only-mine": "" }}
-      />
-      </MoreSection>
+          {/* 自己的中继: the row that adds one (its act asks for the
+              address, so it opens a window and wears the ellipsis —
+              ⚠️ 墓碑 2026-09-28: a text box and a button stood in the
+              card here, a form in a row's place), then one row per
+              entry whose one act is 移除, on the spot. */}
+          <ActionRow
+            name="relays-mine"
+            label={gui.relays_mine}
+            actionLabel={gui.relays_add_ask}
+            onPress={() => openAdd(false)}
+            mark={{ "data-relay-add": "" }}
+          />
+          {choices.mine.map((url) => (
+            <ActionRow
+              key={url}
+              name="relay"
+              rowMark={{ "data-relay-mine": url }}
+              label={<span data-selectable className="block truncate font-mono">{url}</span>}
+              actionLabel={gui.remove}
+              onPress={() =>
+                void write(
+                  choices.mine.filter((u) => u !== url),
+                  choices.only_mine,
+                  setError,
+                )
+              }
+            />
+          ))}
 
-      <MoreSection name="relays-in-use" label={gui.relays_in_use} mark={{ "data-relays-in-use": "" }}>
-        {choices.in_use.map((url) => (
-          <div key={url} data-selectable className="truncate font-mono text-callout text-muted-foreground">
-            {url}
-          </div>
-        ))}
-      </MoreSection>
-    </div>
+          {/* The switch, under the list it governs: it answers
+              「加了这台之后原来那些还在不在」. **With none of your own it
+              asks for one first** — the node refuses only-mine over an
+              empty list (`relays-only-mine-needs-one`), so a switch that
+              just sent it would be a press whose one answer is no. */}
+          <SwitchRow
+            name="relays-only-mine"
+            label={gui.relays_only_mine}
+            hint={<span data-relays-note>{gui.relays_after_restart}</span>}
+            on={choices.only_mine}
+            onToggle={() => {
+              setError(null);
+              if (!choices.only_mine && choices.mine.length === 0) {
+                openAdd(true);
+                return;
+              }
+              void write(choices.mine, !choices.only_mine, setError);
+            }}
+            mark={{ "data-relays-only-mine": "" }}
+          />
+
+          <Dialog open={adding} onOpenChange={setAdding}>
+            <DialogContent data-relay-add-dialog>
+              <DialogHeader>
+                <DialogTitle>{gui.relays_add}</DialogTitle>
+              </DialogHeader>
+              <form
+                id="relay-add"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const url = typed.trim();
+                  if (!url) return;
+                  // Closed only on success: a refused address stays in
+                  // the box next to the sentence saying why, so the fix
+                  // is an edit and not a retype.
+                  if (await write([...choices.mine, url], arming || choices.only_mine, setRefused)) {
+                    setAdding(false);
+                    setArming(false);
+                  }
+                }}
+              >
+                <Input
+                  data-relay-add-url
+                  autoComplete="off"
+                  aria-label={gui.relays_add}
+                  placeholder={gui.relays_hint}
+                  value={typed}
+                  onChange={(e) => setTyped(e.target.value)}
+                  className="min-h-touch w-full font-mono"
+                />
+              </form>
+              {refused && (
+                <p data-relays-refused className="text-callout text-destructive">
+                  {refused}
+                </p>
+              )}
+              <DialogFooter>
+                <Button onClick={() => setAdding(false)}>{gui.delete_keep}</Button>
+                <Button type="submit" form="relay-add" variant="primary" data-relay-add-do disabled={!typed.trim()}>
+                  {gui.watch_add}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+    </MoreSection>
   );
 }

@@ -620,8 +620,12 @@ day-peak-at = "峰值 {0} · {1}"
 # 读过去,是日志;叠放把一天折成每个指标一根轴,轴上画着四分位和中位,是统计。
 # 键名不跟着改——`heat`/`para` 是守门里 `data-day-view-pick` 的锚,词才是给人看的。
 # **「山脊」那一档撤掉了,键连带删了**(2026-09-06:「取消山脊图」),没有替代键。
-day-view-heat = "24h 日志"
-day-view-para = "24h 统计"
+# **2026-09-28「24h」挪进了这一节的标题**(`day-title`):机器页的几块成了板上
+# 的几节,每节一行小标题,这两个词站在标题那一行的右端。读起来仍是「24 小时 ·
+# 日志 / 统计」,只是「24h」不再在每个词前面说一遍。
+day-title = "24 小时"
+day-view-heat = "日志"
+day-view-para = "统计"
 # 游标读数条:那一刻,和那一刻每个读数是多少。**换读法不许丢掉它**——丢了就说明
 # 三种读法各自记着自己的状态,那它们就不是同一份数据的三种看法了。
 day-at = "{0} · {1}"
@@ -2866,12 +2870,12 @@ doctor = "诊断"
 identity = "这台机器"
 identity-id = "机器 id"
 identity-version = "khor 版本"
-# 网络页在这台机器还没配过对时说的那一句。**留在这儿而不是画一张空地图**:
-# 一张一个点的图答不了「怎么再加一台」,而那正是这时候唯一的问题。
+# 网络页在这台机器还没配过对时,「已连接的机器」那一行说的那一句:
+# 这时候唯一的问题是「怎么再加一台」,页头的邀请设备… / 加入网络… 答它。
 identity-alone = "尚未与其他机器配对"
-# 折起来的那一格,网络页的中继和头像编辑器的形状共用一个词
-# (docs/MORE.md 第二轮:中继折在「高级」里)。**默认收起**——
-# 「不是所有的设置都要去铺在界面上」。
+# 折起来的那一格,头像编辑器的形状用它。**默认收起**——
+# 「不是所有的设置都要去铺在界面上」。网络页的中继折在这里过
+# (2026-09-20 → 09-28),现在是网络页上敞开的一组。
 advanced = "高级"
 # 身份卡上「本机开着哪几张界面」那一节 (docs/MORE.md 头像页)。
 # 这里的「界面」是桌面 app 和网页脸,不是头像;事实从节点拿
@@ -2896,11 +2900,33 @@ identity-paused-now = "已暂停——其他设备会看到这台机器离线"
 identity-leave-warn = "本机将退出网络：设备列表只保留本机，其他设备留在这里的数据一并清除。本机的会话、工作区、身份、设置不受影响；用一张新的配对票 pair 可以重新加入。"
 identity-leave-type-name = "输入这台机器的名称以确认"
 identity-leave-do = "离开网络"
+# ── 网络页是一页设置 (2026-09-28 负责人):状态 / 中继 / 离开网络 ────────
+# 地图只住在机器总览上;这一页用设置行说这台机器和这张网的关系。
+# 组名「状态」借 `axis-state`:同一个词,同一个意思,一段文案不挂两个键。
+# 「本机」那一行的值是名字 · 这一个词。暂停时是 `machine-paused`,
+# 别的机器都说 serve 未运行时是 `hop.no-serve`,其余是它。
+net-online = "在线"
+# 连着的只数直连和中继两种路;未连接 / 未知的机器在表里但没在说话,不算。
+net-connected = "已连接的机器"
+net-connected-n = "{0} 台（{1}）"
+net-connected-bare = "{0} 台"
+# 「1 直连」:一个数,一条路的词(`hop.direct` / `hop.relay`)。
+net-via = "{0} {1}"
+# 开关:打开就是 `khor pause`。说明写会发生什么。
+net-pause-sync = "暂停同步"
+net-pause-note = "其他设备会看到这台机器离线；本机照常使用"
+net-relays = "中继"
+# 离开网络那一行:和安全页「重置身份 · 重置…」同一个形状,确认在窗里。
+net-leave-note = "设备列表只保留本机；用新的配对票可以重新加入"
+net-leave-ask = "离开…"
 # 头像页上编辑器那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
 # **2026-09-21 从「这台机器的脸」改成「头像」**:这棵树里「脸」指的是 khor 的
 # 界面(桌面 app、网页脸),而这一节说的是一张图。一个词不能指两样东西。
 settings-face = "头像"
+# 机器行右键菜单里那一项(2026-09-28):开同一个编辑器,编那一行的机器。
+# 原来在地图卡上(「头像」那颗按钮),地图卡撤了。带省略号:后面有窗。
+avatar-change-ask = "更改头像…"
 # 「换一组配色」那颗按钮 (docs/MORE.md 第二轮:出厂色板做成一个按钮,按一下换一组)。
 # **不再把七张色板铺成一排**——「不是所有的设置都要去铺在界面上」;按一下走下一张,
 # 走到头绕回来,而五个色点就在它上面,所以「换到了哪一张」不用说,看得见。
@@ -2960,20 +2986,23 @@ web-key-none = "这台机器尚未开启过网页脸"
 # 换钥匙之后那一句。不是装饰:之前发出去的每一条链接从这一刻起全都打不开,
 # 而那正是这个动作的全部意思。
 web-key-rotated = "已重新生成，之前发出的链接全部失效"
-# 网络页上那台机器的卡里那颗按钮,和机器行菜单同一个词 `delete`
-# (docs/SHELL.md 第二轮:「网络页地图卡改成『删除』」),按下去之后的那一句
-# 两边共用(`forget-machine-confirm`)。墓碑:它叫过「移除设备」。
+# 墓碑(2026-09-28):网络页地图卡上那颗「删除」——按一下就删、不问——随地图
+# 卡一起撤了。删一台机器只剩机器行菜单的「删除…」,走同一个确认窗
+# (`forget-machine-confirm`)。它更早叫过「移除设备」。
 # 重置身份。红字、输机器名——这一页上唯一一件撤不回来的事。
 reset-section = "重置身份"
 reset-warn = "删除这台机器的身份密钥并重新生成。对整个网络来说，这相当于换了一台机器：其他机器只认旧身份，需要重新配对。"
 reset-type-name = "输入机器名称以确认"
 reset-do = "确认重置"
-# ── the machine's own relays, on the settings screen ──
-# 「中继」 alone is already taken by the path word (直连/中继 on a row),
-# and it has to stay that — this heading is about the *list*, not about
+# ── the machine's own relays, 网络 page's 中继 group ──
+# The group itself is `net-relays` (「中继」, the owner's sketch,
+# 2026-09-28); this row is about the *list* the user added, not about
 # which road a connection took, so it says whose list it is.
 relays-mine = "自己的中继"
+# The add window's title; the row's button is `relays-add-ask`, because
+# it opens that window (⚠️ 墓碑 2026-09-28: a box and a button in the card).
 relays-add = "添加中继"
+relays-add-ask = "添加中继…"
 # The placeholder is the answer to「这一格要填什么」, which a label
 # cannot give without becoming an explanation (docs/UX.md 文案).
 relays-hint = "http://地址:端口"
@@ -3763,6 +3792,9 @@ usage-range = "{0} → {1} · 共 {2} 天"
 # 面积那个量的选择器长在脚注的词上,那个词自己就是控件,所以不需要一个行名;
 # 同日用户裁「都做成一个小的设置按钮」,面板里那一行就又需要一个名字了。
 usage-pick-area = "面积"
+# 机器页「进程」那一节的小标题(2026-09-28:机器页的几块成了板上的几节,
+# 每节一行小标题;散点的 ••• 站在这一行的右端)。
+top-section = "进程"
 # 散点脚注:**点的面积是哪个量**。X 和 Y 不在这句里——它们印在自己那根轴上,
 # 而且那个词本身就是换轴的按钮(`components/AxisPick`,和机器页同一个控件)。
 # 这一句只剩第三个量,形状照 `top-plot-halo`(「光晕 = 显存 · …」)。

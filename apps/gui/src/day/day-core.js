@@ -660,15 +660,21 @@ export function mount(host, opts) {
   // The one thing this face asks of every control is a finger-sized
   // target, and the gate that measures it looks at the element carrying
   // the press. Ten-pixel words in a gallery need no such thing.
+  // **The line is the section's heading** (2026-09-28, the owner: the
+  // machine card's parts are sections on the board, each with a small
+  // heading row). The section's name on the left; the two readings at
+  // the right end of the same row, where a heading keeps its control.
   const drawSwitch = () => {
-    sw.innerHTML = viewsOf()
-      .map(
-        ([v, label], k) =>
-          (k ? '<s>·</s>' : '') +
-          '<button type="button" data-day-view-pick="' + v + '" data-on="' + (v === st.view) +
-          '" aria-pressed="' + (v === st.view) + '">' + label + '</button>',
-      )
-      .join('');
+    sw.innerHTML =
+      '<span class="tt" data-day-title>' + (WORDS.title || '') + '</span>' +
+      viewsOf()
+        .map(
+          ([v, label], k) =>
+            (k ? '<s>·</s>' : '') +
+            '<button type="button" data-day-view-pick="' + v + '" data-on="' + (v === st.view) +
+            '" aria-pressed="' + (v === st.view) + '">' + label + '</button>',
+        )
+        .join('');
   };
   // The original showed a sentence here when nothing was under the
   // cursor — 「把鼠标横着扫过去,点一下钉住」. **Not brought over**: this

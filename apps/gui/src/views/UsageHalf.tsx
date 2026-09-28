@@ -68,7 +68,7 @@ import type { Usage } from "@/gen/bindings/Usage";
 import { cli, gui } from "@/gen/catalog";
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
-import { Panel } from "@/components/Panel";
+import { SectionHead } from "@/components/SectionHead";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
 import { SideCut } from "@/components/SideCut";
@@ -407,11 +407,12 @@ export function UsageHalf({
       // head is a control that answers with nothing. **If this half
       // ever grows something to press, that ruling has to be looked at
       // again.**
-      <div data-usage-half data-usage-mute data-usage-source={source} className="flex flex-col gap-row">
-        <p data-usage-title className="text-callout font-title text-muted-foreground">{gui.usage_title}</p>
-        <Panel>
-          <p className="text-callout text-muted-foreground">{why}</p>
-        </Panel>
+      // (2026-09-28: the same section the chart would have had — a
+      // hairline, its heading row, and the sentence where the figure
+      // would be; the card the sentence sat on retired with the boxes.)
+      <div data-usage-half data-usage-mute data-usage-source={source} className="flex flex-col border-t pt-row">
+        <SectionHead title={gui.usage_title} mark={{ "data-usage-title": "" }} />
+        <p className="text-callout text-muted-foreground">{why}</p>
       </div>
     );
   }
@@ -425,26 +426,20 @@ export function UsageHalf({
 
   return (
     <div data-usage-half data-usage-source={source} className="flex flex-col gap-row">
-      {/* **One line, and it is the only heading in this block.**
-          ⚠️ The two zone headings this replaces were control strips
-          with titles on them; the strips went (see `Trend` and
-          `Stats`) and the machine card's own figure-and-table panel
-          carries no heading at all — but that panel is on a card whose
-          every part is about one machine.
-          **Measured 2026-09-08**: the subscription's detail pane has
-          exactly three children — the account's identity line, the
-          dial with its windows, and this. Nothing in the first two
-          says what this one is, and the block above it is **money**
-          while this is tokens. Delete this line and the only thing
-          separating the two quantities is a horizontal rule. */}
-      <p data-usage-title className="text-callout font-title text-muted-foreground">{gui.usage_title}</p>
-      {/* **One card, not two flat sections** (`components/Panel`, the
-          machine card's own). The two zones are two *parts of one
-          subject* — the same models, drawn over days and then listed —
-          so they are one panel with a seam through it, exactly the way
-          that card holds its figure and its table. Two cards would say
-          they are two subjects. */}
-      <Panel>
+      {/* **Two sections on the board, the machine card's shape**
+          (2026-09-28): each a hairline, a small heading row with its
+          figure's ••• at the right end (`components/SectionHead`), and
+          what it draws. The first one's name is this half's one title,
+          「token 用量」 — **measured 2026-09-08**, the subscription's
+          detail pane is the account's identity line, the dial with its
+          windows, and this; the block above is **money** and this is
+          tokens, and without the name the only thing between the two
+          quantities would be a rule.
+          ⚠️ 墓碑 (2026-09-28): the two zones stood in one
+          `components/Panel` (a bordered card on the board) from
+          2026-09-08, the machine card's then; that card's boxes went,
+          so these did — 「一个产品」 either way. */}
+      <>
         <Trend days={days} agg={agg} rows={rows} bands={bands} view={view} win={win} onView={setView} onWin={setWin} />
         {/* ⚠️ **The stats zone goes when the window is empty; the trend
             zone stays.** Not because one is above the other:
@@ -481,7 +476,7 @@ export function UsageHalf({
           onSort={setSort}
         />
         )}
-      </Panel>
+      </>
     </div>
   );
 }
@@ -563,8 +558,37 @@ function Trend({
   const modelRuler = ruler(agg.map((r) => r.input + r.output));
 
   return (
-    <section data-usage-zone="trend" className="flex flex-col gap-in">
-      {/* ⚠️ **No heading and no control strip.** Both were here until
+    <section data-usage-zone="trend" className="flex flex-col gap-in border-t pt-row">
+      {/* **The section's heading row, and the figure's ••• at its right
+          end** (2026-09-28, the machine card's shape): 「按天 / 按模型」
+          and the window, one button, where a section keeps its control.
+          It sat in the figure's top-right corner (`labelSeat`'s
+          settings seat) until then. */}
+      <SectionHead title={gui.usage_title} mark={{ "data-usage-title": "" }}>
+        <PlotSettings
+          rows={[
+            {
+              key: "view",
+              word: gui.usage_view_day,
+              chosen: view,
+              options: [
+                { key: "day", word: gui.usage_view_day },
+                { key: "model", word: gui.usage_view_model },
+              ],
+            },
+            {
+              key: "window",
+              word: gui.usage_window_all,
+              chosen: String(win),
+              options: WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) })),
+            },
+          ]}
+          onPick={(row, k) => (row === "view" ? onView(k === "model" ? "model" : "day") : onWin(Number(k)))}
+        />
+      </SectionHead>
+      {/* ⚠️ **No control strip** (the heading row above is the
+          section's name and one button, the machine card's shape —
+          not this). A strip was here until
           2026-09-08: a title beside a row of chips, above the figure.
           The machine card puts every control **on the thing it
           controls** — sorting on the column heads, an axis's quantity
@@ -580,9 +604,9 @@ function Trend({
           page's own — a stack of ten days needs less air than a scatter
           of labelled models — while everything inside it is
           `lib/plot`'s. */}
-      {/* h-58, not h-52: the head strip grew to a finger's height
+      {/* h-52 again (2026-09-28 evening): the head strip went back to 22 when the ••• left it; it was h-58 while the strip was a finger tall
           (`PLOT.padT`, 2026-09-28) and the bars kept their room. */}
-      <div ref={canvas} className="relative h-58 w-full">
+      <div ref={canvas} className="relative h-52 w-full">
       {/* **The window has nothing in it, and that is a sentence, not an
           empty chart.** The three faces this half already had are 「still
           asking」, 「this provider publishes no token report」 and 「that
@@ -782,28 +806,6 @@ function Trend({
             word={view === "model" ? gui.usage_view_model : gui.usage_view_day}
             rulerWord={win === 0 ? gui.usage_window_all : gui.usage_window_days(win)}
           />
-        </span>
-        <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
-        <PlotSettings
-          rows={[
-            {
-              key: "view",
-              word: gui.usage_view_day,
-              chosen: view,
-              options: [
-                { key: "day", word: gui.usage_view_day },
-                { key: "model", word: gui.usage_view_model },
-              ],
-            },
-            {
-              key: "window",
-              word: gui.usage_window_all,
-              chosen: String(win),
-              options: WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) })),
-            },
-          ]}
-          onPick={(row, k) => (row === "view" ? onView(k === "model" ? "model" : "day") : onWin(Number(k)))}
-        />
         </span>
       </span>
       </div>
@@ -1020,17 +1022,31 @@ function Stats({
     <section
       data-usage-zone="stats"
       ref={box}
-      // **The seam, and it is `--gap-group` on both sides of a
-      // hairline** — `data-top-seam` next door is the same three
-      // classes for the same reason: these two are one block, and the
-      // token whose whole definition is 「between groups that must not
-      // read as one list」 is this one. `--gap-row` was tried there and
-      // measured 25px against an 18px row, a break narrower than twice
-      // the rhythm it breaks.
+      // **A section boundary since 2026-09-28**: one hairline, the
+      // board's section rhythm (the half's `gap-row` above it,
+      // `pt-row` under it — the machine card's processes section), and
+      // a heading row. It was the seam through one card, `--gap-group`
+      // either side, while the two zones stood in one `Panel`.
       data-usage-seam
-      className="mt-group flex flex-col gap-in border-t pt-group"
+      className="flex flex-col gap-in border-t pt-row"
     >
-      {/* ⚠️ **No heading, and no row of `<select>`s.** Both were here
+      {/* The section's heading row: its name (the models this lists)
+          and the figure's ••• at the right end — three rows, X, Y and
+          the dot's area. **The area row offers what every model
+          reports** (`areaKeys`): a point must exist to carry X and Y,
+          so a missing reading has nowhere to go but the floor — where
+          it would read as 「the smallest」. The machine card's rule. */}
+      <SectionHead title={gui.accounts_models}>
+        <PlotSettings
+          rows={[
+            { key: "x", word: "X", chosen: axes.x, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
+            { key: "y", word: "Y", chosen: axes.y, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
+            { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: areaKeys.map((k) => ({ key: k, word: AXES[k].word() })) },
+          ]}
+          onPick={(row, k) => onAxes({ ...axes, [row]: k as AxisKey })}
+        />
+      </SectionHead>
+      {/* ⚠️ **No row of `<select>`s.** It was here
           until 2026-09-08. The four native selects were 23px tall —
           half the finger floor — and they sat in a strip above the
           figure, so 「change what this axis shows」 was a different act
@@ -1039,9 +1055,9 @@ function Stats({
           The window this covers moved with them: it is printed at the
           figure's foot, where it is a fact about the drawing rather
           than a title over it. */}
-      {/* h-70, not h-64: the head strip grew to a finger's height
+      {/* h-64 again (2026-09-28 evening): the head strip went back to 22 when the ••• left it; it was h-70 while the strip was a finger tall
           (`PLOT.padT`, 2026-09-28) and the scatter kept its area. */}
-      <div ref={canvas} className="relative h-70 w-full">
+      <div ref={canvas} className="relative h-64 w-full">
         {/* **The two quantities, each printed on its own axis** —
             `components/PlotControls`, the machine card's own. They are
             words now, not controls: what changes them is the settings
@@ -1054,24 +1070,6 @@ function Stats({
           </span>
           <span className="pointer-events-auto absolute" style={labelSeat("x")}>
             <AxisLabel which="x" word={AXES[axes.x].word()} rulerWord={RULER_WORD[rx.kind]()} />
-          </span>
-          {/* **Three rows, and the third is the dot's area.** The
-              machine card grew the same row on 2026-09-08, so this is
-              one rule on two figures rather than a shape this card has
-              to itself. The axis rows offer everything this source
-              reports; the area row offers what every model reports,
-              because a point must exist to carry X and Y and so a
-              missing reading has nowhere to go but the floor — where
-              it would read as 「the smallest」. */}
-          <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
-            <PlotSettings
-              rows={[
-                { key: "x", word: "X", chosen: axes.x, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
-                { key: "y", word: "Y", chosen: axes.y, options: shown.map((k) => ({ key: k, word: AXES[k].word() })) },
-                { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: areaKeys.map((k) => ({ key: k, word: AXES[k].word() })) },
-              ]}
-              onPick={(row, k) => onAxes({ ...axes, [row]: k as AxisKey })}
-            />
           </span>
         </span>
       <svg

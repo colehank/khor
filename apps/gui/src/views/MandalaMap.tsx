@@ -1,3 +1,5 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+
 import type { DeviceRow } from "@/api";
 // Aliased: `Seat` the name belongs to the component below (one machine
 // in its place); the binding is the place itself.
@@ -158,6 +160,35 @@ export function MandalaMap({
   // other.
   const me = rows.find((r) => r.me) ?? null;
   const others = rows.filter((r) => !r.me);
+  // **Where each edge is drawn, worked out from what is on the square**
+  // (2026-09-28 UI 审计): every edge used to run centre to centre under
+  // everything — through the discs at both ends and through every name
+  // and age hanging under them — and the hop word stood on a chip that
+  // hid only its own patch of line. Now a line stops at a disc's edge,
+  // breaks around every piece of text on the map, and the hop word sits
+  // in the longest stretch that is left. `check-face` 「地图的线」.
+  const square = useRef<HTMLDivElement>(null);
+  const [roads, setRoads] = useState<Roads | null>(null);
+  // A size change moves every seat, and a font arriving late changes
+  // every caption's width; either one re-runs the layout below.
+  const [, setBump] = useState(0);
+  useEffect(() => {
+    const el = square.current;
+    if (!el) return;
+    const again = () => setBump((n) => n + 1);
+    const watch = new ResizeObserver(again);
+    watch.observe(el);
+    void document.fonts?.ready.then(again);
+    return () => watch.disconnect();
+  }, []);
+  // After every render, and before paint: the captions and the words
+  // are this render's, so the lines must be too. Equal answers keep the
+  // old object, so this settles in one pass.
+  useLayoutEffect(() => {
+    const el = square.current;
+    const next = el && me ? layRoads(el, me, others) : null;
+    setRoads((was) => (sameRoads(was, next) ? was : next));
+  });
   return (
     <section
       data-mandala-map
@@ -184,52 +215,59 @@ export function MandalaMap({
           further subtraction left a uniform 48 of slack on every
           window size. */}
       <div
+        ref={square}
         className="relative aspect-square"
         // …and the inner one: the fluid sizes inside the picture
         // resolve against the square itself, not the pane around it.
         style={{ width: "100cqmin", containerType: "size" }}
       >
-        {/* The edges, under everything: the seats' percentages are the
-            viewBox's own coordinates (both speak 0–100 of the square),
-            and `non-scaling-stroke` keeps the line's weight in screen
-            units however large the square is. `preserveAspectRatio`
-            can be none because the box is square by construction. */}
-        {me && others.length > 0 && (
+        {/* The edges, under everything, in the square's own pixels —
+            the stretches `layRoads` left once the discs and the words
+            were cut out of each line. Nothing is drawn until that has
+            run once: a centre-to-centre line for one frame is the
+            picture this replaced. */}
+        {me && others.length > 0 && roads && (
           <svg
             data-mesh-edges
             aria-hidden="true"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
+            viewBox={`0 0 ${roads.side} ${roads.side}`}
             className="pointer-events-none absolute inset-0 size-full"
           >
-            {others.map((row) => (
-              <Edge key={row.id} from={me.seat} to={row.seat} row={row} />
-            ))}
+            {roads.edges.map((e) =>
+              e.parts.map((p, i) => <Edge key={`${e.id} ${i}`} id={e.id} road={e.road} part={p} />),
+            )}
           </svg>
         )}
-        {/* Each edge's word, at its midpoint — HTML rather than SVG
-            text so the type tokens reach it. On a small chip of ground
-            so the line does not strike through its own name. */}
+        {/* Each edge's word, in the longest stretch of its line that no
+            disc or caption covers — HTML rather than SVG text so the
+            type tokens reach it. **No chip of ground under it**: the
+            line is cut around the word instead, so nothing shows
+            through it on either theme. Hidden until placed; it is
+            measured before it is placed. */}
         {me &&
-          others.map(
-            (row) =>
-              row.hop && (
-                <span
-                  key={row.id}
-                  data-edge-word={row.id}
-                  data-hop={row.hop}
-                  className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm bg-background px-1 text-caption text-muted-foreground"
-                  style={{
-                    left: `${(me.seat.left + row.seat.left) / 2}%`,
-                    top: `${(me.seat.top + row.seat.top) / 2}%`,
-                    fontSize: TEXT_FINE,
-                    lineHeight: TEXT_RATIO,
-                  }}
-                >
-                  {hopWord(row.hop)}
-                </span>
-              ),
-          )}
+          others.map((row) => {
+            if (!row.hop) return null;
+            const at = roads?.edges.find((e) => e.id === row.id)?.word ?? null;
+            return (
+              <span
+                key={row.id}
+                data-edge-word={row.id}
+                data-hop={row.hop}
+                className={cn(
+                  "absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-caption text-muted-foreground",
+                  !at && "invisible",
+                )}
+                style={{
+                  left: at ? `${at.x}%` : 0,
+                  top: at ? `${at.y}%` : 0,
+                  fontSize: TEXT_FINE,
+                  lineHeight: TEXT_RATIO,
+                }}
+              >
+                {hopWord(row.hop)}
+              </span>
+            );
+          })}
         <Seat
           row={me}
           big
@@ -251,13 +289,33 @@ export function MandalaMap({
   );
 }
 
+/**
+ * How many rows on each machine are waiting on a person, by device id —
+ * the map's `waiting`. **Counted by the caller's rows, not by this
+ * file**: the map is handed devices and has never been handed
+ * sessions, and a picture that went looking for a second table to draw
+ * itself is a picture with an opinion about what a machine is.
+ *
+ * Joined on the name and not on an id, because the name is the join
+ * the node itself made (`khor_node::list::place_of` builds `home` from
+ * the same device table this row's `name` comes from). Moved here from
+ * `MarkPlace` when that retired (2026-09-28).
+ */
+export function waitingOn(devices: DeviceRow[], rows: { home: string; word: string }[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const d of devices) {
+    const n = rows.filter((r) => r.home === d.name && r.word === "blocked").length;
+    if (n > 0) out[d.id] = n;
+  }
+  return out;
+}
+
 /* The edges' line weights and the relay's dash rhythm, named the way
    Ring.tsx names its STROKE: screen units (non-scaling-stroke), one
    place. The no-reading stroke is thinner as well as fainter, so the
    difference survives a screenshot in one channel colour-blindness
-   cannot take away. The dash is in the viewBox's own units on purpose
-   — it scales with the picture, which is what "everything scales
-   together" means for a pattern. */
+   cannot take away. The viewBox is the square's own pixels since
+   2026-09-28, so the dash is too. */
 const EDGE_STROKE = 1.5;
 const EDGE_STROKE_FAINT = 1;
 const RELAY_DASH = "6 5";
@@ -293,19 +351,19 @@ const TEXT_RATIO = "1.44";
  * with no road is still a member, and a missing edge would read as a
  * machine the map forgot.
  *
- * Endpoints are explicit `Seat` pairs, not "centre to rim" — the shape
- * a future two-segment sponsored route needs (file head).
+ * One `<line>` per stretch `layRoads` left of the edge: a line broken
+ * around a caption or its own word is several of these, all carrying
+ * the edge's id.
  */
-function Edge({ from, to, row }: { from: SeatPoint; to: SeatPoint; row: DeviceRow }) {
-  const road = row.hop === "direct" ? "direct" : row.hop === "relay" ? "relay" : "none";
+function Edge({ id, road, part }: { id: string; road: Road; part: Part }) {
   return (
     <line
-      data-edge={row.id}
+      data-edge={id}
       data-road={road}
-      x1={from.left}
-      y1={from.top}
-      x2={to.left}
-      y2={to.top}
+      x1={part.x1}
+      y1={part.y1}
+      x2={part.x2}
+      y2={part.y2}
       vectorEffect="non-scaling-stroke"
       strokeWidth={road === "none" ? EDGE_STROKE_FAINT : EDGE_STROKE}
       strokeDasharray={road === "relay" ? RELAY_DASH : undefined}
@@ -358,14 +416,17 @@ function Seat({
           the face's is the one class — so the `cn()` merge trap
           (docs/handoff 坑节) has nothing to bite. */}
       <span
+        data-seat-face
         className="block"
         style={big ? { width: FACE_ME, height: FACE_ME } : { width: FACE_OTHER, height: FACE_OTHER }}
       >
         <MachineAvatar face={row.face} className="size-full" />
       </span>
       {/* Out of the flow, so the box this sits in stays exactly the size
-          of the face — see the note above. */}
+          of the face — see the note above. `data-seat-caption` is what
+          `layRoads` reads the words' boxes under. */}
       <span
+        data-seat-caption
         className="absolute left-1/2 top-full flex -translate-x-1/2 flex-col items-center pt-2 text-center"
         style={{ width: CAPTION_W }}
       >
@@ -499,3 +560,163 @@ function Seat({
    same information one press away, in the shape that carries its own
    scale (the card's rings). The file head has the rule this leaves
    behind. */
+
+/* ── where the lines go (2026-09-28 UI 审计) ─────────────────────────
+   Every edge is the straight line from this machine's centre to the
+   other one's, **less every stretch that would run into a disc or
+   under a word**: the two discs at its ends (and any other it passes),
+   every name, age and 待批 under a seat, and — once they are placed —
+   every hop word. A little air (`--gap-xxs`) is kept round each of
+   them, so a line visibly stops rather than touching.
+
+   Read off the laid-out boxes, never off transformed ones: the seats
+   scale on hover and zoom in on arrival, and a layout that followed
+   that would move the lines under the pointer. So the geometry is
+   `offset*` sizes placed at the seat's own point — the resting picture.
+
+   Everything a shape needs is a rounded box (`Keep`): a face is one
+   with its own crop (`Avatar::radius_ratio`; the blank is a circle), a
+   word is one with square corners. The keep-out round a box is convex,
+   so a line enters it at most once — one interval to cut. */
+
+type Road = "direct" | "relay" | "none";
+/** One drawn stretch of an edge, in the square's pixels. */
+type Part = { x1: number; y1: number; x2: number; y2: number };
+type Roads = {
+  /** The square's side, in pixels — the viewBox. */
+  side: number;
+  edges: { id: string; road: Road; parts: Part[]; word: { x: number; y: number } | null }[];
+};
+/** A rounded box: centre, half extents, corner radius. */
+type Keep = { cx: number; cy: number; hw: number; hh: number; r: number };
+type Span = [number, number];
+
+const roadOf = (row: DeviceRow): Road =>
+  row.hop === "direct" ? "direct" : row.hop === "relay" ? "relay" : "none";
+
+/** Signed distance from a point to a rounded box — negative inside. */
+function signed(x: number, y: number, k: Keep): number {
+  const qx = Math.abs(x - k.cx) - k.hw + k.r;
+  const qy = Math.abs(y - k.cy) - k.hh + k.r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - k.r;
+}
+
+/** The stretch of `a→b` (as a fraction of it) that comes within `air`
+    of the box, or null. The distance is convex along a line, so the
+    closest point is found by ternary search and the two crossings by
+    bisection either side of it. */
+function cut(a: { x: number; y: number }, b: { x: number; y: number }, k: Keep, air: number): Span | null {
+  const d = (t: number) => signed(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, k) - air;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 48; i += 1) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    if (d(m1) < d(m2)) hi = m2;
+    else lo = m1;
+  }
+  const near = (lo + hi) / 2;
+  if (d(near) >= 0) return null;
+  const edge = (inside: number, outside: number) => {
+    let i = inside;
+    let o = outside;
+    for (let n = 0; n < 40; n += 1) {
+      const m = (i + o) / 2;
+      if (d(m) < 0) i = m;
+      else o = m;
+    }
+    return o;
+  };
+  return [d(0) < 0 ? 0 : edge(near, 0), d(1) < 0 ? 1 : edge(near, 1)];
+}
+
+function without(spans: Span[], gone: Span | null): Span[] {
+  if (!gone) return spans;
+  const [g0, g1] = gone;
+  return spans.flatMap(([s0, s1]): Span[] => {
+    if (g1 <= s0 || g0 >= s1) return [[s0, s1]];
+    const out: Span[] = [];
+    if (g0 > s0) out.push([s0, g0]);
+    if (g1 < s1) out.push([g1, s1]);
+    return out;
+  });
+}
+
+function layRoads(square: HTMLElement, me: DeviceRow, others: DeviceRow[]): Roads | null {
+  const side = square.clientWidth;
+  if (side <= 0) return null;
+  const root = getComputedStyle(document.documentElement);
+  const air = Number.parseFloat(root.getPropertyValue("--gap-xxs")) || 0;
+  const at = (s: SeatPoint) => ({ x: (s.left / 100) * side, y: (s.top / 100) * side });
+  const all = [me, ...others];
+  const keeps: Keep[] = [];
+  for (const el of square.querySelectorAll<HTMLElement>("[data-seat]")) {
+    const row = all.find((r) => r.id === el.dataset.seat);
+    const face = el.querySelector<HTMLElement>("[data-seat-face]");
+    if (!row || !face) continue;
+    const c = at(row.seat);
+    const fw = face.offsetWidth;
+    const fh = face.offsetHeight;
+    keeps.push({ cx: c.x, cy: c.y, hw: fw / 2, hh: fh / 2, r: (row.face?.radius_ratio ?? 0.5) * Math.min(fw, fh) });
+    // The caption hangs from the seat box's bottom edge, centred on it
+    // (`left-1/2 top-full -translate-x-1/2`); its words are its children.
+    const cap = el.querySelector<HTMLElement>("[data-seat-caption]");
+    if (!cap) continue;
+    const left = c.x - cap.offsetWidth / 2;
+    const top = c.y + el.offsetHeight / 2;
+    for (const w of cap.children) {
+      if (!(w instanceof HTMLElement) || w.offsetWidth === 0) continue;
+      keeps.push({
+        cx: left + w.offsetLeft + w.offsetWidth / 2,
+        cy: top + w.offsetTop + w.offsetHeight / 2,
+        hw: w.offsetWidth / 2,
+        hh: w.offsetHeight / 2,
+        r: 0,
+      });
+    }
+  }
+  const from = at(me.seat);
+  // First pass: the discs and the captions.
+  const lines = others.map((row) => {
+    const to = at(row.seat);
+    let spans: Span[] = [[0, 1]];
+    for (const k of keeps) spans = without(spans, cut(from, to, k, air));
+    return { row, to, spans };
+  });
+  // The words, each in the longest stretch its own line has left.
+  const words: Keep[] = [];
+  const placed = lines.map(({ row, to, spans }) => {
+    const el = square.querySelector<HTMLElement>(`[data-edge-word="${row.id}"]`);
+    if (!el || spans.length === 0) return null;
+    const [s0, s1] = spans.reduce((best, s) => (s[1] - s[0] > best[1] - best[0] ? s : best));
+    const t = (s0 + s1) / 2;
+    const x = from.x + (to.x - from.x) * t;
+    const y = from.y + (to.y - from.y) * t;
+    words.push({ cx: x, cy: y, hw: el.offsetWidth / 2, hh: el.offsetHeight / 2, r: 0 });
+    return { x: (x / side) * 100, y: (y / side) * 100 };
+  });
+  // Second pass: every line breaks round every word, its own and the
+  // others'. A stretch shorter than the air is not a line, it is a dot.
+  const edges = lines.map(({ row, to, spans }, i) => {
+    let left = spans;
+    for (const k of words) left = without(left, cut(from, to, k, air));
+    const len = Math.hypot(to.x - from.x, to.y - from.y);
+    const parts = left
+      .filter(([s0, s1]) => (s1 - s0) * len > air)
+      .map(([s0, s1]) => ({
+        x1: from.x + (to.x - from.x) * s0,
+        y1: from.y + (to.y - from.y) * s0,
+        x2: from.x + (to.x - from.x) * s1,
+        y2: from.y + (to.y - from.y) * s1,
+      }));
+    return { id: row.id, road: roadOf(row), parts, word: placed[i] };
+  });
+  return { side, edges };
+}
+
+/** Two layouts that would paint the same picture — tenths of a pixel. */
+function sameRoads(a: Roads | null, b: Roads | null): boolean {
+  const key = (r: Roads | null) =>
+    JSON.stringify(r, (_, v: unknown) => (typeof v === "number" ? Math.round(v * 10) / 10 : v));
+  return key(a) === key(b);
+}

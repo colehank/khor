@@ -97,7 +97,7 @@ import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCaption, MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { RegionState } from "@/components/RegionState";
-import { MandalaMap } from "@/views/MandalaMap";
+import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
@@ -123,11 +123,11 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
  * **The mark's place is gone as a screen of its own** (2026-09-20).
  * It was a state beside `landing` — the mesh, reached first from the
  * app's mark at the head of the rail, then from this machine's face,
- * then from a row on the identity card. It is the body of the 网络 page
- * now (`views/more/NetworkPage`), which is the whole of that page:
- * 「网络就搞成地图」. The structural argument that kept it out of
- * `Landing` still holds and now belongs to `morePage`, which is where it
- * is written.
+ * then from a row on the identity card. It was the body of the 网络
+ * page from then until 2026-09-28, when the owner put the map on one
+ * surface — the machines landing's overview (10-layout 「机器 → 那张
+ * 图」) — and made 网络 a page of settings rows. `MarkPlace` and the
+ * card it opened over the map went with that.
  */
 
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
@@ -1754,6 +1754,11 @@ export default function App() {
             forgetRefused={forgetRefused}
             onPause={onPauseDevice}
             pauseRefused={pauseRefused}
+            // 头像… on a row writes that machine's face for everyone; the
+            // table is re-read, the way a rename's is.
+            onRestyled={() => {
+              refresh().catch(() => {});
+            }}
             // One question left: the devices pane opens a machine's
             // card. Files and browser were the other two, and each
             // stopped being one when it stopped having a machine list
@@ -1851,7 +1856,6 @@ export default function App() {
             setLanding("devices");
             onSelectDevice(d);
           }}
-          onNew={() => openNewSession()}
         />
       }
     />
@@ -1946,7 +1950,9 @@ export default function App() {
     // answer to 「nothing picked」.
     <RegionState state="loading-never" />
   ) : landing === "devices" && !openDevice ? (
-    <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />
+    // The map's one home (2026-09-28): 待批 rides each seat, counted off
+    // the rows the shell already holds.
+    <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} waiting={waitingOn(devices, rows)} />
   ) : landing === "devices" ? (
     <MachineCard
       row={openDevice}
@@ -2049,22 +2055,17 @@ export default function App() {
   const morePageEl =
     morePage === null ? null : morePage === "network" ? (
       <NetworkPage
-        rows={rows}
         devices={devices}
         onClose={() => setMorePage(null)}
-        onInvite={() => setSheet("invite")}
-        onJoin={() => setSheet("join")}
+        // Narrow has no R0 over a 「…」 page: its buttons go in the
+        // page's own head. Wide has them in R0 (below).
+        actions={narrow ? <PageActions actions={deviceActions} /> : undefined}
         onChanged={() => {
           // The device table is the thing that changed, and every
-          // surface on this screen paints off it — the map's seats, the
-          // rail's foot, the machines landing. One refresh, the same
-          // one a forget has always got.
+          // surface on this screen paints off it — the rail's foot, the
+          // machines landing and its map. One refresh, the same one a
+          // forget has always got.
           refresh().catch(() => {});
-        }}
-        onPickWaiting={(row) => {
-          setMorePage(null);
-          setLanding("sessions");
-          onSelect(row);
         }}
       />
     ) : morePage === "settings" ? (
@@ -2452,16 +2453,21 @@ export default function App() {
               // the board, which would say the page's name twice. The
               // narrow face has no R0 and keeps the frame's own head.
               actions={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={gui.close}
-                  data-more-close
-                  onClick={() => setMorePage(null)}
-                  className="min-h-touch min-w-touch"
-                >
-                  <IconClose />
-                </Button>
+                <>
+                  {/* 网络's own buttons (2026-09-28): 邀请设备… / 加入网络…,
+                      the machines overview's two, before the way out. */}
+                  {morePage === "network" && <PageActions actions={deviceActions} />}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={gui.close}
+                    data-more-close
+                    onClick={() => setMorePage(null)}
+                    className="min-h-touch min-w-touch"
+                  >
+                    <IconClose />
+                  </Button>
+                </>
               }
             >
               {morePageEl}

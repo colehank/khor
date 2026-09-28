@@ -24,6 +24,7 @@ export function ActionRow({
   onPress,
   disabled = false,
   variant = "default",
+  danger = false,
   mark,
   rowMark,
 }: {
@@ -41,6 +42,12 @@ export function ActionRow({
       row that depends on a switch above it looks it. */
   disabled?: boolean;
   variant?: "default" | "ghost" | "destructive";
+  /** The act throws something away (网络's 离开…): the button's word in
+      the `destructive` ink. **Not the destructive fill** — that one is
+      only the confirm window's (components/Button), and this row is the
+      way to that window, not the act. Pair it with `ghost`: on the push
+      button's `fill-strong` the dark `destructive` is 3.95. */
+  danger?: boolean;
   /** Extra anchors on the button. */
   mark?: Record<string, string>;
   /** Extra anchors on the row itself. */
@@ -87,7 +94,7 @@ export function ActionRow({
         {...mark}
         // Both axes of the finger floor: a two-character act (显示,
         // 修复) at `sm` is under it on the axis nobody thinks to check.
-        className="min-h-touch min-w-touch flex-none"
+        className={cn("min-h-touch min-w-touch flex-none", danger && "text-destructive")}
       >
         {actionLabel}
       </Button>
