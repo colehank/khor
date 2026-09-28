@@ -2567,10 +2567,39 @@ fn config() -> Vec<khor_gui_core::ConfigRow> {
 
 /// Sets one, and answers the whole list again. Refused by name for an
 /// unknown key or a value outside that key's ladder.
+///
+/// **语言 rebuilds the menu bar** (`menu::follow_lang`): the menu's words
+/// are read when it is built, and `set_config` is where this process
+/// learns the language changed (`khor_gui_core::set_config` re-applies it).
 #[tauri::command]
-fn set_config(name: String, value: String) -> Result<Vec<khor_gui_core::ConfigRow>, String> {
-    khor_gui_core::set_config(&Node::root_from_env(), &name, &value)
+fn set_config(
+    app: tauri::AppHandle,
+    name: String,
+    value: String,
+) -> Result<Vec<khor_gui_core::ConfigRow>, String> {
+    let rows = khor_gui_core::set_config(&Node::root_from_env(), &name, &value)?;
+    #[cfg(desktop)]
+    if name == "lang" {
+        menu::follow_lang(&app);
+    }
+    #[cfg(not(desktop))]
+    let _ = app;
+    Ok(rows)
 }
+
+/// The page's word on which menu-bar items apply right now — ⌘W with
+/// something to close, two tabs to step between, the landing's 「+」 by
+/// name, a lock with a key (`src/lib/shortcuts.ts`, sent on change).
+/// A no-op everywhere but macOS, which is the one face with a menu bar.
+#[cfg(desktop)]
+#[tauri::command]
+fn menu_state(app: tauri::AppHandle, state: menu::MenuState) {
+    menu::set_state(&app, state);
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn menu_state() {}
 
 #[tauri::command]
 fn invite() -> Result<khor_gui_core::Ticket, String> {
@@ -2672,13 +2701,29 @@ pub fn run() {
     // sampler's last round and never waits for a disk.
     khor_node::vitals::local::start(&Node::root_from_env());
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // **khor's own menu bar** (`menu.rs`), so tauri's default is not
+    // built first: its ⌘W was 「Close Window」, and on khor's one window
+    // that stops the node. A picked item goes back to the page as the act
+    // it names, into the same function the page's keydown runs.
+    #[cfg(desktop)]
+    let builder = builder
+        .enable_macos_default_menu(false)
+        .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()));
+    builder
         .setup(|app| {
             // **The window first**: everything below reaches for it by
             // name (`build_the_window` says why it is not in the config).
             #[cfg(desktop)]
             build_the_window(app.handle())?;
+            // The menu bar (macOS; a no-op elsewhere). Its items and the
+            // page's last word on them live in `menu::Held`.
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                app.manage(menu::Held::default());
+                menu::install(app.handle())?;
+            }
             // The window khor's own overlays are drawn in, hung off the
             // face and hidden until something has a list to show
             // (`hang_menu_window`).
@@ -2776,6 +2821,11 @@ pub fn run() {
                         if *here && window.label() == "main" {
                             use tauri::Emitter;
                             let _ = window.emit_to("main", "window:focused", ());
+                            // …and so does the menu bar's language: a
+                            // `khor config set lang` in a terminal reaches
+                            // the page this way, and the menu follows it.
+                            khor_node::config::apply_lang(&Node::root_from_env());
+                            menu::follow_lang(window.app_handle());
                         }
                     }
                     _ => {}
@@ -2919,6 +2969,7 @@ pub fn run() {
             set_window_theme,
             config,
             set_config,
+            menu_state,
             invite,
             pair,
             leave,
@@ -2929,6 +2980,8 @@ pub fn run() {
         .expect("tauri run");
 }
 
+#[cfg(desktop)]
+mod menu;
 #[cfg(desktop)]
 mod traffic;
 

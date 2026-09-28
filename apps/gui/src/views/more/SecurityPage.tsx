@@ -258,7 +258,7 @@ export function SecurityPage({
               <span className="text-muted-foreground">{gui.web_key_none}</span>
             ) : (
               <span className="flex min-w-0 items-center gap-in">
-                <span data-web-key className="min-w-0 truncate font-mono">
+                <span data-web-key data-selectable className="min-w-0 truncate font-mono">
                   {showKey ? key : "•".repeat(key.length)}
                 </span>
                 <Button
@@ -293,9 +293,9 @@ export function SecurityPage({
 
       {/* 配对的机器 left this page on 2026-09-20 (docs/MORE.md 第二轮:
           已配对机器从头像卡和安全页拿掉). It was a list here *and* a
-          list on the identity card, and the network page's map is the
-          one place a machine lives now — 移除设备 with it, in the card
-          of the machine it is about (`MarkPlace`). What is left on 安全
+          list on the identity card; the machines landing is the one
+          place a machine lives now — 删除… with it, in its row's menu
+          (the map's card held it until 2026-09-28). What is left on 安全
           is what this page is for: the keys and the acts that cost
           something. */}
 

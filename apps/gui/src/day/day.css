@@ -133,6 +133,19 @@
   align-items: center;
   gap: 0;
 }
+/* **The row is the 24-hour section's heading** (2026-09-28): the
+   section's name at the left end, in the board's section-heading style
+   (`group`, tertiary — the name a settings group wears over its card,
+   and `MachineCard`'s 进程 over its own section), and the two readings
+   pushed to the right end of the same row. */
+.dayblk .sw .tt {
+  margin-right: auto;
+  font-size: var(--text-group);
+  line-height: var(--text-group--line-height);
+  font-weight: var(--text-group--font-weight);
+  color: var(--tertiary);
+  letter-spacing: 0;
+}
 /* **The two readings are a segmented control** (2026-09-28, docs/
    design-system components/SegmentedControl) — the app's one, drawn
    here from the app's tokens because this block is not React: one
@@ -155,7 +168,6 @@
   align-items: center;
   justify-content: center;
   font-style: normal;
-  cursor: pointer;
   padding: 0 var(--gap-row);
   min-height: var(--hit);
   min-width: var(--hit);
@@ -164,9 +176,6 @@
 }
 .dayblk .sw button > span {
   position: relative;
-}
-.dayblk .sw button[data-on="true"] {
-  cursor: default;
 }
 .dayblk .sw button[data-on="true"]::before {
   content: "";

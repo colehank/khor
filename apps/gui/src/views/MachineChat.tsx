@@ -144,6 +144,8 @@ export function MachineChat({ id }: { id: string }) {
           const el = e.currentTarget;
           stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
+        // The messages are read and copied (app.css 选字与手).
+        data-selectable
         className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
       >
         {/* The same reading column the agent conversation is set in

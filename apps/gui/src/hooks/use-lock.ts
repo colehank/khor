@@ -110,17 +110,10 @@ export function useLock(): Lock {
     });
   }, []);
 
-  // ⌘L / Ctrl+L. Captured at the window so a text box does not eat it.
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() === "l" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
-        e.preventDefault();
-        now();
-      }
-    };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
-  }, [now]);
+  // ⌘L is pressed in `lib/shortcuts` since 2026-09-28, with the rest of
+  // the keyboard and the menu bar's 锁定, and calls `now` above. ⚠️ It was
+  // `metaKey || ctrlKey` here, so on a Mac ⌃L — a shell's 「clear the
+  // screen」 — locked the app from inside a terminal.
 
   // Idle. **One timer, restarted by activity** rather than a tick that
   // compares clocks: a laptop that slept fires this on the first stir

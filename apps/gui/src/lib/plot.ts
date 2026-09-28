@@ -71,8 +71,14 @@ export const PLOT = {
       the top-left」, level with nothing. With the head as tall as the
       button, the label and the button share one centre line and neither
       touches the data. What it costs is 22px of drawing, and each page
-      gave its box that much more height rather than its data less. */
-  padT: 44,
+      gave its box that much more height rather than its data less.
+
+      ⚠️ **Back to 22 the same evening (2026-09-28)**: the button left
+      the figure for its section's heading row (`components/SectionHead`),
+      and the strip holds the vertical label alone — a word, not a
+      control, which is what 22 was sized for. Each page's box gave back
+      the 22 it had taken, so the drawings kept their area. */
+  padT: 22,
   padB: 34,
   /** A margin at both ends of each axis, **in pixels rather than as a
       fraction of the ruler**: the two extreme readings sit exactly on
@@ -194,7 +200,7 @@ export function xTickY(h: number): number {
   return h - PLOT.padB + 14;
 }
 
-export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
+export function labelSeat(which: "x" | "y"): React.CSSProperties {
   // **Three corners of four.** The two labels take the corners a
   // scatter is least likely to put a point in (min-x max-y, max-x
   // min-y); the settings button takes **top-right**, the one nothing
@@ -223,7 +229,15 @@ export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   // arithmetic.
   const middle = { display: "flex", alignItems: "center" } as const;
   if (which === "y") return { left: PLOT.padL, top: 0, height: PLOT.padT, ...middle };
-  if (which === "x") return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
+  return { right: PLOT.padR, bottom: 0, height: 12, ...middle };
+  //   ⚠️ 墓碑 (2026-09-28, later the same day): **the settings seat left
+  //   the figure.** The owner made the machine card's parts sections on
+  //   the board, each with a small heading row, and the figure's ••• went
+  //   to the right end of its section's heading row
+  //   (`components/SectionHead`) — on both cards, one product. What the
+  //   seat below learnt is kept because the next seat inside a figure
+  //   will need it:
+  //
   //   ⚠️ **The head row's right end** (2026-09-28, from a walk of the
   //   whole face: 「a lone ••• floating at the card's top-left corner —
   //   controls belong in the card's head row, right end, aligned with the
@@ -249,7 +263,6 @@ export function labelSeat(which: "x" | "y" | "settings"): React.CSSProperties {
   //     in a corner.
   //   - A seat above the drawing, in a corner level with nothing, is
   //     what the 2026-09-28 walk read as floating.
-  return { right: 0, top: 0 };
 }
 
 /**

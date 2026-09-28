@@ -661,16 +661,23 @@ export function mount(host, opts) {
   // target, and the gate that measures it looks at the element carrying
   // the press. Ten-pixel words in a gallery need no such thing.
   //
-  // **A segmented control since 2026-09-28** (docs/design-system
-  // components/SegmentedControl): two fixed readings of one day are the
-  // case it exists for — one track, the chosen reading a face in it —
-  // where the prototype had two words and a dot, the chosen one bold.
-  // It is a radiogroup: one tab stop, the arrow keys move the reading
-  // (the keydown below). The look is `day.css`'s `.sw`, from the app's
-  // tokens, the same numbers the React control reads.
+  // **The line is the section's heading** (2026-09-28, the owner: the
+  // machine card's parts are sections on the board, each with a small
+  // heading row). The section's name on the left; the two readings at
+  // the right end of the same row, where a heading keeps its control.
+  //
+  // **The two readings are a segmented control** (2026-09-28, docs/
+  // design-system components/SegmentedControl): two fixed readings of
+  // one day are the case it exists for — one track, the chosen reading
+  // a face in it — where the prototype had two words and a dot, the
+  // chosen one bold. It is a radiogroup: one tab stop, the arrow keys
+  // move the reading (the keydown below). The look is `day.css`'s
+  // `.seg`, from the app's tokens, the same numbers the React control
+  // reads.
   const drawSwitch = () => {
     sw.innerHTML =
-      '<span class="seg" role="radiogroup">' +
+      '<span class="tt" data-day-title>' + (WORDS.title || '') + '</span>' +
+      '<span class="seg" role="radiogroup" aria-label="' + (WORDS.title || '') + '">' +
       viewsOf()
         .map(([v, label]) => {
           const on = v === st.view;

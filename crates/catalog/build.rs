@@ -39,8 +39,12 @@ use std::fmt::Write as _;
 
 /// In the order they are generated. The four whose keys are *data* get a
 /// `word()` lookup and a `KEYS` list as well (see `gen_rust`).
-const SECTIONS: [&str; 8] = [
-    "state", "category", "hop", "avatar", "config", "cli", "msg", "gui",
+///
+/// `menu` is the macOS menu bar's (2026-09-28): the system's standard
+/// words — 「显示」「编辑」「关闭窗口」 — which [gui] already spends on
+/// buttons with other English, and rule 3 is per section.
+const SECTIONS: [&str; 9] = [
+    "state", "category", "hop", "avatar", "config", "cli", "msg", "gui", "menu",
 ];
 
 fn main() {

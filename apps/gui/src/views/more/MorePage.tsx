@@ -22,7 +22,6 @@ import { IconBack, IconChevronRight, IconClose } from "@/components/icons";
 import { PageAction } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
 
 /**
@@ -87,7 +86,6 @@ const PageName = createContext<string | null>(null);
 export function MoreFrame({
   page,
   onClose,
-  bleed,
   actions,
   children,
 }: {
@@ -96,18 +94,15 @@ export function MoreFrame({
       wide face, one screen back to 更多's list on the narrow one (the
       shell decides which, `App` `leaveMorePage`). */
   onClose: () => void;
-  /** The page's own buttons (D9): at R0's right end on the wide face
-      (`PageAction`), at the end of its seated head on the narrow one. */
+  /** The page's own buttons (D9) — 网络's 邀请设备… / 加入网络…, 安全's
+      立即锁定. **One mechanism on both faces** (`PageAction`): at R0's
+      right end on the wide face, at the end of the page's head in the
+      window's first row on the narrow one (`NarrowHead`). */
   actions?: ReactNode;
-  /** The body fills the frame instead of standing in a reading column.
-      **One page asks for this and it is not a preference**: 网络 is a
-      picture — 「网络就搞成地图」 — and a picture capped at a reading
-      measure is a map with margins, which is the one layout that makes
-      the seats near the edge unreachable on a phone. Everything else on
-      these pages is prose and rows, and prose stretched across a 1400
-      window puts a label and its control at opposite ends of the
-      screen. */
-  bleed?: boolean;
+  // ⚠️ 墓碑 (2026-09-28): `bleed` stood here — the body filling the frame
+  // instead of a reading column, for the one page that was a picture
+  // (网络, 「网络就搞成地图」). 网络 is rows now and the map lives on the
+  // machines overview; no page asks for it.
   /** Optional, and it stays optional on purpose: two of these four pages
       are a head and nothing else until their backend lands (batches B
       and C), and a placeholder section saying so would be the 「灰着的
@@ -120,9 +115,8 @@ export function MoreFrame({
         data-more-page={page}
         aria-label={moreName(page)}
         // Settings groups are cards on the canvas (components/SettingsGroup),
-        // so a page of rows stands on `background`; a picture (网络's map)
-        // keeps the board's `card`.
-        className={cn("flex h-full min-h-0 flex-col", bleed ? "bg-card" : "bg-background")}
+        // so a page of rows stands on `background`.
+        className="flex h-full min-h-0 flex-col bg-background"
       >
         {/* The page's own head. **On the wide face it is not drawn**
             (`app.css` `[data-board] [data-more-head]`): R0 above the
@@ -150,7 +144,14 @@ export function MoreFrame({
                   <IconBack />
                 </Button>
                 <h1 className="min-w-0 flex-1 truncate text-title-sm font-title">{moreName(page)}</h1>
-                {actions && <PageAction>{actions}</PageAction>}
+                {/* No R0 on this face: `PageAction` leaves them here,
+                    in the one place a page's buttons are — the end of its
+                    head row, the same slot R0's `data-page-actions` is. */}
+                {actions && (
+                  <div data-page-actions className="flex flex-none items-center gap-in">
+                    <PageAction>{actions}</PageAction>
+                  </div>
+                )}
               </header>
             ) : (
               <header
@@ -173,17 +174,13 @@ export function MoreFrame({
             )
           }
         </NarrowHead>
-        {bleed ? (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto p-pane">
-            {/* Capped at a reading measure and centred: these pages are
-                prose and rows rather than a table, and a settings row
-                stretched across a 1400 window puts its label and its
-                control at opposite ends of the screen. */}
-            <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
-          </div>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto p-pane">
+          {/* Capped at a reading measure and centred: these pages are
+              prose and rows rather than a table, and a settings row
+              stretched across a 1400 window puts its label and its
+              control at opposite ends of the screen. */}
+          <div className="mx-auto flex w-full max-w-measure flex-col gap-group">{children}</div>
+        </div>
       </section>
     </PageName.Provider>
   );
@@ -274,7 +271,7 @@ export function MoreFold({
         // The finger floor on both axes: 「高级」 is two characters, and
         // the marker beside them does not make a target (`MoreSwitch`'s
         // own measurement).
-        className="flex min-h-touch cursor-pointer list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
+        className="flex min-h-touch list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
       >
         <IconChevronRight className="size-3 flex-none transition-transform group-open:rotate-90" />
         {label}
@@ -317,7 +314,7 @@ export function MoreFact({
     // their height, their trailing edge (app.css, `check-face` 4I).
     <div data-more-row className="flex min-w-0 items-center gap-row text-body">
       <span className="flex-1">{label}</span>
-      <span data-more-fact={name} data-setting-trail className="min-w-0 break-all text-right text-muted-foreground">
+      <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 break-all text-right text-muted-foreground">
         {children}
       </span>
     </div>

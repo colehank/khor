@@ -446,7 +446,7 @@ export function TabStrip({
                 // word. Its own token (tokens.css `--tab-gap`) rather
                 // than a step up in `--gap-in`, which would move every
                 // clump in the app for one complaint about tabs.
-                className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-tab-gap text-left"
+                className="flex h-full min-w-0 flex-1 items-center gap-tab-gap text-left"
               >
                 {/* **A two-line file tab stands its glyph beside both
                     lines** (2026-09-16:「标签页上, 文件类型的icon, 过小
@@ -759,7 +759,7 @@ export function TabSwitcher({
               // The name and the path are what a person aims at here;
               // at content height the row's padding looked like part of
               // the target and was the parent's.
-              className="flex min-h-touch min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+              className="flex min-h-touch min-w-0 flex-1 items-center gap-2 text-left"
             >
               <TabAvatar f={f} bare="size-avatar flex-none" seat="row" />
               <span className="flex min-w-0 flex-1 flex-col">

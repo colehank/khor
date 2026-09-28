@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
 import { RegionState } from "@/components/RegionState";
+import { SectionHead } from "@/components/SectionHead";
 import { Bar } from "@/components/Bar";
 import { Face, Glyph, type Pip } from "@/components/Face";
 import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
@@ -15,7 +16,6 @@ import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
    `components/Ring` still owns those two for the ring it draws; what
    ended is this card reading them. */
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
-import { Panel } from "@/components/Panel";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
 import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
 import { NarrowHead } from "@/components/SideHead";
@@ -351,12 +351,15 @@ export function MachineCaption({ row }: { row: DeviceRow }) {
  * wizard where the four answers are, which is where a person can
  * change one. The other two are local navigation and never could fail.
  *
- * **The finger floor is worn here, not fixed in `ui/button.tsx`**: an
- * `icon` button is `--ctl-*` sized, and `min-h-touch min-w-touch` on
- * the caller is how every icon button on this face reaches the floor
- * (the rail's, the pane bar's). `min-height` beats `height`, which is
- * why it lands even though `cn()` cannot take the size class off
- * (`ui/button.tsx` has the scar).
+ * **Toolbar buttons, not rail glyphs** (2026-09-28 UI 审计). They
+ * were the rail's own drawing at the rail's size (`--icon-rail`, 32) in
+ * a 28 button — the heaviest marks in R0, next to a 15 title. They are
+ * R0's page buttons, so they wear what R0's other icon button (a 「…」
+ * page's close) wears: a `--ctl-md` ghost square, the hit floor from
+ * `--hit` (`min-h-touch` reads it), a name in a tooltip. The glyph is
+ * still the rail's — the one word this app has for each place — drawn
+ * at 20, the size the 「…」 list draws the same 24-canvas family
+ * (components/Icon: a 24 glyph never goes down to the 16 canvas).
  */
 export function MachineVerbs({
   row,
@@ -387,7 +390,13 @@ export function MachineVerbs({
               className="min-h-touch min-w-touch"
               onClick={() => go(row)}
             >
-              <Icon />
+              {/* The box sets the size and the glyph fills it: a
+                  `size-*` on the glyph itself sits beside its own
+                  `size-icon-rail`, which tailwind-merge does not read as
+                  a size and keeps (measured: both classes, 32 won). */}
+              <span className="flex size-5 flex-none [&_svg]:size-full">
+                <Icon />
+              </span>
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">{word}</TooltipContent>
@@ -473,6 +482,12 @@ function Hooks({
    half had grown flat sections instead of cards, and a block of
    readings looking like a card on one surface and like a stretch of
    page on the other is the plainest form of 「two products」. */
+/* ⚠️ **And the boxes went on 2026-09-28** (the owner: 「板里去掉框」).
+   The seams the boxes made are one hairline between sections now, and
+   each section has a small heading row (`components/SectionHead`, the
+   24-hour one drawn by the day panel itself); the two products are still
+   one — the 额度 card's usage half took the same shape the same day, and
+   `components/Panel` retired with no users. */
 
 /**
  * What the machine is doing, and how old that answer is.
@@ -543,11 +558,9 @@ function Readings({
   const [open, setOpen] = useState("");
   if (!row.vitals) {
     return (
-      <Panel>
-        <div data-vitals-never className="text-callout text-muted-foreground">
-          {cli.vitals_never}
-        </div>
-      </Panel>
+      <div data-vitals-never className="text-callout text-muted-foreground">
+        {cli.vitals_never}
+      </div>
     );
   }
   const { vitals: v, volume_strains } = row.vitals;
@@ -688,7 +701,13 @@ function Readings({
   const shrink = Math.min(1, room / dialBox);
   const dial = { size: DIAL_CARD_SIZE * shrink, stroke: DIAL_CARD_STROKE * shrink };
   return (
-    <Panel>
+    // **On the board itself, not in a box** (2026-09-28, the owner:
+    // 「机器详情：板里去掉框」). The dials and the slot under them were a
+    // hairline-bordered card on the board, and the processes another;
+    // they are two sections of the board now, one hairline between them
+    // (the slot's own top rule) and no border, ground or inset of their
+    // own. `data-machine-section` names each for the gate that holds it.
+    <section data-machine-section="readings" className="flex flex-col">
       {/* ⚠️ **A grid of a declared column count, since 2026-09-09** —
           and the two rulings it replaces are worth keeping, because
           each one was right about the row it was looking at.
@@ -863,7 +882,7 @@ function Readings({
           {day && <DayChart day={day} />}
         </div>
       </div>
-    </Panel>
+    </section>
   );
 }
 
@@ -1679,9 +1698,9 @@ function Busy({
   // heads stay because pressing one is the way out.
   if (why) {
     return (
-      <Panel>
+      <TopSection>
         <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} seen={seen} hot={null} />
-      </Panel>
+      </TopSection>
     );
   }
   if (!load) return null;
@@ -1689,7 +1708,7 @@ function Busy({
   //   moved into the slot under the four rings, which is where it is
   //   read against them. See `Readings`.
   return (
-    <Panel>
+    <TopSection settings={<TopSettings rows={load.top} />}>
       {/* **The figure first, the table under it** (2026-09-05:「先把
           散点和表再交换下位置」).
 
@@ -1738,7 +1757,59 @@ function Busy({
       <div data-top-seam className="mt-group border-t pt-group">
         <Top rows={load.top} sort={sort} asking={asking} onSort={onSort} seen={seen} hot={hot} />
       </div>
-    </Panel>
+    </TopSection>
+  );
+}
+
+/**
+ * The processes section: a hairline over it, a small heading row, and
+ * the figure and the table under that (2026-09-28, the owner: the
+ * machine card's parts are sections on the board, no boxes). **The
+ * heading row carries the figure's •••** at its right end — the one
+ * control that is about the whole section rather than one axis; it was
+ * in the figure's top-right corner.
+ *
+ * ⚠️ 墓碑 (2026-09-28): this was `components/Panel` — a hairline border,
+ * the card ground and `--gap-row` of inset, a box on the board. The
+ * seam between the figure and the table stays: it is 2026-09-04's
+ * 「表头要明显」, a rule inside one section, not a box around it. The
+ * 额度 card's usage half has the same two sections (`UsageHalf`).
+ */
+function TopSection({ settings, children }: { settings?: ReactNode; children: ReactNode }) {
+  return (
+    <section data-machine-section="top" className="flex flex-col border-t pt-row">
+      <SectionHead title={gui.top_section}>{settings}</SectionHead>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * **One button for what the figure is set to** (2026-09-08: 「都做成一个
+ * 小的设置按钮,点击后进行选择」), at the right end of the section's
+ * heading since 2026-09-28. **Three rows: X, Y, and the dot's area.**
+ * The third one was the open question, and what settled it is a
+ * measurement: `gpu_mem` is null on 200 of 200 rows on two of the three
+ * machines (`zh.toml`'s `top-plot-off` records it), and an area encoding
+ * has no 「do not draw」 — a null reading can only land on the floor,
+ * which reads as 「the smallest」. So the area row offers only what
+ * **every** row on this screen reports (`everyRowHas`), while an axis
+ * row offers everything. **Nobody maintains a list** — the day a
+ * machine reports video memory for every process, 显存 becomes
+ * offerable on its own. The figure reads the same store (`useAxes`).
+ */
+function TopSettings({ rows }: { rows: Load["top"] }) {
+  const axes = useAxes();
+  const areaKeys = everyRowHas(AXIS_KEYS, rows, (k, r) => AXES[k].of(r));
+  return (
+    <PlotSettings
+      rows={[
+        { key: "x", word: "X", chosen: axes.x, options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })) },
+        { key: "y", word: "Y", chosen: axes.y, options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })) },
+        { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: areaKeys.map((k) => ({ key: k, word: AXES[k].word() })) },
+      ]}
+      onPick={(row, k) => axesStore.set({ ...axes, [row]: k as AxisKey })}
+    />
   );
 }
 
@@ -2473,9 +2544,9 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
           swallows a press meant for a point that lands there. The
           corners are where points are rarest, and the alternative —
           shrinking the target — is the floor this card does not break. */}
-      {/* h-50, not h-44: the head strip grew to a finger's height
+      {/* h-44 again (2026-09-28 evening): the head strip went back to 22 when the ••• left it; it was h-50 while the strip was a finger tall
           (`PLOT.padT`, 2026-09-28) and the drawing kept its area. */}
-      <div ref={box} className="relative h-50 w-full">
+      <div ref={box} className="relative h-44 w-full">
         <span className="pointer-events-none absolute inset-0">
           {/* The hit area is 44 tall and the strip is not, so each
               label is centred on its strip and overflows it invisibly.
@@ -2494,33 +2565,10 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
               rulerWord={rx.kind === "log" ? cli.top_plot_log : cli.top_plot_sqrt}
             />
           </span>
-          {/* **One button for what this figure is set to** (2026-09-08:
-              「都做成一个小的设置按钮,点击后进行选择」).
-              **Three rows: X, Y, and the dot's area.** The third one
-              was the open question, and what settled it is a
-              measurement: `gpu_mem` is null on 200 of 200 rows on two
-              of the three machines (`zh.toml`'s `top-plot-off` records
-              it), and an area encoding has no 「do not draw」 — a null
-              reading can only land on the floor, which reads as 「the
-              smallest」. That is the neighbouring-value error this plot
-              is built against. So the area row offers only what
-              **every** row on this screen reports (`areaKeys`), while
-              an axis row offers everything: a row missing an axis
-              reading is simply not placed and the foot says how many,
-              but a point must exist to carry X and Y, so its size has
-              nowhere to go. **Nobody maintains a list** — the day a
-              machine reports video memory for every process, 显存
-              becomes offerable on its own. */}
-          <span className="pointer-events-auto absolute" style={labelSeat("settings")}>
-            <PlotSettings
-              rows={[
-                { key: "x", word: "X", chosen: axes.x, options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })) },
-                { key: "y", word: "Y", chosen: axes.y, options: AXIS_KEYS.map((k) => ({ key: k, word: AXES[k].word() })) },
-                { key: "z", word: gui.usage_pick_area, chosen: axes.z, options: areaKeys.map((k) => ({ key: k, word: AXES[k].word() })) },
-              ]}
-              onPick={(row, k) => axesStore.set({ ...axes, [row]: k as AxisKey })}
-            />
-          </span>
+          {/* ⚠️ The ••• sat here, in the figure's top-right corner
+              (`labelSeat("settings")`), until 2026-09-28: it moved to
+              the right end of the processes section's heading row
+              (`TopSettings`), where a section keeps its control. */}
         </span>
         {/* **Named**, because it is no longer the only `<svg>` in this
             block: the axis labels carry chevrons, and a probe reaching
@@ -2559,7 +2607,6 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                 role="button"
                 aria-label={cmdText(r)}
                 onClick={() => onPoint(r.pid)}
-                className="cursor-pointer"
               >
 
                 {/* ⚠️ **Tombstone: the halo is gone, 2026-09-08.** It was
@@ -2833,7 +2880,7 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
       //     screenshot; the assertion that the cell grew and shrank was
       //     perfectly happy, because it was true). The row grows in
       //     height instead, and the columns stay where they are.
-      className={cn("flex min-w-0 items-baseline gap-in", cut && "cursor-pointer")}
+      className="flex min-w-0 items-baseline gap-in"
     >
       {/* **One box, one line, one truncation.** The name and the word
           are two spans only so they can wear two inks; they are not two
@@ -3236,6 +3283,7 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
   // **Every word the drawing says, from the catalog.** The module holds
   // no Chinese; this is where the two meet.
   const words: DayWords = {
+    title: cli.day_title,
     cpu: cli.vitals_name_cpu,
     gpu: cli.vitals_name_gpu,
     mem: cli.vitals_name_mem,

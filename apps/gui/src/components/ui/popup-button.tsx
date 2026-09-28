@@ -90,7 +90,9 @@ export function PopupButton({
         {...mark}
         // Centred on the drawn button and at least the finger floor
         // tall: the look is the pointer's, the hit area the finger's.
-        className="absolute inset-x-0 top-1/2 h-full min-h-touch w-full -translate-y-1/2 cursor-pointer opacity-0 disabled:cursor-default"
+        // The arrow, not the hand: a control is not a link (the
+        // native-feel batch, `check-face` §3).
+        className="absolute inset-x-0 top-1/2 h-full min-h-touch w-full -translate-y-1/2 opacity-0"
       >
         {choices.map((c) => (
           <option key={c.value} value={c.value} disabled={c.disabled} data-on={c.value === value} {...c.mark}>

@@ -72,6 +72,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { Button } from "@/components/ui/button";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
+import { useTabHost } from "@/lib/shortcuts";
 import { groupLabel } from "@/words";
 
 /** The site a page is on, spelled as the node keys its kept icons
@@ -153,6 +154,25 @@ export function BrowseLanding({
    * is true again for a reason it was not true for before.
    */
   const [switching, setSwitching] = useState(false);
+  // ⌘W, ⌃⇥ / ⌃⇧⇥ on this landing's tabs (`lib/shortcuts`, 2026-09-28): the
+  // tab in front closes — a pinned one is refused by the node, as its
+  // row menu's 删除 is — and the steps walk the column's order.
+  useTabHost(
+    tabs.ready
+      ? {
+          count: tabs.tabs.length,
+          front: true,
+          close: () => {
+            tabs.close(tabs.current.id).catch(() => {});
+          },
+          step: (by) => {
+            const at = tabs.tabs.findIndex((t) => t.id === tabs.current.id);
+            const next = tabs.tabs[(at + by + tabs.tabs.length) % tabs.tabs.length];
+            if (next !== undefined) tabs.focus(next.id);
+          },
+        }
+      : null,
+  );
   /** What the column's search box holds (docs/SHELL.md 第二轮). This
       screen's, like every other pane's query — a filter over rows that
       are already here, not a question for the node. */

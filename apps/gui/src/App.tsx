@@ -99,14 +99,15 @@ import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCaption, MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { RegionState } from "@/components/RegionState";
-import { MandalaMap } from "@/views/MandalaMap";
+import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
-import { SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
 
@@ -124,11 +125,11 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
  * **The mark's place is gone as a screen of its own** (2026-09-20).
  * It was a state beside `landing` — the mesh, reached first from the
  * app's mark at the head of the rail, then from this machine's face,
- * then from a row on the identity card. It is the body of the 网络 page
- * now (`views/more/NetworkPage`), which is the whole of that page:
- * 「网络就搞成地图」. The structural argument that kept it out of
- * `Landing` still holds and now belongs to `morePage`, which is where it
- * is written.
+ * then from a row on the identity card. It was the body of the 网络
+ * page from then until 2026-09-28, when the owner put the map on one
+ * surface — the machines landing's overview (10-layout 「机器 → 那张
+ * 图」) — and made 网络 a page of settings rows. `MarkPlace` and the
+ * card it opened over the map went with that.
  */
 
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
@@ -1523,6 +1524,53 @@ export default function App() {
     </nav>
   );
 
+  // **The keyboard and the menu bar** (`lib/shortcuts`, 2026-09-28): the
+  // map and the rules are there; what is here is what only the shell can
+  // do — walk the rail, open a 「…」 page, and lend the session tabs to
+  // ⌘W and ⌃⇥ while they are the strip on screen.
+  useTabHost(
+    landing === "sessions" && morePage === null && openTabs.length > 0
+      ? {
+          count: openTabs.length,
+          front: selected !== null,
+          close: () => {
+            if (selected !== null) sessionTabs.close(selected);
+          },
+          step: (by) => {
+            const at = openTabs.indexOf(selected ?? "");
+            const next = openTabs[(at + by + openTabs.length) % openTabs.length];
+            if (next === undefined) return;
+            sessionTabs.focus(next);
+            setSwitchingTabs(false);
+            setScreen("detail");
+          },
+        }
+      : null,
+  );
+  useShortcuts({
+    locked: !lock.settled || lock.locked,
+    // What the rail's glyph does on a first press (the second press folds
+    // the list, which a key repeated by accident should not).
+    go: (i) => {
+      const l = landings()[i];
+      if (!l) return;
+      setMorePage(null);
+      setLanding(l.key);
+      setScreen("list");
+      setSwitchingTabs(false);
+      listPane.expand();
+    },
+    settings: () => {
+      setMorePage("settings");
+      setScreen("detail");
+      setSwitchingTabs(false);
+    },
+    closePage: morePage !== null ? () => setMorePage(null) : null,
+    lock: lock.facts?.on ? lock.now : null,
+    find: () => window.dispatchEvent(new Event(FIND_ALL)),
+    import: () => setSheet("import"),
+  });
+
   const sessions = landing === "sessions";
   /** Whether this landing browses (docs/UX.md 浏览型) — the two that do
       share one shell and have no list pane at all. */
@@ -1712,6 +1760,11 @@ export default function App() {
             forgetRefused={forgetRefused}
             onPause={onPauseDevice}
             pauseRefused={pauseRefused}
+            // 头像… on a row writes that machine's face for everyone; the
+            // table is re-read, the way a rename's is.
+            onRestyled={() => {
+              refresh().catch(() => {});
+            }}
             // One question left: the devices pane opens a machine's
             // card. Files and browser were the other two, and each
             // stopped being one when it stopped having a machine list
@@ -1809,7 +1862,6 @@ export default function App() {
             setLanding("devices");
             onSelectDevice(d);
           }}
-          onNew={() => openNewSession()}
         />
       }
     />
@@ -1911,7 +1963,9 @@ export default function App() {
     // answer to 「nothing picked」.
     <RegionState state="loading-never" />
   ) : landing === "devices" && !openDevice ? (
-    <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} />
+    // The map's one home (2026-09-28): 待批 rides each seat, counted off
+    // the rows the shell already holds.
+    <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} waiting={waitingOn(devices, rows)} />
   ) : landing === "devices" ? (
     <MachineCard
       row={openDevice}
@@ -2020,22 +2074,20 @@ export default function App() {
   const morePageEl =
     morePage === null ? null : morePage === "network" ? (
       <NetworkPage
-        rows={rows}
         devices={devices}
         onClose={leaveMorePage}
-        onInvite={() => setSheet("invite")}
-        onJoin={() => setSheet("join")}
+        // 网络's own buttons, 邀请设备… / 加入网络… (the machines
+        // overview's two). **One mechanism on both faces**: the page
+        // hands them to its frame, which seats them with `PageAction` —
+        // at R0's right end on the wide face, at the end of the page's
+        // head in the window's first row on the narrow one.
+        actions={<PageActions actions={deviceActions} />}
         onChanged={() => {
           // The device table is the thing that changed, and every
-          // surface on this screen paints off it — the map's seats, the
-          // rail's foot, the machines landing. One refresh, the same
-          // one a forget has always got.
+          // surface on this screen paints off it — the rail's foot, the
+          // machines landing and its map. One refresh, the same one a
+          // forget has always got.
           refresh().catch(() => {});
-        }}
-        onPickWaiting={(row) => {
-          setMorePage(null);
-          setLanding("sessions");
-          onSelect(row);
         }}
       />
     ) : morePage === "settings" ? (
@@ -2078,7 +2130,13 @@ export default function App() {
    * that pressed 「…」 then a page still presses the same two things.
    */
   const moreList = (
-    <nav data-more-list aria-label={gui.rail_more} className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1">
+    <nav
+      data-more-list
+      aria-label={gui.rail_more}
+      // ↑ ↓ Home End between the sections, System Settings' sidebar.
+      onKeyDown={(e) => walkList(e, "[data-more-landing], [data-more-open]")}
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1"
+    >
       {narrow &&
         landings()
           .slice(NARROW_SHOWN)
@@ -2416,6 +2474,8 @@ export default function App() {
               // buttons (components/Toolbar, D9) — not a second head in
               // the board, which would say the page's name twice. The
               // narrow face has no R0 and keeps the frame's own head.
+              // A page's own buttons (网络's two, 安全's 立即锁定) are
+              // seated before this by the page itself (`PageAction`).
               actions={
                 <Button
                   variant="ghost"

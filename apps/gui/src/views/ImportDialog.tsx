@@ -210,7 +210,7 @@ export function ImportDialog({
                     data-import-form={r.form}
                     data-on={on}
                     className={cn(
-                      "flex min-h-touch min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-callout hover:bg-muted/50",
+                      "flex min-h-touch min-w-0 items-center gap-2 rounded-md px-2 text-callout hover:bg-muted/50",
                       on && "bg-accent",
                     )}
                   >
