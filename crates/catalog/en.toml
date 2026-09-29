@@ -397,6 +397,28 @@ usage: khor <verb>
                         through this machine; to remove it, use
                         forget. Requires passwordless ssh (one that
                         prompts for a password can't connect)
+  pending [--json]      what waits for the root holder: machines paired
+                        in that have no certificate yet, satellites
+                        adopted by a machine without the root, machines
+                        removed elsewhere and not revoked yet. One line
+                        each: id, name, what it waits for
+  approve <machine>     on the machine holding the root: signs a waiting
+                        machine's certificate (or its revocation) and
+                        syncs it to the network right away
+  revoke <machine>      on the machine holding the root: once the network
+                        has the new roster, nobody answers that machine.
+                        It stays in the table; forget removes the row too
+  root [show [--json] | words <this machine> | recover <24 words> | init]
+                        the user's root key: it only signs (which
+                        machines are yours), never connects or encrypts.
+                        show says which root this machine trusts, whether
+                        it holds it and the roster's version; words
+                        prints the 24 recovery words (type this machine's
+                        name to see them); recover restores the root onto
+                        this machine; init gives a network from before
+                        roots its root and signs every machine in the
+                        table. Bare, it prints the store path (for the
+                        installer)
   sync                  syncs with the whole network right now
   mcp                   exposes khor's commands as tools (for
                         agents, not for typing by hand)
@@ -462,6 +484,7 @@ doctor-name-agents = "Agents"
 doctor-name-vscode = "VS Code"
 doctor-name-disk = "Disk headroom"
 doctor-name-launcher = "Opener"
+doctor-name-roster = "Roster"
 # The four states. **Untaken is not ok**: a green row means somebody
 # looked, and not having looked is a different fact.
 doctor-ok = "OK"
@@ -563,6 +586,27 @@ unread = "unread {0}"
 unreachable-for = "unreachable for {0}"
 quiet-for = "quiet for {0}"
 adopted = "brought in: {0}, speaking through {1}; the whole network can see it right away"
+# The user's root key and the roster (docs/CONNECT.md 身份).
+root-born-hint = "This machine just made the network's root key: it signs which machines are yours. Write the 24 recovery words on paper and keep them — without it no machine can be added or revoked again. To see them: khor root words {0}"
+root-show-key = "Root key: {0}"
+root-show-holds = "This machine holds the root key"
+root-show-not-held = "This machine does not hold the root key (another one does)"
+root-show-roster = "Roster version {0}, signed {1} days ago"
+root-show-pending = "This machine is waiting for the root holder's approval: run khor pending there, then khor approve"
+root-show-revoked = "This machine was revoked: the network no longer answers it"
+root-show-legacy = "This network has no root key yet (it predates roots). Run khor root init on the machine that should hold it"
+root-recovered = "Root key restored onto this machine: {0}"
+root-inited = "Made root key {0} and signed the {1} machines in the table; each picks it up on its next sync"
+pending-none = "Nothing is waiting"
+pending-kind-device = "join"
+pending-kind-satellite = "satellite join"
+pending-kind-leave = "removal"
+approved = "Approved \"{0}\"; roster version {1}"
+revoked-ok = "Revoked \"{0}\"; roster version {1}"
+pair-pending-hint = "Paired, but this machine has no certificate yet: the root holder was not part of this pairing. The network recognizes it once khor approve runs on the machine holding the root"
+adopt-pending-hint = "Satellite brought in, but not on the roster yet: this machine does not hold the root. Run khor approve on the machine that does"
+doctor-roster-stale = "The roster is {0} days past fresh (signed {1} days ago): the root holder has been away a long time, and no new certificate is accepted"
+doctor-roster-none = "Knows the root key, but holds no roster that verifies"
 via-sponsor = "via {0}"
 sat-tmux-yes = "it has tmux — terminals opened on it can persist"
 sat-tmux-no = "it has no tmux — terminals opened on it are temporary (gone once the connection drops)"
@@ -858,6 +902,21 @@ bad-invite = "Pairing code is wrong, or already used"
 invite-expired = "This ticket has expired (valid for {0} minutes after issue) — have that machine issue another: khor invite"
 cant-burn-invite = "Can't burn pairing code: {0}"
 not-paired = "This machine isn't in the machine table — pair first"
+# The roster is the one source of trust (docs/CONNECT.md 身份).
+not-in-roster = "This machine is not on the roster: it is waiting for the root holder to approve it, or it was revoked"
+words-need-confirm = "The recovery words restore the whole network's root key; anyone who sees them can sign their own machine into your network. To see them, type this machine's name back: khor root words {0}"
+words-names-another = "\"{0}\" is not this machine's name. To see the recovery words, type this machine's name: khor root words {1}"
+peer-not-in-roster = "That machine is not on the roster (waiting or revoked); not syncing with it"
+pair-two-roots = "Each side is its own network with its own root key; pairing does not merge two networks. To bring that machine in, run khor leave on it first, then pair with this ticket"
+root-not-here = "This machine does not hold the root key. The root holder does; the recovery words can restore it here too: khor root recover <24 words>"
+approve-needs-root = "Approving happens on the machine that holds the root, and this one does not. Run khor pending and khor approve there"
+revoke-needs-root = "Revoking happens on the machine that holds the root, and this one does not"
+nothing-pending-named = "Nothing waiting is called \"{0}\" (khor pending lists them)"
+cant-revoke-holder = "The root holder cannot revoke itself"
+already-revoked = "\"{0}\" is already revoked"
+recover-other-network = "This machine is in another network (root {0}), and these words are a different root. Run khor leave first, then recover"
+root-already = "There is already a root key here: {0}"
+sat-revoked = "Satellite \"{0}\" was revoked; nothing is run on its behalf any more"
 no-home-dir = "This machine can't report its own home directory"
 path-not-absolute = "Path must be written from root: {0}"
 
