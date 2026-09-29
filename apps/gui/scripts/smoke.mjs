@@ -2294,10 +2294,23 @@ for line in sys.stdin:
   // peer's day on its report beat.
   // The band sits under the open session's header now, so the row is
   // opened first and the band read there.
+  //
+  // **…and only once the front tab has been pressed for it** (2026-09-29,
+  // `use-day-shown`). Until alpha's day arrives this row's day is 未查看
+  // end to end — no record, so the tab is not a switch yet (no
+  // `aria-expanded`) and a press would open nothing. So each round
+  // presses the tab the moment it becomes one, and then waits on the band.
   await page.locator('[data-row="tui/cafe1"] [data-row-open]').click();
-  await until("a word from alpha's own day on beta's band for tui/cafe1", 60_000, async () =>
-    (await page.locator('[data-detail-day] [data-day-mark]:not([data-day-mark="unwatched"])').count()) >= 1,
-  );
+  await until("a word from alpha's own day on beta's band for tui/cafe1", 60_000, async () => {
+    const shut = page.locator('[data-session-tabs] [data-tab="tui/cafe1"] [data-tab-open][aria-expanded="false"]');
+    if ((await shut.count()) === 1) {
+      const b = await shut.boundingBox();
+      // The face, not the name: a press on the name waits out the
+      // double-click that would rename it.
+      if (b) await page.mouse.click(b.x + 6, b.y + b.height / 2);
+    }
+    return (await page.locator('[data-detail-day] [data-day-mark]:not([data-day-mark="unwatched"])').count()) >= 1;
+  });
   // 16-0) open sessions are tabs. Opening a second row adds a tab and
   //       brings it to the front; closing that tab leaves its row on
   //       the list and its session alive (a view left, nothing ended),

@@ -179,7 +179,11 @@ export function useStripWidth(el: HTMLElement | null, present: boolean): number 
 }
 
 /**
- * Each row's last day, keyed by session id.
+ * Each row's last day, keyed by session id — or `null` until the first
+ * answer has come back, which is what lets the band draw its skeleton
+ * while the day is on its way instead of an empty row (`DayStrip`'s
+ * 「Hidden until asked for」). After that the last answer stands while
+ * the next is asked; it is never cleared back to `null`.
  *
  * A row with no entry paints no strip. That is a poll being one tick
  * out of step with the row list, not a fact about the session — the
@@ -187,8 +191,8 @@ export function useStripWidth(el: HTMLElement | null, present: boolean): number 
  * come back 不知道 end to end, `khor_node::day::unwatched`), so
  * "missing" here never means "nothing to show".
  */
-export function useDayStrips(width: number): Record<string, DayRun[]> {
-  const [strips, setStrips] = useState<Record<string, DayRun[]>>({});
+export function useDayStrips(width: number): Record<string, DayRun[]> | null {
+  const [strips, setStrips] = useState<Record<string, DayRun[]> | null>(null);
   const hidden = useHidden();
   // No "zero means do not ask" branch any more, and its absence is the
   // fix: an unmeasured width now resolves to a resolution rather than to

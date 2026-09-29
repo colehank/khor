@@ -64,6 +64,16 @@ fn main() -> Result<(), String> {
         ("tui/agent", "an agent that worked all day"),
         ("tui/crashed", "an agent that died at noon"),
         ("tui/latecomer", "something that started six hours ago"),
+        // **The row the gate reads a day with no record on** (2026-09-29).
+        // In none of the samples below — but the bridge's resident takes
+        // its own sample the moment it is up, so by the time a page asks,
+        // this row has a word at the right end like every local session.
+        // A day with no record reaches a screen in two other shapes: a
+        // peer that never answered (`day::unwatched`, 未查看 end to end)
+        // and a row a poll behind the list (no entry). The gate writes
+        // those onto this one row's answer on the wire, so the rows the
+        // other claims read stay the recorder's own.
+        ("tui/quiet", "a session the gate empties the day of"),
     ];
     for (id, title) in rows {
         live.register(
@@ -146,7 +156,9 @@ fn main() -> Result<(), String> {
         if !listed.iter().any(|v| v.session.id.0 == id) {
             return Err(format!("{id} was imported and is not on the list"));
         }
-        println!("row {id}");
+        // `quiet` for the one the gate empties: it expects no band under
+        // it, and a band that shows up there is the empty row coming back.
+        println!("{} {id}", if id == "tui/quiet" { "quiet" } else { "row" });
     }
     Ok(())
 }

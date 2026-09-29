@@ -1,19 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-import {
-  type DayRun,
-  type SessionRow,
-} from "@/api";
+import { type SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
-import { EditableName } from "@/components/EditableName";
-import { IconBack } from "@/components/icons";
+import { EditableName, useSinglePress } from "@/components/EditableName";
+import { IconBack, IconChevronDown } from "@/components/icons";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
+import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
 import { YIELD_MS } from "@/lib/tempo";
+import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
-import { DayStrip } from "@/views/DayStrip";
+import { DAY_ROW_ID, DayStrip, daySwitch, dayHasRecord, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 import { TerminalPane } from "@/views/TerminalPane";
 
@@ -176,7 +175,7 @@ export function DetailPane({
   row,
   narrow,
   onBack,
-  days,
+  day,
   onNew,
   empty,
   tabs,
@@ -185,11 +184,14 @@ export function DetailPane({
   narrow: boolean;
   onBack: () => void;
   /** This session's last day (`DayStrip`), drawn as a band under the
-      header — the one place it is now shown (2026-09-02:「session的状态
-      bar不要在session列表里显示…在session打开后的上方显示」). Fetched by
-      the shell for every row on one beat and handed in, so the band
-      costs the pane nothing of its own. */
-  days?: DayRun[];
+      tabs — the one place it is shown (2026-09-02:「session的状态bar不要
+      在session列表里显示…在session打开后的上方显示」), and only once it
+      is asked for (2026-09-29, `use-day-shown`). Fetched by the shell for
+      every row on one beat and handed in, so the band costs the pane
+      nothing of its own: `null` while that beat has not answered yet.
+      **Absent where nobody fetches days** — a workspace's session column
+      — and then there is no band and no switch for one. */
+  day?: Day;
   /** Opens the new-session dialog — the same act the pane bar's "+"
       offers. Handed in rather than owned: the dialog is `App`'s, and
       this pane only points at it from its empty state. */
@@ -206,6 +208,24 @@ export function DetailPane({
       pane already shows every tab. */
   tabs?: ReactNode;
 }) {
+  const shown = useDayShown();
+  /** The day's switch, where this pane has a day at all: on the wide
+      face it is the front tab's (`App`), and on the narrow one the head
+      below is that tab's stand-in and wears it. One answer for both. */
+  const sw = day === undefined ? null : daySwitch(day, shown, () => setDayShown(!shown));
+  /** Whether the band's row stands under the tabs: asked for, and either
+      on its way (the skeleton) or a day with a record. Never an empty
+      row — that was the blank band (`DayStrip`'s 「Hidden until asked
+      for」). */
+  const drawn = row !== null && day !== undefined && shown && (day === null || dayHasRecord(day));
+  /** A tap on the narrow head's face or name — the name's double-click
+      still renames (`useSinglePress`). */
+  const pressHead = useSinglePress(() => sw?.toggle?.());
+  /** F2 on the narrow head: the name sits inside the head's switch now,
+      so it is not a control of its own, and this is its keyboard door
+      (`EditableName`'s controlled `open`). */
+  const [renaming, setRenaming] = useState(false);
+  useEffect(() => setRenaming(false), [row?.id]);
   return (
     // **The pane's own anchor** (第十四轮 第 1 条). Until this round
     // every gate and every smoke step reached the open session through
@@ -231,7 +251,8 @@ export function DetailPane({
           `EditableName`). The user's rule is wider than this pane:
           **no tab anywhere gets a subtitle under it**.
 
-          So the wide order is: the strip, the day's band, the session.
+          So the wide order is: the strip, the day's band (once the
+          front tab has been pressed for it, 2026-09-29), the session.
 
           The narrow face has no strip, so it keeps a header — and only
           what the strip would have carried: the way back, the face, the
@@ -275,24 +296,76 @@ export function DetailPane({
               tab's face standing in for the strip: the row's 32 and its
               halo made 40 in a 32-tall header and stood out of it at both
               edges (2026-09-28 audit 第 6 条). */}
-          {row && (
-            <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="tab" />
-          )}
-          {/* `min-w-0` (inside EditableName) is what lets it actually
-              truncate: a flex child will not shrink below its content
-              without it. Keyed by the row so switching sessions drops
-              any half-typed edit — a draft belongs to the row it was
-              typed over. */}
-          {row ? (
-            <EditableName
-              key={row.id}
-              id={row.id}
-              title={row.title}
-              className={seated ? "min-w-0 text-title-sm font-title" : "min-w-0 font-title"}
-              inputClassName={seated ? "flex-1 text-title-sm font-title" : "flex-1 font-title"}
-            />
+          {/* **The face and the name are the front tab's stand-in, and so
+              its switch** (2026-09-29): the wide face shows and hides the
+              day from the tab in front, and the narrow face has no tabs
+              — the head is where that tab would be. One button round
+              both, the tab's own arrangement (the name `nested` inside
+              the control that opens, a double-click on it still renames,
+              F2 as its keyboard door). **Pressable the way a title menu
+              on a phone is**: a small chevron after the name, turned up
+              while the day is open — no fill, no border, nothing else
+              on a head that is otherwise just a name. No chevron, and
+              `aria-disabled`, on a day with no record: there is nothing
+              to open. Where nobody fetches days (a workspace's session
+              column) the head is the plain name it always was. */}
+          {row && sw ? (
+            <button
+              type="button"
+              data-day-toggle
+              aria-expanded={sw.expanded}
+              aria-controls={sw.expanded ? DAY_ROW_ID : undefined}
+              aria-disabled={sw.toggle ? undefined : true}
+              aria-keyshortcuts="F2"
+              onClick={pressHead}
+              onKeyDown={(e) => {
+                if (e.key !== "F2" || e.target !== e.currentTarget) return;
+                e.preventDefault();
+                setRenaming(true);
+              }}
+              // `min-w-touch` is also what lets the name truncate: a flex
+              // item's floor is its content until something lowers it.
+              className="flex min-h-touch min-w-touch items-center gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="tab" />
+              <EditableName
+                key={row.id}
+                id={row.id}
+                title={row.title}
+                nested
+                open={renaming || undefined}
+                onClose={() => setRenaming(false)}
+                className={seated ? "min-w-0 text-title-sm font-title" : "min-w-0 font-title"}
+                inputClassName={seated ? "flex-1 text-title-sm font-title" : "flex-1 font-title"}
+              />
+              {sw.toggle && (
+                <IconChevronDown
+                  className={cn("size-3 flex-none text-tertiary", sw.expanded && "rotate-180")}
+                />
+              )}
+            </button>
           ) : (
-            <span className="min-w-0 truncate font-title" />
+            <>
+              {row && (
+                <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="tab" />
+              )}
+              {/* `min-w-0` (inside EditableName) is what lets it actually
+                  truncate: a flex child will not shrink below its content
+                  without it. Keyed by the row so switching sessions drops
+                  any half-typed edit — a draft belongs to the row it was
+                  typed over. */}
+              {row ? (
+                <EditableName
+                  key={row.id}
+                  id={row.id}
+                  title={row.title}
+                  className={seated ? "min-w-0 text-title-sm font-title" : "min-w-0 font-title"}
+                  inputClassName={seated ? "flex-1 text-title-sm font-title" : "flex-1 font-title"}
+                />
+              ) : (
+                <span className="min-w-0 truncate font-title" />
+              )}
+            </>
           )}
           <span className="min-w-0 flex-1" />
           {tabs}
@@ -310,10 +383,17 @@ export function DetailPane({
           behind the tab strip, and only the board's clip kept them off
           the tabs. The row is also what `use-day-strips` measures the
           axis by. Absent with no
-          row — the empty state has no day. */}
-      {row && (
-        <div data-detail-day className="flex-none">
-          <DayStrip runs={days} />
+          row — the empty state has no day.
+
+          **Absent, too, until it is asked for** (2026-09-29,
+          `use-day-shown`: the front tab, or the narrow head, is the
+          switch), **and for a day with no record** — not a row kept
+          empty for it: that row was the blank band under the tabs.
+          While the day is on its way the row holds a skeleton of the
+          band (`DayStrip`), so the session does not jump when it lands. */}
+      {drawn && (
+        <div data-detail-day id={DAY_ROW_ID} className="flex-none">
+          <DayStrip runs={day ?? null} />
         </div>
       )}
       {row && row.kind === "chat" ? (

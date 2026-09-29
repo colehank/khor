@@ -23,6 +23,14 @@
 //
 // # The claims
 //
+//   0. (2026-09-29) the day is **hidden until the front tab is pressed**:
+//      no row and no room kept for one, a hover that says what a press
+//      does, a press (and Enter / Space) that does it, a double-click on
+//      the name that renames without the band so much as blinking, a
+//      choice that outlives a reload, no row at all for a day with no
+//      record, a skeleton rather than a blank while the day is on its
+//      way, and on the narrow face the head standing in for the tab.
+//      Everything from 1 on is read with the band opened this way;
 //   1. every word cell is painted in its own word's colour — asserted
 //      as a **derivation**, this row's cell against this row's word,
 //      never against a colour written in this file. A palette pinned
@@ -167,6 +175,13 @@ const fixtureRows = fixtureOut
   .split("\n")
   .filter((l) => l.startsWith("row "))
   .map((l) => l.slice(4).trim());
+// …and the one it made **with no record** (`quiet <id>`): on the list,
+// in none of the samples, so its day has not one stretch with a word.
+// ⓪ e asks that it draw no row at all.
+const fixtureQuiet = fixtureOut
+  .split("\n")
+  .filter((l) => l.startsWith("quiet "))
+  .map((l) => l.slice(6).trim());
 
 let bridge, vite, browser;
 const listening = async (port, what, ms) => {
@@ -222,6 +237,24 @@ try {
   // 报绿).
   const thrown = [];
   page.on("pageerror", (e) => thrown.push(String(e)));
+  // ⓪ e's rows, emptied on the wire (`day_fixture`'s quiet row says why
+  // the recorder cannot leave one empty): 未查看 end to end, the shape a
+  // peer that never answered arrives in (`day::unwatched`), or no entry
+  // at all, a row a poll behind the list. Only those rows; every other
+  // row's day is the recorder's own.
+  let emptyAs = "unwatched";
+  await page.route("**/day_strips", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const res = await route.fetch();
+    const body = await res.json();
+    for (const id of fixtureQuiet) {
+      if (!(id in body)) continue;
+      const cells = body[id].reduce((n, r) => n + r.cells, 0);
+      if (emptyAs === "missing") delete body[id];
+      else body[id] = [{ mark: "unwatched", cells }];
+    }
+    await route.fulfill({ response: res, json: body });
+  });
   await page.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
 
   const until = async (what, ms, f) => {
@@ -255,6 +288,357 @@ try {
         "— their days are in the record and nobody can open them",
     );
   }
+  if (fixtureQuiet.length === 0) fail("probe dead: day_fixture named no row without a record — ⓪ e would pass on nothing");
+  const quietOff = fixtureQuiet.filter((id) => !rowIds.includes(id));
+  if (quietOff.length) fail(`probe dead: day_fixture's ${quietOff.join(", ")} never reached the session list — ⓪ e has no row to open`);
+
+  // The words the strip and its switch say, read out of the generated
+  // table rather than written here: a copy in this file would keep
+  // passing after the catalog moved. Either language is accepted — the
+  // face picks one.
+  const catalogWords = (() => {
+    const src = readFileSync(join(gui, "src/gen/catalog.ts"), "utf8");
+    const table = (name) => {
+      const m = src.match(new RegExp(`const ${name}(?:: [^=]+)? = \\{([\\s\\S]*?)\\n\\};`));
+      if (!m) return {};
+      return Object.fromEntries([...m[1].matchAll(/^\s*(\w+): "([^"]*)",?$/gm)].map((x) => [x[1], x[2]]));
+    };
+    const zh = table("zh_state");
+    const en = table("en_state");
+    const zhGui = table("zh_gui");
+    const enGui = table("en_gui");
+    zh.unwatched = zhGui.day_unwatched;
+    en.unwatched = enGui.day_unwatched;
+    const hint = Object.fromEntries(
+      ["show", "hide", "none"].map((k) => [k, [zhGui[`day_${k}`], enGui[`day_${k}`]].filter(Boolean)]),
+    );
+    return { zh, en, hint };
+  })();
+  const HINT = catalogWords.hint;
+  if (Object.values(HINT).some((w) => w.length !== 2)) {
+    fail(`probe dead: ⓪ could not read day_show / day_hide / day_none out of src/gen/catalog.ts (${JSON.stringify(HINT)})`);
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ── 0) hidden until the front tab is pressed (2026-09-29) ─────────
+  //
+  // 「把这个状态bar设置为，点击标签后显示吧。悬停的时候加一个提示，点击查看
+  // 近24小时状态。」 And the same morning, a blank band under the tabs: the
+  // strip's no-data branch held its 12 px row open while the day loaded,
+  // and for good on a session with no record. Read on the glass:
+  //
+  //   a. a fresh profile draws no day row and keeps no room for one — the
+  //      session starts where the pane does;
+  //   b. the front tab's hover says what a press will do (「点击查看…」
+  //      hidden, 「点击收起…」 shown), and a press does it — on the face at
+  //      once, on the name once the double-click window has passed, and
+  //      by Enter / Space; the tab says `aria-expanded` and names the row
+  //      it opens (`aria-controls`);
+  //   c. a double-click on the name renames and never toggles, not for
+  //      one frame — sampled on every animation frame across the gesture,
+  //      hidden and shown;
+  //   d. the choice survives a reload;
+  //   e. a day with no record (`day_fixture`'s quiet row): the hint says
+  //      so, a press opens nothing, no row stands under the tabs;
+  //   f. while the day is on its way and the strip is asked for, a
+  //      skeleton in the band's own geometry, never a blank row (a
+  //      context whose day route is held);
+  //   g. narrow — the head's face and name are the tab's stand-in (in ⑥e,
+  //      where the phone's page is).
+  const dayRows = (p) => p.locator("[data-detail-day]").count();
+  const waitRows = async (p, want, ms = 1_500) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (((await dayRows(p)) > 0) === want) return true;
+      await sleep(40);
+    }
+    return false;
+  };
+  const frontOpen = (p, id) => p.locator(`[data-session-tabs] [data-tab="${id}"][data-on="true"] [data-tab-open]`);
+  /** The front tab's hover, read fresh: off the tab and back, because a
+      pointer that is already on it since the press that closed the hint
+      asks for nothing new. */
+  const hintOf = async (p, id) => {
+    await p.mouse.move(700, 600);
+    await sleep(150);
+    const b = await frontOpen(p, id).boundingBox();
+    if (!b) return null;
+    await p.mouse.move(b.x + 6, b.y + b.height / 2);
+    const end = Date.now() + 1_500;
+    while (Date.now() < end) {
+      const t = await p.evaluate(() => {
+        const el = [...document.querySelectorAll("[data-tab-hint]")].find((e) => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+        return el ? (el.innerText ?? "").trim() : null;
+      });
+      if (t) return t;
+      await sleep(60);
+    }
+    return null;
+  };
+  /** Presses the front tab on its face — the half of the tab that is not
+      the name, so nothing waits on a double-click. */
+  const pressFace = async (p, id) => {
+    const b = await frontOpen(p, id).boundingBox();
+    if (!b) return false;
+    await p.mouse.click(b.x + 6, b.y + b.height / 2);
+    return true;
+  };
+  /** Whether a day row stood in the pane, on every animation frame for
+      `ms` — the only way to see a band that opened and shut inside one
+      gesture. */
+  const watchRow = (p, ms) =>
+    p.evaluate(
+      (ms) =>
+        new Promise((done) => {
+          const seen = [];
+          const end = performance.now() + ms;
+          const tick = () => {
+            seen.push(!!document.querySelector("[data-detail-day]"));
+            if (performance.now() < end) requestAnimationFrame(tick);
+            else done(seen);
+          };
+          tick();
+        }),
+      ms,
+    );
+  const ariaOf = (p, id) =>
+    frontOpen(p, id).evaluate((b) => ({
+      expanded: b.getAttribute("aria-expanded"),
+      controls: b.getAttribute("aria-controls"),
+      row: document.querySelector("[data-detail-day]")?.id ?? null,
+    }));
+  const openTab = async (id) => {
+    await page.locator(`[data-row="${id}"] [data-row-open]`).click();
+    return until(`${id} in front`, 10_000, async () => (await frontOpen(page, id).count()) === 1);
+  };
+
+  const first = fixtureRows[0];
+  if (first && (await openTab(first))) {
+    // Long enough for the first answer to have landed: what is asserted
+    // next is the resting state, not the loading one (f has that).
+    await sleep(1_500);
+    // a. nothing under the tabs, and no room kept
+    const rest = await page.evaluate(() => {
+      const pane = document.querySelector("[data-detail-pane]");
+      const kid = pane?.firstElementChild ?? null;
+      const r = (el) => el.getBoundingClientRect();
+      return {
+        rows: document.querySelectorAll("[data-detail-day]").length,
+        bands: document.querySelectorAll("[data-day-strip], [data-day-skeleton]").length,
+        first: kid ? `${kid.tagName.toLowerCase()}${[...kid.attributes].map((a) => `[${a.name}]`).join("")}` : null,
+        kept: pane && kid ? +(r(kid).top - r(pane).top).toFixed(2) : null,
+      };
+    });
+    console.log(`⓪a fresh profile: ${JSON.stringify(rest)}`);
+    if (rest.rows !== 0 || rest.bands !== 0) {
+      fail(`⓪a a fresh profile draws ${rest.rows} day row(s) and ${rest.bands} band(s) under the tabs — the day is hidden until the front tab is pressed`);
+    }
+    if (rest.first === null) fail("probe dead: ⓪a the open session's pane has nothing in it to measure");
+    else if (rest.kept !== 0) fail(`⓪a the session starts ${rest.kept}px below the pane's top (first child ${rest.first}) — no room is kept for a hidden day`);
+
+    // b. the hover says it, a press does it
+    const before = await hintOf(page, first);
+    if (!HINT.show.includes(before)) fail(`⓪b the front tab's hover reads ${JSON.stringify(before)} while the day is hidden — want ${HINT.show.join(" / ")}`);
+    const shut = await ariaOf(page, first);
+    if (shut.expanded !== "false") fail(`⓪b the front tab says aria-expanded=${shut.expanded} while the day is hidden`);
+    await pressFace(page, first);
+    if (!(await waitRows(page, true, 600))) fail("⓪b pressing the front tab's face drew no day row within 600ms");
+    else {
+      const band = await until("the band after the press", 10_000, async () => (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1);
+      if (!band) fail("⓪b the row came down and never held a band");
+      const open = await ariaOf(page, first);
+      if (open.expanded !== "true" || !open.controls || open.controls !== open.row) {
+        fail(`⓪b the open front tab says ${JSON.stringify(open)} — aria-expanded=true and aria-controls naming the row`);
+      }
+      const after = await hintOf(page, first);
+      if (!HINT.hide.includes(after)) fail(`⓪b the front tab's hover reads ${JSON.stringify(after)} while the day is shown — want ${HINT.hide.join(" / ")}`);
+      console.log(`⓪b hover: 「${before}」 → 「${after}」`);
+    }
+    // …on the name: after the double-click window, and only once
+    await page.locator(`[data-tab="${first}"] [data-session-title]`).click();
+    if (!(await waitRows(page, false, 1_500))) fail("⓪b a click on the front tab's name did not hide the day within 1.5s");
+    // …and by keys, on the focused tab
+    await frontOpen(page, first).focus();
+    await page.keyboard.press("Enter");
+    if (!(await waitRows(page, true, 600))) fail("⓪b Enter on the focused front tab did not show the day");
+    await page.keyboard.press(" ");
+    if (!(await waitRows(page, false, 600))) fail("⓪b Space on the focused front tab did not hide the day");
+
+    // c. a double-click renames, and the band holds still — both ways
+    for (const shown of [false, true]) {
+      if (shown) {
+        await pressFace(page, first);
+        await waitRows(page, true, 600);
+      }
+      await page.mouse.move(700, 600);
+      const watching = watchRow(page, 1_000);
+      await page.locator(`[data-tab="${first}"] [data-session-title]`).dblclick();
+      const frames = await watching;
+      const editor = await page.locator(`[data-tab="${first}"] [data-title-input]`).count();
+      const flips = frames.filter((v, i) => i > 0 && v !== frames[i - 1]).length;
+      if (editor !== 1) fail(`⓪c a double-click on the front tab's name opened ${editor} editor(s) — rename must still win`);
+      if (frames.length < 10) fail(`probe dead: ⓪c sampled ${frames.length} frame(s) across the double-click`);
+      else if (flips !== 0 || frames[0] !== shown) {
+        fail(
+          `⓪c a double-click on the name ${shown ? "with the day shown" : "with the day hidden"} moved the band: ` +
+            `${frames.filter(Boolean).length} of ${frames.length} frames had a row, ${flips} flip(s) — it renames, it does not toggle`,
+        );
+      }
+      console.log(`⓪c double-click, day ${shown ? "shown" : "hidden"}: ${frames.length} frames, ${flips} flips, editor ${editor}`);
+      await page.keyboard.press("Escape");
+      await sleep(200);
+    }
+
+    // d. it outlives a reload (the day is shown now, from c)
+    await page.reload({ waitUntil: "load" });
+    const kept = await until("the day, shown again after a reload with nobody pressing", 20_000, async () =>
+      (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1,
+    );
+    if (!kept) fail("⓪d the day was shown before the reload and is not after it — the choice is remembered");
+  } else {
+    fail("probe dead: ⓪ had no fixture row to open");
+  }
+
+  // e. a day with no record: said, not drawn — in both shapes it
+  //    arrives in (the route above), with the day asked for (from d)
+  for (const shape of ["unwatched", "missing"]) {
+  if (shape !== emptyAs) {
+    emptyAs = shape;
+    // The next answer carries the new shape; a reload asks at once
+    // rather than waiting out the poll.
+    await page.reload({ waitUntil: "load" });
+    await until("rows after the reload", 20_000, async () => (await page.locator("[data-row]").count()) > 0);
+  }
+  for (const id of fixtureQuiet) {
+    if (!(await openTab(id))) continue;
+    let said = null;
+    const end = Date.now() + 10_000;
+    while (Date.now() < end) {
+      said = await hintOf(page, id);
+      if (HINT.none.includes(said)) break;
+      await sleep(300);
+    }
+    if (!HINT.none.includes(said)) fail(`⓪e ${id} (${shape}) has no record and its front tab's hover reads ${JSON.stringify(said)} — want ${HINT.none.join(" / ")}`);
+    const rows = await dayRows(page);
+    if (rows !== 0) fail(`⓪e ${id} (${shape}) has no record and ${rows} day row(s) stand under its tab — an empty row is the blank band`);
+    const aria = await ariaOf(page, id);
+    if (aria.expanded !== null) fail(`⓪e ${id}'s front tab says aria-expanded=${aria.expanded} with no record — a press opens nothing, so it is not a switch`);
+    await pressFace(page, id);
+    await page.locator(`[data-tab="${id}"] [data-session-title]`).click();
+    const opened = await waitRows(page, true, 800);
+    if (opened) fail(`⓪e pressing ${id}'s front tab (${shape}) drew a day row — there is no day to draw`);
+    console.log(`⓪e ${id} (${shape}): 「${said}」, ${rows} rows, pressed → ${opened ? "a row" : "nothing"}`);
+  }
+  }
+  // …and the press on an empty day did not turn the switch off: the next
+  // session with a record still opens with its day.
+  if (first && (await openTab(first))) {
+    const still = await until("the day, still asked for after pressing an empty one", 10_000, async () =>
+      (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1,
+    );
+    if (!still) fail("⓪e pressing the tab of a day with no record switched the day off for the sessions that have one");
+  }
+
+  // f. on its way: a skeleton, in the band's own geometry
+  {
+    const slow = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await slow.addInitScript((id) => {
+      try {
+        localStorage.setItem("khor.sessions.day", "1");
+        localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
+      } catch {
+        /* then nothing is asked for, and the probe below says so */
+      }
+    }, first);
+    let release = () => {};
+    const held = new Promise((r) => (release = r));
+    await slow.route("**/day_strips", async (route) => {
+      await held;
+      await route.continue();
+    });
+    const sp = await slow.newPage();
+    const slowThrew = [];
+    sp.on("pageerror", (e) => slowThrew.push(String(e)));
+    await sp.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+    const skeleton = await (async () => {
+      const end = Date.now() + 15_000;
+      while (Date.now() < end) {
+        const got = await sp.evaluate(() => {
+          const row = document.querySelector("[data-detail-day]");
+          const sk = row?.querySelector("[data-day-skeleton]");
+          const pill = sk?.querySelector("[data-skeleton]");
+          if (!row) return null;
+          const probe = document.createElement("span");
+          probe.style.backgroundColor = "var(--fill)";
+          document.body.append(probe);
+          const fill = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const r = row.getBoundingClientRect();
+          const cs = getComputedStyle(row.firstElementChild ?? row);
+          const p = pill?.getBoundingClientRect();
+          const ps = pill ? getComputedStyle(pill) : null;
+          return {
+            band: !!row.querySelector("[data-day-strip]"),
+            skeleton: !!sk,
+            busy: sk?.getAttribute("aria-busy") ?? null,
+            row: { left: r.left, right: r.right, top: r.top, h: r.height },
+            pad: { l: parseFloat(cs.paddingLeft) || 0, r: parseFloat(cs.paddingRight) || 0 },
+            pill: p && { left: p.left, right: p.right, top: p.top, h: p.height, bg: ps.backgroundColor, corner: parseFloat(ps.borderTopLeftRadius) || 0 },
+            fill,
+          };
+        });
+        if (got) return got;
+        await sleep(40);
+      }
+      return null;
+    })();
+    if (!skeleton) fail("⓪f with the day asked for and its answer held back, no row came down at all — the strip is shown and the day is on its way: a skeleton, not nothing");
+    else if (skeleton.band) fail("probe dead: ⓪f a band was drawn while its day route was held — the hold did not hold");
+    else if (!skeleton.skeleton || !skeleton.pill) fail(`⓪f the row under the tabs while the day loads holds no skeleton (${JSON.stringify(skeleton)}) — a blank row is the band the owner reported`);
+    else {
+      const k = skeleton;
+      if (k.busy !== "true") fail(`⓪f the skeleton says aria-busy=${k.busy}`);
+      if (k.pill.bg !== k.fill) fail(`⓪f the skeleton is painted ${k.pill.bg}, not \`fill\` (${k.fill}) — the app's skeleton language`);
+      const full = Math.abs(k.pill.left - (k.row.left + k.pad.l)) < 0.5 && Math.abs(k.pill.right - (k.row.right - k.pad.r)) < 0.5;
+      if (!full) fail(`⓪f the skeleton spans ${k.pill.left.toFixed(1)}..${k.pill.right.toFixed(1)} in a row whose axis is ${(k.row.left + k.pad.l).toFixed(1)}..${(k.row.right - k.pad.r).toFixed(1)} — one pill the whole axis`);
+      if (k.pill.corner < k.pill.h / 2) fail(`⓪f the skeleton's corner is ${k.pill.corner} on a ${k.pill.h}px pill — it is a pill like the band's`);
+      release();
+      const landed = await (async () => {
+        const end = Date.now() + 15_000;
+        while (Date.now() < end) {
+          const got = await sp.evaluate(() => {
+            const row = document.querySelector("[data-detail-day]");
+            const ink = row?.querySelector("[data-day-strip] [data-day-mark] > *");
+            if (!row || !ink) return null;
+            const r = row.getBoundingClientRect();
+            const i = ink.getBoundingClientRect();
+            return { row: { top: r.top, h: r.height }, ink: { top: i.top, h: i.height }, skeleton: !!row.querySelector("[data-day-skeleton]") };
+          });
+          if (got) return got;
+          await sleep(60);
+        }
+        return null;
+      })();
+      if (!landed) fail("⓪f the day's answer was let through and no band replaced the skeleton");
+      else {
+        if (landed.skeleton) fail("⓪f the band arrived and the skeleton is still in the row");
+        if (Math.abs(landed.row.h - k.row.h) > 0.5 || Math.abs(landed.row.top - k.row.top) > 0.5) {
+          fail(`⓪f the skeleton's row is ${k.row.h} tall at ${k.row.top}, the band's is ${landed.row.h} at ${landed.row.top} — the session jumps when the day lands`);
+        }
+        if (Math.abs(landed.ink.h - k.pill.h) > 0.5 || Math.abs(landed.ink.top - k.pill.top) > 0.5) {
+          fail(`⓪f the skeleton's pill is ${k.pill.h} tall at ${k.pill.top}, the band's pills ${landed.ink.h} at ${landed.ink.top} — the band's own geometry`);
+        }
+      }
+      console.log(`⓪f skeleton: ${JSON.stringify(k.pill)} in a ${k.row.h}px row; then ${JSON.stringify(landed)}`);
+    }
+    release();
+    if (slowThrew.length) fail(`⓪f the page threw: ${slowThrew.join(" | ")}`);
+    await slow.close();
+  }
+
   const openRow = async (id) => {
     await page.locator(`[data-row="${id}"] [data-row-open]`).click();
     return until(`the band for ${id}`, 25_000, async () => {
@@ -319,7 +703,12 @@ try {
   // The row ⑥ presses on: the one whose day has a 待批 stretch, because
   // that is the word the strip exists for.
   let rowWithBlocked = null;
-  for (const id of rowIds) {
+  // **The fixture's rows with a record, not every row on the list**
+  // (2026-09-29): a row whose day has no word draws no band now (⓪ e —
+  // the quiet row, and the machine's own conversation, which no sample
+  // ever named), and waiting for one under it would be waiting for the
+  // blank band to come back.
+  for (const id of fixtureRows) {
     if (!(await openRow(id))) continue;
     const got = await readBand();
     seen.wants = got.wants;
@@ -595,28 +984,12 @@ try {
   // to reach down into the session (`before:-bottom-3`): 298 points under
   // the row on the wide face, 124 on the narrow one.
   //
-  // The words are the catalog's, read out of the generated table rather
-  // than written here: a copy in this file would keep passing after the
-  // catalog moved. Either language is accepted — the face picks one.
-  const catalogWords = (() => {
-    const src = readFileSync(join(gui, "src/gen/catalog.ts"), "utf8");
-    const table = (name) => {
-      const m = src.match(new RegExp(`const ${name}(?:: [^=]+)? = \\{([\\s\\S]*?)\\n\\};`));
-      if (!m) return {};
-      return Object.fromEntries([...m[1].matchAll(/^\s*(\w+): "([^"]*)",?$/gm)].map((x) => [x[1], x[2]]));
-    };
-    const zh = table("zh_state");
-    const en = table("en_state");
-    zh.unwatched = table("zh_gui").day_unwatched;
-    en.unwatched = table("en_gui").day_unwatched;
-    return { zh, en };
-  })();
+  // The words are the catalog's (`catalogWords`, read before ⓪).
   const wordsOf = (mark) => [catalogWords.zh[mark], catalogWords.en[mark]].filter(Boolean);
   if (wordsOf("blocked").length !== 2 || wordsOf("unwatched").length !== 2) {
     fail(`probe dead: ⑥ could not read the words out of src/gen/catalog.ts (${JSON.stringify(catalogWords)})`);
   }
   const SPAN = /(\d{2}:\d{2})–(\d{2}:\d{2})/;
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /** Every run's box, its ink's box and corners, in document order. */
   const readRuns = (p) =>
     p.evaluate(() => {
@@ -927,6 +1300,36 @@ try {
       fail(`probe dead: ⑥e the narrow face never listed ${rowWithBlocked}`);
     } else {
       await phone.locator(`[data-row="${rowWithBlocked}"] [data-row-open]`).tap();
+      // ⓪g **The head is the front tab's stand-in**: the phone has no
+      // tabs and no hover, so the name and face in the window's first
+      // row are the switch — hidden at first here too (a fresh profile),
+      // one tap opens it, one more (at the end of ⑥) puts it away.
+      const toggle = phone.locator("[data-detail-header] [data-day-toggle]");
+      const seated = await (async () => {
+        const end = Date.now() + 10_000;
+        while (Date.now() < end) {
+          if ((await toggle.count()) === 1) return true;
+          await sleep(100);
+        }
+        return false;
+      })();
+      await sleep(1_000);
+      const headTap = async () => {
+        const b = await toggle.boundingBox();
+        if (b) await phone.touchscreen.tap(b.x + 10, b.y + b.height / 2);
+      };
+      if (!seated) {
+        fail("⓪g the narrow session's head has no [data-day-toggle] — on the face with no tabs, the head is the switch");
+      } else {
+        if ((await dayRows(phone)) !== 0) fail("⓪g a fresh phone draws a day row before anybody asked for it");
+        const was = await toggle.getAttribute("aria-expanded");
+        if (was !== "false") fail(`⓪g the narrow head says aria-expanded=${was} while the day is hidden`);
+        await headTap();
+        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the narrow head drew no day row");
+        const now = await toggle.getAttribute("aria-expanded");
+        if (now !== "true") fail(`⓪g the narrow head says aria-expanded=${now} with the day shown`);
+        console.log(`⓪g narrow head: aria-expanded ${was} → tap → ${now}`);
+      }
       const end = Date.now() + 25_000;
       let pruns = [];
       while (Date.now() < end) {
@@ -968,6 +1371,12 @@ try {
           if (below.length) fail(`⑥f narrow: ${below.length} point(s) ${dy}px under the band's box hit the band`);
         }
       }
+      if (seated) {
+        // ⓪g …and one more tap puts it away.
+        await sleep(500);
+        await headTap();
+        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the narrow head left the day row up");
+      }
     }
     if (phoneThrew.length) fail(`⑥ the narrow page threw: ${phoneThrew.join(" | ")}`);
     await touch.close();
@@ -992,11 +1401,15 @@ try {
   const returning = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   // …and a session open in a tab from last time (`useSessionTabs`), so
   // the band has somewhere to be with the list put away.
-  const remembered = rowIds[0];
+  // A row with a record: one without draws no band at all now (⓪ e).
+  const remembered = fixtureRows[0];
   await returning.addInitScript((id) => {
     try {
       localStorage.setItem("khor.list-width", '{"w":462,"collapsed":true}');
       localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
+      // …with the day asked for last time (⓪ d): a returning browser
+      // that had it open expects it open.
+      localStorage.setItem("khor.sessions.day", "1");
     } catch {
       /* a profile that refuses storage is simply the blank case again */
     }
@@ -1081,6 +1494,7 @@ try {
     };
     try {
       localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
+      localStorage.setItem("khor.sessions.day", "1");
     } catch {
       /* then nothing is open, and the probe below says so */
     }
