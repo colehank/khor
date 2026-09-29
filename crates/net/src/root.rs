@@ -84,6 +84,35 @@ pub fn save(path: &Path, key: &iroh::SecretKey) -> Result<()> {
     Ok(())
 }
 
+/// Writes `key` at `path` **only if no key is there yet**, and
+/// atomically: two processes opening a fresh store at the same moment
+/// (the app and its resident, the first time) end with one root between
+/// them rather than a file one of them overwrote. Answers whether this
+/// call was the one that wrote it — the other caller then loads what is
+/// there.
+///
+/// Written whole to a private temporary name first and then linked into
+/// place, so nobody ever reads a half-written key.
+pub fn create(path: &Path, key: &iroh::SecretKey) -> Result<bool> {
+    static TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = TICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("new-{}-{n}", std::process::id()));
+    save(&tmp, key)?;
+    let won = match std::fs::hard_link(&tmp, path) {
+        Ok(()) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => false,
+        // A filesystem without links: the same promise, one step weaker
+        // (a rename replaces), so it is taken only where nothing is there.
+        Err(_) if !path.exists() => {
+            std::fs::rename(&tmp, path).with_context(|| msg::cant_write_file(path.display()))?;
+            true
+        }
+        Err(_) => false,
+    };
+    let _ = std::fs::remove_file(&tmp);
+    Ok(won)
+}
+
 /// The key as 24 words, space-separated. The one function in khor that
 /// turns the secret into something printable — callers decide who sees
 /// it, and only after a person asked.
@@ -248,6 +277,19 @@ mod tests {
             let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
             assert_eq!(mode, 0o600, "owner-only from the first byte");
         }
+    }
+
+    /// Two creators, one key: the second finds the first's and says so.
+    #[test]
+    fn create_writes_once_and_never_overwrites() {
+        let t = tmp("create");
+        let path = t.0.join("root.key");
+        let (a, b) = (generate(), generate());
+        assert!(create(&path, &a).unwrap());
+        assert!(!create(&path, &b).unwrap());
+        assert_eq!(load(&path).unwrap().unwrap().to_bytes(), a.to_bytes());
+        let leftovers: Vec<_> = std::fs::read_dir(&t.0).unwrap().flatten().collect();
+        assert_eq!(leftovers.len(), 1, "no temporary is left behind");
     }
 
     #[cfg(unix)]

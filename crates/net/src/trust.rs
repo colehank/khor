@@ -207,9 +207,13 @@ fn seal(magic: &[u8; 4], body: &[u8], key: &iroh::SecretKey) -> Vec<u8> {
     out
 }
 
+/// A record split into its body, the prefix the signature covers, and
+/// the signature.
+type Framed<'a> = (&'a [u8], &'a [u8], [u8; SIG]);
+
 /// The body and the signed prefix, **unverified** — the framing checks
 /// only. Every byte must be accounted for.
-fn frame<'a>(magic: &[u8; 4], bytes: &'a [u8]) -> Result<(&'a [u8], &'a [u8], [u8; SIG]), TrustError> {
+fn frame<'a>(magic: &[u8; 4], bytes: &'a [u8]) -> Result<Framed<'a>, TrustError> {
     if bytes.len() < HEAD + SIG || &bytes[..4] != magic {
         return Err(TrustError::Garbled);
     }
@@ -225,7 +229,7 @@ fn frame<'a>(magic: &[u8; 4], bytes: &'a [u8]) -> Result<(&'a [u8], &'a [u8], [u
 /// A postcard body that must be consumed exactly.
 fn decode<'a, T: Deserialize<'a>>(body: &'a [u8]) -> Result<T, TrustError> {
     match postcard::take_from_bytes::<T>(body) {
-        Ok((v, rest)) if rest.is_empty() => Ok(v),
+        Ok((v, [])) => Ok(v),
         _ => Err(TrustError::Garbled),
     }
 }
