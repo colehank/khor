@@ -3159,16 +3159,23 @@ axis-place = "地方"
 # 「未识别」 — that word belongs to the category axis and says "we
 # could not tell", which is only half of what this group holds.
 group-placeless = "不在任何地方"
-# **What a stretch of the day strip says when the pointer rests on
-# it** (2026-09-01: 「鼠标悬浮在 session 的状态 bar 上的时候,可以显示
-# 状态、时间」): the word, then the span of the day it held. The word
-# is the same six-word key the row wears, looked up the same way — a
-# strip never gets a seventh spelling of a state.
-day-span = "{0} {1}–{2}"
+# ⚠️ 墓碑: `day-span` (「{0} {1}–{2}」, the word then the span) was the
+# day strip's hover of 2026-09-01 and had no caller since 09-02. What a
+# stretch says now — on hover and in the popover a press opens
+# (2026-09-29) — is 「10:05–11:55 · 待批 · 1 小时 50 分钟」: two clocks,
+# the state word (the same six-word key the row wears), and a duration in
+# the `age-*` words. Every piece is a catalog word or a clock and the
+# ` · ` between them is punctuation, so there is no template to keep.
+#
 # A stretch khor was not watching — the app was not running, or the
 # machine had not reported. Not 空闲: idle is a word about the session,
 # and this is a gap in khor's own record.
 day-unwatched = "未查看"
+# …and the one sentence the day strip's popover adds under that word,
+# because 未查看 alone reads like somebody's to-do (「没人去看过」)
+# rather than what it is: khor has no record of the stretch. The other
+# six need no sentence — they are the words the row already wears.
+day-unwatched-why = "这段时间 khor 没有记录：它没在运行，或那台机器没有报告"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.
