@@ -13794,8 +13794,9 @@ try {
     // Exceptions are named, each with its reason, and printed every run.
     {
       const FLOAT_EXCEPT = {
+        // …and that includes the day's readout, which since 2026-09-29 *is*
+        // the tooltip (`DayStrip` no longer draws a surface of its own).
         "src/components/ui/tooltip.tsx": "a tooltip is `radius-sm` (components/Tooltip)",
-        "src/views/DayStrip.tsx": "the day's readout is a tooltip, `radius-sm` (components/Tooltip)",
         "src/components/ui/dialog.tsx": "the sheet hangs from R0: its top edge is R0's, only its lower corners round (`rounded-b-lg`)",
         "src/views/FileView.tsx": "the peek is a band across the whole column over the code — no corner to round",
       };

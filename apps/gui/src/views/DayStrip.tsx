@@ -1,24 +1,26 @@
 import { useRef, useState } from "react";
 
 import type { DayRun } from "@/api";
-import { gui } from "@/gen/catalog";
-import { word } from "@/words";
+import { StatusWord } from "@/components/StatusWord";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cli, gui } from "@/gen/catalog";
+import { stretch, word } from "@/words";
 
 /**
- * One session's last 24 hours, as a band across the bottom of its row.
+ * One session's last 24 hours, as a band across the top of its pane.
  *
  * **Called a day strip and not a strip**, because `SessionsList` already
  * uses that word for a row — "the row is a strip, not a button itself".
  * A second meaning for it in the same pane is how the next person greps
  * for one and reads the other.
  *
- * # Why it is full-bleed
+ * # Why it spans the pane
  *
- * A strip is a time axis, and axes only compare if they line up. Inset
- * to the text column it would still be readable on its own, and reading
- * two rows against each other — *was this one blocked while that one was
- * working?* — would silently be wrong for any row whose indent differs.
- * Edge to edge, every row on the list shares one axis by construction.
+ * A strip is a time axis, and axes only compare if they line up. Every
+ * session's band is drawn across the same pane at the same inset, so
+ * reading one session's day after another's — *was this one blocked
+ * while that one was working?* — compares like with like.
  *
  * # One axis, three tiers — and the third is the absence of ink
  *
@@ -27,10 +29,10 @@ import { word } from "@/words";
  * (`khor_core::DayCell`) have to be told apart from the words *and from
  * each other* without inventing a seventh hue:
  *
- * - a word — a block the full height of the band, in its own colour.
- * - 不知道 (`unwatched`, nobody was sampling) — a block of the same
- *   height, in a quiet tint of the page's own ink. No hue, because it
- *   is not a state.
+ * - a word — a pill the full height of the band, in its own colour.
+ * - 不知道 (`unwatched`, nobody was sampling) — a pill of the same
+ *   height and shape, in a quiet tint of the page's own ink. No hue,
+ *   because it is not a state.
  * - 那时没有这一行 (`absent`, khor was sampling and this session was not
  *   there) — **no element at all**, the row's own ground.
  *
@@ -52,13 +54,37 @@ import { word } from "@/words";
  * without a hue — and the gate measures exactly that gap rather than
  * trusting this paragraph.
  *
+ * # Round, like everything else on the board (2026-09-29)
+ *
+ * 「session的状态条也弄成圆角的bar，而非现在的直角，符合app的一致性」.
+ * The band was the one square thing left on a board where nothing is
+ * square but a hairline (README 形状). Each stretch is now a pill —
+ * `radius-full` on the 4 px band — and neighbours stand **2 px apart**,
+ * the gap carved out of each stretch's own share of the axis (a pixel
+ * off either end) so every pill still starts at its own time.
+ *
+ * **A stretch never gets thinner than a dot, and that is not decided
+ * here.** A pill 4 tall and under 4 wide is a sliver the rounding eats;
+ * floored at a dot instead, it overlaps its neighbours. So the strip
+ * asks the node for cells at least 6 px wide — a dot and its gap
+ * (`use-day-strips` `CELL_WIDTH`) — and the node's own merge
+ * (`khor_core::DayCell::rank`, biased toward 待批) decides what a
+ * coarser cell shows. Merging short stretches here would be a second copy
+ * of that judgment, which the last section of this comment refuses.
+ *
+ * The band stands `gap-in` off the pane's left and right edges and
+ * `gap-xxs` below its top, clear of the board's rounded top corners:
+ * pressed against a 12 px corner, the first and last pills were cut on a
+ * curve. (`use-day-strips` counts cells for that inset axis, not for the
+ * pane.)
+ *
  * # Which end is now, said without a word of explanation
  *
  * The strip runs oldest to newest, and nothing on it says so. What says
- * it is free: **the rightmost cell is painted in the same colour as the
- * state word at the end of the row**, a hand's width away — so the live
- * end of the band and the row's current word are the same colour at the
- * same moment, and the eye joins them without being told.
+ * it is free: **the rightmost stretch is painted in the same colour as
+ * the state word the session wears**, so the live end of the band and
+ * the session's current word are the same colour at the same moment, and
+ * the eye joins them without being told.
  *
  * That cue was there all along and was invisible for a while, because
  * the 不知道 ink was invisible: a young khor has recorded only a few
@@ -70,121 +96,258 @@ import { word } from "@/words";
  * visible, that judgment was wrong and what it earns is a one-time hint,
  * never a permanent key.
  *
+ * # What a stretch says: pointed at, pressed, tapped, or reached by keys
+ *
+ * 「鼠标悬停在bar上要显示时间与状态。点击bar要有一个弹窗显示详情，照顾
+ * 手机没有悬停」 (2026-09-29). **One stretch, one sentence, three ways
+ * to it**, and all three say the same facts:
+ *
+ * - **Pointed at** — the readout, a Tooltip (`components/Tooltip`):
+ *   `10:05–11:55 · 待批 · 1 小时 50 分钟`. Immediate (the provider's
+ *   delay is 0; the first spelling of this, 2026-09-01, went through the
+ *   OS `title` and its 1.5 s wait read as no hover at all). It hangs
+ *   **below** the band, the side a toolbar's tooltip takes, and is held
+ *   inside the pane by the pane itself as its collision boundary.
+ * - **Pressed or tapped** — a popover (Radix, `ui/popover`) anchored to
+ *   the stretch, on the one floating language: the word with its dot,
+ *   the two clocks, the duration, and for 不知道 the sentence that says
+ *   what it is. A phone has no hover, and this is its way in. A press
+ *   outside, Esc, or the same stretch again closes it. One float at a
+ *   time: the readout stands down while a popover is up.
+ * - **Keys** — the band is one Tab stop (`role="toolbar"`), ← → Home End
+ *   walk the stretches with the `ring` round the focused pill, and the
+ *   readout follows focus. Enter or Space opens the popover; Esc closes
+ *   it and focus lands back on the stretch.
+ *
+ * **The span is the stretch's, not the minute under the pointer.** The
+ * readout of 2026-09-02 printed the clock at the cursor, and it was the
+ * right answer to a delay, not to the question: the state is the same
+ * all along a stretch, so a moving clock adds a *position* and no fact —
+ * it is a time axis, which this band deliberately does not draw (README
+ * 不加刻度、不加时间轴) — and a finger could never get it, while the
+ * popover exists precisely so a finger gets what a pointer gets.
+ *
+ * **No 24-hour totals in the popover.** They would be sums of cells, and
+ * a cell shows the word that *most wanted you* at some point inside it,
+ * not the one that held it longest — so 「待批 2 小时」 summed here could
+ * be twelve cells with a minute of 待批 each. An honest total has to be
+ * counted in the node, at the record's minute resolution, and nobody has
+ * asked for it yet.
+ *
+ * **The clock is read at render, not at fetch.** The strip's right edge
+ * is "now" as of the last poll, and the poll is a few seconds — a reading
+ * inside one poll is inside one minute, and the readout prints minutes.
+ *
+ * The facts are chrome, not text to take away (nothing here is a value
+ * anybody pastes), so none of it is `data-selectable`; and the pointer
+ * over a stretch is the arrow every control wears (30-behavior 选字与手).
+ *
+ * # Its hit area is its own row, and covers nothing else
+ *
+ * The band is 4 px; a pointer, let alone a finger, needs more. Each
+ * stretch's hit box reaches `gap-xxs` above and below the band — exactly
+ * the row's own padding, so the row the band sits in (12 px, the band in
+ * the middle) is the whole target and **nothing outside it** is. It used
+ * to reach 12 px *up*, behind the tab strip — where it was harmless only
+ * by accident: the board is `overflow: hidden`, which clips hit-testing
+ * as well as paint, so the reach-up was cut off at the board's edge and
+ * the band's real target was its 4 px. Now that a press opens something,
+ * the target is laid out rather than left to a clip.
+ *
  * # It paints, it does not decide
  *
- * The runs arrive merged to the cell count this list asked for, and
+ * The runs arrive merged to the cell count this pane asked for, and
  * which cell won a merge was `khor_core::DayCell::rank`'s answer. There
  * is no ordering, no bucketing and no fallback word in this file — a
  * second copy of that judgment here is how a strip and the row above it
  * would come to disagree about the same session.
  */
-/** The strip's whole span, in minutes: the node's `Day` is a rolling
-    day (`khor_node::day`), and every run is a share of it. */
-const DAY_MINUTES = 24 * 60;
 
-/** A clock reading, `HH:MM`, for the hover. */
+/** The strip's whole span: the node's `Day` is a rolling day
+    (`khor_node::day`), and every run is a share of it. */
+const DAY_MS = 24 * 60 * 60_000;
+
+/** A clock reading, `HH:MM`. */
 function clock(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/**
- * What the pointer is over: the **moment** under the cursor, and the
- * word there (2026-09-02: 「鼠标悬浮在状态bar上面,应该显示当时的时间
- * 和状态」). The first spelling (2026-09-01) printed the run's whole
- * span through the browser's own `title` — and its 1.5s delay read as
- * no hover at all, which is how the same request arrived twice. This
- * one is immediate and follows the cursor: the axis is linear, so the
- * x under the pointer *is* a time of day.
- *
- * **The clock is read at hover, not at fetch.** The strip's right edge
- * is "now" as of the last poll, and the poll is a few seconds — a
- * reading that lands inside one poll is inside one minute, and the
- * readout prints minutes. Carrying the fetch time out of the hook would
- * be a second clock for a difference the format cannot show.
- *
- * An absent run has nothing to say and takes no pointer; the word for a
- * stretch khor was not watching is its own (`day_unwatched`), never a
- * seventh state. The ` · ` join is punctuation, not copy — the words on
- * either side of it are the catalog's.
- */
-type Peek = { x: number; text: string };
+/** One run placed on the day: where it starts and ends, as of `now`. */
+type Stretch = {
+  i: number;
+  run: DayRun;
+  /** The word it says; `null` for 那时没有这一行, which says nothing. */
+  label: string | null;
+  from: number;
+  to: number;
+  width: string;
+};
 
 function labelOf(mark: DayRun["mark"]): string | null {
   if (mark === "absent") return null;
   return mark === "unwatched" ? gui.day_unwatched : word(mark.word);
 }
 
+/** The runs as stretches of the day ending `now`, oldest first. */
+function lay(runs: DayRun[], total: number, now: number): Stretch[] {
+  let before = 0;
+  return runs.map((run, i) => {
+    const from = now - (1 - before / total) * DAY_MS;
+    before += run.cells;
+    const to = now - (1 - before / total) * DAY_MS;
+    return { i, run, label: labelOf(run.mark), from, to, width: `${(run.cells / total) * 100}%` };
+  });
+}
+
+/** What a stretch says in one line — the readout, and the name a screen
+    reader gives the stretch. The ` · ` and the `–` are punctuation; every
+    word either side is the catalog's. */
+function sentence(s: Stretch): string {
+  return `${clock(s.from)}–${clock(s.to)} · ${s.label} · ${stretch(s.to - s.from)}`;
+}
+
+/** How far a float keeps off the pane's edges: the inset the band
+    itself keeps (`gap-in`), read from the token. */
+function inset(): number {
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-in")) || 0;
+}
+
 export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
-  const box = useRef<HTMLSpanElement>(null);
-  const [peek, setPeek] = useState<Peek | null>(null);
-  if (!runs || runs.length === 0) return null;
-  const total = runs.reduce((n, r) => n + r.cells, 0);
-  if (total === 0) return null;
-  const read = (e: React.MouseEvent, label: string) => {
-    const rect = box.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) return;
-    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const at = Date.now() - (1 - frac) * DAY_MINUTES * 60_000;
-    // Clamped so the readout never hangs past the pane at either end.
-    const x = Math.min(Math.max(e.clientX - rect.left, 28), rect.width - 28);
-    setPeek({ x, text: `${clock(at)} · ${label}` });
+  const box = useRef<HTMLDivElement>(null);
+  /** The stretch whose readout is up. */
+  const [peek, setPeek] = useState<number | null>(null);
+  /** **A moment**, not an index: the popover belongs to the stretch that
+      holds it. Runs have no identity (below), and an index would move to
+      the next stretch when the oldest one slides off the day under an
+      open popover; the moment stays inside the stretch it was taken
+      from, and falls off the day with it. */
+  const [openAt, setOpenAt] = useState<number | null>(null);
+  /** The stretch that holds the band's one Tab stop. */
+  const [stop, setStop] = useState<number | null>(null);
+  const total = runs?.reduce((n, r) => n + r.cells, 0) ?? 0;
+  if (!runs || total === 0) {
+    // The row's room, kept while the day has not arrived, so the session
+    // under it does not jump when it does. Not a band: nothing here says
+    // `data-day-strip`, which is how a gate tells 「no band」 from one.
+    return (
+      <div aria-hidden className="px-in py-xxs">
+        <div className="h-1" />
+      </div>
+    );
+  }
+  const laid = lay(runs, total, Date.now());
+  const inked = laid.filter((s) => s.label !== null);
+  const tabStop = inked.some((s) => s.i === stop) ? stop : (inked[inked.length - 1]?.i ?? null);
+  const bound = box.current?.closest("[data-detail-pane]") ?? null;
+  const pad = inset();
+  const holds = (s: Stretch, at: number | null) => at !== null && at >= s.from && at < s.to;
+
+  // ← → Home End, from a stretch only: the popover is portaled but React
+  // still bubbles its keys through here, and they are not the band's.
+  const walk = (e: React.KeyboardEvent) => {
+    const at = inked.findIndex((s) => String(s.i) === (e.target as HTMLElement).dataset?.dayRun);
+    if (at < 0) return;
+    const to =
+      e.key === "ArrowLeft" ? at - 1 : e.key === "ArrowRight" ? at + 1 : e.key === "Home" ? 0 : e.key === "End" ? inked.length - 1 : null;
+    if (to === null) return;
+    e.preventDefault();
+    const next = inked[Math.max(0, Math.min(inked.length - 1, to))];
+    setStop(next.i);
+    box.current?.querySelector<HTMLElement>(`[data-day-run="${next.i}"]`)?.focus();
   };
+
   return (
-    <span
+    <div
       ref={box}
       data-day-strip
-      // **Only the runs take the pointer**, and each says what it is.
-      // The strip is four pixels tall, so every run also reaches up
-      // behind the row with an invisible hit box (`before:`): a person
-      // aiming at the bar should not need a steady hand to hit it.
-      className="pointer-events-none absolute inset-x-0 bottom-0 flex h-1 overflow-visible"
+      role="toolbar"
+      aria-label={cli.day_title}
+      aria-orientation="horizontal"
+      onKeyDown={walk}
+      // The row: the band in the middle, `gap-xxs` over and under it —
+      // which is exactly how far each stretch's hit box reaches.
+      className="flex px-in py-xxs"
     >
-      {runs.map((run, i) => {
-        const label = labelOf(run.mark);
+      {laid.map((s) => {
+        // Runs have no identity of their own — they are a slice of a
+        // timeline, and the slice at position i is the same thing frame
+        // to frame even when its width changes.
+        if (s.label === null) {
+          // Sampled, and this session was not on the list: the band's own
+          // ground, and deliberately no ink and no target — "nothing
+          // here" is the one of the three that should cost nothing.
+          return (
+            <span
+              key={s.i}
+              data-day-mark="absent"
+              data-day-cells={s.run.cells}
+              aria-hidden
+              className="h-1 flex-none"
+              style={{ width: s.width }}
+            />
+          );
+        }
+        const text = sentence(s);
         return (
-        <span
-          // Runs have no identity of their own — they are a slice of a
-          // timeline, and the slice at position i is the same thing
-          // frame to frame even when its width changes.
-          key={i}
-          data-day-mark={typeof run.mark === "string" ? run.mark : run.mark.word}
-          // Every tier that has ink fills this box; the one that has
-          // none renders nothing into it.
-          className={
-            label === null
-              ? "grid h-full place-items-center"
-              : "pointer-events-auto relative grid h-full place-items-center before:absolute before:inset-x-0 before:-top-3 before:bottom-0 before:content-['']"
-          }
-          style={{ width: `${(run.cells / total) * 100}%` }}
-          onMouseMove={label === null ? undefined : (e) => read(e, label)}
-          onMouseLeave={label === null ? undefined : () => setPeek(null)}
-        >
-          <Mark mark={run.mark} />
-        </span>
+          <Tooltip
+            key={s.i}
+            open={peek === s.i && openAt === null}
+            onOpenChange={(o) => setPeek((cur) => (o ? s.i : cur === s.i ? null : cur))}
+            // The readout is a name, never a place to go.
+            disableHoverableContent
+          >
+            <Popover
+              open={holds(s, openAt)}
+              // Closing clears the moment only if it is still this
+              // stretch's: on a touch screen the tap that opens the next
+              // stretch lands before the last one hears it was left.
+              onOpenChange={(o) => setOpenAt((cur) => (o ? (s.from + s.to) / 2 : holds(s, cur) ? null : cur))}
+            >
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    data-day-mark={typeof s.run.mark === "string" ? s.run.mark : s.run.mark.word}
+                    data-day-run={s.i}
+                    // How many cells it is: what lets a gate say a cell
+                    // is wide enough for a dot and its gap.
+                    data-day-cells={s.run.cells}
+                    tabIndex={s.i === tabStop ? 0 : -1}
+                    aria-label={text}
+                    onFocus={() => setStop(s.i)}
+                    // The slot is this stretch's share of the axis; a pixel
+                    // of it at each end is the gap. `before:` is the hit
+                    // box, the row's padding over and under the band.
+                    className="group relative flex h-1 flex-none justify-center px-px outline-none before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
+                    style={{ width: s.width }}
+                  >
+                    <Ink mark={s.run.mark} />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent data-day-peek side="bottom" collisionBoundary={bound} collisionPadding={pad} className="tabular-nums">
+                {text}
+              </TooltipContent>
+              <PopoverContent
+                data-day-detail
+                side="bottom"
+                collisionBoundary={bound}
+                collisionPadding={pad}
+                aria-label={s.label}
+              >
+                <Detail s={s} />
+              </PopoverContent>
+            </Popover>
+          </Tooltip>
         );
       })}
-      {/* The readout, above the band where the cursor is not covering
-          it. Its own element rather than the OS title: immediate, and
-          it moves with the pointer. `pointer-events` stays off it so it
-          never steals the hover that summoned it. */}
-      {peek && (
-        <span
-          data-day-peek
-          // A tooltip's look (components/Tooltip, 2026-09-28): `popover`,
-          // `float`, `radius-sm`, `gap-xxs` / `gap-in` inside.
-          className="absolute bottom-full z-10 mb-1 -translate-x-1/2 rounded-sm border bg-popover px-in py-xxs text-caption whitespace-nowrap text-popover-foreground shadow-(--shadow-float)"
-          style={{ left: peek.x }}
-        >
-          {peek.text}
-        </span>
-      )}
-    </span>
+    </div>
   );
 }
 
 /**
- * What one run is made of.
+ * The ink of one stretch: a pill, in its word's token or 不知道's tint.
  *
  * The union is discriminated in the type (`DayMark` is
  * `{ word } | "unwatched" | "absent"`), so a word can only be reached
@@ -192,28 +355,47 @@ export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
  * shape. Spelled as one flat string, `var(--state-unwatched)` would
  * resolve to nothing and paint transparent, folding 不知道 into
  * 那时没有这一行 in CSS after the node worked to keep them apart.
+ *
+ * Read through an inline `var()` rather than a Tailwind colour utility:
+ * that would need a second entry in `@theme inline` naming the same fact.
+ * `min-w-1` is a floor for the one case the cell width cannot promise —
+ * a pane not measured yet — and never draws in a measured one.
  */
-function Mark({ mark }: { mark: DayRun["mark"] }) {
-  // Sampled, and this session was not on the list. The band's own
-  // ground, and deliberately no element: "nothing here" is the one of
-  // the three that should cost no ink at all.
+function Ink({ mark }: { mark: DayRun["mark"] }) {
+  // 那时没有这一行 is drawn by the band's caller as an empty slot and
+  // never reaches here; if it did, it would still cost no ink.
   if (mark === "absent") return null;
-  // Nobody was sampling — the same block a word gets, in ink with no
-  // hue. The token carries what it has to sit between and why (a floor
-  // for a filled block, and a factor below 空闲); this file's head has
-  // why it stopped being a hairline.
-  //
-  // Read through an inline `var()` like the word branch below, rather
-  // than through a Tailwind colour utility: that would need a second
-  // entry in `@theme inline` naming the same fact, and the sibling three
-  // lines down already resolves its token this way.
-  if (mark === "unwatched") {
-    return <span className="h-full w-full" style={{ backgroundColor: "var(--day-unwatched)" }} />;
-  }
   return (
     <span
-      className="h-full w-full"
-      style={{ backgroundColor: `var(--state-${mark.word})` }}
+      className="h-full w-full min-w-1 flex-none rounded-full group-focus-visible:outline-2 group-focus-visible:outline-offset-1 group-focus-visible:outline-ring"
+      style={{ backgroundColor: mark === "unwatched" ? "var(--day-unwatched)" : `var(--state-${mark.word})` }}
     />
+  );
+}
+
+/**
+ * The popover's facts, in reading order: what it was (the word and its
+ * dot, `StatusWord`'s one look — or 不知道's own tint and word, which is
+ * not a state and does not wear one), when, and for how long. 不知道
+ * adds the one sentence that says what it means.
+ */
+function Detail({ s }: { s: Stretch }) {
+  const mark = s.run.mark;
+  return (
+    <div className="flex flex-col gap-xxs">
+      {mark === "unwatched" || mark === "absent" ? (
+        <span className="inline-flex items-center gap-xxs text-caption text-muted-foreground">
+          <span aria-hidden className="size-1.5 flex-none rounded-full" style={{ backgroundColor: "var(--day-unwatched)" }} />
+          {gui.day_unwatched}
+        </span>
+      ) : (
+        <StatusWord word={mark.word} />
+      )}
+      <span className="text-body tabular-nums">
+        {clock(s.from)}–{clock(s.to)}
+      </span>
+      <span className="text-callout text-muted-foreground tabular-nums">{stretch(s.to - s.from)}</span>
+      {mark === "unwatched" && <span className="text-callout text-muted-foreground">{gui.day_unwatched_why}</span>}
+    </div>
   );
 }

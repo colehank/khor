@@ -40,7 +40,12 @@
 //      left of where the row's content begins. A strip is a timeline
 //      and timelines only compare if they line up; nested into the
 //      row's padded button it would still look fine alone and be wrong
-//      the moment two rows are read against each other.
+//      the moment two rows are read against each other;
+//   6. (2026-09-29) the band is a control: pills 2 apart and never
+//      thinner than a dot, a readout and a popover that say the same
+//      stretch, a finger that gets the popover, one Tab stop, and a hit
+//      area that covers nothing but its own row. Its own section says
+//      what each half caught on the code before it.
 //
 // # The anti-vacuum probes are the load-bearing part
 //
@@ -67,7 +72,7 @@
 // Run: `npm run day` (needs system Chrome, and:
 // `cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`)
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -311,6 +316,9 @@ try {
   const seen = { wants: {}, marks: [], boxes: [] };
   let bandsRead = 0;
   let rowWithUnwatched = null;
+  // The row ⑥ presses on: the one whose day has a 待批 stretch, because
+  // that is the word the strip exists for.
+  let rowWithBlocked = null;
   for (const id of rowIds) {
     if (!(await openRow(id))) continue;
     const got = await readBand();
@@ -319,6 +327,7 @@ try {
     seen.boxes.push({ id, ...got.box });
     bandsRead += 1;
     if (rowWithUnwatched === null && got.marks.some((m) => m.mark === "unwatched")) rowWithUnwatched = id;
+    if (rowWithBlocked === null && got.marks.some((m) => m.mark === "blocked")) rowWithBlocked = id;
   }
   if (bandsRead === 0) fail("probe dead: no row's band could be read — every claim below would pass on nothing");
   // The ink claim (② b) reads the band on screen; leave up the row that
@@ -552,6 +561,418 @@ try {
     `axis: ${seen.boxes.map((b) => `${b.id} ${b.stripL}..${b.stripR} h${b.stripH} ⊤${b.stripT}/${b.paneT} ${b.runs} runs`).join(", ")}`,
   );
 
+  // ── 6) the band is a control (2026-09-29) ─────────────────────────
+  //
+  // 「session的状态条也弄成圆角的bar…鼠标悬停在bar上要显示时间与状态。
+  // 点击bar要有一个弹窗显示详情，照顾手机没有悬停。」 Every half of that
+  // is a thing on the glass a static read cannot see, so each is read
+  // back here, and each was red on the code before it:
+  //
+  //   a. every inked run is a pill — its corners at least half the band's
+  //      height — with a gap between neighbours and never narrower than
+  //      it is tall (a run the rounding ate would be a stretch of the day
+  //      that silently is not there);
+  //   b. the pointer's readout says the **run's** span and its word, is
+  //      on screen (not clipped by the board it sits at the top of), and
+  //      stays inside the pane at both ends of the day;
+  //   c. a press opens a popover saying the same span and word — and only
+  //      one float at a time; a second press on the run, or a press
+  //      anywhere else, closes it;
+  //   d. one Tab stop, ← → walk the runs with a visible ring, Enter opens,
+  //      Esc closes and puts focus back on the run;
+  //   e. a finger (a touch context, no hover at all) gets the popover;
+  //   f. the band's hit area covers nothing else — the tab strip's lower
+  //      pixels hit the tab, and nothing a few pixels over or under the
+  //      band's row hits the band, wide and narrow.
+  //
+  // a–e were red on the code before them. **f was not, and why is worth
+  // keeping**: the old hit boxes reached 12 px *up*, and the board they
+  // sit in is `overflow: hidden`, which clips hit-testing as well as
+  // paint — so the reach-up was cut off at the board's edge and bought
+  // nothing (a first version of f, sampling half-pixels, went red on the
+  // old code only because a point 0.4 px above an edge is hit-tested as
+  // the pixel it rounds into). f was seen red instead on a hit box made
+  // to reach down into the session (`before:-bottom-3`): 298 points under
+  // the row on the wide face, 124 on the narrow one.
+  //
+  // The words are the catalog's, read out of the generated table rather
+  // than written here: a copy in this file would keep passing after the
+  // catalog moved. Either language is accepted — the face picks one.
+  const catalogWords = (() => {
+    const src = readFileSync(join(gui, "src/gen/catalog.ts"), "utf8");
+    const table = (name) => {
+      const m = src.match(new RegExp(`const ${name}(?:: [^=]+)? = \\{([\\s\\S]*?)\\n\\};`));
+      if (!m) return {};
+      return Object.fromEntries([...m[1].matchAll(/^\s*(\w+): "([^"]*)",?$/gm)].map((x) => [x[1], x[2]]));
+    };
+    const zh = table("zh_state");
+    const en = table("en_state");
+    zh.unwatched = table("zh_gui").day_unwatched;
+    en.unwatched = table("en_gui").day_unwatched;
+    return { zh, en };
+  })();
+  const wordsOf = (mark) => [catalogWords.zh[mark], catalogWords.en[mark]].filter(Boolean);
+  if (wordsOf("blocked").length !== 2 || wordsOf("unwatched").length !== 2) {
+    fail(`probe dead: ⑥ could not read the words out of src/gen/catalog.ts (${JSON.stringify(catalogWords)})`);
+  }
+  const SPAN = /(\d{2}:\d{2})–(\d{2}:\d{2})/;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /** Every run's box, its ink's box and corners, in document order. */
+  const readRuns = (p) =>
+    p.evaluate(() => {
+      const marks = [...document.querySelectorAll("[data-detail-day] [data-day-mark]")];
+      return marks.map((el, i) => {
+        const r = el.getBoundingClientRect();
+        const ink = el.firstElementChild;
+        const k = ink ? ink.getBoundingClientRect() : null;
+        const cs = ink ? getComputedStyle(ink) : null;
+        const corners = cs
+          ? ["borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius", "borderBottomRightRadius"].map(
+              (c) => parseFloat(cs[c]) || 0,
+            )
+          : [];
+        return {
+          i,
+          mark: el.dataset.dayMark,
+          cells: Number(el.dataset.dayCells ?? 0),
+          x: r.left + r.width / 2,
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          tabIndex: el.tabIndex,
+          ink: k && { left: k.left, right: k.right, top: k.top, bottom: k.bottom, w: k.width, h: k.height, y: k.top + k.height / 2 },
+          corner: corners.length ? Math.min(...corners) : null,
+        };
+      });
+    });
+  /** What floats now: the readout and the popover, each with its text,
+      its box, how much of it survives every clipping ancestor, and the
+      pane's own edges. */
+  const readFloats = (p) =>
+    p.evaluate(() => {
+      const pane = document.querySelector("[data-detail-pane]")?.getBoundingClientRect() ?? null;
+      const shown = (sel) => {
+        const el = [...document.querySelectorAll(sel)].find((e) => {
+          const r = e.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        // Visible area after every ancestor that clips: the readout this
+        // replaced was inside the board, above its top edge, and the
+        // board is `overflow: hidden` — present in the DOM, 0% on screen.
+        let [l, t, rt, b] = [r.left, r.top, r.right, r.bottom];
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.overflowX !== "visible" || s.overflowY !== "visible") {
+            const q = a.getBoundingClientRect();
+            l = Math.max(l, q.left);
+            t = Math.max(t, q.top);
+            rt = Math.min(rt, q.right);
+            b = Math.min(b, q.bottom);
+          }
+        }
+        const seen = Math.max(0, rt - l) * Math.max(0, b - t);
+        return {
+          text: (el.innerText ?? "").replace(/\s+/g, " ").trim(),
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          visible: Math.round((seen / (r.width * r.height)) * 100) / 100,
+        };
+      };
+      return { pane: pane && { left: pane.left, right: pane.right }, peek: shown("[data-day-peek]"), detail: shown("[data-day-detail]") };
+    });
+  const waitFloat = async (p, which, want, ms = 1_500) => {
+    const end = Date.now() + ms;
+    let last = null;
+    while (Date.now() < end) {
+      last = await readFloats(p);
+      if (!!last[which] === want) return last;
+      await sleep(60);
+    }
+    return last;
+  };
+  const activeIndex = (p) =>
+    p.evaluate(() => [...document.querySelectorAll("[data-detail-day] [data-day-mark]")].indexOf(document.activeElement));
+  /** The span and word a float says, checked against the run it is about. */
+  const saysRun = (where, float, run) => {
+    if (!float) return null;
+    const span = float.text.match(SPAN);
+    if (!span) fail(`⑥ ${where}: 「${float.text}」 carries no HH:MM–HH:MM span — the run's time, not only a moment in it`);
+    if (!wordsOf(run.mark).some((w) => float.text.includes(w))) {
+      fail(`⑥ ${where}: 「${float.text}」 does not name the run's word (${wordsOf(run.mark).join(" / ")})`);
+    }
+    return span ? span[0] : null;
+  };
+  /** Points in a horizontal line of pixels that land on the band. */
+  const hitsBand = (p, y, from, to) =>
+    p.evaluate(
+      ({ y, from, to }) => {
+        const out = [];
+        for (let x = from + 1; x < to - 1; x += 3) {
+          const el = document.elementFromPoint(x, y);
+          if (el && el.closest("[data-day-strip]")) out.push(Math.round(x));
+        }
+        return out;
+      },
+      { y, from, to },
+    );
+
+  /** ⑥a on one face's band: every inked run a pill, 2 apart, no thinner
+      than it is tall — and **every cell at least a dot and its gap
+      wide**, which is what makes the last true for a stretch of one cell
+      whether or not this fixture happens to have one. */
+  const pills = (where, runs) => {
+    const inked = runs.filter((r) => r.mark !== "absent");
+    for (const r of inked) {
+      if (!r.ink || r.corner === null) {
+        fail(`⑥a ${where}: the ${r.mark} run at ${r.i} has no ink to measure`);
+        continue;
+      }
+      if (r.corner < r.ink.h / 2) {
+        fail(`⑥a ${where}: the ${r.mark} run at ${r.i} has a ${r.corner}px corner on a ${r.ink.h}px band — a pill needs ≥ ${r.ink.h / 2}`);
+      }
+      if (r.ink.w < r.ink.h - 0.01) {
+        fail(`⑥a ${where}: the ${r.mark} run at ${r.i} is ${r.ink.w.toFixed(2)} wide on a ${r.ink.h} band — the rounding has eaten it`);
+      }
+    }
+    for (let k = 0; k + 1 < runs.length; k += 1) {
+      const [a, b] = [runs[k], runs[k + 1]];
+      if (a.mark === "absent" || b.mark === "absent" || !a.ink || !b.ink) continue;
+      const gap = b.ink.left - a.ink.right;
+      if (gap < 1.99) fail(`⑥a ${where}: runs ${a.i} (${a.mark}) and ${b.i} (${b.mark}) are ${gap.toFixed(2)} apart — the gap between pills is 2`);
+    }
+    const band = inked[0]?.ink?.h ?? 0;
+    const counted = runs.filter((r) => r.cells > 0);
+    const cell = counted.length ? Math.min(...counted.map((r) => (r.right - r.left) / r.cells)) : NaN;
+    if (!(cell >= band + 2 - 0.01)) {
+      fail(
+        `⑥a ${where}: a cell is ${cell.toFixed(2)} wide — a stretch of one cell would be a pill under its own ` +
+          `${band}px height once its 2px gap is taken (use-day-strips CELL_WIDTH)`,
+      );
+    }
+    console.log(
+      `⑥a ${where}: ${inked.length} pills, corners ≥ ${Math.min(...inked.map((r) => r.corner ?? 0))}, ` +
+        `narrowest ${Math.min(...inked.map((r) => r.ink?.w ?? 0)).toFixed(2)} wide, a cell ${cell.toFixed(2)} wide`,
+    );
+  };
+
+  if (rowWithBlocked === null) {
+    fail("probe dead: ⑥ found no row with a 待批 stretch to press on");
+  } else {
+    await openRow(rowWithBlocked);
+    await page.mouse.move(700, 600);
+    await sleep(300);
+    const runs = await readRuns(page);
+    const inked = runs.filter((r) => r.mark !== "absent");
+    if (inked.length < 3) fail(`probe dead: ⑥ the band has ${inked.length} inked run(s) — too few to walk`);
+
+    // a. pills, gaps, and nothing eaten
+    pills("wide", runs);
+
+    // b. the readout: the run's span and word, on screen, inside the pane
+    const target = inked.find((r) => r.mark === "blocked") ?? inked[0];
+    const ends = [inked[0], inked[inked.length - 1]];
+    const spans = {};
+    for (const r of [target, ...ends]) {
+      await page.mouse.move(r.x, r.ink?.y ?? r.top + 2);
+      const f = await waitFloat(page, "peek", true, 800);
+      if (!f?.peek) {
+        fail(`⑥b pointing at the ${r.mark} run at ${r.i} shows no readout within 800ms`);
+        continue;
+      }
+      spans[r.i] = saysRun(`the readout over run ${r.i}`, f.peek, r);
+      if (f.peek.visible < 0.99) {
+        fail(
+          `⑥b the readout over run ${r.i} is ${Math.round(f.peek.visible * 100)}% on screen — ` +
+            "an ancestor clips it (the board is overflow: hidden, and the band is its top edge)",
+        );
+      }
+      if (f.pane && (f.peek.left < f.pane.left - 0.5 || f.peek.right > f.pane.right + 0.5)) {
+        fail(`⑥b the readout over run ${r.i} spans ${f.peek.left.toFixed(1)}..${f.peek.right.toFixed(1)}, past the pane's ${f.pane.left}..${f.pane.right}`);
+      }
+      console.log(`⑥b readout over ${r.mark}@${r.i}: 「${f.peek.text}」 ${Math.round(f.peek.visible * 100)}% on screen`);
+      await page.mouse.move(700, 600);
+      await waitFloat(page, "peek", false, 800);
+    }
+
+    // c. a press: the same span and word, one float, and the two ways out
+    const press = async (r) => page.mouse.click(r.x, r.ink?.y ?? r.top + 2);
+    await press(target);
+    let f = await waitFloat(page, "detail", true);
+    if (!f?.detail) {
+      fail(`⑥c pressing the ${target.mark} run opened no popover`);
+    } else {
+      const said = saysRun("the popover", f.detail, target);
+      if (said && spans[target.i] && said !== spans[target.i]) {
+        fail(`⑥c the popover says ${said} and the readout said ${spans[target.i]} — one run, one span`);
+      }
+      // The readout is told to go at the press; give its exit (the
+      // tooltip's 120 ms fade) the time it takes, then judge.
+      const under = f.peek ? (await waitFloat(page, "peek", false, 600))?.peek : null;
+      if (under) fail(`⑥c the readout 「${under.text}」 is still up under the open popover — one float at a time`);
+      if (f.pane && (f.detail.left < f.pane.left - 0.5 || f.detail.right > f.pane.right + 0.5)) {
+        fail(`⑥c the popover spans ${f.detail.left.toFixed(1)}..${f.detail.right.toFixed(1)}, past the pane's ${f.pane.left}..${f.pane.right}`);
+      }
+      console.log(`⑥c popover: 「${f.detail.text}」`);
+      await press(target);
+      if ((await waitFloat(page, "detail", false))?.detail) fail("⑥c pressing the same run again left the popover open");
+      await press(target);
+      await waitFloat(page, "detail", true);
+      await page.mouse.click(700, 600);
+      if ((await waitFloat(page, "detail", false))?.detail) fail("⑥c a press outside left the popover open");
+    }
+
+    // d. the keyboard: one stop, arrows, a ring, Enter, Esc and back
+    const stops = runs.filter((r) => r.tabIndex >= 0);
+    if (stops.length !== 1) {
+      fail(`⑥d the band has ${stops.length} Tab stop(s) — it is one stop, and ← → walk the runs inside it`);
+    } else {
+      await page.evaluate((i) => document.querySelectorAll("[data-detail-day] [data-day-mark]")[i].focus(), stops[0].i);
+      const at = inked.findIndex((r) => r.i === stops[0].i);
+      const back = at > 0 ? inked[at - 1] : null;
+      await page.keyboard.press("ArrowLeft");
+      const moved = await activeIndex(page);
+      if (back && moved !== back.i) fail(`⑥d ← from run ${stops[0].i} landed on ${moved}, not the inked run before it (${back.i})`);
+      const ring = await page.evaluate(() => {
+        const el = document.activeElement;
+        const probe = document.createElement("span");
+        probe.style.color = "var(--ring)";
+        document.body.append(probe);
+        const want = getComputedStyle(probe).color;
+        probe.remove();
+        const on = [el, el?.firstElementChild].filter(Boolean).map((e) => {
+          const s = getComputedStyle(e);
+          return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) || 0, color: s.outlineColor };
+        });
+        return { want, on };
+      });
+      if (!ring.on.some((o) => o.style !== "none" && o.width >= 1 && o.color === ring.want)) {
+        fail(`⑥d the focused run wears no \`ring\` outline (${JSON.stringify(ring.on)}, ring is ${ring.want})`);
+      }
+      await page.keyboard.press("ArrowRight");
+      if (back && (await activeIndex(page)) !== stops[0].i) fail("⑥d → did not walk back to where ← started");
+      const keyed = inked.find((r) => r.i === stops[0].i);
+      for (const key of ["Enter", " "]) {
+        await page.keyboard.press(key);
+        f = await waitFloat(page, "detail", true);
+        if (!f?.detail) {
+          fail(`⑥d ${key === " " ? "Space" : key} on a focused run opened no popover`);
+          continue;
+        }
+        saysRun(`the popover from ${key === " " ? "Space" : key}`, f.detail, keyed);
+        await page.keyboard.press("Escape");
+        if ((await waitFloat(page, "detail", false))?.detail) fail("⑥d Esc left the popover open");
+        const home = await activeIndex(page);
+        if (home !== keyed.i) fail(`⑥d after Esc focus is on ${home}, not on the run the popover came from (${keyed.i})`);
+      }
+    }
+
+    // f. wide: the tab's lower pixels are the tab's
+    const geo = await page.evaluate(() => {
+      const strip = document.querySelector("[data-detail-day] [data-day-strip]")?.getBoundingClientRect();
+      const tab = document.querySelector('[data-tab][data-on="true"]')?.getBoundingClientRect();
+      return strip && { top: strip.top, bottom: strip.bottom, left: strip.left, right: strip.right, tab: tab && { left: tab.left, right: tab.right, bottom: tab.bottom } };
+    });
+    if (!geo?.tab) {
+      fail("probe dead: ⑥f found no front tab over the band");
+    } else {
+      const onTab = await page.evaluate(({ tab }) => {
+        const out = [];
+        for (let y = tab.bottom - 1; y >= tab.bottom - 4; y -= 1) {
+          for (let x = tab.left + 2; x < tab.right - 2; x += 3) {
+            const el = document.elementFromPoint(x, y);
+            if (!el || !el.closest("[data-tab]")) out.push(`${Math.round(x)},${y}→${el ? el.closest("[data-day-strip]") ? "the band" : el.tagName.toLowerCase() : "nothing"}`);
+          }
+        }
+        return out;
+      }, geo);
+      if (onTab.length) fail(`⑥f wide: ${onTab.length} point(s) on the front tab's lower 4px do not hit the tab: ${onTab.slice(0, 4).join("; ")}`);
+      // Whole pixels away from the box's edges: a point less than one
+      // pixel off an edge is hit-tested as the pixel it rounds to
+      // (measured: 47.4 and 47.6 above a box starting at 48 both land in
+      // it), which would be this probe measuring its own rounding.
+      for (const dy of [1, 2, 3, 4]) {
+        const above = await hitsBand(page, geo.top - dy, geo.left, geo.right);
+        if (above.length) fail(`⑥f wide: ${above.length} point(s) ${dy}px above the band's box hit the band (x ${above.slice(0, 4).join(",")}…)`);
+        const below = await hitsBand(page, geo.bottom + dy, geo.left, geo.right);
+        if (below.length) fail(`⑥f wide: ${below.length} point(s) ${dy}px under the band's box hit the band (x ${below.slice(0, 4).join(",")}…)`);
+      }
+      const onBand = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest("[data-day-mark]"), {
+        x: target.x,
+        y: target.ink?.y ?? target.top + 2,
+      });
+      if (!onBand) fail("probe dead: ⑥f the band's own ink does not hit the band — the hit geometry above measured nothing");
+      console.log(`⑥f wide: band box ${geo.top.toFixed(1)}..${geo.bottom.toFixed(1)}, tab bottom ${geo.tab.bottom.toFixed(1)}`);
+    }
+
+    // e + f narrow: a finger, and nothing above or below
+    const touch = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    const phone = await touch.newPage();
+    const phoneThrew = [];
+    phone.on("pageerror", (e) => phoneThrew.push(String(e)));
+    await phone.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+    const listed = await (async () => {
+      const end = Date.now() + 20_000;
+      while (Date.now() < end) {
+        if ((await phone.locator(`[data-row="${rowWithBlocked}"] [data-row-open]`).count()) > 0) return true;
+        await sleep(200);
+      }
+      return false;
+    })();
+    if (!listed) {
+      fail(`probe dead: ⑥e the narrow face never listed ${rowWithBlocked}`);
+    } else {
+      await phone.locator(`[data-row="${rowWithBlocked}"] [data-row-open]`).tap();
+      const end = Date.now() + 25_000;
+      let pruns = [];
+      while (Date.now() < end) {
+        pruns = (await readRuns(phone)).filter((r) => r.mark !== "absent");
+        if (pruns.length > 0) break;
+        await sleep(200);
+      }
+      // Give the band the time to settle on the count measured for this
+      // face — the first answer may be for a pane not measured yet — and
+      // then hold the phone's band to ⑥a as well.
+      await sleep(1_500);
+      pills("narrow", await readRuns(phone));
+      pruns = (await readRuns(phone)).filter((r) => r.mark !== "absent");
+      const t = pruns.find((r) => r.mark === "blocked") ?? pruns[0];
+      if (!t) {
+        fail("probe dead: ⑥e the narrow face drew no band to tap");
+      } else {
+        await phone.touchscreen.tap(t.x, t.ink?.y ?? t.top + 2);
+        const got = await waitFloat(phone, "detail", true);
+        if (!got?.detail) fail(`⑥e a finger tapping the ${t.mark} run opened no popover — a phone has no hover, this is its only way in`);
+        else {
+          saysRun("the tapped popover", got.detail, t);
+          console.log(`⑥e tap: 「${got.detail.text}」`);
+          // A person's second tap, not a double-tap: two taps inside the
+          // double-tap window are one gesture to the browser, not two.
+          await sleep(500);
+          await phone.touchscreen.tap(t.x, t.ink?.y ?? t.top + 2);
+          if ((await waitFloat(phone, "detail", false))?.detail) fail("⑥e tapping the same run again left the popover open");
+        }
+        const pgeo = await phone.evaluate(() => {
+          const s = document.querySelector("[data-detail-day] [data-day-strip]")?.getBoundingClientRect();
+          return s && { top: s.top, bottom: s.bottom, left: s.left, right: s.right };
+        });
+        if (!pgeo) fail("probe dead: ⑥f the narrow face has no band box to measure around");
+        for (const dy of pgeo ? [1, 2, 3, 4] : []) {
+          const above = await hitsBand(phone, pgeo.top - dy, pgeo.left, pgeo.right);
+          if (above.length) fail(`⑥f narrow: ${above.length} point(s) ${dy}px above the band's box hit the band`);
+          const below = await hitsBand(phone, pgeo.bottom + dy, pgeo.left, pgeo.right);
+          if (below.length) fail(`⑥f narrow: ${below.length} point(s) ${dy}px under the band's box hit the band`);
+        }
+      }
+    }
+    if (phoneThrew.length) fail(`⑥ the narrow page threw: ${phoneThrew.join(" | ")}`);
+    await touch.close();
+  }
+
   // ── 4) a browser that has been here before ────────────────────────
   //
   // **Everything above ran in a blank profile, and that is the one
@@ -720,4 +1141,4 @@ if (problems.length) {
   console.error("\nRED:\n" + problems.join("\n"));
   process.exit(1);
 }
-console.log("\nday strip: painted, coloured by its own words, and on one axis");
+console.log("\nday strip: painted, coloured by its own words, on one axis, and a control a pointer, a finger and a keyboard all reach");

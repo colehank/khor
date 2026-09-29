@@ -1582,7 +1582,10 @@ export default function App() {
   // session's header (`DetailPane`). Sized to the pane the band is drawn
   // in — measured, never assumed (`useStripWidth`) — and asked for every
   // row rather than the front one, so switching tabs costs no fetch.
-  const detailBox = useRef<HTMLDivElement>(null);
+  // A callback ref's state, not a ref object: the narrow face keys this
+  // box by its screen, and a replaced node must re-aim the measurement
+  // (`useStripWidth` says what the band looked like when it did not).
+  const [detailBox, setDetailBox] = useState<HTMLDivElement | null>(null);
   const days = useDayStrips(useStripWidth(detailBox, sessions));
   // The open sessions as the strip paints them: each tab wears its
   // row's title and the row's own identity assembly (`SessionFace` —
@@ -2371,7 +2374,7 @@ export default function App() {
           <div
             key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : browses ? landing : screen}
             data-screen={morePage ? "more" : browses ? landing : screen}
-            ref={detailBox}
+            ref={setDetailBox}
             className="min-h-0 flex-1 overflow-hidden"
           >
             {/* A browsing landing is one screen either way — it has no
@@ -2532,7 +2535,7 @@ export default function App() {
                   (it was a row's item), and a flex item's default
                   min-height is its content — the file scroller would
                   grow to its whole file and never scroll. */}
-              <div ref={detailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div ref={setDetailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <Tabs
                     faces={tabFaces}

@@ -303,12 +303,16 @@ export function DetailPane({
       {/* The session's day, as a band the width of the pane, and on the
           wide face **the first thing under the tab strip** — 「标签页下
           就是状态bar然后就是内容」. It is a fact about *this* session
-          and reads beside its name and word. Full-bleed and in its own
-          box, so the runs' reach-up hit boxes (`DayStrip`) land on the
-          edge above rather than on nothing. Absent with no row — the
-          empty state has no day. */}
+          and reads beside its name and word. The width of the pane, and
+          **its own row** (`DayStrip`: the 4 px band with `gap-xxs` over
+          and under it): the stretches are pressed now, and their hit
+          boxes fill that row and nothing past it — they used to reach up
+          behind the tab strip, and only the board's clip kept them off
+          the tabs. The row is also what `use-day-strips` measures the
+          axis by. Absent with no
+          row — the empty state has no day. */}
       {row && (
-        <div data-detail-day className="relative h-1 flex-none">
+        <div data-detail-day className="flex-none">
           <DayStrip runs={days} />
         </div>
       )}

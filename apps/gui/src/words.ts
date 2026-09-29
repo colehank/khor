@@ -283,6 +283,26 @@ export function lasting(ms: number): string {
   return span(ms);
 }
 
+/**
+ * How long a stretch of the day strip lasted, to the minute: hours
+ * *and* minutes, in the same words `lasting` uses.
+ *
+ * **Two units, where every other duration here gets one**, because this
+ * one is printed beside its own two ends (`DayStrip`): 「10:05–11:55 ·
+ * 1 小时」 reads as arithmetic that does not add up, and the reader is
+ * holding both clocks. The ladder's one-unit rule is right for an age —
+ * 「3 小时前」 needs no minutes — and wrong for a span whose endpoints
+ * are on the same line. Never under a minute: a strip's smallest stretch
+ * is one cell, and a cell is at least one (`use-day-strips`).
+ */
+export function stretch(ms: number): string {
+  const m = Math.max(1, Math.round(ms / 60_000));
+  if (m < 60) return cli.age_minutes(m);
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return rest === 0 ? cli.age_hours(h) : `${cli.age_hours(h)} ${cli.age_minutes(rest)}`;
+}
+
 /** A duration in the coarsest unit that still says something. */
 function span(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
