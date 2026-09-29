@@ -48,6 +48,9 @@ fn main() {
     // What 离开这张网 answers with (docs/MORE.md 离开): asked once, by
     // one press, and embedded in nothing.
     khor_gui_core::LeaveOutcome::export_all_to(&dir).expect("export LeaveOutcome");
+    // 待批's answer: asked on its own beat by the devices list, embedded
+    // in nothing. Walks into `PendingRow` from here.
+    khor_gui_core::Waiting::export_all_to(&dir).expect("export Waiting");
     // 诊断's rows: asked on their own beat, embedded in nothing.
     khor_gui_core::DoctorRow::export_all_to(&dir).expect("export DoctorRow");
     // 安全's own facts: asked by the lock screen before anything else is

@@ -75,10 +75,24 @@ pub const SLICE: u64 = 256 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
     /// Join: burn the one-time token, record me, hand me the network.
+    ///
+    /// `roster` is the asker's newest signed roster, empty when it has
+    /// none (docs/CONNECT.md 身份): the issuer settles whose root the
+    /// network is before it burns the token (`khor_net::trust::settle`).
+    ///
+    /// **A tail field, and an older issuer refuses the whole frame** —
+    /// by the rule at the head of this file it is the consumer's error
+    /// branch that decides whether that is acceptable: `Node::pair_with`
+    /// answers `Response::Refused`'s sentence, which the CLI prints and
+    /// the join dialog paints as its error. A person reads a refusal,
+    /// never a success; nothing is merged and no row is written. That is
+    /// the 2026-08-17 rule's intended break (证书一上全网一起升).
     Pair {
         token: String,
         name: String,
         addrs: Vec<String>,
+        #[serde(default)]
+        roster: serde_bytes::ByteBuf,
     },
     /// One sync exchange over a named doc: `devices`, or `chat/<channel>`.
     Sync {
@@ -558,9 +572,20 @@ pub enum Response {
     /// Pairing done on the issuer's side; `devices` is its table snapshot
     /// (base64) — merging it is what makes one pairing join the whole
     /// network.
+    ///
+    /// `roster` is the issuer's newest roster **after** it settled and
+    /// signed (empty in a network from before roots); the asker runs the
+    /// same rule on it before merging anything.
+    ///
+    /// An older asker cannot decode the longer frame: its `pair_with`
+    /// lands on the decode error and prints it — a refusal a person
+    /// reads, not a half-joined table (nothing was merged). Same break,
+    /// same reason as `Request::Pair`.
     Paired {
         name: String,
         devices: String,
+        #[serde(default)]
+        roster: serde_bytes::ByteBuf,
     },
     Synced {
         version: String,

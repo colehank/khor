@@ -47,6 +47,7 @@ pub mod tabs;
 pub(crate) mod testdir;
 pub mod top;
 pub mod transfer;
+pub mod trust;
 pub mod tunnel;
 pub mod usage;
 pub mod vitals;
@@ -61,6 +62,7 @@ pub use khor_core::{
 };
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
+pub use trust::{PendingRow, RootState, Standing};
 /// A relay and the key it admits by — what [`Node::set_relays`] takes.
 pub use khor_net::endpoint::Relay;
 
@@ -423,6 +425,10 @@ pub struct Node {
     /// serve (`via_serve`), and that is the process this saves.
     pub(crate) wires:
         Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+    /// Whether opening this node made the network's root key — the one
+    /// moment a person must be told to write its words down
+    /// (`trust::Node::bootstrap_trust`).
+    root_born: bool,
     /// How this node's recent dials went, per far machine
     /// (`crate::roads`). Only the resident's is ever read — through
     /// `ipc::Op::Roads` — because only it lives long enough to have
@@ -908,7 +914,7 @@ impl Node {
         // that wants a changed list gets it by opening another node.
         let (relay_map, relays_only_mine) = relays_under(&root);
         let relays = relay_map.iter().map(|r| r.url.clone()).collect();
-        let node = Node {
+        let mut node = Node {
             root,
             key,
             device,
@@ -928,10 +934,22 @@ impl Node {
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            root_born: false,
             roads: Arc::default(),
         };
         node.register_self()?;
+        // After the row exists: the first machine's root certifies the
+        // machine the table now holds (docs/CONNECT.md 身份).
+        node.root_born = node.bootstrap_trust()?;
         Ok(node)
+    }
+
+    /// Whether opening this node made the network's root key just now.
+    /// The CLI says 「write the words down」 when it did; the app asks
+    /// `root_state().unshown` instead, which stays true until they are
+    /// shown.
+    pub fn root_born(&self) -> bool {
+        self.root_born
     }
 
     /// The table must know this machine before anyone else can. Name
@@ -1745,15 +1763,29 @@ impl Node {
         let name = name.unwrap_or(host);
         let name = channel_of_machine(name)
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
+        self.enter_satellite(&id, &name, host, probe.tmux)?;
+        Ok((id, name, probe.tmux))
+    }
+
+    /// The table half of [`Node::adopt_satellite`], after the ssh probe
+    /// has answered: the row, the satellite mark, the tombstone cleared —
+    /// and the roster (docs/CONNECT.md 卫星也进名单): signed here when
+    /// this machine holds the root, waiting in `khor pending` otherwise.
+    pub(crate) fn enter_satellite(
+        &self,
+        id: &str,
+        name: &str,
+        host: &str,
+        tmux: bool,
+    ) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.upsert(&id, &name, &[])?;
-        loaded
-            .doc
-            .set_satellite(&id, self.device_str(), host, probe.tmux)?;
-        loaded.doc.set_gone(&id, false)?;
+        loaded.doc.upsert(id, name, &[])?;
+        loaded.doc.set_satellite(id, self.device_str(), host, tmux)?;
+        loaded.doc.set_gone(id, false)?;
+        self.enroll_satellite(&loaded.doc, id, name)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
-        Ok((id, name, probe.tmux))
+        Ok(())
     }
 
     /// Whether `machine` is a satellite, and if so the ssh road **from
@@ -3260,6 +3292,10 @@ impl Node {
         }
         let loaded = self.devices_loaded()?;
         loaded.doc.set_gone(&home.hex(), true)?;
+        // On the machine holding the root the removal is also a
+        // revocation (docs/CONNECT.md 名单是信任的唯一出处); anywhere else
+        // it waits in `khor pending` for the holder.
+        self.revoke_if_holder(&loaded.doc, &home.hex())?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(name)

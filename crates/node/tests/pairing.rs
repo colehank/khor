@@ -231,16 +231,16 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
 
     // An unpaired device syncs nothing — even knowing the address.
     // gamma copies alpha's entry into its own table by hand…
+    use khor_sync::devices::{DeviceDoc, devices_dir};
+    use khor_sync::store::load;
     {
-        use khor_sync::devices::devices_dir;
-        use khor_sync::store::load;
         let alpha = a
             .devices()
             .unwrap()
             .into_iter()
             .find(|d| d.name == "alpha")
             .unwrap();
-        let loaded = load::<khor_sync::devices::DeviceDoc>(&devices_dir(&rc), 0x77).unwrap();
+        let loaded = load::<DeviceDoc>(&devices_dir(&rc), 0x77).unwrap();
         loaded
             .doc
             .upsert(&alpha.id, &alpha.name, &alpha.addrs)
@@ -248,18 +248,45 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         let mut store = loaded.store;
         store.flush(&loaded.doc).unwrap();
     }
-    // …and the far side still refuses by name.
+    // …and does not even dial it: gamma is a network of its own, with its
+    // own root, and alpha is on no roster gamma trusts (docs/CONNECT.md
+    // 名单是信任的唯一出处).
+    let alpha_verdict = |outcomes: &[(String, Result<String, String>)]| {
+        outcomes
+            .iter()
+            .find(|(n, _)| n == "alpha")
+            .expect("there should be an alpha entry")
+            .1
+            .clone()
+    };
     let outcomes = timeout(Duration::from_secs(60), c.sync_now())
         .await
         .expect("refusal must not hang either")
         .unwrap();
-    let (_, verdict) = outcomes
-        .iter()
-        .find(|(n, _)| n == "alpha")
-        .expect("there should be an alpha entry");
-    let err = verdict.as_ref().unwrap_err();
     assert_eq!(
-        err,
+        alpha_verdict(&outcomes).unwrap_err(),
+        khor_catalog::msg::peer_not_in_roster(),
+        "a machine off this side's roster is not dialed"
+    );
+    // Now gamma takes alpha's root and roster as its own, so it does dial…
+    {
+        std::fs::copy(ra.join(".khor/root.pub"), rc.join(".khor/root.pub")).unwrap();
+        let theirs = load::<DeviceDoc>(&devices_dir(&ra), 0x78).unwrap();
+        let loaded = load::<DeviceDoc>(&devices_dir(&rc), 0x79).unwrap();
+        for (k, bytes) in theirs.doc.rosters() {
+            loaded.doc.put_roster(&k, &bytes).unwrap();
+        }
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    }
+    // …and the far side still refuses by name: holding the roster is not
+    // being in the table, and it is the table that says who paired.
+    let outcomes = timeout(Duration::from_secs(60), c.sync_now())
+        .await
+        .expect("refusal must not hang either")
+        .unwrap();
+    assert_eq!(
+        alpha_verdict(&outcomes).unwrap_err(),
         khor_catalog::msg::not_paired(),
         "an unpaired sync is refused by name"
     );

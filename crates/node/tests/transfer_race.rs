@@ -339,6 +339,17 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
         .await
         .expect("sync must not hang")
         .unwrap();
+    // **Joining through beta is a request, not a membership** (docs/
+    // CONNECT.md 根不在场): alpha made the root when it first opened and
+    // beta does not hold it, so gamma waits until alpha approves it —
+    // until then every machine refuses gamma by name. alpha has gamma's
+    // row now (the sync above), approves, and beta takes the new roster
+    // on one more round, which is the only way beta learns of it.
+    a.approve_here("gamma").expect("alpha holds the root and sees gamma waiting");
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
 
     let payload: Vec<u8> = (0..120_000u32).map(|i| (i % 241) as u8).collect();
     let src = ra.join("routed.bin");

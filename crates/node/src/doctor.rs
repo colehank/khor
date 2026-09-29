@@ -113,8 +113,8 @@ pub struct Check {
 /// It exists at all so a face and the fix door cannot disagree about
 /// what the keys are.
 pub const KEYS: &[&str] = &[
-    "version", "identity", "store", "serve", "web", "relays", "peers", "roads", "hooks", "agents",
-    "vscode", "disk", "launcher",
+    "version", "identity", "store", "serve", "web", "relays", "peers", "roster", "roads", "hooks",
+    "agents", "vscode", "disk", "launcher",
 ];
 
 /// The three groups the healthy checks are folded under (docs/MORE.md
@@ -150,7 +150,7 @@ pub fn group(key: &str) -> &'static str {
         "version" | "identity" | "store" | "disk" => "machine",
         // 网络: the ones about reaching, or being reached by, another
         // machine.
-        "serve" | "web" | "relays" | "peers" | "roads" => "network",
+        "serve" | "web" | "relays" | "peers" | "roster" | "roads" => "network",
         // 工具: the things khor installs *beside* itself — none of them
         // is khor failing, and all of them are khor's to mend.
         "hooks" | "agents" | "vscode" | "launcher" => "tools",
@@ -188,6 +188,7 @@ pub fn name(key: &str) -> &str {
         "web" => cli::doctor_name_web(),
         "relays" => cli::doctor_name_relays(),
         "peers" => cli::doctor_name_peers(),
+        "roster" => cli::doctor_name_roster(),
         "roads" => cli::doctor_name_roads(),
         "hooks" => cli::doctor_name_hooks(),
         "agents" => cli::doctor_name_agents(),
@@ -216,6 +217,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         web,
         relays,
         peers,
+        roster,
         roads,
         hooks,
         agents,
@@ -230,6 +232,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed("web", check_web(root.clone())),
         timed("relays", check_relays(node.relays().to_vec())),
         timed("peers", check_peers(node)),
+        timed("roster", check_roster(node)),
         timed("roads", check_roads(node)),
         timed("hooks", check_hooks(node)),
         timed("agents", check_agents(node)),
@@ -238,8 +241,8 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed("launcher", check_launcher()),
     );
     vec![
-        version, identity, store, serve, web, relays, peers, roads, hooks, agents, vscode, disk,
-        launcher,
+        version, identity, store, serve, web, relays, peers, roster, roads, hooks, agents, vscode,
+        disk, launcher,
     ]
 }
 
@@ -567,6 +570,32 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
         }
     }
     (worst, said.join(cli::name_separator()), None)
+}
+
+/// The roster this machine trusts by (docs/CONNECT.md 撤销要新鲜): which
+/// version, how old — and **how stale**, which is the one reading on this
+/// page that says 「the root holder has been away」. Also whether this
+/// machine itself is on it, because a machine waiting for approval sees
+/// every peer refuse it and nothing else on the page says why.
+///
+/// The words are `khor root show`'s own, so the two faces say one thing.
+pub(crate) async fn check_roster(node: &Node) -> (Health, String, Option<String>) {
+    let st = node.root_state();
+    if st.root.is_none() {
+        return (Health::Warn, cli::root_show_legacy().to_owned(), None);
+    }
+    match st.standing.as_str() {
+        "revoked" => return (Health::Fail, cli::root_show_revoked().to_owned(), None),
+        "pending" => return (Health::Warn, cli::root_show_pending().to_owned(), None),
+        _ => {}
+    }
+    let (Some(seq), Some(age)) = (st.seq, st.age_days) else {
+        return (Health::Warn, cli::doctor_roster_none().to_owned(), None);
+    };
+    match st.stale_days {
+        Some(n) => (Health::Warn, cli::doctor_roster_stale(n, age), None),
+        None => (Health::Ok, cli::root_show_roster(seq, age), None),
+    }
 }
 
 /// Whether claude on this machine tells khor what it is doing.

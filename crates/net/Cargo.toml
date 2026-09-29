@@ -15,6 +15,18 @@ serde.workspace = true
 serde_json.workspace = true
 base64.workspace = true
 tokio.workspace = true
+# The signed certificate and roster bodies (`trust`). **Not a new
+# package**: iroh already brings it, and it is the codec iroh signs its
+# own records with — compact, and one byte string per value, so what the
+# root signs is exactly what travels.
+# License: MIT OR Apache-2.0 (checked before use).
+postcard = { version = "1.1", default-features = false, features = ["alloc"] }
+# The root key as 24 words and back (`root`). The rust-bitcoin one:
+# the checksum and the English list are the standard's, so words written
+# down today read back in any BIP-39 tool, and a hand-rolled word list is
+# the one thing a recovery path must not be homework for.
+# License: CC0-1.0 (checked before use; not copyleft).
+bip39 = "2"
 
 [dev-dependencies]
 serde_json.workspace = true

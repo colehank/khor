@@ -105,6 +105,32 @@ fn served_commands() -> BTreeSet<String> {
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
+    // ── the root's words, written down 2026-09-30 (docs/CONNECT.md 身份)
+    //
+    // **A secret, not a window** — the second entry here that is about
+    // the machine. The 24 words restore the network's root, and a root
+    // outlives every web key: a link that leaked once could otherwise
+    // hand out a key that signs machines in for good. The app shows them
+    // on the holder's own screen at first start; anywhere else the way
+    // to them is `khor root words <本机名>` in a terminal on the holder,
+    // which is what the web face's prompt would say.
+    (
+        "root_words",
+        "the root's recovery words, shown on the holder's own screen; a browser face is reached \
+         with a key in a link, and the words outlive every web key — `khor root words` on the \
+         holder is the way to them from anywhere else",
+    ),
+    // ── the menu bar's own word back, 2026-09-30 ──────────────────────
+    //
+    // **The page telling the app's menu which items apply right now**
+    // (⌘W with something to close, two tabs to step between). It is the
+    // twin of the menu's five below: only macOS draws a menu bar, and a
+    // browser tab has none whose items could be enabled or greyed. The
+    // page already sends it only in the app (`api.ts` checks `inApp`).
+    (
+        "menu_state",
+        "the app's own menu bar, which a browser tab does not have; the page only sends it in the app",
+    ),
     // ── the window's own three, 2026-09-23 (docs/SHELL.md 第十轮) ────
     //
     // **A fact about windows, like the menu's five below.** Windows is
