@@ -340,6 +340,20 @@ usage = """
   adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网（卫星）：身份从你的
                         known_hosts 来，一切操作经本机代跑；移除还是
                         forget。要求免密 ssh（有密码提示的连不上）
+  pending [--json]      等持根的机器批的：刚配进来还没拿到证书的机器、不持根
+                        的机器领进来的卫星、在别处删掉了还没撤销的机器。一行
+                        一台：id、名字、等的是什么
+  approve <机器>         在持根的机器上批一台待批的：签它的证书（移除就签它的
+                        撤销），马上同步给全网
+  revoke <机器>          在持根的机器上撤销一台：全网拿到新名单后都不再应答它。
+                        它还留在机器表里；连行一起删用 forget
+  root [show [--json] | words <本机名> | recover <24 个词> | init]
+                        用户根钥匙：只签字（哪些机器是你的），不连网也不加密。
+                        show 看本机认哪把根、持不持、名单第几版；words 打印
+                        24 个恢复词（把本机名字原样打一遍才给看）；recover
+                        用恢复词把根找回到这台；init 给有根以前的老网生一把根，
+                        把机器表里的都签上。不带参数只打印 store 路径（安装
+                        脚本用）
   sync                  立即和全网各同步一趟
   mcp                   把 khor 的动词当工具讲出去（智能体用，不是人敲的）
   version               本机装的是哪一版（网里各机器的版本看 devices）
@@ -399,6 +413,7 @@ doctor-name-agents = "智能体"
 doctor-name-vscode = "VS Code"
 doctor-name-disk = "磁盘余量"
 doctor-name-launcher = "开启器"
+doctor-name-roster = "名单"
 # 四个状态词。**「未量」不是 ok**:一行绿着的意思是有人看过了,而没看过是
 # 另一件事(docs/SESSION.md 认不出就不落词,落在读数上的那一版)。
 doctor-ok = "正常"
@@ -524,6 +539,27 @@ quiet-for = "{0}无消息"
 # on, and the promise (全网都看得见) is the CRDT doing what it always
 # does, said so nobody goes checking.
 adopted = "领进来了：{0}，经 {1} 说话；全网马上都看得见它"
+# 用户根钥匙与名单（docs/CONNECT.md 身份）。
+root-born-hint = "这台机器刚生成了网络的根钥匙：它签字决定哪些机器算你的。把 24 个恢复词抄在纸上收好——丢了它就再也加不了、撤不了机器。看恢复词：khor root words {0}"
+root-show-key = "根公钥：{0}"
+root-show-holds = "本机持有根钥匙"
+root-show-not-held = "本机不持根钥匙（在别的机器上）"
+root-show-roster = "名单第 {0} 版，{1} 天前签发"
+root-show-pending = "本机在等持根的机器批准：在那台上跑 khor pending 看，khor approve 批"
+root-show-revoked = "本机已被撤销：全网不再应答它"
+root-show-legacy = "这张网还没有根钥匙（它来自有根以前）。在要持根的那台上跑 khor root init"
+root-recovered = "根钥匙已恢复到本机：{0}"
+root-inited = "已生成根钥匙 {0}，签了机器表里的 {1} 台；它们下次同步时认上"
+pending-none = "没有待批的"
+pending-kind-device = "入网"
+pending-kind-satellite = "卫星入网"
+pending-kind-leave = "移除"
+approved = "已批准「{0}」，名单第 {1} 版"
+revoked-ok = "已撤销「{0}」，名单第 {1} 版"
+pair-pending-hint = "已配上，但这台还没拿到证书：持根的机器不在这次配对里。在持根的那台上跑 khor approve 批了之后，全网才认它"
+adopt-pending-hint = "卫星已领进来，但还不在名单上：本机不持根。在持根的那台上跑 khor approve 批"
+doctor-roster-stale = "名单已过期 {0} 天（{1} 天前签发）：持根的机器很久没上线了，新证书一律不收"
+doctor-roster-none = "认得根钥匙，但手里没有一份验得过的名单"
 # A satellite's road column: it has no road of its own — its sponsor
 # speaks for it — so where every other machine shows 直连/中继 this
 # shows who it speaks through (both faces use it; 呈现处标「经 <sponsor>」
@@ -1203,6 +1239,16 @@ cant-write-file = "写入失败：{0}"
 cant-set-permissions = "设置文件权限失败"
 identity-too-open = "身份文件权限过于开放（{0}），其他人可以读取它并冒充这台机器。\n  修复：chmod 600 {1}"
 identity-corrupt = "身份文件已损坏（应为 32 字节），删除后会重新生成——\n  注意：重新生成相当于换了一台机器，已配对的机器需要重新配对：{0}"
+# 用户根钥匙（docs/CONNECT.md 身份）：只签字，不连网、不加密。
+root-key-too-open = "根钥匙文件权限过于开放（{0}），别人读得到它就能把自己的机器签进你的网。\n  修复：chmod 600 {1}"
+root-key-corrupt = "根钥匙文件已损坏（应为 32 字节）：{0}\n  用恢复词找回：khor root recover <24 个词>"
+root-words-count = "恢复词要 {0} 个，这里是 {1} 个"
+root-words-unknown = "第 {0} 个词「{1}」不在 BIP-39 英文词表里，多半是抄错了"
+root-words-checksum = "这 24 个词的校验对不上：多半有一个抄错了，或者两个词的顺序颠倒了"
+trust-garbled = "签名记录读不出来：格式不对，或者被截断了"
+trust-bad-signature = "签名对不上：这份记录不是根钥匙签的，或者签完被改过"
+trust-other-root = "这份记录属于另一把根钥匙"
+trust-bad-cert-inside = "名单里有一张证书验不过"
 not-a-machine-id-short = "这不是一个机器 id"
 not-a-ticket-base64 = "这不是有效的配对票（无法解码 base64）"
 not-a-ticket-content = "这不是有效的配对票（内容不匹配）"
@@ -1276,6 +1322,22 @@ bad-invite = "配对码无效或已被使用"
 invite-expired = "这张配对票已过期（出票后 {0} 分钟内有效），在那台机器上重新生成一张：khor invite"
 cant-burn-invite = "无法作废配对码：{0}"
 not-paired = "这台机器不在机器列表中，需要先配对"
+# 名单是信任的唯一出处（docs/CONNECT.md 身份）。「不在名单上」和「没配对」是两件事：
+# 前者配过、在等持根的机器批（或已被撤销），后者从没配过。
+not-in-roster = "这台机器不在名单上：在等持根的机器批准，或者已被撤销"
+words-need-confirm = "恢复词能找回整张网的根钥匙，谁看见谁就能把自己的机器签进你的网。确认要看，把本机的名字原样打一遍：khor root words {0}"
+words-names-another = "「{0}」不是本机的名字。要看恢复词，打本机的名字：khor root words {1}"
+peer-not-in-roster = "那台机器不在名单上（待批或已撤销），不和它同步"
+pair-two-roots = "两边各是一张网、各有自己的根钥匙，配对不会把两张网合成一张。要把那台并进来，先在它上面 khor leave，再用这张票配对"
+root-not-here = "这台机器不持根钥匙。根钥匙在持根的机器上；用恢复词也能在这台上找回：khor root recover <24 个词>"
+approve-needs-root = "批准只能在持根的机器上做，这台不持根。在持根的那台上跑 khor pending 和 khor approve"
+revoke-needs-root = "撤销只能在持根的机器上做，这台不持根"
+nothing-pending-named = "待批里没有「{0}」（khor pending 看有哪些）"
+cant-revoke-holder = "不能撤销持根的这台自己"
+already-revoked = "「{0}」已经撤销过了"
+recover-other-network = "这台机器在另一张网里（根 {0}），这组恢复词是另一把根。先 khor leave 离开那张网，再恢复"
+root-already = "这里已经有根钥匙了：{0}"
+sat-revoked = "卫星「{0}」已被撤销，不再代它跑任何操作"
 # The Ls contract (`khor_node::files`): empty asks for home, anything
 # else is spelled from the root — a relative path would be relative to
 # wherever serve happened to start.
@@ -3414,6 +3476,14 @@ message-text = "留言"
 send-it = "发送"
 make-a-ticket = "邀请设备"
 join-with-a-ticket = "加入网络"
+# 待批与根钥匙的恢复词（docs/CONNECT.md 身份）。
+pending-title = "待批"
+approve = "批准"
+pending-elsewhere = "在持根的机器上批准"
+root-words-title = "抄下恢复词"
+root-words-body = "这台机器刚生成了网络的根钥匙，它签字决定哪些机器算你的。把 24 个恢复词抄在纸上收好：丢了它就再也加不了、撤不了机器，谁看见它谁就能把自己的机器签进你的网。之后要再看，在这台机器上运行 khor root words"
+root-words-show = "显示恢复词"
+root-words-done = "抄好了"
 ticket = "配对票"
 paste-a-ticket = "在此粘贴配对票"
 join = "加入"

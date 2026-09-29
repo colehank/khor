@@ -2613,6 +2613,37 @@ async fn pair(ticket: String) -> Result<String, String> {
     khor_gui_core::pair(&Node::root_from_env(), &ticket).await
 }
 
+/// Who waits for the root holder (docs/CONNECT.md 根不在场).
+#[tauri::command]
+fn pending_list() -> Result<khor_gui_core::Waiting, String> {
+    khor_gui_core::waiting(&Node::root_from_env())
+}
+
+/// The holder signs one waiting machine in. Async for `pair`'s reason:
+/// the roster is pushed out, which dials.
+#[tauri::command]
+async fn approve(machine: String) -> Result<khor_gui_core::Waiting, String> {
+    khor_gui_core::approve(&Node::root_from_env(), &machine).await
+}
+
+/// Whether a root born here still waits for its words to be seen.
+#[tauri::command]
+fn root_unshown() -> Result<bool, String> {
+    khor_gui_core::root_unshown(&Node::root_from_env())
+}
+
+/// The root's words, for the first-start prompt — app-only
+/// (`khor_gui_core`'s `tests/command_tables.rs`).
+#[tauri::command]
+fn root_words() -> Result<String, String> {
+    khor_gui_core::root_words(&Node::root_from_env())
+}
+
+#[tauri::command]
+fn root_words_seen() -> Result<(), String> {
+    khor_gui_core::root_words_seen(&Node::root_from_env())
+}
+
 /// This machine leaves the network (docs/MORE.md 离开). Async for
 /// `pair`'s reason and one more: it pushes the news to every machine in
 /// the table before it empties it, so the slow case is every dial's
@@ -2975,6 +3006,11 @@ pub fn run() {
             set_config,
             menu_state,
             invite,
+            pending_list,
+            approve,
+            root_unshown,
+            root_words,
+            root_words_seen,
             pair,
             leave,
             set_paused,
