@@ -2779,10 +2779,11 @@ tree-search = "搜索文件"
 # 框里有字、两头都没有命中。**说的是「这儿没有」,不是「没找到」**:后者
 # 听起来像 khor 找失败了,而实际情况是这个工作区里确实没有这几个字。
 search-none = "此处无结果"
-# 工作区列表那个框筛完剩 0 条(工作区第六轮 第 50 条)。和 `search-none`
-# 分开两句:那一句说的是一个项目里的文件,这一句说的是你声明过的工作区,
-# 两个列表空掉的原因不一样,下一步也不一样。
-workspace-none-match = "没有匹配的工作区"
+# ⚠️ 墓碑(2026-09-29):`workspace-none-match`「没有匹配的工作区」,工作区列表
+# 筛完、搜完剩 0 条时那一句(工作区第六轮 第 50 条)。负责人「5统一」:工作区栏
+# 和会话、机器、额度几栏说同一句 `no-matches`「没有匹配项」,这个键就删了。
+# 它和上面 `search-none` 分开的理由还在——那一句说的是一个项目里的文件——
+# 只是分开的那一边现在是 `no-matches`。
 # 工作区那一栏的搜索框。**名字、机器、路径三样都搜**(第 50 条:「它应该
 # 针对不同机器、工作区路径可以搜索」),所以名字不能只说其中一样。
 search-workspaces = "搜索工作区"
@@ -3172,9 +3173,12 @@ axis-connection = "连接方式"
 axis-system = "系统"
 # 系统家族的名字(`khor_core::SystemKind`),专有名词,两种语言同一个写法。
 # apple 是一个家族——macOS 和 iOS 都在里面(2026-09-22 负责人:「所有的macos
-# 系统(ios和macos)都用这个」)——所以写 Apple 不写 macOS:和行角标那个苹果
-# 是同一个名字,也不把一台 iPhone 说成 Mac。
-system-apple = "Apple"
+# 系统(ios和macos)都用这个」),行角标画的是同一个苹果。
+# **写 macOS**(2026-09-29 负责人:「系统改成macos吧」)。这一项头一天写的是
+# 「Apple」,为的是不把一台 iPhone 说成 Mac;负责人定了 macOS,代价照实记下:
+# iOS 设备报上来的也是 apple 这个家族,在筛选里会落在「macOS」这一项里。
+# 键名不动,因为它说的是节点给的那个家族,不是这个词。
+system-apple = "macOS"
 system-linux = "Linux"
 system-windows = "Windows"
 system-android = "Android"
@@ -3221,6 +3225,8 @@ day-none = "近 24 小时没有记录"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.
+# **每一栏同一句**:会话、机器、工作区、额度、浏览,筛空、搜空都说它
+# (2026-09-29 负责人「5统一」,工作区栏原来那句的墓碑在 `search-none` 下面)。
 no-matches = "没有匹配项"
 # The row action. Two words because the button has two jobs, and the one
 # it names is the one it will do next — a button labelled by its current

@@ -48,6 +48,7 @@ import { PageActions, PaneBar, type FilterOption } from "@/components/PaneBar";
 import { Region } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
+import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -79,7 +80,7 @@ import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
-import { QUOTA_AXES, axisOf, groupLabel, lasting, until, valueOf } from "@/words";
+import { QUOTA_AXES, groupLabel, lasting, until } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
     five minutes and cools a failed account for ten (`accounts` module
@@ -775,12 +776,35 @@ function axisWord(axis: string): string {
 }
 
 /**
+ * What a row answers on one axis, as the filter reads it — `answersOf`,
+ * one axis at a time. Never `null`: every row answers all three.
+ */
+const quotaPick =
+  (axis: string) =>
+  (r: Row): string =>
+    answersOf(r)[axis] ?? "";
+/** The three axes as the sieve reads them: keys and answers, no words. */
+const QUOTA_SIEVE = QUOTA_AXES.map((key) => ({ key, pick: quotaPick(key) }));
+/** …and with their headings and words, for the menu and the box. A
+    function, not a constant: the words are catalog reads (批 D3). The
+    tick and the group heading print the same `valueWord`. */
+const quotaAxes = (): ListAxis<Row>[] =>
+  QUOTA_AXES.map((key) => ({
+    key,
+    heading: axisWord(key),
+    pick: quotaPick(key),
+    label: (v) => valueWord(key, v),
+  }));
+
+/**
  * Which rows the bar's search and filter leave standing — the same
  * shape `visibleSessions` has, and the same two decisions:
  *
  * **AND across axes, OR within one.** Ticking 订阅 and 计费 means
  * 「either」; ticking 订阅 and a provider means 「the subscription, and
- * from that provider」.
+ * from that provider」. That half is `lib/list-filter`'s `sieve`, the
+ * one every list with a filter uses (moved there 2026-09-29; this page
+ * carried its own copy of the same loop until then).
  *
  * **Search reads what the *page* shows** — which stopped being the
  * same as what the row shows on 2026-09-07, when the sub-line was cut
@@ -798,17 +822,9 @@ function axisWord(axis: string): string {
  */
 export function visibleQuota(rows: Row[], query: string, ticked: string[]): Row[] {
   const q = query.trim().toLowerCase();
-  const wanted = new Map<string, Set<string>>();
-  for (const key of ticked) {
-    const axis = axisOf(key, QUOTA_AXES);
-    const set = wanted.get(axis) ?? new Set<string>();
-    set.add(valueOf(key, QUOTA_AXES));
-    wanted.set(axis, set);
-  }
-  return rows.filter((r) => {
-    const on = answersOf(r);
-    for (const [axis, set] of wanted) if (!set.has(on[axis] ?? "")) return false;
+  return sieve(rows, ticked, QUOTA_SIEVE, QUOTA_AXES).filter((r) => {
     if (q === "") return true;
+    const on = answersOf(r);
     const said = [r.name, r.plan ?? "", ...QUOTA_AXES.map((a) => valueWord(a, on[a] ?? ""))].join(" ");
     return said.toLowerCase().includes(q);
   });
@@ -1097,37 +1113,19 @@ export function QuotaLanding({
   // The ticks, gathered from the rows that exist — never enumerated
   // here. **Plus any key already ticked that matches nothing**, or the
   // tick becomes impossible to undo (which also covers a tick restored
-  // from storage before the first board has arrived).
-  const options = useMemo<FilterOption[]>(() => {
-    const seen = (axis: string) => {
-      const values: string[] = [];
-      for (const r of rows) {
-        const v = answersOf(r)[axis] ?? "";
-        if (!values.includes(v)) values.push(v);
-      }
-      for (const key of words) {
-        const v = valueOf(key, QUOTA_AXES);
-        if (axisOf(key, QUOTA_AXES) === axis && !values.includes(v)) values.push(v);
-      }
-      return values.map((v) => ({ key: `${axis}${v}`, label: valueWord(axis, v), axis: axisWord(axis) }));
-    };
-    return QUOTA_AXES.flatMap(seen);
+  // from storage before the first board has arrived). Both halves are
+  // `listOptions`', the one gathering every list uses.
+  const options = useMemo<FilterOption[]>(
+    () => listOptions(rows, words, quotaAxes(), QUOTA_AXES),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, words]);
+    [rows, words],
+  );
 
   // The same options read as the search box's axes — derived from the
   // one list above rather than gathered a second time, so a chip and a
-  // tick cannot come back with different answers.
-  const axes = useMemo<OmniAxis[]>(() => {
-    const byAxis = new Map<string, OmniAxis>();
-    for (const o of options) {
-      const axis = axisOf(o.key, QUOTA_AXES);
-      const seat = byAxis.get(axis) ?? { key: axis, label: o.axis ?? axisWord(axis), candidates: [] };
-      seat.candidates.push({ key: o.key, label: o.label });
-      byAxis.set(axis, seat);
-    }
-    return [...byAxis.values()];
-  }, [options]);
+  // tick cannot come back with different answers (`listAxes`). No
+  // faces: none of the three values is a machine.
+  const axes = useMemo<OmniAxis[]>(() => listAxes(options, QUOTA_AXES), [options]);
 
   /**
    * The row's own actions — **the same gesture the machine and session
