@@ -192,6 +192,13 @@ pub struct Findings {
     pub multiplexed: Vec<Multiplexed>,
     /// Summed across vendors; see [`Sweep::unmapped`].
     pub unmapped: usize,
+    /// The process table this sweep was answered from — handed on so a
+    /// reader asking **which host a sighting sits in** asks the same
+    /// moment the sighting came from (`crate::live::LiveKind::rows`
+    /// walks a khor host's child subtree with it). A second snapshot
+    /// would be a second moment, and a process that started between the
+    /// two would be alive in one answer and absent from the other.
+    pub procs: Procs,
 }
 
 impl Findings {
@@ -603,10 +610,13 @@ impl Discovery {
 
     /// One sweep of every vendor.
     pub fn sweep(&self) -> Findings {
-        match &self.procs {
-            Some(procs) => self.sweep_with(procs),
-            None => self.sweep_with(&Procs::snapshot()),
-        }
+        let procs = match &self.procs {
+            Some(procs) => procs.clone(),
+            None => Procs::snapshot(),
+        };
+        let mut found = self.sweep_with(&procs);
+        found.procs = procs;
+        found
     }
 
     /// One sweep against a given process table (tests inject theirs).

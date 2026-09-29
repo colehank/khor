@@ -848,13 +848,35 @@ pub enum Hooked {
 /// permission ask becomes 待批. Claude also notifies on long idle, and
 /// "等你说下一句" is exactly what 待批 must never mean (docs/SESSION.md).
 pub fn hook(live: &crate::live::LiveKind, payload: &str) -> Result<Hooked, String> {
+    hook_under(live, payload, std::env::var("KHOR_SESSION").ok())
+}
+
+/// [`hook`], with the `KHOR_SESSION` it runs under handed in rather than
+/// read — the environment is process-wide, and a test that set it would
+/// be setting it for every test running beside it.
+pub(crate) fn hook_under(
+    live: &crate::live::LiveKind,
+    payload: &str,
+    khor_session: Option<String>,
+) -> Result<Hooked, String> {
     use khor_catalog::msg;
 
     let v: serde_json::Value = serde_json::from_str(payload).map_err(msg::hook_payload_garbled)?;
     let event = v["hook_event_name"].as_str().unwrap_or("");
 
-    let id = match std::env::var("KHOR_SESSION") {
-        Ok(sid) if live.claims(&SessionId(sid.clone())) => {
+    let id = match khor_session {
+        // **Not when that session is a terminal khor hosts.** Then this
+        // claude was started *inside* it, the variable came down with
+        // the shell's environment, and the session it names is the
+        // terminal. Claude is a session of its own, occupying that
+        // terminal (docs/SESSION.md 形态随进程变): its words go on its own
+        // row, and its `SessionEnd` is its ending — written on the
+        // terminal it recorded the shell as exited while the shell sat
+        // at its prompt.
+        Some(sid)
+            if live.claims(&SessionId(sid.clone()))
+                && !live.is_a_terminal(&SessionId(sid.clone())) =>
+        {
             let id = SessionId(sid);
             // `khor run --tui -- claude` registered this row before any
             // vendor could be named, so it has no category. This hook

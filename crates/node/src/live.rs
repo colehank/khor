@@ -530,6 +530,19 @@ impl LiveKind {
             .map(|f| (f.sighting.title, f.sighting.pids))
     }
 
+    /// Whether this row is **a terminal khor hosts** — a shell a person
+    /// types into, and so a place an agent can be started *inside*. A
+    /// hook arriving with this row's `KHOR_SESSION` is that agent's, not
+    /// the terminal's (docs/SESSION.md 形态随进程变). A `khor run -- …`
+    /// is not one: it has no host, its process *is* the command, and a
+    /// hook from it is the command speaking for itself.
+    pub fn is_a_terminal(&self, id: &SessionId) -> bool {
+        self.dir(id).is_some_and(|dir| {
+            read_meta(&dir).is_ok_and(|m| m.kind == khor_core::kind::SHELL)
+                && crate::host::read_host_file(&dir).is_ok()
+        })
+    }
+
     /// The kind and title on record, when a registry entry exists.
     pub fn on_record(&self, id: &SessionId) -> Option<(String, String)> {
         let dir = self.dir(id)?;
@@ -629,6 +642,29 @@ impl LiveKind {
             crate::host::spawn_host(&dir, id, &tmux.grouped_attach_argv(&target, None), (80, 24))?;
             return Ok(Seat::Host);
         }
+        // **A row whose agent has left the tmux session it sat in** —
+        // it holds that session's seat now, in the terminal's form
+        // (docs/SESSION.md 形态随进程变), and its terminal is the session
+        // itself. Nothing narrows the view to a window: the process that
+        // named one is gone. The row keeps its registry dir, so the lens
+        // cleans up only its own file when it ends.
+        if !sweep.rows.iter().any(|f| f.id() == *id)
+            && let Some(dir) = self.dir_of(id)
+            && let Some(seat) = read_seat(&dir)
+            && sweep.multiplexed.iter().any(|h| h.found.id().0 == seat)
+            && let Some(target) = seat
+                .strip_prefix(&shell_prefix)
+                .and_then(crate::adaptor::tmux::tmux_target_of)
+        {
+            crate::host::spawn_viewer_host(
+                &dir,
+                id,
+                &tmux.grouped_attach_argv(&target, None),
+                (80, 24),
+                false,
+            )?;
+            return Ok(Seat::View);
+        }
         // Any other row reaches its terminal by redoing the fold's
         // intersection (`rows`): which multiplexer session holds this
         // row's process. The process is named by the vendor's sighting
@@ -703,44 +739,24 @@ impl LiveKind {
         Ok(Seat::View)
     }
 
-    /// Closes bridge hosts whose tmux session holds a row that lists on
-    /// its own — the cleanup half of the fold in [`LiveKind::rows`]. The
-    /// fold hides such a bridge row the moment it sees one (one running
-    /// process, one row — the agent's); what it cannot do from a listing
-    /// is stop the host process the bridge left running, so that happens
-    /// here, on the serve tick like `Node::reap_borrows`. Killing the
-    /// host is a tmux detach: the user's own session is never touched.
+    /// Closes bridge hosts the seating in [`LiveKind::rows`] folded while
+    /// they still run — the cleanup half of that judgment, on the serve
+    /// tick like `Node::reap_borrows`: a listing can hide a row, but only
+    /// this stops the process behind it. Killing the host is a tmux
+    /// detach; the user's own session is never touched.
+    ///
+    /// **Since 2026-09-30 this finds nothing, and that is the rule.** It
+    /// used to close every bridge whose tmux session held a listed agent
+    /// (one running process, one row — the agent's), which closed the
+    /// terminal a person had open the moment they started claude in it.
+    /// Now a row with a terminal open holds its host's seat before
+    /// anything else (docs/SESSION.md 形态随进程变), so a running bridge
+    /// is never the one folded. The reaper asks the listing's own
+    /// question rather than a second copy of it, so the two cannot drift
+    /// apart if that order ever changes.
     pub fn reap_folded_bridges(&self) {
-        let registered = self.registry_rows(&|_| 0);
-        let bridges: Vec<SessionId> = registered
-            .iter()
-            .filter(|r| {
-                r.row
-                    .id
-                    .0
-                    .strip_prefix(&format!("{}/", khor_core::kind::SHELL))
-                    .is_some_and(crate::adaptor::tmux::is_tmux_leaf)
-            })
-            .map(|r| r.row.id.clone())
-            .collect();
-        if bridges.is_empty() {
-            return;
-        }
-        let sweep = self.discovery.sweep();
-        let mut claimed: Vec<u32> = registered.iter().filter_map(|r| r.pid).collect();
-        claimed.extend(
-            sweep
-                .rows
-                .iter()
-                .flat_map(|f| f.sighting.pids.iter().copied()),
-        );
-        for id in bridges {
-            let Some(held) = sweep.multiplexed.iter().find(|h| h.found.id() == id) else {
-                continue;
-            };
-            if held.holds.iter().any(|p| claimed.contains(p)) {
-                let _ = self.close_session(&id);
-            }
+        for id in self.seated(&|_| 0, &|_| false).folded_bridges {
+            let _ = self.close_session(&id);
         }
     }
 
@@ -839,9 +855,67 @@ impl LiveKind {
     /// inside the sweep because **the registry's own pids count too**: a
     /// `khor run -- claude` started in a tmux pane is that pane's
     /// session, and khor already lists it.
+    ///
+    /// **And a host is one row, wearing what runs in it now**
+    /// (docs/SESSION.md 形态随进程变, 2026-09-30) — the seating below,
+    /// which replaced the rule that a multiplexer session holding a
+    /// listed agent simply stopped being a row.
     pub fn rows(&self, watermark: impl Fn(&str) -> i64) -> Vec<Session> {
-        let registered = self.registry_rows(&watermark);
+        self.rows_listed(watermark, |_| false)
+    }
+
+    /// [`LiveKind::rows`], knowing which rows are **on the list** — the
+    /// second tier of who holds a host's seat. The list is the node's
+    /// (`khor_sync::roster`), so it is asked for rather than read here:
+    /// this kind never opens that document, and a row the person put on
+    /// their list must not lose its seat to one they never did (an agent
+    /// found inside it is not on the list until somebody imports it, so
+    /// losing the seat to it was losing the row altogether).
+    pub fn rows_listed(
+        &self,
+        watermark: impl Fn(&str) -> i64,
+        listed: impl Fn(&str) -> bool,
+    ) -> Vec<Session> {
+        self.seated(&watermark, &listed).rows
+    }
+
+    /// The agent row whose form `id` is wearing, if it wears one — the
+    /// conversation a press on it acts on (接管 on a terminal that has a
+    /// claude in it takes over **that claude**).
+    pub fn worn_by(&self, id: &SessionId, listed: impl Fn(&str) -> bool) -> Option<SessionId> {
+        self.seated(&|_| 0, &listed)
+            .worn
+            .into_iter()
+            .find(|(holder, _)| holder == id)
+            .map(|(_, agent)| agent)
+    }
+
+    /// What 「looked at now」 covers for a row as it is **shown**: its own
+    /// stamp, or the stamp of the form it wears if that is newer. Without
+    /// the second half a 完成 worn by a terminal could never be cleared —
+    /// looking at the terminal would mark the terminal's older stamp.
+    pub fn shown_stamp(
+        &self,
+        id: &SessionId,
+        listed: impl Fn(&str) -> bool,
+    ) -> Result<i64, String> {
+        let own = self.stamp(id)?;
+        let shown = self
+            .seated(&|_| 0, &listed)
+            .rows
+            .into_iter()
+            .find(|r| r.id == *id)
+            .map(|r| r.state.at.0 as i64);
+        Ok(shown.map_or(own, |s| s.max(own)))
+    }
+
+    fn seated(&self, watermark: &impl Fn(&str) -> i64, listed: &impl Fn(&str) -> bool) -> Seated {
+        let registered = self.registry_rows(watermark);
         let mut out: Vec<Session> = registered.iter().map(|r| r.row.clone()).collect();
+        // Each row's word before 完成 was settled, beside `out` — a row
+        // that wears another's form settles it against its own watermark
+        // (`RegistryRow::raw`).
+        let mut raw: Vec<State> = registered.iter().map(|r| r.raw).collect();
         let unpinned: Vec<&SessionId> = registered
             .iter()
             .filter(|r| r.pid.is_none())
@@ -935,16 +1009,19 @@ impl LiveKind {
                         at: Millis(sighting.at_ms.max(0) as u64),
                     };
                     out[seat].unread = unread;
+                    raw[seat] = sighting.word;
                 } else if sighting.word == State::Failed && unpinned.contains(&&id) {
                     out[seat].state = StateStamp {
                         state: State::Failed,
                         at: Millis(sighting.at_ms.max(0) as u64),
                     };
                     out[seat].unread = 0;
+                    raw[seat] = State::Failed;
                 }
                 continue;
             }
             let (state, unread) = settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
+            raw.push(sighting.word);
             out.push(Session {
                 id,
                 kind: Kind(kind.to_owned()),
@@ -974,7 +1051,55 @@ impl LiveKind {
                 seat_of_pid.insert(p, seat);
             }
         }
-        let mut folded: Vec<SessionId> = Vec::new();
+        // ── the seating (docs/SESSION.md 形态随进程变) ─────────────
+        //
+        // **One host, one row, wearing what runs in the host now.** A
+        // host is a tmux session or khor's own pty, and what is inside it
+        // is read off the process tree the sweep was answered from
+        // (`Findings::procs`). Every row a host touches is one of three:
+        // the host's own row (a bridge, a hosted terminal, the tmux
+        // session as found), a row whose live process sits inside it, or
+        // an agent row last seen in it whose agent is gone. One of them
+        // holds the seat and wears the host's current form; the rest
+        // fold. Until 2026-09-30 the answer was fixed one way round — an
+        // agent inside always won, a bridge row folded into it and its
+        // host was reaped (the terminal a person was typing into closed
+        // under them) — and an agent that left took its row with it: a
+        // dead registry row went on saying 空闲 over a tmux session that
+        // was still there, and the session came back as a second row.
+        let procs = &sweep.procs;
+        let mut live_pids: Vec<Vec<u32>> = vec![Vec::new(); out.len()];
+        for (&p, &i) in &seat_of_pid {
+            if procs.get(p).is_some() {
+                live_pids[i].push(p);
+            }
+        }
+        let shell_prefix = format!("{}/", khor_core::kind::SHELL);
+        let mut hosts: Vec<Host> = Vec::new();
+        // khor's own terminals, each holding its child's subtree. A
+        // bridge is not one: its pty runs a tmux client, and what it
+        // shows lives under the tmux server — it is seated below, as its
+        // session's own row.
+        for (i, r) in registered.iter().enumerate() {
+            let bridge = r
+                .row
+                .id
+                .0
+                .strip_prefix(&shell_prefix)
+                .is_some_and(crate::adaptor::tmux::is_tmux_leaf);
+            if let Some(child) = r.host_child
+                && r.row.kind.0 == khor_core::kind::SHELL
+                && !r.row.dead
+                && !bridge
+            {
+                hosts.push(Host {
+                    id: r.row.id.clone(),
+                    holds: procs.subtree(&[child]),
+                    own: Some(i),
+                    tmux: None,
+                });
+            }
+        }
         // Oldest first, so the original session outranks any grouped
         // twin of it; the leaf leads with the creation epoch, so the
         // string order is the age order.
@@ -988,88 +1113,212 @@ impl LiveKind {
         let mut seen_holds: Vec<u32> = Vec::new();
         for held in multiplexed {
             let id = held.found.id();
-            let bridge_seat = out.iter().position(|r| r.id == id);
+            let own = out.iter().position(|r| r.id == id);
             // A grouped session lists the very same panes under a second
             // session id — measured (`tmux new-session -t base` → two
             // lines, one pane pid). The bridge's own client is exactly
             // such a twin, so without this every open terminal face grew
             // a phantom row beside the session it was showing.
-            if bridge_seat.is_none() && held.holds.iter().any(|p| seen_holds.contains(p)) {
+            if own.is_none() && held.holds.iter().any(|p| seen_holds.contains(p)) {
                 continue;
             }
             seen_holds.extend(held.holds.iter().copied());
-            let seats: Vec<usize> = held
-                .holds
-                .iter()
-                .filter_map(|p| seat_of_pid.get(p).copied())
-                .filter(|s| Some(*s) != bridge_seat)
-                .collect();
-            if !seats.is_empty() {
-                // The old rule ended at "drop the duplicate". The same
-                // judgment now also keeps what it computed: these rows'
-                // terminals live inside this tmux session, so a host can
-                // be bridged in for them (`attach_multiplexed` resolves
-                // the route by redoing this very intersection).
-                for s in seats {
-                    out[s].term = true;
-                    // **Where the person is.** `term` says a terminal can
-                    // be had; this says the process sits in their tmux —
-                    // which for a row that is also khor's own conversation
-                    // (a `gui` ghost) is the fact that sends it to the
-                    // terminal face by default (`khor_core::Session::mux`).
-                    out[s].mux = true;
-                }
-                // A bridge row somebody stood up for this same session
-                // (before the fold rule, by clicking the tmux row) is
-                // the duplicate wearing a registry entry: one running
-                // process, one row — the agent's. The bridge host is
-                // reaped separately (`reap_folded_bridges`).
-                if bridge_seat.is_some() {
-                    folded.push(id);
-                }
-                continue;
-            }
-            if let Some(seat) = bridge_seat {
-                // This row *is* the multiplexer session, wearing a
-                // registry entry from an earlier open. The session is
-                // still on this machine, so a terminal is still to be
-                // had — whether or not the host stood up by that open
-                // outlived it. Without this line the honest `term`
-                // above (which answers about a process) takes the face
-                // away from a session sitting right there.
-                out[seat].term = true;
-                out[seat].mux = true;
-                continue;
-            }
-            let sighting = held.found.sighting;
-            out.push(Session {
+            hosts.push(Host {
                 id,
-                kind: Kind(held.found.kind.to_owned()),
-                title: sighting.title,
-                home: self.device,
-                state: StateStamp {
-                    state: sighting.word,
-                    at: Millis(sighting.at_ms.max(0) as u64),
-                },
-                // A multiplexer cannot say 完成, so there is nothing here
-                // that could be unread (docs/UX.md 角标可归零).
-                unread: 0,
-                // Listed by a live multiplexer server, so something is
-                // running behind it by construction.
-                dead: false,
-                // …and the listing is the voucher.
-                unbacked: false,
-                category: Some(held.found.category.to_owned()),
-                last: None,
-                via: None,
-                // A discovered multiplexer session is exactly what the
-                // bridge can attach to.
-                term: true,
-                place: place_of(sighting.cwd.as_deref()),
-                mux: true,
+                holds: held.holds,
+                own,
+                tmux: Some(held.found),
             });
         }
-        out.retain(|r| !folded.contains(&r.id));
+        // Which host each running row sits in. A pid on record for a
+        // process that has died cannot match: `live_pids` was built from
+        // the live table.
+        let mut sits_in: Vec<Option<usize>> = vec![None; out.len()];
+        for (h, host) in hosts.iter().enumerate() {
+            for (i, pids) in live_pids.iter().enumerate() {
+                if Some(i) != host.own
+                    && sits_in[i].is_none()
+                    && pids.iter().any(|p| host.holds.contains(p))
+                {
+                    sits_in[i] = Some(h);
+                }
+            }
+        }
+        // **Where each agent row sits, remembered** — the only way to find
+        // its host again once the agent has gone, since its status file
+        // and its process both go with it. Written when it changes;
+        // wiped when the agent is seen running outside every host, so an
+        // agent resumed in some other terminal is not folded back into a
+        // session it left.
+        for (i, r) in registered.iter().enumerate() {
+            if r.row.kind.0 != khor_core::kind::TUI {
+                continue;
+            }
+            match sits_in[i] {
+                Some(h) if r.seat.as_deref() != Some(hosts[h].id.0.as_str()) => {
+                    note_seat(&r.dir, Some(&hosts[h].id.0));
+                }
+                None if !live_pids[i].is_empty() && r.seat.is_some() => note_seat(&r.dir, None),
+                _ => {}
+            }
+        }
+        let mut folded: Vec<SessionId> = Vec::new();
+        let mut folded_bridges: Vec<SessionId> = Vec::new();
+        let mut worn: Vec<(SessionId, SessionId)> = Vec::new();
+        let mut forms: Vec<(usize, Form)> = Vec::new();
+        for (h, host) in hosts.into_iter().enumerate() {
+            let inside: Vec<usize> = (0..sits_in.len())
+                .filter(|&i| sits_in[i] == Some(h))
+                .collect();
+            if host.tmux.is_some() {
+                // The fold keeps what it computed: these rows' terminals
+                // live inside this tmux session, so a host can be bridged
+                // in for them (`attach_multiplexed` resolves the route by
+                // redoing this intersection) — and the process sits in the
+                // person's own tmux, which for a `gui` ghost is the fact
+                // that sends it to the terminal face (`Session::mux`).
+                for &i in &inside {
+                    out[i].term = true;
+                    out[i].mux = true;
+                }
+            }
+            let agents: Vec<usize> = inside
+                .iter()
+                .copied()
+                .filter(|&i| out[i].kind.0 == khor_core::kind::TUI)
+                .collect();
+            // Agent rows last seen here whose agent is nowhere now.
+            let gone: Vec<usize> = registered
+                .iter()
+                .enumerate()
+                .filter(|(i, r)| {
+                    Some(*i) != host.own
+                        && sits_in[*i].is_none()
+                        && live_pids[*i].is_empty()
+                        && r.row.kind.0 == khor_core::kind::TUI
+                        && r.seat.as_deref() == Some(host.id.0.as_str())
+                })
+                .map(|(i, _)| i)
+                .collect();
+            let newest = |rows: &[usize]| rows.iter().copied().max_by_key(|&i| out[i].state.at.0);
+            let open = |i: usize| registered.get(i).is_some_and(|r| r.open);
+            let on_list = |i: usize| listed(&out[i].id.0);
+            let which = |rows: &[usize], keep: &dyn Fn(usize) -> bool| -> Vec<usize> {
+                rows.iter().copied().filter(|&i| keep(i)).collect()
+            };
+            let own_seat = host.own.map_or(Holder::Found, Holder::Row);
+            // **Who holds the seat, in order** (docs/SESSION.md): a row
+            // with a terminal open on it — the tab and the connection are
+            // on it; a row on the list; the agent inside now; the host's
+            // own row. The last only when nothing inside is a row already
+            // — a `khor run` in a pane is that pane's session.
+            let holder = host
+                .own
+                .filter(|&i| open(i))
+                .map(Holder::Row)
+                .or_else(|| newest(&which(&agents, &open)).map(Holder::Row))
+                .or_else(|| newest(&which(&gone, &open)).map(Holder::Row))
+                .or_else(|| newest(&which(&agents, &on_list)).map(Holder::Row))
+                .or_else(|| listed(&host.id.0).then_some(own_seat))
+                .or_else(|| newest(&which(&gone, &on_list)).map(Holder::Row))
+                .or_else(|| newest(&agents).map(Holder::Row))
+                .or_else(|| inside.is_empty().then_some(own_seat));
+            let wear = newest(&agents);
+            let holder_row = match holder {
+                // An agent inside holds: it wears its own form, as it
+                // always did.
+                Some(Holder::Row(k)) if agents.contains(&k) => Some(k),
+                Some(Holder::Row(k)) => {
+                    match (wear, &host.tmux) {
+                        (Some(w), _) => forms.push((
+                            k,
+                            Form::Agent {
+                                from: w,
+                                mux: host.tmux.is_some(),
+                            },
+                        )),
+                        (None, Some(found)) => forms.push((
+                            k,
+                            Form::Terminal {
+                                word: found.sighting.word,
+                                at_ms: found.sighting.at_ms,
+                            },
+                        )),
+                        // khor's own terminal with nothing inside is
+                        // already in its own form: it is the terminal.
+                        (None, None) => {}
+                    }
+                    Some(k)
+                }
+                Some(Holder::Found) => {
+                    // The tmux session nobody registered, as found: a
+                    // terminal. Every host of this shape is a tmux one.
+                    let Some(found) = &host.tmux else {
+                        unreachable!("a khor terminal always has its own row")
+                    };
+                    let sighting = &found.sighting;
+                    raw.push(sighting.word);
+                    out.push(Session {
+                        id: host.id.clone(),
+                        kind: Kind(found.kind.to_owned()),
+                        title: sighting.title.clone(),
+                        home: self.device,
+                        state: StateStamp {
+                            state: sighting.word,
+                            at: Millis(sighting.at_ms.max(0) as u64),
+                        },
+                        // A multiplexer cannot say 完成, so there is
+                        // nothing here that could be unread (docs/UX.md
+                        // 角标可归零).
+                        unread: 0,
+                        // Listed by a live multiplexer server, so
+                        // something is running behind it by construction…
+                        dead: false,
+                        // …and the listing is the voucher.
+                        unbacked: false,
+                        category: Some(found.category.to_owned()),
+                        last: None,
+                        via: None,
+                        // A discovered multiplexer session is exactly
+                        // what the bridge can attach to.
+                        term: true,
+                        place: place_of(sighting.cwd.as_deref()),
+                        mux: true,
+                    });
+                    let k = out.len() - 1;
+                    if let Some(w) = wear {
+                        forms.push((k, Form::Agent { from: w, mux: true }));
+                    }
+                    Some(k)
+                }
+                None => None,
+            };
+            if let (Some(k), Some(w)) = (holder_row, wear)
+                && k != w
+            {
+                worn.push((out[k].id.clone(), out[w].id.clone()));
+                folded.push(out[w].id.clone());
+            }
+            for &g in &gone {
+                if Some(g) != holder_row {
+                    folded.push(out[g].id.clone());
+                }
+            }
+            if let Some(o) = host.own
+                && Some(o) != holder_row
+            {
+                folded.push(out[o].id.clone());
+                // A bridge whose host still runs, folded all the same:
+                // its terminal shows a row that is not on the list, so
+                // it is stopped (`reap_folded_bridges`). The order above
+                // makes this unreachable today — an open terminal holds
+                // the seat — and it is kept so that the reaper and the
+                // list can never disagree about which bridge is spare.
+                if open(o) {
+                    folded_bridges.push(out[o].id.clone());
+                }
+            }
+        }
         // The preview post-pass, one place for every claude-backed row —
         // discovered, hooked, hosted or GUI alike: whatever the vendor's
         // transcript last said. **The transcript outranks the hosted
@@ -1155,7 +1404,59 @@ impl LiveKind {
                 }
             }
         }
-        out
+        // The forms go on last, after the preview pass has given every
+        // row its own preview: a worn form carries the agent's preview,
+        // while the id, title, place and pin stay the holder's
+        // (docs/SESSION.md 形态随进程变).
+        for (k, form) in forms {
+            match form {
+                Form::Terminal { word, at_ms } => {
+                    let r = &mut out[k];
+                    r.kind = Kind(khor_core::kind::SHELL.to_owned());
+                    r.category = Some(khor_core::category::SHELL.to_owned());
+                    r.state = StateStamp {
+                        state: word,
+                        at: Millis(at_ms.max(0) as u64),
+                    };
+                    r.unread = 0;
+                    // The tmux session is there — nothing ended.
+                    r.dead = false;
+                    r.unbacked = false;
+                    // A tmux client's bottom line is its status bar
+                    // (`host::host_serving`'s `mux_client`).
+                    r.last = None;
+                    r.term = true;
+                    r.mux = true;
+                }
+                Form::Agent { from, mux } => {
+                    let (state, unread) = settle_done(
+                        raw[from],
+                        out[from].state.at.0 as i64,
+                        watermark(&out[k].id.0),
+                    );
+                    let agent = out[from].clone();
+                    let r = &mut out[k];
+                    r.kind = agent.kind;
+                    r.category = agent.category;
+                    r.state = StateStamp {
+                        state,
+                        at: agent.state.at,
+                    };
+                    r.unread = unread;
+                    r.dead = false;
+                    r.unbacked = false;
+                    r.last = agent.last;
+                    r.term = true;
+                    r.mux = mux;
+                }
+            }
+        }
+        out.retain(|r| !folded.contains(&r.id));
+        Seated {
+            rows: out,
+            worn,
+            folded_bridges,
+        }
     }
 
     /// Registry rows, each with the pid on record for it. Whether there
@@ -1217,11 +1518,26 @@ impl LiveKind {
             } else {
                 SessionId(meta.id.clone())
             };
-            let (word, at, unread, dead, unbacked) =
-                face(&e.path(), &meta, &state, watermark(&id.0));
+            let (raw, at, dead, unbacked) = face(&e.path(), &meta, &state);
+            let (word, unread) = settle_done(raw, at, watermark(&id.0));
+            // Two different terminals can stand on a registry dir, and
+            // the seating (`rows`) tells them apart: a **host** is khor's
+            // own pty (or its bridge onto a tmux session), a **lens** is a
+            // viewer looking into somebody else's tmux. Either one running
+            // is a terminal a person has open on this row right now.
+            let host = crate::host::read_host_file(&e.path())
+                .ok()
+                .filter(|hf| crate::link::pid_running(hf.host_pid));
+            let lens = crate::host::read_view_file(&e.path())
+                .is_ok_and(|vf| crate::link::pid_running(vf.host_pid));
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
                 vendor_leaf: meta.vendor_leaf.clone(),
+                raw,
+                host_child: host.as_ref().map(|hf| hf.child_pid),
+                open: host.is_some() || lens,
+                seat: read_seat(&e.path()),
+                dir: e.path(),
                 row: Session {
                     id,
                     kind: Kind(meta.kind.clone()),
@@ -1248,10 +1564,7 @@ impl LiveKind {
                     // died but whose process is still sitting in a
                     // multiplexer earns `term` back in the loop below,
                     // which is where that route is resolved anyway.
-                    term: crate::host::read_host_file(&e.path())
-                        .is_ok_and(|hf| crate::link::pid_running(hf.host_pid))
-                        || crate::host::read_view_file(&e.path())
-                            .is_ok_and(|vf| crate::link::pid_running(vf.host_pid)),
+                    term: host.is_some() || lens,
                     place: place_of(meta.place.as_deref()),
                     mux: false,
                 },
@@ -1289,6 +1602,46 @@ impl LiveKind {
     }
 }
 
+/// What the seating in [`LiveKind::rows`] decided, beyond the rows.
+struct Seated {
+    rows: Vec<Session>,
+    /// `(holder, agent)`: the holder wears the agent row's form and the
+    /// agent row folded into it.
+    worn: Vec<(SessionId, SessionId)>,
+    /// Bridge rows folded while their host still runs — what
+    /// [`LiveKind::reap_folded_bridges`] stops.
+    folded_bridges: Vec<SessionId>,
+}
+
+/// One host the seating seats rows on: a tmux session, or khor's own pty.
+struct Host {
+    /// The host's own session id — the tmux session's, or the hosted
+    /// terminal's. What a `seat` note names.
+    id: SessionId,
+    /// Every live pid inside it.
+    holds: Vec<u32>,
+    /// Its own row, where one is already on the list being built.
+    own: Option<usize>,
+    /// The tmux session as the sweep found it; `None` for khor's pty.
+    tmux: Option<crate::adaptor::Found>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Holder {
+    Row(usize),
+    /// The tmux session's own row, not yet on the list (nobody
+    /// registered it).
+    Found,
+}
+
+/// The form a holder takes on.
+enum Form {
+    /// A plain terminal: nothing recognisable is running in the host.
+    Terminal { word: State, at_ms: i64 },
+    /// The agent at row `from` — kind, category, word, preview.
+    Agent { from: usize, mux: bool },
+}
+
 /// A registry row plus the two things [`LiveKind::rows`] needs that a
 /// [`Session`] does not carry: who is running it, and how good its word
 /// is.
@@ -1302,6 +1655,52 @@ struct RegistryRow {
     /// The vendor's own leaf where a hook recorded one (`Meta`), carried
     /// so the preview post-pass can find a khor-minted row's transcript.
     vendor_leaf: Option<String>,
+    /// The word before 完成 was settled against this row's watermark
+    /// ([`face`]). The seating needs it: a row that **wears** this
+    /// one's form settles it against its own watermark instead, or a
+    /// badge on the holder could only be cleared by looking at a row
+    /// that is no longer on the list.
+    raw: State,
+    /// The child of khor's own host for this row, while that host runs —
+    /// the root of the process tree a hosted terminal holds.
+    host_child: Option<u32>,
+    /// A terminal is open on this row now: its host, or a lens onto a
+    /// tmux session (`host::spawn_viewer_host`), is running.
+    open: bool,
+    /// The host this agent row was last seen sitting in (the `seat`
+    /// file, docs/SESSION.md 形态随进程变).
+    seat: Option<String>,
+    dir: PathBuf,
+}
+
+/// Where a registry row remembers the host it was last seen in.
+///
+/// **A file of its own, not a field in `meta.json`**: it is written from
+/// the listing, which runs in every process that lists (serve, app, CLI)
+/// while hooks rewrite `meta.json` in theirs. Sharing the file would make
+/// every seat note a read-modify-write race with a hook's `learn_*`, and
+/// the loser's write would silently vanish.
+fn seat_path(dir: &Path) -> PathBuf {
+    dir.join("seat")
+}
+
+fn read_seat(dir: &Path) -> Option<String> {
+    let text = fs::read_to_string(seat_path(dir)).ok()?;
+    let seat = text.trim();
+    (!seat.is_empty()).then(|| seat.to_owned())
+}
+
+/// Writes (or, with `None`, clears) the seat. Best effort: a note that
+/// did not land is written again on the next listing that sees the row.
+fn note_seat(dir: &Path, seat: Option<&str>) {
+    match seat {
+        Some(s) => {
+            let _ = write_whole(&seat_path(dir), s.as_bytes());
+        }
+        None => {
+            let _ = fs::remove_file(seat_path(dir));
+        }
+    }
 }
 
 /// Who is still there behind a registry row.
@@ -1384,48 +1783,46 @@ fn backing(dir: &Path, meta: &Meta) -> Backing {
 /// host died — the row therefore ages from the last thing that was
 /// known, which is the honest reading of "and then khor lost sight of
 /// it".
-/// The fourth position is [`khor_core::Session::dead`]: whether
+/// The third position is [`khor_core::Session::dead`]: whether
 /// anything will ever move this row again on its own. Said here rather
 /// than re-derived from the word, because the word loses it — a shell
 /// that exited cleanly and was looked at reads 空闲, exactly like one
 /// sitting alive at a prompt.
 ///
-/// The fifth is [`khor_core::Session::unbacked`]: nobody can vouch for
+/// The fourth is [`khor_core::Session::unbacked`]: nobody can vouch for
 /// the word — true only on the one arm where no verdict exists
 /// (`Backing::Unpronounceable`, the pid-less hook-observed row). Every
 /// other arm has a real judge: an exit record, a pid that answered or
 /// refused to, a living child. A sweep sighting later landing on the
 /// same row clears it (`LiveKind::rows`' merge) — a vendor file being
 /// written is a voucher too.
-fn face(
-    dir: &Path,
-    meta: &Meta,
-    state: &LiveState,
-    watermark: i64,
-) -> (State, i64, u64, bool, bool) {
+///
+/// **完成 is left unsettled** (2026-09-30): this answers the word, its
+/// stamp, `dead` and `unbacked`, and the caller settles 完成 against a
+/// watermark ([`settle_done`]) — because since the seating in
+/// [`LiveKind::rows`] it is not always this row's own: a row that
+/// **wears** this one's form settles it against the holder's watermark,
+/// the only one that looking at the holder can move. Every arm but the
+/// reported word and the clean shell exit is some other word, and
+/// settling those is a no-op, so the two halves recombine into exactly
+/// the answer this function used to give.
+fn face(dir: &Path, meta: &Meta, state: &LiveState) -> (State, i64, bool, bool) {
     if let Some(code) = state.exit {
         if code != 0 {
-            return (State::Failed, state.at_ms, 0, true, false);
+            return (State::Failed, state.at_ms, true, false);
         }
         if meta.kind == khor_core::kind::TUI {
-            return (State::Idle, state.at_ms, 0, true, false);
+            return (State::Idle, state.at_ms, true, false);
         }
-        let (word, unread) = settle_done(State::Done, state.at_ms, watermark);
-        return (word, state.at_ms, unread, true, false);
+        return (State::Done, state.at_ms, true, false);
     }
     match backing(dir, meta) {
-        Backing::Gone => (State::Failed, state.at_ms, 0, true, false),
+        Backing::Gone => (State::Failed, state.at_ms, true, false),
         // The child is alive; the row can move again the moment a new
         // host stands up — not dead.
-        Backing::HostLost => (State::Errored, state.at_ms, 0, false, false),
-        Backing::Running => {
-            let (word, unread) = settle_done(state.word, state.at_ms, watermark);
-            (word, state.at_ms, unread, false, false)
-        }
-        Backing::Unpronounceable => {
-            let (word, unread) = settle_done(state.word, state.at_ms, watermark);
-            (word, state.at_ms, unread, false, true)
-        }
+        Backing::HostLost => (State::Errored, state.at_ms, false, false),
+        Backing::Running => (state.word, state.at_ms, false, false),
+        Backing::Unpronounceable => (state.word, state.at_ms, false, true),
     }
 }
 
@@ -2484,11 +2881,15 @@ mod tests {
         );
     }
 
-    /// The fold against a **registry entry**: a bridge row somebody
-    /// stood up for a tmux session (by clicking it before the agent
-    /// inside was listed, or before the fold existed) is the duplicate
-    /// wearing a registry dir — one running process, one row, and the
-    /// row is the agent's, wearing the route.
+    /// The fold against a **registry entry**: a bridge row left behind
+    /// for a tmux session — its dir is there, **its host is not
+    /// running**, and nobody put it on the list — is the duplicate
+    /// wearing a registry dir: one running process, one row, and the row
+    /// is the agent's, wearing the route.
+    ///
+    /// Narrower since 2026-09-30 (docs/SESSION.md 形态随进程变): a bridge
+    /// whose host runs is a terminal somebody has open, and it holds the
+    /// seat instead — `a_terminal_that_starts_an_agent_becomes_that_agent_and_stays_open`.
     #[test]
     fn an_old_bridge_row_folds_into_the_agent_row_it_duplicates() {
         use crate::adaptor::{Discovery, Proc, Procs, tmux::Tmux};
@@ -2704,6 +3105,370 @@ mod tests {
             "the command khor started is the row; the pane is not a second"
         );
         assert_eq!(rows[0].id, id);
+    }
+
+    // ── 形态随进程变 (docs/SESSION.md, 2026-09-30) ──────────────
+    //
+    // Three walks over a fake process tree, one per host shape, each
+    // ending in the control that only a host going away ends a row.
+    // The claude is the vendors fixture's pid 4001 (session
+    // 11111111-…, waiting on a permission prompt: 待批); what moves is
+    // whether that pid is in the table, and under whom.
+
+    const T_ID: &str = "shell/1786245338-7";
+    const AGENT: &str = "tui/11111111-1111-4111-8111";
+
+    fn fixture_vendors() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/claude")
+    }
+
+    fn proc_under(pid: u32, name: &str, parent: u32) -> (u32, crate::adaptor::Proc) {
+        (
+            pid,
+            crate::adaptor::Proc {
+                name: name.into(),
+                started_ms: 1_700_000_000_000,
+                cwd: None,
+                ppid: Some(parent),
+            },
+        )
+    }
+
+    /// A stand-in for a running khor host: a real process, so the
+    /// registry reads its host as running, and **never this test's own
+    /// pid** — a reaper that wrongly closed the row would signal it.
+    struct FakeHost(std::process::Child);
+
+    impl FakeHost {
+        fn up() -> FakeHost {
+            FakeHost(
+                std::process::Command::new("sleep")
+                    .arg("60")
+                    .spawn()
+                    .unwrap(),
+            )
+        }
+
+        fn pid(&self) -> u32 {
+            self.0.id()
+        }
+
+        fn still_up(&mut self) -> bool {
+            self.0.try_wait().unwrap().is_none()
+        }
+
+        /// Writes the host marker a running host leaves in `dir`.
+        fn serve(&self, dir: &Path, child: u32) {
+            fs::write(
+                crate::host::host_file_path(dir),
+                serde_json::to_vec(&crate::host::HostFile {
+                    port: 1,
+                    cookie: "fake".into(),
+                    host_pid: self.pid(),
+                    child_pid: child,
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+
+    impl Drop for FakeHost {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    /// **tmux, the agent leaves.** The row the person has stays on the
+    /// list as the same row — same id — in the terminal's form; the
+    /// tmux session does not come back as a second row; nothing is
+    /// 已结束. Only once the tmux session itself is gone does the row end.
+    #[test]
+    fn an_agent_leaving_its_tmux_session_turns_its_row_into_that_terminal() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("seat-leave");
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "seat-leave",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+        );
+        let at = |procs: Procs, tmux: &str| {
+            LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+                Discovery::at(&fixture_vendors())
+                    .with_procs(procs)
+                    .with_tmux(Tmux::at_binary(tmux)),
+            ))
+        };
+        let pane = proc_under(3001, "zsh", 1);
+        let claude = proc_under(4001, "claude", 3001);
+        let agent = sid(AGENT);
+        let on_list = |s: &str| s == AGENT;
+
+        // claude in pane 3001; its hook registered the row, and the
+        // person put it on their list (imported it).
+        let k = at(Procs::of([pane.clone(), claude.clone()]), &tmux);
+        k.register(&agent, "tui", "one", None, Some("claude"))
+            .unwrap();
+        let rows = k.rows_listed(|_| 0, on_list);
+        assert_eq!(
+            rows.len(),
+            1,
+            "a tmux session holding one claude is one row"
+        );
+        assert_eq!(rows[0].id, agent);
+        assert_eq!(rows[0].kind.0, khor_core::kind::TUI);
+        assert_eq!(rows[0].category.as_deref(), Some("claude"));
+        assert!(rows[0].mux, "and it sits in the person's tmux");
+        assert_eq!(
+            read_seat(&k.dir_of(&agent).unwrap()).as_deref(),
+            Some(T_ID),
+            "the row remembers which host it was seen in"
+        );
+
+        // claude exits: gone from the process table, and its SessionEnd
+        // hook recorded the ending on its own row.
+        let k = at(Procs::of([pane.clone()]), &tmux);
+        k.record_exit(&agent, 0).unwrap();
+        let rows = k.rows_listed(|_| 0, on_list);
+        assert_eq!(
+            rows.len(),
+            1,
+            "the tmux session does not come back as a second row"
+        );
+        let row = &rows[0];
+        assert_eq!(
+            row.id, agent,
+            "the same row — its tab and its pin are on it"
+        );
+        assert_eq!(row.kind.0, khor_core::kind::SHELL, "now a terminal");
+        assert_eq!(row.category.as_deref(), Some(khor_core::category::SHELL));
+        assert!(!row.dead, "nothing ended: the tmux session is still there");
+        assert_eq!(
+            row.state.state,
+            State::Idle,
+            "the terminal's own word — a shell at its prompt — not the agent's ending"
+        );
+        assert!(row.term && row.mux, "and its terminal is the tmux session");
+        assert_eq!(row.unread, 0);
+
+        // Nobody put the claude on the list: the session as found holds
+        // its own seat and the finished claude folds into it.
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id.0, T_ID);
+        assert_eq!(
+            rows[0].category.as_deref(),
+            Some(khor_core::category::SHELL)
+        );
+
+        // The control: the tmux session is gone as well. Now the host is
+        // gone, and now — only now — the row has ended.
+        let none = crate::adaptor::tmux::fake_tmux("seat-leave-none", "");
+        let k = at(Procs::default(), &none);
+        let rows = k.rows_listed(|_| 0, on_list);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, agent);
+        assert!(rows[0].dead, "its host is gone: the row has ended");
+        assert_eq!(
+            rows[0].category.as_deref(),
+            Some("claude"),
+            "and it ends as what it last was"
+        );
+    }
+
+    /// **tmux, an agent arrives.** A tmux session the person has open in
+    /// khor (a bridge whose host runs) becomes the claude started in it:
+    /// the same row wears claude's kind, category and word, the
+    /// discovered claude row folds into it, and the terminal stays up —
+    /// the reaper that used to close it finds nothing. When claude
+    /// leaves, the row is a terminal again.
+    #[test]
+    fn a_terminal_that_starts_an_agent_becomes_that_agent_and_stays_open() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("seat-arrive");
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "seat-arrive",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+        );
+        let at = |procs: Procs| {
+            LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+                Discovery::at(&fixture_vendors())
+                    .with_procs(procs)
+                    .with_tmux(Tmux::at_binary(&tmux)),
+            ))
+        };
+        let pane = proc_under(3001, "zsh", 1);
+        let claude = proc_under(4001, "claude", 3001);
+        let bridge = sid(T_ID);
+
+        // The bridge `attach_multiplexed` stands up for a tmux row: a
+        // registry row under the session's own id, its host running.
+        let mut host = FakeHost::up();
+        let k = at(Procs::of([pane.clone()]));
+        k.register(
+            &bridge,
+            "shell",
+            "work",
+            Some(host.pid()),
+            Some(khor_core::category::SHELL),
+        )
+        .unwrap();
+        host.serve(&k.dir_of(&bridge).unwrap(), dead_pid());
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, bridge);
+        assert_eq!(
+            rows[0].category.as_deref(),
+            Some(khor_core::category::SHELL)
+        );
+
+        // claude starts in the pane.
+        let k = at(Procs::of([pane.clone(), claude.clone()]));
+        let rows = k.rows(|_| 0);
+        assert_eq!(
+            rows.len(),
+            1,
+            "one row: the discovered claude folds into the open terminal"
+        );
+        let row = &rows[0];
+        assert_eq!(
+            row.id, bridge,
+            "the same row — the tab and the connection are on it"
+        );
+        assert_eq!(row.kind.0, khor_core::kind::TUI, "now an agent");
+        assert_eq!(row.category.as_deref(), Some("claude"));
+        assert_eq!(row.state.state, State::Blocked, "wearing claude's own word");
+        assert!(row.term && row.mux);
+        assert_eq!(
+            k.worn_by(&bridge, |_| false).map(|s| s.0),
+            Some(AGENT.to_owned()),
+            "a press on it acts on that claude"
+        );
+        k.reap_folded_bridges();
+        assert!(
+            host.still_up(),
+            "the terminal is not closed under the person"
+        );
+        assert!(k.claims(&bridge), "and its row is not forgotten");
+
+        // claude leaves: a terminal again, still the same row.
+        let k = at(Procs::of([pane.clone()]));
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, bridge);
+        assert_eq!(rows[0].kind.0, khor_core::kind::SHELL);
+        assert_eq!(
+            rows[0].category.as_deref(),
+            Some(khor_core::category::SHELL)
+        );
+        assert!(!rows[0].dead);
+    }
+
+    /// **khor's own terminal.** A shell khor hosts wears the claude
+    /// started inside it — claude's hooks write claude's own row, which
+    /// folds into the terminal — and returns to being a shell when
+    /// claude leaves, with nothing ended. Only the shell exiting ends
+    /// it; then the claude row, whose host is gone, shows as ended too.
+    #[test]
+    fn a_khor_terminal_wears_the_agent_inside_it_and_ends_only_with_its_shell() {
+        use crate::adaptor::{Discovery, Procs};
+
+        let root = tmp("seat-pty");
+        let at = |procs: Procs| {
+            LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+                Discovery::at(&fixture_vendors()).with_procs(procs),
+            ))
+        };
+        let host = FakeHost::up();
+        let shell = proc_under(5001, "zsh", host.pid());
+        let claude = proc_under(4001, "claude", 5001);
+        let term = sid("shell/a1b2c3d4e5f6");
+        let agent = sid(AGENT);
+        let payload = |event: &str| {
+            format!(
+                r#"{{"session_id":"11111111-1111-4111-8111-111111111111","cwd":"/w/one","hook_event_name":"{event}"}}"#
+            )
+        };
+
+        let k = at(Procs::of([shell.clone()]));
+        k.register(
+            &term,
+            "shell",
+            "zsh",
+            Some(host.pid()),
+            Some(khor_core::category::SHELL),
+        )
+        .unwrap();
+        host.serve(&k.dir_of(&term).unwrap(), 5001);
+        assert_eq!(k.rows(|_| 0)[0].kind.0, khor_core::kind::SHELL);
+
+        // claude starts in it. Its hooks carry the terminal's
+        // KHOR_SESSION, and must write claude's own row.
+        let k = at(Procs::of([shell.clone(), claude.clone()]));
+        crate::adaptor::claude::hook_under(&k, &payload("SessionStart"), Some(term.0.clone()))
+            .unwrap();
+        crate::adaptor::claude::hook_under(&k, &payload("Stop"), Some(term.0.clone())).unwrap();
+        assert!(k.claims(&agent), "the hook wrote claude's own row");
+        assert_eq!(
+            k.on_record(&term).map(|(kind, _)| kind).as_deref(),
+            Some(khor_core::kind::SHELL),
+            "and left the terminal's alone"
+        );
+        let rows = k.rows(|_| 0);
+        assert_eq!(
+            rows.len(),
+            1,
+            "claude's row folds into the terminal it runs in"
+        );
+        let row = &rows[0];
+        assert_eq!(row.id, term);
+        assert_eq!(row.kind.0, khor_core::kind::TUI);
+        assert_eq!(row.category.as_deref(), Some("claude"));
+        assert_eq!(
+            (row.state.state, row.unread),
+            (State::Done, 1),
+            "claude's 完成, unread against the terminal's own watermark"
+        );
+        assert!(!row.mux, "khor's own terminal, not a tmux seat");
+        let seen = |s: &str| if s == term.0 { i64::MAX } else { 0 };
+        assert_eq!(
+            k.rows(seen)[0].unread,
+            0,
+            "looking at the terminal clears the badge it shows"
+        );
+        assert!(
+            k.shown_stamp(&term, |_| false).unwrap() >= k.stamp(&agent).unwrap(),
+            "and 「seen」 on it covers claude's 完成"
+        );
+
+        // claude exits: SessionEnd is claude's ending, not the shell's.
+        crate::adaptor::claude::hook_under(&k, &payload("SessionEnd"), Some(term.0.clone()))
+            .unwrap();
+        let k = at(Procs::of([shell.clone()]));
+        let rows = k.rows(|_| 0);
+        assert_eq!(
+            rows.len(),
+            1,
+            "the finished claude is not a second, ended row"
+        );
+        assert_eq!(rows[0].id, term);
+        assert_eq!(rows[0].kind.0, khor_core::kind::SHELL, "a terminal again");
+        assert!(!rows[0].dead, "the shell is still there: nothing ended");
+
+        // The control: the shell itself exits — the pty's child is gone.
+        k.record_exit(&term, 0).unwrap();
+        let mut rows = k.rows(|_| 0);
+        rows.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, term);
+        assert!(rows[0].dead, "the terminal's host ended: now it is 已结束");
+        assert_eq!(rows[1].id, agent);
+        assert!(
+            rows[1].dead,
+            "and the claude row, whose host is gone, ends with it"
+        );
     }
 
     /// Installing the hook must not make crash detection worse.

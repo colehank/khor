@@ -4171,6 +4171,12 @@ impl Node {
     /// A session with no live process is taken over by resurrection
     /// alone — nothing to kill is not an error.
     pub fn takeover(&self, id: &SessionId) -> Result<(), String> {
+        // A terminal wearing an agent's form (docs/SESSION.md 形态随进程变)
+        // is taken over as **that agent**: the conversation is the
+        // agent's, and the terminal it ran in stays where it is.
+        let roster = self.roster_loaded()?;
+        let worn = self.live.worn_by(id, |sid| roster.doc.entry(sid).is_some());
+        let id = worn.as_ref().unwrap_or(id);
         let id_leaf =
             id.0.strip_prefix(&format!("{}/", khor_core::kind::TUI))
                 .ok_or_else(|| msg::takeover_no_record(&id.0))?;
@@ -4897,7 +4903,14 @@ impl KindSurface for LiveKind {
 
     fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
         let seen = node.seen_loaded()?;
-        Ok(self.rows(|sid| seen.doc.watermark(sid)))
+        // Which rows are on the list decides who holds a host's seat
+        // (docs/SESSION.md 形态随进程变): the row a person keeps must not
+        // fold into one they never put there.
+        let roster = node.roster_loaded()?;
+        Ok(self.rows_listed(
+            |sid| seen.doc.watermark(sid),
+            |sid| roster.doc.entry(sid).is_some(),
+        ))
     }
 
     /// Live state never syncs (docs/NET.md) — only home can derive these
@@ -4906,8 +4919,12 @@ impl KindSurface for LiveKind {
         true
     }
 
-    fn seen_at(&self, _node: &Node, id: &SessionId) -> Result<i64, String> {
-        self.stamp(id)
+    /// The stamp of what the row **shows** — a terminal wearing a claude
+    /// that just finished is marked seen up to that 完成, not up to the
+    /// terminal's own older word.
+    fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String> {
+        let roster = node.roster_loaded()?;
+        self.shown_stamp(id, |sid| roster.doc.entry(sid).is_some())
     }
 
     fn close(&self, _node: &Node, id: &SessionId) -> Result<(), String> {
