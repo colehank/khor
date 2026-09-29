@@ -60,6 +60,11 @@ impl Drop for Reaped {
     }
 }
 
+/// Every khor this test starts: its own home, no relay from the shell,
+/// no proxy — and `NO_PROXY` for loopback, because with the proxy
+/// variables gone iroh's relay probes read the proxy out of the macOS
+/// System Settings instead, whose exceptions list the reader ignores
+/// (`tests/relay.rs`'s `clear_proxies` has the whole account).
 fn khor(home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_khor"));
     cmd.env("KHOR_HOME", home)
@@ -69,6 +74,7 @@ fn khor(home: &Path) -> Command {
     for k in PROXY_VARS {
         cmd.env_remove(k);
     }
+    cmd.env("NO_PROXY", "127.0.0.1,localhost,::1");
     cmd
 }
 
