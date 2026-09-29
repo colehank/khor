@@ -759,6 +759,21 @@ impl Node {
     ///   root, certifies itself, and marks the words unshown.
     pub(crate) fn bootstrap_trust(&self) -> Result<bool, String> {
         if self.anchor().is_some() {
+            // **A holder is always on its own roster** — and after `khor id
+            // --reset` its device id is a new one. Only a machine with a
+            // key file pays for the look (every other open is one read).
+            if self.khor_file(ROOT_KEY).exists()
+                && let Some(key) = self.root_secret()?
+            {
+                let loaded = self.devices_loaded()?;
+                if !newest_in(&loaded.doc, &key.public())
+                    .is_some_and(|r| r.admits(&self.my_id(), crate::now_ms()))
+                {
+                    self.certify_self(&loaded.doc, &key)?;
+                    let mut store = loaded.store;
+                    store.flush(&loaded.doc)?;
+                }
+            }
             return Ok(false);
         }
         let key_path = self.khor_file(ROOT_KEY);
@@ -1165,6 +1180,23 @@ mod tests {
         assert_eq!(words.split(' ').count(), khor_net::root::WORDS);
         assert_eq!(khor_net::root::from_words(&words).unwrap().public(), key.public());
         assert!(!a.root_state().unshown, "shown once is shown");
+    }
+
+    /// `khor id --reset` makes the holder a new machine; it is still the
+    /// holder, so it signs its new self back in at the next open.
+    #[test]
+    fn a_holder_that_resets_its_identity_signs_its_new_self_in() {
+        let t = TempTree::fresh("trust-reset");
+        let a = node(&t, "alpha");
+        let old = a.device_str().to_owned();
+        let root = a.root_state().root;
+        crate::lock::reset_identity(&t.path(), "alpha", "alpha").unwrap();
+        let b = node(&t, "alpha");
+        assert_ne!(b.device_str(), old, "a new machine");
+        assert!(!b.root_born(), "not a new root");
+        assert_eq!(b.root_state().root, root);
+        assert!(b.holds_root());
+        assert_eq!(b.standing_of(b.device_str()), Standing::Trusted);
     }
 
     #[test]
