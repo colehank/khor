@@ -39,6 +39,7 @@ pub mod preview;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
+pub(crate) mod roads;
 pub mod satellite;
 pub mod serves;
 pub mod tabs;
@@ -46,6 +47,7 @@ pub mod tabs;
 pub(crate) mod testdir;
 pub mod top;
 pub mod transfer;
+pub mod trust;
 pub mod tunnel;
 pub mod usage;
 pub mod vitals;
@@ -55,11 +57,14 @@ pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopBy, TopRow, Usage, UsageDay,
-    Vitals, kind,
+    CpuDay, Fill, Hop, Load, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    UsageDay, Vitals, kind,
 };
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
+pub use trust::{PendingRow, RootState, Standing};
+/// A relay and the key it admits by — what [`Node::set_relays`] takes.
+pub use khor_net::endpoint::Relay;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -327,11 +332,15 @@ pub struct Node {
     /// This process's writer peer, shared by every doc it writes.
     peer: u64,
     /// Relay roads this machine binds with and offers to others: the
-    /// Khor tier plus `KHOR_RELAY` (docs/NET.md 中继).
+    /// Khor tier plus `KHOR_RELAY` plus the user's own (docs/NET.md 中继).
+    /// Urls only — this is the list that is published.
     relays: Vec<String>,
-    /// Whether `relays` is the user's own list *instead of* the built-in
-    /// tier rather than on top of it — the bind needs to know, because
-    /// n0's servers are added by iroh unless it is told not to.
+    /// The same relays with the keys they are entered with: what the
+    /// bind hands iroh. Kept apart from `relays` so that nothing which
+    /// publishes a road can reach a key by accident.
+    relay_map: Vec<khor_net::endpoint::Relay>,
+    /// Whether `relays` is the user's own list *instead of* the Khor
+    /// tier rather than on top of it.
     relays_only_mine: bool,
     chat: ChatKind,
     transfer: TransferKind,
@@ -416,6 +425,15 @@ pub struct Node {
     /// serve (`via_serve`), and that is the process this saves.
     pub(crate) wires:
         Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+    /// Whether opening this node made the network's root key — the one
+    /// moment a person must be told to write its words down
+    /// (`trust::Node::bootstrap_trust`).
+    root_born: bool,
+    /// How this node's recent dials went, per far machine
+    /// (`crate::roads`). Only the resident's is ever read — through
+    /// `ipc::Op::Roads` — because only it lives long enough to have
+    /// dialled anything more than once.
+    pub(crate) roads: roads::Roads,
 }
 
 /// A read-only look at the connections a node is holding
@@ -736,9 +754,9 @@ fn relay_prefs_path(root: &std::path::Path) -> PathBuf {
 /// whether it is meant to be the whole story.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct RelayPlan {
-    pub(crate) mine: Vec<String>,
-    /// Use `mine` **instead of** the built-in tier and n0's, rather than
-    /// alongside them.
+    pub(crate) mine: Vec<khor_net::endpoint::Relay>,
+    /// Use `mine` (and `KHOR_RELAY`) **instead of** the Khor tier,
+    /// rather than alongside it.
     pub(crate) only_mine: bool,
 }
 
@@ -747,6 +765,11 @@ pub(crate) struct RelayPlan {
 /// An object on disk rather than a bare array, and this flag is why —
 /// it was the question the first version could not answer, and adding
 /// it here cost a key instead of a migration.
+///
+/// **Each entry is `{"url": …, "token": …}`, or a bare url string**:
+/// the string is what the file held before relays took keys, and a
+/// machine that upgrades keeps the relays it had rather than coming up
+/// on the Khor tier alone with the user's list silently gone.
 ///
 /// Unreadable, unparseable and half-parseable all yield what they can
 /// and no error — reaching this path means somebody edited the file by
@@ -767,18 +790,36 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
     let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
         return RelayPlan::default();
     };
-    let mine: Vec<String> = doc
+    let mut mine: Vec<khor_net::endpoint::Relay> = Vec::new();
+    for v in doc
         .get("relays")
         .and_then(|v| v.as_array())
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty() && s.parse::<iroh::RelayUrl>().is_ok())
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
+        .into_iter()
+        .flatten()
+    {
+        let (url, token) = match v {
+            serde_json::Value::String(url) => (url.as_str(), None),
+            serde_json::Value::Object(o) => (
+                o.get("url").and_then(|u| u.as_str()).unwrap_or(""),
+                o.get("token")
+                    .and_then(|t| t.as_str())
+                    .map(str::to_string)
+                    .filter(|t| !t.is_empty()),
+            ),
+            _ => continue,
+        };
+        let url = url.trim();
+        if url.is_empty() || url.parse::<iroh::RelayUrl>().is_err() {
+            continue;
+        }
+        if mine.iter().any(|have| have.url == url) {
+            continue;
+        }
+        mine.push(khor_net::endpoint::Relay {
+            url: url.to_string(),
+            token,
+        });
+    }
     let only_mine = !mine.is_empty()
         && doc
             .get("only_mine")
@@ -787,26 +828,33 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
     RelayPlan { mine, only_mine }
 }
 
-/// Every relay a node on this home should bind with.
+/// Every relay a node on this home should bind with, keys included.
 ///
-/// Two shapes, and the flag picks between them: **added** to the
-/// built-in tier and `KHOR_RELAY` (the default — iroh probes them all
-/// and homes on the closest that answers, so one more entry can only
-/// widen the set of networks this machine is reachable on), or
-/// **instead of** them, which is the point of the whole setting for
-/// somebody who does not want khor touching n0 at all.
-fn relays_under(root: &std::path::Path) -> (Vec<String>, bool) {
+/// Two shapes, and the flag picks between them: **added** to the Khor
+/// tier and `KHOR_RELAY` (the default — iroh probes them all and homes
+/// on the closest that answers, so one more entry can only widen the
+/// set of networks this machine is reachable on), or **instead of the
+/// Khor tier**, for somebody who wants khor touching no relay they do
+/// not run. `KHOR_RELAY` is kept in both shapes: it is this machine's
+/// own relay as much as the typed ones are, only named in a different
+/// place (docs/NET.md 中继).
+///
+/// n0's relays are in neither shape any more (docs/CONNECT.md 分期 1);
+/// before that went, 「only mine」 meant 「not n0 and not Khor」, and
+/// now it means 「not Khor」.
+fn relays_under(root: &std::path::Path) -> (Vec<khor_net::endpoint::Relay>, bool) {
     let plan = chosen_relays(root);
-    if plan.only_mine {
-        return (plan.mine, true);
-    }
-    let mut out = khor_net::endpoint::configured_relays();
-    for url in plan.mine {
-        if !out.iter().any(|have| have == &url) {
-            out.push(url);
+    let mut out = if plan.only_mine {
+        khor_net::endpoint::env_relays()
+    } else {
+        khor_net::endpoint::configured_relays()
+    };
+    for entry in plan.mine {
+        if !out.iter().any(|have| have.url == entry.url) {
+            out.push(entry);
         }
     }
-    (out, false)
+    (out, plan.only_mine)
 }
 
 impl Node {
@@ -864,8 +912,9 @@ impl Node {
         // Read before `root` moves into the struct, not after — the
         // list is settled once, when the node opens, and every caller
         // that wants a changed list gets it by opening another node.
-        let (relays, relays_only_mine) = relays_under(&root);
-        let node = Node {
+        let (relay_map, relays_only_mine) = relays_under(&root);
+        let relays = relay_map.iter().map(|r| r.url.clone()).collect();
+        let mut node = Node {
             root,
             key,
             device,
@@ -873,6 +922,7 @@ impl Node {
             name,
             peer: ChatDoc::fresh_peer(),
             relays,
+            relay_map,
             relays_only_mine,
             chat,
             transfer,
@@ -884,9 +934,22 @@ impl Node {
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            root_born: false,
+            roads: Arc::default(),
         };
         node.register_self()?;
+        // After the row exists: the first machine's root certifies the
+        // machine the table now holds (docs/CONNECT.md 身份).
+        node.root_born = node.bootstrap_trust()?;
         Ok(node)
+    }
+
+    /// Whether opening this node made the network's root key just now.
+    /// The CLI says 「write the words down」 when it did; the app asks
+    /// `root_state().unshown` instead, which stays true until they are
+    /// shown.
+    pub fn root_born(&self) -> bool {
+        self.root_born
     }
 
     /// The table must know this machine before anyone else can. Name
@@ -990,15 +1053,35 @@ impl Node {
 
     /// This machine's own relays, as the user typed them.
     ///
-    /// The stored list only — not the built-in tier and not `KHOR_RELAY`.
+    /// The stored list only — not the Khor tier and not `KHOR_RELAY`.
     /// A settings screen has to be able to show what it will edit, and
     /// the merged list ([`Node::relays`]) has entries in it that no
-    /// control on that screen can remove.
+    /// control on that screen can remove. Urls only; which of them
+    /// carry a key is [`Node::relays_keyed`].
     pub fn relay_choices(&self) -> Vec<String> {
-        chosen_relays(&self.root).mine
+        chosen_relays(&self.root)
+            .mine
+            .into_iter()
+            .map(|r| r.url)
+            .collect()
     }
 
-    /// Whether this machine is set to use only the relays typed here.
+    /// Which of [`Node::relay_choices`] were entered with a key.
+    ///
+    /// **Whether, never what.** A screen needs to say that a relay is
+    /// keyed, and it has no use for the key: showing it would put a
+    /// secret on glass for a question the word 「带密钥」 answers.
+    pub fn relays_keyed(&self) -> Vec<String> {
+        chosen_relays(&self.root)
+            .mine
+            .into_iter()
+            .filter(|r| r.token.is_some())
+            .map(|r| r.url)
+            .collect()
+    }
+
+    /// Whether this machine is set to use only its own relays — not
+    /// the Khor tier.
     pub fn relays_only_mine(&self) -> bool {
         self.relays_only_mine
     }
@@ -1006,6 +1089,13 @@ impl Node {
     /// Sets this machine's own relays, replacing whatever was stored.
     /// Returns the merged list that the next node on this home will
     /// bind with.
+    ///
+    /// **A key rides only with the entry it was typed for.** An entry
+    /// whose `token` is `None` keeps the key already stored for that
+    /// url, if there is one — the screen never holds keys, so it names
+    /// the relays to keep and passes a key only for the one being
+    /// added. A url left out of `entries` takes its key with it; to
+    /// drop a key, remove the relay and add it again without one.
     ///
     /// **Validated before it is written, and rejected whole.** Each
     /// entry has to parse as an [`iroh::RelayUrl`]; one that does not
@@ -1022,14 +1112,35 @@ impl Node {
     /// to say out loud — a setting that visibly took and changes nothing
     /// until a restart nobody mentioned is the same silence as no
     /// setting at all.
-    pub fn set_relays(&self, urls: &[String], only_mine: bool) -> Result<Vec<String>, String> {
-        let mut kept: Vec<String> = Vec::new();
-        for url in urls.iter().map(|u| u.trim()).filter(|u| !u.is_empty()) {
+    pub fn set_relays(
+        &self,
+        entries: &[khor_net::endpoint::Relay],
+        only_mine: bool,
+    ) -> Result<Vec<String>, String> {
+        let stored = chosen_relays(&self.root).mine;
+        let mut kept: Vec<khor_net::endpoint::Relay> = Vec::new();
+        for entry in entries {
+            let url = entry.url.trim();
+            if url.is_empty() {
+                continue;
+            }
             url.parse::<iroh::RelayUrl>()
                 .map_err(|_| msg::not_a_relay_url(url))?;
-            if !kept.iter().any(|have| have == url) {
-                kept.push(url.to_string());
+            if kept.iter().any(|have| have.url == url) {
+                continue;
             }
+            let token = match entry.token.as_deref().map(str::trim) {
+                Some("") => None,
+                Some(t) => Some(t.to_string()),
+                None => stored
+                    .iter()
+                    .find(|s| s.url == url)
+                    .and_then(|s| s.token.clone()),
+            };
+            kept.push(khor_net::endpoint::Relay {
+                url: url.to_string(),
+                token,
+            });
         }
         // 「只用我自己那台」with no 自己那台 is the one combination that
         // reads like a choice and is not one: it leaves the machine with
@@ -1039,9 +1150,22 @@ impl Node {
         if only_mine && kept.is_empty() {
             return Err(msg::relays_only_mine_needs_one().to_string());
         }
-        let doc = serde_json::json!({ "relays": kept, "only_mine": only_mine });
+        let rows: Vec<serde_json::Value> = kept
+            .iter()
+            .map(|r| match &r.token {
+                Some(t) => serde_json::json!({ "url": r.url, "token": t }),
+                None => serde_json::json!({ "url": r.url }),
+            })
+            .collect();
+        let doc = serde_json::json!({ "relays": rows, "only_mine": only_mine });
+        // 0600, beside the identity key: the keys in it are shared
+        // secrets, and the file is the only place they are kept.
         link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
-        Ok(relays_under(&self.root).0)
+        Ok(relays_under(&self.root)
+            .0
+            .into_iter()
+            .map(|r| r.url)
+            .collect())
     }
 
     /// Changes the axes it is handed and leaves the rest where they are
@@ -1371,8 +1495,9 @@ impl Node {
         &self.key
     }
 
-    /// Every relay this node binds with and advertises: the built-in
-    /// tier, `KHOR_RELAY`, and whatever the user typed here.
+    /// Every relay this node binds with and advertises: the Khor tier
+    /// (unless only-mine is on), `KHOR_RELAY`, and whatever the user
+    /// typed here. Urls only — see [`Node::relay_map`] for the keys.
     ///
     /// **Not the same list as [`Node::relay_choices`], and a screen
     /// showing relays needs both.** This one is what the machine
@@ -1385,6 +1510,12 @@ impl Node {
     /// that means for a change made while something is running.
     pub fn relays(&self) -> &[String] {
         &self.relays
+    }
+
+    /// [`Node::relays`] with the keys they were entered with — what an
+    /// endpoint of this node binds with, and nothing else should read.
+    pub fn relay_map(&self) -> &[khor_net::endpoint::Relay] {
+        &self.relay_map
     }
 
     pub(crate) fn devices_loaded(&self) -> Result<Loaded<DeviceDoc>, String> {
@@ -1632,15 +1763,29 @@ impl Node {
         let name = name.unwrap_or(host);
         let name = channel_of_machine(name)
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
+        self.enter_satellite(&id, &name, host, probe.tmux)?;
+        Ok((id, name, probe.tmux))
+    }
+
+    /// The table half of [`Node::adopt_satellite`], after the ssh probe
+    /// has answered: the row, the satellite mark, the tombstone cleared —
+    /// and the roster (docs/CONNECT.md 卫星也进名单): signed here when
+    /// this machine holds the root, waiting in `khor pending` otherwise.
+    pub(crate) fn enter_satellite(
+        &self,
+        id: &str,
+        name: &str,
+        host: &str,
+        tmux: bool,
+    ) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.upsert(&id, &name, &[])?;
-        loaded
-            .doc
-            .set_satellite(&id, self.device_str(), host, probe.tmux)?;
-        loaded.doc.set_gone(&id, false)?;
+        loaded.doc.upsert(id, name, &[])?;
+        loaded.doc.set_satellite(id, self.device_str(), host, tmux)?;
+        loaded.doc.set_gone(id, false)?;
+        self.enroll_satellite(&loaded.doc, id, name)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
-        Ok((id, name, probe.tmux))
+        Ok(())
     }
 
     /// Whether `machine` is a satellite, and if so the ssh road **from
@@ -3147,6 +3292,10 @@ impl Node {
         }
         let loaded = self.devices_loaded()?;
         loaded.doc.set_gone(&home.hex(), true)?;
+        // On the machine holding the root the removal is also a
+        // revocation (docs/CONNECT.md 名单是信任的唯一出处); anywhere else
+        // it waits in `khor pending` for the holder.
+        self.revoke_if_holder(&loaded.doc, &home.hex())?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         Ok(name)

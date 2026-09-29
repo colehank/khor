@@ -29,9 +29,13 @@ import type { DayRun } from "./gen/bindings/DayRun";
 import type { DayMark } from "./gen/bindings/DayMark";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { RelayChoices } from "./gen/bindings/RelayChoices";
+import type { RelayWant } from "./gen/bindings/RelayWant";
+import type { RoadShare } from "./gen/bindings/RoadShare";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
+import type { Waiting } from "./gen/bindings/Waiting";
+import type { PendingRow } from "./gen/bindings/PendingRow";
 import type { About } from "./gen/bindings/About";
 import type { DoctorRow } from "./gen/bindings/DoctorRow";
 import type { LockFacts } from "./gen/bindings/LockFacts";
@@ -87,9 +91,13 @@ export type {
   DayMark,
   FaceChoices,
   RelayChoices,
+  RelayWant,
+  RoadShare,
   HooksState,
   Ticket,
   LeaveOutcome,
+  Waiting,
+  PendingRow,
   About,
   DoctorRow,
   LockFacts,
@@ -844,16 +852,22 @@ export const restyle = (
 ) => call<null>("restyle", { machine, ...change });
 /** This machine's relays, both halves: `mine` is what the user typed
     here and the only part a control can remove, `in_use` is everything
-    the machine actually binds with (the built-in tier included). */
+    the machine actually binds with (the Khor tier included). `keyed`
+    says which of `mine` carry a key — never the key itself. */
 export const fetchRelays = () => call<RelayChoices>("relays");
 /** Replaces the user's own relays and answers with both halves again.
     An entry that is not a relay url is refused whole — nothing is
     written and the message names it, and so is `onlyMine` with an empty
     list (that combination leaves the machine with no relay at all).
+    A want whose `token` is null keeps the key already stored for that
+    url, so only the relay being added carries one.
     ⚠️ `in_use` describes the **next** node to open: a running
     `khor serve` keeps the list it started with. */
-export const setRelays = (urls: string[], onlyMine: boolean) =>
-  call<RelayChoices>("set_relays", { urls, only_mine: onlyMine });
+export const setRelays = (relays: RelayWant[], onlyMine: boolean) =>
+  call<RelayChoices>("set_relays", { relays, only_mine: onlyMine });
+/** 直连占比: of the resident's recent dials that settled, how many went
+    direct. `unread` says why there is no reading when there is none. */
+export const fetchRoadShare = () => call<RoadShare>("road_share");
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to
@@ -867,6 +881,21 @@ export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
     copy of a number only `link::INVITE_WINDOW_MS` decides. */
 export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });
+/** 待批 (docs/CONNECT.md 根不在场): who waits for the root holder, and
+    whether this machine is it — the holder gets a button per row, every
+    other machine a sentence saying where the button is. */
+export const fetchWaiting = () => call<Waiting>("pending_list");
+/** `khor approve` — the holder signs one in and pushes the roster out;
+    answers the list as it now stands. */
+export const approveMachine = (machine: string) => call<Waiting>("approve", { machine });
+/** Whether this machine made the network's root and its words have not
+    been seen yet — the first-start prompt's question. */
+export const rootUnshown = () => call<boolean>("root_unshown");
+/** The 24 words. **App-only**: the web face has no such command
+    (`khor_gui_core` `tests/command_tables.rs`), so only the app asks. */
+export const rootWords = () => call<string>("root_words");
+/** The prompt was answered or closed; it is not asked again. */
+export const rootWordsSeen = () => call<null>("root_words_seen");
 /** `khor leave` — this machine out of the network (docs/MORE.md 离开).
     Takes this machine's own name typed back, because that is the
     confirmation and **the node is what checks it** (`Node::leave`, the

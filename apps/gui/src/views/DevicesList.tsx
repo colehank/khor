@@ -13,6 +13,7 @@ import { gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { connectionKey, connectionKeyWord, connectionWord, groupLabel, systemWord } from "@/words";
 import { FaceSettings } from "@/views/FaceSettings";
+import { PendingStrip } from "@/views/PairDialogs";
 
 /**
  * **What the machines list can be narrowed by** (2026-09-29, the owner:
@@ -340,6 +341,9 @@ export function DevicesList({
   const restyled = restyling ? (rows.find((d) => d.id === restyling.id) ?? null) : null;
   return (
     <>
+      {/* 待批 (docs/CONNECT.md 根不在场): who waits for the root holder,
+          above the rows it will join. Draws nothing while nobody waits. */}
+      <PendingStrip />
       <SideList
         rows={side}
         loading={loading}

@@ -14,7 +14,8 @@ khor-catalog.workspace = true
 # key — CLI and GUI are the same door (docs/KHOR.md CLI 与 GUI 等价), so
 # the face cannot be a thing only the app can raise.
 khor-web = { path = "../web" }
-tokio.workspace = true
+# `signal`: `khor relay` stops on Ctrl-C and on a service manager's TERM.
+tokio = { workspace = true, features = ["signal"] }
 # `khor doctor --json` prints the node's rows verbatim, so the GUI page
 # and this verb cannot come to disagree about what was checked. Hand-built
 # JSON is what `_verbs` does (its rows are two known words); a check's
@@ -39,6 +40,24 @@ qrcode = { version = "0.14.1", default-features = false }
 # width rather than length — see the workspace entry.
 unicode-width.workspace = true
 
+# `khor relay` (docs/NET.md 中继): iroh-relay's own server, the one the
+# `iroh-relay` binary runs, version-locked to the workspace iroh. Its
+# `server` feature was already in the lock (khor-net's dev-dependency);
+# it is a normal dependency here because this binary ships it.
+# License: MIT OR Apache-2.0 (and every package it adds, checked with
+# `cargo metadata` before use).
+iroh-relay = { version = "1.2.0", features = ["server"] }
+# The relay's access hook names endpoints by iroh's own id type.
+iroh.workspace = true
+# The TLS config the relay's HTTPS side takes (`CertConfig`) is a rustls
+# one, and so is reading a certificate and key out of PEM files. The
+# version iroh-relay already pulls; `ring` because that is the provider
+# the rest of the tree uses.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# The meter's file and its timestamps.
+serde.workspace = true
+jiff.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
@@ -48,3 +67,8 @@ libc.workspace = true
 khor-core.workspace = true
 khor-acp = { path = "../acp" }
 agent-client-protocol = "2"
+# `tests/relay.rs` stands endpoints up against a `khor relay` it spawned:
+# khor's own bind for the clients, and the device table written the way
+# the node's own tests write it (`crates/node/tests/avatar.rs`).
+khor-net.workspace = true
+khor-sync.workspace = true

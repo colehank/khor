@@ -175,6 +175,32 @@ const F_WATCH: &str = "watch";
 /// `F_NAME` would be overwritten by its owner within seconds — with
 /// nothing anywhere saying why the new name kept vanishing.
 const F_LABEL: &str = "label";
+/// This machine's certificate, signed by the user's root key
+/// (docs/CONNECT.md 名单是信任的唯一出处) — **opaque bytes here**: this
+/// crate replicates documents and never reads inside a signature
+/// (`khor_net::trust` does, at the one gate that decides trust).
+///
+/// It rides the row so a machine's proof of membership travels with the
+/// row everybody already replicates, and anybody holding the root's
+/// public key can check it without asking. **Last writer wins here and
+/// that decides nothing**: a reader verifies what it finds and holds the
+/// roster ([`TRUST`]) as the authority — a stale or forged value in this
+/// register is a certificate that fails to count, not a trust decision.
+///
+/// Written flat only, never into the old nested mirror: no khor that
+/// reads the nested shape knows what a certificate is.
+const F_CERT: &str = "cert";
+
+/// The roster's home: a map **beside** `devices`, not inside it, keyed by
+/// whatever the writer names a version (`khor_node` uses the roster's
+/// `seq` and a piece of its signature). Every signed version is its own
+/// key, so two replicas that each wrote one keep both after a merge —
+/// **nothing here is last-writer-wins about trust**: readers verify every
+/// value and take the highest `seq` (`khor_net::trust::newest`).
+///
+/// Beside rather than inside because every key in `devices` is read as
+/// `<id>/<field>`; a roster key there would read as a machine.
+const TRUST: &str = "trust";
 
 fn fkey(id: &str, field: &str) -> String {
     let mut k = String::with_capacity(id.len() + 1 + field.len());
@@ -628,6 +654,98 @@ impl DeviceDoc {
             .find(|d| d.label.as_deref() == Some(name))
             .or_else(|| all.iter().find(|d| d.name == name))
             .cloned()
+    }
+
+    /// Stores a machine's certificate on its row (`F_CERT`). Unchanged
+    /// means unwritten, the others' reason.
+    pub fn set_cert(&self, id: &str, cert: &[u8]) -> Result<(), String> {
+        if let Some(LoroValue::Binary(have)) = self.flat(id, F_CERT)
+            && have.as_slice() == cert
+        {
+            return Ok(());
+        }
+        self.map()
+            .insert(&fkey(id, F_CERT), cert)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// The certificate a row carries, unverified — `None` when it carries
+    /// none. **Read for gone rows too**: a certificate is a fact about a
+    /// key, and whether the table still lists the machine is a separate
+    /// question.
+    pub fn cert_of(&self, id: &str) -> Option<Vec<u8>> {
+        match self.flat(id, F_CERT)? {
+            LoroValue::Binary(b) => Some(b.to_vec()),
+            _ => None,
+        }
+    }
+
+    fn trust_map(&self) -> LoroMap {
+        self.inner.get_map(TRUST)
+    }
+
+    /// Stores one signed roster under `key` ([`TRUST`]). A key already
+    /// holding these bytes is left alone.
+    pub fn put_roster(&self, key: &str, bytes: &[u8]) -> Result<(), String> {
+        let map = self.trust_map();
+        if let Some(LoroValue::Binary(have)) = map.get(key).and_then(|v| v.into_value().ok())
+            && have.as_slice() == bytes
+        {
+            return Ok(());
+        }
+        map.insert(key, bytes).map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// Every stored roster, unverified, with its key.
+    pub fn rosters(&self) -> Vec<(String, Vec<u8>)> {
+        let map = self.trust_map();
+        map.keys()
+            .filter_map(|k| {
+                let k = k.to_string();
+                match map.get(&k)?.into_value().ok()? {
+                    LoroValue::Binary(b) => Some((k, b.to_vec())),
+                    _ => None,
+                }
+            })
+            .collect()
+    }
+
+    /// Removes the rosters under `keys` — a holder pruning versions a
+    /// newer one has replaced, or a machine clearing a root it gave up.
+    pub fn drop_rosters(&self, keys: &[String]) -> Result<(), String> {
+        let map = self.trust_map();
+        let mut dirty = false;
+        for k in keys {
+            if map.get(k).is_some() {
+                map.delete(k).map_err(|e| e.to_string())?;
+                dirty = true;
+            }
+        }
+        if dirty {
+            self.inner.commit();
+        }
+        Ok(())
+    }
+
+    /// Every machine the table has shown the door ([`DeviceDoc::set_gone`])
+    /// — the rows [`DeviceDoc::all`] hides. What a root holder reads to
+    /// see which removals still wait for a revocation.
+    pub fn gone_ids(&self) -> Vec<String> {
+        self.ids()
+            .into_iter()
+            .filter(|id| self.bool_field(id, F_GONE))
+            .collect()
+    }
+
+    /// The name a row carries, gone or not — what a pending removal is
+    /// shown under.
+    pub fn name_of(&self, id: &str) -> Option<String> {
+        let label = self.str_field(id, F_LABEL).filter(|l| !l.trim().is_empty());
+        label.or_else(|| self.str_field(id, F_NAME))
     }
 
     /// Renames a machine, or takes the rename back when `label` is
@@ -1349,5 +1467,68 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["aardvark", "alpha"]
         );
+    }
+
+    /// Two replicas each store a roster version; after merging both are
+    /// there. **Nothing about which one counts is decided by the merge** —
+    /// that is `khor_net::trust::newest`'s, over all of them.
+    #[test]
+    fn two_rosters_written_on_two_replicas_both_survive_the_merge() {
+        let a = DeviceDoc::new(1).unwrap();
+        let b = DeviceDoc::new(2).unwrap();
+        a.put_roster("00000000000000000002-aa", b"two").unwrap();
+        b.put_roster("00000000000000000001-bb", b"one").unwrap();
+        a.merge(&b.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        for d in [&a, &b] {
+            let mut got = d.rosters();
+            got.sort();
+            assert_eq!(
+                got,
+                vec![
+                    ("00000000000000000001-bb".to_string(), b"one".to_vec()),
+                    ("00000000000000000002-aa".to_string(), b"two".to_vec()),
+                ]
+            );
+        }
+        // The roster map is not a machine: the table still counts none.
+        assert_eq!(a.items(), 0);
+        assert!(a.all().is_empty());
+        a.drop_rosters(&["00000000000000000001-bb".into()]).unwrap();
+        assert_eq!(a.rosters().len(), 1);
+    }
+
+    /// A certificate rides the row, travels, and an upsert leaves it
+    /// alone — pairing re-writes every peer's name and addresses.
+    #[test]
+    fn a_certificate_rides_the_row_and_an_upsert_does_not_touch_it() {
+        let a = DeviceDoc::new(1).unwrap();
+        let b = DeviceDoc::new(2).unwrap();
+        a.upsert("cc", "turing", &[]).unwrap();
+        a.set_cert("cc", &[1, 2, 3]).unwrap();
+        let before = a.version();
+        a.set_cert("cc", &[1, 2, 3]).unwrap();
+        assert_eq!(a.version(), before, "unchanged means unwritten");
+        b.merge(&a.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert_eq!(b.cert_of("cc"), Some(vec![1, 2, 3]));
+        b.upsert("cc", "turing", &["10.0.0.9:1".into()]).unwrap();
+        assert_eq!(b.cert_of("cc"), Some(vec![1, 2, 3]));
+        assert_eq!(b.cert_of("dd"), None);
+        assert_eq!(b.items(), 1, "the certificate is a field, not a machine");
+    }
+
+    #[test]
+    fn gone_rows_are_listed_for_the_holder_and_keep_their_names() {
+        let d = DeviceDoc::new(1).unwrap();
+        d.upsert("aa", "mac", &[]).unwrap();
+        d.upsert("bb", "phone", &[]).unwrap();
+        d.set_label("bb", "pocket").unwrap();
+        d.set_gone("bb", true).unwrap();
+        assert_eq!(d.gone_ids(), vec!["bb".to_string()]);
+        assert_eq!(d.name_of("bb").as_deref(), Some("pocket"));
+        assert!(d.get("bb").is_none(), "still hidden from the table");
     }
 }

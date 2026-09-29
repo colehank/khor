@@ -241,6 +241,17 @@ pub enum Op {
         machine: String,
         path: String,
     },
+    /// How the resident's recent dials went, per far machine
+    /// (`khor_core::RoadTally`, docs/CONNECT.md 度量与验收). **Only the
+    /// resident can answer**, for the reason [`Op::Hops`] gives.
+    ///
+    /// A new op rather than a field on [`Reply::Hops`]: a serve older
+    /// than this decodes the whole hand-off as garbage and answers
+    /// [`Reply::Refused`], and the consumers' error branch paints that
+    /// as 未量 / 读不到 (`doctor`'s `roads` row, the 网络 page's 直连占比
+    /// line) — not as a count of zero, which a field defaulting to empty
+    /// on an old serve would have painted as fact. Tail-appended.
+    Roads,
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -295,6 +306,7 @@ impl Op {
     fn table(&self) -> (&'static str, std::time::Duration) {
         match self {
             Op::Hops => ("Hops", DEADLINE_LOCAL),
+            Op::Roads => ("Roads", DEADLINE_LOCAL),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -483,6 +495,11 @@ pub enum Reply {
     /// Tail-appended with [`Op::CheckoutOn`].
     Checkout {
         yes: bool,
+    },
+    /// Tail-appended with [`Op::Roads`]: one tally per machine this
+    /// resident has dialled since it started.
+    Roads {
+        by_device: Vec<(String, khor_core::RoadTally)>,
     },
 }
 

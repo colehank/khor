@@ -178,12 +178,48 @@ pub struct WatchedReading {
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct RelayChoices {
     pub mine: Vec<String>,
+    /// Which of `mine` were entered with a key. **Whether, never what**:
+    /// the screen says a relay is keyed and never holds the key, which
+    /// is why a write names the relays to keep and carries a key only
+    /// for the one being added ([`RelayWant`]).
+    pub keyed: Vec<String>,
     pub in_use: Vec<String>,
-    /// Whether `mine` is being used **instead of** the built-in tier and
-    /// n0's rather than on top of them. When this is on, `in_use` is
-    /// `mine` — which is the only way the screen can show that the
-    /// switch did something.
+    /// Whether `mine` is being used **instead of** the Khor tier rather
+    /// than on top of it. When this is on, `in_use` is `mine` (plus
+    /// `KHOR_RELAY`) — which is the only way the screen can show that
+    /// the switch did something.
     pub only_mine: bool,
+}
+
+/// 直连占比 on the 网络 page (docs/CONNECT.md 度量与验收): of the dials
+/// the resident made lately that settled on a road, how many went
+/// direct — every far machine together.
+///
+/// **The two numbers, not the percentage**: the screen writes the share
+/// and how many dials it is out of, and 「100%」 of one dial is not the
+/// same reading as 100% of twenty.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct RoadShare {
+    pub direct: u32,
+    pub settled: u32,
+    /// Why there is no reading, when there is none: `"no-serve"` (no
+    /// resident here, so nothing has been dialling) or `"unanswered"`
+    /// (a resident that did not answer the question). `None` when the
+    /// resident answered — `settled` may still be 0 then, meaning it
+    /// has not dialled anybody since it started.
+    pub unread: Option<String>,
+}
+
+/// One relay a write wants kept or added.
+///
+/// `token` is the key typed for **this** relay, and only the relay
+/// being added carries one: `None` keeps whatever key is already stored
+/// for that url (`Node::set_relays`).
+#[derive(Debug, Clone, serde::Deserialize, TS)]
+pub struct RelayWant {
+    pub url: String,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -1102,8 +1138,36 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
     let node = open(root)?;
     Ok(RelayChoices {
         mine: node.relay_choices(),
+        keyed: node.relays_keyed(),
         in_use: node.relays().to_vec(),
         only_mine: node.relays_only_mine(),
+    })
+}
+
+/// 直连占比, from the resident's own memory of its dials
+/// (`Node::road_tallies`).
+pub async fn road_share(root: &Path) -> Result<RoadShare, String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(match n.road_tallies().await {
+        Ok(tallies) => RoadShare {
+            direct: tallies.iter().map(|(_, t)| t.direct).sum(),
+            settled: tallies.iter().map(|(_, t)| t.direct + t.relay).sum(),
+            unread: None,
+        },
+        Err(why) => RoadShare {
+            direct: 0,
+            settled: 0,
+            unread: Some(
+                match why {
+                    khor_node::link::RoadsUnread::NoServe => "no-serve",
+                    khor_node::link::RoadsUnread::Unanswered => "unanswered",
+                }
+                .to_owned(),
+            ),
+        },
     })
 }
 
@@ -1114,11 +1178,23 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
 /// ⚠️ `in_use` here is what the **next** node will bind with. A running
 /// `khor serve` and every connection already standing keep the list they
 /// opened with; the screen has to say so, because nothing else will.
-pub fn set_relays(root: &Path, urls: &[String], only_mine: bool) -> Result<RelayChoices, String> {
+pub fn set_relays(
+    root: &Path,
+    wants: &[RelayWant],
+    only_mine: bool,
+) -> Result<RelayChoices, String> {
     let node = open(root)?;
-    let in_use = node.set_relays(urls, only_mine)?;
+    let entries: Vec<khor_node::Relay> = wants
+        .iter()
+        .map(|w| khor_node::Relay {
+            url: w.url.clone(),
+            token: w.token.clone(),
+        })
+        .collect();
+    let in_use = node.set_relays(&entries, only_mine)?;
     Ok(RelayChoices {
         mine: node.relay_choices(),
+        keyed: node.relays_keyed(),
         in_use,
         // Read back rather than echoed: the node is allowed to refuse
         // the combination, and a screen painting what it sent would show
@@ -1944,6 +2020,73 @@ pub fn invite(root: &Path) -> Result<Ticket, String> {
 pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
     let node = open(root)?;
     node.pair(ticket).await
+}
+
+/// One machine waiting for the root holder (`khor pending`) — the node's
+/// [`khor_node::PendingRow`], minted here for [`LeaveOutcome`]'s reason:
+/// what crosses to a face is this crate's own type.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct PendingRow {
+    pub id: String,
+    /// The name on the glass.
+    pub name: String,
+    /// `device`, `satellite` or `leave` — the face picks the word.
+    pub kind: String,
+}
+
+/// What the devices list shows above its rows (docs/CONNECT.md 根不在场):
+/// who waits, and **whether this machine can do anything about it** —
+/// the holder gets a button per row, everyone else a sentence saying
+/// where the button is. One answer, so the two cannot disagree.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct Waiting {
+    pub holds: bool,
+    pub rows: Vec<PendingRow>,
+}
+
+/// Who waits for the root holder, and whether this machine is it.
+pub fn waiting(root: &Path) -> Result<Waiting, String> {
+    let node = open(root)?;
+    Ok(Waiting {
+        holds: node.holds_root(),
+        rows: node
+            .pending()?
+            .into_iter()
+            .map(|r| PendingRow {
+                id: r.id,
+                name: r.name,
+                kind: r.kind,
+            })
+            .collect(),
+    })
+}
+
+/// `khor approve` — the holder signs one waiting machine in (or its
+/// removal through), pushes the roster out, and answers the list as it
+/// now stands. Async for `pair`'s reason: the push dials.
+pub async fn approve(root: &Path, machine: &str) -> Result<Waiting, String> {
+    open(root)?.approve(machine).await?;
+    waiting(root)
+}
+
+/// Whether this machine made the network's root and nobody has seen its
+/// words yet — what the app's first-start prompt asks.
+pub fn root_unshown(root: &Path) -> Result<bool, String> {
+    Ok(open(root)?.root_state().unshown)
+}
+
+/// The root's 24 words, for the app's prompt after the person pressed to
+/// see them. **App-only** (`tests/command_tables.rs` has why).
+pub fn root_words(root: &Path) -> Result<String, String> {
+    open(root)?.root_words()
+}
+
+/// The prompt was answered or closed: it is not asked again.
+pub fn root_words_seen(root: &Path) -> Result<(), String> {
+    open(root)?.root_words_seen();
+    Ok(())
 }
 
 /// How a leave ended, per machine that was in the table (docs/MORE.md

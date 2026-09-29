@@ -333,6 +333,23 @@ usage: khor <verb>
                         machine's commands on their behalf, syncs the
                         whole network every 5 seconds (also opens the
                         web face on the LAN — see web)
+  relay --dev | --tls-cert cert --tls-key key | --acme domain [--acme-contact email]
+        [--token key | --only-mine] [--rate bytes/s] [--metrics addr]
+        [--bind addr] [--http addr] [--state dir] | --stats [--state dir]
+                        runs a relay on this machine (iroh-relay, the
+                        same code). --dev is plain HTTP on port 3340 by
+                        default; TLS takes a certificate you have, or
+                        --acme gets one from Let's Encrypt. --token
+                        admits only clients carrying that shared key;
+                        --only-mine admits only the devices on this
+                        network's roster and not revoked (the same rule
+                        every request here passes), no key typed
+                        anywhere.
+                        --rate limits each client. Metering keeps totals
+                        only — per device how many connections and how
+                        long online, plus the relay's bytes — in the
+                        --state directory (default .khor/relay);
+                        --stats prints that metering and starts nothing
   web [--new]           the web face's link: open it on your phone
                         or another computer and you have the whole
                         network. serve is what opens the face — this
@@ -397,6 +414,28 @@ usage: khor <verb>
                         through this machine; to remove it, use
                         forget. Requires passwordless ssh (one that
                         prompts for a password can't connect)
+  pending [--json]      what waits for the root holder: machines paired
+                        in that have no certificate yet, satellites
+                        adopted by a machine without the root, machines
+                        removed elsewhere and not revoked yet. One line
+                        each: id, name, what it waits for
+  approve <machine>     on the machine holding the root: signs a waiting
+                        machine's certificate (or its revocation) and
+                        syncs it to the network right away
+  revoke <machine>      on the machine holding the root: once the network
+                        has the new roster, nobody answers that machine.
+                        It stays in the table; forget removes the row too
+  root [show [--json] | words <this machine> | recover <24 words> | init]
+                        the user's root key: it only signs (which
+                        machines are yours), never connects or encrypts.
+                        show says which root this machine trusts, whether
+                        it holds it and the roster's version; words
+                        prints the 24 recovery words (type this machine's
+                        name to see them); recover restores the root onto
+                        this machine; init gives a network from before
+                        roots its root and signs every machine in the
+                        table. Bare, it prints the store path (for the
+                        installer)
   sync                  syncs with the whole network right now
   mcp                   exposes khor's commands as tools (for
                         agents, not for typing by hand)
@@ -457,11 +496,13 @@ doctor-name-serve = "Resident"
 doctor-name-web = "Web face"
 doctor-name-relays = "Relays"
 doctor-name-peers = "Other machines"
+doctor-name-roads = "Connections"
 doctor-name-hooks = "Hooks"
 doctor-name-agents = "Agents"
 doctor-name-vscode = "VS Code"
 doctor-name-disk = "Disk headroom"
 doctor-name-launcher = "Opener"
+doctor-name-roster = "Roster"
 # The four states. **Untaken is not ok**: a green row means somebody
 # looked, and not having looked is a different fact.
 doctor-ok = "OK"
@@ -532,6 +573,11 @@ doctor-peers-alone = "not paired with any machine yet"
 # 暂停). Not a warning: it is doing what it was told.
 doctor-peers-paused = "Paused — not syncing with the others, and they see this machine offline. To resume: khor resume"
 doctor-peers-unread = "cannot read the machine table"
+doctor-road = "{0} first reply {1}ms, direct {2}/{3}"
+doctor-road-fresh = "{0} first reply {1}ms"
+doctor-roads-none = "serve has not dialled another machine since it started"
+doctor-roads-no-serve = "serve is not running, so there are no connection readings"
+doctor-roads-unanswered = "serve did not answer (it may be older than this khor)"
 doctor-hooks-ok = "every claude hook is installed"
 doctor-hooks-part = "{0} event hook(s) missing, or pointing at another khor"
 doctor-hooks-unread = "cannot read claude's settings"
@@ -563,6 +609,27 @@ unread = "unread {0}"
 unreachable-for = "unreachable for {0}"
 quiet-for = "quiet for {0}"
 adopted = "brought in: {0}, speaking through {1}; the whole network can see it right away"
+# The user's root key and the roster (docs/CONNECT.md 身份).
+root-born-hint = "This machine just made the network's root key: it signs which machines are yours. Write the 24 recovery words on paper and keep them — without it no machine can be added or revoked again. To see them: khor root words {0}"
+root-show-key = "Root key: {0}"
+root-show-holds = "This machine holds the root key"
+root-show-not-held = "This machine does not hold the root key (another one does)"
+root-show-roster = "Roster version {0}, signed {1} days ago"
+root-show-pending = "This machine is waiting for the root holder's approval: run khor pending there, then khor approve"
+root-show-revoked = "This machine was revoked: the network no longer answers it"
+root-show-legacy = "This network has no root key yet (it predates roots). Run khor root init on the machine that should hold it"
+root-recovered = "Root key restored onto this machine: {0}"
+root-inited = "Made root key {0} and signed the {1} machines in the table; each picks it up on its next sync"
+pending-none = "Nothing is waiting"
+pending-kind-device = "join"
+pending-kind-satellite = "satellite join"
+pending-kind-leave = "removal"
+approved = "Approved \"{0}\"; roster version {1}"
+revoked-ok = "Revoked \"{0}\"; roster version {1}"
+pair-pending-hint = "Paired, but this machine has no certificate yet: the root holder was not part of this pairing. The network recognizes it once khor approve runs on the machine holding the root"
+adopt-pending-hint = "Satellite brought in, but not on the roster yet: this machine does not hold the root. Run khor approve on the machine that does"
+doctor-roster-stale = "The roster is {0} days past fresh (signed {1} days ago): the root holder has been away a long time, and no new certificate is accepted"
+doctor-roster-none = "Knows the root key, but holds no roster that verifies"
 via-sponsor = "via {0}"
 sat-tmux-yes = "it has tmux — terminals opened on it can persist"
 sat-tmux-no = "it has no tmux — terminals opened on it are temporary (gone once the connection drops)"
@@ -740,6 +807,29 @@ retracted = "[retracted]"
 file-chip = "[file {0} {1}B]"
 unknown-body = "[this version can't read this entry: {0}]"
 
+relay-up = "Relay listening on {0}"
+relay-admit-everyone = "Admits: anyone (no key, no device table)"
+relay-admit-token = "Admits: clients carrying the shared key"
+relay-admit-mine = "Admits: devices on this network's roster ({0} now)"
+relay-key-in-clear = "Note: over plain HTTP the shared key travels in the clear"
+relay-rate = "Rate limit: {0}/s per client"
+relay-rate-none = "Rate limit: none"
+relay-metrics = "Metrics: {0}"
+relay-meter = "Metering: {0}"
+relay-pick-mode = "Pick one: --dev (plain HTTP), --tls-cert with --tls-key, or --acme <domain>"
+relay-token-or-mine = "--token and --only-mine cannot be used together"
+relay-flag-unknown = "khor relay does not know this argument: {0}"
+relay-flag-needs-value = "{0} needs a value after it"
+relay-rate-bad = "--rate takes a whole number of bytes per second above 0: {0}"
+relay-addr-bad = "Not an address to listen on: {0}"
+relay-tls-bad = "Cannot read the certificate or key: {0}"
+relay-wont-start = "The relay cannot start: {0}"
+relay-stats-none = "Nothing metered yet: {0} does not exist"
+relay-stats-unreadable = "Cannot read the metering file: {0}"
+relay-stats-since = "Since {0}: {1} sent to clients, {2} received from them"
+relay-stats-device = "{0}…  {1} connections, online {2}"
+relay-stats-no-device = "No device has connected yet"
+
 [msg]
 watch-path-relative = "Watched directory must be an absolute path: {0}"
 watch-path-dotdot = "Watched directory can't contain ..: {0}"
@@ -791,6 +881,16 @@ cant-write-file = "Failed to write: {0}"
 cant-set-permissions = "Failed to set file permissions"
 identity-too-open = "Identity file permissions are too open ({0}) — others can read it and impersonate this machine.\n  Fix: chmod 600 {1}"
 identity-corrupt = "Identity file is corrupt (should be 32 bytes). Deleting it regenerates one —\n  note that regenerating is equivalent to becoming a new machine; paired machines will need to re-pair: {0}"
+# The user's root key (docs/CONNECT.md 身份): it only signs.
+root-key-too-open = "Root key file permissions are too open ({0}) — anyone who can read it can sign their own machine into your network.\n  Fix: chmod 600 {1}"
+root-key-corrupt = "Root key file is corrupt (should be 32 bytes): {0}\n  Recover it from the words: khor root recover <24 words>"
+root-words-count = "Recovery takes {0} words; got {1}"
+root-words-unknown = "Word {0} ({1}) is not on the BIP-39 English list — probably a copying mistake"
+root-words-checksum = "These 24 words fail their checksum: most likely one was copied wrong, or two are swapped"
+trust-garbled = "Unreadable signed record: wrong format, or cut short"
+trust-bad-signature = "Signature does not match: this record was not signed by the root key, or was changed after signing"
+trust-other-root = "This record belongs to a different root key"
+trust-bad-cert-inside = "The roster carries a certificate that does not verify"
 not-a-machine-id-short = "Not a machine id"
 not-a-ticket-base64 = "Not a pairing ticket (can't decode base64)"
 not-a-ticket-content = "Not a pairing ticket (content doesn't match)"
@@ -848,6 +948,21 @@ bad-invite = "Pairing code is wrong, or already used"
 invite-expired = "This ticket has expired (valid for {0} minutes after issue) — have that machine issue another: khor invite"
 cant-burn-invite = "Can't burn pairing code: {0}"
 not-paired = "This machine isn't in the machine table — pair first"
+# The roster is the one source of trust (docs/CONNECT.md 身份).
+not-in-roster = "This machine is not on the roster: it is waiting for the root holder to approve it, or it was revoked"
+words-need-confirm = "The recovery words restore the whole network's root key; anyone who sees them can sign their own machine into your network. To see them, type this machine's name back: khor root words {0}"
+words-names-another = "\"{0}\" is not this machine's name. To see the recovery words, type this machine's name: khor root words {1}"
+peer-not-in-roster = "That machine is not on the roster (waiting or revoked); not syncing with it"
+pair-two-roots = "Each side is its own network with its own root key; pairing does not merge two networks. To bring that machine in, run khor leave on it first, then pair with this ticket"
+root-not-here = "This machine does not hold the root key. The root holder does; the recovery words can restore it here too: khor root recover <24 words>"
+approve-needs-root = "Approving happens on the machine that holds the root, and this one does not. Run khor pending and khor approve there"
+revoke-needs-root = "Revoking happens on the machine that holds the root, and this one does not"
+nothing-pending-named = "Nothing waiting is called \"{0}\" (khor pending lists them)"
+cant-revoke-holder = "The root holder cannot revoke itself"
+already-revoked = "\"{0}\" is already revoked"
+recover-other-network = "This machine is in another network (root {0}), and these words are a different root. Run khor leave first, then recover"
+root-already = "There is already a root key here: {0}"
+sat-revoked = "Satellite \"{0}\" was revoked; nothing is run on its behalf any more"
 no-home-dir = "This machine can't report its own home directory"
 path-not-absolute = "Path must be written from root: {0}"
 
@@ -1435,6 +1550,10 @@ head-machines = "{0} machines in all"
 head-connected = "{0} connected"
 head-lock-on = "Lock on"
 head-lock-off = "Lock off"
+roads-share-label = "Direct share"
+roads-share = "{0}% of the last {1} connections"
+roads-none = "No connection readings yet"
+roads-unanswered = "serve did not answer"
 net-pause-sync = "Pause syncing"
 net-pause-note = "The others see this machine offline; everything here still works"
 net-relays = "Relays"
@@ -1512,6 +1631,9 @@ relays-hint = "http://address:port"
 relays-after-restart = "New ones take effect after khor serve restarts"
 relays-in-use = "In use"
 relays-only-mine = "Only use mine"
+relays-key = "Relay key"
+relays-key-hint = "Key (leave empty if none)"
+relays-keyed = "With key"
 back = "Back"
 page-back = "Previous page"
 page-forward = "Next page"
@@ -1603,6 +1725,14 @@ message-text = "Message"
 send-it = "Send"
 make-a-ticket = "Invite device"
 join-with-a-ticket = "Join network"
+# Waiting for the root holder, and the root's recovery words (docs/CONNECT.md 身份).
+pending-title = "Waiting"
+approve = "Approve"
+pending-elsewhere = "Approve on the machine that holds the root"
+root-words-title = "Write down the recovery words"
+root-words-body = "This machine just made the network's root key, which signs which machines are yours. Write the 24 recovery words on paper and keep them: without them no machine can be added or revoked again, and anyone who sees them can sign their own machine into your network. To see them later, run khor root words on this machine"
+root-words-show = "Show recovery words"
+root-words-done = "Written down"
 ticket = "Pairing ticket"
 paste-a-ticket = "Paste the ticket here"
 join = "Join"

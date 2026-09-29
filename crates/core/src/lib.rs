@@ -308,6 +308,33 @@ impl TryFrom<String> for Hop {
     }
 }
 
+/// **How this machine's recent dials to another one went** (docs/
+/// CONNECT.md 度量与验收: 首包时间、直连占比).
+///
+/// Where [`Hop`] is the road in use *right now*, this is a short
+/// history: how long the last dial took to get an answer, and where
+/// the last few settled. The two answer different questions — 「is it
+/// on a relay now」 and 「does this pair usually punch through」 — and a
+/// network that punched through nine times and fell to the relay on
+/// the tenth reads as 中继 on one and 9/10 on the other.
+///
+/// Kept by the resident serve, in memory, from the moment it started:
+/// a machine it has not dialled since has no tally, and a restart
+/// starts every tally again.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoadTally {
+    /// Milliseconds from starting the most recent dial to the far end's
+    /// first answer — the handshake completing, relay head start and
+    /// all. `None` when no dial to it has come back since the serve
+    /// started.
+    pub first_reply_ms: Option<u64>,
+    /// Of the last few dials that settled on a road, how many settled
+    /// direct…
+    pub direct: u32,
+    /// …and how many stayed on a relay.
+    pub relay: u32,
+}
+
 #[cfg(test)]
 mod hop_tests {
     use super::Hop;

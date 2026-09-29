@@ -9,7 +9,19 @@
 // server.
 import { useEffect, useState } from "react";
 
-import { invite, pair, type Ticket } from "@/api";
+import {
+  approveMachine,
+  fetchWaiting,
+  inApp,
+  invite,
+  pair,
+  rootUnshown,
+  rootWords,
+  rootWordsSeen,
+  said,
+  type Ticket,
+  type Waiting,
+} from "@/api";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -142,6 +154,174 @@ export function JoinDialog({
           <Button variant="primary" data-join disabled={!ticket.trim() || joining} onClick={join}>
             {gui.join}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The word for what a waiting machine waits for — the terminal's own
+    (`khor pending`), so the two faces say one thing. */
+function waitsFor(kind: string): string {
+  if (kind === "satellite") return cli.pending_kind_satellite;
+  if (kind === "leave") return cli.pending_kind_leave;
+  return cli.pending_kind_device;
+}
+
+/**
+ * 待批 (docs/CONNECT.md 根不在场), over the machines list: who is waiting
+ * for the machine that holds the root. **Drawn only while something
+ * waits** — an empty strip would be a row the list does not have.
+ *
+ * The holder gets one 批准 per row; every other machine gets the one
+ * sentence that says where that button is, because pressing it here
+ * could only be refused (`Node::approve_here`). Which of the two is the
+ * node's answer (`Waiting.holds`), not a guess made here.
+ *
+ * Asked on its own beat, the way the list asks for its rows: a machine
+ * joins through somebody else's ticket, and this is where it shows up.
+ */
+export function PendingStrip() {
+  const [waiting, setWaiting] = useState<Waiting | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    const read = () =>
+      fetchWaiting()
+        .then((w) => live && setWaiting(w))
+        // A store that cannot say leaves the strip as it was; the list
+        // under it has its own way of saying the store is unreadable.
+        .catch(() => {});
+    read();
+    const beat = window.setInterval(read, 5000);
+    return () => {
+      live = false;
+      window.clearInterval(beat);
+    };
+  }, []);
+
+  if (!waiting || waiting.rows.length === 0) return null;
+
+  const approve = (id: string) => {
+    setBusy(true);
+    setError(null);
+    approveMachine(id)
+      .then(setWaiting)
+      .catch((e) => setError(said(e)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div data-pending className="px-in pb-in">
+      <div className="px-in pt-in pb-xxs text-group text-tertiary">{gui.pending_title}</div>
+      {waiting.rows.map((r) => (
+        <div key={r.id} data-pending-row={r.id} className="flex min-h-row-1 min-w-0 items-center gap-row px-in">
+          <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>
+          <span className="text-caption text-tertiary">{waitsFor(r.kind)}</span>
+          {waiting.holds && (
+            <Button
+              size="sm"
+              data-approve={r.id}
+              className="pointer-coarse:min-h-touch"
+              disabled={busy}
+              onClick={() => approve(r.id)}
+            >
+              {gui.approve}
+            </Button>
+          )}
+        </div>
+      ))}
+      {!waiting.holds && (
+        <div data-pending-elsewhere className="px-in text-callout text-muted-foreground">
+          {gui.pending_elsewhere}
+        </div>
+      )}
+      {error && (
+        <div data-pending-error className="px-in text-callout text-destructive">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The root's words, asked for once (docs/CONNECT.md 身份): this machine
+ * made the network's root when it first opened, and the 24 words are
+ * the only way back if it is lost.
+ *
+ * **Shown only after a press** — the words are the root, and a window
+ * that opened with them on it would put them on a screen nobody chose
+ * to look at. **Asked once**: answering or closing marks them seen, and
+ * after that the way to them is `khor root words` on this machine,
+ * which the sentence says.
+ *
+ * **The app only.** The words are not served to the web face
+ * (`khor_gui_core` `tests/command_tables.rs`), and a browser opening
+ * this page is a different screen from the machine's own.
+ */
+export function RootWordsDialog() {
+  const [open, setOpen] = useState(false);
+  const [words, setWords] = useState<string[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!inApp) return;
+    let live = true;
+    rootUnshown()
+      .then((waiting) => live && waiting && setOpen(true))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const close = () => {
+    setOpen(false);
+    setWords(null);
+    rootWordsSeen().catch(() => {});
+  };
+  const show = () => {
+    setError(null);
+    rootWords()
+      .then((w) => setWords(w.split(" ")))
+      .catch((e) => setError(said(e)));
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && close()}>
+      <DialogContent data-root-words-dialog>
+        <DialogHeader>
+          <DialogTitle>{gui.root_words_title}</DialogTitle>
+        </DialogHeader>
+        <div className="text-body text-muted-foreground">{gui.root_words_body}</div>
+        {words && (
+          <ol data-root-words className="grid grid-cols-3 gap-in font-mono text-body tabular-nums">
+            {words.map((w, i) => (
+              <li key={i} className="flex min-w-0 gap-xxs">
+                <span className="text-tertiary">{i + 1}</span>
+                <span className="truncate">{w}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+        {error && (
+          <div data-dialog-error className="text-callout text-destructive">
+            {error}
+          </div>
+        )}
+        <DialogFooter>
+          {words ? (
+            <Button variant="primary" size="lg" data-root-words-done onClick={close}>
+              {gui.root_words_done}
+            </Button>
+          ) : (
+            <Button variant="primary" size="lg" data-root-words-show onClick={show}>
+              {gui.root_words_show}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

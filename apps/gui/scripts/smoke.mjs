@@ -8419,11 +8419,11 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     const keys = rows.map((r) => r.key);
     console.log(`doctor: ${rows.map((r) => `${r.key}=${r.state}`).join(" ")}`);
     //    a. every key is there. **Enumerated rather than counted**: two
-    //    lists of twelve can still disagree, and a count would call that
+    //    lists of fourteen can still disagree, and a count would call that
     //    a match.
     const WANTED = [
       "version", "identity", "store", "serve", "web", "relays",
-      "peers", "hooks", "agents", "vscode", "disk", "launcher",
+      "peers", "roster", "roads", "hooks", "agents", "vscode", "disk", "launcher",
     ];
     for (const key of WANTED) {
       if (!keys.includes(key)) {

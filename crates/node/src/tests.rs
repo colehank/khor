@@ -2888,8 +2888,9 @@ fn leaving(n: &Node, typed: &str) -> Result<crate::link::Left, String> {
 /// iroh endpoint — public relays, DNS, the lot. Measured on a scratch
 /// home with nobody to dial: **156 seconds** for two tests, all of it
 /// spent handshaking with servers that have nothing to do with the
-/// assertion. An empty relay list does not help (`endpoint::bind_with`
-/// ignores it and uses n0's).
+/// assertion. (That was with n0's relays in the map; a node's list is
+/// still never empty — it carries the Khor tier — so the bind would
+/// still go out to a real relay.)
 ///
 /// So the fixture writes the file a resident writes, with this process's
 /// pid (`endpoint_file` honours a file only while its pid is alive) and

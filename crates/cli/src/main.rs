@@ -57,6 +57,10 @@ use khor_node::{
     AvatarStyle, FaceShape, MsgBody, Node, PRESETS, SessionId, Tokens, UsageDay, Variant, list,
 };
 
+/// `khor relay` — its own file because it is its own program: a server
+/// with its own access control and meter (`relay.rs` head).
+mod relay;
+
 fn main() {
     // 语言, before the first word this process can print (docs/MORE.md
     // 语言). A stored choice wins, `auto` reads the environment, and
@@ -76,7 +80,15 @@ fn main() {
 }
 
 fn node() -> Result<Node, String> {
-    Node::open(Node::root_from_env())
+    let n = Node::open(Node::root_from_env())?;
+    // The one moment a person must be told (docs/CONNECT.md 身份): this
+    // open made the network's root. On stderr, so a verb whose stdout is
+    // piped still says it — and the words themselves are never printed
+    // unasked (`khor root words`).
+    if n.root_born() {
+        eprintln!("{}", cli::root_born_hint(n.shown_name()));
+    }
+    Ok(n)
 }
 
 fn rt() -> Result<tokio::runtime::Runtime, String> {
@@ -433,6 +445,13 @@ const VERBS: &[Verb] = &[
         run: serve,
         reach: Reach::Act,
     },
+    // Starts a server that listens on this machine's ports and lets
+    // other machines through it — and `--stats` is the same word.
+    Verb {
+        word: "relay",
+        run: relay::verb,
+        reach: Reach::Act,
+    },
     // Prints a link with the key in it. Reading it aloud is handing
     // over the whole network, which is why printing is not a read.
     Verb {
@@ -504,6 +523,23 @@ const VERBS: &[Verb] = &[
         run: adopt,
         reach: Reach::Act,
     },
+    // What waits for the root holder (docs/CONNECT.md 根不在场). Reads.
+    Verb {
+        word: "pending",
+        run: pending,
+        reach: Reach::Read,
+    },
+    // Both sign a new roster with the root key: who is in the network.
+    Verb {
+        word: "approve",
+        run: approve,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "revoke",
+        run: revoke,
+        reach: Reach::Act,
+    },
     Verb {
         word: "sync",
         run: sync,
@@ -519,10 +555,14 @@ const VERBS: &[Verb] = &[
         run: version,
         reach: Reach::Read,
     },
+    // Bare, it prints which store is khor's (for `scripts/install.sh`);
+    // with a subword it is the user's root key — and `words` prints the
+    // secret, `recover` and `init` write one. The rule is per word, not
+    // per invocation (`face` above), so the word is an act.
     Verb {
         word: "root",
         run: root,
-        reach: Reach::Read,
+        reach: Reach::Act,
     },
     Verb {
         word: "forget",
@@ -642,14 +682,6 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
         "internal: the verb table as JSON, for the gate that decides what an agent may type (`verbs`)",
     ),
     (
-        "root",
-        "internal: which store on this machine is khor's own, for `scripts/install.sh` — the freshly \
-         unpacked binary is the authority on that and the installer asks it rather than reproducing \
-         the rule in sh (`khor_root` in scripts/onset-lib.sh is what reproducing it costs). Not a \
-         verb a person types: the answer is a path they cannot do anything with, and the one thing \
-         they might want it for (which home am I on) is `khor id`.",
-    ),
-    (
         "face",
         "the old spelling of `avatar`, kept one version as an alias (2026-09-21). Out of the usage \
          on purpose: the usage is what khor teaches, and teaching both spellings of one verb is how \
@@ -704,8 +736,134 @@ fn dispatch(args: &[String]) -> Result<(), String> {
 /// No node is opened. Answering 「which directory」 must work on a store
 /// this machine may not be allowed to open — the uninstall path needs
 /// the answer precisely when the claim might refuse.
-fn root(_rest: &[String]) -> Result<(), String> {
-    println!("{}", Node::root_from_env().display());
+/// `khor root` — two things under one word, and the bare one is not a
+/// person's.
+///
+/// **Bare**, it prints which store is khor's, for `scripts/install.sh`
+/// (the freshly unpacked binary is the authority on that and the
+/// installer asks it rather than reproducing the rule in sh; `khor_root`
+/// in scripts/onset-lib.sh is what reproducing it cost). No node is
+/// opened for that, so it answers on a store that refuses.
+///
+/// **With a subword** it is the user's root key (docs/CONNECT.md 身份):
+/// `show` what this machine verifies with, `words` the 24 words after
+/// this machine's name is typed back, `recover` from the words, `init`
+/// a root for a network from before roots.
+fn root(rest: &[String]) -> Result<(), String> {
+    match rest {
+        [] => {
+            println!("{}", Node::root_from_env().display());
+            Ok(())
+        }
+        [word] if word == "show" => root_show(false),
+        [word, flag] if word == "show" && flag == "--json" => root_show(true),
+        [word] if word == "words" => Err(node()?.root_words_confirmed("").unwrap_err()),
+        [word, typed] if word == "words" => {
+            println!("{}", node()?.root_words_confirmed(typed)?);
+            Ok(())
+        }
+        [word, words @ ..] if word == "recover" && !words.is_empty() => {
+            let root = node()?.root_recover(&words.join(" "))?;
+            println!("{}", cli::root_recovered(root));
+            Ok(())
+        }
+        [word] if word == "init" => {
+            let n = node()?;
+            let (root, count) = n.root_init()?;
+            println!("{}", cli::root_inited(root, count));
+            eprintln!("{}", cli::root_born_hint(n.shown_name()));
+            Ok(())
+        }
+        _ => Err(usage_text().into()),
+    }
+}
+
+/// What this machine verifies with, and how it stands.
+fn root_show(json: bool) -> Result<(), String> {
+    let st = node()?.root_state();
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&st).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+    let Some(root) = &st.root else {
+        println!("{}", cli::root_show_legacy());
+        return Ok(());
+    };
+    println!("{}", cli::root_show_key(root));
+    println!(
+        "{}",
+        if st.holds {
+            cli::root_show_holds()
+        } else {
+            cli::root_show_not_held()
+        }
+    );
+    if let (Some(seq), Some(age)) = (st.seq, st.age_days) {
+        match st.stale_days {
+            Some(n) => println!("{}", cli::doctor_roster_stale(n, age)),
+            None => println!("{}", cli::root_show_roster(seq, age)),
+        }
+    }
+    match st.standing.as_str() {
+        "pending" => println!("{}", cli::root_show_pending()),
+        "revoked" => println!("{}", cli::root_show_revoked()),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// What waits for the root holder: one line per machine — id, name,
+/// what it waits for. `--json` prints the rows the app draws.
+fn pending(rest: &[String]) -> Result<(), String> {
+    let json = match rest {
+        [] => false,
+        [flag] if flag == "--json" => true,
+        _ => return Err(usage_text().into()),
+    };
+    let rows = node()?.pending()?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&rows).map_err(|e| e.to_string())?
+        );
+        return Ok(());
+    }
+    if rows.is_empty() {
+        println!("{}", cli::pending_none());
+    }
+    for r in &rows {
+        let kind = match r.kind.as_str() {
+            "satellite" => cli::pending_kind_satellite(),
+            "leave" => cli::pending_kind_leave(),
+            _ => cli::pending_kind_device(),
+        };
+        println!("{}\t{}\t{kind}", r.id, r.name);
+    }
+    Ok(())
+}
+
+/// Signs one waiting machine in (or its removal through), on the machine
+/// holding the root, and pushes the roster out.
+fn approve(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(usage_text().into());
+    };
+    let (name, seq) = rt()?.block_on(node()?.approve(machine))?;
+    println!("{}", cli::approved(name, seq));
+    Ok(())
+}
+
+/// Revokes a machine on the one holding the root, and pushes the roster
+/// out: every machine that takes it refuses the revoked one.
+fn revoke(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(usage_text().into());
+    };
+    let (name, seq) = rt()?.block_on(node()?.revoke(machine))?;
+    println!("{}", cli::revoked_ok(name, seq));
     Ok(())
 }
 
@@ -4658,8 +4816,14 @@ fn pair(rest: &[String]) -> Result<(), String> {
     let [ticket] = rest else {
         return Err(usage_text().into());
     };
-    let name = rt()?.block_on(node()?.pair(ticket))?;
+    let n = node()?;
+    let name = rt()?.block_on(n.pair(ticket))?;
     println!("{}", cli::paired_ok(name));
+    // Paired, and not yet in: the root holder has not signed this machine
+    // (docs/CONNECT.md 根不在场). Said once, here, where it happened.
+    if n.standing_of(n.device_str()) == khor_node::Standing::Pending {
+        eprintln!("{}", cli::pair_pending_hint());
+    }
     Ok(())
 }
 
@@ -4674,8 +4838,13 @@ fn adopt(rest: &[String]) -> Result<(), String> {
         _ => return Err(usage_text().into()),
     };
     let n = node()?;
-    let (_, name, tmux) = n.adopt_satellite(host, name)?;
+    let (id, name, tmux) = n.adopt_satellite(host, name)?;
     println!("{}", cli::adopted(&name, n.name()));
+    // On the roster only once the root holder signs it (docs/CONNECT.md
+    // 卫星也进名单); until then it waits, and it still works from here.
+    if n.standing_of(&id) == khor_node::Standing::Pending {
+        eprintln!("{}", cli::adopt_pending_hint());
+    }
     println!(
         "{}",
         if tmux {

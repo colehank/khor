@@ -396,24 +396,24 @@ pub fn answer(
             to_json(&crate::set_watch(root, &arg("machine")?, &paths)?)
         }
         "relays" => to_json(&crate::relays(root)?),
+        "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "set_relays" => {
             // Read by position and refused by name, the same as `paths`
             // above and for a sharper version of the same reason: a
             // relay is only consulted after a hole punch has already
             // failed, so an entry dropped on the way in shows up weeks
             // later as「有时候连不上」and points at the network.
-            let urls: Vec<String> = match args.get("urls") {
+            let wants: Vec<crate::RelayWant> = match args.get("relays") {
                 Some(serde_json::Value::Array(items)) => items
                     .iter()
                     .map(|u| {
-                        u.as_str()
-                            .map(str::to_owned)
-                            .ok_or_else(|| "a relay is not a string".to_owned())
+                        serde_json::from_value(u.clone())
+                            .map_err(|_| "a relay is not {url, token}".to_owned())
                     })
                     .collect::<Result<Vec<_>, _>>()?,
-                _ => return Err("arg is not a list: urls".to_owned()),
+                _ => return Err("arg is not a list: relays".to_owned()),
             };
-            to_json(&crate::set_relays(root, &urls, flag("only_mine")?)?)
+            to_json(&crate::set_relays(root, &wants, flag("only_mine")?)?)
         }
         "face_choices" => to_json(&crate::face_choices(
             root,
@@ -745,7 +745,7 @@ pub fn answer(
             crate::reset_identity(root, &arg("name")?)?;
             Ok("null".to_owned())
         }
-        // 诊断 (docs/MORE.md). Twelve checks, each under its own
+        // 诊断 (docs/MORE.md). Thirteen checks, each under its own
         // timeout — so this arm can take three seconds and never more.
         "doctor" => to_json(&rt.block_on(crate::doctor(root))?),
         // …and one check's remedy, by the check's own key.
@@ -760,6 +760,19 @@ pub fn answer(
         "config" => to_json(&crate::config_rows(root)),
         "set_config" => to_json(&crate::set_config(root, &arg("name")?, &arg("value")?)?),
         "invite" => to_json(&crate::invite(root)?),
+        // 待批 (docs/CONNECT.md 根不在场): who waits for the root holder,
+        // and the holder's one act on them. `approve` pushes the roster,
+        // so it dials — async for `pair`'s reason.
+        "pending_list" => to_json(&crate::waiting(root)?),
+        "approve" => to_json(&rt.block_on(crate::approve(root, &arg("machine")?))?),
+        // The first-start prompt's two questions. The words themselves are
+        // not served here — `root_words` is app-only
+        // (`tests/command_tables.rs`).
+        "root_unshown" => to_json(&crate::root_unshown(root)?),
+        "root_words_seen" => {
+            crate::root_words_seen(root)?;
+            Ok("null".to_owned())
+        }
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
         // 离开这张网 (docs/MORE.md 离开). Async for `pair`'s reason: it
         // goes out over the wire before it touches this disk.
