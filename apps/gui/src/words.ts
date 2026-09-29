@@ -51,10 +51,53 @@ export function hopWord(key: string): string {
  * khor cannot name the road yet — absent beats a blank.
  */
 export function connectionWord(row: { me: boolean; sponsor: string | null; hop: string | null }): string | null {
-  if (row.me) return gui.machine_here;
-  if (row.sponsor) return cli.via_sponsor(row.sponsor);
-  if (row.hop) return hopWord(row.hop);
+  return connectionKeyWord(connectionKey(row));
+}
+
+/**
+ * The same fact as a key, for the machines list's filter (2026-09-29):
+ * `here` for this machine, `via:<sponsor>` for a satellite, the hop key
+ * otherwise, and `""` where `connectionWord` has no word. **The word is
+ * looked up from the key** (`connectionKeyWord`), so a tick in the
+ * filter and the word on the row cannot come apart — there is one
+ * derivation, which is this one. The prefixes cannot collide: a hop key
+ * is one kebab word (`khor_core::Hop`), never `here` and never with a
+ * colon in it.
+ */
+export function connectionKey(row: { me: boolean; sponsor: string | null; hop: string | null }): string {
+  if (row.me) return "here";
+  if (row.sponsor) return `via:${row.sponsor}`;
+  return row.hop ?? "";
+}
+
+/** The word for a `connectionKey`, `null` for the empty one. */
+export function connectionKeyWord(key: string): string | null {
+  if (key === "here") return gui.machine_here;
+  if (key.startsWith("via:")) return cli.via_sponsor(key.slice("via:".length));
+  if (key !== "") return hopWord(key);
   return null;
+}
+
+/**
+ * The name of a machine's system family (`khor_core::SystemKind`), from
+ * the key the node sent — the family a machine row's corner draws
+ * (`BrandIcons.machineMark`), so a filter on it and the corner read the
+ * same. An unknown key echoes, `hopWord`'s reason: a family a newer node
+ * knows is still better named by its key than not named at all.
+ */
+export function systemWord(key: string): string {
+  switch (key) {
+    case "apple":
+      return gui.system_apple;
+    case "linux":
+      return gui.system_linux;
+    case "windows":
+      return gui.system_windows;
+    case "android":
+      return gui.system_android;
+    default:
+      return key;
+  }
 }
 
 /**

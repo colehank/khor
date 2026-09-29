@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { DeviceRow } from "@/api";
+import { type OmniAxis } from "@/components/Omnibox";
+import { type FilterOption } from "@/components/PaneBar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
@@ -8,8 +10,76 @@ import { machineMark } from "@/components/BrandIcons";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
-import { connectionWord, groupLabel } from "@/words";
+import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
+import { connectionKey, connectionKeyWord, connectionWord, groupLabel, systemWord } from "@/words";
 import { FaceSettings } from "@/views/FaceSettings";
+
+/**
+ * **What the machines list can be narrowed by** (2026-09-29, the owner:
+ * 「所有的session list应该都可以filter吧？」) — the sessions' filter,
+ * the same menu and chips and the same rule (`lib/list-filter`), on the
+ * three things a machine row says out loud:
+ *
+ * - `link:` 连接方式 — the word on the second line (`connectionKey`):
+ *   本机, the road (直连 / 中继 / 未连接 / …), or 「经 <sponsor>」.
+ *   **One value per sponsor, not one 「借网」 for all of them**: the row
+ *   prints 「经 turing」, so the option prints the same words and a tick
+ *   keeps exactly the rows that say them. Merged, the option would need
+ *   a word no row carries, and one tick would stand for rows that read
+ *   differently — the filter would be saying something the list does
+ *   not. A network has a sponsor or two, so the menu does not grow.
+ * - `sys:` 系统 — the family the corner draws (`vitals.system`). A
+ *   machine that could not say (an older peer, a satellite, no reading
+ *   yet) wears the plain machine mark, never a guess, and files under
+ *   `""` 「未知」 — which is what that corner says.
+ * - `state:` 状态 — 已暂停 and nothing else: the one state a row prints
+ *   (`machine_paused`). A row that is not paused answers nothing here,
+ *   so the axis is on offer only while some machine is paused (or a
+ *   remembered tick is waiting to be undone).
+ *
+ * The first prefix is also where a bare key would land (`axisOf`);
+ * nothing ever wrote one into this store.
+ */
+export const DEVICE_KEYS = ["link:", "sys:", "state:"] as const;
+const devicePick = {
+  "link:": (d: DeviceRow) => connectionKey(d),
+  "sys:": (d: DeviceRow) => d.vitals?.vitals.system ?? "",
+  "state:": (d: DeviceRow) => (d.paused ? "paused" : null),
+};
+/** The three axes as the sieve reads them: keys and answers, no words. */
+const DEVICE_SIEVE = DEVICE_KEYS.map((key) => ({ key, pick: devicePick[key] }));
+/** …and with their headings and words, for the menu and the box. A
+    function, not a constant: the words are catalog reads (批 D3). */
+export const deviceAxes = (): ListAxis<DeviceRow>[] => [
+  {
+    key: "link:",
+    heading: gui.axis_connection,
+    pick: devicePick["link:"],
+    label: (v) => connectionKeyWord(v) ?? gui.filter_unknown,
+  },
+  {
+    key: "sys:",
+    heading: gui.axis_system,
+    pick: devicePick["sys:"],
+    label: (v) => (v === "" ? gui.filter_unknown : systemWord(v)),
+  },
+  {
+    key: "state:",
+    heading: gui.axis_state,
+    pick: devicePick["state:"],
+    label: (v) => (v === "paused" ? gui.machine_paused : v),
+  },
+];
+
+/** The pane bar's half of it: the menu's options and the box's axes,
+    one list read two ways (`listAxes`). No faces — none of the three
+    values is a machine. */
+export function useDeviceFilter(rows: DeviceRow[], ticked: string[]): { options: FilterOption[]; axes: OmniAxis[] } {
+  return useMemo(() => {
+    const options = listOptions(rows, ticked, deviceAxes(), DEVICE_KEYS);
+    return { options, axes: listAxes(options, DEVICE_KEYS) };
+  }, [rows, ticked]);
+}
 
 /** Search matches the name people call the machine and the id they
     paste. The id left the row's face (2026-09-02 — the card carries it
@@ -68,6 +138,7 @@ export function DevicesList({
   rows,
   loading = false,
   query,
+  words = [],
   onPin,
   onForget,
   onOpen,
@@ -82,6 +153,8 @@ export function DevicesList({
   /** Not answered yet: a skeleton rather than 「there are none」. */
   loading?: boolean;
   query: string;
+  /** The ticked filter keys (`DEVICE_KEYS`), from the pane bar. */
+  words?: string[];
   /** Resolves when the pin took and rejects when it did not — the menu
       reads which to decide between closing and staying open (`RowMenu`). */
   onPin: (row: DeviceRow) => Promise<void>;
@@ -187,8 +260,9 @@ export function DevicesList({
   ];
   // **The rows are `SideList`'s** (docs/SHELL.md 第四轮): the node's
   // order (pinned first), the pinned group and its fold, the box's one
-  // rule. What is left here is what a machine row says.
-  const side: SideRow[] = rows.map((d) => {
+  // rule. What is left here is what a machine row says — of the rows
+  // the ticks leave standing (`DEVICE_SIEVE`).
+  const side: SideRow[] = sieve(rows, words, DEVICE_SIEVE, DEVICE_KEYS).map((d) => {
     const connection = connectionWord(d);
     const system = d.vitals?.vitals.system ?? null;
     const SystemMark = machineMark(system);
@@ -270,9 +344,13 @@ export function DevicesList({
         rows={side}
         loading={loading}
         query={query}
+        filtered={words.length > 0}
         label={groupLabel}
         // An empty device table cannot happen — this machine is always in
-        // it — so zero rows is always a filter, said in its own words.
+        // it — so zero rows is always a filter, said in its own words:
+        // the box's or the ticks' (`empty` is what `SideList` draws when
+        // the ticks have left it nothing to hand over).
+        empty={gui.no_matches}
         none={gui.no_matches}
       />
       {/* An errand — 办完就回去 — so a window over the list, not a page.

@@ -44,7 +44,7 @@
 |---|---|---|
 | `npm run test` | `pretest` → `gen` + `check-shim` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |
-| `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome)。`FACE_ONLY=native` 只走第 11 节「像 Mac 的 app」(选字、手、键盘、右键,一分钟);`FACE_ONLY=row` 只走第 12 节「第一行一条中线」(一分钟) | 不拿 |
+| `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome)。`FACE_ONLY=native` 只走第 11 节「像 Mac 的 app」(选字、手、键盘、右键,一分钟);`FACE_ONLY=row` 只走第 12 节「第一行一条中线」(一分钟);`FACE_ONLY=filter` 只走「机器、工作区两栏能筛」(一分钟,2026-09-29) | 不拿 |
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run day` | `check-day.mjs`,会话那条「一天」真的上没上屏,以及它作为控件的样子(2026-09-29 ⑥:胶囊与 2 px 的空、一格不窄于一颗点加它的空、指着的读数与按开的浮层说同一段、手指点得开、一个 Tab 停点、热区不越出自己那一行,宽窄两档)。**同日 ⓪:默认收着**——新的浏览器里没有这一行也不留位;前标签的提示(查看 / 收起 / 没有记录)与 `aria-expanded`;按脸、按名字、⏎ / Space 开合;每一帧采样确认双击名字只改名、带不动;重载后记得;没有记录的一天(把 fixture 的 `tui/quiet` 在线上改成全「未查看」和没有这一项两种)不画、按了也不落;扣住 `day_strips` 时是骨架,和真带同一行同一高;窄档点头开合;**落下来浮在会话上**——会话的上沿和高度一个像素不变,这一行上胶囊以外的一点落到会话(同日傍晚,旧代码上红)。其余各节都在按开之后读(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
 | `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
@@ -118,6 +118,7 @@
   交出去。`wk` 建的是它自己的 `WKWebView`,不是 tauri 建的那个;tauri 那条
   路只核到源码级。真答它要起 app,而这仓所有浏览器守门跑的都是网页脸,
   够不着原生子 webview。
+- **动了列表的筛选**(`src/lib/list-filter.ts`、`lib/session-filter.ts`、`DevicesList` / `WorkspacesList` 的轴、`PaneBar` 的筛选菜单、`Omnibox` 的小标签) → `FACE_ONLY=filter npm run face`,再跑一遍整个 `npm run face`(会话那几节筛选在走查里,不在这一段);
 - **动了导轨** → 加 `npm run rail`;
 - **动了第一行**(`--pane-head`、`--tab-lip`、`src-tauri/src/traffic.rs`、标签条的签与脚、R0 的标题) → `npm run boot` + `FACE_ONLY=row npm run face`,构建后加 `npm run native`;
 - **动了主题、窗口外观、`src-tauri` 里的窗口或标题栏** → 构建后加 `npm run native`;

@@ -15,6 +15,7 @@ import { type DeviceRow, type SessionRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { gui } from "@/gen/catalog";
+import { listAxes, listOptions } from "@/lib/list-filter";
 import { AXES, type Axis, axisOf, groupLabel, placeLabels, valueOf, word } from "@/words";
 
 /**
@@ -120,6 +121,33 @@ export function rememberWords(pane: string, words: string[]): void {
 export const ALL_AXES = AXES;
 
 /**
+ * What a session row answers on each axis, in the node's own terms: the
+ * state key it sent, the machine it lives on, the category, the place —
+ * with the empty string for 「could not tell」, which is exactly the key
+ * the node groups those rows under (`cat:` / `at:` with nothing after
+ * it), so ticking that group filters to it like every other value.
+ *
+ * **One table, read by the menu and by the sieve** (`lib/list-filter`):
+ * the options and the rows they keep used to be two copies of these
+ * four lines, one here and one in `SessionsList`.
+ *
+ * The machine axis reads `home` rather than `source`: `source` is the
+ * offline axis and is absent on rows that live here, so an axis built on
+ * it would be missing this machine — the one people reach for first
+ * (`SessionRow::home` says the rest).
+ */
+const pick: Record<Axis, (r: SessionRow) => string> = {
+  "state:": (r) => r.word,
+  "dev:": (r) => r.home,
+  "cat:": (r) => r.category ?? "",
+  "at:": (r) => r.place ?? "",
+};
+
+/** The four axes as the sieve reads them — every one, whatever a pane
+    offers, because a stored tick on any of them still narrows. */
+export const SESSION_SIEVE = AXES.map((a) => ({ key: a, pick: pick[a] }));
+
+/**
  * The filter's choices: the keys the node actually sent, in the order it
  * sent them — which is its ranking, so they come out in the order that
  * matters. Enumerating the six words here instead would be this layer
@@ -129,16 +157,11 @@ export const ALL_AXES = AXES;
  * **A ticked key stays on the list after its last row leaves**, or the
  * tick becomes impossible to undo — which also covers a tick restored
  * from storage before any row has arrived, the one case where the ticked
- * key is guaranteed to be missing from `rows`.
+ * key is guaranteed to be missing from `rows` (`listOptions`).
  *
  * **The axes are the node's own** (`khor_node::list` groups by exactly
  * these). A ticked key is a group key, so a filter and a heading are the
  * same string and cannot drift apart.
- *
- * The machine axis reads `home` rather than `source`: `source` is the
- * offline axis and is absent on rows that live here, so an axis built on
- * it would be missing this machine — the one people reach for first
- * (`SessionRow::home` says the rest).
  */
 export function sessionOptions(
   rows: SessionRow[],
@@ -149,12 +172,6 @@ export function sessionOptions(
   // same reader the list's headings use, so a chip and the heading it
   // filters to always print the same words.
   const placeNames = placeLabels(rows.map((r) => `at:${r.place ?? ""}`));
-  const pick: Record<Axis, (r: SessionRow) => string> = {
-    "state:": (r) => r.word,
-    "dev:": (r) => r.home,
-    "cat:": (r) => r.category ?? "",
-    "at:": (r) => r.place ?? "",
-  };
   const label: Record<Axis, (v: string) => string> = {
     "state:": word,
     "dev:": (v) => v,
@@ -167,47 +184,26 @@ export function sessionOptions(
     "cat:": gui.axis_category,
     "at:": gui.axis_place,
   };
-  const out: FilterOption[] = [];
-  for (const axis of axes) {
-    const values: string[] = [];
-    for (const r of rows) {
-      const v = pick[axis](r);
-      if (!values.includes(v)) values.push(v);
-    }
-    for (const key of ticked) {
-      if (axisOf(key) === axis && !values.includes(valueOf(key))) values.push(valueOf(key));
-    }
-    for (const v of values) {
-      out.push({ key: `${axis}${v}`, label: label[axis](v), axis: heading[axis] });
-    }
-  }
-  return out;
+  // Stored ticks are read against every axis (`AXES`), not only the ones
+  // on offer: a `dev:` tick in the workspace column's store is not a
+  // state word.
+  return listOptions(
+    rows,
+    ticked,
+    axes.map((a) => ({ key: a, heading: heading[a], pick: pick[a], label: label[a] })),
+    AXES,
+  );
 }
 
 /**
- * The same options, grouped into the axes the search box offers.
- * **Derived from the options rather than gathered again**: the chips and
- * the menu ticks are then not merely kept in step, they are one list
- * read two ways, and there is no second gathering that can come back
- * with something else.
+ * The same options, grouped into the axes the search box offers
+ * (`listAxes`: derived from the options, never gathered again). A
+ * machine wears its face here as it does everywhere else; the other
+ * axes have no face to wear, and an invented one is worse than none
+ * (Avatar.tsx's rule).
  */
 export function sessionAxes(options: FilterOption[], devices: DeviceRow[] = []): OmniAxis[] {
-  const byAxis = new Map<string, OmniAxis>();
-  for (const o of options) {
-    const axis = axisOf(o.key);
-    const seat = byAxis.get(axis) ?? { key: axis, label: o.axis ?? "", candidates: [] };
-    seat.candidates.push({
-      key: o.key,
-      label: o.label,
-      // A machine wears its face here as it does everywhere else; the
-      // other axes have no face to wear, and an invented one is worse
-      // than none (Avatar.tsx's rule).
-      face:
-        axis === "dev:"
-          ? (devices.find((d) => d.name === valueOf(o.key))?.face ?? null)
-          : undefined,
-    });
-    byAxis.set(axis, seat);
-  }
-  return [...byAxis.values()];
+  return listAxes(options, AXES, (key) =>
+    axisOf(key) === "dev:" ? (devices.find((d) => d.name === valueOf(key))?.face ?? null) : undefined,
+  );
 }

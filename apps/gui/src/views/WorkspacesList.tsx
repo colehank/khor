@@ -19,7 +19,7 @@
 // reason: a beat is a dial plus a walk of somebody else's disk for an
 // answer that is almost always the one already on screen, and coming
 // back to the window is the moment staleness starts to mislead.
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   fetchCheckout,
@@ -35,12 +35,15 @@ import {
 import { EmptyState } from "@/components/RegionState";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBranch, IconChevronRight, IconFiles } from "@/components/icons";
+import { type OmniAxis } from "@/components/Omnibox";
+import { type FilterOption } from "@/components/PaneBar";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
+import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { cn } from "@/lib/utils";
-import { ago, groupLabel } from "@/words";
+import { ago, axisOf, groupLabel, valueOf } from "@/words";
 import { IGNORED } from "@/views/fileRow";
 
 /** One row's identity, the same pair the table is keyed by: two
@@ -152,16 +155,126 @@ function publish(next: WorkspaceFacts) {
   facts = next;
   for (const l of listeners) l();
 }
+function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+}
 export function useWorkspaceFacts(): WorkspaceFacts {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => {
-        listeners.delete(l);
-      };
+  return useSyncExternalStore(subscribe, () => facts);
+}
+
+/**
+ * The corner a row wears, and so the 类型 it files under (2026-09-29):
+ * `branch` where the row is a repository, `folder` otherwise.
+ *
+ * **A repository is what the cheap answer says; where it has not
+ * answered, one whose status came back at all** — a detached HEAD names
+ * no branch and is still a checkout. A row nobody has answered about
+ * yet wears the folder, and the filter reads the same corner: it sieves
+ * what is on the glass, not a fact the glass has not shown.
+ */
+function kindOf(
+  k: string,
+  repos: Record<string, boolean>,
+  marks: Record<string, GitStatus>,
+): "branch" | "folder" {
+  return (repos[k] ?? marks[k] !== undefined) ? "branch" : "folder";
+}
+
+/**
+ * **What the workspaces list can be narrowed by** (2026-09-29, the
+ * owner: 「所有的session list应该都可以filter吧？」) — the sessions'
+ * filter, the same menu and chips and rule (`lib/list-filter`):
+ *
+ * - `dev:` 机器 — the machine the row is on, **by its id** (`device`):
+ *   the name on the row is its current display name, and a tick kept in
+ *   this browser must survive somebody renaming the machine. A row whose
+ *   machine has left the device table prints only its path, and files
+ *   under `""` 「未知」 — that is what the row says about its machine.
+ * - `kind:` 类型 — the row's corner, `branch` or `folder` (`kindOf`).
+ *
+ * The overview beside the list (`WorkspacesNow`) is not narrowed: it is
+ * the landing's summary, not this list.
+ */
+export const WORKSPACE_KEYS = ["dev:", "kind:"] as const;
+/** What a row answers on the two axes, and all the filter reads of it. */
+export type WorkspaceFacet = { device: string; machine: string; kind: "branch" | "folder" };
+const workspacePick = {
+  "dev:": (r: WorkspaceFacet) => (r.machine === "" ? "" : r.device),
+  "kind:": (r: WorkspaceFacet) => r.kind,
+};
+const WORKSPACE_SIEVE = WORKSPACE_KEYS.map((key) => ({ key, pick: workspacePick[key] }));
+/** The two axes with their headings and words, for the menu and the box.
+    `rows` names the machines: each row carries its machine's display
+    name, which is the name it prints; the device table answers for a
+    ticked machine no row is on any more. */
+export const workspaceAxes = (rows: readonly WorkspaceFacet[], devices: DeviceRow[]): ListAxis<WorkspaceFacet>[] => [
+  {
+    key: "dev:",
+    heading: gui.devices_tab,
+    pick: workspacePick["dev:"],
+    label: (v) => {
+      if (v === "") return gui.filter_unknown;
+      return (
+        rows.find((r) => r.device === v && r.machine !== "")?.machine ??
+        devices.find((d) => d.id === v)?.shown ??
+        gui.filter_unknown
+      );
     },
-    () => facts,
-  );
+  },
+  {
+    key: "kind:",
+    // 「类型」, the 额度 page's word for the same question (the catalog
+    // allows one name per text in a section, and it is one word).
+    heading: gui.quota_kind,
+    pick: workspacePick["kind:"],
+    label: (v) => (v === "branch" ? gui.ws_kind_repo : v === "folder" ? gui.ws_kind_folder : v),
+  },
+];
+
+/**
+ * What the list has learned, as the filter reads it — for the pane bar,
+ * which the shell draws above this list and which offers the options.
+ *
+ * **It answers a new array only when an answer on an axis changed**:
+ * the shell is the whole window, and a branch name or a time landing on
+ * a row (several per row, on every return to the page) is nothing the
+ * filter's menu shows. So the snapshot is the rows' facets, kept as long
+ * as they read the same.
+ */
+let facetCache: { said: string; rows: WorkspaceFacet[] } = { said: "", rows: [] };
+function facetsNow(): WorkspaceFacet[] {
+  const rows = facts.list.map((r) => ({
+    device: r.device,
+    machine: r.machine,
+    kind: kindOf(keyOf(r), facts.repos, facts.marks),
+  }));
+  const said = JSON.stringify(rows);
+  if (said !== facetCache.said) facetCache = { said, rows };
+  return facetCache.rows;
+}
+function useWorkspaceFacets(): WorkspaceFacet[] {
+  return useSyncExternalStore(subscribe, facetsNow);
+}
+
+/** The pane bar's half of it: the menu's options and the box's axes,
+    one list read two ways (`listAxes`). A machine's chip wears its face,
+    the way the sessions' machine chips do. */
+export function useWorkspaceFilter(
+  devices: DeviceRow[],
+  ticked: string[],
+): { options: FilterOption[]; axes: OmniAxis[] } {
+  const facets = useWorkspaceFacets();
+  return useMemo(() => {
+    const options = listOptions(facets, ticked, workspaceAxes(facets, devices), WORKSPACE_KEYS);
+    const face = (key: string) =>
+      axisOf(key, WORKSPACE_KEYS) === "dev:"
+        ? (devices.find((d) => d.id === valueOf(key, WORKSPACE_KEYS))?.face ?? null)
+        : undefined;
+    return { options, axes: listAxes(options, WORKSPACE_KEYS, face) };
+  }, [facets, devices, ticked]);
 }
 /** The key a row's facts are filed under — `keyOf`, for the overview. */
 export const factKey = (r: { device: string; path: string }) => keyOf(r);
@@ -205,6 +318,7 @@ function rememberWsOpened(device: string, path: string) {
 export function WorkspacesList({
   devices,
   query = "",
+  words = [],
   reloadAt = 0,
   selected,
   onOpen,
@@ -220,6 +334,8 @@ export function WorkspacesList({
       the user). Matched against the three things a row says out loud;
       see `matches`. */
   query?: string;
+  /** The ticked filter keys (`WORKSPACE_KEYS`), from the pane bar. */
+  words?: string[];
   /** Bumped by the shell when **it** has changed the table — the pane
       bar's 「+」 lives up there (`App`). Every other read this list
       makes is its own; this is the one change it has no way to
@@ -443,7 +559,15 @@ export function WorkspacesList({
 
   if (!known) return <div className="flex min-h-0 flex-1 flex-col" />;
 
-  const side: SideRow[] = rows.map((r) => {
+  // Each row with the corner it wears (`kindOf`), which is also what the
+  // 类型 tick reads — then the rows the ticks leave standing.
+  const kept = sieve(
+    rows.map((r) => ({ ...r, kind: kindOf(keyOf(r), repos, marks) })),
+    words,
+    WORKSPACE_SIEVE,
+    WORKSPACE_KEYS,
+  );
+  const side: SideRow[] = kept.map((r) => {
     const k = keyOf(r);
     const isOpen = selected?.device === r.device && selected.path === r.path;
     const git = marks[k];
@@ -451,11 +575,9 @@ export function WorkspacesList({
     // **Ignored paths are rows too since 2026-09-16, and they are not
     // changes** (`khor_node::git::IGNORED`).
     const changed = git ? git.rows.filter((w) => w.mark !== IGNORED).length : 0;
-    // **A repository is what the cheap answer says; where it has not
-    // answered, one whose status came back at all** — a detached HEAD
-    // names no branch and is still a checkout. Only the branch *name*
-    // waits on the walk.
-    const repo = repos[k] ?? git !== undefined;
+    // Only the branch *name* waits on the walk; whether it is a
+    // repository at all is `kindOf`'s.
+    const repo = r.kind === "branch";
     return {
       // Not `keyOf`: that joins on a NUL, which no attribute selector can
       // name. The machine's id and the path, with a colon between — the
@@ -556,24 +678,33 @@ export function WorkspacesList({
     };
   });
 
+  // One sentence for 「nothing matched」, whether the box or the ticks
+  // did it — this pane's own words for it since ruling 50.
+  const noneMatch = <EmptyState data-ws-none-match>{gui.workspace_none_match}</EmptyState>;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <SideList
         rows={side}
         query={query}
+        filtered={words.length > 0}
         label={groupLabel}
         empty={
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-            <span className="text-body font-title text-foreground">{gui.workspaces_empty}</span>
-            <span className="text-callout text-muted-foreground">{gui.workspaces_how}</span>
-          </div>
+          // **A list emptied by the ticks is not an empty list either**
+          // — the box's rule below, for the same reason: 「还没有工作区」
+          // over a filter would hide three projects behind one untick.
+          list.length > 0 ? (
+            noneMatch
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+              <span className="text-body font-title text-foreground">{gui.workspaces_empty}</span>
+              <span className="text-callout text-muted-foreground">{gui.workspaces_how}</span>
+            </div>
+          )
         }
         // **A list emptied by the box is not an empty list** (ruling 50):
         // 「还没有工作区」 under a typed word would be khor telling somebody
         // they have no projects while three are one backspace away.
-        none={
-          <EmptyState data-ws-none-match>{gui.workspace_none_match}</EmptyState>
-        }
+        none={noneMatch}
       />
     </div>
   );
