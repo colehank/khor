@@ -275,31 +275,42 @@ async fn a_token_relay_refuses_the_keyless_and_carries_the_keyed() {
     far.close().await;
 }
 
-/// `--only-mine`: the devices in this home's table get in with no key;
-/// an endpoint that is not in it is refused and reaches nobody.
+/// `--only-mine`: the devices this network trusts get in with no key —
+/// **by the roster, not the device table** (CONNECT.md 名单是信任的唯一
+/// 出处). The controls are the three ways of not being trusted: not in
+/// the table at all, in the table but waiting (not on the roster), and
+/// on the roster once but revoked since. Each is refused and reaches
+/// nobody.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_only_mine_relay_admits_the_device_table_and_nobody_else() {
+async fn an_only_mine_relay_admits_the_roster_and_nobody_else() {
     clear_proxies();
     let home = scratch("mine");
-    // Two devices in this home's table, written the way a merged table
-    // lands on disk (`crates/node/tests/avatar.rs` does the same).
-    let (a, b) = (iroh::SecretKey::generate(), iroh::SecretKey::generate());
-    khor_node::Node::open_as(home.0.clone(), "relay-home").expect("the home opens");
+    let [a, b, waiting, revoked] = std::array::from_fn(|_| iroh::SecretKey::generate());
+    // A fresh home makes its own root at first open and holds it; the
+    // other machines are written into its table the way a merged table
+    // lands on disk (`crates/node/tests/avatar.rs` does the same), then
+    // approved — or not — by that root.
+    let node = khor_node::Node::open_as(home.0.clone(), "relay-home").expect("the home opens");
+    assert!(node.holds_root(), "a fresh home holds its own root");
     {
         use khor_sync::devices::{DeviceDoc, devices_dir};
         use khor_sync::store::load;
         let loaded = load::<DeviceDoc>(&devices_dir(&home.0), 0x51).unwrap();
-        loaded
-            .doc
-            .upsert(&a.public().to_string(), "alpha", &[])
-            .unwrap();
-        loaded
-            .doc
-            .upsert(&b.public().to_string(), "beta", &[])
-            .unwrap();
+        for (key, name) in [(&a, "alpha"), (&b, "beta"), (&waiting, "gamma"), (&revoked, "delta")] {
+            loaded
+                .doc
+                .upsert(&key.public().to_string(), name, &[])
+                .unwrap();
+        }
         let mut store = loaded.store;
         store.flush(&loaded.doc).unwrap();
     }
+    for name in ["alpha", "beta", "delta"] {
+        node.approve_here(name).expect("the root holder approves");
+    }
+    node.revoke_here("delta").expect("and revokes one of them again");
+    drop(node);
+
     let r = relay(&home.0, &["--only-mine"]);
     // The child picked its language off the same environment (a fresh
     // home has no stored choice), so this process speaks it too.
@@ -307,31 +318,32 @@ async fn an_only_mine_relay_admits_the_device_table_and_nobody_else() {
     let admits = khor_catalog::cli::relay_admit_mine(3);
     assert!(
         r.banner.iter().any(|l| *l == admits),
-        "the banner says who gets in, counting the table (this home, alpha, beta) — \
-         want {admits:?} in {:?}",
+        "the banner counts who the roster admits (this home, alpha, beta — not the \
+         waiting gamma, not the revoked delta): want {admits:?} in {:?}",
         r.banner
     );
     let relays = [Relay::bare(&r.url)];
 
     let far = far_side(a, &relays).await;
-    assert_eq!(verdict(&far).await, Ok(()), "a device in the table gets in");
+    assert_eq!(verdict(&far).await, Ok(()), "a device on the roster gets in");
 
-    let stranger = endpoint::bind(iroh::SecretKey::generate(), &relays)
-        .await
-        .unwrap();
-    let refused = verdict(&stranger).await;
-    assert!(
-        refused.is_err(),
-        "an endpoint not in the table must be refused, got {refused:?}"
-    );
-    assert!(
-        echo(&stranger, &far, &r.url).await.is_err(),
-        "and must reach nobody through this relay"
-    );
-    stranger.close().await;
+    for (key, why) in [
+        (iroh::SecretKey::generate(), "not in the table at all"),
+        (waiting, "in the table but not on the roster"),
+        (revoked, "on the roster once, revoked since"),
+    ] {
+        let ep = endpoint::bind(key, &relays).await.unwrap();
+        let refused = verdict(&ep).await;
+        assert!(refused.is_err(), "{why}: must be refused, got {refused:?}");
+        assert!(
+            echo(&ep, &far, &r.url).await.is_err(),
+            "{why}: must reach nobody through this relay"
+        );
+        ep.close().await;
+    }
 
     let near = endpoint::bind(b, &relays).await.unwrap();
-    assert_eq!(verdict(&near).await, Ok(()), "the other device in the table gets in");
+    assert_eq!(verdict(&near).await, Ok(()), "the other device on the roster gets in");
     assert_eq!(echo(&near, &far, &r.url).await, Ok(()));
     near.close().await;
     far.close().await;

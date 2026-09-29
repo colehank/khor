@@ -341,8 +341,10 @@ usage: khor <verb>
                         default; TLS takes a certificate you have, or
                         --acme gets one from Let's Encrypt. --token
                         admits only clients carrying that shared key;
-                        --only-mine admits only the devices in this
-                        machine's device table, no key typed anywhere.
+                        --only-mine admits only the devices on this
+                        network's roster and not revoked (the same rule
+                        every request here passes), no key typed
+                        anywhere.
                         --rate limits each client. Metering keeps totals
                         only — per device how many connections and how
                         long online, plus the relay's bytes — in the
@@ -808,7 +810,7 @@ unknown-body = "[this version can't read this entry: {0}]"
 relay-up = "Relay listening on {0}"
 relay-admit-everyone = "Admits: anyone (no key, no device table)"
 relay-admit-token = "Admits: clients carrying the shared key"
-relay-admit-mine = "Admits: devices in this machine's device table ({0} now)"
+relay-admit-mine = "Admits: devices on this network's roster ({0} now)"
 relay-key-in-clear = "Note: over plain HTTP the shared key travels in the clear"
 relay-rate = "Rate limit: {0}/s per client"
 relay-rate-none = "Rate limit: none"

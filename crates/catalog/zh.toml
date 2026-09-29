@@ -309,8 +309,9 @@ usage = """
                         在这台机器上跑一台中继（iroh-relay，同一份代码）。
                         --dev 是明文 HTTP，默认 3340 口；TLS 用现成的证书，
                         或者 --acme 找 Let's Encrypt 要一张。--token 只放行
-                        带这把共享密钥的客户端；--only-mine 只放行本机设备表
-                        里的设备，谁也不用填密钥。--rate 给每个客户端限速。
+                        带这把共享密钥的客户端；--only-mine 只放行这张网名单
+                        上、没被撤销的设备（和每个请求过的那道门同一条规矩），
+                        谁也不用填密钥。--rate 给每个客户端限速。
                         计量只存总数：每台设备连了几次、在线多久，加中继收发的
                         总字节，写在 --state 目录（默认 .khor/relay）；
                         --stats 打印这份计量，不起中继
@@ -1203,7 +1204,7 @@ unknown-body = "[当前版本无法读取这条消息：{0}]"
 relay-up = "中继在听：{0}"
 relay-admit-everyone = "准入：任何人（不要密钥，也不看设备表）"
 relay-admit-token = "准入：带共享密钥的客户端"
-relay-admit-mine = "准入：本机设备表里的设备（现有 {0} 台）"
+relay-admit-mine = "准入：这张网名单上的设备（现有 {0} 台）"
 # --dev with --token: the relay still cannot read what it forwards (that
 # is end-to-end encrypted), but the key itself crosses in plain HTTP.
 relay-key-in-clear = "注意：明文 HTTP 下，共享密钥也是明文传的"

@@ -139,7 +139,7 @@ aliyun 那台（CONNECT.md「中继」：国内外各至少一台，否则去 n0
 **密钥不出本机。** 设备表的地址提示、配对票、`endpoint.json` 里只有地址，没有
 密钥——那些会复制到网里每一台、并留在删不掉的历史里。后果是故意的：别的机器
 要经一台带密钥的中继找你，它自己也得配上这把密钥。给自己的设备跑中继，用
-`khor relay --only-mine`，谁也不用填。
+`khor relay --only-mine`，谁也不用填，按名单放行。
 
 ### `khor relay`：自己跑一台
 
@@ -151,7 +151,7 @@ aliyun 那台（CONNECT.md「中继」：国内外各至少一台，否则去 n0
 | `--tls-cert 证书 --tls-key 私钥` | HTTPS，默认 443；另开一个明文口给强制门户探测，默认 80（`--http` 改） |
 | `--acme 域名 [--acme-contact 邮箱]` | 找 Let's Encrypt 要证书，缓存在 `--state` 下的 `acme/` |
 | `--token 密钥`（可多把） | 只放行带其中一把的客户端 |
-| `--only-mine` | 只放行本机设备表里的设备：按中继握手已验过的 endpoint id 查表（每 5 秒至多读一次），读不了表就谁也不放。和 `--token` 二选一 |
+| `--only-mine` | 只放行这张网信任的设备：按中继握手已验过的 endpoint id，用和每个请求那道门（`Node::admit`）同一条规矩——在设备表里，且在最新名单上、没被撤销（有根以前的老网只看设备表）。待批的、撤销的都拒。每 5 秒至多重算一次，读不了就谁也不放。和 `--token` 二选一 |
 | `--rate 字节每秒` | 每个客户端的上行限速（iroh-relay 的 `client_rx`，整台一个值） |
 | `--metrics 地址` | iroh-relay 自带的指标页 |
 | `--bind 地址` | 中继主口（`--dev` 时是 HTTP，TLS 时是 HTTPS） |

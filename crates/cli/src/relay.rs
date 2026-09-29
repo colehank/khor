@@ -6,10 +6,13 @@
 //! is only the three things that binary cannot know:
 //!
 //! - **who gets in** — everyone, holders of a shared key (iroh-relay's
-//!   `shared_token`), or **the devices in this machine's device table**
-//!   (`--only-mine`), judged by the endpoint id the relay handshake has
-//!   already proven. The last is the one CONNECT.md asks for: a relay a
-//!   person runs for their own devices needs no key typed anywhere;
+//!   `shared_token`), or **the devices this network trusts**
+//!   (`--only-mine`): judged by the endpoint id the relay handshake has
+//!   already proven, against the roster the root signed — the same test
+//!   every request to this machine passes (`Node::admit`: in the table,
+//!   and standing trusted). The last is the one CONNECT.md asks for: a
+//!   relay a person runs for their own devices needs no key typed
+//!   anywhere, and admits by certificate (分期 2 「khor relay 按证书放行」);
 //! - **a meter that keeps totals only** (CONNECT.md 计量只存总数): per
 //!   endpoint id, how many connections and how long online, plus the
 //!   relay's own byte counters — never who talked to whom;
@@ -42,10 +45,11 @@ use crate::out;
 /// Khor tier has always used, and `iroh-relay --dev`'s own default.
 const DEV_PORT: u16 = 3340;
 
-/// How long the device table is trusted before it is read again, for
+/// How long the admitted set is kept before it is worked out again, for
 /// `--only-mine`. Bounds the disk reads a stranger can cause by
-/// reconnecting in a loop; a machine paired a moment ago waits at most
-/// this long to be let in.
+/// reconnecting in a loop; a machine approved a moment ago waits at most
+/// this long to be let in, and one revoked a moment ago is refused
+/// within it.
 const TABLE_FRESH: Duration = Duration::from_secs(5);
 
 /// The meter's file inside `--state`.
@@ -315,16 +319,25 @@ enum Admit {
     /// iroh-relay's `shared_token`: the bearer token, or the `token`
     /// query parameter, must be one of these.
     Token(Vec<String>),
-    /// Only endpoints whose id is a device in this machine's table.
+    /// Only endpoints this network trusts ([`Table`]).
     Mine(Arc<Table>),
 }
 
-/// This machine's device ids, read off its store and kept for
-/// [`TABLE_FRESH`].
+/// The devices this network trusts, worked out from this machine's
+/// store and kept for [`TABLE_FRESH`].
 ///
-/// **The table is read, never written**: pairing a device here stays
-/// the one way in, so this relay admits exactly what the network
-/// already trusts — no second list to keep in step with the first.
+/// **The rule is the request gate's, not a second one** (`Node::admit`):
+/// in the device table, and standing admitted — listed in the newest
+/// roster that verifies under this machine's root and not revoked (or
+/// carrying a certificate newer than a fresh roster), or, in a network
+/// from before roots, simply in the table (`Standing::Legacy`). A row
+/// the table holds but the roster does not (pending) is refused, and so
+/// is a revoked one: **the roster is the one source of trust**
+/// (CONNECT.md 名单是信任的唯一出处), and a relay that trusted the table
+/// alone would let a stolen, revoked machine keep using it.
+///
+/// **Read, never written**: pairing and approving stay the only ways
+/// in, so this relay admits exactly what the network already trusts.
 struct Table {
     node: Node,
     seen: Mutex<Option<(Instant, Arc<HashSet<String>>)>>,
@@ -350,7 +363,12 @@ impl Table {
         let ids: Arc<HashSet<String>> = Arc::new(
             self.node
                 .devices()
-                .map(|all| all.into_iter().map(|d| d.id).collect())
+                .map(|all| {
+                    all.into_iter()
+                        .map(|d| d.id)
+                        .filter(|id| self.node.standing_of(id).admitted())
+                        .collect()
+                })
                 .unwrap_or_default(),
         );
         if let Ok(mut seen) = self.seen.lock() {
@@ -398,7 +416,7 @@ impl AccessControl for Gate {
             return Access::Deny {
                 reason: Some(
                     match self.admit {
-                        Admit::Mine(_) => "not-in-device-table",
+                        Admit::Mine(_) => "not-on-roster",
                         _ => "shared-token",
                     }
                     .to_owned(),
