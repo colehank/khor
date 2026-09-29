@@ -120,6 +120,17 @@ const ONE_SIDED: &[(&str, &str)] = &[
          with a key in a link, and the words outlive every web key — `khor root words` on the \
          holder is the way to them from anywhere else",
     ),
+    // ── the menu bar's own word back, 2026-09-30 ──────────────────────
+    //
+    // **The page telling the app's menu which items apply right now**
+    // (⌘W with something to close, two tabs to step between). It is the
+    // twin of the menu's five below: only macOS draws a menu bar, and a
+    // browser tab has none whose items could be enabled or greyed. The
+    // page already sends it only in the app (`api.ts` checks `inApp`).
+    (
+        "menu_state",
+        "the app's own menu bar, which a browser tab does not have; the page only sends it in the app",
+    ),
     // ── the window's own three, 2026-09-23 (docs/SHELL.md 第十轮) ────
     //
     // **A fact about windows, like the menu's five below.** Windows is
