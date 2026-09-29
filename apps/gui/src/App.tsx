@@ -87,9 +87,9 @@ import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
 import { holding, LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
-import { DevicesList } from "@/views/DevicesList";
+import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
-import { WorkspacesList } from "@/views/WorkspacesList";
+import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
 import { moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
@@ -180,9 +180,10 @@ const UNWATCHED_MS = 10_000;
  */
 const HOOKS_MS = 60_000;
 
-/** The sessions landing's stored ticks, one entry per pane
-    (`lib/session-filter`). The workspace column keeps its own under a
-    pane name of its own — see `WorkspacePane`. */
+/** Each landing's stored ticks, one entry per pane (`lib/session-filter`)
+    — sessions, machines, workspaces and 额度 each tick their own axes.
+    The workspace column keeps its own under a pane name of its own —
+    see `WorkspacePane`. */
 function storedWordsAll(): Record<Landing, string[]> {
   return {
     sessions: storedWords("sessions"),
@@ -1240,6 +1241,21 @@ export default function App() {
     () => axesOf(wordOptions, devices),
     [wordOptions, devices],
   );
+  // **The machines and the workspaces narrow the same way** (2026-09-29,
+  // the owner: 「所有的session list应该都可以filter吧？」): the same menu,
+  // chips and rule (`lib/list-filter`), on each list's own axes — which
+  // each list names beside its rows (`DevicesList`, `WorkspacesList`).
+  const deviceFilter = useDeviceFilter(devices, words.devices);
+  const workspaceFilter = useWorkspaceFilter(devices, words.workspaces);
+  /** What the open landing's pane bar offers to narrow by. */
+  const paneFilter =
+    landing === "sessions"
+      ? { options: wordOptions, axes: sessionAxes }
+      : landing === "devices"
+        ? deviceFilter
+        : landing === "workspaces"
+          ? workspaceFilter
+          : null;
 
   // (The files pane's box used to be assembled here — a machine chip
   // and a path axis, for a pane whose subject was one machine. It moved
@@ -1704,14 +1720,17 @@ export default function App() {
         }
         query={queries[landing]}
         onQuery={setQuery}
-        filterLabel={sessions ? gui.filter : undefined}
-        // Only the sessions pane narrows a list now: the two browsing
-        // landings have no list pane at all, and their box belongs to a
-        // tab (`AddressBar`).
+        filterLabel={paneFilter ? gui.filter : undefined}
+        // Every list pane narrows now — sessions, machines, workspaces
+        // (`paneFilter`), each by its own axes and all by one rule. The
+        // two browsing landings have no list pane at all, and their box
+        // belongs to a tab (`AddressBar`).
         filter={
-          sessions ? { options: wordOptions, chosen: words[landing], onToggle: toggleWord } : undefined
+          paneFilter
+            ? { options: paneFilter.options, chosen: words[landing], onToggle: toggleWord }
+            : undefined
         }
-        axes={sessions ? sessionAxes : undefined}
+        axes={paneFilter?.axes}
         arrange={
           sessions
             ? {
@@ -1766,6 +1785,7 @@ export default function App() {
           <WorkspacesList
             devices={devices}
             query={queries.workspaces}
+            words={words.workspaces}
             reloadAt={wsAdded}
             selected={openWs}
             // The chevron on the open row. **Not on the narrow face**:
@@ -1780,6 +1800,7 @@ export default function App() {
             rows={devices}
             loading={!devicesRead}
             query={queries[landing]}
+            words={words.devices}
             onPin={onPinDevice}
             onForget={onForgetDevice}
             forgetRefused={forgetRefused}

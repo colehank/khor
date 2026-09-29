@@ -3159,6 +3159,34 @@ axis-place = "地方"
 # 「未识别」 — that word belongs to the category axis and says "we
 # could not tell", which is only half of what this group holds.
 group-placeless = "不在任何地方"
+# 机器栏、工作区栏的筛选(2026-09-29,负责人:「所有的session list应该都可以
+# filter吧？」)。和会话、额度两栏同一套:轴名是小标题,值是行上印着的事实。
+#
+# 机器栏三根轴。「连接方式」的值就是行副标题里那个词——本机(machine-here)、
+# [hop] 的五个词、借网的「经 某台」(cli 的 via-sponsor),都不另起新词;
+# 「系统」是行角标画的那个系统家族;「状态」借 axis-state,只有「已暂停」
+# (machine-paused)一个值,有机器暂停时才出现。
+# 工作区栏两根轴:「机器」借 devices-tab,「类型」借 quota-kind——同一段字
+# 在一个段里只能有一个名字,这正是要的。
+axis-connection = "连接方式"
+axis-system = "系统"
+# 系统家族的名字(`khor_core::SystemKind`),专有名词,两种语言同一个写法。
+# apple 是一个家族——macOS 和 iOS 都在里面(2026-09-22 负责人:「所有的macos
+# 系统(ios和macos)都用这个」)——所以写 Apple 不写 macOS:和行角标那个苹果
+# 是同一个名字,也不把一台 iPhone 说成 Mac。
+system-apple = "Apple"
+system-linux = "Linux"
+system-windows = "Windows"
+system-android = "Android"
+# 筛选里「这一行没说」的那一项:机器没报它的系统(老版本、附属机器、还没读到,
+# 行角标是不分系统的机器)、机器没有能说出的连接方式、工作区所在的机器已不在
+# 设备表里(行上只印路径)。行上这一处是空的,所以这个词只出现在筛选的选项和
+# 框里的小标签上。
+filter-unknown = "未知"
+# 工作区的两种,**按角标分**:角标是分支的是 git 仓库,是文件夹的是文件夹。
+# 还没答复是不是仓库的那一行角标是文件夹,筛选里也就算文件夹——筛的是屏上看到的。
+ws-kind-repo = "git 仓库"
+ws-kind-folder = "文件夹"
 # ⚠️ 墓碑: `day-span` (「{0} {1}–{2}」, the word then the span) was the
 # day strip's hover of 2026-09-01 and had no caller since 09-02. What a
 # stretch says now — on hover and in the popover a press opens

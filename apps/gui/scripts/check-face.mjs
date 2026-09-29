@@ -2082,8 +2082,10 @@ try {
   // in here. The whole gate is still `npm run face` with no switch.
   // **`FACE_ONLY=row` walks section 12 alone** (the first row's one
   // centreline, 2026-09-29), for the same reason and on the same terms.
+  // **`FACE_ONLY=filter` walks the machines' and workspaces' filter
+  // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
   walk: {
-  if (process.env.FACE_ONLY === "native" || process.env.FACE_ONLY === "row") break walk;
+  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23401,6 +23403,361 @@ try {
     return press(tailRail(tab));
   };
 
+  // ── 机器、工作区两栏能筛 (2026-09-29) ─────────────────────────────
+  //
+  // The owner: 「所有的session list应该都可以filter吧？」 — and of the
+  // lists offered, the machines column and the workspaces column. They
+  // narrow the way the sessions and 额度 columns do (`lib/list-filter`):
+  //
+  //   a. the filter button is outside the box, and lit (`data-on`) while
+  //      anything is ticked; every tick is a chip in the box;
+  //   b. one tick keeps the rows that answer it — on the key the node
+  //      sent, not the word drawn;
+  //   c. two ticks on one axis are OR, two on two axes are AND — each
+  //      arm with a count only the right rule gives;
+  //   d. a tick that leaves nothing says 「nothing matched」, not 「there
+  //      are none」; a ticked value whose last row left stays on offer so
+  //      it can be undone; the ticks survive a reload (this browser);
+  //   e. untick (menu or chip) and every row is back, the button unlit;
+  //   f. the narrow list screen has the same button and it works;
+  //   g. the workspaces overview beside the list is not narrowed.
+  //
+  // Axes: machines — 连接方式 (`link:`), 系统 (`sys:`), 状态 (`state:`,
+  // 已暂停 alone, on offer only while a machine is paused); workspaces —
+  // 机器 (`dev:`, by id; `""` where the machine left the table) and 类型
+  // (`kind:`, the corner: `branch` / `folder`). New, not a fix: no red
+  // first (30-behavior 「先红后绿只用于修 bug」).
+  //
+  // `FACE_ONLY=filter` runs this section alone.
+  lists: {
+  if (process.env.FACE_ONLY === "native" || process.env.FACE_ONLY === "row") break lists;
+  const head = "[data-side-head]";
+  const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
+  const chipKeys = () =>
+    page.locator(`${head} [data-chip]`).evaluateAll((els) => els.map((e) => e.getAttribute("data-chip")).sort());
+  // What the menu offers, key → { label, axis heading }, read with the
+  // menu open and put away again.
+  const offered = async () => {
+    await press(`${head} [data-pane-filter]`);
+    await until(3_000, async () => (await page.locator("[data-filter-option]").count()) > 0);
+    const got = await page.evaluate(() => {
+      const out = {};
+      let axis = null;
+      for (const el of document.querySelectorAll("[data-filter-axis], [data-filter-option]")) {
+        if (el.hasAttribute("data-filter-axis")) axis = el.getAttribute("data-filter-axis");
+        else out[el.getAttribute("data-filter-option")] = { label: (el.textContent ?? "").trim(), axis };
+      }
+      return out;
+    });
+    await page.keyboard.press("Escape");
+    await wait(300);
+    return got;
+  };
+  // Tick or untick, through the menu, the way a person does.
+  const toggle = async (...keys) => {
+    await press(`${head} [data-pane-filter]`);
+    await until(3_000, async () => (await page.locator("[data-filter-option]").count()) > 0);
+    for (const k of keys) {
+      if (!(await press(`[data-filter-option="${k}"]`))) fail(`probe dead: lists · no ${k} in the filter menu`);
+    }
+    await page.keyboard.press("Escape");
+    await wait(400);
+  };
+  const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+
+  // ── the machines ──
+  {
+    // Two system families and a machine that could not say (this one,
+    // no reading): the axis has three values to tell apart. Put back at
+    // the end, like 4M.
+    const peer = devs.find((d) => d.name === "peer");
+    const elder = devs.find((d) => d.name === "elder");
+    const was = { peer: peer?.vitals?.vitals?.system, elder: elder?.vitals?.vitals?.system, paused: gatePaused };
+    if (peer?.vitals?.vitals) peer.vitals.vitals.system = "linux";
+    if (elder?.vitals?.vitals) elder.vitals.vitals.system = "apple";
+    gatePaused = false;
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.evaluate(() => window.localStorage.removeItem("khor.filter.devices"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("devices");
+    const names = () =>
+      page
+        .locator("[data-list] [data-side-row][data-device]")
+        .evaluateAll((els) => els.map((e) => e.getAttribute("data-device")).sort());
+    const all = devs.map((d) => d.name);
+    await until(5_000, async () => (await names()).length === all.length);
+    await until(3_000, async () =>
+      (await page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-badge="linux"]').count()) === 1,
+    );
+    const check = async (what, want) => {
+      const got = await names();
+      const chips = await chipKeys();
+      const on = await lit();
+      console.log(`lists · machines · ${what}: ${JSON.stringify({ rows: got, chips, on })}`);
+      if (!same(got, want.rows)) {
+        fail(`lists · machines · ${what}: the list kept ${JSON.stringify(got)}, not ${JSON.stringify(want.rows)} (src/views/DevicesList.tsx, src/lib/list-filter.ts)`);
+      }
+      if (!same(chips, want.chips)) {
+        fail(`lists · machines · ${what}: the box holds chips ${JSON.stringify(chips)}, not ${JSON.stringify(want.chips)} — every tick is a chip (components/Omnibox)`);
+      }
+      if (on !== String(want.chips.length > 0)) {
+        fail(`lists · machines · ${what}: the filter button's data-on is ${on} with ${want.chips.length} tick(s) (components/PaneBar)`);
+      }
+    };
+    if ((await names()).length !== all.length) {
+      fail(`probe dead: lists · the machines column drew ${JSON.stringify(await names())}`);
+    } else if ((await page.locator(`${head} [data-pane-filter]`).count()) !== 1) {
+      fail("lists · the machines column's bar has no filter button — 「机器栏加筛选」 (src/App.tsx paneFilter)");
+    } else {
+      await check("nothing ticked", { rows: all, chips: [] });
+      // (a/b) What is on offer: each row's own answer, and nothing about
+      // a pause while no machine is paused.
+      const menu = await offered();
+      console.log(`lists · machines · offered: ${JSON.stringify(menu)}`);
+      const wantKeys = ["link:here", "link:direct", "link:relay", "sys:", "sys:linux", "sys:apple"];
+      if (!same(Object.keys(menu), wantKeys)) {
+        fail(`lists · machines · the menu offers ${JSON.stringify(Object.keys(menu))}, not ${JSON.stringify(wantKeys)} — the values the rows answer, and 已暂停 only while a machine is paused (src/views/DevicesList.tsx)`);
+      }
+      const axes = new Set(Object.values(menu).map((o) => o.axis));
+      if (axes.size !== 2 || [...axes].some((a) => !a)) {
+        fail(`lists · machines · the menu's headings are ${JSON.stringify([...axes])} — 连接方式 and 系统, one each`);
+      }
+      // The connection option says what the row says (`connectionWord`).
+      const peerSays = await page
+        .locator('[data-list] [data-side-row][data-device="peer"] [data-row-connection]')
+        .textContent()
+        .catch(() => null);
+      if (menu["link:direct"] && menu["link:direct"].label !== (peerSays ?? "").trim()) {
+        fail(`lists · machines · the menu calls peer's road 「${menu["link:direct"].label}」 and the row 「${peerSays}」 — one word (words.ts connectionKeyWord)`);
+      }
+      // (b) one tick
+      await toggle("sys:linux");
+      await check("系统 = linux", { rows: ["peer"], chips: ["sys:linux"] });
+      // (c) OR within an axis
+      await toggle("sys:apple");
+      await check("系统 = linux or apple", { rows: ["peer", "elder"], chips: ["sys:linux", "sys:apple"] });
+      // (c) AND across axes: an OR here would keep all three
+      await toggle("link:relay");
+      await check("系统 ∈ {linux, apple} and 连接方式 = relay", { rows: ["elder"], chips: ["sys:linux", "sys:apple", "link:relay"] });
+      // (d) nothing left: this machine is neither family
+      await toggle("link:relay", "link:here");
+      await check("系统 ∈ {linux, apple} and 本机", { rows: [], chips: ["sys:linux", "sys:apple", "link:here"] });
+      const said = await page.locator("[data-list] [data-side-list][data-empty]").textContent().catch(() => null);
+      console.log(`lists · machines · nothing left says ${JSON.stringify(said)}`);
+      if (!said || !said.trim()) {
+        fail("lists · machines · ticks that leave nothing draw no sentence — 「nothing matched」 is said (gui.no_matches)");
+      }
+      // (d) remembered in this browser
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await open("devices");
+      await until(5_000, async () => (await chipKeys()).length === 3);
+      await check("after a reload", { rows: [], chips: ["sys:linux", "sys:apple", "link:here"] });
+      // (e) out through the chips, the box's own way
+      for (const k of ["link:here", "sys:apple", "sys:linux"]) {
+        await press(`${head} [data-chip-remove="${k}"]`);
+      }
+      await wait(400);
+      await check("every chip taken out", { rows: all, chips: [] });
+      // (d) 已暂停: on offer only while something is paused, and still on
+      // offer — so it can be undone — once its last row has gone.
+      gatePaused = true;
+      const paused = await until(8_000, async () =>
+        (await page.locator('[data-list] [data-side-row][data-device="gate"][data-paused="true"]').count()) === 1,
+      );
+      if (!paused) {
+        fail("probe dead: lists · this machine never came back paused from the fixture");
+      } else {
+        const withPause = await offered();
+        if (!withPause["state:paused"]) {
+          fail(`lists · machines · a paused machine is on the list and the menu offers ${JSON.stringify(Object.keys(withPause))} — no 已暂停`);
+        }
+        await toggle("state:paused");
+        await check("状态 = 已暂停", { rows: ["gate"], chips: ["state:paused"] });
+        gatePaused = false;
+        await until(8_000, async () => (await names()).length === 0);
+        await check("已暂停, and nothing paused any more", { rows: [], chips: ["state:paused"] });
+        const stillOffered = await offered();
+        if (!stillOffered["state:paused"]) {
+          fail("lists · machines · 已暂停 is ticked and left the menu when its last row did — the tick can no longer be undone");
+        }
+        await toggle("state:paused");
+        await check("已暂停 unticked", { rows: all, chips: [] });
+        const after = await offered();
+        if (after["state:paused"]) {
+          fail("lists · machines · 已暂停 is still offered with no machine paused and nothing ticked");
+        }
+      }
+      // (f) the narrow list screen: L0 is the box, the filter and ＋.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(600);
+      const narrowBar = await page.evaluate((h) => {
+        const bar = document.querySelector(`${h} [data-pane-bar]`);
+        return bar
+          ? {
+              box: bar.querySelectorAll("[data-pane-search]").length,
+              filter: bar.querySelectorAll("[data-pane-filter]").length,
+              plus: bar.querySelectorAll("[data-pane-new]").length,
+            }
+          : null;
+      }, head);
+      console.log(`lists · machines · narrow bar: ${JSON.stringify(narrowBar)}`);
+      if (!narrowBar || narrowBar.box !== 1 || narrowBar.filter !== 1 || narrowBar.plus !== 1) {
+        fail(`lists · machines · the narrow list screen's first row is ${JSON.stringify(narrowBar)} — the box, the filter and ＋`);
+      } else {
+        await toggle("link:direct");
+        await check("narrow · 连接方式 = direct", { rows: ["peer"], chips: ["link:direct"] });
+        await toggle("link:direct");
+        await check("narrow · unticked", { rows: all, chips: [] });
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+    }
+    if (peer?.vitals?.vitals) peer.vitals.vitals.system = was.peer;
+    if (elder?.vitals?.vitals) elder.vitals.vitals.system = was.elder;
+    gatePaused = was.paused;
+    await page.evaluate(() => window.localStorage.removeItem("khor.filter.devices"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
+  // ── the workspaces ──
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.evaluate(() => window.localStorage.removeItem("khor.filter.workspaces"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("workspaces");
+    // Each row's id is `device:path` (`WorkspacesList`); its machine is
+    // the fixture's, which is the node's answer the row was drawn from.
+    const read = () =>
+      page.locator("[data-list] [data-side-row][data-ws-line]").evaluateAll((els) =>
+        els.map((e) => ({
+          id: e.getAttribute("data-side-row"),
+          badge: e.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+        })),
+      );
+    const ids = async () => (await read()).map((r) => r.id).sort();
+    const peerId = `${pin.device}:${pin.path}`;
+    await until(5_000, async () => (await read()).length === wsRows.length);
+    await until(5_000, async () => (await read()).find((r) => r.id === peerId)?.badge === "branch");
+    const rowsNow = await read();
+    const machineOf = (id) => wsRows.find((w) => `${w.device}:${w.path}` === id);
+    const devKey = (id) => {
+      const w = machineOf(id);
+      return w && w.machine !== "" ? `dev:${w.device}` : "dev:";
+    };
+    const whereKind = (kind) => rowsNow.filter((r) => r.badge === kind).map((r) => r.id);
+    const whereDev = (key) => rowsNow.filter((r) => devKey(r.id) === key).map((r) => r.id);
+    const allIds = rowsNow.map((r) => r.id);
+    const overview = () => page.locator("[data-ws-now-row]").count();
+    const overviewAll = await overview();
+    const check = async (what, want) => {
+      const got = await ids();
+      const chips = await chipKeys();
+      const on = await lit();
+      console.log(`lists · workspaces · ${what}: ${JSON.stringify({ rows: got.length, chips, on })}`);
+      if (!same(got, want.rows)) {
+        fail(`lists · workspaces · ${what}: the list kept ${JSON.stringify(got)}, not ${JSON.stringify(want.rows)} (src/views/WorkspacesList.tsx, src/lib/list-filter.ts)`);
+      }
+      if (!same(chips, want.chips)) {
+        fail(`lists · workspaces · ${what}: the box holds chips ${JSON.stringify(chips)}, not ${JSON.stringify(want.chips)}`);
+      }
+      if (on !== String(want.chips.length > 0)) {
+        fail(`lists · workspaces · ${what}: the filter button's data-on is ${on} with ${want.chips.length} tick(s)`);
+      }
+      const now = await overview();
+      if (now !== overviewAll) {
+        fail(`lists · workspaces · ${what}: the overview beside the list went from ${overviewAll} rows to ${now} — it is the landing's summary, not the list, and the ticks do not narrow it (src/views/WorkspacesNow.tsx)`);
+      }
+    };
+    console.log(`lists · workspaces · rows: ${JSON.stringify(rowsNow)} · overview rows: ${overviewAll}`);
+    if (rowsNow.length !== wsRows.length) {
+      fail(`probe dead: lists · the workspaces column drew ${rowsNow.length} of ${wsRows.length} rows`);
+    } else if ((await page.locator(`${head} [data-pane-filter]`).count()) !== 1) {
+      fail("lists · the workspaces column's bar has no filter button — 「工作区栏加筛选」 (src/App.tsx paneFilter)");
+    } else {
+      await check("nothing ticked", { rows: allIds, chips: [] });
+      const peerKey = `dev:${pin.device}`;
+      const elderKey = `dev:${"d".repeat(64)}`;
+      const menu = await offered();
+      console.log(`lists · workspaces · offered: ${JSON.stringify(menu)}`);
+      const wantKeys = [...new Set([...allIds.map(devKey), ...rowsNow.map((r) => `kind:${r.badge}`)])];
+      if (!same(Object.keys(menu), wantKeys)) {
+        fail(`lists · workspaces · the menu offers ${JSON.stringify(Object.keys(menu))}, not ${JSON.stringify(wantKeys)} — each row's machine and its corner (src/views/WorkspacesList.tsx)`);
+      }
+      // A machine is offered by the name its rows print; the row whose
+      // machine left the table prints none, and its option is a word, not
+      // a blank and not a hex id.
+      if (menu[peerKey] && menu[peerKey].label !== "peer") {
+        fail(`lists · workspaces · peer's option reads 「${menu[peerKey].label}」 — the name the row prints`);
+      }
+      if (menu["dev:"] && (!menu["dev:"].label || /^[0-9a-f]{16,}$/.test(menu["dev:"].label))) {
+        fail(`lists · workspaces · the option for rows with no machine reads 「${menu["dev:"]?.label}」`);
+      }
+      // (b) one tick: the corner
+      await toggle("kind:branch");
+      await check("类型 = branch", { rows: whereKind("branch"), chips: ["kind:branch"] });
+      // (c) OR within an axis
+      await toggle("kind:folder");
+      await check("类型 = branch or folder", { rows: allIds, chips: ["kind:branch", "kind:folder"] });
+      // (c) AND across axes: elder's row is a folder (it answers nothing)
+      await toggle(elderKey);
+      await check("类型 ∈ both and 机器 = elder", { rows: whereDev(elderKey), chips: ["kind:branch", "kind:folder", elderKey] });
+      // (d) nothing left: elder holds no repository
+      await toggle("kind:folder");
+      await check("类型 = branch and 机器 = elder", { rows: [], chips: ["kind:branch", elderKey] });
+      const none = await page.locator("[data-list] [data-ws-none-match]").count();
+      if (none !== 1) {
+        fail(`lists · workspaces · ticks that leave nothing drew ${none} 「没有匹配的工作区」 — a filtered list is not an empty one (src/views/WorkspacesList.tsx)`);
+      }
+      // (d) remembered in this browser
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await open("workspaces");
+      await until(5_000, async () => (await chipKeys()).length === 2);
+      await check("after a reload", { rows: [], chips: ["kind:branch", elderKey] });
+      // (e) out through the chips
+      await press(`${head} [data-chip-remove="${elderKey}"]`);
+      await check("机器 chip taken out", { rows: whereKind("branch"), chips: ["kind:branch"] });
+      await press(`${head} [data-chip-remove="kind:branch"]`);
+      await check("every chip taken out", { rows: allIds, chips: [] });
+      // The rows whose machine left the table, and peer's through the menu.
+      if (menu["dev:"]) {
+        await toggle("dev:");
+        await check("机器 = 未知", { rows: whereDev("dev:"), chips: ["dev:"] });
+        await toggle("dev:");
+      }
+      await toggle(peerKey, "kind:branch");
+      await check("机器 = peer and 类型 = branch", {
+        rows: whereDev(peerKey).filter((id) => whereKind("branch").includes(id)),
+        chips: [peerKey, "kind:branch"],
+      });
+      await toggle(peerKey, "kind:branch");
+      await check("unticked", { rows: allIds, chips: [] });
+      // (f) narrow
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(600);
+      if ((await page.locator(`${head} [data-pane-filter]`).count()) !== 1) {
+        fail("lists · workspaces · the narrow list screen has no filter button");
+      } else {
+        await toggle("kind:folder");
+        const got = await ids();
+        console.log(`lists · workspaces · narrow · 类型 = folder: ${got.length} row(s)`);
+        if (!same(got, whereKind("folder"))) {
+          fail(`lists · workspaces · narrow · 类型 = folder kept ${JSON.stringify(got)}, not ${JSON.stringify(whereKind("folder"))}`);
+        }
+        await toggle("kind:folder");
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+    }
+    await page.evaluate(() => window.localStorage.removeItem("khor.filter.workspaces"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "filter") console.log("lists · FACE_ONLY=filter: the other sections are skipped");
+
   // ── 12) 第一行一条中线 (2026-09-29) ───────────────────────────────
   //
   // The owner: 「怎么标签页到app上沿有空白空间 可以整体顶到上沿，为显示
@@ -23434,7 +23791,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  {
+  if (process.env.FACE_ONLY !== "filter") {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -23709,7 +24066,7 @@ try {
   }
 
   rest: {
-  if (process.env.FACE_ONLY === "row") break rest;
+  if (process.env.FACE_ONLY === "row" || process.env.FACE_ONLY === "filter") break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //

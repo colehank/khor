@@ -11,7 +11,9 @@ import { IconDevices } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { closeWarning } from "@/views/DetailPane";
-import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf } from "@/words";
+import { sieve } from "@/lib/list-filter";
+import { SESSION_SIEVE } from "@/lib/session-filter";
+import { AXES, ago, groupLabel, placeLabels, quietFor } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -35,41 +37,16 @@ import { ago, axisOf, groupLabel, placeLabels, quietFor, valueOf } from "@/words
  */
 export function visibleSessions(rows: SessionRow[], query: string, ticked: string[]) {
   const q = query.trim().toLowerCase();
-  // **AND across axes, OR within one.** Both halves are decisions, not
-  // defaults: ticking 忙碌 and 待批 means "either of these two", while
-  // ticking 忙碌 and a machine means "busy ones on that machine". The
-  // OR half is also what this list has always done with the state
-  // words, so the two new axes join the rule rather than changing it.
-  const wanted = new Map<string, Set<string>>();
-  for (const key of ticked) {
-    const axis = axisOf(key);
-    const set = wanted.get(axis) ?? new Set<string>();
-    set.add(valueOf(key));
-    wanted.set(axis, set);
-  }
-  // What the row answers on each axis, in the node's own terms: the
-  // state key it sent, the machine it lives on, and the category — with
-  // the empty string for "could not tell", which is exactly the key the
-  // node groups those rows under (`cat:` with nothing after it).
-  const answers = (r: SessionRow): Record<string, string> => ({
-    "state:": r.word,
-    "dev:": r.home,
-    "cat:": r.category ?? "",
-    // The empty string for a row with no place, which is exactly the
-    // key the node groups those under (`at:` with nothing after it) —
-    // so ticking that group filters to it, like every other axis.
-    "at:": r.place ?? "",
-  });
-  return rows.filter((r) => {
-    const on = answers(r);
-    for (const [axis, set] of wanted) if (!set.has(on[axis] ?? "")) return false;
-    return (
+  // **AND across axes, OR within one** — every list's rule, in one place
+  // (`lib/list-filter`'s `sieve`), against what each row answers on the
+  // four axes (`SESSION_SIEVE`: the node's keys, never the words drawn).
+  return sieve(rows, ticked, SESSION_SIEVE, AXES).filter(
+    (r) =>
       q === "" ||
       `${r.title} ${r.id} ${r.source?.device ?? ""} ${r.place ?? ""}`
         .toLowerCase()
-        .includes(q)
-    );
-  });
+        .includes(q),
+  );
 }
 
 // Order and words come from the node untouched: the list never
