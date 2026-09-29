@@ -755,6 +755,21 @@ impl LiveKind {
     /// question rather than a second copy of it, so the two cannot drift
     /// apart if that order ever changes.
     pub fn reap_folded_bridges(&self) {
+        // This runs on every serve tick, and only a bridge with a running
+        // host can be reaped — so the whole sweep is asked only when one
+        // exists, which is what this cost before the seating too.
+        let shell_prefix = format!("{}/", khor_core::kind::SHELL);
+        let any_open_bridge = self.registry_rows(&|_| 0).iter().any(|r| {
+            r.open
+                && r.row
+                    .id
+                    .0
+                    .strip_prefix(&shell_prefix)
+                    .is_some_and(crate::adaptor::tmux::is_tmux_leaf)
+        });
+        if !any_open_bridge {
+            return;
+        }
         for id in self.seated(&|_| 0, &|_| false).folded_bridges {
             let _ = self.close_session(&id);
         }
@@ -1293,8 +1308,11 @@ impl LiveKind {
                 }
                 None => None,
             };
+            // Only a holder that is not itself one of the agents wears
+            // one; an agent that holds keeps its own form, and the other
+            // agents in the same session stay rows of their own.
             if let (Some(k), Some(w)) = (holder_row, wear)
-                && k != w
+                && !agents.contains(&k)
             {
                 worn.push((out[k].id.clone(), out[w].id.clone()));
                 folded.push(out[w].id.clone());
@@ -3274,6 +3292,50 @@ mod tests {
             rows[0].category.as_deref(),
             Some("claude"),
             "and it ends as what it last was"
+        );
+    }
+
+    /// Two claudes in one tmux session are two conversations, and stay
+    /// two rows whoever holds the session's seat: the one on the list
+    /// holds it in its own form, and the other — newer, and so the one a
+    /// non-agent holder would wear — is not folded into it.
+    #[test]
+    fn two_agents_in_one_tmux_session_stay_two_rows() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("seat-two");
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "seat-two",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+        );
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&fixture_vendors())
+                .with_procs(Procs::of([
+                    proc_under(3001, "zsh", 1),
+                    proc_under(4001, "claude", 3001),
+                    (
+                        4002,
+                        crate::adaptor::Proc {
+                            name: "claude".into(),
+                            started_ms: 1_700_000_100_000,
+                            cwd: None,
+                            ppid: Some(3001),
+                        },
+                    ),
+                ]))
+                .with_tmux(Tmux::at_binary(&tmux)),
+        ));
+        let mut rows = k.rows_listed(|_| 0, |s| s == AGENT);
+        rows.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec![AGENT, "tui/22222222-2222-4222-8222"],
+            "both conversations list, and the tmux session is not a third row"
+        );
+        assert!(
+            rows.iter()
+                .all(|r| r.category.as_deref() == Some("claude") && r.mux)
         );
     }
 
