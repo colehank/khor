@@ -13,9 +13,10 @@
 // axes are**: their prefix, their heading, what a row answers on each,
 // and the word for each answer.
 //
-// ⚠️ 额度 (`QuotaLanding`'s `visibleQuota` and its options) still carries
-// its own copy of the same two loops; it behaves the same and moving it
-// here is a follow-up, not a different rule.
+// Every list with a filter reads it from here: 会话, 机器, 工作区 and
+// 额度. 额度 was the last (2026-09-29): `QuotaLanding`'s `visibleQuota`
+// and its options carried their own copy of the same two loops until
+// then, behaving the same, so the move changed nothing on screen.
 //
 // **Nothing here decides what values exist.** The options are whatever
 // the rows answer, in the order the rows came — which is the node's

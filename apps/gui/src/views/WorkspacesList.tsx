@@ -32,7 +32,6 @@ import {
   type GitStatus,
   type WorkspaceRow,
 } from "@/api";
-import { EmptyState } from "@/components/RegionState";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBranch, IconChevronRight, IconFiles } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
@@ -679,8 +678,11 @@ export function WorkspacesList({
   });
 
   // One sentence for 「nothing matched」, whether the box or the ticks
-  // did it — this pane's own words for it since ruling 50.
-  const noneMatch = <EmptyState data-ws-none-match>{gui.workspace_none_match}</EmptyState>;
+  // did it — **and the same sentence every list says** (2026-09-29, the
+  // owner: 「5统一」): until then this pane had its own, 「没有匹配的工作区」
+  // since ruling 50. A bare span, like the other lists': `SideList` lays
+  // it in its own `EmptyState`, so a second one here would pad it twice.
+  const noneMatch = <span data-ws-none-match>{gui.no_matches}</span>;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <SideList

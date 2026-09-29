@@ -666,7 +666,8 @@ try {
     // ⚠️ **A field the wire has always carried and this fixture never
     // did** (`AccountRing.kind`, non-optional). It cost a whole gate:
     // 「类型」 is not a hard-coded pair of ticks, it is **derived from
-    // the rows on screen** (`QuotaLanding`'s `seen(axis)`), so every
+    // the rows on screen** (`QuotaLanding`'s `seen(axis)` then,
+    // `lib/list-filter`'s `listOptions` since 2026-09-29), so every
     // row answering `undefined` meant the `kind:bill` tick was never
     // drawn and its probe waited 30 seconds for a node that could not
     // exist.
@@ -23416,8 +23417,11 @@ try {
   //   c. two ticks on one axis are OR, two on two axes are AND — each
   //      arm with a count only the right rule gives;
   //   d. a tick that leaves nothing says 「nothing matched」, not 「there
-  //      are none」; a ticked value whose last row left stays on offer so
-  //      it can be undone; the ticks survive a reload (this browser);
+  //      are none」 — and the workspaces column, ticked or searched down
+  //      to nothing, says it in the machines column's words (2026-09-29
+  //      「5统一」; it had its own, 「没有匹配的工作区」); a ticked value
+  //      whose last row left stays on offer so it can be undone; the
+  //      ticks survive a reload (this browser);
   //   e. untick (menu or chip) and every row is back, the button unlit;
   //   f. the narrow list screen has the same button and it works;
   //   g. the workspaces overview beside the list is not narrowed.
@@ -23464,6 +23468,11 @@ try {
     await wait(400);
   };
   const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  // What the machines column says once its ticks leave nothing — the
+  // workspaces column must say the same, word for word (2026-09-29, the
+  // owner: 「5统一」). Compared column against column, not against the
+  // catalog, so the gate moves with the word.
+  let machinesNone = null;
 
   // ── the machines ──
   {
@@ -23547,6 +23556,8 @@ try {
       console.log(`lists · machines · nothing left says ${JSON.stringify(said)}`);
       if (!said || !said.trim()) {
         fail("lists · machines · ticks that leave nothing draw no sentence — 「nothing matched」 is said (gui.no_matches)");
+      } else {
+        machinesNone = said.trim();
       }
       // (d) remembered in this browser
       await page.reload({ waitUntil: "load" });
@@ -23707,9 +23718,15 @@ try {
       // (d) nothing left: elder holds no repository
       await toggle("kind:folder");
       await check("类型 = branch and 机器 = elder", { rows: [], chips: ["kind:branch", elderKey] });
-      const none = await page.locator("[data-list] [data-ws-none-match]").count();
-      if (none !== 1) {
-        fail(`lists · workspaces · ticks that leave nothing drew ${none} 「没有匹配的工作区」 — a filtered list is not an empty one (src/views/WorkspacesList.tsx)`);
+      // One sentence for 「nothing matched」, and the machines column's.
+      const noneSaid = () =>
+        page.locator("[data-list] [data-ws-none-match]").evaluateAll((els) => els.map((e) => (e.textContent ?? "").trim()));
+      const none = await noneSaid();
+      console.log(`lists · workspaces · nothing left says ${JSON.stringify(none)} · the machines column said ${JSON.stringify(machinesNone)}`);
+      if (none.length !== 1) {
+        fail(`lists · workspaces · ticks that leave nothing drew ${none.length} 「没有匹配项」 — a filtered list is not an empty one (src/views/WorkspacesList.tsx)`);
+      } else if (machinesNone !== null && none[0] !== machinesNone) {
+        fail(`lists · workspaces · ticks that leave nothing say 「${none[0]}」 where the machines column says 「${machinesNone}」 — one sentence, every list (2026-09-29 「5统一」, gui.no_matches)`);
       }
       // (d) remembered in this browser
       await page.reload({ waitUntil: "load" });
@@ -23735,6 +23752,16 @@ try {
       });
       await toggle(peerKey, "kind:branch");
       await check("unticked", { rows: allIds, chips: [] });
+      // …and the box emptying it says the same as the ticks did.
+      await page.locator(`${head} [data-pane-search]`).fill("zzzz");
+      await wait(400);
+      const bySearch = await noneSaid();
+      console.log(`lists · workspaces · a search matching nothing says ${JSON.stringify(bySearch)}`);
+      if (bySearch.length !== 1 || (machinesNone !== null && bySearch[0] !== machinesNone)) {
+        fail(`lists · workspaces · a search matching nothing says ${JSON.stringify(bySearch)} where the machines column's ticks said 「${machinesNone}」 — one sentence, every list (2026-09-29 「5统一」, gui.no_matches)`);
+      }
+      await page.locator(`${head} [data-pane-search]`).fill("");
+      await wait(300);
       // (f) narrow
       await page.setViewportSize({ width: 390, height: 844 });
       await wait(600);
