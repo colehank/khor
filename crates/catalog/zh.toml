@@ -3176,6 +3176,20 @@ day-unwatched = "未查看"
 # rather than what it is: khor has no record of the stretch. The other
 # six need no sentence — they are the words the row already wears.
 day-unwatched-why = "这段时间 khor 没有记录：它没在运行，或那台机器没有报告"
+# The front session tab's hover (2026-09-29, the owner:「把这个状态bar设置
+# 为，点击标签后显示吧。悬停的时候加一个提示，点击查看近24小时状态」). The
+# day strip is hidden until the tab in front is pressed, and pressed again
+# it goes; the hint says which of the two the next press does. His words,
+# with the spaces this catalog puts round a number. 「收起」 is the pair
+# every Chinese app's disclosure uses (展开 / 收起).
+day-show = "点击查看近 24 小时状态"
+day-hide = "点击收起近 24 小时状态"
+# …and when there is nothing to show: not one stretch of the day wears a
+# word (every minute 未查看, or the session was not there). A press then
+# opens nothing, so the hint says why instead of offering it — and no
+# empty row can stand under the tabs. 「没有记录」 is `day-unwatched-why`'s
+# own phrase for the same fact.
+day-none = "近 24 小时没有记录"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.

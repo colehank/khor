@@ -154,6 +154,30 @@ import { stretch, word } from "@/words";
  * the band's real target was its 4 px. Now that a press opens something,
  * the target is laid out rather than left to a clip.
  *
+ * # Hidden until asked for (2026-09-29)
+ *
+ * 「把这个状态bar设置为，点击标签后显示吧。悬停的时候加一个提示，点击查看
+ * 近24小时状态」. The band is not drawn until the tab in front is pressed —
+ * pressed again it goes — and the choice is one switch for this face,
+ * remembered (`use-day-shown`). The narrow face has no tabs, and its
+ * detail screen's head stands in for the front tab (`DetailPane`).
+ *
+ * That also ended the blank band the owner reported the same morning:
+ * this component used to hold its 12 px row open whenever it had no runs
+ * — while the day loaded, and **for good** on a session with no record —
+ * so that the session under it would not jump when the day arrived. Two
+ * things replace that one empty row, and neither is empty:
+ *
+ * - **on its way** (`null`): a skeleton in the band's own geometry — one
+ *   pill the width of the axis on `fill`, the app's skeleton language
+ *   (`RegionState`) — so the session does not jump when the day lands
+ *   and the row is never blank;
+ * - **no record** (not one stretch wears a word — `dayHasRecord`): no row
+ *   at all, and the front tab's hover says so (「近 24 小时没有记录」)
+ *   instead of offering to open it. A band of 不知道 and nothing is not a
+ *   day to look at: `day-unwatched-why` itself says 「khor 没有记录」 of
+ *   every minute of it.
+ *
  * # It paints, it does not decide
  *
  * The runs arrive merged to the cell count this pane asked for, and
@@ -162,6 +186,45 @@ import { stretch, word } from "@/words";
  * second copy of that judgment here is how a strip and the row above it
  * would come to disagree about the same session.
  */
+
+/**
+ * One session's day as a pane holds it: `null` while the first answer is
+ * on its way, then its runs — an empty list for a row that answer did not
+ * include (a poll a tick behind the list, or a row the node has no day
+ * for; either way there is nothing to draw yet).
+ */
+export type Day = DayRun[] | null;
+
+/** Whether a day has anything for the band to say: at least one stretch
+    wearing a word. A day of 不知道 and 那时没有这一行 alone is 「没有记录」
+    (the strip's own sentence for 不知道), and draws no row. */
+export function dayHasRecord(runs: DayRun[]): boolean {
+  return runs.some((r) => typeof r.mark === "object");
+}
+
+/** The row the band stands in — what the front tab's `aria-controls`
+    names. One at a time: only the open session's pane draws a day. */
+export const DAY_ROW_ID = "khor-session-day";
+
+/**
+ * What the switch for the day says and does — the front tab's on the
+ * wide face, the head's on the narrow one; one answer, so the two cannot
+ * come to disagree about a session.
+ *
+ * `hint` is the tab's hover. `expanded` and `toggle` are absent for a day
+ * with no record: a press there opens nothing, so the control is not a
+ * switch and does not say it is one. While the day is on its way it is
+ * still a switch — what arrives might be a record, and pressing shows the
+ * skeleton until it does.
+ */
+export function daySwitch(
+  day: Day,
+  shown: boolean,
+  toggle: () => void,
+): { hint: string; expanded?: boolean; toggle?: () => void } {
+  if (day !== null && !dayHasRecord(day)) return { hint: gui.day_none };
+  return { hint: shown ? gui.day_hide : gui.day_show, expanded: shown, toggle };
+}
 
 /** The strip's whole span: the node's `Day` is a rolling day
     (`khor_node::day`), and every run is a share of it. */
@@ -213,7 +276,7 @@ function inset(): number {
   return parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-in")) || 0;
 }
 
-export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
+export function DayStrip({ runs }: { runs: Day }) {
   const box = useRef<HTMLDivElement>(null);
   /** The stretch whose readout is up. */
   const [peek, setPeek] = useState<number | null>(null);
@@ -225,17 +288,21 @@ export function DayStrip({ runs }: { runs: DayRun[] | undefined }) {
   const [openAt, setOpenAt] = useState<number | null>(null);
   /** The stretch that holds the band's one Tab stop. */
   const [stop, setStop] = useState<number | null>(null);
-  const total = runs?.reduce((n, r) => n + r.cells, 0) ?? 0;
-  if (!runs || total === 0) {
-    // The row's room, kept while the day has not arrived, so the session
-    // under it does not jump when it does. Not a band: nothing here says
-    // `data-day-strip`, which is how a gate tells 「no band」 from one.
+  if (runs === null) {
+    // On its way: one pill the width of the axis, on `fill` (the head's
+    // 「Hidden until asked for」) — the band's row, padding and height, so
+    // nothing moves when the day lands. Not a band: nothing here says
+    // `data-day-strip`, which is how a gate tells the two apart.
     return (
-      <div aria-hidden className="px-in py-xxs">
-        <div className="h-1" />
+      <div data-day-skeleton aria-busy="true" aria-label={cli.day_title} className="flex px-in py-xxs">
+        <span data-skeleton className="h-1 w-full rounded-full bg-fill" />
       </div>
     );
   }
+  // No record draws nothing: the pane does not ask for this row then
+  // (`DetailPane`), and if it ever did, an empty row is the blank band.
+  if (!dayHasRecord(runs)) return null;
+  const total = runs.reduce((n, r) => n + r.cells, 0);
   const laid = lay(runs, total, Date.now());
   const inked = laid.filter((s) => s.label !== null);
   const tabStop = inked.some((s) => s.i === stop) ? stop : (inked[inked.length - 1]?.i ?? null);

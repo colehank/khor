@@ -41,7 +41,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { EditableName } from "@/components/EditableName";
+import { EditableName, useSinglePress } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
@@ -49,6 +49,7 @@ import { IconBack, IconClose, IconEye, IconPlus } from "@/components/icons";
 import { PaneBar } from "@/components/PaneBar";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -127,6 +128,24 @@ export type TabFace = {
    * a close, and a second mark on each of them would be a row of
    * controls aimed at files nobody is looking at. */
   look?: { on: boolean; label: string; onToggle: () => void };
+  /**
+   * What pressing this tab **again** does — while it is already in front
+   * — and what hovering it then says (2026-09-29, the owner, of the
+   * session's day: 「点击标签后显示吧。悬停的时候加一个提示，点击查看近24
+   * 小时状态」).
+   *
+   * Read only on the tab in front: a press on any other tab switches to
+   * it, as it always has, and it gets no hint. `expanded` and `controls`
+   * make the tab a disclosure button — the strip's tabs are plain
+   * buttons, not an ARIA tablist, so `aria-expanded` is the honest role
+   * for 「this press shows or hides that row」 (a `tab` would have wanted
+   * `aria-selected` and meant something else). Absent `toggle`, the tab
+   * says `hint` and a press does nothing: there is nothing to open.
+   *
+   * The strip does not know what is being opened; the session's day is
+   * the one caller (`App`), and the words are the caller's.
+   */
+  again?: { hint: string; expanded?: boolean; controls?: string; toggle?: () => void };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -287,6 +306,15 @@ export function TabStrip({
 
   useLayoutEffect(() => bringFront.current(), [active, faces.length]);
 
+  /** Whether the front tab's hint is up (`TabFace.again`). One for the
+      strip: only the tab in front ever has one. */
+  const [hint, setHint] = useState(false);
+  useEffect(() => setHint(false), [active]);
+  /** A press on the front tab, resolved against a double-click on its
+      name — which renames, and must not show and hide the day on its
+      way there (`useSinglePress`). */
+  const pressAgain = useSinglePress(() => faces.find((f) => f.id === active)?.again?.toggle?.());
+
   return (
     <div
       data-tab-bar
@@ -382,6 +410,7 @@ export function TabStrip({
       >
         {faces.map((f) => {
           const on = f.id === active;
+          const again = on ? f.again : undefined;
           return (
             <div
               key={f.id}
@@ -394,10 +423,18 @@ export function TabStrip({
               // (第十四轮 第 2 条): the sentences that used to stand in
               // a row under the strip now ride here, after the address,
               // on the one tab they are about.
+              //
+              // **Not on a tab carrying `again`'s hint**: that one says
+              // what a press does, at once, and the system's title a
+              // beat later would be a second float over the same tab
+              // saying something else. The address is the stub's hover,
+              // and the open session's row is lit in the list beside.
               title={
-                [[f.machine, f.path].filter(Boolean).join(": "), f.note]
-                  .filter(Boolean)
-                  .join(" · ") || undefined
+                again
+                  ? undefined
+                  : [[f.machine, f.path].filter(Boolean).join(": "), f.note]
+                      .filter(Boolean)
+                      .join(" · ") || undefined
               }
               className={cn(
                 // `h-touch`, not `h-ctl-md`: the tab is the target, so the
@@ -430,11 +467,34 @@ export function TabStrip({
                   : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
               )}
             >
+              {/* **Every tab sits in a Tooltip, and only the front one's
+                  can open** (`again`): kept on all of them so that a tab
+                  coming to the front does not remount its button — and
+                  the name editor inside it, halfway through the
+                  double-click that brought it there. Below the tab, the
+                  side a toolbar's hint hangs on (components/Tooltip), and
+                  never a place to go. */}
+              <Tooltip
+                open={!!again && hint}
+                onOpenChange={(o) => {
+                  if (again) setHint(o);
+                }}
+                disableHoverableContent
+              >
               <TabOpen menu={f.menu}>
+              <TooltipTrigger asChild>
               <button
                 type="button"
                 data-tab-open={f.id}
-                onClick={() => onFocus(f.id)}
+                // A press on the tab in front is `again`'s — after it has
+                // been what every press on a tab is (`onFocus`, a no-op on
+                // the tab already in front).
+                onClick={(e) => {
+                  onFocus(f.id);
+                  if (again) pressAgain(e);
+                }}
+                aria-expanded={again?.expanded}
+                aria-controls={again?.expanded ? again.controls : undefined}
                 // `h-full`: the whole tab opens it, not the line of text
                 // in the middle of it. Left at content height this was 18
                 // tall inside a tab it filled the width of — the band
@@ -520,7 +580,14 @@ export function TabStrip({
                   </span>
                 )}
               </button>
+              </TooltipTrigger>
               </TabOpen>
+              {again && (
+                <TooltipContent data-tab-hint side="bottom">
+                  {again.hint}
+                </TooltipContent>
+              )}
+              </Tooltip>
               {/* 预览, between the name and the ×: the order a person
                   reads the tab in is what it is, then what to do with
                   it. `size-3.5` against the close's own glyph — this

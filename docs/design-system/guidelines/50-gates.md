@@ -46,7 +46,7 @@
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |
 | `npm run face` | `check-face.mjs`,渲染(自起 vite + 系统 Chrome)。`FACE_ONLY=native` 只走第 11 节「像 Mac 的 app」(选字、手、键盘、右键,一分钟) | 不拿 |
 | `npm run read` | `check-read.mjs`,对话是不是还读得下去:行长、正文档位、行高、正文墨的对比,两个主题两个姿势两张对话脸(自起 vite + 系统 Chrome) | 不拿 |
-| `npm run day` | `check-day.mjs`,会话那条「一天」真的上没上屏,以及它作为控件的样子(2026-09-29 ⑥:胶囊与 2 px 的空、一格不窄于一颗点加它的空、指着的读数与按开的浮层说同一段、手指点得开、一个 Tab 停点、热区不越出自己那一行,宽窄两档)(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
+| `npm run day` | `check-day.mjs`,会话那条「一天」真的上没上屏,以及它作为控件的样子(2026-09-29 ⑥:胶囊与 2 px 的空、一格不窄于一颗点加它的空、指着的读数与按开的浮层说同一段、手指点得开、一个 Tab 停点、热区不越出自己那一行,宽窄两档)。**同日 ⓪:默认收着**——新的浏览器里没有这一行也不留位;前标签的提示(查看 / 收起 / 没有记录)与 `aria-expanded`;按脸、按名字、⏎ / Space 开合;每一帧采样确认双击名字只改名、带不动;重载后记得;没有记录的一天(把 fixture 的 `tui/quiet` 在线上改成全「未查看」和没有这一项两种)不画、按了也不落;扣住 `day_strips` 时是骨架,和真带同一行同一高;窄档点头开合。其余各节都在按开之后读(自起 vite + bridge + 自备一天的数据) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge -p khor-node --example day_fixture`) |
 | `npm run acp` | `check-acp.mjs`,ACP 那一面有没有真的到屏幕上。两批:**协议里带状态的帧**(`tool_call_update` 折进对应那一行、三个状态三种看得出的墨、失败穿 `失败` 自己那支、关掉动效之后事实还在);**新会话对话框里的注册表与历史对话**(「还没问过 / 它答不了 / 它说它没有 / 它列出来了」是四句不同的话且两两不同、坐着两个轮询周期一次 `agent_ask` 都不许发出去而按一下正好一次、发二进制的那些不长「接进来」、「接进来」和「点开一段」真的把 id 送上了线)(自起 vite + 系统 Chrome) | 不拿 |
 | `npm run fast` | `check-fast.mjs`,「快」那三行(`30-behavior.md`):bridge 下挂一块 `statfs` 要 10 秒的**假**卷(`BRIDGE_SLOW_VOLUME_MS`,不碰真盘),机器页 1 秒内列出这台机器、1 秒内出带读数的卡片;离开再回来,**第一帧**就有卡片、读数和进程行(自起 vite + bridge + 系统 Chrome) | 不拿(但**要求先构建**:`cargo build -p khor-gui-core --bin bridge`) |
 | `npm run rail` | `check-rail.mjs`,导轨的几何与图标 | 不拿 |
@@ -87,7 +87,7 @@
   2026-09-08 `UsageHalf.tsx` 里四个字面 NUL 让 `file` 判它是 `data`,而带 `-I`
   的 `grep` 静默跳过整个文件,于是那一晚三条「grep 没找到」的结论全是猜的。
   **「我没找到」和「我没看」是同一个输出**,而这条把它们分开。
-- **动了会话那条「一天」(`DayStrip`、`use-day-strips`),或它背后的 `khor_node::day`** → 加 `npm run day`。
+- **动了会话那条「一天」(`DayStrip`、`use-day-strips`、`use-day-shown`,标签条的 `again`、`EditableName` 的 `useSinglePress`),或它背后的 `khor_node::day`** → 加 `npm run day`。
 - **动了 `cagent`/`codexagent` 往外发的 `SessionUpdate`,或 `ChatView` 那个 fold** → 加 `npm run acp`。
   它守的是**协议的状态有没有到屏幕上**:今天 khor 自己的垫片是唯一的来源,接了注册表里的 agent 之后,
   同样的字段会从线上真的来——那时候「掉在 `default` 分支里」就不是「还没做」,是**收到了然后扔掉**。

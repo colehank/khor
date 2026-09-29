@@ -59,6 +59,7 @@ import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
+import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
@@ -82,6 +83,7 @@ import {
 } from "@/lib/session-filter";
 import { draftCount, watchDrafts } from "@/lib/drafts";
 import { cn } from "@/lib/utils";
+import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
 import { holding, LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
@@ -1587,6 +1589,12 @@ export default function App() {
   // (`useStripWidth` says what the band looked like when it did not).
   const [detailBox, setDetailBox] = useState<HTMLDivElement | null>(null);
   const days = useDayStrips(useStripWidth(detailBox, sessions));
+  /** One session's day as the pane holds it (`DayStrip` `Day`): `null`
+      until the first answer, then its runs. */
+  const dayOf = (id: string): Day => (days === null ? null : (days[id] ?? []));
+  // Whether the day is asked for under the tabs (`use-day-shown`): the
+  // front tab is the switch, and says so on hover.
+  const dayShown = useDayShown();
   // The open sessions as the strip paints them: each tab wears its
   // row's title and the row's own identity assembly (`SessionFace` —
   // face, state halo, kind mark), the same facts in the same clothes. A
@@ -1595,6 +1603,17 @@ export default function App() {
     () =>
       openTabs.map((id) => {
         const r = rows.find((row) => row.id === id);
+        // **Pressed again, the tab in front shows or hides its day**
+        // (2026-09-29:「点击标签后显示吧。悬停的时候加一个提示」). Read
+        // by the strip only on the tab in front; the words and whether
+        // there is anything to open are the day's (`daySwitch`).
+        const sw = daySwitch(days === null ? null : (days[id] ?? []), dayShown, () => setDayShown(!dayShown));
+        const again = {
+          hint: sw.hint,
+          expanded: sw.expanded,
+          controls: sw.expanded ? DAY_ROW_ID : undefined,
+          toggle: sw.toggle,
+        };
         return r
           ? {
               id,
@@ -1607,10 +1626,11 @@ export default function App() {
               // here too. A browsing tab below wears a page's own
               // name and hands none of this in.
               rename: { kind: "session" as const, id },
+              again,
             }
-          : { id, label: id, face: null, path: "" };
+          : { id, label: id, face: null, path: "", again };
       }),
-    [openTabs, rows],
+    [openTabs, rows, days, dayShown],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -1842,7 +1862,7 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
-      days={selectedRow ? days[selectedRow.id] : undefined}
+      day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
       onNew={() => openNewSession()}
       // The way to the other open tabs on the face that has no strip:

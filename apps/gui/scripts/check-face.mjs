@@ -22148,7 +22148,15 @@ try {
       }, name);
     const gapIn = await px("--gap-in");
 
-    // ── (a) wide: the strip, the day's band, the session ──
+    // ── (a) wide: the strip, then the session ──
+    //
+    // **The day's band is not in this row until it is asked for**
+    // (2026-09-29: 「点击标签后显示吧」 — the front tab is its switch,
+    // `use-day-shown`, and `npm run day` ⓪ walks it). This fixture's
+    // browser has never pressed it, so what stands under the strip is the
+    // session itself: the pane's first child starts where the strip ends,
+    // and there is no `[data-detail-day]` — not even an empty one, which
+    // was the blank band the owner reported that morning.
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
     await open("sessions");
@@ -22158,16 +22166,17 @@ try {
       await wait(400);
       const wide = await page.evaluate(() => {
         const pane = document.querySelector("[data-detail-pane]");
-        const day = document.querySelector("[data-detail-day]");
+        const kid = pane?.firstElementChild ?? null;
         const strip = document.querySelector("[data-region-head]");
-        if (!pane || !day || !strip) {
-          return { missing: [!pane && "[data-detail-pane]", !day && "[data-detail-day]", !strip && "[data-region-head]"].filter(Boolean) };
+        if (!pane || !kid || !strip) {
+          return { missing: [!pane && "[data-detail-pane]", !kid && "the pane's first child", !strip && "[data-region-head]"].filter(Boolean) };
         }
         const r = (el) => el.getBoundingClientRect();
         return {
           header: document.querySelectorAll("[data-detail-pane] [data-detail-header]").length,
           facts: document.querySelectorAll("[data-detail-facts]").length,
-          dayTop: +r(day).top.toFixed(2),
+          days: document.querySelectorAll("[data-detail-day]").length,
+          firstTop: +r(kid).top.toFixed(2),
           stripBottom: +r(strip).bottom.toFixed(2),
         };
       });
@@ -22181,10 +22190,16 @@ try {
               "「session标签页下还有个标题, 不要了」: the strip already says the name, the face and the state (src/views/DetailPane.tsx)",
           );
         }
-        if (wide.dayTop !== wide.stripBottom) {
+        if (wide.days !== 0) {
           fail(
-            `the day's band starts at ${wide.dayTop} and the tab strip ends at ${wide.stripBottom} — ` +
-              "「标签页下就是状态bar然后就是内容」: nothing stands between them",
+            `an open session draws ${wide.days} [data-detail-day] row(s) in a browser that never asked for the day — ` +
+              "hidden until the front tab is pressed, and never as an empty row (src/views/DetailPane.tsx)",
+          );
+        }
+        if (wide.firstTop !== wide.stripBottom) {
+          fail(
+            `the session starts at ${wide.firstTop} and the tab strip ends at ${wide.stripBottom} — ` +
+              "「标签页下就是状态bar然后就是内容」, and with the day hidden nothing stands between them",
           );
         }
       }

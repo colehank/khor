@@ -1,8 +1,65 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { renameMachine, renameSession } from "@/api";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+
+/**
+ * How long a press on a name waits for the second half of a double-click
+ * before it counts as a single press.
+ *
+ * **Most double-clicks land well inside this.** The system's own window
+ * is longer (macOS defaults to half a second) and the page cannot read
+ * it; a double-click slower than this but still inside it does both —
+ * the single press lands, then the editor opens. What it never does is
+ * the thing this exists to stop: a press that shows something and a
+ * double-click that takes it away again, one blink apiece.
+ */
+const NAME_WAIT_MS = 300;
+
+/**
+ * A single press on a control that **holds a name somebody may rename**
+ * (2026-09-29: the front session tab, and the narrow head that stands in
+ * for it — a press shows the day, a double-click on the name renames).
+ *
+ * Both gestures start with the same click, so the click on the name has
+ * to wait to learn which one it is: `act` runs once the double-click
+ * window has passed with no second press, and never if one came (the
+ * second click, `detail` 2, cancels it; the `dblclick` then opens the
+ * editor as it always has). **Only a click on the name waits** — the
+ * editor's hot zone is the name's own text, so a press on the face or on
+ * the blank beside it cannot be a rename and acts at once — and so do
+ * Enter and Space (`detail` 0): a key is never half a double-click.
+ */
+export function useSinglePress(act: () => void): (e: MouseEvent) => void {
+  const wait = useRef<number | null>(null);
+  // The act of the render the press lands in: a timer holding the act of
+  // the render it started in would run a stale one.
+  const latest = useRef(act);
+  latest.current = act;
+  useEffect(
+    () => () => {
+      if (wait.current !== null) window.clearTimeout(wait.current);
+    },
+    [],
+  );
+  return (e) => {
+    if (wait.current !== null) {
+      window.clearTimeout(wait.current);
+      wait.current = null;
+    }
+    if (e.detail > 1) return;
+    const onName = e.target instanceof Element && e.target.closest("[data-editable-name]") !== null;
+    if (e.detail === 0 || !onName) {
+      latest.current();
+      return;
+    }
+    wait.current = window.setTimeout(() => {
+      wait.current = null;
+      latest.current();
+    }, NAME_WAIT_MS);
+  };
+}
 
 /**
  * A name somebody may change: double-click, type, Enter. One component
