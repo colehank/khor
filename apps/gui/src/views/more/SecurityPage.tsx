@@ -32,7 +32,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { gui } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
@@ -139,6 +139,21 @@ export function SecurityPage({
       // idle row, left-aligned in the card — the shape 「重新生成」 had
       // just been moved out of. Only while the lock is on: before that
       // there is nothing to lock with (`khor_node::lock` refuses).
+      // Whether the lock is on, and when it closes by itself — the
+      // shell's own answer (`lock`), in the idle row's words.
+      subtitle={
+        lock ? (
+          lock.on ? (
+            <>
+              {gui.head_lock_on}
+              <span aria-hidden="true"> · </span>
+              {lock.timeout_min > 0 ? cli.lock_idle_after(lock.timeout_min) : cli.lock_idle_never}
+            </>
+          ) : (
+            gui.head_lock_off
+          )
+        ) : undefined
+      }
       actions={
         lock?.on ? (
           <Button

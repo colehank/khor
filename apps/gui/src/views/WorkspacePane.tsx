@@ -49,7 +49,7 @@ import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
-import { PageAction, PageSubtitle } from "@/components/Region";
+import { PageAction, PageSubtitle, PageTitleAside } from "@/components/Region";
 import { type RowAction } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import {
@@ -1468,29 +1468,38 @@ export function WorkspacePane({
   /** The tooltip is the whole value, and only while the value is cut:
       over a value showing in full it would be noise. */
   const [whereTip, setWhereTip] = useState(false);
+  /** **Beside the name, on its line** (2026-09-30:「标题旁边是 git
+      branch 加改动简介」): the branch and how many files it has changed —
+      what qualifies the name, the way the list row pairs them. Nothing
+      for a directory that is not a repository. It gives way before the
+      name does (`PageHead`). */
+  const aside = branch !== "" && (
+    <>
+      {/* The branch keeps its whole name while the line has room; the
+          count after it never breaks. */}
+      {/* On the name's baseline: the text is what lines up, and the
+          glyph centres on it (a glyph has no baseline of its own). */}
+      <span data-ws-head-branch className="flex min-w-0 items-baseline gap-xxs">
+        <IconBranch className="size-kind-mark-glyph flex-none self-center" />
+        <span className="truncate">{branch}</span>
+      </span>
+      {changed > 0 && (
+        <>
+          <span aria-hidden="true" className="flex-none">·</span>
+          <span data-ws-head-changed className="flex-none whitespace-nowrap tabular-nums">
+            {gui.ws_marked(changed)}
+          </span>
+        </>
+      )}
+    </>
+  );
+  /** **The second line is the location and nothing else** (2026-09-30:
+      「下方完整目录」) — the one long value, with the whole line to itself
+      now, cut in the middle as before. */
   const subtitle = (
     // `callout` on `caption`'s leading: R0 is 38 since 2026-09-29 and the
     // name over this line is set a rung tight to fit it (`PageHead`).
     <div data-ws-subtitle className="flex min-w-0 flex-1 items-center gap-xxs text-callout leading-(--text-caption--line-height) text-muted-foreground">
-      {branch !== "" && (
-        <>
-          {/* The branch keeps its whole name up to half the line; the
-              location is what gives way first. */}
-          <span data-ws-head-branch className="flex min-w-0 max-w-1/2 flex-none items-center gap-xxs">
-            <IconBranch className="size-kind-mark-glyph flex-none" />
-            <span className="truncate">{branch}</span>
-          </span>
-          {changed > 0 && (
-            <>
-              <span aria-hidden="true" className="flex-none">·</span>
-              <span data-ws-head-changed className="flex-none whitespace-nowrap tabular-nums">
-                {gui.ws_marked(changed)}
-              </span>
-            </>
-          )}
-          <span aria-hidden="true" className="flex-none">·</span>
-        </>
-      )}
       <Tooltip open={whereTip && whereCut} onOpenChange={setWhereTip}>
         <TooltipTrigger asChild>
           {/* **Selectable, and a focus stop so it can be.** R0 moves the
@@ -1651,12 +1660,14 @@ export function WorkspacePane({
         )}
       </NarrowHead>
     )}
-    {/* **R0, on the wide face** (2026-09-28): the second title line
-        under the name the shell already put there, and the two switches
-        at the right end. Written here because the facts and the presses
+    {/* **R0, on the wide face** (2026-09-28; split 2026-09-30): the
+        branch and the change count beside the name the shell already put
+        there, the location on the second line, and the two switches at
+        the right end. Written here because the facts and the presses
         are this pane's; seated there by the shell (`Region`). The
         browsing face (`root` empty) is a machine's disk rather than a
         workspace, and keeps its own crumbs bar below for 「where」. */}
+    {!narrow && root !== "" && aside && <PageTitleAside>{aside}</PageTitleAside>}
     {!narrow && root !== "" && <PageSubtitle>{subtitle}</PageSubtitle>}
     {!narrow && <PageAction>{switches}</PageAction>}
     <DeeperHeads>

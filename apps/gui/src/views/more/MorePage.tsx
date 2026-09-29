@@ -19,7 +19,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { IconBack, IconChevronRight, IconClose } from "@/components/icons";
-import { PageAction } from "@/components/Region";
+import { PageAction, PageSubtitle } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { config, gui } from "@/gen/catalog";
@@ -87,6 +87,7 @@ export function MoreFrame({
   page,
   onClose,
   actions,
+  subtitle,
   children,
 }: {
   page: MorePage;
@@ -99,6 +100,14 @@ export function MoreFrame({
       right end on the wide face, at the end of the page's head in the
       window's first row on the narrow one (`NarrowHead`). */
   actions?: ReactNode;
+  /** **R0's second line** (2026-09-30, the A pages 「和工作区看齐」):
+      the fact this page has already asked for that says where the thing
+      it is about stands — which khor, whether the network is talking,
+      whether the lock is on. **Absent where the page asks nothing**
+      (外观: its rows are the settings themselves) — no second line
+      rather than an invented one. Wide only: the narrow head is one
+      line, the name. */
+  subtitle?: ReactNode;
   // ⚠️ 墓碑 (2026-09-28): `bleed` stood here — the body filling the frame
   // instead of a reading column, for the one page that was a picture
   // (网络, 「网络就搞成地图」). 网络 is rows now and the map lives on the
@@ -118,6 +127,16 @@ export function MoreFrame({
         // so a page of rows stands on `background`.
         className="flex h-full min-h-0 flex-col bg-background"
       >
+        {subtitle && (
+          <PageSubtitle>
+            <span
+              data-more-head-sub
+              className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+            >
+              {subtitle}
+            </span>
+          </PageSubtitle>
+        )}
         {/* The page's own head. **On the wide face it is not drawn**
             (`app.css` `[data-board] [data-more-head]`): R0 above the
             board already says the name and holds the way out, and only

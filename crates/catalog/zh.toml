@@ -2952,6 +2952,16 @@ net-connected-n = "{0} 台（{1}）"
 net-connected-bare = "{0} 台"
 # 「1 直连」:一个数,一条路的词(`hop.direct` / `hop.relay`)。
 net-via = "{0} {1}"
+# ── R0 的第二行 (2026-09-30,A 页型「和工作区看齐」)────────────────
+# 标题下面那一行只写页面已经问到的事实(10-layout 页型表旁那张表)。
+# 机器总览:地图上有几台,这台在跟几台说话——只数直连和中继两种路,
+# 和上面 `net-connected` 同一个数法。网络页的第二行借 `head-connected`。
+head-machines = "{0} 台机器"
+head-connected = "已连接 {0} 台"
+# 安全页:锁这项功能开没开。**不借 `cli.lock-on`「已锁定」**——命令行里那是
+# 状态行的一段,放在一个正开着的窗口上读起来像「屏幕现在锁着」。
+head-lock-on = "锁定已开启"
+head-lock-off = "锁定未开启"
 # 开关:打开就是 `khor pause`。说明写会发生什么。
 net-pause-sync = "暂停同步"
 net-pause-note = "其他设备会看到这台机器离线；本机照常使用"

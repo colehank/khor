@@ -80,7 +80,25 @@ export function IdentityPage({
   const [renaming, setRenaming] = useState(false);
 
   return (
-    <MoreFrame page="identity" onClose={onClose}>
+    <MoreFrame
+      page="identity"
+      onClose={onClose}
+      // The machine page's second line for this machine: its name and the
+      // khor it runs — R0 says 「这台机器」, this says which one.
+      subtitle={
+        me ? (
+          <>
+            {me.shown}
+            {about?.version && (
+              <>
+                <span aria-hidden="true"> · </span>
+                {gui.card_version(about.version)}
+              </>
+            )}
+          </>
+        ) : undefined
+      }
+    >
       {/* **One settings group, no name of its own** — R0 says 身份. The
           machine's name is a row whose act is 改名… (it asks for the new
           name, so the ellipsis), then the id and the version as facts.

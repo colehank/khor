@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
+import { PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
 import { SectionHead } from "@/components/SectionHead";
 import { Bar } from "@/components/Bar";
@@ -112,6 +113,21 @@ export function MachineCard({
         </header>
         )}
         </NarrowHead>
+      )}
+      {/* **R0's second line** (2026-09-30:「机器页：最上方是机器名，下方一
+          行是 khor 版本与更新时间」): the shell says the name, this says
+          which khor it runs and how old its reading is — written here,
+          seated in R0 by the shell (`PageSubtitle`), like the workspace's
+          location. Nothing on the narrow face, which has no R0. */}
+      {row?.vitals && (
+        <PageSubtitle>
+          <span
+            data-machine-head-sub
+            className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+          >
+            <MachineCaption row={row} />
+          </span>
+        </PageSubtitle>
       )}
       {row && (
         // **Keyed by the machine**, so every piece of state on this card
@@ -234,9 +250,8 @@ function Body({
  *   this machine;
  * - the big face — gone; it was identity and nothing else, and the list
  *   row beside it wears the same face;
- * - the version and the freshness — **to R0's right end**
- *   (`MachineCaption`), the seat every page uses for how old what it
- *   shows is (「3 分钟前的读数」, components/RegionState);
+ * - the version and the freshness — to R0 (`MachineCaption`): its right
+ *   end until 2026-09-30, the second line under the name since;
  * - the id, the road, the uptime — here, as the card's first line: they
  *   are readings about the machine, not a title over it.
  *
@@ -288,10 +303,12 @@ function Head({ row }: { row: DeviceRow }) {
 }
 
 /**
- * **What R0's right end says about an open machine** (`Region caption`):
+ * **What R0 says under an open machine's name** (`PageSubtitle`, above):
  * which khor it runs and how old its reading is — 「Khor 0.1.14 · 12 秒前」
  * (2026-09-06:「Khor xxx N 秒前」). Moved here from the card's head on
- * 2026-09-27 (see `Head`'s tombstone).
+ * 2026-09-27 (see `Head`'s tombstone), and from R0's right end to the
+ * second line under the name on 2026-09-30 — the right end is left to
+ * 「3 分钟前的读数」 when the whole page is stale (components/RegionState).
  *
  * The version is one of `khor devices`' sentences and keeps its unit;
  * the freshness is the age sentence for a machine reached over the wire

@@ -81,6 +81,9 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
       moment that check is asked again — a sentence about a repair that
       has since been re-measured is worse than no sentence. */
   const [fixed, setFixed] = useState<Record<string, string>>({});
+  /** When the checks on screen were answered — R0's second line, the
+      page's 更新于 the way a machine's reading has one. */
+  const [answeredAt, setAnsweredAt] = useState<number | null>(null);
 
   const ask = useCallback(() => {
     setAsking(true);
@@ -89,6 +92,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
     fetchDoctor().then(
       (r) => {
         setRows(r);
+        setAnsweredAt(Date.now());
         setAsking(false);
       },
       (e: unknown) => {
@@ -121,7 +125,18 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
   const well = rows?.filter((r) => !wants(r)) ?? [];
 
   return (
-    <MoreFrame page="doctor" onClose={onClose}>
+    <MoreFrame
+      page="doctor"
+      onClose={onClose}
+      // When these checks were taken, in the machine page's words
+      // (`updated-at`): the verdict is the first row, the time is not on
+      // the page anywhere else.
+      subtitle={
+        answeredAt !== null
+          ? cli.updated_at(new Date(answeredAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))
+          : undefined
+      }
+    >
       {/* **Settings groups, like every other 「…」 page**
           (components/SettingsGroup). The first group has no name — R0
           already says 诊断 — and holds the verdict with 重新检查 as its

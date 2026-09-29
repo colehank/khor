@@ -5,6 +5,7 @@ import type { DeviceRow } from "@/api";
 // in its place); the binding is the place itself.
 import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
+import { PageSubtitle } from "@/components/Region";
 import { cli, gui, state } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { ageIfOld, hopWord } from "@/words";
@@ -189,7 +190,30 @@ export function MandalaMap({
     const next = el && me ? layRoads(el, me, others) : null;
     setRoads((was) => (sameRoads(was, next) ? was : next));
   });
+  // **R0's second line on the machines overview** (2026-09-30, the A
+  // pages 「和工作区看齐」): how many machines the map holds and how many
+  // this one is talking to — counted off the rows the map is drawn from,
+  // with the same roads the network page counts (direct and relayed
+  // carry something; 未连接 / serve 未运行 do not).
+  const connected = others.filter((r) => r.hop === "direct" || r.hop === "relay").length;
   return (
+    <>
+    {rows.length > 0 && (
+      <PageSubtitle>
+        <span
+          data-machines-head-sub
+          className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+        >
+          {gui.head_machines(rows.length)}
+          {others.length > 0 && (
+            <>
+              <span aria-hidden="true"> · </span>
+              {gui.head_connected(connected)}
+            </>
+          )}
+        </span>
+      </PageSubtitle>
+    )}
     <section
       data-mandala-map
       aria-label={gui.mesh_map}
@@ -286,6 +310,7 @@ export function MandalaMap({
         ))}
       </div>
     </section>
+    </>
   );
 }
 

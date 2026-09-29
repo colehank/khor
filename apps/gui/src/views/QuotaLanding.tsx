@@ -45,7 +45,7 @@ import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PageActions, PaneBar, type FilterOption } from "@/components/PaneBar";
-import { Region } from "@/components/Region";
+import { PageSubtitle, Region } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
@@ -1782,14 +1782,30 @@ export function QuotaLanding({
   // cannot reach khor, or this landing's own poll was refused over a
   // board already read — says so; otherwise the open account's plan and
   // the age of its reading (`ReadCaption`).
-  const caption =
+  /** 过期 / 离线: the last board stays and R0's right end says so. */
+  const staleSay =
     stale || (error && board !== null) ? (
       <span data-quota-stale title={error ?? undefined}>
         {stale ? gui.backend_unreachable : error}
       </span>
-    ) : current ? (
-      <ReadCaption row={current} />
     ) : undefined;
+  /** The narrow face's head has one line, so it keeps both at its end. */
+  const caption = staleSay ?? (current ? <ReadCaption row={current} /> : undefined);
+  /** **R0's second line on the wide face** (2026-09-30, the A pages
+      「和工作区看齐」): the plan and when the reading was taken, under
+      the account's name — moved from R0's right end, which keeps only
+      the stale note above. Nothing with no account on the board: an
+      empty landing has no reading to date. */
+  const subtitle = current && (
+    <PageSubtitle>
+      <span
+        data-quota-head-sub
+        className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+      >
+        <ReadCaption row={current} />
+      </span>
+    </PageSubtitle>
+  );
 
   // Never answered and refused: the machine's own sentence where the
   // empty state sits, and 重试 (components/RegionState `error`).
@@ -1928,9 +1944,10 @@ export function QuotaLanding({
             kind="detail"
             title={current?.name ?? gui.accounts_tab}
             actions={<PageActions actions={quotaActions} />}
-            caption={caption}
+            caption={staleSay}
             className="overflow-y-auto"
           >
+            {subtitle}
             {detail}
             {subDetail}
           </Region>
@@ -1966,8 +1983,9 @@ export function QuotaLanding({
 
 
 /**
- * What R0's right end says about the account on the board: its plan,
- * and **when it was read** (`Region caption`).
+ * What R0 says under the account's name: its plan, and **when it was
+ * read** (`PageSubtitle` on the wide face since 2026-09-30; before that
+ * R0's right end, which the narrow face's one-line head still is).
  *
  * # Why the age is here, and why the tombstone that removed it stands
  *

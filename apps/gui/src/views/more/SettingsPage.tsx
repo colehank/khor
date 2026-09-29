@@ -63,7 +63,13 @@ export function SettingsPage({
   }, []);
 
   return (
-    <MoreFrame page="settings" onClose={onClose}>
+    <MoreFrame
+      page="settings"
+      onClose={onClose}
+      // Which khor this is — the same unit the machine page's second line
+      // says it in (`card-version`), off the answer this page asked for.
+      subtitle={about?.version ? gui.card_version(about.version) : undefined}
+    >
       {/* 头像 left this page on 2026-09-21 (docs/MORE.md 第二轮 地图:
           头像 = 这台机器是谁). The editor is on the avatar's own page
           now, where the thing it edits is already the subject — and on

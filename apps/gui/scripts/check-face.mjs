@@ -4680,43 +4680,61 @@ try {
       }
       await press("[data-ws-sessions-switch]");
       await wait(200);
-      // **R0 says what this is, in two lines inside its 48** (2026-09-28):
-      // the name, then 「⎇ main · 5 个文件已修改 · peer:/home/peer/work」
-      // — the workspace list row's own words, from the status the pane
-      // already asked for. Not a row between R0 and R1 (10-layout).
+      // **R0 says what this is, in two lines inside its 38** (2026-09-28;
+      // split 2026-09-30): the name with 「⎇ main · 5 个文件已修改」 beside
+      // it, then 「peer:/home/peer/work」 under it — the workspace list
+      // row's own words, from the status the pane already asked for. Not
+      // a row between R0 and R1 (10-layout). **What stands where is the
+      // real-app checklist's** (30-behavior, 2026-09-25 gate rule); this
+      // reads the words, the sizes, the line heights and that all of it
+      // is inside R0.
       const line2 = await page.evaluate(() => {
         const r0 = document.querySelector("[data-main] [data-region-head]");
         const title = r0?.querySelector("[data-page-title]") ?? null;
+        const aside = r0?.querySelector("[data-page-title-aside]") ?? null;
         const sub = r0?.querySelector("[data-page-subtitle] [data-ws-subtitle]") ?? null;
-        if (!r0 || !title || !sub) return { r0: !!r0, title: !!title, sub: !!sub };
+        if (!r0 || !title || !sub || !aside) return { r0: !!r0, title: !!title, sub: !!sub, aside: !!aside };
         const r = (el) => el.getBoundingClientRect();
         const h = r(r0);
         const t = r(title);
         const s = r(sub);
+        const a = r(aside);
         const where = sub.querySelector("[data-ws-head-where]");
-        const branch = sub.querySelector("[data-ws-head-branch]");
+        const branch = aside.querySelector("[data-ws-head-branch]");
+        const root = getComputedStyle(document.documentElement);
         return {
           name: title.textContent.trim(),
           branch: branch?.textContent?.trim() ?? null,
           glyph: branch?.querySelectorAll("svg").length ?? 0,
-          changed: sub.querySelector("[data-ws-head-changed]")?.textContent?.trim() ?? null,
+          changed: aside.querySelector("[data-ws-head-changed]")?.textContent?.trim() ?? null,
           where: where?.textContent?.trim() ?? null,
-          order: branch && where ? r(branch).right <= r(where).left : null,
           select: where ? getComputedStyle(where).userSelect : null,
           stop: where?.getAttribute("tabindex") ?? null,
           r0h: Math.round(h.height),
-          head: Math.round(Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--pane-head"))),
-          inside: t.top >= h.top - 0.5 && s.bottom <= h.bottom + 0.5 && s.left >= h.left - 0.5 && s.right <= h.right + 0.5,
+          head: Math.round(Number.parseFloat(root.getPropertyValue("--pane-head"))),
+          inside:
+            t.top >= h.top - 0.5 &&
+            s.bottom <= h.bottom + 0.5 &&
+            s.left >= h.left - 0.5 &&
+            s.right <= h.right + 0.5 &&
+            a.top >= h.top - 0.5 &&
+            a.bottom <= h.bottom + 0.5 &&
+            a.right <= h.right + 0.5,
           under: s.top >= t.bottom - 0.5,
           size: getComputedStyle(sub).fontSize,
-          callout: getComputedStyle(document.documentElement).getPropertyValue("--text-callout").trim(),
+          asideSize: getComputedStyle(aside).fontSize,
+          // The name's line keeps the name's leading with the words
+          // beside it on it (`PageHead`: 18 + 14 in 38).
+          nameLine: +r(title.parentElement).height.toFixed(2),
+          body: Number.parseFloat(root.getPropertyValue("--text-body--line-height")),
+          callout: root.getPropertyValue("--text-callout").trim(),
         };
       });
       console.log(`R0 second line: ${JSON.stringify(line2)}`);
       if (line2.name === undefined) {
         fail(
-          `probe dead: R0 over the open workspace has ${JSON.stringify(line2)} — no second line to read ` +
-            "(src/components/Region.tsx PageSubtitle, src/views/WorkspacePane.tsx)",
+          `probe dead: R0 over the open workspace has ${JSON.stringify(line2)} — no name, words beside it and second ` +
+            "line to read (src/components/Region.tsx PageTitleAside / PageSubtitle, src/views/WorkspacePane.tsx)",
         );
       } else {
         const wanted = { name: "work", branch: "main", changed: "5 个文件已修改", where: "peer:/home/peer/work" };
@@ -4724,25 +4742,31 @@ try {
           if (line2[k] !== v) {
             fail(
               `R0 says ${k} ${JSON.stringify(line2[k])} where the workspace list row says ${JSON.stringify(v)} — ` +
-                "the same words, from the status this pane already holds (src/views/WorkspacePane.tsx subtitle)",
+                "the same words, from the status this pane already holds (src/views/WorkspacePane.tsx aside / subtitle)",
             );
           }
         }
         if (line2.glyph !== 1) {
           fail(`the branch in R0 wears ${line2.glyph} glyph(s) — one, the branch mark (src/views/WorkspacePane.tsx)`);
         }
-        if (line2.order !== true) {
-          fail("R0's second line does not read branch first, location last (src/views/WorkspacePane.tsx subtitle)");
-        }
         if (!line2.inside || !line2.under || line2.r0h !== line2.head) {
           fail(
             `R0's two lines stand ${line2.inside ? "inside" : "outside"} a ${line2.r0h}-tall R0 (--pane-head ${line2.head}), ` +
               `the second ${line2.under ? "under" : "not under"} the name — the title and its subtitle live inside R0's ` +
-              "48, never as a row between R0 and R1 (10-layout.md)",
+              "38, never as a row between R0 and R1 (10-layout.md)",
           );
         }
-        if (line2.size !== line2.callout) {
-          fail(`R0's second line is ${line2.size}, not \`callout\` ${line2.callout} — a subtitle's size (README 字)`);
+        if (line2.size !== line2.callout || line2.asideSize !== line2.callout) {
+          fail(
+            `R0's second line is ${line2.size} and the words beside the name ${line2.asideSize}, not \`callout\` ` +
+              `${line2.callout} — a subtitle's size (README 字)`,
+          );
+        }
+        if (Math.abs(line2.nameLine - line2.body) > 0.5) {
+          fail(
+            `the name's line is ${line2.nameLine} tall with the branch beside it, not the name's own ${line2.body} — the ` +
+              "words beside it ride its baseline on `caption`'s leading and must not make it taller (src/components/Region.tsx PageHead)",
+          );
         }
         // A path is a value people copy (30-behavior 选字与手) — and R0
         // moves the window, so it also needs a tab stop, or tauri's
@@ -14395,8 +14419,12 @@ try {
   // components/Toolbar) and the age went to R0's right end, the seat a
   // reading's age has on every page (components/RegionState). The row
   // pressed above is acc-trouble, so the caption is its.
+  // **Read anywhere in R0 since 2026-09-30**: the plan and the age went
+  // from R0's right end to the second line under the name (the A pages
+  // 「和工作区看齐」, `PageSubtitle`). Which seat in R0 is the real-app
+  // checklist's (30-behavior); that R0 says it, and says it once, is this.
   const readBy = await page
-    .locator("[data-region-caption] [data-quota-age]")
+    .locator("[data-region-head] [data-quota-age]")
     .textContent();
   if (!readBy?.includes("peer")) {
     fail(`a peer's reading does not name its reader — got ${JSON.stringify(readBy)}`);
@@ -14566,12 +14594,13 @@ try {
     //   (「身份只出现一次… 板里不许再有第二个标题」, components/Toolbar):
     //   the name is R0's title, and the plan rides with the reading's age
     //   at R0's right end. Still once per surface, still equality.
-    const headChips = await page.locator("[data-region-caption] [data-quota-plan]").count();
-    const headChip = (await page.locator("[data-region-caption] [data-quota-plan]").textContent().catch(() => null))?.trim();
+    //   (2026-09-30: under the name now, still in R0 — read off R0.)
+    const headChips = await page.locator("[data-region-head] [data-quota-plan]").count();
+    const headChip = (await page.locator("[data-region-head] [data-quota-plan]").textContent().catch(() => null))?.trim();
     const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
     if (headChips !== 1 || headChip !== quotaPlan) {
       fail(
-        `R0's caption draws ${headChips} plans reading ${JSON.stringify(headChip)}, not one saying ${JSON.stringify(quotaPlan)}`,
+        `R0 draws ${headChips} plans reading ${JSON.stringify(headChip)}, not one saying ${JSON.stringify(quotaPlan)}`,
       );
     } else if (rowPlan.chipOnRow !== 0) {
       fail(
@@ -23886,6 +23915,7 @@ try {
         const l0 = document.querySelector("[data-side-head]");
         const r0 = document.querySelector("[data-main] [data-region-head]");
         const things = [];
+        let pair = null;
         const put = (row, what, el) => shown(el) && things.push({ row, what, ...box(el) });
         if (l0) {
           for (const el of l0.querySelectorAll("button, input, [data-search-field]")) put("L0", label(el), el);
@@ -23914,6 +23944,15 @@ try {
                 h: +(s.bottom - t.top).toFixed(2),
                 mid: +((t.top + s.bottom) / 2).toFixed(2),
               });
+              // The pair's two leadings (2026-09-29: 18 + 14 in 38), on
+              // every A page that has a second line now (2026-09-30).
+              const root = getComputedStyle(document.documentElement);
+              pair = {
+                name: +r(title.parentElement).height.toFixed(2),
+                sub: +s.height.toFixed(2),
+                nameLead: Number.parseFloat(root.getPropertyValue("--text-body--line-height")),
+                subLead: Number.parseFloat(root.getPropertyValue("--text-caption--line-height")),
+              };
             } else put("R0", "the page's title", title);
           }
           for (const t of r0.querySelectorAll("[data-tab]")) {
@@ -23931,6 +23970,7 @@ try {
           boardTop: board ? +r(board).top.toFixed(2) : null,
           things,
           tabs,
+          pair,
         };
       });
     /** Judges one reading: the row's height (`want`), the centreline, the
@@ -23957,6 +23997,13 @@ try {
         fail(
           `row · ${where}: ${t.row}'s ${t.what} is centred at y ${t.mid} (${t.top}…${t.bottom}), the row's centre is ${centre} — ` +
             "the window's buttons, the search box, the title, the tabs and the page's buttons stand on one centreline",
+        );
+      }
+      if (row.pair && (Math.abs(row.pair.name - row.pair.nameLead) > 0.5 || Math.abs(row.pair.sub - row.pair.subLead) > 0.5)) {
+        fail(
+          `row · ${where}: R0's name line is ${row.pair.name} and its second line ${row.pair.sub} tall, not ` +
+            `${row.pair.nameLead} and ${row.pair.subLead} — the pair is set a rung tight (body's and caption's leading) ` +
+            "to sit in the row (src/components/Region.tsx PageHead; 10-layout 「第一行是 38」)",
         );
       }
       const outside = row.things.filter((t) => t.top < -0.5 || t.bottom > want + 0.5);

@@ -100,12 +100,18 @@ export function PageAction({ children }: { children: ReactNode }) {
 /** Where a page's second title line goes, under its name in R0. */
 const SubtitleSeat = createContext<HTMLElement | null | undefined>(undefined);
 
+/** Where a page's words beside its name go, on the name's own line. */
+const AsideSeat = createContext<HTMLElement | null | undefined>(undefined);
+
 /**
  * **A page's second title line, inside R0** (2026-09-28, the open
  * workspace: branch, changed files, `机器:路径`). The macOS title-and-
  * subtitle pair — Xcode puts the branch under the project — and not a
- * row between R0 and R1, which nothing may add (10-layout). Only a page
- * with a *location* to state wears one (components/Toolbar says when).
+ * row between R0 and R1, which nothing may add (10-layout). **Every A
+ * page wears one where it has an honest fact to put there** (2026-09-30,
+ * 「所有非标签页的落地页和工作区看齐」); which fact each page writes is
+ * the table beside 10-layout's page types, and a page with none draws
+ * no second line (components/Toolbar).
  *
  * Drawn by the page that owns the facts, seated by the shell, the way
  * `PageAction` is. **Nothing where there is no R0**: the narrow face's
@@ -115,6 +121,21 @@ const SubtitleSeat = createContext<HTMLElement | null | undefined>(undefined);
  */
 export function PageSubtitle({ children }: { children: ReactNode }) {
   const seat = useContext(SubtitleSeat);
+  if (!seat) return null;
+  return createPortal(children, seat);
+}
+
+/**
+ * **Words beside a page's name, on the name's own line** (2026-09-30,
+ * the open workspace: 「标题旁边是 git branch 加改动简介」). `callout`
+ * in `secondary`, on the name's baseline — a qualifier of the name, the
+ * way Finder's path bar greys the folder's parent beside it; the second
+ * line (`PageSubtitle`) is left for the one long value, the location.
+ * It gives way before the name does (`PageHead`). Seated by the shell
+ * like `PageSubtitle`; nothing where there is no R0.
+ */
+export function PageTitleAside({ children }: { children: ReactNode }) {
+  const seat = useContext(AsideSeat);
   if (!seat) return null;
   return createPortal(children, seat);
 }
@@ -135,6 +156,7 @@ export function PageHead({
   caption,
   seatRef,
   subRef,
+  asideRef,
 }: {
   title: ReactNode;
   actions?: ReactNode;
@@ -147,6 +169,9 @@ export function PageHead({
   /** Where the page's second title line is seated (`PageSubtitle`).
       Empty, it takes no room and the name sits alone on R0's middle. */
   subRef?: (el: HTMLElement | null) => void;
+  /** Where the words beside the name are seated (`PageTitleAside`).
+      Empty, it takes no room. */
+  asideRef?: (el: HTMLElement | null) => void;
 }) {
   return (
     <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
@@ -160,9 +185,23 @@ export function PageHead({
           Sizes unchanged — 15 and 12. A name alone is centred the same
           either way. */}
       <div className="flex min-w-0 flex-1 flex-col justify-center">
-        <h1 data-page-title className="min-w-0 truncate text-title-sm leading-(--text-body--line-height) font-title">
-          {title}
-        </h1>
+        {/* The name's line: the name, then what qualifies it on the same
+            baseline. **The words beside give way first** — a large
+            shrink factor against the name's one — so a long branch is
+            cut before the directory's own name is. On `caption`'s
+            leading, so the line stays the name's 18 tall. */}
+        <div className="flex min-w-0 items-baseline gap-in">
+          <h1 data-page-title className="min-w-0 truncate text-title-sm leading-(--text-body--line-height) font-title">
+            {title}
+          </h1>
+          {asideRef && (
+            <span
+              ref={asideRef}
+              data-page-title-aside
+              className="flex min-w-0 shrink-[1000] items-baseline gap-xxs overflow-hidden whitespace-nowrap text-callout leading-(--text-caption--line-height) text-muted-foreground empty:hidden"
+            />
+          )}
+        </div>
         {subRef && <div ref={subRef} data-page-subtitle className="flex min-w-0 empty:hidden" />}
       </div>
       {caption && (
@@ -221,6 +260,7 @@ export function Region({
 }) {
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
+  const [aside, setAside] = useState<HTMLElement | null>(null);
   return (
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
@@ -233,7 +273,14 @@ export function Region({
       >
         <div className="flex min-w-0 flex-1 self-stretch">
           {head ?? (
-            <PageHead title={title} actions={actions} caption={caption} seatRef={setSeat} subRef={setSub} />
+            <PageHead
+              title={title}
+              actions={actions}
+              caption={caption}
+              seatRef={setSeat}
+              subRef={setSub}
+              asideRef={setAside}
+            />
           )}
         </div>
         {/* **Every R0 can say it is stale**, not only a `PageHead`: on a
@@ -273,7 +320,9 @@ export function Region({
         )}
       >
         <ActionsSeat.Provider value={head ? undefined : seat}>
-          <SubtitleSeat.Provider value={head ? undefined : sub}>{children}</SubtitleSeat.Provider>
+          <SubtitleSeat.Provider value={head ? undefined : sub}>
+            <AsideSeat.Provider value={head ? undefined : aside}>{children}</AsideSeat.Provider>
+          </SubtitleSeat.Provider>
         </ActionsSeat.Provider>
       </div>
     </div>

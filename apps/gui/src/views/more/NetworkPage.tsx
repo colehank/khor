@@ -106,7 +106,22 @@ export function NetworkPage({
   const state = about?.paused ? gui.machine_paused : noServe ? hopWord("no-serve") : gui.net_online;
 
   return (
-    <MoreFrame page="network" onClose={onClose} actions={actions}>
+    <MoreFrame
+      page="network"
+      onClose={onClose}
+      actions={actions}
+      // Whether this machine is talking and to how many — the status
+      // group's two facts in one line, counted the same way.
+      subtitle={
+        about ? (
+          <>
+            {state}
+            <span aria-hidden="true"> · </span>
+            {alone ? gui.identity_alone : gui.head_connected(connected)}
+          </>
+        ) : undefined
+      }
+    >
       {error && (
         <p data-net-error className="text-callout text-destructive">
           {error}
