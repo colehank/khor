@@ -32,6 +32,8 @@ import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
+import type { Waiting } from "./gen/bindings/Waiting";
+import type { PendingRow } from "./gen/bindings/PendingRow";
 import type { About } from "./gen/bindings/About";
 import type { DoctorRow } from "./gen/bindings/DoctorRow";
 import type { LockFacts } from "./gen/bindings/LockFacts";
@@ -90,6 +92,8 @@ export type {
   HooksState,
   Ticket,
   LeaveOutcome,
+  Waiting,
+  PendingRow,
   About,
   DoctorRow,
   LockFacts,
@@ -867,6 +871,21 @@ export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
     copy of a number only `link::INVITE_WINDOW_MS` decides. */
 export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });
+/** 待批 (docs/CONNECT.md 根不在场): who waits for the root holder, and
+    whether this machine is it — the holder gets a button per row, every
+    other machine a sentence saying where the button is. */
+export const fetchWaiting = () => call<Waiting>("pending_list");
+/** `khor approve` — the holder signs one in and pushes the roster out;
+    answers the list as it now stands. */
+export const approveMachine = (machine: string) => call<Waiting>("approve", { machine });
+/** Whether this machine made the network's root and its words have not
+    been seen yet — the first-start prompt's question. */
+export const rootUnshown = () => call<boolean>("root_unshown");
+/** The 24 words. **App-only**: the web face has no such command
+    (`khor_gui_core` `tests/command_tables.rs`), so only the app asks. */
+export const rootWords = () => call<string>("root_words");
+/** The prompt was answered or closed; it is not asked again. */
+export const rootWordsSeen = () => call<null>("root_words_seen");
 /** `khor leave` — this machine out of the network (docs/MORE.md 离开).
     Takes this machine's own name typed back, because that is the
     confirmation and **the node is what checks it** (`Node::leave`, the

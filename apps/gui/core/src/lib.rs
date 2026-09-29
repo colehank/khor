@@ -1946,6 +1946,73 @@ pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
     node.pair(ticket).await
 }
 
+/// One machine waiting for the root holder (`khor pending`) — the node's
+/// [`khor_node::PendingRow`], minted here for [`LeaveOutcome`]'s reason:
+/// what crosses to a face is this crate's own type.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct PendingRow {
+    pub id: String,
+    /// The name on the glass.
+    pub name: String,
+    /// `device`, `satellite` or `leave` — the face picks the word.
+    pub kind: String,
+}
+
+/// What the devices list shows above its rows (docs/CONNECT.md 根不在场):
+/// who waits, and **whether this machine can do anything about it** —
+/// the holder gets a button per row, everyone else a sentence saying
+/// where the button is. One answer, so the two cannot disagree.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct Waiting {
+    pub holds: bool,
+    pub rows: Vec<PendingRow>,
+}
+
+/// Who waits for the root holder, and whether this machine is it.
+pub fn waiting(root: &Path) -> Result<Waiting, String> {
+    let node = open(root)?;
+    Ok(Waiting {
+        holds: node.holds_root(),
+        rows: node
+            .pending()?
+            .into_iter()
+            .map(|r| PendingRow {
+                id: r.id,
+                name: r.name,
+                kind: r.kind,
+            })
+            .collect(),
+    })
+}
+
+/// `khor approve` — the holder signs one waiting machine in (or its
+/// removal through), pushes the roster out, and answers the list as it
+/// now stands. Async for `pair`'s reason: the push dials.
+pub async fn approve(root: &Path, machine: &str) -> Result<Waiting, String> {
+    open(root)?.approve(machine).await?;
+    waiting(root)
+}
+
+/// Whether this machine made the network's root and nobody has seen its
+/// words yet — what the app's first-start prompt asks.
+pub fn root_unshown(root: &Path) -> Result<bool, String> {
+    Ok(open(root)?.root_state().unshown)
+}
+
+/// The root's 24 words, for the app's prompt after the person pressed to
+/// see them. **App-only** (`tests/command_tables.rs` has why).
+pub fn root_words(root: &Path) -> Result<String, String> {
+    open(root)?.root_words()
+}
+
+/// The prompt was answered or closed: it is not asked again.
+pub fn root_words_seen(root: &Path) -> Result<(), String> {
+    open(root)?.root_words_seen();
+    Ok(())
+}
+
 /// How a leave ended, per machine that was in the table (docs/MORE.md
 /// 离开). The node's [`khor_node::link::Left`], minted here for the
 /// same reason [`LockFacts`] is minted here: what crosses to a face is
