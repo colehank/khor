@@ -39,6 +39,8 @@ fn main() {
     khor_gui_core::RelayChoices::export_all_to(&dir).expect("export RelayChoices");
     // What a relay write sends; embedded in no answer.
     khor_gui_core::RelayWant::export_all_to(&dir).expect("export RelayWant");
+    // 网络's 直连占比: asked on its own when the page opens.
+    khor_gui_core::RoadShare::export_all_to(&dir).expect("export RoadShare");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     // The identity card's foot: asked for on its own, embedded in no row.

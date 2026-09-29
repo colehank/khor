@@ -113,8 +113,8 @@ pub struct Check {
 /// It exists at all so a face and the fix door cannot disagree about
 /// what the keys are.
 pub const KEYS: &[&str] = &[
-    "version", "identity", "store", "serve", "web", "relays", "peers", "hooks", "agents", "vscode",
-    "disk", "launcher",
+    "version", "identity", "store", "serve", "web", "relays", "peers", "roads", "hooks", "agents",
+    "vscode", "disk", "launcher",
 ];
 
 /// The three groups the healthy checks are folded under (docs/MORE.md
@@ -148,9 +148,9 @@ pub fn group(key: &str) -> &'static str {
         // here rather than under 工具 because a full store is this
         // machine's problem before it is anybody's tool.
         "version" | "identity" | "store" | "disk" => "machine",
-        // 网络: the four that are about reaching, or being reached by,
-        // another machine.
-        "serve" | "web" | "relays" | "peers" => "network",
+        // 网络: the ones about reaching, or being reached by, another
+        // machine.
+        "serve" | "web" | "relays" | "peers" | "roads" => "network",
         // 工具: the things khor installs *beside* itself — none of them
         // is khor failing, and all of them are khor's to mend.
         "hooks" | "agents" | "vscode" | "launcher" => "tools",
@@ -188,6 +188,7 @@ pub fn name(key: &str) -> &str {
         "web" => cli::doctor_name_web(),
         "relays" => cli::doctor_name_relays(),
         "peers" => cli::doctor_name_peers(),
+        "roads" => cli::doctor_name_roads(),
         "hooks" => cli::doctor_name_hooks(),
         "agents" => cli::doctor_name_agents(),
         "vscode" => cli::doctor_name_vscode(),
@@ -215,6 +216,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         web,
         relays,
         peers,
+        roads,
         hooks,
         agents,
         vscode,
@@ -228,6 +230,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed("web", check_web(root.clone())),
         timed("relays", check_relays(node.relays().to_vec())),
         timed("peers", check_peers(node)),
+        timed("roads", check_roads(node)),
         timed("hooks", check_hooks(node)),
         timed("agents", check_agents(node)),
         timed("vscode", check_vscode()),
@@ -235,7 +238,8 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed("launcher", check_launcher()),
     );
     vec![
-        version, identity, store, serve, web, relays, peers, hooks, agents, vscode, disk, launcher,
+        version, identity, store, serve, web, relays, peers, roads, hooks, agents, vscode, disk,
+        launcher,
     ]
 }
 
@@ -444,6 +448,68 @@ async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
         Health::Warn
     };
     (state, said.join(cli::name_separator()), None)
+}
+
+/// 连接诊断: per machine the resident has dialled, how long the last
+/// dial took to get an answer and where the last few settled
+/// (`khor_core::RoadTally`, docs/CONNECT.md 度量与验收).
+///
+/// **A reading, never a verdict**: a pair of machines that only ever
+/// meets on a relay is one of the six places CONNECT.md says cannot be
+/// made seamless, and nothing on this row can be mended — so every
+/// reading is ok, and only the absence of one is 未量.
+async fn check_roads(node: &Node) -> (Health, String, Option<String>) {
+    let tallies = match node.road_tallies().await {
+        Ok(t) => t,
+        Err(crate::link::RoadsUnread::NoServe) => {
+            return (
+                Health::Unmeasured,
+                cli::doctor_roads_no_serve().to_owned(),
+                None,
+            );
+        }
+        Err(crate::link::RoadsUnread::Unanswered) => {
+            return (
+                Health::Unmeasured,
+                cli::doctor_roads_unanswered().to_owned(),
+                None,
+            );
+        }
+    };
+    let devices = node.devices().unwrap_or_default();
+    // In the device table's order, so two runs list machines the same
+    // way; a tally for a machine that has since left is named by its id.
+    let mut rows: Vec<(String, khor_core::RoadTally)> = Vec::new();
+    for d in &devices {
+        if let Some((_, t)) = tallies.iter().find(|(id, _)| *id == d.id) {
+            rows.push((d.shown().to_owned(), *t));
+        }
+    }
+    for (id, t) in &tallies {
+        if !devices.iter().any(|d| d.id == *id) {
+            rows.push((id.chars().take(8).collect(), *t));
+        }
+    }
+    let said: Vec<String> = rows
+        .iter()
+        .filter_map(|(who, t)| {
+            let ms = t.first_reply_ms?;
+            let settled = t.direct + t.relay;
+            Some(if settled == 0 {
+                cli::doctor_road_fresh(who, ms)
+            } else {
+                cli::doctor_road(who, ms, t.direct, settled)
+            })
+        })
+        .collect();
+    if said.is_empty() {
+        return (
+            Health::Unmeasured,
+            cli::doctor_roads_none().to_owned(),
+            None,
+        );
+    }
+    (Health::Ok, said.join(cli::name_separator()), None)
 }
 
 /// Every paired machine: which road, and which khor.

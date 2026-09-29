@@ -377,6 +377,11 @@ fn set_relays(
 }
 
 #[tauri::command]
+async fn road_share() -> Result<khor_gui_core::RoadShare, String> {
+    khor_gui_core::road_share(&Node::root_from_env()).await
+}
+
+#[tauri::command]
 fn tell(machine: String, text: String) -> Result<(), String> {
     khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
 }
@@ -2891,6 +2896,7 @@ pub fn run() {
             rename_machine,
             relays,
             set_relays,
+            road_share,
             tell,
             pin_session,
             pin_device,

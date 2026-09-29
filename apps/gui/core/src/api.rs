@@ -396,6 +396,7 @@ pub fn answer(
             to_json(&crate::set_watch(root, &arg("machine")?, &paths)?)
         }
         "relays" => to_json(&crate::relays(root)?),
+        "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "set_relays" => {
             // Read by position and refused by name, the same as `paths`
             // above and for a sharper version of the same reason: a

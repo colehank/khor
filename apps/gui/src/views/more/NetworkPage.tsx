@@ -8,7 +8,8 @@
 // machine in the rows every other 「…」 page is made of:
 //
 //   状态   本机 (its name and whether it is talking) · 已连接的机器 (how
-//          many, and by which road) · 暂停同步 (a switch)
+//          many, and by which road) · 直连占比 (how the resident's recent
+//          dials settled) · 暂停同步 (a switch)
 //   中继   使用中 · 自己的中继 and its entries · 只使用自己的中继
 //   ——     离开网络
 //
@@ -35,7 +36,15 @@
 // drifts is the one nobody runs.
 import { useEffect, useState, type ReactNode } from "react";
 
-import { fetchAbout, leaveNetwork, setPaused, type About, type DeviceRow } from "@/api";
+import {
+  fetchAbout,
+  fetchRoadShare,
+  leaveNetwork,
+  setPaused,
+  type About,
+  type DeviceRow,
+  type RoadShare,
+} from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
@@ -76,6 +85,13 @@ export function NetworkPage({
   const [about, setAbout] = useState<About | null>(null);
   useEffect(() => {
     void fetchAbout().then(setAbout, () => setAbout(null));
+  }, []);
+  // 直连占比 (docs/CONNECT.md 度量与验收): the resident's own memory of
+  // its dials, asked once on arrival like `about`. A failed ask leaves
+  // the row out rather than painting a number nobody measured.
+  const [share, setShare] = useState<RoadShare | null>(null);
+  useEffect(() => {
+    void fetchRoadShare().then(setShare, () => setShare(null));
   }, []);
   const [leaving, setLeaving] = useState(false);
   const [typedName, setTypedName] = useState("");
@@ -146,6 +162,25 @@ export function NetworkPage({
             gui.net_connected_bare(0)
           )}
         </MoreFact>
+        {/* 直连占比: of the dials this machine's serve made lately that
+            settled on a road, how many went direct — the answer to
+            「这张网还要不要中继」 over time, where 已连接的机器 above is
+            the answer right now. Out of how many is part of the fact:
+            100% of one dial is not 100% of twenty. No reading says
+            why — serve 未运行 in the word the row above uses for it. */}
+        {!alone && share && (
+          <MoreFact name="net-direct-share" label={gui.roads_share_label}>
+            <span data-net-direct-share={share.unread ?? share.settled}>
+              {share.unread === "no-serve"
+                ? hopWord("no-serve")
+                : share.unread
+                  ? gui.roads_unanswered
+                  : share.settled === 0
+                    ? gui.roads_none
+                    : gui.roads_share(Math.round((100 * share.direct) / share.settled), share.settled)}
+            </span>
+          </MoreFact>
+        )}
         {/* 暂停同步: **a switch** — one state, taken at once, undone by the
             same press. Not drawn on a machine that is in no network:
             `khor pause` there is an act with no audience. The fresh

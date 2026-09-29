@@ -30,6 +30,7 @@ import type { DayMark } from "./gen/bindings/DayMark";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { RelayWant } from "./gen/bindings/RelayWant";
+import type { RoadShare } from "./gen/bindings/RoadShare";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
@@ -89,6 +90,7 @@ export type {
   FaceChoices,
   RelayChoices,
   RelayWant,
+  RoadShare,
   HooksState,
   Ticket,
   LeaveOutcome,
@@ -859,6 +861,9 @@ export const fetchRelays = () => call<RelayChoices>("relays");
     `khor serve` keeps the list it started with. */
 export const setRelays = (relays: RelayWant[], onlyMine: boolean) =>
   call<RelayChoices>("set_relays", { relays, only_mine: onlyMine });
+/** 直连占比: of the resident's recent dials that settled, how many went
+    direct. `unread` says why there is no reading when there is none. */
+export const fetchRoadShare = () => call<RoadShare>("road_share");
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to

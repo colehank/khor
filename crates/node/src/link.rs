@@ -546,6 +546,9 @@ impl Node {
                 }
                 ipc::Reply::Hops { by_device }
             }
+            ipc::Op::Roads => ipc::Reply::Roads {
+                by_device: crate::roads::tally(&self.roads),
+            },
             ipc::Op::SyncNow => {
                 let _g = self.sync_gate.lock().await;
                 ipc::Reply::Synced {
@@ -5302,6 +5305,25 @@ impl Node {
         }
     }
 
+    /// How the resident's recent dials went, per far machine
+    /// (`khor_core::RoadTally`). Machines it has not dialled since it
+    /// started are absent — that is「no reading」, not「zero」.
+    ///
+    /// **Only the resident can answer**, for the reason [`Node::hops`]
+    /// gives: a one-shot verb has dialled nothing. `Err` says which of
+    /// the two silences it is, because only one has a remedy: no serve
+    /// at all ([`RoadsUnread::NoServe`]), or a serve that did not
+    /// understand the question — one older than this op, which decodes
+    /// it as garbage and answers `Refused` — or did not answer in time
+    /// ([`RoadsUnread::Unanswered`]).
+    pub async fn road_tallies(&self) -> Result<Vec<(String, khor_core::RoadTally)>, RoadsUnread> {
+        match self.via_serve(ipc::Op::Roads).await {
+            Some(Ok(ipc::Reply::Roads { by_device })) => Ok(by_device),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
+        }
+    }
+
     /// One sync visit to every known device, now. Returns per-device
     /// outcomes — "moved nothing" and "failed" wear different faces.
     /// Routed through the resident serve when one holds the key.
@@ -5890,6 +5912,15 @@ pub(crate) fn pid_alive(pid: u32) -> bool {
     }
 }
 
+/// Why [`Node::road_tallies`] has no answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoadsUnread {
+    /// No resident on this machine: nothing here has been dialling.
+    NoServe,
+    /// A resident that refused the question or did not answer it.
+    Unanswered,
+}
+
 /// Why a dial did not produce a connection. Kept apart from the sentence
 /// a person reads: every caller says who it was trying to reach and what
 /// for, and that is the half worth keeping at the call site.
@@ -5938,6 +5969,9 @@ impl Node {
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
         }
         let bare = |e| DialFailure::Refused(format!("{e}"));
+        // 首包时间 starts here, before either road is tried: what a
+        // person waits through is the whole dial, head start included.
+        let started = std::time::Instant::now();
         let mut roads = tokio::task::JoinSet::new();
         if !direct.is_empty() {
             let addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
@@ -5967,7 +6001,11 @@ impl Node {
             tokio::select! {
                 () = &mut deadline => return Err(DialFailure::TimedOut),
                 joined = roads.join_next() => match joined {
-                    Some(Ok(Ok(conn))) => return Ok(conn),
+                    Some(Ok(Ok(conn))) => {
+                        crate::roads::replied(&self.roads, id, started.elapsed());
+                        crate::roads::watch(&self.roads, id, &conn);
+                        return Ok(conn);
+                    }
                     Some(Ok(Err(e))) => refused = Some(e.to_string()),
                     Some(Err(_)) => {}
                     None => return Err(match refused {

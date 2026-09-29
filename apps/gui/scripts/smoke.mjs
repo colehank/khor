@@ -8423,7 +8423,7 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     //    a match.
     const WANTED = [
       "version", "identity", "store", "serve", "web", "relays",
-      "peers", "hooks", "agents", "vscode", "disk", "launcher",
+      "peers", "roads", "hooks", "agents", "vscode", "disk", "launcher",
     ];
     for (const key of WANTED) {
       if (!keys.includes(key)) {

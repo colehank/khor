@@ -39,6 +39,7 @@ pub mod preview;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
+pub(crate) mod roads;
 pub mod satellite;
 pub mod serves;
 pub mod tabs;
@@ -55,8 +56,8 @@ pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Load, Session, SessionId, State, Tokens, TopBy, TopRow, Usage, UsageDay,
-    Vitals, kind,
+    CpuDay, Fill, Hop, Load, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    UsageDay, Vitals, kind,
 };
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
 pub use khor_sync::devices::DeviceInfo;
@@ -422,6 +423,11 @@ pub struct Node {
     /// serve (`via_serve`), and that is the process this saves.
     pub(crate) wires:
         Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+    /// How this node's recent dials went, per far machine
+    /// (`crate::roads`). Only the resident's is ever read — through
+    /// `ipc::Op::Roads` — because only it lives long enough to have
+    /// dialled anything more than once.
+    pub(crate) roads: roads::Roads,
 }
 
 /// A read-only look at the connections a node is holding
@@ -922,6 +928,7 @@ impl Node {
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            roads: Arc::default(),
         };
         node.register_self()?;
         Ok(node)

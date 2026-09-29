@@ -191,6 +191,25 @@ pub struct RelayChoices {
     pub only_mine: bool,
 }
 
+/// 直连占比 on the 网络 page (docs/CONNECT.md 度量与验收): of the dials
+/// the resident made lately that settled on a road, how many went
+/// direct — every far machine together.
+///
+/// **The two numbers, not the percentage**: the screen writes the share
+/// and how many dials it is out of, and 「100%」 of one dial is not the
+/// same reading as 100% of twenty.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct RoadShare {
+    pub direct: u32,
+    pub settled: u32,
+    /// Why there is no reading, when there is none: `"no-serve"` (no
+    /// resident here, so nothing has been dialling) or `"unanswered"`
+    /// (a resident that did not answer the question). `None` when the
+    /// resident answered — `settled` may still be 0 then, meaning it
+    /// has not dialled anybody since it started.
+    pub unread: Option<String>,
+}
+
 /// One relay a write wants kept or added.
 ///
 /// `token` is the key typed for **this** relay, and only the relay
@@ -1122,6 +1141,33 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
         keyed: node.relays_keyed(),
         in_use: node.relays().to_vec(),
         only_mine: node.relays_only_mine(),
+    })
+}
+
+/// 直连占比, from the resident's own memory of its dials
+/// (`Node::road_tallies`).
+pub async fn road_share(root: &Path) -> Result<RoadShare, String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    Ok(match n.road_tallies().await {
+        Ok(tallies) => RoadShare {
+            direct: tallies.iter().map(|(_, t)| t.direct).sum(),
+            settled: tallies.iter().map(|(_, t)| t.direct + t.relay).sum(),
+            unread: None,
+        },
+        Err(why) => RoadShare {
+            direct: 0,
+            settled: 0,
+            unread: Some(
+                match why {
+                    khor_node::link::RoadsUnread::NoServe => "no-serve",
+                    khor_node::link::RoadsUnread::Unanswered => "unanswered",
+                }
+                .to_owned(),
+            ),
+        },
     })
 }
 

@@ -405,6 +405,7 @@ doctor-name-serve = "常驻"
 doctor-name-web = "网页脸"
 doctor-name-relays = "中继"
 doctor-name-peers = "其他机器"
+doctor-name-roads = "连接诊断"
 doctor-name-hooks = "钩子"
 doctor-name-agents = "智能体"
 doctor-name-vscode = "VS Code"
@@ -508,6 +509,16 @@ doctor-peers-alone = "尚未与其他机器配对"
 # 本机暂停接入时的自检结论(docs/MORE.md 暂停)。不是警告:它正在做被吩咐的事。
 doctor-peers-paused = "已暂停接入——不再与别的机器同步，别的机器那边看见这台离线。要恢复：khor resume"
 doctor-peers-unread = "无法读取机器列表"
+# 连接诊断 (docs/CONNECT.md 度量与验收): per machine, how long the last
+# dial took to get an answer, and where the last few settled. 「首包」 is
+# the dial's start to the far end's first answer; 「直连 2/3」 is two of
+# the last three dials that settled went direct. A dial whose road has
+# not settled yet has a time and no count, hence the short form.
+doctor-road = "{0} 首包 {1}ms，直连 {2}/{3}"
+doctor-road-fresh = "{0} 首包 {1}ms"
+doctor-roads-none = "serve 这次启动后还没有连过别的机器"
+doctor-roads-no-serve = "serve 未运行，没有连接读数"
+doctor-roads-unanswered = "serve 没有回答（可能比这一版旧）"
 doctor-hooks-ok = "claude 的钩子均已安装"
 doctor-hooks-part = "{0} 个事件的钩子未安装，或指向另一个 khor"
 doctor-hooks-unread = "无法读取 claude 的设置"
@@ -2994,6 +3005,13 @@ net-connected-n = "{0} 台（{1}）"
 net-connected-bare = "{0} 台"
 # 「1 直连」:一个数,一条路的词(`hop.direct` / `hop.relay`)。
 net-via = "{0} {1}"
+# 直连占比 (docs/CONNECT.md 度量与验收): of the resident's recent dials
+# that settled on a road, how many went direct. 「最近 N 次连接」 is part
+# of the reading — 100% of one dial is not 100% of twenty.
+roads-share-label = "直连占比"
+roads-share = "{0}%（最近 {1} 次连接）"
+roads-none = "还没有连接读数"
+roads-unanswered = "serve 没有回答"
 # 开关:打开就是 `khor pause`。说明写会发生什么。
 net-pause-sync = "暂停同步"
 net-pause-note = "其他设备会看到这台机器离线；本机照常使用"
