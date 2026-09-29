@@ -303,6 +303,17 @@ usage = """
                         列表里拿掉，那边的会话一个字节不动，它回到候选里）
   serve                 常驻：应答别人、代跑本机动词、每 5 秒同步全网
                         （顺带把网页脸也开在局域网上，见 web）
+  relay --dev | --tls-cert 证书 --tls-key 私钥 | --acme 域名 [--acme-contact 邮箱]
+        [--token 密钥 | --only-mine] [--rate 字节每秒] [--metrics 地址]
+        [--bind 地址] [--http 地址] [--state 目录] | --stats [--state 目录]
+                        在这台机器上跑一台中继（iroh-relay，同一份代码）。
+                        --dev 是明文 HTTP，默认 3340 口；TLS 用现成的证书，
+                        或者 --acme 找 Let's Encrypt 要一张。--token 只放行
+                        带这把共享密钥的客户端；--only-mine 只放行本机设备表
+                        里的设备，谁也不用填密钥。--rate 给每个客户端限速。
+                        计量只存总数：每台设备连了几次、在线多久，加中继收发的
+                        总字节，写在 --state 目录（默认 .khor/relay）；
+                        --stats 打印这份计量，不起中继
   web [--new]           网页脸的链接：拿手机或者别的电脑打开它，就是整个网。
                         脸是 serve 开的，这条只发密钥；链接里带密钥，别贴进
                         会同步的文档。--new 换一把，之前发出去的链接全作废
@@ -1137,6 +1148,37 @@ session-closed = "session 关了"
 retracted = "[已撤回]"
 file-chip = "[文件 {0} {1}B]"
 unknown-body = "[当前版本无法读取这条消息：{0}]"
+
+# ── `khor relay` (docs/NET.md 中继, CONNECT.md 自家 khor relay) ──────
+# The start banner: where it listens, who gets in, how fast, where the
+# numbers go — what a person starting a relay on a server has to know
+# before walking away from it.
+relay-up = "中继在听：{0}"
+relay-admit-everyone = "准入：任何人（不要密钥，也不看设备表）"
+relay-admit-token = "准入：带共享密钥的客户端"
+relay-admit-mine = "准入：本机设备表里的设备（现有 {0} 台）"
+# --dev with --token: the relay still cannot read what it forwards (that
+# is end-to-end encrypted), but the key itself crosses in plain HTTP.
+relay-key-in-clear = "注意：明文 HTTP 下，共享密钥也是明文传的"
+relay-rate = "限速：每个客户端 {0}/秒"
+relay-rate-none = "限速：不限"
+relay-metrics = "指标：{0}"
+relay-meter = "计量：{0}"
+relay-pick-mode = "要选一种：--dev（明文 HTTP）、--tls-cert 加 --tls-key，或 --acme 域名"
+relay-token-or-mine = "--token 和 --only-mine 只能选一个"
+relay-flag-unknown = "khor relay 不认识这个参数：{0}"
+relay-flag-needs-value = "{0} 缺少一个值"
+relay-rate-bad = "--rate 要一个大于 0 的整数（字节每秒）：{0}"
+relay-addr-bad = "不是一个监听地址：{0}"
+relay-tls-bad = "读不了证书或私钥：{0}"
+relay-wont-start = "中继无法启动：{0}"
+# `khor relay --stats`: totals only (CONNECT.md 计量只存总数) — per
+# endpoint how often and how long, the relay's bytes as one number.
+relay-stats-none = "还没有计量：{0} 不存在"
+relay-stats-unreadable = "读不了计量文件：{0}"
+relay-stats-since = "{0} 起：发给客户端 {1}，从客户端收到 {2}"
+relay-stats-device = "{0}…  连接 {1} 次，在线 {2}"
+relay-stats-no-device = "还没有设备连过"
 
 [msg]
 # ── the watch list (关注目录) ──

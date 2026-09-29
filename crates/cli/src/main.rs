@@ -57,6 +57,10 @@ use khor_node::{
     AvatarStyle, FaceShape, MsgBody, Node, PRESETS, SessionId, Tokens, UsageDay, Variant, list,
 };
 
+/// `khor relay` — its own file because it is its own program: a server
+/// with its own access control and meter (`relay.rs` head).
+mod relay;
+
 fn main() {
     // 语言, before the first word this process can print (docs/MORE.md
     // 语言). A stored choice wins, `auto` reads the environment, and
@@ -431,6 +435,13 @@ const VERBS: &[Verb] = &[
     Verb {
         word: "serve",
         run: serve,
+        reach: Reach::Act,
+    },
+    // Starts a server that listens on this machine's ports and lets
+    // other machines through it — and `--stats` is the same word.
+    Verb {
+        word: "relay",
+        run: relay::verb,
         reach: Reach::Act,
     },
     // Prints a link with the key in it. Reading it aloud is handing

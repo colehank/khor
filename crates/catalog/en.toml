@@ -333,6 +333,21 @@ usage: khor <verb>
                         machine's commands on their behalf, syncs the
                         whole network every 5 seconds (also opens the
                         web face on the LAN — see web)
+  relay --dev | --tls-cert cert --tls-key key | --acme domain [--acme-contact email]
+        [--token key | --only-mine] [--rate bytes/s] [--metrics addr]
+        [--bind addr] [--http addr] [--state dir] | --stats [--state dir]
+                        runs a relay on this machine (iroh-relay, the
+                        same code). --dev is plain HTTP on port 3340 by
+                        default; TLS takes a certificate you have, or
+                        --acme gets one from Let's Encrypt. --token
+                        admits only clients carrying that shared key;
+                        --only-mine admits only the devices in this
+                        machine's device table, no key typed anywhere.
+                        --rate limits each client. Metering keeps totals
+                        only — per device how many connections and how
+                        long online, plus the relay's bytes — in the
+                        --state directory (default .khor/relay);
+                        --stats prints that metering and starts nothing
   web [--new]           the web face's link: open it on your phone
                         or another computer and you have the whole
                         network. serve is what opens the face — this
@@ -739,6 +754,29 @@ session-closed = "Session closed"
 retracted = "[retracted]"
 file-chip = "[file {0} {1}B]"
 unknown-body = "[this version can't read this entry: {0}]"
+
+relay-up = "Relay listening on {0}"
+relay-admit-everyone = "Admits: anyone (no key, no device table)"
+relay-admit-token = "Admits: clients carrying the shared key"
+relay-admit-mine = "Admits: devices in this machine's device table ({0} now)"
+relay-key-in-clear = "Note: over plain HTTP the shared key travels in the clear"
+relay-rate = "Rate limit: {0}/s per client"
+relay-rate-none = "Rate limit: none"
+relay-metrics = "Metrics: {0}"
+relay-meter = "Metering: {0}"
+relay-pick-mode = "Pick one: --dev (plain HTTP), --tls-cert with --tls-key, or --acme <domain>"
+relay-token-or-mine = "--token and --only-mine cannot be used together"
+relay-flag-unknown = "khor relay does not know this argument: {0}"
+relay-flag-needs-value = "{0} needs a value after it"
+relay-rate-bad = "--rate takes a whole number of bytes per second above 0: {0}"
+relay-addr-bad = "Not an address to listen on: {0}"
+relay-tls-bad = "Cannot read the certificate or key: {0}"
+relay-wont-start = "The relay cannot start: {0}"
+relay-stats-none = "Nothing metered yet: {0} does not exist"
+relay-stats-unreadable = "Cannot read the metering file: {0}"
+relay-stats-since = "Since {0}: {1} sent to clients, {2} received from them"
+relay-stats-device = "{0}…  {1} connections, online {2}"
+relay-stats-no-device = "No device has connected yet"
 
 [msg]
 watch-path-relative = "Watched directory must be an absolute path: {0}"
