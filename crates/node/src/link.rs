@@ -221,17 +221,10 @@ impl Node {
     /// the live endpoint and the hand-off port.
     pub async fn serve(self) -> Result<(), String> {
         let ep = std::sync::Arc::new(
-            // The one bind that serves this machine, and the only
-            // caller that passes the exclusive switch — every other
-            // `bind` in this file is a test standing up a throwaway
-            // endpoint, and none of them has a relay file to read.
-            endpoint::bind_with(
-                self.secret_key().clone(),
-                self.relays(),
-                self.relays_only_mine(),
-            )
-            .await
-            .map_err(|e| e.to_string())?,
+            // The one bind that serves this machine.
+            endpoint::bind(self.secret_key().clone(), self.relay_map())
+                .await
+                .map_err(|e| e.to_string())?,
         );
         let addrs = endpoint::local_addrs(&ep);
         // Own dialing hints go into the table so the snapshot handed to a
@@ -2215,7 +2208,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.accept_with(&ep, id).await;
@@ -2235,7 +2228,7 @@ impl Node {
     ///
     /// [`Borrow`]: crate::tunnel::Borrow
     pub async fn tunnel_to(&self, machine: &str) -> Result<crate::tunnel::Borrow, String> {
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let conn = self.dial_tunnel(&ep, machine).await?;
@@ -2554,7 +2547,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self
@@ -2589,7 +2582,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self
@@ -2672,7 +2665,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.places_on_with(&ep, machine).await;
@@ -2713,7 +2706,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.load_on_with(&ep, machine, top, by, desc).await;
@@ -2851,7 +2844,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.remove_with(&ep, machine, path).await;
@@ -2956,7 +2949,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.mkdir_with(&ep, machine, path).await;
@@ -3037,7 +3030,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.touch_with(&ep, machine, path).await;
@@ -3101,7 +3094,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.rename_with(&ep, machine, from, to).await;
@@ -3182,7 +3175,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.launch_with(&ep, machine, target).await;
@@ -3267,7 +3260,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.search_with(&ep, machine, dir, query).await;
@@ -3343,7 +3336,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.touched_with(&ep, machine, path).await;
@@ -3377,7 +3370,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.checkout_with(&ep, machine, path).await;
@@ -3563,7 +3556,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.read_head_with(&ep, machine, path).await;
@@ -3629,7 +3622,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.git_status_with(&ep, machine, root).await;
@@ -3735,7 +3728,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.git_diff_with(&ep, machine, path).await;
@@ -3818,7 +3811,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.write_path_with(&ep, machine, path, was, bytes).await;
@@ -3919,7 +3912,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.code_here_with(&ep, machine).await;
@@ -4136,7 +4129,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.read_at_with(&ep, machine, path, offset).await;
@@ -4343,7 +4336,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.close_on_with(&ep, machine, session).await;
@@ -4394,7 +4387,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.ls_with(&ep, machine, path).await;
@@ -4532,7 +4525,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self.pull_path_with(&ep, machine, path, dir).await;
@@ -5086,7 +5079,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         // A one-shot endpoint's addresses die with it — better none than
@@ -5320,7 +5313,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind(self.secret_key().clone(), self.relays())
+        let ep = endpoint::bind(self.secret_key().clone(), self.relay_map())
             .await
             .map_err(|e| e.to_string())?;
         let out = self.sync_with_all(&ep).await;

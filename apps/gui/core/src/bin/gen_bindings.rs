@@ -37,6 +37,8 @@ fn main() {
     khor_gui_core::DayRun::export_all_to(&dir).expect("export DayRun");
     khor_gui_core::FaceChoices::export_all_to(&dir).expect("export FaceChoices");
     khor_gui_core::RelayChoices::export_all_to(&dir).expect("export RelayChoices");
+    // What a relay write sends; embedded in no answer.
+    khor_gui_core::RelayWant::export_all_to(&dir).expect("export RelayWant");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     // The identity card's foot: asked for on its own, embedded in no row.

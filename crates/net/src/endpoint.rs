@@ -13,21 +13,120 @@ pub const ALPN: &[u8] = b"khor/0";
 /// routes by which one a connection speaks.
 pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 
-/// The Khor relay tier (docs/NET.md 中继): joins the n0 defaults on
-/// every bind, so a network that cannot reach n0 falls to it without
-/// anyone flipping a switch. Currently mandala's aliyun box, on loan —
-/// khor's own fleet replaces this list, not the mechanism.
+/// The Khor relay tier (docs/NET.md 中继): the relays every khor binds
+/// with unless this machine was told to use only its own. Currently
+/// mandala's aliyun box, on loan — khor's own fleet replaces this list,
+/// not the mechanism.
+///
+/// **This is the whole default now; n0's public relays are not beside
+/// it** (docs/CONNECT.md 分期 1). n0 describes them as fit for
+/// development and rate-limited, they do not answer from mainland China
+/// at all, and a map that holds them sends this machine's net report to
+/// four hosts nobody here runs.
 pub const KHOR_RELAYS: &[&str] = &["http://39.97.7.248:3340"];
 
-/// Every relay this machine should use: the Khor tier plus `KHOR_RELAY`
-/// (comma-separated, the self-hosted tier). Deduplicated, order kept.
-pub fn configured_relays() -> Vec<String> {
-    let mut out: Vec<String> = KHOR_RELAYS.iter().map(|s| s.to_string()).collect();
-    if let Ok(own) = std::env::var("KHOR_RELAY") {
-        for url in own.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            if !out.iter().any(|have| have == url) {
-                out.push(url.to_string());
-            }
+/// The Khor tier's shared key, when it has one.
+///
+/// `None` while the tier still runs `iroh-relay --dev` and admits
+/// everyone. A key compiled into a binary can be dug out of it, so this
+/// only stops casual free-riding, not a determined one (CONNECT.md 分期
+/// 0 says the same); what it buys is that a relay admitting only
+/// holders of it stops being an open relay for every iroh program.
+pub const KHOR_RELAY_TOKEN: Option<&str> = None;
+
+/// One relay this machine binds with: where it is, and the key its
+/// operator asked for.
+///
+/// **The key never travels.** What goes into the device table's hints,
+/// the pairing ticket and `endpoint.json` is [`Relay::url`] alone —
+/// those are copied to every machine on the network and kept in
+/// history that cannot be deleted. The consequence is on purpose: a
+/// peer that wants to reach this machine through a keyed relay has to
+/// hold the key itself, typed on that machine. A relay khor runs for
+/// its own devices (`khor relay --only-mine`) needs no key at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Relay {
+    pub url: String,
+    /// The shared key the relay admits by, sent as a bearer token.
+    pub token: Option<String>,
+}
+
+impl Relay {
+    /// A relay that asks for nothing.
+    pub fn bare(url: impl Into<String>) -> Relay {
+        Relay {
+            url: url.into(),
+            token: None,
+        }
+    }
+
+    /// Reads one entry the way `KHOR_RELAY` writes it: a relay url,
+    /// optionally carrying its key as a `token` query parameter —
+    /// `https://relay.example.com?token=SECRET`. `None` when it is not a
+    /// relay url at all.
+    ///
+    /// The query parameter is iroh-relay's own spelling
+    /// (`ClientRequest::auth_token` accepts `?token=` beside the bearer
+    /// header), so a url copied out of an iroh-relay operator's notes
+    /// means the same thing here. The key is lifted out of the url
+    /// rather than left in it: the url is what gets published, and a
+    /// key left inside it would be published with it.
+    pub fn parse(entry: &str) -> Option<Relay> {
+        let entry = entry.trim();
+        let parsed: iroh::RelayUrl = entry.parse().ok()?;
+        let token = parsed
+            .query_pairs()
+            .find(|(k, _)| k == "token")
+            .map(|(_, v)| v.into_owned())
+            .filter(|t| !t.is_empty());
+        let url = match entry.split_once('?') {
+            Some((bare, _)) => bare.to_string(),
+            None => entry.to_string(),
+        };
+        // The part before the query has to stand on its own too:
+        // `http://?token=x` parses as a url with the query, and not
+        // without it.
+        url.parse::<iroh::RelayUrl>().ok()?;
+        Some(Relay { url, token })
+    }
+}
+
+/// The Khor tier as relay entries.
+pub fn khor_tier() -> Vec<Relay> {
+    KHOR_RELAYS
+        .iter()
+        .map(|url| Relay {
+            url: url.to_string(),
+            token: KHOR_RELAY_TOKEN.map(str::to_string),
+        })
+        .collect()
+}
+
+/// What `KHOR_RELAY` names: comma-separated entries, each a relay url
+/// with an optional `?token=` ([`Relay::parse`]). An entry that does
+/// not parse is skipped — one typo must not cost the relays typed
+/// correctly, the same rule [`dial_addr`] keeps. A key therefore cannot
+/// contain a comma.
+pub fn env_relays() -> Vec<Relay> {
+    let Ok(own) = std::env::var("KHOR_RELAY") else {
+        return Vec::new();
+    };
+    let mut out: Vec<Relay> = Vec::new();
+    for entry in own.split(',').filter_map(Relay::parse) {
+        if !out.iter().any(|have| have.url == entry.url) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// Every relay this machine should use by default: the Khor tier plus
+/// `KHOR_RELAY`. Deduplicated by url, first one wins, order kept.
+pub fn configured_relays() -> Vec<Relay> {
+    let mut out = khor_tier();
+    for entry in env_relays() {
+        if !out.iter().any(|have| have.url == entry.url) {
+            out.push(entry);
         }
     }
     out
@@ -138,41 +237,44 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
 /// bind with the same key knocks the first off the relay, and both stop
 /// working (learned in production).
 ///
-/// `extra_relays` join the n0 defaults; iroh probes them all and homes
-/// on the closest reachable one. That probing IS the automatic tier
-/// fallback: where n0 is unreachable, the extra relay is the only probe
-/// that answers. Self-hosted relays are assumed to run no QUIC address
-/// discovery — assuming it costs a dead-port wait on every connection.
-pub async fn bind(secret: iroh::SecretKey, extra_relays: &[String]) -> Result<iroh::Endpoint> {
-    bind_with(secret, extra_relays, false).await
+/// **`relays` is the whole relay map.** iroh probes them all and homes
+/// on the closest one that answers; nothing is added behind the
+/// caller's back. It used to be added to n0's public relays, and the
+/// n0 DNS/pkarr lookup rode along with them — both are gone
+/// (docs/CONNECT.md 分期 1), so what this machine talks to for relay and
+/// lookup is exactly this list plus mDNS on its own segment. An empty
+/// list is an endpoint with no relay at all, reachable only on a road
+/// somebody already knows; a node never asks for that
+/// (`Node::set_relays` refuses the one setting that would), and tests
+/// that stand up a throwaway endpoint get the hermetic one they want.
+///
+/// Relays are assumed to run no QUIC address discovery — assuming it
+/// costs a dead-port wait on every connection. Each carries its own key
+/// when it has one ([`Relay::token`]).
+///
+/// **An HTTP proxy from the environment is honoured** (`HTTP_PROXY`,
+/// `http_proxy`, `HTTPS_PROXY`, `https_proxy`, in iroh's order): a
+/// network that lets out only TCP 443 through a proxy still reaches a
+/// relay that way (CONNECT.md 设备会在的网络). iroh reads no `NO_PROXY`,
+/// so a proxy set for the whole shell carries a relay on the same LAN
+/// through it too.
+pub async fn bind(secret: iroh::SecretKey, relays: &[Relay]) -> Result<iroh::Endpoint> {
+    Ok(builder(secret, relays)?.bind().await?)
 }
 
-/// [`bind`], plus the switch that makes `extra_relays` the **whole**
-/// relay map instead of an addition to n0's.
-///
-/// A separate entry point rather than a third parameter on `bind`:
-/// `bind` has twenty-odd call sites and all but one of them want the
-/// default, so widening it would put every test in this workspace in a
-/// red window to spell out `false`.
-///
-/// **`exclusive` with an empty list is ignored, not honoured.** Honouring
-/// it means [`iroh::endpoint::RelayMode::Disabled`] — a machine with no
-/// relay at all, reachable only where a hole punch lands, which is the
-/// one outcome nobody asks for by leaving a box empty. The refusal that
-/// makes this unreachable lives at the write door (`Node::set_relays`);
-/// this line is the second net, for a hand-edited file.
-pub async fn bind_with(
-    secret: iroh::SecretKey,
-    extra_relays: &[String],
-    exclusive: bool,
-) -> Result<iroh::Endpoint> {
+/// Everything [`bind`] configures, short of binding — split out so the
+/// configuration can be read (its `Debug`) without a socket.
+fn builder(secret: iroh::SecretKey, relays: &[Relay]) -> Result<iroh::endpoint::Builder> {
     // Built here rather than by iroh so that `follow` can read what it
     // finds; registered on the builder all the same (`Prebuilt`).
     let mdns = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
         .build(secret.public())
         .context(msg::no_local_lookup())?;
     follow(mdns.clone());
-    let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+    // `Minimal`, not `N0`: the n0 preset is n0's relays plus a pkarr
+    // publisher, a pkarr resolver and a DNS lookup, all pointed at
+    // n0's servers. Only the crypto provider is kept from it.
+    let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
         .secret_key(secret)
         // Compiled-in Mozilla roots instead of the operating system's:
         // the system route reads the macOS Keychain, and on a Mac
@@ -181,8 +283,8 @@ pub async fn bind_with(
         // own test binaries at 36-43s per process, while the verdict
         // hid because the hang is synchronous and froze single-thread
         // tokio timers with it, #73). These roots only verify outward
-        // TLS (https relays, pkarr, DoH); iroh's own encryption never
-        // touched the Keychain in the first place.
+        // TLS (https relays); iroh's own encryption never touched the
+        // Keychain in the first place.
         .ca_tls_config(iroh::tls::CaTlsConfig::embedded())
         // Explicit public nameservers instead of "read the system's":
         // on macOS the system route goes through SCDynamicStore, whose
@@ -190,10 +292,10 @@ pub async fn bind_with(
         // unbundled binaries — measured with `sample` on 2026-08-20,
         // the whole of #73's frozen-timer mystery (the hang is
         // synchronous, so it froze single-threaded tokio clocks too).
-        // khor's own relays are IPs and need no DNS at all; these
-        // servers only resolve n0's relay/lookup names where they are
-        // reachable. The cost — a network whose ONLY nameserver is an
-        // internal one loses n0 name resolution — is on the ledger.
+        // The Khor tier is an IP and needs no DNS at all; these servers
+        // resolve a relay somebody named by its domain. The cost — a
+        // network whose ONLY nameserver is an internal one cannot
+        // resolve such a relay — is on the ledger.
         .dns_resolver(
             iroh::dns::DnsResolver::builder()
                 .add_nameserver_configs(
@@ -202,6 +304,7 @@ pub async fn bind_with(
                 )
                 .build(),
         )
+        .proxy_from_env()
         .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
         // **On the builder, not on the bound endpoint — and that is the
         // whole difference between wired up and merely present.**
@@ -223,31 +326,28 @@ pub async fn bind_with(
                 std::borrow::Cow::Borrowed(addrs)
             }
         }));
-    let extras: Vec<iroh::RelayConfig> = extra_relays
+    let map = relay_map(relays);
+    if !map.is_empty() {
+        builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
+    }
+    Ok(builder)
+}
+
+/// The relay map a bind hands iroh: every entry that parses, each with
+/// its key. An entry that does not parse is dropped here rather than
+/// failing the bind — the list comes from files and environment
+/// variables, and one typo must not take the rest down with it.
+pub fn relay_map(relays: &[Relay]) -> iroh::RelayMap {
+    relays
         .iter()
-        .filter_map(|r| r.parse::<iroh::RelayUrl>().ok())
-        .map(|url| {
+        .filter_map(|r| {
+            let url = r.url.parse::<iroh::RelayUrl>().ok()?;
             let mut c = iroh::RelayConfig::from(url);
             c.quic = None;
-            c
+            c.auth_token = r.token.clone().filter(|t| !t.is_empty());
+            Some(std::sync::Arc::new(c))
         })
-        .collect();
-    if !extras.is_empty() {
-        // Exclusive means the user's list *is* the map — n0's servers
-        // are not in it and this machine stops touching them for relay.
-        // (Their DNS/pkarr lookup is a different service and is still
-        // on; taking that out is its own switch and nobody has asked.)
-        let mut relays: Vec<std::sync::Arc<iroh::RelayConfig>> = if exclusive {
-            Vec::new()
-        } else {
-            iroh::defaults::prod::default_relay_map().relays()
-        };
-        relays.extend(extras.into_iter().map(std::sync::Arc::new));
-        builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(
-            relays.into_iter().collect(),
-        ));
-    }
-    Ok(builder.bind().await?)
+        .collect()
 }
 
 /// Is this an address no peer could ever reach us on?
@@ -457,6 +557,86 @@ mod tests {
             (1, 2),
             "one direct road, two relay roads, no garbage"
         );
+    }
+
+    /// `KHOR_RELAY`'s entry shape: a url, and a key riding as `?token=`
+    /// that is lifted out of the url — the url is what gets published.
+    #[test]
+    fn a_relay_entry_carries_its_key_outside_the_url() {
+        let keyed = Relay::parse(" https://relay.example.com:8443?token=s3cr%2Bt ").unwrap();
+        assert_eq!(keyed.url, "https://relay.example.com:8443");
+        assert_eq!(
+            keyed.token.as_deref(),
+            Some("s3cr+t"),
+            "the key is percent-decoded"
+        );
+        let bare = Relay::parse("http://39.97.7.248:3340").unwrap();
+        assert_eq!(bare, Relay::bare("http://39.97.7.248:3340"));
+        // An empty key is no key: `?token=` alone must not send an empty
+        // bearer that a keyed relay refuses and an open one ignores.
+        assert_eq!(Relay::parse("http://h:1?token=").unwrap().token, None);
+        for garbage in ["", "garbage", "?token=x", "http://?token=x"] {
+            assert_eq!(Relay::parse(garbage), None, "{garbage:?} is not a relay");
+        }
+    }
+
+    /// The map a bind hands iroh: keys on the relays that have them,
+    /// none on the ones that do not, and a bad entry dropped rather than
+    /// failing the rest.
+    #[test]
+    fn the_relay_map_carries_each_key_and_skips_garbage() {
+        let map = relay_map(&[
+            Relay {
+                url: "http://203.0.113.9:3340".into(),
+                token: Some("k".into()),
+            },
+            Relay::bare("http://203.0.113.10:3340"),
+            Relay::bare("not a url"),
+        ]);
+        assert_eq!(map.len(), 2, "the bad entry is dropped, the others kept");
+        let key_of = |u: &str| map.get(&u.parse().unwrap()).and_then(|c| c.auth_token.clone());
+        assert_eq!(key_of("http://203.0.113.9:3340").as_deref(), Some("k"));
+        assert_eq!(key_of("http://203.0.113.10:3340"), None);
+    }
+
+    /// No n0 service survives a bind: not a relay in the map, not a
+    /// lookup service (docs/CONNECT.md 分期 1 去 n0).
+    ///
+    /// **Two controls, because both halves are absence checks.** The
+    /// needle is shown to find n0 where n0 is (iroh's own n0 preset),
+    /// and the relay probe is shown to find a relay that is there —
+    /// without them, a `Debug` that printed nothing and a probe that
+    /// always missed would pass as well as the real thing.
+    #[tokio::test]
+    async fn a_bound_endpoint_has_no_n0_relay_and_no_n0_lookup() {
+        const N0: &str = "iroh.link";
+        const MINE: &str = "http://203.0.113.9:3340";
+        let relays = [Relay::bare(MINE)];
+
+        let n0 = format!("{:?}", iroh::Endpoint::builder(iroh::endpoint::presets::N0));
+        assert!(n0.contains(N0), "control: the needle must find n0 in n0's preset");
+        let ours = format!("{:?}", builder(iroh::SecretKey::generate(), &relays).unwrap());
+        assert!(!ours.contains(N0), "the builder names an n0 service: {ours}");
+        assert!(
+            ours.contains("203.0.113.9"),
+            "control: the builder's Debug must show the relays it holds: {ours}"
+        );
+
+        let ep = bind(iroh::SecretKey::generate(), &relays).await.unwrap();
+        let lookup = ep.address_lookup().unwrap();
+        assert_eq!(lookup.len(), 1, "mDNS is the one lookup service: {lookup:?}");
+        assert!(!format!("{lookup:?}").contains(N0), "{lookup:?}");
+        for url in iroh::defaults::prod::default_relay_map().urls::<Vec<_>>() {
+            assert!(
+                ep.remove_relay(&url).await.is_none(),
+                "n0's relay {url} is in the bound endpoint's map"
+            );
+        }
+        assert!(
+            ep.remove_relay(&MINE.parse().unwrap()).await.is_some(),
+            "control: the probe must find the relay that is in the map"
+        );
+        ep.close().await;
     }
 
     #[test]

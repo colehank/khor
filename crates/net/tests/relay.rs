@@ -28,8 +28,9 @@ fn clear_proxies() {
 async fn a_relay_only_dial_connects_and_a_ghost_peer_does_not() {
     clear_proxies();
     let relays: Vec<String> = KHOR_RELAYS.iter().map(|s| s.to_string()).collect();
+    let map = endpoint::khor_tier();
 
-    let server = endpoint::bind(iroh::SecretKey::generate(), &relays)
+    let server = endpoint::bind(iroh::SecretKey::generate(), &map)
         .await
         .unwrap();
     let server_id = server.addr().id.to_string();
@@ -59,7 +60,7 @@ async fn a_relay_only_dial_connects_and_a_ghost_peer_does_not() {
     });
 
     // The dial carries the relay road only — no IPs.
-    let client = endpoint::bind(iroh::SecretKey::generate(), &relays)
+    let client = endpoint::bind(iroh::SecretKey::generate(), &map)
         .await
         .unwrap();
     let addr = endpoint::dial_addr(&server_id, &[], &relays).unwrap();

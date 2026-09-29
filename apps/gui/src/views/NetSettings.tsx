@@ -22,6 +22,12 @@
 // `setRelays` and paints the answer. "Did it take" is never a question
 // this layer answers from memory.
 //
+// **A key is typed once and never shown again** (2026-09-30, docs/NET.md
+// 中继). The add window has a second box for the relay's shared key;
+// after that the page only knows *whether* a relay is keyed (`keyed`,
+// the row's note) — every later write names the relays to keep with no
+// key, and the node keeps the one it stored (`Node::set_relays`).
+//
 // ⚠️ **The one thing here that is not visible in the data:** the list is
 // read when a node opens. The app opens one per call so it sees a change
 // at once, but a running `khor serve` and every standing connection keep
@@ -31,7 +37,7 @@
 // connecting the two.
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchRelays, setRelays, type RelayChoices } from "@/api";
+import { fetchRelays, setRelays, type RelayChoices, type RelayWant } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
@@ -39,6 +45,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
+
+/** A relay to keep as it is stored — its key, if any, stays put. */
+const kept = (url: string): RelayWant => ({ url, token: null });
 
 /** Mounting is reading: the page is drawn only while it is on screen. */
 export function NetSettings() {
@@ -50,6 +59,7 @@ export function NetSettings() {
   // pressed the switch for (安全's PIN-then-lock, the same road).
   const [adding, setAdding] = useState(false);
   const [typed, setTyped] = useState("");
+  const [typedKey, setTypedKey] = useState("");
   const [refused, setRefused] = useState<string | null>(null);
   const [arming, setArming] = useState(false);
 
@@ -70,7 +80,7 @@ export function NetSettings() {
   // One door for every change — add and remove both send the whole list,
   // because that is the shape the node takes (`Node::set_relays`
   // replaces). The node's own sentence names the entry it refused.
-  const write = useCallback(async (next: string[], onlyMine: boolean, onRefuse: (why: string) => void) => {
+  const write = useCallback(async (next: RelayWant[], onlyMine: boolean, onRefuse: (why: string) => void) => {
     try {
       setChoices(await setRelays(next, onlyMine));
       return true;
@@ -82,6 +92,7 @@ export function NetSettings() {
 
   const openAdd = (arm: boolean) => {
     setTyped("");
+    setTypedKey("");
     setRefused(null);
     setArming(arm);
     setAdding(true);
@@ -124,10 +135,11 @@ export function NetSettings() {
               name="relay"
               rowMark={{ "data-relay-mine": url }}
               label={<span data-selectable className="block truncate font-mono">{url}</span>}
+              hint={choices.keyed.includes(url) ? <span data-relay-keyed>{gui.relays_keyed}</span> : undefined}
               actionLabel={gui.remove}
               onPress={() =>
                 void write(
-                  choices.mine.filter((u) => u !== url),
+                  choices.mine.filter((u) => u !== url).map(kept),
                   choices.only_mine,
                   setError,
                 )
@@ -151,7 +163,7 @@ export function NetSettings() {
                 openAdd(true);
                 return;
               }
-              void write(choices.mine, !choices.only_mine, setError);
+              void write(choices.mine.map(kept), !choices.only_mine, setError);
             }}
             mark={{ "data-relays-only-mine": "" }}
           />
@@ -163,14 +175,22 @@ export function NetSettings() {
               </DialogHeader>
               <form
                 id="relay-add"
+                className="flex flex-col gap-in"
                 onSubmit={async (e) => {
                   e.preventDefault();
                   const url = typed.trim();
                   if (!url) return;
+                  const token = typedKey.trim() || null;
                   // Closed only on success: a refused address stays in
                   // the box next to the sentence saying why, so the fix
                   // is an edit and not a retype.
-                  if (await write([...choices.mine, url], arming || choices.only_mine, setRefused)) {
+                  if (
+                    await write(
+                      [...choices.mine.filter((u) => u !== url).map(kept), { url, token }],
+                      arming || choices.only_mine,
+                      setRefused,
+                    )
+                  ) {
                     setAdding(false);
                     setArming(false);
                   }
@@ -183,6 +203,20 @@ export function NetSettings() {
                   placeholder={gui.relays_hint}
                   value={typed}
                   onChange={(e) => setTyped(e.target.value)}
+                  className="min-h-touch w-full font-mono"
+                />
+                {/* The relay's shared key, when its operator set one
+                    (`khor relay --token`, iroh-relay's shared_token).
+                    Masked: it is a secret, and this is the one moment
+                    it is on screen at all. */}
+                <Input
+                  data-relay-add-key
+                  type="password"
+                  autoComplete="off"
+                  aria-label={gui.relays_key}
+                  placeholder={gui.relays_key_hint}
+                  value={typedKey}
+                  onChange={(e) => setTypedKey(e.target.value)}
                   className="min-h-touch w-full font-mono"
                 />
               </form>

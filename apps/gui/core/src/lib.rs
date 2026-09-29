@@ -178,12 +178,29 @@ pub struct WatchedReading {
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct RelayChoices {
     pub mine: Vec<String>,
+    /// Which of `mine` were entered with a key. **Whether, never what**:
+    /// the screen says a relay is keyed and never holds the key, which
+    /// is why a write names the relays to keep and carries a key only
+    /// for the one being added ([`RelayWant`]).
+    pub keyed: Vec<String>,
     pub in_use: Vec<String>,
-    /// Whether `mine` is being used **instead of** the built-in tier and
-    /// n0's rather than on top of them. When this is on, `in_use` is
-    /// `mine` — which is the only way the screen can show that the
-    /// switch did something.
+    /// Whether `mine` is being used **instead of** the Khor tier rather
+    /// than on top of it. When this is on, `in_use` is `mine` (plus
+    /// `KHOR_RELAY`) — which is the only way the screen can show that
+    /// the switch did something.
     pub only_mine: bool,
+}
+
+/// One relay a write wants kept or added.
+///
+/// `token` is the key typed for **this** relay, and only the relay
+/// being added carries one: `None` keeps whatever key is already stored
+/// for that url (`Node::set_relays`).
+#[derive(Debug, Clone, serde::Deserialize, TS)]
+pub struct RelayWant {
+    pub url: String,
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -1102,6 +1119,7 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
     let node = open(root)?;
     Ok(RelayChoices {
         mine: node.relay_choices(),
+        keyed: node.relays_keyed(),
         in_use: node.relays().to_vec(),
         only_mine: node.relays_only_mine(),
     })
@@ -1114,11 +1132,23 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
 /// ⚠️ `in_use` here is what the **next** node will bind with. A running
 /// `khor serve` and every connection already standing keep the list they
 /// opened with; the screen has to say so, because nothing else will.
-pub fn set_relays(root: &Path, urls: &[String], only_mine: bool) -> Result<RelayChoices, String> {
+pub fn set_relays(
+    root: &Path,
+    wants: &[RelayWant],
+    only_mine: bool,
+) -> Result<RelayChoices, String> {
     let node = open(root)?;
-    let in_use = node.set_relays(urls, only_mine)?;
+    let entries: Vec<khor_node::Relay> = wants
+        .iter()
+        .map(|w| khor_node::Relay {
+            url: w.url.clone(),
+            token: w.token.clone(),
+        })
+        .collect();
+    let in_use = node.set_relays(&entries, only_mine)?;
     Ok(RelayChoices {
         mine: node.relay_choices(),
+        keyed: node.relays_keyed(),
         in_use,
         // Read back rather than echoed: the node is allowed to refuse
         // the combination, and a screen painting what it sent would show

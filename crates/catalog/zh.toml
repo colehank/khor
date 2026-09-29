@@ -1156,8 +1156,8 @@ watch-path-twice = "目录重复：{0}"
 # 连不上」weeks later, pointing at the network — and the user is looking
 # at a screen that still lists the relay they typed.
 not-a-relay-url = "不是一个中继地址：{0}"
-# 局域网发现起不来。不致命——n0 那套照常答,只是找隔壁那台还要走一趟
-# 跨洋往返;而它起不来时没有任何症状,所以这句是唯一会说话的东西。
+# 局域网发现起不来。不致命——中继照常,只是找隔壁那台也要绕中继走;
+# 而它起不来时没有任何症状,所以这句是唯一会说话的东西。
 no-local-lookup = "局域网发现无法启动"
 # 「只用我自己那台」和一张空名单合起来是唯一一种「看着像选择、其实不是」
 # 的组合:它把机器留在没有任何中继的状态,只有打洞成了才连得上。拒绝,
@@ -3059,8 +3059,17 @@ relays-in-use = "使用中"
 # The exclusive switch. It reads as a sentence rather than a label
 # because what it does is not guessable from a noun: 「中继」 alone would
 # leave「加了这台之后原来那些还在不在」unanswered, which is the only
-# question this control exists to answer.
+# question this control exists to answer. Since n0's relays left the
+# default (docs/CONNECT.md 分期 1) 「原来那些」 is the Khor tier alone, so
+# on it means 「不用 Khor 中继」.
 relays-only-mine = "只使用自己的中继"
+# The add window's second box: the relay's shared key, when its operator
+# set one (`khor relay --token`, iroh-relay's shared_token). Typed once;
+# afterwards the page only says that a relay has one (`relays-keyed`) —
+# the key is a secret and is never painted back.
+relays-key = "中继密钥"
+relays-key-hint = "密钥（没有就留空）"
+relays-keyed = "带密钥"
 back = "返回"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —

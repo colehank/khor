@@ -6,7 +6,7 @@
 //! nothing in this file depends on the aliyun box being up (which is
 //! what `relay.rs` is for, and why that one is `#[ignore]`).
 
-use khor_node::Node;
+use khor_node::{Node, Relay};
 
 /// An address in TEST-NET-3 (RFC 5737), which exists so that a document
 /// can name an address nobody routes. It has to parse as a relay url and
@@ -74,7 +74,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     );
 
     let merged = node
-        .set_relays(&[MINE.to_string()], false)
+        .set_relays(&[Relay::bare(MINE)], false)
         .expect("a real relay url should be accepted");
     assert!(
         merged.iter().any(|r| r == MINE),
@@ -104,7 +104,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     // Refused, and refused **without touching what was already stored**.
     // A validation that clears the list on its way to saying no would be
     // worse than one that never checked.
-    let refused = reopened.set_relays(&["这不是一个地址".to_string()], false);
+    let refused = reopened.set_relays(&[Relay::bare("这不是一个地址")], false);
     assert!(
         refused.is_err(),
         "a string that is not a relay url must not be stored"
@@ -131,7 +131,7 @@ fn a_typed_relay_joins_the_list_survives_a_reopen_and_a_bad_one_is_refused() {
     );
 }
 
-/// 「只用我自己那台」replaces the list instead of joining it — and it
+/// 「只用我自己那台」replaces the Khor tier instead of joining it — and it
 /// cannot be turned on with nothing to replace it with.
 ///
 /// **The first assertion is again the arm that gives the rest meaning.**
@@ -158,7 +158,7 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
     // exclusive case below — without it, "the list is just mine" could
     // mean the tier was never there.
     let joined = node
-        .set_relays(&[MINE.to_string()], false)
+        .set_relays(&[Relay::bare(MINE)], false)
         .expect("a real relay url should be accepted");
     assert!(
         joined.len() > 1,
@@ -167,7 +167,7 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
 
     // Exclusive: the same one address, and now it is the whole map.
     let alone = node
-        .set_relays(&[MINE.to_string()], true)
+        .set_relays(&[Relay::bare(MINE)], true)
         .expect("one relay of my own is enough to be the only one");
     assert_eq!(
         alone,
@@ -191,5 +191,115 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
     assert!(
         reopened.set_relays(&[], true).is_err(),
         "emptying the list must not be a way into「only mine, and none」"
+    );
+}
+
+/// A relay's key is stored with it, reaches the bind, and reaches
+/// nothing that is published.
+///
+/// **The control is the url list, not the key.** "the bind carries the
+/// key" is satisfied by a node that also put the key into the list it
+/// hands to the device table and the ticket — which would copy a shared
+/// secret into every machine's history. So the published list is read
+/// for the key too, and must not have it.
+#[test]
+fn a_relay_key_reaches_the_bind_and_nothing_that_is_published() {
+    const KEY: &str = "sesame-4f2a";
+    let root = root("keyed");
+    let node = Node::open(root.to_path_buf()).expect("a fresh home should open");
+    node.set_relays(
+        &[Relay {
+            url: MINE.to_string(),
+            token: Some(KEY.to_string()),
+        }],
+        false,
+    )
+    .expect("a keyed relay should be accepted");
+
+    let reopened = Node::open(root.to_path_buf()).expect("the home should reopen");
+    let bound = reopened
+        .relay_map()
+        .iter()
+        .find(|r| r.url == MINE)
+        .expect("the typed relay is in the map the bind uses");
+    assert_eq!(
+        bound.token.as_deref(),
+        Some(KEY),
+        "the bind must carry the key the relay was entered with"
+    );
+    assert!(
+        reopened.relays().iter().all(|r| !r.contains(KEY)),
+        "the published list must not carry the key: {:?}",
+        reopened.relays()
+    );
+    assert_eq!(
+        reopened.relays_keyed(),
+        vec![MINE.to_string()],
+        "the screen learns that the relay is keyed"
+    );
+
+    // A write that names the relay without a key keeps the stored one —
+    // the screen never holds keys, so removing *another* relay must not
+    // strip this one's.
+    const OTHER: &str = "http://203.0.113.10:3340";
+    reopened
+        .set_relays(&[Relay::bare(MINE), Relay::bare(OTHER)], false)
+        .expect("adding a second relay should be accepted");
+    reopened
+        .set_relays(&[Relay::bare(MINE)], false)
+        .expect("removing the second relay should be accepted");
+    let again = Node::open(root.to_path_buf()).expect("the home should reopen");
+    assert_eq!(
+        again
+            .relay_map()
+            .iter()
+            .find(|r| r.url == MINE)
+            .and_then(|r| r.token.as_deref()),
+        Some(KEY),
+        "a relay named without a key keeps the key it already had"
+    );
+
+    // Removing the relay takes its key with it: adding it back bare
+    // gives a bare relay, not the old key resurrected.
+    again.set_relays(&[], false).expect("clearing should be allowed");
+    again
+        .set_relays(&[Relay::bare(MINE)], false)
+        .expect("re-adding should be allowed");
+    assert!(
+        again.relays_keyed().is_empty(),
+        "a relay removed and added back without a key has none"
+    );
+
+    // The file holding the key is private to this user.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(root.join(".khor").join("relays.json"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0, "relays.json must be 0600, is {mode:o}");
+    }
+}
+
+/// A relay file from before relays took keys — a bare array of url
+/// strings — still reads as those relays. Losing it would leave a
+/// machine that upgraded on the Khor tier alone with nothing saying the
+/// user's list had gone.
+#[test]
+fn a_relay_file_of_bare_urls_still_reads() {
+    let root = root("bare");
+    std::fs::create_dir_all(root.join(".khor")).unwrap();
+    std::fs::write(
+        root.join(".khor").join("relays.json"),
+        format!(r#"{{"relays": ["{MINE}", "not a url"], "only_mine": true}}"#),
+    )
+    .unwrap();
+    let node = Node::open(root.to_path_buf()).expect("the home should open");
+    assert_eq!(node.relay_choices(), vec![MINE.to_string()]);
+    assert!(node.relays_only_mine(), "the switch is read too");
+    assert!(
+        node.relays().iter().any(|r| r == MINE),
+        "and the relay is bound with"
     );
 }

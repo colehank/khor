@@ -2052,9 +2052,13 @@ try {
   const relaysAsked = [];
   const relaysSet = [];
   let relayMine = ["http://relay.gate:4433"];
+  // Which of `relayMine` carry a key — the node keeps a key for a url a
+  // write names without one (`Node::set_relays`), and so does this stub.
+  let relayKeyed = [];
   let relayOnly = false;
   const relayChoices = () => ({
     mine: relayMine,
+    keyed: relayKeyed.filter((u) => relayMine.includes(u)),
     in_use: relayOnly ? relayMine : [...new Set(["http://relay.gate:4433", ...relayMine])],
     only_mine: relayOnly,
   });
@@ -2063,12 +2067,17 @@ try {
     r.fulfill({ contentType: "application/json", body: JSON.stringify(relayChoices()) });
   });
   await page.route("**/set_relays", (r) => {
-    const { urls, only_mine } = JSON.parse(r.request().postData() || "{}");
-    relaysSet.push({ urls, only_mine });
+    const { relays, only_mine } = JSON.parse(r.request().postData() || "{}");
+    const urls = (relays ?? []).map((w) => w.url);
+    relaysSet.push({ urls, only_mine, keys: (relays ?? []).filter((w) => w.token).map((w) => w.url) });
     if (!urls.every((u) => /^https?:\/\//.test(u)) || (only_mine && urls.length === 0)) {
       r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(`no: ${urls.join(" ")}`) });
       return;
     }
+    relayKeyed = [
+      ...relayKeyed.filter((u) => urls.includes(u)),
+      ...(relays ?? []).filter((w) => w.token).map((w) => w.url),
+    ];
     relayMine = urls;
     relayOnly = only_mine;
     r.fulfill({ contentType: "application/json", body: JSON.stringify(relayChoices()) });
@@ -12303,10 +12312,17 @@ try {
           fail(`${posture}: 添加中继… opened no window with an address box`);
         } else {
           await page.fill("[data-relay-add-url]", "http://relay.two:4433");
+          // The relay's key rides only with the relay being added, and
+          // comes back as a fact about the row — never as the key.
+          await page.fill("[data-relay-add-key]", "gate-key");
           await press("[data-relay-add-do]");
           const added = await until(3_000, async () => (await page.locator('[data-relay-mine="http://relay.two:4433"]').count()) === 1);
+          const wrote = relaysSet[relaysSet.length - 1];
+          const keyedRow = await page.locator('[data-relay-mine="http://relay.two:4433"] [data-relay-keyed]').count();
           if (!added || relaysSet.length === sentBefore) {
             fail(`${posture}: adding a relay sent ${relaysSet.length - sentBefore} write(s) and drew ${added ? "its row" : "no row"}`);
+          } else if (JSON.stringify(wrote?.keys) !== JSON.stringify(["http://relay.two:4433"]) || keyedRow !== 1) {
+            fail(`${posture}: the add window's key went with ${JSON.stringify(wrote?.keys)} and the row says keyed ${keyedRow} time(s) — want only the added relay, once`);
           } else {
             await press('[data-relay-mine="http://relay.two:4433"] [data-setting-trail]');
             const gone = await until(3_000, async () => (await page.locator('[data-relay-mine="http://relay.two:4433"]').count()) === 0);

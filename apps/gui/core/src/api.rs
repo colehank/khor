@@ -402,18 +402,17 @@ pub fn answer(
             // relay is only consulted after a hole punch has already
             // failed, so an entry dropped on the way in shows up weeks
             // later as「有时候连不上」and points at the network.
-            let urls: Vec<String> = match args.get("urls") {
+            let wants: Vec<crate::RelayWant> = match args.get("relays") {
                 Some(serde_json::Value::Array(items)) => items
                     .iter()
                     .map(|u| {
-                        u.as_str()
-                            .map(str::to_owned)
-                            .ok_or_else(|| "a relay is not a string".to_owned())
+                        serde_json::from_value(u.clone())
+                            .map_err(|_| "a relay is not {url, token}".to_owned())
                     })
                     .collect::<Result<Vec<_>, _>>()?,
-                _ => return Err("arg is not a list: urls".to_owned()),
+                _ => return Err("arg is not a list: relays".to_owned()),
             };
-            to_json(&crate::set_relays(root, &urls, flag("only_mine")?)?)
+            to_json(&crate::set_relays(root, &wants, flag("only_mine")?)?)
         }
         "face_choices" => to_json(&crate::face_choices(
             root,

@@ -29,6 +29,7 @@ import type { DayRun } from "./gen/bindings/DayRun";
 import type { DayMark } from "./gen/bindings/DayMark";
 import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { RelayChoices } from "./gen/bindings/RelayChoices";
+import type { RelayWant } from "./gen/bindings/RelayWant";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
@@ -87,6 +88,7 @@ export type {
   DayMark,
   FaceChoices,
   RelayChoices,
+  RelayWant,
   HooksState,
   Ticket,
   LeaveOutcome,
@@ -844,16 +846,19 @@ export const restyle = (
 ) => call<null>("restyle", { machine, ...change });
 /** This machine's relays, both halves: `mine` is what the user typed
     here and the only part a control can remove, `in_use` is everything
-    the machine actually binds with (the built-in tier included). */
+    the machine actually binds with (the Khor tier included). `keyed`
+    says which of `mine` carry a key — never the key itself. */
 export const fetchRelays = () => call<RelayChoices>("relays");
 /** Replaces the user's own relays and answers with both halves again.
     An entry that is not a relay url is refused whole — nothing is
     written and the message names it, and so is `onlyMine` with an empty
     list (that combination leaves the machine with no relay at all).
+    A want whose `token` is null keeps the key already stored for that
+    url, so only the relay being added carries one.
     ⚠️ `in_use` describes the **next** node to open: a running
     `khor serve` keeps the list it started with. */
-export const setRelays = (urls: string[], onlyMine: boolean) =>
-  call<RelayChoices>("set_relays", { urls, only_mine: onlyMine });
+export const setRelays = (relays: RelayWant[], onlyMine: boolean) =>
+  call<RelayChoices>("set_relays", { relays, only_mine: onlyMine });
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to
