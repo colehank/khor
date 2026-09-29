@@ -2080,8 +2080,10 @@ try {
   // worked on. The block below is every other section; section 11 reloads
   // the page and builds its own helpers, so it stands on nothing declared
   // in here. The whole gate is still `npm run face` with no switch.
+  // **`FACE_ONLY=row` walks section 12 alone** (the first row's one
+  // centreline, 2026-09-29), for the same reason and on the same terms.
   walk: {
-  if (process.env.FACE_ONLY === "native") break walk;
+  if (process.env.FACE_ONLY === "native" || process.env.FACE_ONLY === "row") break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23353,6 +23355,316 @@ try {
     return press(tailRail(tab));
   };
 
+  // ── 12) 第一行一条中线 (2026-09-29) ───────────────────────────────
+  //
+  // The owner: 「怎么标签页到app上沿有空白空间 可以整体顶到上沿，为显示
+  // 内容腾出空间」 — and of the ways offered, 「整行收紧到 38」: L0 and R0
+  // together at macOS's compact toolbar height (Safari's, Finder's), every
+  // page ten pixels taller, and **the window's three buttons, the search
+  // box, the page's title, the tabs and the page's buttons on one
+  // centreline**. Read on every landing, at the wide, the middle and the
+  // narrow width:
+  //
+  //   a. the row is the design system's number (tokens.json `pane-head`),
+  //      L0 and R0 alike, from the window's top edge;
+  //   b. everything pressable or read in L0 and R0 — the search box, ＋,
+  //      the page's title (two lines as one pair), a caption, the page's
+  //      buttons, the address bar, a tab's label and its × — has its
+  //      centre within 1 of the row's;
+  //   c. a tab is joined to the board and stands at least (row − label)
+  //      / 2 = 5 off the top edge: its label is on the centreline and
+  //      the tab's foot (`--tab-lip`) is the same five under it — the
+  //      strip above the tabs is the window's to drag by;
+  //   d. the window's buttons are placed for this centre: `traffic.rs`
+  //      PANE_HEAD / 2 is the centreline rendered here (`npm run native`
+  //      measures the buttons themselves on the built app);
+  //   e. **a finger gets the taller row back** — `--touch` plus a lip
+  //      either side — with the tabs still on its centreline; a mouse on
+  //      the narrow face keeps the 38 (tokens.css `--pane-head` says why
+  //      the row follows the pointer and not the width).
+  //
+  // Red on the 48 row it replaces: the session tab's label stood at 34 on
+  // a row whose centre is 24 — the tab was bottom-aligned, twenty under
+  // the edge, which is the blank the owner pointed at.
+  //
+  // `FACE_ONLY=row` runs this section alone.
+  {
+    const TOL = 1;
+    const designHead = (() => {
+      try {
+        const json = JSON.parse(readFileSync(join(gui, "..", "..", "docs", "design-system", "tokens.json"), "utf8"));
+        return parseFloat(json.size.tokens.find((t) => t.name === "pane-head")?.value ?? "NaN");
+      } catch {
+        return NaN;
+      }
+    })();
+    const lightsRow = Number(
+      readFileSync(join(gui, "src-tauri", "src", "traffic.rs"), "utf8").match(/pub const PANE_HEAD: f64 = ([\d.]+);/)?.[1],
+    );
+    if (!Number.isFinite(designHead) || !Number.isFinite(lightsRow)) {
+      fail(`probe dead: row · tokens.json pane-head ${designHead}, traffic.rs PANE_HEAD ${lightsRow} — nothing to hold the row to`);
+    }
+    const tokenPx = (name) =>
+      page.evaluate((n) => {
+        const el = document.createElement("div");
+        el.style.cssText = `position:absolute;visibility:hidden;height:var(${n})`;
+        document.body.appendChild(el);
+        const v = el.getBoundingClientRect().height;
+        el.remove();
+        return +v.toFixed(2);
+      }, name);
+    const hit = async (sel) => {
+      const loc = page.locator(sel);
+      if ((await loc.count()) === 0) return false;
+      const ok = await loc.first().click({ timeout: 5_000 }).then(() => true, () => false);
+      await wait(450);
+      return ok;
+    };
+    const railAt = (k) => `[data-rail-item][data-landing="${k}"]`;
+    /** A landing by its glyph, through another one, so a press never
+        folds the list of the landing already open — and with its list
+        out: the walk may have left it put away, which the page remembers
+        across a reload (section 11's `land` says the same). */
+    const land = async (k) => {
+      await hit(railAt(k === "devices" ? "quota" : "devices"));
+      const ok = await hit(railAt(k));
+      const narrow = await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"));
+      const away = await page.evaluate(() => (document.querySelector("[data-list]")?.getBoundingClientRect().width ?? 0) < 8);
+      if (ok && !narrow && away) await hit(railAt(k));
+      return ok;
+    };
+    /** Everything in the first row that has to sit on its centreline,
+        with the row itself: L0, R0 where there is one, each tab's label,
+        × and box, and the board's top edge under the tabs. */
+    const readRow = () =>
+      page.evaluate(() => {
+        const r = (el) => el.getBoundingClientRect();
+        const shown = (el) => {
+          const b = r(el);
+          const s = getComputedStyle(el);
+          return b.width > 0 && b.height > 0 && s.visibility !== "hidden" && s.display !== "none";
+        };
+        const box = (el) => {
+          const b = r(el);
+          return { top: +b.top.toFixed(2), bottom: +b.bottom.toFixed(2), h: +b.height.toFixed(2), mid: +((b.top + b.bottom) / 2).toFixed(2) };
+        };
+        const label = (el) => {
+          const data = [...el.attributes].find((a) => a.name.startsWith("data-"))?.name ?? "";
+          const said = el.getAttribute("aria-label") ?? el.getAttribute("placeholder") ?? el.textContent?.trim().slice(0, 16) ?? "";
+          return `${el.tagName.toLowerCase()}${data ? `[${data}]` : ""}${said ? ` 「${said}」` : ""}`;
+        };
+        const l0 = document.querySelector("[data-side-head]");
+        const r0 = document.querySelector("[data-main] [data-region-head]");
+        const things = [];
+        const put = (row, what, el) => shown(el) && things.push({ row, what, ...box(el) });
+        if (l0) {
+          for (const el of l0.querySelectorAll("button, input, [data-search-field]")) put("L0", label(el), el);
+          // A narrow detail screen's name (and the workspace's branch
+          // under it) is read, not pressed — measured as the pair it is.
+          const name = l0.querySelector("[data-ws-head-name]")?.parentElement;
+          if (name) put("L0", "the narrow head's name", name);
+        }
+        const tabs = [];
+        if (r0) {
+          for (const el of r0.querySelectorAll("button, input, [data-region-caption], [data-address-bar] [data-omnibox]")) {
+            if (el.closest("[data-tab]")) continue;
+            put("R0", label(el), el);
+          }
+          const title = r0.querySelector("[data-page-title]");
+          const sub = r0.querySelector("[data-page-subtitle]");
+          if (title && shown(title)) {
+            if (sub && shown(sub)) {
+              const t = r(title);
+              const s = r(sub);
+              things.push({
+                row: "R0",
+                what: "the title with its second line",
+                top: +t.top.toFixed(2),
+                bottom: +s.bottom.toFixed(2),
+                h: +(s.bottom - t.top).toFixed(2),
+                mid: +((t.top + s.bottom) / 2).toFixed(2),
+              });
+            } else put("R0", "the page's title", title);
+          }
+          for (const t of r0.querySelectorAll("[data-tab]")) {
+            const name = t.querySelector("[data-tab-label]");
+            const close = t.querySelector("[data-tab-close]");
+            if (name) put("R0", `tab ${t.getAttribute("data-tab")}'s label`, name);
+            if (close) put("R0", `tab ${t.getAttribute("data-tab")}'s ×`, close);
+            tabs.push({ id: t.getAttribute("data-tab"), ...box(t) });
+          }
+        }
+        const board = document.querySelector("[data-main] [data-board]");
+        return {
+          l0: l0 ? box(l0) : null,
+          r0: r0 ? box(r0) : null,
+          boardTop: board ? +r(board).top.toFixed(2) : null,
+          things,
+          tabs,
+        };
+      });
+    /** Judges one reading: the row's height (`want`), the centreline, the
+        tabs' gap and joint. `lip` is the tab's foot, and so the least a
+        tab may stand off the top edge. */
+    const judge = (where, row, { want, lip, mustR0 = true, mustTabs = false }) => {
+      if (!row.l0) {
+        fail(`probe dead: row · ${where} has no [data-side-head]`);
+        return;
+      }
+      const heads = [["L0", row.l0], ...(row.r0 ? [["R0", row.r0]] : [])];
+      if (mustR0 && !row.r0) fail(`probe dead: row · ${where} has no R0 ([data-main] [data-region-head])`);
+      for (const [name, b] of heads) {
+        if (b.top !== 0 || Math.abs(b.h - want) > 0.5) {
+          fail(
+            `row · ${where}: ${name} is ${b.h} tall from ${b.top}, the row is ${want} — one row at the window's top, L0 and R0 alike ` +
+              "(「整行收紧到 38」 under a mouse, --touch and a lip either side under a finger; docs/design-system/guidelines/10-layout.md)",
+          );
+        }
+      }
+      const centre = row.l0.top + row.l0.h / 2;
+      const off = row.things.filter((t) => Math.abs(t.mid - centre) > TOL);
+      for (const t of off) {
+        fail(
+          `row · ${where}: ${t.row}'s ${t.what} is centred at y ${t.mid} (${t.top}…${t.bottom}), the row's centre is ${centre} — ` +
+            "the window's buttons, the search box, the title, the tabs and the page's buttons stand on one centreline",
+        );
+      }
+      const outside = row.things.filter((t) => t.top < -0.5 || t.bottom > want + 0.5);
+      for (const t of outside) fail(`row · ${where}: ${t.row}'s ${t.what} spans ${t.top}…${t.bottom}, outside the ${want} row`);
+      if (mustTabs && row.tabs.length === 0) fail(`probe dead: row · ${where} drew no tab in R0`);
+      for (const t of row.tabs) {
+        if (t.top < lip - 0.5) {
+          fail(`row · ${where}: tab ${t.id} stands ${t.top} off the top edge — at least ${lip}, the strip above the tabs moves the window`);
+        }
+        if (row.boardTop === null || Math.abs(t.bottom - row.boardTop) > 0.5) {
+          fail(`row · ${where}: tab ${t.id} ends at ${t.bottom} and the board starts at ${row.boardTop} — the tab reaches the board and is joined to it`);
+        }
+      }
+      console.log(
+        `row · ${where}: ${heads.map(([n, b]) => `${n} ${b.h}`).join(", ")}, centre ${centre}, ${row.things.length} on the line` +
+          `${off.length ? ` (${off.length} off)` : ""}${row.tabs.length ? `, tabs ${row.tabs.map((t) => `${t.top}…${t.bottom}`).join(" ")} over a board at ${row.boardTop}` : ""}`,
+      );
+      return centre;
+    };
+
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.evaluate(() => localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const want = designHead;
+    const lip = await tokenPx("--tab-lip");
+    const paneHead = await tokenPx("--pane-head");
+    console.log(`row · tokens.json pane-head ${designHead}, --pane-head ${paneHead}, --tab-lip ${lip}, traffic.rs PANE_HEAD ${lightsRow}`);
+    if (paneHead !== designHead) fail(`row · --pane-head renders ${paneHead}, the design system says ${designHead} (docs/design-system/tokens.json)`);
+
+    const stops = [
+      ["sessions, two tabs", async () => {
+        await land("sessions");
+        const rows = page.locator("[data-list] [data-row-open]");
+        for (let i = 0; i < Math.min(2, await rows.count()); i++) {
+          await rows.nth(i).click({ timeout: 5_000 }).catch(() => {});
+          await wait(500);
+        }
+        return (await page.locator("[data-session-tabs] [data-tab]").count()) >= 2;
+      }, { mustTabs: true }],
+      ["a machine", async () => {
+        await land("devices");
+        await hit('[data-list] [data-row-open] >> nth=1');
+        return until(5_000, async () => (await page.locator("[data-main] [data-page-actions] button").count()) > 0);
+      }],
+      ["an open workspace", async () => {
+        await land("workspaces");
+        await hit("[data-ws-row]");
+        if ((await page.locator("[data-ws-tree]").count()) === 0) await hit("[data-ws-row]");
+        return until(5_000, async () => (await page.locator("[data-main] [data-page-subtitle] [data-ws-subtitle]").count()) > 0);
+      }],
+      ["通用", async () => {
+        await hit("[data-rail-more]");
+        await hit('[data-more-open="settings"]');
+        return until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
+      }],
+      ["浏览", async () => {
+        if (await page.locator("[data-more-close]").count()) await hit("[data-more-close]");
+        await land("browser");
+        return until(5_000, async () => (await page.locator("[data-main] [data-address-bar]").count()) > 0);
+      }],
+    ];
+    for (const [w, h] of [[1400, 900], [1000, 760]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await wait(300);
+      for (const [name, go, opts = {}] of stops) {
+        const where = `${name} @${w}`;
+        if (!(await go())) {
+          fail(`probe dead: row · ${where} never drew what it measures`);
+          continue;
+        }
+        await page.mouse.move(w / 2, h - 40);
+        await wait(200);
+        const centre = judge(where, await readRow(), { want, lip, ...opts });
+        if (w === 1400 && name === "sessions, two tabs" && centre !== undefined && Math.abs(lightsRow / 2 - centre) > 0.5) {
+          fail(`row · traffic.rs places the window's buttons for a centre at ${lightsRow / 2}, the row's centre is ${centre} (src-tauri/src/traffic.rs PANE_HEAD)`);
+        }
+      }
+      if (await page.locator("[data-more-close]").count()) await hit("[data-more-close]");
+    }
+
+    // ── narrow, with a mouse: the same row, the head that sits in it ──
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(400);
+    for (const [name, go] of [
+      ["a session's screen", async () => {
+        await land("sessions");
+        await hit("[data-list] [data-row-open]");
+        return until(5_000, async () => (await page.locator("[data-side-head] [data-back]").count()) > 0);
+      }],
+      ["a workspace's screen", async () => {
+        await land("workspaces");
+        await hit("[data-ws-row]");
+        return until(5_000, async () => (await page.locator("[data-side-head] [data-ws-head-name]").count()) > 0);
+      }],
+    ]) {
+      if (!(await go())) {
+        fail(`probe dead: row · narrow · ${name} never drew its head in the first row`);
+        continue;
+      }
+      judge(`narrow · ${name}`, await readRow(), { want, lip, mustR0: false });
+      if (await page.locator("[data-side-head] [data-back]").count()) await hit("[data-side-head] [data-back]");
+    }
+
+    // ── a finger: the row is the finger's floor and a lip either side ──
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+    try {
+      for (const [w, h] of [[1400, 900], [390, 844]]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        if (!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches))) {
+          fail(`probe void: row · the finger did not take at ${w} — the coarse row was measured with a mouse`);
+          continue;
+        }
+        const touch = await tokenPx("--touch");
+        const fingerLip = await tokenPx("--tab-lip");
+        const fingerRow = touch + 2 * fingerLip;
+        const drew = await stops[0][1]();
+        if (w === 1400 && !drew) {
+          fail("probe dead: row · a finger's session strip never drew two tabs");
+          continue;
+        }
+        judge(`a finger @${w}`, await readRow(), { want: fingerRow, lip: fingerLip, mustR0: w === 1400, mustTabs: w === 1400 });
+      }
+    } finally {
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
+  }
+
+  rest: {
+  if (process.env.FACE_ONLY === "row") break rest;
+
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
   // Four things a web page does that a Mac app does not, each read off
@@ -24015,6 +24327,7 @@ try {
     }
     console.log(`delete asks · ${offered} 删除 offered off the map`);
   }
+  } // rest
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

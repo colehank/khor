@@ -337,7 +337,8 @@ export function TabStrip({
       //
       // No `border-b`: the change of ground *is* the boundary, and a
       // rule as well would cut the open tab off from the page again.
-      // `items-end` and a top-only radius do the rest.
+      // A tab reaching the band's floor and a top-only radius do the
+      // rest.
       //
       // The strip scrolls rather than shrinking its tabs (tokens.css
       // `--tab-w` says why they are fixed), and `flex-none` keeps it
@@ -354,12 +355,20 @@ export function TabStrip({
       //
       // **…and it is the same height as a pane's top row, from the same
       // token** (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的
-      // 高度一致, 保持和谐. 现在, 标签页普遍比侧边栏更高一些」).
-      // `--pane-head` is the finger's floor plus `--tab-lip`, the
-      // sliver of band a tab stands on; a pane's search row centres its
-      // controls in exactly that. They were 48 and 44 — two numbers
-      // arrived at separately, agreeing about nothing — and the gate
-      // now subtracts them and asks for zero.
+      // 高度一致, 保持和谐. 现在, 标签页普遍比侧边栏更高一些」). They
+      // were 48 and 44 — two numbers arrived at separately, agreeing
+      // about nothing — and the gate now subtracts them and asks for
+      // zero.
+      //
+      // **One centreline** (2026-09-29,「整行收紧到 38」): the band is
+      // the window's first row, and everything in it is centred on the
+      // row's middle — the count, the landing's pins at either end, 「+」
+      // and every tab's label — the line macOS's three buttons, the
+      // search box and a page's title stand on. Only the tabs reach the
+      // floor, by their foot (`--tab-lip`, the tab below). It was
+      // `items-end` with the tabs standing on the floor, twenty under
+      // the window's edge on the 48 row: the blank the owner asked
+      // about.
       //
       // **The band and the scrolling row are two elements now, and the
       // reason is a measurement**: with everything in one scroll
@@ -381,7 +390,7 @@ export function TabStrip({
       // tab when it is crowded is the switcher, which has its own — and
       // the switcher is offered exactly when the strip has stopped
       // showing every tab.
-      className="flex h-pane-head min-w-0 flex-1 items-end gap-1 px-in pt-tab-lip"
+      className="flex h-pane-head min-w-0 flex-1 items-center gap-1 px-in"
     >
       {head}
       {/* The scroller and the two fades over its ends. **No scrollbar**
@@ -406,7 +415,9 @@ export function TabStrip({
       <div
         ref={strip}
         data-tab-strip
-        className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto"
+        // `items-center`: 「+」 on the row's centreline with the tabs'
+        // labels; the tabs themselves stretch to the floor (their foot).
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
       >
         {faces.map((f) => {
           const on = f.id === active;
@@ -437,14 +448,20 @@ export function TabStrip({
                       .join(" · ") || undefined
               }
               className={cn(
-                // `h-touch`, not `h-ctl-md`: the tab is the target, so the
-                // tab is what has to be tall enough to land on — and it is
-                // also what paints "this one is in front", which is the
-                // half that would have been lost by growing an invisible
-                // box inside a short pill. A tab whose colour stops short
-                // of where it can be pressed is a tab that lies about
-                // where it is.
-                "group relative flex h-touch items-center gap-1 rounded-t-md pr-0.5 pl-2",
+                // **A `--hit` tall label on the row's centreline and a
+                // foot under it** (2026-09-29): `mt-tab-lip` over the
+                // label, `pb-tab-lip` under it, and the tab stretched to
+                // the band's floor — so the label (and the ×, and the
+                // eye) sit on the line the window's buttons and the search
+                // box stand on, while the tab's colour runs on down into
+                // the board it is joined to. The label keeps the search
+                // box's height (2026-09-20 第 5 条); the foot is the
+                // joint. `--hit`, not `--ctl-md`: the tab is the target,
+                // and it is also what paints "this one is in front" —
+                // a tab whose colour stops short of where it can be
+                // pressed is a tab that lies about where it is, which is
+                // why the button below reaches into the foot.
+                "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
                 // **Two widths, and each tab wears exactly one.** The one
                 // in front takes its own name's width — never less than a
                 // stub, so it does not read as the smallest tab on the
@@ -495,10 +512,16 @@ export function TabStrip({
                 }}
                 aria-expanded={again?.expanded}
                 aria-controls={again?.expanded ? again.controls : undefined}
-                // `h-full`: the whole tab opens it, not the line of text
-                // in the middle of it. Left at content height this was 18
-                // tall inside a tab it filled the width of — the band
-                // around the label looked pressable and was not.
+                // `self-stretch`: the whole tab opens it, not the line of
+                // text in the middle of it. Left at content height this
+                // was 18 tall inside a tab it filled the width of — the
+                // band around the label looked pressable and was not.
+                // **…and down through the foot** (2026-09-29): the tab's
+                // `pb-tab-lip` would otherwise be a strip of painted tab
+                // that moves the window instead of opening it (R0 is a
+                // drag region, and only a control keeps its press), so
+                // the button hangs `-mb-tab-lip` into it and pads its
+                // label back up onto the centreline.
                 // `gap-tab-gap`, not the `gap-1` this had: 「标签页上的
                 // 标题距离头像稍远一些, 现在有些拥挤」 (2026-09-20 第 3
                 // 条). Four pixels put the name against the face while
@@ -507,7 +530,7 @@ export function TabStrip({
                 // word. Its own token (tokens.css `--tab-gap`) rather
                 // than a step up in `--gap-in`, which would move every
                 // clump in the app for one complaint about tabs.
-                className="flex h-full min-w-0 flex-1 items-center gap-tab-gap text-left"
+                className="-mb-tab-lip flex min-w-0 flex-1 items-center gap-tab-gap self-stretch pb-tab-lip text-left"
               >
                 {/* **A two-line file tab stands its glyph beside both
                     lines** (2026-09-16:「标签页上, 文件类型的icon, 过小
@@ -683,10 +706,10 @@ export function TabStrip({
             data-tab-new
             aria-label={gui.new_tab}
             // The `mb-1` it used to wear lifted a 30 button off the band's
-            // floor so it read as level with the 30 tabs. Both are the
-            // finger's floor now, and `items-end` already levels them —
-            // keeping the margin would have made the band four taller than
-            // anything in it.
+            // floor so it read as level with the 30 tabs. Both are `--hit`
+            // now and both centred on the row (2026-09-29: the tabs' labels
+            // are, their feet reach the floor) — a margin would put it off
+            // the line.
             className="min-h-touch min-w-touch flex-none"
             onClick={onNew}
           >

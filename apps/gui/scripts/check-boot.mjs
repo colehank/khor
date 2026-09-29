@@ -97,8 +97,8 @@ const rust = readFileSync(
 // tauri when the window is built, in Rust, where no token is readable.
 // So three numbers are written twice, each read here from both files,
 // and a disagreement is refused: the same arrangement the two grounds
-// above have. `--pane-head` is a calc of two tokens, so it is summed
-// here rather than matched as a literal.
+// above have. `--pane-head` is written as a number (38 since 2026-09-29),
+// so it is matched as the literal it is.
 const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"), "utf8");
 {
   const px = (name) => {
@@ -109,17 +109,14 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
     const m = new RegExp(`pub const ${name}: f64 = ([0-9.]+);`).exec(traffic);
     return m ? parseFloat(m[1]) : null;
   };
-  const touch = px("touch");
   const lip = px("tab-lip");
   const railW = px("rail-w");
   const railItem = px("rail-item");
   const gapIn = px("gap-in");
-  // `--pane-head` is written as 48 since 第十五轮 — a decision about
-  // the window's first rows, not the sum of the finger's floor and a
-  // tab's lip (docs/design-system/guidelines/40-migration.md).
+  // `--pane-head` is written as a number — a decision about the window's
+  // first rows, not the sum of the finger's floor and a tab's lip
+  // (docs/design-system/guidelines/40-migration.md). 38 since 2026-09-29.
   const paneHead = px("pane-head");
-  void touch;
-  void lip;
   const pairs = [
     ["the first row's height", "PANE_HEAD", paneHead, "--pane-head"],
     ["the first button's left edge", "X", railW !== null && railItem !== null ? (railW - railItem) / 2 : null, "(--rail-w − --rail-item) / 2, the rail's glyph box"],
@@ -136,6 +133,49 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
       fail(`${what} is ${inCss} by tokens.css (${from}) and ${inRust} in src-tauri/src/traffic.rs ${name} — the window's three buttons would be placed on a row that is not the one drawn`);
     } else {
       console.log(`first row: ${name} ${inRust} in src-tauri and in tokens.css (${from})`);
+    }
+  }
+
+  // **One centreline, in both postures** (2026-09-29, 「整行收紧到 38」).
+  // A tab is a `--hit` tall label on the row's middle — where the search
+  // box, the title and the window's buttons stand — plus a foot,
+  // `--tab-lip`, that carries it down into the board it is joined to; so
+  // the lip is also what stands above the label, and the row is the
+  // label with a lip either side. Three numbers that only mean anything
+  // together, written apart, and a drift between them is a tab a pixel
+  // or two off the line everything else is on — the kind of thing no
+  // one sees until the owner does. Read for the mouse (`:root`) and for
+  // the finger (`@media (pointer: coarse)`, where `--hit` is `--touch`
+  // and the row goes back to 48). `check-face` §12 measures it drawn.
+  {
+    const coarse = /@media \(pointer: coarse\) \{\s*:root \{([\s\S]*?)\n  \}\n\}/.exec(css)?.[1] ?? null;
+    const decl = (text, name) => new RegExp(`--${name}:\\s*([^;]+);`).exec(text)?.[1].trim() ?? null;
+    const asPx = (v) => {
+      if (v === null) return null;
+      const ref = /^var\(--([a-z0-9-]+)\)$/.exec(v);
+      if (ref) return px(ref[1]);
+      const n = /^([0-9.]+)px$/.exec(v);
+      return n ? parseFloat(n[1]) : null;
+    };
+    if (coarse === null) {
+      fail("tokens.css has no `@media (pointer: coarse) { :root { … } }` block to read the finger's row from — the second posture is not being held");
+    } else {
+      const postures = [
+        ["a mouse", { row: paneHead, hit: asPx(decl(css, "hit")), lip }],
+        ["a finger", { row: asPx(decl(coarse, "pane-head")), hit: asPx(decl(coarse, "hit")), lip: asPx(decl(coarse, "tab-lip")) }],
+      ];
+      for (const [who, p] of postures) {
+        if (p.row === null || p.hit === null || p.lip === null) {
+          fail(`the first row under ${who} does not read: --pane-head ${p.row}, --hit ${p.hit}, --tab-lip ${p.lip} — nothing holds a tab's label on its centreline`);
+        } else if (p.hit + 2 * p.lip !== p.row) {
+          fail(
+            `under ${who} the row is ${p.row} and a tab is a ${p.hit} label with a ${p.lip} lip over and a ${p.lip} foot under it ` +
+              `(${p.hit + 2 * p.lip}) — its label is ${(p.row - p.hit) / 2 - p.lip} off the centreline the search box and the window's buttons stand on`,
+          );
+        } else {
+          console.log(`first row under ${who}: ${p.row} = a ${p.hit} label + ${p.lip} over + ${p.lip} under, one centreline`);
+        }
+      }
     }
   }
 }

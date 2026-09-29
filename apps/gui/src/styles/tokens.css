@@ -803,7 +803,7 @@
    * 样子不变」— the 44 was only ever the finger's number.
    * `min-h-touch` / `min-w-touch` / `size-touch` all read this. */
   --hit: var(--ctl-md);
-  /* ── the top row of a pane, and the sliver a tab sits on ──────
+  /* ── the top row of a pane, and the foot a tab stands on ──────
    *
    * **One number, two surfaces, because they are one line of the
    * window** (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的高度
@@ -814,23 +814,40 @@
    * numbers that happen to agree**, which is the whole of what that
    * ruling is about.
    *
-   * Derived rather than picked: a tab is a finger's target and so is
-   * the search box, so the floor under both is `--touch`; `--tab-lip`
-   * is the strip of band left above a tab, which is what makes a tab
-   * read as standing *on* the row rather than as filling it. The pane's
-   * head has no tab in it and simply centres its controls in the same
-   * height.
-   *
    * It is not a fourth `--ctl-*`: those are the *look* of a control
-   * beside text. This is the height of a region's first row. */
-  --tab-lip: 4px;
-  /* **Written as 48, not summed** (docs/design-system/guidelines/40-migration.md, 第十五轮): the value is the same, but
-   * it is a design decision about the window's first rows, not a
-   * by-product of two other numbers — retuning the finger's floor must
-   * not move the window's head. `--tab-lip` is still the band a tab
-   * stands on, and `src-tauri/src/traffic.rs` carries this 48 too
-   * (`check-boot` holds them together). */
-  --pane-head: 48px;
+   * beside text. This is the height of a region's first row.
+   *
+   * **One centreline** (2026-09-29, the owner: 「怎么标签页到app上沿有
+   * 空白空间 可以整体顶到上沿，为显示内容腾出空间」 — and of the ways
+   * offered, 「整行收紧到 38」). macOS's three buttons, the search box,
+   * the page's title, the tabs and the page's buttons are centred on
+   * this row's middle. A tab is a `--hit` tall label on that middle plus
+   * a foot, `--tab-lip`, that carries it down into the board it is
+   * joined to — so the lip is what is left above the label as well:
+   * `(--pane-head − --hit) / 2`, 5 under a mouse. It was the strip of
+   * band *above* a tab that stood on the row's floor, 20 under the
+   * window's edge on the 48 row: the blank the owner pointed at.
+   * `check-boot` holds the arithmetic in both postures (a finger's lip
+   * is at the foot of this file); `check-face` §12 measures it drawn. */
+  --tab-lip: 5px;
+  /* **38: macOS's compact toolbar** (2026-09-29; 48 from 第十五轮 until
+   * then) — Safari's and Finder's with 「使用紧凑布局」, every page ten
+   * pixels taller. **Written, not summed** (docs/design-system/
+   * guidelines/40-migration.md): a design decision about the window's
+   * first rows, not a by-product of two other numbers. Everything that
+   * stands in it is `--ctl-md` (28), so 5 either side.
+   * `src-tauri/src/traffic.rs` carries this number too, to put macOS's
+   * buttons on its middle (`check-boot` holds them together).
+   *
+   * **The row follows the pointer, not the width** (the coarse block at
+   * the foot of this file puts 48 back under a finger): what has to fit
+   * in it is a target, and a finger's is `--touch` 44 — a phone's
+   * header and an iPad's tab strip keep the row they had. A narrow Mac
+   * window has a mouse and keeps this one, which is also the only row
+   * its three buttons can be centred on: AppKit places them once, when
+   * the window is built, and a row that changed height at 760 wide
+   * would leave them five points off its middle. */
+  --pane-head: 38px;
   /* A tab's close cell (`components/Tab`): always this wide, the name
    * truncates before it. It was `--ctl-sm` until the control heights
    * went to macOS's 22 — a cell is not a control's look. */
@@ -1877,8 +1894,9 @@
   --spacing-kind-mark-tab: var(--kind-mark-tab);
   --spacing-kind-mark-tab-glyph: var(--kind-mark-tab-glyph);
   /* `min-h-pane-head` on a pane's top row, `h-pane-head` on the tab
-     band, `pt-tab-lip` on the sliver above a tab — 第 5 条's one token
-     reaching both surfaces. */
+     band — 第 5 条's one token reaching both surfaces — and `mt-tab-lip`
+     / `pb-tab-lip` on a tab, the room over its label and the foot under
+     it (2026-09-29). */
   --spacing-pane-head: var(--pane-head);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
@@ -2197,5 +2215,13 @@
   :root {
     --hit: var(--touch);
     --tree-row: var(--touch);
+    /* **…and the first row with it** (2026-09-29). The row went to
+       macOS's compact 38 for a mouse; a finger's target is 44 and a
+       row of 38 cannot hold it — a tab would stand out of its band and
+       be clipped by the strip's scroller. So under a finger the row is
+       the 48 it was, and a tab's lip is what centres a 44 label in it:
+       (48 − 44) / 2. `check-boot` holds both halves of that sum. */
+    --pane-head: 48px;
+    --tab-lip: 2px;
   }
 }
