@@ -99,7 +99,7 @@ import { NetworkPage } from "@/views/more/NetworkPage";
 import { IdentityPage } from "@/views/more/IdentityPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
-import { MachineCaption, MachineCard, MachineVerbs } from "@/views/MachineCard";
+import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { RegionState } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
@@ -2621,15 +2621,10 @@ export default function App() {
                     flush={landing === "workspaces" && openWs !== null}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
-                    // An open machine otherwise says which khor it runs
-                    // and how old its reading is (`MachineCaption`).
-                    caption={
-                      stale ? (
-                        gui.backend_unreachable
-                      ) : landing === "devices" && openDevice?.vitals ? (
-                        <MachineCaption row={openDevice} />
-                      ) : undefined
-                    }
+                    // (An open machine's version and reading age are the
+                    // card's second line under its name since 2026-09-30,
+                    // `MachineCard`'s `PageSubtitle`.)
+                    caption={stale ? gui.backend_unreachable : undefined}
                   >
                     {detail}
                   </Region>

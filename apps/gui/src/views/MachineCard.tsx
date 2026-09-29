@@ -323,7 +323,7 @@ function Head({ row }: { row: DeviceRow }) {
  * the page, and R0 is on the page). A middle dot between the two, and
  * only when both are there. Nothing for a machine never read.
  */
-export function MachineCaption({ row }: { row: DeviceRow }) {
+function MachineCaption({ row }: { row: DeviceRow }) {
   const v = row.vitals;
   if (!v) return null;
   return (
