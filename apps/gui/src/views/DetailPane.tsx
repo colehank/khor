@@ -232,7 +232,20 @@ export function DetailPane({
     // `[data-detail-header]` — a row that exists on one face only now,
     // so「the pane」 needed a name of its own rather than a landmark
     // inside it.
-    <section data-detail-pane className="flex h-full min-w-0 flex-col">
+    // `--day-under` is the surface the day floats over, so its fade
+    // melts into that and not into a neighbour's: a terminal paints the
+    // page's own `background`, everything else leaves the board's `card`
+    // showing. `--day-over` is how far the day reaches down into the
+    // session — its row, while it is up, and nothing while it is not —
+    // which the session's own top-corner floats (the terminal's find bar
+    // and title) step under, so the two never overprint.
+    <section
+      data-detail-pane
+      className={cn(
+        "flex h-full min-w-0 flex-col [--day-under:var(--card)] has-[>[data-terminal]]:[--day-under:var(--background)]",
+        drawn ? "[--day-over:calc(2*var(--gap-xxs)+var(--spacing))]" : "[--day-over:calc(0*var(--spacing))]",
+      )}
+    >
       {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
           changed is that it may no longer clip. Everything in it that can
           be pressed now carries the finger floor (tokens.css `--touch`),
@@ -376,24 +389,41 @@ export function DetailPane({
       {/* The session's day, as a band the width of the pane, and on the
           wide face **the first thing under the tab strip** — 「标签页下
           就是状态bar然后就是内容」. It is a fact about *this* session
-          and reads beside its name and word. The width of the pane, and
-          **its own row** (`DayStrip`: the 4 px band with `gap-xxs` over
-          and under it): the stretches are pressed now, and their hit
-          boxes fill that row and nothing past it — they used to reach up
-          behind the tab strip, and only the board's clip kept them off
-          the tabs. The row is also what `use-day-strips` measures the
-          axis by. Absent with no
-          row — the empty state has no day.
+          and reads beside its name and word. The width of the pane, in
+          **a row of its own geometry** (`DayStrip`: the 4 px band with
+          `gap-xxs` over and under it): the stretches' hit boxes fill that
+          row and nothing past it. The row is also what `use-day-strips`
+          measures the axis by. Absent with no row — the empty state has
+          no day.
 
           **Absent, too, until it is asked for** (2026-09-29,
           `use-day-shown`: the front tab, or the narrow head, is the
-          switch), **and for a day with no record** — not a row kept
-          empty for it: that row was the blank band under the tabs.
-          While the day is on its way the row holds a skeleton of the
-          band (`DayStrip`), so the session does not jump when it lands. */}
+          switch), **and for a day with no record**. While the day is on
+          its way the row holds a skeleton of the band (`DayStrip`).
+
+          **It floats over the session and takes none of its room**
+          (2026-09-29, the owner: 「下方多了一个空间…挤占了session的内容
+          呀。悬浮内容悬浮在session内容上即可」). Laid out as a row, the
+          day pushed the session down 12 px every time it was asked for —
+          and under a terminal a push is a resize, so tmux reflowed the
+          screen under the person's eyes, once to open and once to close.
+          So the row hangs from **a seat of no height**, which is where a
+          row would have stood (under the tabs on the wide face, under the
+          head on the narrow one), and the session below does not move by
+          a pixel. Over the session it fades out of `--day-under`, the
+          surface beneath it — the edge a toolbar gives the content that
+          scrolls under it — so the band reads over a terminal's first
+          line without a hard cut. Only the stretches take a press: a
+          gap between them, and the fade, are the session's. */}
       {drawn && (
-        <div data-detail-day id={DAY_ROW_ID} className="flex-none">
-          <DayStrip runs={day ?? null} />
+        <div className="relative z-30 h-0 flex-none">
+          <div
+            data-detail-day
+            id={DAY_ROW_ID}
+            className="pointer-events-none absolute inset-x-0 top-0 bg-linear-to-b from-(--day-under) from-65% to-transparent"
+          >
+            <DayStrip runs={day ?? null} />
+          </div>
         </div>
       )}
       {row && row.kind === "chat" ? (

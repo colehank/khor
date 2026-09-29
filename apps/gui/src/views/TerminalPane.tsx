@@ -572,7 +572,9 @@ export function TerminalPane({ id }: { id: string }) {
           data-term-find
           // Floats over the screen, so the one floating language
           // (20-states 浮层, 2026-09-28): `popover`, `float`, `radius-lg`.
-          className="absolute right-2 top-1 z-20 flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
+          // Below the day while that floats over the top of the pane
+          // (`--day-over`, `DetailPane`), so the two never overprint.
+          className="absolute right-2 top-[calc(var(--spacing)+var(--day-over))] z-20 flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
         >
           <input
             data-term-find-input
@@ -642,8 +644,9 @@ export function TerminalPane({ id }: { id: string }) {
           className={cn(
             "pointer-events-none absolute right-2 z-10 flex flex-col items-end gap-1 text-caption",
             // Under the search bar while that is up, so the two never
-            // overprint each other.
-            finding ? "top-12" : "top-1",
+            // overprint each other — and under the day while that floats
+            // over the top of the pane (`--day-over`, `DetailPane`).
+            finding ? "top-[calc(var(--spacing)*12+var(--day-over))]" : "top-[calc(var(--spacing)+var(--day-over))]",
           )}
         >
           {/* What the program calls itself. Muted and on a wash so it

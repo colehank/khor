@@ -30,7 +30,11 @@
 //      choice that outlives a reload, no row at all for a day with no
 //      record, a skeleton rather than a blank while the day is on its
 //      way, and on the narrow face the head standing in for the tab.
-//      Everything from 1 on is read with the band opened this way;
+//      Shown, it **floats over the session and takes none of its room**
+//      (「悬浮内容悬浮在session内容上即可」): the session does not move or
+//      shrink by a pixel, and a press on the row off a stretch is the
+//      session's. Everything from 1 on is read with the band opened this
+//      way;
 //   1. every word cell is painted in its own word's colour — asserted
 //      as a **derivation**, this row's cell against this row's word,
 //      never against a colour written in this file. A palette pinned
@@ -444,11 +448,43 @@ try {
     if (!HINT.show.includes(before)) fail(`⓪b the front tab's hover reads ${JSON.stringify(before)} while the day is hidden — want ${HINT.show.join(" / ")}`);
     const shut = await ariaOf(page, first);
     if (shut.expanded !== "false") fail(`⓪b the front tab says aria-expanded=${shut.expanded} while the day is hidden`);
+    /** The session under the day: the pane's last child, whatever it
+        is — the band is read against it, not against a kind of pane. */
+    const sessionBox = () =>
+      page.evaluate(() => {
+        const s = document.querySelector("[data-detail-pane]")?.lastElementChild;
+        if (!s || s.matches("[data-detail-day]") || s.querySelector("[data-detail-day]")) return null;
+        const r = s.getBoundingClientRect();
+        return { top: r.top, h: r.height };
+      });
+    const under = await sessionBox();
     await pressFace(page, first);
     if (!(await waitRows(page, true, 600))) fail("⓪b pressing the front tab's face drew no day row within 600ms");
     else {
       const band = await until("the band after the press", 10_000, async () => (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1);
       if (!band) fail("⓪b the row came down and never held a band");
+      // It floats: the session neither moves nor shrinks (2026-09-29 —
+      // as a row it pushed the session 12 px down, and under a terminal
+      // that push was a resize tmux redrew the screen for) …
+      const over = await sessionBox();
+      if (!under || !over) fail(`probe dead: ⓪b no session under the day to measure (${JSON.stringify({ under, over })})`);
+      else if (Math.abs(over.top - under.top) > 0.5 || Math.abs(over.h - under.h) > 0.5) {
+        fail(
+          `⓪b showing the day moved the session from ${under.top}+${under.h} to ${over.top}+${over.h} — ` +
+            "it floats over the session and takes none of its room",
+        );
+      }
+      // … and off a stretch, the row is the session's: a press in the
+      // inset before the first pill lands on whatever is beneath.
+      const through = await page.evaluate(() => {
+        const row = document.querySelector("[data-detail-day]");
+        if (!row) return null;
+        const r = row.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + 2, r.top + r.height / 2);
+        return hit ? { day: !!hit.closest("[data-detail-day]"), what: hit.tagName.toLowerCase() } : null;
+      });
+      if (!through) fail("probe dead: ⓪b nothing under the day's row to hit");
+      else if (through.day) fail("⓪b a press on the day's row off every stretch lands on the row — it should pass through to the session");
       const open = await ariaOf(page, first);
       if (open.expanded !== "true" || !open.controls || open.controls !== open.row) {
         fail(`⓪b the open front tab says ${JSON.stringify(open)} — aria-expanded=true and aria-controls naming the row`);

@@ -170,13 +170,25 @@ import { stretch, word } from "@/words";
  *
  * - **on its way** (`null`): a skeleton in the band's own geometry — one
  *   pill the width of the axis on `fill`, the app's skeleton language
- *   (`RegionState`) — so the session does not jump when the day lands
- *   and the row is never blank;
+ *   (`RegionState`) — so the band lands where its skeleton stood and
+ *   the row is never blank;
  * - **no record** (not one stretch wears a word — `dayHasRecord`): no row
  *   at all, and the front tab's hover says so (「近 24 小时没有记录」)
  *   instead of offering to open it. A band of 不知道 and nothing is not a
  *   day to look at: `day-unwatched-why` itself says 「khor 没有记录」 of
  *   every minute of it.
+ *
+ * # It floats over the session (2026-09-29)
+ *
+ * 「下方多了一个空间…挤占了session的内容呀。悬浮内容悬浮在session内容上
+ * 即可」. Once the day became something a press brings down, the row it
+ * stood in read as room made for a float — and it was room taken from the
+ * session: 12 px of push each time, and under a terminal a resize, which
+ * tmux answers by redrawing the screen. So the row now hangs over the top
+ * of the session from a seat of no height (`DetailPane`), fading out of
+ * the surface beneath it, and passes every press but a stretch's through
+ * to the session. The row's geometry is unchanged — the band, its
+ * padding, its hit boxes — it just no longer costs the session anything.
  *
  * # It paints, it does not decide
  *
@@ -291,7 +303,7 @@ export function DayStrip({ runs }: { runs: Day }) {
   if (runs === null) {
     // On its way: one pill the width of the axis, on `fill` (the head's
     // 「Hidden until asked for」) — the band's row, padding and height, so
-    // nothing moves when the day lands. Not a band: nothing here says
+    // the band lands where this stood. Not a band: nothing here says
     // `data-day-strip`, which is how a gate tells the two apart.
     return (
       <div data-day-skeleton aria-busy="true" aria-label={cli.day_title} className="flex px-in py-xxs">
@@ -386,7 +398,10 @@ export function DayStrip({ runs }: { runs: Day }) {
                     // The slot is this stretch's share of the axis; a pixel
                     // of it at each end is the gap. `before:` is the hit
                     // box, the row's padding over and under the band.
-                    className="group relative flex h-1 flex-none justify-center px-px outline-none before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
+                    // `pointer-events-auto` because the row it floats in
+                    // passes every other press to the session beneath
+                    // (`DetailPane`).
+                    className="group pointer-events-auto relative flex h-1 flex-none justify-center px-px outline-none before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']"
                     style={{ width: s.width }}
                   >
                     <Ink mark={s.run.mark} />
