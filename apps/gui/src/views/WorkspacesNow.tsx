@@ -63,7 +63,10 @@ export function WorkspacesNow({
       live = false;
     };
   }, [facts.read]);
-  const list = facts.read ? facts.list : own;
+  // The list's reading once it has one; before that, what it last knew
+  // (`WorkspaceFacts.known`, remembered across a restart) until this
+  // pane's own read lands.
+  const list = facts.read || (own === null && facts.known) ? facts.list : own;
 
   if (list === null) return <RegionState state="loading-never" />;
   if (list.length === 0) {

@@ -19,7 +19,7 @@
 // reason: a beat is a dial plus a walk of somebody else's disk for an
 // answer that is almost always the one already on screen, and coming
 // back to the window is the moment staleness starts to mislead.
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   fetchCheckout,
@@ -65,10 +65,88 @@ function keyOf(r: { device: string; path: string }): string {
 export type WorkspaceFacts = {
   list: WorkspaceRow[];
   marks: Record<string, GitStatus>;
+  /** Whether each row is a repository — the list's corner mark. */
+  repos: Record<string, boolean>;
   times: Record<string, number>;
+  /** Whether the table has been read **in this run of the app**. */
   read: boolean;
+  /** Whether there is a list to show at all: read in this run, or
+      remembered from the last (`KNOWN_KEY`). */
+  known: boolean;
 };
-let facts: WorkspaceFacts = { list: [], marks: {}, times: {}, read: false };
+
+/**
+ * **What the list last knew outlives the list** (2026-09-29, the owner:
+ * 「侧边栏内容的抽象没有缓存？每次新进入工作区，都要从原始的工作区顺序
+ * 到置顶设置好的顺序。角标也从普通到git」).
+ *
+ * The list's order and its corner marks are answers from far machines —
+ * when each row last changed, whether it is a repository — and they
+ * arrive a row at a time. Kept only in this component, they were thrown
+ * away every time the page was left, so every return drew the list in
+ * path order with a folder on every row, then reshuffled it and swapped
+ * the folders for branches as the answers came back: the same answers
+ * the screen had shown a minute ago. That is 20-states' 「加载中，看过」,
+ * whose rule is **上次的内容原样留着** — not 先清空再填.
+ *
+ * So this module holds them (`facts`, which the overview already read
+ * across the list's remounts), the list starts from them, and every
+ * answer is still re-asked on the way in and replaces its row's. A
+ * **snapshot of the order-bearing part** — the rows, when each last
+ * changed, which are repositories — is also kept in this browser's
+ * storage, so the first look after a restart is not the reshuffle
+ * either. The branch and its count are not kept there: they are a walk
+ * of somebody's tree, stale the moment they are written, and filling
+ * them in moves no row.
+ */
+const KNOWN_KEY = "khor.ws-known";
+function storedKnown(): WorkspaceFacts {
+  const none: WorkspaceFacts = { list: [], marks: {}, repos: {}, times: {}, read: false, known: false };
+  try {
+    const raw = window.localStorage.getItem(KNOWN_KEY);
+    if (raw === null) return none;
+    const o: unknown = JSON.parse(raw);
+    if (typeof o !== "object" || o === null) return none;
+    const { list, repos, times } = o as Record<string, unknown>;
+    // Every field a row is drawn from, checked: a snapshot written by
+    // another version of this file must be dropped, not half-drawn.
+    const rows = Array.isArray(list)
+      ? list.filter(
+          (r): r is WorkspaceRow =>
+            typeof r === "object" &&
+            r !== null &&
+            typeof r.device === "string" &&
+            typeof r.machine === "string" &&
+            typeof r.path === "string" &&
+            typeof r.name === "string" &&
+            typeof r.pinned === "boolean",
+        )
+      : null;
+    if (rows === null) return none;
+    const table = <T,>(v: unknown, is: (x: unknown) => x is T): Record<string, T> =>
+      typeof v === "object" && v !== null
+        ? Object.fromEntries(Object.entries(v).filter((e): e is [string, T] => is(e[1])))
+        : {};
+    return {
+      list: rows,
+      marks: {},
+      repos: table(repos, (x): x is boolean => typeof x === "boolean"),
+      times: table(times, (x): x is number => typeof x === "number"),
+      read: false,
+      known: true,
+    };
+  } catch {
+    return none;
+  }
+}
+function rememberKnown(f: Pick<WorkspaceFacts, "list" | "repos" | "times">) {
+  try {
+    window.localStorage.setItem(KNOWN_KEY, JSON.stringify({ list: f.list, repos: f.repos, times: f.times }));
+  } catch {
+    /* the next cold start reshuffles once, and nothing else is lost */
+  }
+}
+let facts: WorkspaceFacts = storedKnown();
 const listeners = new Set<() => void>();
 function publish(next: WorkspaceFacts) {
   facts = next;
@@ -163,19 +241,21 @@ export function WorkspacesList({
       screen and the tree is the next one — nothing to fold. */
   onTree?: () => void;
 }) {
-  const [list, setList] = useState<WorkspaceRow[]>([]);
+  // Every piece starts from what the list last knew (`facts`), and is
+  // re-asked below as it always was.
+  const [list, setList] = useState<WorkspaceRow[]>(() => facts.list);
   /** What the two per-row questions came back with. Absent means「not
       answered」— never asked yet, or that machine could not — and the
       corner is blank either way, because the two lead to the same next
       move: look at the row, not at the column. */
-  const [marks, setMarks] = useState<Record<string, GitStatus>>({});
+  const [marks, setMarks] = useState<Record<string, GitStatus>>(() => facts.marks);
   /** Whether each row is a repository, asked apart from `marks`
       (docs/SHELL.md 第五轮 第 6 条): 「is this a repository」 is one
       stat, 「what changed in it」 is a walk, and the corner used to wait
       on the walk — so a repository whose status was slow, failed, or
       named no branch wore a folder. Absent means not answered. */
-  const [repos, setRepos] = useState<Record<string, boolean>>({});
-  const [times, setTimes] = useState<Record<string, number>>({});
+  const [repos, setRepos] = useState<Record<string, boolean>>(() => facts.repos);
+  const [times, setTimes] = useState<Record<string, number>>(() => facts.times);
   /** A row action that did not take, in the node's own sentence. It
       outlives one opening of the menu, which is why it is here and not
       in `RowMenu` (that file's `note` says so). */
@@ -185,15 +265,25 @@ export function WorkspacesList({
       asked any more. This is only the difference between「还没读」and
       「读了，是空的」, which is one frame long and would otherwise flash
       「还没有工作区」at somebody who has plenty. */
-  const [read, setRead] = useState(false);
+  const [read, setRead] = useState(() => facts.read);
+  /** A list to draw: read now, or remembered (`facts.known`). */
+  const known = read || facts.known;
   const hidden = useHidden();
   const [round, setRound] = useState(0);
 
+  /** Whether the table has **answered** this run — `read` is also true
+      after a read that failed, and a failed read must not be written
+      over the snapshot as if it were the table (an empty list would
+      greet the next start with 「还没有工作区」). */
+  const answered = useRef(false);
   const reload = useCallback(
     () =>
       fetchWorkspaces()
         .then(
-          setList,
+          (rows) => {
+            answered.current = true;
+            setList(rows);
+          },
           // The table is on this disk; a read of it failing is the
           // backend being unreachable, which the shell already says
           // above this pane (`App`'s 后端 line). Nothing to add here.
@@ -207,10 +297,17 @@ export function WorkspacesList({
     void reload();
   }, [reload, round, reloadAt]);
 
-  // What the overview beside this list reads (`WorkspaceFacts`).
+  // What the overview beside this list reads (`WorkspaceFacts`), and
+  // what the next mount of this list starts from.
   useEffect(() => {
-    publish({ list, marks, times, read });
-  }, [list, marks, times, read]);
+    publish({ list, marks, repos, times, read, known: read || facts.known });
+  }, [list, marks, repos, times, read]);
+  // …and the part of it that orders the rows, for the next start of the
+  // app. Only once the table has answered this run: until then it is
+  // the snapshot itself.
+  useEffect(() => {
+    if (answered.current) rememberKnown({ list, repos, times });
+  }, [list, repos, times]);
 
   // An opened workspace — by this list, the overview or ⌘K: whatever
   // opened it, the selection is where it shows. A machine's whole disk
@@ -241,6 +338,11 @@ export function WorkspacesList({
   // answer does not go blank, it becomes its neighbour. Here the
   // neighbour would be believable, which is worse.
   useEffect(() => {
+    // **Asked for the table's rows, never for the remembered ones**: the
+    // list a mount starts from (`facts`) is only there to be drawn, and
+    // the table answers it a moment later from this disk. Asking for
+    // both was every far machine walked twice on every return.
+    if (!answered.current) return;
     let live = true;
     const drop =
       <T,>(k: string) =>
@@ -339,7 +441,7 @@ export function WorkspacesList({
     ];
   };
 
-  if (!read) return <div className="flex min-h-0 flex-1 flex-col" />;
+  if (!known) return <div className="flex min-h-0 flex-1 flex-col" />;
 
   const side: SideRow[] = rows.map((r) => {
     const k = keyOf(r);

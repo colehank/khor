@@ -5350,6 +5350,52 @@ try {
           "state now points at it (src/App.tsx)",
       );
     }
+
+    // ── 4f·back) coming back is not starting over (2026-09-29) ──────
+    //
+    // 「侧边栏内容的抽象没有缓存？每次新进入工作区，都要从原始的工作区
+    // 顺序到置顶设置好的顺序。角标也从普通到git」. The per-row answers
+    // lived in the list and died with it, so every return drew each row
+    // with a folder and no branch and reshuffled as the answers came
+    // back. So: settle, leave, and come back **with every per-row
+    // question held** — what is drawn then is only what the list kept,
+    // and it must be what was on screen when it was left.
+    const readWs = () =>
+      page.$$eval("[data-ws-row]", (rows) =>
+        rows.map((el) => ({
+          name: el.querySelector("[data-ws-name]")?.textContent?.trim() ?? null,
+          badge: el.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+          git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? null,
+        })),
+      );
+    await until(5_000, async () => (await readWs()).some((r) => r.badge === "branch" && r.git));
+    const left = await readWs();
+    let letGo;
+    const held = new Promise((ok) => (letGo = ok));
+    const hold = async (route) => {
+      await held;
+      return route.fallback();
+    };
+    const perRow = ["**/touched", "**/checkout", "**/git_status"];
+    for (const u of perRow) await page.route(u, hold);
+    try {
+      await open("sessions");
+      await open("workspaces");
+      const back = (await until(5_000, async () => (await page.locator("[data-ws-row]").count()) > 0)) ? await readWs() : null;
+      console.log(`workspaces, back with every answer held: ${JSON.stringify(back)}`);
+      if (!left.some((r) => r.badge === "branch")) {
+        fail(`probe dead: 4f·back — no row wore a branch before leaving (${JSON.stringify(left)})`);
+      } else if (JSON.stringify(back) !== JSON.stringify(left)) {
+        fail(
+          `coming back to the workspaces drew ${JSON.stringify(back)} before a single answer — it left ` +
+            `${JSON.stringify(left)}. What the list knew is kept and drawn first, then asked again ` +
+            "(20-states 加载中，看过: 上次的内容原样留着; src/views/WorkspacesList.tsx)",
+        );
+      }
+    } finally {
+      letGo();
+      for (const u of perRow) await page.unroute(u, hold);
+    }
   }
 
   // ── 4g) the directory box ─────────────────────────────────────────
