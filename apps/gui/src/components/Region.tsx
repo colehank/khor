@@ -101,7 +101,7 @@ export function PageAction({ children }: { children: ReactNode }) {
 const SubtitleSeat = createContext<HTMLElement | null | undefined>(undefined);
 
 /**
- * **A page's second title line, inside R0's 48** (2026-09-28, the open
+ * **A page's second title line, inside R0** (2026-09-28, the open
  * workspace: branch, changed files, `机器:路径`). The macOS title-and-
  * subtitle pair — Xcode puts the branch under the project — and not a
  * row between R0 and R1, which nothing may add (10-layout). Only a page
@@ -110,6 +110,8 @@ const SubtitleSeat = createContext<HTMLElement | null | undefined>(undefined);
  * Drawn by the page that owns the facts, seated by the shell, the way
  * `PageAction` is. **Nothing where there is no R0**: the narrow face's
  * head is the page's own (`NarrowHead`) and says what fits there itself.
+ * **Written on `caption`'s leading, 14** (2026-09-29): R0 is 38 and the
+ * pair is set a rung tight to sit in it with room (`PageHead`).
  */
 export function PageSubtitle({ children }: { children: ReactNode }) {
   const seat = useContext(SubtitleSeat);
@@ -148,9 +150,17 @@ export function PageHead({
 }) {
   return (
     <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
-      {/* The name over its second line, the pair centred in the 48. */}
+      {/* The name over its second line, the pair centred in R0 — on the
+          centreline the window's buttons and the search box stand on.
+          **Set one leading rung tight** (2026-09-29, R0 at 38): the name
+          on `body`'s 18 rather than `title-sm`'s own 20, and the page's
+          second line on `caption`'s 14 (`PageSubtitle`'s callers):
+          18 + 14 = 32 leaves 3 over and under, where 20 + 16 = 36 left
+          one and the second line's descenders stood on R0's hairline.
+          Sizes unchanged — 15 and 12. A name alone is centred the same
+          either way. */}
       <div className="flex min-w-0 flex-1 flex-col justify-center">
-        <h1 data-page-title className="min-w-0 truncate text-title-sm font-title">
+        <h1 data-page-title className="min-w-0 truncate text-title-sm leading-(--text-body--line-height) font-title">
           {title}
         </h1>
         {subRef && <div ref={subRef} data-page-subtitle className="flex min-w-0 empty:hidden" />}

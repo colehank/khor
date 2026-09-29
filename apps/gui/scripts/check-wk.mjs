@@ -494,12 +494,13 @@ if (said.pdf?.loadFailed) {
   };
   const railW = px("rail-w");
   const railItem = px("rail-item");
-  const touch = px("touch");
-  const tabLip = px("tab-lip");
   const glyphLeft = (railW - railItem) / 2;
-  const paneHead = touch + tabLip;
-  if (![railW, railItem, touch, tabLip].every(Number.isFinite)) {
-    fail(`wk: tokens.css did not give --rail-w / --rail-item / --touch / --tab-lip (${railW} / ${railItem} / ${touch} / ${tabLip}) — nothing below knows where the rail's glyph box is`);
+  // **The row as written** (38 since 2026-09-29). This used to add
+  // `--touch` and `--tab-lip`, the sum `--pane-head` was until 第十五轮
+  // wrote it down — and from then on it measured a row nobody drew.
+  const paneHead = px("pane-head");
+  if (![railW, railItem, paneHead].every(Number.isFinite)) {
+    fail(`wk: tokens.css did not give --rail-w / --rail-item / --pane-head (${railW} / ${railItem} / ${paneHead}) — nothing below knows where the rail's glyph box is or how tall the row is`);
   }
   // The row it has, and one it does not: the second is what keeps a
   // number that only happens to fit today's row out of the code.
