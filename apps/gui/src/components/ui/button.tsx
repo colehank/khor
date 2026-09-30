@@ -36,10 +36,11 @@ const buttonVariants = cva(
         // painted it made every unmarked button on every page a solid
         // olive block — the brand voltage in a place it is not allowed.
         default: "bg-fill-strong text-foreground hover:bg-fill-strong/80",
-        // **The** one primary act of a dialog or a sheet, and nowhere
-        // else: at most one per dialog, never two in a row. `check-face`
-        // (第十七轮) goes red on a primary outside `[role=dialog]` /
-        // `[data-sheet]`, and on two in one.
+        // **The** one primary act of a dialog, and nowhere else: at most
+        // one per dialog, never two in a row. `check-face` (第十七轮)
+        // goes red on a primary outside `[role=dialog]`, and on two in
+        // one. (A form is a dialog too since the R0 sheet was retired,
+        // 2026-09-30.)
         primary: "bg-primary text-primary-foreground hover:bg-primary/90",
         secondary: "bg-secondary text-secondary-foreground hover:bg-fill-strong",
         // `plain`: no ground, `secondary` ink, `fill` under the pointer.

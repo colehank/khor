@@ -7528,14 +7528,14 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //      desktop actually shows.
   await page.locator('[data-file="long.txt"] > button').first().click();
   await until("alpha's long file on the sheet", 30_000, async () =>
-    (await page.locator('[data-sheet] [data-line="3"]').count()) === 1,
+    (await page.locator('[data-file-text] [data-line="3"]').count()) === 1,
   );
   const folded = await page.evaluate(() => {
     const round = (n) => Math.round(n * 10) / 10;
-    const pre = document.querySelector("[data-sheet]");
+    const pre = document.querySelector("[data-file-text]");
     const box = document.querySelector("[data-file-scroll]");
     const tall = (n) => {
-      const el = document.querySelector(`[data-sheet] [data-line="${n}"]`);
+      const el = document.querySelector(`[data-file-text] [data-line="${n}"]`);
       return el === null ? null : round(el.getBoundingClientRect().height);
     };
     const top = (sel) => {
@@ -7549,7 +7549,7 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
       column: round(pre.parentElement.getBoundingClientRect().width),
       box: box === null ? null : [box.scrollWidth, box.clientWidth],
       page: [document.scrollingElement.scrollWidth, document.scrollingElement.clientWidth],
-      line3: top('[data-sheet] [data-line="3"]'),
+      line3: top('[data-file-text] [data-line="3"]'),
       num3: top('[data-num="3"]'),
     };
   });
@@ -7834,7 +7834,7 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     );
     await page.locator('[data-file="keep.txt"] > button').first().click();
     await until("alpha's keep.txt on the sheet with a bar in its gutter", 30_000, async () =>
-      (await page.locator('[data-sheet] [data-line="2"]').count()) === 1 &&
+      (await page.locator('[data-file-text] [data-line="2"]').count()) === 1 &&
       (await page.locator("[data-gutter] [data-hunk]").count()) > 0,
     );
     const painted = await page.evaluate(() => {

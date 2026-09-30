@@ -133,7 +133,7 @@ export function JoinDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent sheet data-join-dialog>
+      <DialogContent form data-join-dialog>
         <DialogHeader>
           <DialogTitle>{gui.join_with_a_ticket}</DialogTitle>
         </DialogHeader>
@@ -151,6 +151,9 @@ export function JoinDialog({
           </div>
         )}
         <DialogFooter>
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+            {gui.delete_keep}
+          </Button>
           <Button variant="primary" data-join disabled={!ticket.trim() || joining} onClick={join}>
             {gui.join}
           </Button>

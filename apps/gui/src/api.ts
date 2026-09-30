@@ -204,7 +204,7 @@ const unwrap = (body: string): string => {
  * `fetch`, with a failure to reach khor said in the catalog's words.
  *
  * 2026-09-28: 「Failed to fetch」 was painted as-is at the top of the
- * browse board and in red inside the new-session sheet. That string is
+ * browse board and in red inside the new-session dialog. That string is
  * the browser's, and it is the same for every way the request did not
  * arrive (no bridge, a refused port, CORS) — so it carries nothing a
  * person can act on beyond 「khor did not answer」, which is exactly

@@ -3437,16 +3437,16 @@ try {
     bars[0].click();
     await new Promise((r) => setTimeout(r, 120));
     const peek = document.querySelector("[data-peek]");
-    const sheet = document.querySelector("[data-sheet]");
+    const sheet = document.querySelector("[data-file-text]");
     const at = Number(bars[0].dataset.hunk);
-    const line = document.querySelector(`[data-sheet] [data-line="${at}"]`);
+    const line = document.querySelector(`[data-file-text] [data-line="${at}"]`);
     const round = (n) => Math.round(n * 10) / 10;
     return {
       bars: bars.length,
       at,
       // Which place the open block belongs to, read off the block.
       peekAt: peek === null ? null : Number(peek.dataset.peek),
-      // **In the file, not under it.** `data-sheet` and no fallback:
+      // **In the file, not under it.** `data-file-text` and no fallback:
       // the first spelling of a probe here fell back to
       // `querySelector("pre")`, which is the line-number column, and a
       // probe that cannot find its subject must go void, never green.
@@ -3557,7 +3557,7 @@ try {
     // the keystroke, so the keystroke is where it is measured.
     const lineTop = () =>
       page.evaluate(() => {
-        const one = document.querySelector('[data-sheet] [data-line="1"]');
+        const one = document.querySelector('[data-file-text] [data-line="1"]');
         return one === null ? null : Math.round(one.getBoundingClientRect().top * 10) / 10;
       });
     const restTop = await lineTop();
@@ -3632,7 +3632,7 @@ try {
     const refused = await page.evaluate(() => {
       const notice = document.querySelector("[data-file-notice]");
       const box = document.querySelector("[data-file-scroll]");
-      const first = document.querySelector('[data-sheet] [data-line="1"]');
+      const first = document.querySelector('[data-file-text] [data-line="1"]');
       const n = notice?.getBoundingClientRect() ?? null;
       const b = box?.getBoundingClientRect() ?? null;
       return {
@@ -6125,7 +6125,7 @@ try {
     // painted copy is wider than the editor's plain text over it, and
     // the caret drifts. Markdown source is where the theme bolds.
     const heavy = await page.evaluate(() => {
-      const pre = document.querySelector("[data-sheet]");
+      const pre = document.querySelector("[data-file-text]");
       if (!pre) return null;
       const base = getComputedStyle(pre);
       const odd = [];
@@ -6472,17 +6472,17 @@ try {
   // paint is colour on the glass, not a class in the DOM. **A class is
   // not a colour**: every token wore highlight.js's class before
   // 2026-09-15 and the sheet was one colour anyway, because no rule
-  // reached `[data-sheet]`. So what is read is computed ink: the
+  // reached `[data-file-text]`. So what is read is computed ink: the
   // painted spans must wear at least three inks between them and at
   // least one of them must differ from the sheet's own — a one-colour
   // theme wearing spans would pass a count and fail here.
   if (await openFile("one.rs")) {
     const painted = await until(8_000, async () =>
-      (await page.locator('[data-sheet] span[style*="--shiki"]').count()) > 0,
+      (await page.locator('[data-file-text] span[style*="--shiki"]').count()) > 0,
     );
     if (!painted) {
       const html = await page.evaluate(
-        () => document.querySelector("[data-sheet]")?.innerHTML?.slice(0, 120) ?? null,
+        () => document.querySelector("[data-file-text]")?.innerHTML?.slice(0, 120) ?? null,
       );
       fail(
         `the source of a .rs file carries no highlighting — 「要有语法高亮」, and what is there is ` +
@@ -6490,7 +6490,7 @@ try {
       );
     } else {
       const inks = await page.evaluate(() => {
-        const sheet = document.querySelector("[data-sheet]");
+        const sheet = document.querySelector("[data-file-text]");
         const body = getComputedStyle(sheet).color;
         const seen = new Set();
         for (const el of sheet.querySelectorAll('span[style*="--shiki"]')) seen.add(getComputedStyle(el).color);
@@ -6684,7 +6684,7 @@ try {
     }
     await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
     const drew = await until(8_000, async () =>
-      (await page.locator('[data-sheet] [data-line="6"]').count()) === 1,
+      (await page.locator('[data-file-text] [data-line="6"]').count()) === 1,
     );
     if (!drew) {
       fail(
@@ -6694,7 +6694,7 @@ try {
     } else {
       const fold = await page.evaluate(() => {
         const round = (n) => Math.round(n * 10) / 10;
-        const pre = document.querySelector("[data-sheet]");
+        const pre = document.querySelector("[data-file-text]");
         const ta = document.querySelector("[data-edit]");
         const box = document.querySelector("[data-file-scroll]");
         const page_ = document.scrollingElement;
@@ -6711,9 +6711,9 @@ try {
           box: box === null ? null : [box.scrollWidth, box.clientWidth],
           sheet: round(pre.getBoundingClientRect().width),
           column: round(pre.parentElement.getBoundingClientRect().width),
-          row: tall('[data-sheet] [data-line="1"]'),
-          wrapped: tall('[data-sheet] [data-line="2"]'),
-          lines: [2, 3, 4].map((n) => [n, top(`[data-sheet] [data-line="${n}"]`), top(`[data-num="${n}"]`)]),
+          row: tall('[data-file-text] [data-line="1"]'),
+          wrapped: tall('[data-file-text] [data-line="2"]'),
+          lines: [2, 3, 4].map((n) => [n, top(`[data-file-text] [data-line="${n}"]`), top(`[data-num="${n}"]`)]),
           bar: top('[data-hunk="4"]'),
           // The editor's own idea of how tall the text is. It is forced
           // to the column's height by `inset-0`, so the only thing that
@@ -6825,7 +6825,7 @@ try {
     await page.setViewportSize({ width: 1400, height: 700 });
     await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
     const drew = await until(8_000, async () =>
-      (await page.locator('[data-sheet] [data-line="60"]').count()) === 1,
+      (await page.locator('[data-file-text] [data-line="60"]').count()) === 1,
     );
     if (!drew) {
       fail("probe dead: the tall fixture did not draw, so nothing here can be scrolled and re-wrapped");
@@ -6835,7 +6835,7 @@ try {
           const box = document.querySelector("[data-file-scroll]");
           const b = box.getBoundingClientRect().top;
           let best = null;
-          for (const el of document.querySelectorAll("[data-sheet] [data-line]")) {
+          for (const el of document.querySelectorAll("[data-file-text] [data-line]")) {
             const r = el.getBoundingClientRect();
             if (r.top <= b + 1 && r.bottom > b + 1) best = el.getAttribute("data-line");
           }
@@ -6843,7 +6843,7 @@ try {
         });
       await page.evaluate(() => {
         const box = document.querySelector("[data-file-scroll]");
-        const l = document.querySelector('[data-sheet] [data-line="30"]');
+        const l = document.querySelector('[data-file-text] [data-line="30"]');
         box.scrollTop += l.getBoundingClientRect().top - box.getBoundingClientRect().top;
       });
       await wait(150);
@@ -7691,7 +7691,7 @@ try {
     }
     await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
     const drew = await until(8_000, async () =>
-      (await page.locator(`[data-sheet] [data-line="${LINES}"]`).count()) === 1,
+      (await page.locator(`[data-file-text] [data-line="${LINES}"]`).count()) === 1,
     );
     if (!drew) {
       fail(`probe dead: the ${LINES}-line fixture never reached the sheet (src/views/FileView.tsx)`);
@@ -7844,7 +7844,7 @@ try {
       const laid = await page.evaluate(() => {
         const round = (n) => Math.round(n * 10) / 10;
         const peek = document.querySelector("[data-peek]");
-        const sheet = document.querySelector("[data-sheet]");
+        const sheet = document.querySelector("[data-file-text]");
         const top = (sel) => {
           const el = document.querySelector(sel);
           return el === null ? null : round(el.getBoundingClientRect().top);
@@ -7854,8 +7854,8 @@ try {
           said: peek?.textContent?.trim() ?? null,
           peekTop: peek === null ? null : round(peek.getBoundingClientRect().top),
           peekBottom: peek === null ? null : round(peek.getBoundingClientRect().bottom),
-          before: top('[data-sheet] [data-line="149"]'),
-          after: top('[data-sheet] [data-line="150"]'),
+          before: top('[data-file-text] [data-line="149"]'),
+          after: top('[data-file-text] [data-line="150"]'),
           // Two numbers on either side of the block, to catch the
           // column silently sliding by the peek's own height.
           num149: top('[data-num="149"]'),
@@ -7999,9 +7999,9 @@ try {
               return el === null ? null : round(el.getBoundingClientRect().top);
             };
             return {
-              l149: at('[data-sheet] [data-line="149"]'),
-              l150: at('[data-sheet] [data-line="150"]'),
-              l151: at('[data-sheet] [data-line="151"]'),
+              l149: at('[data-file-text] [data-line="149"]'),
+              l150: at('[data-file-text] [data-line="150"]'),
+              l151: at('[data-file-text] [data-line="151"]'),
               edit: document.querySelectorAll("[data-edit]").length,
             };
           });
@@ -8093,8 +8093,8 @@ try {
           // …and what the file itself says about where those lines are,
           // so the fractions above can be checked rather than eyeballed.
           total: box.scrollHeight,
-          at3: document.querySelector('[data-sheet] [data-line="3"]')?.offsetTop ?? null,
-          at150: document.querySelector('[data-sheet] [data-line="150"]')?.offsetTop ?? null,
+          at3: document.querySelector('[data-file-text] [data-line="3"]')?.offsetTop ?? null,
+          at150: document.querySelector('[data-file-text] [data-line="150"]')?.offsetTop ?? null,
         };
       });
       console.log(`overview ruler: ${JSON.stringify(ruler)}`);
@@ -8176,7 +8176,7 @@ try {
           const box = document.querySelector("[data-file-scroll]");
           box.scrollTop = 0;
           const b = box.getBoundingClientRect();
-          const l = document.querySelector('[data-sheet] [data-line="150"]').getBoundingClientRect();
+          const l = document.querySelector('[data-file-text] [data-line="150"]').getBoundingClientRect();
           return { top: Math.round(box.scrollTop), onScreen: l.top >= b.top - 1 && l.bottom <= b.bottom + 1 };
         });
         await wait(200);
@@ -8190,7 +8190,7 @@ try {
         await wait(300);
         const went = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const line = document.querySelector('[data-sheet] [data-line="150"]');
+          const line = document.querySelector('[data-file-text] [data-line="150"]');
           const b = box.getBoundingClientRect();
           const l = line.getBoundingClientRect();
           return {
@@ -8906,7 +8906,7 @@ try {
         );
         const landed = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-sheet] [data-line="3"]');
+          const row = document.querySelector('[data-file-text] [data-line="3"]');
           if (box === null || row === null) return null;
           const b = box.getBoundingClientRect();
           const r = row.getBoundingClientRect();
@@ -9433,7 +9433,7 @@ try {
         );
         const at = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-sheet] [data-line="2"]');
+          const row = document.querySelector('[data-file-text] [data-line="2"]');
           return {
             tabs: [...document.querySelectorAll("[data-tab-name]")].map((e) => e.textContent?.trim()),
             // …and it went to the line, read the way ruling 35's own
@@ -11660,7 +11660,7 @@ try {
       }
       if (laid.file === null || laid.file < 80) {
         fail(
-          `the file column is ${laid.file}px wide with the editor's card up — a sheet asks and goes, ` +
+          `the file column is ${laid.file}px wide with the editor's card up — a dialog asks and goes, ` +
             "it does not take a column (src/views/WorkspacePane.tsx)",
         );
       }
@@ -11679,7 +11679,7 @@ try {
         const b = document.querySelector("[data-code]");
         return {
           column: document.querySelectorAll("[data-ws-code]").length,
-          sheet: document.querySelectorAll("[data-code-sheet]").length,
+          dialog: document.querySelectorAll("[data-code-dialog]").length,
           file: mid === null ? null : Math.round(mid.getBoundingClientRect().width),
           lit: b?.getAttribute("data-on") ?? null,
         };
@@ -11997,7 +11997,7 @@ try {
         );
         const there = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-sheet] [data-line="3"]');
+          const row = document.querySelector('[data-file-text] [data-line="3"]');
           const on = document.querySelector('[data-rail-item][data-landing="workspaces"]');
           const open = document.querySelector('[data-ws-row][data-selected="true"] [data-ws-name]');
           return {
@@ -12911,12 +12911,12 @@ try {
     await open("sessions");
     await press("[data-list] [data-row-open]");
     await wait(400);
-    const CONTENT = "[data-row], [data-chat-input], [data-sheet]";
+    const CONTENT = "[data-row], [data-chat-input], [data-file-text]";
     const before = await page.evaluate((sel) => document.querySelectorAll(sel).length, CONTENT);
     console.log(`lock · before: ${before} piece(s) of session content on screen`);
     if (before === 0) {
       fail(
-        "probe dead: nothing matched [data-row], [data-chat-input] or [data-sheet] with a session " +
+        "probe dead: nothing matched [data-row], [data-chat-input] or [data-file-text] with a session " +
           "open — a zero after the lock would then prove nothing",
       );
     } else {
@@ -13614,8 +13614,8 @@ try {
         const ground = getComputedStyle(board).backgroundColor;
         // **…and it wears the one floating language** (2026-09-28): the
         // `float` shadow and the `radius-lg` corner, read back against
-        // what the tokens resolve to here. The sheet's top edge is R0's,
-        // so its corner is read at the bottom.
+        // what the tokens resolve to here. (The R0 sheet, whose corner was
+        // read at the bottom, was retired 2026-09-30: a form is a dialog.)
         const probe = document.createElement("div");
         probe.style.cssText =
           "position:absolute;visibility:hidden;box-shadow:var(--shadow-float);border-radius:var(--radius-lg)";
@@ -13623,7 +13623,7 @@ try {
         const want = { shadow: getComputedStyle(probe).boxShadow, radius: getComputedStyle(probe).borderTopLeftRadius };
         probe.remove();
         const cs = getComputedStyle(el);
-        const radius = el.hasAttribute("data-sheet") ? cs.borderBottomLeftRadius : cs.borderTopLeftRadius;
+        const radius = cs.borderTopLeftRadius;
         return {
           surface,
           ground,
@@ -13637,7 +13637,7 @@ try {
         };
       }, sel);
     const surfaces = [
-      ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && pressNew("new")],
+      ["the new-session dialog", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
       [
         "a dialog (改名…)",
         "[data-identity-rename-dialog]",
@@ -13920,7 +13920,6 @@ try {
         // …and that includes the day's readout, which since 2026-09-29 *is*
         // the tooltip (`DayStrip` no longer draws a surface of its own).
         "src/components/ui/tooltip.tsx": "a tooltip is `radius-sm` (components/Tooltip)",
-        "src/components/ui/dialog.tsx": "the sheet hangs from R0: its top edge is R0's, only its lower corners round (`rounded-b-lg`)",
         "src/views/FileView.tsx": "the peek is a band across the whole column over the code — no corner to round",
       };
       const POPOVER_EXCEPT = {
@@ -22841,12 +22840,14 @@ try {
     // red against the tree it replaced (docs/handoff/001.md 第十七轮):
     //   (a) every selectable setting on More is one of the four row kinds,
     //       and a popup row opens the system's menu (a native select);
-    //   (b) the brand-strong push button is a dialog's or a sheet's, at
-    //       most one each, and never on a page;
+    //   (b) the brand-strong push button is a dialog's, at most one each,
+    //       and never on a page;
     //   (c) no board holds a row of buttons: two or more buttons side by
     //       side as direct children of one box inside [data-board];
-    //   (d) a create form is a sheet hanging from R0's lower edge, with
-    //       no scrim over the window;
+    //   (d) a create form is a centred dialog over a scrim — ⚠️ 墓碑
+    //       (2026-09-30): until then it read 「a sheet hanging from R0's
+    //       lower edge, with no scrim over the window」 (D10), which the
+    //       owner retired (section 13 (b) has the whole of it);
     //   (e) an open workspace is three panes on a flush board, each
     //       pane's head --pane-head tall.
     {
@@ -22923,7 +22924,7 @@ try {
           const brand = getComputedStyle(probe).backgroundColor;
           probe.remove();
           const primaries = [...document.querySelectorAll("button")].filter(
-            (b) => shown(b) && !b.closest('[role="dialog"], [data-sheet], [role="switch"]') && b.getAttribute("role") !== "switch" &&
+            (b) => shown(b) && !b.closest('[role="dialog"], [role="switch"]') && b.getAttribute("role") !== "switch" &&
               getComputedStyle(b).backgroundColor === brand && !b.closest("[data-more-list], [data-side-row], [data-list], [data-rail]"),
           );
           const board = document.querySelector("[data-main] [data-board]");
@@ -22945,7 +22946,7 @@ try {
         console.log(`round 17 (b/c) · ${where}: primary ${r.primaries.length}, button rows ${JSON.stringify(r.rows)}`);
         if (r.primaries.length) {
           fail(
-            `round 17 (b): ${where} paints ${r.primaries.length} brand-strong button(s) outside a dialog or sheet — ` +
+            `round 17 (b): ${where} paints ${r.primaries.length} brand-strong button(s) outside a dialog — ` +
               `the primary is a dialog's one act, a page's buttons are fill-strong (${JSON.stringify(r.primaries)})`,
           );
         }
@@ -22957,8 +22958,8 @@ try {
         }
       }
 
-      // (b) inside a dialog or sheet: at most one primary.
-      // (d) the create forms are sheets hanging from R0.
+      // (b) inside a dialog: at most one primary.
+      // (d) the create forms are centred dialogs over a scrim.
       const forms = [
         // Both are the sessions landing's ＋, a menu of the two
         // (2026-09-30, 「一个动作只有一个家」).
@@ -22974,9 +22975,6 @@ try {
         await wait(300);
         const s = await page.evaluate((sel) => {
           const el = document.querySelector(sel);
-          const head = document.querySelector("[data-main] [data-region-head]");
-          const main = document.querySelector("[data-main]");
-          const board = document.querySelector("[data-main] [data-board]");
           const probe = document.createElement("div");
           probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
           document.body.appendChild(probe);
@@ -22989,30 +22987,26 @@ try {
             const cs = getComputedStyle(n);
             return cs.position === "fixed" && b.width >= vw - 1 && b.height >= vh - 1 && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
           }).length;
+          const b = el?.getBoundingClientRect() ?? null;
           return {
-            sheet: el?.hasAttribute("data-sheet") ?? false,
-            top: el ? +el.getBoundingClientRect().top.toFixed(1) : null,
-            r0: head ? +head.getBoundingClientRect().bottom.toFixed(1) : null,
-            w: el ? el.getBoundingClientRect().width : null,
-            board: board ? board.getBoundingClientRect().width : null,
-            inMain: !!(main && el && main.contains(el)),
+            sheets: document.querySelectorAll("[data-sheet]").length,
+            dx: b ? +((b.left + b.right) / 2 - vw / 2).toFixed(1) : null,
+            dy: b ? +((b.top + b.bottom) / 2 - vh / 2).toFixed(1) : null,
             scrims,
             primaries: el ? [...el.querySelectorAll("button")].filter((b) => getComputedStyle(b).backgroundColor === brand).length : 0,
           };
         }, sel);
         console.log(`round 17 (d) · ${what}: ${JSON.stringify(s)}`);
-        if (!s.sheet) fail(`round 17 (d): the ${what} form is a centred dialog — a create form is a sheet from R0 (D10)`);
-        if (s.top === null || s.r0 === null || Math.abs(s.top - s.r0) > 0.5) {
-          fail(`round 17 (d): the ${what} sheet's top is ${s.top}, R0's bottom is ${s.r0} — it hangs from R0's lower edge`);
+        if (s.sheets !== 0 || s.dx === null || Math.abs(s.dx) > 1 || Math.abs(s.dy) > 1 || s.scrims < 1) {
+          fail(
+            `round 17 (d): the ${what} form is ${s.dx}/${s.dy} off the window's centre over ${s.scrims} scrim(s), ` +
+              `${s.sheets} sheet(s) up — a create form is a centred dialog (components/Dialog, 2026-09-30)`,
+          );
         }
-        if (s.w !== null && s.board !== null && s.w > s.board + 0.5) {
-          fail(`round 17 (d): the ${what} sheet is ${s.w} wide over a ${s.board} board — no wider than the board`);
-        }
-        if (s.scrims) fail(`round 17 (d): the ${what} sheet brought ${s.scrims} window-wide scrim(s) — a sheet dims nothing`);
-        if (s.primaries > 1) fail(`round 17 (b): the ${what} form paints ${s.primaries} primary buttons — one per dialog or sheet`);
+        if (s.primaries > 1) fail(`round 17 (b): the ${what} form paints ${s.primaries} primary buttons — one per dialog`);
         await page.keyboard.press("Escape");
         if (!(await until(2_000, async () => (await page.locator(sel).count()) === 0))) {
-          fail(`round 17 (d): Esc left the ${what} sheet open`);
+          fail(`round 17 (d): Esc left the ${what} dialog open`);
         }
       }
 
@@ -24404,9 +24398,9 @@ try {
       if (read < 50) fail(`probe dead: (b) read ${read} source file(s) for not-allowed`);
       for (const at of hits) fail(`${at} gives a disabled control the barred circle — AppKit keeps the arrow over a disabled control; the greying says it`);
     }
-    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-sheet]", "[data-numbers]", "[data-file] > button"]);
+    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-file-text]", "[data-numbers]", "[data-file] > button"]);
     console.log(`mac · user-select in the workspace ${JSON.stringify(file)}`);
-    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-sheet]": "text", "[data-numbers]": "none", "[data-file] > button": "none" };
+    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-file-text]": "text", "[data-numbers]": "none", "[data-file] > button": "none" };
     for (const { s, v } of file) {
       if (v === null) fail(`probe dead: ${s} is not in the open workspace`);
       else if (v !== want[s]) fail(`${s} computes user-select ${v}, not ${want[s]} — code selects, its line numbers and the tree do not`);
@@ -24858,17 +24852,24 @@ try {
   //
   // The owner: 「订阅页右上角不要有登记按钮，这个功能属于搜索框旁边的 ＋。
   // 类似的冗余不要出现在 app 里：机器页点 ＋ 就是邀请设备和加入网络，更多里
-  // 的网络页就不要有右上方两个邀请、加入了」. What of that a machine can
-  // measure:
+  // 的网络页就不要有右上方两个邀请、加入了」「整个 app 所有点击的弹窗，比如
+  // 新建 session，是要来一个弹窗，而不是现在这样从标题下长出来的奇怪东西」.
+  // What of that a machine can measure:
   //
   //   a. **R0 makes nothing.** On the three overviews (会话, 机器, 额度) and
   //      on 「…」 → 网络, R0 holds no `data-new-item`; the overviews' right
   //      end is empty and 网络's holds only its ×. The acts are the ＋
   //      beside L0's search box: one act is pressed straight through, two
   //      drop a menu — on the wide face too.
+  //   b. **`data-sheet` is zero across the app.** Statically, nothing under
+  //      src/ writes it or asks `DialogContent` for a sheet; live, every
+  //      form ＋ opens (新会话, 导入, 邀请设备, 加入网络, 登记, 添加工作区)
+  //      is a centred dialog — over a scrim, its centre on the window's
+  //      (±1), at most one primary — and Esc closes it.
   //
   // Red on the code it replaced: R0 held 新会话… 导入… / 邀请设备… 加入网络…
-  // / 登记… and 网络's two, and ＋ on 会话 and 机器 was the first act alone.
+  // / 登记… and 网络's two; the new-session, import, join, register and
+  // directory forms were sheets hanging from R0 with no scrim.
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
@@ -24883,6 +24884,37 @@ try {
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
     await wait(900);
+
+    // (b, static) nothing under src/ writes `data-sheet` or asks for a
+    // sheet. Comment lines are skipped — a tombstone may name the thing
+    // it buried.
+    {
+      const files = [];
+      const walkSrc = (d) => {
+        for (const n of readdirSync(d)) {
+          const p = join(d, n);
+          if (statSync(p).isDirectory()) {
+            if (n !== "gen") walkSrc(p);
+          } else if (/\.(tsx?|css)$/.test(n)) files.push(p);
+        }
+      };
+      walkSrc(join(gui, "src"));
+      const bad = [];
+      for (const f of files) {
+        const rel = relative(gui, f);
+        readFileSync(f, "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+            const code = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+            if (/data-sheet(?![\w-])/.test(code)) bad.push(`${rel}:${i + 1} writes or reads \`data-sheet\``);
+            if (/<DialogContent\b[^>]*\ssheet(?![\w-])/.test(code)) bad.push(`${rel}:${i + 1} asks DialogContent for a sheet`);
+          });
+      }
+      console.log(`acts (b) · static · ${files.length} file(s) read, ${bad.length} sheet(s)`);
+      for (const b of bad) fail(`acts (b) · ${b} — there is one kind of window a press opens, the centred dialog (D10, 2026-09-30)`);
+      if (files.length < 50) fail(`probe dead: acts (b) read ${files.length} source file(s) — the walk is not reaching src/`);
+    }
 
     // (a) R0 makes nothing.
     const r0 = () =>
@@ -24942,7 +24974,7 @@ try {
       if ((await page.locator("[data-more-page]").count()) > 0) await press("[data-more-close]");
     }
 
-    // (a) every act is on ＋.
+    // (a, b) every act is on ＋, and every form it opens is a dialog.
     /** ＋ on the open landing, then its `key` if ＋ dropped a menu.
         Answers how it went: "menu", "direct", or why it did not. */
     const plus = async (key) => {
@@ -24986,9 +25018,48 @@ try {
         await wait(300);
         continue;
       }
+      await wait(400);
+      const s = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const scrims = [...document.querySelectorAll("body *")].filter((n) => {
+          const r = n.getBoundingClientRect();
+          const cs = getComputedStyle(n);
+          return cs.position === "fixed" && r.width >= vw - 1 && r.height >= vh - 1 && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+        }).length;
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
+        document.body.appendChild(probe);
+        const brand = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+          sheets: document.querySelectorAll("[data-sheet]").length,
+          role: el.getAttribute("role"),
+          dx: +((b.left + b.right) / 2 - vw / 2).toFixed(1),
+          dy: +((b.top + b.bottom) / 2 - vh / 2).toFixed(1),
+          scrims,
+          primaries: [...el.querySelectorAll("button")].filter((x) => getComputedStyle(x).backgroundColor === brand).length,
+        };
+      }, sel);
+      console.log(`acts (b) · ${word}: ${JSON.stringify(s)}`);
+      if (!s) {
+        fail(`probe dead: acts (b) · ${word} could not be read`);
+      } else {
+        if (s.sheets !== 0) fail(`acts (b) · with ${word} open the page holds ${s.sheets} [data-sheet] — a sheet is retired (D10, 2026-09-30)`);
+        if (s.role !== "dialog" || Math.abs(s.dx) > 1 || Math.abs(s.dy) > 1 || s.scrims < 1) {
+          fail(
+            `acts (b) · ${word} is role ${JSON.stringify(s.role)}, its centre ${s.dx}/${s.dy} off the window's, over ${s.scrims} scrim(s) — ` +
+              "a form is a centred dialog like 邀请设备's (components/Dialog)",
+          );
+        }
+        if (s.primaries > 1) fail(`acts (b) · ${word} paints ${s.primaries} primary buttons — one per dialog`);
+      }
       await page.keyboard.press("Escape");
       if (!(await until(2_000, async () => (await page.locator(sel).count()) === 0))) {
-        fail(`acts (a) · Esc left ${word} open`);
+        fail(`acts (b) · Esc left ${word} open`);
         await page.keyboard.press("Escape");
       }
       await wait(250);

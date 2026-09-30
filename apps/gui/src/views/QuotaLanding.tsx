@@ -73,7 +73,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { FormLabel, SheetForm } from "@/components/ui/sheet-form";
+import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -2353,11 +2353,11 @@ function RegisterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent sheet data-quota-dialog>
+      <DialogContent form data-quota-dialog>
         <DialogHeader>
           <DialogTitle>{gui.accounts_register}</DialogTitle>
         </DialogHeader>
-        <SheetForm data-quota-form>
+        <FormGrid data-quota-form>
           {/* **类型 first, because it decides what the rest of this form
               even is** — a subscription has no key, no address and no
               budget, and a form that asked for them and then refused
@@ -2468,8 +2468,11 @@ function RegisterDialog({
               {error}
             </p>
           )}
-        </SheetForm>
+        </FormGrid>
         <DialogFooter>
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+            {gui.delete_keep}
+          </Button>
           <Button variant="primary" data-quota-create disabled={busy} onClick={create}>
             {gui.accounts_register}
           </Button>

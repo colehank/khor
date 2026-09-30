@@ -2125,14 +2125,14 @@ export function WorkspacePane({
           </ListPane>
         )}
       </div>
-      {/* ── the editor's two sentences, as a sheet ────────────────
+      {/* ── the editor's two sentences, as a dialog ───────────────
           (2026-09-17 ruling 46:「同意卡…和『那台机器没有 code』的拒绝:
           在工作区页里弹一张小 sheet」— the user).
 
           **Both of them belong to one press and neither belongs in a
           column.** They stood in the editor's own column for one batch
           (ruling 45), which meant a person's file gave up room to hold
-          a question about a window that did not exist yet. A sheet asks
+          a question about a window that did not exist yet. A dialog asks
           and goes.
 
           The words are the ones that were already written — two
@@ -2147,7 +2147,7 @@ export function WorkspacePane({
           setCodeError(null);
         }}
       >
-        <DialogContent data-code-sheet>
+        <DialogContent data-code-dialog>
           <DialogHeader>
             <DialogTitle>{gui.code_tab}</DialogTitle>
           </DialogHeader>

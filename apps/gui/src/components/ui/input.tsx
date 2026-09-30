@@ -9,7 +9,7 @@
 // It was shadcn's input as shipped: a `rounded-md` corner, an `input`
 // border, Tailwind's own `shadow-xs`, a 3 px half-strength glow for focus
 // and a step down to `callout` at the wide breakpoint — the one control
-// in a sheet that did not wear the `fill` ground its neighbours (the
+// in a form that did not wear the `fill` ground its neighbours (the
 // popup button's field, the segmented control's track, the search box)
 // all do.
 //
