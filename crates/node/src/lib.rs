@@ -839,9 +839,10 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
 /// own relay as much as the typed ones are, only named in a different
 /// place (docs/NET.md 中继).
 ///
-/// n0's relays are in neither shape any more (docs/CONNECT.md 分期 1);
-/// before that went, 「only mine」 meant 「not n0 and not Khor」, and
-/// now it means 「not Khor」.
+/// n0's public relays are in neither shape: they are the fallback tier
+/// `endpoint::bind_with` adds behind this list unless 「only mine」 is
+/// on — so 「only mine」 means 「not n0 and not Khor」, a machine that
+/// touches no relay its owner did not name.
 fn relays_under(root: &std::path::Path) -> (Vec<khor_net::endpoint::Relay>, bool) {
     let plan = chosen_relays(root);
     let mut out = if plan.only_mine {
@@ -1084,6 +1085,13 @@ impl Node {
     /// the Khor tier.
     pub fn relays_only_mine(&self) -> bool {
         self.relays_only_mine
+    }
+
+    /// Whether binds add n0's public relays behind this machine's own
+    /// as the fallback tier (`endpoint::bind_with`): every machine but
+    /// one set to use only its own relays.
+    pub fn relays_n0(&self) -> bool {
+        !self.relays_only_mine
     }
 
     /// Sets this machine's own relays, replacing whatever was stored.

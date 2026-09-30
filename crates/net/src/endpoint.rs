@@ -18,11 +18,14 @@ pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 /// mandala's aliyun box, on loan — khor's own fleet replaces this list,
 /// not the mechanism.
 ///
-/// **This is the whole default now; n0's public relays are not beside
-/// it** (docs/CONNECT.md 分期 1). n0 describes them as fit for
-/// development and rate-limited, they do not answer from mainland China
-/// at all, and a map that holds them sends this machine's net report to
-/// four hosts nobody here runs.
+/// **n0's public relays stay beside it as the fallback** (the owner,
+/// 2026-09-30: 「还是不去 n0 吧，n0 可以兜底」 — Khor has one relay, in
+/// China, and until it has one abroad a machine abroad would otherwise
+/// cross the border for every relayed byte). n0 describes them as fit
+/// for development and rate-limited, and they do not answer from
+/// mainland China; both are why the Khor tier is in the map at all.
+/// [`bind_with`] is where the fallback is added; 「只使用自己的中继」
+/// drops both tiers.
 pub const KHOR_RELAYS: &[&str] = &["http://39.97.7.248:3340"];
 
 /// The Khor tier's shared key, when it has one.
@@ -237,16 +240,16 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
 /// bind with the same key knocks the first off the relay, and both stop
 /// working (learned in production).
 ///
-/// **`relays` is the whole relay map.** iroh probes them all and homes
-/// on the closest one that answers; nothing is added behind the
-/// caller's back. It used to be added to n0's public relays, and the
-/// n0 DNS/pkarr lookup rode along with them — both are gone
-/// (docs/CONNECT.md 分期 1), so what this machine talks to for relay and
-/// lookup is exactly this list plus mDNS on its own segment. An empty
-/// list is an endpoint with no relay at all, reachable only on a road
-/// somebody already knows; a node never asks for that
-/// (`Node::set_relays` refuses the one setting that would), and tests
-/// that stand up a throwaway endpoint get the hermetic one they want.
+/// **`relays` is the whole relay map**, and this is the hermetic shape:
+/// iroh probes exactly these and homes on the closest one that answers;
+/// nothing is added behind the caller's back, and what this machine
+/// talks to for relay and lookup is this list plus mDNS on its own
+/// segment. An empty list is an endpoint with no relay at all,
+/// reachable only on a road somebody already knows; a node never asks
+/// for that (`Node::set_relays` refuses the one setting that would).
+/// Tests that stand up a throwaway endpoint want this one; a node binds
+/// through [`bind_with`], which adds n0's tier unless the machine is set
+/// to use only its own relays.
 ///
 /// Relays are assumed to run no QUIC address discovery — assuming it
 /// costs a dead-port wait on every connection. Each carries its own key
@@ -259,22 +262,40 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
 /// so a proxy set for the whole shell carries a relay on the same LAN
 /// through it too.
 pub async fn bind(secret: iroh::SecretKey, relays: &[Relay]) -> Result<iroh::Endpoint> {
-    Ok(builder(secret, relays)?.bind().await?)
+    bind_with(secret, relays, false).await
+}
+
+/// [`bind`], plus the switch that puts n0 beside `relays` as the
+/// fallback tier: n0's public relays in the map after the caller's, and
+/// the n0 preset's pkarr/DNS lookup beside mDNS. Off, it is [`bind`]
+/// exactly — the shape 「只使用自己的中继」 asks for, where this machine
+/// touches no relay and no lookup service it was not told about.
+pub async fn bind_with(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    n0: bool,
+) -> Result<iroh::Endpoint> {
+    Ok(builder(secret, relays, n0)?.bind().await?)
 }
 
 /// Everything [`bind`] configures, short of binding — split out so the
 /// configuration can be read (its `Debug`) without a socket.
-fn builder(secret: iroh::SecretKey, relays: &[Relay]) -> Result<iroh::endpoint::Builder> {
+fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::endpoint::Builder> {
     // Built here rather than by iroh so that `follow` can read what it
     // finds; registered on the builder all the same (`Prebuilt`).
     let mdns = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
         .build(secret.public())
         .context(msg::no_local_lookup())?;
     follow(mdns.clone());
-    // `Minimal`, not `N0`: the n0 preset is n0's relays plus a pkarr
-    // publisher, a pkarr resolver and a DNS lookup, all pointed at
-    // n0's servers. Only the crypto provider is kept from it.
-    let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+    // The n0 preset is n0's relays plus a pkarr publisher, a pkarr
+    // resolver and a DNS lookup, all pointed at n0's servers; `Minimal`
+    // keeps only the crypto provider. The relay map is replaced below
+    // either way, so the preset decides the lookup services alone.
+    let mut builder = if n0 {
+        iroh::Endpoint::builder(iroh::endpoint::presets::N0)
+    } else {
+        iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+    }
         .secret_key(secret)
         // Compiled-in Mozilla roots instead of the operating system's:
         // the system route reads the macOS Keychain, and on a Mac
@@ -326,11 +347,30 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay]) -> Result<iroh::endpoint::
                 std::borrow::Cow::Borrowed(addrs)
             }
         }));
-    let map = relay_map(relays);
+    let map = full_relay_map(relays, n0);
     if !map.is_empty() {
         builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
     }
     Ok(builder)
+}
+
+/// The map a bind hands iroh: the caller's relays ([`relay_map`]), then
+/// n0's public ones when `n0` is on. After the caller's, so a keyed or
+/// self-run relay is never shadowed by a public one at the same url;
+/// iroh homes by measured latency, not by position, so order decides
+/// nothing else.
+fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
+    let mut map: Vec<std::sync::Arc<iroh::RelayConfig>> = relay_map(relays).relays();
+    if n0 {
+        let public: Vec<std::sync::Arc<iroh::RelayConfig>> =
+            iroh::defaults::prod::default_relay_map().relays();
+        for r in public {
+            if !map.iter().any(|have| have.url == r.url) {
+                map.push(r);
+            }
+        }
+    }
+    map.into_iter().collect()
 }
 
 /// The relay map a bind hands iroh: every entry that parses, each with
@@ -599,27 +639,41 @@ mod tests {
         assert_eq!(key_of("http://203.0.113.10:3340"), None);
     }
 
-    /// No n0 service survives a bind: not a relay in the map, not a
-    /// lookup service (docs/CONNECT.md 分期 1 去 n0).
+    /// The hermetic bind touches no n0 service — not a relay in the
+    /// map, not a lookup service — and the n0 switch puts n0's relays
+    /// and lookup back **after** the caller's own (the owner's
+    /// 2026-09-30 ruling: n0 stays as the fallback tier).
     ///
-    /// **Two controls, because both halves are absence checks.** The
-    /// needle is shown to find n0 where n0 is (iroh's own n0 preset),
-    /// and the relay probe is shown to find a relay that is there —
-    /// without them, a `Debug` that printed nothing and a probe that
-    /// always missed would pass as well as the real thing.
+    /// **Two controls, because the hermetic half is absence checks.**
+    /// The needle is shown to find n0 where n0 is (iroh's own n0
+    /// preset), and the relay probe is shown to find a relay that is
+    /// there — without them, a `Debug` that printed nothing and a probe
+    /// that always missed would pass as well as the real thing.
     #[tokio::test]
-    async fn a_bound_endpoint_has_no_n0_relay_and_no_n0_lookup() {
+    async fn a_hermetic_bind_has_no_n0_and_the_n0_switch_adds_it_behind_ours() {
         const N0: &str = "iroh.link";
         const MINE: &str = "http://203.0.113.9:3340";
         let relays = [Relay::bare(MINE)];
 
         let n0 = format!("{:?}", iroh::Endpoint::builder(iroh::endpoint::presets::N0));
         assert!(n0.contains(N0), "control: the needle must find n0 in n0's preset");
-        let ours = format!("{:?}", builder(iroh::SecretKey::generate(), &relays).unwrap());
+        let ours = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, false).unwrap());
         assert!(!ours.contains(N0), "the builder names an n0 service: {ours}");
         assert!(
             ours.contains("203.0.113.9"),
             "control: the builder's Debug must show the relays it holds: {ours}"
+        );
+        let with = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, true).unwrap());
+        assert!(with.contains(N0), "the n0 switch must name n0's services: {with}");
+        let urls: Vec<iroh::RelayUrl> = full_relay_map(&relays, true).urls();
+        assert_eq!(urls[0], MINE.parse().unwrap(), "ours comes first: {urls:?}");
+        for url in iroh::defaults::prod::default_relay_map().urls::<Vec<_>>() {
+            assert!(urls.contains(&url), "n0's {url} is behind ours: {urls:?}");
+        }
+        assert_eq!(
+            full_relay_map(&relays, false).urls::<Vec<_>>(),
+            vec![MINE.parse::<iroh::RelayUrl>().unwrap()],
+            "the hermetic map is ours alone"
         );
 
         let ep = bind(iroh::SecretKey::generate(), &relays).await.unwrap();

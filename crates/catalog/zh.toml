@@ -3192,9 +3192,9 @@ relays-in-use = "使用中"
 # The exclusive switch. It reads as a sentence rather than a label
 # because what it does is not guessable from a noun: 「中继」 alone would
 # leave「加了这台之后原来那些还在不在」unanswered, which is the only
-# question this control exists to answer. Since n0's relays left the
-# default (docs/CONNECT.md 分期 1) 「原来那些」 is the Khor tier alone, so
-# on it means 「不用 Khor 中继」.
+# question this control exists to answer. 「原来那些」 are the Khor tier
+# and n0's public relays behind it (the fallback the owner kept on
+# 2026-09-30), so on it means 「不用 Khor 中继，也不用 n0」.
 relays-only-mine = "只使用自己的中继"
 # The add window's second box: the relay's shared key, when its operator
 # set one (`khor relay --token`, iroh-relay's shared_token). Typed once;
