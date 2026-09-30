@@ -19,3 +19,7 @@ vt100.workspace = true
 ts-rs = "10"
 # Loopback HTTP skin for the dev bridge only; the app itself talks tauri.
 tiny_http = "0.12"
+# The invite's QR code (`qr`), drawn by the face as one SVG path. The
+# encoder, version and features the CLI's `khor web` block already uses:
+# no second QR crate in the tree and none on the npm side (MIT/Apache).
+qrcode = { version = "0.14.1", default-features = false }
