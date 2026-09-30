@@ -2537,6 +2537,20 @@ machine-here = "本机"
 # not the command's spelling.
 card-version = "khor {0}"
 card-age = "{0}前"
+# 机器详情最上面那张名片(2026-09-30 负责人:「机器页的内容部分做成一个类似
+# 通讯录的卡片：头像、型号、id 等等」)的事实行。标签 · 值两列,标签用标准词。
+# khor 版本、机器 id 两行借「这台机器」页的 identity-version / identity-id:
+# 同一个事实,同一个词。
+# 「系统」那一行借 axis-system(同一个词不许两个名字,catalog 的构建会拒);
+# 「已运行」的值借 cli 的 age-days / age-hours(「3 天」),标签已经说了「已运行」,
+# 值不再说一遍——cli 的 uptime-days 带着它,用在终端那一行上。
+card-model = "型号"
+card-connection = "连接"
+card-uptime = "已运行"
+# 这份读数是什么时候的:别的机器是「12 秒前」,这台机器是「14:02」。
+card-reading = "读数"
+# 这台机器开着哪几张 khor 界面(桌面 app、网页);只有本机答得出。
+card-faces = "界面"
 new-session-dir = "目录"
 # The placeholder in every directory box a 「+」 opens (`PathField`).
 # **Says what to type**, because the box is all there is: 2026-09-27

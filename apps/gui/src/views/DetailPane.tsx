@@ -67,8 +67,13 @@ export function CopyId({
       changes: the report of the press rides beside it, because smoke
       reads that prefix immediately after clicking to copy, and a
       control that reports by *replacing* the fact would hand back
-      「复制好了」 where an id was asked for. */
-  face?: "verb" | "id";
+      「复制好了」 where an id was asked for.
+
+      `fact` is `id` as a value on a contact card (the machine's, from
+      2026-09-30): the same twelve characters and the same press, in the
+      card's value ink — `body` `ink`, mono, because an id is read one
+      character at a time — rather than a quiet `callout` note. */
+  face?: "verb" | "id" | "fact";
 }) {
   const [said, setSaid] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
@@ -81,7 +86,7 @@ export function CopyId({
       () => setSaid("copied"),
       () => setSaid("failed"),
     );
-  if (face === "id") {
+  if (face === "id" || face === "fact") {
     return (
       <button
         type="button"
@@ -95,9 +100,13 @@ export function CopyId({
         // The finger floor again (tokens.css `--touch`), on a target
         // whose ink is twelve small characters — the one on this card
         // most likely to be missed.
-        className="flex min-h-touch min-w-0 items-center gap-in rounded-md text-callout text-muted-foreground hover:text-foreground data-[said=failed]:text-state-failed"
+        className={
+          face === "fact"
+            ? "flex min-h-touch min-w-0 items-center gap-in rounded-md text-body text-foreground data-[said=failed]:text-state-failed"
+            : "flex min-h-touch min-w-0 items-center gap-in rounded-md text-callout text-muted-foreground hover:text-foreground data-[said=failed]:text-state-failed"
+        }
       >
-        <span data-card-id className="truncate">
+        <span data-card-id className={face === "fact" ? "truncate font-mono" : "truncate"}>
           {id.slice(0, 12)}
         </span>
         {said && <span className="flex-none text-callout">{said === "copied" ? gui.copied : gui.copy_failed}</span>}
