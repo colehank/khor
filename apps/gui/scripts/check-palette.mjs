@@ -39,7 +39,13 @@
 //     screenshot and invisible in a diff, and only shows up when a
 //     keyboard user tabs onto the one button whose colour matches it;
 //   - the tokens being right while nothing wears them: a real button on
-//     a real screen is read back and compared against the tokens.
+//     a real screen is read back and compared against the tokens;
+//   - (2026-09-30, 板是纸底是框) the paper stopping being the theme's
+//     extreme ground, the frame drifting back to within a glance of it,
+//     the left block or what floats losing its step off either; any ink
+//     falling under its floor on any of the four grounds; the terminal
+//     painting a ground other than the paper its tab joins; a picked row
+//     in a floating list keeping a second ink on its block.
 //
 // Run: `npm run palette` (boots its own vite, needs system Chrome). No
 // backend: the join dialog reaches a primary button with no mesh behind
@@ -56,6 +62,40 @@ const PORT = Number(process.env.PALETTE_PORT ?? 1450);
 const TEXT_FLOOR = 4.5;
 /** A focus ring is a graphic. */
 const GRAPHIC_FLOOR = 3.0;
+
+/**
+ * **The board is paper, the ground is its frame** (2026-09-30, the owner:
+ * 「用灰色背景，黑色内容怎么样」「浅色也类似的去做。这是抽象的更改，要作用到
+ * 整个 app 上」). The paper (`--card`) is the most extreme ground a theme
+ * has — the whitest in light, the blackest in dark — and the frame
+ * (`--background`) stands at least this far from it in L*, so that it
+ * reads as a frame at a glance.
+ *
+ * 6, because the step it replaced did not read: #f4f4ef round a #fcfcfa
+ * board is 2.85, and the owner saw no frame. macOS's own chrome sits 6.6
+ * under its white content and 9.5 over its dark content; this palette's
+ * two frames measure 7.10 and 9.84. On the old values this is red twice:
+ * 2.85 in light, and in dark the paper (#191917) was not the extreme —
+ * the ground (#0f0f0e) was blacker than the board.
+ */
+const FRAME_STEP = 6;
+/**
+ * The left block's ground stands between the paper and the frame, and a
+ * step a person sees from each (L*): that step is what makes the block
+ * read as one piece of furniture rather than as the frame or the board
+ * under another name. Measured 3.93 / 3.17 light, 4.40 / 5.44 dark (from
+ * the paper / from the frame); the old dark block sat 2.42 off its
+ * ground.
+ */
+const SIDE_STEP = 3;
+/**
+ * What floats lands on the paper and on the frame, and has to be told
+ * from both. On the frame by lightness in both themes; on the paper by
+ * lightness in the dark only — a light popover is the paper's own white
+ * and `--shadow-float` lifts it, where on black paper a black shadow is
+ * a darkening nobody sees (2026-09-28, D14).
+ */
+const FLOAT_STEP = 4;
 
 /**
  * The six words, in the order the doctrine gives them.
@@ -323,6 +363,7 @@ try {
         dialog: getComputedStyle(document.querySelector('[data-slot="dialog-content"]') ?? document.body).backgroundColor,
         ink: g("--foreground"),
         inkMuted: g("--muted-foreground"),
+        tertiary: g("--tertiary"),
         lq3: g("--lq3"),
         accent: g("--accent"),
         words: Object.fromEntries(
@@ -364,6 +405,79 @@ try {
       }
     }
 
+    // ── the paper and the frame (2026-09-30, 板是纸底是框) ─────────
+    //
+    // Four grounds, one order: the paper at the end of the theme's
+    // range, the left block a step in from it, the frame a step further,
+    // and what floats a step off both of the grounds it lands on.
+    {
+      const L = {
+        paper: lstar(rgb(t.card)),
+        side: lstar(flatten(parse(t.side), rgb(t.bg))),
+        frame: lstar(rgb(t.bg)),
+        float: lstar(rgb(t.popover)),
+      };
+      // Signed toward the frame: positive means 「further from the paper's
+      // end of the range」, which is darker in light and lighter in dark.
+      const away = (x) => (scheme === "light" ? L.paper - x : x - L.paper);
+      console.log(
+        `${scheme}: L* paper ${say(L.paper)}, side ${say(L.side)}, frame ${say(L.frame)}, float ${say(L.float)} — ` +
+          `frame ${say(away(L.frame))} from the paper, side ${say(away(L.side))} from the paper and ` +
+          `${say(away(L.frame) - away(L.side))} from the frame, float ${say(Math.abs(L.float - L.frame))} off the frame`,
+      );
+      for (const [name, v] of [["the left block", L.side], ["the frame", L.frame], ["what floats", L.float]]) {
+        if (away(v) < 0) {
+          fail(
+            `${scheme}: ${name} (L* ${say(v)}) is further toward the end of the range than the paper --card ` +
+              `(L* ${say(L.paper)}) — the paper is the ${scheme === "light" ? "whitest" : "blackest"} ground ` +
+              "this theme has (板是纸, tokens.css)",
+          );
+        }
+      }
+      if (away(L.frame) < FRAME_STEP) {
+        fail(
+          `${scheme}: the frame --background ${t.bg} is ${say(away(L.frame))} L* from the paper --card ${t.card}, ` +
+            `under ${FRAME_STEP} — a frame a person has to look for is not a frame (底是框, tokens.css)`,
+        );
+      }
+      if (!(away(L.side) >= SIDE_STEP && away(L.frame) - away(L.side) >= SIDE_STEP)) {
+        fail(
+          `${scheme}: the left block --side ${t.side} is ${say(away(L.side))} L* from the paper and ` +
+            `${say(away(L.frame) - away(L.side))} from the frame — it stands between them, ${SIDE_STEP} from each, ` +
+            "or it reads as one of them rather than as its own piece of furniture",
+        );
+      }
+      if (Math.abs(L.float - L.frame) < FLOAT_STEP) {
+        fail(
+          `${scheme}: --popover ${t.popover} is ${say(Math.abs(L.float - L.frame))} L* off the frame ${t.bg} — ` +
+            `what floats over R0 or the gap round the board has to be ${FLOAT_STEP} off it`,
+        );
+      }
+      if (scheme === "dark" && L.float - L.frame < FLOAT_STEP) {
+        fail(`dark: --popover ${t.popover} is not lighter than the frame ${t.bg} — the lightest thing in a dark window is what floats`);
+      }
+    }
+
+    // ── every ink on every ground ─────────────────────────────────
+    //
+    // The design system's pairs (README 颜色「可访问性例外」), measured on
+    // the four grounds a word can stand on. Text answers to 4.5, the
+    // ring to 3.0; `tertiary` is printed and not held — it is the one
+    // written exception, and its lowest reading is what the README says.
+    {
+      const grounds = { side: flatten(parse(t.side), rgb(t.bg)), frame: rgb(t.bg), paper: rgb(t.card), float: rgb(t.popover) };
+      const inks = { ink: t.ink, secondary: t.inkMuted, destructive: t.destructive, tertiary: t.tertiary, ring: t.ring };
+      for (const [name, ink] of Object.entries(inks)) {
+        const got = Object.entries(grounds).map(([g, under]) => [g, contrast(flatten(parse(ink), under), under)]);
+        console.log(`${scheme}: ${name} on ${got.map(([g, v]) => `${g} ${say(v)}`).join(", ")}`);
+        if (name === "tertiary") continue;
+        const floor = name === "ring" ? GRAPHIC_FLOOR : TEXT_FLOOR;
+        for (const [g, v] of got) {
+          if (v < floor) fail(`${scheme}: ${name} reads ${say(v)} on the ${g} (${name === "ring" ? "a graphic" : "text"} needs ${floor})`);
+        }
+      }
+    }
+
     const label = contrast(rgb(t.fg), rgb(t.primary));
     const onCard = contrast(flatten(parse(t.ring), rgb(t.card)), rgb(t.card));
     const onPage = contrast(flatten(parse(t.ring), rgb(t.bg)), rgb(t.bg));
@@ -385,14 +499,14 @@ try {
     // ── what floats: a step above the board on the dark theme ──────
     //
     // A dialog, a sheet, a menu and the search results wear `--popover`.
-    // On the light theme that is the card's value and `--shadow-float`
-    // lifts it; on the dark one a shadow is black on near-black, and a
-    // popover at the card's value sat flush on the board — the same
-    // colour, nothing to say it was in front (2026-09-28). So there it
-    // must be lighter than the card by a step a person sees: 4 L*, the
-    // step `--card` itself takes over `--background` (4.4). And being
-    // lighter must not cost the words on it — body, second line and a
-    // refusal in `--destructive` — the text floor.
+    // On the light theme that is the paper's value and `--shadow-float`
+    // lifts it; on the dark one a shadow is black on black paper, and a
+    // popover at the board's value sat flush on it — the same colour,
+    // nothing to say it was in front (2026-09-28). So there it must be
+    // lighter than the paper by a step a person sees: 4 L*
+    // (`FLOAT_STEP`; its step off the frame is asserted above). And
+    // being lighter must not cost the words on it — body, second line and
+    // a refusal in `--destructive` — the text floor.
     if (!t.popover || !t.destructive) {
       fail(`${scheme}: --popover or --destructive does not resolve (src/styles/tokens.css)`);
     } else {
@@ -411,7 +525,7 @@ try {
       for (const [what, ratio] of Object.entries(onPop)) {
         if (ratio < TEXT_FLOOR) fail(`${scheme}: ${what} reads ${say(ratio)} on --popover, under ${TEXT_FLOOR}`);
       }
-      if (scheme === "dark" && lift < 4) {
+      if (scheme === "dark" && lift < FLOAT_STEP) {
         fail(
           `dark: --popover ${t.popover} is ${say(lift)} L* over --card ${t.card} — a shadow cannot lift ` +
             "anything on a ground this dark, so what floats is lighter than the board by 4 or more",
@@ -432,8 +546,7 @@ try {
     // and why the face has a token of its own. Measured on the two
     // grounds the control stands on: a sheet (`--popover`) and the
     // board (`--card`). 4 L* is the step that reads as lifted
-    // (`--card` over `--background` is 4.4), and the words on the face
-    // are text.
+    // (`FLOAT_STEP`), and the words on the face are text.
     if (!t.fill || !t.segment) {
       fail(`${scheme}: --fill or --segment does not resolve (src/styles/tokens.css)`);
     } else {
@@ -456,12 +569,21 @@ try {
     // ── the six words, every one of them, on both themes ──────────
     //
     // **Measured against the worst ground a word can land on**, not
-    // against one chosen ground: the same colour is painted on a card in
-    // the session list, on a selected row where the card is tinted, and
-    // on the app's own paper. A word that clears 4.5 on the lightest of
-    // those and fails on another is a word that is unreadable exactly
-    // where it happens to be sitting.
-    const grounds = [rgb(t.card), rgb(t.bg), flatten(parse(t.accent), rgb(t.card))];
+    // against one chosen ground: the same colour is painted on a session
+    // row in the left block, on the paper (the overview, a conversation),
+    // on the frame (the window's foot), in a floating list, and behind
+    // the brand wash on the paper. A word that clears 4.5 on the
+    // lightest of those and fails on another is a word that is
+    // unreadable exactly where it happens to be sitting. (The left block
+    // and the popover joined on 2026-09-30; the light block's own 4.52
+    // was on the floor and nothing here read it.)
+    const grounds = [
+      rgb(t.card),
+      rgb(t.bg),
+      flatten(parse(t.side), rgb(t.bg)),
+      rgb(t.popover),
+      flatten(parse(t.accent), rgb(t.card)),
+    ];
     const readings = WORDS.map((w) => {
       const colour = t.words[w];
       if (!colour) throw new Error(`probe dead in ${scheme}: --state-${w} did not resolve`);
@@ -795,6 +917,105 @@ try {
     }
   }
 
+
+  // ── the terminal is the paper, and so is its tab (2026-09-30) ──────
+  //
+  // 「用灰色背景，黑色内容怎么样」: the owner opened a terminal session
+  // and saw the open tab in the board's grey and the screen under it in
+  // the ground's black — `--term-bg` was `var(--background)`, the frame
+  // round the board, so the tab joined a board the terminal then covered
+  // in another colour. The terminal is content, and content is on the
+  // paper. Read four ways, both themes: the screen's box, what xterm was
+  // actually handed (it paints its own canvas from `themeOf`, and only
+  // re-reads on a theme flip), the board, and the open tab — one colour,
+  // and it is `--card`. **Red on the code before the fix**: the box and
+  // xterm read `--background` in both themes.
+  //
+  // A routed row with a terminal to be had (`attachable`); nothing here
+  // answers the terminal's own requests, which is fine — the box and
+  // xterm's theme are drawn before the pty is asked for anything.
+  {
+    const now = Date.now();
+    const term = {
+      id: "tui/palette-term",
+      kind: "tui",
+      title: "palette-term",
+      word: "idle",
+      at_ms: now,
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    };
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify([term]) }));
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(1200);
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await wait(200);
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await wait(400);
+    const opener = page.locator("[data-list] [data-row-open]").first();
+    if ((await opener.count()) === 0) throw new Error("probe dead: the routed terminal row drew no [data-row-open]");
+    await opener.click();
+    const deadline = Date.now() + 5_000;
+    while ((await page.locator("[data-terminal]").count()) === 0 && Date.now() < deadline) await wait(100);
+    if ((await page.locator("[data-terminal]").count()) !== 1) {
+      fail("probe dead: opening an attachable session drew no [data-terminal] — nothing to measure the terminal's ground on");
+    } else {
+      for (const scheme of ["light", "dark"]) {
+        await flipTheme(page, scheme);
+        // xterm re-reads its colours on the stamp's own mutation
+        // (`TerminalPane`), one frame behind the page.
+        await wait(400);
+        const got = await page.evaluate(() => {
+          const probe = document.createElement("span");
+          probe.style.backgroundColor = "var(--card)";
+          document.body.append(probe);
+          const card = getComputedStyle(probe).backgroundColor;
+          probe.style.backgroundColor = "var(--background)";
+          const frame = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const box = document.querySelector("[data-terminal]");
+          const board = document.querySelector("[data-main] [data-board]");
+          const tab = document.querySelector("[data-tab][data-on='true']");
+          return {
+            card,
+            frame,
+            box: box ? getComputedStyle(box).backgroundColor : null,
+            xterm: box?.__xterm?.options?.theme?.background ?? null,
+            board: board ? getComputedStyle(board).backgroundColor : null,
+            tab: tab ? getComputedStyle(tab).backgroundColor : null,
+          };
+        });
+        console.log(`${scheme}: the terminal's ground ${JSON.stringify(got)}`);
+        for (const where of ["box", "xterm", "board", "tab"]) {
+          if (!got[where]) {
+            fail(`${scheme}: probe dead — the terminal's ${where} could not be read`);
+          } else if (!same(got[where], got.card)) {
+            fail(
+              `${scheme}: the terminal's ${where} is ${got[where]}, not the paper --card ${got.card}` +
+                (same(got[where], got.frame) ? " — it is the frame, --background" : "") +
+                " — the open tab and the screen under it are one piece of paper (板是纸, TerminalPane `--term-bg`)",
+            );
+          }
+        }
+      }
+    }
+  }
+
   // ── a picked row in a floating list wears one ink (2026-09-30) ─────
   //
   // The ⌘K hits mark the picked row with `--fill-strong` — the block a
@@ -873,7 +1094,7 @@ try {
   }
 
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
-  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, a row reads on the left block's ground, and a selected row reads in front and behind");
+  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, the paper is the extreme and the frame a step off it, every ink reads on all four grounds, a row reads on the left block's ground, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
 } catch (e) {
   fail(String(e));
 } finally {

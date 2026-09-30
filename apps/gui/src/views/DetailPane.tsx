@@ -233,16 +233,18 @@ export function DetailPane({
     // so「the pane」 needed a name of its own rather than a landmark
     // inside it.
     // `--day-under` is the surface the day floats over, so its fade
-    // melts into that and not into a neighbour's: a terminal paints the
-    // page's own `background`, everything else leaves the board's `card`
-    // showing. `--day-over` is how far the day reaches down into the
+    // melts into that and not into a neighbour's. **One value since
+    // 2026-09-30** (板是纸): a terminal used to paint the page's own
+    // `background` and everything else the board's `card`; the terminal
+    // is the paper now like every other session, so the day fades out of
+    // the paper wherever it floats. `--day-over` is how far the day reaches down into the
     // session — its row, while it is up, and nothing while it is not —
     // which the session's own top-corner floats (the terminal's find bar
     // and title) step under, so the two never overprint.
     <section
       data-detail-pane
       className={cn(
-        "flex h-full min-w-0 flex-col [--day-under:var(--card)] has-[>[data-terminal]]:[--day-under:var(--background)]",
+        "flex h-full min-w-0 flex-col [--day-under:var(--card)]",
         drawn ? "[--day-over:calc(2*var(--gap-xxs)+var(--spacing))]" : "[--day-over:calc(0*var(--spacing))]",
       )}
     >

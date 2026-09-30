@@ -36,7 +36,9 @@
      90.94 / 85.41 / 79.72 / 72.69 / 63.81 / 52.46 / 37.80 / 15.72,
      相邻最小 5.53,最低一档离纸 7.97。 */
   --fg: var(--foreground);
-  --bg: var(--background);
+  /* The paper it is drawn on (2026-09-30: `--background` is the frame
+     round the board now, and this block is on the board). */
+  --bg: var(--card);
   --r1: rgba(26, 26, 20, 0.101);
   --r2: rgba(26, 26, 20, 0.17);
   --r3: rgba(26, 26, 20, 0.24);

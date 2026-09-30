@@ -135,7 +135,7 @@ function b64bytes(b64: string): Uint8Array {
  * The app's theme, resolved to the concrete colours xterm takes.
  *
  * Read off the pane's own computed style rather than re-declared: the
- * tokens (`--background`/`--foreground` through `--term-bg`/`--term-fg`)
+ * tokens (`--card`/`--card-foreground` through `--term-bg`/`--term-fg`)
  * are the one place the theme lives, and a hex copied here would be the
  * second copy that drifts. Selection stays xterm's default — a alpha
  * wash that works on both grounds.
@@ -540,7 +540,13 @@ export function TerminalPane({ id }: { id: string }) {
       data-term-bell={rang}
       ref={boxRef}
       // The terminal owns its own two colours; they follow the theme so
-      // a plain shell is the app's paper, not a black box. The font
+      // a plain shell is the app's paper, not a black box. **The paper is
+      // the board's** (2026-09-30, 板是纸底是框): this was `--background`,
+      // the ground *around* the board, so the open tab above it was the
+      // board's grey and the screen under it the ground's black — two
+      // pieces where the owner saw one session. It is `--card` now, the
+      // same surface the tab joins (`check-palette` reads the box, what
+      // xterm was handed and the board, and wants one colour). The font
       // tokens are read off this element by `fontOf` — one source, no
       // copy in JS.
       className={cn(
@@ -552,8 +558,8 @@ export function TerminalPane({ id }: { id: string }) {
       )}
       style={
         {
-          "--term-bg": "var(--background)",
-          "--term-fg": "var(--foreground)",
+          "--term-bg": "var(--card)",
+          "--term-fg": "var(--card-foreground)",
           "--term-bell": ANSI16[3],
           fontFamily: "var(--font-term)",
           fontSize: "var(--text-term)",
@@ -653,7 +659,7 @@ export function TerminalPane({ id }: { id: string }) {
               reads over output without hiding it; `pointer-events-none`
               from the column, so a click lands on the screen beneath. */}
           {title && (
-            <div data-term-title className="max-w-72 truncate rounded bg-background/70 px-1 text-muted-foreground">
+            <div data-term-title className="max-w-72 truncate rounded bg-card/70 px-1 text-muted-foreground">
               {title}
             </div>
           )}

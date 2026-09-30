@@ -313,7 +313,7 @@ input[type="search"]::-webkit-search-decoration {
    (`src-tauri` `build_the_window`): the page paints nothing where the
    material should show — the document's own ground and the block's
    `--side` go clear, **inside the block only** (a workspace's tree in the
-   board keeps its `--side`). The right side (`[data-main]`, `bg-background`),
+   board is on the paper, `--card`). The right side (`[data-main]`, `bg-background`),
    the board and R0 paint their own, so the material is the left block's
    and nothing else's. **Not a translucent colour**: where the material is
    absent (every other face, and the narrow face, which has no block) the
@@ -470,8 +470,21 @@ aside[data-side] {
  * the only channel a box-shadow cannot animate by itself. */
 [data-halo] {
   box-shadow:
-    0 0 0 var(--halo-gap) var(--card),
+    0 0 0 var(--halo-gap) var(--halo-under, var(--card)),
     0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-color);
+}
+
+/* **The gap ring is the ground the face stands on.** It was `--card`
+   everywhere, a shade off the tab strip's ground and close enough not to
+   bother (`SessionFace`). Since 2026-09-30 the strip is the frame and the
+   paper is white / black: a tab that is not in front stands on
+   `--background`, 7.1 / 9.8 L* from the paper, and a paper-coloured ring
+   there reads as a second ring. The one in front is the paper. */
+[data-tab-bar] {
+  --halo-under: var(--background);
+}
+[data-tab-bar] [data-tab][data-on="true"] {
+  --halo-under: var(--card);
 }
 
 /* The breath, and why it outlived the argument that put it here.
@@ -1066,15 +1079,17 @@ aside[data-side] {
 
 /* The veil blends into whatever the scroller is sitting on. Both of
    this app's surfaces are named, so the caller says which rather than
-   this file guessing: `--cut-into` defaults to the page. */
+   this file guessing: `--cut-into` defaults to the paper, since a table
+   is content and content is on the board (2026-09-30, 板是纸底是框; it
+   defaulted to the page's `background`, the frame round the board). */
 [data-side-cut]::after {
   right: 0;
-  background: linear-gradient(to left, var(--cut-into, var(--background)), transparent);
+  background: linear-gradient(to left, var(--cut-into, var(--card)), transparent);
 }
 
 [data-side-cut]::before {
   left: 0;
-  background: linear-gradient(to right, var(--cut-into, var(--background)), transparent);
+  background: linear-gradient(to right, var(--cut-into, var(--card)), transparent);
 }
 
 [data-side-cut][data-cut-right]::after,

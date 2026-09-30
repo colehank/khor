@@ -1342,7 +1342,7 @@ fn traffic_room() -> f64 {
 ///
 /// ```text
 /// 528 ms   #1e1e1e   the platform default, before and after this change
-/// 709 ms   #0f0f0e   this ground
+/// 709 ms   #0f0f0e   this ground (the frame is #242422 since 2026-09-30)
 /// 760 ms   the first HTML frame
 /// ```
 ///
@@ -1375,9 +1375,9 @@ fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
         _ => matches!(w.theme(), Ok(Theme::Dark)),
     };
     let ground = if dark {
-        tauri::webview::Color(0x0f, 0x0f, 0x0e, 0xff)
+        tauri::webview::Color(0x24, 0x24, 0x22, 0xff)
     } else {
-        tauri::webview::Color(0xf4, 0xf4, 0xef, 0xff)
+        tauri::webview::Color(0xeb, 0xeb, 0xe5, 0xff)
     };
     // Nothing to do if the platform refuses: the failure is the old
     // behaviour, which is a flash rather than a fault.

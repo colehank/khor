@@ -13573,10 +13573,12 @@ try {
     }
 
     // (e) the floating surfaces lift in the dark. Against the board's
-    // own ground, in L* rather than contrast — the claim is that a
-    // person sees an edge where the surface meets the board. 4 is the
-    // step `canvas` → `card` takes (4.4), the step that makes the board
-    // itself read as lifted.
+    // own ground **and the frame's** (2026-09-30, 板是纸底是框: the board
+    // is the black paper and the frame round it grey, and what floats
+    // lands on both), in L* rather than contrast — the claim is that a
+    // person sees an edge where the surface meets what is under it. 4 is
+    // the step `check-palette` asks of the tokens (`FLOAT_STEP`); until
+    // today it was quoted as the old `canvas` → `card` step (4.4).
     const LIFT = 4;
     await page.emulateMedia({ colorScheme: "dark" });
     await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark");
@@ -13595,9 +13597,11 @@ try {
         };
         const el = document.querySelector(s);
         const board = document.querySelector("[data-main] [data-board]");
-        if (!el || !board) return null;
+        const main = document.querySelector("[data-main]");
+        if (!el || !board || !main) return null;
         const surface = getComputedStyle(el).backgroundColor;
         const ground = getComputedStyle(board).backgroundColor;
+        const frame = getComputedStyle(main).backgroundColor;
         // **…and it wears the one floating language** (2026-09-28): the
         // `float` shadow and the `radius-lg` corner, read back against
         // what the tokens resolve to here. The sheet's top edge is R0's,
@@ -13614,6 +13618,8 @@ try {
           surface,
           ground,
           d: Math.round((lstar(surface) - lstar(ground)) * 100) / 100,
+          frame,
+          dFrame: Math.round((lstar(surface) - lstar(frame)) * 100) / 100,
           // Tailwind lays its ring layers (all `0 0 0 0 transparent`)
           // in front of the shadow, so the float is one of the layers.
           shadow: cs.boxShadow.includes(want.shadow),
@@ -13681,6 +13687,12 @@ try {
             fail(
               `4I · in the dark ${what} is ${got.surface} on a ${got.ground} board — ${got.d} L* apart, ` +
                 `under the ${LIFT} a floating surface needs to read as above the board (--popover, tokens.css)`,
+            );
+          }
+          if (!(got.dFrame >= LIFT)) {
+            fail(
+              `4I · in the dark ${what} is ${got.surface} against a ${got.frame} frame — ${got.dFrame} L* apart, ` +
+                `under the ${LIFT} it needs to read as above the frame round the board too (--popover, tokens.css)`,
             );
           }
           if (!got.shadow || got.radius !== got.wantRadius) {

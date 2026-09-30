@@ -79,25 +79,58 @@
      frame before the stamp lands, and for any face that never stamps. */
 
   /* ── shadcn scheme, mandala light values ─────────── */
-  --background: #f4f4ef;
+  /* **The board is paper, the ground is its frame** (2026-09-30, the
+     owner: 「用灰色背景，黑色内容怎么样」, then 「大改，浅色也类似的去做。
+     这是抽象的更改，要作用到整个 app 上」). One rule, both themes:
+     `--card` is the most extreme ground the theme has — the whitest
+     here, the blackest on the dark one — and everything that is content
+     lands on it: a terminal, a conversation, a file tree, a machine card,
+     the rings, a settings group, a web page. `--background` is the frame
+     round it: R0, the `gap-in` about the board, the window's foot, and
+     the page a settings group stands on. macOS draws a window the same
+     way — its chrome a step greyer than the content in light, a step
+     lighter in dark.
+
+     **The step is macOS's, taken from this paper.** Its light chrome
+     (#ececec) sits 6.6 L* under its white content; 7.1 under this white
+     is #ebebe5 — the value the left block wore until today, which every
+     word on the page had already been measured on (忙碌 4.52, 空闲 4.52:
+     on the floor). **So it is also as grey as this frame can go**
+     without moving the six words: 0.005 of OKLCH L darker and 空闲 reads
+     4.50. What it replaces: a #f4f4ef ground 2.85 L* under a #fcfcfa
+     board, a difference the owner could not see as a frame at all.
+     `check-palette` holds the two ≥ 6 L* apart and the paper at the end.
+
+     **The paper is pure white** because white is the extreme: at L 1.0
+     there is no chroma left to hold, so this palette's warmth (h 106.6,
+     C .007–.008) lives in the frame and the left block. */
+  --background: #ebebe5;
   --foreground: rgba(26, 26, 20, 0.94);
-  --card: #fcfcfa;
+  --card: #ffffff;
   /* **The left block's own ground** (docs/SHELL.md 第十三轮 第 1 条:
      「竖栏和列表一种底色, 体现出侧边栏和侧边栏内容是一体的」): the rail
      and every list column sit on it, under a first row of the same
-     material. A third ground beside the page's and the card's, darker
-     than both on the light theme and darker than both on the dark one,
-     which is what makes the block read as one piece of furniture and
-     the board on the right read as lifted off the page.
+     material. A third ground beside the frame and the paper, which is
+     what makes the block read as one piece of furniture.
+
+     **Between the paper and the frame, on both themes** (2026-09-30):
+     lighter than the frame here, darker than it at night. Its rows are
+     read, so the block leans toward the paper; and it cannot go the
+     other way on this theme — the frame is already on the six words'
+     floor, and anything greyer drops 忙碌 and 空闲 under 4.5. It took
+     the frame's old value: 3.2 L* over the frame, 3.9 under the paper,
+     each a step a person sees (`check-palette` asks 3 of both). On the
+     macOS app the system's sidebar material stands here instead (D4).
      `check-palette` reads a row's two lines against it; `check-boot`
      holds the first frame to it. */
-  --side: #ebebe5;
+  --side: #f4f4ef;
   --card-foreground: rgba(26, 26, 20, 0.94);
   /* What floats — a dialog, a sheet, a menu, the search results, a
-     tip. **The card's value on this theme and not on the other**: here
-     `--shadow-float` does the lifting, a soft dark shadow on a light
-     page. The dark block says why it cannot there. */
-  --popover: #fcfcfa;
+     tip. **The paper's value on this theme and not on the other**: on
+     the board `--shadow-float` does the lifting, a soft dark shadow on
+     white; on the frame it is also 7.1 L* lighter than what it lands
+     on. The dark block says why a shadow cannot do it there. */
+  --popover: #ffffff;
   --popover-foreground: rgba(26, 26, 20, 0.94);
   /* Ink, not the brand green — see the green doctrine at the top of this
      file. White on this measures 17.47; white on the green it replaces
@@ -120,8 +153,16 @@
      `check-palette` reads it. */
   --muted-foreground: rgba(26, 26, 20, 0.63);
   /* The ink a conversation is read in — softer than `--foreground`, and
-   * worn only by prose. Measures 12.07 on this theme's paper, where
-   * `--foreground` measures 13.60.
+   * worn only by prose. Measures 12.25 on this theme's paper (`--card`,
+   * white), where `--foreground` measures 14.87.
+   *
+   * **.88 since 2026-09-30, from .90**, and only because the paper moved:
+   * the board went from #fcfcfa to white (板是纸), and .90 on white reads
+   * 13.10. The pair below is the point — the dark theme reads 12.23 on
+   * its paper — so the ink thinned by two points to keep one reading.
+   * (Until today the 12.07 written here was measured on #f4f4ef, the old
+   * ground; the conversation itself stood on the card and read 12.81.
+   * Both themes now answer on the surface prose is actually read on.)
    *
    * **Why prose gets an ink of its own rather than the page moving.**
    * The case for coming down off the top of the range is a case about
@@ -142,7 +183,7 @@
    * The two themes are held to one reading, which they were not: 13.60
    * light against 15.17 dark meant the same paragraph had two weights
    * depending on an OS setting nobody had written down. */
-  --read-ink: rgba(26, 26, 20, 0.9);
+  --read-ink: rgba(26, 26, 20, 0.88);
   /* No code palette of its own since 2026-09-15: the sheet and the
      rendered turns paint with Shiki in GitHub's two themes, and every
      token carries its own colour (`styles/app.css`). */
@@ -153,7 +194,8 @@
   /* The third ink (docs/design-system README 「三层墨」): times, counts,
    * key hints, group headers — **never something a person must read**;
    * it is macOS's tertiaryLabelColor and sits under 4.5 on purpose
-   * (2.79 on `--side` light, 3.67 dark). */
+   * (2.79 on the frame light, 3.37 on the dark popover — the lowest
+   * it lands on, 2026-09-30). */
   --tertiary: rgba(26, 26, 20, 0.45);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
@@ -178,8 +220,9 @@
    * ring drawn tight against that button measured 1.00 — invisible on
    * precisely the control that matters most, dark theme included. The
    * gap that fixes that is on the button (`ui/button.tsx`), not here. */
-  /* 第十五轮 (docs/design-system/guidelines/40-migration.md, 第十五轮): the ring is `--brand-strong` — 4.75 on the card
-   * light, 7.98 dark, over the 3.0 a graphic needs. It still sits a gap
+  /* 第十五轮 (docs/design-system/guidelines/40-migration.md, 第十五轮): the ring is `--brand-strong` — 4.88 on the paper
+   * light, 8.69 dark (4.08 / 6.17 at its lowest, the light frame and the
+   * dark popover; 2026-09-30), over the 3.0 a graphic needs. It still sits a gap
    * off the primary button it now matches (`ui/button.tsx`), which is
    * what the paragraph above is about. */
   --ring: var(--brand-strong);
@@ -238,12 +281,12 @@
   /* The hue itself (= `--lq3`), named for the post it holds in the
    * design system: a source of hue, never a text colour. */
   --brand: var(--lq3);
-  /* Ink on a `--brand-wash`: 8.98 over the wash on `--side`. */
+  /* Ink on a `--brand-wash`: 9.65 over the wash on `--side` (2026-09-30). */
   --brand-ink: #2f3b0d;
   /* ── depth: one shadow for what floats, one for a face in a track ──
    * (a switch's knob, the chosen segment of a segmented control)
    * (docs/design-system README 「间距、形状、材质」). The board and the
-   * settings groups are never shadowed — they are card on canvas. */
+   * settings groups are never shadowed — they are paper on the frame. */
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.28);
   --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.25);
   --fill: rgba(26, 26, 20, 0.06);
@@ -253,9 +296,9 @@
    * `--fill` track, lifted by `--shadow-knob` — the switch's knob's
    * relative. **Not `--card`**: on the dark theme the card is darker
    * than a track laid over a sheet, and a chosen segment would read as
-   * a hole. Light is white over the track (+5.8 L*), dark a lighter
-   * wash over it (+13.6 L* on a sheet); ink on it 14.87 / 6.40
-   * (`check-palette`). */
+   * a hole. Light is white over the track (+4.8 L* on the white paper,
+   * 2026-09-30; +5.8 on the old #fcfcfa), dark a lighter wash over it
+   * (+12.7 L* on a sheet); ink on it 14.87 / 5.68 (`check-palette`). */
   --segment: #ffffff;
   /* The switch's knob (docs/design-system components/Switch): white in
    * both themes — it is the one face that does not follow the theme, the
@@ -496,8 +539,10 @@
    * gives the fourth the same colour as the third — two models drawn as
    * one band, which is the same screen a folded band gives and the
    * thing the 「every model gets its own band」 rule exists against. So
-   * the steps are `color-mix` toward `--background`, cut by how many
-   * generations that family actually has. See `lib/model-band`, which
+   * the steps are `color-mix` toward `--card` — the paper the bands are
+   * drawn on (toward `--background` until 2026-09-30, when the ground
+   * became the frame and stopped being what is behind a chart) — cut by
+   * how many generations that family actually has. See `lib/model-band`, which
    * also decides the *order* of those steps — from the name, over every
    * day the account has, so switching the window cannot recolour a
    * model.
@@ -1586,25 +1631,48 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --background: #0f0f0e;
+  /* **Grey frame, black paper** (2026-09-30, the owner: 「用灰色背景，黑色
+     内容怎么样」 — the open tab was the board's grey and the terminal under
+     it the ground's black, two pieces where there should be one). The
+     three grounds turned over: the paper (`--card`) takes the old
+     ground's #0f0f0e, the blackest this palette has and the one every
+     dark ink was tuned against (`--foreground` 15.17, `--read-ink`
+     12.23); the left block takes the old board's #191917; the frame
+     takes the old popover's #242422.
+
+     **The frame's step is macOS's too**: its dark chrome (#323232) sits
+     9.5 L* over its content (#1e1e1e); this frame sits 9.84 over this
+     paper, in OKLCH L .168 → .260 at the palette's own hue (106.7) and
+     C ≤ .004. Every word written on the frame (R0, a settings page's
+     group names, the window's foot) had already been measured on this
+     value as the popover: ink 12.39, secondary 5.72, 空闲 5.05,
+     destructive 5.53 with its new value. Lighter than this, the
+     popover above it runs out of room: see there. */
+  --background: #242422;
   --foreground: rgba(238, 238, 231, 0.96);
-  --card: #191917;
-  --side: #151513;
+  --card: #0f0f0e;
+  /* Between the paper and the frame, as on the light theme: 4.40 L* over
+     the paper, 5.44 under the frame. The rail's glyph measures 8.30 on
+     it (floor 5.5), its body 4.71 (floor 3.0). */
+  --side: #191917;
   --card-foreground: rgba(238, 238, 231, 0.96);
-  /* **A step lighter than the card, because a shadow cannot lift
-     anything here** (2026-09-28). The board is #191917; black at .45
-     on a ground that dark is a darkening nobody sees, so a sheet or a
-     dialog at the card's value sat flush on the board and read as part
-     of it. macOS answers the same problem the same way — its dark
-     menus, popovers and sheets are lighter than the window under them.
-     +5.4 L* over the card, more than the 4.4 the card itself stands
-     over the canvas (`check-face` 4I asks for 4 on the real surfaces).
-     What it costs, measured on it: ink 12.39, secondary 5.72,
-     destructive 4.85, the lowest state word 6.09, secondary on a
-     `fill-strong` chip 4.52 — and `tertiary` 3.55, under the 3.67 it
-     has on the card, inside its written exception (annotations only).
-     `check-palette` holds the 4.5 pairs. */
-  --popover: #242422;
+  /* **A step lighter than the frame, because a shadow cannot lift
+     anything off the paper** (2026-09-28, re-derived 2026-09-30). Black
+     at .45 on a ground this dark is a darkening nobody sees, so what
+     floats has to be lighter than what it lands on — and it lands on
+     both the black paper and the grey frame. macOS answers the same
+     way: its dark menus, popovers and sheets are the lightest thing in
+     the window. **+4.74 L* over the frame, +14.58 over the paper** (OKLCH
+     L .300); `check-palette` asks 4 of both, `check-face` 4I reads it on
+     the real surfaces.
+     What it costs, measured on it: ink 10.89, secondary 5.26, 空闲 4.67
+     (the lowest word), `destructive` 4.84 only because that red came up
+     a step (it read 4.25 here at #d4756b), `tertiary` 3.37 — the lowest
+     it lands on, inside its written exception — and a picked row's
+     second line on `fill-strong` 4.11, which is why a picked row now
+     wears one ink like a selected one (`app.css`). The old value, #242422,
+     is the frame now. */
+  --popover: #2e2e2c;
   --popover-foreground: rgba(238, 238, 231, 0.96);
   /* Paper, the mirror of light's ink: an ink button cannot be seen on a
      dark ground, so this is the one thing in the palette whose two
@@ -1629,17 +1697,26 @@
      the app does, and that is a different measurement from the one
      that set this. */
   --muted-foreground: rgba(238, 238, 231, 0.6);
-  /* 12.23 against this theme's ground, against the light theme's
-     12.07 — the pair is the point, and the reasoning is on the light
-     value. This theme is the one that was out of band: `--foreground`
-     measures 15.17 here, near the 18.4 ceiling paper-on-this-ground
-     has, which is where a dark page starts to glare. */
+  /* 12.23 against this theme's paper, against the light theme's 12.25
+     — the pair is the point, and the reasoning is on the light value
+     (this number was measured on #0f0f0e when that was the ground; it is
+     the paper since 2026-09-30, and prose is read on the paper). This
+     theme is the one that was out of band: `--foreground` measures 15.17
+     here, near the 18.4 ceiling paper-on-this-ground has, which is where
+     a dark page starts to glare. */
   --read-ink: rgba(238, 238, 231, 0.86);
   --brand-wash: rgba(180, 210, 87, 0.14);
   --accent: var(--brand-wash);
   --tertiary: rgba(238, 238, 231, 0.42);
   --accent-foreground: rgba(238, 238, 231, 0.96);
-  --destructive: #d4756b;
+  /* **#e07f75 since 2026-09-30, from #d4756b**: only OKLCH lightness
+     moved (.666 → .700; C .121 and h 27 held, so it is the same red).
+     The popover came up to #2e2e2c to float over the grey frame, and a
+     menu's 删除… on it read 4.25; one step of L puts it at 4.84 — the
+     4.85 it had on the old popover. On the paper 6.81, on the frame
+     5.53, and what stands on it (`--on-destructive`) 6.21, up from 5.46.
+     `--badge` is its own token and stayed. */
+  --destructive: #e07f75;
   --on-destructive: #1a1a14;
   --destructive-foreground: var(--on-destructive);
   --border: rgba(238, 238, 231, 0.08);
@@ -1741,10 +1818,11 @@
      own and the hue re-checked (closest pair here is fable/haiku at
      44.4°, closest to 待批 is spare at 39.7°).
 
-     The older generations still mix toward `--background`, which is
-     this theme's near-black — so an older model fades *down* here and
-     *up* on the light theme, and either way 「fainter」 means 「older」
-     against the page it is drawn on. */
+     The older generations mix toward `--card`, which is this theme's
+     black paper — so an older model fades *down* here and *up* on the
+     light theme, and either way 「fainter」 means 「older」 against the
+     paper it is drawn on (`--background` until 2026-09-30, when the
+     ground became the frame). */
   --model-opus: #7a7ea4;
   --model-fable: #a8bd6f;
   --model-sonnet: #a36979;

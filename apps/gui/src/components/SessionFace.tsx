@@ -52,11 +52,14 @@ const SIZES = {
  *
  * The halo paints entirely outside the face's box (`app.css`
  * `[data-halo]` — colour, the busy breath, and the reduced-motion
- * guard all live there, never here). Its gap ring is `--card`, the
- * ground the list row sits on; on the tab strip's grounds that token
- * is a shade off the real ground and reads as part of the ring —
- * close enough not to buy a prop for, said here so a future mismatch
- * has its cause written down.
+ * guard all live there, never here). Its gap ring is `--halo-under`,
+ * `--card` unless the ground says otherwise: the tab strip does
+ * (2026-09-30) — a tab not in front stands on the frame, 7.1 / 9.8 L*
+ * off the paper since 板是纸底是框, and a paper ring there read as a
+ * second ring. The list rows' `--side` is still a shade off it (3.9 /
+ * 4.4 L*), and on the macOS app the block is the system's material,
+ * which no colour matches — said here so the mismatch has its cause
+ * written down.
  *
  * The mark sits on a solid punch-out, or the transparent brand strokes
  * dissolve into the face.

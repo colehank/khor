@@ -162,7 +162,10 @@ export function bandsFor(models: (string | null)[]): Map<string | null, string> 
       // as one band, and a band drawn as another band is the same
       // screen as a band drawn as nothing.
       const t = order.length < 2 ? 0 : Math.round((FADE_MAX * k) / (order.length - 1));
-      out.set(name, t === 0 ? hue : `color-mix(in srgb, ${hue} ${100 - t}%, var(--background))`);
+      // Toward the paper the bands are drawn on (`--card`; it was
+      // `--background` until 2026-09-30, when the ground became the
+      // frame round the board and stopped being what is behind a chart).
+      out.set(name, t === 0 ? hue : `color-mix(in srgb, ${hue} ${100 - t}%, var(--card))`);
     });
   }
   return out;

@@ -124,7 +124,11 @@ export function MoreFrame({
         data-more-page={page}
         aria-label={moreName(page)}
         // Settings groups are cards on the canvas (components/SettingsGroup),
-        // so a page of rows stands on `background`.
+        // so a page of rows stands on `background`. **The one place the
+        // frame reaches into the board** (10-layout's written exception):
+        // since 2026-09-30 that reads as paper on the frame — each group a
+        // sheet of the board's white / black, the page round them the
+        // window's grey, like System Settings.
         className="flex h-full min-h-0 flex-col bg-background"
       >
         {subtitle && (
