@@ -3,7 +3,6 @@ import { useMemo, useState } from "react";
 import type { DeviceRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { machineMark } from "@/components/BrandIcons";
@@ -12,7 +11,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { connectionKey, connectionKeyWord, connectionWord, groupLabel, systemWord } from "@/words";
-import { FaceSettings } from "@/views/FaceSettings";
+import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
 /**
@@ -176,12 +175,14 @@ export function DevicesList({
   onPause?: (row: DeviceRow) => Promise<void>;
   /** The node's sentence for a pause it refused, by row. */
   pauseRefused?: Map<string, string>;
-  /** A face was written from 更改头像… — the shell re-reads the table.
-      Absent, the row offers no 更改头像…. */
+  /** Something was written from 编辑… (a name, a face) — the shell
+      re-reads the table. Absent, the row offers no 编辑…. (The name is
+      the prop's from when 更改头像… was the item; kept so the shell's call
+      site stands.) */
   onRestyled?: () => void;
 }) {
-  // Whose face the editor is open on, if anyone's.
-  const [restyling, setRestyling] = useState<DeviceRow | null>(null);
+  // Which machine the edit window is open on, if any.
+  const [editing, setEditing] = useState<DeviceRow | null>(null);
   const actions = (d: DeviceRow): RowAction[] => [
     {
       key: "pin",
@@ -217,18 +218,18 @@ export function DevicesList({
           },
         ]
       : []),
-    // **更改头像…** (2026-09-28): every machine's face can be set from
-    // here — 全网同一份, anyone may set anyone's (docs/MORE.md 第二轮).
-    // It was a button on the card the map opened over itself; that card
-    // retired with the map's second home, and a row's acts are its menu
-    // (D9). The same editor 这台机器 draws, in a window, on this row's
-    // machine; the ellipsis because a window follows.
+    // **编辑…** (2026-09-30, the owner: 「右键→编辑，然后这里可以改名称、
+    // 头像等诸多信息」): the one window where a machine's name and face
+    // are changed (`MachineEditDialog`) — on every machine, this one
+    // included; 全网同一份, anyone may set anyone's. It replaced 更改头像…
+    // (2026-09-28), which opened the face half alone, and 这台机器's own
+    // copies of both went with it. The ellipsis because a window follows.
     ...(onRestyled
       ? [
           {
-            key: "avatar",
-            label: gui.avatar_change_ask,
-            run: () => setRestyling(d),
+            key: "edit",
+            label: gui.machine_edit_ask,
+            run: () => setEditing(d),
           },
         ]
       : []),
@@ -338,7 +339,7 @@ export function DevicesList({
   });
   // The row it was opened on, re-read off the table so the title follows
   // a rename and the window goes if the machine does.
-  const restyled = restyling ? (rows.find((d) => d.id === restyling.id) ?? null) : null;
+  const edited = editing ? (rows.find((d) => d.id === editing.id) ?? null) : null;
   return (
     <>
       {/* 待批 (docs/CONNECT.md 根不在场): who waits for the root holder,
@@ -358,16 +359,9 @@ export function DevicesList({
         none={gui.no_matches}
       />
       {/* An errand — 办完就回去 — so a window over the list, not a page.
-          Changing a style keeps it open (the table is re-read, the
-          window stays): only closing it closes it. */}
-      <Dialog open={restyled !== null} onOpenChange={(o) => !o && setRestyling(null)}>
-        <DialogContent data-avatar-dialog={restyled?.id}>
-          <DialogHeader>
-            <DialogTitle>{restyled?.shown ?? ""}</DialogTitle>
-          </DialogHeader>
-          {restyled && <FaceSettings machine={restyled.id} onChanged={() => onRestyled?.()} />}
-        </DialogContent>
-      </Dialog>
+          Picking a face keeps it open (the table is re-read, the window
+          stays): only 完成 or Esc closes it. */}
+      <MachineEditDialog row={edited} onClose={() => setEditing(null)} onChanged={() => onRestyled?.()} />
     </>
   );
 }
