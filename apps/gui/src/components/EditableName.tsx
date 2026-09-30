@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
-import { renameMachine, renameSession } from "@/api";
+import { renameAccount, renameMachine, renameSession } from "@/api";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -152,6 +152,12 @@ export function useSinglePress(act: () => void): (e: MouseEvent) => void {
 const WRITE = {
   session: (id: string, name: string) => renameSession(id, name).then(() => null),
   machine: (id: string, name: string) => renameMachine(id, name),
+  // **The third subject that is a line here, as the head promised**
+  // (2026-09-30, the owner: 「这里的 list 也要和 session 一样，支持双击
+  // 名字改名」). An account has no reported name to fall back to, so an
+  // emptied box is refused in the node's words (`Node::rename_account`)
+  // and lands under the box like any refusal.
+  account: (id: string, name: string) => renameAccount(id, name).then(() => null),
 } as const;
 
 export function EditableName({
@@ -259,6 +265,7 @@ export function EditableName({
           data-editable-name
           data-session-title={kind === "session" ? "" : undefined}
           data-machine-name={kind === "machine" ? "" : undefined}
+          data-account-name={kind === "account" ? "" : undefined}
           // A control only where that is well-formed (the file head).
           role={nested ? undefined : "button"}
           tabIndex={nested ? undefined : 0}
