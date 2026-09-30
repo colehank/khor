@@ -7399,7 +7399,10 @@ try {
     const long = {
       device: pin.device,
       machine: "peer",
-      path: "/home/peer/projects/clients/acme-corporation/platform/services/billing-worker",
+      // Long enough to overflow the second line at 1000 wide now that
+      // the location has that line to itself (2026-09-30): the branch
+      // and the change count moved up beside the name.
+      path: "/home/peer/projects/clients/acme-corporation/platform/services/payments/settlement/reconciliation/nightly-batch/regional/apac/singapore/billing-worker",
       name: "billing-worker",
       pinned: false,
     };
