@@ -1,4 +1,4 @@
-// 跨机器目录 (工作区批②): one sheet that answers one question — 哪台机器上
+// 跨机器目录 (工作区批②): one dialog that answers one question — 哪台机器上
 // 的哪个目录 — and hands back the answer. The workspace 「+」 opens it.
 //
 // **One box, and nothing offered before it is typed in** (2026-09-27:
@@ -12,7 +12,7 @@
 // the caller's question, asked by the caller's own verb — `ws_add`
 // probes it with `Ls` — and it already has its own sentence for the
 // answer. What this does instead is show what came back: `onPick` may
-// reject, and a rejection keeps the sheet open with the node's own
+// reject, and a rejection keeps the dialog open with the node's own
 // sentence under the box (`RowMenu`'s rule, one surface up).
 import { useEffect, useState } from "react";
 
@@ -27,7 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PopupButton } from "@/components/ui/popup-button";
-import { FormLabel, SheetForm } from "@/components/ui/sheet-form";
+import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
 import { connectionWord } from "@/words";
 
@@ -47,7 +47,7 @@ export function DirPicker({
   /** Which machine to open on; `""` is this one. */
   machine?: string;
   /** Answered with the pick. **Rejecting is how the caller says it did
-      not take**: the sheet stays open and shows what came back, which
+      not take**: the dialog stays open and shows what came back, which
       is where the person pressing is looking (`RowMenu`). Resolving
       closes it. */
   onPick: (pick: DirPick) => Promise<void> | void;
@@ -60,7 +60,7 @@ export function DirPicker({
   const [taking, setTaking] = useState(false);
 
   // Reopening must not inherit a stale path or a stale refusal: the
-  // sheet is a question being asked now, and last time's answer is not
+  // dialog is a question being asked now, and last time's answer is not
   // an answer to it.
   useEffect(() => {
     if (!open) return;
@@ -98,11 +98,11 @@ export function DirPicker({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent sheet data-dir-picker>
+      <DialogContent form data-dir-picker>
         <DialogHeader>
           <DialogTitle>{gui.dir_picker}</DialogTitle>
         </DialogHeader>
-        <SheetForm>
+        <FormGrid>
           {/* 在哪台, first — the directory is a fact about the machine
               (the wizard's order, and its heading). Satellites are
               listed: `Ls` routes through the sponsor, so completion
@@ -161,8 +161,11 @@ export function DirPicker({
               {refused}
             </div>
           )}
-        </SheetForm>
+        </FormGrid>
         <DialogFooter>
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
+            {gui.delete_keep}
+          </Button>
           <Button
             variant="primary"
             data-dir-picker-take

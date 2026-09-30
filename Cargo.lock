@@ -4412,6 +4412,7 @@ dependencies = [
  "khor-catalog",
  "khor-core",
  "khor-node",
+ "qrcode",
  "serde",
  "serde_json",
  "tiny_http",

@@ -45,7 +45,7 @@
 // - **The terminal gives up ⌃⇥** — Terminal.app and iTerm step their tabs
 //   on it, and a shell cannot tell ⌃⇥ from ⇥ anyway. Every other key a
 //   terminal needs has no ⌘ on it.
-// - **Nothing under a sheet or a dialog**, except ⌘L: a sheet is a
+// - **Nothing under a dialog**, except ⌘L: a dialog is a
 //   question the window is waiting on (Esc, or its buttons, answer it).
 // - **Nothing while locked.**
 // - **The web face leaves the browser its keys**: ⌘W ⇧⌘W ⌘N ⌘1–⌘5 ⌃⇥ ⌃⇧⇥

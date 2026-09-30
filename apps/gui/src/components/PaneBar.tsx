@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { useNarrow } from "@/hooks/use-narrow";
 import { useNewAct } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -48,23 +47,15 @@ export type FilterOption = { key: string; label: string; axis?: string };
 
 export type PaneAction = { key: string; label: string; onSelect: () => void };
 
-/** A landing's own acts as R0 buttons (components/Toolbar, D9): push
-    buttons at the default `ctl-md` with `body` 13, one per act, in the
-    order the landing lists them. **Not `sm`** (2026-09-30, with the
-    toolbar's glyphs): `sm` is the dense row's 22 with `callout` 12, and
-    `min-h-touch` was already stretching it to 28 — a 28 button wearing a
-    12 word and 8 of padding read as a small one in a 38 row. */
-export function PageActions({ actions }: { actions: PaneAction[] }) {
-  return (
-    <>
-      {actions.map((a) => (
-        <Button key={a.key} data-new-item={a.key} onClick={a.onSelect} className="min-h-touch min-w-touch flex-none">
-          {a.label}
-        </Button>
-      ))}
-    </>
-  );
-}
+// ⚠️ 墓碑 (2026-09-30): `PageActions` stood here — a landing's own acts
+// drawn a second time as push buttons at R0's right end (新会话… 导入… on
+// 会话, 邀请设备… 加入网络… on 机器 and on 「…」 → 网络, 登记… on 额度),
+// beside the ＋ that already offered them. The owner: 「订阅页右上角不要
+// 有登记按钮，这个功能属于搜索框旁边的 ＋。类似的冗余不要出现在 app 里」.
+// **An act that makes something has one home, the ＋ below**; R0's right
+// end is for verbs on the one thing that is open (a machine's four, a
+// workspace's two, 安全's 立即锁定), and a row's acts are its menu
+// (10-layout 「一个动作只有一个家」).
 
 /** One way of laying the list out; `key` is the backend's arrangement
     key, never a word this layer invented. */
@@ -134,8 +125,12 @@ export function PaneBar({
     onChoose: (key: string) => void;
   };
   /**
-   * What "+" opens. Only things that work today go in here: a menu item
-   * that greys out or does nothing teaches people not to open the menu.
+   * What "+" opens: **every act on this landing that makes something
+   * not yet there** — 新会话 and 导入, 邀请设备 and 加入网络, 登记 — and
+   * this is the only place they are drawn (2026-09-30). One is pressed
+   * straight through, two or more are a menu. The first is also ⌘N.
+   * Only things that work today go in here: a menu item that greys out
+   * or does nothing teaches people not to open the menu.
    */
   actions?: PaneAction[];
   /**
@@ -156,7 +151,6 @@ export function PaneBar({
    */
   create?: { label: string; mark?: string; disabled?: boolean; onSelect?: () => void };
 }) {
-  const narrow = useNarrow();
   // **⌘N is this 「+」** (`lib/shortcuts`, 2026-09-28) — the landing's one
   // 「+」 is the one seated in the first row, so only that bar lends it,
   // by its own name (the menu bar's 新建 item reads it).
@@ -314,14 +308,15 @@ export function PaneBar({
         </DropdownMenu>
       )}
 
-      {/* **＋ is one act** (components/SideHead「＋ 只有一个动作（新建当前
-          落地页的东西）…别做成下拉」, 2026-09-26): the landing's first
-          action, pressed straight through. The rest of the landing's
-          acts are buttons at R0's right end (`PageActions`), where page
-          buttons live (D9). */}
-      {actions && actions.length > 1 && narrow ? (
-        // The narrow face has no R0, so the acts that live there on the
-        // wide face come back under ＋ as the menu they were.
+      {/* **＋ is every act that makes something on this landing, and
+          their only home** (2026-09-30, 10-layout 「一个动作只有一个家」):
+          one act is pressed straight through; two or more drop a menu —
+          the same on the wide face and the narrow one. ⚠️ 墓碑: from
+          2026-09-26 ＋ was the first act alone and the rest stood at R0's
+          right end (`PageActions`, retired above), with this menu only on
+          the narrow face, which has no R0. That put every act twice on
+          the wide face; the owner took R0's copy away. */}
+      {actions && actions.length > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" aria-label={gui.new_item} data-pane-new className="min-h-touch min-w-touch">

@@ -44,7 +44,7 @@ import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
-import { PageActions, PaneBar, type FilterOption } from "@/components/PaneBar";
+import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { PageSubtitle, Region } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
@@ -73,7 +73,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import { FormLabel, SheetForm } from "@/components/ui/sheet-form";
+import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -967,8 +967,10 @@ export function QuotaLanding({
   const [board, setBoard] = useKept<AccountRing[] | null>("quota.board", null);
   const [picked, setPicked] = useKept<string | null>("quota.picked", null);
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
-  // The landing's one act: ＋ in L0 and a button at R0's right end (D9).
-  // It opens a sheet, so it wears the ellipsis (components/Button).
+  // The landing's one act, and its one home: ＋ in L0, pressed straight
+  // through (2026-09-30, the owner: 「订阅页右上角不要有登记按钮，这个功能
+  // 属于搜索框旁边的 ＋」; ⚠️ 墓碑: it stood at R0's right end as well).
+  // It opens a dialog, so it wears the ellipsis (components/Button).
   const quotaActions = [{ key: "register", label: gui.accounts_register_ask, onSelect: () => setRegistering(true) }];
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
@@ -1943,7 +1945,6 @@ export function QuotaLanding({
           <Region
             kind="detail"
             title={current?.name ?? gui.accounts_tab}
-            actions={<PageActions actions={quotaActions} />}
             caption={staleSay}
             className="overflow-y-auto"
           >
@@ -2352,11 +2353,11 @@ function RegisterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent sheet data-quota-dialog>
+      <DialogContent form data-quota-dialog>
         <DialogHeader>
           <DialogTitle>{gui.accounts_register}</DialogTitle>
         </DialogHeader>
-        <SheetForm data-quota-form>
+        <FormGrid data-quota-form>
           {/* **类型 first, because it decides what the rest of this form
               even is** — a subscription has no key, no address and no
               budget, and a form that asked for them and then refused
@@ -2467,8 +2468,11 @@ function RegisterDialog({
               {error}
             </p>
           )}
-        </SheetForm>
+        </FormGrid>
         <DialogFooter>
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+            {gui.delete_keep}
+          </Button>
           <Button variant="primary" data-quota-create disabled={busy} onClick={create}>
             {gui.accounts_register}
           </Button>

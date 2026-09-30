@@ -1,13 +1,11 @@
 // shadcn/ui dialog (new-york) over Radix. Departures from stock: imports
-// name the individual `@radix-ui/react-*` package; the close mark is our
-// own `IconClose` rather than the stock one; motion rides our tokens; and the
-// close button's name comes from the catalog, because "Close" spelled in
-// a component is a user-facing word living outside zh.toml.
+// name the individual `@radix-ui/react-*` package; there is no close mark
+// (a dialog's way out is 取消 and Esc, components/Dialog); motion rides
+// our tokens; and it is the one kind of window a press opens — centred,
+// over the scrim — since the R0 sheet was retired (2026-09-30).
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
-import { IconClose } from "@/components/icons";
-import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -43,64 +41,57 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
-  sheet = false,
+  form = false,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  /** **A sheet, not a dialog** (docs/SHELL.md 第十七轮 §4, D10): a
-      create or import form drops from R0's lower edge — its top is R0's
-      bottom, its width no more than the board's, and nothing dims the
-      window (no overlay). Esc and the close mark close it the way they
-      close a dialog. A confirmation that destroys something stays a
-      dialog. */
-  sheet?: boolean;
+  /** **A dialog that holds a form** — 新会话, 导入, 加入网络, 登记,
+      选择目录, the relay and the PIN. Two things differ from a question
+      dialog and nothing else: it is wider, because a form is two columns
+      (the questions right-aligned against their answers, `ui/form-grid`),
+      and **a press outside it does not close it** — what was typed is not
+      thrown away by a stray click; Esc, 取消 and its own button do. Same
+      place, same surface, same scrim (components/Dialog). */
+  form?: boolean;
 }) {
-  // The sheet hangs inside the right side (`[data-main]`, positioned by
-  // the shell), so `top-pane-head` is R0's bottom whichever page is up.
-  // With no right side (the narrow face) it hangs from the window's
-  // first row instead, which is the same height.
-  const main =
-    sheet && typeof document !== "undefined" ? document.querySelector<HTMLElement>("[data-main]") : null;
+  // ⚠️ 墓碑 (2026-09-30): a `sheet` variant stood here from 第十七轮 (D10)
+  // — a create form dropped from R0's lower edge, portaled into the right
+  // side, no scrim, only its lower corners rounded, and the one close mark
+  // in the app. The owner: 「整个 app 所有点击的弹窗，比如新建 session，
+  // 是要来一个弹窗，而不是现在这样从标题下长出来的奇怪东西——我说的弹窗类似
+  // 机器页点 ＋ 后的邀请设备弹窗」. **One kind of window a press opens**:
+  // centred, over the scrim, `popover` under `float`. Retired whole, no
+  // switch left (`check-face` §13 (b) reads `src/` for it).
   return (
-    <DialogPrimitive.Portal data-slot="dialog-portal" container={main ?? undefined}>
-      {!sheet && <DialogOverlay />}
+    <DialogPrimitive.Portal data-slot="dialog-portal">
+      <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        data-sheet={sheet ? "" : undefined}
+        data-form={form ? "" : undefined}
         // Radix asks for a description or an explicit opt-out. Our
         // dialogs opt out by default: a paragraph explaining what the
         // dialog is for is exactly the decorative copy docs/UX.md bans.
         // Callers that genuinely have one can pass their own.
         aria-describedby={undefined}
-        // A sheet leaves the rest of the window live, so a press outside
-        // it is not a request to close it.
-        onInteractOutside={sheet ? (e) => e.preventDefault() : undefined}
+        onInteractOutside={form ? (e) => e.preventDefault() : undefined}
         className={cn(
-          sheet
-            ? cn(
-                // **It floats, so it wears what floats** — `popover` under
-                // `float` — not the board's `card` under a stock shadow.
-                // ⚠️ 墓碑 (2026-09-28): on the dark theme `card` *is* the
-                // board, and the sheet sat on it flush, the same colour,
-                // with nothing to say it was in front (`check-face` 4I).
-                "top-pane-head inset-x-in z-50 mx-auto grid max-w-lg gap-4 rounded-b-lg border border-t-0 bg-popover p-6 shadow-(--shadow-float) outline-none",
-                main ? "absolute" : "fixed",
-                "duration-[var(--dur-180)] ease-[var(--ease-out)]",
-                "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
-              )
-            : cn(
-                // components/Dialog: `dialog-w` 380, `popover` under `float` and
-                // a hairline, `radius-lg`, parts `gap-row` apart.
-                "fixed top-1/2 left-1/2 z-50 grid w-dialog max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
-                "duration-[var(--dur-180)] ease-[var(--ease-out)]",
-                "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
-              ),
+          // components/Dialog: `dialog-w` 380 for a question, 32rem for a
+          // form (the width the retired sheet had, which the two-column
+          // forms were laid out in); `popover` under `float` and a
+          // hairline, `radius-lg`, parts `gap-row` apart. **It floats, so
+          // it wears what floats**, never the board's `card` (⚠️ 墓碑
+          // 2026-09-28: on the dark theme `card` *is* the board, and a form
+          // on it sat flush, the same colour — `check-face` 4I).
+          "fixed top-1/2 left-1/2 z-50 grid max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
+          form ? "w-[32rem]" : "w-dialog",
+          "duration-[var(--dur-180)] ease-[var(--ease-out)]",
+          "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
         // **An open list inside it takes the first Escape.** Radix hears
         // Escape on the document before the focused box does, so a
         // combobox showing its suggestions (`PathField`) could not close
-        // them without closing the whole sheet. `aria-expanded` is the
+        // them without closing the whole dialog. `aria-expanded` is the
         // box's own statement that a list is open.
         onEscapeKeyDown={(e) => {
           const t = e.target instanceof Element ? e.target : null;
@@ -112,37 +103,10 @@ function DialogContent({
         }}
       >
         {children}
-        {/* **The box is a finger's, the glyph stays a glyph.** This was
-            the smallest target on the whole face — 16×16, the icon's own
-            size — and it is the one control every sheet has. The box
-            grows to `--touch` and centres the mark inside it; the inset
-            drops by the same amount the box gained on each side, so the
-            cross does not move a pixel from where it has always sat.
-            (`top-4 right-4` around a 16 box put the mark's centre 24 in
-            from both edges; the inset is `24 − box/2` so the mark stays
-            there whatever the box is — `--hit` is 28 under a mouse and
-            44 under a finger since 2026-09-26, and a fixed inset moved
-            the cross 8 into the corner when the box shrank.)
-
-            The feedback is on the glyph rather than a plate behind it,
-            and that is not the trap tokens.css warns about: hovering
-            anywhere in the grown box brightens the mark, so the whole
-            pressable area does announce itself. A plate would be a
-            second kind of hover mark on a surface that has none.
-
-            **What this does not fix:** every sheet's own controls. This
-            is the vendored shell, and a dialog body that draws a 24-high
-            button is still a 24-high button — the face gate walks the
-            sheets and says so. */}
-        {sheet && (
-        <DialogPrimitive.Close
-          data-slot="dialog-close"
-          aria-label={gui.close}
-          className="absolute top-[calc(24px-var(--hit)/2)] right-[calc(24px-var(--hit)/2)] grid size-touch place-items-center rounded-sm text-muted-foreground opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0"
-        >
-          <IconClose />
-        </DialogPrimitive.Close>
-        )}
+        {/* ⚠️ 墓碑 (2026-09-30): the sheet's close mark stood here, a 16
+            cross in the corner grown to a finger's box. A dialog has no
+            cross (components/Dialog): its way out is 取消 left of its one
+            act — the form dialogs now carry one — and Esc. */}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );

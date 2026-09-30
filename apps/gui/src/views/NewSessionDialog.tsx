@@ -85,7 +85,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { SEGMENTS_MAX, SegmentedControl } from "@/components/ui/segmented-control";
-import { FormLabel, SheetForm } from "@/components/ui/sheet-form";
+import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { connectionWord } from "@/words";
@@ -98,7 +98,6 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   onOpened,
-  onImport,
   machine: picked = "",
   dir: at = "",
 }: {
@@ -106,10 +105,9 @@ export function NewSessionDialog({
   onOpenChange: (open: boolean) => void;
   /** The freshly-minted session id — the caller may select its row. */
   onOpened: (id: string) => void;
-  /** The other way to add a session: take one khor found (导入). Offered
-      here because ＋ in L0 is one act (components/SideHead「要选类型就让它
-      落下一个 sheet」) and a strip of tabs leaves R0 no room for it. */
-  onImport?: () => void;
+  // ⚠️ 墓碑 (2026-09-30): `onImport` stood here — 导入… as a button in
+  // this dialog's foot, offered because ＋ was one act then. ＋ is a menu
+  // of 新会话… and 导入… now, and an act has one home (10-layout).
   /** 在哪台, answered before the dialog opens — the machine card's
       开会话 names the card's machine (2026-09-06). Empty is the "+"
       menu's opening and means this machine, as it always has. */
@@ -311,13 +309,13 @@ export function NewSessionDialog({
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent sheet data-new-session-dialog>
+      <DialogContent form data-new-session-dialog>
         <DialogHeader>
           <DialogTitle>{gui.new_session}</DialogTitle>
         </DialogHeader>
         {/* **One form, label beside control** (2026-09-28, the owner's
             sketch): the questions stand in one column and their answers
-            in the next, so the sheet reads down one edge. Every answer
+            in the next, so the form reads down one edge. Every answer
             is a system-shaped control — a popup for the machines (they
             grow), a segmented control for the three fixed questions —
             where each row used to be a set of grey pills of its own.
@@ -328,10 +326,10 @@ export function NewSessionDialog({
             column, and both are load-bearing.** `DialogContent` is a
             grid and this is its item; a grid (or flex) item defaults to
             `min-width: auto`, so one long cwd in the lists below pushes
-            the whole dialog past its `max-w-lg` — inputs, buttons and
+            the whole dialog past its width — inputs, buttons and
             all — and `truncate` never fires because nothing above it
             agreed to shrink. */}
-        <SheetForm data-new-session-form>
+        <FormGrid data-new-session-form>
           {/* **在哪台, first — before the directory, because the
               directory is a fact about the machine.** The whole net's
               machines, this one marked; picking one makes the box,
@@ -408,7 +406,7 @@ export function NewSessionDialog({
                   ⚠️ **It has a label, and so does the form row below**
                   (2026-09-28): it sat without one on the argument that
                   the pressed 智能体 above named it — but two unlabelled
-                  rows in a sheet whose other rows are all labelled read
+                  rows in a form whose other rows are all labelled read
                   as loose buttons, not as two more questions. The label
                   is `new-session-agent-pick` rather than 智能体 again,
                   which was the original objection and still stands. */}
@@ -636,13 +634,13 @@ export function NewSessionDialog({
               {error}
             </p>
           )}
-        </SheetForm>
+        </FormGrid>
         <DialogFooter>
-          {onImport && kind !== "tell" && (
-            <Button data-new-item="import" className="mr-auto" onClick={onImport}>
-              {gui.import_sessions_ask}
-            </Button>
-          )}
+          {/* The way out, left of the one act (components/Dialog). The
+              sheet this used to be had a cross in its corner. */}
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+            {gui.delete_keep}
+          </Button>
           {kind === "tell" ? (
             <Button variant="primary" data-tell-send disabled={!text.trim() || opening} onClick={send}>
               {gui.send_it}

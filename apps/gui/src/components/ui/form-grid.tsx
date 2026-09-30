@@ -1,19 +1,24 @@
-// The form inside a sheet (docs/design-system components/Dialog, 「sheet
-// 里的表单」, 2026-09-28): questions in one column, right-aligned against
-// their answers in the next — macOS's form habit — so a sheet reads down
-// one edge instead of as a stack of label-over-control blocks. 新会话,
-// 选择目录, 注册账户 and 导入 all stand on this one grid.
+// The form inside a form dialog (docs/design-system components/Dialog,
+// 「对话框里的表单」, 2026-09-28): questions in one column, right-aligned
+// against their answers in the next — macOS's form habit — so a form reads
+// down one edge instead of as a stack of label-over-control blocks. 新会话,
+// 选择目录 and 登记 stand on this one grid.
+//
+// ⚠️ 墓碑 (2026-09-30): this was `ui/sheet-form` (`SheetForm`) while the
+// forms were sheets hanging from R0. The sheet was retired — every form is
+// a centred dialog now (`DialogContent form`) — and the grid kept its job
+// under a name that does not say sheet.
 //
 // **`min-w-0` on the grid and `minmax(0,1fr)` on its second column are
 // load-bearing**: `DialogContent` is a grid and this is its item, and a
 // grid item defaults to `min-width: auto` — one long path inside would
-// push the whole sheet past its `max-w-lg` and `truncate` would never
-// fire (the new-session wizard's scar, `check-acp` 17).
+// push the whole dialog past its width and `truncate` would never fire
+// (the new-session wizard's scar, `check-acp` 17).
 import type { HTMLAttributes, ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-export function SheetForm({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
+export function FormGrid({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       {...rest}

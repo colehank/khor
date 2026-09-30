@@ -2094,8 +2094,10 @@ try {
   // centreline, 2026-09-29), for the same reason and on the same terms.
   // **`FACE_ONLY=filter` walks the machines' and workspaces' filter
   // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
+  // **`FACE_ONLY=acts` walks section 13 alone** (一个动作一个家,
+  // 2026-09-30), for the same reason.
   walk: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -2423,6 +2425,16 @@ try {
     return true;
   };
   const press = (sel) => pressNth(sel, 0);
+  /** An act on the open landing's ＋ — its one home since 2026-09-30
+      (「一个动作只有一个家」): pressed straight through where the landing
+      has one act, picked off the menu ＋ drops where it has two or more
+      (会话: 新会话… 导入…; 机器: 邀请设备… 加入网络…). True when it got
+      there. */
+  const pressNew = async (key) => {
+    if (!(await press("[data-side-head] [data-pane-new]"))) return false;
+    if ((await page.locator('[role="menu"]').count()) === 0) return true;
+    return press(`[role="menu"] [data-new-item="${key}"]`);
+  };
   // A settings value, chosen the way a person chooses it since round 17:
   // through the row's native select (`components/settings/PopupRow`).
   // True when the select was there to choose from.
@@ -3425,16 +3437,16 @@ try {
     bars[0].click();
     await new Promise((r) => setTimeout(r, 120));
     const peek = document.querySelector("[data-peek]");
-    const sheet = document.querySelector("[data-sheet]");
+    const sheet = document.querySelector("[data-file-text]");
     const at = Number(bars[0].dataset.hunk);
-    const line = document.querySelector(`[data-sheet] [data-line="${at}"]`);
+    const line = document.querySelector(`[data-file-text] [data-line="${at}"]`);
     const round = (n) => Math.round(n * 10) / 10;
     return {
       bars: bars.length,
       at,
       // Which place the open block belongs to, read off the block.
       peekAt: peek === null ? null : Number(peek.dataset.peek),
-      // **In the file, not under it.** `data-sheet` and no fallback:
+      // **In the file, not under it.** `data-file-text` and no fallback:
       // the first spelling of a probe here fell back to
       // `querySelector("pre")`, which is the line-number column, and a
       // probe that cannot find its subject must go void, never green.
@@ -3545,7 +3557,7 @@ try {
     // the keystroke, so the keystroke is where it is measured.
     const lineTop = () =>
       page.evaluate(() => {
-        const one = document.querySelector('[data-sheet] [data-line="1"]');
+        const one = document.querySelector('[data-file-text] [data-line="1"]');
         return one === null ? null : Math.round(one.getBoundingClientRect().top * 10) / 10;
       });
     const restTop = await lineTop();
@@ -3620,7 +3632,7 @@ try {
     const refused = await page.evaluate(() => {
       const notice = document.querySelector("[data-file-notice]");
       const box = document.querySelector("[data-file-scroll]");
-      const first = document.querySelector('[data-sheet] [data-line="1"]');
+      const first = document.querySelector('[data-file-text] [data-line="1"]');
       const n = notice?.getBoundingClientRect() ?? null;
       const b = box?.getBoundingClientRect() ?? null;
       return {
@@ -5554,7 +5566,7 @@ try {
 
   // The wizard's box: empty on the 「+」, and completing the same way.
   await press(rail("sessions"));
-  await press("[data-side-head] [data-pane-new]");
+  await pressNew("new");
   const wizard = await until(5_000, async () =>
     (await page.locator("[data-new-session-dir]").count()) === 1,
   );
@@ -6113,7 +6125,7 @@ try {
     // painted copy is wider than the editor's plain text over it, and
     // the caret drifts. Markdown source is where the theme bolds.
     const heavy = await page.evaluate(() => {
-      const pre = document.querySelector("[data-sheet]");
+      const pre = document.querySelector("[data-file-text]");
       if (!pre) return null;
       const base = getComputedStyle(pre);
       const odd = [];
@@ -6460,17 +6472,17 @@ try {
   // paint is colour on the glass, not a class in the DOM. **A class is
   // not a colour**: every token wore highlight.js's class before
   // 2026-09-15 and the sheet was one colour anyway, because no rule
-  // reached `[data-sheet]`. So what is read is computed ink: the
+  // reached `[data-file-text]`. So what is read is computed ink: the
   // painted spans must wear at least three inks between them and at
   // least one of them must differ from the sheet's own — a one-colour
   // theme wearing spans would pass a count and fail here.
   if (await openFile("one.rs")) {
     const painted = await until(8_000, async () =>
-      (await page.locator('[data-sheet] span[style*="--shiki"]').count()) > 0,
+      (await page.locator('[data-file-text] span[style*="--shiki"]').count()) > 0,
     );
     if (!painted) {
       const html = await page.evaluate(
-        () => document.querySelector("[data-sheet]")?.innerHTML?.slice(0, 120) ?? null,
+        () => document.querySelector("[data-file-text]")?.innerHTML?.slice(0, 120) ?? null,
       );
       fail(
         `the source of a .rs file carries no highlighting — 「要有语法高亮」, and what is there is ` +
@@ -6478,7 +6490,7 @@ try {
       );
     } else {
       const inks = await page.evaluate(() => {
-        const sheet = document.querySelector("[data-sheet]");
+        const sheet = document.querySelector("[data-file-text]");
         const body = getComputedStyle(sheet).color;
         const seen = new Set();
         for (const el of sheet.querySelectorAll('span[style*="--shiki"]')) seen.add(getComputedStyle(el).color);
@@ -6672,7 +6684,7 @@ try {
     }
     await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
     const drew = await until(8_000, async () =>
-      (await page.locator('[data-sheet] [data-line="6"]').count()) === 1,
+      (await page.locator('[data-file-text] [data-line="6"]').count()) === 1,
     );
     if (!drew) {
       fail(
@@ -6682,7 +6694,7 @@ try {
     } else {
       const fold = await page.evaluate(() => {
         const round = (n) => Math.round(n * 10) / 10;
-        const pre = document.querySelector("[data-sheet]");
+        const pre = document.querySelector("[data-file-text]");
         const ta = document.querySelector("[data-edit]");
         const box = document.querySelector("[data-file-scroll]");
         const page_ = document.scrollingElement;
@@ -6699,9 +6711,9 @@ try {
           box: box === null ? null : [box.scrollWidth, box.clientWidth],
           sheet: round(pre.getBoundingClientRect().width),
           column: round(pre.parentElement.getBoundingClientRect().width),
-          row: tall('[data-sheet] [data-line="1"]'),
-          wrapped: tall('[data-sheet] [data-line="2"]'),
-          lines: [2, 3, 4].map((n) => [n, top(`[data-sheet] [data-line="${n}"]`), top(`[data-num="${n}"]`)]),
+          row: tall('[data-file-text] [data-line="1"]'),
+          wrapped: tall('[data-file-text] [data-line="2"]'),
+          lines: [2, 3, 4].map((n) => [n, top(`[data-file-text] [data-line="${n}"]`), top(`[data-num="${n}"]`)]),
           bar: top('[data-hunk="4"]'),
           // The editor's own idea of how tall the text is. It is forced
           // to the column's height by `inset-0`, so the only thing that
@@ -6813,7 +6825,7 @@ try {
     await page.setViewportSize({ width: 1400, height: 700 });
     await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
     const drew = await until(8_000, async () =>
-      (await page.locator('[data-sheet] [data-line="60"]').count()) === 1,
+      (await page.locator('[data-file-text] [data-line="60"]').count()) === 1,
     );
     if (!drew) {
       fail("probe dead: the tall fixture did not draw, so nothing here can be scrolled and re-wrapped");
@@ -6823,7 +6835,7 @@ try {
           const box = document.querySelector("[data-file-scroll]");
           const b = box.getBoundingClientRect().top;
           let best = null;
-          for (const el of document.querySelectorAll("[data-sheet] [data-line]")) {
+          for (const el of document.querySelectorAll("[data-file-text] [data-line]")) {
             const r = el.getBoundingClientRect();
             if (r.top <= b + 1 && r.bottom > b + 1) best = el.getAttribute("data-line");
           }
@@ -6831,7 +6843,7 @@ try {
         });
       await page.evaluate(() => {
         const box = document.querySelector("[data-file-scroll]");
-        const l = document.querySelector('[data-sheet] [data-line="30"]');
+        const l = document.querySelector('[data-file-text] [data-line="30"]');
         box.scrollTop += l.getBoundingClientRect().top - box.getBoundingClientRect().top;
       });
       await wait(150);
@@ -7679,7 +7691,7 @@ try {
     }
     await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
     const drew = await until(8_000, async () =>
-      (await page.locator(`[data-sheet] [data-line="${LINES}"]`).count()) === 1,
+      (await page.locator(`[data-file-text] [data-line="${LINES}"]`).count()) === 1,
     );
     if (!drew) {
       fail(`probe dead: the ${LINES}-line fixture never reached the sheet (src/views/FileView.tsx)`);
@@ -7832,7 +7844,7 @@ try {
       const laid = await page.evaluate(() => {
         const round = (n) => Math.round(n * 10) / 10;
         const peek = document.querySelector("[data-peek]");
-        const sheet = document.querySelector("[data-sheet]");
+        const sheet = document.querySelector("[data-file-text]");
         const top = (sel) => {
           const el = document.querySelector(sel);
           return el === null ? null : round(el.getBoundingClientRect().top);
@@ -7842,8 +7854,8 @@ try {
           said: peek?.textContent?.trim() ?? null,
           peekTop: peek === null ? null : round(peek.getBoundingClientRect().top),
           peekBottom: peek === null ? null : round(peek.getBoundingClientRect().bottom),
-          before: top('[data-sheet] [data-line="149"]'),
-          after: top('[data-sheet] [data-line="150"]'),
+          before: top('[data-file-text] [data-line="149"]'),
+          after: top('[data-file-text] [data-line="150"]'),
           // Two numbers on either side of the block, to catch the
           // column silently sliding by the peek's own height.
           num149: top('[data-num="149"]'),
@@ -7987,9 +7999,9 @@ try {
               return el === null ? null : round(el.getBoundingClientRect().top);
             };
             return {
-              l149: at('[data-sheet] [data-line="149"]'),
-              l150: at('[data-sheet] [data-line="150"]'),
-              l151: at('[data-sheet] [data-line="151"]'),
+              l149: at('[data-file-text] [data-line="149"]'),
+              l150: at('[data-file-text] [data-line="150"]'),
+              l151: at('[data-file-text] [data-line="151"]'),
               edit: document.querySelectorAll("[data-edit]").length,
             };
           });
@@ -8081,8 +8093,8 @@ try {
           // …and what the file itself says about where those lines are,
           // so the fractions above can be checked rather than eyeballed.
           total: box.scrollHeight,
-          at3: document.querySelector('[data-sheet] [data-line="3"]')?.offsetTop ?? null,
-          at150: document.querySelector('[data-sheet] [data-line="150"]')?.offsetTop ?? null,
+          at3: document.querySelector('[data-file-text] [data-line="3"]')?.offsetTop ?? null,
+          at150: document.querySelector('[data-file-text] [data-line="150"]')?.offsetTop ?? null,
         };
       });
       console.log(`overview ruler: ${JSON.stringify(ruler)}`);
@@ -8164,7 +8176,7 @@ try {
           const box = document.querySelector("[data-file-scroll]");
           box.scrollTop = 0;
           const b = box.getBoundingClientRect();
-          const l = document.querySelector('[data-sheet] [data-line="150"]').getBoundingClientRect();
+          const l = document.querySelector('[data-file-text] [data-line="150"]').getBoundingClientRect();
           return { top: Math.round(box.scrollTop), onScreen: l.top >= b.top - 1 && l.bottom <= b.bottom + 1 };
         });
         await wait(200);
@@ -8178,7 +8190,7 @@ try {
         await wait(300);
         const went = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const line = document.querySelector('[data-sheet] [data-line="150"]');
+          const line = document.querySelector('[data-file-text] [data-line="150"]');
           const b = box.getBoundingClientRect();
           const l = line.getBoundingClientRect();
           return {
@@ -8894,7 +8906,7 @@ try {
         );
         const landed = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-sheet] [data-line="3"]');
+          const row = document.querySelector('[data-file-text] [data-line="3"]');
           if (box === null || row === null) return null;
           const b = box.getBoundingClientRect();
           const r = row.getBoundingClientRect();
@@ -9421,7 +9433,7 @@ try {
         );
         const at = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-sheet] [data-line="2"]');
+          const row = document.querySelector('[data-file-text] [data-line="2"]');
           return {
             tabs: [...document.querySelectorAll("[data-tab-name]")].map((e) => e.textContent?.trim()),
             // …and it went to the line, read the way ruling 35's own
@@ -11648,7 +11660,7 @@ try {
       }
       if (laid.file === null || laid.file < 80) {
         fail(
-          `the file column is ${laid.file}px wide with the editor's card up — a sheet asks and goes, ` +
+          `the file column is ${laid.file}px wide with the editor's card up — a dialog asks and goes, ` +
             "it does not take a column (src/views/WorkspacePane.tsx)",
         );
       }
@@ -11667,7 +11679,7 @@ try {
         const b = document.querySelector("[data-code]");
         return {
           column: document.querySelectorAll("[data-ws-code]").length,
-          sheet: document.querySelectorAll("[data-code-sheet]").length,
+          dialog: document.querySelectorAll("[data-code-dialog]").length,
           file: mid === null ? null : Math.round(mid.getBoundingClientRect().width),
           lit: b?.getAttribute("data-on") ?? null,
         };
@@ -11985,7 +11997,7 @@ try {
         );
         const there = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-sheet] [data-line="3"]');
+          const row = document.querySelector('[data-file-text] [data-line="3"]');
           const on = document.querySelector('[data-rail-item][data-landing="workspaces"]');
           const open = document.querySelector('[data-ws-row][data-selected="true"] [data-ws-name]');
           return {
@@ -12265,20 +12277,22 @@ try {
         }
       }
 
-      // ── 网络: a page of settings rows, its two acts in R0 ──────────
+      // ── 网络: a page of settings rows, no act that makes anything ──
       //
       // 2026-09-28, the owner: the map lives on the machines overview and
       // nowhere else (10-layout 「机器 → 那张图」), and 网络 is a settings
       // page like its siblings — 状态 (本机 · 已连接的机器 · 暂停同步),
-      // 中继 (使用中 · 自己的中继 · 只使用自己的中继), 离开网络… — with
-      // 邀请设备… / 加入网络… as the page's own buttons at R0's right end
-      // (D9; the narrow face has no R0 and they sit in the page's head).
-      // It superseded 2026-09-20's 「网络就搞成地图」.
+      // 中继 (使用中 · 自己的中继 · 只使用自己的中继), 离开网络…. It
+      // superseded 2026-09-20's 「网络就搞成地图」. **邀请设备… / 加入网络…
+      // left its head on 2026-09-30** (「机器页点 ＋ 就是邀请设备和加入网络，
+      // 更多里的网络页就不要有右上方两个邀请、加入了」): they are the machines
+      // landing's ＋ and nowhere else, so neither the head nor the body
+      // holds one (section 13 reads the ＋).
       //
       // **What this reads is that every capability the old page had is
-      // still reachable** — the two pairing doors, the pause round trip,
-      // the relays, leaving — and that the map is not drawn twice. Where
-      // each row sits is the acceptance walk's (30-behavior.md).
+      // still reachable** — the pause round trip, the relays, leaving —
+      // and that the map is not drawn twice. Where each row sits is the
+      // acceptance walk's (30-behavior.md).
       const relaysBefore = relaysAsked.length;
       if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="network"]'))) {
         fail(`probe dead: ${posture} · 「…」 → 网络 did not open`);
@@ -12298,7 +12312,7 @@ try {
         return {
           map: document.querySelectorAll("[data-mandala-map], [data-seat], [data-node-card]").length,
           acts: ["invite", "join"].map((k) => (head ? head.querySelectorAll(`[data-new-item="${k}"]`).length : 0)),
-          // D9: never a row of buttons in the page.
+          // Not in the page either: an act has one home, ＋ on 机器.
           inBody: body ? body.querySelectorAll("[data-new-item]").length : null,
           pause: el.querySelectorAll('[data-net-pause][role="switch"]').length,
           leave: el.querySelectorAll("[data-net-leave]").length,
@@ -12321,10 +12335,10 @@ try {
               "overview only since 2026-09-28 (views/more/NetworkPage)",
           );
         }
-        if (net.acts.join(",") !== "1,1" || net.inBody !== 0) {
+        if (net.acts.join(",") !== "0,0" || net.inBody !== 0) {
           fail(
             `${posture}: 邀请设备… / 加入网络… read ${JSON.stringify(net.acts)} in the page's head and ${net.inBody} ` +
-              "in its body — they are the page's own buttons, at R0's right end and nowhere else (D9)",
+              "in its body — they are the machines landing's ＋ and nowhere else (10-layout, 2026-09-30)",
           );
         }
         if (net.pause !== 1 || net.leave !== 1) {
@@ -12897,12 +12911,12 @@ try {
     await open("sessions");
     await press("[data-list] [data-row-open]");
     await wait(400);
-    const CONTENT = "[data-row], [data-chat-input], [data-sheet]";
+    const CONTENT = "[data-row], [data-chat-input], [data-file-text]";
     const before = await page.evaluate((sel) => document.querySelectorAll(sel).length, CONTENT);
     console.log(`lock · before: ${before} piece(s) of session content on screen`);
     if (before === 0) {
       fail(
-        "probe dead: nothing matched [data-row], [data-chat-input] or [data-sheet] with a session " +
+        "probe dead: nothing matched [data-row], [data-chat-input] or [data-file-text] with a session " +
           "open — a zero after the lock would then prove nothing",
       );
     } else {
@@ -13032,7 +13046,7 @@ try {
       // is already open collapses its list, and the 新建 button lives in
       // that list's own head (the helper's own note, 2026-09-02).
       await open("sessions");
-      await press("[data-side-head] [data-pane-new]");
+      await pressNew("new");
       if (!(await until(5_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 1))) {
         return null;
       }
@@ -13604,8 +13618,8 @@ try {
         const frame = getComputedStyle(main).backgroundColor;
         // **…and it wears the one floating language** (2026-09-28): the
         // `float` shadow and the `radius-lg` corner, read back against
-        // what the tokens resolve to here. The sheet's top edge is R0's,
-        // so its corner is read at the bottom.
+        // what the tokens resolve to here. (The R0 sheet, whose corner was
+        // read at the bottom, was retired 2026-09-30: a form is a dialog.)
         const probe = document.createElement("div");
         probe.style.cssText =
           "position:absolute;visibility:hidden;box-shadow:var(--shadow-float);border-radius:var(--radius-lg)";
@@ -13613,7 +13627,7 @@ try {
         const want = { shadow: getComputedStyle(probe).boxShadow, radius: getComputedStyle(probe).borderTopLeftRadius };
         probe.remove();
         const cs = getComputedStyle(el);
-        const radius = el.hasAttribute("data-sheet") ? cs.borderBottomLeftRadius : cs.borderTopLeftRadius;
+        const radius = cs.borderTopLeftRadius;
         return {
           surface,
           ground,
@@ -13629,7 +13643,7 @@ try {
         };
       }, sel);
     const surfaces = [
-      ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
+      ["the new-session dialog", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
       [
         "a dialog (改名…)",
         "[data-identity-rename-dialog]",
@@ -13918,7 +13932,6 @@ try {
         // …and that includes the day's readout, which since 2026-09-29 *is*
         // the tooltip (`DayStrip` no longer draws a surface of its own).
         "src/components/ui/tooltip.tsx": "a tooltip is `radius-sm` (components/Tooltip)",
-        "src/components/ui/dialog.tsx": "the sheet hangs from R0: its top edge is R0's, only its lower corners round (`rounded-b-lg`)",
         "src/views/FileView.tsx": "the peek is a band across the whole column over the code — no corner to round",
       };
       const POPOVER_EXCEPT = {
@@ -22839,12 +22852,14 @@ try {
     // red against the tree it replaced (docs/handoff/001.md 第十七轮):
     //   (a) every selectable setting on More is one of the four row kinds,
     //       and a popup row opens the system's menu (a native select);
-    //   (b) the brand-strong push button is a dialog's or a sheet's, at
-    //       most one each, and never on a page;
+    //   (b) the brand-strong push button is a dialog's, at most one each,
+    //       and never on a page;
     //   (c) no board holds a row of buttons: two or more buttons side by
     //       side as direct children of one box inside [data-board];
-    //   (d) a create form is a sheet hanging from R0's lower edge, with
-    //       no scrim over the window;
+    //   (d) a create form is a centred dialog over a scrim — ⚠️ 墓碑
+    //       (2026-09-30): until then it read 「a sheet hanging from R0's
+    //       lower edge, with no scrim over the window」 (D10), which the
+    //       owner retired (section 13 (b) has the whole of it);
     //   (e) an open workspace is three panes on a flush board, each
     //       pane's head --pane-head tall.
     {
@@ -22921,7 +22936,7 @@ try {
           const brand = getComputedStyle(probe).backgroundColor;
           probe.remove();
           const primaries = [...document.querySelectorAll("button")].filter(
-            (b) => shown(b) && !b.closest('[role="dialog"], [data-sheet], [role="switch"]') && b.getAttribute("role") !== "switch" &&
+            (b) => shown(b) && !b.closest('[role="dialog"], [role="switch"]') && b.getAttribute("role") !== "switch" &&
               getComputedStyle(b).backgroundColor === brand && !b.closest("[data-more-list], [data-side-row], [data-list], [data-rail]"),
           );
           const board = document.querySelector("[data-main] [data-board]");
@@ -22943,7 +22958,7 @@ try {
         console.log(`round 17 (b/c) · ${where}: primary ${r.primaries.length}, button rows ${JSON.stringify(r.rows)}`);
         if (r.primaries.length) {
           fail(
-            `round 17 (b): ${where} paints ${r.primaries.length} brand-strong button(s) outside a dialog or sheet — ` +
+            `round 17 (b): ${where} paints ${r.primaries.length} brand-strong button(s) outside a dialog — ` +
               `the primary is a dialog's one act, a page's buttons are fill-strong (${JSON.stringify(r.primaries)})`,
           );
         }
@@ -22955,13 +22970,13 @@ try {
         }
       }
 
-      // (b) inside a dialog or sheet: at most one primary.
-      // (d) the create forms are sheets hanging from R0.
+      // (b) inside a dialog: at most one primary.
+      // (d) the create forms are centred dialogs over a scrim.
       const forms = [
-        // ＋ is one act (新会话); 导入 is offered on that sheet
-        // (2026-09-26), since a strip of tabs leaves R0 no room for it.
-        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
-        ["import", "[data-import-dialog]", async () => (await open("sessions")) && (await press("[data-side-head] [data-pane-new]")) && press('[data-new-session-dialog] [data-new-item="import"]')],
+        // Both are the sessions landing's ＋, a menu of the two
+        // (2026-09-30, 「一个动作只有一个家」).
+        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
+        ["import", "[data-import-dialog]", async () => (await open("sessions")) && pressNew("import")],
       ];
       for (const [what, sel, go] of forms) {
         if (!(await go()) || !(await until(4_000, async () => (await page.locator(sel).count()) === 1))) {
@@ -22972,9 +22987,6 @@ try {
         await wait(300);
         const s = await page.evaluate((sel) => {
           const el = document.querySelector(sel);
-          const head = document.querySelector("[data-main] [data-region-head]");
-          const main = document.querySelector("[data-main]");
-          const board = document.querySelector("[data-main] [data-board]");
           const probe = document.createElement("div");
           probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
           document.body.appendChild(probe);
@@ -22987,30 +22999,26 @@ try {
             const cs = getComputedStyle(n);
             return cs.position === "fixed" && b.width >= vw - 1 && b.height >= vh - 1 && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
           }).length;
+          const b = el?.getBoundingClientRect() ?? null;
           return {
-            sheet: el?.hasAttribute("data-sheet") ?? false,
-            top: el ? +el.getBoundingClientRect().top.toFixed(1) : null,
-            r0: head ? +head.getBoundingClientRect().bottom.toFixed(1) : null,
-            w: el ? el.getBoundingClientRect().width : null,
-            board: board ? board.getBoundingClientRect().width : null,
-            inMain: !!(main && el && main.contains(el)),
+            sheets: document.querySelectorAll("[data-sheet]").length,
+            dx: b ? +((b.left + b.right) / 2 - vw / 2).toFixed(1) : null,
+            dy: b ? +((b.top + b.bottom) / 2 - vh / 2).toFixed(1) : null,
             scrims,
             primaries: el ? [...el.querySelectorAll("button")].filter((b) => getComputedStyle(b).backgroundColor === brand).length : 0,
           };
         }, sel);
         console.log(`round 17 (d) · ${what}: ${JSON.stringify(s)}`);
-        if (!s.sheet) fail(`round 17 (d): the ${what} form is a centred dialog — a create form is a sheet from R0 (D10)`);
-        if (s.top === null || s.r0 === null || Math.abs(s.top - s.r0) > 0.5) {
-          fail(`round 17 (d): the ${what} sheet's top is ${s.top}, R0's bottom is ${s.r0} — it hangs from R0's lower edge`);
+        if (s.sheets !== 0 || s.dx === null || Math.abs(s.dx) > 1 || Math.abs(s.dy) > 1 || s.scrims < 1) {
+          fail(
+            `round 17 (d): the ${what} form is ${s.dx}/${s.dy} off the window's centre over ${s.scrims} scrim(s), ` +
+              `${s.sheets} sheet(s) up — a create form is a centred dialog (components/Dialog, 2026-09-30)`,
+          );
         }
-        if (s.w !== null && s.board !== null && s.w > s.board + 0.5) {
-          fail(`round 17 (d): the ${what} sheet is ${s.w} wide over a ${s.board} board — no wider than the board`);
-        }
-        if (s.scrims) fail(`round 17 (d): the ${what} sheet brought ${s.scrims} window-wide scrim(s) — a sheet dims nothing`);
-        if (s.primaries > 1) fail(`round 17 (b): the ${what} form paints ${s.primaries} primary buttons — one per dialog or sheet`);
+        if (s.primaries > 1) fail(`round 17 (b): the ${what} form paints ${s.primaries} primary buttons — one per dialog`);
         await page.keyboard.press("Escape");
         if (!(await until(2_000, async () => (await page.locator(sel).count()) === 0))) {
-          fail(`round 17 (d): Esc left the ${what} sheet open`);
+          fail(`round 17 (d): Esc left the ${what} dialog open`);
         }
       }
 
@@ -23509,7 +23517,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (process.env.FACE_ONLY === "native" || process.env.FACE_ONLY === "row") break lists;
+  if (["native", "row", "acts"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23893,7 +23901,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (process.env.FACE_ONLY !== "filter") {
+  if (!["filter", "acts"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24186,7 +24194,7 @@ try {
   }
 
   rest: {
-  if (process.env.FACE_ONLY === "row" || process.env.FACE_ONLY === "filter") break rest;
+  if (["row", "filter", "acts"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -24402,9 +24410,9 @@ try {
       if (read < 50) fail(`probe dead: (b) read ${read} source file(s) for not-allowed`);
       for (const at of hits) fail(`${at} gives a disabled control the barred circle — AppKit keeps the arrow over a disabled control; the greying says it`);
     }
-    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-sheet]", "[data-numbers]", "[data-file] > button"]);
+    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-file-text]", "[data-numbers]", "[data-file] > button"]);
     console.log(`mac · user-select in the workspace ${JSON.stringify(file)}`);
-    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-sheet]": "text", "[data-numbers]": "none", "[data-file] > button": "none" };
+    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-file-text]": "text", "[data-numbers]": "none", "[data-file] > button": "none" };
     for (const { s, v } of file) {
       if (v === null) fail(`probe dead: ${s} is not in the open workspace`);
       else if (v !== want[s]) fail(`${s} computes user-select ${v}, not ${want[s]} — code selects, its line numbers and the tree do not`);
@@ -24851,6 +24859,387 @@ try {
     console.log(`delete asks · ${offered} 删除 offered off the map`);
   }
   } // rest
+
+  // ── 13) 一个动作一个家 (2026-09-30) ───────────────────────────────
+  //
+  // The owner: 「订阅页右上角不要有登记按钮，这个功能属于搜索框旁边的 ＋。
+  // 类似的冗余不要出现在 app 里：机器页点 ＋ 就是邀请设备和加入网络，更多里
+  // 的网络页就不要有右上方两个邀请、加入了」「整个 app 所有点击的弹窗，比如
+  // 新建 session，是要来一个弹窗，而不是现在这样从标题下长出来的奇怪东西」
+  // 「邀请设备显示两个内容：现在的 token，和一个二维码」. What of that a
+  // machine can measure:
+  //
+  //   a. **R0 makes nothing.** On the three overviews (会话, 机器, 额度) and
+  //      on 「…」 → 网络, R0 holds no `data-new-item`; the overviews' right
+  //      end is empty and 网络's holds only its ×. The acts are the ＋
+  //      beside L0's search box: one act is pressed straight through, two
+  //      drop a menu — on the wide face too.
+  //   b. **`data-sheet` is zero across the app.** Statically, nothing under
+  //      src/ writes it or asks `DialogContent` for a sheet; live, every
+  //      form ＋ opens (新会话, 导入, 邀请设备, 加入网络, 登记, 添加工作区)
+  //      is a centred dialog — over a scrim, its centre on the window's
+  //      (±1), at most one primary — and Esc closes it.
+  //   c. **邀请设备 is the token and its QR code.** An `<svg>` in the dialog
+  //      whose path is painted `currentColor`, computing to the ink, on no
+  //      ground of its own; square, inside the dialog, with at least four
+  //      light modules between the symbol and the picture's edge on every
+  //      side (the quiet zone ISO/IEC 18004 asks for); and the token beside
+  //      it is the one the node answered. The fixture is
+  //      `khor_gui_core::qr::encode("khor-face-ticket-0930")`, copied from
+  //      the encoder — whose own test reads the path back module by module.
+  //   d. **机器页的第四颗** (「机器页也加一个 VS Code 图标，打开这台机器的
+  //      VS Code，不指定目录」): with a machine open whose editor is there,
+  //      R0's verbs read 开会话, 看文件, 借网, VS Code — one `ctl-md` box,
+  //      the painted marks within 1.5 px; the first press asks (the
+  //      workspace's consent, a dialog); yes asks `code_open` once, for
+  //      that machine, with an empty `dir`, and opens a window with the
+  //      switch lit. New, not a fix: no red first (30-behavior).
+  //
+  // Red on the code it replaced: R0 held 新会话… 导入… / 邀请设备… 加入网络…
+  // / 登记… and 网络's two; the new-session, import, join, register and
+  // directory forms were sheets hanging from R0 with no scrim; the invite
+  // dialog had no picture.
+  //
+  // `FACE_ONLY=acts` runs this section alone.
+  acts: {
+  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break acts;
+  {
+    const QR_TOKEN = "khor-face-ticket-0930";
+    const QR_SPAN = 33;
+    const QR_PATH =
+      "M4 4h7v1h-7zM12 4h1v1h-1zM15 4h1v1h-1zM17 4h1v1h-1zM19 4h2v1h-2zM22 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h1v1h-1zM20 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h2v1h-2zM17 6h3v1h-3zM22 6h1v1h-1zM24 6h3v1h-3zM28 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM19 7h1v1h-1zM22 7h1v1h-1zM24 7h3v1h-3zM28 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM13 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h3v1h-3zM28 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h1v1h-1zM16 9h1v1h-1zM22 9h1v1h-1zM28 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h7v1h-7zM13 11h1v1h-1zM20 11h1v1h-1zM4 12h1v1h-1zM6 12h1v1h-1zM10 12h2v1h-2zM16 12h2v1h-2zM19 12h1v1h-1zM23 12h1v1h-1zM26 12h1v1h-1zM28 12h1v1h-1zM4 13h3v1h-3zM9 13h1v1h-1zM13 13h1v1h-1zM16 13h5v1h-5zM22 13h1v1h-1zM25 13h2v1h-2zM28 13h1v1h-1zM7 14h1v1h-1zM9 14h4v1h-4zM14 14h1v1h-1zM16 14h2v1h-2zM19 14h1v1h-1zM24 14h1v1h-1zM28 14h1v1h-1zM4 15h2v1h-2zM7 15h1v1h-1zM9 15h1v1h-1zM11 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM20 15h2v1h-2zM23 15h1v1h-1zM25 15h1v1h-1zM5 16h2v1h-2zM10 16h1v1h-1zM13 16h8v1h-8zM22 16h2v1h-2zM27 16h1v1h-1zM6 17h1v1h-1zM9 17h1v1h-1zM11 17h2v1h-2zM16 17h1v1h-1zM19 17h5v1h-5zM28 17h1v1h-1zM4 18h4v1h-4zM10 18h2v1h-2zM14 18h1v1h-1zM16 18h4v1h-4zM22 18h1v1h-1zM25 18h1v1h-1zM28 18h1v1h-1zM6 19h1v1h-1zM8 19h2v1h-2zM11 19h1v1h-1zM13 19h4v1h-4zM19 19h1v1h-1zM27 19h2v1h-2zM4 20h2v1h-2zM8 20h1v1h-1zM10 20h1v1h-1zM13 20h1v1h-1zM17 20h2v1h-2zM20 20h6v1h-6zM27 20h1v1h-1zM12 21h1v1h-1zM17 21h1v1h-1zM20 21h1v1h-1zM24 21h3v1h-3zM28 21h1v1h-1zM4 22h7v1h-7zM12 22h2v1h-2zM15 22h1v1h-1zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM26 22h1v1h-1zM28 22h1v1h-1zM4 23h1v1h-1zM10 23h1v1h-1zM17 23h1v1h-1zM19 23h2v1h-2zM24 23h2v1h-2zM27 23h1v1h-1zM4 24h1v1h-1zM6 24h3v1h-3zM10 24h1v1h-1zM13 24h5v1h-5zM19 24h7v1h-7zM27 24h2v1h-2zM4 25h1v1h-1zM6 25h3v1h-3zM10 25h1v1h-1zM13 25h1v1h-1zM16 25h1v1h-1zM19 25h3v1h-3zM24 25h2v1h-2zM27 25h1v1h-1zM4 26h1v1h-1zM6 26h3v1h-3zM10 26h1v1h-1zM12 26h3v1h-3zM16 26h6v1h-6zM24 26h2v1h-2zM27 26h2v1h-2zM4 27h1v1h-1zM10 27h1v1h-1zM13 27h4v1h-4zM18 27h1v1h-1zM20 27h1v1h-1zM22 27h2v1h-2zM25 27h1v1h-1zM4 28h7v1h-7zM12 28h1v1h-1zM14 28h1v1h-1zM17 28h2v1h-2zM20 28h1v1h-1zM22 28h4v1h-4zM28 28h1v1h-1z";
+    await page.route("**/invite", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ token: QR_TOKEN, minutes: 15, qr: { span: QR_SPAN, path: QR_PATH } }),
+      }),
+    );
+    // Rows on 额度, so its landing has a list and the list its ＋.
+    await routeStanding();
+    // A clean screen: no session tab left open by an earlier section
+    // (then R0 would be the strip, not the overview's head), nothing
+    // picked on 机器.
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+
+    // (b, static) nothing under src/ writes `data-sheet` or asks for a
+    // sheet. Comment lines are skipped — a tombstone may name the thing
+    // it buried.
+    {
+      const files = [];
+      const walkSrc = (d) => {
+        for (const n of readdirSync(d)) {
+          const p = join(d, n);
+          if (statSync(p).isDirectory()) {
+            if (n !== "gen") walkSrc(p);
+          } else if (/\.(tsx?|css)$/.test(n)) files.push(p);
+        }
+      };
+      walkSrc(join(gui, "src"));
+      const bad = [];
+      for (const f of files) {
+        const rel = relative(gui, f);
+        readFileSync(f, "utf8")
+          .split("\n")
+          .forEach((line, i) => {
+            if (/^\s*(\/\/|\*|\/\*)/.test(line)) return;
+            const code = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
+            if (/data-sheet(?![\w-])/.test(code)) bad.push(`${rel}:${i + 1} writes or reads \`data-sheet\``);
+            if (/<DialogContent\b[^>]*\ssheet(?![\w-])/.test(code)) bad.push(`${rel}:${i + 1} asks DialogContent for a sheet`);
+          });
+      }
+      console.log(`acts (b) · static · ${files.length} file(s) read, ${bad.length} sheet(s)`);
+      for (const b of bad) fail(`acts (b) · ${b} — there is one kind of window a press opens, the centred dialog (D10, 2026-09-30)`);
+      if (files.length < 50) fail(`probe dead: acts (b) read ${files.length} source file(s) — the walk is not reaching src/`);
+    }
+
+    // (a) R0 makes nothing.
+    const r0 = () =>
+      page.evaluate(() => {
+        const head = document.querySelector("[data-main] [data-region-head]");
+        if (!head) return null;
+        const shown = (el) => {
+          const b = el.getBoundingClientRect();
+          return b.width > 0 && b.height > 0;
+        };
+        const end = head.querySelector("[data-page-actions]");
+        const name = (b) =>
+          [...b.attributes].find((a) => a.name.startsWith("data-") && !["data-slot", "data-state"].includes(a.name))?.name ??
+          (b.getAttribute("aria-label") || b.textContent.trim());
+        return {
+          tabs: head.querySelectorAll("[data-session-tabs]").length,
+          makes: [...head.querySelectorAll("[data-new-item]")].map((b) => b.getAttribute("data-new-item")),
+          end: end ? [...end.querySelectorAll("button")].filter(shown).map(name) : [],
+        };
+      });
+    const pages = [
+      ["the sessions overview", async () => open("sessions"), []],
+      ["the machines overview", async () => open("devices"), []],
+      ["the 额度 landing", async () => open("quota"), []],
+      [
+        "「…」 → 网络",
+        async () => (await press("[data-rail-more]")) && press('[data-more-open="network"]'),
+        ["data-more-close"],
+      ],
+    ];
+    for (const [where, go, wantEnd] of pages) {
+      if (!(await go())) {
+        fail(`probe dead: acts (a) could not reach ${where}`);
+        continue;
+      }
+      await wait(400);
+      const got = await r0();
+      console.log(`acts (a) · ${where}: ${JSON.stringify(got)}`);
+      if (!got) {
+        fail(`probe dead: acts (a) · ${where} drew no R0`);
+      } else if (got.tabs) {
+        fail(`probe dead: acts (a) · ${where} has session tabs open — R0 is the strip, not the overview's head`);
+      } else {
+        if (got.makes.length) {
+          fail(
+            `acts (a) · R0 on ${where} holds ${JSON.stringify(got.makes)} — an act that makes something lives on the ＋ ` +
+              "beside L0's search box and nowhere else (10-layout, 2026-09-30)",
+          );
+        }
+        if (got.end.join(",") !== wantEnd.join(",")) {
+          fail(
+            `acts (a) · R0's right end on ${where} reads ${JSON.stringify(got.end)}, not ${JSON.stringify(wantEnd)} — ` +
+              "the overviews' is empty and 网络's is its × (components/Toolbar)",
+          );
+        }
+      }
+      if ((await page.locator("[data-more-page]").count()) > 0) await press("[data-more-close]");
+    }
+
+    // (a, b) every act is on ＋, and every form it opens is a dialog.
+    /** ＋ on the open landing, then its `key` if ＋ dropped a menu.
+        Answers how it went: "menu", "direct", or why it did not. */
+    const plus = async (key) => {
+      const btn = page.locator("[data-side-head] [data-pane-new]");
+      if ((await btn.count()) === 0) return "no ＋ in L0";
+      await btn.first().click();
+      await wait(400);
+      if ((await page.locator('[role="menu"]').count()) === 0) return "direct";
+      const item = page.locator(`[role="menu"] [data-new-item="${key}"]`);
+      if ((await item.count()) === 0) {
+        await page.keyboard.press("Escape");
+        await wait(250);
+        return `${key} is not on ＋'s menu`;
+      }
+      await item.first().click();
+      await wait(400);
+      return "menu";
+    };
+    const forms = [
+      ["sessions", "new", "新会话…", "[data-new-session-dialog]", "menu"],
+      ["sessions", "import", "导入…", "[data-import-dialog]", "menu"],
+      ["devices", "invite", "邀请设备…", "[data-invite-dialog]", "menu"],
+      ["devices", "join", "加入网络…", "[data-join-dialog]", "menu"],
+      ["quota", "register", "登记…", "[data-quota-dialog]", "direct"],
+      ["workspaces", "ws-add", "添加工作区…", "[data-dir-picker]", "direct"],
+    ];
+    for (const [landing, key, word, sel, want] of forms) {
+      if (!(await open(landing))) {
+        fail(`probe dead: acts · could not reach ${landing}`);
+        continue;
+      }
+      await wait(300);
+      const how = await plus(key);
+      const up = await until(3_000, async () => (await page.locator(sel).count()) === 1);
+      if (how !== want || !up) {
+        fail(
+          `acts (a) · ${word} on ${landing}: ＋ went ${JSON.stringify(how)} and the form ${up ? "opened" : "did not open"} — ` +
+            `${want === "menu" ? "two acts, so ＋ drops a menu with this one on it" : "one act, so ＋ is it"} (10-layout, 2026-09-30)`,
+        );
+        await page.keyboard.press("Escape");
+        await wait(300);
+        continue;
+      }
+      await wait(400);
+      const s = await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const scrims = [...document.querySelectorAll("body *")].filter((n) => {
+          const r = n.getBoundingClientRect();
+          const cs = getComputedStyle(n);
+          return cs.position === "fixed" && r.width >= vw - 1 && r.height >= vh - 1 && cs.backgroundColor !== "rgba(0, 0, 0, 0)";
+        }).length;
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
+        document.body.appendChild(probe);
+        const brand = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return {
+          sheets: document.querySelectorAll("[data-sheet]").length,
+          role: el.getAttribute("role"),
+          dx: +((b.left + b.right) / 2 - vw / 2).toFixed(1),
+          dy: +((b.top + b.bottom) / 2 - vh / 2).toFixed(1),
+          scrims,
+          primaries: [...el.querySelectorAll("button")].filter((x) => getComputedStyle(x).backgroundColor === brand).length,
+        };
+      }, sel);
+      console.log(`acts (b) · ${word}: ${JSON.stringify(s)}`);
+      if (!s) {
+        fail(`probe dead: acts (b) · ${word} could not be read`);
+      } else {
+        if (s.sheets !== 0) fail(`acts (b) · with ${word} open the page holds ${s.sheets} [data-sheet] — a sheet is retired (D10, 2026-09-30)`);
+        if (s.role !== "dialog" || Math.abs(s.dx) > 1 || Math.abs(s.dy) > 1 || s.scrims < 1) {
+          fail(
+            `acts (b) · ${word} is role ${JSON.stringify(s.role)}, its centre ${s.dx}/${s.dy} off the window's, over ${s.scrims} scrim(s) — ` +
+              "a form is a centred dialog like 邀请设备's (components/Dialog)",
+          );
+        }
+        if (s.primaries > 1) fail(`acts (b) · ${word} paints ${s.primaries} primary buttons — one per dialog`);
+      }
+      await page.keyboard.press("Escape");
+      if (!(await until(2_000, async () => (await page.locator(sel).count()) === 0))) {
+        fail(`acts (b) · Esc left ${word} open`);
+        await page.keyboard.press("Escape");
+      }
+      await wait(250);
+    }
+
+    // (c) 邀请设备: the token and its QR code.
+    if (!(await open("devices")) || !["menu", "direct"].includes(await plus("invite"))) {
+      fail("probe dead: acts (c) could not press ＋ on 机器");
+    } else if (!(await until(3_000, async () => (await page.locator("[data-invite-dialog] [data-ticket]").count()) === 1))) {
+      fail("probe dead: acts (c) · 邀请设备 opened no dialog with a token in it");
+    } else {
+      await wait(400);
+      const q = await page.evaluate(() => {
+        const dlg = document.querySelector("[data-invite-dialog]");
+        const svg = dlg?.querySelector("svg[data-ticket-qr]");
+        const path = svg?.querySelector("path");
+        const field = dlg?.querySelector("[data-ticket]");
+        const token = field ? ("value" in field ? field.value : field.textContent) : null;
+        if (!svg || !path) return { svg: !!svg, path: !!path, token };
+        const vb = svg.viewBox.baseVal;
+        const bb = path.getBBox();
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;color:var(--foreground)";
+        document.body.appendChild(probe);
+        const ink = getComputedStyle(probe).color;
+        probe.remove();
+        const box = svg.getBoundingClientRect();
+        const d = dlg.getBoundingClientRect();
+        return {
+          svg: true,
+          path: true,
+          token,
+          fillAttr: path.getAttribute("fill"),
+          fill: getComputedStyle(path).fill,
+          ink,
+          ground: getComputedStyle(svg).backgroundColor,
+          span: [vb.width, vb.height],
+          quiet: Math.min(bb.x - vb.x, bb.y - vb.y, vb.x + vb.width - (bb.x + bb.width), vb.y + vb.height - (bb.y + bb.height)),
+          square: Math.abs(box.width - box.height) < 0.5,
+          inside: box.left >= d.left - 0.5 && box.right <= d.right + 0.5 && box.top >= d.top - 0.5 && box.bottom <= d.bottom + 0.5,
+          module: +(box.width / vb.width).toFixed(2),
+        };
+      });
+      console.log(`acts (c) · 邀请设备: ${JSON.stringify(q)}`);
+      if (!q.svg || !q.path) {
+        fail("acts (c) · 邀请设备 draws no QR code — one invite, two spellings: the code above, the token under it");
+      } else {
+        if (q.fillAttr !== "currentColor" || q.fill !== q.ink) {
+          fail(`acts (c) · the code is painted ${q.fillAttr} → ${q.fill}, not currentColor → the ink ${q.ink}`);
+        }
+        if (q.ground !== "rgba(0, 0, 0, 0)") fail(`acts (c) · the code stands on ${q.ground} — its ground is the dialog's (transparent)`);
+        if (q.span.join(",") !== `${QR_SPAN},${QR_SPAN}`) fail(`acts (c) · the picture is ${q.span} modules — the node answered ${QR_SPAN}`);
+        if (!(q.quiet >= 4)) fail(`acts (c) · ${q.quiet} light module(s) around the symbol — a QR code needs a quiet zone of 4`);
+        if (!q.square || !q.inside) fail(`acts (c) · the code is ${q.square ? "" : "not "}square and ${q.inside ? "" : "not "}inside the dialog`);
+      }
+      if (q.token !== QR_TOKEN) fail(`acts (c) · the dialog's token reads ${JSON.stringify(q.token)} — the node answered ${QR_TOKEN}`);
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
+    await page.unroute("**/invite");
+
+    // (d) 机器页的第四颗: that machine's VS Code, no folder. The fixture's
+    // editor is there and has not fetched its server (`ready: false`), so
+    // the first press asks.
+    await page.unroute("**/code_here");
+    await page.route("**/code_here", (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify({ version: "1.137.0", ready: false }) }),
+    );
+    if (!(await open("devices")) || !(await press("[data-list] [data-row-open] >> nth=1"))) {
+      fail("probe dead: acts (d) could not open a machine");
+    } else if (
+      !(await until(5_000, async () => (await page.locator('[data-main] [data-region-head] [data-machine-verbs] [data-verb="code"]').count()) === 1))
+    ) {
+      const verbs = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-main] [data-region-head] [data-machine-verbs] > button")].map((b) => b.getAttribute("data-verb")),
+      );
+      fail(
+        `acts (d) · the machine page's R0 holds ${JSON.stringify(verbs)} — its fourth verb is VS Code, drawn where that machine ` +
+          "has an editor (2026-09-30, 「机器页也加一个 VS Code 图标」; components/CodeWindow)",
+      );
+    } else {
+      const look = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-machine-verbs] > button")];
+        const selected = document.querySelector('[data-list] [data-device][data-selected="true"]');
+        return {
+          ctl: Math.round(Number.parseFloat(root.getPropertyValue("--ctl-md"))),
+          machine: selected?.getAttribute("data-device") ?? null,
+          btns: btns.map((b) => {
+            const svg = b.querySelector("svg");
+            let ink = 0;
+            if (svg) {
+              const bb = svg.getBBox();
+              const vb = svg.viewBox.baseVal;
+              const k = svg.getBoundingClientRect().height / (vb.height || 1);
+              ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
+            }
+            const r = b.getBoundingClientRect();
+            return { verb: b.getAttribute("data-verb"), box: `${Math.round(r.width)}x${Math.round(r.height)}`, ink };
+          }),
+        };
+      });
+      console.log(`acts (d) · machine verbs: ${JSON.stringify(look)}`);
+      const order = look.btns.map((b) => b.verb).join(",");
+      if (order !== "new-session-on,browse-files,borrow-web,code") {
+        fail(`acts (d) · the machine page's verbs read ${order} — 开会话, 看文件, 借网, then VS Code`);
+      }
+      const inks = look.btns.map((b) => b.ink);
+      if (look.btns.some((b) => b.box !== `${look.ctl}x${look.ctl}`) || Math.max(...inks) - Math.min(...inks) > 1.5) {
+        fail(
+          `acts (d) · the four verbs are ${look.btns.map((b) => `${b.box}/${b.ink}`).join(", ")} — one \`ctl-md\` box, ` +
+            "the painted marks within a pixel and a half (components/Toolbar: the VS Code mark at 16 against the glyphs' 24)",
+        );
+      }
+      await press('[data-main] [data-region-head] [data-verb="code"]');
+      if (!(await until(3_000, async () => (await page.locator("[data-code-dialog] [data-code-consent]").count()) === 1))) {
+        fail("acts (d) · the first press on a machine whose editor has no server raised no consent — the workspace's flow asks first");
+      } else {
+        const before = codeOpened.length;
+        const popped = new Promise((r) => page.once("popup", r));
+        await press("[data-code-go]");
+        const popup = await Promise.race([popped, wait(4_000).then(() => null)]);
+        const asked = codeOpened.slice(before);
+        const lit = await page.locator('[data-main] [data-region-head] [data-verb="code"]').getAttribute("data-on");
+        console.log(`acts (d) · VS Code: asked ${JSON.stringify(asked)}, popup ${popup === null ? "none" : "one"}, lit ${lit}`);
+        if (asked.length !== 1 || asked[0].dir !== "" || (look.machine !== null && asked[0].machine !== look.machine)) {
+          fail(
+            `acts (d) · saying yes asked code_open ${JSON.stringify(asked)} — once, for ${look.machine}, with no folder ` +
+              "(「打开这台机器的 VS Code，不指定目录」, khor_gui_core::code::open with an empty dir)",
+          );
+        }
+        if (popup === null || lit !== "true") {
+          fail(`acts (d) · saying yes opened ${popup === null ? "no" : "a"} window and left the switch ${lit} — a window, lit while it is open`);
+        }
+        await popup?.close().catch(() => {});
+      }
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
+  }
+  } // acts
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

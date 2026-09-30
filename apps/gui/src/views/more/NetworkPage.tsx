@@ -34,7 +34,7 @@
 // (`Node::leave`) rather than this page's — a page that grew its own
 // would be two rules about one irreversible act, and the one that
 // drifts is the one nobody runs.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 import {
   fetchAbout,
@@ -62,7 +62,6 @@ const DOT = " · ";
 export function NetworkPage({
   devices,
   onClose,
-  actions,
   onChanged,
 }: {
   /** The shell's own polled table — **not fetched again here**. Two
@@ -70,10 +69,10 @@ export function NetworkPage({
       different names for one machine (`IdentityPage`'s rule). */
   devices: DeviceRow[];
   onClose: () => void;
-  /** 邀请设备… / 加入网络… for the narrow face, whose only head is this
-      page's own — wide puts them in R0 (`App`), where every page's
-      buttons are. */
-  actions?: ReactNode;
+  // ⚠️ 墓碑 (2026-09-30): `actions` stood here — 邀请设备… / 加入网络…,
+  // seated at R0's right end (the narrow head's end on a phone). They are
+  // the machines landing's ＋ and nowhere else now (10-layout 「一个动作
+  // 只有一个家」), so this page's head holds only its way out.
   /** The device table changed under every surface on screen — the shell
       re-reads it (`App`'s `refresh`, the same one a forget gets). */
   onChanged: () => void;
@@ -125,7 +124,6 @@ export function NetworkPage({
     <MoreFrame
       page="network"
       onClose={onClose}
-      actions={actions}
       // Whether this machine is talking and to how many — the status
       // group's two facts in one line, counted the same way.
       subtitle={

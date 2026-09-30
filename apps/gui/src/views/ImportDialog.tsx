@@ -143,7 +143,7 @@ export function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent sheet data-import-dialog>
+      <DialogContent form data-import-dialog>
         <DialogHeader>
           <DialogTitle>{gui.import_title}</DialogTitle>
         </DialogHeader>
@@ -283,6 +283,9 @@ export function ImportDialog({
           )}
         </div>
         <DialogFooter>
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
+            {gui.delete_keep}
+          </Button>
           <Button variant="primary" data-import-go disabled={picked.size === 0 || going} onClick={go} className="min-h-touch">
             {gui.import_go(picked.size)}
           </Button>

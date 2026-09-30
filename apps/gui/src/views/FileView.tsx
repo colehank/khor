@@ -1522,7 +1522,10 @@ function Sheet({
         // ("pre")`, which is the number column — and reported no
         // overlap against the old overlay too, so the assertion passed
         // on the behaviour it was written to forbid (2026-09-13).
-        data-sheet
+        // `data-file-text`, not `data-sheet` (2026-09-30): the retired R0
+        // sheet wore that same name, and 「no `data-sheet` anywhere」 is
+        // now a gate (`check-face` §13 (b)).
+        data-file-text
         // Hidden from a screen reader when the textarea is there: the
         // two hold the same words, and read twice they are gibberish.
         aria-hidden={edit || undefined}

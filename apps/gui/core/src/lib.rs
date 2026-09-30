@@ -16,6 +16,7 @@ pub mod code;
 pub mod files;
 pub mod git;
 pub mod import;
+pub mod qr;
 pub mod recents;
 pub mod tabs;
 pub mod term;
@@ -1596,6 +1597,12 @@ pub fn reset_identity(root: &Path, name_typed: &str) -> Result<(), String> {
 pub struct Ticket {
     pub token: String,
     pub minutes: u32,
+    /// **The same token as a QR code** (2026-09-30, the owner: 「邀请
+    /// 设备显示两个内容：现在的 token，和一个二维码」). Encoded from
+    /// `token` right here, so the picture and the string cannot be two
+    /// different invites. `None` only when the token is too long for any
+    /// QR version — the string is still the whole invite then.
+    pub qr: Option<qr::Qr>,
 }
 
 /// 接管 (批C): the chat face becomes the session's one body — the node
@@ -2008,8 +2015,10 @@ pub async fn open_term_on(
 /// (the bridge and the app each start `serve` on their own thread), so
 /// the GUI can issue a real ticket without a terminal.
 pub fn invite(root: &Path) -> Result<Ticket, String> {
+    let token = open(root)?.invite()?;
     Ok(Ticket {
-        token: open(root)?.invite()?,
+        qr: qr::encode(&token),
+        token,
         minutes: khor_node::link::invite_window_minutes(),
     })
 }

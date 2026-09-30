@@ -611,7 +611,7 @@ aside[data-side] {
 }
 
 [data-md] span[style*="--shiki"],
-[data-sheet] span[style*="--shiki"] {
+[data-file-text] span[style*="--shiki"] {
   color: var(--shiki-light);
   text-decoration: var(--shiki-light-text-decoration, inherit);
 }
@@ -628,7 +628,7 @@ aside[data-side] {
 }
 
 :root[data-theme="dark"] [data-md] span[style*="--shiki"],
-:root[data-theme="dark"] [data-sheet] span[style*="--shiki"] {
+:root[data-theme="dark"] [data-file-text] span[style*="--shiki"] {
   color: var(--shiki-dark);
   text-decoration: var(--shiki-dark-text-decoration, inherit);
 }

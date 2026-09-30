@@ -43,3 +43,10 @@
 - `--git-mark` 和 `--day-unwatched` 在 `tokens.css` 里是 `color-mix(...)`，这套 token 格式读不了函数嵌套，改写成了等价的 `rgba()` 字面值。
 - `--cw-*`（进程表每一列的宽度）、`--part-*`、`--top-*`、`--tip-cmd-max` 这些只服务一张表的尺寸没有收进来：它们是那张表的实现细节，不是系统级的东西。要改就在 `tokens.css` 里改。
 - `--seat-menu-inset` `--menu-inset` `--side-inset` 是从别的值算出来的，留在 `tokens.css`。
+
+## 2026-09-30 撤掉的两样（没有 token 变）
+
+D7–D10 那一行里的「sheet + R0 右端按钮」，这一天负责人撤了两半，都没动 `tokens.css`：
+
+- **R0 右端按钮 → 一个动作一个家（D9 改写）**：会让新东西出现的动作只在 L0 的 ＋（两个以上落菜单，宽窄一样），R0 右端只放打开的那一样东西的动词。`PageActions` 删了；会话、机器、额度三个总览的 R0 右端是空的，网络页只剩 ×。
+- **sheet → 一种弹窗（D10 改写）**：`DialogContent` 的 `sheet` 变体、`data-sheet`、角上的 × 都删了；表单是居中的对话框，`DialogContent form` 宽 32rem（就是 sheet 原来的 `max-w-lg`，写在 `ui/dialog.tsx` 里，`ui/` 在 `check-px` 的白名单里，所以没有新 token）、按在外面不关。`ui/sheet-form.tsx` 改名 `ui/form-grid.tsx`（`FormGrid`）。文件视图那张 `<pre>` 以前也叫 `data-sheet`，改叫 `data-file-text`，好让「`data-sheet` 为零」这道门量得准。

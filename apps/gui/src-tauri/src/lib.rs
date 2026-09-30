@@ -2126,7 +2126,7 @@ async fn open_code_window(
 async fn open_code_window(machine: String, url: String, title: String) -> Result<(), String> {
     let _ = (machine, url, title);
     // A phone has no second window to put an editor in, and the face
-    // draws no switch there anyway (`views/WorkspacePane`).
+    // draws no switch there anyway (`components/CodeWindow`).
     Err("no windows here".into())
 }
 

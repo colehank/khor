@@ -5,7 +5,7 @@
 // before a character is typed — no recent places, no home shortcut, no
 // tree to walk — and what is offered after is the one thing a shell's
 // Tab would offer: the directories under what has been typed so far, on
-// the machine the sheet is pointed at.
+// the machine the dialog is pointed at.
 //
 // **Completion, not validation.** A machine that is slow, unreachable or
 // refuses the listing means no suggestions and nothing else: the box
@@ -14,7 +14,7 @@
 // head says why a check here would be a third opinion).
 //
 // **One listing per parent, per opening.** The cache lives as long as
-// this component, and every sheet that draws it unmounts it on close, so
+// this component, and every dialog that draws it unmounts it on close, so
 // a directory made since the last opening is listed afresh while typing
 // back and forth over one parent asks once.
 import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
@@ -195,9 +195,9 @@ export function PathField({
               onSubmit?.();
             }
           } else if (open && e.key === "Escape") {
-            // The sheet's own Escape stands down while this is open
+            // The dialog's own Escape stands down while this is open
             // (`ui/dialog`, `aria-expanded`), so the first Escape
-            // closes the list and the second the sheet.
+            // closes the list and the second the dialog.
             setShut(true);
           }
         }}

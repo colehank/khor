@@ -9,10 +9,10 @@
 //
 //   - `plain` — a settings row's trailing control (`PopupRow`): clear
 //     ground, `fill` under the pointer, as wide as its value.
-//   - `field` — a row of a form in a sheet (新会话's 目标机器, 导入's two
+//   - `field` — a row of a form in a dialog (新会话's 目标机器, 导入's two
 //     filters): the `fill` ground a search field and a segmented
 //     control's track wear, `radius-sm`, as wide as the column, so the
-//     sheet's controls read as one family and the ⌃⌄ stands at the
+//     dialog's controls read as one family and the ⌃⌄ stands at the
 //     field's end where a person looks for it.
 //
 // `data-popup-button` is on the drawn box and `data-popup-value` on the
