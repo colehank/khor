@@ -795,6 +795,83 @@ try {
     }
   }
 
+  // ── a picked row in a floating list wears one ink (2026-09-30) ─────
+  //
+  // The ⌘K hits mark the picked row with `--fill-strong` — the block a
+  // selected list row wears — and kept its second line and its kind word
+  // in `--muted-foreground` on it. A selected row does not
+  // (README 颜色「选中的行上没有…第二、三层墨」), because on that block
+  // the second ink falls under 4.5; the popover went a step lighter on
+  // the dark theme to float over the grey frame, and there it read 4.11.
+  // Every line of the picked hit is read against the block it stands on,
+  // composited down to the popover, both themes. **Red before the fix**
+  // (the dark note and kind word, 4.11).
+  {
+    await page.route("**/find", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify([
+          { kind: "session", id: "tui/palette-term", label: "palette-term", note: "gate · /home/gate/work" },
+          { kind: "machine", id: "palette-machine", label: "palette-machine", note: "a second line" },
+        ]),
+      }),
+    );
+    // Off the terminal first: its screen holds the keyboard, and the
+    // question here is the hits, not who hears ⌘K inside a pty.
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await wait(400);
+    for (const scheme of ["light", "dark"]) {
+      await flipTheme(page, scheme);
+      await wait(300);
+      await page.keyboard.press("Meta+k");
+      const deadline = Date.now() + 3_000;
+      while ((await page.locator("[data-search-box]").count()) === 0 && Date.now() < deadline) await wait(100);
+      if ((await page.locator("[data-search-box]").count()) === 0) {
+        fail(`${scheme}: probe dead — ⌘K opened no [data-search-box]`);
+        continue;
+      }
+      await page.locator("[data-search-box]").fill("palette");
+      const rowsBy = Date.now() + 3_000;
+      while ((await page.locator('[data-search-row][data-on="true"]').count()) === 0 && Date.now() < rowsBy) await wait(100);
+      const got = await page.evaluate(() => {
+        const row = document.querySelector('[data-search-row][data-on="true"]');
+        if (!row) return null;
+        const layers = [];
+        for (let e = row; e; e = e.parentElement) {
+          const c = getComputedStyle(e).backgroundColor;
+          if (c && c !== "rgba(0, 0, 0, 0)" && c !== "transparent") layers.push(c);
+          if (e.matches("[data-search-rows]")) break;
+        }
+        const texts = [...row.querySelectorAll("*"), row]
+          .filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim() !== ""))
+          .filter((el) => el.getBoundingClientRect().width > 0)
+          .map((el) => ({ text: el.textContent.trim().slice(0, 24), color: getComputedStyle(el).color }));
+        return { layers, texts };
+      });
+      await page.keyboard.press("Escape");
+      await wait(200);
+      if (!got || got.texts.length < 2) {
+        fail(`${scheme}: probe dead — the picked ⌘K hit showed ${got ? got.texts.length : 0} piece(s) of text; two hits with a note were routed in`);
+        continue;
+      }
+      let ground = rgb(got.layers.at(-1));
+      for (const c of [...got.layers].reverse().slice(1)) ground = flatten(parse(c), ground);
+      const read = got.texts.map((x) => ({ ...x, ratio: contrast(flatten(parse(x.color), ground), ground) }));
+      console.log(
+        `${scheme} · picked ⌘K hit: ground ${ground.map((v) => Math.round(v)).join(",")}, ` +
+          read.map((x) => `${JSON.stringify(x.text)} ${say(x.ratio)}`).join(", "),
+      );
+      for (const x of read) {
+        if (x.ratio < TEXT_FLOOR) {
+          fail(
+            `${scheme} · picked ⌘K hit: ${JSON.stringify(x.text)} reads ${say(x.ratio)} on its block, under ${TEXT_FLOOR} — ` +
+              "a picked row wears one ink, like a selected one (app.css)",
+          );
+        }
+      }
+    }
+  }
+
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
   if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, a row reads on the left block's ground, and a selected row reads in front and behind");
 } catch (e) {

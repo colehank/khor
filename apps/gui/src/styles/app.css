@@ -289,6 +289,20 @@ input[type="search"]::-webkit-search-decoration {
 [data-side-row][data-selected="true"] [data-word-text] {
   color: var(--foreground) !important;
 }
+
+/* **A picked row in a floating list is a chosen row, and wears one ink
+   too** (2026-09-30). The ⌘K hits, a box's completions, the slash
+   commands and the import list mark the picked row with the same
+   `--fill-strong` a selected list row wears — and kept their second
+   line in `--muted-foreground` on it. That read 4.52 on the dark
+   popover when the popover was #242422; one step lighter, to float over
+   the grey frame, it read 4.11. The rule a selected row already keeps
+   (README 颜色「选中的行上没有…第二、三层墨」) is the fix, not a lighter
+   block: `check-palette` reads a picked hit's every line against it. */
+:is([data-search-row], [data-omni-item], [data-slash-item], [data-import-row])[data-on="true"] {
+  --muted-foreground: var(--foreground);
+  --tertiary: var(--foreground);
+}
 :root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-side-title] {
   font-weight: var(--text-headline--font-weight);
 }

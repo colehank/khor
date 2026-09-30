@@ -31,6 +31,7 @@
 | 窄档的标签切换器那一屏也有退路：窗口第一行是「‹」加它的搜索框，「‹」回到前面那个标签 | `check-face` 窄档标签数那一段：第一行正好一个「‹」，按下去切换器收起、落回会话详情（2026-09-28，旧代码上没有这一颗） |
 | 浮层一种语言：`popover` + `float` + `radius-lg`；阴影只有 `float`（和槽里那一颗的 `knob`） | `check-face` 4J (c) 静态读 `src/` 每个文件（旧代码上 14 处：五样 `shadow-sm/md/lg`、三处 `rounded-md` 的菜单、三处 `popover` 不浮）；4I 在暗色里量真的 sheet、对话框、右键菜单、搜索结果、框下补全的阴影和圆角（旧代码搜索结果、补全是 8 px）。例外三处在门里点名打印 |
 | 分段控件选中的那一段是槽里浮起来的一块面：比槽亮 ≥ 4 L\*，上面的字 ≥ 4.5，两个主题、sheet 和板两种底 | `check-palette`（拿 `card` 当面时暗色红过：-12.29 / -7.51 L\*） |
+| **浮层里选中的一行只有一种墨**（2026-09-30）：⌘K 结果、框下补全、斜杠命令、导入列表里选中（`fill-strong`）的那一行，和列表选中行一样，第二行、类别词都换成 `ink` | `check-palette`「a picked row wears one ink」：路由两条命中，⌘K 选中第一条，每段字对它合成后的底量，两主题（新浮层值上拿掉 `app.css` 那条规则时红：暗色第二行和「会话」4.11） |
 | 界面的字不能拖选；读的、抄的地方能（见下「选字与手」） | `check-face` §11a：竖栏、第一行、列表行的标题和副标题、标签、R0 的 computed `user-select` 是 `none`；对话、Markdown、代码、输入框是 `text`，行号和文件树仍是 `none`（2026-09-28，旧代码上先红过） |
 | 手指形光标只给正文里的链接 | `check-face` 第 3 节每一站、每种姿势：链接以外任何元素 computed `cursor: pointer` 都红，报出写在哪个文件；§11b 再走一遍对话、设置、工作区（旧代码上 77 处红） |
 | 灰掉的控件上也是箭头，不是 `not-allowed` 那个带斜杠的圆 | `check-face` §11b：每一站读每个元素的 computed `cursor`，`not-allowed` 就红；再静态读 `src/` 每个文件的 `cursor-not-allowed` / `cursor: not-allowed`（2026-09-28，旧代码上三处红：`Switch`、`Input`、`Textarea`） |
