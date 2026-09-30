@@ -95,8 +95,10 @@ export function MoreFrame({
       wide face, one screen back to 更多's list on the narrow one (the
       shell decides which, `App` `leaveMorePage`). */
   onClose: () => void;
-  /** The page's own buttons (D9) — 网络's 邀请设备… / 加入网络…, 安全's
-      立即锁定. **One mechanism on both faces** (`PageAction`): at R0's
+  /** The page's own buttons (D9) — verbs on what the page is about, never
+      an act that makes something new (those are a landing's ＋, 2026-09-30;
+      网络's 邀请设备… / 加入网络… left on that day): 安全's 立即锁定.
+      **One mechanism on both faces** (`PageAction`): at R0's
       right end on the wide face, at the end of the page's head in the
       window's first row on the narrow one (`NarrowHead`). */
   actions?: ReactNode;

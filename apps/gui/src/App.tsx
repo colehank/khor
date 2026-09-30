@@ -45,7 +45,7 @@ import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
-import { PageActions, PaneBar, type PaneAction } from "@/components/PaneBar";
+import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
 import {
@@ -137,7 +137,7 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
     leaving a line is the wizard's first kind now (`NewSessionDialog`),
     one door for every kind of session. */
-type Sheet = "new" | "import" | "invite" | "join" | "ws-add" | null;
+type PlusDialog = "new" | "import" | "invite" | "join" | "ws-add" | null;
 
 const POLL_MS = 2000;
 /**
@@ -415,7 +415,7 @@ export default function App() {
    *
    * **Held at the very top of the shell because of what a lock has to
    * be able to do**: return the lock screen *instead of* everything
-   * below, so a locked face has no list, no conversation and no sheet
+   * below, so a locked face has no list, no conversation and no dialog
    * in its document at all (「卸掉不是盖住」). Every hook in this
    * component still runs — the early return is at the foot of the
    * function, where React can survive it — but nothing any of them
@@ -510,7 +510,7 @@ export default function App() {
   // 退出时还有草稿要拦 (工作区第五轮 第 39 条). Two roads, one
   // condition, and the condition is `lib/drafts`'s register.
   //
-  // **The app's road prevents the close and puts a sheet up.** Tauri
+  // **The app's road prevents the close and puts a dialog up.** Tauri
   // stops the window as soon as this page is listening at all
   // (`onQuitRequested`), so the listener is installed for the life of
   // the app and always answers — a listener that came and went is a
@@ -520,7 +520,7 @@ export default function App() {
   // thing.** A page cannot put its own dialog in front of a tab
   // closing; all it can do is ask the browser to ask, in the browser's
   // own words, which is the whole of what the web gives. So there is no
-  // sheet there and the wording is not khor's — what the two share is
+  // dialog there and the wording is not khor's — what the two share is
   // the condition and nothing else.
   const [quitting, setQuitting] = useState<number | null>(null);
   useEffect(() => {
@@ -543,7 +543,7 @@ export default function App() {
       window.removeEventListener("beforeunload", leaving);
     };
   }, []);
-  // The sheet on screen counts again while it is up, so saving the last
+  // The dialog on screen counts again while it is up, so saving the last
   // draft from behind it takes it down rather than leaving a stale
   // number in front of somebody.
   useEffect(() => {
@@ -655,16 +655,16 @@ export default function App() {
   // look at this list.
   const [words, setWords] = useState<Record<Landing, string[]>>(storedWordsAll);
   const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
-  const [sheet, setSheet] = useState<Sheet>(null);
+  const [dialog, setDialog] = useState<PlusDialog>(null);
   /** Which machine the wizard opens with picked — the machine card's
       开会话 names one (2026-09-06); the sessions pane's "+" names none,
       which the wizard reads as this machine. Set together with the
-      sheet and never on its own, so a card's pick cannot outlive the
+      dialog and never on its own, so a card's pick cannot outlive the
       opening it was made for. */
   const [newSessionOn, setNewSessionOn] = useState("");
   /** …and which directory. The workspace column's 「+」 names its
       project's (工作区批⑩); every other door names none, which the
-      wizard reads as that machine's home. Set together with the sheet
+      wizard reads as that machine's home. Set together with the dialog
       for `newSessionOn`'s reason. */
   const [newSessionAt, setNewSessionAt] = useState("");
   /** Bumped when this shell has changed the workspace table from
@@ -684,18 +684,18 @@ export default function App() {
     setNewSessionOn(machine);
     setNewSessionAt(dir);
     setNewSessionInPlace(inPlace);
-    setSheet("new");
+    setDialog("new");
   }, []);
   /** Whether the open wizard was started from a workspace's own column,
       and the id it left there. **Two pieces of state and not one**: the
-      first is true while the sheet is up and the second outlives it,
+      first is true while the dialog is up and the second outlives it,
       which is what the column reads. */
   const [newSessionInPlace, setNewSessionInPlace] = useState(false);
   const [openedInWs, setOpenedInWs] = useState<string | null>(null);
   /**
    * Which page behind 「…」 or the avatar is open, if any (docs/MORE.md).
    *
-   * **One value for four pages, and it is not a `Sheet`.** Those three
+   * **One value for four pages, and it is not a `PlusDialog`.** Those three
    * are the "+" menu's dialogs and belong to a pane; these are places
    * that take the whole region beside the rail. It is also not a
    * `Landing`, for the reason `Mark` gives about itself: a landing is a
@@ -1286,16 +1286,16 @@ export default function App() {
   const sessionActions: PaneAction[] = [
     // First, because opening a session is the pane's first act
     // (会话身份批B: 建 session 是第一动作).
-    // Every one of these opens a sheet, so each wears the ellipsis
+    // Every one of these opens a dialog, so each wears the ellipsis
     // (components/Button:「还会再问一次的动作，文案带省略号」) — the
-    // `-ask` keys; the sheet's own title keeps the bare word.
+    // `-ask` keys; the dialog's own title keeps the bare word.
     { key: "new", label: gui.new_session_ask, onSelect: () => openNewSession() },
     // What khor found and has not put on the list (docs/SHELL.md 第八轮).
-    { key: "import", label: gui.import_sessions_ask, onSelect: () => setSheet("import") },
+    { key: "import", label: gui.import_sessions_ask, onSelect: () => setDialog("import") },
   ];
   const deviceActions: PaneAction[] = [
-    { key: "invite", label: gui.make_a_ticket_ask, onSelect: () => setSheet("invite") },
-    { key: "join", label: gui.join_with_a_ticket_ask, onSelect: () => setSheet("join") },
+    { key: "invite", label: gui.make_a_ticket_ask, onSelect: () => setDialog("invite") },
+    { key: "join", label: gui.join_with_a_ticket_ask, onSelect: () => setDialog("join") },
   ];
 
   // Whether the open landing is one the narrow bar folded away — the
@@ -1586,7 +1586,7 @@ export default function App() {
     closePage: morePage !== null ? () => setMorePage(null) : null,
     lock: lock.facts?.on ? lock.now : null,
     find: () => window.dispatchEvent(new Event(FIND_ALL)),
-    import: () => setSheet("import"),
+    import: () => setDialog("import"),
   });
 
   const sessions = landing === "sessions";
@@ -1754,7 +1754,7 @@ export default function App() {
             ? {
                 label: gui.ws_add,
                 mark: "data-ws-add",
-                onSelect: () => setSheet("ws-add"),
+                onSelect: () => setDialog("ws-add"),
               }
             : undefined
         }
@@ -2000,7 +2000,7 @@ export default function App() {
       // 2026-09-28): the workspaces this face opened last, each with its
       // machine, path, branch and last change — the board was a blank
       // slab here. Wide only: on the narrow face the list is the screen.
-      <WorkspacesNow devices={devices} onOpen={openWorkspace} onAdd={() => setSheet("ws-add")} />
+      <WorkspacesNow devices={devices} onOpen={openWorkspace} onAdd={() => setDialog("ws-add")} />
     )
   ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
     // A machine asked for (⌘K) before the device table has answered
@@ -2026,7 +2026,7 @@ export default function App() {
   ) : null;
 
 
-  const sheets = (
+  const dialogs = (
     <>
       {/* 退出时还有草稿 (ruling 39). The app's half — a browser is
           asked by `beforeunload` in its own words and never sees this.
@@ -2042,8 +2042,8 @@ export default function App() {
         onKeep={() => setQuitting(null)}
       />
       <ImportDialog
-        open={sheet === "import"}
-        onOpenChange={(o) => setSheet(o ? "import" : null)}
+        open={dialog === "import"}
+        onOpenChange={(o) => setDialog(o ? "import" : null)}
         // The first one imported is what the person came to see, the
         // way a freshly opened session is (`NewSessionDialog` below).
         onImported={(ids) => {
@@ -2054,9 +2054,8 @@ export default function App() {
         }}
       />
       <NewSessionDialog
-        open={sheet === "new"}
-        onOpenChange={(o) => setSheet(o ? "new" : null)}
-        onImport={() => setSheet("import")}
+        open={dialog === "new"}
+        onOpenChange={(o) => setDialog(o ? "new" : null)}
         machine={newSessionOn}
         dir={newSessionAt}
         // The freshly-opened session is what the person came to see —
@@ -2087,15 +2086,15 @@ export default function App() {
           still standing where they pressed, and the path they typed is
           still in the box to fix (`components/DirPicker`). */}
       <DirPicker
-        open={sheet === "ws-add"}
-        onOpenChange={(o) => setSheet(o ? "ws-add" : null)}
+        open={dialog === "ws-add"}
+        onOpenChange={(o) => setDialog(o ? "ws-add" : null)}
         onPick={async (pick) => {
           await wsAdd(pick.machine, pick.path);
           setWsAdded((n) => n + 1);
         }}
       />
-      <InviteDialog open={sheet === "invite"} onOpenChange={(o) => setSheet(o ? "invite" : null)} />
-      <JoinDialog open={sheet === "join"} onOpenChange={(o) => setSheet(o ? "join" : null)} />
+      <InviteDialog open={dialog === "invite"} onOpenChange={(o) => setDialog(o ? "invite" : null)} />
+      <JoinDialog open={dialog === "join"} onOpenChange={(o) => setDialog(o ? "join" : null)} />
       {/* The root's words, asked for once on the machine that made it. */}
       <RootWordsDialog />
       {/* (设置 was the fourth thing here — a dialog — until 2026-09-19.
@@ -2124,12 +2123,10 @@ export default function App() {
       <NetworkPage
         devices={devices}
         onClose={leaveMorePage}
-        // 网络's own buttons, 邀请设备… / 加入网络… (the machines
-        // overview's two). **One mechanism on both faces**: the page
-        // hands them to its frame, which seats them with `PageAction` —
-        // at R0's right end on the wide face, at the end of the page's
-        // head in the window's first row on the narrow one.
-        actions={<PageActions actions={deviceActions} />}
+        // ⚠️ 墓碑 (2026-09-30): 网络 carried 邀请设备… / 加入网络… at R0's
+        // right end, the machines landing's two acts a second time. The
+        // owner: 「机器页点 ＋ 就是邀请设备和加入网络，更多里的网络页就不要
+        // 有右上方两个邀请、加入了」 — they are ＋'s on 机器, and only there.
         onChanged={() => {
           // The device table is the thing that changed, and every
           // surface on this screen paints off it — the rail's foot, the
@@ -2467,7 +2464,7 @@ export default function App() {
                       : list}
           </div>
           {rail}
-          {sheets}
+          {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       ) : (
@@ -2607,17 +2604,13 @@ export default function App() {
                   <Region
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
-                    // The machine's verbs while one is open; with nothing
-                    // picked, the landing's own acts — 新会话 / 导入 on
-                    // 会话, 邀请 / 加入 on 机器 (D9: page buttons are R0's).
-                    actions={
-                      machineVerbs ??
-                      (sessions ? (
-                        <PageActions actions={sessionActions} />
-                      ) : landing === "devices" ? (
-                        <PageActions actions={deviceActions} />
-                      ) : undefined)
-                    }
+                    // The open machine's verbs, and nothing else: with
+                    // nothing picked R0's right end is empty. ⚠️ 墓碑
+                    // (2026-09-30): the overviews stood 新会话… 导入… /
+                    // 邀请设备… 加入网络… here, a second copy of what ＋
+                    // offers; an act that makes something lives on ＋
+                    // alone (10-layout 「一个动作只有一个家」).
+                    actions={machineVerbs}
                     flush={landing === "workspaces" && openWs !== null}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
@@ -2634,7 +2627,7 @@ export default function App() {
           )}
           </main>
           </div>
-          {sheets}
+          {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       )}

@@ -282,10 +282,12 @@ try {
     await wait(200);
     await page.locator('[data-rail-item][data-landing="devices"]').click();
     await wait(400);
-    // 用邀请加入 is a button at R0's right end on the machines overview
-    // (2026-09-26: ＋ is one act, the landing's other acts live in R0).
-    const joinButton = page.locator('[data-new-item="join"]');
-    if ((await joinButton.count()) !== 1) throw new Error("probe dead: no 用邀请加入 button at R0's right end");
+    // 加入网络… is on the machines landing's ＋ and nowhere else
+    // (2026-09-30, 「一个动作只有一个家」): two acts, so ＋ drops a menu.
+    await page.locator("[data-side-head] [data-pane-new]").click();
+    await wait(300);
+    const joinButton = page.locator('[role="menu"] [data-new-item="join"]');
+    if ((await joinButton.count()) !== 1) throw new Error("probe dead: no 加入网络… on the machines landing's ＋ menu");
     await joinButton.click();
     await wait(600);
     if ((await join.count()) !== 1) throw new Error("probe dead: no primary button in the join dialog");

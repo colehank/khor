@@ -98,7 +98,6 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   onOpened,
-  onImport,
   machine: picked = "",
   dir: at = "",
 }: {
@@ -106,10 +105,9 @@ export function NewSessionDialog({
   onOpenChange: (open: boolean) => void;
   /** The freshly-minted session id — the caller may select its row. */
   onOpened: (id: string) => void;
-  /** The other way to add a session: take one khor found (导入). Offered
-      here because ＋ in L0 is one act (components/SideHead「要选类型就让它
-      落下一个 sheet」) and a strip of tabs leaves R0 no room for it. */
-  onImport?: () => void;
+  // ⚠️ 墓碑 (2026-09-30): `onImport` stood here — 导入… as a button in
+  // this dialog's foot, offered because ＋ was one act then. ＋ is a menu
+  // of 新会话… and 导入… now, and an act has one home (10-layout).
   /** 在哪台, answered before the dialog opens — the machine card's
       开会话 names the card's machine (2026-09-06). Empty is the "+"
       menu's opening and means this machine, as it always has. */
@@ -638,11 +636,6 @@ export function NewSessionDialog({
           )}
         </SheetForm>
         <DialogFooter>
-          {onImport && kind !== "tell" && (
-            <Button data-new-item="import" className="mr-auto" onClick={onImport}>
-              {gui.import_sessions_ask}
-            </Button>
-          )}
           {kind === "tell" ? (
             <Button variant="primary" data-tell-send disabled={!text.trim() || opening} onClick={send}>
               {gui.send_it}

@@ -44,7 +44,7 @@ import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
-import { PageActions, PaneBar, type FilterOption } from "@/components/PaneBar";
+import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { PageSubtitle, Region } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
@@ -967,8 +967,10 @@ export function QuotaLanding({
   const [board, setBoard] = useKept<AccountRing[] | null>("quota.board", null);
   const [picked, setPicked] = useKept<string | null>("quota.picked", null);
   const [groupBy, setGroupBy] = useState<string>(storedGroup);
-  // The landing's one act: ＋ in L0 and a button at R0's right end (D9).
-  // It opens a sheet, so it wears the ellipsis (components/Button).
+  // The landing's one act, and its one home: ＋ in L0, pressed straight
+  // through (2026-09-30, the owner: 「订阅页右上角不要有登记按钮，这个功能
+  // 属于搜索框旁边的 ＋」; ⚠️ 墓碑: it stood at R0's right end as well).
+  // It opens a dialog, so it wears the ellipsis (components/Button).
   const quotaActions = [{ key: "register", label: gui.accounts_register_ask, onSelect: () => setRegistering(true) }];
   const [registering, setRegistering] = useState(false);
   /** Rows whose last pin attempt did not take — the same shape `App`
@@ -1943,7 +1945,6 @@ export function QuotaLanding({
           <Region
             kind="detail"
             title={current?.name ?? gui.accounts_tab}
-            actions={<PageActions actions={quotaActions} />}
             caption={staleSay}
             className="overflow-y-auto"
           >

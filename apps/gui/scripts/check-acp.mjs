@@ -830,12 +830,13 @@ try {
     });
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(700);
-    // The door is R0's page action of that name. Since 2026-09-27
-    // (9fb1833) the wide 「+」 is one act that opens the new-session sheet
-    // itself, and that sheet carries its own 导入 button under the same
-    // `data-new-item="import"` — so an unscoped locator found two, and a
-    // walk through 「+」 would leave the sheet over R0's doors.
-    await page.locator(`[data-region-head] [data-new-item="${door}"]`).click();
+    // The door is the sessions landing's ＋ menu item of that name — its
+    // one home since 2026-09-30 (「一个动作只有一个家」): ＋ holds 新会话…
+    // and 导入…, R0 holds neither, and the new-session dialog no longer
+    // carries an 导入 of its own.
+    await page.locator("[data-side-head] [data-pane-new]").click();
+    await wait(300);
+    await page.locator(`[role="menu"] [data-new-item="${door}"]`).click();
     await wait(400);
     if (attachId !== null) {
       await page.locator("[data-new-session-add-agent]").click();

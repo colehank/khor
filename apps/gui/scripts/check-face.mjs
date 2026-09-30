@@ -2094,8 +2094,10 @@ try {
   // centreline, 2026-09-29), for the same reason and on the same terms.
   // **`FACE_ONLY=filter` walks the machines' and workspaces' filter
   // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
+  // **`FACE_ONLY=acts` walks section 13 alone** (一个动作一个家,
+  // 2026-09-30), for the same reason.
   walk: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -2423,6 +2425,16 @@ try {
     return true;
   };
   const press = (sel) => pressNth(sel, 0);
+  /** An act on the open landing's ＋ — its one home since 2026-09-30
+      (「一个动作只有一个家」): pressed straight through where the landing
+      has one act, picked off the menu ＋ drops where it has two or more
+      (会话: 新会话… 导入…; 机器: 邀请设备… 加入网络…). True when it got
+      there. */
+  const pressNew = async (key) => {
+    if (!(await press("[data-side-head] [data-pane-new]"))) return false;
+    if ((await page.locator('[role="menu"]').count()) === 0) return true;
+    return press(`[role="menu"] [data-new-item="${key}"]`);
+  };
   // A settings value, chosen the way a person chooses it since round 17:
   // through the row's native select (`components/settings/PopupRow`).
   // True when the select was there to choose from.
@@ -5554,7 +5566,7 @@ try {
 
   // The wizard's box: empty on the 「+」, and completing the same way.
   await press(rail("sessions"));
-  await press("[data-side-head] [data-pane-new]");
+  await pressNew("new");
   const wizard = await until(5_000, async () =>
     (await page.locator("[data-new-session-dir]").count()) === 1,
   );
@@ -12265,20 +12277,22 @@ try {
         }
       }
 
-      // ── 网络: a page of settings rows, its two acts in R0 ──────────
+      // ── 网络: a page of settings rows, no act that makes anything ──
       //
       // 2026-09-28, the owner: the map lives on the machines overview and
       // nowhere else (10-layout 「机器 → 那张图」), and 网络 is a settings
       // page like its siblings — 状态 (本机 · 已连接的机器 · 暂停同步),
-      // 中继 (使用中 · 自己的中继 · 只使用自己的中继), 离开网络… — with
-      // 邀请设备… / 加入网络… as the page's own buttons at R0's right end
-      // (D9; the narrow face has no R0 and they sit in the page's head).
-      // It superseded 2026-09-20's 「网络就搞成地图」.
+      // 中继 (使用中 · 自己的中继 · 只使用自己的中继), 离开网络…. It
+      // superseded 2026-09-20's 「网络就搞成地图」. **邀请设备… / 加入网络…
+      // left its head on 2026-09-30** (「机器页点 ＋ 就是邀请设备和加入网络，
+      // 更多里的网络页就不要有右上方两个邀请、加入了」): they are the machines
+      // landing's ＋ and nowhere else, so neither the head nor the body
+      // holds one (section 13 reads the ＋).
       //
       // **What this reads is that every capability the old page had is
-      // still reachable** — the two pairing doors, the pause round trip,
-      // the relays, leaving — and that the map is not drawn twice. Where
-      // each row sits is the acceptance walk's (30-behavior.md).
+      // still reachable** — the pause round trip, the relays, leaving —
+      // and that the map is not drawn twice. Where each row sits is the
+      // acceptance walk's (30-behavior.md).
       const relaysBefore = relaysAsked.length;
       if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="network"]'))) {
         fail(`probe dead: ${posture} · 「…」 → 网络 did not open`);
@@ -12298,7 +12312,7 @@ try {
         return {
           map: document.querySelectorAll("[data-mandala-map], [data-seat], [data-node-card]").length,
           acts: ["invite", "join"].map((k) => (head ? head.querySelectorAll(`[data-new-item="${k}"]`).length : 0)),
-          // D9: never a row of buttons in the page.
+          // Not in the page either: an act has one home, ＋ on 机器.
           inBody: body ? body.querySelectorAll("[data-new-item]").length : null,
           pause: el.querySelectorAll('[data-net-pause][role="switch"]').length,
           leave: el.querySelectorAll("[data-net-leave]").length,
@@ -12321,10 +12335,10 @@ try {
               "overview only since 2026-09-28 (views/more/NetworkPage)",
           );
         }
-        if (net.acts.join(",") !== "1,1" || net.inBody !== 0) {
+        if (net.acts.join(",") !== "0,0" || net.inBody !== 0) {
           fail(
             `${posture}: 邀请设备… / 加入网络… read ${JSON.stringify(net.acts)} in the page's head and ${net.inBody} ` +
-              "in its body — they are the page's own buttons, at R0's right end and nowhere else (D9)",
+              "in its body — they are the machines landing's ＋ and nowhere else (10-layout, 2026-09-30)",
           );
         }
         if (net.pause !== 1 || net.leave !== 1) {
@@ -13032,7 +13046,7 @@ try {
       // is already open collapses its list, and the 新建 button lives in
       // that list's own head (the helper's own note, 2026-09-02).
       await open("sessions");
-      await press("[data-side-head] [data-pane-new]");
+      await pressNew("new");
       if (!(await until(5_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 1))) {
         return null;
       }
@@ -13623,7 +13637,7 @@ try {
         };
       }, sel);
     const surfaces = [
-      ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
+      ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && pressNew("new")],
       [
         "a dialog (改名…)",
         "[data-identity-rename-dialog]",
@@ -22946,10 +22960,10 @@ try {
       // (b) inside a dialog or sheet: at most one primary.
       // (d) the create forms are sheets hanging from R0.
       const forms = [
-        // ＋ is one act (新会话); 导入 is offered on that sheet
-        // (2026-09-26), since a strip of tabs leaves R0 no room for it.
-        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
-        ["import", "[data-import-dialog]", async () => (await open("sessions")) && (await press("[data-side-head] [data-pane-new]")) && press('[data-new-session-dialog] [data-new-item="import"]')],
+        // Both are the sessions landing's ＋, a menu of the two
+        // (2026-09-30, 「一个动作只有一个家」).
+        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
+        ["import", "[data-import-dialog]", async () => (await open("sessions")) && pressNew("import")],
       ];
       for (const [what, sel, go] of forms) {
         if (!(await go()) || !(await until(4_000, async () => (await page.locator(sel).count()) === 1))) {
@@ -23497,7 +23511,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (process.env.FACE_ONLY === "native" || process.env.FACE_ONLY === "row") break lists;
+  if (["native", "row", "acts"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23881,7 +23895,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (process.env.FACE_ONLY !== "filter") {
+  if (!["filter", "acts"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24174,7 +24188,7 @@ try {
   }
 
   rest: {
-  if (process.env.FACE_ONLY === "row" || process.env.FACE_ONLY === "filter") break rest;
+  if (["row", "filter", "acts"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -24839,6 +24853,148 @@ try {
     console.log(`delete asks · ${offered} 删除 offered off the map`);
   }
   } // rest
+
+  // ── 13) 一个动作一个家 (2026-09-30) ───────────────────────────────
+  //
+  // The owner: 「订阅页右上角不要有登记按钮，这个功能属于搜索框旁边的 ＋。
+  // 类似的冗余不要出现在 app 里：机器页点 ＋ 就是邀请设备和加入网络，更多里
+  // 的网络页就不要有右上方两个邀请、加入了」. What of that a machine can
+  // measure:
+  //
+  //   a. **R0 makes nothing.** On the three overviews (会话, 机器, 额度) and
+  //      on 「…」 → 网络, R0 holds no `data-new-item`; the overviews' right
+  //      end is empty and 网络's holds only its ×. The acts are the ＋
+  //      beside L0's search box: one act is pressed straight through, two
+  //      drop a menu — on the wide face too.
+  //
+  // Red on the code it replaced: R0 held 新会话… 导入… / 邀请设备… 加入网络…
+  // / 登记… and 网络's two, and ＋ on 会话 and 机器 was the first act alone.
+  //
+  // `FACE_ONLY=acts` runs this section alone.
+  acts: {
+  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break acts;
+  {
+    // Rows on 额度, so its landing has a list and the list its ＋.
+    await routeStanding();
+    // A clean screen: no session tab left open by an earlier section
+    // (then R0 would be the strip, not the overview's head), nothing
+    // picked on 机器.
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+
+    // (a) R0 makes nothing.
+    const r0 = () =>
+      page.evaluate(() => {
+        const head = document.querySelector("[data-main] [data-region-head]");
+        if (!head) return null;
+        const shown = (el) => {
+          const b = el.getBoundingClientRect();
+          return b.width > 0 && b.height > 0;
+        };
+        const end = head.querySelector("[data-page-actions]");
+        const name = (b) =>
+          [...b.attributes].find((a) => a.name.startsWith("data-") && !["data-slot", "data-state"].includes(a.name))?.name ??
+          (b.getAttribute("aria-label") || b.textContent.trim());
+        return {
+          tabs: head.querySelectorAll("[data-session-tabs]").length,
+          makes: [...head.querySelectorAll("[data-new-item]")].map((b) => b.getAttribute("data-new-item")),
+          end: end ? [...end.querySelectorAll("button")].filter(shown).map(name) : [],
+        };
+      });
+    const pages = [
+      ["the sessions overview", async () => open("sessions"), []],
+      ["the machines overview", async () => open("devices"), []],
+      ["the 额度 landing", async () => open("quota"), []],
+      [
+        "「…」 → 网络",
+        async () => (await press("[data-rail-more]")) && press('[data-more-open="network"]'),
+        ["data-more-close"],
+      ],
+    ];
+    for (const [where, go, wantEnd] of pages) {
+      if (!(await go())) {
+        fail(`probe dead: acts (a) could not reach ${where}`);
+        continue;
+      }
+      await wait(400);
+      const got = await r0();
+      console.log(`acts (a) · ${where}: ${JSON.stringify(got)}`);
+      if (!got) {
+        fail(`probe dead: acts (a) · ${where} drew no R0`);
+      } else if (got.tabs) {
+        fail(`probe dead: acts (a) · ${where} has session tabs open — R0 is the strip, not the overview's head`);
+      } else {
+        if (got.makes.length) {
+          fail(
+            `acts (a) · R0 on ${where} holds ${JSON.stringify(got.makes)} — an act that makes something lives on the ＋ ` +
+              "beside L0's search box and nowhere else (10-layout, 2026-09-30)",
+          );
+        }
+        if (got.end.join(",") !== wantEnd.join(",")) {
+          fail(
+            `acts (a) · R0's right end on ${where} reads ${JSON.stringify(got.end)}, not ${JSON.stringify(wantEnd)} — ` +
+              "the overviews' is empty and 网络's is its × (components/Toolbar)",
+          );
+        }
+      }
+      if ((await page.locator("[data-more-page]").count()) > 0) await press("[data-more-close]");
+    }
+
+    // (a) every act is on ＋.
+    /** ＋ on the open landing, then its `key` if ＋ dropped a menu.
+        Answers how it went: "menu", "direct", or why it did not. */
+    const plus = async (key) => {
+      const btn = page.locator("[data-side-head] [data-pane-new]");
+      if ((await btn.count()) === 0) return "no ＋ in L0";
+      await btn.first().click();
+      await wait(400);
+      if ((await page.locator('[role="menu"]').count()) === 0) return "direct";
+      const item = page.locator(`[role="menu"] [data-new-item="${key}"]`);
+      if ((await item.count()) === 0) {
+        await page.keyboard.press("Escape");
+        await wait(250);
+        return `${key} is not on ＋'s menu`;
+      }
+      await item.first().click();
+      await wait(400);
+      return "menu";
+    };
+    const forms = [
+      ["sessions", "new", "新会话…", "[data-new-session-dialog]", "menu"],
+      ["sessions", "import", "导入…", "[data-import-dialog]", "menu"],
+      ["devices", "invite", "邀请设备…", "[data-invite-dialog]", "menu"],
+      ["devices", "join", "加入网络…", "[data-join-dialog]", "menu"],
+      ["quota", "register", "登记…", "[data-quota-dialog]", "direct"],
+      ["workspaces", "ws-add", "添加工作区…", "[data-dir-picker]", "direct"],
+    ];
+    for (const [landing, key, word, sel, want] of forms) {
+      if (!(await open(landing))) {
+        fail(`probe dead: acts · could not reach ${landing}`);
+        continue;
+      }
+      await wait(300);
+      const how = await plus(key);
+      const up = await until(3_000, async () => (await page.locator(sel).count()) === 1);
+      if (how !== want || !up) {
+        fail(
+          `acts (a) · ${word} on ${landing}: ＋ went ${JSON.stringify(how)} and the form ${up ? "opened" : "did not open"} — ` +
+            `${want === "menu" ? "two acts, so ＋ drops a menu with this one on it" : "one act, so ＋ is it"} (10-layout, 2026-09-30)`,
+        );
+        await page.keyboard.press("Escape");
+        await wait(300);
+        continue;
+      }
+      await page.keyboard.press("Escape");
+      if (!(await until(2_000, async () => (await page.locator(sel).count()) === 0))) {
+        fail(`acts (a) · Esc left ${word} open`);
+        await page.keyboard.press("Escape");
+      }
+      await wait(250);
+    }
+  }
+  } // acts
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

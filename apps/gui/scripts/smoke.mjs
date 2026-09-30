@@ -1050,6 +1050,14 @@ for line in sys.stdin:
   // inlined because the shape is what says「a landing may or may not
   // browse」, and that is still true of every landing this walks.
   const BROWSE_KIND = { browser: "page" };
+  /** An act on the open landing's ＋, its one home (2026-09-30, 「一个
+      动作只有一个家」): 会话's 新会话… / 导入… and 机器's 邀请设备… /
+      加入网络… are two acts each, so ＋ drops a menu and the act is
+      picked off it. */
+  const plusAct = async (key) => {
+    await page.locator("[data-side-head] [data-pane-new]").click();
+    await page.locator(`[role="menu"] [data-new-item="${key}"]`).click();
+  };
   const openLanding = async (tab) => {
     // Re-clicking the open landing now collapses its list (App.tsx 再点
     // 收起, 2026-09-02; the workspaces landing joined on 2026-09-16 —
@@ -1190,7 +1198,7 @@ for line in sys.stdin:
   if ((await page.locator('[data-device="alpha"]').count()) !== 0) {
     throw new Error("alpha is in the table before pairing — the control is void");
   }
-  await page.locator('[data-new-item="join"]').click();
+  await plusAct("join");
   await page.locator("[data-ticket-input]").fill(ticketA);
   await page.locator("[data-join]").click();
   await until("alpha's row, wearing its own face", 30_000, async () => {
@@ -1219,7 +1227,7 @@ for line in sys.stdin:
 
   // 3) the GUI mints a real ticket — proven by a third machine joining
   //    with it from the CLI, not by the string looking ticket-shaped.
-  await page.locator('[data-new-item="invite"]').click();
+  await plusAct("invite");
   const guiTicket = await until("a ticket from the GUI", 20_000, async () => {
     const err = await page.locator("[data-dialog-error]").count();
     if (err) throw new Error(await page.locator("[data-dialog-error]").innerText());
@@ -1281,7 +1289,7 @@ for line in sys.stdin:
   //    "+" menu's separate door went with the old dialog: pick alpha in
   //    在哪台, pick 留言 in 类型, and the third step is the line itself.
   await assertUntitled("sessions");
-  await page.locator("[data-side-head] [data-pane-new]").click();
+  await plusAct("new");
   await until("the wizard offering alpha", 10_000, async () =>
     (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
   );
@@ -4292,9 +4300,9 @@ for line in sys.stdin:
     throw new Error("the 网络 page is still up after a landing was picked");
   }
 
-  //     Wide: 网络 is rows — the pause switch and the two pairing doors in
-  //     R0 are there (the smoke homes are paired, so 暂停 is drawn), and
-  //     no map.
+  //     Wide: 网络 is rows — the pause switch is there (the smoke homes
+  //     are paired, so 暂停 is drawn), no map, and **no pairing doors in
+  //     R0** (2026-09-30: they are the machines landing's ＋'s alone).
   await page.setViewportSize({ width: 1080, height: 720 });
   await toMesh();
   await until("the 网络 page's rows", 15_000, async () =>
@@ -4304,8 +4312,8 @@ for line in sys.stdin:
     throw new Error("the wide 网络 page draws the map — it lives on the machines overview only");
   }
   for (const door of ["invite", "join"]) {
-    if ((await page.locator(`[data-page-actions] [data-new-item="${door}"]`).count()) !== 1) {
-      throw new Error(`the 网络 page's R0 has no ${door} — its two pairing doors are its page buttons`);
+    if ((await page.locator(`[data-region-head] [data-new-item="${door}"]`).count()) !== 0) {
+      throw new Error(`the 网络 page's R0 has ${door} — an act that makes something is ＋'s alone (10-layout)`);
     }
   }
   await page.locator("[data-region-head] [data-more-close]").click();
@@ -4683,8 +4691,7 @@ for line in sys.stdin:
   if ((await page.locator(`[data-row="${acpOpened}"]`).count()) !== 0) {
     throw new Error(`the stub's conversation ${acpOpened} is open on beta's list before anybody imported it`);
   }
-  await page.locator("[data-side-head] [data-pane-new]").click();
-  await page.locator('[data-new-session-dialog] [data-new-item="import"]').click();
+  await plusAct("import");
   await until("the import panel with all three", 20_000, async () => {
     for (const id of [tmuxRowId, "tui/imp01", acpRow]) {
       if ((await page.locator(`[data-import-row="${id}"]`).count()) !== 1) return false;
@@ -5778,7 +5785,7 @@ for line in sys.stdin:
   const placeRepo = join(SCRATCH, "place-repo");
   mkdirSync(join(placeRepo, "apps/deep"), { recursive: true });
   await openLanding("sessions");
-  await page.locator("[data-side-head] [data-pane-new]").click();
+  await plusAct("new");
   await until("the wizard's 目录 box", 10_000, async () =>
     (await page.locator("[data-new-session-dir]").count()) === 1,
   );
@@ -5816,7 +5823,7 @@ for line in sys.stdin:
   const wizDir = join(SCRATCH, "wizard-cwd");
   mkdirSync(wizDir, { recursive: true });
   await openLanding("sessions");
-  await page.locator("[data-side-head] [data-pane-new]").click();
+  await plusAct("new");
   await page.locator("[data-new-session-dir]").fill(wizDir);
   await page.locator("[data-new-session-name]").fill("wizard-one");
   // The conversation form is the default (the ruling); just create.
@@ -5894,7 +5901,7 @@ for line in sys.stdin:
   const farDir = join(SCRATCH, "far-cwd");
   mkdirSync(farDir, { recursive: true });
   await openLanding("sessions");
-  await page.locator("[data-side-head] [data-pane-new]").click();
+  await plusAct("new");
   await until("the machine row offering alpha", 10_000, async () =>
     (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
   );
@@ -6825,7 +6832,7 @@ for line in sys.stdin:
   // not take over was the one khor opened itself.
   const termDir = join(SCRATCH, "wizard-term-cwd");
   mkdirSync(termDir, { recursive: true });
-  await page.locator("[data-side-head] [data-pane-new]").click();
+  await plusAct("new");
   await page.locator("[data-new-session-dir]").fill(termDir);
   await page.locator("[data-new-session-name]").fill("wizard-term");
   await page.locator("[data-new-session-term]").click();
