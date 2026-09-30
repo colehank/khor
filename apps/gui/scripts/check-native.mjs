@@ -478,6 +478,19 @@ async function langPhase() {
 
 try {
   execFileSync(cliBin, ["config", "set", "lang", "zh"], { env, encoding: "utf8" });
+  // **The first-start prompt, answered before the window opens**
+  // (2026-09-30). A fresh store is the network's first machine, and since
+  // 0e4fcaa the app opens on 「抄下恢复词」 — a dialog whose scrim halves
+  // every colour this gate reads (the light board measured rgb(126,126,125))
+  // and whose `aria-modal` hides the page from the AX walk (「no text field
+  // in the scratch app's page」). So the scratch machine is opened once
+  // from the terminal, which makes its root, and shown its words the way a
+  // person would see them there (`khor root words <this machine>`), which
+  // is what marks them seen. Only this scratch home is touched.
+  const idLine = execFileSync(cliBin, ["id"], { env, encoding: "utf8" }).trim().split("\n").pop() ?? "";
+  const me = idLine.trim().split(/\s+/).slice(1).join(" ");
+  if (!me) throw new Error(`probe dead: \`khor id\` named no machine (${JSON.stringify(idLine)})`);
+  execFileSync(cliBin, ["root", "words", me], { env, encoding: "utf8" });
   setTheme("dark");
   const [id, , , w, h] = await launch();
   console.log(`window ${id}: ${w}×${h}`);
