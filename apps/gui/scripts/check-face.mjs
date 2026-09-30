@@ -24875,6 +24875,13 @@ try {
   //      it is the one the node answered. The fixture is
   //      `khor_gui_core::qr::encode("khor-face-ticket-0930")`, copied from
   //      the encoder — whose own test reads the path back module by module.
+  //   d. **机器页的第四颗** (「机器页也加一个 VS Code 图标，打开这台机器的
+  //      VS Code，不指定目录」): with a machine open whose editor is there,
+  //      R0's verbs read 开会话, 看文件, 借网, VS Code — one `ctl-md` box,
+  //      the painted marks within 1.5 px; the first press asks (the
+  //      workspace's consent, a dialog); yes asks `code_open` once, for
+  //      that machine, with an empty `dir`, and opens a window with the
+  //      switch lit. New, not a fix: no red first (30-behavior).
   //
   // Red on the code it replaced: R0 held 新会话… 导入… / 邀请设备… 加入网络…
   // / 登记… and 网络's two; the new-session, import, join, register and
@@ -25140,6 +25147,85 @@ try {
       await wait(300);
     }
     await page.unroute("**/invite");
+
+    // (d) 机器页的第四颗: that machine's VS Code, no folder. The fixture's
+    // editor is there and has not fetched its server (`ready: false`), so
+    // the first press asks.
+    await page.unroute("**/code_here");
+    await page.route("**/code_here", (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify({ version: "1.137.0", ready: false }) }),
+    );
+    if (!(await open("devices")) || !(await press("[data-list] [data-row-open] >> nth=1"))) {
+      fail("probe dead: acts (d) could not open a machine");
+    } else if (
+      !(await until(5_000, async () => (await page.locator('[data-main] [data-region-head] [data-machine-verbs] [data-verb="code"]').count()) === 1))
+    ) {
+      const verbs = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-main] [data-region-head] [data-machine-verbs] > button")].map((b) => b.getAttribute("data-verb")),
+      );
+      fail(
+        `acts (d) · the machine page's R0 holds ${JSON.stringify(verbs)} — its fourth verb is VS Code, drawn where that machine ` +
+          "has an editor (2026-09-30, 「机器页也加一个 VS Code 图标」; components/CodeWindow)",
+      );
+    } else {
+      const look = await page.evaluate(() => {
+        const root = getComputedStyle(document.documentElement);
+        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-machine-verbs] > button")];
+        const selected = document.querySelector('[data-list] [data-device][data-selected="true"]');
+        return {
+          ctl: Math.round(Number.parseFloat(root.getPropertyValue("--ctl-md"))),
+          machine: selected?.getAttribute("data-device") ?? null,
+          btns: btns.map((b) => {
+            const svg = b.querySelector("svg");
+            let ink = 0;
+            if (svg) {
+              const bb = svg.getBBox();
+              const vb = svg.viewBox.baseVal;
+              const k = svg.getBoundingClientRect().height / (vb.height || 1);
+              ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
+            }
+            const r = b.getBoundingClientRect();
+            return { verb: b.getAttribute("data-verb"), box: `${Math.round(r.width)}x${Math.round(r.height)}`, ink };
+          }),
+        };
+      });
+      console.log(`acts (d) · machine verbs: ${JSON.stringify(look)}`);
+      const order = look.btns.map((b) => b.verb).join(",");
+      if (order !== "new-session-on,browse-files,borrow-web,code") {
+        fail(`acts (d) · the machine page's verbs read ${order} — 开会话, 看文件, 借网, then VS Code`);
+      }
+      const inks = look.btns.map((b) => b.ink);
+      if (look.btns.some((b) => b.box !== `${look.ctl}x${look.ctl}`) || Math.max(...inks) - Math.min(...inks) > 1.5) {
+        fail(
+          `acts (d) · the four verbs are ${look.btns.map((b) => `${b.box}/${b.ink}`).join(", ")} — one \`ctl-md\` box, ` +
+            "the painted marks within a pixel and a half (components/Toolbar: the VS Code mark at 16 against the glyphs' 24)",
+        );
+      }
+      await press('[data-main] [data-region-head] [data-verb="code"]');
+      if (!(await until(3_000, async () => (await page.locator("[data-code-dialog] [data-code-consent]").count()) === 1))) {
+        fail("acts (d) · the first press on a machine whose editor has no server raised no consent — the workspace's flow asks first");
+      } else {
+        const before = codeOpened.length;
+        const popped = new Promise((r) => page.once("popup", r));
+        await press("[data-code-go]");
+        const popup = await Promise.race([popped, wait(4_000).then(() => null)]);
+        const asked = codeOpened.slice(before);
+        const lit = await page.locator('[data-main] [data-region-head] [data-verb="code"]').getAttribute("data-on");
+        console.log(`acts (d) · VS Code: asked ${JSON.stringify(asked)}, popup ${popup === null ? "none" : "one"}, lit ${lit}`);
+        if (asked.length !== 1 || asked[0].dir !== "" || (look.machine !== null && asked[0].machine !== look.machine)) {
+          fail(
+            `acts (d) · saying yes asked code_open ${JSON.stringify(asked)} — once, for ${look.machine}, with no folder ` +
+              "(「打开这台机器的 VS Code，不指定目录」, khor_gui_core::code::open with an empty dir)",
+          );
+        }
+        if (popup === null || lit !== "true") {
+          fail(`acts (d) · saying yes opened ${popup === null ? "no" : "a"} window and left the switch ${lit} — a window, lit while it is open`);
+        }
+        await popup?.close().catch(() => {});
+      }
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
   }
   } // acts
 

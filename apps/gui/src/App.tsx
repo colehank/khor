@@ -45,6 +45,7 @@ import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
+import { useCodeWindow } from "@/components/CodeWindow";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
@@ -1844,13 +1845,22 @@ export default function App() {
         : paneName;
   // (Both browsing landings' starting points moved in with the shell,
   // which reads the device table itself — `BrowseLanding`.)
-  /** The machine card's three verbs, **at R0's right end**
+  /** The open machine's VS Code, with no folder — the fourth verb
+      (2026-09-30, 「机器页也加一个 VS Code 图标，打开这台机器的 VS Code，
+      不指定目录」). **Held here, by the shell**, for the workspace pane's
+      reason: the verbs are drawn in R0 on the wide face and in the
+      machine card's narrow head on the other, and the window's handle
+      and its server must outlive that move. `null` while no machine is
+      open, which gives the far server back (`components/CodeWindow`). */
+  const machineCode = useCodeWindow(landing === "devices" && openDevice ? openDevice.name : null, "");
+  /** The machine card's four verbs, **at R0's right end**
       (docs/SHELL.md 第十七轮 §3, D9): page buttons live in the toolbar,
       never as a row in the board. Only while a machine is open. */
   const machineVerbs =
     landing === "devices" && openDevice ? (
       <MachineVerbs
         row={openDevice}
+        code={machineCode}
         // The sessions pane's own wizard, opened with this machine picked
         // (2026-09-06:「会话是对应会话页的新建 session」).
         onNewSession={(row) => openNewSession(row.name)}
@@ -2094,6 +2104,8 @@ export default function App() {
         }}
       />
       <InviteDialog open={dialog === "invite"} onOpenChange={(o) => setDialog(o ? "invite" : null)} />
+      {/* The machine page's VS Code: its consent and its refusal. */}
+      {machineCode.dialog}
       <JoinDialog open={dialog === "join"} onOpenChange={(o) => setDialog(o ? "join" : null)} />
       {/* The root's words, asked for once on the machine that made it. */}
       <RootWordsDialog />

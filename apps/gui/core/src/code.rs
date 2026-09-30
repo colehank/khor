@@ -1,4 +1,7 @@
-//! A workspace's VS Code, shaped for the screen (工作区批5).
+//! A machine's VS Code, shaped for the screen (工作区批5): on a
+//! workspace's directory from the open workspace, or on no folder at all
+//! from the machine page (2026-09-30, 「打开这台机器的 VS Code，不指定
+//! 目录」).
 //!
 //! Every judgment — whether a machine has an editor, whether one is
 //! already running, how the pipe in front of it is held — is made in
@@ -8,7 +11,7 @@
 //! **The consent is not here either, and that is deliberate.** Whether
 //! a person has agreed to fetch 640 MB from Microsoft and accept their
 //! server licence is a fact about that person, remembered by the face
-//! that asked (`views/WorkspacePane`). A data layer that carried it
+//! that asked (`components/CodeWindow`). A data layer that carried it
 //! would be a second place for the answer to live, and the one that
 //! forgot would be the one that launched.
 
@@ -62,21 +65,30 @@ pub async fn here(root: &Path, machine: &str) -> Result<Editor, String> {
 }
 
 /// Starts (or reuses) that machine's web face and answers the URL to
-/// point at it, with `dir` as the folder to open.
+/// point at it, with `dir` as the folder to open — **empty for none**,
+/// which is the machine page's door (2026-09-30): the editor comes up on
+/// that machine with nothing open, and the person picks.
 ///
 /// **The first call on a machine can take minutes**, because a machine
 /// that has never run it fetches its server first. The face must have
 /// said so before calling this; there is no way to ask from here.
 pub async fn open(root: &Path, machine: &str, dir: &str) -> Result<CodeAt, String> {
     let (addr, token) = Node::open(root.to_path_buf())?.code_open(machine).await?;
+    Ok(CodeAt {
+        url: url(&addr, &token, dir),
+    })
+}
+
+/// The editor's address: the server, its token, and the folder when
+/// there is one. No `folder` parameter at all for an empty `dir` — an
+/// empty one would ask the server for a folder named nothing.
+fn url(addr: &impl std::fmt::Display, token: &str, dir: &str) -> String {
     let folder = if dir.is_empty() {
         String::new()
     } else {
         format!("&folder={}", enc(dir))
     };
-    Ok(CodeAt {
-        url: format!("http://{addr}/?tkn={token}{folder}"),
-    })
+    format!("http://{addr}/?tkn={token}{folder}")
 }
 
 /// Stops that machine's web face and drops this side's pipe.
@@ -118,6 +130,17 @@ mod tests {
     #[test]
     fn a_chinese_directory_is_encoded_bytewise() {
         assert_eq!(enc("/工"), "/%E5%B7%A5");
+    }
+
+    #[test]
+    fn the_machine_pages_door_opens_no_folder() {
+        // 「打开这台机器的 VS Code，不指定目录」: an empty dir is no
+        // `folder` at all, not an empty one.
+        assert_eq!(url(&"127.0.0.1:5000", "t0k", ""), "http://127.0.0.1:5000/?tkn=t0k");
+        assert_eq!(
+            url(&"127.0.0.1:5000", "t0k", "/w/a b"),
+            "http://127.0.0.1:5000/?tkn=t0k&folder=/w/a%20b"
+        );
     }
 
     #[test]

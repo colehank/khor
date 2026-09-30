@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 
 import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchLoad, setWatch } from "@/api";
+import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
 import { SectionHead } from "@/components/SectionHead";
@@ -385,11 +386,22 @@ export function MachineVerbs({
   onNewSession,
   onBrowseFiles,
   onBorrowWeb,
+  code,
 }: {
   row: DeviceRow;
   onNewSession: (row: DeviceRow) => void;
   onBrowseFiles: (row: DeviceRow) => void;
   onBorrowWeb: (row: DeviceRow) => void;
+  /** **The fourth verb: this machine's VS Code, with no folder**
+      (2026-09-30, the owner: 「机器页也加一个 VS Code 图标，打开这台机器的
+      VS Code，不指定目录」). The open workspace's switch and this one are
+      one flow (`components/CodeWindow`): drawn only where this machine
+      has an editor and never on the web face, the first press on a
+      machine asks, a second press brings the window forward. Held by the
+      shell rather than here — this row of buttons is drawn in R0 on the
+      wide face and in the narrow head on the other, and a remount across
+      the breakpoint would drop the window's handle. */
+  code?: CodeWindow;
 }) {
   const verbs = [
     { key: "new-session-on", word: gui.open_term_on, Icon: IconSessions, go: onNewSession },
@@ -421,6 +433,9 @@ export function MachineVerbs({
           <TooltipContent side="bottom">{word}</TooltipContent>
         </Tooltip>
       ))}
+      {/* After the three, the workspace's own mark and box: the logo is
+          drawn at 16 against the glyphs' 24, ink for ink (`CodeButton`). */}
+      {code && <CodeButton code={code} mark={{ "data-verb": "code" }} className="min-h-touch min-w-touch" />}
     </div>
   );
 }

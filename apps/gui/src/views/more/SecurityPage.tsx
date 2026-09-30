@@ -158,7 +158,10 @@ export function SecurityPage({
         lock?.on ? (
           <Button
             // The toolbar's push button: default `ctl-md`, `body` 13
-            // (`PageActions`, 2026-09-30) — not the dense row's `sm`.
+            // (components/Toolbar, 2026-09-30) — not the dense row's `sm`.
+            // R0's one text button now: the overviews' 新会话… 邀请设备…
+            // 登记… left for ＋ the same day (「一个动作只有一个家」); this
+            // is a verb on the lock, not a thing made.
             data-security-lock-now
             onClick={onLockNow}
             className="min-h-touch min-w-touch flex-none"

@@ -19,32 +19,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
-  onWebFace,
-  codeSeat,
-  fetchCodeHere,
   fetchGitStatus,
-  hear,
   launchOn,
-  openCode,
   searchIn,
-  stopCode,
   widenWindow,
-  type CodeSeat,
   type Found,
   type SearchHit,
   type GitStatus,
   type SessionRow,
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconBranch, IconCode, IconPlus, IconSearch, IconSessions } from "@/components/icons";
+import { IconBack, IconBranch, IconPlus, IconSearch, IconSessions } from "@/components/icons";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
@@ -85,7 +72,6 @@ import { FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceEmpty";
-import type { Editor } from "@/gen/bindings/Editor";
 
 export function WorkspacePane({
   machine,
@@ -533,34 +519,12 @@ export function WorkspacePane({
     });
   }, []);
   const hidden = useHidden();
-  /** What that machine says about its editor. `version` empty means it
-      has none **or could not be asked** — the two lead to the same next
-      move, which is to draw no switch (`khor_gui_core::code::here`). */
-  const [code, setCode] = useState<Editor>({ version: "", ready: false });
-  /** The URL to point a webview at, once one has been asked for.
-      `null` while khor's own file view is what the middle column shows,
-      which is always how a workspace opens. */
-  const [codeAt, setCodeAt] = useState<string | null>(null);
-  /** The consent card is up. Asked once per machine and remembered in
-      this face's own storage — **the thing consented to happens on the
-      far machine, so it is keyed by that machine**, and a second face
-      asking again is right rather than a bug: the person at that face
-      has not agreed to anything yet. */
-  const [asking, setAsking] = useState(false);
-  const [codeError, setCodeError] = useState<string | null>(null);
-
-  /** The window this machine's editor is in, once one has been asked
-      for (2026-09-17 ruling 46). **A ref, because nothing on the glass
-      is drawn from it** — what the switch paints is `codeUp` — and a
-      window handle in state would be a render per press for a thing
-      only the next press reads. */
-  const seat = useRef<CodeSeat | null>(null);
-  /** Whether that window is open, as far as this face knows.
-   *
-   * **`codeAt` is not this question.** That one is 「the node answered
-   * a URL」, which stays true after somebody closes the window; this is
-   * 「there is a window」, which is what the switch is lit for. */
-  const [codeUp, setCodeUp] = useState(false);
+  /** That machine's VS Code, on this workspace's directory — the flow
+      the machine page's door shares (`components/CodeWindow`, moved out
+      of here 2026-09-30). Held here, not in the button: the button moves
+      between R0 and the narrow head, and a remount would drop the
+      window's handle and stop the server under it. */
+  const codeWin = useCodeWindow(machine, root);
 
   /** What is typed into the box at the head of the tree
       (2026-09-17 ruling 47). **In memory and per pane**, the sessions
@@ -677,86 +641,6 @@ export function WorkspacePane({
     setReadAt((n) => n + 1);
   }, [hidden]);
 
-  // **Given back when this pane stops pointing at that machine.** A
-  // web face is a `node` process with an extension host on somebody
-  // else's box; leaving the workspace used to leave it running with
-  // nothing on any screen pointed at it, which is the shape
-  // `held.ts` was written for on the borrow side. Here the ledger is
-  // one entry deep — one pane, one machine — so the cleanup is the
-  // effect's own.
-  useEffect(() => {
-    if (codeAt === null) return;
-    return () => {
-      stopCode(machine).catch(() => {
-        // The pipe on this side is already dropped by the node; a far
-        // machine that could not be told is a server that outlives this
-        // by one `khor code --stop`, not a hang.
-      });
-    };
-  }, [machine, codeAt]);
-
-  // **The switch goes dark when the window does** (2026-09-17 ruling
-  // 46:「窗口关掉 = 图标灭」). The app says so out loud — it is the one
-  // that owns the window — and the web face's named tab is asked
-  // instead, on the beat somebody comes back to this page, because a
-  // tab showing another origin tells this page nothing and `closed` is
-  // the one thing it will still answer.
-  useEffect(() => hear<string>("code:closed", (who) => who === machine && setCodeUp(false)), [
-    machine,
-  ]);
-  useEffect(() => {
-    if (hidden) return;
-    if (seat.current?.gone() === true) setCodeUp(false);
-  }, [hidden]);
-  // …and a beat while the tab is held (2026-09-18 ruling 57:「网页脸上
-  // VS Code 标签页关了, 图标当场灭」).
-  //
-  // **This is what a timer has to have in this tree: a reason there is
-  // no event.** A cross-origin window hands this page exactly one
-  // answer — `closed` — and no notification of any kind; the visibility
-  // beat above it is真的一拍, but it only fires when somebody comes
-  // back here, so a person who closed the editor and stayed in it saw a
-  // lit switch for as long as they stayed. One second is the reading
-  // cadence of a thing beside a pointer: faster buys nothing a person
-  // can see, slower is the lie again.
-  //
-  // **Only while there is something to ask, and only on the road that
-  // answers**: the app announces (`asks` is false there), the question
-  // stops the moment it comes back true, and a pane with no seat sets
-  // no timer at all.
-  useEffect(() => {
-    if (!codeUp) return;
-    const held = seat.current;
-    if (held === null || !held.asks) return;
-    const beat = window.setInterval(() => {
-      if (held.gone()) setCodeUp(false);
-    }, CODE_BEAT_MS);
-    return () => window.clearInterval(beat);
-  }, [codeUp]);
-
-  useEffect(() => {
-    let live = true;
-    setCode({ version: "", ready: false });
-    setCodeAt(null);
-    setAsking(false);
-    setCodeError(null);
-    // A workspace's editor window belongs to the machine it was opened
-    // on; walking to another machine's workspace leaves that window
-    // where it is and this pane stops holding it (the far server is
-    // stopped by the effect above, which is where it always was).
-    seat.current?.drop();
-    seat.current = null;
-    setCodeUp(false);
-    fetchCodeHere(machine)
-      .then((e) => live && setCode(e))
-      // Already folded to the default on the way here; this arm is for
-      // the call itself failing, and it means the same thing.
-      .catch(() => live && setCode({ version: "", ready: false }));
-    return () => {
-      live = false;
-    };
-  }, [machine]);
-
   // **Only the sessions column's default lives here now** (工作区批⑧).
   // It used to also throw away the open file, both draft maps and the
   // tree's position, on `[root, machine, narrow, listOpen]` — and the
@@ -801,76 +685,6 @@ export function WorkspacePane({
     setSessions(!listOpen);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow]);
-
-  /** Remembered per machine, in this face's own storage. */
-  const agreedKey = `khor.code.agreed.${machine}`;
-  const agreed = (): boolean => {
-    try {
-      return window.localStorage.getItem(agreedKey) === "1";
-    } catch {
-      // Storage refused (a private window, a locked profile). **Then
-      // nobody has agreed** — the safe answer is to ask again, not to
-      // assume the yes we cannot read.
-      return false;
-    }
-  };
-  /** Pressing the switch: ask first if this machine has never been
-      agreed to, otherwise go straight there.
-      **The server already being over there is the other way past the
-      card**, and it is a stronger reason than the remembered yes: the
-      card's whole sentence is「第一次要下约 640 MB」, and on a machine
-      that has the server that sentence is false. It was shown anyway
-      until 2026-09-13, because this face only ever consulted its own
-      storage — so a fresh app profile asked to download a server that
-      had been on disk for two days, and the licence the card also names
-      was accepted when those bytes landed. */
-  const want = () => {
-    setCodeError(null);
-    // **Already open is brought forward** (2026-09-17 ruling 46:「再按
-    // 图标 = 把那个窗口拉到前面(已开就不再开第二个)」). The switch is
-    // one press with two meanings, and which one it has is a fact about
-    // the window rather than a mode: there is one, or there is not.
-    const held = seat.current;
-    if (held !== null && codeUp && codeAt !== null) {
-      void held.raise(codeAt, windowTitle(root, machine));
-      return;
-    }
-    if (code.ready || agreed()) {
-      go();
-    } else {
-      setAsking(true);
-    }
-  };
-  const go = () => {
-    setAsking(false);
-    setCodeError(null);
-    try {
-      window.localStorage.setItem(agreedKey, "1");
-    } catch {
-      // The launch still happens; only the memory of the yes is lost,
-      // and the cost of that is being asked again.
-    }
-    // **Claimed inside the press, before anything is awaited** — a
-    // browser only lets a page open a window from the task a person's
-    // own gesture started, and the editor's address is two round trips
-    // away (`api.ts` `codeSeat`).
-    const seated = codeSeat(machine);
-    seat.current = seated;
-    openCode(machine, root)
-      .then((a) => {
-        setCodeAt(a.url);
-        setCodeUp(true);
-        return seated.raise(a.url, windowTitle(root, machine));
-      })
-      .catch((e: unknown) => {
-        // A window with nothing in it is worse than none: it is khor
-        // having opened something and said nothing.
-        seated.drop();
-        seat.current = null;
-        setCodeUp(false);
-        setCodeError(String(e instanceof Error ? e.message : e));
-      });
-  };
 
   // **A session belongs here if it is running on this machine, under
   // this directory** (工作区批③). Both halves, because a workspace *is*
@@ -1394,38 +1208,7 @@ export function WorkspacePane({
           running the resident serve; a phone reading khor's web face is
           not that machine, so the link would name a loopback it cannot
           reach. */}
-      {code.version !== "" && root !== "" && !onWebFace && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              data-code={codeUp ? "on" : "off"}
-              data-on={codeUp}
-              aria-label={gui.code_tab}
-              // **A window, not a column and not the middle one's other
-              // face** (2026-09-17 ruling 46). Pressing it opens that
-              // machine's editor in a window of its own; pressing it
-              // again brings that window forward rather than making a
-              // second — so it is not a toggle and says no `aria-pressed`.
-              onClick={want}
-              className={toolClass}
-            >
-              {/* **Equal ink, not equal boxes** (2026-09-16:「右上角的
-                  icon, 明显大小不一」, then 「注意四个icon的大小一致性」).
-                  The logo fills its canvas and the bubble beside it keeps
-                  air inside its own (about five sevenths of it), so the
-                  bubble's 24 paints about 17 and this box is 16: the two
-                  *painted* marks match within the gate's pixel and a
-                  half, which `check-face` measures — never the class. */}
-              <span className="flex size-4 flex-none [&_svg]:size-full">
-                <IconCode />
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{gui.code_tab}</TooltipContent>
-        </Tooltip>
-      )}
+      {root !== "" && <CodeButton code={codeWin} className={toolClass} />}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -2125,62 +1908,8 @@ export function WorkspacePane({
           </ListPane>
         )}
       </div>
-      {/* ── the editor's two sentences, as a dialog ───────────────
-          (2026-09-17 ruling 46:「同意卡…和『那台机器没有 code』的拒绝:
-          在工作区页里弹一张小 sheet」— the user).
-
-          **Both of them belong to one press and neither belongs in a
-          column.** They stood in the editor's own column for one batch
-          (ruling 45), which meant a person's file gave up room to hold
-          a question about a window that did not exist yet. A dialog asks
-          and goes.
-
-          The words are the ones that were already written — two
-          sentences about what happens to somebody else's machine, and
-          the far machine's own refusal — because this ruling moved
-          where they are said and not what they say. */}
-      <Dialog
-        open={asking || codeError !== null}
-        onOpenChange={(o) => {
-          if (o) return;
-          setAsking(false);
-          setCodeError(null);
-        }}
-      >
-        <DialogContent data-code-dialog>
-          <DialogHeader>
-            <DialogTitle>{gui.code_tab}</DialogTitle>
-          </DialogHeader>
-          {asking ? (
-            <>
-              <div
-                data-code-consent
-                className="max-w-prose text-body whitespace-pre-line text-foreground"
-              >
-                {gui.code_consent}
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-code-no
-                  onClick={() => setAsking(false)}
-                  className="min-h-touch"
-                >
-                  {gui.code_consent_no}
-                </Button>
-                <Button variant="primary" size="sm" data-code-go onClick={go} className="min-h-touch">
-                  {gui.code_consent_go}
-                </Button>
-              </DialogFooter>
-            </>
-          ) : (
-            <div data-code-refused className="text-body text-muted-foreground">
-              {codeError}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* The editor's consent and refusal (`components/CodeWindow`). */}
+      {codeWin.dialog}
       {/* One sheet for the whole strip, not one per tab: what is being
           asked about is state, and a dialog per tab would be one
           mounted component per open file. */}
@@ -2279,22 +2008,6 @@ function useMiddleCut(value: string, cut: number) {
     quarter of a second is under the threshold where a person notices
     waiting at all. */
 const HUNT_WAIT = 300;
-
-/** How often the web face asks its editor tab whether it is still there
-    (2026-09-18 ruling 57). **A second, because the answer is drawn
-    beside a pointer**: nothing a person can see improves by asking
-    faster, and anything slower leaves a lit switch over a window that
-    is gone — which is the whole of what this ruling is about. The cost
-    is one property read of a handle this page already holds. */
-const CODE_BEAT_MS = 1_000;
-
-/** What the editor's window is called: the project, then the product.
-    **The workspace first**, because a person with two of them open is
-    reading window titles to tell them apart, and 「VS Code」 is the
-    half both of them share. */
-function windowTitle(root: string, machine: string): string {
-  return `${root === "" ? machine : basename(root)} — ${gui.code_tab}`;
-}
 
 /** What the tree's column shows while there is something in the box
     (2026-09-17 ruling 47).
