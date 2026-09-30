@@ -273,7 +273,9 @@ export function FaceSettings({
                   />
                 ))}
               </div>
-              <Button data-face-shuffle onClick={shuffle}>
+              {/* The finger's floor on the button's box (`--hit`, 44
+                  under a finger), the look unchanged. */}
+              <Button data-face-shuffle className="min-h-touch" onClick={shuffle}>
                 {gui.face_shuffle}
               </Button>
             </div>

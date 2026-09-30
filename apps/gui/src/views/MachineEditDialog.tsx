@@ -143,7 +143,7 @@ export function MachineEditDialog({
           </FaceSettings>
         )}
         <DialogFooter>
-          <Button variant="primary" data-machine-edit-done disabled={going} onClick={done}>
+          <Button variant="primary" data-machine-edit-done className="min-h-touch" disabled={going} onClick={done}>
             {gui.edit_done}
           </Button>
         </DialogFooter>
