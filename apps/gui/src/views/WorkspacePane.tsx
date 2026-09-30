@@ -1375,9 +1375,12 @@ export function WorkspacePane({
    * every one of the three screens rather than only the tree's. The
    * tree's head is a search box and ＋ now, like every list's.
    *
-   * Toolbar buttons, the size of the machine page's three: a 20 glyph in
-   * a `ctl-md` box, `--hit` around it, a `Tooltip` naming each (the
-   * design system's `Toolbar`). On is the grey block (`toolClass`). */
+   * Toolbar buttons, the size of the machine page's three: the rail's
+   * 24-canvas glyph at its own 24 in a `ctl-md` box (2026-09-30, the
+   * owner: 「顶部右侧的几个 icon 太小了, 明显没有把空间充分利用上」— the
+   * 20 they were drawn at left a 38 row mostly air), `--hit` around it,
+   * a `Tooltip` naming each (the design system's `Toolbar`). On is the
+   * grey block (`toolClass`). */
   const switches = (
     <div data-ws-switches className="flex flex-none items-center gap-in">
       {/* **Only where there is an editor to open.** A machine without
@@ -1412,10 +1415,10 @@ export function WorkspacePane({
                   icon, 明显大小不一」, then 「注意四个icon的大小一致性」).
                   The logo fills its canvas and the bubble beside it keeps
                   air inside its own (about five sevenths of it), so the
-                  bubble's 20 paints about 14 and this box is 14: the two
-                  *painted* marks match, which `check-face` measures —
-                  never the class. */}
-              <span className="flex size-3.5 flex-none [&_svg]:size-full">
+                  bubble's 24 paints about 17 and this box is 16: the two
+                  *painted* marks match within the gate's pixel and a
+                  half, which `check-face` measures — never the class. */}
+              <span className="flex size-4 flex-none [&_svg]:size-full">
                 <IconCode />
               </span>
             </Button>
@@ -1435,10 +1438,10 @@ export function WorkspacePane({
             onClick={() => showSessions(!sessions)}
             className={toolClass}
           >
-            {/* The rail's 24-canvas bubble drawn at 20, the toolbar's
+            {/* The rail's 24-canvas bubble at its own 24, the toolbar's
                 size (`MachineVerbs`): the box sets the size and the
                 glyph fills it. */}
-            <span className="flex size-5 flex-none [&_svg]:size-full">
+            <span className="flex size-6 flex-none [&_svg]:size-full">
               <IconSessions />
             </span>
           </Button>
@@ -1448,16 +1451,17 @@ export function WorkspacePane({
     </div>
   );
 
-  /** R0's second line (2026-09-28): 「⎇ main · 5 个文件已修改 ·
-      peer:/home/peer/work」, **the workspace list row's own words** —
-      its branch corner (`ws-marked`, ignored paths not counted) and its
+  /** R0's second line (2026-09-28): 「⎇ main · peer:/home/peer/work」,
+      **the workspace list row's own words** — its branch corner and its
       subtitle (`机器:路径`, never shortened to `~`). Built from the
       status this pane already asked for (`headGit`), so R0 costs the
       far machine nothing. Not a checkout, or not answered: the location
-      alone. A detached HEAD names no branch, and the count waits on the
-      branch the way the list's corner does. */
+      alone. A detached HEAD names no branch. **No count of changed
+      files** (2026-09-30, the owner: 「还是不写多少个文件已修改这样的 git
+      注释吧」): the list row keeps its 「N 个文件已修改」 corner, where
+      one scans for which workspace has work in it; the head is where
+      one already is, and says only where. */
   const branch = headGit !== null && headGit.branch !== "" ? headGit.branch : "";
-  const changed = branch === "" || headGit === null ? 0 : headGit.rows.filter((w) => w.mark !== IGNORED).length;
   const where = `${machine}:${root}`;
   /** **Cut in the middle, keeping the machine and the last segment**
       (Finder's path, Xcode's title): the head of the path takes the
@@ -1469,29 +1473,16 @@ export function WorkspacePane({
       over a value showing in full it would be noise. */
   const [whereTip, setWhereTip] = useState(false);
   /** **Beside the name, on its line** (2026-09-30:「标题旁边是 git
-      branch 加改动简介」): the branch and how many files it has changed —
-      what qualifies the name, the way the list row pairs them. Nothing
-      for a directory that is not a repository. It gives way before the
-      name does (`PageHead`). */
+      branch」): the branch and nothing more — what qualifies the name.
+      Nothing for a directory that is not a repository. It gives way
+      before the name does (`PageHead`). */
   const aside = branch !== "" && (
-    <>
-      {/* The branch keeps its whole name while the line has room; the
-          count after it never breaks. */}
-      {/* On the name's baseline: the text is what lines up, and the
-          glyph centres on it (a glyph has no baseline of its own). */}
-      <span data-ws-head-branch className="flex min-w-0 items-baseline gap-xxs">
-        <IconBranch className="size-kind-mark-glyph flex-none self-center" />
-        <span className="truncate">{branch}</span>
-      </span>
-      {changed > 0 && (
-        <>
-          <span aria-hidden="true" className="flex-none">·</span>
-          <span data-ws-head-changed className="flex-none whitespace-nowrap tabular-nums">
-            {gui.ws_marked(changed)}
-          </span>
-        </>
-      )}
-    </>
+    // On the name's baseline: the text is what lines up, and the glyph
+    // centres on it (a glyph has no baseline of its own).
+    <span data-ws-head-branch className="flex min-w-0 items-baseline gap-xxs">
+      <IconBranch className="size-kind-mark-glyph flex-none self-center" />
+      <span className="truncate">{branch}</span>
+    </span>
   );
   /** **The second line is the location and nothing else** (2026-09-30:
       「下方完整目录」) — the one long value, with the whole line to itself

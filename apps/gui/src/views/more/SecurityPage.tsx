@@ -157,7 +157,8 @@ export function SecurityPage({
       actions={
         lock?.on ? (
           <Button
-            size="sm"
+            // The toolbar's push button: default `ctl-md`, `body` 13
+            // (`PageActions`, 2026-09-30) — not the dense row's `sm`.
             data-security-lock-now
             onClick={onLockNow}
             className="min-h-touch min-w-touch flex-none"

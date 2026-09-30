@@ -4322,9 +4322,11 @@ try {
   //      branch, no count of unsaved files — and since 2026-09-28 the
   //      two switches are R0's page buttons (VS Code, then the sessions
   //      at the far right; toolbar size, equal ink, a tooltip each, on is
-  //      the grey block and not the brand), R0 says the name over
-  //      「⎇ main · 5 个文件已修改 · peer:/home/peer/work」 inside its 48,
-  //      and the tree's head is exactly a search box and ＋.
+  //      the grey block and not the brand), R0 says the name with
+  //      「⎇ main」 beside it over 「peer:/home/peer/work」 inside its 38
+  //      (2026-09-30: no count of changed files — the owner's 「还是不写
+  //      多少个文件已修改这样的 git 注释吧」), and the tree's head is
+  //      exactly a search box and ＋.
   {
     // This section's own reads and writes. 4b-bis left a merge fixture
     // behind and took its `write_text` away with it (4j learned the
@@ -4496,7 +4498,9 @@ try {
       // its own, so equal glyph boxes would read as two sizes; what has
       // to match is what is painted. The box is R0's toolbar button:
       // `ctl-md` under a mouse, like the machine page's three
-      // (components/Toolbar, 2026-09-28).
+      // (components/Toolbar, 2026-09-28); the glyph in it is the rail's
+      // 24-canvas form at its own 24 since 2026-09-30 (the owner: 「顶部
+      // 右侧的几个 icon 太小了, 明显没有把空间充分利用上」).
       const tailLook = await page.evaluate(() => {
         const paint = (v, prop) => {
           const el = document.createElement("span");
@@ -4552,13 +4556,14 @@ try {
               `button is the ${tailLook.ctl} \`ctl-md\` square, the machine page's size (components/Toolbar)`,
           );
         }
-        // The ink of a 24-canvas glyph drawn at 20 — the toolbar's size
-        // (「字形用竖栏同一个 24 画布的形，画成 20」) — which paints about
-        // five sevenths of its box. A mark kept at the tree head's 24,
-        // or shrunk to a row's 16, falls out of the band.
-        if (inks.some((k) => k < 12 || k > 17)) {
+        // The ink of a 24-canvas glyph drawn at its own 24 — the
+        // toolbar's size (「字形用竖栏同一个 24 画布的形，画成 24」,
+        // 2026-09-30) — which paints about five sevenths of its box, 17.
+        // A mark left at the 20 of before (14 of ink), or shrunk to a
+        // row's 16, falls out of the band.
+        if (inks.some((k) => k < 15.5 || k > 20)) {
           fail(
-            `R0's switches paint ${inks.join("/")}px of ink — a 20 glyph in a toolbar button paints about 14 ` +
+            `R0's switches paint ${inks.join("/")}px of ink — a 24 glyph in a toolbar button paints about 17 ` +
               "(components/Toolbar; src/views/WorkspacePane.tsx)",
           );
         }
@@ -4690,9 +4695,10 @@ try {
       await press("[data-ws-sessions-switch]");
       await wait(200);
       // **R0 says what this is, in two lines inside its 38** (2026-09-28;
-      // split 2026-09-30): the name with 「⎇ main · 5 个文件已修改」 beside
-      // it, then 「peer:/home/peer/work」 under it — the workspace list
-      // row's own words, from the status the pane already asked for. Not
+      // split 2026-09-30): the name with 「⎇ main」 beside it, then
+      // 「peer:/home/peer/work」 under it — the workspace list row's own
+      // words, from the status the pane already asked for, **minus the
+      // row's count of changed files** (2026-09-30, the owner). Not
       // a row between R0 and R1 (10-layout). **What stands where is the
       // real-app checklist's** (30-behavior, 2026-09-25 gate rule); this
       // reads the words, the sizes, the line heights and that all of it
@@ -4746,7 +4752,7 @@ try {
             "line to read (src/components/Region.tsx PageTitleAside / PageSubtitle, src/views/WorkspacePane.tsx)",
         );
       } else {
-        const wanted = { name: "work", branch: "main", changed: "5 个文件已修改", where: "peer:/home/peer/work" };
+        const wanted = { name: "work", branch: "main", where: "peer:/home/peer/work" };
         for (const [k, v] of Object.entries(wanted)) {
           if (line2[k] !== v) {
             fail(
@@ -4754,6 +4760,15 @@ try {
                 "the same words, from the status this pane already holds (src/views/WorkspacePane.tsx aside / subtitle)",
             );
           }
+        }
+        // **No count of changed files beside the name** (2026-09-30, the
+        // owner: 「还是不写多少个文件已修改这样的 git 注释吧」): the fixture
+        // has five, and the list row still says so; R0 does not.
+        if (line2.changed !== null) {
+          fail(
+            `R0 says ${JSON.stringify(line2.changed)} beside the name — the branch alone qualifies the name; ` +
+              "the count of changed files stays on the list row (src/views/WorkspacePane.tsx aside)",
+          );
         }
         if (line2.glyph !== 1) {
           fail(`the branch in R0 wears ${line2.glyph} glyph(s) — one, the branch mark (src/views/WorkspacePane.tsx)`);

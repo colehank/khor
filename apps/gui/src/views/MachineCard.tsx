@@ -375,8 +375,10 @@ function MachineCaption({ row }: { row: DeviceRow }) {
  * page's close) wears: a `--ctl-md` ghost square, the hit floor from
  * `--hit` (`min-h-touch` reads it), a name in a tooltip. The glyph is
  * still the rail's — the one word this app has for each place — drawn
- * at 20, the size the 「…」 list draws the same 24-canvas family
- * (components/Icon: a 24 glyph never goes down to the 16 canvas).
+ * at its own 24 (2026-09-30, the owner: 「顶部右侧的几个 icon 太小了,
+ * 明显没有把空间充分利用上」; at 20, the 「…」 list's size, three of them
+ * left a 38 row mostly air). components/Icon: a 24 glyph never goes
+ * down to the 16 canvas.
  */
 export function MachineVerbs({
   row,
@@ -411,7 +413,7 @@ export function MachineVerbs({
                   `size-*` on the glyph itself sits beside its own
                   `size-icon-rail`, which tailwind-merge does not read as
                   a size and keeps (measured: both classes, 32 won). */}
-              <span className="flex size-5 flex-none [&_svg]:size-full">
+              <span className="flex size-6 flex-none [&_svg]:size-full">
                 <Icon />
               </span>
             </Button>

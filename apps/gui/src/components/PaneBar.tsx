@@ -49,12 +49,16 @@ export type FilterOption = { key: string; label: string; axis?: string };
 export type PaneAction = { key: string; label: string; onSelect: () => void };
 
 /** A landing's own acts as R0 buttons (components/Toolbar, D9): push
-    `sm`, one per act, in the order the landing lists them. */
+    buttons at the default `ctl-md` with `body` 13, one per act, in the
+    order the landing lists them. **Not `sm`** (2026-09-30, with the
+    toolbar's glyphs): `sm` is the dense row's 22 with `callout` 12, and
+    `min-h-touch` was already stretching it to 28 — a 28 button wearing a
+    12 word and 8 of padding read as a small one in a 38 row. */
 export function PageActions({ actions }: { actions: PaneAction[] }) {
   return (
     <>
       {actions.map((a) => (
-        <Button key={a.key} size="sm" data-new-item={a.key} onClick={a.onSelect} className="min-h-touch min-w-touch flex-none">
+        <Button key={a.key} data-new-item={a.key} onClick={a.onSelect} className="min-h-touch min-w-touch flex-none">
           {a.label}
         </Button>
       ))}
