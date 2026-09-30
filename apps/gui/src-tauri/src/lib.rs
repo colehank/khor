@@ -164,6 +164,12 @@ fn pin_account(id: String, on: bool) -> Result<(), String> {
     khor_gui_core::pin_account(&Node::root_from_env(), &id, on)
 }
 
+/// 给一个账号改名 (`khor_gui_core::rename_account`) — 额度列表里双击名字。
+#[tauri::command]
+fn rename_account(id: String, name: String) -> Result<(), String> {
+    khor_gui_core::rename_account(&Node::root_from_env(), &id, &name)
+}
+
 /// 编辑一个账号 (`khor_gui_core::update_account`). `key` absent means
 /// leave the stored one alone — an edit of the name must not make
 /// somebody paste a secret again.
@@ -2917,6 +2923,7 @@ pub fn run() {
             quota_board,
             register_account,
             pin_account,
+            rename_account,
             update_account,
             remove_account,
             usage,

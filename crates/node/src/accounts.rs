@@ -495,6 +495,36 @@ impl Node {
         Ok(())
     }
 
+    /// Renames an account — the list row's double-click (2026-09-30, the
+    /// owner: 「这里的 list 也要和 session 一样，支持双击名字改名」).
+    ///
+    /// **The name and nothing else.** [`Node::update_account`] writes
+    /// every field the 编辑 window holds, so a rename sent through it
+    /// would have to carry the address, the budget and the unit back
+    /// unchanged — and one of them read stale would be an edit nobody
+    /// made. It also drops the cached reading (the budget is its
+    /// denominator); a name is not part of any figure, so nothing is
+    /// thrown away here.
+    ///
+    /// **Everywhere, not here**: the name rides the replicated doc, the
+    /// same bargain [`Node::pin_account`] makes, so the row reads the new
+    /// name on every machine. A blank name is refused with the sentence
+    /// registration uses — an account has no reported name to fall back
+    /// to, unlike a machine.
+    pub fn rename_account(&self, id: &str, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(msg::account_name_blank().into());
+        }
+        let loaded = self.accounts_loaded()?;
+        let mut account = loaded.doc.get(id).ok_or_else(|| msg::no_such_account(id))?;
+        account.name = name.to_owned();
+        loaded.doc.set(&account)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(())
+    }
+
     /// Edits a registered account: its name, its address, its budget,
     /// and **optionally its key**.
     ///
@@ -735,10 +765,18 @@ impl Node {
             // *label*: the figure beside it is untouched, because the
             // gateway reported the right amount under the wrong name
             // (`Account::unit`).
+            //
+            // **So is the name** (2026-09-30): a reading carries the
+            // name it was taken under — cached here for minutes, carried
+            // from the home machine for longer — and a row renamed a
+            // moment ago would wear the old one until the cache turned
+            // over. The name is a fact of the account, and the account
+            // is the doc; the reading only borrows it.
             let relabel = |mut r: AccountReading| {
                 if let Some(unit) = account.unit.clone() {
                     r.currency = Some(unit);
                 }
+                r.name = account.name.clone();
                 r
             };
             if account.home == me {
@@ -2446,6 +2484,78 @@ mod tests {
             "control: a good reading on record stands too"
         );
         assert_eq!(got[0].trouble, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **A rename reaches the board at once, and moves nothing else.**
+    /// 2026-09-30, the owner: the 额度 list renames the session list's
+    /// way (a double-click on the name).
+    ///
+    /// Four arms:
+    ///
+    /// - **the new name is on the board while the old reading is still
+    ///   cached** — the reading was taken under the old name, and the
+    ///   board reads the name off the account rather than off the
+    ///   reading. Without that, this arm shows the old name until the
+    ///   cache turns over (red on the board as it was: 「gw」);
+    /// - **the figure, the budget, the address and the unit are
+    ///   untouched** — a rename that went through `update_account`
+    ///   would have to carry them back, and the cache would be gone;
+    /// - **blank is refused**, with registration's sentence — an
+    ///   account has no reported name to fall back to;
+    /// - **an id nobody has is refused by name**.
+    #[test]
+    fn a_renamed_account_reads_its_new_name_on_the_board_and_keeps_the_rest() {
+        let root = std::env::temp_dir().join(format!("khor-accounts-rename-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let n = Node::open(root.clone()).unwrap();
+        let a = n
+            .register_account(
+                "gw",
+                Provider::Newapi,
+                AccountKind::Bill,
+                Some("http://127.0.0.1:1"),
+                "sk-x",
+                Some(50.0),
+            )
+            .unwrap();
+        n.update_account(&a.id, "gw", Some("http://127.0.0.1:1"), None, Some(50.0), Some("RMB"))
+            .unwrap();
+        let mut read = bare(&a, None, crate::live::now_ms());
+        read.spent = Some(12.5);
+        n.cache_reading(
+            &a.id,
+            &Cached {
+                reading: read,
+                failed_at_ms: None,
+            },
+        );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        n.rename_account(&a.id, "  网关二号  ").unwrap();
+        let board = rt.block_on(n.quota_board()).unwrap();
+        assert_eq!(board.len(), 1);
+        assert_eq!(
+            board[0].0.name, "网关二号",
+            "the board reads the account's name, trimmed, not the name the cached reading was taken under"
+        );
+        assert_eq!(board[0].0.spent, Some(12.5), "the cached figure is still the figure");
+        let kept = n.accounts().unwrap().into_iter().find(|x| x.id == a.id).unwrap();
+        assert_eq!(kept.budget, Some(50.0), "the budget stays");
+        assert_eq!(kept.base_url.as_deref(), Some("http://127.0.0.1:1"), "the address stays");
+        assert_eq!(kept.unit.as_deref(), Some("RMB"), "the unit stays");
+
+        assert_eq!(
+            n.rename_account(&a.id, "   "),
+            Err(msg::account_name_blank().to_string()),
+            "a blank name is refused, not stored"
+        );
+        assert_eq!(n.accounts().unwrap()[0].name, "网关二号", "and the refusal wrote nothing");
+        assert!(n.rename_account("no-such", "x").is_err(), "an id nobody has is refused");
         let _ = std::fs::remove_dir_all(&root);
     }
 
