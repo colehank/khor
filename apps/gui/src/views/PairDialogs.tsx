@@ -32,8 +32,17 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cli, gui } from "@/gen/catalog";
+import { YIELD_MS } from "@/lib/tempo";
 
-/** Issues a one-time ticket and shows it, ready to be carried across. */
+/**
+ * Issues a one-time ticket and shows it, ready to be carried across —
+ * **one invite, two spellings** (2026-09-30, the owner: 「邀请设备显示两个
+ * 内容：现在的 token，和一个二维码，后者为手机连接奠定基础」): the QR code
+ * above, the token under it. The code carries the token itself, not a URL
+ * around it, so a phone that scans it one day holds exactly what 加入网络
+ * takes today; it is encoded by the node with the ticket
+ * (`khor_gui_core::qr`) and only drawn here.
+ */
 export function InviteDialog({
   open,
   onOpenChange,
@@ -43,6 +52,9 @@ export function InviteDialog({
 }) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** What the last copy did, said on the button for a beat (`CopyId`'s
+      rule: a refused clipboard write must not look like one that took). */
+  const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
 
   // The ticket is minted on opening, not on mounting: it burns on use,
   // and one issued per glance at the menu leaves a pile of live tokens.
@@ -50,6 +62,7 @@ export function InviteDialog({
     if (!open) return;
     setTicket(null);
     setError(null);
+    setCopied(null);
     let live = true;
     invite()
       .then((t) => live && setTicket(t))
@@ -58,6 +71,18 @@ export function InviteDialog({
       live = false;
     };
   }, [open]);
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(null), YIELD_MS);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+  const copy = () => {
+    if (!ticket) return;
+    navigator.clipboard.writeText(ticket.token).then(
+      () => setCopied("copied"),
+      () => setCopied("failed"),
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,6 +96,31 @@ export function InviteDialog({
           </div>
         ) : (
           <>
+            {/* **The code, drawn as the node answered it.** One path in
+                module units; the `viewBox` is the whole picture with its
+                four-module quiet zone already in the path's coordinates,
+                so nothing here can crop it. Ink is `currentColor` (the
+                `ink` token) on no ground of its own, and `crispEdges`
+                keeps neighbouring modules from growing hairline seams
+                when the picture is scaled. A square of the same size
+                stands in while the ticket is on its way, so the dialog
+                does not jump when it lands; a ticket too long for any QR
+                version answers no code and the token alone is the
+                invite. */}
+            {ticket?.qr ? (
+              <svg
+                data-ticket-qr
+                role="img"
+                aria-label={gui.ticket_qr}
+                viewBox={`0 0 ${ticket.qr.span} ${ticket.qr.span}`}
+                shapeRendering="crispEdges"
+                className="mx-auto size-60 flex-none text-foreground"
+              >
+                <path d={ticket.qr.path} fill="currentColor" />
+              </svg>
+            ) : (
+              !ticket && <div aria-hidden className="mx-auto size-60 flex-none" />
+            )}
             <Input
               data-ticket
               aria-label={gui.ticket}
@@ -95,6 +145,26 @@ export function InviteDialog({
             )}
           </>
         )}
+        {/* **The one act is carrying the token across**; closing is the
+            plain button beside it (components/Dialog). The ticket stays
+            good after the dialog goes — it burns on use or on its window,
+            not on this — so the way out is 关闭, not 取消. */}
+        <DialogFooter>
+          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+            {gui.close}
+          </Button>
+          {!error && (
+            <Button
+              variant="primary"
+              data-copy-ticket
+              data-said={copied ?? undefined}
+              disabled={!ticket}
+              onClick={copy}
+            >
+              {copied === "copied" ? gui.copied : copied === "failed" ? gui.copy_failed : gui.copy_ticket}
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -24853,8 +24853,9 @@ try {
   // The owner: 「订阅页右上角不要有登记按钮，这个功能属于搜索框旁边的 ＋。
   // 类似的冗余不要出现在 app 里：机器页点 ＋ 就是邀请设备和加入网络，更多里
   // 的网络页就不要有右上方两个邀请、加入了」「整个 app 所有点击的弹窗，比如
-  // 新建 session，是要来一个弹窗，而不是现在这样从标题下长出来的奇怪东西」.
-  // What of that a machine can measure:
+  // 新建 session，是要来一个弹窗，而不是现在这样从标题下长出来的奇怪东西」
+  // 「邀请设备显示两个内容：现在的 token，和一个二维码」. What of that a
+  // machine can measure:
   //
   //   a. **R0 makes nothing.** On the three overviews (会话, 机器, 额度) and
   //      on 「…」 → 网络, R0 holds no `data-new-item`; the overviews' right
@@ -24866,15 +24867,34 @@ try {
   //      form ＋ opens (新会话, 导入, 邀请设备, 加入网络, 登记, 添加工作区)
   //      is a centred dialog — over a scrim, its centre on the window's
   //      (±1), at most one primary — and Esc closes it.
+  //   c. **邀请设备 is the token and its QR code.** An `<svg>` in the dialog
+  //      whose path is painted `currentColor`, computing to the ink, on no
+  //      ground of its own; square, inside the dialog, with at least four
+  //      light modules between the symbol and the picture's edge on every
+  //      side (the quiet zone ISO/IEC 18004 asks for); and the token beside
+  //      it is the one the node answered. The fixture is
+  //      `khor_gui_core::qr::encode("khor-face-ticket-0930")`, copied from
+  //      the encoder — whose own test reads the path back module by module.
   //
   // Red on the code it replaced: R0 held 新会话… 导入… / 邀请设备… 加入网络…
   // / 登记… and 网络's two; the new-session, import, join, register and
-  // directory forms were sheets hanging from R0 with no scrim.
+  // directory forms were sheets hanging from R0 with no scrim; the invite
+  // dialog had no picture.
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
   if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break acts;
   {
+    const QR_TOKEN = "khor-face-ticket-0930";
+    const QR_SPAN = 33;
+    const QR_PATH =
+      "M4 4h7v1h-7zM12 4h1v1h-1zM15 4h1v1h-1zM17 4h1v1h-1zM19 4h2v1h-2zM22 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM15 5h1v1h-1zM20 5h1v1h-1zM22 5h1v1h-1zM28 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h2v1h-2zM17 6h3v1h-3zM22 6h1v1h-1zM24 6h3v1h-3zM28 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM19 7h1v1h-1zM22 7h1v1h-1zM24 7h3v1h-3zM28 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM13 8h1v1h-1zM15 8h1v1h-1zM17 8h1v1h-1zM20 8h1v1h-1zM22 8h1v1h-1zM24 8h3v1h-3zM28 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h1v1h-1zM16 9h1v1h-1zM22 9h1v1h-1zM28 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h7v1h-7zM13 11h1v1h-1zM20 11h1v1h-1zM4 12h1v1h-1zM6 12h1v1h-1zM10 12h2v1h-2zM16 12h2v1h-2zM19 12h1v1h-1zM23 12h1v1h-1zM26 12h1v1h-1zM28 12h1v1h-1zM4 13h3v1h-3zM9 13h1v1h-1zM13 13h1v1h-1zM16 13h5v1h-5zM22 13h1v1h-1zM25 13h2v1h-2zM28 13h1v1h-1zM7 14h1v1h-1zM9 14h4v1h-4zM14 14h1v1h-1zM16 14h2v1h-2zM19 14h1v1h-1zM24 14h1v1h-1zM28 14h1v1h-1zM4 15h2v1h-2zM7 15h1v1h-1zM9 15h1v1h-1zM11 15h1v1h-1zM14 15h1v1h-1zM16 15h1v1h-1zM18 15h1v1h-1zM20 15h2v1h-2zM23 15h1v1h-1zM25 15h1v1h-1zM5 16h2v1h-2zM10 16h1v1h-1zM13 16h8v1h-8zM22 16h2v1h-2zM27 16h1v1h-1zM6 17h1v1h-1zM9 17h1v1h-1zM11 17h2v1h-2zM16 17h1v1h-1zM19 17h5v1h-5zM28 17h1v1h-1zM4 18h4v1h-4zM10 18h2v1h-2zM14 18h1v1h-1zM16 18h4v1h-4zM22 18h1v1h-1zM25 18h1v1h-1zM28 18h1v1h-1zM6 19h1v1h-1zM8 19h2v1h-2zM11 19h1v1h-1zM13 19h4v1h-4zM19 19h1v1h-1zM27 19h2v1h-2zM4 20h2v1h-2zM8 20h1v1h-1zM10 20h1v1h-1zM13 20h1v1h-1zM17 20h2v1h-2zM20 20h6v1h-6zM27 20h1v1h-1zM12 21h1v1h-1zM17 21h1v1h-1zM20 21h1v1h-1zM24 21h3v1h-3zM28 21h1v1h-1zM4 22h7v1h-7zM12 22h2v1h-2zM15 22h1v1h-1zM20 22h1v1h-1zM22 22h1v1h-1zM24 22h1v1h-1zM26 22h1v1h-1zM28 22h1v1h-1zM4 23h1v1h-1zM10 23h1v1h-1zM17 23h1v1h-1zM19 23h2v1h-2zM24 23h2v1h-2zM27 23h1v1h-1zM4 24h1v1h-1zM6 24h3v1h-3zM10 24h1v1h-1zM13 24h5v1h-5zM19 24h7v1h-7zM27 24h2v1h-2zM4 25h1v1h-1zM6 25h3v1h-3zM10 25h1v1h-1zM13 25h1v1h-1zM16 25h1v1h-1zM19 25h3v1h-3zM24 25h2v1h-2zM27 25h1v1h-1zM4 26h1v1h-1zM6 26h3v1h-3zM10 26h1v1h-1zM12 26h3v1h-3zM16 26h6v1h-6zM24 26h2v1h-2zM27 26h2v1h-2zM4 27h1v1h-1zM10 27h1v1h-1zM13 27h4v1h-4zM18 27h1v1h-1zM20 27h1v1h-1zM22 27h2v1h-2zM25 27h1v1h-1zM4 28h7v1h-7zM12 28h1v1h-1zM14 28h1v1h-1zM17 28h2v1h-2zM20 28h1v1h-1zM22 28h4v1h-4zM28 28h1v1h-1z";
+    await page.route("**/invite", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ token: QR_TOKEN, minutes: 15, qr: { span: QR_SPAN, path: QR_PATH } }),
+      }),
+    );
     // Rows on 额度, so its landing has a list and the list its ＋.
     await routeStanding();
     // A clean screen: no session tab left open by an earlier section
@@ -25064,6 +25084,62 @@ try {
       }
       await wait(250);
     }
+
+    // (c) 邀请设备: the token and its QR code.
+    if (!(await open("devices")) || !["menu", "direct"].includes(await plus("invite"))) {
+      fail("probe dead: acts (c) could not press ＋ on 机器");
+    } else if (!(await until(3_000, async () => (await page.locator("[data-invite-dialog] [data-ticket]").count()) === 1))) {
+      fail("probe dead: acts (c) · 邀请设备 opened no dialog with a token in it");
+    } else {
+      await wait(400);
+      const q = await page.evaluate(() => {
+        const dlg = document.querySelector("[data-invite-dialog]");
+        const svg = dlg?.querySelector("svg[data-ticket-qr]");
+        const path = svg?.querySelector("path");
+        const field = dlg?.querySelector("[data-ticket]");
+        const token = field ? ("value" in field ? field.value : field.textContent) : null;
+        if (!svg || !path) return { svg: !!svg, path: !!path, token };
+        const vb = svg.viewBox.baseVal;
+        const bb = path.getBBox();
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;color:var(--foreground)";
+        document.body.appendChild(probe);
+        const ink = getComputedStyle(probe).color;
+        probe.remove();
+        const box = svg.getBoundingClientRect();
+        const d = dlg.getBoundingClientRect();
+        return {
+          svg: true,
+          path: true,
+          token,
+          fillAttr: path.getAttribute("fill"),
+          fill: getComputedStyle(path).fill,
+          ink,
+          ground: getComputedStyle(svg).backgroundColor,
+          span: [vb.width, vb.height],
+          quiet: Math.min(bb.x - vb.x, bb.y - vb.y, vb.x + vb.width - (bb.x + bb.width), vb.y + vb.height - (bb.y + bb.height)),
+          square: Math.abs(box.width - box.height) < 0.5,
+          inside: box.left >= d.left - 0.5 && box.right <= d.right + 0.5 && box.top >= d.top - 0.5 && box.bottom <= d.bottom + 0.5,
+          module: +(box.width / vb.width).toFixed(2),
+        };
+      });
+      console.log(`acts (c) · 邀请设备: ${JSON.stringify(q)}`);
+      if (!q.svg || !q.path) {
+        fail("acts (c) · 邀请设备 draws no QR code — one invite, two spellings: the code above, the token under it");
+      } else {
+        if (q.fillAttr !== "currentColor" || q.fill !== q.ink) {
+          fail(`acts (c) · the code is painted ${q.fillAttr} → ${q.fill}, not currentColor → the ink ${q.ink}`);
+        }
+        if (q.ground !== "rgba(0, 0, 0, 0)") fail(`acts (c) · the code stands on ${q.ground} — its ground is the dialog's (transparent)`);
+        if (q.span.join(",") !== `${QR_SPAN},${QR_SPAN}`) fail(`acts (c) · the picture is ${q.span} modules — the node answered ${QR_SPAN}`);
+        if (!(q.quiet >= 4)) fail(`acts (c) · ${q.quiet} light module(s) around the symbol — a QR code needs a quiet zone of 4`);
+        if (!q.square || !q.inside) fail(`acts (c) · the code is ${q.square ? "" : "not "}square and ${q.inside ? "" : "not "}inside the dialog`);
+      }
+      if (q.token !== QR_TOKEN) fail(`acts (c) · the dialog's token reads ${JSON.stringify(q.token)} — the node answered ${QR_TOKEN}`);
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
+    await page.unroute("**/invite");
   }
   } // acts
 

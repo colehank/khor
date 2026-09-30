@@ -3565,6 +3565,13 @@ root-words-body = "这台机器刚生成了网络的根钥匙，它签字决定�
 root-words-show = "显示恢复词"
 root-words-done = "抄好了"
 ticket = "配对票"
+# 邀请设备的两种写法（2026-09-30，负责人：「邀请设备显示两个内容：现在的
+# token，和一个二维码」）。`ticket-qr` 是那张码的名字，给读屏的人——码里
+# 装的就是这串配对票，所以名字说的是它，不是「二维码」三个字。`copy-ticket`
+# 是对话框唯一的主按钮，当场做完，不带省略号；按下后借 `copied` /
+# `copy-failed` 报一声再回来（`copy-id` 的规矩）。
+ticket-qr = "配对票的二维码"
+copy-ticket = "复制配对票"
 paste-a-ticket = "在此粘贴配对票"
 join = "加入"
 close = "关闭"

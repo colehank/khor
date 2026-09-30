@@ -1252,6 +1252,19 @@ for line in sys.stdin:
   if (shownWindow !== saidWindow) {
     throw new Error(`the dialog says ${shownWindow}, the terminal says ${saidWindow}`);
   }
+  //    …and the same ticket as a QR code above it (2026-09-30, 「一个
+  //    邀请、两种写法」): the real node's answer, drawn — one path, in the
+  //    ink. What it encodes is proven by the encoder's own read-back test
+  //    (`khor_gui_core::qr`); this proves the real ticket reached the face
+  //    with a picture.
+  const qr = await page.evaluate(() => {
+    const svg = document.querySelector("[data-invite-dialog] svg[data-ticket-qr]");
+    const path = svg?.querySelector("path");
+    return svg && path ? { d: (path.getAttribute("d") ?? "").length, fill: path.getAttribute("fill"), span: svg.viewBox.baseVal.width } : null;
+  });
+  if (!qr || qr.d === 0 || qr.fill !== "currentColor" || !(qr.span > 21 + 8 - 1)) {
+    throw new Error(`the invite dialog draws no QR code of its ticket: ${JSON.stringify(qr)}`);
+  }
 
   await page.keyboard.press("Escape");
   cli(envG, "pair", guiTicket);
