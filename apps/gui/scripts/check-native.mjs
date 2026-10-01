@@ -25,6 +25,10 @@
 //   2. the left block's ground and the board agree with the theme —
 //      both dark in 深色, both light in 浅色.
 //
+// The last theme step relaunches the app on the theme **opposite to the
+// desktop's** (2026-10-01): a window that opened that way kept the
+// desktop's sidebar material under a page in the other theme.
+//
 // **And, since 2026-09-28, the half of 「像一个 Mac app」 that only the
 // real WKWebView can answer** (the keys phase, `keysPhase` below): the
 // menu bar khor builds (`src-tauri/src/menu.rs`) — its five menus, the
@@ -479,15 +483,26 @@ async function langPhase() {
 try {
   execFileSync(cliBin, ["config", "set", "lang", "zh"], { env, encoding: "utf8" });
   setTheme("dark");
-  const [id, , , w, h] = await launch();
+  let [id, , , w, h] = await launch();
   console.log(`window ${id}: ${w}×${h}`);
 
   /** Front, settle, shoot, judge. */
-  const step = async (theme, how) => {
-    execFileSync("osascript", ["-e", 'tell application "Finder" to activate']);
-    await wait(900);
+  const step = async (theme, how, refocus = true) => {
+    // Focus away and back — the page re-reads the store on coming to the
+    // front. **Finder put in front by System Events, not asked to activate
+    // itself** (2026-10-01): `tell application "Finder" to activate` is an
+    // Apple Event Finder has to answer, and a Finder busy elsewhere (a
+    // trash operation stuck the same morning) times it out (-1712) and the
+    // whole gate with it; System Events answers for Finder.
+    if (refocus) {
+      execFileSync("osascript", [
+        "-e",
+        'tell application "System Events" to set frontmost of (first process whose name is "Finder") to true',
+      ]);
+      await wait(900);
+    }
     front(child.pid);
-    await wait(1800);
+    await wait(refocus ? 1800 : 3000);
     const png = join(scratch, `${theme}-${how}.png`);
     execFileSync("screencapture", ["-x", "-o", "-l", String(id), png]);
     // The left block's blank rail (below the landings, above 「…」) and
@@ -530,6 +545,24 @@ try {
     await step("dark", "switched back");
     setTheme("auto");
     await step("auto", "follows the desktop");
+    // **Launched against the desktop** (2026-10-01, the owner's bug lane:
+    // two lanes saw the scratch app light with the left block dark — dark
+    // material, dark ink). The switches above all start from a window
+    // that already wore a theme; a window that *opens* on the store's
+    // light while the desktop is dark (or the other way round) wore the
+    // desktop's material until something made the window redraw it — a
+    // trip to the background and back, or switching the theme twice by
+    // hand. So this one is read **without** the trip the steps above
+    // take: brought to the front once, the way a person opens it.
+    // Measured before the fix: board rgb(255,255,255), left block
+    // rgb(67,67,67).
+    const against = desktopDark() ? "light" : "dark";
+    child.kill("SIGTERM");
+    for (let i = 0; i < 40 && child.exitCode === null && child.signalCode === null; i++) await wait(250);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    setTheme(against);
+    [id, , , w, h] = await launch();
+    await step(against, "launched against the desktop, never sent back", false);
   }
   if (only !== "theme") {
     await keysPhase(child.pid);

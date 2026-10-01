@@ -25596,6 +25596,11 @@ try {
   //      this file's routes (`?bridge=`); it comes last in this file,
   //      because the page stays an app from here on. Red before: the
   //      dialog came up on its own and 安全 had no such row.
+  //   d. **Only the face hands the app its theme** (浅色下左块是深色材质).
+  //      Read in the app, after c: the overlay menu window's page
+  //      (`?face=menu`) never asks `set_window_theme`. Red before: it
+  //      asked its mirror's 「auto」 at boot. The pixels are
+  //      `npm run native`'s.
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
@@ -25906,6 +25911,41 @@ try {
       if (n !== 0) fail("fix c · 安全 draws a 恢复词 row on a machine that does not hold the root");
       if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
     }
+  }
+
+  // d. only the face dresses the app (浅色下左块是深色材质, 2026-10-01).
+  //    The theme is worn on NSApp (`set_window_theme`), so it is the
+  //    whole app's — and the overlay menu window loads this same page
+  //    (`?face=menu`) at startup, where `main.tsx` used to hand the
+  //    window its **mirror's** guess and nothing ever corrected it. Two
+  //    pages, two guesses, last IPC wins: the scratch app opened light
+  //    with the left block dark whenever the overlay's 「auto」 landed after
+  //    the face's 「light」 (logged: 2 launches in 7). Still in the app here,
+  //    so `inApp` holds; red before: the overlay asked once at boot.
+  {
+    const asked = [];
+    const record = (r) => {
+      asked.push(JSON.parse(r.request().postData() || "{}").theme ?? null);
+      r.fulfill({ contentType: "application/json", body: "null" });
+    };
+    await page.route("**/set_window_theme", record);
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=menu`, { waitUntil: "load" });
+    await wait(1_500);
+    const fromMenu = asked.splice(0);
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+    await until(5_000, async () => asked.length > 0);
+    await wait(500);
+    const fromFace = asked.splice(0);
+    console.log(`fix d · set_window_theme asked by the overlay ${JSON.stringify(fromMenu)}, by the face ${JSON.stringify(fromFace)}`);
+    if (fromMenu.length) {
+      fail(
+        `fix d · the overlay menu window (?face=menu) asked set_window_theme ${JSON.stringify(fromMenu)} — it wears its ` +
+          "mirror's guess on the whole app, and when it lands after the face's answer the sidebar material is the wrong theme " +
+          "(src/theme.ts wearTheme)",
+      );
+    }
+    if (!fromFace.length) fail("probe dead: fix d · the face itself never handed the window its theme");
+    await page.unroute("**/set_window_theme", record);
   }
   } // fix
 

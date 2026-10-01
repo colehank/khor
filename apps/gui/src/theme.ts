@@ -29,7 +29,7 @@
 // browser that refuses storage simply follows the desktop, and the cost
 // of a stale mirror is one quarter-second flash on the first launch
 // after somebody changes the setting.
-import { inApp, setWindowTheme } from "@/api";
+import { inApp, isMenuFace, setWindowTheme } from "@/api";
 
 /** The key `index.html`'s pre-bundle script reads. **Written in two
     places by necessity** — that script runs before any module — and
@@ -78,6 +78,24 @@ export function mirroredPref(): ThemePref {
  * colour on its own.
  */
 export function wearTheme(next: ThemePref | null): void {
+  // **The overlay follows the app; it never steers it** (2026-10-01, the
+  // owner: 浅色下左块是深色材质、字暗). The overlay menu window loads this
+  // same page (`?face=menu`) at startup and never reads the store, so a
+  // choice of its own could only be the mirror as it stood when it
+  // booted. It used to wear that choice like the face — on NSApp, which
+  // is the whole app's — so two pages handed the app two answers and the
+  // last one won: launched on 浅色 over a dark desktop, the overlay's
+  // stale 「auto」 landed after the face's 「light」 and the sidebar
+  // material stayed dark under a light page (`npm run native`, the
+  // launch against the desktop: 1 launch in 2 before this). Its `change`
+  // listener below would hand it over again on every appearance change.
+  // NSApp already wears the face's choice and the overlay's
+  // `prefers-color-scheme` is NSApp's, so the overlay reads it as `auto`
+  // and writes neither the mirror nor the window.
+  if (isMenuFace) {
+    document.documentElement.setAttribute("data-theme", systemIsDark() ? "dark" : "light");
+    return;
+  }
   if (next !== null) pref = next;
   const dark = pref === "dark" || (pref === "auto" && systemIsDark());
   document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
