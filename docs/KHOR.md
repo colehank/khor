@@ -29,7 +29,8 @@ p2p 组成用户自己的设备网络：在任意设备同步信息、发起任�
 
 ## 实现
 
-Rust 后端 + Tauri v2 前端，一套代码五端：macOS、Linux、Windows、iOS、Android。
+Rust 后端 + Tauri v2 前端，一套代码五端：macOS、Linux、Windows、iOS、Android
+（iOS 起得来了，现状见 [IOS.md](IOS.md)）。
 网页脸是同一份前端：vite 产物编进那一个二进制（`crates/web`），
 落地的机器上仍然什么都不用装——浏览器每台设备本来就有。
 UI 用 shadcn/ui，参考 Apple。没有技术壁垒，体验就是壁垒。
@@ -53,4 +54,5 @@ UI 用 shadcn/ui，参考 Apple。没有技术壁垒，体验就是壁垒。
 | [WORKSPACE.md](WORKSPACE.md) | 工作区：人立的 (机器,目录)、行的四个角、同步表、`khor ws` |
 | [HOOKS.md](HOOKS.md) | 进程接入：钩子怎么交状态词、Claude Code 怎么挂 |
 | [AGENT.md](AGENT.md) | Khor 智能体：权限两档、执行位置、账户 |
+| [IOS.md](IOS.md) | iOS：怎么构建、在模拟器里跑；手机上哪些事只有桌面能做、今天怎样；下一步 |
 | [NEWAPI.md](NEWAPI.md) | new-api 两个端点的形状：字段、哨兵、上限——**一份会过期的快照** |

@@ -27,7 +27,9 @@
     "web-face": "node scripts/web-face.mjs",
     "gates": "node scripts/check-gates.mjs",
     "boot": "node scripts/check-boot.mjs",
-    "native": "node scripts/check-native.mjs"
+    "native": "node scripts/check-native.mjs",
+    "mobile": "node scripts/check-mobile.mjs",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@radix-ui/react-context-menu": "^2.3.7",
@@ -56,6 +58,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4",
+    "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5",

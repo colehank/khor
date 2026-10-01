@@ -17,8 +17,9 @@ khor-node.workspace = true
 # The browser face, started beside the embedded serve. The app is the
 # resident on a desktop that has one, and a face that only `khor serve`
 # could raise would be absent on exactly the machines somebody sits at.
+# Compiled on a phone too and never started there (`run`).
 khor-web = { path = "../../../crates/web" }
-# Used only by the mobile halves of the page commands, which refuse in
+# Used only by the mobile halves of the page and window commands, which refuse in
 # words. Not target-gated: `desktop`/`mobile` are cfgs tauri-build sets,
 # and cargo's `[target.'cfg(..)']` only understands real target cfgs — so
 # gating the dependency the way the code is gated is not expressible.
@@ -56,7 +57,11 @@ tauri-plugin-dialog = "2"
 # arguments on Windows. Reading this gate as "borrowing is macOS-only"
 # is what kept two platforms refusing a thing they could already do.
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-proxy"] }
+# `macos-private-api` repeated here is the tauri CLI's doing: `tauri ios`
+# holds every `tauri` line equal to `macOSPrivateApi` and rewrites this one
+# if it lacks it (2026-10-02). Cargo unions features, so the desktop build
+# is the same either way; written out, the CLI leaves the file alone.
+tauri = { version = "2", features = ["macos-private-api", "macos-proxy"] }
 # Already in the tree under tao/wry; used to read and set one window's
 # NSAppearance (`open_code_window`), which tauri's own `theme` cannot do
 # per window on macOS (it sets NSApp's).

@@ -433,6 +433,19 @@ impl Node {
                             let stamp =
                                 jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                             eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
+                            // **Not on a phone.** Nothing stands an iOS
+                            // app back up — no keeper, and the system
+                            // reads an exit as a crash — and a phone out
+                            // of signal for two minutes hears nobody for
+                            // an ordinary reason. The app would simply
+                            // vanish in a lift. The watch starts over;
+                            // fresh ears without a restart are iOS
+                            // step 2 (docs/IOS.md).
+                            #[cfg(target_os = "ios")]
+                            {
+                                *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
+                            }
+                            #[cfg(not(target_os = "ios"))]
                             std::process::exit(DEAF_EXIT);
                         }
                         // **Tidy up after the sync, never before it.**

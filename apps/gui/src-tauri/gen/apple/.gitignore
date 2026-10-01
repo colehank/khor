@@ -1,0 +1,5 @@
+# No trailing slash: a machine that links these to another disk has
+# symlinks here, which a `dir/` pattern does not match.
+xcuserdata/
+build
+Externals

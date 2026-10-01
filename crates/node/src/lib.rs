@@ -1387,7 +1387,31 @@ impl Node {
     /// user on this machine is serving (`serves::residents`).
     pub fn root_from_env_default() -> PathBuf {
         let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        #[cfg(target_os = "ios")]
+        return Self::sandbox_root(&home);
+        #[cfg(not(target_os = "ios"))]
         Self::store_under(&home)
+    }
+
+    /// Where the store lives inside an iOS app's sandbox. `$HOME` there is
+    /// the app's own data container, and the system lets an app write in
+    /// `Documents`, `Library` and `tmp` — not at the container's top, where
+    /// `~/.khor` would have gone. `Library/Application Support` is the
+    /// place Apple names for data the app makes and the person never opens
+    /// as files (`Documents` would show the private key in the Files app
+    /// once file sharing is on). It does not exist on a fresh install;
+    /// `claim_store` creates the path on the way in.
+    ///
+    /// **No side rooms**: a container is one app on one phone, never a
+    /// home mounted on several machines, so [`Node::store_under`]'s search
+    /// has nothing to find.
+    ///
+    /// ⚠️ The system backs this directory up, identity key included, so a
+    /// restore onto a new phone arrives with the old phone's key — the
+    /// copied-store case. Excluding `.khor` from backup is iOS step 2
+    /// (`docs/IOS.md`).
+    pub fn sandbox_root(home: &std::path::Path) -> PathBuf {
+        home.join("Library").join("Application Support")
     }
 
     /// Which store under `home` belongs to this machine. Split out so a
