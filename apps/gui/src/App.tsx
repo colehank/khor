@@ -2010,7 +2010,7 @@ export default function App() {
       // 2026-09-28): the workspaces this face opened last, each with its
       // machine, path, branch and last change — the board was a blank
       // slab here. Wide only: on the narrow face the list is the screen.
-      <WorkspacesNow devices={devices} onOpen={openWorkspace} onAdd={() => setDialog("ws-add")} />
+      <WorkspacesNow devices={devices} onOpen={openWorkspace} />
     )
   ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
     // A machine asked for (⌘K) before the device table has answered

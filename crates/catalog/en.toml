@@ -1315,6 +1315,7 @@ rail-more = "More"
 # "Quota" (not "Usage") — the `khor usage` command already owns that word.
 accounts-tab = "Quota"
 accounts-empty = "No API accounts registered yet — register one and its usage shows up here."
+accounts-empty-how = "Use the + beside the search box to register one"
 accounts-register = "Register"
 # Kept distinct from `quota-by` ("Provider", the grouping axis) to avoid a duplicate string in this section.
 accounts-provider = "Vendor"
@@ -1449,6 +1450,7 @@ workspaces-empty = "No workspaces yet"
 workspaces-how = "Use the + above to pick a directory on a machine"
 ws-add-ask = "Add a workspace…"
 ws-now-changed = "Recently changed"
+ws-now-how = "Use the + beside the search box to add one"
 # Said in the one delete window every sidebar shares (`confirm-delete`,
 # docs/SHELL.md 第四轮).
 ws-remove-confirm = "Takes it off this list; the directory itself is untouched"
