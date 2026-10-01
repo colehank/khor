@@ -661,6 +661,14 @@ impl LiveKind {
         // one — and an agent row's route exists only while the sweep can
         // still see its process inside a session.
         let sweep = self.discovery.sweep();
+        // Every attach below turns the mouse on for khor's own client
+        // (`Tmux::grouped_attach_argv`, so the wheel scrolls tmux's
+        // history). A tmux with no `mouse` option attaches all the same
+        // — the setting is `-q` — and this line is what is left to say
+        // why its wheel is still ↑ ↓.
+        if !tmux.knows_mouse() {
+            eprintln!("{}", msg::tmux_no_mouse_option(&id.0));
+        }
         let shell_prefix = format!("{}/", khor_core::kind::SHELL);
         if let Some(target) =
             id.0.strip_prefix(&shell_prefix)

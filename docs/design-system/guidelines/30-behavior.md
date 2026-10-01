@@ -66,6 +66,7 @@
 | 恢复词按需：首启生根的机器 app 一开不弹窗；持根机在 app 里「…」→ 安全 有一行「恢复词」，右端「显示…」，按了才在对话框里给 24 个词；不持根的机器、网页脸都没有这一行 | `check-face` §14 c（`FACE_ONLY=fix`，2026-10-01；网页脸量一次，再在同一页上挂 tauri 的 IPC 全局量 app，所有调用仍走 `?bridge=` 的路由；旧代码上先红：首启弹出 `data-root-words-dialog`、安全页没有这一行） |
 | **一段回放从中间开始，也先回到它开头设的模式**（2026-10-01，负责人：「初次进入一个 tmux 会话的标签，滚鼠标滚轮页面没有变化；把窗口缩放一下就能滚了」）：宿主的回放环（256 KiB）和 app 的 feed（512 KiB）截掉开头时，被截掉那段设过的终端模式（备用屏 1049、光标键 1、鼠标 1000 / 1002 / 1003 / 1006…、粘贴 2004、小键盘）放在回放最前面（`khor_node::modes`）。tmux 客户端只在连上时发一次 `ESC [ ? 1049 h`，环一满它就没了：再接上的 xterm 停在普通缓冲区，滚轮滚的是 xterm 自己几乎空的回滚、什么也不发给 tmux；缩放让程序重画、把行挤进这个错的缓冲区，滚轮才「能滚」 | `cargo test -p khor-node --test host_replay`：真宿主、真 pty，程序设四个模式后写 450 KiB，再接上的回放在第一行之前带着四个模式（旧代码上先红：回放从「…4567890123456789\r\nflood-001721」开始，没有 1049h）；`cargo test -p khor-gui-core term::tests::a_trimmed_feed_replays_into_the_modes_its_head_set`（把前缀拿掉就红） |
 | **终端里输入法不组字就提交的字，按一次发一次**（2026-10-01，负责人：「『(』『"』这类符号要按两次才上屏」）：拼音下 Shift + 标点，WebKit 先发 `input`（insertText「(」）、后发这个键的 keydown（229），xterm 6.0 两条路都接不住——`_inputEvent` 嫌 Shift 的 keydown 还没抬起，229 那条读 textarea 的差时字已经在里面了；按住 Shift 再按一次才过（前一次的抬起清了旗）。`TerminalPane` 的 `keepShiftedCommits` 只接这一种：不在组字、最后一个 keydown 只是修饰键且没抬起时的 insertText（xtermjs/xterm.js#5887 同一族） | `check-face` §15（`FACE_ONLY=term`）：在 xterm 的 textarea 上按 WebKit 的真实顺序重放，数 `term_key` 收到的字：「(」「“」各一次一个、按住 Shift 两次两个，Chrome 的顺序（229 在前）仍是一个（旧代码上先红：0、0、1）；真 WKWebView + 真拼音输入源的脚本（scratch，不进门）修后 Shift+9、Shift+'、Shift+0、Shift+1 每次一个 |
+| **khor 接入的 tmux 会话，滚轮翻 tmux 的历史**（2026-10-01，负责人：「滚轮翻 tmux 历史这，自动打开吧」）：接入的命令最后一句 `set-option -q mouse on`，设在 khor 自己的分组会话上（`Tmux::grouped_attach_argv`）——用户的会话、别的会话、`-g` 全局、配置文件都不动，khor 断开后分组会话连同这个选项一起销毁，不用设回；没有 `mouse` 选项的老 tmux 照常接入、日志留一句（`tmux-no-mouse-option`）。鼠标开着时普通拖动归 tmux（拷进 tmux 自己的缓冲、进不了剪贴板），**⌥ 拖**才是 khor 的选择（选中即拷），`TerminalPane` 开了 `macOptionClickForcesSelection`。理由与取舍见 docs/SESSION.md「接入 tmux」 | `cargo test -p khor-node --test tmux_mouse`：私有 tmux 服务器（`-L`、`-f /dev/null`、自己的 `TMUX_TMPDIR`）上走真接入（`attach_multiplexed` → 真宿主 → 真 tmux 客户端）：分组会话 `mouse on`，被接的会话和另一个会话仍是 off、全局 off；宿主流里出现 `ESC [ ? 1006 h`；从宿主送进三个 SGR 滚轮，窗格进复制模式、`scroll_position` > 0。机器上没有 tmux 就跳过并说明。`adaptor::tmux` 单测钉命令链的形状（最后一句、无 `-t` 无 `-g`、带 `-q`）。新行为，没有先红 |
 
 | 每一轮结束时，负责人在**真的 app 里**走一遍——拖、拉宽、切页、掐时间 | 交接清单里的一条；网页端截图不算 |
 
@@ -90,6 +91,10 @@
 **2026-10-01 终端滚轮与输入法**（负责人：「初次进入一个 tmux 会话的标签，滚鼠标滚轮页面没有变化；把窗口缩放一下就能滚了」「『(』『"』这类符号要按两次才上屏」）。装机后走；已经在跑的宿主是旧代码，要等它的 tmux 标签新起一个宿主：
 - 开一个在 tmux 里跑了很久、输出很多的会话标签，不缩放窗口就滚滚轮：tmux 的 `mouse` 是 off（默认）时，滚轮等于按 ↑ ↓（像 Terminal.app 在备用屏里），缩放前后一样；`mouse on` 时滚轮让 tmux 进复制模式往上翻，缩放前后一样。不再有「缩放后才能滚、滚出来的是旧画面的碎片」。
 - 拼音输入法、中文标点下，在终端里按 Shift+9、Shift+'、Shift+1：每按一次上屏一个，不用按两次；按住 Shift 连按两次 9 是两个；打一句带标点的中文、再切英文输入法打一遍，都不多不少。
+- **接入的 tmux 会话，滚轮翻历史**（负责人：「滚轮翻 tmux 历史这，自动打开吧」）：已经开着的 tmux 标签是旧宿主，先关掉再从侧边栏打开（新起一个宿主）。tmux 里跑着 claude 或 shell、输出过不少，滚轮往上：tmux 进复制模式（右上角出现 `[行号/总数]`）往上翻，**不是**翻 claude / shell 的输入历史；往下滚回底部自动退出，`q` 也退出。
+- 同一个标签里，**⌥ 拖**选一段字：出现 xterm 的选中底色，松手后在别处 ⌘V 粘出来的就是这段。**不按 ⌥ 直接拖**：是 tmux 在选（复制模式的高亮），松手后 ⌘V 粘出来的**不是**这段（它进了 tmux 自己的缓冲）——这是开鼠标的代价，写在 docs/SESSION.md。右键弹的是 tmux 的菜单。
+- 在 Terminal.app / iTerm 里 `tmux attach` 同一个会话：那边滚轮仍是原来的样子（鼠标没被打开），`tmux show-options -g mouse` 仍是 off、`tmux show-options -t <会话> mouse` 什么都没设；khor 那边滚上去时，这边看到同一个窗格也进了复制模式（窗格是共用的）。关掉 khor 的标签，`tmux ls` 里没有多出来的会话。
+- khor 自己的终端（新会话里开的，不是 tmux）：直接拖就是选，滚轮照旧。
 
 **2026-09-30 板是纸，底是框**（负责人：「用灰色背景，黑色内容怎么样」「大改，浅色也类似的去做」）。两个主题各走一遍（「…」› 外观 切浅色 / 深色）：
 

@@ -50,6 +50,12 @@ pdfboss-core = "2.4.0"
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
+# Its own `main`: the attach it tests re-execs this binary as the host
+# (`host::main_if_host`), which the default harness cannot answer.
+[[test]]
+name = "tmux_mouse"
+harness = false
+
 # The one road to a recycle bin, on the three platforms that have one
 # (`crates/node/src/files.rs` — the three candidates and what each cost).
 # Not on iOS/Android, which have no such place: there `files::remove`

@@ -146,6 +146,56 @@ khor 自己的终端宿主（pty）、一个 tmux 会话；khor 摸不到终端�
 修；`an_unregistered_agent_leaving_its_tmux_session_turns_its_row_into_that_terminal`
 在旧代码上先红）。实现在 `crates/node/src/live.rs` 的 `LiveKind::rows`。
 
+## 接入 tmux：滚轮翻 tmux 的历史（2026-10-01）
+
+khor 打开一个 tmux 会话的终端，不是 `tmux attach` 到用户的会话上，而是在
+自己的宿主（pty）里起一个**分组会话**的客户端：`tmux new-session -t <会话>`，
+再 `set-option destroy-unattached on`（`Tmux::grouped_attach_argv`）。分组
+会话和用户的会话共用窗口和窗格，但有自己的客户端、尺寸和**会话级选项**；
+khor 的客户端一断开，分组会话就随之销毁。三条接入路（tmux 行自己、坐过它的
+智能体行、tmux 里的智能体行，`LiveKind::attach_multiplexed`）都走这一条命令。
+
+**负责人 2026-10-01 定：「滚轮翻 tmux 历史这，自动打开吧」。** tmux 的
+`mouse` 默认是 off；tmux 客户端停在备用屏里，终端在备用屏里的滚轮等于按
+↑ ↓（Terminal.app 也一样），落到窗格里的 claude 或 shell 上是翻输入历史，
+翻不了 tmux 的画面。所以这条命令最后加了一句 `set-option -q mouse on`：
+
+- **设在 khor 自己的分组会话上，不设在用户的会话上。** `mouse` 是会话选项，
+  tmux 按**客户端所在的会话**读它；分组会话的选项是它自己的（继承全局，
+  不继承被分组的那个会话）。所以只有 khor 的客户端开了鼠标：用户的会话、
+  用户的其他会话、`-g` 全局都不动，不写任何配置文件。实测（私有 `-L`
+  服务器）：接入后分组会话 `mouse on`，被接的会话和旁边的会话仍是 `off`，
+  `show-options -g` 仍是 `off`。这比派活时设想的 `set-option -t <会话>`
+  更窄：用户在别的终端里接同一个 tmux 会话，鼠标照旧是关的。
+- **开了以后**：tmux 向 khor 的终端要 SGR 鼠标报告（`ESC [ ? 1006 h`），
+  xterm 把滚轮当鼠标报告发过去，tmux 进复制模式往上翻；翻回底部自己退出
+  （`copy-mode -e`），`q` 也退出。**复制模式是窗格的**：用户在别的终端里
+  看着同一个窗口，会看到窗格也进了复制模式。
+- **拖选变了。** 鼠标开着时，普通的拖动归 tmux：它在复制模式里选、松手拷进
+  **tmux 自己的粘贴缓冲**（`prefix ]` 粘），**进不了 Mac 的剪贴板**——那要
+  OSC 52，khor 的终端不接。要 khor 自己的选择（选中即拷进剪贴板，
+  `TerminalPane`），**按住 ⌥ 拖**（Mac 以外按住 ⇧）。⌥ 拖在 Mac 上要 xterm 的
+  `macOptionClickForcesSelection` 才生效，这一天起打开；代价是 ⌥ 拖不再是
+  xterm 的列选择。右键也归 tmux（tmux 3 弹它自己的菜单）。没开鼠标的终端
+  （khor 自己的 pty、没经 tmux 的）照旧：拖就是选。
+- **断开后不设回去**：设在分组会话上，khor 一断开分组会话就销毁了，选项跟着
+  没了，用户的会话本来就没被写过——没有什么要还原。即使将来改成设在用户的
+  会话上，也不该设回：会话是用户的，下次接入还得再开，来回切只会让用户在
+  别的终端里看到鼠标时开时关。
+- **失败不挡接入**：这一句在命令链的最后，tmux 的命令链里一句失败只跳过
+  它后面的（实测：放在 `destroy-unattached` 前面失败，那一句就没设上），
+  放最后只可能赔掉它自己；`-q` 让没有 `mouse` 选项的 tmux（早于 2.1）不在
+  状态栏上报错。这种情况接入前先问一次（`Tmux::knows_mouse`），日志里留
+  `tmux-no-mouse-option` 一句。会话已经没了的话，接入本身就失败，原来的话
+  （`tmux-session-gone`）不变。
+- **不涉及**：khor 自己开的终端（pty 里直接是 shell / 程序）；卫星上 khor
+  自己起的 `tmux new-session -A -s khor`（那是 khor 的会话，另一回事，未动）。
+
+测试：`cargo test -p khor-node --test tmux_mouse`——私有 tmux 服务器上走一遍
+真的接入（`attach_multiplexed` → 真宿主 → 真 tmux 客户端），断言分组会话
+`mouse on`、被接的会话和另一个会话仍 off、全局 off，宿主流里出现 1006h，
+从宿主送进一个 SGR 滚轮后窗格进了复制模式、`scroll_position` > 0。
+
 ## 动作
 
 通用四个：open、close、seen、rename。
