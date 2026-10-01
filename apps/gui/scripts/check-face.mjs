@@ -27051,7 +27051,13 @@ try {
     if (!dialogB) {
       fail("probe dead: phone b · the new-session dialog or its machine choice never drew");
     } else {
-      if (dialogB.opened !== "peer") fail(`phone b · the dialog opened on ${dialogB.opened} — on a phone it opens on the first machine that can host (peer)`);
+      // **A machine that can host, never this phone** — which one is the
+      // list's order, and earlier sections pin and rename (peer alone, or
+      // elder first once the table is reordered).
+      const hostsHere = devs.filter((d) => d.hosts && d.sponsor === null).map((d) => d.name);
+      if (!hostsHere.includes(dialogB.opened)) {
+        fail(`phone b · the dialog opened on ${dialogB.opened} — on a phone it opens on a machine that can host (${hostsHere.join(", ")})`);
+      }
       if (dialogB.atOpen.agent?.disabled !== false || !dialogB.atOpen.agent?.on) {
         fail(`phone b · the dialog did not open on 智能体, live, on peer — a machine that can host: ${JSON.stringify(dialogB.atOpen)}`);
       }
