@@ -197,18 +197,10 @@ async fn run(o: &Options, mode: &Mode, table: Option<Arc<Table>>) -> Result<(), 
             }
             (
                 o.http.unwrap_or_else(|| SocketAddr::from(([0u16; 8], 80))),
-                Some(TlsConfig::new(
+                Some(acme_tls(
+                    acme,
                     o.bind.unwrap_or_else(|| SocketAddr::from(([0u16; 8], 443))),
-                    CertConfig::LetsEncrypt {
-                        acme_config: acme,
-                        server_config_builder: rustls::ServerConfig::builder_with_provider(
-                            Arc::new(rustls::crypto::ring::default_provider()),
-                        )
-                        .with_safe_default_protocol_versions()
-                        .map_err(|e| cli::relay_wont_start(e))?
-                        .with_no_client_auth(),
-                    },
-                )),
+                )?),
             )
         }
     };
@@ -294,6 +286,35 @@ async fn stop_signal() {
     {
         let _ = tokio::signal::ctrl_c().await;
     }
+}
+
+/// The TLS half of `--acme`: certificates asked of an ACME directory,
+/// served on `bind`.
+///
+/// **Installs ring as the process's rustls provider first.** When the
+/// server is spawned the ACME library builds its acceptor with
+/// `rustls::ServerConfig::builder()` — the *process default* provider —
+/// and this binary's dependency tree turns on both `ring` and
+/// `aws-lc-rs`, so rustls refuses to pick one and panics. The first
+/// `khor relay --acme` ever started (2026-10-01, the Hong Kong relay)
+/// died in a restart loop on exactly that, before it listened.
+/// Everything else here names ring explicitly (`manual_tls`, the
+/// builder below), which is why the other two modes never met it.
+/// Installing twice is refused by rustls and is not an error here.
+fn acme_tls(acme: AcmeConfig, bind: SocketAddr) -> Result<TlsConfig, String> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    Ok(TlsConfig::new(
+        bind,
+        CertConfig::LetsEncrypt {
+            acme_config: acme,
+            server_config_builder: rustls::ServerConfig::builder_with_provider(Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| cli::relay_wont_start(e))?
+            .with_no_client_auth(),
+        },
+    ))
 }
 
 fn manual_tls(cert: &Path, key: &Path) -> Result<rustls::ServerConfig, String> {
@@ -606,4 +627,37 @@ fn print_stats(state: &Path) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `khor relay --acme` panicked the moment its server was spawned:
+    /// "Could not automatically determine the process-level
+    /// CryptoProvider". Red without the install in `acme_tls` when run
+    /// alone (`cargo test -p khor-cli --bin khor acme_mode`).
+    ///
+    /// Nothing leaves the machine: the ACME directory is a dead loopback
+    /// port, so the order loop fails quietly in the background, and both
+    /// listeners are on loopback ports the system picks.
+    #[tokio::test]
+    async fn the_acme_mode_spawns_its_server_in_a_process_with_no_rustls_provider() {
+        let dir = std::env::temp_dir().join(format!("khor-relay-acme-{}", std::process::id()));
+        let loopback = SocketAddr::from(([127, 0, 0, 1], 0));
+        let acme = AcmeConfig::new("http://127.0.0.1:9/directory".to_owned())
+            .domains(vec!["relay.example".to_owned()])
+            .cache_path(dir.join("acme"));
+        let mut relay = RelayConfig::new(loopback);
+        relay.tls = Some(acme_tls(acme, loopback).expect("the TLS half should build"));
+        let mut cfg = ServerConfig::default();
+        cfg.relay = Some(relay);
+        let mut server = Server::spawn(cfg)
+            .await
+            .expect("an ACME relay should spawn and listen");
+        assert!(server.https_addr().is_some(), "it listens for TLS");
+        let _ = server.shutdown().await;
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
