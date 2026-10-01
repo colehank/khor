@@ -432,10 +432,21 @@ async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
     if urls.is_empty() {
         return (Health::Warn, cli::doctor_relays_none().to_owned(), None);
     }
+    // **All at once, each on its own clock** (2026-10-01, when the tier
+    // became two relays): asked one after another, a slow relay ate the
+    // row's whole three seconds and the row said 未量 about a relay that
+    // had answered in 10 ms.
+    let asked: Vec<_> = urls
+        .iter()
+        .map(|url| {
+            let url = url.clone();
+            tokio::spawn(async move { relay_rtt(&url).await })
+        })
+        .collect();
     let mut said: Vec<String> = Vec::new();
     let mut reached = 0usize;
-    for url in &urls {
-        match relay_rtt(url).await {
+    for (url, rtt) in urls.iter().zip(asked) {
+        match rtt.await.ok().flatten() {
             Some(ms) => {
                 reached += 1;
                 said.push(cli::doctor_relay_ms(url, ms));
@@ -836,11 +847,26 @@ pub fn store_bytes(root: &Path) -> u64 {
 /// completes and then never speaks is not reachability. Any status is an
 /// answer — what is being asked is whether the host is there, not what
 /// it thinks of the path.
+///
+/// **On the road khor's own relay connection takes**: a proxy from the
+/// environment and nothing else — never the system proxy this crate's
+/// reqwest reads for the quota page (2026-10-01; iroh's relay client and,
+/// since vendor/iroh patch 2, its probes read the same four variables in
+/// the same order). Through the system proxy this row measured the
+/// proxy's detour, not the relay. Its clock is a little short of the
+/// row's, so a silent relay is named as silent rather than timing the
+/// whole row out.
 async fn relay_rtt(url: &str) -> Option<u128> {
-    let client = reqwest::Client::builder()
-        .timeout(CHECK_TIMEOUT)
-        .build()
-        .ok()?;
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(CHECK_TIMEOUT.saturating_sub(Duration::from_millis(400)));
+    let from_env = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"]
+        .into_iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
+    if let Some(proxy) = from_env.and_then(|v| reqwest::Proxy::all(v).ok()) {
+        builder = builder.proxy(proxy);
+    }
+    let client = builder.build().ok()?;
     let started = Instant::now();
     client.get(url).send().await.ok()?;
     Some(started.elapsed().as_millis())

@@ -14,28 +14,53 @@ pub const ALPN: &[u8] = b"khor/0";
 pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 
 /// The Khor relay tier (docs/NET.md 中继): the relays every khor binds
-/// with unless this machine was told to use only its own. Currently
-/// mandala's aliyun box, on loan — khor's own fleet replaces this list,
-/// not the mechanism.
+/// with unless this machine was told to use only its own — each with
+/// the shared key its relay asks for.
 ///
-/// **n0's public relays stay beside it as the fallback** (the owner,
-/// 2026-09-30: 「还是不去 n0 吧，n0 可以兜底」 — Khor has one relay, in
-/// China, and until it has one abroad a machine abroad would otherwise
-/// cross the border for every relayed byte). n0 describes them as fit
-/// for development and rate-limited, and they do not answer from
-/// mainland China; both are why the Khor tier is in the map at all.
-/// [`bind_with`] is where the fallback is added; 「只使用自己的中继」
-/// drops both tiers.
-pub const KHOR_RELAYS: &[&str] = &["http://39.97.7.248:3340"];
-
-/// The Khor tier's shared key, when it has one.
+/// **Two, because one cannot be reached by everyone** (2026-10-01,
+/// measured before either went in):
 ///
-/// `None` while the tier still runs `iroh-relay --dev` and admits
-/// everyone. A key compiled into a binary can be dug out of it, so this
-/// only stops casual free-riding, not a determined one (CONNECT.md 分期
-/// 0 says the same); what it buys is that a relay admitting only
-/// holders of it stops being an open relay for every iroh program.
-pub const KHOR_RELAY_TOKEN: Option<&str> = None;
+/// - **Beijing**, plain HTTP on 3340. For machines whose network does
+///   not leave the mainland — the lab's three reach it in 5 ms and
+///   cannot reach Hong Kong at all (a campus network that carries
+///   domestic traffic only). An address and a port, no domain: a domain
+///   on a mainland machine's 443 needs an ICP filing.
+/// - **Hong Kong**, `relay.khor.cloud`, TLS with a Let's Encrypt
+///   certificate. For everything that can cross the border, and for
+///   machines abroad.
+///
+/// Each endpoint homes on whichever it measures nearest; two machines
+/// on different homes meet through the callee's, and Beijing is the one
+/// both sides can reach. **Two addresses, never one name over both**: a
+/// relay is stateful — a machine is found only on the relay it is
+/// connected to — so one name resolving to two boxes splits the fleet.
+///
+/// **A key each, and not the same key.** A key compiled into a binary
+/// can be dug out of it, so these stop casual free-riding, not a
+/// determined one (CONNECT.md 分期 0 says the same); what they buy is
+/// that neither box is an open relay for every iroh program. Beijing's
+/// crosses the wire in the clear, which is why it must not also open
+/// Hong Kong.
+///
+/// **n0's public relays stay behind these as the fallback** (the owner,
+/// 2026-09-30: 「还是不去 n0 吧，n0 可以兜底」). [`bind_with`] is where
+/// the fallback is added; 「只使用自己的中继」 drops both tiers.
+///
+/// ⚠️ 墓碑: until 2026-10-01 this was one open relay,
+/// `http://39.97.7.248:3340` — mandala's aliyun box on loan, running
+/// `iroh-relay --dev` and admitting everyone — with `KHOR_RELAY_TOKEN`
+/// a separate `None`. That box's lease ends; the key now rides with
+/// each address because the two relays do not share one.
+pub const KHOR_RELAYS: &[(&str, Option<&str>)] = &[
+    (
+        "http://101.200.80.77:3340",
+        Some("bbe31ccf721dde188508517840c24673ef9d4a5865af18a3"),
+    ),
+    (
+        "https://relay.khor.cloud",
+        Some("a086ea41af0a8bfe73ac98a914a18542bea845123e8b9eaf"),
+    ),
+];
 
 /// One relay this machine binds with: where it is, and the key its
 /// operator asked for.
@@ -98,9 +123,9 @@ impl Relay {
 pub fn khor_tier() -> Vec<Relay> {
     KHOR_RELAYS
         .iter()
-        .map(|url| Relay {
+        .map(|(url, token)| Relay {
             url: url.to_string(),
-            token: KHOR_RELAY_TOKEN.map(str::to_string),
+            token: token.map(str::to_string),
         })
         .collect()
 }
