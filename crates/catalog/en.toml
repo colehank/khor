@@ -1104,6 +1104,7 @@ no-standing-dir = "can't tell which directory this command was started in (most 
 cwd-pin-failed = "could not stand in {0} ({1}); still standing where it was started, and if that directory is deleted a repository read will be refused"
 borrow-self = "That's this machine's own network — no need to borrow it; open it directly for a direct connection"
 page-needs-desktop = "Opening a web page from another machine's network only works on desktop for now"
+window-needs-desktop = "Window actions work only on desktop"
 
 name-not-pathable = "This name can't go in a path: {0}"
 machine-name-not-pathable = "This machine name can't go in a path: {0}"

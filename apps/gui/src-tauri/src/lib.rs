@@ -1318,6 +1318,14 @@ fn traffic_room() -> f64 {
     0.0
 }
 
+/// A phone draws no buttons over the row, so this is the true answer, not
+/// a refusal — `show_menu`'s kind of mobile half.
+#[cfg(not(desktop))]
+#[tauri::command]
+fn traffic_room() -> f64 {
+    0.0
+}
+
 /// Give the window the app's own ground **before the page has one**.
 ///
 /// ⚠️ **Measured 2026-09-11 by screenshotting a cold launch**: the
@@ -2133,7 +2141,7 @@ async fn open_code_window(machine: String, url: String, title: String) -> Result
     let _ = (machine, url, title);
     // A phone has no second window to put an editor in, and the face
     // draws no switch there anyway (`components/CodeWindow`).
-    Err("no windows here".into())
+    Err(khor_catalog::msg::window_needs_desktop().into())
 }
 
 // **The mobile halves are refusals, and unlike the last one that stood
@@ -2369,6 +2377,29 @@ fn window_maximize_toggle(window: tauri::Window) -> Result<(), String> {
 #[tauri::command]
 fn window_close(window: tauri::Window) -> Result<(), String> {
     window.close().map_err(|e| e.to_string())
+}
+
+// **The mobile halves refuse, in words.** A phone's one window is the
+// system's to minimize and close; answering `Ok` would tell the face a
+// thing happened that did not. The face draws none of the three there
+// (`windowsApp` is the app on Windows alone), so this is what a stray
+// call hears, not something a person meets.
+#[cfg(not(desktop))]
+#[tauri::command]
+fn window_minimize() -> Result<(), String> {
+    Err(khor_catalog::msg::window_needs_desktop().into())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn window_maximize_toggle() -> Result<(), String> {
+    Err(khor_catalog::msg::window_needs_desktop().into())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn window_close() -> Result<(), String> {
+    Err(khor_catalog::msg::window_needs_desktop().into())
 }
 
 /// 全局搜索 (docs/SHELL.md 第十轮): one word over everything khor holds.
@@ -2678,6 +2709,11 @@ fn set_machine_paused(machine: String, on: bool) -> Result<String, String> {
     khor_gui_core::set_machine_paused(&Node::root_from_env(), &machine, on)
 }
 
+/// The app. On a phone the system starts it through this same function:
+/// `mobile_entry_point` exports the `start_app` symbol the Xcode project
+/// in `gen/apple` calls — without it the iOS library links and nothing
+/// ever runs it.
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // **Stand somewhere that cannot be deleted, before anything else**
     // (docs/SHELL.md 第十四轮 第 4 条). The install script starts this
@@ -2701,6 +2737,7 @@ pub fn run() {
     // AppKit's own menu items in the language just chosen — before the
     // builder brings AppKit up, which settles it (`menu::speak_at_launch`).
     // **After `main_if_host`**: a session host draws no menu.
+    #[cfg(desktop)]
     menu::speak_at_launch();
     // 本机开着哪几张脸 (docs/MORE.md 头像页): the desktop app is the one
     // face nothing else on this machine can see, so it says so itself.
@@ -2732,6 +2769,13 @@ pub fn run() {
     // cannot bind: a busy port must not cost this machine its place in
     // the mesh, and `khor web` checks a live socket before printing a
     // link rather than trusting that this succeeded.
+    //
+    // **Not on a phone**: it is nobody's resident. The system suspends it
+    // in the background (docs/CONNECT.md 手机后台), so a link to its face
+    // would be a link that works only while the phone is lit in somebody's
+    // hand — the phone is the thing that opens a face, not one that
+    // serves it.
+    #[cfg(desktop)]
     match khor_web::listen(Node::root_from_env(), khor_web::port()) {
         Ok(face) => eprintln!("khor web face: {}", face.addr),
         Err(e) => eprintln!("{e}"),
@@ -2771,8 +2815,13 @@ pub fn run() {
             hang_menu_window(app.handle());
             #[cfg(desktop)]
             paint_the_window_before_the_page(app.handle());
+            // **A phone's one window, plain.** The config declares no
+            // window (`build_the_window` says why), so nothing would be on
+            // screen without this; everything that function sets is a
+            // desktop window's — size, title bar, material, the three
+            // buttons — and a phone's window is the screen.
             #[cfg(not(desktop))]
-            let _ = app;
+            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default()).build()?;
             Ok(())
         })
         // **The overlay window has to be closed by hand.** It has a level
