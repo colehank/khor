@@ -304,6 +304,15 @@ pub struct DeviceRow {
     /// placed machine — and because the seat of one depends on the whole
     /// set, which is a thing only the code building the whole set knows.
     pub seat: Seat,
+    /// Whether this machine can host a session — `false` for a phone
+    /// (docs/IOS.md 第二步). **The one fact every entry that needs a
+    /// hosting machine reads**: new session there, VS Code there, the
+    /// process table, the hooks; and on this machine's own row, the acts
+    /// that need a computer under the face (a second window, an opener,
+    /// a downloads folder). Said by the machine itself in the device
+    /// table (`khor_sync::devices`' `hosts`), so it is the same answer on
+    /// every machine looking; a machine that never said is a computer.
+    pub hosts: bool,
 }
 
 /// A machine's reading plus its age — the two axes docs/SESSION.md keeps
@@ -1031,6 +1040,10 @@ fn rows_of_devices(
                 .watched_of(&d.id)
                 .map(|(rows, age_ms)| WatchedReading { rows, age_ms }),
             shown: d.shown().to_owned(),
+            // This machine's own answer comes from the node that is
+            // asking — the same fact it wrote to the table at open,
+            // without waiting for the write to be read back.
+            hosts: if d.id == me { n.hosts() } else { d.hosts },
             watch: d.watch,
             label: d.label,
             id: d.id,
@@ -1537,6 +1550,16 @@ pub struct LockFacts {
     /// The PIN floor, so the box can refuse before a round trip and say
     /// the same number the node would (`khor_node::lock::PIN_MIN`).
     pub pin_min: u32,
+    /// Whether this machine has the system's own unlock behind the
+    /// lock screen's second button (Touch ID / the login password,
+    /// `system_unlock`). **A Mac's alone**: the command asks
+    /// LocalAuthentication there and answers `false` everywhere else, so
+    /// on a phone the button was drawn and did nothing when pressed
+    /// (docs/IOS.md 第二步) — and so on a Linux or Windows desktop, the
+    /// same lie one platform over. Read here because the lock screen is
+    /// drawn before anything else is known, and this answer is one the
+    /// face already has at that point.
+    pub system_door: bool,
 }
 
 fn lock_facts(state: khor_node::lock::LockState) -> LockFacts {
@@ -1546,6 +1569,7 @@ fn lock_facts(state: khor_node::lock::LockState) -> LockFacts {
         timeout_min: state.timeout_min,
         timeouts: khor_node::lock::TIMEOUTS.to_vec(),
         pin_min: khor_node::lock::PIN_MIN as u32,
+        system_door: cfg!(target_os = "macos"),
     }
 }
 

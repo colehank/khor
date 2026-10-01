@@ -55,6 +55,13 @@ pub async fn ls(root: &Path, machine: &str, path: &str) -> Result<DirListing, St
 /// landed: the place was chosen silently, so it must be said.
 pub async fn pull(root: &Path, machine: &str, path: &str) -> Result<String, String> {
     let n = Node::open(root.to_path_buf())?;
+    // **Not to a phone** (docs/IOS.md 第二步): its `$HOME` is the app's
+    // container, whose top it may not write, and a file that did land
+    // there is one no other app — the Files app included — can see. The
+    // face draws no 拉过来 there; this is for anything that asks anyway.
+    if !n.hosts() {
+        return Err(khor_catalog::msg::pull_needs_a_computer().to_owned());
+    }
     let dir = dirs_download();
     let (_, dest) = n.pull_path(machine, path, &dir).await?;
     Ok(dest.display().to_string())
