@@ -310,10 +310,10 @@ function Body({
  *   cells, before each line. Chosen over equal columns because the cells
  *   are not equally wide (「直连」 beside twelve characters of id): equal
  *   tracks leave the short ones floating in air and fold the row sooner;
- *   spread, the row stays one line down to a board of about 42rem, and
+ *   spread, seven cells stay one line down to a strip of about 36rem, and
  *   folded, the tracks still line the rows up into columns.
  * - **It folds by the board, not the window** (`@container/strip`): one
- *   row from 42rem; two rows from 28rem; three below that. Every row
+ *   row from 36rem; two rows from 24rem; three below that. Every row
  *   holds the same count — `ceil(n / rows)`, so only the last can be
  *   short, by less than a row — in the same tracks, `gap-row` between
  *   rows. A row's first cell shows no line: the grid is pulled left by
@@ -482,8 +482,8 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
           // keeps its words on the board's padding and its line outside.
           "-ml-[calc(var(--gap-row)+var(--hair))]",
           "grid-cols-[repeat(var(--strip-three),auto)]",
-          "@md/strip:grid-cols-[repeat(var(--strip-two),auto)]",
-          "@2xl/strip:grid-cols-[repeat(var(--strip-one),auto)]",
+          "@sm/strip:grid-cols-[repeat(var(--strip-two),auto)]",
+          "@xl/strip:grid-cols-[repeat(var(--strip-one),auto)]",
         )}
       >
         {facts.map(([k, label, value]) => (
