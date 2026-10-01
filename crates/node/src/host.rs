@@ -16,7 +16,10 @@
 //! length + msgpack. The replay ring is raw bytes, not a screen model —
 //! good enough because attaching resizes the PTY, and the resize makes
 //! any full-screen program repaint itself; a real terminal model waits
-//! for the GUI batch.
+//! for the GUI batch. **A repaint redraws the screen, not the modes**
+//! (the alternate buffer, cursor keys, the mouse, paste), so the bytes
+//! the ring trims go through [`Modes`] and a replay opens with them
+//! ([`Ring`]).
 
 use std::collections::VecDeque;
 use std::io::{Read, Write};
@@ -28,6 +31,8 @@ use std::time::Duration;
 
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
+
+use crate::modes::Modes;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 
@@ -503,11 +508,39 @@ pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpS
 
 // ── the host process ────────────────────────────────────────
 
+/// The replay: the last [`RING`] bytes, and the modes the bytes before
+/// them had set (`crate::modes` — a tmux client's `ESC [ ? 1049 h` is
+/// its first line and never repeated, 2026-10-01).
+#[derive(Default)]
+struct Ring {
+    bytes: VecDeque<u8>,
+    head: Modes,
+}
+
+impl Ring {
+    fn push(&mut self, bytes: &[u8]) {
+        self.bytes.extend(bytes);
+        let over = self.bytes.len().saturating_sub(RING);
+        if over > 0 {
+            let gone: Vec<u8> = self.bytes.drain(..over).collect();
+            self.head.feed(&gone);
+        }
+    }
+
+    /// What an attacher is handed first: the trimmed head's modes, then
+    /// the bytes still held.
+    fn replay(&self) -> Vec<u8> {
+        let mut out = self.head.preamble();
+        out.extend(self.bytes.iter());
+        out
+    }
+}
+
 struct Shared {
     /// Lock order everywhere: ring, then clients — an attacher must
     /// snapshot and join atomically or it double-receives the bytes the
     /// reader is broadcasting.
-    ring: Mutex<VecDeque<u8>>,
+    ring: Mutex<Ring>,
     clients: Mutex<Vec<TcpStream>>,
 }
 
@@ -734,7 +767,7 @@ fn host_serving(
     )?;
 
     let shared = Arc::new(Shared {
-        ring: Mutex::new(VecDeque::new()),
+        ring: Mutex::new(Ring::default()),
         clients: Mutex::new(Vec::new()),
     });
     let output_done = Arc::new(AtomicBool::new(false));
@@ -777,10 +810,7 @@ fn host_serving(
                     screen.lock().unwrap().feed(&buf[..n]);
                 }
                 let mut ring = shared.ring.lock().unwrap();
-                ring.extend(&buf[..n]);
-                while ring.len() > RING {
-                    ring.pop_front();
-                }
+                ring.push(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
                 clients.retain_mut(|c| c.write_all(&buf[..n]).is_ok());
                 drop(clients);
@@ -801,7 +831,7 @@ fn host_serving(
                         None => {
                             let ring = shared.ring.lock().unwrap();
                             let tail: Vec<u8> =
-                                ring.iter().rev().take(4096).rev().copied().collect();
+                                ring.bytes.iter().rev().take(4096).rev().copied().collect();
                             drop(ring);
                             last_plain_line(&tail)
                         }
@@ -944,8 +974,7 @@ fn host_serving(
                 }
                 {
                     let ring = shared.ring.lock().unwrap();
-                    let (a, b) = ring.as_slices();
-                    if conn.write_all(a).and_then(|()| conn.write_all(b)).is_err() {
+                    if conn.write_all(&ring.replay()).is_err() {
                         continue;
                     }
                     let Ok(readable) = conn.try_clone() else {

@@ -33,6 +33,7 @@ pub mod live;
 pub mod lock;
 pub mod mcp;
 pub mod merge;
+pub mod modes;
 pub mod pause;
 pub mod place;
 pub mod preview;
