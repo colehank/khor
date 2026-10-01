@@ -20,7 +20,9 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  fetchWaiting,
   fetchWebKey,
+  inApp,
   resetIdentity,
   rotateWebKey,
   setLock,
@@ -38,6 +40,7 @@ import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { MoreFrame, MoreSection } from "@/views/more/MorePage";
+import { RootWordsDialog } from "@/views/PairDialogs";
 
 export function SecurityPage({
   onClose,
@@ -80,6 +83,10 @@ export function SecurityPage({
   // what the person pressed the switch for.
   const [arming, setArming] = useState(false);
   const [resetting, setResetting] = useState(false);
+  /** This machine holds the network's root — the 恢复词 row is its
+      alone. Asked of the node (`Waiting.holds`); unknown reads as no. */
+  const [holdsRoot, setHoldsRoot] = useState(false);
+  const [showingWords, setShowingWords] = useState(false);
 
   const me = devices.find((d) => d.me) ?? null;
 
@@ -87,6 +94,18 @@ export function SecurityPage({
     void fetchWebKey().then(setKey, (e: unknown) =>
       setError(String(e instanceof Error ? e.message : e)),
     );
+  }, []);
+
+  useEffect(() => {
+    if (!inApp) return;
+    let live = true;
+    fetchWaiting().then(
+      (w) => live && setHoldsRoot(w.holds),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
   }, []);
 
   // Two-argument `then` everywhere below, and the re-read is never in
@@ -309,6 +328,27 @@ export function SecurityPage({
           mark={{ "data-web-key-rotate": "" }}
         />
       </MoreSection>
+
+      {/* **恢复词, on demand** (2026-10-01, the owner: 「根钥匙是不是只在
+          共享的时候出现更友好」). The machine that made the root no longer
+          opens on 「抄下恢复词」; the words are here, one row, and only a
+          press on 「显示…」 puts them on the screen (`RootWordsDialog`).
+          **Where the root is held, and in the app alone**: any other
+          machine has no words to show, and the web face is never given
+          them (`khor_gui_core` command_tables). No group name, the reset
+          row's reason. */}
+      {inApp && holdsRoot && (
+        <MoreSection name="root-words">
+          <ActionRow
+            name="root-words"
+            label={gui.root_words_title}
+            actionLabel={gui.root_words_show_ask}
+            onPress={() => setShowingWords(true)}
+            mark={{ "data-root-words-open": "" }}
+          />
+        </MoreSection>
+      )}
+      <RootWordsDialog open={showingWords} onClose={() => setShowingWords(false)} />
 
       {/* 配对的机器 left this page on 2026-09-20 (docs/MORE.md 第二轮:
           已配对机器从头像卡和安全页拿掉). It was a list here *and* a

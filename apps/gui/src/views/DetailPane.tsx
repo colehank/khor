@@ -150,7 +150,11 @@ export function CopyId({
  * later, and the honest thing to say about it is only the part that is
  * true of every close.
  */
-export function closeWarning(kind: string, imported = false): string {
+export function closeWarning(
+  kind: string,
+  imported = false,
+  host: { hosted?: boolean; mux?: boolean } = {},
+): string {
   // An imported row leaves the list and nothing else (docs/SHELL.md
   // 第八轮 第 3 条) — the window says so, whatever its kind.
   if (imported) return gui.close_warn_imported;
@@ -159,6 +163,14 @@ export function closeWarning(kind: string, imported = false): string {
   // An ACP conversation outlives the row: it is the agent's, and 导入
   // finds it again (docs/SHELL.md 第八轮).
   if (kind === "gui") return gui.close_warn_gui;
+  // **A row wearing a terminal is asked about the terminal** (2026-10-01,
+  // the owner's bug lane). Its kind is the form it wears now (docs/
+  // SESSION.md 形态随进程变), and by its host deleting it does opposite
+  // things: khor's own pty closes with what runs in it, while the
+  // person's tmux session is never ended by khor — only khor's terminal
+  // on it goes. Both were asked the agent's sentence below.
+  if (kind === "shell" && host.mux) return gui.close_warn_tmux;
+  if (kind === "shell" && host.hosted) return gui.close_warn_terminal;
   if (kind === "shell" || kind === "tui" || kind === "borrow") {
     return gui.close_warn_live;
   }

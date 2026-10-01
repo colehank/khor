@@ -2096,8 +2096,10 @@ try {
   // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
   // **`FACE_ONLY=acts` walks section 13 alone** (一个动作一个家,
   // 2026-09-30), for the same reason.
+  // **`FACE_ONLY=fix` walks section 14 alone** (修 bug 车道, 2026-10-01),
+  // for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23545,7 +23547,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23929,7 +23931,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24256,7 +24258,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24519,7 +24521,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25227,7 +25229,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -25565,6 +25567,387 @@ try {
     }
   }
   } // acts
+
+  // ── 14) 修 bug 车道 (2026-10-01) ────────────────────────────────────
+  //
+  // The owner, 2026-10-01: 「bug 可以先派一个 agent 去改」. These are the
+  // face's part of the five, each a fix and so each red on the code
+  // before it (30-behavior: 先红后绿只用于修 bug):
+  //
+  //   a. **删除 says what deleting this row does, by its form.** A row
+  //      wearing a terminal — khor's own (`hosted`) or the person's tmux
+  //      (`mux`) — is not asked the agent's sentence: deleting closes that
+  //      terminal and stops what runs in it, or closes khor's terminal on
+  //      the tmux session and leaves the session running. Red before: all
+  //      three forms were asked `close-warn-live`.
+  //   b. **An item that opens a window says so with 「…」.** Every item of
+  //      every sidebar's row menu, every ＋ beside L0's search box, and a
+  //      machine page's R0 verbs, pressed in turn: whatever put a dialog
+  //      up is spelled with a trailing ellipsis (README 文字怎么写: 「带
+  //      省略号表示还会再问一次」). Red before: the 额度 row's 「编辑」, the
+  //      工作区 ＋'s 「添加工作区」, an open workspace's session column ＋
+  //      「新会话」, the machine page's 「打开会话」.
+  //   c. **恢复词 on demand** (「根钥匙是不是只在共享的时候出现更友好」): a
+  //      machine that made the root does not open on 「抄下恢复词」; the
+  //      words are one row on 「…」 → 安全 — 「恢复词」 and a 「显示…」 —
+  //      on the app alone, and only where the root is held. The web face
+  //      draws no such row. The app is stood in for by tauri's IPC global
+  //      on this page (`api.ts` `inApp`), with every call still answered by
+  //      this file's routes (`?bridge=`); it comes last in this file,
+  //      because the page stays an app from here on. Red before: the
+  //      dialog came up on its own and 安全 had no such row.
+  //   d. **Only the face hands the app its theme** (浅色下左块是深色材质).
+  //      Read in the app, after c: the overlay menu window's page
+  //      (`?face=menu`) never asks `set_window_theme`. Red before: it
+  //      asked its mirror's 「auto」 at boot. The pixels are
+  //      `npm run native`'s.
+  //
+  // `FACE_ONLY=fix` runs this section alone.
+  fix: {
+  if (["native", "row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break fix;
+  configValues["confirm-delete"] = "on";
+  page.on("popup", (p) => void p.close().catch(() => {}));
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  const ELLIPSIS = "…";
+  /** Escape until nothing floats: a menu left up eats the next press. */
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) {
+      if ((await page.locator('[role="dialog"], [data-row-menu], [role="menu"]').count()) === 0) return;
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
+  };
+
+  // a. the delete question, by form.
+  {
+    const FORMS = [
+      ["agent", { ...row(31, "idle"), id: "tui/fix-agent", kind: "tui", category: "claude", title: "fix-agent" }],
+      [
+        "khor's terminal",
+        { ...row(32, "idle"), id: "shell/fix-term", kind: "shell", category: "shell", title: "fix-term", hosted: true, attachable: true },
+      ],
+      [
+        "a tmux terminal",
+        { ...row(33, "idle"), id: "shell/1786245338-7", kind: "shell", category: "shell", title: "fix-tmux", attachable: true, mux: true },
+      ],
+    ];
+    const fixRows = (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(FORMS.map(([, x]) => x)) });
+    await page.route("**/sessions", fixRows);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("sessions");
+    await until(5_000, async () => (await page.locator('[data-list] [data-side-row="shell/fix-term"]').count()) === 1);
+    const says = {};
+    for (const [form, x] of FORMS) {
+      const sel = `[data-list] [data-side-row="${x.id}"] [data-side-open]`;
+      if ((await page.locator(sel).count()) === 0) {
+        fail(`probe dead: fix a · no ${form} row (${x.id}) in the sessions sidebar`);
+        continue;
+      }
+      await page.locator(sel).click({ button: "right" });
+      await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="close"]').count()) === 1);
+      await page.locator('[data-row-menu] [data-menu-item="close"]').click();
+      const up = await until(3_000, async () => (await page.locator("[data-delete-dialog] [data-delete-says]").count()) === 1);
+      says[form] = up ? (await page.locator("[data-delete-says]").innerText()).trim() : null;
+      if (!says[form]) fail(`probe dead: fix a · 删除 on the ${form} row raised no sentence`);
+      await settle();
+    }
+    console.log(`fix a · 删除 asks: ${JSON.stringify(says)}`);
+    for (const form of ["khor's terminal", "a tmux terminal"]) {
+      if (says[form] && says[form] === says.agent) {
+        fail(
+          `fix a · 删除 on ${form} row asks the agent's sentence 「${says[form]}」 — what deleting a terminal does is ` +
+            "its own (DetailPane closeWarning, close-warn-terminal / close-warn-tmux)",
+        );
+      }
+    }
+    if (says["khor's terminal"] && says["khor's terminal"] === says["a tmux terminal"]) {
+      fail(
+        "fix a · khor's terminal and a tmux terminal are asked one sentence — closing khor's own stops what runs in it, " +
+          "closing khor's terminal on a tmux session does not end the session",
+      );
+    }
+    await page.unroute("**/sessions", fixRows);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
+  // b. 「…」 on every item that opens a window.
+  {
+    const misses = [];
+    let pressed = 0;
+    let windows = 0;
+    const opened = async () =>
+      until(1_200, async () => (await page.locator('[role="dialog"]').count()) > 0);
+    // The row menus, every sidebar.
+    const COLS = [
+      { landing: "sessions", pane: "[data-list]" },
+      { landing: "devices", pane: "[data-list]" },
+      { landing: "workspaces", pane: "[data-list]" },
+      { landing: "browser", pane: "[data-browse-tabs]" },
+      { landing: "quota", pane: "[data-quota-pane]" },
+    ];
+    for (const c of COLS) {
+      await open(c.landing);
+      await wait(500);
+      const rowSel = `${c.pane} [data-side-row][data-side-menu="true"]:not([data-me="true"])`;
+      if ((await page.locator(rowSel).count()) === 0) {
+        fail(`probe dead: fix b · no row with a menu in the ${c.landing} sidebar`);
+        continue;
+      }
+      const target = await page.locator(rowSel).last().getAttribute("data-side-row");
+      const menuUp = async () => {
+        await page.locator(`${c.pane} [data-side-row="${target}"] [data-side-open]`).click({ button: "right" });
+        return until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
+      };
+      if (!(await menuUp())) {
+        fail(`probe dead: fix b · right-clicking a ${c.landing} row opened no menu`);
+        continue;
+      }
+      const items = await page
+        .locator("[data-row-menu] [data-menu-item]")
+        .evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-menu-item"), label: e.textContent.trim() })));
+      await settle();
+      for (const it of items) {
+        if (!(await menuUp())) break;
+        const item = page.locator(`[data-row-menu] [data-menu-item="${it.key}"]`);
+        if ((await item.count()) === 0) {
+          await settle();
+          continue;
+        }
+        const label = (await item.innerText()).trim();
+        await item.click();
+        pressed += 1;
+        if (await opened()) {
+          windows += 1;
+          if (!label.endsWith(ELLIPSIS)) misses.push(`the ${c.landing} row's 「${label}」 (${it.key})`);
+        }
+        await settle();
+      }
+    }
+    // The ＋ beside L0's search box, on every landing that has one, and
+    // the one over an open workspace's sessions.
+    const plus = async (where) => {
+      const btn = page.locator("[data-pane-new]:visible");
+      const n = await btn.count();
+      for (let i = 0; i < n; i++) {
+        const b = btn.nth(i);
+        if ((await b.getAttribute("aria-haspopup")) === "menu") {
+          await b.click();
+          await until(2_000, async () => (await page.locator("[data-new-item]").count()) > 0);
+          const keys = await page.locator("[data-new-item]").evaluateAll((els) => els.map((e) => e.getAttribute("data-new-item")));
+          await settle();
+          for (const k of keys) {
+            await b.click();
+            if (!(await until(2_000, async () => (await page.locator(`[data-new-item="${k}"]`).count()) === 1))) continue;
+            const label = (await page.locator(`[data-new-item="${k}"]`).innerText()).trim();
+            await page.locator(`[data-new-item="${k}"]`).click();
+            pressed += 1;
+            if (await opened()) {
+              windows += 1;
+              if (!label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ menu 「${label}」 (${k})`);
+            }
+            await settle();
+          }
+        } else {
+          const label = (await b.getAttribute("aria-label")) ?? "";
+          if (await b.isDisabled()) continue;
+          await b.click();
+          pressed += 1;
+          if (await opened()) {
+            windows += 1;
+            if (!label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ 「${label}」`);
+          }
+          await settle();
+        }
+      }
+    };
+    for (const landing of ["sessions", "devices", "workspaces", "quota"]) {
+      await open(landing);
+      await wait(500);
+      await plus(`the ${landing} landing`);
+    }
+    await open("workspaces");
+    await wait(500);
+    // The walk's `openWs`, which ended with the walk's block.
+    const openWsHere = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    if (await openWsHere()) {
+      // The sessions column is the R0 switch's to open (4l).
+      if (!(await until(2_000, async () => (await page.locator("[data-ws-new-session]").count()) > 0))) {
+        await press("[data-ws-sessions-switch]");
+      }
+      await until(5_000, async () => (await page.locator("[data-ws-new-session]").count()) > 0);
+      const b = page.locator("[data-ws-new-session]").first();
+      if ((await b.count()) === 0) fail("probe dead: fix b · an open workspace drew no ＋ over its sessions");
+      else {
+        const label = (await b.getAttribute("aria-label")) ?? "";
+        await b.click();
+        pressed += 1;
+        if (await opened()) {
+          windows += 1;
+          if (!label.endsWith(ELLIPSIS)) misses.push(`an open workspace's sessions ＋ 「${label}」`);
+        }
+        await settle();
+      }
+    } else fail("probe dead: fix b · no workspace row to open");
+    // A machine page's R0 verbs: icons too, named by `aria-label`. All
+    // but VS Code — its window is a consent asked once per machine
+    // (§13 d), not a step of every press.
+    {
+      const verbSel = "[data-main] [data-region-head] [data-machine-verbs] > button[data-verb]";
+      const toMachine = async () =>
+        (await open("devices")) &&
+        (await press("[data-list] [data-row-open] >> nth=1")) &&
+        until(5_000, async () => (await page.locator(verbSel).count()) > 0);
+      if (!(await toMachine())) fail("probe dead: fix b · no machine page with verbs in R0");
+      else {
+        const keys = (
+          await page.locator(verbSel).evaluateAll((els) => els.map((e) => e.getAttribute("data-verb")))
+        ).filter((k) => k !== "code");
+        for (const k of keys) {
+          if (!(await toMachine())) break;
+          const b = page.locator(`[data-main] [data-region-head] [data-machine-verbs] > button[data-verb="${k}"]`);
+          const label = (await b.getAttribute("aria-label")) ?? "";
+          await b.click();
+          pressed += 1;
+          if (await opened()) {
+            windows += 1;
+            if (!label.endsWith(ELLIPSIS)) misses.push(`the machine page's 「${label}」 (${k})`);
+          }
+          await settle();
+        }
+      }
+    }
+    console.log(`fix b · ${pressed} item(s) pressed, ${windows} opened a window, ${misses.length} without 「…」`);
+    if (windows < 8) fail(`probe dead: fix b · only ${windows} press(es) opened a window — the sweep is not reaching the menus`);
+    for (const m of misses) {
+      fail(`fix b · ${m} opens a window and its word has no 「…」 — 「带省略号表示还会再问一次」 (README 文字怎么写)`);
+    }
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
+  // c. 恢复词 on demand.
+  {
+    const WORDS = Array.from({ length: 24 }, (_, i) => (i === 23 ? "art" : "abandon")).join(" ");
+    let held = true;
+    await page.route("**/root_unshown", (r) => r.fulfill({ contentType: "application/json", body: "true" }));
+    await page.route("**/pending_list", (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify({ holds: held, rows: [] }) }),
+    );
+    await page.route("**/root_words", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(WORDS) }));
+    await page.route("**/root_words_seen", (r) => r.fulfill({ contentType: "application/json", body: "null" }));
+    const rowSel = '[data-setting-row-name="root-words"]';
+    const toSecurity = async () =>
+      (await press("[data-rail-more]")) && (await press('[data-more-open="security"]')) &&
+      until(3_000, async () => (await page.locator('[data-more-page="security"]').count()) > 0);
+    // The web face first: no row, whoever holds the root.
+    if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open on the web face");
+    else {
+      await wait(600);
+      const n = await page.locator(rowSel).count();
+      console.log(`fix c · web face: 恢复词 rows on 安全 ${n}`);
+      if (n !== 0) fail("fix c · the web face draws a 恢复词 row — the words are the app's alone (khor_gui_core command_tables)");
+    }
+    if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    // Now the app: tauri's IPC global, every call still over the bridge.
+    await page.addInitScript(() => {
+      window.__TAURI_INTERNALS__ = {
+        invoke: () => Promise.resolve(null),
+        transformCallback: () => 0,
+        unregisterCallback: () => {},
+        convertFileSrc: (p) => p,
+        metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
+      };
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+    });
+    await page.reload({ waitUntil: "load" });
+    await until(5_000, async () => (await page.locator("[data-rail-more]").count()) > 0);
+    await wait(1_500);
+    const asked = await page.locator("[data-root-words-dialog]").count();
+    console.log(`fix c · app, first start of the root's machine: 恢复词 dialogs ${asked}`);
+    if (asked !== 0) {
+      fail("fix c · the app opened on 「抄下恢复词」 — the words wait on 「…」 → 安全 until somebody asks (the owner, 2026-10-01)");
+      await settle();
+    }
+    if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open in the app");
+    else {
+      await until(3_000, async () => (await page.locator(rowSel).count()) > 0);
+      const look = await page.evaluate((sel) => {
+        const row = document.querySelector(sel);
+        if (!row) return null;
+        return {
+          title: row.querySelector(".text-body")?.textContent?.trim() ?? null,
+          act: row.querySelector("button")?.textContent?.trim() ?? null,
+          words: document.querySelectorAll("[data-root-words] li").length,
+        };
+      }, rowSel);
+      console.log(`fix c · app, 安全 while the root is held: ${JSON.stringify(look)}`);
+      if (!look) {
+        fail("fix c · 安全 has no 恢复词 row on the machine that holds the root — 「…」 → 安全 is where the words are");
+      } else {
+        if (!look.act?.endsWith(ELLIPSIS)) fail(`fix c · the 恢复词 row's act reads 「${look.act}」 — it opens a window: 「显示…」`);
+        if (look.words !== 0) fail("fix c · the words are on the page before anybody pressed 「显示…」");
+        await page.locator(`${rowSel} button`).click();
+        const up = await until(3_000, async () => (await page.locator("[data-root-words-dialog] [data-root-words] li").count()) > 0);
+        const shown = await page.locator("[data-root-words-dialog] [data-root-words] li").count();
+        console.log(`fix c · 「显示…」 → ${shown} word(s) in a dialog`);
+        if (!up || shown !== 24) fail(`fix c · 「显示…」 showed ${shown} word(s), not the root's 24`);
+        await settle();
+      }
+      held = false;
+      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+      await toSecurity();
+      await wait(800);
+      const n = await page.locator(rowSel).count();
+      console.log(`fix c · app, 安全 where the root is not held: 恢复词 rows ${n}`);
+      if (n !== 0) fail("fix c · 安全 draws a 恢复词 row on a machine that does not hold the root");
+      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    }
+  }
+
+  // d. only the face dresses the app (浅色下左块是深色材质, 2026-10-01).
+  //    The theme is worn on NSApp (`set_window_theme`), so it is the
+  //    whole app's — and the overlay menu window loads this same page
+  //    (`?face=menu`) at startup, where `main.tsx` used to hand the
+  //    window its **mirror's** guess and nothing ever corrected it. Two
+  //    pages, two guesses, last IPC wins: the scratch app opened light
+  //    with the left block dark whenever the overlay's 「auto」 landed after
+  //    the face's 「light」 (logged: 2 launches in 7). Still in the app here,
+  //    so `inApp` holds; red before: the overlay asked once at boot.
+  {
+    const asked = [];
+    const record = (r) => {
+      asked.push(JSON.parse(r.request().postData() || "{}").theme ?? null);
+      r.fulfill({ contentType: "application/json", body: "null" });
+    };
+    await page.route("**/set_window_theme", record);
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=menu`, { waitUntil: "load" });
+    await wait(1_500);
+    const fromMenu = asked.splice(0);
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+    await until(5_000, async () => asked.length > 0);
+    await wait(500);
+    const fromFace = asked.splice(0);
+    console.log(`fix d · set_window_theme asked by the overlay ${JSON.stringify(fromMenu)}, by the face ${JSON.stringify(fromFace)}`);
+    if (fromMenu.length) {
+      fail(
+        `fix d · the overlay menu window (?face=menu) asked set_window_theme ${JSON.stringify(fromMenu)} — it wears its ` +
+          "mirror's guess on the whole app, and when it lands after the face's answer the sidebar material is the wrong theme " +
+          "(src/theme.ts wearTheme)",
+      );
+    }
+    if (!fromFace.length) fail("probe dead: fix d · the face itself never handed the window its theme");
+    await page.unroute("**/set_window_theme", record);
+  }
+  } // fix
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

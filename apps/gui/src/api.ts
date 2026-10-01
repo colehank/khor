@@ -892,14 +892,12 @@ export const fetchWaiting = () => call<Waiting>("pending_list");
 /** `khor approve` — the holder signs one in and pushes the roster out;
     answers the list as it now stands. */
 export const approveMachine = (machine: string) => call<Waiting>("approve", { machine });
-/** Whether this machine made the network's root and its words have not
-    been seen yet — the first-start prompt's question. */
-export const rootUnshown = () => call<boolean>("root_unshown");
-/** The 24 words. **App-only**: the web face has no such command
-    (`khor_gui_core` `tests/command_tables.rs`), so only the app asks. */
+/** The 24 words, for 「…」 → 安全's 「显示…」. **App-only**: the web face
+    has no such command (`khor_gui_core` `tests/command_tables.rs`), so
+    only the app asks. (`root_unshown` / `root_words_seen` were the
+    first-start prompt's two questions; since 2026-10-01 nothing opens on
+    its own, so the face asks neither.) */
 export const rootWords = () => call<string>("root_words");
-/** The prompt was answered or closed; it is not asked again. */
-export const rootWordsSeen = () => call<null>("root_words_seen");
 /** `khor leave` — this machine out of the network (docs/MORE.md 离开).
     Takes this machine's own name typed back, because that is the
     confirmation and **the node is what checks it** (`Node::leave`, the

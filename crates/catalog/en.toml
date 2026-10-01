@@ -1447,7 +1447,6 @@ workspaces-tab = "Workspaces"
 browser-tab = "Browser"
 workspaces-empty = "No workspaces yet"
 workspaces-how = "Use the + above to pick a directory on a machine"
-ws-add = "Add a workspace"
 ws-add-ask = "Add a workspace…"
 ws-now-changed = "Recently changed"
 # Said in the one delete window every sidebar shares (`confirm-delete`,
@@ -1567,9 +1566,10 @@ net-leave-note = "The device list keeps only this machine; a fresh ticket rejoin
 net-leave-ask = "Leave…"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "Avatar"
-# The machine row's menu item (2026-09-30): one door, one window, for
-# everything a machine has to edit — it replaced "Change avatar…".
-machine-edit-ask = "Edit…"
+# A row menu's "Edit…" — the machine row's (2026-09-30: one door, one
+# window, for everything a machine has to edit; it replaced "Change
+# avatar…") and the account row's (2026-10-01). Both open a window.
+edit-ask = "Edit…"
 machine-edit-title = "Edit {0}"
 machine-name = "Machine name"
 edit-done = "Done"
@@ -1724,7 +1724,7 @@ watch-save-failed = "Couldn't save"
 # Distinct from `file-unsaved`'s "Unsaved" (an editor tab's own state) —
 # this is a watched-directory list row that hasn't been saved to config yet.
 watch-unsaved = "Not saved"
-open-term-on = "Open session"
+open-term-on-ask = "Open session…"
 browse-files = "Browse files"
 borrow-web = "Borrow network"
 install-hooks = "Install hooks"
@@ -1740,10 +1740,11 @@ join-with-a-ticket = "Join network"
 pending-title = "Waiting"
 approve = "Approve"
 pending-elsewhere = "Approve on the machine that holds the root"
-root-words-title = "Write down the recovery words"
-root-words-body = "This machine just made the network's root key, which signs which machines are yours. Write the 24 recovery words on paper and keep them: without them no machine can be added or revoked again, and anyone who sees them can sign their own machine into your network. To see them later, run khor root words on this machine"
-root-words-show = "Show recovery words"
-root-words-done = "Written down"
+# On demand since 2026-10-01: a row on Security opens the window, and the
+# title is also the row's name.
+root-words-title = "Recovery words"
+root-words-body = "These 24 words are the network's root key, which signs which machines are yours. Write them on paper and keep them: without them no machine can be added or revoked again, and anyone who sees them can sign their own machine into your network"
+root-words-show-ask = "Show…"
 ticket = "Pairing ticket"
 ticket-qr = "The pairing ticket as a QR code"
 copy-ticket = "Copy ticket"
@@ -1776,6 +1777,8 @@ chat-refused-turn-in-flight = "Another window is already talking — that messag
 chat-refused-no-turn = "There's no turn running right now"
 chat-refused-setting = "The agent declined this — nothing changed"
 close-warn-live = "Close it, and the process it's running will stop"
+close-warn-terminal = "This terminal closes, and whatever is running in it stops"
+close-warn-tmux = "khor's terminal on it closes; the tmux session and what runs in it keep going"
 close-warn-gui = "This deletes khor's row; the conversation itself stays with that agent and can be imported again"
 close-warn-chat = "Close it and this row is put away — history and received files stay, and it comes back with the next message"
 close-warn-transfer = "Close it and the files from this transfer are deleted — the row stays"

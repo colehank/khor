@@ -2640,22 +2640,13 @@ async fn approve(machine: String) -> Result<khor_gui_core::Waiting, String> {
     khor_gui_core::approve(&Node::root_from_env(), &machine).await
 }
 
-/// Whether a root born here still waits for its words to be seen.
-#[tauri::command]
-fn root_unshown() -> Result<bool, String> {
-    khor_gui_core::root_unshown(&Node::root_from_env())
-}
-
-/// The root's words, for the first-start prompt — app-only
-/// (`khor_gui_core`'s `tests/command_tables.rs`).
+/// The root's words, for 「…」 → 安全's 「显示…」 — app-only
+/// (`khor_gui_core`'s `tests/command_tables.rs`). Since 2026-10-01 nothing
+/// asks for them on its own: the first-start prompt and its two questions
+/// (`root_unshown`, `root_words_seen`) are gone.
 #[tauri::command]
 fn root_words() -> Result<String, String> {
     khor_gui_core::root_words(&Node::root_from_env())
-}
-
-#[tauri::command]
-fn root_words_seen() -> Result<(), String> {
-    khor_gui_core::root_words_seen(&Node::root_from_env())
 }
 
 /// This machine leaves the network (docs/MORE.md 离开). Async for
@@ -3024,9 +3015,7 @@ pub fn run() {
             invite,
             pending_list,
             approve,
-            root_unshown,
             root_words,
-            root_words_seen,
             pair,
             leave,
             set_paused,
