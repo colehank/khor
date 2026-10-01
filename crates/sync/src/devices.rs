@@ -190,6 +190,19 @@ const F_LABEL: &str = "label";
 /// Written flat only, never into the old nested mirror: no khor that
 /// reads the nested shape knows what a certificate is.
 const F_CERT: &str = "cert";
+/// Whether this machine can host a session (`khor_core::hosts_here`):
+/// `false` on a phone, which may not start a process, has no tmux, no
+/// VS Code and nothing to open a file with. **Only the machine itself
+/// writes it** (`Node::register_self`, on every open) — it is a fact
+/// about the build it runs, not a setting anyone decides.
+///
+/// **Absent reads as hosting**, and that is a default rather than a
+/// shim: every khor that predates the field ran on a computer, so a row
+/// it wrote is a computer's row. Written flat only, never into the old
+/// nested mirror (`F_CERT`'s reason: no khor that reads the nested
+/// shape knows what this is); an older khor replicates the register
+/// untouched and never reads it.
+const F_HOSTS: &str = "hosts";
 
 /// The roster's home: a map **beside** `devices`, not inside it, keyed by
 /// whatever the writer names a version (`khor_node` uses the roster's
@@ -255,6 +268,9 @@ pub struct DeviceInfo {
     /// directly — every screen must make the same choice between this
     /// and `name`.
     pub label: Option<String>,
+    /// Whether the machine can host a session (`F_HOSTS`): `false` for a
+    /// phone, `true` for a computer and for a row that never said.
+    pub hosts: bool,
 }
 
 impl DeviceInfo {
@@ -621,6 +637,7 @@ impl DeviceDoc {
                 label: self
                     .str_field(&id, F_LABEL)
                     .filter(|l| !l.trim().is_empty()),
+                hosts: !matches!(self.flat(&id, F_HOSTS), Some(LoroValue::Bool(false))),
                 id,
             })
             .collect();
@@ -666,6 +683,20 @@ impl DeviceDoc {
         }
         self.map()
             .insert(&fkey(id, F_CERT), cert)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// Says whether a machine can host (`F_HOSTS`). The machine says it
+    /// about itself on every open; unchanged means unwritten, the
+    /// others' reason. Flat only — see `F_HOSTS`.
+    pub fn set_hosts(&self, id: &str, hosts: bool) -> Result<(), String> {
+        if self.flat(id, F_HOSTS) == Some(LoroValue::Bool(hosts)) {
+            return Ok(());
+        }
+        self.map()
+            .insert(&fkey(id, F_HOSTS), hosts)
             .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
@@ -1323,6 +1354,46 @@ mod tests {
         let before = d.version();
         d.set_pinned("aa", false).unwrap();
         assert_eq!(d.version(), before, "no change must mean no new ops");
+    }
+
+    /// **Whether a machine can host travels, and absence is a computer**
+    /// (docs/IOS.md 第二步). A phone says no about itself; every table
+    /// it merges into says no for it — so a desktop never offers a
+    /// session there. A row that never said (any khor before this field,
+    /// and a row written in the old nested shape) reads as hosting: the
+    /// control, without which an implementation that read every row as
+    /// a phone would pass the first half.
+    #[test]
+    fn a_machine_that_cannot_host_says_so_everywhere_and_silence_is_a_computer() {
+        let phone = DeviceDoc::new(1).unwrap();
+        phone.upsert("bb", "phone", &[]).unwrap();
+        phone.set_hosts("bb", false).unwrap();
+        assert!(!phone.get("bb").unwrap().hosts, "it says no about itself");
+        let before = phone.version();
+        phone.set_hosts("bb", false).unwrap();
+        assert_eq!(phone.version(), before, "saying it again writes nothing");
+
+        let desk = DeviceDoc::new(2).unwrap();
+        desk.upsert("aa", "mac", &[]).unwrap();
+        desk.set_hosts("aa", true).unwrap();
+        write_old_shape(&desk, "cc", "turing", &[], None, false);
+        desk.merge(&phone.changes_since(&Default::default()).unwrap())
+            .unwrap();
+        assert!(!desk.get("bb").unwrap().hosts, "the no crosses the network");
+        assert!(desk.get("aa").unwrap().hosts, "a computer says yes");
+        assert!(
+            desk.get("cc").unwrap().hosts,
+            "a row from a khor before the field is a computer's"
+        );
+        // A routine upsert (pairing re-writes names and addresses for
+        // every peer) must not take the answer back.
+        desk.upsert("bb", "phone", &["10.0.0.7:1".into()]).unwrap();
+        assert!(!desk.get("bb").unwrap().hosts, "an upsert leaves it alone");
+        let nested = desk.inner.get_map(DEVICES).get("bb").and_then(as_map).unwrap();
+        assert!(
+            nested.get(F_HOSTS).is_none(),
+            "flat only — nothing new in the old mirror"
+        );
     }
 
     /// The satellite mark round-trips and replicates (附属机器批): the

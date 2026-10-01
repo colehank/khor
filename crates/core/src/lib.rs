@@ -815,6 +815,36 @@ impl SystemKind {
     }
 }
 
+/// Whether this build's machine can **host** — hold a session's process
+/// (a PTY, an agent, a shell), run tmux, be handed a path to open, have
+/// VS Code, claude's hooks or a web face of its own (docs/IOS.md).
+///
+/// **A build-time truth, not a guess.** A phone's app is a sandbox that
+/// may not start processes, has no user home and no second window; the
+/// build that runs there is the iOS or Android one, and nothing else is.
+/// Every other build is a computer and hosts. It is the same line tauri
+/// draws between its `desktop` and `mobile` cfgs, drawn here where the
+/// node can read it.
+///
+/// The node says this about itself in the device table
+/// (`khor_sync::devices`' `hosts`), so every machine in the network —
+/// not only the phone — knows not to offer a session on it. A row that
+/// predates the field reads as hosting: every khor before this one ran
+/// on a computer.
+pub fn hosts_here() -> bool {
+    !cfg!(any(target_os = "ios", target_os = "android"))
+}
+
+#[cfg(test)]
+mod hosts_tests {
+    /// The builds the tests run on are computers; a phone build is the
+    /// one that answers no (read in the simulator, docs/IOS.md).
+    #[test]
+    fn a_computer_build_hosts() {
+        assert!(super::hosts_here());
+    }
+}
+
 /// A machine's model: a stable [`ModelKind`] for code to branch on, and
 /// the name the machine gives itself for a person to read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
