@@ -9,6 +9,7 @@
 
 pub mod accounts;
 pub mod adaptor;
+pub mod backup;
 pub mod cagent;
 pub mod chat;
 pub mod code;
@@ -435,6 +436,12 @@ pub struct Node {
     /// `ipc::Op::Roads` — because only it lives long enough to have
     /// dialled anything more than once.
     pub(crate) roads: roads::Roads,
+    /// Whether this machine can host a session (`khor_core::hosts_here`,
+    /// docs/IOS.md): `false` on a phone. Read once at open and written to
+    /// this machine's own row in the device table, so every machine in
+    /// the network knows; every door that would start a process here
+    /// asks it first ([`Node::refuse_unless_hosting`]).
+    hosts: bool,
 }
 
 /// A read-only look at the connections a node is holding
@@ -698,7 +705,21 @@ fn settled_channel(root: &std::path::Path, computed: String) -> Result<String, S
 ///
 /// **Never `KHOR_NAME`**, then or now: a store must not be reachable or
 /// unreachable depending on an environment variable.
+///
+/// # On a phone, the store stays on the phone
+///
+/// Claimed or freshly made, the store is then kept out of the system's
+/// backups ([`backup::keep_out`], docs/IOS.md 第二步): a backup restored
+/// onto a new phone would otherwise arrive with this phone's identity
+/// key, and one key on two devices is the copied store this stamp exists
+/// to refuse — except that the stamp would travel with it.
 fn claim_store(root: &std::path::Path) -> Result<(), String> {
+    claim_store_stamp(root)?;
+    backup::keep_out(&root.join(".khor"));
+    Ok(())
+}
+
+fn claim_store_stamp(root: &std::path::Path) -> Result<(), String> {
     let dir = root.join(".khor");
     let stamp = dir.join("owner");
     let here = gethostname::gethostname().to_string_lossy().to_string();
@@ -870,6 +891,20 @@ impl Node {
 
     /// Opens with an explicit machine name (pre-cleaning).
     pub fn open_as(root: PathBuf, name: &str) -> Result<Node, String> {
+        Self::open_hosting(root, name, khor_core::hosts_here())
+    }
+
+    /// [`Node::open_as`], told whether this machine can host rather than
+    /// reading it off the build.
+    ///
+    /// **Every real open goes through `open_as`**, which passes the
+    /// build's truth (`khor_core::hosts_here`): a phone build answers no,
+    /// every other build yes. This door exists so a test on a computer
+    /// can stand up the node a phone runs — the build fact cannot be
+    /// flipped in a test binary, and what has to be proven (no tmux
+    /// asked, no session started, the row says so) is about the node,
+    /// not about the build.
+    pub fn open_hosting(root: PathBuf, name: &str, hosts: bool) -> Result<Node, String> {
         // **Before anything reads a path** (第十四轮 第 4 条): if this
         // process is standing in a directory that has been deleted, it
         // steps onto `/` first — `gix` goes through the current
@@ -898,8 +933,20 @@ impl Node {
         // The one place khor decides to read other vendors' files. Every
         // other construction of a LiveKind discovers nothing, so no test
         // answers with whatever the machine happens to be running.
-        let live = LiveKind::new(root.clone(), device)
-            .discovering(Arc::new(adaptor::Discovery::for_root(&root)));
+        //
+        // **A machine that cannot host discovers nothing** (docs/IOS.md
+        // 第二步): no vendor directories, no tmux, not even the process
+        // table — a phone has no agents of its own and may not start a
+        // process, so every sweep there was a `posix_spawn` refused in
+        // silence, every ten seconds (`day_sampler`). Closed rather than
+        // skipped, so every reader of `live` keeps working and simply
+        // finds nothing here.
+        let discovery = if hosts {
+            adaptor::Discovery::for_root(&root)
+        } else {
+            adaptor::Discovery::empty().with_procs(adaptor::Procs::default())
+        };
+        let live = LiveKind::new(root.clone(), device).discovering(Arc::new(discovery));
         // Rooted through the same `vendor_home` as discovery and the
         // hooks: a node opened on a temp home reads that home's agents,
         // never the real user's. Every verification of this feature is
@@ -938,6 +985,7 @@ impl Node {
             wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             root_born: false,
             roads: Arc::default(),
+            hosts,
         };
         node.register_self()?;
         // After the row exists: the first machine's root certifies the
@@ -980,6 +1028,11 @@ impl Node {
             .map(|d| d.addrs)
             .unwrap_or_default();
         loaded.doc.upsert(&self.device_str, &self.name, &keep)?;
+        // **Whether this machine can host, said by the machine itself**
+        // (docs/IOS.md 第二步) — on every open, so the row always says
+        // what the build running it is. Every other machine reads it off
+        // the table to decide whether to offer a session here.
+        loaded.doc.set_hosts(&self.device_str, self.hosts)?;
         // **No style is written here any more** (2026-09-21). It used to
         // push `.khor/avatar.json` into the table on every open, back
         // when the file was the choice and the table was a report of it.
@@ -1487,6 +1540,26 @@ impl Node {
         &self.name
     }
 
+    /// Whether this machine can host a session — `false` on a phone
+    /// (`khor_core::hosts_here`, docs/IOS.md).
+    pub fn hosts(&self) -> bool {
+        self.hosts
+    }
+
+    /// **The one refusal every door that starts a process here gives on
+    /// a machine that cannot host**, before anything is registered: a
+    /// row put on the list for a host that then fails to start is a row
+    /// that lies (docs/IOS.md: 「终端形式先登记行再起进程」). In the
+    /// catalog's words, never the OS's (`posix_spawn` refused in a
+    /// sandbox is not a sentence a person can act on).
+    pub(crate) fn refuse_unless_hosting(&self) -> Result<(), String> {
+        if self.hosts {
+            Ok(())
+        } else {
+            Err(msg::machine_cannot_host(&self.name))
+        }
+    }
+
     /// This machine's name **as a person reads it** — the rename when
     /// there is one, else the channel (`DeviceInfo::shown`).
     ///
@@ -1740,6 +1813,11 @@ impl Node {
     /// nothing and answers `None`, which stays distinct from `Some([])`
     /// all the way out to the screen.
     pub fn refresh_agent_sessions(&self, name: &str) -> Result<AgentAnswer, String> {
+        // Asking starts the agent, and a phone starts nothing
+        // (docs/IOS.md); the face does not offer it there.
+        if !self.hosts {
+            return Err(msg::agent_ask_needs_a_computer().to_owned());
+        }
         // **The refusal is recorded, not discarded.** An agent that
         // cannot list is something khor now knows about it; throwing it
         // away leaves the store saying "nobody has asked", which sends
@@ -2140,6 +2218,26 @@ impl Node {
         self.resolve(machine)
     }
 
+    /// Refuses a session on `machine` when that machine cannot host
+    /// (docs/IOS.md 第二步), **before anything is dialled**: a phone says
+    /// so about itself in the device table, so the asking side knows
+    /// without a round trip — and without the phone having to be awake
+    /// to say no. The empty name is this machine, `resolve_or_here`'s
+    /// spelling. A name the table does not hold is left to the verb's own
+    /// resolve, which names the machines it does hold.
+    pub(crate) fn refuse_unless_it_hosts(&self, machine: &str) -> Result<(), String> {
+        let Ok((channel, home)) = self.resolve_or_here(machine) else {
+            return Ok(());
+        };
+        if home == self.device() {
+            return self.refuse_unless_hosting();
+        }
+        match self.devices()?.into_iter().find(|d| d.name == channel) {
+            Some(d) if !d.hosts => Err(msg::machine_cannot_host(d.shown())),
+            _ => Ok(()),
+        }
+    }
+
     /// A typed machine name as an id, hex, with the empty name meaning
     /// this machine — the spelling every `machine` argument uses. The
     /// workspace verbs are keyed by id ([`Node::ws_write`]) and the CLI
@@ -2524,7 +2622,11 @@ impl Node {
             })
             .collect();
         let me = self.device_str().to_owned();
-        for (name, _) in self.agents()? {
+        // **An ACP conversation is reopened on this machine**
+        // (`resume_agent_session`), so a phone offers none (docs/IOS.md):
+        // every one of them would be refused at the press.
+        let agents = if self.hosts { self.agents()? } else { Vec::new() };
+        for (name, _) in agents {
             let Some(khor_sync::agents::Answer::Sessions { rows }) = self.agent_seen(&name)? else {
                 continue;
             };
@@ -2591,6 +2693,7 @@ impl Node {
     /// is the failure being avoided. It brings its own directory and
     /// name, decided by it.
     pub fn resume_agent_session(&self, agent: &str, session: &str) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         let spec = self.agent_or_refuse(agent)?;
         let seen = self
             .agent_seen_row(agent, session)?
@@ -3976,6 +4079,7 @@ impl Node {
     /// `run_ephemeral` runs. The persistent host (`open`) is a coming
     /// batch.
     pub fn open_ephemeral(&self, kind: &str, title: &str) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live
@@ -4000,6 +4104,7 @@ impl Node {
         cmd: &[String],
         size: (u16, u16),
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live
@@ -4035,6 +4140,7 @@ impl Node {
         cmd: &[String],
         size: (u16, u16),
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         let leaf = link::fresh_leaf()?;
         let id = SessionId(format!("{kind}/{leaf}"));
         self.live
@@ -4076,6 +4182,7 @@ impl Node {
         size: (u16, u16),
         category: Option<&str>,
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         self.live.register(id, kind, title, None, category)?;
         self.live.learn_place(id, cwd)?;
         let dir = self
@@ -4091,6 +4198,7 @@ impl Node {
     /// id comes back from the host — it is the vendor's own, and exists
     /// only once the agent has answered (`gui_host` module head).
     pub fn open_gui(&self, title: &str, cmd: &[String]) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         gui_host::spawn_gui_host(None, title, cmd, None, false)
     }
 
@@ -4110,6 +4218,7 @@ impl Node {
         cmd: &[String],
         agent: &str,
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         gui_host::spawn_gui_host(None, title, cmd, Some(agent), false)
     }
 
@@ -4147,6 +4256,7 @@ impl Node {
         agent: &str,
         session: &str,
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         // Refused here rather than at the spawn: a directory that is
         // gone comes back from the child as a launch failure, and the
         // thing a person can act on is the path.
@@ -4188,6 +4298,7 @@ impl Node {
         // `agent`: hand it khor's own verbs (docs/AGENT.md 调度员).
         agent: bool,
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         gui_host::spawn_gui_host(Some(cwd), title, cmd, vendor, agent)
     }
 
@@ -4259,6 +4370,7 @@ impl Node {
         form: &str,
         agent: &str,
     ) -> Result<SessionId, String> {
+        self.refuse_unless_hosting()?;
         let picked = match agent {
             "" | adaptor::claude::VENDOR => Picked::Claude,
             adaptor::codex::VENDOR => Picked::Codex,
@@ -4353,6 +4465,7 @@ impl Node {
     /// A session with no live process is taken over by resurrection
     /// alone — nothing to kill is not an error.
     pub fn takeover(&self, id: &SessionId) -> Result<(), String> {
+        self.refuse_unless_hosting()?;
         // A terminal wearing an agent's form (docs/SESSION.md 形态随进程变)
         // is taken over as **that agent**: the conversation is the
         // agent's, and the terminal it ran in stays where it is.
@@ -4476,6 +4589,7 @@ impl Node {
     /// terminal — the host claims the pid itself on the way up
     /// (`LiveKind::reseat`), so nothing here has to guess it.
     pub fn takeover_term(&self, id: &SessionId) -> Result<(), String> {
+        self.refuse_unless_hosting()?;
         let Some((kind, title)) = self.live.on_record(id) else {
             return Err(msg::takeover_no_record(&id.0));
         };
@@ -4868,6 +4982,12 @@ impl Node {
     /// Adds khor's hooks to claude's settings, leaving the rest of that
     /// file alone. See `adaptor::claude::install_hooks`.
     pub fn install_hooks(&self) -> Result<adaptor::claude::HookInstall, String> {
+        // A phone has no claude to tell khor anything (docs/IOS.md): the
+        // card does not offer this there, and answering 「装好了」 for a
+        // settings file in a sandbox nobody reads was the lie.
+        if !self.hosts {
+            return Err(msg::hooks_need_a_computer().to_owned());
+        }
         adaptor::claude::install_hooks(&adaptor::vendor_home(&self.root))
     }
 

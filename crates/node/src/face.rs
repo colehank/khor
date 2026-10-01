@@ -226,7 +226,15 @@ fn web_up(port: u16) -> bool {
 }
 
 /// Which faces are up, in [`FACE_KEYS`] order.
+///
+/// **None on a phone** (docs/IOS.md 第二步): its app is not 「the desktop
+/// app」 and it serves no web face, so both rows would be 未运行 about
+/// things that do not exist there — and the port probe would be asked of
+/// a loopback nothing listens on.
 pub fn faces(root: &Path) -> Vec<FaceUp> {
+    if !khor_core::hosts_here() {
+        return Vec::new();
+    }
     let port = web_port();
     FACE_KEYS
         .iter()

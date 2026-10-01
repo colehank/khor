@@ -1733,6 +1733,14 @@ page-needs-desktop = "通过其他机器的网络打开网页，目前只支持�
 # face draws none of these there; this is what the mobile halves of the
 # window commands answer if anything asks anyway.
 window-needs-desktop = "窗口操作只在桌面端可用"
+# iOS 第二步（docs/IOS.md）：手机不托管会话。下面五句是后端的拒绝——界面在
+# 这些地方本来就不画入口，有人绕过来问（命令行、另一台机器、过期的页面）时
+# 答这一句，不让系统错误露到屏幕上。
+machine-cannot-host = "{0} 是手机，会话只开在电脑上"
+hooks-need-a-computer = "手机上没有 claude，钩子只装在电脑上"
+launch-needs-a-computer = "{0} 是手机，在它上面打不开文件"
+pull-needs-a-computer = "文件只能拉到电脑上"
+agent-ask-needs-a-computer = "手机上起不了智能体，到电脑上问"
 # 墓碑: `borrow-webview-macos-only` ("从别台的网开网页,现在只有 mac 上能用")
 # was removed here. It refused the borrow on Linux and Windows, reasoning
 # from the Cargo feature — and the feature really is Apple-only. But the

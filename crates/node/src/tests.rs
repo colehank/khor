@@ -3641,3 +3641,135 @@ fn one_search_reaches_every_kind_and_orders_them_one_way() {
     );
     assert!(n.find("no-such-thing-anywhere").unwrap().is_empty());
 }
+
+// ── a machine that cannot host (docs/IOS.md 第二步) ──────────────────
+
+/// **A phone says it cannot host, and every door that would start a
+/// process there refuses in the catalog's words before a row exists.**
+/// The control is a computer's node on the same kind of scratch home:
+/// its row says yes, and the same door gets past the guard (it then
+/// fails for its own reasons, which is not this test's business — what
+/// is asserted is that the refusal is not the phone's).
+#[test]
+fn a_machine_that_cannot_host_says_so_and_refuses_before_any_row_exists() {
+    let r = root("phone");
+    let n = Node::open_hosting(r.to_path_buf(), "phone", false).unwrap();
+    let mine = n
+        .devices()
+        .unwrap()
+        .into_iter()
+        .find(|d| d.id == n.device_str())
+        .expect("its own row");
+    assert!(!mine.hosts, "the phone's own row says it cannot host");
+    let no = msg::machine_cannot_host("phone");
+    let before = n.sessions().unwrap().len();
+    let sh = ["/bin/sh".to_owned()];
+    assert_eq!(n.open_persistent("shell", "t", &sh, (80, 24)), Err(no.clone()));
+    assert_eq!(n.open_persistent_at(&r, "shell", "t", &sh, (80, 24)), Err(no.clone()));
+    assert_eq!(n.open_ephemeral("shell", "t"), Err(no.clone()));
+    assert_eq!(n.open_gui("t", &sh), Err(no.clone()));
+    assert_eq!(n.start_session("", "t", "chat", "claude"), Err(no.clone()));
+    assert_eq!(n.start_session("", "t", "term", "claude"), Err(no.clone()));
+    assert_eq!(n.takeover(&SessionId("tui/x".into())), Err(no.clone()));
+    assert_eq!(
+        n.sessions().unwrap().len(),
+        before,
+        "nothing was registered on the way to a refusal"
+    );
+    assert_eq!(
+        n.install_hooks().map(|_| ()),
+        Err(msg::hooks_need_a_computer().to_owned()),
+        "no hooks are 「installed」 where there is no claude"
+    );
+    assert_eq!(
+        n.refresh_agent_sessions("anything").map(|_| ()),
+        Err(msg::agent_ask_needs_a_computer().to_owned()),
+        "asking an agent starts it, and a phone starts nothing"
+    );
+    for key in ["hooks", "serve"] {
+        assert!(
+            crate::doctor::fix(&n, key).is_err(),
+            "the doctor's {key} remedy starts something; not on a phone"
+        );
+    }
+
+    let c = root("computer");
+    let desk = Node::open_hosting(c.to_path_buf(), "desk", true).unwrap();
+    assert!(
+        desk.devices()
+            .unwrap()
+            .iter()
+            .any(|d| d.id == desk.device_str() && d.hosts),
+        "a computer's own row says it can"
+    );
+    assert_ne!(
+        desk.start_session("/no/such/dir", "t", "chat", "claude"),
+        Err(msg::machine_cannot_host("desk")),
+        "the control: the guard lets a computer through"
+    );
+}
+
+/// **A computer does not offer a session to a phone it only knows from
+/// the table**: the refusal comes off the phone's row, before any dial —
+/// so it is said even while the phone is asleep. The control is the
+/// same machine's row before it said anything: that one is a computer
+/// (a row from a khor before the field), and the guard lets it through.
+#[tokio::test]
+async fn a_computer_refuses_a_session_on_a_phone_off_its_row_without_dialling() {
+    let r = root("asks-phone");
+    let n = Node::open_hosting(r.to_path_buf(), "desk", true).unwrap();
+    let phone = "ab".repeat(32);
+    let loaded = n.devices_loaded().unwrap();
+    loaded.doc.upsert(&phone, "phone", &[]).unwrap();
+    let mut store = loaded.store;
+    store.flush(&loaded.doc).unwrap();
+    // Before the phone said anything: a computer to every reader.
+    assert_eq!(
+        n.refuse_unless_it_hosts("phone"),
+        Ok(()),
+        "a row that never said is a computer's"
+    );
+    let loaded = n.devices_loaded().unwrap();
+    loaded.doc.set_hosts(&phone, false).unwrap();
+    let mut store = loaded.store;
+    store.flush(&loaded.doc).unwrap();
+    let no = Err(msg::machine_cannot_host("phone"));
+    assert_eq!(
+        n.open_on("phone", "shell", "t", "", &[], (80, 24))
+            .await
+            .map(|_| ()),
+        no.clone(),
+        "a shell on the phone is refused"
+    );
+    assert_eq!(
+        n.open_agent_on("phone", "", "t", "chat", "claude")
+            .await
+            .map(|_| ()),
+        no,
+        "an agent on the phone is refused"
+    );
+    assert_eq!(
+        n.launch("phone", "https://example.test/").await,
+        Err(msg::launch_needs_a_computer("phone")),
+        "nothing is opened on the phone either"
+    );
+}
+
+/// What a phone's 自检 runs: everything about the network and the store,
+/// nothing about tools a phone does not have.
+#[test]
+fn a_phones_checklist_is_the_computers_minus_what_is_not_there() {
+    for key in crate::doctor::KEYS {
+        assert!(crate::doctor::applies(key, true), "a computer runs {key}");
+    }
+    let phone: Vec<&str> = crate::doctor::KEYS
+        .iter()
+        .copied()
+        .filter(|k| crate::doctor::applies(k, false))
+        .collect();
+    assert_eq!(
+        phone,
+        ["identity", "store", "serve", "relays", "peers", "roster", "roads", "disk"],
+        "a phone keeps what is about itself and the network"
+    );
+}

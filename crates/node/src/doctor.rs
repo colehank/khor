@@ -199,13 +199,37 @@ pub fn name(key: &str) -> &str {
     }
 }
 
+/// Whether a check means anything on a machine that can (`hosts`) or
+/// cannot host a session (docs/IOS.md 第二步).
+///
+/// **A phone has a checklist of its own, and it is this list minus what
+/// is not there**: no `khor` CLI beside the app (version), no web face
+/// (web), no claude (hooks), no agents it could start (agents), no VS
+/// Code (vscode), nothing that opens a file (launcher). Each of those
+/// would answer a warning that is true and useless — 「没有 CLI」 on a
+/// phone is not a thing to mend — and a checklist that warns about the
+/// ordinary state of the machine teaches people to stop reading it
+/// (`check_vscode`'s reason). Dropped rows, not green ones: a row that
+/// said 「正常」 about a CLI that does not exist would be a lie.
+pub fn applies(key: &str, hosts: bool) -> bool {
+    hosts || !matches!(key, "version" | "web" | "hooks" | "agents" | "vscode" | "launcher")
+}
+
 /// The whole checklist.
 ///
 /// Concurrent, each row under its own timeout. The order of the answer
 /// is [`KEYS`]' order and never the order they finished in: a list that
 /// reshuffles itself between two runs is a list nobody can compare.
+///
+/// On a machine that cannot host, the rows [`applies`] says nothing
+/// about are left out **and never run** — a check that is not polled
+/// starts nothing, and the version check alone would spawn a CLI that is
+/// not there — and the serve row carries no fix: the app *is* the
+/// resident there, and the fix starts a `khor serve` that does not exist.
 pub async fn doctor(node: &Node) -> Vec<Check> {
     let root = node.root().clone();
+    let hosts = node.hosts();
+    let run = |key: &str| applies(key, hosts);
     // Each arm is `(key, future)`. `tokio::join!` rather than a Vec of
     // boxed futures: the arms have different types and none of them is
     // built in a loop, so boxing would buy nothing but an allocation.
@@ -225,25 +249,45 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         disk,
         launcher,
     ) = tokio::join!(
-        timed("version", check_version()),
-        timed("identity", check_identity(root.clone())),
-        timed("store", check_store(root.clone())),
-        timed("serve", check_serve(node)),
-        timed("web", check_web(root.clone())),
-        timed("relays", check_relays(node.relays().to_vec())),
-        timed("peers", check_peers(node)),
-        timed("roster", check_roster(node)),
-        timed("roads", check_roads(node)),
-        timed("hooks", check_hooks(node)),
-        timed("agents", check_agents(node)),
-        timed("vscode", check_vscode()),
-        timed("disk", check_disk(root.clone())),
-        timed("launcher", check_launcher()),
+        timed_if(run("version"), "version", check_version()),
+        timed_if(run("identity"), "identity", check_identity(root.clone())),
+        timed_if(run("store"), "store", check_store(root.clone())),
+        timed_if(run("serve"), "serve", check_serve(node)),
+        timed_if(run("web"), "web", check_web(root.clone())),
+        timed_if(run("relays"), "relays", check_relays(node.relays().to_vec())),
+        timed_if(run("peers"), "peers", check_peers(node)),
+        timed_if(run("roster"), "roster", check_roster(node)),
+        timed_if(run("roads"), "roads", check_roads(node)),
+        timed_if(run("hooks"), "hooks", check_hooks(node)),
+        timed_if(run("agents"), "agents", check_agents(node)),
+        timed_if(run("vscode"), "vscode", check_vscode()),
+        timed_if(run("disk"), "disk", check_disk(root.clone())),
+        timed_if(run("launcher"), "launcher", check_launcher()),
     );
-    vec![
+    [
         version, identity, store, serve, web, relays, peers, roster, roads, hooks, agents, vscode,
         disk, launcher,
     ]
+    .into_iter()
+    .flatten()
+    .map(|mut c| {
+        if !hosts {
+            c.fix = None;
+        }
+        c
+    })
+    .collect()
+}
+
+/// [`timed`], or nothing at all when the check does not apply here —
+/// the future is dropped unpolled, so whatever it would have started
+/// never starts.
+async fn timed_if(
+    run: bool,
+    key: &str,
+    work: impl Future<Output = (Health, String, Option<String>)>,
+) -> Option<Check> {
+    if run { Some(timed(key, work).await) } else { None }
 }
 
 /// One check, under the budget. A check that overruns answers 未量 with
@@ -753,6 +797,12 @@ async fn check_launcher() -> (Health, String, Option<String>) {
 /// nothing quietly is the shape where somebody believes a thing was
 /// mended.
 pub fn fix(node: &Node, key: &str) -> Result<String, String> {
+    // On a phone the two remedies that start something — a `khor serve`,
+    // claude's hooks — have nothing to start (docs/IOS.md); the page
+    // offers neither there, and asking anyway is refused by name.
+    if !node.hosts() && matches!(key, "serve" | "hooks") {
+        return Err(cli::doctor_no_fix(key));
+    }
     match key {
         "identity" => {
             let p = identity_path(node.root());

@@ -1105,6 +1105,11 @@ cwd-pin-failed = "could not stand in {0} ({1}); still standing where it was star
 borrow-self = "That's this machine's own network — no need to borrow it; open it directly for a direct connection"
 page-needs-desktop = "Opening a web page from another machine's network only works on desktop for now"
 window-needs-desktop = "Window actions work only on desktop"
+machine-cannot-host = "{0} is a phone — sessions open on computers only"
+hooks-need-a-computer = "There is no claude on a phone — hooks are installed on computers only"
+launch-needs-a-computer = "{0} is a phone — nothing can be opened on it"
+pull-needs-a-computer = "Files can only be pulled to a computer"
+agent-ask-needs-a-computer = "An agent can't run on a phone — ask from a computer"
 
 name-not-pathable = "This name can't go in a path: {0}"
 machine-name-not-pathable = "This machine name can't go in a path: {0}"

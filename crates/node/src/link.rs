@@ -1407,6 +1407,11 @@ impl Node {
                 Ok(Response::Renamed)
             }
             Request::Launch { target } => {
+                // Nothing is opened on a phone (docs/IOS.md): its opener
+                // is not a program khor may start.
+                if !self.hosts() {
+                    return Err(msg::launch_needs_a_computer(self.name()));
+                }
                 // Off the reactor: starting a process is a fork, and a
                 // fork on the reactor is the one thing that stops every
                 // other answer this machine owes.
@@ -1664,6 +1669,10 @@ impl Node {
                 cols,
                 rows,
             } => {
+                // A phone hosts nothing (docs/IOS.md); an asker that
+                // read its row already refused, this is for one that
+                // did not.
+                self.refuse_unless_hosting()?;
                 // Defaults are resolved **here**, on the machine that
                 // will run it: the asker's home and the asker's `$SHELL`
                 // are answers to a question about the wrong computer.
@@ -2470,6 +2479,7 @@ impl Node {
         cmd: &[String],
         size: (u16, u16),
     ) -> Result<crate::SessionId, String> {
+        self.refuse_unless_it_hosts(machine)?;
         let op = ipc::Op::OpenOn {
             machine: machine.to_owned(),
             kind: kind.to_owned(),
@@ -2507,6 +2517,7 @@ impl Node {
         form: &str,
         agent: &str,
     ) -> Result<crate::SessionId, String> {
+        self.refuse_unless_it_hosts(machine)?;
         let op = ipc::Op::OpenAgentOn {
             machine: machine.to_owned(),
             dir: dir.to_owned(),
@@ -3132,6 +3143,20 @@ impl Node {
         // hands the target to an opener khor never sees again.
         crate::files::openable(target)?;
         let (channel, home) = self.resolve_or_here(machine)?;
+        // Nothing is opened on a phone (docs/IOS.md): not this one, and
+        // not one the table says is a phone — said before a dial, in
+        // words, rather than as 「设 KHOR_LAUNCHER」, which is advice for
+        // a computer.
+        let phone = if home == self.device() {
+            !self.hosts()
+        } else {
+            self.devices()?
+                .iter()
+                .any(|d| d.name == channel && !d.hosts)
+        };
+        if phone {
+            return Err(msg::launch_needs_a_computer(&channel));
+        }
         if home == self.device() {
             let t = target.to_owned();
             return tokio::task::spawn_blocking(move || crate::files::launch(&t))
