@@ -1395,7 +1395,8 @@ accounts-log-capped = "Only fetched the most recent {0} entries"
 machine-here = "This machine"
 card-version = "khor {0}"
 card-age = "{0} ago"
-# The contact card at the top of a machine's detail (2026-09-30).
+# The strip of facts at the top of a machine's detail (2026-10-01; it was a
+# contact card from 2026-09-30). The model is a cell only on the narrow face.
 card-model = "Model"
 card-connection = "Route"
 card-uptime = "Up"

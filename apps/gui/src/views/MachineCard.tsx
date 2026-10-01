@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
+import { MachineAvatar } from "@/components/Avatar";
 import { machineMark } from "@/components/BrandIcons";
+import { FaceMark } from "@/components/FaceMark";
 import { PageAvatar, PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
 import { SectionHead } from "@/components/SectionHead";
@@ -49,9 +50,9 @@ import { ago, hopWord, lasting, systemWord } from "@/words";
  * stay exactly as they were until their own batches give them one.
  *
  * No title here (components/Toolbar「身份只出现一次」): the machine's
- * name is R0's. The board opens on the machine's **contact card**
- * (`Contact`, 2026-09-30) — its face, its name as part of the card, and
- * the facts about it — and the readings follow.
+ * name is R0's, with its row's avatar and its model. The board opens on
+ * **one strip of facts** (`Strip`, 2026-10-01) — no face, no name — and
+ * the readings follow.
  */
 export function MachineCard({
   row,
@@ -119,23 +120,19 @@ export function MachineCard({
         )}
         </NarrowHead>
       )}
-      {/* **R0: the system's mark, the name, the model** (2026-10-01, the
+      {/* **R0: the row's avatar, the name, the model** (2026-10-01, the
           owner: 「机器页面的标题，改成第一行名称，第二行型号就行了，不写
-          khor 版本和链接方式」「类别头像机器就是系统的 icon 呀」). The
-          shell says the name; this page writes the two things around it,
-          seated in R0 by the shell like the workspace's location:
-          - the avatar is the machine's **system family** — the very mark
-            its list row wears on its corner (`machineMark`, the plain
-            machine glyph for one that could not say), never its face;
+          khor 版本和链接方式」; the avatar 2026-10-02). The shell says the
+          name; this page writes the two things around it, seated in R0 by
+          the shell like the workspace's location:
+          - the avatar is **the one its list row wears** (`HeadAvatar`);
           - the second line is the **model** alone, and is not drawn when
             the machine did not report one (「读不到就空——不编」).
           ⚠️ 墓碑 (2026-09-30 晚 → 10-01): the second line was 「型号 ·
           khor 版本 · 连接」 (`MachineCaption`); the version and the road
-          are the contact card's, said there once. Nothing on the narrow
-          face, which has no R0 — the card says the model there. */}
-      {row && (
-        <PageAvatar mark={machineMark(row.vitals?.vitals.system)} kind={row.vitals?.vitals.system ?? "machine"} />
-      )}
+          are the strip's, said there once. Nothing on the narrow face,
+          which has no R0 — the strip says the model there, first. */}
+      {row && <HeadAvatar row={row} />}
       {row?.vitals?.vitals.model?.name && (
         <PageSubtitle>
           <span
@@ -173,6 +170,36 @@ export function MachineCard({
   );
 }
 
+/**
+ * **R0's avatar over a machine: the very one its list row wears**
+ * (2026-10-02, the owner through the lead: 「机器页页头的头像不要画裸的
+ * 系统标记了，直接用列表那一行的同一个机器头像组件」). The same pieces
+ * the machines' list hands its row (`DevicesList` → `SideList` →
+ * `FaceMark`): the machine's face at `--avatar` 32 and its system
+ * family's mark (`machineMark`, the plain machine glyph for one that could
+ * not say) the way a row draws it — so a change to how a row draws a face
+ * and its mark (「浮现」 / 「角标」) is a change here too, with nothing to
+ * keep in step. 32 is the two title lines; `PageAvatar` seats it and takes
+ * the face's hairline ring away, which a 1× screen draws in steps.
+ *
+ * ⚠️ 墓碑 (2026-10-01 → 10-02): the bare system mark, first at 18 on a
+ * paper disc, then at 32 on nothing (「头像仅仅是类别头像哈，不是机器带
+ * 角标的」).
+ */
+function HeadAvatar({ row }: { row: DeviceRow }) {
+  const system = row.vitals?.vitals.system ?? null;
+  const SystemMark = machineMark(system);
+  return (
+    <PageAvatar kind={system ?? "machine"}>
+      <FaceMark
+        face={<MachineAvatar face={row.face} className="size-avatar" />}
+        badge={<SystemMark className="size-kind-mark-glyph" />}
+        mark={system ?? "machine"}
+      />
+    </PageAvatar>
+  );
+}
+
 /** One machine's card, from its head to its hook. Split from the
     section above only so that `key` can reset every bit of state on it
     when the machine changes. */
@@ -185,8 +212,8 @@ function Body({
   onUninstallHooks,
 }: {
   row: DeviceRow;
-  /** The narrow face has no R0, so the model R0 says is the card's to
-      say there (`Contact`). A fact about the screen, like the way back. */
+  /** The narrow face has no R0, so the model R0 says is the strip's to
+      say there (`Strip`). A fact about the screen, like the way back. */
   sayModel: boolean;
   hooks: HooksState | null;
   hooksFailed: boolean;
@@ -209,7 +236,7 @@ function Body({
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
-            <Contact row={row} sayModel={sayModel} />
+            <Strip row={row} sayModel={sayModel} />
             {never ? (
               <RegionState state="loading-never" />
             ) : (
@@ -255,80 +282,65 @@ function Body({
 }
 
 /**
- * **The machine's contact card** — the top of its board (2026-09-30, the
- * owner: 「机器页的内容部分做成一个类似通讯录的卡片：头像、型号、id 等等，
- * 想一个好的办法把它布局出来」), **redrawn 2026-10-01** (「头像也没有对齐，
- * 各类布局也很难看」). macOS Contacts' card, and its one alignment: the
- * face large at the head, the name beside it, and under them a table of
- * `label · value` lines whose **labels end where the face ends and whose
- * values start where the name starts**.
+ * **The machine's facts, one strip at the top of its board** (2026-10-01,
+ * the owner looked at three directions and picked A, 「一条事实带」). Each
+ * fact is a cell — a small label over its value — and the cells stand in
+ * one row with a hairline between every two:
  *
  * ```
- *  ┌──────┐
- *  │  72  │  peer                          ← title-md <p>; the face's middle
- *  │ face │                                   is the name block's middle
- *  └──────┘
- *      系统  macOS               连接  直连
- * khor 版本  0.1.14            已运行  125 天
- *   机器 id  ffffffffffff        读数  42 秒前
- *         ↑                        界面  桌面 app · 网页
- *   the face's right edge = the labels' right edge;
- *   the name's left edge = the values' left edge
+ * 系统    │ khor 版本 │ 连接 │ 已运行 │ 读数    │ 机器 id      │ 界面
+ * macOS   │ 0.1.14    │ 直连 │ 125 天 │ 42 秒前 │ ffffffffffff │ 桌面 app · 网页
+ * ─────────────────────────────────────────────────────────── ← hairline
+ *   CPU  GPU  内存  磁盘 ……
  * ```
  *
- * **One grid, so the lines are true by construction, not by numbers.**
- * Column one is `minmax(--avatar-lg, max-content)`: as wide as the face,
- * or as the longest label if one is longer (English); the face stands at
- * its right end (`justify-self: end`), and every label is right-aligned
- * in it. Column two is the name's and the values'. The head row and the
- * two groups are `subgrid`s of it, so they cannot drift apart. The head
- * centres the face and the name block on one line (`items-center`).
+ * **Who it is is R0's, said once**: the row's avatar, the name, the
+ * model. The board has no face (R0 and the list row beside it wear it)
+ * and no name; the strip is what the machine *is* and how it *is now*, the facts
+ * you look up rather than read on arrival — so they take one line of
+ * about forty pixels and the dials are the first look again.
  *
- * **Two groups, side by side where the card is wide and one group where
- * it is not** — a container query on the card (`@xl/contact`, 36rem),
- * not the window: what the machine *is* (系统, khor 版本, id — they change
- * with an upgrade at most) and how it *is now* (连接, 已运行, 读数, and on
- * this machine the khor faces that are open). Wide, the grid grows to
- * four columns and the second group takes the last two (its labels are
- * a column of their own, right-aligned too); narrow, the second group
- * continues under the first at the same pitch (`gap-xxs`) in the same
- * label column, so the two read as one table.
+ * - **A cell**: the label in `caption` `tertiary`, the value in `body`
+ *   `ink` (14 + 18 = 32 tall), numbers tabular, the id mono. Content
+ *   starts at the cell's left; the hairline is the cell's left border,
+ *   `gap-row` before its words.
+ * - **The row is spread end to end** (`justify-content: space-between`
+ *   over `auto` tracks): the first value starts at the board's padding
+ *   and the last one ends at it, and what is left over goes between the
+ *   cells, before each line. Chosen over equal columns because the cells
+ *   are not equally wide (「直连」 beside twelve characters of id): equal
+ *   tracks leave the short ones floating in air and fold the row sooner;
+ *   spread, the row stays one line down to a board of about 42rem, and
+ *   folded, the tracks still line the rows up into columns.
+ * - **It folds by the board, not the window** (`@container/strip`): one
+ *   row from 42rem; two rows from 28rem; three below that. Every row
+ *   holds the same count — `ceil(n / rows)`, so only the last can be
+ *   short, by less than a row — in the same tracks, `gap-row` between
+ *   rows. A row's first cell shows no line: the grid is pulled left by
+ *   one line and its gap under a horizontal clip, so the first column's
+ *   lines stand outside the strip.
+ * - **The order**: 系统 · khor 版本 · 连接 · 已运行 · 读数 · 机器 id · 界面
+ *   — what it is, then how it is now, then the long values last so a
+ *   squeezed row cuts them rather than the short ones. The narrow face
+ *   has no R0, so the model opens the strip there (`sayModel`).
  *
- * **What R0 says is not said again** (2026-10-01): R0 is the system's
- * mark, the name and the model. The card keeps the name — a card carries
- * one, and it is the face's caption — and **drops 型号**, except on the
- * narrow face, which has no R0: there the model is the name's second
- * line (`sayModel`), the way Contacts puts the company under a name.
+ * **Every cell is a fact the page already has**, and a fact with nothing
+ * honest to say is no cell — never a dash, never a guess, never an empty
+ * slot (「读不到就空——不编」):
  *
- * **Every line is a fact the page already has**, and a line with nothing
- * honest to say is not drawn — never a dash, never a guess
- * (「读不到就空——不编」):
- *
- * - 系统 — the family the list row's corner and R0's avatar draw
+ * - 系统 — the family the list row's corner and R0's mark draw
  *   (`vitals.system`);
  * - khor 版本 — `vitals.version`, the khor that machine runs;
- * - 机器 id — the row's id, twelve characters, and pressing copies all
- *   sixty-four (`CopyId`); mono, because it is read character by character;
  * - 连接 — `connectionWord`, the word the list row prints: 本机, the road
  *   (`hop`), or 「经 <sponsor>」;
  * - 已运行 — `vitals.uptime_s`, nothing for 0 (an older node);
  * - 读数 — how old the reading is: an age for a machine reached over the
  *   wire, the clock of its taking for this one;
+ * - 机器 id — the row's id, twelve characters, and pressing copies all
+ *   sixty-four (`CopyId`); mono, because it is read character by character;
  * - 界面 — this machine only: which khor faces are open, from the node
  *   (`about.faces`, `khor faces`). Nobody can answer it for another
- *   machine, so its card has no such line.
- *
- * **The name is part of the card, not a second title**: R0 says it as
- * the page's title, and here it is the card's name the way a contact
- * card carries one — a `<p>`, never a heading (`check-face` 13c counts
- * `h1`s and headings in the card). Editing is not here: the name and the
- * face are changed from the row (右键 → 编辑…).
- *
- * ⚠️ 墓碑 (2026-09-27 → 09-30): this was `Head`, one line of `callout`
- * facts (the id, the road, the uptime) after the face and the name had
- * left the board as a second title. The owner asked for them back as a
- * card; what keeps it from being a second title is its shape — a card
- * of facts with a name on it, not a heading over the board.
+ *   machine, so its strip has no such cell.
  *
  * The anchors the smoke and the gates read ride the values: `data-hop` /
  * `data-machine-here` / `data-via-sponsor` on 连接 (the road compared
@@ -336,18 +348,20 @@ function Body({
  * and `data-vitals-age` / `data-updated` on 读数 — the readings the smoke
  * counts against the CLI's line, once on the page.
  *
- * ⚠️ 墓碑 (2026-09-30 → 10-01): the face and a column of text sat in a
- * flex row (`items-start`, `gap-group`), the facts were two `dl`s that
- * wrapped (`flex-wrap`), each sizing its own label column — so the face's
- * top stood on the name's line box rather than on anything the eye
- * reads, a stacked second group's labels ended on a different edge from
- * the first's, and 型号 opened the table one line under R0 saying it.
+ * ⚠️ 墓碑 (2026-09-30 → 10-01): this was `Contact`, a contact card — the
+ * face at 72, the name beside it in `title-md`, and the facts in a
+ * `label · value` table built on one grid with `subgrid`s so the labels
+ * ended where the face ended. The owner, on his 1× screen: 「机器页内容部
+ * 分还是很丑」. The name was said in R0 and again on the card, the face
+ * repeated the list row beside it, and a hundred and fifty pixels at the
+ * top of the board went to the facts read least, pushing the dials down.
+ * Before that (09-27 → 09-30) it was `Head`, one line of `callout` facts.
  */
-function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
+function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
   const v = row.vitals?.vitals ?? null;
   const age = row.vitals?.age_ms ?? 0;
-  // **This machine's open faces** — the one fact on the card only the
-  // node here can answer, asked once per card (the identity page's
+  // **This machine's open faces** — the one fact on the strip only the
+  // node here can answer, asked once per board (the identity page's
   // reason: cheap, and fresh enough at the cost of one reopening).
   const [about, setAbout] = useState<About | null>(null);
   useEffect(() => {
@@ -356,7 +370,7 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
     void fetchAbout().then(
       (a) => live && setAbout(a),
       () => {
-        // Silent: a line on a card; its absence says as much as a
+        // Silent: a cell on a strip; its absence says as much as a
         // sentence about khor failing to ask itself.
       },
     );
@@ -369,10 +383,11 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
   const model = v?.model?.name ?? null;
   const upFaces = row.me && about ? about.faces.filter((f) => f.up) : [];
   const here = inApp ? "app" : "web";
-  const what: [string, string, ReactNode][] = [];
-  if (v?.system) what.push(["system", gui.axis_system, systemWord(v.system)]);
+  const facts: [string, string, ReactNode][] = [];
+  if (sayModel && model) facts.push(["model", gui.card_model, model]);
+  if (v?.system) facts.push(["system", gui.axis_system, systemWord(v.system)]);
   if (v?.version) {
-    what.push([
+    facts.push([
       "version",
       gui.identity_version,
       <span data-vitals-unit="version" className="tabular-nums">
@@ -380,21 +395,9 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
       </span>,
     ]);
   }
-  what.push([
-    "id",
-    gui.identity_id,
-    // Twelve characters to recognise; pressing copies all sixty-four.
-    // The button keeps the finger's floor (`--hit`); the negative
-    // margin keeps that floor from pushing the line apart from its
-    // neighbours — the target grows, the rhythm does not.
-    <span className="-my-xxs flex min-w-0">
-      <CopyId id={row.id} face="fact" />
-    </span>,
-  ]);
-  const now: [string, string, ReactNode][] = [];
   // Three shapes for one slot (`connectionWord`'s three). This machine
   // reaches itself over nothing — 本机, deliberately **not** `data-hop`:
-  // the smoke asserts this machine's card carries no road.
+  // the smoke asserts this machine's strip carries no road.
   const road = row.me ? (
     <span data-machine-here>{gui.machine_here}</span>
   ) : row.sponsor ? (
@@ -402,9 +405,9 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
   ) : row.hop ? (
     <span data-hop={row.hop}>{hopWord(row.hop)}</span>
   ) : null;
-  if (road) now.push(["connection", gui.card_connection, road]);
+  if (road) facts.push(["connection", gui.card_connection, road]);
   if (v && v.uptime_s > 0) {
-    now.push([
+    facts.push([
       "uptime",
       gui.card_uptime,
       <span data-uptime className="tabular-nums">
@@ -413,7 +416,7 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
     ]);
   }
   if (row.vitals) {
-    now.push([
+    facts.push([
       "reading",
       gui.card_reading,
       !row.me && age > 0 ? (
@@ -427,13 +430,25 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
       ),
     ]);
   }
+  facts.push([
+    "id",
+    gui.identity_id,
+    // Twelve characters to recognise; pressing copies all sixty-four.
+    // The button keeps the pointer's floor (`--hit`, taller than the
+    // value's line): it is centred on a box exactly the value's line
+    // tall, so the target overhangs the line evenly and the twelve
+    // characters stand on the same baseline as every other value.
+    <span className="flex h-(--text-body--line-height) min-w-0 items-center">
+      <CopyId id={row.id} face="fact" />
+    </span>,
+  ]);
   if (upFaces.length > 0) {
-    now.push([
+    facts.push([
       "faces",
       gui.card_faces,
-      <span data-contact-faces>
+      <span data-strip-faces>
         {upFaces.map((f, i) => (
-          <span key={f.key} data-contact-face={f.key} data-here={f.key === here}>
+          <span key={f.key} data-strip-face={f.key} data-here={f.key === here}>
             {i > 0 && <span aria-hidden="true"> · </span>}
             {f.name}
           </span>
@@ -441,66 +456,47 @@ function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
       </span>,
     ]);
   }
-  // A group is a `subgrid` of the card's grid: its labels sit in the
-  // card's label column (narrow) or in their own (the wide face's third),
-  // so a label column is one track, not one per group. Rows on `body`'s
-  // leading with `gap-xxs` between — one pitch for every line.
-  // **`content-start`**: wide, the two groups share one row of the card's
-  // grid and the shorter one is stretched to the taller's height; a grid
-  // stretches its own rows into that (`align-content: normal`), and the
-  // three lines of 「是什么」 stood 29 apart beside 「现在」's 22 (first
-  // look at the scratch app, 2026-10-01).
-  const group = (key: string, lines: [string, string, ReactNode][]) =>
-    lines.length > 0 && (
+  const n = facts.length;
+  return (
+    // The board's own width decides how many rows (`@container`), and a
+    // hairline under the strip is the one edge between it and the dials
+    // — `gap-base` of paper over the line, the board's `gap-row` under it.
+    // **`overflow-x: clip`**, not hidden: the first column's lines are
+    // cut off sideways while the id's taller hit floor still overhangs
+    // its line up and down.
+    <div data-machine-strip className="@container/strip min-w-0 overflow-x-clip border-b pb-base">
       <dl
-        data-contact-group={key}
-        className="col-span-full grid grid-cols-subgrid content-start items-baseline gap-y-xxs @xl/contact:col-span-2"
+        data-strip-grid
+        // The three counts a row can hold, one per fold; the class list
+        // picks one by the board's width.
+        style={
+          {
+            "--strip-one": n,
+            "--strip-two": Math.ceil(n / 2),
+            "--strip-three": Math.ceil(n / 3),
+          } as CSSProperties
+        }
+        className={cn(
+          "grid justify-between gap-x-row gap-y-row",
+          // Pulled left by one cell's line and gap, so a row's first cell
+          // keeps its words on the board's padding and its line outside.
+          "-ml-[calc(var(--gap-row)+var(--hair))]",
+          "grid-cols-[repeat(var(--strip-three),auto)]",
+          "@md/strip:grid-cols-[repeat(var(--strip-two),auto)]",
+          "@2xl/strip:grid-cols-[repeat(var(--strip-one),auto)]",
+        )}
       >
-        {lines.map(([k, label, value]) => (
-          <div key={k} data-contact-fact={k} className="contents">
-            <dt data-contact-label className="min-w-0 truncate text-right text-callout text-muted-foreground">
+        {facts.map(([k, label, value]) => (
+          <div key={k} data-strip-fact={k} className="flex min-w-0 flex-col border-l pl-row">
+            <dt data-strip-label className="truncate text-caption text-tertiary">
               {label}
             </dt>
-            <dd data-contact-value data-selectable className="min-w-0 truncate text-body text-foreground">
+            <dd data-strip-value data-selectable className="min-w-0 truncate text-body text-foreground">
               {value}
             </dd>
           </div>
         ))}
       </dl>
-    );
-  return (
-    // The card's own width decides one group or two (`@container`), and
-    // a hairline under it is the one edge between it and the dials —
-    // `gap-group` of paper over the line, the board's `gap-row` under it.
-    <div data-machine-contact className="@container/contact min-w-0 border-b pb-group">
-      <div
-        data-contact-grid
-        className={cn(
-          "grid min-w-0 gap-x-row gap-y-xxs",
-          "grid-cols-[minmax(var(--avatar-lg),max-content)_minmax(0,1fr)]",
-          "@xl/contact:grid-cols-[minmax(var(--avatar-lg),max-content)_minmax(0,1fr)_max-content_minmax(0,1fr)]",
-        )}
-      >
-        {/* The head: the face at the label column's right end, the name
-            block in the values' column, both centred on one line. Its
-            `pb-base` is the step from the card's head to its table — a
-            paragraph's, where the lines below are one table's pitch. */}
-        <div data-contact-head className="col-span-full grid grid-cols-subgrid items-center pb-base">
-          <MachineAvatar face={row.face} className="size-avatar-lg justify-self-end" />
-          <div data-contact-title className="col-[2/-1] flex min-w-0 flex-col">
-            <p data-machine-contact-name data-selectable className="min-w-0 truncate text-title-md">
-              {row.shown}
-            </p>
-            {sayModel && model && (
-              <p data-contact-model data-selectable className="min-w-0 truncate text-callout text-muted-foreground">
-                {model}
-              </p>
-            )}
-          </div>
-        </div>
-        {group("what", what)}
-        {group("now", now)}
-      </div>
     </div>
   );
 }
