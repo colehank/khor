@@ -12,8 +12,13 @@
 //
 // What is left is the two halves of 这台机器是谁:
 //
-// - the face, the name (editable) and the id — what the network calls
-//   this machine;
+// - the face, the name and the id — what the network calls this
+//   machine. **Stated, not edited** (2026-09-30, the owner: 「『我』的里面
+//   不要有更改头像的设置，这在机器页也能设置，不要冗余」): the name and the
+//   face are changed in one window, from the machine's row on the
+//   machines page (右键 → 编辑…, `MachineEditDialog`), for this machine
+//   as for every other. This page carried a 改名… row and the whole face
+//   editor until then — a second door to the same two facts;
 // - **本机开着哪几张 khor 界面, 当前是哪张** (「头像这, 还可以显示, 本机
 //   运行了哪些脸. 当前是哪张脸」). The facts come from the node
 //   (`khor_node::face::faces`, which `khor faces` prints) — the desktop
@@ -27,21 +32,16 @@
 // here rather than carried in the answer.
 import { useEffect, useState } from "react";
 
-import { fetchAbout, inApp, renameMachine, type About, type DeviceRow } from "@/api";
-import { ActionRow } from "@/components/settings/ActionRow";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { fetchAbout, inApp, type About, type DeviceRow } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { CopyId } from "@/views/DetailPane";
-import { FaceSettings } from "@/views/FaceSettings";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 export function IdentityPage({
   devices,
   onClose,
-  onRestyled,
 }: {
   /** The shell's own polled table — **not fetched again here**. Two
       readers of one answer is how two surfaces come to show two
@@ -49,10 +49,6 @@ export function IdentityPage({
       (`App.tsx`'s devices effect). */
   devices: DeviceRow[];
   onClose: () => void;
-  /** A restyle repaints this machine everywhere at once — the shell
-      refetches rows and devices together and every face on screen is
-      painted from that one answer. */
-  onRestyled: () => void;
 }) {
   // Asked once per opening, like the settings screen reads its face
   // choices: a version cannot change under a running app, but the
@@ -77,7 +73,6 @@ export function IdentityPage({
   // so about itself; everything else is a browser, which is the web
   // face — and in neither case is it something the node can be asked.
   const hereKey = inApp ? "app" : "web";
-  const [renaming, setRenaming] = useState(false);
 
   return (
     <MoreFrame
@@ -99,27 +94,27 @@ export function IdentityPage({
         ) : undefined
       }
     >
-      {/* **One settings group, no name of its own** — R0 says 身份. The
-          machine's name is a row whose act is 改名… (it asks for the new
-          name, so the ellipsis), then the id and the version as facts.
+      {/* **One settings group of facts, no name of its own** — R0 says
+          这台机器. The name, with the face it wears beside it, then the
+          id and the version. `shown`, never `name`: the first is what
+          this machine is called, the second is what the network files
+          it under.
 
-          ⚠️ 墓碑 (2026-09-27): this was a head of its own — the face at
-          `avatar-lg` and the name as a `title-md` heading editable by
-          double-click — which is a second title in the board and a
-          setting drawn outside the four row kinds. The face is the
-          editor's subject just below (`FaceSettings` draws it large), so
-          the copy up here went; the rename is the row. `shown`, never
-          `name`: the first is what this machine is called, the second
-          is what the network files it under. */}
+          ⚠️ 墓碑 (2026-09-30): the name was an action row, 改名… (a window
+          with a box), and the face editor was its own section under it.
+          Both went — the owner: 「『我』的里面不要有更改头像的设置，这在机器
+          页也能设置，不要冗余」. The one place either is edited is the
+          machine row's 编辑… (`MachineEditDialog`). And before that
+          (2026-09-27) this was a head of its own — the face at
+          `avatar-lg` and a `title-md` name — a second title. */}
       <MoreSection name="machine">
         {me && (
-          <ActionRow
-            name="rename"
-            label={<span data-identity-name>{me.shown}</span>}
-            actionLabel={gui.rename_ask}
-            onPress={() => setRenaming(true)}
-            mark={{ "data-identity-rename": "" }}
-          />
+          <MoreFact name="name" label={gui.machine_name}>
+            <span data-identity-name className="inline-flex max-w-full items-center gap-in align-middle">
+              <MachineAvatar face={me.face} className="size-kind-mark flex-none" />
+              <span className="min-w-0 break-all">{me.shown}</span>
+            </span>
+          </MoreFact>
         )}
         {me && (
           <MoreFact name="id" label={gui.identity_id}>
@@ -134,25 +129,6 @@ export function IdentityPage({
               is where another machine's is asked for over the wire. */}
           <span className="tabular-nums">{about?.version ?? ""}</span>
         </MoreFact>
-      </MoreSection>
-      {me && (
-        <RenameDialog
-          open={renaming}
-          id={me.id}
-          name={me.shown}
-          onClose={() => setRenaming(false)}
-          onRenamed={() => {
-            setRenaming(false);
-            onRestyled();
-          }}
-        />
-      )}
-
-      {/* 头像 (docs/MORE.md 头像页: 脸编辑器). **Empty machine — this
-          one**: the page is about this machine, and the same editor
-          opens on the map for any other. */}
-      <MoreSection name="avatar" label={gui.settings_face}>
-        <FaceSettings onChanged={onRestyled} />
       </MoreSection>
 
       {/* 本机开着哪几张界面 (docs/MORE.md 头像页). Drawn only once khor
@@ -201,87 +177,5 @@ export function IdentityPage({
         </MoreSection>
       )}
     </MoreFrame>
-  );
-}
-
-/**
- * 改名…: the name in a box, and the one act that writes it — the same
- * writer the list row's double-click uses (`renameMachine`, behind
- * `EditableName`). An emptied box gives the machine its reported name
- * back, as it does there. A refusal stays in the window in the node's
- * own sentence, under the box, so the fix is an edit.
- */
-function RenameDialog({
-  open,
-  id,
-  name,
-  onClose,
-  onRenamed,
-}: {
-  open: boolean;
-  id: string;
-  name: string;
-  onClose: () => void;
-  onRenamed: () => void;
-}) {
-  const [typed, setTyped] = useState(name);
-  const [going, setGoing] = useState(false);
-  const [refused, setRefused] = useState<string | null>(null);
-  useEffect(() => {
-    if (open) {
-      setTyped(name);
-      setRefused(null);
-      setGoing(false);
-    }
-  }, [open, name]);
-  const write = () => {
-    if (going) return;
-    setGoing(true);
-    setRefused(null);
-    renameMachine(id, typed.trim()).then(
-      () => {
-        setGoing(false);
-        onRenamed();
-      },
-      (e: unknown) => {
-        setGoing(false);
-        setRefused(String(e instanceof Error ? e.message : e) || gui.rename_failed);
-      },
-    );
-  };
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent data-identity-rename-dialog>
-        <DialogHeader>
-          <DialogTitle>{gui.rename}</DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            write();
-          }}
-        >
-          <Input
-            data-identity-rename-input
-            autoComplete="off"
-            aria-label={gui.rename}
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            className="min-h-touch w-full"
-          />
-        </form>
-        {refused !== null && (
-          <p data-identity-rename-refused className="text-callout text-destructive">
-            {refused}
-          </p>
-        )}
-        <DialogFooter>
-          <Button onClick={onClose}>{gui.delete_keep}</Button>
-          <Button variant="primary" disabled={going} onClick={write}>
-            {gui.rename}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

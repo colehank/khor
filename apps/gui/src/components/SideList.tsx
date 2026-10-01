@@ -46,10 +46,10 @@ export type SideRow = {
   pinned: boolean;
   /** The face, already sized. */
   face: ReactNode;
-  /** The corner mark and what it says (a key, for the gates). `beside`
-      stands it next to the face rather than on it — for a face with
-      words in its middle (`FaceMark`). */
-  badge?: { mark: string; icon: ReactNode; data?: Record<string, string>; beside?: boolean };
+  /** The corner mark and what it says (a key, for the gates). Absent
+      draws no corner (the 额度 row's mark opens its title instead,
+      2026-09-30). */
+  badge?: { mark: string; icon: ReactNode; data?: Record<string, string> };
   /** A session's state ring. */
   halo?: string;
   title: ReactNode;
@@ -275,7 +275,6 @@ export function SideList({
           badge={r.badge?.icon}
           mark={r.badge?.mark}
           badgeData={r.badge?.data}
-          beside={r.badge?.beside}
         />
         <span className="min-w-0 flex-1">
           <span data-side-title className="block min-w-0">

@@ -618,6 +618,10 @@ export const pinAccount = (id: string, on: boolean) => call<null>("pin_account",
     key can only be replaced on the machine that holds it, which the node
     refuses by name rather than dropping. The provider is not editable:
     it decides how the account is read at all. */
+/** Renames an account, network-wide — the 额度 row's double-click
+    (2026-09-30). The name alone: `updateAccount` writes every field the
+    编辑 window holds. A blank name is refused in the node's words. */
+export const renameAccount = (id: string, name: string) => call<null>("rename_account", { id, name });
 export const updateAccount = (a: {
   id: string;
   name: string;

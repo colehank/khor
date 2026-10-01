@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
-import type { DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
-import { fetchLoad, setWatch } from "@/api";
+import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
+import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
+import { MachineAvatar } from "@/components/Avatar";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
@@ -33,7 +34,7 @@ import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { CopyId } from "@/views/DetailPane";
-import { ago, hopWord, lasting } from "@/words";
+import { ago, connectionWord, hopWord, lasting, systemWord } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -47,7 +48,9 @@ import { ago, hopWord, lasting } from "@/words";
  * stay exactly as they were until their own batches give them one.
  *
  * No title here (components/Toolbar「身份只出现一次」): the machine's
- * name is R0's, and the card starts with its facts.
+ * name is R0's. The board opens on the machine's **contact card**
+ * (`Contact`, 2026-09-30) — its face, its name as part of the card, and
+ * the facts about it — and the readings follow.
  */
 export function MachineCard({
   row,
@@ -115,12 +118,14 @@ export function MachineCard({
         )}
         </NarrowHead>
       )}
-      {/* **R0's second line** (2026-09-30:「机器页：最上方是机器名，下方一
-          行是 khor 版本与更新时间」): the shell says the name, this says
-          which khor it runs and how old its reading is — written here,
-          seated in R0 by the shell (`PageSubtitle`), like the workspace's
-          location. Nothing on the narrow face, which has no R0. */}
-      {row?.vitals && (
+      {/* **R0's second line** (2026-09-30, the owner, 晚: 「机器页上方标题
+          改为第一行机器名，第二行机器型号、khor 版本、连接方式」): the shell
+          says the name, this says what the machine is, which khor it runs
+          and how it is reached — written here, seated in R0 by the shell
+          (`PageSubtitle`), like the workspace's location. The reading's
+          age was here that morning; it is the card's now. Nothing on the
+          narrow face, which has no R0. */}
+      {row && (row.vitals || connectionWord(row)) && (
         <PageSubtitle>
           <span
             data-machine-head-sub
@@ -188,7 +193,7 @@ function Body({
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
-            <Head row={row} />
+            <Contact row={row} />
             {never ? (
               <RegionState state="loading-never" />
             ) : (
@@ -234,108 +239,234 @@ function Body({
 }
 
 /**
- * The card's first line: the facts about this machine that are not its
- * name — the id (small, **and** the control that copies it: `CopyId`'s
- * `id` face, because a string already on screen does not need a button
- * to fetch it), the road it is reached over, and how long it has been
- * up.
+ * **The machine's contact card** — the top of its board (2026-09-30, the
+ * owner: 「机器页的内容部分做成一个类似通讯录的卡片：头像、型号、id 等等，
+ * 想一个好的办法把它布局出来」). macOS Contacts' card: the face large on
+ * the left, the name beside it, and under the name the facts, each a
+ * `label · value` line — the label in `callout` `secondary`, right-aligned
+ * so the values start on one edge, the value in `body` `ink`, numbers
+ * tabular.
  *
- * ⚠️ 墓碑 (2026-09-27): **this was a head, and it said who the machine
- * is a second time.** The face at `avatar-lg` and the name in
- * `title-md` (editable by double-click) sat over the id, while R0 above
- * already carried the name — 「身份只出现一次… 板里不许再有第二个标题」
- * (components/Toolbar, Board). What went where:
+ * ```
+ * ┌──────┐  peer                           (title-md, not a heading)
+ * │  72  │     型号  MacBook Pro          连接  直连
+ * │ face │     系统  macOS              已运行  125 天
+ * └──────┘ khor 版本  0.1.0              读数  42 秒前
+ *           机器 id  ffffffffffff
+ * ```
  *
- * - the name — gone; R0 says it. Renaming stays on the list row, whose
- *   title is the same `EditableName` (double-click, F2), and on 身份 for
- *   this machine;
- * - the big face — gone; it was identity and nothing else, and the list
- *   row beside it wears the same face;
- * - the version and the freshness — to R0 (`MachineCaption`): its right
- *   end until 2026-09-30, the second line under the name since;
- * - the id, the road, the uptime — here, as the card's first line: they
- *   are readings about the machine, not a title over it.
+ * **Two groups, side by side where the board is wide and stacked where
+ * it is not** (`flex-wrap`): what the machine *is* (型号, 系统, khor 版本,
+ * id — they change with an upgrade at most) and how it *is now* (连接,
+ * 已运行, 读数, and on this machine the khor faces that are open). Each
+ * group is its own two-column grid, so its values share one edge.
  *
- * The pin went off the card before that (2026-09-03:「置顶统一和 session
- * 一样, 右键机器选择」).
+ * **Every line is a fact the page already has**, and a line with nothing
+ * honest to say is not drawn — never a dash, never a guess
+ * (「读不到就空——不编」):
+ *
+ * - 型号 — `vitals.model.name`, what the machine calls itself (Apple
+ *   Silicon's device tree `product-name`, an Intel Mac's `hw.model`, a
+ *   Linux box's DMI `product_name`, read in-process by
+ *   `khor_node::vitals::model`); absent from a machine that could not say
+ *   and from one never reached;
+ * - 系统 — the family the list row's corner draws (`vitals.system`);
+ * - khor 版本 — `vitals.version`, the khor that machine runs;
+ * - 机器 id — the row's id, twelve characters, and pressing copies all
+ *   sixty-four (`CopyId`); mono, because it is read character by character;
+ * - 连接 — `connectionWord`, the word the list row and R0 print: 本机, the
+ *   road (`hop`), or 「经 <sponsor>」;
+ * - 已运行 — `vitals.uptime_s`, nothing for 0 (an older node);
+ * - 读数 — how old the reading is: an age for a machine reached over the
+ *   wire, the clock of its taking for this one;
+ * - 界面 — this machine only: which khor faces are open, from the node
+ *   (`about.faces`, `khor faces`). Nobody can answer it for another
+ *   machine, so its card has no such line.
+ *
+ * **The name is part of the card, not a second title**: R0 says it as
+ * the page's title, and here it is the card's name the way a contact
+ * card carries one — a `<p>`, never a heading (`check-face` 13c counts
+ * `h1`s and headings in the card). Editing is not here: the name and the
+ * face are changed from the row (右键 → 编辑…).
+ *
+ * ⚠️ 墓碑 (2026-09-27 → 09-30): this was `Head`, one line of `callout`
+ * facts (the id, the road, the uptime) after the face and the name had
+ * left the board as a second title. The owner asked for them back as a
+ * card; what keeps it from being a second title is its shape — a card
+ * of facts with a name on it, not a heading over the board.
+ *
+ * The anchors the smoke and the gates read ride the values: `data-hop` /
+ * `data-machine-here` / `data-via-sponsor` on 连接 (the road compared
+ * against `khor devices`), `data-vitals-unit="version"` on the version
+ * and `data-vitals-age` / `data-updated` on 读数 — the readings the smoke
+ * counts against the CLI's line, **once on the page**: R0's second line
+ * repeats the version without them.
  */
-function Head({ row }: { row: DeviceRow }) {
-  const v = row.vitals;
-  const days = v ? Math.floor(v.vitals.uptime_s / 86_400) : 0;
-  const hours = v ? Math.floor(v.vitals.uptime_s / 3_600) : 0;
-  return (
-    <div data-machine-facts className="flex flex-wrap items-center gap-row text-callout text-muted-foreground">
-      {/* The first twelve characters — a prefix to recognise, and
-          pressing it puts all sixty-four on the clipboard. */}
-      <CopyId id={row.id} face="id" />
-      {/* Which road this machine is being reached over
-          (`khor_core::Hop`), the same reading `khor devices` prints, from
-          the same call. Not a liveness signal — it lags the far end going
-          away by minutes; the freshness at R0's right end is what says
-          whether this machine has been heard from.
-
-          Three shapes for one slot. This machine reaches itself over
-          nothing, so its word is 本机 and it is deliberately **not**
-          `data-hop` — smoke asserts the own card carries no road. A
-          satellite has no road of its own; its sponsor speaks for it
-          (附属机器批). */}
-      {row.me ? (
-        <span data-machine-here className="flex-none">
-          {gui.machine_here}
-        </span>
-      ) : row.sponsor ? (
-        <span data-via-sponsor={row.sponsor} className="flex-none">
-          {cli.via_sponsor(row.sponsor)}
+function Contact({ row }: { row: DeviceRow }) {
+  const v = row.vitals?.vitals ?? null;
+  const age = row.vitals?.age_ms ?? 0;
+  // **This machine's open faces** — the one fact on the card only the
+  // node here can answer, asked once per card (the identity page's
+  // reason: cheap, and fresh enough at the cost of one reopening).
+  const [about, setAbout] = useState<About | null>(null);
+  useEffect(() => {
+    if (!row.me) return;
+    let live = true;
+    void fetchAbout().then(
+      (a) => live && setAbout(a),
+      () => {
+        // Silent: a line on a card; its absence says as much as a
+        // sentence about khor failing to ask itself.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [row.me]);
+  const days = v ? Math.floor(v.uptime_s / 86_400) : 0;
+  const hours = v ? Math.floor(v.uptime_s / 3_600) : 0;
+  const model = v?.model?.name ?? null;
+  const upFaces = row.me && about ? about.faces.filter((f) => f.up) : [];
+  const here = inApp ? "app" : "web";
+  const what: [string, string, ReactNode][] = [];
+  if (model) what.push(["model", gui.card_model, <span data-contact-model>{model}</span>]);
+  if (v?.system) what.push(["system", gui.axis_system, systemWord(v.system)]);
+  if (v?.version) {
+    what.push([
+      "version",
+      gui.identity_version,
+      <span data-vitals-unit="version" className="tabular-nums">
+        {v.version}
+      </span>,
+    ]);
+  }
+  what.push([
+    "id",
+    gui.identity_id,
+    // Twelve characters to recognise; pressing copies all sixty-four.
+    // The button keeps the finger's floor (`--hit`); the negative
+    // margin keeps that floor from pushing the line apart from its
+    // neighbours — the target grows, the rhythm does not.
+    <span className="-my-xxs flex min-w-0">
+      <CopyId id={row.id} face="fact" />
+    </span>,
+  ]);
+  const now: [string, string, ReactNode][] = [];
+  // Three shapes for one slot (`connectionWord`'s three). This machine
+  // reaches itself over nothing — 本机, deliberately **not** `data-hop`:
+  // the smoke asserts this machine's card carries no road.
+  const road = row.me ? (
+    <span data-machine-here>{gui.machine_here}</span>
+  ) : row.sponsor ? (
+    <span data-via-sponsor={row.sponsor}>{cli.via_sponsor(row.sponsor)}</span>
+  ) : row.hop ? (
+    <span data-hop={row.hop}>{hopWord(row.hop)}</span>
+  ) : null;
+  if (road) now.push(["connection", gui.card_connection, road]);
+  if (v && v.uptime_s > 0) {
+    now.push([
+      "uptime",
+      gui.card_uptime,
+      <span data-uptime className="tabular-nums">
+        {days >= 1 ? cli.age_days(days) : cli.age_hours(hours)}
+      </span>,
+    ]);
+  }
+  if (row.vitals) {
+    now.push([
+      "reading",
+      gui.card_reading,
+      !row.me && age > 0 ? (
+        <span data-vitals-age className="tabular-nums">
+          {gui.card_age(ago(Date.now() - age))}
         </span>
       ) : (
-        row.hop && (
-          <span data-hop={row.hop} className="flex-none">
-            {hopWord(row.hop)}
-          </span>
-        )
-      )}
-      {v && v.vitals.uptime_s > 0 && (
-        <span data-uptime className="flex-none">
-          {days >= 1 ? cli.uptime_days(days) : cli.uptime_hours(hours)}
+        <span data-updated className="tabular-nums">
+          {clock(Date.now() - age)}
         </span>
-      )}
+      ),
+    ]);
+  }
+  if (upFaces.length > 0) {
+    now.push([
+      "faces",
+      gui.card_faces,
+      <span data-contact-faces>
+        {upFaces.map((f, i) => (
+          <span key={f.key} data-contact-face={f.key} data-here={f.key === here}>
+            {i > 0 && <span aria-hidden="true"> · </span>}
+            {f.name}
+          </span>
+        ))}
+      </span>,
+    ]);
+  }
+  const group = (key: string, lines: [string, string, ReactNode][]) =>
+    lines.length > 0 && (
+      <dl
+        data-contact-group={key}
+        className="grid min-w-0 flex-none grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-row gap-y-xxs"
+      >
+        {lines.map(([k, label, value]) => (
+          <div key={k} data-contact-fact={k} className="contents">
+            <dt className="text-right text-callout text-muted-foreground">{label}</dt>
+            <dd data-selectable className="min-w-0 truncate text-body text-foreground">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
+  return (
+    <div data-machine-contact className="flex min-w-0 items-start gap-group border-b pb-group">
+      <MachineAvatar face={row.face} className="size-avatar-lg flex-none" />
+      <div className="flex min-w-0 flex-1 flex-col gap-in">
+        <p data-machine-contact-name data-selectable className="min-w-0 truncate text-title-md">
+          {row.shown}
+        </p>
+        <div className="flex min-w-0 flex-wrap items-start gap-x-pane gap-y-in">
+          {group("what", what)}
+          {group("now", now)}
+        </div>
+      </div>
     </div>
   );
 }
 
 /**
  * **What R0 says under an open machine's name** (`PageSubtitle`, above):
- * which khor it runs and how old its reading is — 「Khor 0.1.14 · 12 秒前」
- * (2026-09-06:「Khor xxx N 秒前」). Moved here from the card's head on
- * 2026-09-27 (see `Head`'s tombstone), and from R0's right end to the
- * second line under the name on 2026-09-30 — the right end is left to
- * 「3 分钟前的读数」 when the whole page is stale (components/RegionState).
+ * 型号 · khor 版本 · 连接 — 「MacBook Pro · khor 0.1.14 · 直连」, 「… · 本机」
+ * on this machine (2026-09-30, the owner, 晚: 「机器页上方标题改为第一行
+ * 机器名，第二行机器型号、khor 版本、连接方式」). A segment with nothing
+ * honest to say is skipped, never filled — a machine that did not report
+ * its model starts at the version (「型号没报回来就跳过这一段，不编」).
  *
- * The version is one of `khor devices`' sentences and keeps its unit;
- * the freshness is the age sentence for a machine reached over the wire
- * (its own unit, counted with the readings) and the present's clock for
- * this one — this machine's reading has an age too since 第十六轮 (the
- * background sampler's last round, seconds old), but it keeps the clock
- * of when it was taken rather than an age sentence, which is the face a
- * reading from elsewhere wears. **The words are the card's, the units
- * are the CLI's**: `card-version` and `card-age` say the same two facts
- * `khor devices` prints as `vitals-version` and `vitals-taken`, so the
- * smoke's count of readings against the terminal still holds (it counts
- * the page, and R0 is on the page). A middle dot between the two, and
- * only when both are there. Nothing for a machine never read.
+ * ⚠️ 墓碑: 「khor 0.1.14 · 12 秒前」 was this line from the morning of
+ * 2026-09-30 (moved here from R0's right end, and to R0 from the card's
+ * head on 2026-09-27). **The reading's age left it the same evening** —
+ * it is the contact card's 读数 now, and a fact is said on the card, in
+ * R0's second line, and nowhere a third time.
+ *
+ * **No gate anchors here.** The version and the road are the card's
+ * facts too, and the smoke counts the page's `data-vitals-unit` against
+ * `khor devices` and reads the card's `data-hop` — marks on this line
+ * would count one reading twice.
  */
 function MachineCaption({ row }: { row: DeviceRow }) {
-  const v = row.vitals;
-  if (!v) return null;
+  const v = row.vitals?.vitals ?? null;
+  const parts = [
+    v?.model?.name ?? null,
+    v?.version ? gui.card_version(v.version) : null,
+    connectionWord(row),
+  ].filter((p): p is string => !!p);
   return (
     <>
-      {v.vitals.version && <span data-vitals-unit="version">{gui.card_version(v.vitals.version)}</span>}
-      {v.vitals.version && <span aria-hidden="true"> · </span>}
-      {!row.me && v.age_ms > 0 ? (
-        <span data-vitals-age>{gui.card_age(ago(Date.now() - v.age_ms))}</span>
-      ) : (
-        <span data-updated>{cli.updated_at(clock(Date.now() - v.age_ms))}</span>
-      )}
+      {parts.map((p, i) => (
+        <span key={i}>
+          {i > 0 && <span aria-hidden="true"> · </span>}
+          {p}
+        </span>
+      ))}
     </>
   );
 }

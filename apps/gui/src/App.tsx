@@ -2167,13 +2167,7 @@ export default function App() {
     ) : morePage === "doctor" ? (
       <DoctorPage onClose={leaveMorePage} />
     ) : (
-      <IdentityPage
-        devices={devices}
-        onClose={leaveMorePage}
-        onRestyled={() => {
-          refresh().catch(() => {});
-        }}
-      />
+      <IdentityPage devices={devices} onClose={leaveMorePage} />
     );
 
   /**

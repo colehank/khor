@@ -312,6 +312,11 @@ pub fn answer(
             crate::pin_account(root, &arg("id")?, flag("on")?)?;
             Ok("null".to_owned())
         }
+        // 改名: the 额度 row's double-click — the name and nothing else.
+        "rename_account" => {
+            crate::rename_account(root, &arg("id")?, &arg("name")?)?;
+            Ok("null".to_owned())
+        }
         // 编辑. **`key` absent means「leave the stored key alone」**, and
         // that is why it is `opt_str` rather than `arg`: an edit of the
         // name must not make somebody paste a secret again. Present and

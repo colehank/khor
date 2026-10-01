@@ -849,6 +849,12 @@ pub fn pin_account(root: &Path, id: &str, on: bool) -> Result<(), String> {
     open(root)?.pin_account(id, on)
 }
 
+/// 改名 (`Node::rename_account`): the list row's double-click, the
+/// session row's gesture (2026-09-30). The name alone, network-wide.
+pub fn rename_account(root: &Path, id: &str, name: &str) -> Result<(), String> {
+    open(root)?.rename_account(id, name)
+}
+
 /// 编辑 (`Node::update_account`): name, address, budget, unit, and
 /// optionally a new key. The provider is not editable — see the node's
 /// own head.

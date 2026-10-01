@@ -51,6 +51,7 @@ import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
+import { EditableName } from "@/components/EditableName";
 import { SideList, type SideRow } from "@/components/SideList";
 import {
   DIAL_CARD_RATIO,
@@ -1256,17 +1257,39 @@ export function QuotaLanding({
           {centreOf(r)}
         </Face>
       ),
-      // The provider on the corner — what this reading is *of*. **Beside
-      // the dial, not on it** (`FaceMark` `beside`): the reading is
-      // printed in the dial's middle and runs to its lower right, which
-      // is exactly where a corner sits — 「39%」「124$」 lost their last
-      // glyph under it (2026-09-28 audit 第 8 条).
-      badge: { mark: r.provider, icon: <M className="size-kind-mark-glyph" />, beside: true },
+      // **The kind's mark opens the title** (2026-09-30, the owner: 「额度
+      // 页 list 里，把类型的头像做成标题的开头，如 f"{icon} Claude Code
+      // 订阅"」): the provider's glyph, then the name, on one line and one
+      // baseline — what this reading is *of*, said where the eye starts.
+      // The glyph's box stands on the baseline (`items-baseline`) and is
+      // let down 0.15em, so it sits across the line the way an SF Symbol
+      // does beside text — centred on the caps, not perched above them
+      // (bottom-on-baseline read as a superscript at 14 beside 13).
+      //
+      // ⚠️ 墓碑 (2026-09-28 → 09-30): the same glyph stood in a corner
+      // *beside* the dial (`FaceMark` `beside`), because on the dial it
+      // sat on the reading's last glyph (「39%」「124$」, audit 第 8 条).
+      // Beside, it widened every face by a corner and still read as the
+      // dial's, not the row's; in the title it is neither on the number
+      // nor in its way, and `beside` retired with it.
+      //
       // **The title is somebody's own word** (「标题是用户可以自己起的」),
-      // so the line under it carries what the row *is*: 类型 · 提供商.
+      // so the line under it carries what the row *is*: 类型 · 提供商 —
+      // and it renames the session row's way: double-click, type, Enter
+      // (`EditableName`, `nested` inside the button that opens the row).
       title: (
-        <span data-quota-name className="block truncate text-body">
-          {r.name}
+        <span data-quota-name className="flex min-w-0 items-baseline gap-xxs text-body">
+          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em]" />
+          <span className="block min-w-0 flex-1">
+            <EditableName
+              kind="account"
+              id={r.id}
+              title={r.name}
+              className="block text-body"
+              inputClassName="w-full text-body"
+              nested
+            />
+          </span>
         </span>
       ),
       name: r.name,

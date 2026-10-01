@@ -1393,6 +1393,12 @@ accounts-log-capped = "Only fetched the most recent {0} entries"
 machine-here = "This machine"
 card-version = "khor {0}"
 card-age = "{0} ago"
+# The contact card at the top of a machine's detail (2026-09-30).
+card-model = "Model"
+card-connection = "Route"
+card-uptime = "Up"
+card-reading = "Reading"
+card-faces = "Interfaces"
 new-session-dir = "Directory"
 dir-path-hint = "Directory path"
 new-session-name = "Name"
@@ -1561,7 +1567,12 @@ net-leave-note = "The device list keeps only this machine; a fresh ticket rejoin
 net-leave-ask = "Leave…"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "Avatar"
-avatar-change-ask = "Change avatar…"
+# The machine row's menu item (2026-09-30): one door, one window, for
+# everything a machine has to edit — it replaced "Change avatar…".
+machine-edit-ask = "Edit…"
+machine-edit-title = "Edit {0}"
+machine-name = "Machine name"
+edit-done = "Done"
 # In [gui], not [avatar]: that section holds the options a face is made
 # of, and its gate requires every word there to name one.
 face-shuffle = "Another colour set"
