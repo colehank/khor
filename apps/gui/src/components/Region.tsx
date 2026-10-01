@@ -31,7 +31,7 @@
 // **The open tab is the board's colour and joins it** — that is the
 // whole of how a tab says it is in front (`TabStrip`): its bottom edge
 // has no edge, and the board is what it is continuous with.
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ComponentType, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
@@ -140,6 +140,45 @@ export function PageTitleAside({ children }: { children: ReactNode }) {
   return createPortal(children, seat);
 }
 
+/** Where a page's category avatar goes, left of its two title lines. */
+const AvatarSeat = createContext<HTMLElement | null | undefined>(undefined);
+
+/**
+ * **A page's category avatar, at R0's left end** (2026-10-01, the owner:
+ * 「机器、额度这俩非标签页的页面，最上面的标题改成最左侧头像，占俩行。
+ * 头像仅仅是类别头像哈，不是机器带角标的」「类别头像机器就是系统的 icon
+ * 呀，额度页就是厂商的 icon 呀」). What *kind* of thing the page is open
+ * on — a machine's system family (`machineMark`), an account's vendor
+ * (`sessionMark`) — never the thing's own face: the face is the list
+ * row's and the contact card's.
+ *
+ * **The mark as it came, on a disc** (components/Avatar, components/Icon):
+ * the glyph is somebody else's (Apple's, Claude's…) and is not redrawn —
+ * it stands at `--kind-mark` 18 on an `--avatar` 32 disc of paper with
+ * the hairline a face wears (`avatar-edge`), so it reads as an avatar
+ * beside the name rather than as a loose logo. 32 is the two title
+ * lines' 18 + 14: the disc and the pair share R0's centreline, 3 over and
+ * under.
+ *
+ * Seated by the shell like `PageSubtitle`; nothing where there is no R0
+ * — the narrow face's head is one line (`NarrowHead`), and a disc that
+ * stands for two lines has no second line there to stand beside.
+ */
+export function PageAvatar({ mark: Mark, kind }: { mark: ComponentType<{ className?: string }>; kind: string }) {
+  const seat = useContext(AvatarSeat);
+  if (!seat) return null;
+  return createPortal(
+    <span
+      data-page-avatar-mark={kind}
+      aria-hidden="true"
+      className="grid size-avatar flex-none place-items-center rounded-full border border-avatar-edge bg-card text-foreground"
+    >
+      <Mark className="size-kind-mark" />
+    </span>,
+    seat,
+  );
+}
+
 /** Which of the three page types a region is (docs/DESIGN.md 第五节). */
 export type RegionKind = "detail" | "tabs" | "doc";
 
@@ -157,6 +196,7 @@ export function PageHead({
   seatRef,
   subRef,
   asideRef,
+  avatarRef,
 }: {
   title: ReactNode;
   actions?: ReactNode;
@@ -172,9 +212,18 @@ export function PageHead({
   /** Where the words beside the name are seated (`PageTitleAside`).
       Empty, it takes no room. */
   asideRef?: (el: HTMLElement | null) => void;
+  /** Where the page's category avatar is seated (`PageAvatar`), left of
+      the two lines and `gap-in` off them. Empty, it takes no room. */
+  avatarRef?: (el: HTMLElement | null) => void;
 }) {
   return (
     <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
+      {/* The avatar and the name it stands for are one clump — `gap-in`,
+          「inside one thing」 — where the page's buttons stand `gap-row`
+          off. Both are centred in R0, so the disc and the pair share the
+          row's centreline. */}
+      <div className="flex min-w-0 flex-1 items-center gap-in">
+      {avatarRef && <span ref={avatarRef} data-page-avatar className="flex flex-none empty:hidden" />}
       {/* The name over its second line, the pair centred in R0 — on the
           centreline the window's buttons and the search box stand on.
           **Set one leading rung tight** (2026-09-29, R0 at 38): the name
@@ -203,6 +252,7 @@ export function PageHead({
           )}
         </div>
         {subRef && <div ref={subRef} data-page-subtitle className="flex min-w-0 empty:hidden" />}
+      </div>
       </div>
       {caption && (
         <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
@@ -261,6 +311,7 @@ export function Region({
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
+  const [avatar, setAvatar] = useState<HTMLElement | null>(null);
   return (
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
@@ -280,6 +331,7 @@ export function Region({
               seatRef={setSeat}
               subRef={setSub}
               asideRef={setAside}
+              avatarRef={setAvatar}
             />
           )}
         </div>
@@ -321,7 +373,9 @@ export function Region({
       >
         <ActionsSeat.Provider value={head ? undefined : seat}>
           <SubtitleSeat.Provider value={head ? undefined : sub}>
-            <AsideSeat.Provider value={head ? undefined : aside}>{children}</AsideSeat.Provider>
+            <AsideSeat.Provider value={head ? undefined : aside}>
+              <AvatarSeat.Provider value={head ? undefined : avatar}>{children}</AvatarSeat.Provider>
+            </AsideSeat.Provider>
           </SubtitleSeat.Provider>
         </ActionsSeat.Provider>
       </div>

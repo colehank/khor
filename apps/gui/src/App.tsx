@@ -2621,9 +2621,10 @@ export default function App() {
                     flush={landing === "workspaces" && openWs !== null}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
-                    // (An open machine's version and reading age are the
-                    // card's second line under its name since 2026-09-30,
-                    // `MachineCard`'s `PageSubtitle`.)
+                    // (An open machine's model is R0's second line and its
+                    // system's mark R0's avatar, both written by
+                    // `MachineCard` — `PageSubtitle`, `PageAvatar`; its
+                    // version and reading age are the card's, 2026-10-01.)
                     caption={stale ? gui.backend_unreachable : undefined}
                   >
                     {detail}

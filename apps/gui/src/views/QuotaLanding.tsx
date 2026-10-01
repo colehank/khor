@@ -45,7 +45,7 @@ import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
-import { PageSubtitle, Region } from "@/components/Region";
+import { PageAvatar, PageSubtitle, Region } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
@@ -1835,7 +1835,13 @@ export function QuotaLanding({
       the account's name — moved from R0's right end, which keeps only
       the stale note above. Nothing with no account on the board: an
       empty landing has no reading to date. */
+  // **R0's avatar** (2026-10-01, the owner: 「额度页就是厂商的 icon 呀」):
+  // the vendor's mark — the one this account's row opens its title with
+  // (`sessionMark`), on the head's disc — never the dial. Nothing with no
+  // account open: the landing's name alone heads an empty board.
   const subtitle = current && (
+    <>
+    <PageAvatar mark={sessionMark("agent", current.provider)} kind={current.provider} />
     <PageSubtitle>
       <span
         data-quota-head-sub
@@ -1844,6 +1850,7 @@ export function QuotaLanding({
         <ReadCaption row={current} />
       </span>
     </PageSubtitle>
+    </>
   );
 
   // Never answered and refused: the machine's own sentence where the
