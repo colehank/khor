@@ -161,6 +161,12 @@ use ts_rs::TS;
 
 use crate::DeviceId;
 
+mod mark;
+pub use mark::{
+    MARK_INK_DARK, MARK_INK_LIGHT, MARK_REGION, MARK_TARGET, MAX_BLACK_VEIL, MarkInk, MarkOnFace,
+    VEIL_STEP,
+};
+
 /// Canvas side for [`Variant::Marble`] and [`Variant::Bauhaus`], equal
 /// to boring-avatars' `SIZE` for those two; the geometric constants are
 /// written against it. **Not one number shared by all three variants**
@@ -838,6 +844,11 @@ pub struct Avatar {
     pub radius_ratio: f64,
     /// Which composition, with which parameters.
     pub paint: AvatarPaint,
+    /// What a kind mark painted on this face wears — its ink, and the
+    /// veil under it (类型标记「浮现」, 2026-10-02). Derived from the
+    /// face's own pixels, here, so every end draws the same mark on the
+    /// same machine; the rule is in the `mark` module.
+    pub mark: MarkOnFace,
 }
 
 /// The port of JS's `hashCode`.
@@ -1208,6 +1219,19 @@ fn beam_props(h: i64) -> BeamProps {
 /// variant recomposes while translation and rotation still come from
 /// the same seed. Tests pin this.
 pub fn avatar(seed: &AvatarSeed, style: &AvatarStyle) -> Avatar {
+    let mut face = painted(seed, style);
+    face.mark = mark::derive(&face);
+    face
+}
+
+/// The face before what sits on it: [`avatar`] less its [`Avatar::mark`],
+/// which is read off this.
+fn painted(seed: &AvatarSeed, style: &AvatarStyle) -> Avatar {
+    // Replaced by `avatar` before anybody sees it.
+    let mark = MarkOnFace {
+        ink: MarkInk::Light,
+        veil: MAX_BLACK_VEIL,
+    };
     let h = hash_code(&seed.0);
     let colors = style.palette.colors();
     let radius_ratio = style.shape.radius_ratio();
@@ -1224,6 +1248,7 @@ pub fn avatar(seed: &AvatarSeed, style: &AvatarStyle) -> Avatar {
                 canvas: CANVAS,
                 background: colors[c[0]].clone(),
                 radius_ratio,
+                mark,
                 paint: AvatarPaint::Marble {
                     blur: BLUR,
                     veins: vec![
@@ -1274,6 +1299,7 @@ pub fn avatar(seed: &AvatarSeed, style: &AvatarStyle) -> Avatar {
                 canvas: CANVAS,
                 background: colors[c[0]].clone(),
                 radius_ratio,
+                mark,
                 paint: AvatarPaint::Bauhaus {
                     shapes: vec![
                         // The bar: a rect spanning the canvas, a whole
@@ -1336,6 +1362,7 @@ pub fn avatar(seed: &AvatarSeed, style: &AvatarStyle) -> Avatar {
                 canvas: BEAM_CANVAS,
                 background: colors[c[0]].clone(),
                 radius_ratio,
+                mark,
                 paint: AvatarPaint::Beam {
                     wrapper_rx: if p.is_circle {
                         BEAM_CANVAS / 2.0
@@ -1674,6 +1701,9 @@ mod tests {
             assert_eq!(c.radius_ratio, shape.radius_ratio());
             assert_eq!(c.background, a.background);
             assert_eq!(c.paint, a.paint);
+            // …and what a mark wears with it: the region under a mark
+            // sits inside every crop.
+            assert_eq!(c.mark, a.mark);
         }
     }
 
@@ -1701,7 +1731,7 @@ mod tests {
             let mut seen: HashMap<String, usize> = HashMap::new();
             for seed in seeds(N, 0x9e37_79b9_7f4a_7c15) {
                 *seen
-                    .entry(format!("{:?}", avatar(&seed, &style)))
+                    .entry(format!("{:?}", painted(&seed, &style)))
                     .or_default() += 1;
             }
             let pairs: usize = seen.values().map(|&k| k * (k - 1) / 2).sum();
@@ -1759,7 +1789,7 @@ mod tests {
                 };
                 let combos: HashSet<Vec<String>> = seeds(20_000, 0x2545_f491_4f6c_dd1d)
                     .iter()
-                    .map(|s| used_colors(&avatar(s, &style)))
+                    .map(|s| used_colors(&painted(s, &style)))
                     .collect();
                 assert_eq!(
                     combos.len(),
@@ -1788,7 +1818,7 @@ mod tests {
                 };
                 let combos: HashSet<Vec<String>> = seeds(60, 0x1234_5678_9abc_def0)
                     .iter()
-                    .map(|s| used_colors(&avatar(s, &style)))
+                    .map(|s| used_colors(&painted(s, &style)))
                     .collect();
                 println!(
                     "60 seeds / {} / {variant:?} → {} palettes",
@@ -1823,7 +1853,7 @@ mod tests {
             };
             let combos: HashSet<Vec<String>> = seeds(60, 0x1234_5678_9abc_def0)
                 .iter()
-                .map(|s| used_colors(&avatar(s, &style)))
+                .map(|s| used_colors(&painted(s, &style)))
                 .collect();
             println!(
                 "60 seeds / {} / Beam → {} palettes (of 10)",
@@ -1850,7 +1880,7 @@ mod tests {
         for style in all_styles() {
             let colors = style.palette.colors();
             for seed in seeds(300, 0x0bad_c0de_dead_beef) {
-                let a = avatar(&seed, &style);
+                let a = painted(&seed, &style);
                 let used = used_colors(&a);
                 let mut rank: Vec<&String> =
                     colors.iter().filter(|c| **c != a.background).collect();
@@ -1904,7 +1934,7 @@ mod tests {
                 shape: FaceShape::Rounded,
             };
             for seed in seeds(500, 0xfeed_face_cafe_0001) {
-                let a = avatar(&seed, &style);
+                let a = painted(&seed, &style);
                 if a.background == INK {
                     continue; // ink as ground makes paper the highest contrast, correctly
                 }
@@ -2352,7 +2382,7 @@ mod tests {
         const N: usize = 4_000;
         let style = golden_style();
         for seed in seeds(N, 0x51ed_270b_5a1f_c33d) {
-            let AvatarPaint::Marble { veins, .. } = avatar(&seed, &style).paint else {
+            let AvatarPaint::Marble { veins, .. } = painted(&seed, &style).paint else {
                 panic!("the golden style's variant is marble");
             };
             let (s, w) = (&veins[0], &veins[1]);
@@ -2412,7 +2442,7 @@ mod tests {
     fn geometry_stays_in_range() {
         for style in all_styles() {
             for seed in seeds(200, 0x0123_4567_89ab_cdef) {
-                let a = avatar(&seed, &style);
+                let a = painted(&seed, &style);
                 // beam has its own canvas (see `BEAM_CANVAS`), it is not
                 // always `CANVAS`
                 assert_eq!(
@@ -2720,8 +2750,20 @@ mod tests {
         let keys: HashSet<&str> = v.as_object().unwrap().keys().map(|s| s.as_str()).collect();
         assert_eq!(
             keys,
-            HashSet::from(["canvas", "background", "radius_ratio", "paint"]),
+            HashSet::from(["canvas", "background", "radius_ratio", "paint", "mark"]),
             "the avatar frame's key set changed"
+        );
+        let mark_keys: HashSet<&str> = v["mark"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|s| s.as_str())
+            .collect();
+        assert_eq!(mark_keys, HashSet::from(["ink", "veil"]));
+        assert!(
+            v["mark"]["ink"] == "light" || v["mark"]["ink"] == "dark",
+            "the ink travels as its key: {}",
+            v["mark"]["ink"]
         );
         assert_eq!(v["paint"]["variant"], "marble");
         let vein_keys: HashSet<&str> = v["paint"]["veins"][0]
