@@ -2095,7 +2095,7 @@ try {
   // **`FACE_ONLY=filter` walks the machines' and workspaces' filter
   // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
   walk: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "entity"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -2706,17 +2706,35 @@ try {
       // …and the card itself, which is what the avatar actually opens.
       // The anchor is a fact on it rather than the frame: a page that
       // drew its head and threw on the way to its body would still
-      // satisfy the frame.
-      // The editor's own row, because that is the thing only this page
-      // draws and the thing that is absent if the body drew half of
-      // itself — a `FaceChoices` whose shape drifted so the render threw
-      // partway says *probe dead* here rather than passing. (The version
-      // and the id are asserted in §4C, off the same page.)
+      // satisfy the frame. **The id, since 2026-09-30**: the face
+      // editor that anchored this stop left the page (「不要冗余」) for
+      // the machine row's 编辑… window, the next stop.
       name: "identity",
-      anchor: '[data-face-axis="variant"] [data-face-option]',
+      anchor: '[data-more-page="identity"] [data-more-fact="id"]',
       go: () => press("[data-rail-mark]"),
       after: async () => {
         await press("[data-more-close]");
+      },
+    },
+    {
+      // 编辑… off a machine row (2026-09-30): the name box, the two
+      // segmented rows, the five wells, 随机配色 and 完成 — the face
+      // editor's one home now. Anchored on the last row's option, which
+      // is only there once `face_choices` answered and the form drew
+      // whole.
+      name: "the edit window",
+      anchor: '[data-machine-edit] [data-face-axis="shape"] [data-face-option]',
+      go: async () => {
+        if (!(await open("devices"))) return false;
+        const row = page.locator("[data-list] [data-side-row][data-device] [data-side-open]").first();
+        if ((await row.count()) === 0) return false;
+        await row.click({ button: "right" });
+        if (!(await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="edit"]').count()) > 0))) return false;
+        return press('[data-row-menu] [data-menu-item="edit"]');
+      },
+      after: async () => {
+        await page.keyboard.press("Escape");
+        await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 0);
       },
     },
     {
@@ -10790,7 +10808,12 @@ try {
       { landing: "browser", pane: "[data-browse-tabs]" },
       { landing: "quota", pane: "[data-quota-pane]" },
     ];
-    const PARTS = ["data-side-open", "data-side-face", "data-side-badge", "data-side-title", "data-side-sub"];
+    // **The kind mark is one part in two seats** (2026-09-30): a corner
+    // on the face (`data-side-badge`) on four columns, and on 额度 the
+    // title's first glyph (the owner: 「把类型的头像做成标题的开头」,
+    // section 13e holds it). Either seat counts as the row having its
+    // kind said; a row with neither is a row missing a part.
+    const PARTS = ["data-side-open", "data-side-face", "kind-mark", "data-side-title", "data-side-sub"];
     await page.setViewportSize({ width: 1400, height: 900 });
     const shapes = [];
     for (const c of COLS) {
@@ -10801,7 +10824,12 @@ try {
           const list = document.querySelector(`${pane} [data-side-list]`);
           const row = list?.querySelector("[data-side-row]");
           if (!row) return null;
-          return parts.filter((a) => row.hasAttribute(a) || row.querySelector(`[${a}]`));
+          const has = (a) =>
+            a === "kind-mark"
+              ? !!row.querySelector("[data-side-badge]") ||
+                row.querySelector("[data-side-title] > *")?.firstElementChild?.tagName.toLowerCase() === "svg"
+              : row.hasAttribute(a) || !!row.querySelector(`[${a}]`);
+          return parts.filter(has);
         },
         [c.pane, PARTS],
       );
@@ -11513,10 +11541,10 @@ try {
     console.log(`devices 4P · menus: peer ${JSON.stringify(peerKeys)}, gate ${JSON.stringify(gateKeys)}`);
     // 置顶, 暂停 / 恢复, then 删除 last behind its line (2026-09-28 audit
     // 第 16 条; it was 置顶、删除、暂停 by 第五轮 第 10 条 until then) —
-    // and 更改头像… before it since the same day, which came off the
-    // map's retired card (src/views/DevicesList.tsx).
-    if (JSON.stringify(peerKeys) !== JSON.stringify(["pin", "pause", "avatar", "forget"])) {
-      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, 更改头像…, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
+    // and 编辑… before it (2026-09-30; 更改头像… stood there from 09-28,
+    // off the map's retired card — src/views/DevicesList.tsx).
+    if (JSON.stringify(peerKeys) !== JSON.stringify(["pin", "pause", "edit", "forget"])) {
+      fail(`another machine's row menu reads ${JSON.stringify(peerKeys)} — 置顶, 暂停 / 恢复, 编辑…, then 删除 last (docs/SHELL.md 第五轮 第 10 条, audit 第 16 条)`);
     }
     if (JSON.stringify(gateKeys.slice(0, 2)) !== JSON.stringify(["pin", "pause"])) {
       fail(`this machine's row menu reads ${JSON.stringify(gateKeys)} — 置顶, then 暂停 (no 删除 on its own row)`);
@@ -12459,48 +12487,66 @@ try {
       }
       await press("[data-more-close]");
 
-      // 每台机器的头像都能改 (docs/MORE.md 第二轮) — **from its row's menu**
-      // since 2026-09-28: 更改头像… opens the same editor 这台机器 draws,
-      // on that row's machine (it was 头像 on the card the map opened,
-      // which went with the map's second home). A face is 全网一份, so the
-      // one it writes is the one you pointed at; a restyle keeps the window
-      // open (the table is re-read under it); Escape takes the window.
+      // 每台机器的头像都能改 (docs/MORE.md 第二轮) — **from its row's menu**:
+      // 编辑… since 2026-09-30 (更改头像… from 09-28; before that 头像 on
+      // the card the map opened). A face is 全网一份, so the one it writes
+      // is the one you pointed at; a restyle keeps the window open (the
+      // table is re-read under it); Escape takes the window. The editor's
+      // shape is the owner's form (src/views/FaceSettings.tsx): a large
+      // face, 画法 and 形状 as segmented controls, the five wells and
+      // 随机配色 — and no fold.
       await open("devices");
       await wait(400);
       const theirRow = page.locator('[data-list] [data-side-row][data-side-menu="true"]:not([data-me="true"]) [data-side-open]').first();
       if ((await theirRow.count()) === 0) {
-        fail(`probe dead: ${posture} · no other machine's row to open 更改头像… on`);
+        fail(`probe dead: ${posture} · no other machine's row to open 编辑… on`);
       } else {
         await theirRow.click({ button: "right" });
-        await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="avatar"]').count()) > 0);
-        await press('[data-row-menu] [data-menu-item="avatar"]');
+        await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="edit"]').count()) > 0);
+        await press('[data-row-menu] [data-menu-item="edit"]');
         const editorUp = await until(
           3_000,
-          async () => (await page.locator('[data-avatar-dialog] [data-face-axis="variant"] [data-face-option]').count()) > 0,
+          async () => (await page.locator('[data-machine-edit] [data-face-axis="variant"] [data-face-option]').count()) > 0,
         );
         if (!editorUp) {
-          fail(`${posture}: 更改头像… on a machine row opened no editor (src/views/DevicesList.tsx)`);
+          fail(`${posture}: 编辑… on a machine row opened no editor (src/views/DevicesList.tsx)`);
         } else {
+          const shape = await page.evaluate(() => {
+            const el = document.querySelector("[data-machine-edit]");
+            return {
+              variants: el?.querySelectorAll('[data-face-axis="variant"] [data-face-option]').length ?? 0,
+              wells: el?.querySelectorAll("[data-face-wells] [data-color-slot]").length ?? 0,
+              shuffle: el?.querySelectorAll("[data-face-shuffle]").length ?? 0,
+              shapes: el?.querySelectorAll('[data-face-axis="shape"] [data-face-option]').length ?? 0,
+              folds: el?.querySelectorAll("[data-more-fold]").length ?? 0,
+            };
+          });
+          if (shape.variants === 0 || shape.wells === 0 || shape.shuffle !== 1 || shape.shapes === 0 || shape.folds !== 0) {
+            fail(
+              `${posture}: the edit window's face editor drew ${JSON.stringify(shape)} — every 画法, the five wells, ` +
+                "one 随机配色 and every 形状, none of it folded (src/views/FaceSettings.tsx)",
+            );
+          }
           const restyledBefore = restyled.length;
-          await pressNth('[data-avatar-dialog] [data-face-axis="variant"] [data-face-option]', 1);
+          await pressNth('[data-machine-edit] [data-face-axis="variant"] [data-face-option]', 1);
           await until(3_000, async () => restyled.length > restyledBefore);
           const forWhom = restyled.at(-1)?.machine ?? null;
           const them = devs.find((d) => !d.me);
           await wait(1_500);
-          const settled = await page.locator("[data-avatar-dialog]").count();
-          console.log(`网络 ${posture} · 更改头像: ${JSON.stringify({ sent: forWhom, open: settled })}`);
+          const settled = await page.locator("[data-machine-edit]").count();
+          console.log(`网络 ${posture} · 编辑… · 画法: ${JSON.stringify({ sent: forWhom, open: settled })}`);
           if (forWhom !== them.id) {
             fail(
-              `${posture}: 更改头像… restyled ${JSON.stringify(forWhom)} from ${JSON.stringify(them.id)}'s row — ` +
+              `${posture}: 编辑… restyled ${JSON.stringify(forWhom)} from ${JSON.stringify(them.id)}'s row — ` +
                 "a face is 全网一份, so the one it writes is the one you pointed at (docs/MORE.md 第二轮)",
             );
           }
           if (settled !== 1) {
-            fail(`${posture}: the 头像 window is gone a moment after a restyle — the re-read must not put it away`);
+            fail(`${posture}: the edit window is gone a moment after a restyle — the re-read must not put it away`);
           }
           await page.keyboard.press("Escape");
-          const shut = await until(3_000, async () => (await page.locator("[data-avatar-dialog]").count()) === 0);
-          if (!shut) fail(`${posture}: Escape left the 头像 window open`);
+          const shut = await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 0);
+          if (!shut) fail(`${posture}: Escape left the edit window open`);
         }
       }
 
@@ -12529,17 +12575,11 @@ try {
             "[data-paired-machine], [data-identity-invite], [data-identity-join], " +
               "[data-identity-mesh], [data-identity-leave], [data-identity-pause], [data-mark-place]",
           ).length,
-          // 头像编辑器 (docs/MORE.md 第二轮 头像页), 照用户给的图:
-          // 上面大脸、下面一排画法缩略图、再一排五个色点、一个换一组配色。
+          // The name and the face, stated — the editor left this page
+          // on 2026-09-30 (「不要冗余」; section 13a holds that it has
+          // no control left for either).
+          name: el.querySelector('[data-more-fact="name"]')?.textContent?.trim() ?? null,
           editor: el.querySelectorAll("[data-face-settings]").length,
-          variants: el.querySelectorAll('[data-face-axis="variant"] [data-face-option]').length,
-          wells: el.querySelectorAll("[data-face-wells] [data-color-slot]").length,
-          shuffle: el.querySelectorAll("[data-face-shuffle]").length,
-          // 「不是所有的设置都要去铺在界面上」: 形状折起来, 默认收着。
-          fold: el.querySelectorAll('[data-more-fold="face-advanced"]').length,
-          foldOpen:
-            el.querySelector('[data-more-fold="face-advanced"]')?.hasAttribute("open") ?? null,
-          shapes: el.querySelectorAll('[data-face-axis="shape"] [data-face-option]').length,
           // 本机开着哪几张界面, 当前是哪张 (docs/MORE.md 头像页).
           faceKeys: faces.map((e) => e.getAttribute("data-iface")),
           faceSaids: faces.map(
@@ -12569,31 +12609,14 @@ try {
               "are the 网络 page's (docs/MORE.md 第二轮 地图)",
           );
         }
-        // The editor, in the shape the user drew. Counts against the
-        // fixture rather than numbers written here: how many styles
-        // there are is `Variant::ALL`'s and how many wells is the
-        // palette's, and a number here would be this file having an
-        // opinion about the library.
-        if (card.editor !== 1) {
+        // **The name and the face are stated here and edited from the
+        // machine's row** (2026-09-30). The editor's shape is measured
+        // where it lives now (the edit window, above).
+        if (!card.name) fail(`${posture}: the identity card states no name`);
+        if (card.editor !== 0) {
           fail(
-            `${posture}: the identity card draws ${card.editor} avatar editor(s) — ` +
-              "「脸编辑器照用户给的图」 (docs/MORE.md 第二轮 头像页)",
-          );
-        }
-        if (card.variants === 0 || card.wells === 0 || card.shuffle !== 1) {
-          fail(
-            `${posture}: the editor drew ${card.variants} style(s), ${card.wells} colour slot(s) ` +
-              `and ${card.shuffle} 「换一组配色」 — the drawing is a big face, a row of ` +
-              "styles, a row of colours and one button",
-          );
-        }
-        // 形状 is the one axis that folded away. **Both halves**: it is
-        // still reachable, and it is not on the page until asked for —
-        // 「不是所有的设置都要去铺在界面上，显得非常杂乱」.
-        if (card.fold !== 1 || card.foldOpen !== false || card.shapes !== 0) {
-          fail(
-            `${posture}: 形状 is ${card.fold} fold(s), open=${JSON.stringify(card.foldOpen)}, ` +
-              `${card.shapes} option(s) on the page — it folds and it starts shut`,
+            `${posture}: the identity card still draws ${card.editor} avatar editor(s) — the face is ` +
+              "edited from the machine's row (右键 → 编辑…), not here (「不要冗余」, 2026-09-30)",
           );
         }
 
@@ -13625,12 +13648,17 @@ try {
     const surfaces = [
       ["the new-session sheet", "[data-sheet]", async () => (await open("sessions")) && press("[data-side-head] [data-pane-new]")],
       [
-        "a dialog (改名…)",
-        "[data-identity-rename-dialog]",
+        // 编辑… off a machine row (2026-09-30; it was 这台机器's 改名…,
+        // which left that page with the face editor).
+        "a dialog (编辑…)",
+        "[data-machine-edit]",
         async () => {
-          if (!(await press("[data-rail-mark]"))) return false;
-          if (!(await until(3_000, async () => (await page.locator("[data-identity-rename]").count()) > 0))) return false;
-          return press("[data-identity-rename]");
+          if (!(await open("devices"))) return false;
+          const row = page.locator("[data-list] [data-side-row][data-device] [data-side-open]").first();
+          if ((await row.count()) === 0) return false;
+          await row.click({ button: "right" });
+          if (!(await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="edit"]').count()) > 0))) return false;
+          return press('[data-row-menu] [data-menu-item="edit"]');
         },
       ],
       [
@@ -23497,7 +23525,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (process.env.FACE_ONLY === "native" || process.env.FACE_ONLY === "row") break lists;
+  if (["native", "row", "entity"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23881,7 +23909,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (process.env.FACE_ONLY !== "filter") {
+  if (process.env.FACE_ONLY !== "filter" && process.env.FACE_ONLY !== "entity") {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24173,8 +24201,305 @@ try {
     }
   }
 
+  // ── 13) 一样东西一处编辑 (2026-09-30) ─────────────────────────────
+  //
+  // The owner, 2026-09-30 晚: 「『我』的里面不要有更改头像的设置，这在
+  // 机器页也能设置，不要冗余。更改头像的弹窗 UI 有点丑，能不能右键→编辑，
+  // 然后这里可以改名称、头像等诸多信息」「机器页的内容部分做成一个类似
+  // 通讯录的卡片」「额度页 list 里，把类型的头像做成标题的开头……这里的
+  // list 也要和 session 一样，支持双击名字改名」. **One fact, one source,
+  // one place to edit it, one drawing.** What a ruler can hold of that:
+  //
+  //   a. 这台机器 draws no control that edits the name or the face — no
+  //      box, no editable name, no face editor, no 改名… — only facts;
+  //   b. a machine row's menu has 编辑… (`edit`) and no 更改头像…
+  //      (`avatar`), on another machine's row and on this machine's own;
+  //      pressing it opens one centred dialog holding the name box and
+  //      the face editor, and what it writes goes to the row pressed;
+  //   c. the machine detail's board has no `h1` (and nothing with
+  //      `role=heading`) — R0 is the page's title — and exactly one
+  //      contact card (`data-machine-contact`) at its top;
+  //   d. R0's second line over a machine is 型号 · khor 版本 · 连接,
+  //      without the reading's age (that is the card's);
+  //   e. every 额度 row's title starts with its kind's mark — the first
+  //      element child of `[data-quota-name]` is an `svg` — and no row
+  //      wears the corner beside the dial any more;
+  //   f. a 额度 row's name renames the session row's way (`EditableName`):
+  //      a double-click opens the box, Enter sends `rename_account` for
+  //      that row.
+  //
+  // (The card's name is `data-machine-contact`, not the brief's
+  // `data-machine-card`: that name has marked the whole detail section
+  // since 2026-09-02 and 218 lines of this file, smoke and check-tabs
+  // hold it. Renaming the section to free it would move every one of
+  // them for a word.)
+  //
+  // `FACE_ONLY=entity` runs this section alone.
+  entity: {
+  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break entity;
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  const renamedMachines = [];
+  await page.route("**/rename_machine", (r) => {
+    renamedMachines.push(JSON.parse(r.request().postData() || "{}"));
+    r.fulfill({ contentType: "application/json", body: JSON.stringify("renamed") });
+  });
+  const renamedAccounts = [];
+  await page.route("**/rename_account", (r) => {
+    const a = JSON.parse(r.request().postData() || "{}");
+    renamedAccounts.push(a);
+    const acc = board.find((x) => x.reading?.account === a.id);
+    if (acc) acc.reading.name = a.name;
+    r.fulfill({ contentType: "application/json", body: "null" });
+  });
+
+  // a. 这台机器: facts only.
+  if (!(await press("[data-rail-mark]"))) {
+    fail("probe dead: entity · no face at the foot of the rail to open 这台机器 by");
+  } else {
+    await until(3_000, async () => (await page.locator('[data-more-page="identity"] [data-more-fact="id"]').count()) > 0);
+    const mine = await page.evaluate(() => {
+      const el = document.querySelector('[data-more-page="identity"]');
+      if (!el) return null;
+      const editors = [
+        "input",
+        "textarea",
+        "[contenteditable=true]",
+        "[data-editable-name]",
+        "[data-face-settings]",
+        "[data-face-option]",
+        "[data-color-slot]",
+        "[data-face-shuffle]",
+        "[data-segmented]",
+        "[data-identity-rename]",
+      ];
+      return {
+        facts: el.querySelectorAll("[data-more-fact]").length,
+        editors: editors.filter((s) => el.querySelector(s)).map((s) => `${s}×${el.querySelectorAll(s).length}`),
+      };
+    });
+    console.log(`entity a · 这台机器: ${JSON.stringify(mine)}`);
+    if (!mine || mine.facts === 0) {
+      fail("probe dead: entity a · 这台机器 drew no facts to read");
+    } else if (mine.editors.length > 0) {
+      fail(
+        `entity a · 这台机器 still edits: ${mine.editors.join(", ")} — the name and the face are edited from the ` +
+          "machine's row (右键 → 编辑…), and this page only states them (the owner, 2026-09-30: 「不要冗余」)",
+      );
+    }
+    if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+  }
+
+  // b. the row menus, and the dialog 编辑… opens.
+  await open("devices");
+  await until(5_000, async () => (await page.locator("[data-side-row][data-device]").count()) >= 2);
+  const menuKeys = async (name) => {
+    await page.locator(`[data-side-row][data-device="${name}"] [data-side-open]`).click({ button: "right" });
+    await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
+    return page
+      .locator("[data-row-menu] [data-menu-item]")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
+  };
+  const peerMenu = await menuKeys("peer");
+  await page.keyboard.press("Escape");
+  await wait(200);
+  const gateMenu = await menuKeys("gate");
+  await page.keyboard.press("Escape");
+  await wait(200);
+  console.log(`entity b · menus: peer ${JSON.stringify(peerMenu)}, gate ${JSON.stringify(gateMenu)}`);
+  for (const [who, keys] of [["another machine's", peerMenu], ["this machine's", gateMenu]]) {
+    if (keys.length === 0) {
+      fail(`probe dead: entity b · ${who} row opened no menu`);
+      continue;
+    }
+    if (keys.includes("avatar")) {
+      fail(`entity b · ${who} row menu still offers 更改头像… (${JSON.stringify(keys)}) — it is 编辑… now`);
+    }
+    if (!keys.includes("edit")) {
+      fail(`entity b · ${who} row menu has no 编辑… (${JSON.stringify(keys)}) — every machine is edited from its row`);
+    }
+  }
+  if (peerMenu.includes("edit")) {
+    await menuKeys("peer");
+    await press('[data-row-menu] [data-menu-item="edit"]');
+    const up = await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 1);
+    const dialog = up
+      ? await page.evaluate(() => {
+          const el = document.querySelector("[data-machine-edit]");
+          return {
+            who: el?.getAttribute("data-machine-edit") ?? null,
+            role: el?.getAttribute("role") ?? null,
+            name: el?.querySelectorAll("[data-machine-edit-name]").length ?? 0,
+            face: el?.querySelectorAll("[data-face-settings]").length ?? 0,
+            // The dialog's one primary act wears `bg-primary` (ui/button's
+            // `primary` variant — the class the sheet gate counts too).
+            primary: el?.querySelectorAll("button.bg-primary").length ?? 0,
+            sheet: el?.hasAttribute("data-sheet") ?? null,
+          };
+        })
+      : null;
+    console.log(`entity b · 编辑… on peer: ${JSON.stringify(dialog)}`);
+    const peerId = devs.find((d) => d.name === "peer")?.id;
+    if (!dialog) {
+      fail("entity b · 编辑… on a machine row opened no dialog (`data-machine-edit`)");
+    } else {
+      if (dialog.who !== peerId) fail(`entity b · 编辑… on peer's row opened the dialog for ${JSON.stringify(dialog.who)}`);
+      if (dialog.role !== "dialog" || dialog.sheet) {
+        fail(`entity b · 编辑… is ${dialog.sheet ? "a sheet" : `role=${dialog.role}`} — it is a centred dialog`);
+      }
+      if (dialog.name !== 1 || dialog.face !== 1) {
+        fail(`entity b · the edit dialog holds ${dialog.name} name box(es) and ${dialog.face} face editor(s) — one of each`);
+      }
+      if (dialog.primary !== 1) fail(`entity b · the edit dialog has ${dialog.primary} primary button(s) — exactly one`);
+      // What it writes goes to the row pressed: a name, then a face.
+      const box = page.locator("[data-machine-edit] [data-machine-edit-name]");
+      if ((await box.count()) === 1) {
+        await box.fill("隔壁");
+        await box.press("Enter");
+        await until(3_000, async () => renamedMachines.length > 0);
+        const sent = renamedMachines.at(-1) ?? null;
+        console.log(`entity b · rename sent: ${JSON.stringify(sent)}`);
+        if (!sent || sent.id !== peerId || sent.name !== "隔壁") {
+          fail(`entity b · the edit dialog's name went out as ${JSON.stringify(sent)} — peer's id and 「隔壁」`);
+        }
+        // A name that took closes the window (完成 / Enter).
+        if (!(await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 0))) {
+          fail("entity b · Enter wrote the name and left the edit window open — a rename that took closes it");
+        }
+      }
+      if ((await page.locator("[data-machine-edit]").count()) === 0) {
+        await menuKeys("peer");
+        await press('[data-row-menu] [data-menu-item="edit"]');
+        await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 1);
+      }
+      const option = page.locator('[data-machine-edit] [data-face-axis="variant"] [data-face-option]');
+      if ((await option.count()) < 2) {
+        fail("probe dead: entity b · the edit dialog shows no second 画法 to pick");
+      } else {
+        const before = restyled.length;
+        await option.nth(1).click();
+        await until(3_000, async () => restyled.length > before);
+        const forWhom = restyled.at(-1)?.machine ?? null;
+        if (forWhom !== peerId) fail(`entity b · a 画法 picked in peer's dialog restyled ${JSON.stringify(forWhom)}`);
+      }
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 0);
+    }
+  }
+
+  // c + d. the detail: a contact card, no heading, and R0's second line.
+  const peer = devs.find((d) => d.name === "peer");
+  const peerVitals = peer?.vitals?.vitals ?? null;
+  const hadModel = peerVitals ? peerVitals.model : undefined;
+  if (peerVitals) peerVitals.model = { kind: "macbook", name: "MacBook Pro" };
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  await open("devices");
+  await until(5_000, async () => (await page.locator('[data-side-row][data-device="peer"]').count()) === 1);
+  await press('[data-side-row][data-device="peer"] [data-side-open]');
+  await until(5_000, async () => (await page.locator("[data-machine-card]").count()) === 1);
+  const detail = await page.evaluate(() => {
+    const card = document.querySelector("[data-machine-card]");
+    const sub = document.querySelector("[data-page-subtitle]");
+    return card
+      ? {
+          h1: card.querySelectorAll('h1, [role="heading"][aria-level="1"]').length,
+          // The sections' own `h2`s (components/SectionHead) are the
+          // board's 节, and stay; the card's name must not be one.
+          contactHeadings: card.querySelectorAll(
+            '[data-machine-contact] :is(h1, h2, h3, h4, h5, h6, [role="heading"])',
+          ).length,
+          contact: card.querySelectorAll("[data-machine-contact]").length,
+          contactName: card.querySelectorAll("[data-machine-contact-name]").length,
+          r0: sub?.textContent?.replace(/\s+/g, " ").trim() ?? null,
+          r0Age: sub ? sub.querySelectorAll("[data-vitals-age], [data-updated]").length : null,
+        }
+      : null;
+  });
+  console.log(`entity c/d · peer's detail: ${JSON.stringify(detail)}`);
+  if (!detail) {
+    fail("probe dead: entity c · peer's detail never opened");
+  } else {
+    if (detail.h1 !== 0 || detail.contactHeadings !== 0) {
+      fail(
+        `entity c · the machine detail's board holds ${detail.h1} h1 and ${detail.contactHeadings} heading(s) in its card — ` +
+          "R0 is the page's one title; the card's name is part of the card, not a heading",
+      );
+    }
+    if (detail.contact !== 1 || detail.contactName !== 1) {
+      fail(
+        `entity c · the machine detail draws ${detail.contact} contact card(s) with ${detail.contactName} name(s) — ` +
+          "exactly one card, at the top, naming its machine once (data-machine-contact)",
+      );
+    }
+    const want = ["MacBook Pro", "khor 0.1.0", "直连"].join(" · ");
+    if (detail.r0 !== want || detail.r0Age !== 0) {
+      fail(
+        `entity d · R0's second line over peer reads ${JSON.stringify(detail.r0)} (${detail.r0Age} age(s)) — ` +
+          `${JSON.stringify(want)}: 型号 · khor 版本 · 连接, the reading's age is the card's`,
+      );
+    }
+  }
+  if (peerVitals) peerVitals.model = hadModel;
+
+  // e + f. the 额度 rows.
+  await open("quota");
+  await until(8_000, async () => (await page.locator("[data-quota-row]").count()) > 1);
+  const titles = await page.evaluate(() =>
+    [...document.querySelectorAll("[data-quota-row]")].map((row) => {
+      const name = row.querySelector("[data-quota-name]");
+      const first = name?.firstElementChild ?? null;
+      return {
+        id: row.getAttribute("data-quota-row"),
+        first: first ? first.tagName.toLowerCase() : null,
+        badge: row.querySelectorAll("[data-side-badge]").length,
+        editable: row.querySelectorAll("[data-editable-name]").length,
+      };
+    }),
+  );
+  console.log(`entity e · 额度 titles: ${JSON.stringify(titles)}`);
+  if (titles.length < 2) fail(`probe dead: entity e · ${titles.length} 额度 row(s) to read`);
+  for (const t of titles) {
+    if (t.first !== "svg") {
+      fail(`entity e · the ${t.id} row's title starts with ${JSON.stringify(t.first)}, not its kind's mark (svg) — 「{icon} Claude Code 订阅」`);
+    }
+    if (t.badge !== 0) fail(`entity e · the ${t.id} row still wears a corner beside its dial — the mark is the title's now`);
+  }
+  const editable = titles.find((t) => t.id === "acc-fill");
+  if (!editable || editable.editable !== 1) {
+    fail(`entity f · the acc-fill row's name is not an EditableName (${JSON.stringify(editable)}) — 双击改名, like a session row`);
+  } else {
+    await page.locator('[data-quota-row="acc-fill"] [data-editable-name]').dblclick();
+    const box = page.locator('[data-quota-row="acc-fill"] [data-title-input]');
+    if (!(await until(3_000, async () => (await box.count()) === 1))) {
+      fail("entity f · a double-click on a 额度 row's name opened no box");
+    } else {
+      await box.fill("网关二号");
+      await box.press("Enter");
+      await until(3_000, async () => renamedAccounts.length > 0);
+      const sent = renamedAccounts.at(-1) ?? null;
+      console.log(`entity f · rename sent: ${JSON.stringify(sent)}`);
+      if (!sent || sent.id !== "acc-fill" || sent.name !== "网关二号") {
+        fail(`entity f · the 额度 row's rename went out as ${JSON.stringify(sent)} — acc-fill and 「网关二号」`);
+      }
+      const shows = await until(6_000, async () =>
+        ((await page.locator('[data-quota-row="acc-fill"] [data-quota-name]').textContent()) ?? "").includes("网关二号"),
+      );
+      if (!shows) fail("entity f · the 额度 row does not wear the name it was renamed to");
+    }
+  }
+  const back = board.find((x) => x.reading?.account === "acc-fill");
+  if (back) back.reading.name = "gateway";
+  await page.unroute("**/rename_machine");
+  await page.unroute("**/rename_account");
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  }
+  if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
+
   rest: {
-  if (process.env.FACE_ONLY === "row" || process.env.FACE_ONLY === "filter") break rest;
+  if (["row", "filter", "entity"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //

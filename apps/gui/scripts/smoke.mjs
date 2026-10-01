@@ -3059,28 +3059,36 @@ for line in sys.stdin:
   if ((await settingsGlyph.count()) !== 1) {
     throw new Error("probe dead: the rail does not have exactly one glyph that opens no landing");
   }
-  const sheet = page.locator("[data-face-settings]");
+  const sheet = page.locator("[data-machine-edit] [data-face-settings]");
   // **Two presses since 2026-09-19** (docs/MORE.md): that glyph opens a
   // menu of three pages and 设置 is the first row of it, where it used
   // to open a dialog outright.
   // **One press again since 2026-09-21** (docs/MORE.md 第二轮: 头像编辑
-  // 器在头像页). The editor was the first section of 设置 — two presses,
-  // 「…」 then 设置 — and it is on the 头像 page now, which the rail's own
-  // mark opens directly. The name below is kept: what these three walks
-  // measure is this machine changing its face, not which page it is on.
+  // 器在头像页), the rail's own mark opening the page directly.
+  // **And the row's 编辑… since 2026-09-30** (the owner: 「『我』的里面不要
+  // 有更改头像的设置，这在机器页也能设置，不要冗余……右键→编辑」): the
+  // editor is a window off this machine's row on the machines landing,
+  // and 这台机器 only states the face. The name below is kept: what these
+  // walks measure is this machine changing its face, not where the door
+  // is. Closing goes back to the sessions landing, where the premise
+  // below was counted.
   const openSettings = async () => {
-    await page.locator("[data-rail-mark]").click();
-    await until("the 头像 page", 10_000, async () => (await sheet.count()) === 1);
+    await openLanding("devices");
+    const own = page.locator('[data-side-row][data-me="true"] [data-side-open]');
+    await until("this machine's row", 10_000, async () => (await own.count()) === 1);
+    await own.click({ button: "right" });
+    await page.locator('[data-row-menu] [data-menu-item="edit"]').click();
+    await until("the edit window", 10_000, async () => (await sheet.count()) === 1);
     await until("the options to arrive", 10_000, async () =>
       (await sheet.locator("[data-face-option]").count()) > 0,
     );
   };
   const closeSettings = async () => {
-    // R0's ×: the page's own head also carries one, drawn only on the
-    // narrow face (`app.css` hides `[data-board] [data-more-head]`), so an
-    // unscoped locator finds two.
-    await page.locator("[data-region-head] [data-more-close]").click();
-    await until("the settings page closed", 10_000, async () => (await sheet.count()) === 0);
+    // Escape: it is a dialog now, and Escape is one of its exits (the
+    // face is already written — there is nothing for 完成 to add).
+    await page.keyboard.press("Escape");
+    await until("the edit window closed", 10_000, async () => (await sheet.count()) === 0);
+    await openLanding("sessions");
     await until("rows behind it", 15_000, async () => (await page.locator("[data-row]").count()) > 0);
   };
 
@@ -3093,14 +3101,16 @@ for line in sys.stdin:
   //     premise is established here, the change is made on the page,
   //     and the count is taken again once the page is closed.
   //
-  //     Scoped to #root and **outside any 「…」 page**: the settings
-  //     page's own swatches change too, and they are the screen making
-  //     its offer rather than this machine wearing a face.
+  //     Scoped to #root and **outside any 「…」 page or the edit
+  //     window**: the editor's own preview changes too, and it is the
+  //     screen making its offer rather than this machine wearing a face.
   const wearing = async (want) =>
     (
       await page
         .locator("#root [data-face]")
-        .evaluateAll((els) => els.filter((e) => !e.closest("[data-more-page]")).map((e) => e.innerHTML))
+        .evaluateAll((els) =>
+          els.filter((e) => !e.closest("[data-more-page], [data-machine-edit]")).map((e) => e.innerHTML),
+        )
     ).filter((h) => h.replace(/av-blur-[^"')\s]+/g, "BLUR") === want).length;
   const placesBefore = await wearing(await faceOf(railFace));
   if (placesBefore < 2) {
@@ -3115,52 +3125,48 @@ for line in sys.stdin:
   // three runs before it failed on the fourth, which is the whole
   // signature of waiting for the wrong thing.)
 
-  //     a. what the page offers on arrival: **one row of styles, five
-  //     colour wells and one button** (docs/MORE.md 第二轮 — 「不是所有
-  //     的设置都要去铺在界面上」). 形状 is behind 「高级」 and so is not
-  //     an axis here until somebody opens it; 色板 stopped being a row
-  //     at all — it is the button.
+  //     a. what the window offers: **画法 and 形状 as two segmented
+  //     rows, five colour wells and one button**, under one large face
+  //     (2026-09-30: the editor is a form now — src/views/FaceSettings.tsx
+  //     says why 形状 is no longer folded and why the options carry
+  //     words rather than thumbnails).
   //
-  //     Every option painted by the real brush, stated positively for
+  //     The preview painted by the real brush, stated positively for
   //     the same reason the row faces are: a face that failed to derive
-  //     renders no <svg> at all, so counting them *is* "nothing fell
-  //     back to a placeholder".
+  //     renders no <svg> at all.
   const axisNames = await sheet
     .locator("[data-face-axis]")
     .evaluateAll((els) => els.map((e) => e.dataset.faceAxis));
-  if (axisNames.join(",") !== "variant") {
-    throw new Error(`the 头像 page offers ${JSON.stringify(axisNames)} on arrival`);
+  if (axisNames.join(",") !== "variant,shape") {
+    throw new Error(`the edit window offers ${JSON.stringify(axisNames)}`);
   }
   const wellCount = await sheet.locator("[data-color-slot]").count();
   if (wellCount !== 5) throw new Error(`${wellCount} colour wells; a palette is five`);
   if ((await sheet.locator("[data-face-shuffle]").count()) !== 1) {
     throw new Error("the 换一组配色 button is not on the page");
   }
-  const optionCount = await sheet.locator("[data-face-option]").count();
-  const optionFaces = await sheet.locator("[data-face-option] [data-face] svg").count();
-  if (optionCount < 3 || optionFaces !== optionCount) {
-    throw new Error(`options with a painted face: ${optionFaces} of ${optionCount}`);
+  const optionCount = await sheet.locator('[data-face-option][data-axis="variant"]').count();
+  if (optionCount < 3) throw new Error(`${optionCount} 画法 on offer`);
+  if ((await sheet.locator("[data-face-preview] [data-face] svg").count()) !== 1) {
+    throw new Error("the edit window's preview is not a painted face");
   }
 
-  //     b. one option marked on the axis that is showing, and it
-  //     **paints the face this machine is already wearing**. That
-  //     follows from the design — a marked option is the current value
-  //     on its axis, and every option is derived with the others left
-  //     alone — which is exactly why it is worth asserting: one line
-  //     catches a swatch derived from the wrong style, a mark on the
-  //     wrong option, and a second painter.
+  //     b. one option marked on each axis, and **the preview paints the
+  //     face this machine is already wearing** — one line that catches a
+  //     preview derived from the wrong style and a second painter.
   // The same locator item 10 proved is this machine's face at the foot
   // of the rail — reused rather than re-derived, so what moves below is
   // the picture that test already tied to beta's own row.
   const markedFaces = async () =>
     sheet
-      .locator("[data-face-option][data-on=true] [data-face]")
+      .locator("[data-face-preview] [data-face]")
       .evaluateAll((els) => els.map((e) => e.innerHTML.replace(/av-blur-[^"')\s]+/g, "BLUR")));
   let worn = await faceOf(railFace);
   const marked = await markedFaces();
-  if (marked.length !== 1) throw new Error(`${marked.length} options are marked; one per axis on show`);
-  if (marked.some((m) => m !== worn)) {
-    throw new Error("a marked option is not the face this machine is wearing");
+  const onEach = await sheet.locator("[data-face-option][data-on=true]").count();
+  if (onEach !== 2) throw new Error(`${onEach} options are marked; one per axis`);
+  if (marked.length !== 1 || marked.some((m) => m !== worn)) {
+    throw new Error("the edit window's preview is not the face this machine is wearing");
   }
 
   //     c. 「换一组配色」 moves this machine's face **everywhere it
@@ -3267,14 +3273,14 @@ for line in sys.stdin:
   if (marksAfter.join("|") === marksBefore.join("|")) {
     throw new Error("khor avatar does not see the colour set this screen just changed");
   }
-  //     …and the marked option still paints what this machine wears.
+  //     …and the preview still paints what this machine wears.
   //     Re-asserted here and not only at the top, because up there the
   //     machine wore the factory style and every axis sat on its
   //     default — an option derived from the defaults instead of from
   //     the current style would have looked exactly the same.
   const nowWorn = await faceOf(railFace);
   if ((await markedFaces()).some((m) => m !== nowWorn)) {
-    throw new Error("after a change, a marked option is not the face this machine is wearing");
+    throw new Error("after a change, the preview is not the face this machine is wearing");
   }
 
   //     g. flipping the theme still moves nothing inside the face — now
@@ -3292,8 +3298,6 @@ for line in sys.stdin:
 
   //     h. and it outlives a reload — the choice lives in the node, not
   //     on this screen.
-  //     Closed by its own button: a page is not a dialog and Escape is
-  //     not one of its exits (docs/MORE.md 「页头一行：名字 + 关闭」).
   await closeSettings();
   await page.reload();
   await until("rows after the reload", 20_000, async () => (await page.locator("[data-row]").count()) > 0);
@@ -3644,11 +3648,17 @@ for line in sys.stdin:
   await rowBox.press("Enter");
   await until("alpha back to its own name", 10_000, async () => (await pageTitle.innerText()).trim() === "alpha");
 
-  //     One machine, one picture — and **one place for it on this page**:
-  //     the row beside the card wears the face, and the card's own large
-  //     copy went with its name (2026-09-27, identity said once).
-  if ((await page.locator("[data-machine-card] [data-face]").count()) !== 0) {
-    throw new Error("the card draws the machine's face again beside the row that already wears it");
+  //     One machine, one picture: the contact card at the top of the
+  //     board wears it large (2026-09-30, the owner: 「机器页的内容部分做
+  //     成一个类似通讯录的卡片：头像、型号、id 等等」 — it had left the
+  //     board on 2026-09-27 with a name that was a second title), **once**,
+  //     and it is the picture the row beside it wears.
+  const cardFace = page.locator("[data-machine-card] [data-machine-contact] [data-face]");
+  if ((await page.locator("[data-machine-card] [data-face]").count()) !== 1 || (await cardFace.count()) !== 1) {
+    throw new Error("the card does not wear the machine's face exactly once, on its contact card");
+  }
+  if ((await faceOf(cardFace)) !== (await faceOf(page.locator('[data-device="alpha"] [data-face]')))) {
+    throw new Error("the card's face is not the picture alpha's row wears");
   }
 
   //     The readings are drawn, and **how many of them there are is not
