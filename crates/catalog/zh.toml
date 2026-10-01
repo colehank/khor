@@ -1747,6 +1747,12 @@ no-agents-registered = "还没登记过任何 agent（用 khor agents add 登记
 # right place (a stale list vs a wrong click).
 not-a-tmux-row = "这不是可连接的 tmux 会话：{0}"
 tmux-session-gone = "那个 tmux 会话已经不在了：{0}"
+# A log line, not a refusal: the attach goes ahead. khor turns tmux's
+# mouse on for its own client so the wheel scrolls tmux's history
+# (`Tmux::grouped_attach_argv`); a tmux older than 2.1 has no such
+# option, and this is the one place that says why the wheel there is
+# still ↑ ↓.
+tmux-no-mouse-option = "这台机器的 tmux 没有 mouse 选项（早于 2.1），照常接入 {0}；滚轮仍是上下键"
 no-terminal-here = "这台机器上目前没有可连接的终端：{0}"
 # Marks where a tool's output was cut. **必须有这一行**——不标的截断是在
 # 谎报工具返回了什么,而人会照着那个不完整的输出下判断。

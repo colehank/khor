@@ -45,6 +45,8 @@
 //     is khor's, not the addon's;
 //   - **a selection is a copy** (`onSelectionChange` → clipboard), so
 //     there is no ⌘C to remember and nothing to lose by clicking away;
+//     where the program has the mouse (a tmux khor attached), the
+//     selection is ⌥-drag (⇧-drag off a Mac) — `macOptionClickForcesSelection`;
 //   - **⌘F is the terminal's own search** (`SearchAddon` + the bar in
 //     this file), not the page's — a page find would search the DOM of
 //     a webgl canvas and find nothing;
@@ -291,6 +293,18 @@ export function TerminalPane({ id }: { id: string }) {
       fontSize: font.size,
       lineHeight: font.line,
       theme: themeOf(box),
+      // **⌥-drag is xterm's own selection even when the program asked
+      // for the mouse** — iTerm2's gesture. khor turns tmux's mouse on
+      // for the tmux sessions it attaches (2026-10-01, so the wheel
+      // scrolls tmux's history; `Tmux::grouped_attach_argv`), and from
+      // then on a plain drag is tmux's: it selects in copy mode and
+      // copies into tmux's own buffer, which never reaches the Mac's
+      // clipboard (that would take OSC 52, which this pane does not
+      // answer). xterm's escape hatch is Shift elsewhere, but on a Mac
+      // it is ⌥ and only with this flag — without it there was no way
+      // to select into the clipboard at all. The cost: ⌥-drag is no
+      // longer xterm's column selection.
+      macOptionClickForcesSelection: true,
     });
     const fit = new FitAddon();
     term.loadAddon(fit);

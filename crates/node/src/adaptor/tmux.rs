@@ -252,6 +252,41 @@ impl Tmux {
     /// group, so selecting it here never moves the user's own client.
     /// (Pane selection and zoom are window-level flags the user's client
     /// shares, so neither is touched — on the ledger.)
+    ///
+    /// # The wheel: `mouse on`, on khor's own grouped session only
+    ///
+    /// The owner, 2026-10-01: 「滚轮翻 tmux 历史这，自动打开吧」. A tmux
+    /// client sits in the alternate screen, and there a terminal's wheel
+    /// is ↑ ↓ (Terminal.app does the same) — on a claude or a shell in
+    /// the pane that walks input history, never tmux's. With `mouse` on,
+    /// tmux asks the outer terminal for SGR mouse reports (`ESC [ ? 1006
+    /// h`), xterm sends the wheel as one, and tmux enters copy mode and
+    /// scrolls (measured, scroll_position 27; and in `tests/tmux_mouse.rs`).
+    ///
+    /// **Set on the grouped session this command creates, not on the
+    /// user's.** `mouse` is a session option and a grouped session has
+    /// options of its own (it inherits the global ones, never the
+    /// target's), and tmux reads it off the *client's* session: so this
+    /// turns the mouse on for khor's client and nobody else's. Measured
+    /// on a private server: after the attach the grouped session reads
+    /// `mouse on`, the target session and an unrelated one still read
+    /// `off`, and `-g` still reads `off`. Nothing the user owns is
+    /// written — no `-g`, no config file, no other session — so there is
+    /// nothing to set back when khor leaves: `destroy-unattached` takes
+    /// the grouped session, and its option with it, the moment khor's
+    /// client detaches.
+    ///
+    /// What the user's own client *does* share is the pane: a wheel in
+    /// khor puts the pane in copy mode, and a client of theirs looking
+    /// at the same window sees it there too (`q` leaves; `-e` leaves on
+    /// its own once scrolled back to the bottom).
+    ///
+    /// **Last in the chain, and `-q`.** A command that fails ends the
+    /// rest of its chain; last, it can only cost itself, never the
+    /// attach or `destroy-unattached`. `-q` keeps a tmux older than 2.1
+    /// (no `mouse` option) quiet rather than flashing an error on the
+    /// person's status line; [`Tmux::knows_mouse`] is where that case
+    /// leaves its trace.
     pub fn grouped_attach_argv(&self, target: &str, window: Option<&str>) -> Vec<String> {
         let mut argv = vec![
             self.binaries
@@ -271,10 +306,29 @@ impl Tmux {
                 argv.push(a.into());
             }
         }
-        for a in ["set-option", "destroy-unattached", "on"] {
+        for a in [
+            "set-option",
+            "destroy-unattached",
+            "on",
+            ";",
+            "set-option",
+            "-q",
+            "mouse",
+            "on",
+        ] {
             argv.push(a.into());
         }
         argv
+    }
+
+    /// Whether this server has a `mouse` option at all — tmux 2.1 and
+    /// later. Read-only (`show-options -gv`), asked once per attach so
+    /// that the one case where [`Tmux::grouped_attach_argv`]'s
+    /// `set-option -q mouse on` silently does nothing leaves a line in
+    /// the log. `false` also for a server that will not answer; the
+    /// attach that follows then fails on its own, with its own words.
+    pub fn knows_mouse(&self) -> bool {
+        self.ask(&["show-options", "-gv", "mouse"]).is_some()
     }
 
     /// The window of session `target` whose panes hold any of `wanted`,
@@ -924,6 +978,40 @@ mod tests {
         let listing = quiet.sweep(&Procs::default());
         assert_eq!(listing.rows.len(), 0);
         assert_eq!(listing.unmapped, 0);
+    }
+
+    /// The attach turns the mouse on as the chain's last command, for the
+    /// session the chain itself created: no `-t` (which would name
+    /// somebody's session), no `-g` (which would name everybody's), and
+    /// `-q`. The live half — which session ends up `on` — is
+    /// `tests/tmux_mouse.rs`, through the whole attach.
+    #[test]
+    fn the_attach_turns_the_mouse_on_last_and_only_for_its_own_session() {
+        for window in [None, Some("@3")] {
+            let argv = Tmux::on_socket("s").grouped_attach_argv("$1", window);
+            let tail: Vec<&str> = argv[argv.len() - 5..].iter().map(String::as_str).collect();
+            assert_eq!(tail, [";", "set-option", "-q", "mouse", "on"], "{argv:?}");
+            let mouse = argv.iter().position(|a| a == "mouse").unwrap();
+            let own = argv[..mouse].iter().rposition(|a| a == ";").unwrap();
+            assert!(
+                !argv[own..].iter().any(|a| a == "-g" || a == "-t"),
+                "{argv:?}"
+            );
+        }
+    }
+
+    /// The question behind the one log line: a tmux that has the option
+    /// answers, a missing binary does not.
+    #[test]
+    fn a_real_tmux_knows_the_mouse_option_and_a_missing_one_does_not() {
+        assert!(!Tmux::at_binary("/nonexistent/khor-test/tmux").knows_mouse());
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("knows");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one"]);
+        s.until_present("one");
+        assert!(s.at().knows_mouse());
     }
 
     /// The flagship, on a real server of khor's own: a shell sitting at
