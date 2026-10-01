@@ -1996,9 +1996,12 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { theme: "auto", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
+  const configValues = { theme: "auto", "kind-mark": "face", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
   const CONFIG_SHAPE = [
     ["theme", "appearance", "appearance", "主题", [["auto", "跟随系统"], ["light", "浅色"], ["dark", "深色"]]],
+    // 类型标记 (2026-10-02): the one row with a note so far — the sixth
+    // field, `ConfigRow.note`.
+    ["kind-mark", "appearance", "appearance", "类型标记", [["face", "浮现"], ["corner", "角标"]], "类型标记画在头像上，或放在头像右下角"],
     ["lang", "language", "appearance", "界面语言", [["auto", "跟随系统"], ["zh", "中文"], ["en", "English"]]],
     // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
     ["tabs-limit", "general", "settings", "标签页上限", [["off", "关"], ...Array.from({ length: 47 }, (_, i) => [String(i + 4), String(i + 4)])]],
@@ -2009,7 +2012,7 @@ try {
   ];
   const SECTION_WORD = { appearance: "外观", language: "语言", general: "通用", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
   const configRows = () =>
-    CONFIG_SHAPE.map(([name, section, page_, label, choices]) => ({
+    CONFIG_SHAPE.map(([name, section, page_, label, choices, note]) => ({
       name,
       label,
       section,
@@ -2017,6 +2020,7 @@ try {
       page: page_,
       value: configValues[name],
       choices: choices.map(([value, l]) => ({ value, label: l })),
+      note: note ?? null,
     }));
   await page.route("**/set_config", (r) => {
     const { name, value } = JSON.parse(r.request().postData() || "{}");
@@ -2103,8 +2107,10 @@ try {
   // **`FACE_ONLY=head` walks section 16 alone** (R0's avatar, the
   // machine's contact card, the empty landings, 2026-10-01), for the
   // same reason.
+  // **`FACE_ONLY=mark` walks section 17 alone** (类型标记「浮现 / 角标」,
+  // 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -5452,7 +5458,7 @@ try {
       page.$$eval("[data-ws-row]", (rows) =>
         rows.map((el) => ({
           name: el.querySelector("[data-ws-name]")?.textContent?.trim() ?? null,
-          badge: el.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+          badge: el.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
           git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? null,
         })),
       );
@@ -10828,7 +10834,8 @@ try {
       { landing: "quota", pane: "[data-quota-pane]" },
     ];
     // **The kind mark is one part in two seats** (2026-09-30): a corner
-    // on the face (`data-side-badge`) on four columns, and on 额度 the
+    // with the face (`data-side-mark` — on it or on its corner by 类型标记,
+    // 2026-10-02) on four columns, and on 额度 the
     // title's first glyph (the owner: 「把类型的头像做成标题的开头」,
     // section 13e holds it). Either seat counts as the row having its
     // kind said; a row with neither is a row missing a part.
@@ -10845,7 +10852,7 @@ try {
           if (!row) return null;
           const has = (a) =>
             a === "kind-mark"
-              ? !!row.querySelector("[data-side-badge]") ||
+              ? !!row.querySelector("[data-side-mark]") ||
                 row.querySelector("[data-side-title] > *")?.firstElementChild?.tagName.toLowerCase() === "svg"
               : row.hasAttribute(a) || !!row.querySelector(`[${a}]`);
           return parts.filter(has);
@@ -11237,8 +11244,8 @@ try {
     const badges = () =>
       page.evaluate(
         ([p, g]) => ({
-          peer: document.querySelector(`${p} [data-side-badge]`)?.getAttribute("data-side-badge") ?? null,
-          gate: document.querySelector(`${g} [data-side-badge]`)?.getAttribute("data-side-badge") ?? null,
+          peer: document.querySelector(`${p} [data-side-mark]`)?.getAttribute("data-side-mark") ?? null,
+          gate: document.querySelector(`${g} [data-side-mark]`)?.getAttribute("data-side-mark") ?? null,
         }),
         [peerRow, gateRow],
       );
@@ -11485,7 +11492,7 @@ try {
           [...document.querySelectorAll("[data-side-row][data-device]")].map((row) => [
             row.getAttribute("data-device"),
             {
-              corner: row.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+              corner: row.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
               sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
             },
           ]),
@@ -23255,7 +23262,7 @@ try {
               const r = f.getBoundingClientRect();
               const reach = f.querySelector("[data-halo]") ? ring : 0;
               const ink = { top: r.top - reach, bottom: r.bottom + reach, left: r.left - reach, right: r.right + reach };
-              const badge = f.querySelector("[data-side-badge]")?.getBoundingClientRect();
+              const badge = f.querySelector("[data-side-mark]")?.getBoundingClientRect();
               if (badge) {
                 ink.top = Math.min(ink.top, badge.top);
                 ink.bottom = Math.max(ink.bottom, badge.bottom);
@@ -23337,7 +23344,7 @@ try {
       [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
         const svg = row.querySelector("[data-dial-face]");
         const text = svg?.querySelector("text");
-        const badge = row.querySelector("[data-side-badge]");
+        const badge = row.querySelector("[data-side-mark]");
         if (!svg || !text || (text.textContent ?? "").trim() === "") return [];
         const n = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.right.toFixed(1), +r.bottom.toFixed(1)];
         return [
@@ -23552,7 +23559,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23615,7 +23622,7 @@ try {
     const all = devs.map((d) => d.name);
     await until(5_000, async () => (await names()).length === all.length);
     await until(3_000, async () =>
-      (await page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-badge="linux"]').count()) === 1,
+      (await page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-mark="linux"]').count()) === 1,
     );
     const check = async (what, want) => {
       const got = await names();
@@ -23763,7 +23770,7 @@ try {
       page.locator("[data-list] [data-side-row][data-ws-line]").evaluateAll((els) =>
         els.map((e) => ({
           id: e.getAttribute("data-side-row"),
-          badge: e.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+          badge: e.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
         })),
       );
     const ids = async () => (await read()).map((r) => r.id).sort();
@@ -23936,7 +23943,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24264,7 +24271,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24530,7 +24537,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25238,7 +25245,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -25906,7 +25913,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -26408,6 +26415,204 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "term") console.log("term · FACE_ONLY=term: the other sections are skipped");
+
+  // ── 17) 类型标记: on the face, or on its corner (2026-10-02) ─────────
+  //
+  // The owner, after the drawing:「画在脸上感觉很好看。我们在外观里可以设
+  // 置，对象类型的绘制形式，角标、浮现这样。不做对调了，就是这两种选择。」
+  // One setting (外观 › 类型标记), two ways, one assembly (`FaceMark`):
+  //
+  //   a. **浮现 is the default**: in the sessions, machines and workspaces
+  //      columns every avatar that says a kind has it on the face
+  //      (`data-mark-at="face"`), wears the veil, and has **no corner**
+  //      (`data-side-badge`); the mark is `--mark-ink`, whole pixels,
+  //      centred on the face (±0.5), the offset whole too (1×: the
+  //      owner's screen); a 笑脸 face under a mark has no features, and
+  //      the same face where no kind is said (the rail's own avatar)
+  //      keeps them; a session tab's face does the same at 16 with a 12
+  //      mark;
+  //   b. **外观 has the row**, with its sentence, on 浮现; choosing 角标
+  //      there turns every one of those avatars into the corner — no
+  //      mark on any face, no veil, the features back — tab included;
+  //   c. **it stays after a reload** (the fixture holds the store like the
+  //      node: `set_config` → `config`), and choosing 浮现 brings it back.
+  //
+  // New behaviour, not a fix: no red was owed first (30-behavior). The
+  // contrast of the mark on real faces is `check-palette`'s.
+  //
+  // `FACE_ONLY=mark` runs this section alone.
+  mark: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mark") break mark;
+  {
+    const gateDev = devs.find((d) => d.me);
+    const peerDev = devs.find((d) => d.name === "peer");
+    const facesWere = [gateDev?.face ?? null, peerDev?.face ?? null];
+    // A 笑脸 face on this machine and a 晕染 one on peer: the one way of
+    // drawing that has features, and one that has none to lose.
+    if (gateDev) gateDev.face = av(beam);
+    if (peerDev) peerDev.face = av(marble);
+    configValues["kind-mark"] = "face";
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const inkWant = await page.evaluate(() => {
+      const el = document.createElement("span");
+      el.style.color = "var(--mark-ink)";
+      document.body.appendChild(el);
+      const c = getComputedStyle(el).color;
+      el.remove();
+      return c;
+    });
+    /** Every avatar under `scope` that carries a kind, as drawn. */
+    const readMarks = (scope) =>
+      page.evaluate((scope) => {
+        const r = (e) => e.getBoundingClientRect();
+        return [...document.querySelectorAll(`${scope} [data-side-face]`)].flatMap((f) => {
+          const mark = f.querySelector("[data-side-mark]");
+          if (!mark) return [];
+          const face = f.querySelector("[data-face], [data-face-blank]");
+          const glyph = mark.firstElementChild;
+          return [
+            {
+              key: mark.getAttribute("data-side-mark"),
+              at: mark.getAttribute("data-mark-at"),
+              row: f.closest("[data-side-row]")?.getAttribute("data-side-row") ?? null,
+              badge: f.querySelectorAll("[data-side-badge]").length,
+              veil: f.querySelectorAll("[data-face-veil]").length,
+              features: f.querySelectorAll("[data-face-features]").length,
+              face: face ? { x: r(face).left, y: r(face).top, w: r(face).width, h: r(face).height } : null,
+              glyph: glyph ? { x: r(glyph).left, y: r(glyph).top, w: r(glyph).width, h: r(glyph).height } : null,
+              ink: getComputedStyle(mark).color,
+            },
+          ];
+        });
+      }, scope);
+    const whole = (v) => Math.abs(v - Math.round(v)) < 0.01;
+    const COLUMNS = ["sessions", "devices", "workspaces"];
+    /** a / c: every column's marks are on the face, as the claims say. */
+    const judgeFace = async (when) => {
+      for (const col of COLUMNS) {
+        await open(col);
+        await until(5_000, async () => (await page.locator("[data-list] [data-side-row] [data-side-mark]").count()) > 0);
+        const marks = await readMarks("[data-list] [data-side-row]");
+        console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.badge, m.veil, m.features, m.glyph?.w]))}`);
+        if (marks.length === 0) {
+          fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind (src/components/FaceMark.tsx)`);
+          continue;
+        }
+        for (const m of marks) {
+          const where = `mark ${when} · ${col} ${m.row} (${m.key})`;
+          if (m.at !== "face" || m.badge !== 0) {
+            fail(`${where}: the mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s) — 浮现 is the default, and it has no corner`);
+            continue;
+          }
+          if (m.veil !== 1) fail(`${where}: the face under the mark wears ${m.veil} veil(s), not one (src/components/Avatar.tsx UnderMark)`);
+          if (m.ink !== inkWant) fail(`${where}: the mark is ${m.ink}, not --mark-ink ${inkWant}`);
+          if (!m.face || !m.glyph) {
+            fail(`probe dead: ${where} has no face or no glyph to measure`);
+            continue;
+          }
+          const dx = m.glyph.x + m.glyph.w / 2 - (m.face.x + m.face.w / 2);
+          const dy = m.glyph.y + m.glyph.h / 2 - (m.face.y + m.face.h / 2);
+          if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+            fail(`${where}: the mark's centre is ${dx.toFixed(2)}, ${dy.toFixed(2)} off the face's — it is drawn centred`);
+          }
+          if (![m.glyph.w, m.glyph.h, m.glyph.x - m.face.x, m.glyph.y - m.face.y].every(whole)) {
+            fail(`${where}: the mark is ${m.glyph.w}×${m.glyph.h} at ${m.glyph.x - m.face.x}, ${m.glyph.y - m.face.y} in the face — whole pixels on a 1× screen`);
+          }
+        }
+        if (col === "devices") {
+          const gate = marks.find((m) => m.row === gateDev?.id);
+          if (!gate) fail(`probe dead: mark ${when} · this machine's row has no kind`);
+          else if (gate.features !== 0) fail(`mark ${when} · a 笑脸 face under a mark still draws its eyes and mouth (${gate.features}) — they read as a smudge behind the mark`);
+          const rail = await page.evaluate(() => ({
+            features: document.querySelectorAll("[data-rail-mark] [data-face-features]").length,
+            veil: document.querySelectorAll("[data-rail-mark] [data-face-veil]").length,
+          }));
+          if (rail.features !== 1 || rail.veil !== 0) {
+            fail(`mark ${when} · the rail's own avatar says no kind and drew ${rail.features} set(s) of features and ${rail.veil} veil(s) — a face with no mark is drawn whole`);
+          }
+        }
+      }
+      // A session tab: the same assembly at a tab's size.
+      await open("sessions");
+      await press("[data-list] [data-row-open]");
+      await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-mark]").count()) > 0);
+      const tab = await readMarks("[data-session-tabs] [data-tab]");
+      console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge, m.face?.w, m.glyph?.w]))}`);
+      if (tab.length === 0) fail(`probe dead: mark ${when} · no session tab with a kind on the strip`);
+      for (const m of tab) {
+        if (m.at !== "face" || m.badge !== 0 || m.veil !== 1) {
+          fail(`mark ${when} · a session tab's face has its mark ${JSON.stringify(m.at)}, ${m.badge} corner(s), ${m.veil} veil(s) — the tab follows the setting`);
+        } else if (m.face?.w !== 16 || m.glyph?.w !== 12 || m.glyph.x - m.face.x !== 2 || m.glyph.y - m.face.y !== 2) {
+          fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 16, 2 in`);
+        }
+      }
+    };
+    const judgeCorner = async (when) => {
+      for (const col of COLUMNS) {
+        await open(col);
+        await until(5_000, async () => (await page.locator("[data-list] [data-side-row] [data-side-badge]").count()) > 0);
+        const marks = await readMarks("[data-list] [data-side-row]");
+        console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.badge, m.veil, m.features]))}`);
+        if (marks.length === 0) fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind`);
+        for (const m of marks) {
+          if (m.at !== "corner" || m.badge !== 1 || m.veil !== 0) {
+            fail(`mark ${when} · ${col} ${m.row}: ${JSON.stringify(m.at)}, ${m.badge} corner(s), ${m.veil} veil(s) — 角标 is the corner, and no face under a veil`);
+          }
+        }
+        if (col === "devices") {
+          const gate = marks.find((m) => m.row === gateDev?.id);
+          if (!gate || gate.features !== 1) fail(`mark ${when} · with the mark on the corner the 笑脸 face draws ${gate?.features ?? "no"} set(s) of features — it is whole again`);
+        }
+      }
+      await open("sessions");
+      await press("[data-list] [data-row-open]");
+      await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-badge]").count()) > 0);
+      const tab = await readMarks("[data-session-tabs] [data-tab]");
+      console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge]))}`);
+      if (tab.length === 0 || tab.some((m) => m.at !== "corner" || m.badge !== 1)) {
+        fail(`mark ${when} · the session tab's mark is ${JSON.stringify(tab.map((m) => m.at))} — the tab follows the setting to the corner`);
+      }
+    };
+    /** b: the row on 外观, and choosing on it the way a person does. */
+    const chooseOnPage = async (value) => {
+      if (!((await press("[data-rail-more]")) && (await press('[data-more-open="appearance"]')))) {
+        fail("probe dead: mark · More › 外观 did not open");
+        return false;
+      }
+      const row = page.locator('[data-config-row="kind-mark"]');
+      if ((await row.count()) !== 1) {
+        fail("mark b · 外观 has no 类型标记 row (crates/node/src/config.rs KEYS, src/views/more/ConfigRows.tsx)");
+        return false;
+      }
+      const note = (await row.locator("[data-setting-note]").textContent().catch(() => null))?.trim() ?? "";
+      if (note === "") fail("mark b · the 类型标记 row says nothing under its name — a setting's note says what it does (ConfigRow.note)");
+      await page.locator('[data-setting-select="kind-mark"]').selectOption(value);
+      const took = await until(3_000, async () => configValues["kind-mark"] === value && (await row.getAttribute("data-value")) === value);
+      if (!took) fail(`mark b · choosing ${value} on 外观 did not reach the store (it holds ${configValues["kind-mark"]})`);
+      await press("[data-more-close]");
+      return took;
+    };
+
+    await judgeFace("default");
+    if (await chooseOnPage("corner")) {
+      await judgeCorner("角标");
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await judgeCorner("角标 after a reload");
+      if (await chooseOnPage("face")) await judgeFace("浮现 again");
+    }
+    if (gateDev) gateDev.face = facesWere[0];
+    if (peerDev) peerDev.face = facesWere[1];
+    configValues["kind-mark"] = "face";
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "mark") console.log("mark · FACE_ONLY=mark: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

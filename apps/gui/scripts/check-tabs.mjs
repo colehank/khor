@@ -1011,9 +1011,9 @@ try {
           .first();
         await until("the icon site's row", 10_000, async () => (await row.count()) === 1).catch(() => false);
         await until("its icon", 5_000, async () =>
-          (await row.locator("[data-side-badge]").getAttribute("data-side-badge").catch(() => null)) === "favicon",
+          (await row.locator("[data-side-mark]").getAttribute("data-side-mark").catch(() => null)) === "favicon",
         ).catch(() => false);
-        const badge = await row.locator("[data-side-badge]").getAttribute("data-side-badge").catch(() => null);
+        const badge = await row.locator("[data-side-mark]").getAttribute("data-side-mark").catch(() => null);
         console.log(`     icon kept: asked once → ${typeof got === "string" ? got.slice(0, 22) : got}; after a reload the row wears ${badge}; the site was asked ${icoAsked - before} more time(s)`);
         if (icoAsked === 0) {
           fail("probe dead: the icon site was never asked, so nothing could have been kept");
@@ -1068,8 +1068,8 @@ try {
         const rowOf = (at, path) =>
           page.locator("[data-browse-tabs] [data-side-row]").filter({ hasText: `${at}${path}` }).first();
         const drawn = async (row) => ({
-          badge: await row.locator("[data-side-badge]").getAttribute("data-side-badge").catch(() => null),
-          src: await row.locator("[data-side-badge] img").getAttribute("src").catch(() => null),
+          badge: await row.locator("[data-side-mark]").getAttribute("data-side-mark").catch(() => null),
+          src: await row.locator("[data-side-mark] img").getAttribute("src").catch(() => null),
         });
         const spaRow = rowOf(spaAt, "/app");
         await until("the SPA's row", 10_000, async () => (await spaRow.count()) === 1).catch(() => false);
@@ -1217,7 +1217,7 @@ try {
           return {
             row: true,
             halo: halo ? halo.getAttribute("data-halo") : null,
-            badge: row.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+            badge: row.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
             title: row.querySelector("[data-tab-label]")?.textContent ?? null,
           };
         }, at);

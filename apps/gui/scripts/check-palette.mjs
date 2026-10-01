@@ -1095,6 +1095,156 @@ try {
     }
   }
 
+  // ── a mark on a face (类型标记「浮现」, 2026-10-02) ───────────────────
+  //
+  // The owner:「画在脸上感觉很好看」. The kind mark is painted on the
+  // machine's face — and a face is any colour, light and dark in one
+  // gradient. So the face under a mark wears one veil (`--mark-veil`)
+  // and the mark is one ink (`--mark-ink`), and this measures that pair
+  // on **real faces**: `khor_core::avatar`'s own output (the
+  // `face_samples` bin), every factory palette × every way of drawing,
+  // sixteen machines each, drawn by the app in the machines column.
+  //
+  // How: the mark is made transparent (the veil stays — it is the face's), the
+  // box the mark's glyph occupies is cut out of a screenshot, and the
+  // brightest pixel in it is the worst ground the ink meets there. That
+  // is conservative — the box holds pixels the glyph never touches — and
+  // it is the one reading that does not depend on which glyph a row
+  // happens to wear. Floor: a graphic's 3:1.
+  //
+  // **The probe proves it can see a failure every run**: the same faces
+  // with the veil taken off must fall under the floor somewhere, or this
+  // section is measuring something that cannot fail (the drawing's 0.30
+  // veil on the same faces was the hand-made red, 2026-10-02).
+  {
+    const { execFileSync } = await import("node:child_process");
+    const samples = JSON.parse(
+      execFileSync("cargo", ["run", "-q", "-p", "khor-gui-core", "--bin", "face_samples"], {
+        cwd: gui,
+        maxBuffer: 64 << 20,
+        stdio: ["ignore", "pipe", "inherit"],
+      }).toString(),
+    );
+    const grounds = new Map();
+    for (const s of samples) {
+      const k = s.palette;
+      grounds.set(k, (grounds.get(k) ?? new Set()).add(s.face.background));
+    }
+    const thin = [...grounds].filter(([, g]) => g.size < 5).map(([p, g]) => `${p} ${g.size}`);
+    if (samples.length === 0 || thin.length) {
+      fail(`a mark on a face: probe dead — the samples tried fewer than five grounds on ${thin.join(", ") || "every palette"} (apps/gui/core/src/bin/face_samples.rs SEEDS)`);
+    }
+    const idOf = (i) => i.toString(16).padStart(64, "0");
+    // One more machine with no face at all: the blank wears the veil
+    // too, and it is the one ground here that reads the theme.
+    const devices = [...samples.map((s, i) => ({ s, i })), { s: null, i: samples.length }].map(({ s, i }) => ({
+      id: idOf(i + 1),
+      name: s ? `${s.palette}-${s.variant}-${s.seed}` : "blank",
+      shown: s ? `${s.palette}-${s.variant}-${s.seed}` : "blank",
+      label: null,
+      me: false,
+      paused: false,
+      face: s ? s.face : null,
+      pinned: false,
+      vitals: null,
+      hop: "direct",
+      sponsor: null,
+      watch: [],
+      watched: null,
+      seat: { left: 50, top: 50 },
+    }));
+    await page.route("**/devices", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(devices) }));
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await wait(200);
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    const drawnBy = Date.now() + 8_000;
+    const markSel = '[data-side-row] [data-mark-at="face"]';
+    while ((await page.locator(markSel).count()) < devices.length && Date.now() < drawnBy) await wait(200);
+    const marks = await page.locator(markSel).count();
+    if (marks < devices.length) {
+      fail(`a mark on a face: probe dead — ${marks} of ${devices.length} routed machines drew a mark on their face (src/components/FaceMark.tsx)`);
+    } else {
+      /** The brightest pixel under each row's mark, keyed by row id. */
+      const brightest = async () => {
+        const shots = [];
+        for (let n = 0; n < devices.length; n++) {
+          const row = page.locator(`[data-side-row="${devices[n].id}"]`);
+          const glyph = row.locator('[data-mark-at="face"] > *').first();
+          await glyph.scrollIntoViewIfNeeded();
+          shots.push((await glyph.screenshot({ animations: "disabled" })).toString("base64"));
+        }
+        return page.evaluate(async (pngs) => {
+          const lin = (c) => {
+            const s = c / 255;
+            return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+          };
+          const out = [];
+          for (const b64 of pngs) {
+            const img = new Image();
+            img.src = `data:image/png;base64,${b64}`;
+            await img.decode();
+            const c = document.createElement("canvas");
+            c.width = img.width;
+            c.height = img.height;
+            const g = c.getContext("2d");
+            g.drawImage(img, 0, 0);
+            const px = g.getImageData(0, 0, c.width, c.height).data;
+            let best = { y: -1, rgb: [0, 0, 0] };
+            for (let i = 0; i < px.length; i += 4) {
+              const y = 0.2126 * lin(px[i]) + 0.7152 * lin(px[i + 1]) + 0.0722 * lin(px[i + 2]);
+              if (y > best.y) best = { y, rgb: [px[i], px[i + 1], px[i + 2]], w: c.width };
+            }
+            out.push(best);
+          }
+          return out;
+        }, shots);
+      };
+      const hide = await page.addStyleTag({ content: '[data-mark-at="face"] > * { opacity: 0 !important; }' });
+      for (const scheme of ["light", "dark"]) {
+        await flipTheme(page, scheme);
+        await wait(300);
+        const ink = await page.evaluate((sel) => getComputedStyle(document.querySelector(sel)).color, markSel);
+        const seen = await brightest();
+        const worst = new Map();
+        const bareFloor = [];
+        seen.forEach((b, n) => {
+          const s = n < samples.length ? samples[n] : null;
+          const key = s ? `${s.palette} × ${s.variant}` : "no face (the blank)";
+          const ratio = contrast(rgb(ink), b.rgb);
+          const was = worst.get(key);
+          if (!was || ratio < was.ratio) worst.set(key, { ratio, rgb: b.rgb, w: b.w, at: s ? s.seed : null });
+          bareFloor.push(ratio);
+        });
+        console.log(
+          `${scheme} · a mark on a face: ink ${ink}, ${seen.length} faces, glyph box ${seen[0]?.w}px — worst per palette × drawing:\n` +
+            [...worst].map(([k, v]) => `    ${k}: ${say(v.ratio)} (brightest ${v.rgb.join(",")}, machine ${v.at})`).join("\n"),
+        );
+        for (const [k, v] of worst) {
+          if (v.ratio < GRAPHIC_FLOOR) {
+            fail(
+              `${scheme} · a mark on a face: on ${k} the mark reads ${say(v.ratio)} against the face behind it, under ${GRAPHIC_FLOOR} — ` +
+                "the veil (--mark-veil) or the ink (--mark-ink) moved (src/styles/tokens.css)",
+            );
+          }
+        }
+      }
+      // The teeth: the same faces with no veil must fail somewhere.
+      const unveil = await page.addStyleTag({ content: "[data-face-veil] { display: none !important; }" });
+      await flipTheme(page, "light");
+      await wait(300);
+      const ink = await page.evaluate((sel) => getComputedStyle(document.querySelector(sel)).color, markSel);
+      const bare = (await brightest()).map((b) => contrast(rgb(ink), b.rgb));
+      const bareWorst = Math.min(...bare);
+      console.log(`a mark on a face, with the veil taken off: worst ${say(bareWorst)} — the probe sees a failing face`);
+      if (!(bareWorst < GRAPHIC_FLOOR)) {
+        fail(`a mark on a face: probe dead — with the veil off the worst face still reads ${say(bareWorst)}; this section cannot see a failure`);
+      }
+      await unveil.evaluate((n) => n.remove());
+      await hide.evaluate((n) => n.remove());
+    }
+    await page.unroute("**/devices");
+  }
+
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
   if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, the paper is the extreme and the frame a step off it, every ink reads on all four grounds, a row reads on the left block's ground, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
 } catch (e) {
