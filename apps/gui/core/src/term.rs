@@ -39,6 +39,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::Engine;
 use khor_node::host::{ClientOp, connect, write_frame};
+use khor_node::modes::Modes;
 use khor_node::{Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
@@ -57,6 +58,27 @@ const B64: base64::engine::general_purpose::GeneralPurpose =
 /// these bytes are a grammar, and a splice mid-escape is garbage on
 /// screen.
 pub const FEED_CAP: usize = 512 * 1024;
+
+/// The bytes the feed holds, and the modes the bytes it trimmed had set
+/// (`khor_node::modes`): a replay of a trimmed feed opens with them, or
+/// a face that attaches after the first [`FEED_CAP`] of a tmux client
+/// draws the alternate screen into the normal buffer (2026-10-01 — the
+/// host's ring has the same rule for the same reason).
+#[derive(Default)]
+struct Feed {
+    bytes: VecDeque<u8>,
+    head: Modes,
+}
+
+impl Feed {
+    /// Everything a face that starts over is handed: the trimmed head's
+    /// modes, then every byte still held.
+    fn replay(&self) -> Vec<u8> {
+        let mut out = self.head.preamble();
+        out.extend(self.bytes.iter());
+        out
+    }
+}
 
 /// What an attach answers: everything the feed holds, and the cursor
 /// to tail from ([`term_stream`]'s `since`).
@@ -103,8 +125,8 @@ struct Term {
     holds: AtomicUsize,
     /// The bytes themselves, exactly as the parser ate them (post-ACS
     /// filter — the two consumers must see one stream), head-trimmed at
-    /// [`FEED_CAP`].
-    feed: Mutex<VecDeque<u8>>,
+    /// [`FEED_CAP`], with the modes of what was trimmed.
+    feed: Mutex<Feed>,
     /// Total bytes ever pushed into `feed` since this `Term` was made —
     /// the stream cursor. `fed - feed.len()` is the oldest byte still
     /// held. Written only inside [`push_feed`], under the `feed` lock,
@@ -223,7 +245,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         acs: Mutex::new(crate::acs::Acs::default()),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
-        feed: Mutex::new(VecDeque::new()),
+        feed: Mutex::new(Feed::default()),
         fed: AtomicU64::new(0),
     });
     let reader = term.clone();
@@ -267,7 +289,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
 fn paint(
     acs: &Mutex<crate::acs::Acs>,
     parser: &Mutex<vt100::Parser>,
-    feed: &Mutex<VecDeque<u8>>,
+    feed: &Mutex<Feed>,
     fed: &AtomicU64,
     bytes: &[u8],
 ) -> Option<(u16, u16)> {
@@ -298,35 +320,38 @@ fn paint(
 
 /// Appends to the feed and advances the cursor, trimming the head past
 /// [`FEED_CAP`]. `fed` moves only here, under the feed lock.
-fn push_feed(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64, bytes: &[u8]) {
+fn push_feed(feed: &Mutex<Feed>, fed: &AtomicU64, bytes: &[u8]) {
     let mut g = plock(feed);
-    g.extend(bytes.iter().copied());
-    let over = g.len().saturating_sub(FEED_CAP);
+    g.bytes.extend(bytes.iter().copied());
+    let over = g.bytes.len().saturating_sub(FEED_CAP);
     if over > 0 {
-        g.drain(..over);
+        let gone: Vec<u8> = g.bytes.drain(..over).collect();
+        g.head.feed(&gone);
     }
     fed.fetch_add(bytes.len() as u64, Ordering::Relaxed);
 }
 
-/// The whole feed and its end cursor, consistent under one lock.
-fn take_all(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64) -> (Vec<u8>, u64) {
+/// The whole feed and its end cursor, consistent under one lock. The
+/// cursor counts stream bytes only — the modes in front are not part of
+/// the stream a later [`take_since`] continues.
+fn take_all(feed: &Mutex<Feed>, fed: &AtomicU64) -> (Vec<u8>, u64) {
     let g = plock(feed);
-    (g.iter().copied().collect(), fed.load(Ordering::Relaxed))
+    (g.replay(), fed.load(Ordering::Relaxed))
 }
 
 /// The bytes from `since` to the end — or, when `since` is off the
 /// trimmed head or from another life (a re-made `Term` counts from
 /// zero again, so a stale cursor can be *bigger* than anything this
 /// feed ever counted), the whole feed with `reset` raised.
-fn take_since(feed: &Mutex<VecDeque<u8>>, fed: &AtomicU64, since: u64) -> (Vec<u8>, u64, bool) {
+fn take_since(feed: &Mutex<Feed>, fed: &AtomicU64, since: u64) -> (Vec<u8>, u64, bool) {
     let g = plock(feed);
     let end = fed.load(Ordering::Relaxed);
-    let start = end - g.len() as u64;
+    let start = end - g.bytes.len() as u64;
     if since < start || since > end {
-        return (g.iter().copied().collect(), end, true);
+        return (g.replay(), end, true);
     }
     let from = (since - start) as usize;
-    (g.iter().skip(from).copied().collect(), end, false)
+    (g.bytes.iter().skip(from).copied().collect(), end, false)
 }
 
 fn term_of(id: &str) -> Result<Arc<Term>, String> {
@@ -592,7 +617,7 @@ mod tests {
     fn the_reader_path_feeds_the_same_filtered_bytes_it_parses() {
         let acs = Mutex::new(crate::acs::Acs::default());
         let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
-        let feed = Mutex::new(VecDeque::new());
+        let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         assert_eq!(paint(&acs, &parser, &feed, &fed, b"\x1b(0"), None);
         assert_eq!(paint(&acs, &parser, &feed, &fed, b"lqqqk"), None);
@@ -620,7 +645,7 @@ mod tests {
         // in the feed and on the oracle's grid alike.
         let acs = Mutex::new(crate::acs::Acs::default());
         let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
-        let feed = Mutex::new(VecDeque::new());
+        let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         paint(&acs, &parser, &feed, &fed, b"lqqqk");
         let (bytes, _) = take_all(&feed, &fed);
@@ -633,7 +658,7 @@ mod tests {
     /// face's 50ms beat costs a lock and nothing else.
     #[test]
     fn attach_then_stream_is_seamless_and_idle_is_empty() {
-        let feed = Mutex::new(VecDeque::new());
+        let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         push_feed(&feed, &fed, b"hello ");
         let (first, at) = take_all(&feed, &fed);
@@ -655,14 +680,14 @@ mod tests {
     /// with a hole mid-escape.
     #[test]
     fn a_cursor_off_the_trimmed_head_gets_a_reset_not_a_splice() {
-        let feed = Mutex::new(VecDeque::new());
+        let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         let chunk = vec![7u8; 200 * 1024];
         push_feed(&feed, &fed, &chunk);
         let (_, held) = take_all(&feed, &fed);
         push_feed(&feed, &fed, &chunk);
         push_feed(&feed, &fed, &chunk);
-        assert_eq!(plock(&feed).len(), FEED_CAP, "the feed is capped");
+        assert_eq!(plock(&feed).bytes.len(), FEED_CAP, "the feed is capped");
         let (bytes, end, reset) = take_since(&feed, &fed, 0);
         assert!(reset, "cursor 0 fell off the trimmed head");
         assert_eq!(
@@ -681,6 +706,45 @@ mod tests {
         );
     }
 
+    /// **A replay of a trimmed feed opens in the modes its head set** —
+    /// the same rule as the host's ring, for a face that attaches (or
+    /// starts over) after the first [`FEED_CAP`] of a tmux client. Both
+    /// doors that hand out the whole feed: attach, and a reset.
+    #[test]
+    fn a_trimmed_feed_replays_into_the_modes_its_head_set() {
+        let feed = Mutex::new(Feed::default());
+        let fed = AtomicU64::new(0);
+        push_feed(&feed, &fed, b"\x1b[?1049h\x1b[?1h\x1b=");
+        let line = [b'x'; 1023]
+            .iter()
+            .chain(b"\n")
+            .copied()
+            .collect::<Vec<u8>>();
+        for _ in 0..600 {
+            push_feed(&feed, &fed, &line);
+        }
+        let (all, end) = take_all(&feed, &fed);
+        assert!(
+            all.starts_with(b"\x1b[?1049h\x1b[?1h\x1b="),
+            "attach opens in the alternate screen with cursor keys and keypad set, began {:?}",
+            String::from_utf8_lossy(&all[..all.len().min(24)])
+        );
+        assert_eq!(all.len(), FEED_CAP + 15, "the modes, then every byte held");
+        let (again, _, reset) = take_since(&feed, &fed, 0);
+        assert!(reset && again == all, "a reset hands out the same replay");
+        let (tail, _, reset) = take_since(&feed, &fed, end - 4);
+        assert!(
+            !reset && tail.len() == 4,
+            "a tail is the stream alone, no modes spliced in"
+        );
+
+        // The control: the same modes still held are not repeated.
+        let feed = Mutex::new(Feed::default());
+        let fed = AtomicU64::new(0);
+        push_feed(&feed, &fed, b"\x1b[?1049hhi");
+        assert_eq!(take_all(&feed, &fed).0, b"\x1b[?1049hhi");
+    }
+
     /// The public doors over a real registry entry: attach hands back
     /// base64 of the feed with its cursor, stream tails it, and a
     /// `gone` flip reaches the answer. Built on a real local socket
@@ -696,7 +760,7 @@ mod tests {
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
             holds: AtomicUsize::new(1),
-            feed: Mutex::new(VecDeque::new()),
+            feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
         });
         push_feed(&term.feed, &term.fed, b"\x1b[31mhi");
