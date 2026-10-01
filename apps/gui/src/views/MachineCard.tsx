@@ -4,7 +4,8 @@ import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/a
 import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
-import { PageSubtitle } from "@/components/Region";
+import { machineMark } from "@/components/BrandIcons";
+import { PageAvatar, PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
 import { SectionHead } from "@/components/SectionHead";
 import { Bar } from "@/components/Bar";
@@ -34,7 +35,7 @@ import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { CopyId } from "@/views/DetailPane";
-import { ago, connectionWord, hopWord, lasting, systemWord } from "@/words";
+import { ago, hopWord, lasting, systemWord } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -118,20 +119,30 @@ export function MachineCard({
         )}
         </NarrowHead>
       )}
-      {/* **R0's second line** (2026-09-30, the owner, 晚: 「机器页上方标题
-          改为第一行机器名，第二行机器型号、khor 版本、连接方式」): the shell
-          says the name, this says what the machine is, which khor it runs
-          and how it is reached — written here, seated in R0 by the shell
-          (`PageSubtitle`), like the workspace's location. The reading's
-          age was here that morning; it is the card's now. Nothing on the
-          narrow face, which has no R0. */}
-      {row && (row.vitals || connectionWord(row)) && (
+      {/* **R0: the system's mark, the name, the model** (2026-10-01, the
+          owner: 「机器页面的标题，改成第一行名称，第二行型号就行了，不写
+          khor 版本和链接方式」「类别头像机器就是系统的 icon 呀」). The
+          shell says the name; this page writes the two things around it,
+          seated in R0 by the shell like the workspace's location:
+          - the avatar is the machine's **system family** — the very mark
+            its list row wears on its corner (`machineMark`, the plain
+            machine glyph for one that could not say), never its face;
+          - the second line is the **model** alone, and is not drawn when
+            the machine did not report one (「读不到就空——不编」).
+          ⚠️ 墓碑 (2026-09-30 晚 → 10-01): the second line was 「型号 ·
+          khor 版本 · 连接」 (`MachineCaption`); the version and the road
+          are the contact card's, said there once. Nothing on the narrow
+          face, which has no R0 — the card says the model there. */}
+      {row && (
+        <PageAvatar mark={machineMark(row.vitals?.vitals.system)} kind={row.vitals?.vitals.system ?? "machine"} />
+      )}
+      {row?.vitals?.vitals.model?.name && (
         <PageSubtitle>
           <span
             data-machine-head-sub
-            className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+            className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground"
           >
-            <MachineCaption row={row} />
+            {row.vitals.vitals.model.name}
           </span>
         </PageSubtitle>
       )}
@@ -151,6 +162,7 @@ export function MachineCard({
         <Body
           key={row.id}
           row={row}
+          sayModel={narrow}
           hooks={hooks}
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
@@ -166,12 +178,16 @@ export function MachineCard({
     when the machine changes. */
 function Body({
   row,
+  sayModel,
   hooks,
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
 }: {
   row: DeviceRow;
+  /** The narrow face has no R0, so the model R0 says is the card's to
+      say there (`Contact`). A fact about the screen, like the way back. */
+  sayModel: boolean;
   hooks: HooksState | null;
   hooksFailed: boolean;
   onInstallHooks: () => void;
@@ -193,7 +209,7 @@ function Body({
   return (
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
-            <Contact row={row} />
+            <Contact row={row} sayModel={sayModel} />
             {never ? (
               <RegionState state="loading-never" />
             ) : (
@@ -241,41 +257,60 @@ function Body({
 /**
  * **The machine's contact card** — the top of its board (2026-09-30, the
  * owner: 「机器页的内容部分做成一个类似通讯录的卡片：头像、型号、id 等等，
- * 想一个好的办法把它布局出来」). macOS Contacts' card: the face large on
- * the left, the name beside it, and under the name the facts, each a
- * `label · value` line — the label in `callout` `secondary`, right-aligned
- * so the values start on one edge, the value in `body` `ink`, numbers
- * tabular.
+ * 想一个好的办法把它布局出来」), **redrawn 2026-10-01** (「头像也没有对齐，
+ * 各类布局也很难看」). macOS Contacts' card, and its one alignment: the
+ * face large at the head, the name beside it, and under them a table of
+ * `label · value` lines whose **labels end where the face ends and whose
+ * values start where the name starts**.
  *
  * ```
- * ┌──────┐  peer                           (title-md, not a heading)
- * │  72  │     型号  MacBook Pro          连接  直连
- * │ face │     系统  macOS              已运行  125 天
- * └──────┘ khor 版本  0.1.0              读数  42 秒前
- *           机器 id  ffffffffffff
+ *  ┌──────┐
+ *  │  72  │  peer                          ← title-md <p>; the face's middle
+ *  │ face │                                   is the name block's middle
+ *  └──────┘
+ *      系统  macOS               连接  直连
+ * khor 版本  0.1.14            已运行  125 天
+ *   机器 id  ffffffffffff        读数  42 秒前
+ *         ↑                        界面  桌面 app · 网页
+ *   the face's right edge = the labels' right edge;
+ *   the name's left edge = the values' left edge
  * ```
  *
- * **Two groups, side by side where the board is wide and stacked where
- * it is not** (`flex-wrap`): what the machine *is* (型号, 系统, khor 版本,
- * id — they change with an upgrade at most) and how it *is now* (连接,
- * 已运行, 读数, and on this machine the khor faces that are open). Each
- * group is its own two-column grid, so its values share one edge.
+ * **One grid, so the lines are true by construction, not by numbers.**
+ * Column one is `minmax(--avatar-lg, max-content)`: as wide as the face,
+ * or as the longest label if one is longer (English); the face stands at
+ * its right end (`justify-self: end`), and every label is right-aligned
+ * in it. Column two is the name's and the values'. The head row and the
+ * two groups are `subgrid`s of it, so they cannot drift apart. The head
+ * centres the face and the name block on one line (`items-center`).
+ *
+ * **Two groups, side by side where the card is wide and one group where
+ * it is not** — a container query on the card (`@xl/contact`, 36rem),
+ * not the window: what the machine *is* (系统, khor 版本, id — they change
+ * with an upgrade at most) and how it *is now* (连接, 已运行, 读数, and on
+ * this machine the khor faces that are open). Wide, the grid grows to
+ * four columns and the second group takes the last two (its labels are
+ * a column of their own, right-aligned too); narrow, the second group
+ * continues under the first at the same pitch (`gap-xxs`) in the same
+ * label column, so the two read as one table.
+ *
+ * **What R0 says is not said again** (2026-10-01): R0 is the system's
+ * mark, the name and the model. The card keeps the name — a card carries
+ * one, and it is the face's caption — and **drops 型号**, except on the
+ * narrow face, which has no R0: there the model is the name's second
+ * line (`sayModel`), the way Contacts puts the company under a name.
  *
  * **Every line is a fact the page already has**, and a line with nothing
  * honest to say is not drawn — never a dash, never a guess
  * (「读不到就空——不编」):
  *
- * - 型号 — `vitals.model.name`, what the machine calls itself (Apple
- *   Silicon's device tree `product-name`, an Intel Mac's `hw.model`, a
- *   Linux box's DMI `product_name`, read in-process by
- *   `khor_node::vitals::model`); absent from a machine that could not say
- *   and from one never reached;
- * - 系统 — the family the list row's corner draws (`vitals.system`);
+ * - 系统 — the family the list row's corner and R0's avatar draw
+ *   (`vitals.system`);
  * - khor 版本 — `vitals.version`, the khor that machine runs;
  * - 机器 id — the row's id, twelve characters, and pressing copies all
  *   sixty-four (`CopyId`); mono, because it is read character by character;
- * - 连接 — `connectionWord`, the word the list row and R0 print: 本机, the
- *   road (`hop`), or 「经 <sponsor>」;
+ * - 连接 — `connectionWord`, the word the list row prints: 本机, the road
+ *   (`hop`), or 「经 <sponsor>」;
  * - 已运行 — `vitals.uptime_s`, nothing for 0 (an older node);
  * - 读数 — how old the reading is: an age for a machine reached over the
  *   wire, the clock of its taking for this one;
@@ -299,10 +334,16 @@ function Body({
  * `data-machine-here` / `data-via-sponsor` on 连接 (the road compared
  * against `khor devices`), `data-vitals-unit="version"` on the version
  * and `data-vitals-age` / `data-updated` on 读数 — the readings the smoke
- * counts against the CLI's line, **once on the page**: R0's second line
- * repeats the version without them.
+ * counts against the CLI's line, once on the page.
+ *
+ * ⚠️ 墓碑 (2026-09-30 → 10-01): the face and a column of text sat in a
+ * flex row (`items-start`, `gap-group`), the facts were two `dl`s that
+ * wrapped (`flex-wrap`), each sizing its own label column — so the face's
+ * top stood on the name's line box rather than on anything the eye
+ * reads, a stacked second group's labels ended on a different edge from
+ * the first's, and 型号 opened the table one line under R0 saying it.
  */
-function Contact({ row }: { row: DeviceRow }) {
+function Contact({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
   const v = row.vitals?.vitals ?? null;
   const age = row.vitals?.age_ms ?? 0;
   // **This machine's open faces** — the one fact on the card only the
@@ -329,7 +370,6 @@ function Contact({ row }: { row: DeviceRow }) {
   const upFaces = row.me && about ? about.faces.filter((f) => f.up) : [];
   const here = inApp ? "app" : "web";
   const what: [string, string, ReactNode][] = [];
-  if (model) what.push(["model", gui.card_model, <span data-contact-model>{model}</span>]);
   if (v?.system) what.push(["system", gui.axis_system, systemWord(v.system)]);
   if (v?.version) {
     what.push([
@@ -401,16 +441,27 @@ function Contact({ row }: { row: DeviceRow }) {
       </span>,
     ]);
   }
+  // A group is a `subgrid` of the card's grid: its labels sit in the
+  // card's label column (narrow) or in their own (the wide face's third),
+  // so a label column is one track, not one per group. Rows on `body`'s
+  // leading with `gap-xxs` between — one pitch for every line.
+  // **`content-start`**: wide, the two groups share one row of the card's
+  // grid and the shorter one is stretched to the taller's height; a grid
+  // stretches its own rows into that (`align-content: normal`), and the
+  // three lines of 「是什么」 stood 29 apart beside 「现在」's 22 (first
+  // look at the scratch app, 2026-10-01).
   const group = (key: string, lines: [string, string, ReactNode][]) =>
     lines.length > 0 && (
       <dl
         data-contact-group={key}
-        className="grid min-w-0 flex-none grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-row gap-y-xxs"
+        className="col-span-full grid grid-cols-subgrid content-start items-baseline gap-y-xxs @xl/contact:col-span-2"
       >
         {lines.map(([k, label, value]) => (
           <div key={k} data-contact-fact={k} className="contents">
-            <dt className="text-right text-callout text-muted-foreground">{label}</dt>
-            <dd data-selectable className="min-w-0 truncate text-body text-foreground">
+            <dt data-contact-label className="min-w-0 truncate text-right text-callout text-muted-foreground">
+              {label}
+            </dt>
+            <dd data-contact-value data-selectable className="min-w-0 truncate text-body text-foreground">
               {value}
             </dd>
           </div>
@@ -418,56 +469,39 @@ function Contact({ row }: { row: DeviceRow }) {
       </dl>
     );
   return (
-    <div data-machine-contact className="flex min-w-0 items-start gap-group border-b pb-group">
-      <MachineAvatar face={row.face} className="size-avatar-lg flex-none" />
-      <div className="flex min-w-0 flex-1 flex-col gap-in">
-        <p data-machine-contact-name data-selectable className="min-w-0 truncate text-title-md">
-          {row.shown}
-        </p>
-        <div className="flex min-w-0 flex-wrap items-start gap-x-pane gap-y-in">
-          {group("what", what)}
-          {group("now", now)}
+    // The card's own width decides one group or two (`@container`), and
+    // a hairline under it is the one edge between it and the dials —
+    // `gap-group` of paper over the line, the board's `gap-row` under it.
+    <div data-machine-contact className="@container/contact min-w-0 border-b pb-group">
+      <div
+        data-contact-grid
+        className={cn(
+          "grid min-w-0 gap-x-row gap-y-xxs",
+          "grid-cols-[minmax(var(--avatar-lg),max-content)_minmax(0,1fr)]",
+          "@xl/contact:grid-cols-[minmax(var(--avatar-lg),max-content)_minmax(0,1fr)_max-content_minmax(0,1fr)]",
+        )}
+      >
+        {/* The head: the face at the label column's right end, the name
+            block in the values' column, both centred on one line. Its
+            `pb-base` is the step from the card's head to its table — a
+            paragraph's, where the lines below are one table's pitch. */}
+        <div data-contact-head className="col-span-full grid grid-cols-subgrid items-center pb-base">
+          <MachineAvatar face={row.face} className="size-avatar-lg justify-self-end" />
+          <div data-contact-title className="col-[2/-1] flex min-w-0 flex-col">
+            <p data-machine-contact-name data-selectable className="min-w-0 truncate text-title-md">
+              {row.shown}
+            </p>
+            {sayModel && model && (
+              <p data-contact-model data-selectable className="min-w-0 truncate text-callout text-muted-foreground">
+                {model}
+              </p>
+            )}
+          </div>
         </div>
+        {group("what", what)}
+        {group("now", now)}
       </div>
     </div>
-  );
-}
-
-/**
- * **What R0 says under an open machine's name** (`PageSubtitle`, above):
- * 型号 · khor 版本 · 连接 — 「MacBook Pro · khor 0.1.14 · 直连」, 「… · 本机」
- * on this machine (2026-09-30, the owner, 晚: 「机器页上方标题改为第一行
- * 机器名，第二行机器型号、khor 版本、连接方式」). A segment with nothing
- * honest to say is skipped, never filled — a machine that did not report
- * its model starts at the version (「型号没报回来就跳过这一段，不编」).
- *
- * ⚠️ 墓碑: 「khor 0.1.14 · 12 秒前」 was this line from the morning of
- * 2026-09-30 (moved here from R0's right end, and to R0 from the card's
- * head on 2026-09-27). **The reading's age left it the same evening** —
- * it is the contact card's 读数 now, and a fact is said on the card, in
- * R0's second line, and nowhere a third time.
- *
- * **No gate anchors here.** The version and the road are the card's
- * facts too, and the smoke counts the page's `data-vitals-unit` against
- * `khor devices` and reads the card's `data-hop` — marks on this line
- * would count one reading twice.
- */
-function MachineCaption({ row }: { row: DeviceRow }) {
-  const v = row.vitals?.vitals ?? null;
-  const parts = [
-    v?.model?.name ?? null,
-    v?.version ? gui.card_version(v.version) : null,
-    connectionWord(row),
-  ].filter((p): p is string => !!p);
-  return (
-    <>
-      {parts.map((p, i) => (
-        <span key={i}>
-          {i > 0 && <span aria-hidden="true"> · </span>}
-          {p}
-        </span>
-      ))}
-    </>
   );
 }
 

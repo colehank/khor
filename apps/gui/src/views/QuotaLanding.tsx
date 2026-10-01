@@ -45,7 +45,7 @@ import { IconBack } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
-import { PageSubtitle, Region } from "@/components/Region";
+import { PageAvatar, PageSubtitle, Region } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
@@ -1325,9 +1325,23 @@ export function QuotaLanding({
       mark={{ "data-quota-list": "" }}
       label={(g) => (g === "pin" ? groupLabel(g) : valueWord(groupBy, g.slice(groupBy.length)))}
       headData={(g) => (g === "pin" ? {} : { "data-quota-group": g })}
-      // This landing always has its own subscription row, so an empty
-      // list is always a filter — said the same way either road.
-      empty={<span data-quota-none>{gui.no_matches}</span>}
+      // An empty list is a filter — said the same way either road —
+      // unless there is nothing at all (a machine with no login read and
+      // nothing registered, 2026-10-01): then the wide face's list is
+      // blank and its board says so, and the narrow face's list screen,
+      // which has no board, says it here with the way to the ＋ above.
+      empty={
+        rows.length > 0 ? (
+          <span data-quota-none>{gui.no_matches}</span>
+        ) : narrow ? (
+          <>
+            <span data-quota-empty>{gui.accounts_empty}</span>
+            <span data-quota-empty-how className="mt-xxs block text-callout">
+              {gui.accounts_empty_how}
+            </span>
+          </>
+        ) : null
+      }
       none={<span data-quota-none>{gui.no_matches}</span>}
     />
   );
@@ -1821,7 +1835,13 @@ export function QuotaLanding({
       the account's name — moved from R0's right end, which keeps only
       the stale note above. Nothing with no account on the board: an
       empty landing has no reading to date. */
+  // **R0's avatar** (2026-10-01, the owner: 「额度页就是厂商的 icon 呀」):
+  // the vendor's mark — the one this account's row opens its title with
+  // (`sessionMark`), on the head's disc — never the dial. Nothing with no
+  // account open: the landing's name alone heads an empty board.
   const subtitle = current && (
+    <>
+    <PageAvatar mark={sessionMark("agent", current.provider)} kind={current.provider} />
     <PageSubtitle>
       <span
         data-quota-head-sub
@@ -1830,6 +1850,7 @@ export function QuotaLanding({
         <ReadCaption row={current} />
       </span>
     </PageSubtitle>
+    </>
   );
 
   // Never answered and refused: the machine's own sentence where the
@@ -1851,13 +1872,13 @@ export function QuotaLanding({
     ) : board === null ? (
       <RegionState state="loading-never" />
     ) : (
-      <EmptyState
-        action={
-          <Button data-quota-register className="min-h-touch" onClick={() => setRegistering(true)}>
-            {gui.accounts_register_ask}
-          </Button>
-        }
-      >
+      // **The sentence, and where the one act lives — no button**
+      // (2026-10-01, the owner: 「空状态不加添加工作区和登记」). 登记… has
+      // one home, the ＋ beside the search box (10-layout D9); the empty
+      // board points at it rather than being a second door.
+      // ⚠️ 墓碑 (2026-09-28 → 10-01): 「登记…」 stood here as the empty
+      // state's one button (`data-quota-register`), D9's named exception.
+      <EmptyState data-quota-empty-state hint={<span data-quota-empty-how>{gui.accounts_empty_how}</span>}>
         <span data-quota-empty>{gui.accounts_empty}</span>
       </EmptyState>
     );
@@ -1870,19 +1891,37 @@ export function QuotaLanding({
           R0's caption says so (`caption` below); with none it is the
           error state in the board (`empty`). Never a banner
           (components/RegionState). */}
-      {rows.length === 0 ? (
-        // Nothing registered and no subscription read: a search box
-        // over an empty list is a control with nothing to do, and the
-        // one thing there is to do is the button in `empty`. **Still a
-        // page with an R0** on the wide face (第十五轮 第 5 条) — the
-        // window's handle and the landing's name are the shell's, not
-        // something an empty landing can go without.
+      {rows.length === 0 && (board === null || !narrow) ? (
+        // Never read (the skeleton, or the refusal and 重试), or read and
+        // empty on the wide face. **The list column and its bar stay**
+        // (2026-10-01): the empty state has no button any more, so the
+        // ＋ beside the search box is the one way to register the first
+        // account, and it has to be there to be pointed at. ⚠️ 墓碑
+        // (→ 10-01): an empty landing drew no list column and no bar —
+        // 「a search box over an empty list is a control with nothing to
+        // do」 — because the board's button was the door. **Still a page
+        // with an R0** on the wide face (第十五轮 第 5 条).
         narrow ? (
           empty
         ) : (
-          <Region kind="detail" title={gui.accounts_tab} caption={stale ? gui.backend_unreachable : undefined}>
-            {empty}
-          </Region>
+          <div className="flex min-h-0 flex-1 flex-col">
+            {board !== null && (
+              <ListPane
+                mark="data-quota-pane"
+                name={gui.accounts_tab}
+                pane={pane}
+                narrow={false}
+                seam={{ "data-list-seam": "" }}
+                seat="side"
+                head={bar}
+              >
+                {list}
+              </ListPane>
+            )}
+            <Region kind="detail" title={gui.accounts_tab} caption={stale ? gui.backend_unreachable : undefined}>
+              {empty}
+            </Region>
+          </div>
         )
       ) : narrow ? (
         // **One screen at a time, with a way back** — the same pair the

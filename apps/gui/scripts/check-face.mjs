@@ -2100,8 +2100,11 @@ try {
   // for the same reason.
   // **`FACE_ONLY=term` walks section 15 alone** (the terminal's keys,
   // 2026-10-01), for the same reason.
+  // **`FACE_ONLY=head` walks section 16 alone** (R0's avatar, the
+  // machine's contact card, the empty landings, 2026-10-01), for the
+  // same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23549,7 +23552,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23933,7 +23936,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24243,8 +24246,9 @@ try {
   //   c. the machine detail's board has no `h1` (and nothing with
   //      `role=heading`) — R0 is the page's title — and exactly one
   //      contact card (`data-machine-contact`) at its top;
-  //   d. R0's second line over a machine is 型号 · khor 版本 · 连接,
-  //      without the reading's age (that is the card's);
+  //   d. R0's second line over a machine is its model alone (2026-10-01;
+  //      09-30 晚 it was 型号 · khor 版本 · 连接), without the reading's
+  //      age (that is the card's);
   //   e. every 额度 row's title starts with its kind's mark — the first
   //      element child of `[data-quota-name]` is an `svg` — and no row
   //      wears the corner beside the dial any more;
@@ -24260,7 +24264,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24457,11 +24461,14 @@ try {
           "exactly one card, at the top, naming its machine once (data-machine-contact)",
       );
     }
-    const want = ["MacBook Pro", "khor 0.1.0", "直连"].join(" · ");
+    // 2026-10-01 (the owner: 「第二行型号就行了，不写 khor 版本和链接方式」):
+    // the model alone. ⚠️ 墓碑: 09-30 晚 to 10-01 it was 「型号 · khor 版本 ·
+    // 连接」. Section 16 b holds the rest (no line where no model came).
+    const want = "MacBook Pro";
     if (detail.r0 !== want || detail.r0Age !== 0) {
       fail(
         `entity d · R0's second line over peer reads ${JSON.stringify(detail.r0)} (${detail.r0Age} age(s)) — ` +
-          `${JSON.stringify(want)}: 型号 · khor 版本 · 连接, the reading's age is the card's`,
+          `${JSON.stringify(want)}: the model alone; the version, the road and the reading's age are the card's`,
       );
     }
   }
@@ -24523,7 +24530,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25231,7 +25238,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -25570,6 +25577,299 @@ try {
   }
   } // acts
 
+  // ── 16) 页头头像与机器名片 (2026-10-01) ─────────────────────────────
+  //
+  // The owner, 2026-10-01 晚, on the real app: 「机器、额度这俩非标签页的
+  // 页面，最上面的标题改成最左侧头像，占俩行。头像仅仅是类别头像哈，不是
+  // 机器带角标的」「类别头像机器就是系统的 icon 呀，额度页就是厂商的 icon
+  // 呀」「机器页面的标题，改成第一行名称，第二行型号就行了」「内容这里，第
+  // 一个组块……也太丑了。头像也没有对齐」「空状态不加添加工作区和登记」.
+  // What a ruler can hold of it:
+  //
+  //   a. **R0's avatar** on a machine and on an account: exactly one
+  //      `[data-page-avatar-mark]`, of the machine's system family (the
+  //      plain machine mark where it said none) or the account's vendor;
+  //      no taller than the two title lines (body's + caption's leading,
+  //      18 + 14), left of the name, its centre within 1 of the pair's;
+  //      no face and no corner in it. None on the machines' map, none on
+  //      「…」 → 通用.
+  //   b. **R0's second line over a machine is the model and only that** —
+  //      no 「khor 」, no road; with no model reported it is not drawn.
+  //   c. **The contact card's lines**, wide (two groups side by side) and
+  //      narrow (one table): within each group every label's text ends on
+  //      one edge and every value starts on one (±1); stacked, the two
+  //      groups share those edges; the face's right edge is the labels'
+  //      edge and the name starts on the values' edge (±1); the face's
+  //      middle is the name block's middle (±1). The model is not in the
+  //      wide card (R0 says it) and is under the name on the narrow one.
+  //   d. **An empty landing makes nothing**: with no workspace, the
+  //      overview's empty state and with no account, 额度's, hold no
+  //      button and no `data-new-item` — one sentence and where ＋ is —
+  //      and L0 still has the ＋ the sentence points at.
+  //
+  // Red on the code before (a fix by the owner's word, 30-behavior): no
+  // avatar seat in R0 on peer, elder or acc-fill; the second line
+  // 「MacBook Pro · khor 0.1.0 · 直连」 over peer and 「khor 0.1.0 · 中继」
+  // over elder, who reported no model; the card had no head row and no
+  // label cells to read (probe dead — its anchors are new) and said the
+  // model twice; the empty workspaces overview held 「添加工作区…」 and no
+  // hint, and the empty 额度 had no such empty state (it was a button and
+  // no list column, so no ＋). c's centreline was seen red on purpose too:
+  // the head set `items-start` put the name block's middle at 65 against
+  // the face's 90 (wide) and 73 against 90 (narrow); and the pitch, first
+  // seen wrong in the scratch app and then red here with `content-start`
+  // taken off the groups: [22, 22, 34] wide. Its right-edge arm
+  // cannot go red in Chinese — every label is narrower than the face, so
+  // the column is the face's 72 either way; English labels are what it
+  // is for.
+  //
+  // `FACE_ONLY=head` runs this section alone.
+  head: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "head") break head;
+  {
+    const TOL = 1;
+    const peer = devs.find((d) => d.name === "peer");
+    const peerVitals = peer?.vitals?.vitals ?? null;
+    const was = peerVitals ? { system: peerVitals.system, model: peerVitals.model, uptime_s: peerVitals.uptime_s } : null;
+    if (peerVitals) {
+      peerVitals.system = "apple";
+      peerVitals.model = { kind: "macbook", name: "MacBook Pro" };
+      // No uptime (an older node's 0): 「现在」 has two lines beside
+      // 「是什么」's three, so a stretched short group shows in c's pitch.
+      peerVitals.uptime_s = 0;
+    }
+    await routeStanding();
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const leads = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement);
+      return (
+        Number.parseFloat(root.getPropertyValue("--text-body--line-height")) +
+        Number.parseFloat(root.getPropertyValue("--text-caption--line-height"))
+      );
+    });
+    /** R0 as the eye reads it: the avatar(s), the name with its second
+        line as one pair, and that line's words. */
+    const readHead = () =>
+      page.evaluate(() => {
+        const r0 = document.querySelector("[data-main] [data-region-head]");
+        if (!r0) return null;
+        const box = (b) => ({ top: +b.top.toFixed(2), bottom: +b.bottom.toFixed(2), left: +b.left.toFixed(2), h: +b.height.toFixed(2), mid: +((b.top + b.bottom) / 2).toFixed(2) });
+        const title = r0.querySelector("[data-page-title]");
+        const sub = r0.querySelector("[data-page-subtitle]");
+        const subShown = !!sub && sub.getBoundingClientRect().height > 0;
+        const line = title ? title.parentElement.getBoundingClientRect() : null;
+        const pair = line ? { top: line.top, bottom: subShown ? sub.getBoundingClientRect().bottom : line.bottom } : null;
+        return {
+          marks: [...r0.querySelectorAll("[data-page-avatar-mark]")].map((m) => ({
+            kind: m.getAttribute("data-page-avatar-mark"),
+            ...box(m.getBoundingClientRect()),
+            inner: m.querySelectorAll("[data-face], [data-face-blank], [data-side-badge]").length,
+          })),
+          seats: r0.querySelectorAll("[data-page-avatar]").length,
+          titleLeft: title ? +title.getBoundingClientRect().left.toFixed(2) : null,
+          pair: pair ? { top: +pair.top.toFixed(2), bottom: +pair.bottom.toFixed(2), mid: +((pair.top + pair.bottom) / 2).toFixed(2) } : null,
+          sub: subShown ? sub.textContent.replace(/\s+/g, " ").trim() : null,
+        };
+      });
+    const judgeHead = (where, head, kind) => {
+      console.log(`head a · ${where}: ${JSON.stringify(head)}`);
+      if (!head) {
+        fail(`probe dead: head a · ${where} has no R0`);
+        return;
+      }
+      if (kind === null) {
+        if (head.marks.length !== 0) fail(`head a · ${where} wears an avatar (${head.marks.map((m) => m.kind).join(", ")}) — only a machine or an account opened`);
+        return;
+      }
+      if (head.seats !== 1) fail(`head a · ${where}: R0 has ${head.seats} avatar seat(s) ([data-page-avatar]) — PageHead seats one, left of the name`);
+      if (head.marks.length !== 1) {
+        fail(`head a · ${where}: R0 wears ${head.marks.length} avatar(s), not one — 「最左侧头像，占俩行」`);
+        return;
+      }
+      const m = head.marks[0];
+      if (m.kind !== kind) fail(`head a · ${where}: R0's avatar is 「${m.kind}」, not 「${kind}」 — 「类别头像机器就是系统的 icon，额度页就是厂商的 icon」`);
+      if (m.inner !== 0) fail(`head a · ${where}: R0's avatar holds a face or a corner — 「头像仅仅是类别头像，不是机器带角标的」`);
+      if (m.h > leads + 0.5) fail(`head a · ${where}: R0's avatar is ${m.h} tall, more than the two lines' ${leads}`);
+      if (!head.pair || Math.abs(m.mid - head.pair.mid) > TOL) {
+        fail(`head a · ${where}: R0's avatar is centred at y ${m.mid}, the name and its second line at ${head.pair?.mid} — one centreline`);
+      }
+      if (head.titleLeft === null || m.left >= head.titleLeft) fail(`head a · ${where}: R0's avatar is not left of the name (${m.left} vs ${head.titleLeft})`);
+    };
+
+    // a + b on 机器: the map, peer (apple, a model), elder (neither).
+    await open("devices");
+    await until(5_000, async () => (await page.locator('[data-side-row][data-device="peer"]').count()) === 1);
+    judgeHead("the machines' map", await readHead(), null);
+    await press('[data-side-row][data-device="peer"] [data-side-open]');
+    await until(5_000, async () => (await page.locator("[data-main] [data-page-avatar-mark]").count()) === 1);
+    const peerHead = await readHead();
+    judgeHead("peer", peerHead, "apple");
+    if (peerHead && (peerHead.sub !== "MacBook Pro" || /khor /.test(peerHead.sub ?? ""))) {
+      fail(`head b · R0's second line over peer reads ${JSON.stringify(peerHead.sub)} — the model alone, 「MacBook Pro」 (「第二行型号就行了，不写 khor 版本和链接方式」)`);
+    }
+
+    // c, wide: the card beside the list, two groups side by side.
+    /** The card's edges, read off the text itself (a `Range` per cell):
+        a label's box is its column, its words are where the eye reads. */
+    const readCard = () =>
+      page.evaluate(() => {
+        const c = document.querySelector("[data-machine-contact]");
+        if (!c) return null;
+        const text = (el) => {
+          const rg = document.createRange();
+          rg.selectNodeContents(el);
+          return rg.getBoundingClientRect();
+        };
+        const face = c.querySelector("[data-contact-head] :is([data-face], [data-face-blank])");
+        const title = c.querySelector("[data-contact-title]");
+        const name = c.querySelector("[data-machine-contact-name]");
+        const fb = face?.getBoundingClientRect();
+        const tb = title?.getBoundingClientRect();
+        return {
+          face: fb ? { right: +fb.right.toFixed(2), mid: +((fb.top + fb.bottom) / 2).toFixed(2) } : null,
+          title: tb ? { mid: +((tb.top + tb.bottom) / 2).toFixed(2) } : null,
+          nameLeft: name ? +text(name).left.toFixed(2) : null,
+          model: c.querySelectorAll("[data-contact-model], [data-contact-fact=\"model\"]").length,
+          groups: [...c.querySelectorAll("[data-contact-group]")].map((g) => {
+            const b = g.getBoundingClientRect();
+            return {
+              key: g.getAttribute("data-contact-group"),
+              top: +b.top.toFixed(2),
+              bottom: +b.bottom.toFixed(2),
+              ends: [...g.querySelectorAll("[data-contact-label]")].map((d) => +text(d).right.toFixed(2)),
+              tops: [...g.querySelectorAll("[data-contact-label]")].map((d) => +text(d).top.toFixed(2)),
+              starts: [...g.querySelectorAll("[data-contact-value]")].map((d) => +d.getBoundingClientRect().left.toFixed(2)),
+            };
+          }),
+        };
+      });
+    const spread = (xs) => (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
+    const judgeCard = (where, card, { stacked, model }) => {
+      console.log(`head c · ${where}: ${JSON.stringify(card)}`);
+      if (!card || !card.face || !card.title || card.groups.length !== 2) {
+        fail(`probe dead: head c · ${where}: no card, face, name block or two groups to read`);
+        return;
+      }
+      const [what, now] = card.groups;
+      // One pitch for every line of the table, in both groups (the
+      // shorter group used to be stretched to the taller's height).
+      const pitches = card.groups.flatMap((g) => g.tops.slice(1).map((t, i) => +(t - g.tops[i]).toFixed(2)));
+      if (spread(pitches) > TOL) fail(`head c · ${where}: the card's lines stand ${JSON.stringify(pitches)} apart — one pitch for the whole table`);
+      for (const g of card.groups) {
+        if (spread(g.ends) > TOL) fail(`head c · ${where}: the 「${g.key}」 labels end on ${JSON.stringify(g.ends)} — one right edge`);
+        if (spread(g.starts) > TOL) fail(`head c · ${where}: the 「${g.key}」 values start on ${JSON.stringify(g.starts)} — one left edge`);
+      }
+      if (stacked) {
+        if (now.top < what.bottom - 0.5) fail(`head c · ${where}: the two groups are side by side (${what.top}…${what.bottom}, ${now.top}) — narrow, they are one table`);
+        if (spread([...what.ends, ...now.ends]) > TOL || spread([...what.starts, ...now.starts]) > TOL) {
+          fail(`head c · ${where}: stacked, the two groups' labels end on ${JSON.stringify([...what.ends, ...now.ends])} and values start on ${JSON.stringify([...what.starts, ...now.starts])} — one table, one pair of edges`);
+        }
+      } else if (Math.abs(now.top - what.top) > TOL) {
+        fail(`head c · ${where}: the two groups start at ${what.top} and ${now.top} — wide, they stand side by side`);
+      }
+      if (!(Math.abs(card.face.right - (what.ends[0] ?? NaN)) <= TOL)) {
+        fail(`head c · ${where}: the face ends at x ${card.face.right}, the labels at ${what.ends[0]} — the labels end where the face ends`);
+      }
+      if (!(Math.abs((card.nameLeft ?? NaN) - (what.starts[0] ?? NaN)) <= TOL)) {
+        fail(`head c · ${where}: the name starts at x ${card.nameLeft}, the values at ${what.starts[0]} — the values start where the name does`);
+      }
+      if (!(Math.abs(card.face.mid - card.title.mid) <= TOL)) {
+        fail(`head c · ${where}: the face is centred at y ${card.face.mid}, the name block at ${card.title.mid} — one centreline`);
+      }
+      if (card.model !== model) {
+        fail(`head c · ${where}: the card says the model ${card.model} time(s), not ${model} — ${model ? "the narrow face has no R0 to say it" : "R0 says it; the card does not say it again"}`);
+      }
+    };
+    judgeCard("peer @1400", await readCard(), { stacked: false, model: 0 });
+
+    // elder: no system (the plain machine mark), no model (no second line).
+    await press('[data-side-row][data-device="elder"] [data-side-open]');
+    await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").textContent()) === "elder");
+    await wait(300);
+    const elderHead = await readHead();
+    judgeHead("elder", elderHead, "machine");
+    if (elderHead && elderHead.sub !== null) {
+      fail(`head b · R0 over elder, which reported no model, has a second line ${JSON.stringify(elderHead.sub)} — not drawn (「读不到就空——不编」)`);
+    }
+
+    // a on 额度: the open account's vendor; on 「…」 → 通用: nothing.
+    await open("quota");
+    await until(8_000, async () => (await page.locator('[data-quota-row="acc-fill"]').count()) === 1);
+    await press('[data-quota-row="acc-fill"]');
+    await until(5_000, async () => (await page.locator("[data-main] [data-page-avatar-mark]").count()) === 1);
+    const provider = await page.locator('[data-quota-row="acc-fill"]').getAttribute("data-provider");
+    judgeHead("额度 · acc-fill", await readHead(), provider);
+    await press("[data-rail-more]");
+    await press('[data-more-open="settings"]');
+    await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
+    judgeHead("「…」 → 通用", await readHead(), null);
+    if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+
+    // c, narrow: one table, and the model under the name.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(400);
+    await open("devices");
+    await press('[data-side-row][data-device="peer"] [data-side-open]');
+    await until(5_000, async () => (await page.locator("[data-machine-contact]").count()) === 1);
+    await wait(300);
+    judgeCard("peer @390", await readCard(), { stacked: true, model: 1 });
+    if (await page.locator("[data-side-head] [data-back]").count()) await press("[data-side-head] [data-back]");
+    await page.setViewportSize({ width: 1400, height: 900 });
+    if (peerVitals && was) {
+      peerVitals.system = was.system;
+      peerVitals.model = was.model;
+      peerVitals.uptime_s = was.uptime_s;
+    }
+
+    // d. the empty landings.
+    await page.route("**/workspaces", (r) => r.fulfill({ contentType: "application/json", body: "[]" }));
+    await page.unroute("**/quota_board");
+    await page.route("**/quota_board", (r) => r.fulfill({ contentType: "application/json", body: "[]" }));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const readEmpty = (sel) =>
+      page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        return el
+          ? {
+              buttons: [...el.querySelectorAll("button, [role=button]")].map((b) => b.textContent?.trim() ?? ""),
+              makes: el.querySelectorAll("[data-new-item], [data-ws-now-add], [data-quota-register]").length,
+              hint: el.querySelector("[data-empty-hint]")?.textContent?.trim() ?? null,
+              plus: document.querySelectorAll("[data-side-head] [data-pane-new]").length,
+            }
+          : null;
+      }, sel);
+    for (const [tab, sel, what] of [
+      ["workspaces", "[data-ws-now-empty]", "工作区"],
+      ["quota", "[data-quota-empty-state]", "额度"],
+    ]) {
+      await open(tab);
+      await until(5_000, async () => (await page.locator(sel).count()) === 1);
+      const e = await readEmpty(sel);
+      console.log(`head d · ${what} with nothing: ${JSON.stringify(e)}`);
+      if (!e) {
+        fail(`probe dead: head d · ${what} with nothing drew no ${sel}`);
+        continue;
+      }
+      if (e.buttons.length > 0 || e.makes > 0) {
+        fail(`head d · ${what}'s empty state holds ${JSON.stringify(e.buttons)} — 「空状态不加添加工作区和登记」: the ＋ beside the search box is the one home`);
+      }
+      if (!e.hint) fail(`head d · ${what}'s empty state does not say where ＋ is`);
+      if (e.plus < 1) fail(`head d · ${what} with nothing has no ＋ in L0 — the one way to make the first one`);
+    }
+    await page.unroute("**/workspaces");
+    await page.route("**/workspaces", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(wsRows) }));
+    await routeStanding();
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "head") console.log("head · FACE_ONLY=head: the other sections are skipped");
+
   // ── 14) 修 bug 车道 (2026-10-01) ────────────────────────────────────
   //
   // The owner, 2026-10-01: 「bug 可以先派一个 agent 去改」. These are the
@@ -25606,7 +25906,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });

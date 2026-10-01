@@ -2233,6 +2233,10 @@ rail-more = "更多"
 # not 「用量」— `khor usage` (花了多少) already owns that word.
 accounts-tab = "额度"
 accounts-empty = "还没有登记 API 账号。登记后，用量会显示在这里"
+# 空状态那句话下面的一行：登记在哪儿（2026-10-01 负责人：「空状态不加添加工作区和
+# 登记」）。空状态不再摆「登记…」按钮，创建类动作只有 L0 搜索框旁的 ＋ 一个家，
+# 这一行只指路，不是第二扇门。「搜索框旁」宽档窄档都对（窄档的 ＋ 也在那一行）。
+accounts-empty-how = "点击搜索框旁的 + 登记账户"
 accounts-register = "登记"
 accounts-provider = "服务提供商"
 accounts-provider-newapi = "new-api 站"
@@ -2718,7 +2722,8 @@ workspaces-how = "点击上方的 +，选择一台机器上的目录"
 # is, what git says, and when it last changed.
 #
 # 添加工作区:开跨机器的目录选择窗(工作区批②),所以带省略号(components/Button)。
-# 总览上的按钮和 L0 搜索框旁的 ＋ 是同一个词。⚠️ 墓碑(2026-10-01):＋ 原来另有一个
+# 它是 L0 搜索框旁那颗 ＋ 的名字(总览空状态上同名的按钮 2026-10-01 撤了,
+# 见 `ws-now-how`)。⚠️ 墓碑(2026-10-01):＋ 原来另有一个
 # 不带省略号的 `ws-add`(「添加工作区」),理由是 ＋ 是个图标、词只是它的名字;而
 # 额度那颗 ＋ 从 2026-09-30 起就叫「登记…」,会话、机器的 ＋ 菜单里每项都带省略号——
 # 一个 ＋ 开窗就带省略号,一条规矩(负责人派的修 bug 车道,check-face 14 b)。
@@ -2728,6 +2733,9 @@ ws-add-ask = "添加工作区…"
 # opened one; before that it is the workspaces by when their tree last
 # changed, and says so.
 ws-now-changed = "最近改动"
+# 一个工作区都没有时，总览那句「还没有工作区」下面的一行：添加在哪儿（2026-10-01
+# 负责人：「空状态不加添加工作区和登记」）。按钮撤了，只指路到 ＋。
+ws-now-how = "点击搜索框旁的 + 添加工作区"
 # On a row the word is `delete` (docs/SHELL.md 第二轮). ⚠️ 墓碑:it said
 # 移出工作区 until 2026-09-21, because 删除 beside a directory name reads
 # as touching the directory (user, 2026-09-14). The user overruled that

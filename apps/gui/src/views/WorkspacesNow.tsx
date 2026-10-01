@@ -30,7 +30,6 @@ import { useEffect, useState } from "react";
 import { fetchWorkspaces, type DeviceRow, type WorkspaceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { EmptyState, RegionState } from "@/components/RegionState";
-import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { ago } from "@/words";
 import { factKey, storedWsOpened, useWorkspaceFacts } from "@/views/WorkspacesList";
@@ -42,13 +41,10 @@ const SHOWN = 6;
 export function WorkspacesNow({
   devices,
   onOpen,
-  onAdd,
 }: {
   /** Only for the faces, as the list uses it. */
   devices: DeviceRow[];
   onOpen: (row: WorkspaceRow) => void;
-  /** The landing's 「+」: the cross-machine directory picker. */
-  onAdd: () => void;
 }) {
   const facts = useWorkspaceFacts();
   const [own, setOwn] = useState<WorkspaceRow[] | null>(null);
@@ -70,17 +66,13 @@ export function WorkspacesNow({
 
   if (list === null) return <RegionState state="loading-never" />;
   if (list.length === 0) {
-    // **No workspace at all**: one sentence and the one way to add one
-    // (components/EmptyState — at most one button).
+    // **No workspace at all**: one sentence, and where the one way to add
+    // one lives — the ＋ beside the search box (2026-10-01, the owner:
+    // 「空状态不加添加工作区和登记」; 10-layout D9, one act one home).
+    // ⚠️ 墓碑 (2026-09-28 → 10-01): 「添加工作区…」 stood here as the
+    // empty state's one button (`data-ws-now-add`), D9's named exception.
     return (
-      <EmptyState
-        data-ws-now-empty
-        action={
-          <Button data-ws-now-add onClick={onAdd} className="min-h-touch">
-            {gui.ws_add_ask}
-          </Button>
-        }
-      >
+      <EmptyState data-ws-now-empty hint={<span data-ws-now-how>{gui.ws_now_how}</span>}>
         {gui.workspaces_empty}
       </EmptyState>
     );

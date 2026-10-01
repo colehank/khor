@@ -31,18 +31,29 @@ const SKELETON = ["w-[72%]", "w-[56%]", "w-[64%]", "w-[40%]"];
  * in its region, one sentence in `body` / `secondary`, at most one
  * button. A `headline` in `title-lg` is rare on purpose — it is the
  * largest size in the app. No illustration, no red box, no stack.
+ *
+ * **An empty landing creates nothing here** (2026-10-01, the owner:
+ * 「空状态不加添加工作区和登记」): an act that makes a thing has one home,
+ * the ＋ beside the search box (10-layout D9). Where the sentence would
+ * leave a person asking 「how do I get one」, a `hint` under it says
+ * where that ＋ is — words, not a second door. `action` stays for 重试,
+ * which redoes what failed rather than making anything.
  */
 export function EmptyState({
   headline,
   action,
+  hint,
   state = "empty",
   className,
   children,
   ...marks
 }: {
   headline?: ReactNode;
-  /** At most one button. */
+  /** At most one button — 重试, never an act that makes something. */
   action?: ReactNode;
+  /** A second line under the sentence, `callout`: where the act that
+      would fill this lives (「点击搜索框旁的 + …」). */
+  hint?: ReactNode;
   state?: "empty" | "error";
   className?: string;
   children?: ReactNode;
@@ -57,7 +68,12 @@ export function EmptyState({
       className={cn("flex h-full min-h-0 flex-1 flex-col items-center justify-center gap-row p-pane text-center", className)}
     >
       {headline && <p className="text-title-lg font-title text-foreground">{headline}</p>}
-      <p className="max-w-measure text-body text-muted-foreground">{children}</p>
+      {/* The sentence and its hint are one statement: `gap-xxs` between
+          them, where the button below stood `gap-row` off. */}
+      <div className="flex flex-col items-center gap-xxs">
+        <p className="max-w-measure text-body text-muted-foreground">{children}</p>
+        {hint && <p data-empty-hint className="max-w-measure text-callout text-muted-foreground">{hint}</p>}
+      </div>
       {action}
     </div>
   );
