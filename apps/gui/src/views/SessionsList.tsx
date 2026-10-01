@@ -250,7 +250,7 @@ export function SessionsList({
       label: gui.delete,
       askLabel: gui.delete_ask,
       destructive: true,
-      ask: closeWarning(r.kind, r.imported),
+      ask: closeWarning(r.kind, r.imported, r),
       note: closeRefused.get(r.id),
       run: () => onClose(r),
     },

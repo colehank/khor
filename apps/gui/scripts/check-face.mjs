@@ -2096,8 +2096,10 @@ try {
   // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
   // **`FACE_ONLY=acts` walks section 13 alone** (一个动作一个家,
   // 2026-09-30), for the same reason.
+  // **`FACE_ONLY=fix` walks section 14 alone** (修 bug 车道, 2026-10-01),
+  // for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23545,7 +23547,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23929,7 +23931,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24256,7 +24258,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24519,7 +24521,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25227,7 +25229,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -25565,6 +25567,93 @@ try {
     }
   }
   } // acts
+
+  // ── 14) 修 bug 车道 (2026-10-01) ────────────────────────────────────
+  //
+  // The owner, 2026-10-01: 「bug 可以先派一个 agent 去改」. These are the
+  // face's part of the five, each a fix and so each red on the code
+  // before it (30-behavior: 先红后绿只用于修 bug):
+  //
+  //   a. **删除 says what deleting this row does, by its form.** A row
+  //      wearing a terminal — khor's own (`hosted`) or the person's tmux
+  //      (`mux`) — is not asked the agent's sentence: deleting closes that
+  //      terminal and stops what runs in it, or closes khor's terminal on
+  //      the tmux session and leaves the session running. Red before: all
+  //      three forms were asked `close-warn-live`.
+  //
+  // `FACE_ONLY=fix` runs this section alone.
+  fix: {
+  if (["native", "row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break fix;
+  configValues["confirm-delete"] = "on";
+  page.on("popup", (p) => void p.close().catch(() => {}));
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  const ELLIPSIS = "…";
+  /** Escape until nothing floats: a menu left up eats the next press. */
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) {
+      if ((await page.locator('[role="dialog"], [data-row-menu], [role="menu"]').count()) === 0) return;
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
+  };
+
+  // a. the delete question, by form.
+  {
+    const FORMS = [
+      ["agent", { ...row(31, "idle"), id: "tui/fix-agent", kind: "tui", category: "claude", title: "fix-agent" }],
+      [
+        "khor's terminal",
+        { ...row(32, "idle"), id: "shell/fix-term", kind: "shell", category: "shell", title: "fix-term", hosted: true, attachable: true },
+      ],
+      [
+        "a tmux terminal",
+        { ...row(33, "idle"), id: "shell/1786245338-7", kind: "shell", category: "shell", title: "fix-tmux", attachable: true, mux: true },
+      ],
+    ];
+    const fixRows = (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(FORMS.map(([, x]) => x)) });
+    await page.route("**/sessions", fixRows);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("sessions");
+    await until(5_000, async () => (await page.locator('[data-list] [data-side-row="shell/fix-term"]').count()) === 1);
+    const says = {};
+    for (const [form, x] of FORMS) {
+      const sel = `[data-list] [data-side-row="${x.id}"] [data-side-open]`;
+      if ((await page.locator(sel).count()) === 0) {
+        fail(`probe dead: fix a · no ${form} row (${x.id}) in the sessions sidebar`);
+        continue;
+      }
+      await page.locator(sel).click({ button: "right" });
+      await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="close"]').count()) === 1);
+      await page.locator('[data-row-menu] [data-menu-item="close"]').click();
+      const up = await until(3_000, async () => (await page.locator("[data-delete-dialog] [data-delete-says]").count()) === 1);
+      says[form] = up ? (await page.locator("[data-delete-says]").innerText()).trim() : null;
+      if (!says[form]) fail(`probe dead: fix a · 删除 on the ${form} row raised no sentence`);
+      await settle();
+    }
+    console.log(`fix a · 删除 asks: ${JSON.stringify(says)}`);
+    for (const form of ["khor's terminal", "a tmux terminal"]) {
+      if (says[form] && says[form] === says.agent) {
+        fail(
+          `fix a · 删除 on ${form} row asks the agent's sentence 「${says[form]}」 — what deleting a terminal does is ` +
+            "its own (DetailPane closeWarning, close-warn-terminal / close-warn-tmux)",
+        );
+      }
+    }
+    if (says["khor's terminal"] && says["khor's terminal"] === says["a tmux terminal"]) {
+      fail(
+        "fix a · khor's terminal and a tmux terminal are asked one sentence — closing khor's own stops what runs in it, " +
+          "closing khor's terminal on a tmux session does not end the session",
+      );
+    }
+    await page.unroute("**/sessions", fixRows);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  } // fix
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

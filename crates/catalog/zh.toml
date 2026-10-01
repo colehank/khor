@@ -3727,6 +3727,16 @@ chat-refused-setting = "agent 未接受这项设置，保持不变"
 # useful for none: the thing a person is deciding is what they are about
 # to lose, and that is the part that differs.
 close-warn-live = "关闭后，正在运行的进程会停止"
+# 穿着终端形态的一行(2026-10-01,负责人派的修 bug 车道;docs/SESSION.md 形态随进程变):
+# 删除它关的是终端,不是「一个进程」——上面那句是智能体那一行的话。按宿主分两句,
+# 因为两种宿主删下去的后果正好相反:
+#   khor 自己的终端(pty,`hosted`)——`close_session` 杀掉 shell 的进程组,终端关掉,
+#     里面跑着的东西一起停;
+#   tmux 会话(`mux`)——khor 从不结束别人的 tmux 会话:删除只关掉 khor 连在它上面
+#     的那个终端(分组会话随之销毁,`grouped_attach_argv`),tmux 会话和里面的程序照常。
+# 导入的那一行仍说 `close-warn-imported`(只从列表拿掉,两种宿主都不动)。
+close-warn-terminal = "这个终端会关闭，里面正在运行的程序也会停止"
+close-warn-tmux = "khor 里的这个终端会关闭；tmux 会话和里面的程序照常运行"
 # ACP 对话那一行(gui 形态,docs/SHELL.md 第八轮):删掉的是 khor 里这一行和它起的 agent 进程,
 # 对话本身还在那个 agent 那里,在「导入」里还能再找回来。
 close-warn-gui = "只删除 khor 中的这一行，对话仍保留在该 agent 中，可以再次导入"
