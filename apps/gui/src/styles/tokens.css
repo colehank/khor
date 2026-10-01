@@ -1459,11 +1459,13 @@
    * was, which is exactly why nobody noticed it stop being true.) */
   --measure: 46em;
   --avatar: 32px;
-  /* A machine's face on its own card. Its own token rather than a class
-   * override on `size-avatar`: `cn()` cannot beat a `--spacing-*`
-   * utility (tailwind-merge does not read `avatar` as a size), so both
-   * classes would survive into the markup and the winner would be
-   * whichever the stylesheet emitted last. */
+  /* The floor of this machine's face on the machines' map (`MandalaMap`).
+   * Its own token rather than a class override on `size-avatar`: `cn()`
+   * cannot beat a `--spacing-*` utility (tailwind-merge does not read
+   * `avatar` as a size), so both classes would survive into the markup
+   * and the winner would be whichever the stylesheet emitted last.
+   * ⚠️ 墓碑 (09-30 → 2026-10-01): it was also the face on the machine
+   * detail's contact card, which the strip of facts replaced. */
   --avatar-lg: 72px;
   /* The mandala map's middle. One step above the ring's faces, because
      the size difference is carrying a fact — that seat is this machine —

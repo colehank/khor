@@ -31,7 +31,7 @@
 // **The open tab is the board's colour and joins it** — that is the
 // whole of how a tab says it is in front (`TabStrip`): its bottom edge
 // has no edge, and the board is what it is continuous with.
-import { createContext, useContext, useState, type ComponentType, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
@@ -144,36 +144,51 @@ export function PageTitleAside({ children }: { children: ReactNode }) {
 const AvatarSeat = createContext<HTMLElement | null | undefined>(undefined);
 
 /**
- * **A page's category avatar, at R0's left end** (2026-10-01, the owner:
- * 「机器、额度这俩非标签页的页面，最上面的标题改成最左侧头像，占俩行。
- * 头像仅仅是类别头像哈，不是机器带角标的」「类别头像机器就是系统的 icon
- * 呀，额度页就是厂商的 icon 呀」). What *kind* of thing the page is open
- * on — a machine's system family (`machineMark`), an account's vendor
- * (`sessionMark`) — never the thing's own face: the face is the list
- * row's and the contact card's.
+ * **A page's avatar, at R0's left end** (2026-10-01, the owner:
+ * 「机器、额度这俩非标签页的页面，最上面的标题改成最左侧头像，占俩行」
+ * 「类别头像机器就是系统的 icon 呀，额度页就是厂商的 icon 呀」), two lines
+ * tall: `--avatar` 32 is the title lines' 18 + 14, so it stands 3 off R0's
+ * top and bottom on the pair's centreline. **32 and 3 are whole pixels**,
+ * so a 1× screen draws it without resampling. What stands here is the
+ * page's to say:
  *
- * **The mark as it came, on a disc** (components/Avatar, components/Icon):
- * the glyph is somebody else's (Apple's, Claude's…) and is not redrawn —
- * it stands at `--kind-mark` 18 on an `--avatar` 32 disc of paper with
- * the hairline a face wears (`avatar-edge`), so it reads as an avatar
- * beside the name rather than as a loose logo. 32 is the two title
- * lines' 18 + 14: the disc and the pair share R0's centreline, 3 over and
- * under.
+ * - **a machine: the very avatar its list row wears** (2026-10-02, the
+ *   owner, through the lead): the row's own composition — the machine's
+ *   face (`MachineAvatar`) with its system's mark the way the row draws it
+ *   (`FaceMark`) — so when the row's drawing changes (the face-and-mark
+ *   styles, 「浮现」 and 「角标」), the head changes with it;
+ * - **an account: the vendor's mark itself** (`sessionMark`), on nothing —
+ *   an account has no face — in ink (`currentColor`; every mark in
+ *   `BrandIcons` is one colour, filled with it).
+ *
+ * **No 1 px ring in R0, whatever stands here.** A face carries a hairline
+ * edge (`avatar-edge`) so a pale face does not dissolve into the paper of
+ * a list; round a 32 circle on the owner's 2560×1440 1× screen that ring
+ * cannot be drawn without stair steps (「有一个我屏幕上看起来带锯齿的边」),
+ * so the seat takes every border inside a face away. R0 is the frame's
+ * grey (`canvas`), not paper, which is the ground the edge was for.
+ *
+ * ⚠️ 墓碑 (2026-10-01, one evening): every page's avatar was a category
+ * mark at `--kind-mark` 18 on an `--avatar` 32 disc of paper with a face's
+ * hairline — the ring above, and an 18 mark inside an empty ring read as
+ * a badge, not as the two lines' avatar. Then (the same night) the bare
+ * system mark at 32 on the machine page, until the owner asked for the
+ * row's own avatar there.
  *
  * Seated by the shell like `PageSubtitle`; nothing where there is no R0
- * — the narrow face's head is one line (`NarrowHead`), and a disc that
+ * — the narrow face's head is one line (`NarrowHead`), and an avatar that
  * stands for two lines has no second line there to stand beside.
  */
-export function PageAvatar({ mark: Mark, kind }: { mark: ComponentType<{ className?: string }>; kind: string }) {
+export function PageAvatar({ kind, children }: { kind: string; children: ReactNode }) {
   const seat = useContext(AvatarSeat);
   if (!seat) return null;
   return createPortal(
     <span
       data-page-avatar-mark={kind}
       aria-hidden="true"
-      className="grid size-avatar flex-none place-items-center rounded-full border border-avatar-edge bg-card text-foreground"
+      className="flex flex-none text-foreground [&_[data-face]_*]:border-0"
     >
-      <Mark className="size-kind-mark" />
+      {children}
     </span>,
     seat,
   );
@@ -218,9 +233,9 @@ export function PageHead({
 }) {
   return (
     <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
-      {/* The avatar and the name it stands for are one clump — `gap-in`,
+      {/* The mark and the name it stands for are one clump — `gap-in`,
           「inside one thing」 — where the page's buttons stand `gap-row`
-          off. Both are centred in R0, so the disc and the pair share the
+          off. Both are centred in R0, so the mark and the pair share the
           row's centreline. */}
       <div className="flex min-w-0 flex-1 items-center gap-in">
       {avatarRef && <span ref={avatarRef} data-page-avatar className="flex flex-none empty:hidden" />}

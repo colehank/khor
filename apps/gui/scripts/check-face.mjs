@@ -24252,7 +24252,9 @@ try {
   //      the face editor, and what it writes goes to the row pressed;
   //   c. the machine detail's board has no `h1` (and nothing with
   //      `role=heading`) — R0 is the page's title — and exactly one
-  //      contact card (`data-machine-contact`) at its top;
+  //      strip of facts (`data-machine-strip`, 2026-10-01; it was the
+  //      contact card `data-machine-contact` from 09-30) at its top, with
+  //      no heading in it and no face on the board;
   //   d. R0's second line over a machine is its model alone (2026-10-01;
   //      09-30 晚 it was 型号 · khor 版本 · 连接), without the reading's
   //      age (that is the card's);
@@ -24263,11 +24265,12 @@ try {
   //      a double-click opens the box, Enter sends `rename_account` for
   //      that row.
   //
-  // (The card's name is `data-machine-contact`, not the brief's
-  // `data-machine-card`: that name has marked the whole detail section
-  // since 2026-09-02 and 218 lines of this file, smoke and check-tabs
-  // hold it. Renaming the section to free it would move every one of
-  // them for a word.)
+  // (The strip is `data-machine-strip`, never `data-machine-card`: that
+  // name has marked the whole detail section since 2026-09-02 and 218
+  // lines of this file, smoke and check-tabs hold it. ⚠️ 墓碑 (09-30 →
+  // 10-01): the top was the contact card, `data-machine-contact`, its
+  // face and its name a `<p>`; the owner picked the strip, direction A,
+  // and 16 c holds its lines.)
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
@@ -24423,7 +24426,7 @@ try {
     }
   }
 
-  // c + d. the detail: a contact card, no heading, and R0's second line.
+  // c + d. the detail: a strip of facts, no heading, and R0's second line.
   const peer = devs.find((d) => d.name === "peer");
   const peerVitals = peer?.vitals?.vitals ?? null;
   const hadModel = peerVitals ? peerVitals.model : undefined;
@@ -24441,12 +24444,18 @@ try {
       ? {
           h1: card.querySelectorAll('h1, [role="heading"][aria-level="1"]').length,
           // The sections' own `h2`s (components/SectionHead) are the
-          // board's 节, and stay; the card's name must not be one.
-          contactHeadings: card.querySelectorAll(
-            '[data-machine-contact] :is(h1, h2, h3, h4, h5, h6, [role="heading"])',
+          // board's 节, and stay; nothing in the strip is one.
+          stripHeadings: card.querySelectorAll(
+            '[data-machine-strip] :is(h1, h2, h3, h4, h5, h6, [role="heading"])',
           ).length,
-          contact: card.querySelectorAll("[data-machine-contact]").length,
-          contactName: card.querySelectorAll("[data-machine-contact-name]").length,
+          strip: card.querySelectorAll("[data-machine-strip]").length,
+          // The board wears no face: R0 says who.
+          faces: card.querySelectorAll("[data-face], [data-face-blank]").length,
+          stripFirst: (() => {
+            const s = card.querySelector("[data-machine-strip]");
+            const d = card.querySelector("[data-dial]");
+            return !!s && (!d || s.getBoundingClientRect().bottom <= d.getBoundingClientRect().top + 0.5);
+          })(),
           r0: sub?.textContent?.replace(/\s+/g, " ").trim() ?? null,
           r0Age: sub ? sub.querySelectorAll("[data-vitals-age], [data-updated]").length : null,
         }
@@ -24456,16 +24465,16 @@ try {
   if (!detail) {
     fail("probe dead: entity c · peer's detail never opened");
   } else {
-    if (detail.h1 !== 0 || detail.contactHeadings !== 0) {
+    if (detail.h1 !== 0 || detail.stripHeadings !== 0) {
       fail(
-        `entity c · the machine detail's board holds ${detail.h1} h1 and ${detail.contactHeadings} heading(s) in its card — ` +
-          "R0 is the page's one title; the card's name is part of the card, not a heading",
+        `entity c · the machine detail's board holds ${detail.h1} h1 and ${detail.stripHeadings} heading(s) in its strip — ` +
+          "R0 is the page's one title",
       );
     }
-    if (detail.contact !== 1 || detail.contactName !== 1) {
+    if (detail.strip !== 1 || !detail.stripFirst || detail.faces !== 0) {
       fail(
-        `entity c · the machine detail draws ${detail.contact} contact card(s) with ${detail.contactName} name(s) — ` +
-          "exactly one card, at the top, naming its machine once (data-machine-contact)",
+        `entity c · the machine detail draws ${detail.strip} strip(s) of facts${detail.stripFirst ? "" : " (not above the dials)"} and ${detail.faces} face(s) — ` +
+          "exactly one strip, at the top, and no face: R0 says who (data-machine-strip)",
       );
     }
     // 2026-10-01 (the owner: 「第二行型号就行了，不写 khor 版本和链接方式」):
@@ -24475,7 +24484,7 @@ try {
     if (detail.r0 !== want || detail.r0Age !== 0) {
       fail(
         `entity d · R0's second line over peer reads ${JSON.stringify(detail.r0)} (${detail.r0Age} age(s)) — ` +
-          `${JSON.stringify(want)}: the model alone; the version, the road and the reading's age are the card's`,
+          `${JSON.stringify(want)}: the model alone; the version, the road and the reading's age are the strip's`,
       );
     }
   }
@@ -25594,27 +25603,52 @@ try {
   // What a ruler can hold of it:
   //
   //   a. **R0's avatar** on a machine and on an account: exactly one
-  //      `[data-page-avatar-mark]`, of the machine's system family (the
-  //      plain machine mark where it said none) or the account's vendor;
-  //      no taller than the two title lines (body's + caption's leading,
-  //      18 + 14), left of the name, its centre within 1 of the pair's;
-  //      no face and no corner in it. None on the machines' map, none on
-  //      「…」 → 通用.
+  //      `[data-page-avatar-mark]`, keyed by the machine's system family
+  //      (`machine` where it said none) or the account's vendor. **A
+  //      machine's is the very avatar its list row wears** (2026-10-02,
+  //      the owner through the lead): one face, built as the open row's
+  //      is (as many faces, the same corner or none). **An account's is
+  //      the vendor's mark alone**: no face, no corner. **No disc, no
+  //      ring** (2026-10-01 later, the owner: 「这个标题上的头像也太难看
+  //      了，有一个我屏幕上看起来带锯齿的边」 — a 1 px ring on a 1× screen):
+  //      nothing between the avatar and its seat paints a ground or a
+  //      rounded box, and nothing on that chain or inside it — a face's
+  //      own hairline edge included — draws a border, an outline or a
+  //      shadow. What is drawn (the face, or the mark's svg) is no taller
+  //      than the two title lines (body's + caption's leading, 18 + 14)
+  //      and no shorter than 24 — it fills the two lines, it is not a
+  //      badge; left of the name, its centre within 1 of the pair's; the
+  //      seat's box and the drawing's on whole pixels (left, top, width,
+  //      height), so nothing is resampled half a pixel off. None on the
+  //      machines' map, none on 「…」 → 通用.
   //   b. **R0's second line over a machine is the model and only that** —
   //      no 「khor 」, no road; with no model reported it is not drawn.
-  //   c. **The contact card's lines**, wide (two groups side by side) and
-  //      narrow (one table): within each group every label's text ends on
-  //      one edge and every value starts on one (±1); stacked, the two
-  //      groups share those edges; the face's right edge is the labels'
-  //      edge and the name starts on the values' edge (±1); the face's
-  //      middle is the name block's middle (±1). The model is not in the
-  //      wide card (R0 says it) and is under the name on the narrow one.
+  //   c. **The machine's board opens on one strip of facts** (direction A,
+  //      the owner's pick 2026-10-01): no face, no name and no `h1` in the
+  //      board — R0 says who, once; exactly one `[data-machine-strip]`,
+  //      above the dials; its cells in the fixed order (型号 on the narrow
+  //      face only, then 系统 · khor 版本 · 连接 · 已运行 · 读数 · 机器 id ·
+  //      界面, the absent left out); in every row the labels stand on one
+  //      baseline and the values on one (±1); every cell but a row's first
+  //      wears its hairline on the left, the row's first none, and the
+  //      lines are one height; wide, one row no taller than 40; narrow,
+  //      every row but the last holds the same count and the last no
+  //      more, columns starting on one edge (±1). The model is not in the
+  //      wide strip (R0 says it) and is its first cell on the narrow one.
   //   d. **An empty landing makes nothing**: with no workspace, the
   //      overview's empty state and with no account, 额度's, hold no
   //      button and no `data-new-item` — one sentence and where ＋ is —
   //      and L0 still has the ＋ the sentence points at.
   //
-  // Red on the code before (a fix by the owner's word, 30-behavior): no
+  // a and c rewritten 2026-10-01 later (the disc and the contact card
+  // retired); red on the code before them: the disc's 1 px `avatar-edge`
+  // border and `card` ground and its `radius-full`, the mark 18 tall on
+  // peer, elder and acc-fill; no strip on peer @1400, @900 or @390 (probe
+  // dead — the card stood there, with a face and the name). a's machine
+  // half rewritten 2026-10-02 (the row's avatar, not the bare system
+  // mark); the face's own edge is the ring it would have shown.
+  //
+  // Red on the code before the first version (a fix by the owner's word, 30-behavior): no
   // avatar seat in R0 on peer, elder or acc-fill; the second line
   // 「MacBook Pro · khor 0.1.0 · 直连」 over peer and 「khor 0.1.0 · 中继」
   // over elder, who reported no model; the card had no head row and no
@@ -25638,6 +25672,10 @@ try {
     const peer = devs.find((d) => d.name === "peer");
     const peerVitals = peer?.vitals?.vitals ?? null;
     const was = peerVitals ? { system: peerVitals.system, model: peerVitals.model, uptime_s: peerVitals.uptime_s } : null;
+    // A real face on peer (the fixture's are blanks): a face carries its
+    // hairline edge, the ring a's 「no ring」 is about; elder stays blank.
+    const peerFace = peer?.face ?? null;
+    if (peer) peer.face = av(marble);
     if (peerVitals) {
       peerVitals.system = "apple";
       peerVitals.model = { kind: "macbook", name: "MacBook Pro" };
@@ -25664,31 +25702,79 @@ try {
       page.evaluate(() => {
         const r0 = document.querySelector("[data-main] [data-region-head]");
         if (!r0) return null;
-        const box = (b) => ({ top: +b.top.toFixed(2), bottom: +b.bottom.toFixed(2), left: +b.left.toFixed(2), h: +b.height.toFixed(2), mid: +((b.top + b.bottom) / 2).toFixed(2) });
+        const box = (b) => ({ top: +b.top.toFixed(2), bottom: +b.bottom.toFixed(2), left: +b.left.toFixed(2), w: +b.width.toFixed(2), h: +b.height.toFixed(2), mid: +((b.top + b.bottom) / 2).toFixed(2) });
         const title = r0.querySelector("[data-page-title]");
         const sub = r0.querySelector("[data-page-subtitle]");
         const subShown = !!sub && sub.getBoundingClientRect().height > 0;
         const line = title ? title.parentElement.getBoundingClientRect() : null;
         const pair = line ? { top: line.top, bottom: subShown ? sub.getBoundingClientRect().bottom : line.bottom } : null;
+        // **A disc** is a ground or a rounded box behind the avatar: read on
+        // the seat's wrapper and every box between it and its seat.
+        // **A ring** is a border, an outline or a shadow anywhere — on that
+        // chain or inside the avatar, a face's own hairline edge included.
+        const clear = (c) => c === "transparent" || /rgba\(.*,\s*0\)$/.test(c);
+        const ground = (el) => {
+          const s = getComputedStyle(el);
+          return [
+            !clear(s.backgroundColor) && `background ${s.backgroundColor}`,
+            s.backgroundImage !== "none" && `background-image ${s.backgroundImage}`,
+            ["TopLeft", "TopRight", "BottomLeft", "BottomRight"].some((k) => Number.parseFloat(s[`border${k}Radius`]) > 0) && `radius ${s.borderRadius}`,
+          ].filter(Boolean);
+        };
+        const ring = (el) => {
+          const s = getComputedStyle(el);
+          return [
+            ["Top", "Right", "Bottom", "Left"].some((k) => Number.parseFloat(s[`border${k}Width`]) > 0) && `border ${s.borderWidth} ${s.borderColor}`,
+            s.boxShadow !== "none" && `shadow ${s.boxShadow}`,
+            s.outlineStyle !== "none" && Number.parseFloat(s.outlineWidth) > 0 && `outline ${s.outlineWidth}`,
+          ].filter(Boolean);
+        };
+        const whole = (b) => [b.left, b.top, b.width, b.height].every((v) => Math.abs(v - Math.round(v)) < 0.01);
+        /** How a row's avatar is put together, to hold the head to it:
+            how many faces, and what its corner says (none: no corner). */
+        const build = (el) =>
+          el
+            ? {
+                faces: el.querySelectorAll("[data-face], [data-face-blank]").length,
+                corner: el.querySelector("[data-side-badge]")?.getAttribute("data-side-badge") ?? null,
+              }
+            : null;
         return {
-          marks: [...r0.querySelectorAll("[data-page-avatar-mark]")].map((m) => ({
-            kind: m.getAttribute("data-page-avatar-mark"),
-            ...box(m.getBoundingClientRect()),
-            inner: m.querySelectorAll("[data-face], [data-face-blank], [data-side-badge]").length,
-          })),
+          marks: [...r0.querySelectorAll("[data-page-avatar-mark]")].map((m) => {
+            const chain = [];
+            for (let el = m; el && !el.hasAttribute("data-page-avatar"); el = el.parentElement) chain.push(el);
+            const face = m.querySelector("[data-face], [data-face-blank]");
+            // What the eye reads as the avatar: the face where there is
+            // one, the mark's own drawing where there is not.
+            const body = face ?? m.querySelector("svg");
+            return {
+              kind: m.getAttribute("data-page-avatar-mark"),
+              ...box(m.getBoundingClientRect()),
+              body: body ? box(body.getBoundingClientRect()) : null,
+              ...build(m),
+              ground: chain.flatMap(ground),
+              rings: [...chain, ...m.querySelectorAll("*")].flatMap(ring),
+              whole: whole(m.getBoundingClientRect()) && !!body && whole(body.getBoundingClientRect()),
+            };
+          }),
           seats: r0.querySelectorAll("[data-page-avatar]").length,
           titleLeft: title ? +title.getBoundingClientRect().left.toFixed(2) : null,
           pair: pair ? { top: +pair.top.toFixed(2), bottom: +pair.bottom.toFixed(2), mid: +((pair.top + pair.bottom) / 2).toFixed(2) } : null,
           sub: subShown ? sub.textContent.replace(/\s+/g, " ").trim() : null,
+          // The open machine's own list row, as the head's twin.
+          row: build(document.querySelector('[data-side-row][data-selected="true"] [data-side-face]')),
         };
       });
-    const judgeHead = (where, head, kind) => {
+    /** `want`: `null` for a page with no avatar; otherwise the key it
+        should carry and whether it is the machine's row avatar (a face)
+        or a bare mark (an account). */
+    const judgeHead = (where, head, want) => {
       console.log(`head a · ${where}: ${JSON.stringify(head)}`);
       if (!head) {
         fail(`probe dead: head a · ${where} has no R0`);
         return;
       }
-      if (kind === null) {
+      if (want === null) {
         if (head.marks.length !== 0) fail(`head a · ${where} wears an avatar (${head.marks.map((m) => m.kind).join(", ")}) — only a machine or an account opened`);
         return;
       }
@@ -25698,11 +25784,32 @@ try {
         return;
       }
       const m = head.marks[0];
-      if (m.kind !== kind) fail(`head a · ${where}: R0's avatar is 「${m.kind}」, not 「${kind}」 — 「类别头像机器就是系统的 icon，额度页就是厂商的 icon」`);
-      if (m.inner !== 0) fail(`head a · ${where}: R0's avatar holds a face or a corner — 「头像仅仅是类别头像，不是机器带角标的」`);
-      if (m.h > leads + 0.5) fail(`head a · ${where}: R0's avatar is ${m.h} tall, more than the two lines' ${leads}`);
-      if (!head.pair || Math.abs(m.mid - head.pair.mid) > TOL) {
-        fail(`head a · ${where}: R0's avatar is centred at y ${m.mid}, the name and its second line at ${head.pair?.mid} — one centreline`);
+      if (m.kind !== want.kind) fail(`head a · ${where}: R0's avatar says 「${m.kind}」, not 「${want.kind}」 — the machine's system, the account's vendor`);
+      if (want.face) {
+        if (m.faces !== 1) fail(`head a · ${where}: R0's avatar holds ${m.faces} face(s) — the machine's row avatar, one face (2026-10-02)`);
+        if (!head.row) {
+          fail(`probe dead: head a · ${where}: no open list row to hold the head's avatar to`);
+        } else if (head.row.faces !== m.faces || head.row.corner !== m.corner) {
+          fail(`head a · ${where}: R0's avatar is built ${JSON.stringify({ faces: m.faces, corner: m.corner })}, the row's ${JSON.stringify(head.row)} — the very avatar the row wears`);
+        }
+      } else if (m.faces !== 0 || m.corner !== null) {
+        fail(`head a · ${where}: R0's avatar holds a face or a corner — an account's is its vendor's mark alone`);
+      }
+      if (m.ground.length > 0) {
+        fail(`head a · ${where}: R0's avatar sits on a disc (${m.ground.join("; ")}) — no ground behind it`);
+      }
+      if (m.rings.length > 0) {
+        fail(`head a · ${where}: R0's avatar draws a ring (${m.rings.join("; ")}) — no 1 px circle in R0 (「带锯齿的边」 on a 1× screen)`);
+      }
+      if (!m.body) {
+        fail(`probe dead: head a · ${where}: nothing drawn in R0's avatar`);
+        return;
+      }
+      if (m.h > leads + 0.5 || m.body.h > leads + 0.5) fail(`head a · ${where}: R0's avatar is ${m.body.h} tall in a ${m.h} box, more than the two lines' ${leads}`);
+      if (m.body.h < 24 - 0.5) fail(`head a · ${where}: R0's avatar is drawn ${m.body.h} tall — it fills the two lines (≥ 24), it is not a badge`);
+      if (!m.whole) fail(`head a · ${where}: R0's avatar is off the pixel grid (${JSON.stringify({ box: [m.left, m.top, m.w, m.h], body: m.body })}) — whole pixels, or a 1× screen resamples it`);
+      if (!head.pair || Math.abs(m.body.mid - head.pair.mid) > TOL) {
+        fail(`head a · ${where}: R0's avatar is centred at y ${m.body.mid}, the name and its second line at ${head.pair?.mid} — one centreline`);
       }
       if (head.titleLeft === null || m.left >= head.titleLeft) fail(`head a · ${where}: R0's avatar is not left of the name (${m.left} vs ${head.titleLeft})`);
     };
@@ -25714,91 +25821,153 @@ try {
     await press('[data-side-row][data-device="peer"] [data-side-open]');
     await until(5_000, async () => (await page.locator("[data-main] [data-page-avatar-mark]").count()) === 1);
     const peerHead = await readHead();
-    judgeHead("peer", peerHead, "apple");
+    judgeHead("peer", peerHead, { kind: "apple", face: true });
     if (peerHead && (peerHead.sub !== "MacBook Pro" || /khor /.test(peerHead.sub ?? ""))) {
       fail(`head b · R0's second line over peer reads ${JSON.stringify(peerHead.sub)} — the model alone, 「MacBook Pro」 (「第二行型号就行了，不写 khor 版本和链接方式」)`);
     }
 
-    // c, wide: the card beside the list, two groups side by side.
-    /** The card's edges, read off the text itself (a `Range` per cell):
-        a label's box is its column, its words are where the eye reads. */
-    const readCard = () =>
-      page.evaluate(() => {
-        const c = document.querySelector("[data-machine-contact]");
-        if (!c) return null;
-        const text = (el) => {
-          const rg = document.createRange();
-          rg.selectNodeContents(el);
-          return rg.getBoundingClientRect();
+    // c, wide: the board under R0 opens on one strip of facts.
+    /** The machine's board as the eye reads it: what stands above the
+        dials (a face? the name?), and the strip's cells — each one's box,
+        whether its left hairline is seen (the grid is pulled left under a
+        clip so a row's first cell shows none), and the baseline of its
+        label and of its value, read off a zero-size probe set on the
+        line after the first words (a `Range` gives the line box, not the
+        baseline, and the id's mono stands on its own metrics). */
+    const readStrip = (name) =>
+      page.evaluate((name) => {
+        const card = document.querySelector("[data-machine-card]");
+        if (!card) return null;
+        const dial = card.querySelector("[data-dial]");
+        const dialsTop = dial ? dial.getBoundingClientRect().top : Number.POSITIVE_INFINITY;
+        const above = (el) => el.getBoundingClientRect().bottom <= dialsTop + 0.5;
+        const named = [...card.querySelectorAll("*")].filter(
+          (el) => el.children.length === 0 && el.textContent.trim() === name && above(el),
+        ).length;
+        const faces = card.querySelectorAll("[data-face], [data-face-blank]").length;
+        const h1 = card.querySelectorAll('h1, [role="heading"][aria-level="1"]').length;
+        const strips = card.querySelectorAll("[data-machine-strip]");
+        const s = strips[0];
+        if (!s) return { strips: 0, faces, h1, named, cells: [] };
+        const clip = s.getBoundingClientRect();
+        const baseline = (el) => {
+          if (!el) return null;
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+            acceptNode: (n) => (n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP),
+          });
+          const t = w.nextNode();
+          if (!t) return null;
+          const probe = document.createElement("span");
+          probe.style.cssText = "display:inline-block;width:0;height:0;vertical-align:baseline";
+          t.parentNode.insertBefore(probe, t.nextSibling);
+          const y = probe.getBoundingClientRect().top;
+          probe.remove();
+          return +y.toFixed(2);
         };
-        const face = c.querySelector("[data-contact-head] :is([data-face], [data-face-blank])");
-        const title = c.querySelector("[data-contact-title]");
-        const name = c.querySelector("[data-machine-contact-name]");
-        const fb = face?.getBoundingClientRect();
-        const tb = title?.getBoundingClientRect();
+        const grid = s.querySelector("[data-strip-grid]") ?? s;
         return {
-          face: fb ? { right: +fb.right.toFixed(2), mid: +((fb.top + fb.bottom) / 2).toFixed(2) } : null,
-          title: tb ? { mid: +((tb.top + tb.bottom) / 2).toFixed(2) } : null,
-          nameLeft: name ? +text(name).left.toFixed(2) : null,
-          model: c.querySelectorAll("[data-contact-model], [data-contact-fact=\"model\"]").length,
-          groups: [...c.querySelectorAll("[data-contact-group]")].map((g) => {
-            const b = g.getBoundingClientRect();
+          strips: strips.length,
+          faces,
+          h1,
+          named,
+          headings: s.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]').length,
+          height: +grid.getBoundingClientRect().height.toFixed(2),
+          bottom: +clip.bottom.toFixed(2),
+          dialsTop: Number.isFinite(dialsTop) ? +dialsTop.toFixed(2) : null,
+          cells: [...s.querySelectorAll("[data-strip-fact]")].map((c) => {
+            const b = c.getBoundingClientRect();
+            const cs = getComputedStyle(c);
             return {
-              key: g.getAttribute("data-contact-group"),
+              key: c.getAttribute("data-strip-fact"),
+              left: +b.left.toFixed(2),
               top: +b.top.toFixed(2),
-              bottom: +b.bottom.toFixed(2),
-              ends: [...g.querySelectorAll("[data-contact-label]")].map((d) => +text(d).right.toFixed(2)),
-              tops: [...g.querySelectorAll("[data-contact-label]")].map((d) => +text(d).top.toFixed(2)),
-              starts: [...g.querySelectorAll("[data-contact-value]")].map((d) => +d.getBoundingClientRect().left.toFixed(2)),
+              h: +b.height.toFixed(2),
+              line: Number.parseFloat(cs.borderLeftWidth) > 0 && b.left >= clip.left - 0.5 && b.right <= clip.right + 0.5,
+              label: baseline(c.querySelector("[data-strip-label]")),
+              value: baseline(c.querySelector("[data-strip-value]")),
             };
           }),
         };
-      });
+      }, name);
     const spread = (xs) => (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
-    const judgeCard = (where, card, { stacked, model }) => {
-      console.log(`head c · ${where}: ${JSON.stringify(card)}`);
-      if (!card || !card.face || !card.title || card.groups.length !== 2) {
-        fail(`probe dead: head c · ${where}: no card, face, name block or two groups to read`);
+    const STRIP_ORDER = ["model", "system", "version", "connection", "uptime", "reading", "id", "faces"];
+    /** The strip's one height on a wide board: one row of label over
+        value — caption's 14 + body's 18 — with room to spare, 「四十像素
+        上下」 (the brief), so the dials are the first thing seen. */
+    const STRIP_MAX = 40;
+    const judgeStrip = (where, s, { model, oneRow }) => {
+      console.log(`head c · ${where}: ${JSON.stringify(s)}`);
+      if (!s || s.strips === 0 || s.cells.length === 0) {
+        fail(`probe dead: head c · ${where}: no strip of facts ([data-machine-strip]) on the machine's board`);
+        if (s && (s.faces > 0 || s.named > 0)) {
+          fail(`head c · ${where}: the board wears ${s.faces} face(s) and says the name ${s.named} time(s) above the dials — R0 says who, once`);
+        }
         return;
       }
-      const [what, now] = card.groups;
-      // One pitch for every line of the table, in both groups (the
-      // shorter group used to be stretched to the taller's height).
-      const pitches = card.groups.flatMap((g) => g.tops.slice(1).map((t, i) => +(t - g.tops[i]).toFixed(2)));
-      if (spread(pitches) > TOL) fail(`head c · ${where}: the card's lines stand ${JSON.stringify(pitches)} apart — one pitch for the whole table`);
-      for (const g of card.groups) {
-        if (spread(g.ends) > TOL) fail(`head c · ${where}: the 「${g.key}」 labels end on ${JSON.stringify(g.ends)} — one right edge`);
-        if (spread(g.starts) > TOL) fail(`head c · ${where}: the 「${g.key}」 values start on ${JSON.stringify(g.starts)} — one left edge`);
+      if (s.strips !== 1) fail(`head c · ${where}: ${s.strips} strips — exactly one`);
+      if (s.faces !== 0 || s.named !== 0 || s.h1 !== 0 || s.headings !== 0) {
+        fail(`head c · ${where}: the board wears ${s.faces} face(s), the name ${s.named} time(s), ${s.h1} h1 and ${s.headings} heading(s) in the strip — R0 says who, once`);
       }
-      if (stacked) {
-        if (now.top < what.bottom - 0.5) fail(`head c · ${where}: the two groups are side by side (${what.top}…${what.bottom}, ${now.top}) — narrow, they are one table`);
-        if (spread([...what.ends, ...now.ends]) > TOL || spread([...what.starts, ...now.starts]) > TOL) {
-          fail(`head c · ${where}: stacked, the two groups' labels end on ${JSON.stringify([...what.ends, ...now.ends])} and values start on ${JSON.stringify([...what.starts, ...now.starts])} — one table, one pair of edges`);
+      const keys = s.cells.map((c) => c.key);
+      const order = STRIP_ORDER.filter((k) => keys.includes(k));
+      if (keys.some((k) => !STRIP_ORDER.includes(k)) || JSON.stringify(keys) !== JSON.stringify(order)) {
+        fail(`head c · ${where}: the cells run ${JSON.stringify(keys)} — the order is ${JSON.stringify(STRIP_ORDER)}, the absent left out`);
+      }
+      if (keys.includes("model") !== model || (model && keys[0] !== "model")) {
+        fail(`head c · ${where}: the model is ${keys.includes("model") ? `cell ${keys.indexOf("model") + 1}` : "absent"} — ${model ? "the narrow face has no R0, so it is the first cell" : "R0 says it; the strip does not say it again"}`);
+      }
+      if (s.dialsTop !== null && s.bottom > s.dialsTop) fail(`head c · ${where}: the strip ends at ${s.bottom}, under the dials' top ${s.dialsTop} — it opens the board`);
+      // Rows, by top.
+      const rows = [];
+      for (const c of s.cells) {
+        const r = rows.find((r) => Math.abs(r[0].top - c.top) <= TOL);
+        if (r) r.push(c);
+        else rows.push([c]);
+      }
+      for (const [i, r] of rows.entries()) {
+        const labels = r.map((c) => c.label).filter((v) => v !== null);
+        const values = r.map((c) => c.value).filter((v) => v !== null);
+        if (labels.length !== r.length || values.length !== r.length) fail(`head c · ${where}: row ${i + 1} has a cell with no label or no value to read`);
+        if (spread(labels) > TOL) fail(`head c · ${where}: row ${i + 1}'s labels stand on ${JSON.stringify(labels)} — one baseline`);
+        if (spread(values) > TOL) fail(`head c · ${where}: row ${i + 1}'s values stand on ${JSON.stringify(values)} — one baseline`);
+        if (r[0].line) fail(`head c · ${where}: row ${i + 1}'s first cell (${r[0].key}) wears a line on its left — the first has none`);
+        const bare = r.slice(1).filter((c) => !c.line).map((c) => c.key);
+        if (bare.length) fail(`head c · ${where}: row ${i + 1}'s ${JSON.stringify(bare)} wear no line on the left — a hairline between every two cells`);
+      }
+      const lines = s.cells.filter((c) => c.line).map((c) => c.h);
+      if (spread(lines) > TOL) fail(`head c · ${where}: the lines between cells are ${JSON.stringify(lines)} tall — one height`);
+      if (oneRow) {
+        if (rows.length !== 1) fail(`head c · ${where}: the strip folds into ${rows.length} rows on a wide board — one row`);
+        if (s.height > STRIP_MAX + 0.5) fail(`head c · ${where}: the strip is ${s.height} tall — no more than ${STRIP_MAX}, the dials are the first look`);
+      } else {
+        const counts = rows.map((r) => r.length);
+        if (counts.slice(0, -1).some((n) => n !== counts[0]) || counts.at(-1) > counts[0]) {
+          fail(`head c · ${where}: the rows hold ${JSON.stringify(counts)} cells — one count a row, the last no more`);
         }
-      } else if (Math.abs(now.top - what.top) > TOL) {
-        fail(`head c · ${where}: the two groups start at ${what.top} and ${now.top} — wide, they stand side by side`);
-      }
-      if (!(Math.abs(card.face.right - (what.ends[0] ?? NaN)) <= TOL)) {
-        fail(`head c · ${where}: the face ends at x ${card.face.right}, the labels at ${what.ends[0]} — the labels end where the face ends`);
-      }
-      if (!(Math.abs((card.nameLeft ?? NaN) - (what.starts[0] ?? NaN)) <= TOL)) {
-        fail(`head c · ${where}: the name starts at x ${card.nameLeft}, the values at ${what.starts[0]} — the values start where the name does`);
-      }
-      if (!(Math.abs(card.face.mid - card.title.mid) <= TOL)) {
-        fail(`head c · ${where}: the face is centred at y ${card.face.mid}, the name block at ${card.title.mid} — one centreline`);
-      }
-      if (card.model !== model) {
-        fail(`head c · ${where}: the card says the model ${card.model} time(s), not ${model} — ${model ? "the narrow face has no R0 to say it" : "R0 says it; the card does not say it again"}`);
+        for (let j = 0; j < counts[0]; j++) {
+          const lefts = rows.filter((r) => r[j]).map((r) => r[j].left);
+          if (spread(lefts) > TOL) fail(`head c · ${where}: column ${j + 1} starts at ${JSON.stringify(lefts)} — one edge, the rows are one grid`);
+        }
       }
     };
-    judgeCard("peer @1400", await readCard(), { stacked: false, model: 0 });
+    await until(3_000, async () => (await page.locator("[data-machine-strip]").count()) === 1);
+    const peerName = await page.locator("[data-main] [data-page-title]").textContent();
+    judgeStrip("peer @1400", await readStrip(peerName), { model: false, oneRow: true });
+
+    // c, a wide window with a narrow board: the strip folds by the
+    // board's own width (a container query), not the window's.
+    await page.setViewportSize({ width: 900, height: 900 });
+    await wait(400);
+    judgeStrip("peer @900", await readStrip(peerName), { model: false, oneRow: false });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(300);
 
     // elder: no system (the plain machine mark), no model (no second line).
     await press('[data-side-row][data-device="elder"] [data-side-open]');
     await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").textContent()) === "elder");
     await wait(300);
     const elderHead = await readHead();
-    judgeHead("elder", elderHead, "machine");
+    judgeHead("elder", elderHead, { kind: "machine", face: true });
     if (elderHead && elderHead.sub !== null) {
       fail(`head b · R0 over elder, which reported no model, has a second line ${JSON.stringify(elderHead.sub)} — not drawn (「读不到就空——不编」)`);
     }
@@ -25809,23 +25978,25 @@ try {
     await press('[data-quota-row="acc-fill"]');
     await until(5_000, async () => (await page.locator("[data-main] [data-page-avatar-mark]").count()) === 1);
     const provider = await page.locator('[data-quota-row="acc-fill"]').getAttribute("data-provider");
-    judgeHead("额度 · acc-fill", await readHead(), provider);
+    judgeHead("额度 · acc-fill", await readHead(), { kind: provider, face: false });
     await press("[data-rail-more]");
     await press('[data-more-open="settings"]');
     await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
     judgeHead("「…」 → 通用", await readHead(), null);
     if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
 
-    // c, narrow: one table, and the model under the name.
+    // c, narrow: no R0, so the model is the strip's first cell, and the
+    // strip folds into rows of one count.
     await page.setViewportSize({ width: 390, height: 844 });
     await wait(400);
     await open("devices");
     await press('[data-side-row][data-device="peer"] [data-side-open]');
-    await until(5_000, async () => (await page.locator("[data-machine-contact]").count()) === 1);
+    await until(5_000, async () => (await page.locator("[data-machine-strip]").count()) === 1);
     await wait(300);
-    judgeCard("peer @390", await readCard(), { stacked: true, model: 1 });
+    judgeStrip("peer @390", await readStrip(peerName), { model: true, oneRow: false });
     if (await page.locator("[data-side-head] [data-back]").count()) await press("[data-side-head] [data-back]");
     await page.setViewportSize({ width: 1400, height: 900 });
+    if (peer) peer.face = peerFace;
     if (peerVitals && was) {
       peerVitals.system = was.system;
       peerVitals.model = was.model;

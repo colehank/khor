@@ -1837,11 +1837,17 @@ export function QuotaLanding({
       empty landing has no reading to date. */
   // **R0's avatar** (2026-10-01, the owner: 「额度页就是厂商的 icon 呀」):
   // the vendor's mark — the one this account's row opens its title with
-  // (`sessionMark`), on the head's disc — never the dial. Nothing with no
-  // account open: the landing's name alone heads an empty board.
-  const subtitle = current && (
+  // (`sessionMark`), drawn itself at `--avatar` 32, two lines tall, on
+  // nothing — no disc, no ring (`PageAvatar`); an account has no face.
+  // Never the dial. Nothing with no account open: the landing's name alone
+  // heads an empty board. The board under it opens on the dial: the
+  // account's name, plan and vendor are R0's, said once.
+  const VendorMark = current ? sessionMark("agent", current.provider) : null;
+  const subtitle = current && VendorMark && (
     <>
-    <PageAvatar mark={sessionMark("agent", current.provider)} kind={current.provider} />
+    <PageAvatar kind={current.provider}>
+      <VendorMark className="block size-avatar" />
+    </PageAvatar>
     <PageSubtitle>
       <span
         data-quota-head-sub

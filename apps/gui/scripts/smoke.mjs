@@ -3552,7 +3552,7 @@ for line in sys.stdin:
   const sameNumberOfReadings = async (machine, env) => {
     const onScreen =
       (await page.locator("[data-vitals-unit]").count()) +
-      (await page.locator("[data-vitals-age]").count());
+      (await page.locator("[data-machine-strip] [data-vitals-age]").count());
     const printed = cliReadings(machine, env);
     if (onScreen !== printed.length) {
       throw new Error(
@@ -3671,17 +3671,16 @@ for line in sys.stdin:
   await rowBox.press("Enter");
   await until("alpha back to its own name", 10_000, async () => (await pageTitle.innerText()).trim() === "alpha");
 
-  //     One machine, one picture: the contact card at the top of the
-  //     board wears it large (2026-09-30, the owner: 「机器页的内容部分做
-  //     成一个类似通讯录的卡片：头像、型号、id 等等」 — it had left the
-  //     board on 2026-09-27 with a name that was a second title), **once**,
-  //     and it is the picture the row beside it wears.
-  const cardFace = page.locator("[data-machine-card] [data-machine-contact] [data-face]");
-  if ((await page.locator("[data-machine-card] [data-face]").count()) !== 1 || (await cardFace.count()) !== 1) {
-    throw new Error("the card does not wear the machine's face exactly once, on its contact card");
+  //     **No face on the board** (2026-10-01, the owner picked the strip
+  //     of facts, direction A): the machine's picture is the row's beside
+  //     it, and R0 says who. The board opens on one strip of facts.
+  //     ⚠️ 墓碑 (09-30 → 10-01): this asserted the contact card wore the
+  //     face once, the row's picture, large.
+  if ((await page.locator("[data-machine-card] [data-face]").count()) !== 0) {
+    throw new Error("the machine's board wears a face — the row beside it does, and R0 says who");
   }
-  if ((await faceOf(cardFace)) !== (await faceOf(page.locator('[data-device="alpha"] [data-face]')))) {
-    throw new Error("the card's face is not the picture alpha's row wears");
+  if ((await page.locator("[data-machine-card] [data-machine-strip]").count()) !== 1) {
+    throw new Error("the machine's board does not open on one strip of facts");
   }
 
   //     The readings are drawn, and **how many of them there are is not
@@ -3755,7 +3754,7 @@ for line in sys.stdin:
   //     screen that worked it out for itself is a screen that can
   //     disagree with the terminal. Compared as the word, which is the
   //     only form both ends show — neither side spells it here.
-  const cardRoad = page.locator("[data-machine-card] [data-hop]");
+  const cardRoad = page.locator("[data-machine-card] [data-machine-strip] [data-hop]");
   if ((await cardRoad.count()) !== 1) {
     throw new Error("alpha's card draws no road reading");
   }
@@ -3771,7 +3770,7 @@ for line in sys.stdin:
   //     itself to answer the very call that painted this, so it has
   //     none. Both halves are asserted because either alone passes for
   //     the wrong reason — always showing an age, or never showing one.
-  if ((await page.locator("[data-vitals-age]").count()) !== 1) {
+  if ((await page.locator("[data-machine-strip] [data-vitals-age]").count()) !== 1) {
     throw new Error("a reading that travelled here shows no age");
   }
   const betaShort = await page
@@ -3793,19 +3792,19 @@ for line in sys.stdin:
   //     no reading rather than an unreadable one — the negative half of
   //     the check above, and the one that would go quietly wrong if the
   //     field were a word every face had to remember to hide.
-  if ((await page.locator("[data-machine-card] [data-hop]").count()) !== 0) {
+  if ((await page.locator("[data-machine-card] [data-machine-strip] [data-hop]").count()) !== 0) {
     throw new Error("beta's own card claims a road to itself");
   }
   //     What the slot holds instead (2026-09-02): the machine's own
   //     word — it reaches itself over nothing — with the id prefix
   //     beside it.
-  if ((await page.locator("[data-machine-card] [data-machine-here]").count()) !== 1) {
+  if ((await page.locator("[data-machine-card] [data-machine-strip] [data-machine-here]").count()) !== 1) {
     throw new Error("beta's own card does not carry the here-word in the connection slot");
   }
   if ((await page.locator("[data-vitals-unit]").count()) === 0) {
     throw new Error("this machine's own card is missing readings");
   }
-  if ((await page.locator("[data-vitals-age]").count()) !== 0) {
+  if ((await page.locator("[data-machine-strip] [data-vitals-age]").count()) !== 0) {
     throw new Error("this machine's own reading is dressed as something remembered");
   }
   await sameNumberOfReadings("beta", envB);
