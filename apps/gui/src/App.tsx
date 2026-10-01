@@ -104,7 +104,7 @@ import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { RegionState } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
-import { InviteDialog, JoinDialog, RootWordsDialog } from "@/views/PairDialogs";
+import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
@@ -2107,8 +2107,9 @@ export default function App() {
       {/* The machine page's VS Code: its consent and its refusal. */}
       {machineCode.dialog}
       <JoinDialog open={dialog === "join"} onOpenChange={(o) => setDialog(o ? "join" : null)} />
-      {/* The root's words, asked for once on the machine that made it. */}
-      <RootWordsDialog />
+      {/* (The root's words were asked for here, once, on the machine that
+          made the root — 0e4fcaa. Since 2026-10-01 they wait on 「…」 →
+          安全 until somebody presses 「显示…」: `SecurityPage`.) */}
       {/* (设置 was the fourth thing here — a dialog — until 2026-09-19.
           It is a page now, drawn beside the rail with its three
           siblings; see `morePage`.) */}

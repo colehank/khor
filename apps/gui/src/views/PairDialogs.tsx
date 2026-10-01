@@ -12,12 +12,9 @@ import { useEffect, useState } from "react";
 import {
   approveMachine,
   fetchWaiting,
-  inApp,
   invite,
   pair,
-  rootUnshown,
   rootWords,
-  rootWordsSeen,
   said,
   type Ticket,
   type Waiting,
@@ -321,50 +318,45 @@ export function PendingStrip() {
 }
 
 /**
- * The root's words, asked for once (docs/CONNECT.md 身份): this machine
- * made the network's root when it first opened, and the 24 words are
- * the only way back if it is lost.
+ * The root's words, **when somebody asks** (docs/CONNECT.md 身份): the
+ * 24 words are the network's root key, and the only way back to it if
+ * the machine holding it is lost.
  *
- * **Shown only after a press** — the words are the root, and a window
- * that opened with them on it would put them on a screen nobody chose
- * to look at. **Asked once**: answering or closing marks them seen, and
- * after that the way to them is `khor root words` on this machine,
- * which the sentence says.
+ * **On demand, not at first start** (2026-10-01, the owner: 「根钥匙是
+ * 不是只在共享的时候出现更友好」). Since 0e4fcaa the machine that made
+ * the root opened on this window by itself; now nothing opens it but the
+ * 「显示…」 on 「…」 → 安全 (`SecurityPage`), and the sharing flow will
+ * call it from there when it lands. That press is the deliberate act, so
+ * the words are fetched as the window opens — the second press inside
+ * the window existed only because nobody had chosen to open it. Looking
+ * clears the node's 「not yet shown」 mark (`Node::root_words`).
  *
  * **The app only.** The words are not served to the web face
- * (`khor_gui_core` `tests/command_tables.rs`), and a browser opening
- * this page is a different screen from the machine's own.
+ * (`khor_gui_core` `tests/command_tables.rs`), and the row that opens
+ * this is drawn in the app alone.
  */
-export function RootWordsDialog() {
-  const [open, setOpen] = useState(false);
+export function RootWordsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [words, setWords] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!inApp) return;
+    if (!open) {
+      // Off the screen means out of memory too: the words are the root.
+      setWords(null);
+      setError(null);
+      return;
+    }
     let live = true;
-    rootUnshown()
-      .then((waiting) => live && waiting && setOpen(true))
-      .catch(() => {});
+    rootWords()
+      .then((w) => live && setWords(w.split(" ")))
+      .catch((e) => live && setError(said(e)));
     return () => {
       live = false;
     };
-  }, []);
-
-  const close = () => {
-    setOpen(false);
-    setWords(null);
-    rootWordsSeen().catch(() => {});
-  };
-  const show = () => {
-    setError(null);
-    rootWords()
-      .then((w) => setWords(w.split(" ")))
-      .catch((e) => setError(said(e)));
-  };
+  }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && close()}>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent data-root-words-dialog>
         <DialogHeader>
           <DialogTitle>{gui.root_words_title}</DialogTitle>
@@ -386,15 +378,9 @@ export function RootWordsDialog() {
           </div>
         )}
         <DialogFooter>
-          {words ? (
-            <Button variant="primary" size="lg" data-root-words-done onClick={close}>
-              {gui.root_words_done}
-            </Button>
-          ) : (
-            <Button variant="primary" size="lg" data-root-words-show onClick={show}>
-              {gui.root_words_show}
-            </Button>
-          )}
+          <Button data-root-words-done onClick={onClose}>
+            {gui.close}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

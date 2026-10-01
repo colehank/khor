@@ -2086,22 +2086,16 @@ pub async fn approve(root: &Path, machine: &str) -> Result<Waiting, String> {
     waiting(root)
 }
 
-/// Whether this machine made the network's root and nobody has seen its
-/// words yet — what the app's first-start prompt asks.
-pub fn root_unshown(root: &Path) -> Result<bool, String> {
-    Ok(open(root)?.root_state().unshown)
-}
-
-/// The root's 24 words, for the app's prompt after the person pressed to
-/// see them. **App-only** (`tests/command_tables.rs` has why).
+/// The root's 24 words, for 「…」 → 安全 after the person pressed
+/// 「显示…」. **App-only** (`tests/command_tables.rs` has why).
+///
+/// **On demand only** (2026-10-01, the owner: 「根钥匙是不是只在共享的时候
+/// 出现更友好」). The app used to ask at first start whether a root born
+/// here had had its words seen (`root_unshown`) and mark them seen when
+/// the prompt closed (`root_words_seen`); nothing opens on its own now, so
+/// both questions went. Showing still clears the node's mark.
 pub fn root_words(root: &Path) -> Result<String, String> {
     open(root)?.root_words()
-}
-
-/// The prompt was answered or closed: it is not asked again.
-pub fn root_words_seen(root: &Path) -> Result<(), String> {
-    open(root)?.root_words_seen();
-    Ok(())
 }
 
 /// How a leave ended, per machine that was in the table (docs/MORE.md

@@ -25587,6 +25587,15 @@ try {
   //      省略号表示还会再问一次」). Red before: the 额度 row's 「编辑」, the
   //      工作区 ＋'s 「添加工作区」, an open workspace's session column ＋
   //      「新会话」, the machine page's 「打开会话」.
+  //   c. **恢复词 on demand** (「根钥匙是不是只在共享的时候出现更友好」): a
+  //      machine that made the root does not open on 「抄下恢复词」; the
+  //      words are one row on 「…」 → 安全 — 「恢复词」 and a 「显示…」 —
+  //      on the app alone, and only where the root is held. The web face
+  //      draws no such row. The app is stood in for by tauri's IPC global
+  //      on this page (`api.ts` `inApp`), with every call still answered by
+  //      this file's routes (`?bridge=`); it comes last in this file,
+  //      because the page stays an app from here on. Red before: the
+  //      dialog came up on its own and 安全 had no such row.
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
@@ -25818,6 +25827,85 @@ try {
     }
     await page.reload({ waitUntil: "load" });
     await wait(900);
+  }
+
+  // c. 恢复词 on demand.
+  {
+    const WORDS = Array.from({ length: 24 }, (_, i) => (i === 23 ? "art" : "abandon")).join(" ");
+    let held = true;
+    await page.route("**/root_unshown", (r) => r.fulfill({ contentType: "application/json", body: "true" }));
+    await page.route("**/pending_list", (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify({ holds: held, rows: [] }) }),
+    );
+    await page.route("**/root_words", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(WORDS) }));
+    await page.route("**/root_words_seen", (r) => r.fulfill({ contentType: "application/json", body: "null" }));
+    const rowSel = '[data-setting-row-name="root-words"]';
+    const toSecurity = async () =>
+      (await press("[data-rail-more]")) && (await press('[data-more-open="security"]')) &&
+      until(3_000, async () => (await page.locator('[data-more-page="security"]').count()) > 0);
+    // The web face first: no row, whoever holds the root.
+    if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open on the web face");
+    else {
+      await wait(600);
+      const n = await page.locator(rowSel).count();
+      console.log(`fix c · web face: 恢复词 rows on 安全 ${n}`);
+      if (n !== 0) fail("fix c · the web face draws a 恢复词 row — the words are the app's alone (khor_gui_core command_tables)");
+    }
+    if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    // Now the app: tauri's IPC global, every call still over the bridge.
+    await page.addInitScript(() => {
+      window.__TAURI_INTERNALS__ = {
+        invoke: () => Promise.resolve(null),
+        transformCallback: () => 0,
+        unregisterCallback: () => {},
+        convertFileSrc: (p) => p,
+        metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
+      };
+      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+    });
+    await page.reload({ waitUntil: "load" });
+    await until(5_000, async () => (await page.locator("[data-rail-more]").count()) > 0);
+    await wait(1_500);
+    const asked = await page.locator("[data-root-words-dialog]").count();
+    console.log(`fix c · app, first start of the root's machine: 恢复词 dialogs ${asked}`);
+    if (asked !== 0) {
+      fail("fix c · the app opened on 「抄下恢复词」 — the words wait on 「…」 → 安全 until somebody asks (the owner, 2026-10-01)");
+      await settle();
+    }
+    if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open in the app");
+    else {
+      await until(3_000, async () => (await page.locator(rowSel).count()) > 0);
+      const look = await page.evaluate((sel) => {
+        const row = document.querySelector(sel);
+        if (!row) return null;
+        return {
+          title: row.querySelector(".text-body")?.textContent?.trim() ?? null,
+          act: row.querySelector("button")?.textContent?.trim() ?? null,
+          words: document.querySelectorAll("[data-root-words] li").length,
+        };
+      }, rowSel);
+      console.log(`fix c · app, 安全 while the root is held: ${JSON.stringify(look)}`);
+      if (!look) {
+        fail("fix c · 安全 has no 恢复词 row on the machine that holds the root — 「…」 → 安全 is where the words are");
+      } else {
+        if (!look.act?.endsWith(ELLIPSIS)) fail(`fix c · the 恢复词 row's act reads 「${look.act}」 — it opens a window: 「显示…」`);
+        if (look.words !== 0) fail("fix c · the words are on the page before anybody pressed 「显示…」");
+        await page.locator(`${rowSel} button`).click();
+        const up = await until(3_000, async () => (await page.locator("[data-root-words-dialog] [data-root-words] li").count()) > 0);
+        const shown = await page.locator("[data-root-words-dialog] [data-root-words] li").count();
+        console.log(`fix c · 「显示…」 → ${shown} word(s) in a dialog`);
+        if (!up || shown !== 24) fail(`fix c · 「显示…」 showed ${shown} word(s), not the root's 24`);
+        await settle();
+      }
+      held = false;
+      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+      await toSecurity();
+      await wait(800);
+      const n = await page.locator(rowSel).count();
+      console.log(`fix c · app, 安全 where the root is not held: 恢复词 rows ${n}`);
+      if (n !== 0) fail("fix c · 安全 draws a 恢复词 row on a machine that does not hold the root");
+      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    }
   }
   } // fix
 

@@ -111,9 +111,10 @@ const ONE_SIDED: &[(&str, &str)] = &[
     // the machine. The 24 words restore the network's root, and a root
     // outlives every web key: a link that leaked once could otherwise
     // hand out a key that signs machines in for good. The app shows them
-    // on the holder's own screen at first start; anywhere else the way
-    // to them is `khor root words <本机名>` in a terminal on the holder,
-    // which is what the web face's prompt would say.
+    // on the holder's own screen when somebody presses 「显示…」 on
+    // 「…」 → 安全 (on demand since 2026-10-01; at first start before
+    // that); anywhere else the way to them is `khor root words <本机名>`
+    // in a terminal on the holder.
     (
         "root_words",
         "the root's recovery words, shown on the holder's own screen; a browser face is reached \

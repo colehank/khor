@@ -770,14 +770,10 @@ pub fn answer(
         // so it dials — async for `pair`'s reason.
         "pending_list" => to_json(&crate::waiting(root)?),
         "approve" => to_json(&rt.block_on(crate::approve(root, &arg("machine")?))?),
-        // The first-start prompt's two questions. The words themselves are
-        // not served here — `root_words` is app-only
-        // (`tests/command_tables.rs`).
-        "root_unshown" => to_json(&crate::root_unshown(root)?),
-        "root_words_seen" => {
-            crate::root_words_seen(root)?;
-            Ok("null".to_owned())
-        }
+        // The root's words are not served here — `root_words` is app-only
+        // (`tests/command_tables.rs`). The first-start prompt's two
+        // questions (`root_unshown`, `root_words_seen`) went with the
+        // prompt on 2026-10-01: the words are on demand.
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
         // 离开这张网 (docs/MORE.md 离开). Async for `pair`'s reason: it
         // goes out over the wire before it touches this disk.
