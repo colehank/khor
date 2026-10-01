@@ -2370,7 +2370,8 @@ accounts-read-from = "{0} 读取于 {1}前"
 # **不复用 `forget-machine-confirm`**(2026-09-07 领队裁):离开网络和撤掉一份
 # 登记不是一件事,一句话套两处,其中一处一定读起来不对。
 accounts-remove-confirm = "所有机器都会移除这个账号；密钥需要在保存它的机器上删除"
-# 右键菜单的第二项。改名字、地址、预算,以及换一把密钥;**厂商不给改**——
+# 编辑账户那个窗的标题和它的按钮(右键菜单里那一项是带省略号的 `edit-ask`,
+# 2026-10-01 起)。改名字、地址、预算,以及换一把密钥;**厂商不给改**——
 # 它决定这个账户怎么被读,改它等于拿一个旧 id 登记另一个账户。
 accounts-edit = "编辑"
 # 编辑对话框里密钥那个框**下面**的话(2026-09-07)。
@@ -2710,11 +2711,11 @@ workspaces-how = "点击上方的 +，选择一台机器上的目录"
 # and the row is not derived any more — what a row says now is where it
 # is, what git says, and when it last changed.
 #
-# The 「+」 on the workspace pane. It opens the cross-machine directory
-# picker (工作区批②).
-ws-add = "添加工作区"
-# The same act on the landing's overview, where it is a button that
-# opens the picker — so it wears the ellipsis (components/Button).
+# 添加工作区:开跨机器的目录选择窗(工作区批②),所以带省略号(components/Button)。
+# 总览上的按钮和 L0 搜索框旁的 ＋ 是同一个词。⚠️ 墓碑(2026-10-01):＋ 原来另有一个
+# 不带省略号的 `ws-add`(「添加工作区」),理由是 ＋ 是个图标、词只是它的名字;而
+# 额度那颗 ＋ 从 2026-09-30 起就叫「登记…」,会话、机器的 ＋ 菜单里每项都带省略号——
+# 一个 ＋ 开窗就带省略号,一条规矩(负责人派的修 bug 车道,check-face 14 b)。
 ws-add-ask = "添加工作区…"
 # 工作区落地页的总览 (2026-09-28). Its list is 「最近打开」 (`ws-empty-
 # recent`, the same two words the middle column uses) once this face has
@@ -3111,11 +3112,13 @@ net-leave-ask = "离开…"
 # **2026-09-21 从「这台机器的脸」改成「头像」**:这棵树里「脸」指的是 khor 的
 # 界面(桌面 app、网页脸),而这一节说的是一张图。一个词不能指两样东西。
 settings-face = "头像"
-# 机器行右键菜单里那一项(2026-09-30 负责人:「更改头像的弹窗 UI 有点丑，
+# 行右键菜单里的「编辑…」。先是机器行(2026-09-30 负责人:「更改头像的弹窗 UI 有点丑，
 # 能不能右键→编辑，然后这里可以改名称、头像等诸多信息」)。**取代「更改头像…」**
 # (2026-09-28 起那一项):一台机器能改的东西(名字、头像)只有这一扇门、一个窗。
-# 带省略号:后面有窗。标准词「编辑…」。
-machine-edit-ask = "编辑…"
+# 2026-10-01 额度行的「编辑」也换成它(负责人派的修 bug 车道):它也开一个窗,
+# 原来用的是不带省略号的 `accounts-edit`——那个词现在只是窗的标题。
+# 带省略号:后面有窗。标准词「编辑…」。原名 `machine-edit-ask`,两行共用后去掉了「机器」。
+edit-ask = "编辑…"
 # 那个窗的标题:点名编的是哪一台。
 machine-edit-title = "编辑 {0}"
 # 名字那一栏的问题。空着就回到这台机器自己报的名字(框里淡着的那个)。
@@ -3524,7 +3527,9 @@ watch-unsaved = "未保存"
 # **`open-term-on-failed` 撤掉了,没有替代键**(2026-09-06):开会话不再直接
 # 在那台机器上起 shell,而是打开新建会话对话框——打开一个对话框失败不了;
 # 那台机器不在的拒句落在对话框里,四个答案都在那儿,人改得了。
-open-term-on = "打开会话"
+# 所以它带省略号(2026-10-01,负责人派的修 bug 车道,check-face 14 b):后面有窗。
+# 图标的字是它的名字,和 L0 那颗 ＋ 一条规矩。原名 `open-term-on`。
+open-term-on-ask = "打开会话…"
 browse-files = "浏览文件"
 # The third verb, the one the browser landing is for (docs/NET.md 借网):
 # this machine's network, borrowed from where you are standing.

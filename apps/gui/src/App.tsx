@@ -1753,7 +1753,7 @@ export default function App() {
         create={
           landing === "workspaces"
             ? {
-                label: gui.ws_add,
+                label: gui.ws_add_ask,
                 mark: "data-ws-add",
                 onSelect: () => setDialog("ws-add"),
               }

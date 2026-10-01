@@ -228,7 +228,7 @@ export function DevicesList({
       ? [
           {
             key: "edit",
-            label: gui.machine_edit_ask,
+            label: gui.edit_ask,
             run: () => setEditing(d),
           },
         ]

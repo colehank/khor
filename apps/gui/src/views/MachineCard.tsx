@@ -535,7 +535,7 @@ export function MachineVerbs({
   code?: CodeWindow;
 }) {
   const verbs = [
-    { key: "new-session-on", word: gui.open_term_on, Icon: IconSessions, go: onNewSession },
+    { key: "new-session-on", word: gui.open_term_on_ask, Icon: IconSessions, go: onNewSession },
     { key: "browse-files", word: gui.browse_files, Icon: IconFiles, go: onBrowseFiles },
     { key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb },
   ] as const;

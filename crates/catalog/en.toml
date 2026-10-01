@@ -1447,7 +1447,6 @@ workspaces-tab = "Workspaces"
 browser-tab = "Browser"
 workspaces-empty = "No workspaces yet"
 workspaces-how = "Use the + above to pick a directory on a machine"
-ws-add = "Add a workspace"
 ws-add-ask = "Add a workspace…"
 ws-now-changed = "Recently changed"
 # Said in the one delete window every sidebar shares (`confirm-delete`,
@@ -1567,9 +1566,10 @@ net-leave-note = "The device list keeps only this machine; a fresh ticket rejoin
 net-leave-ask = "Leave…"
 # "Face" is khor's own term for this settings section (avatar/identity look), not a literal face
 settings-face = "Avatar"
-# The machine row's menu item (2026-09-30): one door, one window, for
-# everything a machine has to edit — it replaced "Change avatar…".
-machine-edit-ask = "Edit…"
+# A row menu's "Edit…" — the machine row's (2026-09-30: one door, one
+# window, for everything a machine has to edit; it replaced "Change
+# avatar…") and the account row's (2026-10-01). Both open a window.
+edit-ask = "Edit…"
 machine-edit-title = "Edit {0}"
 machine-name = "Machine name"
 edit-done = "Done"
@@ -1724,7 +1724,7 @@ watch-save-failed = "Couldn't save"
 # Distinct from `file-unsaved`'s "Unsaved" (an editor tab's own state) —
 # this is a watched-directory list row that hasn't been saved to config yet.
 watch-unsaved = "Not saved"
-open-term-on = "Open session"
+open-term-on-ask = "Open session…"
 browse-files = "Browse files"
 borrow-web = "Borrow network"
 install-hooks = "Install hooks"

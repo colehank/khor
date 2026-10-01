@@ -1867,7 +1867,7 @@ export function WorkspacePane({
                   // there is to send, and the node refuses it in its own
                   // words.
                   create={{
-                    label: gui.new_session,
+                    label: gui.new_session_ask,
                     mark: "data-ws-new-session",
                     onSelect: () => onNewSession(channel ?? machine, root),
                   }}

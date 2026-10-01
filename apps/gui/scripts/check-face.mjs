@@ -25580,6 +25580,13 @@ try {
   //      terminal and stops what runs in it, or closes khor's terminal on
   //      the tmux session and leaves the session running. Red before: all
   //      three forms were asked `close-warn-live`.
+  //   b. **An item that opens a window says so with 「…」.** Every item of
+  //      every sidebar's row menu, every ＋ beside L0's search box, and a
+  //      machine page's R0 verbs, pressed in turn: whatever put a dialog
+  //      up is spelled with a trailing ellipsis (README 文字怎么写: 「带
+  //      省略号表示还会再问一次」). Red before: the 额度 row's 「编辑」, the
+  //      工作区 ＋'s 「添加工作区」, an open workspace's session column ＋
+  //      「新会话」, the machine page's 「打开会话」.
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
@@ -25650,6 +25657,165 @@ try {
       );
     }
     await page.unroute("**/sessions", fixRows);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
+  // b. 「…」 on every item that opens a window.
+  {
+    const misses = [];
+    let pressed = 0;
+    let windows = 0;
+    const opened = async () =>
+      until(1_200, async () => (await page.locator('[role="dialog"]').count()) > 0);
+    // The row menus, every sidebar.
+    const COLS = [
+      { landing: "sessions", pane: "[data-list]" },
+      { landing: "devices", pane: "[data-list]" },
+      { landing: "workspaces", pane: "[data-list]" },
+      { landing: "browser", pane: "[data-browse-tabs]" },
+      { landing: "quota", pane: "[data-quota-pane]" },
+    ];
+    for (const c of COLS) {
+      await open(c.landing);
+      await wait(500);
+      const rowSel = `${c.pane} [data-side-row][data-side-menu="true"]:not([data-me="true"])`;
+      if ((await page.locator(rowSel).count()) === 0) {
+        fail(`probe dead: fix b · no row with a menu in the ${c.landing} sidebar`);
+        continue;
+      }
+      const target = await page.locator(rowSel).last().getAttribute("data-side-row");
+      const menuUp = async () => {
+        await page.locator(`${c.pane} [data-side-row="${target}"] [data-side-open]`).click({ button: "right" });
+        return until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 0);
+      };
+      if (!(await menuUp())) {
+        fail(`probe dead: fix b · right-clicking a ${c.landing} row opened no menu`);
+        continue;
+      }
+      const items = await page
+        .locator("[data-row-menu] [data-menu-item]")
+        .evaluateAll((els) => els.map((e) => ({ key: e.getAttribute("data-menu-item"), label: e.textContent.trim() })));
+      await settle();
+      for (const it of items) {
+        if (!(await menuUp())) break;
+        const item = page.locator(`[data-row-menu] [data-menu-item="${it.key}"]`);
+        if ((await item.count()) === 0) {
+          await settle();
+          continue;
+        }
+        const label = (await item.innerText()).trim();
+        await item.click();
+        pressed += 1;
+        if (await opened()) {
+          windows += 1;
+          if (!label.endsWith(ELLIPSIS)) misses.push(`the ${c.landing} row's 「${label}」 (${it.key})`);
+        }
+        await settle();
+      }
+    }
+    // The ＋ beside L0's search box, on every landing that has one, and
+    // the one over an open workspace's sessions.
+    const plus = async (where) => {
+      const btn = page.locator("[data-pane-new]:visible");
+      const n = await btn.count();
+      for (let i = 0; i < n; i++) {
+        const b = btn.nth(i);
+        if ((await b.getAttribute("aria-haspopup")) === "menu") {
+          await b.click();
+          await until(2_000, async () => (await page.locator("[data-new-item]").count()) > 0);
+          const keys = await page.locator("[data-new-item]").evaluateAll((els) => els.map((e) => e.getAttribute("data-new-item")));
+          await settle();
+          for (const k of keys) {
+            await b.click();
+            if (!(await until(2_000, async () => (await page.locator(`[data-new-item="${k}"]`).count()) === 1))) continue;
+            const label = (await page.locator(`[data-new-item="${k}"]`).innerText()).trim();
+            await page.locator(`[data-new-item="${k}"]`).click();
+            pressed += 1;
+            if (await opened()) {
+              windows += 1;
+              if (!label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ menu 「${label}」 (${k})`);
+            }
+            await settle();
+          }
+        } else {
+          const label = (await b.getAttribute("aria-label")) ?? "";
+          if (await b.isDisabled()) continue;
+          await b.click();
+          pressed += 1;
+          if (await opened()) {
+            windows += 1;
+            if (!label.endsWith(ELLIPSIS)) misses.push(`${where}'s ＋ 「${label}」`);
+          }
+          await settle();
+        }
+      }
+    };
+    for (const landing of ["sessions", "devices", "workspaces", "quota"]) {
+      await open(landing);
+      await wait(500);
+      await plus(`the ${landing} landing`);
+    }
+    await open("workspaces");
+    await wait(500);
+    // The walk's `openWs`, which ended with the walk's block.
+    const openWsHere = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    if (await openWsHere()) {
+      // The sessions column is the R0 switch's to open (4l).
+      if (!(await until(2_000, async () => (await page.locator("[data-ws-new-session]").count()) > 0))) {
+        await press("[data-ws-sessions-switch]");
+      }
+      await until(5_000, async () => (await page.locator("[data-ws-new-session]").count()) > 0);
+      const b = page.locator("[data-ws-new-session]").first();
+      if ((await b.count()) === 0) fail("probe dead: fix b · an open workspace drew no ＋ over its sessions");
+      else {
+        const label = (await b.getAttribute("aria-label")) ?? "";
+        await b.click();
+        pressed += 1;
+        if (await opened()) {
+          windows += 1;
+          if (!label.endsWith(ELLIPSIS)) misses.push(`an open workspace's sessions ＋ 「${label}」`);
+        }
+        await settle();
+      }
+    } else fail("probe dead: fix b · no workspace row to open");
+    // A machine page's R0 verbs: icons too, named by `aria-label`. All
+    // but VS Code — its window is a consent asked once per machine
+    // (§13 d), not a step of every press.
+    {
+      const verbSel = "[data-main] [data-region-head] [data-machine-verbs] > button[data-verb]";
+      const toMachine = async () =>
+        (await open("devices")) &&
+        (await press("[data-list] [data-row-open] >> nth=1")) &&
+        until(5_000, async () => (await page.locator(verbSel).count()) > 0);
+      if (!(await toMachine())) fail("probe dead: fix b · no machine page with verbs in R0");
+      else {
+        const keys = (
+          await page.locator(verbSel).evaluateAll((els) => els.map((e) => e.getAttribute("data-verb")))
+        ).filter((k) => k !== "code");
+        for (const k of keys) {
+          if (!(await toMachine())) break;
+          const b = page.locator(`[data-main] [data-region-head] [data-machine-verbs] > button[data-verb="${k}"]`);
+          const label = (await b.getAttribute("aria-label")) ?? "";
+          await b.click();
+          pressed += 1;
+          if (await opened()) {
+            windows += 1;
+            if (!label.endsWith(ELLIPSIS)) misses.push(`the machine page's 「${label}」 (${k})`);
+          }
+          await settle();
+        }
+      }
+    }
+    console.log(`fix b · ${pressed} item(s) pressed, ${windows} opened a window, ${misses.length} without 「…」`);
+    if (windows < 8) fail(`probe dead: fix b · only ${windows} press(es) opened a window — the sweep is not reaching the menus`);
+    for (const m of misses) {
+      fail(`fix b · ${m} opens a window and its word has no 「…」 — 「带省略号表示还会再问一次」 (README 文字怎么写)`);
+    }
     await page.reload({ waitUntil: "load" });
     await wait(900);
   }

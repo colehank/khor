@@ -1187,7 +1187,7 @@ export function QuotaLanding({
               throw e;
             }),
       },
-      { key: "edit", label: gui.accounts_edit, run: () => setEditing(r) },
+      { key: "edit", label: gui.edit_ask, run: () => setEditing(r) },
       // 删除 last, behind a line — every sidebar's menu opens on 置顶 and
       // closes on 删除 (2026-09-28 audit 第 16 条, Apple HIG). It was the
       // second item from docs/SHELL.md 第二轮 until then, and 撤掉 and
