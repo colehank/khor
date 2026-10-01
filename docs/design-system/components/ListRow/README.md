@@ -2,7 +2,9 @@
 
 L2 列表里的一行。有副标题就是两行、高 `row-2` 48；没有就是一行、高 `row-1` 32。左右内边距 `gap-in` 8，各部分之间 `gap-row` 12，选中块圆角 `radius-md` 8。
 
-三个槽：**leading**（头像或字形块）· **标题 / 副标题** · **meta**（右端的时间、计数、状态词）。标题 `body`，选中时换成 `headline`；副标题 `callout` 配 `secondary`；meta `caption` 配 `tertiary`。
+三个槽：**leading**（头像或字形块）· **标题 / 副标题** · **meta**（右端的时间、计数、状态词）。
+
+**leading 说「这是哪一类」有两种画法**（2026-10-02，负责人：「角标、浮现这样」）：默认**浮现**——类型标记 18 画在 32 的脸正中，脸压一层 `mark-veil`，没有角标；「…」→ 外观 →「类型标记」选**角标**就回到右下角那枚。会话、机器、工作区、浏览四栏同一个 `FaceMark`，列只交「是哪一类」（`SideRow.mark`），不交标记的尺寸。细节在 `Avatar`。标题 `body`，选中时换成 `headline`；副标题 `callout` 配 `secondary`；meta `caption` 配 `tertiary`。
 
 ## 选中是一块灰（D6，2026-09-27 改）
 
