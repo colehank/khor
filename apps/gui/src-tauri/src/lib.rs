@@ -487,9 +487,43 @@ fn page_icons() -> std::collections::BTreeMap<String, String> {
     khor_gui_core::web::page_icons(&Node::root_from_env())
 }
 
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 fn open_link(url: String) -> Result<(), String> {
     khor_gui_core::web::open_link(&url)
+}
+
+/// The phone's half (docs/IOS.md 第二步): **the system opens the page**,
+/// in whatever browser the person uses — an app's sandbox has no program
+/// to hand a URL to, and the desktop road's `xdg-open` came back as a raw
+/// OS error. The same whitelist as the desktop (`web::page_only`), asked
+/// before anything leaves; UIKit wants the main thread, so the hand-over
+/// runs there and this answers once it is queued.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    khor_gui_core::web::page_only(&url)?;
+    app.run_on_main_thread(move || {
+        use objc2::MainThreadMarker;
+        use objc2_foundation::{NSDictionary, NSString, NSURL};
+        use objc2_ui_kit::UIApplication;
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let Some(page) = NSURL::URLWithString(&NSString::from_str(&url)) else {
+            return;
+        };
+        // SAFETY: an empty options dictionary is the documented default,
+        // and no completion handler is asked for.
+        unsafe {
+            UIApplication::sharedApplication(mtm).openURL_options_completionHandler(
+                &page,
+                &NSDictionary::new(),
+                None,
+            );
+        }
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2744,7 +2778,18 @@ pub fn run() {
     // **After `main_if_host`**, or a re-exec'd session host would claim
     // to be the window. Failing to write it costs a row on one card and
     // nothing else, so it does not stop the app coming up.
+    //
+    // **Not on a phone** (docs/IOS.md 第二步): its app is not the desktop
+    // app, and a pid file saying so made the phone's own card claim one.
+    #[cfg(desktop)]
     let _ = khor_node::face::app_here(&Node::root_from_env());
+    // **The phone's machine fingerprint, asked here, on the main thread**
+    // (`khor_node::hardware`): UIKit hands `identifierForVendor` out on
+    // the main thread only, and this is the one moment the app is
+    // certainly on it — every later ask, from the serve's thread or a
+    // command's, reads the kept answer instead of queueing onto main.
+    #[cfg(target_os = "ios")]
+    let _ = khor_node::hardware::fingerprint();
 
     // The app embeds serve — the desktop is a full node, not a client
     // (one mesh, no client/server split). Running `khor serve` on the

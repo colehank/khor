@@ -92,6 +92,19 @@ pub fn page_icons(root: &Path) -> std::collections::BTreeMap<String, String> {
     khor_node::favicon::kept(root)
 }
 
+/// [`open_link`]'s whitelist on its own: `http` and `https`, refused in
+/// words otherwise. Public for the phone's opener (`khor_gui`'s iOS
+/// `open_link`, which hands the page to the system rather than to a
+/// program), so both roads refuse the same addresses.
+pub fn page_only(url: &str) -> Result<(), String> {
+    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
+    if matches!(scheme.as_deref(), Some("http") | Some("https")) {
+        Ok(())
+    } else {
+        Err(khor_catalog::msg::not_a_page(url))
+    }
+}
+
 /// Hands a page to whatever this machine opens pages with.
 ///
 /// **The address comes out of an agent's own words** — a conversation
@@ -107,10 +120,7 @@ pub fn page_icons(root: &Path) -> std::collections::BTreeMap<String, String> {
 /// (docs/STACK.md 零依赖 is about **the user's tools**): `open` and
 /// `xdg-open` ship with the desktop that would be showing this window.
 pub fn open_link(url: &str) -> Result<(), String> {
-    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
-    if !matches!(scheme.as_deref(), Some("http") | Some("https")) {
-        return Err(khor_catalog::msg::not_a_page(url));
-    }
+    page_only(url)?;
     // A URL is a URL, never a shell word: the opener is executed
     // directly with one argument, so nothing in the address can become
     // a second command.

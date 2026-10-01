@@ -82,6 +82,16 @@ block2 = "0.6"
 # the tree under tauri**, which uses it for dev builds — no new package.
 embed_plist = "1"
 
+# The phone's opener (docs/IOS.md 第二步): a link is handed to the system
+# with `UIApplication.openURL`, which opens it in the person's browser —
+# there is no `open` or `xdg-open` to start in an app's sandbox, and the
+# desktop road answered a raw OS error there. **Already in the tree**
+# under wry on iOS; only the features named here are compiled.
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSDictionary"] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "block2", "UIApplication", "UIResponder"] }
+
 [features]
 # **On by default, and that is the whole fix for the white window.**
 # tauri decides at *compile time* whether the app loads `build.devUrl`

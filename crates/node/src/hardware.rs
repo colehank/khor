@@ -26,6 +26,7 @@
 //! |---|---|
 //! | Linux | `/etc/machine-id`, else `/var/lib/dbus/machine-id` |
 //! | macOS | `IOPlatformUUID` out of `ioreg` |
+//! | iOS | `UIDevice.identifierForVendor` |
 //!
 //! **Hashed before it is written down.** Both are stable identifiers of
 //! somebody's computer, and `~/.khor/owner` is a file that travels on a
@@ -103,7 +104,31 @@ fn raw_id() -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+/// **An iPhone: `identifierForVendor`** (docs/IOS.md 第二步) — the id
+/// iOS keeps for this app's vendor on this device. It survives a rename
+/// (the device name is a label, the very thing this module refuses to
+/// trust) and an app update; it changes only when every app of the
+/// vendor is removed, which takes the store with it, and it is a
+/// different id on a different phone — so a store restored onto another
+/// device would be refused rather than worn, if it ever got there
+/// (`backup::keep_out` sees that it does not).
+///
+/// UIKit hands it out on the main thread: asked there directly (the app
+/// asks once at launch, `khor_gui::run`, so the answer is kept before any
+/// other thread wants it), and from any other thread through the main
+/// queue. `None` in the rare moment iOS will not say (after a restart,
+/// before the first unlock) — the name decides then, as on a platform
+/// with no id.
+#[cfg(target_os = "ios")]
+fn raw_id() -> Option<String> {
+    dispatch2::run_on_main(|mtm| {
+        objc2_ui_kit::UIDevice::currentDevice(mtm)
+            .identifierForVendor()
+            .map(|id| id.UUIDString().to_string())
+    })
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
 fn raw_id() -> Option<String> {
     None
 }

@@ -82,3 +82,16 @@ core-foundation.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nvml-wrapper.workspace = true
+
+# A phone's two identity facts (docs/IOS.md 第二步): the machine
+# fingerprint is `UIDevice.identifierForVendor` (`hardware.rs`), asked on
+# the main thread through `dispatch2::run_on_main`, and the store is kept
+# out of iCloud / computer backups with `NSURLIsExcludedFromBackupKey`
+# (`backup.rs`). **All four are already in the tree** under tauri's wry
+# on iOS — no new package; only the features named here are compiled.
+# License: MIT (the objc2 family).
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSValue", "NSError", "NSUUID"] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "UIDevice"] }
+dispatch2 = "0.3"
