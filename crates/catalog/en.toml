@@ -68,6 +68,8 @@ workspace = "Workspace"
 confirm = "Confirm dangerous actions"
 
 theme = "Theme"
+kind-mark = "Kind mark"
+kind-mark-note = "Draws the kind on the avatar, or at its bottom-right corner"
 lang = "Interface language"
 tabs-limit = "Tab limit"
 session-form = "New sessions open as"
@@ -92,6 +94,8 @@ preview = "Preview"
 pin = "Keep open"
 on = "On"
 off = "Off"
+face = "On the face"
+corner = "Corner badge"
 
 [cli]
 usage = """

@@ -1395,6 +1395,10 @@ pub struct ConfigRow {
     pub page: String,
     pub value: String,
     pub choices: Vec<ConfigChoice>,
+    /// The sentence under the row's name — **what the setting does**
+    /// (components/SettingsGroup: 「note 写会发生什么」) — when the
+    /// catalog has one (`<key>-note`, 2026-10-02). Most keys have none.
+    pub note: Option<String>,
 }
 
 fn config_row(k: &khor_node::config::Key, value: &str) -> ConfigRow {
@@ -1419,6 +1423,14 @@ fn config_row(k: &khor_node::config::Key, value: &str) -> ConfigRow {
                 label: khor_catalog::config::word(v).to_owned(),
             })
             .collect(),
+        note: {
+            // `word` echoes a name it does not know, so an echo is
+            // 「this key has no note」 — `khor-node`'s gate holds the
+            // other direction (a note's stem is a key).
+            let name = format!("{}-note", k.name);
+            let said = khor_catalog::config::word(&name);
+            (said != name).then(|| said.to_owned())
+        },
     }
 }
 

@@ -130,6 +130,24 @@ pub const KEYS: &[Key] = &[
         values: &["auto", "light", "dark"],
         default: "auto",
     },
+    // 类型标记 (the owner, 2026-10-02:「我们在外观里可以设置，对象类型的
+    // 绘制形式，角标、浮现这样」): how every avatar that says *what kind of
+    // thing* a row is — a session's agent or terminal, a machine's system,
+    // a workspace's repository or folder — draws that kind. `face` paints
+    // the mark on the machine's face, centred, with no corner; `corner` is
+    // the face with the mark on a punch-out at its bottom right, which is
+    // what khor drew before this key existed.
+    //
+    // **The default is `face`, a new behaviour on purpose**: the owner
+    // picked it from the drawing as the one he wants to see, and `corner`
+    // stays one row away. **Only the face reads this** (`FaceMark`), the
+    // same way only the face resolves `theme`.
+    Key {
+        name: "kind-mark",
+        section: "appearance",
+        values: &["face", "corner"],
+        default: "face",
+    },
     // ── 语言 ──────────────────────────────────────────────────────
     //
     // 「自动跟随系统语言，我们支持英语与中文。失败会退英文」 (the user,

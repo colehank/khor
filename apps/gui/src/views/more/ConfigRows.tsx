@@ -62,6 +62,7 @@ function Row({
       <SwitchRow
         name={row.name}
         label={row.label}
+        hint={row.note ?? undefined}
         on={on}
         onToggle={() => onPick(row.name, on ? "off" : "on")}
         rowMark={mark}
@@ -72,6 +73,9 @@ function Row({
     <PopupRow
       name={row.name}
       label={row.label}
+      // What the setting does, when the catalog has a sentence for it
+      // (`ConfigRow.note`, 2026-10-02) — the node's word like the label.
+      hint={row.note ?? undefined}
       value={row.value}
       choices={row.choices.map((c) => ({ value: c.value, label: c.label }))}
       onPick={(v) => onPick(row.name, v)}

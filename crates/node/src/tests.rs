@@ -2850,11 +2850,42 @@ fn every_config_name_has_a_word_and_every_word_names_something() {
         );
     }
     for key in khor_catalog::config::KEYS {
+        // **A row's note** (`<key>-note`, 2026-10-02): the sentence under
+        // a setting's name that says what it does. Optional per key, so it
+        // is not in `named`; what is required is that its stem is a key
+        // somebody can reach — a note left behind by a key that went
+        // away is the invisible half this test exists for.
+        if let Some(stem) = key.strip_suffix("-note") {
+            assert!(
+                config::key(stem).is_some(),
+                "config.{key} is a note for {stem}, which is not a key"
+            );
+            continue;
+        }
         assert!(
             named.contains(&key),
             "config.{key} has a word but names no section, key or value anybody can reach"
         );
     }
+}
+
+/// 类型标记 (the owner, 2026-10-02): the setting is on the 外观 page, it
+/// starts out as `face` — the drawing the owner picked — and takes only
+/// the two ways he named.
+#[test]
+fn the_kind_mark_starts_on_the_face_and_takes_two_ways() {
+    let r = scratch("config-kind-mark");
+    assert_eq!(config::get(&r, "kind-mark").unwrap(), "face");
+    let k = config::key("kind-mark").unwrap();
+    assert_eq!(config::section(k.section).unwrap().page, "appearance");
+    assert_eq!(config::set(&r, "kind-mark", "corner").unwrap(), "corner");
+    assert_eq!(config::get(&r, "kind-mark").unwrap(), "corner");
+    assert!(config::set(&r, "kind-mark", "swap").is_err());
+    assert_ne!(
+        khor_catalog::config::word("kind-mark-note"),
+        "kind-mark-note",
+        "the row says what it does"
+    );
 }
 
 // ── khor leave (docs/MORE.md 离开, 2026-09-20) ──────────────────────
