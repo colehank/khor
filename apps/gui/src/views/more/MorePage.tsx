@@ -338,7 +338,10 @@ export function MoreFact({
     // `data-more-row`: a row of a settings card like the four kinds —
     // their height, their trailing edge (app.css, `check-face` 4I).
     <div data-more-row className="flex min-w-0 items-center gap-row text-body">
-      <span className="flex-1">{label}</span>
+      {/* The label keeps its line: a long value (a store path on a phone,
+          docs/IOS.md) wraps beside it instead of squeezing it to one
+          character a line. */}
+      <span className="flex-1 whitespace-nowrap">{label}</span>
       <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 break-all text-right text-muted-foreground">
         {children}
       </span>
