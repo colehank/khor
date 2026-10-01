@@ -303,9 +303,13 @@ export function NewSessionDialog({
   const chosen = machine || fallback;
   const target = chosen || machines.find((d) => d.me)?.name || "";
   /** Whether the machine picked can host a session — its own row says
-      (a phone does not). Unknown while the table has not answered reads
-      as this machine's own answer. */
-  const targetHosts = machines.find((d) => d.name === target)?.hosts ?? here;
+      (a phone does not). **Yes until the table has answered**: the
+      dialog opens before it, and on a phone the target is not known yet
+      (it becomes the first machine that can host) — reading the phone's
+      own no then would fall the kind back to 留言 for a machine nobody
+      picked. */
+  const targetHosts =
+    machines.length === 0 ? true : (machines.find((d) => d.name === target)?.hosts ?? true);
   // 智能体 and shell picked on a machine that cannot host fall back to
   // the one kind it takes — the 终端 form's `pick` rule, one step up.
   useEffect(() => {

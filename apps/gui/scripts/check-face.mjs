@@ -27005,7 +27005,7 @@ try {
       fail("probe dead: phone a · the new-session dialog or its machine choice never drew");
     } else {
       if (dialogA.opened !== "gate") fail(`phone a · the dialog opened on ${dialogA.opened} — a computer opens it on itself, as it always did`);
-      if (dialogA.atOpen.agent?.disabled !== false) fail("probe dead: phone a · 智能体 is not live on this machine — the control");
+      if (dialogA.atOpen.agent?.disabled !== false || !dialogA.atOpen.agent?.on) fail(`probe dead: phone a · the dialog did not open on 智能体, live — the control: ${JSON.stringify(dialogA.atOpen)}`);
       const k = dialogA.picked;
       if (!(k.agent?.disabled && k.shell?.disabled && k.tell?.disabled === false && k.tell?.on)) {
         fail(`phone a · picking elder left the kinds ${JSON.stringify(k)} — 智能体 and shell greyed, 留言 chosen (src/views/NewSessionDialog.tsx)`);
@@ -27024,12 +27024,15 @@ try {
     const takeA = await count("[data-ws-tree] [data-file] [data-take]");
     const wsCodeA = await count("[data-code]");
     await open("sessions");
+    // Counted across 导入 alone: the new-session dialog reads the registry too
+    // (a document, no process), and that read is not what this is about.
+    const agentsBeforeA = sent("agents");
     if (await press("[data-side-head] [data-pane-new]")) {
       if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="import"]');
       await wait(800);
       await press("[data-dialog-cancel]");
     }
-    const agentsAskedA = sent("agents");
+    const agentsAskedA = sent("agents") - agentsBeforeA;
     const webKeyA = sent("web_key");
     console.log(
       `phone a · controls: hooks polled ${hooksPolledA}, key row ${keyRowA}, 打开 ${storeOpenA}, 拉过来 ${takeA}, workspace VS Code ${wsCodeA}, agents asked ${agentsAskedA}, web_key asked ${webKeyA}`,
@@ -27049,7 +27052,9 @@ try {
       fail("probe dead: phone b · the new-session dialog or its machine choice never drew");
     } else {
       if (dialogB.opened !== "peer") fail(`phone b · the dialog opened on ${dialogB.opened} — on a phone it opens on the first machine that can host (peer)`);
-      if (dialogB.atOpen.agent?.disabled !== false) fail(`phone b · 智能体 is not live on peer, a machine that can host: ${JSON.stringify(dialogB.atOpen)}`);
+      if (dialogB.atOpen.agent?.disabled !== false || !dialogB.atOpen.agent?.on) {
+        fail(`phone b · the dialog did not open on 智能体, live, on peer — a machine that can host: ${JSON.stringify(dialogB.atOpen)}`);
+      }
       const k = dialogB.picked;
       if (!(k.agent?.disabled && k.shell?.disabled && k.tell?.disabled === false && k.tell?.on)) {
         fail(`phone b · picking this phone left the kinds ${JSON.stringify(k)} — 智能体 and shell greyed, 留言 chosen`);
@@ -27083,6 +27088,7 @@ try {
     if (await count("[data-ws-tree] [data-file] [data-take]")) fail("phone b · the tree offers 拉过来 on a phone (src/views/fileRow.tsx useTake)");
     if (await count("[data-code]")) fail("phone b · the workspace offers VS Code on a phone (src/components/CodeWindow.tsx)");
     await open("sessions");
+    const agentsBeforeB = sent("agents");
     if (await press("[data-side-head] [data-pane-new]")) {
       if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="import"]');
       await wait(800);
@@ -27090,7 +27096,7 @@ try {
       if (await count("[data-import-agents]")) fail("phone b · 导入 offers to ask the agents on a phone");
       await press("[data-dialog-cancel]");
     }
-    if (sent("agents") || sent("agent_ask")) fail(`phone b · 导入 asked for the agents on a phone (${sent("agents")}, ${sent("agent_ask")}) (src/views/ImportDialog.tsx)`);
+    if (sent("agents") - agentsBeforeB || sent("agent_ask")) fail(`phone b · 导入 asked for the agents on a phone (${sent("agents") - agentsBeforeB}, ${sent("agent_ask")}) (src/views/ImportDialog.tsx)`);
 
     page.off("request", listen);
     gateDev.hosts = true;
