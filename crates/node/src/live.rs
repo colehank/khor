@@ -263,6 +263,51 @@ impl LiveKind {
         Some(sessions_dir(&self.root).join(format!("{kind}-{leaf}")))
     }
 
+    /// The file an unregistered agent row's [`SeatNote`] lives in — the
+    /// registry's own `<kind>-<leaf>` spelling, under `.khor/seats`.
+    fn seat_note_path(&self, id: &SessionId) -> Option<PathBuf> {
+        let dir = self.dir(id)?;
+        Some(seats_dir(&self.root).join(dir.file_name()?))
+    }
+
+    fn seat_note(&self, id: &SessionId) -> Option<SeatNote> {
+        let text = fs::read(self.seat_note_path(id)?).ok()?;
+        serde_json::from_slice::<SeatNote>(&text)
+            .ok()
+            .filter(|n| n.id == id.0)
+    }
+
+    /// Every note on disk; an unreadable one is skipped, like a
+    /// half-written registry dir.
+    fn seat_notes(&self) -> Vec<SeatNote> {
+        let Ok(rd) = fs::read_dir(seats_dir(&self.root)) else {
+            return Vec::new();
+        };
+        rd.flatten()
+            .filter_map(|e| fs::read(e.path()).ok())
+            .filter_map(|b| serde_json::from_slice::<SeatNote>(&b).ok())
+            .filter(|n| self.seat_note_path(&SessionId(n.id.clone())).is_some())
+            .collect()
+    }
+
+    /// Best effort, `note_seat`'s terms: a note that did not land is
+    /// written again by the next listing that sees the row.
+    fn write_seat_note(&self, note: &SeatNote) {
+        let Some(path) = self.seat_note_path(&SessionId(note.id.clone())) else {
+            return;
+        };
+        let _ = fs::create_dir_all(seats_dir(&self.root));
+        if let Ok(bytes) = serde_json::to_vec(note) {
+            let _ = write_whole(&path, &bytes);
+        }
+    }
+
+    fn clear_seat_note(&self, id: &SessionId) {
+        if let Some(path) = self.seat_note_path(id) {
+            let _ = fs::remove_file(path);
+        }
+    }
+
     /// Whether this id names a session in the local registry.
     pub fn claims(&self, id: &SessionId) -> bool {
         self.dir(id).is_some_and(|d| d.join("meta.json").exists())
@@ -648,20 +693,38 @@ impl LiveKind {
         // itself. Nothing narrows the view to a window: the process that
         // named one is gone. The row keeps its registry dir, so the lens
         // cleans up only its own file when it ends.
+        //
+        // **An agent nobody registered** remembers its seat in a note
+        // (`SeatNote`) instead. The lens needs a registry dir to hang on,
+        // so one is minted here — the discovered path's rule below — and
+        // taken away with the lens, after which the note seats the row
+        // again exactly as before.
+        let noted = (!self.claims(id)).then(|| self.seat_note(id)).flatten();
         if !sweep.rows.iter().any(|f| f.id() == *id)
             && let Some(dir) = self.dir_of(id)
-            && let Some(seat) = read_seat(&dir)
+            && let Some(seat) = read_seat(&dir).or_else(|| noted.as_ref().map(|n| n.seat.clone()))
             && sweep.multiplexed.iter().any(|h| h.found.id().0 == seat)
             && let Some(target) = seat
                 .strip_prefix(&shell_prefix)
                 .and_then(crate::adaptor::tmux::tmux_target_of)
         {
+            let minted = match &noted {
+                Some(n) if !self.claims(id) => {
+                    self.ensure(id, khor_core::kind::TUI, &n.title, None, n.category.as_deref())?;
+                    // Nothing was spawned: the opening 忙碌 `register`
+                    // writes is demoted, as for a discovered row below.
+                    let _ = self.report(id, State::Idle, Source::Screen);
+                    note_seat(&dir, Some(&seat));
+                    true
+                }
+                _ => false,
+            };
             crate::host::spawn_viewer_host(
                 &dir,
                 id,
                 &tmux.grouped_attach_argv(&target, None),
                 (80, 24),
-                false,
+                minted,
             )?;
             return Ok(Seat::View);
         }
@@ -1066,6 +1129,23 @@ impl LiveKind {
                 seat_of_pid.insert(p, seat);
             }
         }
+        // Where each row was last seen sitting: a registered row's own
+        // `seat` file, and for an agent nobody registered, its note
+        // (`SeatNote`). A note for a row that has since been registered
+        // is the registry's business now, and is not read.
+        let notes: Vec<SeatNote> = self
+            .seat_notes()
+            .into_iter()
+            .filter(|n| !registered.iter().any(|r| r.row.id.0 == n.id))
+            .collect();
+        let mut last_seat: Vec<Option<String>> = out
+            .iter()
+            .enumerate()
+            .map(|(i, r)| match registered.get(i) {
+                Some(reg) => reg.seat.clone(),
+                None => notes.iter().find(|n| n.id == r.id.0).map(|n| n.seat.clone()),
+            })
+            .collect();
         // ── the seating (docs/SESSION.md 形态随进程变) ─────────────
         //
         // **One host, one row, wearing what runs in the host now.** A
@@ -1145,6 +1225,42 @@ impl LiveKind {
                 tmux: Some(held.found),
             });
         }
+        // **An agent nobody registered, gone from a host that is still
+        // there.** Nothing else remembers it — its status file and its
+        // process went with it — so its note stands it back up as a row,
+        // only for the seating below to seat like a registered one: on
+        // the list it holds the seat in the host's current form, off it
+        // it folds. A note whose host is gone brings nothing back; the
+        // row then ends the way an unregistered one always has.
+        for n in &notes {
+            if out.iter().any(|r| r.id.0 == n.id) || !hosts.iter().any(|h| h.id.0 == n.seat) {
+                continue;
+            }
+            raw.push(State::Done);
+            live_pids.push(Vec::new());
+            last_seat.push(Some(n.seat.clone()));
+            out.push(Session {
+                id: SessionId(n.id.clone()),
+                kind: Kind(khor_core::kind::TUI.to_owned()),
+                title: n.title.clone(),
+                home: self.device,
+                // Never shown as it stands: the seating either dresses
+                // it in the host's form or folds it.
+                state: StateStamp {
+                    state: State::Done,
+                    at: Millis(0),
+                },
+                unread: 0,
+                dead: true,
+                unbacked: false,
+                category: n.category.clone(),
+                last: None,
+                via: None,
+                term: false,
+                place: n.place.clone(),
+                mux: false,
+            });
+        }
         // Which host each running row sits in. A pid on record for a
         // process that has died cannot match: `live_pids` was built from
         // the live table.
@@ -1177,6 +1293,32 @@ impl LiveKind {
                 _ => {}
             }
         }
+        // The same note for an agent on the list that nobody registered,
+        // which has no registry dir to keep it in (`SeatNote`).
+        for i in registered.len()..out.len() {
+            let r = &out[i];
+            if r.kind.0 != khor_core::kind::TUI {
+                continue;
+            }
+            match sits_in[i] {
+                Some(h) if listed(&r.id.0) => {
+                    let note = SeatNote {
+                        id: r.id.0.clone(),
+                        seat: hosts[h].id.0.clone(),
+                        title: r.title.clone(),
+                        category: r.category.clone(),
+                        place: r.place.clone(),
+                    };
+                    if notes.iter().find(|n| n.id == note.id) != Some(&note) {
+                        self.write_seat_note(&note);
+                    }
+                }
+                None if !live_pids[i].is_empty() && last_seat[i].is_some() => {
+                    self.clear_seat_note(&r.id)
+                }
+                _ => {}
+            }
+        }
         let mut folded: Vec<SessionId> = Vec::new();
         let mut folded_bridges: Vec<SessionId> = Vec::new();
         let mut worn: Vec<(SessionId, SessionId)> = Vec::new();
@@ -1202,18 +1344,18 @@ impl LiveKind {
                 .copied()
                 .filter(|&i| out[i].kind.0 == khor_core::kind::TUI)
                 .collect();
-            // Agent rows last seen here whose agent is nowhere now.
-            let gone: Vec<usize> = registered
-                .iter()
-                .enumerate()
-                .filter(|(i, r)| {
-                    Some(*i) != host.own
-                        && sits_in[*i].is_none()
-                        && live_pids[*i].is_empty()
-                        && r.row.kind.0 == khor_core::kind::TUI
-                        && r.seat.as_deref() == Some(host.id.0.as_str())
+            // Agent rows last seen here whose agent is nowhere now —
+            // registered or not (`SeatNote`). Over the rows as they stood
+            // before this loop: a tmux session's own row appended below
+            // is a host, never an agent that left one.
+            let gone: Vec<usize> = (0..sits_in.len())
+                .filter(|&i| {
+                    Some(i) != host.own
+                        && sits_in[i].is_none()
+                        && live_pids[i].is_empty()
+                        && out[i].kind.0 == khor_core::kind::TUI
+                        && last_seat[i].as_deref() == Some(host.id.0.as_str())
                 })
-                .map(|(i, _)| i)
                 .collect();
             let newest = |rows: &[usize]| rows.iter().copied().max_by_key(|&i| out[i].state.at.0);
             let open = |i: usize| registered.get(i).is_some_and(|r| r.open);
@@ -1719,6 +1861,34 @@ fn note_seat(dir: &Path, seat: Option<&str>) {
             let _ = fs::remove_file(seat_path(dir));
         }
     }
+}
+
+/// Where an agent row **khor never registered** was last seen sitting —
+/// the `seat` file's job for a row that has no registry dir to keep one
+/// in (no hook, never opened in khor). Without it such an agent, once it
+/// left, had nothing to find its host by: its status file and its
+/// process go with it, so the row the person imported vanished and the
+/// tmux session came back as a row nobody put on the list (2026-09-30
+/// account, docs/SESSION.md 形态随进程变).
+///
+/// Written only for a row **on the list** — nobody else misses one — and
+/// it carries what the row showed, because after the agent is gone
+/// nothing else can say it. One file per row under `.khor/seats`, apart
+/// from the registry so that `claims` and the registry listing never see
+/// it; wiped when the agent is seen running outside every host, the
+/// registered note's rule.
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug)]
+struct SeatNote {
+    id: String,
+    /// The host's session id, as a registered row's `seat` file says it.
+    seat: String,
+    title: String,
+    category: Option<String>,
+    place: Option<String>,
+}
+
+fn seats_dir(root: &Path) -> PathBuf {
+    root.join(".khor").join("seats")
 }
 
 /// Who is still there behind a registry row.
@@ -3293,6 +3463,123 @@ mod tests {
             Some("claude"),
             "and it ends as what it last was"
         );
+    }
+
+    /// **tmux, an agent khor never registered leaves** (the 2026-09-30
+    /// account, docs/handoff/001.md). A claude with no hook that nobody
+    /// opened in khor has no registry entry, so it had nowhere to write
+    /// the seat note above: once it left, the row the person had
+    /// imported went with it, and the tmux session came back as a row
+    /// nobody put on the list — from the sidebar the row was simply
+    /// gone. It has to turn into that tmux session's terminal exactly
+    /// like a registered one, whether claude crashed (its status file
+    /// left behind, still news) or exited cleanly (the file gone too).
+    #[test]
+    fn an_unregistered_agent_leaving_its_tmux_session_turns_its_row_into_that_terminal() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("seat-unregistered");
+        // A status file of our own, fresh, so the crash below is still
+        // news to the sweep (the fixture's is from 2023).
+        let vendors = root.join("vendors");
+        let sessions = vendors.join(".claude/sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let status = sessions.join("4001.json");
+        let write_status = || {
+            fs::write(
+                &status,
+                serde_json::to_vec(&serde_json::json!({
+                    "pid": 4001,
+                    "sessionId": "11111111-1111-4111-8111-111111111111",
+                    "cwd": "/w/one",
+                    "startedAt": 1_700_000_000_000i64,
+                    "name": "one-aa",
+                    "status": "busy",
+                    "statusUpdatedAt": now_ms() - 1_000,
+                }))
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        write_status();
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "seat-unregistered",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+        );
+        let at = |procs: Procs, tmux: &str| {
+            LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+                Discovery::at(&vendors)
+                    .with_procs(procs)
+                    .with_tmux(Tmux::at_binary(tmux)),
+            ))
+        };
+        let pane = proc_under(3001, "zsh", 1);
+        let claude = proc_under(4001, "claude", 3001);
+        let agent = sid(AGENT);
+        let on_list = |s: &str| s == AGENT;
+        let terminal_of = |rows: &[Session], how: &str| {
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(
+                ids,
+                vec![AGENT],
+                "{how}: the row the person imported is still there, and the tmux session is not a second row"
+            );
+            let row = &rows[0];
+            assert_eq!(row.kind.0, khor_core::kind::SHELL, "{how}: now a terminal");
+            assert_eq!(
+                row.category.as_deref(),
+                Some(khor_core::category::SHELL),
+                "{how}: filed as a terminal"
+            );
+            assert!(!row.dead, "{how}: nothing ended — the tmux session is still there");
+            assert_eq!(
+                row.state.state,
+                State::Idle,
+                "{how}: the terminal's own word, not the agent's ending"
+            );
+            assert!(row.term && row.mux, "{how}: its terminal is the tmux session");
+            assert_eq!(row.title, "one-aa", "{how}: the name it had");
+        };
+
+        // claude in pane 3001, found by the sweep alone: no hook ever
+        // registered it. The person imported it from the candidates.
+        let k = at(Procs::of([pane.clone(), claude.clone()]), &tmux);
+        let rows = k.rows_listed(|_| 0, on_list);
+        assert!(!k.claims(&agent), "nothing registered it");
+        assert_eq!(rows.len(), 1, "a tmux session holding one claude is one row");
+        assert_eq!(rows[0].id, agent);
+        assert_eq!(rows[0].kind.0, khor_core::kind::TUI);
+        assert!(rows[0].mux);
+
+        // claude crashes: gone from the process table, its status file
+        // left behind.
+        let k = at(Procs::of([pane.clone()]), &tmux);
+        terminal_of(&k.rows_listed(|_| 0, on_list), "crashed");
+
+        // …or exits cleanly, and the status file goes with it.
+        fs::remove_file(&status).unwrap();
+        let k = at(Procs::of([pane.clone()]), &tmux);
+        terminal_of(&k.rows_listed(|_| 0, on_list), "exited");
+        // Asked again: the same answer, not a one-off.
+        terminal_of(&k.rows_listed(|_| 0, on_list), "asked again");
+
+        // Nobody put the claude on the list: the session as found holds
+        // its own seat, as it always did.
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id.0, T_ID);
+
+        // The control: the tmux session is gone as well. Nothing is left
+        // to wear, so the row is not dressed as a terminal of nothing —
+        // with the crash still news, it is the 失败 the sweep reads.
+        write_status();
+        let none = crate::adaptor::tmux::fake_tmux("seat-unregistered-none", "");
+        let k = at(Procs::default(), &none);
+        let rows = k.rows_listed(|_| 0, on_list);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, agent);
+        assert_eq!(rows[0].state.state, State::Failed, "its host is gone: the ending stands");
+        assert_eq!(rows[0].category.as_deref(), Some("claude"));
     }
 
     /// Two claudes in one tmux session are two conversations, and stay
