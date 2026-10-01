@@ -171,17 +171,16 @@ iroh 的 `Builder::proxy_from_env` 已开：中继连接和中继探测经环境
 **iroh 不读 `NO_PROXY`**：整个 shell 设了代理，同一局域网里的中继也会绕代理。
 桌面 app 从 Dock 起时通常没有这些变量。
 
-**现状两笔账，没还**（2026-09-29 查，09-30 复核）：
+**三条路一种规矩**（2026-10-01 负责人定，「可以，这个记上要做」）：直连是 UDP，
+不经任何代理；连中继只读环境变量（`proxy_from_env`）；**探测也只读环境变量**——
+vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vendor/iroh/KHOR.md`）。
+⚠️ 墓碑（2026-09-30 查，10-01 还）：之前探测读的是 macOS 系统设置里的代理——工作区为
+额度页给 reqwest 开了 `system-proxy`，feature 合并后 iroh 的探测也读它，而 hyper-util
+读系统代理不看例外表。后果是系统设置指着一个挂了的代理时一台中继也量不到、选不出家；
+代理把 39.97.7.248 路由到海外时量到的延迟是错的。本地中继的测试当时都设了
+`NO_PROXY=127.0.0.1,localhost,::1` 堵着，10-01 随补丁撤掉。
 
-- **中继探测走系统代理，中继连接不走**（2026-09-30 查）。iroh 量各中继延迟
-  和强制门户用的是 reqwest，工作区为额度页给 reqwest 开了 `system-proxy`，
-  feature 合并后 iroh 的探测也读 macOS 系统设置里的代理；而读系统代理的那段
-  （hyper-util）不看例外表，只认环境变量 `NO_PROXY`。真正的中继连接只读
-  环境变量（`proxy_from_env`）。后果：系统设置指着一个挂了的代理（国内很常见）
-  时一台中继也量不到，选不出家；代理把 39.97.7.248 路由到海外时量到的延迟是
-  错的。本地中继的测试为此都设了 `NO_PROXY=127.0.0.1,localhost,::1`。修法二选一：
-  vendor/iroh 的 reqwest 构造没有显式代理时 `.no_proxy()`，让探测和连接走同一条
-  路；或把 khor 自己的 reqwest 与 iroh 的拆开。
+**现状一笔账，没还**：
 - **Khor 档是一台谁都能用的中继。** 39.97.7.248:3340（`endpoint.rs`
   `KHOR_RELAYS`）跑的是 `iroh-relay --dev`：明文 HTTP、不验任何凭据，任何
   iroh 程序拿到地址都能用它转发。它不是开放代理——只在 iroh 设备之间转包——

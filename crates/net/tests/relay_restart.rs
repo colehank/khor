@@ -89,18 +89,8 @@ async fn an_endpoint_survives_its_relay_restarting() {
     ] {
         unsafe { std::env::remove_var(k) };
     }
-    // **Removing the variables is not enough on macOS**: iroh's relay
-    // probes (net_report's HTTP latency and captive-portal checks) are
-    // reqwest clients, and the workspace turns on reqwest's
-    // `system-proxy`, so with the variables gone they read the proxy out
-    // of System Settings — and hyper-util's reader takes the host and
-    // port there and **ignores the exceptions list**. On a machine with
-    // a system proxy (the owner's: 127.0.0.1:7897) every probe of a
-    // loopback relay goes through it; when that proxy is down or will
-    // not deliver to loopback, no relay is ever measured, no home relay
-    // is chosen, and an endpoint sits with no verdict at all. `NO_PROXY`
-    // is the one knob that reader honours.
-    unsafe { std::env::set_var("NO_PROXY", "127.0.0.1,localhost,::1") };
+    // Removing the variables is enough since 2026-10-01: iroh's probes no
+    // longer read the macOS system proxy (vendor/iroh/KHOR.md, patch 2).
 
     let first = relay_on("127.0.0.1:0".parse().unwrap()).await;
     let port = first

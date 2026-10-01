@@ -13,7 +13,19 @@ pub(crate) fn reqwest_client_builder(
 ) -> reqwest::ClientBuilder {
     use self::reqwest_dns_resolver::ReqwestDnsResolver;
 
+    // khor patch 2 (2026-10-01, vendor/iroh/KHOR.md): **never the system
+    // proxy.** Every other road out of this crate reads a proxy from the
+    // environment alone (`Builder::proxy_from_env` → the relay client), and
+    // the callers of this builder add that same `proxy_url` explicitly when
+    // there is one. Without this line, a workspace that enables reqwest's
+    // `system-proxy` feature for its own clients hands these probes the
+    // proxy out of macOS System Settings — whose exceptions list the reader
+    // ignores — so a dead or foreign system proxy means no relay is ever
+    // measured and no home relay is chosen, while the relay connection
+    // itself went direct. `no_proxy()` only clears the automatic system
+    // lookup; a `.proxy(..)` added after it still applies.
     reqwest::Client::builder()
+        .no_proxy()
         .tls_backend_preconfigured(tls_client_config)
         .dns_resolver(ReqwestDnsResolver(dns_resolver))
 }

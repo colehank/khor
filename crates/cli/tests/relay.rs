@@ -44,9 +44,6 @@ const PROXY_VARS: [&str; 6] = [
     "all_proxy",
 ];
 
-/// The loopback in `NO_PROXY` form: what a proxy must never carry.
-const LOOPBACK: &str = "127.0.0.1,localhost,::1";
-
 /// The endpoints in this process go through khor's bind, which honours
 /// a proxy from the environment — one set in the shell running the
 /// tests would carry these loopback relay connections somewhere else.
@@ -54,18 +51,11 @@ fn clear_proxies() {
     for k in PROXY_VARS {
         unsafe { std::env::remove_var(k) };
     }
-    // **Removing the variables is not enough on macOS**: iroh's relay
-    // probes (net_report's HTTP latency and captive-portal checks) are
-    // reqwest clients, and the workspace turns on reqwest's
-    // `system-proxy`, so with the variables gone they read the proxy out
-    // of System Settings — and hyper-util's reader takes the host and
-    // port there and **ignores the exceptions list**. On a machine with
-    // a system proxy (the owner's: 127.0.0.1:7897) every probe of a
-    // loopback relay goes through it; when that proxy is down or will
-    // not deliver to loopback, no relay is ever measured, no home relay
-    // is chosen, and an endpoint sits with no verdict at all. `NO_PROXY`
-    // is the one knob that reader honours.
-    unsafe { std::env::set_var("NO_PROXY", LOOPBACK) };
+    // Removing the variables is enough since 2026-10-01: iroh's relay
+    // probes no longer read the proxy out of macOS System Settings
+    // (vendor/iroh/KHOR.md, patch 2). Before that, `NO_PROXY` for the
+    // loopback had to be set here as well — docs/NET.md「代理」has the
+    // tombstone.
 }
 
 /// A running `khor relay`, killed by pid however the test leaves.
@@ -97,7 +87,6 @@ fn relay(home: &Path, extra: &[&str]) -> Running {
     for k in PROXY_VARS {
         cmd.env_remove(k);
     }
-    cmd.env("NO_PROXY", LOOPBACK);
     let mut child = cmd.spawn().expect("khor relay should spawn");
     let stdout = child.stdout.take().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();

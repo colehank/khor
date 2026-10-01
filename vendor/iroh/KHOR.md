@@ -12,7 +12,19 @@
 
 ## 补丁
 
-只改了一个文件：`src/socket/remote_map/remote_state.rs`。
+两处，各一个文件。
+
+### 2. `src/util.rs`：探测的 HTTP 客户端不读系统代理（2026-10-01，负责人定）
+
+`reqwest_client_builder` 里加一行 `.no_proxy()`。iroh 的 net_report 探测（量各中继延迟、
+强制门户）和 pkarr 发布用的是 reqwest；khor 工作区为额度页给 reqwest 开了 `system-proxy`，
+cargo 的 feature 合并后这些探测也读 macOS 系统设置里的代理，而 hyper-util 读系统代理时不看
+例外表。真正的中继连接只读环境变量（`proxy_from_env`），直连是 UDP 根本不经代理——三条路
+三种规矩。`no_proxy()` 只关掉「自动读系统代理」，调用方在有 `proxy_url`（来自环境变量）时
+仍 `.proxy(..)` 加上去，所以探测从此和连中继同一条规矩：只认环境变量。
+账在 docs/NET.md「代理」一节；这条上游没有对应 PR，升级 iroh 时要重新打。
+
+### 1. `src/socket/remote_map/remote_state.rs`
 
 - 用的是上游 PR **#4522**「fix(iroh): bound and deduplicate pending_open_paths」的改法
   （PR 头提交 `eaca51d4c003f8a9f3764bd7ff7eca1a8dbdc309`，基于 main；截至 2026-09-21 仍是 OPEN，未合并）。
