@@ -2,7 +2,6 @@ import type { ComponentType } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import type { SystemKind } from "@/gen/bindings/SystemKind";
-import { MachineAvatar } from "@/components/Avatar";
 import { machineMark, sessionMark } from "@/components/BrandIcons";
 import { FaceMark, SIZES, type KindMark } from "@/components/FaceMark";
 
@@ -78,7 +77,7 @@ export function SessionFace({
 }) {
   return (
     <FaceMark
-      face={<MachineAvatar face={face} className={SIZES[size].face} />}
+      face={{ machine: face }}
       halo={word}
       mark={sessionKind(kind, category)}
       size={size}
@@ -106,7 +105,7 @@ export function MachineFace({
 }) {
   return (
     <FaceMark
-      face={<MachineAvatar face={face} className={SIZES[size].face} />}
+      face={{ machine: face }}
       mark={machineKind(system)}
       size={size}
       className={className}

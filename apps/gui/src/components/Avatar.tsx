@@ -82,34 +82,52 @@ const BLUR_MARGIN = 3.43;
 /**
  * **Whether this face has a kind mark painted on it** (类型标记「浮现」,
  * the owner 2026-10-02:「画在脸上感觉很好看」). Set by `FaceMark` and by
- * nobody else, around the face it was handed — so a face drawn anywhere
- * that says no kind (the machine card, the edit window, 「这台机器」, the
- * lock screen) is never under one and paints whole.
- *
- * A context rather than a prop because the face reaches `FaceMark`
- * already built (`SideRow.face` is a node: a session's machine, a
- * workspace's, a browsing tab's — or the 额度 dial, which has no mark).
+ * nobody else, around the face it draws — so a face drawn anywhere that
+ * says no kind (the machine card, the edit window, 「这台机器」, the lock
+ * screen) is never under one and paints whole.
  *
  * Under a mark the brush does two things and only two, and **neither
- * touches a number `khor_core::avatar` derived**:
+ * computes a number** — both are `khor_core::avatar`'s:
  *
- * 1. **A veil** (`--mark-veil`) over the whole face, cropped with it, so
- *    the mark's one ink (`--mark-ink`) clears 3:1 on any face at all —
- *    tokens.css has the bound, `check-palette` the measurements.
+ * 1. **The veil the face was given** (`face.mark`): when its alpha is
+ *    above 0, a layer of the ink's opposite — black under the light ink
+ *    (`--mark-veil-dark`), white under the dark one (`--mark-veil-light`)
+ *    — at that alpha, over the whole face and cropped with it. Most
+ *    faces are given none: a bright face takes the dark ink and a dark
+ *    face the light one, bare; only a face whose centre mixes the two is
+ *    veiled, and only as much as its worst pixel needs (the owner:
+ *    「按脸换墨，不够才压」; the rule is `avatar/mark.rs`). The mark itself,
+ *    in the matching ink, is `FaceMark`'s, read off the same record.
  * 2. **Beam (笑脸) leaves out its eyes and mouth.** Its features are a
  *    face of their own, at the very centre the mark takes; drawn under a
  *    mark they read as a smudge behind it. What is left — the ground and
  *    the wrapper block — is still that machine's colours in that
  *    machine's arrangement, which is all a face under a mark is asked to
- *    say.
+ *    say. (The core's raster leaves them out too.)
+ *
+ * ⚠️ 墓碑 (2026-10-02, the same day): the veil was one `--mark-veil`,
+ * black at 0.42, over every face under a mark, under one white ink. It
+ * held 3:1 on any face and greyed every one of them:「浮现这，给原始头像
+ * 上了蒙板？感觉没那么好看了」.
  */
 export const UnderMark = createContext(false);
 
-/** The veil itself: a layer over the painting and under the edge,
-    cropped with the face by the face's own `overflow: hidden`. */
-function Veil() {
+/** The veil the face was given, if any: a layer over the painting and
+    under the edge, cropped with the face by the face's own
+    `overflow: hidden`. `data-face-veil` names its colour. */
+function Veil({ face }: { face: Avatar }) {
+  const { ink, veil } = face.mark;
+  if (!(veil > 0)) return null;
   return (
-    <span data-face-veil="" aria-hidden="true" className="pointer-events-none absolute inset-0 bg-mark-veil" />
+    <span
+      data-face-veil={ink === "light" ? "dark" : "light"}
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute inset-0",
+        ink === "light" ? "bg-mark-veil-dark" : "bg-mark-veil-light",
+      )}
+      style={{ opacity: veil }}
+    />
   );
 }
 
@@ -305,7 +323,7 @@ export function AvatarFace({ face, className }: { face: Avatar; className?: stri
       >
         <AvatarPaintLayers face={face} uid={uid} features={!marked} />
       </svg>
-      {marked && <Veil />}
+      {marked && <Veil face={face} />}
       {/*
         The hairline edge. **Not decoration — the one stroke this design
         cannot go without.**
@@ -346,18 +364,15 @@ export function AvatarFace({ face, className }: { face: Avatar; className?: stri
  * believed, and it would not be that machine's.
  */
 export function AvatarBlank({ className }: { className?: string }) {
-  // Under a kind mark the blank wears the veil too: the mark's ink is
-  // one white on every face, and the light theme's grey blank would
-  // otherwise be the one ground it cannot be read on.
-  const marked = useContext(UnderMark);
+  // Under a kind mark the blank wears no veil: it is the theme's own
+  // grey, not a face, so the mark on it takes the theme's ink
+  // (`--mark-ink-blank`, `FaceMark`) and reads bare in both themes.
   return (
     <span
       aria-hidden="true"
       data-face-blank=""
       className={cn("relative inline-block flex-none overflow-hidden rounded-full bg-muted", className)}
-    >
-      {marked && <Veil />}
-    </span>
+    />
   );
 }
 

@@ -261,7 +261,7 @@ export function SessionsList({
     pinned: r.pinned,
     // The machine's face carries the row; the halo is the state, the
     // mark the kind (`FaceMark`, which `SessionFace` also wears).
-    face: <MachineAvatar face={r.face} className="size-avatar" />,
+    face: { machine: r.face },
     halo: r.word,
     mark: sessionKind(r.kind, r.category),
     // Double-click the title to rename it in place — the component the

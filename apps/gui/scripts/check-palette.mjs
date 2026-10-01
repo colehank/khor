@@ -1099,32 +1099,49 @@ try {
   //
   // The owner:「画在脸上感觉很好看」. The kind mark is painted on the
   // machine's face — and a face is any colour, light and dark in one
-  // gradient. So the face under a mark wears one veil (`--mark-veil`)
-  // and the mark is one ink (`--mark-ink`), and this measures that pair
-  // on **real faces**: `khor_core::avatar`'s own output (the
-  // `face_samples` bin), every factory palette × every way of drawing,
-  // sixteen machines each, drawn by the app in the machines column.
+  // gradient. **The face says which ink and how much veil** (the owner,
+  // the same day:「按脸换墨，不够才压」): `khor_core::avatar` derives, per
+  // face, the ink most of the centre wants (`--mark-ink-dark` on a bright
+  // face, `--mark-ink-light` on a dark one) and the least veil — black
+  // under the light ink, white under the dark — at which the worst pixel
+  // under a mark reads 3.2 (`Avatar.mark`, `avatar/mark.rs`). This
+  // measures that, as the app paints it, on **real faces**: the core's
+  // own output (the `face_samples` bin), every factory palette × every
+  // way of drawing, sixteen machines each, in the machines column.
   //
-  // How: the mark is made transparent (the veil stays — it is the face's), the
-  // box the mark's glyph occupies is cut out of a screenshot, and the
-  // brightest pixel in it is the worst ground the ink meets there. That
-  // is conservative — the box holds pixels the glyph never touches — and
-  // it is the one reading that does not depend on which glyph a row
-  // happens to wear. Floor: a graphic's 3:1.
+  // How: the mark is made transparent (the veil stays — it is the
+  // face's), the box the mark's glyph occupies is cut out of a
+  // screenshot, and the pixel in it that reads worst against **the ink
+  // that face was given** is the worst ground the ink meets there — the
+  // brightest under the light ink, the darkest under the dark. That is
+  // conservative (the box holds pixels the glyph never touches) and it
+  // does not depend on which glyph a row happens to wear. Floor: a
+  // graphic's 3:1, both themes, the blank too.
+  //
+  // Also held, so the drawing is the record's: each mark is painted in
+  // its face's ink (and the GUI's inks are the core's hex), each face
+  // wears a veil exactly when its record has one, in the record's colour
+  // and alpha — and **the point of the change**: most sample faces wear
+  // no veil at all (the lab counted 269 of 336; the floor is 240).
   //
   // **The probe proves it can see a failure every run**: the same faces
-  // with the veil taken off must fall under the floor somewhere, or this
-  // section is measuring something that cannot fail (the drawing's 0.30
-  // veil on the same faces was the hand-made red, 2026-10-02).
+  // forced to the light ink with no veil — the first version's ink
+  // without its veil — must fall under the floor somewhere.
+  //
+  // ⚠️ 墓碑 (2026-10-02, the same day): this measured one white
+  // `--mark-ink` over one `--mark-veil` (black 0.42) on every face, and
+  // its teeth were the veil taken off. The owner:「浮现这，给原始头像上了
+  // 蒙板？感觉没那么好看了」.
   {
     const { execFileSync } = await import("node:child_process");
-    const samples = JSON.parse(
+    const out = JSON.parse(
       execFileSync("cargo", ["run", "-q", "-p", "khor-gui-core", "--bin", "face_samples"], {
         cwd: gui,
         maxBuffer: 64 << 20,
         stdio: ["ignore", "pipe", "inherit"],
       }).toString(),
     );
+    const samples = out.samples ?? [];
     const grounds = new Map();
     for (const s of samples) {
       const k = s.palette;
@@ -1134,9 +1151,44 @@ try {
     if (samples.length === 0 || thin.length) {
       fail(`a mark on a face: probe dead — the samples tried fewer than five grounds on ${thin.join(", ") || "every palette"} (apps/gui/core/src/bin/face_samples.rs SEEDS)`);
     }
+    if (samples.some((s) => !s.face.mark || !["light", "dark"].includes(s.face.mark.ink))) {
+      fail("a mark on a face: probe dead — a sample face carries no mark record (khor_core::avatar Avatar.mark)");
+    }
+    // **The point of the change**, on the record: most faces bare.
+    const BARE_FLOOR = 240;
+    const bareRecords = samples.filter((s) => s.face.mark?.veil === 0).length;
+    const darkRecords = samples.filter((s) => s.face.mark?.ink === "dark").length;
+    const mostVeil = Math.max(...samples.map((s) => s.face.mark?.veil ?? 0));
+    console.log(
+      `a mark on a face: ${samples.length} sample faces — ${bareRecords} with no veil, ${darkRecords} dark ink / ${samples.length - darkRecords} light, the most veil ${mostVeil}`,
+    );
+    if (bareRecords < BARE_FLOOR) {
+      fail(`a mark on a face: only ${bareRecords} of ${samples.length} sample faces go bare, under ${BARE_FLOOR} — the per-face ink is there so most faces wear no veil (khor_core::avatar mark.rs)`);
+    }
+    // The GUI's colours are the core's: the rule was derived with these.
+    const tokenOf = (name) =>
+      page.evaluate((name) => {
+        const el = document.createElement("span");
+        el.style.color = `var(${name})`;
+        document.body.appendChild(el);
+        const c = getComputedStyle(el).color;
+        el.remove();
+        return c;
+      }, name);
+    for (const [token, hex] of [
+      ["--mark-ink-light", out.inks?.light],
+      ["--mark-ink-dark", out.inks?.dark],
+      ["--mark-veil-dark", out.veil_under?.light],
+      ["--mark-veil-light", out.veil_under?.dark],
+    ]) {
+      const got = await tokenOf(token);
+      if (!hex || !same(got, hex)) {
+        fail(`a mark on a face: ${token} is ${got}, the core derives with ${hex} — two homes for one colour (src/styles/tokens.css, khor_core::avatar mark.rs)`);
+      }
+    }
     const idOf = (i) => i.toString(16).padStart(64, "0");
-    // One more machine with no face at all: the blank wears the veil
-    // too, and it is the one ground here that reads the theme.
+    // One more machine with no face at all: the blank is the theme's
+    // grey, and the one ground here that reads the theme.
     const devices = [...samples.map((s, i) => ({ s, i })), { s: null, i: samples.length }].map(({ s, i }) => ({
       id: idOf(i + 1),
       name: s ? `${s.palette}-${s.variant}-${s.seed}` : "blank",
@@ -1164,8 +1216,24 @@ try {
     if (marks < devices.length) {
       fail(`a mark on a face: probe dead — ${marks} of ${devices.length} routed machines drew a mark on their face (src/components/FaceMark.tsx)`);
     } else {
-      /** The brightest pixel under each row's mark, keyed by row id. */
-      const brightest = async () => {
+      /** What each row drew: the mark's ink, and the veil its face wears. */
+      const drawn = () =>
+        page.evaluate((ids) => {
+          return ids.map((id) => {
+            const row = document.querySelector(`[data-side-row="${id}"]`);
+            const mark = row?.querySelector('[data-mark-at="face"]');
+            const veils = [...(row?.querySelectorAll("[data-face-veil]") ?? [])];
+            const v = veils[0];
+            return {
+              ink: mark?.getAttribute("data-mark-ink") ?? null,
+              color: mark ? getComputedStyle(mark).color : null,
+              veils: veils.length,
+              veil: v ? { color: getComputedStyle(v).backgroundColor, alpha: Number(getComputedStyle(v).opacity) } : null,
+            };
+          });
+        }, devices.map((d) => d.id));
+      /** The pixels under each row's mark, as the screenshot has them. */
+      const boxes = async () => {
         const shots = [];
         for (let n = 0; n < devices.length; n++) {
           const row = page.locator(`[data-side-row="${devices[n].id}"]`);
@@ -1174,10 +1242,6 @@ try {
           shots.push((await glyph.screenshot({ animations: "disabled" })).toString("base64"));
         }
         return page.evaluate(async (pngs) => {
-          const lin = (c) => {
-            const s = c / 255;
-            return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-          };
           const out = [];
           for (const b64 of pngs) {
             const img = new Image();
@@ -1189,55 +1253,85 @@ try {
             const g = c.getContext("2d");
             g.drawImage(img, 0, 0);
             const px = g.getImageData(0, 0, c.width, c.height).data;
-            let best = { y: -1, rgb: [0, 0, 0] };
-            for (let i = 0; i < px.length; i += 4) {
-              const y = 0.2126 * lin(px[i]) + 0.7152 * lin(px[i + 1]) + 0.0722 * lin(px[i + 2]);
-              if (y > best.y) best = { y, rgb: [px[i], px[i + 1], px[i + 2]], w: c.width };
-            }
-            out.push(best);
+            const all = [];
+            for (let i = 0; i < px.length; i += 4) all.push([px[i], px[i + 1], px[i + 2]]);
+            out.push({ w: c.width, px: all });
           }
           return out;
         }, shots);
+      };
+      /** The pixel that reads worst against `ink`, and how it reads. */
+      const worstOf = (ink, px) => {
+        let best = { ratio: Infinity, rgb: null };
+        for (const p of px) {
+          const r = contrast(rgb(ink), p);
+          if (r < best.ratio) best = { ratio: r, rgb: p };
+        }
+        return best;
       };
       const hide = await page.addStyleTag({ content: '[data-mark-at="face"] > * { opacity: 0 !important; }' });
       for (const scheme of ["light", "dark"]) {
         await flipTheme(page, scheme);
         await wait(300);
-        const ink = await page.evaluate((sel) => getComputedStyle(document.querySelector(sel)).color, markSel);
-        const seen = await brightest();
+        const blankInk = await tokenOf("--mark-ink-blank");
+        const seen = await drawn();
+        const shots = await boxes();
         const worst = new Map();
-        const bareFloor = [];
-        seen.forEach((b, n) => {
+        let bareDrawn = 0;
+        seen.forEach((d, n) => {
           const s = n < samples.length ? samples[n] : null;
           const key = s ? `${s.palette} × ${s.variant}` : "no face (the blank)";
-          const ratio = contrast(rgb(ink), b.rgb);
+          const where = `${scheme} · a mark on a face: ${s ? `${s.palette}-${s.variant}-${s.seed}` : "the blank"}`;
+          const want = s ? s.face.mark : null;
+          // The drawing is the record's.
+          const wantInk = want ? want.ink : "blank";
+          const wantColor = want ? (want.ink === "light" ? out.inks.light : out.inks.dark) : blankInk;
+          if (d.ink !== wantInk || !d.color || !same(d.color, wantColor)) {
+            fail(`${where}: the mark is ${d.ink} ${d.color}, the face was given ${wantInk} ${wantColor} (src/components/FaceMark.tsx)`);
+          }
+          const wantVeils = want && want.veil > 0 ? 1 : 0;
+          if (d.veils !== wantVeils) {
+            fail(`${where}: the face wears ${d.veils} veil(s), its record says ${want ? want.veil : "none (the blank)"} (src/components/Avatar.tsx Veil)`);
+          } else if (wantVeils) {
+            const veilColor = want.ink === "light" ? out.veil_under.light : out.veil_under.dark;
+            if (!same(d.veil.color, veilColor) || Math.abs(d.veil.alpha - want.veil) > 0.005) {
+              fail(`${where}: the veil is ${d.veil.color} at ${d.veil.alpha}, the record says ${veilColor} at ${want.veil}`);
+            }
+          }
+          if (s && d.veils === 0) bareDrawn++;
+          const w = worstOf(wantColor, shots[n].px);
           const was = worst.get(key);
-          if (!was || ratio < was.ratio) worst.set(key, { ratio, rgb: b.rgb, w: b.w, at: s ? s.seed : null });
-          bareFloor.push(ratio);
+          if (!was || w.ratio < was.ratio) worst.set(key, { ...w, w: shots[n].w, at: s ? s.seed : null, ink: wantInk, veil: want?.veil ?? 0 });
         });
         console.log(
-          `${scheme} · a mark on a face: ink ${ink}, ${seen.length} faces, glyph box ${seen[0]?.w}px — worst per palette × drawing:\n` +
-            [...worst].map(([k, v]) => `    ${k}: ${say(v.ratio)} (brightest ${v.rgb.join(",")}, machine ${v.at})`).join("\n"),
+          `${scheme} · a mark on a face: ${seen.length} faces, ${bareDrawn} of ${samples.length} drawn bare, glyph box ${shots[0]?.w}px — worst per palette × drawing:\n` +
+            [...worst]
+              .map(([k, v]) => `    ${k}: ${say(v.ratio)} (${v.ink} ink, veil ${v.veil}, worst pixel ${v.rgb?.join(",")}, machine ${v.at})`)
+              .join("\n"),
         );
+        if (bareDrawn < BARE_FLOOR) {
+          fail(`${scheme} · a mark on a face: only ${bareDrawn} of ${samples.length} sample faces are drawn with no veil, under ${BARE_FLOOR}`);
+        }
         for (const [k, v] of worst) {
           if (v.ratio < GRAPHIC_FLOOR) {
             fail(
               `${scheme} · a mark on a face: on ${k} the mark reads ${say(v.ratio)} against the face behind it, under ${GRAPHIC_FLOOR} — ` +
-                "the veil (--mark-veil) or the ink (--mark-ink) moved (src/styles/tokens.css)",
+                "the ink or veil the face was given does not hold it (khor_core::avatar mark.rs; src/styles/tokens.css)",
             );
           }
         }
       }
-      // The teeth: the same faces with no veil must fail somewhere.
+      // The teeth: every face forced to the light ink with no veil — the
+      // first version's ink without its veil — must fail somewhere.
       const unveil = await page.addStyleTag({ content: "[data-face-veil] { display: none !important; }" });
       await flipTheme(page, "light");
       await wait(300);
-      const ink = await page.evaluate((sel) => getComputedStyle(document.querySelector(sel)).color, markSel);
-      const bare = (await brightest()).map((b) => contrast(rgb(ink), b.rgb));
+      const bare = (await boxes()).slice(0, samples.length).map((b) => worstOf(out.inks.light, b.px).ratio);
       const bareWorst = Math.min(...bare);
-      console.log(`a mark on a face, with the veil taken off: worst ${say(bareWorst)} — the probe sees a failing face`);
+      const under = bare.filter((r) => r < GRAPHIC_FLOOR).length;
+      console.log(`a mark on a face, every face forced to the light ink with no veil: worst ${say(bareWorst)}, ${under} under ${GRAPHIC_FLOOR} — the probe sees a failing face`);
       if (!(bareWorst < GRAPHIC_FLOOR)) {
-        fail(`a mark on a face: probe dead — with the veil off the worst face still reads ${say(bareWorst)}; this section cannot see a failure`);
+        fail(`a mark on a face: probe dead — with every face on the light ink and no veil the worst still reads ${say(bareWorst)}; this section cannot see a failure`);
       }
       await unveil.evaluate((n) => n.remove());
       await hide.evaluate((n) => n.remove());

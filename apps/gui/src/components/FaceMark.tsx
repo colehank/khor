@@ -1,8 +1,25 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import { UnderMark } from "@/components/Avatar";
+import { MachineAvatar, UnderMark } from "@/components/Avatar";
+import type { Avatar } from "@/gen/bindings/Avatar";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
+
+/**
+ * **Whose face the assembly draws.** A machine's is handed over as the
+ * machine's record — `{ machine }`, `null` for one that has no face —
+ * and drawn here, so the ink its mark wears is read off **the same
+ * record** the face is painted from (`Avatar.mark`): the two cannot
+ * belong to different machines. Anything that is not a machine's face
+ * (the 额度 dial) is `{ art }`, a drawing already sized, and never
+ * carries a mark on it.
+ *
+ * ⚠️ 墓碑 (2026-10-02, the same day): the face arrived as a node built
+ * by the column, which was enough while every mark wore one white ink.
+ * Once the face decides the ink (「按脸换墨，不够才压」), a node could not
+ * say which.
+ */
+export type FaceOf = { machine: Avatar | null } | { art: ReactNode };
 
 /**
  * What a row's kind mark is, as a column hands it in.
@@ -26,7 +43,7 @@ export type KindMark = {
  * The two sizes the assembly is drawn at, each whole, in both ways of
  * drawing the mark.
  *
- * - `face`: the box the face is drawn in.
+ * - `face`: the box a machine's face is drawn in (`FaceOf`).
  * - `on`: the mark painted **on** the face (「浮现」): `--kind-mark` 18 on
  *   the row's 32 and `--kind-mark-tab` 12 on a tab's 16 — both leave a
  *   whole-pixel margin (7 and 2) all round, so the mark lands on whole
@@ -72,16 +89,21 @@ export function useMarkInCorner(): boolean {
  * 选择」):
  *
  * - **浮现** (`face`, the default): the mark is painted on the face,
- *   centred, in `--mark-ink`, and the face under it wears `--mark-veil`
- *   (`UnderMark`). No corner. One avatar says two things at once: the
- *   shape is what kind, the colours are which machine.
+ *   centred, opaque, in the ink the face was given (`Avatar.mark`:
+ *   `--mark-ink-dark` on a bright face, `--mark-ink-light` on a dark
+ *   one), and the face wears the veil it was given, if any
+ *   (`UnderMark`). The blank — a machine with no face — is the theme's
+ *   grey and takes the theme's ink, `--mark-ink-blank`. No corner. One
+ *   avatar says two things at once: the shape is what kind, the colours
+ *   are which machine.
  * - **角标** (`corner`): the face is the avatar and the mark sits on a
  *   solid punch-out at its bottom right, or its strokes dissolve into
  *   the face under it — what khor drew before the setting.
  *
  * Anchors: the mark carries `data-side-mark` (its key) and
  * `data-mark-at` (`face` / `corner`) either way; only the corner is
- * `data-side-badge`.
+ * `data-side-badge`; on the face, `data-mark-ink` says which ink
+ * (`light` / `dark` / `blank`).
  *
  * A `halo` is the session's state ring and nobody else's: the six state
  * words belong to sessions (the palette ruling), so the prop exists for
@@ -94,10 +116,14 @@ export function FaceMark({
   halo,
   size = "row",
   className,
-}: {
-  face: ReactNode;
-  /** What kind of thing this is; absent draws the face alone. */
-  mark?: KindMark;
+}: (
+  | {
+      face: { machine: Avatar | null };
+      /** What kind of thing this is; absent draws the face alone. */
+      mark?: KindMark;
+    }
+  | { face: { art: ReactNode }; mark?: never }
+) & {
   /** A session's state key (`busy`…), for the ring outside the face. */
   halo?: string;
   /** A list row's (the switcher's rows too) or a tab's — see `SIZES`. */
@@ -112,13 +138,17 @@ export function FaceMark({
   const corner = useMarkInCorner();
   const s = SIZES[size];
   const onFace = mark !== undefined && !corner;
+  // The ink the face was given, or the theme's on the blank.
+  const ink = "machine" in face ? (face.machine?.mark.ink ?? "blank") : "blank";
   return (
     // `flex`, not inline: an inline wrap grows the baseline's few
     // pixels under the face and the mark's corner offset bites into
     // that gap instead of the face (mandala's .badged-face fix, the
     // flex spelling of display:block+line-height:0).
     <span data-side-face data-mark-way={mark ? (corner ? "corner" : "face") : undefined} className={cn("relative flex flex-none", className)}>
-      <UnderMark.Provider value={onFace}>{face}</UnderMark.Provider>
+      <UnderMark.Provider value={onFace}>
+        {"machine" in face ? <MachineAvatar face={face.machine} className={s.face} /> : face.art}
+      </UnderMark.Provider>
       {halo !== undefined && (
         // Behind nothing and in front of nothing — it paints outside the
         // face's box entirely (`app.css`), so it can neither cover the
@@ -132,15 +162,20 @@ export function FaceMark({
       )}
       {mark !== undefined &&
         (onFace ? (
-          // **On the face**: centred over the face's box, the mark's one
-          // ink. The veil is the face's (`UnderMark`), so it takes the
-          // face's crop — round, rounded or square.
+          // **On the face**: centred over the face's box, opaque, in the
+          // ink the face was given. The veil is the face's own
+          // (`UnderMark`), so it takes the face's crop — round, rounded
+          // or square.
           <span
             data-side-mark={mark.key}
             data-mark-at="face"
+            data-mark-ink={ink}
             {...mark.data}
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 grid place-items-center text-mark-ink"
+            className={cn(
+              "pointer-events-none absolute inset-0 grid place-items-center",
+              ink === "light" ? "text-mark-ink-light" : ink === "dark" ? "text-mark-ink-dark" : "text-mark-ink-blank",
+            )}
           >
             {mark.glyph(s.on)}
           </span>

@@ -32,7 +32,6 @@ import {
   type GitStatus,
   type WorkspaceRow,
 } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
 import { IconBranch, IconChevronRight, IconFiles } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
@@ -584,12 +583,7 @@ export function WorkspacesList({
       id: `${r.device}:${r.path}`,
       group: r.pinned ? "pin" : "",
       pinned: r.pinned,
-      face: (
-        <MachineAvatar
-          face={devices.find((d) => d.id === r.device)?.face ?? null}
-          className="size-avatar"
-        />
-      ),
+      face: { machine: devices.find((d) => d.id === r.device)?.face ?? null },
       // 「工作区: 文件夹, 是 git 仓库时换分支」 (docs/SHELL.md 第四轮 第 2 条).
       // On the face or on its corner by the 外观 setting (`FaceMark`).
       mark: repo

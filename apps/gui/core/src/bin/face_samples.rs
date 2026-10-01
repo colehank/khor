@@ -10,8 +10,17 @@
 //! -q -p khor-gui-core --bin face_samples`) rather than written into
 //! `src/gen`, so a palette that changes in Rust is measured the next time
 //! the gate runs, with nothing to regenerate by hand.
+//!
+//! Each face carries what a mark on it wears (`face.mark`: the ink, and
+//! the veil under it, derived per face — 「按脸换墨，不够才压」). Beside the
+//! samples go the core's two inks as hex, so the gate can hold the
+//! GUI's `--mark-ink-light` / `--mark-ink-dark` to the colours the rule
+//! was derived with.
 
-use khor_core::avatar::{AvatarSeed, AvatarStyle, FaceShape, PRESETS, Variant, avatar};
+use khor_core::avatar::{
+    AvatarSeed, AvatarStyle, FaceShape, MARK_INK_DARK, MARK_INK_LIGHT, MarkInk, PRESETS, Variant,
+    avatar,
+};
 
 /// How many machines per palette × variant. Each face picks its ground
 /// and strokes from the palette by its id, so more seeds is more of the
@@ -54,5 +63,12 @@ fn main() {
             }
         }
     }
-    println!("{}", serde_json::Value::Array(out));
+    println!(
+        "{}",
+        serde_json::json!({
+            "inks": { "light": MARK_INK_LIGHT, "dark": MARK_INK_DARK },
+            "veil_under": { "light": MarkInk::Light.veil_hex(), "dark": MarkInk::Dark.veil_hex() },
+            "samples": out,
+        })
+    );
 }

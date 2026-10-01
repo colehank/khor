@@ -1244,19 +1244,22 @@ export function QuotaLanding({
       // **The machine card's dial, one size down** — the same geometry,
       // milestones and rim (2026-09-07:「环全部和机器卡对齐」); the
       // reading is inside the ring.
-      face: (
-        <Face
-          size={DIAL_ROW_SIZE}
-          stroke={DIAL_ROW_STROKE}
-          ratio={DIAL_ROW_RATIO}
-          crop
-          fraction={arcOf(r)}
-          strain={r.account?.strain ?? null}
-          pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
-        >
-          {centreOf(r)}
-        </Face>
-      ),
+      // Not a machine's face, so `art`, and no mark on it.
+      face: {
+        art: (
+          <Face
+            size={DIAL_ROW_SIZE}
+            stroke={DIAL_ROW_STROKE}
+            ratio={DIAL_ROW_RATIO}
+            crop
+            fraction={arcOf(r)}
+            strain={r.account?.strain ?? null}
+            pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+          >
+            {centreOf(r)}
+          </Face>
+        ),
+      },
       // **The kind's mark opens the title** (2026-09-30, the owner: 「额度
       // 页 list 里，把类型的头像做成标题的开头，如 f"{icon} Claude Code
       // 订阅"」): the provider's glyph, then the name, on one line and one

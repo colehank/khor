@@ -637,27 +637,41 @@
   /* ── a kind mark drawn on a face (类型标记「浮现」) ─────────
    * The owner, 2026-10-02:「画在脸上感觉很好看」. The mark that says what
    * a row is (an agent, a terminal, a system, a repository) is painted
-   * on the machine's face, centred, instead of on a corner. A face is
-   * any colour at all — light and dark in one gradient, and a palette
-   * is the user's to pick — so the mark cannot be readable by choosing
-   * one ink against it. **One veil and one ink instead**: the face
-   * under a mark wears this veil, and the mark is this ink.
+   * on the machine's face, centred, instead of on a corner.
    *
-   * **0.42 is a bound, not a taste.** The brightest thing a face can
-   * hold is white (a custom palette may be `#ffffff`, and marble's
-   * overlay strokes brighten past any slot). White under 42% black is
-   * sRGB 0.58, luminance 0.296, and white ink on that is **3.04** — the
-   * 3:1 a graphic needs, for every face any palette can paint. At the
-   * drawing's 0.30 the same white face gives 2.12. `check-palette` 「a
-   * mark on a face」 measures the real faces: every factory palette ×
-   * every way of drawing, sixteen machines each.
+   * **The face says which ink, and how much veil** (the owner, same day,
+   * choosing from six ways on real faces:「按脸换墨，不够才压」): a bright
+   * face gets the dark ink, a dark face the light one, and **no veil**;
+   * only a face whose centre mixes light and dark is veiled, and only as
+   * much as its worst pixel needs — black under the light ink, white
+   * under the dark one. The choice and the alpha are `khor_core::avatar`'s
+   * (`Avatar.mark`, the rule in `avatar/mark.rs`), derived per face so
+   * the phone and the desktop draw the same mark; the brush paints them.
+   * These four are only the colours, and the core holds the two inks'
+   * hex beside its rule (`MARK_INK_LIGHT` / `MARK_INK_DARK`) —
+   * `check-palette` 「a mark on a face」 reads both and red if they part.
    *
    * **The same in both themes, and that is the point**: the face never
    * reads the theme (`Avatar.tsx`), and what sits on it must not
-   * either — the veil and the ink are about the face, not the window.
-   * Not redefined under `[data-theme="dark"]`. */
-  --mark-veil: rgba(0, 0, 0, 0.42);
-  --mark-ink: #ffffff;
+   * either. Not redefined under `[data-theme="dark"]`.
+   *
+   * ⚠️ 墓碑 (2026-10-02, the same day): `--mark-veil` was one black at
+   * 0.42 over **every** face under a mark, and `--mark-ink` one white.
+   * 0.42 was a bound — white under it reads 3.04 against white ink, so
+   * any face cleared 3:1 — and it stays as the ceiling on the black veil
+   * (`MAX_BLACK_VEIL`). As the one look it greyed every face, bright and
+   * dark alike:「浮现这，给原始头像上了蒙板？感觉没那么好看了」. On the 336
+   * sample faces the per-face rule leaves 269 with no veil at all. */
+  --mark-ink-light: #ffffff;
+  --mark-ink-dark: #14140f;
+  --mark-veil-dark: #000000;
+  --mark-veil-light: #ffffff;
+  /* **The blank is not a face** (`AvatarBlank`: no identity, so no
+   * record to say an ink) — it is the theme's own `--muted`, so its ink
+   * is the theme's: the dark ink on the light theme's pale grey, the
+   * light ink on the dark theme's, and no veil on either. Redefined
+   * under `[data-theme="dark"]`. `check-palette` measures it in both. */
+  --mark-ink-blank: var(--mark-ink-dark);
 
   /* ── the rail's ink, and the two densities inside it ──
    * The family draws each glyph as one solid piece (`data-body`) held
@@ -1862,6 +1876,8 @@
   --badge-foreground: var(--on-badge);
 
   --avatar-edge: rgba(238, 238, 231, 0.22);
+  /* The blank under a mark: the dark theme's grey takes the light ink. */
+  --mark-ink-blank: var(--mark-ink-light);
 
   /* Only the ink flips; `--icon-body` is a ratio and stays one number
      for both themes — see the light block for why that is the point. */
@@ -1942,8 +1958,11 @@
   --color-badge: var(--badge);
   --color-badge-foreground: var(--badge-foreground);
   --color-avatar-edge: var(--avatar-edge);
-  --color-mark-veil: var(--mark-veil);
-  --color-mark-ink: var(--mark-ink);
+  --color-mark-ink-light: var(--mark-ink-light);
+  --color-mark-ink-dark: var(--mark-ink-dark);
+  --color-mark-ink-blank: var(--mark-ink-blank);
+  --color-mark-veil-dark: var(--mark-veil-dark);
+  --color-mark-veil-light: var(--mark-veil-light);
   --color-rail-ink: var(--rail-ink);
   --color-side: var(--side);
   --color-brand-strong: var(--brand-strong);

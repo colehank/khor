@@ -4,7 +4,6 @@ import type { DeviceRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { EditableName } from "@/components/EditableName";
-import { MachineAvatar } from "@/components/Avatar";
 import { machineKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -272,7 +271,7 @@ export function DevicesList({
       id: d.id,
       group: d.pinned ? "pin" : "",
       pinned: d.pinned,
-      face: <MachineAvatar face={d.face} className="size-avatar" />,
+      face: { machine: d.face },
       // **The system family's own mark** (docs/SHELL.md 第五轮第 7 条改画法:
       // 「角标按系统」) — the node's `vitals.system`. A machine that could
       // not say (an older peer, a satellite, no reading yet) wears the

@@ -26,7 +26,7 @@ import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "rea
 
 import { EmptyState, RegionState } from "@/components/RegionState";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
-import { FaceMark, type KindMark } from "@/components/FaceMark";
+import { FaceMark, type FaceOf, type KindMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { walkList } from "@/lib/shortcuts";
@@ -44,8 +44,11 @@ export type SideRow = {
       node (sessions' arrangements) hands those keys in as they are. */
   group: string;
   pinned: boolean;
-  /** The face, already sized. */
-  face: ReactNode;
+  /** Whose face: a machine's record (`{ machine }`, drawn by `FaceMark`
+      at the row's size, the ink of its mark read off the same record),
+      or a drawing that is not a face (`{ art }`, already sized — the 额度
+      dial), which never carries a mark (`FaceOf`). */
+  face: FaceOf;
   /** What kind of thing the row is — drawn on the face or on its corner
       as the 外观 setting says (`FaceMark`, 2026-10-02). Absent draws the
       face alone (the 额度 row's mark opens its title instead,
@@ -270,7 +273,11 @@ export function SideList({
         onClick={r.onOpen}
         className={cn("flex min-h-row-2 min-w-0 flex-1 items-center gap-row px-in py-1 text-left", RING)}
       >
-        <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
+        {"machine" in r.face ? (
+          <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
+        ) : (
+          <FaceMark face={r.face} halo={r.halo} />
+        )}
         <span className="min-w-0 flex-1">
           <span data-side-title className="block min-w-0">
             {r.title}

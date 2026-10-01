@@ -1768,11 +1768,15 @@ try {
   // one shape three times: `AvatarFace` has a separate brush per variant,
   // and a fixture that exercised one of them would leave the other two's
   // drift to be found by somebody else.
-  const av = (paint) => ({
+  // `mark` is what a kind mark on the face wears (`Avatar.mark`: the
+  // ink, and the veil under it, derived per face by the core). Hand-
+  // shaped like the rest; section 17 hands two faces the two cases.
+  const av = (paint, mark = { ink: "light", veil: 0 }) => ({
     canvas: paint.variant === "beam" ? 36 : 80,
     background: "#1d1f21",
     radius_ratio: 0.5,
     paint,
+    mark,
   });
   const marble = {
     variant: "marble",
@@ -26595,13 +26599,21 @@ try {
   //
   //   a. **浮现 is the default**: in the sessions, machines and workspaces
   //      columns every avatar that says a kind has it on the face
-  //      (`data-mark-at="face"`), wears the veil, and has **no corner**
-  //      (`data-side-badge`); the mark is `--mark-ink`, whole pixels,
-  //      centred on the face (±0.5), the offset whole too (1×: the
-  //      owner's screen); a 笑脸 face under a mark has no features, and
-  //      the same face where no kind is said (the rail's own avatar)
-  //      keeps them; a session tab's face does the same at 16 with a 12
-  //      mark;
+  //      (`data-mark-at="face"`) and has **no corner** (`data-side-badge`);
+  //      the mark is whole pixels, centred on the face (±0.5), the offset
+  //      whole too (1×: the owner's screen); a 笑脸 face under a mark has
+  //      no features, and the same face where no kind is said (the rail's
+  //      own avatar) keeps them; a session tab's face does the same at 16
+  //      with a 12 mark;
+  //   a′. **the face says the ink and the veil** (the owner, 2026-10-02:
+  //      「按脸换墨，不够才压」): the mark is painted in the ink its face's
+  //      record names (`Avatar.mark.ink` → `--mark-ink-light` /
+  //      `--mark-ink-dark`), the face wears a veil **only** when its
+  //      record has one — the ink's opposite colour, at the record's
+  //      alpha — and the blank takes the theme's `--mark-ink-blank` with
+  //      no veil. Two hand-shaped faces carry the two cases: this machine
+  //      (笑脸) a dark ink and no veil, peer (晕染) a light ink over black
+  //      at 0.30;
   //   b. **外观 has the row**, with its sentence, on 浮现; choosing 角标
   //      there turns every one of those avatars into the corner — no
   //      mark on any face, no veil, the features back — tab included;
@@ -26611,6 +26623,11 @@ try {
   // New behaviour, not a fix: no red was owed first (30-behavior). The
   // contrast of the mark on real faces is `check-palette`'s.
   //
+  // ⚠️ 墓碑 (2026-10-02, the same day): a. said every on-face mark wears
+  // one veil and one `--mark-ink`. That was the first version — one black
+  // 0.42 over every face — and the owner turned it down:「浮现这，给原始头
+  // 像上了蒙板？感觉没那么好看了」.
+  //
   // `FACE_ONLY=mark` runs this section alone.
   mark: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mark") break mark;
@@ -26619,23 +26636,37 @@ try {
     const peerDev = devs.find((d) => d.name === "peer");
     const facesWere = [gateDev?.face ?? null, peerDev?.face ?? null];
     // A 笑脸 face on this machine and a 晕染 one on peer: the one way of
-    // drawing that has features, and one that has none to lose.
-    if (gateDev) gateDev.face = av(beam);
-    if (peerDev) peerDev.face = av(marble);
+    // drawing that has features, and one that has none to lose — and
+    // the two things a face can say about a mark on it: a dark ink bare,
+    // and a light ink over a black veil.
+    const GATE_MARK = { ink: "dark", veil: 0 };
+    const PEER_MARK = { ink: "light", veil: 0.3 };
+    if (gateDev) gateDev.face = av(beam, GATE_MARK);
+    if (peerDev) peerDev.face = av(marble, PEER_MARK);
     configValues["kind-mark"] = "face";
     await page.evaluate(() => window.localStorage.clear());
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.emulateMedia({ colorScheme: "light" });
     await page.reload({ waitUntil: "load" });
     await wait(900);
-    const inkWant = await page.evaluate(() => {
-      const el = document.createElement("span");
-      el.style.color = "var(--mark-ink)";
-      document.body.appendChild(el);
-      const c = getComputedStyle(el).color;
-      el.remove();
-      return c;
-    });
+    /** Each token's colour as the page computes it. */
+    const tokens = await page.evaluate(() =>
+      Object.fromEntries(
+        ["--mark-ink-light", "--mark-ink-dark", "--mark-ink-blank", "--mark-veil-dark", "--mark-veil-light"].map((name) => {
+          const el = document.createElement("span");
+          el.style.color = `var(${name})`;
+          document.body.appendChild(el);
+          const c = getComputedStyle(el).color;
+          el.remove();
+          return [name, c];
+        }),
+      ),
+    );
+    const inkWant = { light: tokens["--mark-ink-light"], dark: tokens["--mark-ink-dark"], blank: tokens["--mark-ink-blank"] };
+    const veilWant = { dark: tokens["--mark-veil-dark"], light: tokens["--mark-veil-light"] };
+    if (new Set(Object.values(tokens)).size < 3 || Object.values(tokens).some((c) => !c || c === "rgba(0, 0, 0, 0)")) {
+      fail(`probe dead: mark · the mark tokens did not resolve: ${JSON.stringify(tokens)} (src/styles/tokens.css)`);
+    }
     /** Every avatar under `scope` that carries a kind, as drawn. */
     const readMarks = (scope) =>
       page.evaluate((scope) => {
@@ -26645,6 +26676,7 @@ try {
           if (!mark) return [];
           const face = f.querySelector("[data-face], [data-face-blank]");
           const glyph = mark.firstElementChild;
+          const veil = f.querySelector("[data-face-veil]");
           return [
             {
               key: mark.getAttribute("data-side-mark"),
@@ -26652,9 +26684,13 @@ try {
               row: f.closest("[data-side-row]")?.getAttribute("data-side-row") ?? null,
               badge: f.querySelectorAll("[data-side-badge]").length,
               veil: f.querySelectorAll("[data-face-veil]").length,
+              veilColor: veil ? getComputedStyle(veil).backgroundColor : null,
+              veilAlpha: veil ? Number(getComputedStyle(veil).opacity) : null,
+              blank: !!f.querySelector("[data-face-blank]"),
               features: f.querySelectorAll("[data-face-features]").length,
               face: face ? { x: r(face).left, y: r(face).top, w: r(face).width, h: r(face).height } : null,
               glyph: glyph ? { x: r(glyph).left, y: r(glyph).top, w: r(glyph).width, h: r(glyph).height } : null,
+              inkKey: mark.getAttribute("data-mark-ink"),
               ink: getComputedStyle(mark).color,
             },
           ];
@@ -26662,6 +26698,38 @@ try {
       }, scope);
     const whole = (v) => Math.abs(v - Math.round(v)) < 0.01;
     const COLUMNS = ["sessions", "devices", "workspaces"];
+    /** The face record a row was drawn from, where the fixture can say
+        (a machine's row, a workspace's machine); `undefined` elsewhere. */
+    const recordOf = (col, row) => {
+      if (!row || col === "sessions") return undefined;
+      const id = col === "workspaces" ? row.split(":")[0] : row;
+      const d = devs.find((x) => x.id === id);
+      return d ? d.face : undefined;
+    };
+    /** a′: the ink and the veil are the face's (the blank's the theme's). */
+    const judgeInk = (where, m, record) => {
+      if (m.blank || record === null) {
+        if (m.inkKey !== "blank" || m.ink !== inkWant.blank || m.veil !== 0) {
+          fail(`${where}: the blank's mark is ${m.inkKey} ${m.ink} with ${m.veil} veil(s) — the blank takes --mark-ink-blank ${inkWant.blank}, bare (src/components/FaceMark.tsx)`);
+        }
+        return;
+      }
+      if (!["light", "dark"].includes(m.inkKey) || m.ink !== inkWant[m.inkKey]) {
+        fail(`${where}: the mark is ${m.inkKey} ${m.ink}, not a face's ink (--mark-ink-light / --mark-ink-dark) (src/components/FaceMark.tsx)`);
+        return;
+      }
+      if (m.veil > 1) fail(`${where}: the face wears ${m.veil} veils`);
+      if (m.veil === 1 && m.veilColor !== veilWant[m.inkKey === "light" ? "dark" : "light"]) {
+        fail(`${where}: the veil under the ${m.inkKey} ink is ${m.veilColor} — black under the light ink, white under the dark (src/components/Avatar.tsx Veil)`);
+      }
+      if (record) {
+        const want = record.mark;
+        if (m.inkKey !== want.ink) fail(`${where}: the mark is the ${m.inkKey} ink, the face was given the ${want.ink} one`);
+        if (m.veil !== (want.veil > 0 ? 1 : 0) || (m.veil === 1 && Math.abs(m.veilAlpha - want.veil) > 0.005)) {
+          fail(`${where}: the face wears ${m.veil} veil(s)${m.veil ? ` at ${m.veilAlpha}` : ""}, its record says ${want.veil} — a veil only where the face needs one (src/components/Avatar.tsx Veil)`);
+        }
+      }
+    };
     /** a / c: every column's marks are on the face, as the claims say. */
     const judgeFace = async (when) => {
       for (const col of COLUMNS) {
@@ -26679,8 +26747,7 @@ try {
             fail(`${where}: the mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s) — 浮现 is the default, and it has no corner`);
             continue;
           }
-          if (m.veil !== 1) fail(`${where}: the face under the mark wears ${m.veil} veil(s), not one (src/components/Avatar.tsx UnderMark)`);
-          if (m.ink !== inkWant) fail(`${where}: the mark is ${m.ink}, not --mark-ink ${inkWant}`);
+          judgeInk(where, m, recordOf(col, m.row));
           if (!m.face || !m.glyph) {
             fail(`probe dead: ${where} has no face or no glyph to measure`);
             continue;
@@ -26698,6 +26765,14 @@ try {
           const gate = marks.find((m) => m.row === gateDev?.id);
           if (!gate) fail(`probe dead: mark ${when} · this machine's row has no kind`);
           else if (gate.features !== 0) fail(`mark ${when} · a 笑脸 face under a mark still draws its eyes and mouth (${gate.features}) — they read as a smudge behind the mark`);
+          // a′ saw both cases, not one of them twice.
+          const peerRow = marks.find((m) => m.row === peerDev?.id);
+          if (!gate || !peerRow || gate.inkKey !== "dark" || gate.veil !== 0 || peerRow.inkKey !== "light" || peerRow.veil !== 1) {
+            fail(
+              `mark ${when} · the two faces drew ${JSON.stringify([gate && [gate.inkKey, gate.veil], peerRow && [peerRow.inkKey, peerRow.veil, peerRow.veilAlpha]])} — ` +
+                `this machine's says ${JSON.stringify(GATE_MARK)} (dark, bare), peer's ${JSON.stringify(PEER_MARK)} (light over black)`,
+            );
+          }
           const rail = await page.evaluate(() => ({
             features: document.querySelectorAll("[data-rail-mark] [data-face-features]").length,
             veil: document.querySelectorAll("[data-rail-mark] [data-face-veil]").length,
@@ -26712,12 +26787,15 @@ try {
       await press("[data-list] [data-row-open]");
       await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-mark]").count()) > 0);
       const tab = await readMarks("[data-session-tabs] [data-tab]");
-      console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge, m.face?.w, m.glyph?.w]))}`);
+      console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge, m.inkKey, m.veil, m.face?.w, m.glyph?.w]))}`);
       if (tab.length === 0) fail(`probe dead: mark ${when} · no session tab with a kind on the strip`);
       for (const m of tab) {
-        if (m.at !== "face" || m.badge !== 0 || m.veil !== 1) {
-          fail(`mark ${when} · a session tab's face has its mark ${JSON.stringify(m.at)}, ${m.badge} corner(s), ${m.veil} veil(s) — the tab follows the setting`);
-        } else if (m.face?.w !== 16 || m.glyph?.w !== 12 || m.glyph.x - m.face.x !== 2 || m.glyph.y - m.face.y !== 2) {
+        if (m.at !== "face" || m.badge !== 0) {
+          fail(`mark ${when} · a session tab's face has its mark ${JSON.stringify(m.at)} with ${m.badge} corner(s) — the tab follows the setting`);
+          continue;
+        }
+        judgeInk(`mark ${when} · a session tab (${m.key})`, m, undefined);
+        if (m.face?.w !== 16 || m.glyph?.w !== 12 || m.glyph.x - m.face.x !== 2 || m.glyph.y - m.face.y !== 2) {
           fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 16, 2 in`);
         }
       }

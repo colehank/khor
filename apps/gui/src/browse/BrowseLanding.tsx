@@ -62,7 +62,6 @@ import { TabCount } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
-import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconClose } from "@/components/icons";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
@@ -312,7 +311,7 @@ export function BrowseLanding({
       id: t.id,
       group: t.pinned ? "pin" : "",
       pinned: t.pinned,
-      face: <MachineAvatar face={d?.face ?? null} className="size-avatar" />,
+      face: { machine: d?.face ?? null },
       // **The same ring a 忙碌 session wears** (docs/SHELL.md 第十二轮:
       // 「用同一个光晕…不新造一种转圈」) — one state word, one look,
       // and the reduced-motion guard comes with it (`app.css`). Only
