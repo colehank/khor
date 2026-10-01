@@ -241,6 +241,7 @@ try {
       // which is exactly why it survived: the only witness was a picture
       // nobody was looking at.
       seat: { left: 50, top: 50 },
+      hosts: true,
     },
     {
       id: "f".repeat(64),
@@ -308,6 +309,7 @@ try {
       // so the picture this gate measures is the picture the product
       // draws.
       seat: { left: 50, top: 84 },
+      hosts: true,
     },
     {
       id: "d".repeat(64),
@@ -344,6 +346,7 @@ try {
       watched: null,
       // ring(2)'s other seat: opposite the peer, up top.
       seat: { left: 50, top: 16 },
+      hosts: true,
     },
   ];
   await page.route("**/sessions", (r) =>
@@ -2113,8 +2116,10 @@ try {
   // same reason.
   // **`FACE_ONLY=mark` walks section 17 alone** (类型标记「浮现 / 角标」,
   // 2026-10-02), for the same reason.
+  // **`FACE_ONLY=phone` walks section 18 alone** (手机不托管, iOS 第二步,
+  // 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23563,7 +23568,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23947,7 +23952,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24278,7 +24283,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24550,7 +24555,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25258,7 +25263,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -26088,7 +26093,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -26862,6 +26867,238 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "mark") console.log("mark · FACE_ONLY=mark: the other sections are skipped");
+
+  // ── 手机不托管 (docs/IOS.md 第二步, 2026-10-02) ──────────────────
+  //
+  // A phone hosts nothing — no tmux, no process it may start, no VS
+  // Code, no claude, no second window, nothing to open a file with — and
+  // says so on its own row (`DeviceRow.hosts`, written by the node from
+  // the build it runs). Every entry that needs a hosting machine reads
+  // that one fact: **an act that cannot exist there is not drawn**, and
+  // the face does not even ask the far machine about it. Two arms, each
+  // against a control on the same page:
+  //
+  //   a. **a computer looking at a phone** (elder says it cannot host):
+  //      elder's card has no 开会话, no VS Code switch (and `code_here`
+  //      is never asked about it), no process table — peer's card has
+  //      all three; the new-session dialog opens on this machine, and
+  //      picking elder greys 智能体 and shell and leaves 留言 chosen,
+  //      where picking peer leaves them live;
+  //   b. **this machine is the phone** (gate says it cannot host): the
+  //      dialog opens on the first machine that can (peer), and picking
+  //      gate greys 智能体 / shell; gate's own card has no 开会话, no
+  //      借网, no hooks, no process table; peer's card keeps 开会话 but
+  //      has no 借网 and no VS Code (a phone has no second window), and
+  //      `code_here` is never asked of anyone; the hooks are never polled;
+  //      安全 has no web-face key (and `web_key` is never asked); 设置
+  //      shows the store's path with no 打开; a workspace's tree has no
+  //      拉过来 and no VS Code switch; 导入 never asks for the agents.
+  //
+  // Each b-claim's control is the same probe in a (gate hosts there).
+  // Red first: run against the frontend before this lane, every arm
+  // fails (the fixture's `hosts` is a field nothing read).
+  //
+  // `FACE_ONLY=phone` runs this section alone.
+  phone: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "phone") break phone;
+  {
+    const gateDev = devs.find((d) => d.me);
+    const peerDev = devs.find((d) => d.name === "peer");
+    const elderDev = devs.find((d) => d.name === "elder");
+    if (!gateDev || !peerDev || !elderDev) {
+      fail("probe dead: phone · the fixture lost gate, peer or elder");
+      break phone;
+    }
+    /** Every command the face sent while this section ran, with what it
+        named — the only witness for 「never asked」. */
+    let asked = [];
+    const listen = (req) => {
+      const path = new URL(req.url()).pathname;
+      const cmd = path.slice(path.lastIndexOf("/") + 1);
+      let body = {};
+      try {
+        body = req.postDataJSON() ?? {};
+      } catch {
+        body = {};
+      }
+      asked.push({ cmd, body });
+    };
+    page.on("request", listen);
+    const sent = (cmd, pred = () => true) => asked.filter((a) => a.cmd === cmd && pred(a.body)).length;
+    const count = (sel) => page.locator(sel).count();
+    const card = async (dev) => {
+      await open("devices");
+      if (!(await press(`[data-list] [data-side-row="${dev.id}"] [data-row-open]`))) return false;
+      return until(5_000, async () => (await count("[data-machine-card]")) > 0);
+    };
+    /** The card's verbs and sections, as drawn. */
+    const readCard = async () => ({
+      newSession: await count('[data-verb="new-session-on"]'),
+      borrow: await count('[data-verb="borrow-web"]'),
+      code: await count('[data-verb="code"]'),
+      top: await count('[data-machine-card] [data-machine-section="top"]'),
+      hooks: await count("[data-machine-card] [data-hooks]"),
+    });
+    /** The dialog: where it opens, and the kinds after picking `pick`. */
+    const readDialog = async (pick) => {
+      await open("sessions");
+      if (!(await press("[data-side-head] [data-pane-new]"))) return null;
+      if ((await count('[role="menu"]')) > 0 && !(await press('[role="menu"] [data-new-item="new"]'))) return null;
+      if (!(await until(3_000, async () => (await count("[data-new-session-dialog]")) > 0))) return null;
+      const select = page.locator("[data-new-session-machine-select]");
+      if ((await select.count()) === 0) return null;
+      const opened = await select.inputValue();
+      const kinds = async () =>
+        page.evaluate(() =>
+          Object.fromEntries(
+            [...document.querySelectorAll("[data-new-session-kind]")].map((b) => [
+              b.getAttribute("data-new-session-kind"),
+              { disabled: b.disabled, on: b.getAttribute("data-on") === "true" },
+            ]),
+          ),
+        );
+      const atOpen = await kinds();
+      await select.selectOption(pick);
+      await wait(300);
+      const picked = await kinds();
+      await press("[data-new-session-dialog] [data-dialog-cancel]");
+      return { opened, atOpen, picked };
+    };
+    /** The first workspace (peer's pinned one), its tree out — the
+        walk's `openWs`, which ended with the walk's block. */
+    const openWsTree = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await count("[data-ws-tree]")) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    const morePage = async (key) => (await press("[data-rail-more]")) && press(`[data-more-open="${key}"]`);
+    const closeMore = () => press("[data-more-close]");
+    const reload = async () => {
+      await page.evaluate(() => window.localStorage.clear());
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(1500);
+    };
+
+    // ── a. a computer looking at a phone ──
+    gateDev.hosts = true;
+    elderDev.hosts = false;
+    asked = [];
+    await reload();
+    const hooksPolledA = sent("hooks_state");
+    if (!(await card(elderDev))) fail("probe dead: phone a · elder's card never opened");
+    const elderSeen = await readCard();
+    if (!(await card(peerDev))) fail("probe dead: phone a · peer's card never opened");
+    await until(3_000, async () => (await count('[data-verb="code"]')) > 0);
+    const peerSeenA = await readCard();
+    console.log(`phone a · elder (cannot host) ${JSON.stringify(elderSeen)} · peer ${JSON.stringify(peerSeenA)}`);
+    if (peerSeenA.newSession !== 1 || peerSeenA.code !== 1 || peerSeenA.top !== 1) {
+      fail(`probe dead: phone a · peer's card drew ${JSON.stringify(peerSeenA)} — the control needs its 开会话, VS Code and process table`);
+    }
+    if (elderSeen.newSession !== 0) fail("phone a · elder cannot host and its card offers 开会话 (src/views/MachineCard.tsx MachineVerbs)");
+    if (elderSeen.code !== 0) fail("phone a · elder cannot host and its card offers VS Code (src/App.tsx machineCode)");
+    if (elderSeen.top !== 0) fail("phone a · elder cannot host and its card draws a process table — empty there, and read as 「nothing running」 (MachineCard Busy)");
+    if (sent("code_here", (b) => b.machine === "elder") !== 0) fail("phone a · code_here was asked about elder, a machine that cannot host");
+    const dialogA = await readDialog("elder");
+    console.log(`phone a · new session: ${JSON.stringify(dialogA)}`);
+    if (!dialogA) {
+      fail("probe dead: phone a · the new-session dialog or its machine choice never drew");
+    } else {
+      if (dialogA.opened !== "gate") fail(`phone a · the dialog opened on ${dialogA.opened} — a computer opens it on itself, as it always did`);
+      if (dialogA.atOpen.agent?.disabled !== false) fail("probe dead: phone a · 智能体 is not live on this machine — the control");
+      const k = dialogA.picked;
+      if (!(k.agent?.disabled && k.shell?.disabled && k.tell?.disabled === false && k.tell?.on)) {
+        fail(`phone a · picking elder left the kinds ${JSON.stringify(k)} — 智能体 and shell greyed, 留言 chosen (src/views/NewSessionDialog.tsx)`);
+      }
+    }
+    // The b-arm's controls, on this computer's own pages.
+    if (!(await morePage("security"))) fail("probe dead: phone a · 安全 did not open");
+    const keyRowA = await count("[data-web-key-rotate]");
+    await closeMore();
+    if (!(await morePage("settings"))) fail("probe dead: phone a · 设置 did not open");
+    const storeOpenA = await count("[data-store-open]");
+    await closeMore();
+    await open("workspaces");
+    await openWsTree();
+    await until(5_000, async () => (await count("[data-ws-tree] [data-file] [data-take]")) > 0);
+    const takeA = await count("[data-ws-tree] [data-file] [data-take]");
+    const wsCodeA = await count("[data-code]");
+    await open("sessions");
+    if (await press("[data-side-head] [data-pane-new]")) {
+      if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="import"]');
+      await wait(800);
+      await press("[data-dialog-cancel]");
+    }
+    const agentsAskedA = sent("agents");
+    const webKeyA = sent("web_key");
+    console.log(
+      `phone a · controls: hooks polled ${hooksPolledA}, key row ${keyRowA}, 打开 ${storeOpenA}, 拉过来 ${takeA}, workspace VS Code ${wsCodeA}, agents asked ${agentsAskedA}, web_key asked ${webKeyA}`,
+    );
+    if (!hooksPolledA || !keyRowA || !storeOpenA || !takeA || !wsCodeA || !agentsAskedA || !webKeyA) {
+      fail("probe dead: phone a · a control for the b-arm drew or asked nothing on a computer — b would measure nothing");
+    }
+
+    // ── b. this machine is the phone ──
+    gateDev.hosts = false;
+    elderDev.hosts = true;
+    asked = [];
+    await reload();
+    const dialogB = await readDialog("gate");
+    console.log(`phone b · new session: ${JSON.stringify(dialogB)}`);
+    if (!dialogB) {
+      fail("probe dead: phone b · the new-session dialog or its machine choice never drew");
+    } else {
+      if (dialogB.opened !== "peer") fail(`phone b · the dialog opened on ${dialogB.opened} — on a phone it opens on the first machine that can host (peer)`);
+      if (dialogB.atOpen.agent?.disabled !== false) fail(`phone b · 智能体 is not live on peer, a machine that can host: ${JSON.stringify(dialogB.atOpen)}`);
+      const k = dialogB.picked;
+      if (!(k.agent?.disabled && k.shell?.disabled && k.tell?.disabled === false && k.tell?.on)) {
+        fail(`phone b · picking this phone left the kinds ${JSON.stringify(k)} — 智能体 and shell greyed, 留言 chosen`);
+      }
+    }
+    if (!(await card(gateDev))) fail("probe dead: phone b · this machine's card never opened");
+    const gateSeen = await readCard();
+    if (!(await card(peerDev))) fail("probe dead: phone b · peer's card never opened");
+    await wait(800);
+    const peerSeenB = await readCard();
+    console.log(`phone b · this phone ${JSON.stringify(gateSeen)} · peer ${JSON.stringify(peerSeenB)}`);
+    if (gateSeen.newSession || gateSeen.borrow || gateSeen.hooks || gateSeen.top) {
+      fail(`phone b · this phone's own card drew ${JSON.stringify(gateSeen)} — no 开会话, 借网, hooks or process table on a machine that cannot host`);
+    }
+    if (peerSeenB.newSession !== 1) fail(`phone b · peer can host and its card lost 开会话 (${JSON.stringify(peerSeenB)})`);
+    if (peerSeenB.borrow || peerSeenB.code) fail(`phone b · peer's card offers ${JSON.stringify(peerSeenB)} — a phone has no second window for 借网 or VS Code`);
+    if (sent("code_here")) fail(`phone b · code_here was asked ${sent("code_here")} time(s) — a phone opens no editor window, so nobody is asked`);
+    if (sent("hooks_state")) fail(`phone b · the hooks were polled ${sent("hooks_state")} time(s) on a phone (src/App.tsx)`);
+    if (!(await morePage("security"))) fail("probe dead: phone b · 安全 did not open");
+    if (await count("[data-web-key-rotate], [data-web-key]")) fail("phone b · 安全 shows the web face's key on a phone, which serves no web face (src/views/more/SecurityPage.tsx)");
+    if (sent("web_key")) fail("phone b · web_key was asked on a phone");
+    await closeMore();
+    if (!(await morePage("settings"))) fail("probe dead: phone b · 设置 did not open");
+    if (await count("[data-store-open]")) fail("phone b · 设置 offers 打开 for the store on a phone, which has nothing to open it with (src/views/more/SettingsPage.tsx)");
+    if (!(await count('[data-more-fact="store-path"]'))) fail("phone b · 设置 lost the store's path along with its 打开 — the fact stays");
+    await closeMore();
+    await open("workspaces");
+    await openWsTree();
+    await until(5_000, async () => (await count("[data-ws-tree] [data-file]")) > 0);
+    if (!(await count("[data-ws-tree] [data-file]"))) fail("probe dead: phone b · the workspace's tree never drew");
+    if (await count("[data-ws-tree] [data-file] [data-take]")) fail("phone b · the tree offers 拉过来 on a phone (src/views/fileRow.tsx useTake)");
+    if (await count("[data-code]")) fail("phone b · the workspace offers VS Code on a phone (src/components/CodeWindow.tsx)");
+    await open("sessions");
+    if (await press("[data-side-head] [data-pane-new]")) {
+      if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="import"]');
+      await wait(800);
+      if (!(await count("[data-import-note]"))) fail("probe dead: phone b · 导入 never opened");
+      if (await count("[data-import-agents]")) fail("phone b · 导入 offers to ask the agents on a phone");
+      await press("[data-dialog-cancel]");
+    }
+    if (sent("agents") || sent("agent_ask")) fail(`phone b · 导入 asked for the agents on a phone (${sent("agents")}, ${sent("agent_ask")}) (src/views/ImportDialog.tsx)`);
+
+    page.off("request", listen);
+    gateDev.hosts = true;
+    elderDev.hosts = true;
+    await reload();
+  }
+  }
+  if (process.env.FACE_ONLY === "phone") console.log("phone · FACE_ONLY=phone: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

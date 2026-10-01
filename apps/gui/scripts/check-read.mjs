@@ -655,6 +655,7 @@ try {
           watch: [],
           watched: null,
           seat: { left: 50, top: 50 },
+          hosts: true,
         },
       ]),
     );

@@ -46,6 +46,7 @@ import { DirPicker } from "@/components/DirPicker";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
+import { HereHostsProvider, hereHosts } from "@/lib/here";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
@@ -580,6 +581,10 @@ export default function App() {
   const [landing, setLanding] = useState<Landing>("sessions");
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
+  /** Whether this machine can host — `false` on a phone, said by its own
+      row (`lib/here`, docs/IOS.md 第二步). Handed down as a context; read
+      here for the shell's own acts (the hooks, the editor, the lock). */
+  const hosts = hereHosts(devices);
   // Whether either list has been answered once (components/RegionState):
   // until then an empty array is 「not read yet」, drawn as a skeleton,
   // and never as 「there are none」.
@@ -824,6 +829,13 @@ export default function App() {
   // sit there offering to do something already done. A minute late is
   // still early enough for that (`HOOKS_MS`).
   useEffect(() => {
+    // **Not on a phone** (docs/IOS.md 第二步): there is no claude there to
+    // hook, so there is no answer worth a minute's beat — and the card
+    // that would show it is not drawn (`MachineCard`'s `Hooks`). **Asked
+    // once the table has said which this is**, or a phone's first beat
+    // would go out on the default before its own row arrived; the card
+    // that shows the answer needs that table anyway.
+    if (!devicesRead || !hosts) return;
     let live = true;
     const tick = () => {
       fetchHooks()
@@ -843,7 +855,7 @@ export default function App() {
       live = false;
       clearInterval(t);
     };
-  }, [hidden]);
+  }, [hidden, hosts, devicesRead]);
 
   const onSelect = useCallback((row: SessionRow) => {
     sessionTabs.open(row.id);
@@ -1852,7 +1864,16 @@ export default function App() {
       machine card's narrow head on the other, and the window's handle
       and its server must outlive that move. `null` while no machine is
       open, which gives the far server back (`components/CodeWindow`). */
-  const machineCode = useCodeWindow(landing === "devices" && openDevice ? openDevice.name : null, "");
+  //
+  // **Only where both ends are computers** (docs/IOS.md 第二步): the
+  // editor runs on that machine, so one that cannot host has none; and
+  // its window opens on this one, so a phone — one window, the
+  // screen's — has nowhere to put it. Asked of neither, the switch is
+  // not drawn and the far machine is never asked whether it has one.
+  const machineCode = useCodeWindow(
+    landing === "devices" && openDevice && openDevice.hosts && hosts ? openDevice.name : null,
+    "",
+  );
   /** The machine card's four verbs, **at R0's right end**
       (docs/SHELL.md 第十七轮 §3, D9): page buttons live in the toolbar,
       never as a row in the board. Only while a machine is open. */
@@ -2322,8 +2343,11 @@ export default function App() {
     // binding inside a closure, and the `null` here is the seam itself
     // (`api.ts` systemUnlock) rather than a value that might arrive.
     const ask = systemUnlock;
+    // **And only where the machine has one** (`LockFacts.system_door`,
+    // docs/IOS.md 第二步): the command asks LocalAuthentication on a Mac
+    // and answers no everywhere else, so elsewhere the button did nothing.
     const systemDoor =
-      ask === null
+      ask === null || !lock.facts?.system_door
         ? undefined
         : () => {
             void ask().then((took) => {
@@ -2401,6 +2425,7 @@ export default function App() {
     <SettingsProvider value={settings.rows}>
     <SettingsRereadProvider value={settings.reread}>
     <SideSeatsProvider value={seats.seats}>
+    <HereHostsProvider value={hosts}>
     <TooltipProvider delayDuration={0}>
       {narrow ? (
         <div className="flex h-dvh flex-col">
@@ -2640,6 +2665,7 @@ export default function App() {
         </div>
       )}
     </TooltipProvider>
+    </HereHostsProvider>
     </SideSeatsProvider>
     </SettingsRereadProvider>
     </SettingsProvider>

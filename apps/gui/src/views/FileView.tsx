@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFileLines } from "@/lib/highlight";
+import { useHereHosts } from "@/lib/here";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
@@ -105,12 +106,16 @@ function Away({
   onTake: () => void;
   took: string | null;
 }) {
+  // Not on a phone (docs/IOS.md 第二步): it takes no files (`useTake`).
+  const takes = useHereHosts();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
       <span className="text-body text-foreground">{word}</span>
-      <Button size="sm" onClick={onTake} className="mt-1 min-h-touch min-w-touch">
-        {gui.file_take}
-      </Button>
+      {takes && (
+        <Button size="sm" data-file-take onClick={onTake} className="mt-1 min-h-touch min-w-touch">
+          {gui.file_take}
+        </Button>
+      )}
       {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
     </div>
   );

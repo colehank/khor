@@ -17,6 +17,7 @@ import { fetchTrashHere, pullFile, removePath } from "@/api";
 import { neverAsks, type RemoveKind } from "@/components/RemoveDialog";
 import { type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
+import { useHereHosts } from "@/lib/here";
 import { cn } from "@/lib/utils";
 
 /** What a directory wears instead of a letter. Not a catalog string: it
@@ -285,6 +286,10 @@ export type Took = { path: string; state: "taking" | "landed" | "failed"; word: 
     because this app has nowhere that collects messages. */
 export function useTake(machine: string) {
   const [took, setTook] = useState<Took | null>(null);
+  /** **Whether this machine takes files at all** — not a phone
+      (docs/IOS.md 第二步): its app may not write where a person would
+      find the file, so 拉过来 is not drawn there (`pull` refuses too). */
+  const takes = useHereHosts();
   const take = (path: string) => {
     setTook({ path, state: "taking", word: "…" });
     pullFile(machine, path)
@@ -293,5 +298,5 @@ export function useTake(machine: string) {
         setTook({ path, state: "failed", word: String(e instanceof Error ? e.message : e) }),
       );
   };
-  return { took, take };
+  return { took, take, takes };
 }

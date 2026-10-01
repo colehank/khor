@@ -134,7 +134,9 @@ export function IdentityPage({
       {/* 本机开着哪几张界面 (docs/MORE.md 头像页). Drawn only once khor
           has answered — a list of faces painted from a default this file
           kept would be a page reporting a probe it never made. */}
-      {about !== null && (
+      {/* A phone has neither face, and says so with no section rather
+          than an empty one (`khor_node::face::faces`, docs/IOS.md). */}
+      {about !== null && about.faces.length > 0 && (
         <MoreSection name="faces" label={gui.identity_faces}>
           {/* **Each face is a row of the card**, as tall as every other
               settings row and with the hairline between them.

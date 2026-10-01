@@ -27,6 +27,15 @@
 //     directory and under the name given. The user's word, not 终端:
 //     a terminal is the window a session appears in.
 //
+// **A machine that cannot host takes a line and nothing else**
+// (docs/IOS.md 第二步). A phone says so on its own row (`DeviceRow.hosts`):
+// it is offered for 留言 — its window is a window like any other — and
+// 智能体 / shell are greyed while it is the one picked, the 终端 form's
+// rule below (a kind that exists for one machine and not another is a
+// fact about the machine). **The default is never such a machine**: on
+// a phone the dialog opens on the first machine that can host, so the
+// first press of 创建 is a session somewhere real rather than a refusal.
+//
 // **智能体 is an open position (批⑥):** khor's own two, plus every ACP
 // agent this person registered (`khor agents add`). The registered ones
 // are fetched rather than listed here — the registry is a replicated
@@ -87,6 +96,7 @@ import { PopupButton } from "@/components/ui/popup-button";
 import { SEGMENTS_MAX, SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
+import { useHereHosts } from "@/lib/here";
 import { useSetting } from "@/settings";
 import { connectionWord } from "@/words";
 
@@ -268,8 +278,10 @@ export function NewSessionDialog({
         // what it says it has lands among the import candidates
         // (docs/SHELL.md 第八轮: 已有的对话 moved to 导入). Not painted
         // here, and not cancelled when this dialog closes: the answer
-        // is written to the agents doc and syncs.
-        agentAsk(id).catch(() => {});
+        // is written to the agents doc and syncs. **Not from a phone**
+        // (docs/IOS.md 第二步): asking starts the agent here, and a phone
+        // starts nothing — the registration alone travels.
+        if (here) agentAsk(id).catch(() => {});
       })
       .catch(why)
       .finally(() => setAttaching(null));
@@ -279,13 +291,32 @@ export function NewSessionDialog({
       one — the table's own `me` row spells its name, and the two calls
       that leave this dialog for a shell or a line resolve a name, not
       a blank. */
-  const target = machine || machines.find((d) => d.me)?.name || "";
+  const here = useHereHosts();
+  /** Where the dialog opens when nobody picked: this machine — unless
+      it cannot host (a phone), and then the first machine that can and is
+      not a satellite (a satellite takes no agent). `""` is this machine
+      to every verb, so a computer's default sends exactly what it always
+      sent. No machine at all that can host leaves this machine, and
+      the kinds below leave it a line. */
+  const fallback = here ? "" : (machines.find((d) => d.hosts && d.sponsor === null)?.name ?? "");
+  /** The machine every verb below is sent to, `""` meaning this one. */
+  const chosen = machine || fallback;
+  const target = chosen || machines.find((d) => d.me)?.name || "";
+  /** Whether the machine picked can host a session — its own row says
+      (a phone does not). Unknown while the table has not answered reads
+      as this machine's own answer. */
+  const targetHosts = machines.find((d) => d.name === target)?.hosts ?? here;
+  // 智能体 and shell picked on a machine that cannot host fall back to
+  // the one kind it takes — the 终端 form's `pick` rule, one step up.
+  useEffect(() => {
+    if (!targetHosts && kind !== "tell") setKind("tell");
+  }, [targetHosts, kind]);
 
   const create = () => {
     if (opening) return;
     setOpening(true);
     setError(null);
-    (kind === "shell" ? openTermOn(target, title, settledPath(dir)) : openSession(settledPath(dir), title, form, agent, machine))
+    (kind === "shell" ? openTermOn(target, title, settledPath(dir)) : openSession(settledPath(dir), title, form, agent, chosen))
       .then((id) => {
         onOpenChange(false);
         onOpened(id);
@@ -383,7 +414,12 @@ export function NewSessionDialog({
                   ["agent", gui.new_session_agent],
                   ["shell", gui.new_session_kind_shell],
                 ] as const
-              ).map(([k, word]) => ({ key: k, label: word, mark: { "data-new-session-kind": k } }))}
+              ).map(([k, word]) => ({
+                key: k,
+                label: word,
+                disabled: k !== "tell" && !targetHosts,
+                mark: { "data-new-session-kind": k },
+              }))}
             />
           </div>
           {kind === "tell" && (
@@ -621,7 +657,7 @@ export function NewSessionDialog({
                 <PathField
                   data-new-session-dir
                   aria-label={gui.new_session_dir}
-                  machine={machine}
+                  machine={chosen}
                   value={dir}
                   onValueChange={setDir}
                   onSubmit={create}

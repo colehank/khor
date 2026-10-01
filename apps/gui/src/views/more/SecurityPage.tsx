@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cli, gui } from "@/gen/catalog";
+import { useHereHosts } from "@/lib/here";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
@@ -89,12 +90,17 @@ export function SecurityPage({
   const [showingWords, setShowingWords] = useState(false);
 
   const me = devices.find((d) => d.me) ?? null;
+  /** **A phone serves no web face** (docs/IOS.md 第二步: the app does not
+      start one there), so it has no key to show or to change — the row
+      is not drawn, and the key is not asked for. */
+  const servesWeb = useHereHosts();
 
   useEffect(() => {
+    if (!servesWeb) return;
     void fetchWebKey().then(setKey, (e: unknown) =>
       setError(String(e instanceof Error ? e.message : e)),
     );
-  }, []);
+  }, [servesWeb]);
 
   useEffect(() => {
     if (!inApp) return;
@@ -277,6 +283,7 @@ export function SecurityPage({
           it (`khor_node::config::SECTIONS`). */}
       <ConfigSections page="security" onChanged={onSettingChanged} />
 
+      {servesWeb && (
       <MoreSection name="web-key" label={gui.web_key_section}>
         {/* **One row: the key, and 换一把 as its trailing act**, like
             every other settings row. ⚠️ 墓碑 (2026-09-28): 换一把 was a
@@ -328,6 +335,7 @@ export function SecurityPage({
           mark={{ "data-web-key-rotate": "" }}
         />
       </MoreSection>
+      )}
 
       {/* **恢复词, on demand** (2026-10-01, the owner: 「根钥匙是不是只在
           共享的时候出现更友好」). The machine that made the root no longer

@@ -25,6 +25,7 @@ import { useEffect, useState } from "react";
 import { fetchAbout, launchOn, type About } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { gui } from "@/gen/catalog";
+import { useHereHosts } from "@/lib/here";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
@@ -54,6 +55,10 @@ export function SettingsPage({
   onSettingChanged: () => void;
 }) {
   const [about, setAbout] = useState<About | null>(null);
+  /** Whether this machine has something to open a directory with — not
+      a phone (docs/IOS.md 第二步: nothing is opened there, and the
+      refusal said 「设 KHOR_LAUNCHER」, advice for a computer). */
+  const opens = useHereHosts();
 
   // **No node is opened on the other side**, so this answers even on a
   // machine whose store refuses — which is the moment a person most
@@ -90,16 +95,23 @@ export function SettingsPage({
                 `machine` is this one (`files::launch`).
                 ⚠️ 墓碑 (2026-09-28): 「store 在哪儿」 was two rows, one
                 holding the path and one the button, the title twice. */}
-            <ActionRow
-              name="store-open"
-              label={gui.store_path}
-              value={<span data-more-fact="store-path">{about.root}</span>}
-              actionLabel={gui.store_open}
-              mark={{ "data-store-open": "" }}
-              onPress={() => {
-                void launchOn("", about.root).catch(() => {});
-              }}
-            />
+            {opens ? (
+              <ActionRow
+                name="store-open"
+                label={gui.store_path}
+                value={<span data-more-fact="store-path">{about.root}</span>}
+                actionLabel={gui.store_open}
+                mark={{ "data-store-open": "" }}
+                onPress={() => {
+                  void launchOn("", about.root).catch(() => {});
+                }}
+              />
+            ) : (
+              // The path is still a fact worth reading; the act is not drawn.
+              <MoreFact name="store-path" label={gui.store_path}>
+                <span data-more-fact="store-path">{about.root}</span>
+              </MoreFact>
+            )}
             <MoreFact name="store-size" label={gui.store_size}>
               {bytes(about.store_bytes)}
             </MoreFact>

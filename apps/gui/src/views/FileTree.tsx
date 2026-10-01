@@ -172,7 +172,7 @@ export function FileTree({
       piece of state for that would itself cause the render that starts
       the second one. */
   const asked = useRef(new Set<string>());
-  const { took, take } = useTake(machine);
+  const { took, take, takes } = useTake(machine);
   /** 单击文件: whether one click keeps the tab, or takes the preview
       seat the next click replaces (`khor config`). Double click pins
       either way, so 「预览」 is not a road with no exit. */
@@ -648,7 +648,7 @@ export function FileTree({
                       {took.word}
                     </span>
                   ) : (
-                    !here && (
+                    !here && takes && (
                       <Button
                         size="sm"
                         variant="ghost"

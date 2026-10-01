@@ -1204,6 +1204,7 @@ try {
       watch: [],
       watched: null,
       seat: { left: 50, top: 50 },
+      hosts: true,
     }));
     await page.route("**/devices", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(devices) }));
     await page.locator('[data-rail-item][data-landing="sessions"]').click();

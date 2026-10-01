@@ -33,6 +33,7 @@ import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
+import { useHereHosts } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
 import { ago, hopWord, lasting, systemWord } from "@/words";
 
@@ -238,7 +239,12 @@ function Body({
             ) : (
               <>
                 <Readings row={row} day={load?.cpu_day ?? null} top={load?.top ?? []} />
-                {answered ? (
+                {/* **No process table for a machine that cannot host**
+                    (docs/IOS.md 第二步): a phone's app may not see other
+                    processes, so its table is always empty — and an empty
+                    table reads as 「nothing running」, a claim about a
+                    machine khor cannot look inside. */}
+                {!row.hosts ? null : answered ? (
                   <Busy
                     load={load}
                     why={why}
@@ -264,7 +270,10 @@ function Body({
               Installing on a machine you are looking at from here
               belongs to the batch that adds remote verbs, and when it
               lands, this is where it goes. */}
-          {row.me && (
+          {/* …and only on a machine with a claude to hook: a phone has
+              none, and its 「装好了」 was about a file nobody reads
+              (docs/IOS.md 第二步; `install_hooks` refuses there too). */}
+          {row.me && row.hosts && (
             <Hooks
               state={hooks}
               failed={hooksFailed}
@@ -560,11 +569,17 @@ export function MachineVerbs({
       the breakpoint would drop the window's handle. */
   code?: CodeWindow;
 }) {
+  const here = useHereHosts();
+  // **An act that cannot exist is not drawn** (docs/IOS.md 第二步): no
+  // session on a machine that cannot host — a phone, said on its own
+  // row — and no page through another machine's network on a face that
+  // has no second webview to show it in (a phone's; `page-needs-desktop`
+  // is the refusal behind it).
   const verbs = [
-    { key: "new-session-on", word: gui.open_term_on_ask, Icon: IconSessions, go: onNewSession },
+    ...(row.hosts ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconSessions, go: onNewSession }] : []),
     { key: "browse-files", word: gui.browse_files, Icon: IconFiles, go: onBrowseFiles },
-    { key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb },
-  ] as const;
+    ...(here ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb }] : []),
+  ];
   return (
     <div data-machine-verbs className="flex flex-wrap items-center justify-end gap-in">
       {verbs.map(({ key, word, Icon, go }) => (

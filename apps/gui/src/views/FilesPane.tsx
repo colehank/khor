@@ -110,7 +110,7 @@ export function FilesPane({
 }) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { took, take } = useTake(machine);
+  const { took, take, takes } = useTake(machine);
   /** Bumped when this pane changed the directory under itself, which is
       the one change its own effect cannot notice: the path did not
       move, so nothing in the deps would. */
@@ -379,7 +379,7 @@ export function FilesPane({
                           still said where taking is decided — the file
                           view's own head says it for a binary and for a
                           cut one. */}
-                      {!here && (
+                      {!here && takes && (
                       <Button
                         size="sm"
                         variant="ghost"

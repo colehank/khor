@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Editor } from "@/gen/bindings/Editor";
 import { gui } from "@/gen/catalog";
+import { useHereHosts } from "@/lib/here";
 import { useHidden } from "@/hooks/use-hidden";
 import { basename } from "@/words";
 
@@ -64,7 +65,13 @@ export type CodeWindow = {
  * `machine` is a node name (`null` where the door points at nothing);
  * `dir` is the folder to open, empty for none.
  */
-export function useCodeWindow(machine: string | null, dir: string): CodeWindow {
+export function useCodeWindow(pointed: string | null, dir: string): CodeWindow {
+  // **No editor door on a face with no second window** (docs/IOS.md 第二步):
+  // a phone's one window is the screen's, so the window this opens has
+  // nowhere to go — and asking first would start `serve-web` on the far
+  // machine (a 640 MB download the first time) for a window that is then
+  // refused. A door pointing at nothing draws nothing and asks nothing.
+  const machine = useHereHosts() ? pointed : null;
   const hidden = useHidden();
   /** What that machine says about its editor. `version` empty means it
       has none **or could not be asked** — the two lead to the same next

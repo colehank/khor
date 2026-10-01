@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
+import { useHereHosts } from "@/lib/here";
 import { cn } from "@/lib/utils";
 import { ago } from "@/words";
 
@@ -69,6 +70,12 @@ export function ImportDialog({
   const [going, setGoing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const why = (e: unknown) => setError(String(e instanceof Error ? e.message : e));
+  /** **A phone neither lists an agent's conversations nor asks for them**
+      (docs/IOS.md 第二步): one is reopened on this machine, and asking
+      starts the agent here — a phone starts nothing. The node leaves
+      them out of the candidates there; this leaves out the section that
+      would ask. */
+  const here = useHereHosts();
 
   const reload = () =>
     fetchImportCandidates()
@@ -84,6 +91,7 @@ export function ImportDialog({
     setError(null);
     setRows(null);
     reload();
+    if (!here) return;
     fetchAgents()
       .then((list) => {
         setRegistered(list);
@@ -94,7 +102,7 @@ export function ImportDialog({
         }
       })
       .catch(why);
-  }, [open]);
+  }, [open, here]);
 
   /** **The only thing here that starts a process.** */
   const ask = (name: string) => {
@@ -233,7 +241,7 @@ export function ImportDialog({
               })}
             </div>
           )}
-          {registered.length > 0 && (
+          {here && registered.length > 0 && (
             <div data-import-agents className="flex min-w-0 flex-col gap-1 text-callout">
               <span className="text-muted-foreground">{gui.import_agents}</span>
               {registered.map((a) => {
