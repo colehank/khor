@@ -70,6 +70,17 @@ svg [data-body] {
   fill-opacity: 1;
 }
 
+/* **A kind mark painted on a face is one density** (类型标记「浮现」,
+   2026-10-02). Its ink is the one white `--mark-ink` over the face's
+   `--mark-veil`, measured at 3:1 against the brightest face can be
+   (`check-palette`「a mark on a face」); a body at `icon-body` 0.7 would
+   be white thinned back toward the face it is meant to stand off — 2.3
+   on a white face. So it takes the rail's open rule: the body filled to
+   1.0, the family's cuts still separating the pieces. */
+[data-mark-at="face"] svg [data-body] {
+  fill-opacity: 1;
+}
+
 /* **Tombstone: the open item used to wear a block, and it does not now.**
  *
  * It was `background-color: var(--rail-on)` — the brand green, thinned —

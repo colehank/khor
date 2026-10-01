@@ -591,9 +591,10 @@ export function WorkspacesList({
         />
       ),
       // 「工作区: 文件夹, 是 git 仓库时换分支」 (docs/SHELL.md 第四轮 第 2 条).
-      badge: repo
-        ? { mark: "branch", icon: <IconBranch className="size-kind-mark-glyph" /> }
-        : { mark: "folder", icon: <IconFiles className="size-kind-mark-glyph" /> },
+      // On the face or on its corner by the 外观 setting (`FaceMark`).
+      mark: repo
+        ? { key: "branch", glyph: (c: string) => <IconBranch className={c} /> }
+        : { key: "folder", glyph: (c: string) => <IconFiles className={c} /> },
       title: (
         <span className="flex w-full items-center gap-1.5">
           {/* **The name gives way last** (「list 宽度折叠的时候, 优先折叠

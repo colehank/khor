@@ -319,13 +319,13 @@ export function BrowseLanding({
       // this row: the strip's own tab is 80 wide and has no room for a
       // ring around its face (第十二轮 第 3 条).
       halo: load.busy(t.id) ? "busy" : undefined,
-      badge: {
-        mark: src ? "favicon" : "page",
-        icon: src ? (
-          <img src={src} alt="" className="size-kind-mark-glyph rounded-sm" />
-        ) : (
-          <IconBrowser className="size-kind-mark-glyph" />
-        ),
+      // On the face or on its corner by the 外观 setting (`FaceMark`). A
+      // site's favicon is its own picture, drawn as it came on either —
+      // someone else's mark (README 图标); the page glyph takes the ink.
+      mark: {
+        key: src ? "favicon" : "page",
+        glyph: (c: string) =>
+          src ? <img src={src} alt="" className={`${c} rounded-sm`} /> : <IconBrowser className={c} />,
       },
       title: (
         <span data-tab-label data-tab-name className="block truncate text-callout font-label">

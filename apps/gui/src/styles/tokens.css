@@ -634,6 +634,31 @@
    * card. Taking the theme's own ink handles both at once. */
   --avatar-edge: rgba(26, 26, 20, 0.22);
 
+  /* ── a kind mark drawn on a face (类型标记「浮现」) ─────────
+   * The owner, 2026-10-02:「画在脸上感觉很好看」. The mark that says what
+   * a row is (an agent, a terminal, a system, a repository) is painted
+   * on the machine's face, centred, instead of on a corner. A face is
+   * any colour at all — light and dark in one gradient, and a palette
+   * is the user's to pick — so the mark cannot be readable by choosing
+   * one ink against it. **One veil and one ink instead**: the face
+   * under a mark wears this veil, and the mark is this ink.
+   *
+   * **0.42 is a bound, not a taste.** The brightest thing a face can
+   * hold is white (a custom palette may be `#ffffff`, and marble's
+   * overlay strokes brighten past any slot). White under 42% black is
+   * sRGB 0.58, luminance 0.296, and white ink on that is **3.04** — the
+   * 3:1 a graphic needs, for every face any palette can paint. At the
+   * drawing's 0.30 the same white face gives 2.12. `check-palette` 「a
+   * mark on a face」 measures the real faces: every factory palette ×
+   * every way of drawing, sixteen machines each.
+   *
+   * **The same in both themes, and that is the point**: the face never
+   * reads the theme (`Avatar.tsx`), and what sits on it must not
+   * either — the veil and the ink are about the face, not the window.
+   * Not redefined under `[data-theme="dark"]`. */
+  --mark-veil: rgba(0, 0, 0, 0.42);
+  --mark-ink: #ffffff;
+
   /* ── the rail's ink, and the two densities inside it ──
    * The family draws each glyph as one solid piece (`data-body`) held
    * in a line: one colour at two depths, never two colours (`app.css`).
@@ -1915,6 +1940,8 @@
   --color-badge: var(--badge);
   --color-badge-foreground: var(--badge-foreground);
   --color-avatar-edge: var(--avatar-edge);
+  --color-mark-veil: var(--mark-veil);
+  --color-mark-ink: var(--mark-ink);
   --color-rail-ink: var(--rail-ink);
   --color-side: var(--side);
   --color-brand-strong: var(--brand-strong);

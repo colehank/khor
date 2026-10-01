@@ -15,7 +15,7 @@
 //            the heading folds its rows away — the pinned group is one of
 //            those, which is how every column gets 「置顶的显示也是收起与
 //            展开」 without a line of its own;
-//   row      a face with a corner mark (`FaceMark`), a title over a
+//   row      a face with its kind mark (`FaceMark`), a title over a
 //            subtitle, whatever the column puts at the right end;
 //   motion   rows walk to their new places (`useRowFlip`);
 //   the old  rows past their time fold behind one line at the foot.
@@ -26,7 +26,7 @@ import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "rea
 
 import { EmptyState, RegionState } from "@/components/RegionState";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
-import { FaceMark } from "@/components/FaceMark";
+import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { walkList } from "@/lib/shortcuts";
@@ -46,10 +46,11 @@ export type SideRow = {
   pinned: boolean;
   /** The face, already sized. */
   face: ReactNode;
-  /** The corner mark and what it says (a key, for the gates). Absent
-      draws no corner (the 额度 row's mark opens its title instead,
+  /** What kind of thing the row is — drawn on the face or on its corner
+      as the 外观 setting says (`FaceMark`, 2026-10-02). Absent draws the
+      face alone (the 额度 row's mark opens its title instead,
       2026-09-30). */
-  badge?: { mark: string; icon: ReactNode; data?: Record<string, string> };
+  mark?: KindMark;
   /** A session's state ring. */
   halo?: string;
   title: ReactNode;
@@ -269,13 +270,7 @@ export function SideList({
         onClick={r.onOpen}
         className={cn("flex min-h-row-2 min-w-0 flex-1 items-center gap-row px-in py-1 text-left", RING)}
       >
-        <FaceMark
-          face={r.face}
-          halo={r.halo}
-          badge={r.badge?.icon}
-          mark={r.badge?.mark}
-          badgeData={r.badge?.data}
-        />
+        <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
         <span className="min-w-0 flex-1">
           <span data-side-title className="block min-w-0">
             {r.title}

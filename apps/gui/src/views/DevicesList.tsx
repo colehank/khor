@@ -5,7 +5,7 @@ import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { EditableName } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
-import { machineMark } from "@/components/BrandIcons";
+import { machineKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
@@ -267,7 +267,6 @@ export function DevicesList({
   const side: SideRow[] = sieve(rows, words, DEVICE_SIEVE, DEVICE_KEYS).map((d) => {
     const connection = connectionWord(d);
     const system = d.vitals?.vitals.system ?? null;
-    const SystemMark = machineMark(system);
     const modelName = d.vitals?.vitals.model?.name ?? null;
     return {
       id: d.id,
@@ -277,12 +276,11 @@ export function DevicesList({
       // **The system family's own mark** (docs/SHELL.md 第五轮第 7 条改画法:
       // 「角标按系统」) — the node's `vitals.system`. A machine that could
       // not say (an older peer, a satellite, no reading yet) wears the
-      // plain machine mark, never a guess. The model is not the corner's
-      // any more; its name is the second line's (`sub`).
-      badge: {
-        mark: system ?? "machine",
-        icon: <SystemMark className="size-kind-mark-glyph" />,
-      },
+      // plain machine mark, never a guess. The model is not the mark's
+      // any more; its name is the second line's (`sub`). On the face or
+      // on its corner by the 外观 setting (`FaceMark`, 2026-10-02) — and
+      // `MachineFace` is this same assembly for anywhere else.
+      mark: machineKind(system),
       // Double-click to rename, the gesture a session row wears
       // (`EditableName`); `nested` because it sits inside the button
       // that opens the row. Only where a row opens anything.

@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { createContext, useContext, useId } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import type { Vein } from "@/gen/bindings/Vein";
@@ -77,6 +77,42 @@ const VEIN_PATH: Record<Vein, string> = {
  */
 const BLUR_MARGIN = 3.43;
 
+/* ═══════════ under a kind mark ═══════════ */
+
+/**
+ * **Whether this face has a kind mark painted on it** (类型标记「浮现」,
+ * the owner 2026-10-02:「画在脸上感觉很好看」). Set by `FaceMark` and by
+ * nobody else, around the face it was handed — so a face drawn anywhere
+ * that says no kind (the machine card, the edit window, 「这台机器」, the
+ * lock screen) is never under one and paints whole.
+ *
+ * A context rather than a prop because the face reaches `FaceMark`
+ * already built (`SideRow.face` is a node: a session's machine, a
+ * workspace's, a browsing tab's — or the 额度 dial, which has no mark).
+ *
+ * Under a mark the brush does two things and only two, and **neither
+ * touches a number `khor_core::avatar` derived**:
+ *
+ * 1. **A veil** (`--mark-veil`) over the whole face, cropped with it, so
+ *    the mark's one ink (`--mark-ink`) clears 3:1 on any face at all —
+ *    tokens.css has the bound, `check-palette` the measurements.
+ * 2. **Beam (笑脸) leaves out its eyes and mouth.** Its features are a
+ *    face of their own, at the very centre the mark takes; drawn under a
+ *    mark they read as a smudge behind it. What is left — the ground and
+ *    the wrapper block — is still that machine's colours in that
+ *    machine's arrangement, which is all a face under a mark is asked to
+ *    say.
+ */
+export const UnderMark = createContext(false);
+
+/** The veil itself: a layer over the painting and under the edge,
+    cropped with the face by the face's own `overflow: hidden`. */
+function Veil() {
+  return (
+    <span data-face-veil="" aria-hidden="true" className="pointer-events-none absolute inset-0 bg-mark-veil" />
+  );
+}
+
 /* ═══════════ the brush ═══════════ */
 
 /**
@@ -84,7 +120,7 @@ const BLUR_MARGIN = 3.43;
  * document-unique id — a screen holds dozens of faces, and a collided
  * `url(#…)` resolves every one of them to whichever appeared first.
  */
-function AvatarPaintLayers({ face, uid }: { face: Avatar; uid: string }) {
+function AvatarPaintLayers({ face, uid, features }: { face: Avatar; uid: string; features: boolean }) {
   const c = face.canvas / 2;
   const blurId = `av-blur-${uid}`;
   const paint = face.paint;
@@ -188,7 +224,10 @@ function AvatarPaintLayers({ face, uid }: { face: Avatar; uid: string }) {
               fill={paint.wrapper_color}
               transform={`translate(${paint.wrapper_dx} ${paint.wrapper_dy}) rotate(${paint.wrapper_rotate} ${c} ${c}) scale(${paint.wrapper_scale})`}
             />
+            {/* The features — left out under a kind mark (`UnderMark`). */}
+            {features && (
             <g
+              data-face-features=""
               transform={`translate(${paint.face_dx} ${paint.face_dy}) rotate(${paint.face_rotate} ${c} ${c})`}
             >
               {paint.mouth_open ? (
@@ -221,6 +260,7 @@ function AvatarPaintLayers({ face, uid }: { face: Avatar; uid: string }) {
                 fill={paint.face_ink}
               />
             </g>
+            )}
           </>
         )}
       </g>
@@ -245,6 +285,7 @@ function crop(ratio: number) {
  */
 export function AvatarFace({ face, className }: { face: Avatar; className?: string }) {
   const uid = useId().replace(/:/g, "");
+  const marked = useContext(UnderMark);
   return (
     <span
       aria-hidden="true"
@@ -262,8 +303,9 @@ export function AvatarFace({ face, className }: { face: Avatar; className?: stri
         // the picture out too would just say the row twice.
         aria-hidden="true"
       >
-        <AvatarPaintLayers face={face} uid={uid} />
+        <AvatarPaintLayers face={face} uid={uid} features={!marked} />
       </svg>
+      {marked && <Veil />}
       {/*
         The hairline edge. **Not decoration — the one stroke this design
         cannot go without.**
@@ -304,12 +346,18 @@ export function AvatarFace({ face, className }: { face: Avatar; className?: stri
  * believed, and it would not be that machine's.
  */
 export function AvatarBlank({ className }: { className?: string }) {
+  // Under a kind mark the blank wears the veil too: the mark's ink is
+  // one white on every face, and the light theme's grey blank would
+  // otherwise be the one ground it cannot be read on.
+  const marked = useContext(UnderMark);
   return (
     <span
       aria-hidden="true"
       data-face-blank=""
-      className={cn("inline-block flex-none rounded-full bg-muted", className)}
-    />
+      className={cn("relative inline-block flex-none overflow-hidden rounded-full bg-muted", className)}
+    >
+      {marked && <Veil />}
+    </span>
   );
 }
 

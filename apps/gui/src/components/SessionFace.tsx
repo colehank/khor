@@ -1,40 +1,37 @@
-import type { Avatar } from "@/gen/bindings/Avatar";
-import { MachineAvatar } from "@/components/Avatar";
-import { sessionMark } from "@/components/BrandIcons";
-import { FaceMark } from "@/components/FaceMark";
+import type { ComponentType } from "react";
 
-/** The corner mark on a session's face: the shape is `sessionMark`'s
-    one judgment; this only sizes it. (Moved here from `SessionsList`
-    with the assembly around it.) */
-function KindMark({ kind, category, className }: { kind: string; category: string | null; className: string }) {
-  const M = sessionMark(kind, category);
-  return <M className={className} />;
+import type { Avatar } from "@/gen/bindings/Avatar";
+import type { SystemKind } from "@/gen/bindings/SystemKind";
+import { MachineAvatar } from "@/components/Avatar";
+import { machineMark, sessionMark } from "@/components/BrandIcons";
+import { FaceMark, SIZES, type KindMark } from "@/components/FaceMark";
+
+/** A glyph component as a `KindMark`'s drawing, at whatever size the
+    assembly asks for. */
+const drawn =
+  (M: ComponentType<{ className?: string }>) =>
+  (className: string) => <M className={className} />;
+
+/** A session's kind mark: the shape is `sessionMark`'s one judgment;
+    the anchor is the category when the node named one, else the kind.
+    (Moved here from `SessionsList` with the assembly around it.) */
+export function sessionKind(kind: string, category: string | null): KindMark {
+  const key = category ?? kind;
+  return { key, glyph: drawn(sessionMark(kind, category)), data: { "data-kind-mark": key } };
 }
 
-/**
- * The two sizes the assembly is drawn at, each whole: the face, the
- * corner's frame and the glyph in it move together, because a row's
- * corner on a tab's face is bigger than the face (tokens.css
- * `--kind-mark-tab`).
- *
- * **`tab` is for a strip's tab and for what stands in for one** (the
- * narrow detail header). It exists because the row's size was used
- * there and did not fit: 32 plus the halo is 40, and a tab is 28 — the
- * ring stood 6 over the tab's top edge (2026-09-28 audit 第 6 条).
- * `check-face` measures the whole ink — halo and corner — against the
- * tab's box and the header's.
- */
-const SIZES = {
-  row: { face: "size-avatar", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
-  // `size-4`: the bare machine face a browsing tab wears beside it
-  // (`TabStrip`'s `bare`) — one tab, one face size, whichever kind.
-  tab: { face: "size-4", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
-} as const;
+/** A machine's kind mark: the system family the node reported, or the
+    plain machine mark for one that could not say — never a guess
+    (`machineMark`). */
+export function machineKind(system: SystemKind | null | undefined): KindMark {
+  return { key: system ?? "machine", glyph: drawn(machineMark(system)) };
+}
 
 /**
  * One session's identity, assembled the one way it is drawn anywhere:
  * the machine's face carrying the row, a halo around it in the state's
- * own colour, and the kind mark on its corner.
+ * own colour, and the kind mark — on the face or on its corner, as the
+ * 外观 setting says (`FaceMark`).
  *
  * **Extracted from the list row on 2026-09-02** —「标签页的标签头像
  * 应该和session列表一致。状态灯是环在外侧,右下角是类型」— so the tab
@@ -60,9 +57,6 @@ const SIZES = {
  * 4.4 L*), and on the macOS app the block is the system's material,
  * which no colour matches — said here so the mismatch has its cause
  * written down.
- *
- * The mark sits on a solid punch-out, or the transparent brand strokes
- * dissolve into the face.
  */
 export function SessionFace({
   face,
@@ -77,22 +71,44 @@ export function SessionFace({
   word: string;
   kind: string;
   category: string | null;
-  /** A list row's (the switcher's rows too) or a tab's — see `SIZES`. */
+  /** A list row's (the switcher's rows too) or a tab's — see `FaceMark`'s
+      `SIZES`. */
   size?: keyof typeof SIZES;
   className?: string;
 }) {
-  const s = SIZES[size];
-  // **`FaceMark` with a halo and a kind mark** (docs/SHELL.md 第四轮 第 2
-  // 条): the assembly this file used to draw by hand is the one every
-  // sidebar row wears now; a session's is the only one with a halo.
   return (
     <FaceMark
-      face={<MachineAvatar face={face} className={s.face} />}
+      face={<MachineAvatar face={face} className={SIZES[size].face} />}
       halo={word}
-      mark={category ?? kind}
-      badgeData={{ "data-kind-mark": category ?? kind }}
-      badgeClass={s.frame}
-      badge={<KindMark kind={kind} category={category} className={s.glyph} />}
+      mark={sessionKind(kind, category)}
+      size={size}
+      className={className}
+    />
+  );
+}
+
+/**
+ * **A machine's avatar with its system on it** — the machine list row's
+ * own assembly, for any other place that shows a machine *as a kind of
+ * machine* (the machine page's header, 2026-10-02: the page's head wears
+ * the list row's avatar and follows the 类型标记 setting with it).
+ */
+export function MachineFace({
+  face,
+  system,
+  size = "row",
+  className,
+}: {
+  face: Avatar | null;
+  system: SystemKind | null | undefined;
+  size?: keyof typeof SIZES;
+  className?: string;
+}) {
+  return (
+    <FaceMark
+      face={<MachineAvatar face={face} className={SIZES[size].face} />}
+      mark={machineKind(system)}
+      size={size}
       className={className}
     />
   );

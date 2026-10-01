@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { StatusWord } from "@/components/StatusWord";
 import { takeover, takeoverTerm, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { sessionMark } from "@/components/BrandIcons";
+import { sessionKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { EditableName } from "@/components/EditableName";
@@ -255,19 +255,15 @@ export function SessionsList({
       run: () => onClose(r),
     },
   ];
-  const Mark = (r: SessionRow) => {
-    const M = sessionMark(r.kind, r.category);
-    return <M className="size-kind-mark-glyph" />;
-  };
   const side: SideRow[] = ticked.map((r) => ({
     id: r.id,
     group: r.group,
     pinned: r.pinned,
     // The machine's face carries the row; the halo is the state, the
-    // corner the kind (`FaceMark`, which `SessionFace` also wears).
+    // mark the kind (`FaceMark`, which `SessionFace` also wears).
     face: <MachineAvatar face={r.face} className="size-avatar" />,
     halo: r.word,
-    badge: { mark: r.category ?? r.kind, icon: Mark(r), data: { "data-kind-mark": r.category ?? r.kind } },
+    mark: sessionKind(r.kind, r.category),
     // Double-click the title to rename it in place — the component the
     // detail header wears, so the two cannot drift. `nested`: it sits
     // inside the button that opens the row.
