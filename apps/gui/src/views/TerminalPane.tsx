@@ -172,6 +172,64 @@ function fontOf(el: HTMLElement): { family: string; size: number; line: number }
   };
 }
 
+/** Keys that are only modifiers — their keydown is not a character. */
+const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "AltGraph"]);
+
+/**
+ * A character an input method commits **without composing** while a
+ * modifier is held — 「(」「"」「!」 under 拼音 with Shift — reaches the
+ * pty, once.
+ *
+ * The owner, 2026-10-01: 「(」「"」 这类符号要按两次才上屏. Traced in a
+ * bare WKWebView with the real 拼音 input source (scratch `ime/`
+ * harness), WebKit's order for Shift+9 is
+ *
+ *     keydown Shift · beforeinput/input insertText "(" · keydown 229 · keyup · keyup Shift
+ *
+ * — the text lands **before** the key's own keydown. xterm 6.0 then
+ * drops it on both of its roads: `_inputEvent` takes an `insertText`
+ * only when no keydown is outstanding, and the Shift keydown is one;
+ * the 229 keydown's textarea diff snapshots the value *after* the input
+ * already landed and finds nothing new. With Shift still held the second
+ * press goes through (the first one's keyup cleared the flag) — the
+ * "press twice". Chrome fires the 229 keydown first, so the diff works
+ * there and no chromium run ever showed it. Same family upstream:
+ * xtermjs/xterm.js#5887.
+ *
+ * So this takes exactly the case xterm skips: an `insertText` that is
+ * not composing, arriving while the last keydown was a modifier alone
+ * and its keyup has not come (xterm's `_keyDownSeen`, mirrored). Every
+ * other `insertText` xterm already sends — through `_inputEvent`, or a
+ * keypress it marked handled — and sending it here too would double it.
+ * Answers the undo.
+ */
+function keepShiftedCommits(term: Terminal): () => void {
+  const field = term.textarea;
+  if (!field) return () => {};
+  let held = false;
+  let modifierOnly = false;
+  const down = (e: KeyboardEvent) => {
+    held = true;
+    modifierOnly = MODIFIER_KEYS.has(e.key);
+  };
+  const up = () => {
+    held = false;
+  };
+  const input = (e: Event) => {
+    const ev = e as InputEvent;
+    if (ev.inputType !== "insertText" || !ev.data || ev.isComposing) return;
+    if (held && modifierOnly) term.input(ev.data, true);
+  };
+  field.addEventListener("keydown", down, true);
+  field.addEventListener("keyup", up, true);
+  field.addEventListener("input", input, true);
+  return () => {
+    field.removeEventListener("keydown", down, true);
+    field.removeEventListener("keyup", up, true);
+    field.removeEventListener("input", input, true);
+  };
+}
+
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -287,6 +345,7 @@ export function TerminalPane({ id }: { id: string }) {
       const s = term.getSelection();
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
+    const shifted = keepShiftedCommits(term);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -411,6 +470,7 @@ export function TerminalPane({ id }: { id: string }) {
       rung.dispose();
       titled.dispose();
       selected.dispose();
+      shifted();
       window.clearTimeout(bellTimer.current);
       term.dispose();
       termRef.current = null;

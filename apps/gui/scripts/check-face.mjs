@@ -2096,8 +2096,10 @@ try {
   // alone** (「机器、工作区两栏能筛」, 2026-09-29), for the same reason.
   // **`FACE_ONLY=acts` walks section 13 alone** (一个动作一个家,
   // 2026-09-30), for the same reason.
+  // **`FACE_ONLY=term` walks section 14 alone** (the terminal's keys,
+  // 2026-10-01), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "term"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23545,7 +23547,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "term"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23929,7 +23931,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "term"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24256,7 +24258,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "term"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24519,7 +24521,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "term"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25227,7 +25229,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "term"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -25565,6 +25567,164 @@ try {
     }
   }
   } // acts
+
+  // ── 14) the terminal's keys (2026-10-01) ─────────────────────────
+  //
+  // The owner:「在会话里打字时，『(』『"』这类符号要按两次才上屏」. Under
+  // 拼音, Shift + a punctuation key is committed by the input method
+  // without composing, and WebKit fires the text **before** the key's own
+  // keydown (traced in a real WKWebView with the real input source):
+  //
+  //     keydown Shift · input insertText "(" · keydown 229 · keyup · keyup Shift
+  //
+  // xterm 6.0 drops that "(" (`TerminalPane`'s `keepShiftedCommits` has
+  // the two roads and why both miss). Chromium fires the 229 keydown
+  // first, so the real sequence is replayed here by hand: synthetic
+  // events on xterm's own textarea, the textarea's value moved the way
+  // the input method moves it, and what reaches `term_key` counted.
+  //
+  //   a. WebKit's order, one press: exactly one "(" goes out;
+  //   b. the same for a full-width 「“」 (拼音 with Chinese punctuation);
+  //   c. Shift held, two presses: exactly two — the second one is the
+  //      one xterm already sent, and must not become two;
+  //   d. Chrome's order (229 keydown first): exactly one, the control —
+  //      xterm's own textarea diff sends it, and nothing here may add a
+  //      second.
+  //
+  // Red on the code before the fix: a 0, b 0, c 1.
+  //
+  // `FACE_ONLY=term` runs this section alone.
+  term: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "term") break term;
+  {
+    await page.setViewportSize({ width: 1400, height: 900 });
+    const termRow = {
+      id: "tui/face-term",
+      kind: "tui",
+      title: "face-term",
+      word: "idle",
+      at_ms: Date.now(),
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    };
+    const sentKeys = [];
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json([termRow]));
+    await page.route("**/term_open", json(null));
+    await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+    await page.route("**/term_stream", json({ bytes: "", seq: 0, gone: false, reset: false }));
+    await page.route("**/term_key", (r) => {
+      sentKeys.push(JSON.parse(r.request().postData() || "{}").keys);
+      r.fulfill({ contentType: "application/json", body: "null" });
+    });
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await wait(200);
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    const opener = page.locator("[data-list] [data-row-open]").first();
+    await until(3_000, async () => (await opener.count()) > 0);
+    if ((await opener.count()) === 0) {
+      fail("probe dead: term · the routed terminal row drew no [data-row-open]");
+      break term;
+    }
+    await opener.click();
+    if (!(await until(5_000, async () => page.evaluate(() => !!document.querySelector("[data-terminal]")?.__xterm?.textarea)))) {
+      fail("probe dead: term · opening an attachable session drew no xterm");
+      break term;
+    }
+    await wait(400);
+    // One press, replayed: `steps` are [type, init] for key events,
+    // ["input", data] for the text the input method commits, and
+    // ["pause"] for the time between two presses — xterm's 229 road
+    // reads the textarea on a zero timeout, and a person's next press
+    // comes long after it.
+    const replay = async (steps) => {
+      sentKeys.length = 0;
+      const runs = [[]];
+      for (const step of steps) {
+        if (step[0] === "pause") runs.push([]);
+        else runs.at(-1).push(step);
+      }
+      for (const run of runs) {
+        await page.evaluate((steps) => {
+        const field = document.querySelector("[data-terminal]").__xterm.textarea;
+        field.focus();
+        for (const [type, a] of steps) {
+          if (type === "input") {
+            field.value += a;
+            field.dispatchEvent(new InputEvent("beforeinput", { inputType: "insertText", data: a, bubbles: true, composed: true, cancelable: true }));
+            field.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: a, bubbles: true, composed: true }));
+            continue;
+          }
+          const ev = new KeyboardEvent(type, { key: a.key, code: a.code, shiftKey: a.shift, bubbles: true, composed: true, cancelable: true });
+          // Chromium ignores `keyCode` in the init; the 229 is the point.
+          Object.defineProperty(ev, "keyCode", { get: () => a.keyCode });
+          Object.defineProperty(ev, "which", { get: () => a.keyCode });
+          field.dispatchEvent(ev);
+        }
+        }, run);
+        await wait(150);
+      }
+      // xterm's 229 road answers on a zero timeout, then the request.
+      await wait(400);
+      return sentKeys.join("");
+    };
+    const shiftDown = ["keydown", { key: "Shift", code: "ShiftLeft", keyCode: 16, shift: true }];
+    const shiftUp = ["keyup", { key: "Shift", code: "ShiftLeft", keyCode: 16, shift: false }];
+    const webkitPress = (text, key, code, keyCode) => [
+      ["input", text],
+      ["keydown", { key, code, keyCode: 229, shift: true }],
+      ["keyup", { key, code, keyCode, shift: true }],
+    ];
+    const cases = [
+      ["a", "WebKit's order, 「(」 once", [shiftDown, ...webkitPress("(", "（", "Digit9", 57), shiftUp], "("],
+      ["b", "WebKit's order, 「“」 once", [shiftDown, ...webkitPress("“", '"', "Quote", 222), shiftUp], "“"],
+      [
+        "c",
+        "Shift held, 「(」 twice",
+        [shiftDown, ...webkitPress("(", "（", "Digit9", 57), ["pause"], ...webkitPress("(", "（", "Digit9", 57), shiftUp],
+        "((",
+      ],
+      [
+        "d",
+        "Chrome's order, 「(」 once (the control)",
+        [shiftDown, ["keydown", { key: "（", code: "Digit9", keyCode: 229, shift: true }], ["input", "("], ["keyup", { key: "（", code: "Digit9", keyCode: 57, shift: true }], shiftUp],
+        "(",
+      ],
+    ];
+    for (const [tag, what, steps, want] of cases) {
+      const got = await replay(steps);
+      console.log(`term ${tag} · ${what}: sent ${JSON.stringify(got)}`);
+      if (got !== want) {
+        fail(
+          `term ${tag} · ${what} sent ${JSON.stringify(got)} to the pty, not ${JSON.stringify(want)} — ` +
+            "a character an input method commits while Shift is held reaches the pty once per press (「要按两次才上屏」, 2026-10-01)",
+        );
+      }
+    }
+    await page.unroute("**/term_open");
+    await page.unroute("**/term_attach");
+    await page.unroute("**/term_stream");
+    await page.unroute("**/term_key");
+  }
+  }
+  if (process.env.FACE_ONLY === "term") console.log("term · FACE_ONLY=term: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
