@@ -112,6 +112,7 @@ import { SessionsList } from "@/views/SessionsList";
 import { Region, RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { useKeptScroll } from "@/hooks/use-kept-scroll";
+import { useEdgeSwipe } from "@/hooks/use-edge-swipe";
 import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
@@ -1974,6 +1975,21 @@ export default function App() {
   );
 
   const leaveMorePage = () => (narrow ? setScreen("list") : setMorePage(null));
+  /** Where a swipe from the left edge goes (F7.3, narrow): the same
+      place each screen's ‹ goes, or nowhere on a screen with no back. */
+  const swipeBack: (() => void) | null = !narrow
+    ? null
+    : switchingTabs && openTabs.length > 0
+      ? () => setSwitchingTabs(false)
+      : screen !== "detail"
+        ? null
+        : morePage
+          ? leaveMorePage
+          : landing === "devices" && fileBack
+            ? fileBack.go
+            : () => setScreen("list");
+  const [swipeHost, setSwipeHost] = useState<HTMLDivElement | null>(null);
+  useEdgeSwipe(swipeHost, swipeBack);
   const morePageEl =
     morePage === null ? null : morePage === "network" ? (
       <NetworkPage
@@ -2280,6 +2296,20 @@ export default function App() {
   // narrow is one screen at a time with the rail as a bottom bar. A
   // 「…」 page is neither half of that pair, so it takes the whole of
   // what is left of the window beside the rail (see `morePage`).
+  /** What a back swipe uncovers (F7.3): the list the page came from.
+      Absent where the page under is not a list this shell draws — a
+      file's listing is the machine page's own, 额度 and the browsing
+      landing hold their screens themselves, and the tab switcher's page
+      is a live terminal that must not be drawn twice. */
+  const under =
+    swipeBack === null || switchingTabs
+      ? null
+      : morePage
+        ? moreList
+        : !(landing === "devices" && fileBack) && !quotas && !browses
+          ? list
+          : null;
+
   return (
     <SettingsProvider value={settings.rows}>
     <SettingsRereadProvider value={settings.reread}>
@@ -2308,6 +2338,15 @@ export default function App() {
               and re-keying on the row would replay the slide (and
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
+          <div ref={setSwipeHost} data-swipe-host className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* **The page a swipe goes back to, already there** (F7.3):
+              while a finger pulls the page off, the one under it is the
+              real list, drawn behind — nothing flashes when it lets go. */}
+          {under && (
+            <div data-screen-under aria-hidden inert className="absolute inset-0 overflow-hidden">
+              {under}
+            </div>
+          )}
           <div
             key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : screen}
             data-screen={morePage ? "more" : screen}
@@ -2361,6 +2400,7 @@ export default function App() {
                         ? sessionScreen
                         : detail
                       : list}
+          </div>
           </div>
           {/* The navigation floats over every screen but a session's,
               whose foot is its own bar (the owner, 2026-10-02: 「会话里不

@@ -19,7 +19,7 @@ const SCROLLERS = "[data-pane-body], [data-nav-clear], [data-files-list], [data-
 
 function scrollers(): HTMLElement[] {
   return [...document.querySelectorAll<HTMLElement>(SCROLLERS)].filter(
-    (e) => e.getClientRects().length > 0 && !e.closest(".xterm"),
+    (e) => e.getClientRects().length > 0 && !e.closest(".xterm, [data-screen-under]"),
   );
 }
 
