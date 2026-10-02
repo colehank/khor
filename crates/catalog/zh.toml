@@ -3538,6 +3538,10 @@ day-unwatched-why = "这段时间 khor 没有记录：它没在运行，或那�
 # with the spaces this catalog puts round a number. 「收起」 is the pair
 # every Chinese app's disclosure uses (展开 / 收起).
 day-show = "点击查看近 24 小时状态"
+# A machine's dial, under the pointer (W-V12): what pressing it does —
+# open that reading's parts in the slot below, or put the 24 hours back.
+metric-open = "显示{0}的组成"
+metric-close = "回到最近 24 小时"
 day-hide = "点击收起近 24 小时状态"
 # …and when there is nothing to show: not one stretch of the day wears a
 # word (every minute 未查看, or the session was not there). A press then

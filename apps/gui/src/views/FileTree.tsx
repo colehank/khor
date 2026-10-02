@@ -579,8 +579,11 @@ export function FileTree({
                   // and the row is legible without colour.
                   className={cn(
                     // Round like every list's chosen block (F4.7; W17).
-                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 rounded-md pr-3 text-callout",
-                    open === r.full ? "bg-fill-strong" : "hover:bg-fill",
+                    "group relative isolate flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout",
+                    // **Inset like a list's chosen block** (W-V9): 8 in
+                    // from the pane's edges, drawn under the row.
+                    "before:absolute before:inset-y-0 before:inset-x-2 before:-z-10 before:rounded-md before:content-['']",
+                    open === r.full ? "before:bg-fill-strong" : "hover:before:bg-fill",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -626,7 +629,11 @@ export function FileTree({
                           *empty* slot reading as membership; a slot
                           with the file's own mark in it is VS Code's
                           picture, and the ruling that followed. */}
-                      <FileKindIcon name={r.name} className="size-[var(--tree-slot)] p-1" />
+                      {/* The kind's glyph starts its ink on the line with the
+                          chevrons' (W-V9): its box begins where the
+                          chevron's ink does (5.4 further in than its box,
+                          measured), at the chevron's 16. */}
+                      <FileKindIcon name={r.name} className="h-[var(--tree-slot)] w-[var(--tree-slot)] items-center ps-[calc(var(--tree-slot)/2-var(--affordance)/2+5.4px)] [&>svg]:!size-4" />
                       {naming?.at === r.full && naming.kind === "rename" ? (
                         nameBox(moved(r.full), r.name)
                       ) : (

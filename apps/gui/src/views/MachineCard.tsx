@@ -2636,8 +2636,8 @@ const AXES = {
     of: (r: Load["top"][number]) => r.cpu_pct,
     tick: (v: number, d: number) => `${v.toFixed(d)}%`,
   },
-  mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number, d: number) => bytes(v, d) },
-  vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number, d: number) => bytes(v, d) },
+  mem: { word: () => cli.vitals_name_mem, of: (r: Load["top"][number]) => Number(r.mem), tick: (v: number, d: number) => bytes(v, d), binary: true },
+  vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number, d: number) => bytes(v, d), binary: true },
   time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000), fold: true },
 } as const;
 
@@ -2645,12 +2645,17 @@ const AXES = {
     the two ends — each label at the decimals the decade needs. */
 function decades(
   r: { lo: number; hi: number },
-  a: { tick: (v: number, d: number) => string },
+  a: { tick: (v: number, d: number) => string; binary?: boolean },
 ): { v: number; label: string }[] {
   const vs = new Set<number>([r.lo, r.hi]);
+  // **A byte axis ticks in its own units** (W-V8): at powers of 16 —
+  // 1M, 16M, 256M, 4G — which print as round binary values; a decade of
+  // bytes printed in KiB / MiB came out 977K and 95M.
+  const base = a.binary ? 16 : 10;
   if (r.hi > 0) {
-    for (let k = Math.floor(Math.log10(Math.max(r.lo, r.hi / 1e6))); 10 ** k <= r.hi; k += 1) {
-      const v = 10 ** k;
+    const from = Math.floor(Math.log(Math.max(r.lo, r.hi / 1e6)) / Math.log(base));
+    for (let k = from; base ** k <= r.hi; k += 1) {
+      const v = base ** k;
       if (v > r.lo && v < r.hi) vs.add(v);
     }
   }
@@ -2780,21 +2785,22 @@ function ruler(vals: number[]): {
       tick: (f) => lo + (hi - lo) * f,
     };
   }
-  // `s` is the data's own resolution **above the minimum** — the
-  // smallest step any reading takes from `lo` — so the log has
-  // something to compress from the very first reading, not from an
-  // absolute zero the axis no longer starts at.
-  const above = vals.map((v) => v - lo).filter((v) => v > 0);
-  const s = Math.max(above.length ? Math.min(...above) : (hi - lo) / 1e6, (hi - lo) / 1e6);
-  const span = Math.log1p((hi - lo) / s);
+  // **A true log** (W-V8), so the decades the axis marks stand evenly
+  // apart, as a ruler that says 「(log)」 promises. It starts at the
+  // smallest reading above zero; a reading of zero (an idle process's
+  // CPU) is drawn at the axis's start, where nothing smaller can be.
+  // ⚠️ 墓碑: `log1p((v − lo) / s)`, which bent near the start — decades
+  // at 150 / 136 / 135 px under a word that said log.
+  const floor = Math.max(Math.min(...vals.filter((v) => v > 0), hi), hi / 1e9);
+  const span = Math.log(hi / floor) || 1;
   return {
     kind: "log",
-    lo,
+    lo: floor,
     hi,
-    at: (v) => Math.log1p(Math.max(0, v - lo) / s) / span,
+    at: (v) => (v <= floor ? 0 : Math.log(v / floor) / span),
     // The value whose position is `f` — so the label is a real reading
     // and the tick is where that reading belongs.
-    tick: (f) => lo + (Math.exp(f * span) - 1) * s,
+    tick: (f) => floor * Math.exp(f * span),
   };
 }
 
@@ -3960,6 +3966,8 @@ function Dial({
   const lines = facts.filter((f) => f !== null && f !== undefined);
   return (
     <div className="flex flex-col items-center gap-in">
+      <Tooltip>
+      <TooltipTrigger asChild>
       <button
         type="button"
         data-metric
@@ -3975,7 +3983,11 @@ function Dial({
         // showing closes it — anything else makes the press do nothing
         // when it is already on, which reads as a stuck control.
         onClick={() => onOpen(open ? "" : dial)}
-        className="rounded-md"
+        // **Answers the pointer like every pressable thing** (W-V12): the
+        // shared hover fill and press (`data-glass-hit`), and a tooltip
+        // saying what the press does.
+        data-glass-hit
+        className="rounded-lg"
         /* ⚠️ **Tombstone: this button carried
            `style={{ width: RING_SIZE_CARD * 1.6, height: RING_SIZE_CARD }}`
            until 2026-09-08.** Its reason was 「the back has to fit a
@@ -4062,6 +4074,9 @@ function Dial({
           </span>
         </span>
       </button>
+      </TooltipTrigger>
+      <TooltipContent side="top">{open ? gui.metric_close : gui.metric_open(word)}</TooltipContent>
+      </Tooltip>
       {/* **The open ring's name says so, in weight and ink and nothing
           else** (2026-09-04:「开着抽屉时那个环要看得出是选中的」). The
           slot under these four belongs to whichever one is open, and

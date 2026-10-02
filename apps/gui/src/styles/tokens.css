@@ -2518,6 +2518,10 @@
   --lh-group: calc(14px * var(--ui-scale));
   --fs-read: calc(16px * var(--ui-scale));
   --lh-read: calc(24px * var(--ui-scale));
+  /* **The gauge's number, a named step** (W-V13): the machine card's
+     dials print their reading at 34, the one size above title-lg, and
+     only there. `Face`'s `TYPE_STEPS` mirrors the ramp, this included. */
+  --fs-gauge: calc(34px * var(--ui-scale));
   --fs-mono: calc(13px * var(--ui-scale));
   --lh-mono: calc(20px * var(--ui-scale));
 }

@@ -1625,7 +1625,7 @@ aside[data-side] {
   position: absolute;
   top: 0;
   left: var(--gap-row);
-  right: 0;
+  right: var(--gap-row);
   height: var(--hair);
   background: var(--border);
 }
@@ -1647,12 +1647,14 @@ aside[data-side] {
 [data-settings-card] > * + * {
   position: relative;
 }
+/* A row's hairline runs from its words to where its controls end
+   (W-V10), not past them to the card's edge. */
 [data-settings-card] > * + *::before {
   content: "";
   position: absolute;
   top: 0;
   left: var(--gap-row);
-  right: 0;
+  right: var(--gap-row);
   height: var(--hair);
   background: var(--border);
 }
@@ -1878,7 +1880,7 @@ aside[data-side] {
 
 /* **A listing's hairline starts at its names** (V17), the text column,
    as every list's does: 16 of inset, the 20 kind box and its 8. */
-[data-files-list] :is(div:has(> [data-dir]), div:has(> button > [data-dir]), [data-file]) {
+[data-files-list] :is(div:has(> [data-dir]), div:has(> button > [data-dir]), [data-file], [data-files-here-row]) {
   background-image: linear-gradient(var(--border), var(--border));
   background-size: calc(100% - 44px) 1px;
   background-position: right bottom;

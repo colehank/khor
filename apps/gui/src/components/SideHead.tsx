@@ -452,7 +452,9 @@ export function SideHead({
               data-search-field
               data-scope="all"
               value={word}
-              placeholder={gui.find_hint}
+              // Short enough to fit the box whole (W-V15); the range it
+              // covers is in its results.
+              placeholder={gui.find_everything}
               aria-label={gui.find_everything}
               role="combobox"
               aria-expanded={shown.length > 0}
@@ -520,11 +522,15 @@ export function SideHead({
                       i === at && "glass-sel",
                     )}
                   >
-                    <span className="min-w-0 flex-1 truncate">{h.label}</span>
-                    {h.note !== null && (
-                      <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{h.note}</span>
-                    )}
-                    <span className="flex-none text-caption text-muted-foreground">{kindWord(h.kind)}</span>
+                    {/* **A hit is a list row** (W-V15): its name, and under
+                        it where it lives and what it is — 「proto · 会话」 —
+                        not three words spread across the column. */}
+                    <span className="flex min-w-0 flex-1 flex-col py-1">
+                      <span className="truncate">{h.label}</span>
+                      <span className="truncate text-caption text-muted-foreground">
+                        {[h.note, kindWord(h.kind)].filter(Boolean).join(" · ")}
+                      </span>
+                    </span>
                   </button>
                 ))}
               </div>

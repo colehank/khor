@@ -293,10 +293,10 @@ export function ModeSeat({
               data-mode-option={m.id}
               data-mode-fixed
               data-on={m.id === current || undefined}
-              className="glass-sel flex min-h-menu-item flex-col items-start justify-center gap-0 rounded-menu-item px-row py-1.5"
+              className="glass-sel flex min-h-menu-item flex-col items-start justify-center gap-0.5 rounded-menu-item px-row py-1.5"
             >
-              <span className="text-body font-title">{m.name}</span>
-              {m.note && <span className="text-caption text-muted-foreground">{m.note}</span>}
+              <span className="text-body">{m.name}</span>
+              {m.note && <span className="text-caption text-pretty text-muted-foreground">{m.note}</span>}
             </div>
           ) : (
           <DropdownMenuItem
@@ -304,13 +304,16 @@ export function ModeSeat({
             data-mode-option={m.id}
             data-on={m.id === current || undefined}
             onSelect={() => onPick(m.id)}
+            // **A title and its note are one pair** (W-V14): 2 between
+            // them, 12 to the next pair; the chosen piece says chosen, so
+            // the title keeps its weight.
             className={cn(
-              "flex-col items-start justify-center gap-0 py-1.5",
+              "flex-col items-start justify-center !gap-0.5 py-1.5",
               m.id === current && "glass-sel",
             )}
           >
-            <span className={cn("text-body", m.id === current && "font-title")}>{m.name}</span>
-            {m.note && <span className="text-caption text-muted-foreground">{m.note}</span>}
+            <span className="text-body">{m.name}</span>
+            {m.note && <span className="text-caption text-pretty text-muted-foreground">{m.note}</span>}
           </DropdownMenuItem>
           ),
         )}
@@ -460,7 +463,9 @@ function CtxDial({ pct }: { pct: number }) {
   const ink = gaugeColor(pct >= 90 ? "critical" : null);
   const end = ARC0 + (Math.min(100, Math.max(0, pct)) / 100) * SPAN;
   return (
-    <span className="relative grid size-[calc(var(--composer-h)*0.585)] place-items-center">
+    // Sized to hold three digits at the caption's 11 (W-V13): 100 fits
+    // the bowl.
+    <span className="relative grid size-[calc(var(--composer-item)-2px)] place-items-center">
       <svg viewBox={`0 0 ${S} ${S}`} aria-hidden="true" className="absolute inset-0 size-full">
         <path d={arc(S / 2, cy, r, ARC0, ARC0 + SPAN)} fill="none" stroke="currentColor" strokeOpacity={0.2} strokeWidth={W} strokeLinecap="round" />
         {pct > 0 && (
@@ -468,7 +473,7 @@ function CtxDial({ pct }: { pct: number }) {
         )}
       </svg>
       <span
-        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] leading-3 font-title tabular-nums"
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 text-caption leading-none font-title tabular-nums"
         // In the arc's bowl: the box's middle, a pixel low, where the
         // open bottom leaves it room.
         style={{ color: ink, top: `${((S / 2 + 1) / S) * 100}%` }}

@@ -157,7 +157,10 @@ export function IdentityPage({
                     way macOS marks 「this Mac」 in a list of devices.
                     ⚠️ 墓碑 (2026-09-28): it was olive, and a marked
                     choice is not one of `brand-strong`'s three posts. */}
-                {f.key === hereKey && (
+                {/* Only on a face that is open: a page cannot be looked
+                    at through a face that is not (「网页版 当前 · 未打开」,
+                    the wide check — a dev page is neither). */}
+                {f.key === hereKey && f.up && (
                   <span data-iface-here className="flex-none text-muted-foreground">
                     {cli.face_current}
                   </span>

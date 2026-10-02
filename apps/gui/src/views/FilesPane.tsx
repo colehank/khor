@@ -225,9 +225,15 @@ export function FilesPane({
                 // it is; 上一级 is the button's name.
                 aria-label={gui.up_dir}
                 title={listing.path}
-                className="flex min-h-touch w-full items-center gap-2 border-b px-4 text-left text-callout text-muted-foreground hover:bg-muted/50"
+                // In the entries' anatomy (W-V16): the ‹ in the kind's 20
+                // box, so the name starts where theirs do, and the
+                // listing's hairline from the names (`app.css`).
+                data-files-here-row
+                className="flex min-h-touch w-full items-center gap-2 px-4 text-left text-callout text-muted-foreground hover:bg-muted/50"
               >
-                <IconBack className="size-affordance flex-none" />
+                <span className="flex w-5 flex-none justify-center">
+                  <IconBack className="size-affordance" />
+                </span>
                 <span data-files-here className="min-w-0 truncate font-label text-foreground">
                   {listing.path.split("/").filter(Boolean).pop() ?? listing.path}
                 </span>

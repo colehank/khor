@@ -280,7 +280,9 @@ export function PageHead({
             fix plan F4.9; W21): a page with no subtitle has its name on
             the same line as one with — the name dropped 6 when the line
             went. */}
-        {subRef && <div ref={subRef} data-page-subtitle className="flex min-h-(--text-caption--line-height) min-w-0" />}
+        {/* The second line's room is kept when it is empty, at the line
+            a subtitle is set in (W-V10: 外观's head was 2 shorter). */}
+        {subRef && <div ref={subRef} data-page-subtitle className="flex min-h-(--text-callout--line-height) min-w-0" />}
       </div>
       </div>
       {caption && (

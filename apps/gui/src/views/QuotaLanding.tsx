@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
@@ -63,7 +63,6 @@ import {
   DIAL_ROW_SIZE,
   DIAL_ROW_STROKE,
   Face,
-  hugRatio,
   type Pip,
 } from "@/components/Face";
 import { Button } from "@/components/ui/button";
@@ -673,9 +672,6 @@ function arcOf(r: Row): number | null {
 /** The middle of a row's dial. A registered row says what its reading
     says (`centre`); a probed subscription has no reading object, so its
     share is spelled here — the same rounding, on the same number. */
-/** The width of the row dial's ink, pips included (`hugRatio`). */
-const DIAL_ROW_INK = hugRatio(DIAL_ROW_SIZE, DIAL_ROW_STROKE) * DIAL_ROW_SIZE;
-
 /** A reading inside the row's dial, its unit a step smaller than its
     digits (F4.4: 「85%」 stood 1px from the arc's ends) — the number is
     the reading, the sign only says what kind. */
@@ -1271,15 +1267,9 @@ export function QuotaLanding({
       // Not a machine's face, so `art`, and no mark on it.
       face: {
         art: (
-          // **The dial's first ink on the left line** (F2.7, the narrow
-          // check: a pip reached 16.2 against 20). The dial's ink is wider
-          // than the face's slot, so on the narrow face it is moved right
-          // by what it overhangs; the text column is 12 away and keeps 5.
-          <span
-            data-dial-row
-            className="flex [[data-narrow]_&]:translate-x-(--dial-overhang)"
-            style={{ "--dial-overhang": `calc((${DIAL_ROW_INK}px - var(--list-face)) / 2)` } as CSSProperties}
-          >
+          // The dial fills the list's face slot, pips and all (W-V11:
+          // `DIAL_ROW_SIZE`); its first ink is on the list's line.
+          <span data-dial-row className="flex">
             <Face
               size={DIAL_ROW_SIZE}
               stroke={DIAL_ROW_STROKE}

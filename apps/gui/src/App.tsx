@@ -2107,6 +2107,9 @@ export default function App() {
           data-more-open="identity"
           data-more-me
           data-on={morePage === "identity"}
+          // **One Tab stop for the list** (F3.8): the open section's row,
+          // or this first one; ↑ ↓ walk the rest.
+          tabIndex={morePage === null || morePage === "identity" ? 0 : -1}
           onClick={() => {
             setMorePage("identity");
             setScreen("detail");
@@ -2131,6 +2134,7 @@ export default function App() {
           type="button"
           data-more-open={p}
           data-on={morePage === p}
+          tabIndex={morePage === p && p !== "identity" ? 0 : -1}
           onClick={() => {
             setMorePage(p);
             setScreen("detail");
@@ -2144,7 +2148,9 @@ export default function App() {
             "flex min-h-touch items-stretch gap-row rounded-md text-start text-headline focus-visible:-outline-offset-2",
             // Narrow, the hairline runs to the screen's edge as every
             // list's does (V17): the row keeps its left inset only.
-            narrow ? "ms-in ps-3" : "mx-in px-3",
+            // Its hairline ends where a list's does (W-V10): the right
+            // padding is the words' span's, which the line runs under.
+            narrow ? "ms-in ps-3" : "mx-in ps-3",
             // The selected row wears the block only while it is the one
             // on screen — on the narrow list the page is a screen away.
             morePage === p && !narrow ? "bg-fill-strong" : "hover:bg-fill",
@@ -2169,7 +2175,7 @@ export default function App() {
           <span
             className={cn(
               "flex min-w-0 flex-1 items-center gap-row border-b py-1",
-              narrow && "pe-page",
+              narrow ? "pe-page" : "pe-3",
               morePage === p && !narrow && "border-transparent",
             )}
           >

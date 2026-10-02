@@ -249,7 +249,9 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-footer"
-      className={cn("mt-xxs flex flex-row justify-end gap-in [&_button]:h-ctl-lg", className)}
+      // The in-content control height, as the fields beside them (W-V17):
+      // 28 under a mouse, 44 under a finger (`app.css`).
+      className={cn("mt-xxs flex flex-row justify-end gap-in [&_button]:h-ctl-md", className)}
       {...props}
     />
   );

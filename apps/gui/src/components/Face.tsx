@@ -41,7 +41,8 @@
 import { gaugeColor } from "@/lib/vitals";
 import type { Strain } from "@/api";
 
-/** The type scale's steps, in px (tokens.css `--fs-*` at scale 1). */
+/** The type scale's steps, in px (tokens.css `--fs-*` at scale 1 — the
+    34 is `--fs-gauge`, W-V13). */
 const TYPE_STEPS = [11, 12, 13, 15, 17, 22, 26, 34];
 /** The scale step nearest a size computed from a box. */
 export function snapType(px: number): number {
@@ -127,6 +128,18 @@ function croppedHeight(size: number, stroke: number): number {
  * cap has a floor under it), so an algebraic inverse would be a second
  * expression to keep in step with the first.
  */
+/** The size whose drawing, pips included, is `w` wide (`hugRatio`). */
+function sizeForWidth(w: number, stroke: number): number {
+  let lo = 1;
+  let hi = 1000;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (2 * reachOf(mid, stroke) < w) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 function sizeForCroppedHeight(h: number, stroke: number): number {
   let lo = 1;
   let hi = 1000;
@@ -298,9 +311,6 @@ const BOX_RATIO = 1.6;
  * them is a change to the machine card's imports, and that surface
  * belongs to another lane today.
  */
-/** The box a row gives the dial: **just the drawing**, no margins. See
-    `Face`'s `ratio`. */
-export const DIAL_ROW_RATIO = 1;
 /** Thinner than the card's 4, in the proportion the sizes are: a row's
     arc at the card's stroke is a band with no hole in it. */
 export const DIAL_ROW_STROKE = 2.6;
@@ -335,7 +345,17 @@ export const DIAL_ROW_STROKE = 2.6;
    the edge.** Whoever widens it next has to measure — and the cheap
    way is to read that line's `scrollWidth - clientWidth` rather than
    to trust a remembered pixel count, this note included. */
-export const DIAL_ROW_SIZE = sizeForCroppedHeight(AVATAR_BOX, DIAL_ROW_STROKE);
+/* **In the list's face slot, whole** (W-V11, 2026-10-03): the dial,
+   its pips included, is as wide as every list's face (`AVATAR_BOX`), so
+   nothing of it falls left of the list's line and the usual gap stands
+   before the text column. ⚠️ 墓碑: sized to the slot's *height*, which
+   made it 51 wide in a 32 slot — 9 over the line, 2.4 from the words. */
+export const DIAL_ROW_SIZE = Math.min(
+  sizeForCroppedHeight(AVATAR_BOX, DIAL_ROW_STROKE),
+  sizeForWidth(AVATAR_BOX, DIAL_ROW_STROKE),
+);
+/** The box is the drawing's own width — `AVATAR_BOX`, pips included. */
+export const DIAL_ROW_RATIO = hugRatio(DIAL_ROW_SIZE, DIAL_ROW_STROKE);
 
 /**
  * The dial on a card that has **only this dial** — the 額度 page's.
