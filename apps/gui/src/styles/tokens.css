@@ -2157,9 +2157,6 @@
   --spacing-nav-glyph: var(--nav-glyph);
   --spacing-nav-gap: var(--nav-gap);
   --spacing-nav-room: var(--nav-room);
-  --spacing-nav-more-in: var(--nav-more-in);
-  --spacing-nav-more-glyph: var(--nav-more-glyph);
-  --spacing-nav-pair: var(--nav-pair-gap);
   --spacing-nav-menu: var(--nav-menu);
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
@@ -2538,13 +2535,11 @@
      narrow), laid on a page: set in by the rest, so the faces stand on
      the page's left line (the machine's sessions). */
   --rows-inset: calc(var(--page-inset) - var(--gap-group));
+  /* A workspace's tree, set in so its first level's disclosure mark (a
+     12 glyph centred in the `--tree-slot`) stands on the page's left
+     line: 16 in a window, 12 on the narrow face. */
+  --tree-inset: calc(var(--page-inset) - (var(--tree-slot) - 0.75rem) / 2);
   --nav-h: 52px;
-  /* 更多's own glass circle beside the capsule (the owner, 2026-10-02):
-     as tall as the capsule, a pressable round 8 smaller inside it, 10
-     apart from the capsule; its glyph 22 under a mouse, 26 under a finger. */
-  --nav-more-in: calc(var(--nav-h) - 8px);
-  --nav-more-glyph: 22px;
-  --nav-pair-gap: 10px;
   --nav-item: 64px;
   --nav-glyph: 20px;
   --nav-gap: 16px;
@@ -2579,7 +2574,6 @@
     --head-item-w: 44px;
     --head-glyph: 22px;
     --nav-h: 64px;
-    --nav-more-glyph: 26px;
     --nav-item: 76px;
     --nav-glyph: 24px;
     --nav-gap: 24px;

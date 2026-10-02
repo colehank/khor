@@ -47,6 +47,7 @@ import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { PageAvatar, PageSubtitle, Region } from "@/components/Region";
+import { FlushInk } from "@/hooks/use-flush-ink";
 import { NarrowHead } from "@/components/SideHead";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
@@ -1449,6 +1450,9 @@ export function QuotaLanding({
             no handle — so the handle is gone rather than disabled.
 
             What is left is the dial, drawn and not pressed. */}
+        {/* On the page's left line (`FlushInk`): the dial's first mark,
+            not its box (the redesign, 2026-10-02). */}
+        <FlushInk>
         <Face
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
@@ -1459,6 +1463,7 @@ export function QuotaLanding({
         >
           {centreOf(current)}
         </Face>
+        </FlushInk>
         {/* **The right column, and everything in it is a fact about
             this subscription** — the windows, then the credits. They
             are one column rather than two blocks stacked under the card
@@ -1642,6 +1647,7 @@ export function QuotaLanding({
           **No pips**: an account is one reading and has no parts, and a
           rim with no marks is the honest drawing of that. */}
       <div data-quota-lead className="flex flex-wrap items-center gap-x-group gap-y-row">
+        <FlushInk>
         <Face
           size={DIAL_CARD_SIZE}
           stroke={DIAL_CARD_STROKE}
@@ -1652,6 +1658,7 @@ export function QuotaLanding({
         >
           {centre(acc)}
         </Face>
+        </FlushInk>
         <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-callout">
         {acc.reading.trouble ? (
           <>

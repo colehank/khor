@@ -1,9 +1,8 @@
 /**
  * **The floating navigation, narrow only** (the redesign, 2026-10-02:
- * Apple's Preview on a phone). A glass capsule of the first three
- * landings in the user's order (`lib/nav-order`), and beside it, a glass
- * circle of its own, 更多 (the owner: 「单独一个按钮，和别的四个分开」) —
- * the pair floating, centred, over the foot of the screen. The wide face
+ * Apple's Preview on a phone). One glass capsule: the first three
+ * landings in the user's order (`lib/nav-order`), then 更多 — floating,
+ * centred, over the foot of the screen. The wide face
  * has the landings' strip in its top row instead (`LandingStrip`).
  *
  * **更多 opens a menu in place**, anchored above it: the landings past
@@ -92,39 +91,35 @@ export function FloatNav({
   className?: string;
 }) {
   return (
-    // **更多 is a button of its own** (the owner, 2026-10-02: 「单独一个按钮,
-    // 和别的四个分开」) — the list head's grammar, a capsule and a circle
-    // beside it: the landings in one glass capsule, 更多 a glass circle,
-    // the pair centred together.
-    <div data-float-nav-pair className={cn("flex items-center gap-nav-pair select-none", className)}>
+    // **Four seats in one capsule** (the owner, round 14: on the narrow
+    // bar 更多 is not a button of its own — ⚠️ 墓碑, round 8 split it into
+    // a circle beside the capsule; the wide strip keeps that). The three
+    // landings, then 更多 with its word under the glyph, 314 wide.
     <nav
       data-float-nav
       aria-label={gui.nav}
-      className="glass flex h-nav-h items-stretch rounded-full p-xxs"
+      // The padding keeps the hairline the glass had before its edge
+      // became a ring (round 7), so the capsule is still 314 wide.
+      className={cn("glass flex h-nav-h items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none", className)}
     >
       {seats.map((s) => (
         <Seat key={s.key} seat={s} on={active === s.key} onClick={() => onGo(s.key)} />
       ))}
-    </nav>
-    <div className="glass grid size-nav-h flex-none place-items-center rounded-full">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          {/* The glyph alone; its name is for the ear. Chosen (the
-              ground showing through) while its menu is open, and olive
-              too while a page reached through it is the one on screen. */}
+          {/* Chosen (the glass's chosen piece) while its menu is open,
+              and olive too while a page reached through it is the one on
+              screen. */}
           <button
             type="button"
             data-slot="button"
             data-nav-more
             data-on={moreOn}
             aria-label={gui.rail_more}
-            className={cn(
-              "relative grid size-nav-more-in place-items-center rounded-full text-foreground [&_svg]:size-nav-more-glyph",
-              "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-              "data-[on=true]:glass-sel data-[on=true]:text-[var(--rail-on-ink)] data-[state=open]:glass-sel",
-            )}
+            className={cn(SEAT, "data-[state=open]:glass-sel")}
           >
             <IconMore />
+            <span className={cn("text-nav-label", moreOn && "font-title")}>{gui.rail_more}</span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -166,7 +161,6 @@ export function FloatNav({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
-    </div>
+    </nav>
   );
 }

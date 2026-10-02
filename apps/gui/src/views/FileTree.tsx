@@ -58,7 +58,7 @@ function Guides({ depth }: { depth: number }) {
           data-guide={k}
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 w-px bg-border"
-          style={{ left: `calc(var(--gap-row) + var(--tree-step) * ${k} + var(--tree-slot) / 2)` }}
+          style={{ left: `calc(var(--tree-inset) + var(--tree-step) * ${k} + var(--tree-slot) / 2)` }}
         />
       ))}
     </>
@@ -431,7 +431,9 @@ export function FileTree({
 
   /** How far in one level sits (tokens.css `--tree-step`). */
   const indent = (depth: number) => ({
-    paddingLeft: `calc(var(--gap-row) + var(--tree-step) * ${depth})`,
+    // **The first level's disclosure mark on the page's left line** (the
+    // redesign, 2026-10-02: one left line), via `--tree-inset`.
+    paddingLeft: `calc(var(--tree-inset) + var(--tree-step) * ${depth})`,
   });
 
   const rootError = failed.get(root);

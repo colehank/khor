@@ -1,7 +1,8 @@
 // **The navigation's order** (the redesign, 2026-10-02). The narrow
 // face's floating navigation seats the first `NAV_SHOWN` landings in this
-// order; 更多, a button of its own beside them, holds the rest with 设置
-// and 这台机器. The wide face's strip seats all of them, in this order. The owner
+// order, then 更多, which holds the rest with 设置 and 这台机器. The wide
+// face's strip seats all of them, in this order, with 更多 a circle of
+// its own beside it. The owner
 // set the default — 机器、会话、额度 — and the user reorders it under
 // 外观 (`NavOrderRows`).
 //
@@ -14,8 +15,8 @@ import { useEffect, useState } from "react";
 /** The five landings, by key. */
 export type NavKey = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 
-/** How many landings sit in the narrow bar's capsule; the rest are
-    under 更多, the circle beside it. */
+/** How many landings sit in the narrow bar before 更多, its fourth seat;
+    the rest are under 更多. */
 export const NAV_SHOWN = 3;
 
 export const NAV_DEFAULT: NavKey[] = ["devices", "sessions", "quota", "workspaces", "browser"];
