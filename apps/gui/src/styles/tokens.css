@@ -2623,7 +2623,9 @@
      pills the capsule rule's height. */
   --glass-tabs: var(--glass-btn);
   --glass-tab: var(--glass-item-h);
-  --tab-face: 16px;
+  /* A tab's face: 18 under a mouse (the owner, 2026-10-02), its ring
+     1.5 outside a 1.5 gap (`app.css` `[data-tab-bar]`). */
+  --tab-face: 18px;
   /* The session bar's row at the foot of a session (52 on the canvas)
      and the accessory keys under it: a key cap and its floor width. */
   --key-cap: 36px;

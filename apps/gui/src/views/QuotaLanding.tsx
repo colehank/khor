@@ -1329,6 +1329,8 @@ export function QuotaLanding({
   const list = (
     <SideList
       rows={side}
+      // Not read yet: the list's skeleton under its own title row.
+      loading={board === null}
       mark={{ "data-quota-list": "" }}
       label={(g) => (g === "pin" ? groupLabel(g) : valueWord(groupBy, g.slice(groupBy.length)))}
       headData={(g) => (g === "pin" ? {} : { "data-quota-group": g })}
@@ -1921,11 +1923,21 @@ export function QuotaLanding({
         // 「a search box over an empty list is a control with nothing to
         // do」 — because the board's button was the door. **Still a page
         // with an R0** on the wide face (第十五轮 第 5 条).
+        // **A loading list keeps its title row** (the audit fix plan F3.4;
+        // W06): the bar is there before the first answer, so nothing
+        // jumps when it lands. ⚠️ 墓碑: the column (and on the narrow face
+        // the screen's head) was drawn only once the board had been read.
         narrow ? (
-          empty
+          board === null && !error ? (
+            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bar}>
+              {list}
+            </ListPane>
+          ) : (
+            empty
+          )
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
-            {board !== null && (
+            {(board !== null || !error) && (
               <ListPane
                 mark="data-quota-pane"
                 name={gui.accounts_tab}

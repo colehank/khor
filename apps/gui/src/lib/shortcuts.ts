@@ -12,7 +12,7 @@
 //
 // | keys                  | act          | what it does                                    |
 // |-----------------------|--------------|-------------------------------------------------|
-// | ⌘1 ⌘2 ⌘3 ⌘4 ⌘5        | landing-1…5  | the rail, in its order: 会话 机器 工作区 额度 浏览器 |
+// | ⌘1 ⌘2 ⌘3 ⌘4 ⌘5        | landing-1…5  | the strip, in its order (外观 → 导航)              |
 // | ⌘,                    | settings     | 「…」 › 通用                                      |
 // | ⌘L                    | lock         | locks the face (only with a PIN set)            |
 // | ⌘K                    | find         | the first row's box, over everything            |
@@ -21,6 +21,7 @@
 // | ⌘W                    | close-tab    | the 「…」 page if one is up, else the front tab   |
 // | ⌃⇥  ⇧⌘]               | next-tab     | one tab right, wrapping                         |
 // | ⌃⇧⇥ ⇧⌘[               | prev-tab     | one tab left, wrapping                          |
+// | ⌥⌘S                   | focus-list   | the list's one Tab stop, from anywhere          |
 //
 // ⌘ is Ctrl off a Mac (Windows, Linux, and a browser there). **On a Mac
 // Ctrl is not ⌘**: ⌃W, ⌃K and ⌃L are a text field's and a terminal's own
@@ -90,13 +91,14 @@ export type Act =
   | "import"
   | "close-tab"
   | "next-tab"
-  | "prev-tab";
+  | "prev-tab"
+  | "focus-list";
 
 /** One way to press an act. `mod` is ⌘ on a Mac and Ctrl elsewhere;
     `ctrl` is the Control key itself on every platform. Matched on `code`
     (the key's place) where a shift changes the character — `]` is `}`
     with ⇧ held — and on `key` where the letter is the point. */
-type Chord = { key?: string; code?: string; mod?: true; ctrl?: true; shift?: true };
+type Chord = { key?: string; code?: string; mod?: true; ctrl?: true; shift?: true; alt?: true };
 
 /** The map. `web: false` is a key the browser owns (see the head). */
 export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
@@ -126,6 +128,10 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
     ],
     web: false,
   },
+  // The list's one Tab stop, from anywhere — a terminal included, which
+  // keeps Tab for its shell (the audit fix plan F3.8; W25). ⌥⌘S, the
+  // sidebar's key in Notes.
+  { act: "focus-list", chords: [{ code: "KeyS", mod: true, alt: true }], web: true },
 ];
 
 const IS_MAC = /mac/i.test(navigator.platform || navigator.userAgent);
@@ -137,7 +143,6 @@ type Keyish = Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shif
  * the face gate can ask it about the web face from inside the app's.
  */
 export function actOf(e: Keyish, face: "app" | "web", mac = IS_MAC): Act | null {
-  if (e.altKey) return null;
   const cmd = mac ? e.metaKey : e.ctrlKey;
   for (const { act, chords, web } of KEYMAP) {
     if (face === "web" && !web) continue;
@@ -145,7 +150,7 @@ export function actOf(e: Keyish, face: "app" | "web", mac = IS_MAC): Act | null 
       // ⌃⇥ is Control on every platform; off a Mac that is also `mod`.
       const wantCtrl = !!c.ctrl || (!!c.mod && !mac);
       const wantMeta = !!c.mod && mac;
-      if (e.ctrlKey !== wantCtrl || e.metaKey !== wantMeta || e.shiftKey !== !!c.shift) continue;
+      if (e.ctrlKey !== wantCtrl || e.metaKey !== wantMeta || e.shiftKey !== !!c.shift || e.altKey !== !!c.alt) continue;
       if (c.mod && !cmd) continue;
       if (c.code !== undefined && e.code !== c.code) continue;
       if (c.key !== undefined && e.key.toLowerCase() !== c.key.toLowerCase()) continue;
@@ -292,6 +297,12 @@ export function useShortcuts(acts: ShellActs) {
           else if (now.tabs?.front) now.tabs.close();
           else return false;
           return true;
+        case "focus-list": {
+          const row = document.querySelector<HTMLElement>('[data-side-list] [data-side-open][tabindex="0"]');
+          if (!row) return false;
+          row.focus();
+          return true;
+        }
         case "next-tab":
         case "prev-tab":
           if (acts.closePage || !now.tabs || now.tabs.count < 2) return false;

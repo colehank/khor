@@ -54,8 +54,16 @@ export function LockScreen({
     box.current?.focus();
   }, []);
 
+  /** With no PIN yet, the act says so and the caret goes to the box
+      (`components/Why`). */
+  const [need, setNeed] = useState(false);
   const tryIt = async () => {
-    if (!pin || asking) return;
+    if (asking) return;
+    if (!pin) {
+      setNeed(true);
+      box.current?.focus();
+      return;
+    }
     setAsking(true);
     try {
       const took = await onOpen(pin);
@@ -116,6 +124,7 @@ export function LockScreen({
           onChange={(e) => {
             setPin(e.target.value);
             setWrong(false);
+            setNeed(false);
           }}
           className="min-h-touch w-full text-center"
         />
@@ -124,12 +133,14 @@ export function LockScreen({
             {gui.lock_wrong}
           </div>
         )}
-        {/* Drawn once a PIN is typed (F1.9: not greyed). */}
-        {pin && (
-          <Button type="submit" data-lock-open disabled={asking} aria-busy={asking || undefined} className="min-h-touch w-full">
-            {gui.lock_open}
-          </Button>
+        {need && (
+          <div data-dialog-why className="text-callout text-destructive">
+            {gui.need_pin}
+          </div>
         )}
+        <Button type="submit" data-lock-open disabled={asking} aria-busy={asking || undefined} className="min-h-touch w-full">
+          {gui.lock_open}
+        </Button>
         {systemUnlock && (
           <Button
             type="button"

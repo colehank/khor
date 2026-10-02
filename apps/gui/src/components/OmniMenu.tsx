@@ -102,7 +102,8 @@ export function OmniMenu({
     <div
       data-omni-menu
       style={{ maxHeight: MENU_TALLEST, ...style }}
-      className={cn("overflow-y-auto border bg-popover p-1", className)}
+      // The one menu's material (the audit fix plan F1.6 / F3.4).
+      className={cn("glass overflow-y-auto rounded-menu border-0 bg-glass-menu p-menu-inset shadow-[var(--glass-in),var(--glass-shadow)]", className)}
     >
       {rows.groups.map((a) => (
         <div key={a.key}>
@@ -110,7 +111,7 @@ export function OmniMenu({
               box's completions (`PathField`), where a caption over the
               rows would repeat what the box already says. */}
           {a.label !== "" && (
-            <div data-omni-axis={a.key} className="px-2 py-1 text-caption text-muted-foreground">
+            <div data-omni-axis={a.key} className="px-row pt-1.5 pb-1 text-caption text-muted-foreground">
               {a.label}
             </div>
           )}
@@ -130,8 +131,8 @@ export function OmniMenu({
                   // the brand wash, README 颜色) and the row is the floor
                   // tall, so what the arrow keys highlight is exactly
                   // what a press lands on (tokens.css `--touch`).
-                  "flex min-h-touch w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-callout",
-                  n === rows.at && "bg-fill-strong",
+                  "flex min-h-menu-item w-full items-center gap-2 rounded-menu-item px-row text-left text-body",
+                  n === rows.at && "glass-sel",
                   c.dim && "text-muted-foreground",
                 )}
                 // The box must not lose focus to the press — the caret

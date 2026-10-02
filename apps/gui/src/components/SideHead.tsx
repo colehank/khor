@@ -40,11 +40,12 @@ import {
 import { createPortal } from "react-dom";
 
 import { find as findAll, type FindHit } from "@/api";
-import { IconSearch } from "@/components/icons";
+import { IconClose, IconSearch } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
+import { GlassCircle } from "@/components/Glass";
 
 /**
  * Where a landing's head and its list column go: two seats the shell
@@ -261,7 +262,11 @@ export function SideHead({
   const box = useRef<HTMLInputElement>(null);
   const seat = useRef<HTMLDivElement>(null);
 
+  /** What held focus before ⌘K, given it back on close (F3.7; W20). */
+  const before = useRef<HTMLElement | null>(null);
   const widen = useCallback((from: string) => {
+    const at = document.activeElement;
+    before.current = at instanceof HTMLElement && at !== document.body ? at : null;
     setWord(from);
     setAt(0);
     setOpen(true);
@@ -325,6 +330,9 @@ export function SideHead({
       setWord("");
       setHits([]);
       setAt(0);
+      const back = before.current;
+      before.current = null;
+      if (back?.isConnected && (document.activeElement === document.body || document.activeElement === null)) back.focus();
       return;
     }
     box.current?.focus();
@@ -394,14 +402,16 @@ export function SideHead({
         // bare magnifier on the narrow face). The one field look —
         // `fill`, `radius-sm`, `ctl-md`, the magnifier at the left and
         // ⌘K at the right — pressed, it widens into the real box.
-        <div className="@container/bar flex min-w-0 flex-1 items-center pr-1">
+        // **The one search field** (the audit fix plan F3.4; W06): the
+        // list's glass capsule, never a fourth look.
+        <div data-search-glass className="@container/bar flex min-w-0 flex-1 items-center">
           <button
             type="button"
             data-global-search
             data-search-field
             aria-label={gui.find_everything}
             onClick={() => widen("")}
-            className="flex h-ctl-md min-h-touch min-w-0 flex-1 items-center gap-in rounded-sm bg-fill px-2 text-left text-tertiary"
+            className="flex min-w-0 flex-1 items-center gap-in rounded-full px-3 text-left text-tertiary"
           >
             <IconSearch className="flex-none" />
             <span className="min-w-0 flex-1 truncate text-body">{gui.find_everything}</span>
@@ -417,14 +427,25 @@ export function SideHead({
         // to. **The floor is the token `--list-w-min`**, not `--list-w`:
         // that one is the block's live width now (第十五轮 第 4 条),
         // which is zero exactly where this floor is needed.
+        // **The same field the list's search circle opens, in the same
+        // place** (the audit fix plan F3.4; W06): the title row's glass
+        // capsule and its close circle, the wider range said by the
+        // placeholder. It ends on the column's right line, where the
+        // title row's controls do, and never past it. ⚠️ 墓碑: a 28-high
+        // rectangle with a 2px ring and a 「搜全部」 key word, from the
+        // window's corner to the seam.
         <div
           ref={seat}
           data-search-seat
-          className="absolute inset-y-0 z-50 flex min-w-list-min items-center bg-side pr-1"
-          style={{ left: START, right: 0 }}
+          data-search-glass
+          className={cn(
+            "absolute inset-y-0 z-50 flex min-w-list-min items-center gap-in bg-side",
+            narrow ? "pr-group" : "pr-row pb-1.5",
+          )}
+          style={{ left: narrow ? START : "var(--gap-group)", right: 0 }}
         >
-          <div className="relative flex min-w-0 flex-1 items-center">
-            <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
+          <div data-search-wrap className="relative flex min-w-0 flex-1 items-center">
+            <IconSearch className="pointer-events-none absolute top-1/2 left-3 z-10 -translate-y-1/2 text-tertiary" />
             <Input
               ref={box}
               data-search-box
@@ -436,10 +457,7 @@ export function SideHead({
               role="combobox"
               aria-expanded={shown.length > 0}
               aria-controls="khor-search-rows"
-              // The text field's own look (`ui/input`, components/
-              // TextField) — `fill`, `radius-sm`, the `ring` on focus —
-              // with room for the magnifier and the range word.
-              className="pr-12 pl-7"
+              className="rounded-full bg-transparent pr-3 pl-9"
               onChange={(e) => setWord(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "ArrowDown") {
@@ -457,13 +475,8 @@ export function SideHead({
                 }
               }}
             />
-            {/* Which range the box is on, in one small word (第 4 条). */}
-            <kbd
-              data-search-scope
-              className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-xs border px-xxs text-caption text-tertiary"
-            >
-              {gui.search_all}
-            </kbd>
+            {/* ⚠️ 墓碑 (F3.4): the range in a key word at the box's end; the
+                placeholder says it now (`find-hint`). */}
             {/* Hung from the box, not from the page: the row is the
                 anchor, and what is under it stays under it however the
                 window moves. */}
@@ -475,7 +488,9 @@ export function SideHead({
                 // Search results float (20-states 浮层): `popover` under
                 // `float`, which on the dark theme is lighter than what
                 // it hangs over — `card` was the board's own colour.
-                className="absolute top-full right-0 z-50 mt-1 flex max-h-80 flex-col overflow-y-auto rounded-lg border bg-popover shadow-(--shadow-float)"
+                // One menu's material (F1.6): the glass, its radius and
+                // inset, the chosen piece for the picked hit.
+                className="glass absolute top-full right-0 z-50 mt-2 flex max-h-80 flex-col overflow-y-auto rounded-menu border-0 bg-glass-menu p-menu-inset shadow-[var(--glass-in),var(--glass-shadow)]"
                 // From the list column's edge, not the box's: hung
                 // straight down they would lie over the rail's glyphs
                 // (tokens.css `--seat-menu-inset`).
@@ -501,8 +516,8 @@ export function SideHead({
                     // `fill`. The brand wash is for the row being
                     // located to (README 颜色, `check-face` 4K).
                     className={cn(
-                      "flex min-h-touch min-w-0 items-center gap-2 px-2 text-left text-callout hover:bg-fill",
-                      i === at && "bg-fill-strong",
+                      "flex min-h-menu-item min-w-0 items-center gap-2 rounded-menu-item px-row text-left text-body hover:bg-fill",
+                      i === at && "glass-sel",
                     )}
                   >
                     <span className="min-w-0 flex-1 truncate">{h.label}</span>
@@ -515,6 +530,9 @@ export function SideHead({
               </div>
             )}
           </div>
+          <GlassCircle aria-label={gui.search_close} data-search-close onClick={() => setOpen(false)}>
+            <IconClose />
+          </GlassCircle>
         </div>
       )}
     </div>

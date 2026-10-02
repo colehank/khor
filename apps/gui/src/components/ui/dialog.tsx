@@ -61,12 +61,34 @@ function DialogContent({
   // 机器页点 ＋ 后的邀请设备弹窗」. **One kind of window a press opens**:
   // centred, over the scrim, `popover` under `float`. Retired whole, no
   // switch left (`check-face` §13 (b) reads `src/` for it).
+  // **Focus goes back to what opened it** (the audit fix plan F3.7; W20):
+  // most of these are opened from a menu or by state, not by a Radix
+  // trigger, so Radix had nothing to return to and focus fell to the
+  // page. What held focus as the dialog came up is kept and refocused.
+  const opener = React.useRef<HTMLElement | null>(null);
+  if (opener.current === null && typeof document !== "undefined") {
+    const at = document.activeElement;
+    // Opened from a menu's item: the menu is going away, so its trigger.
+    const menu = at instanceof HTMLElement ? at.closest<HTMLElement>('[role="menu"]') : null;
+    const trigger = menu?.id ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(menu.id)}"]`) : null;
+    opener.current = trigger ?? (at instanceof HTMLElement && at !== document.body ? at : null);
+  }
+  const { onCloseAutoFocus, ...rest } = props;
   return (
     <DialogPrimitive.Portal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         data-form={form ? "" : undefined}
+        onCloseAutoFocus={(e) => {
+          onCloseAutoFocus?.(e);
+          if (e.defaultPrevented) return;
+          const back = opener.current;
+          if (back && back.isConnected) {
+            e.preventDefault();
+            back.focus();
+          }
+        }}
         // Radix asks for a description or an explicit opt-out. Our
         // dialogs opt out by default: a paragraph explaining what the
         // dialog is for is exactly the decorative copy docs/UX.md bans.
@@ -87,7 +109,7 @@ function DialogContent({
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
-        {...props}
+        {...rest}
         // **An open list inside it takes the first Escape.** Radix hears
         // Escape on the document before the focused box does, so a
         // combobox showing its suggestions (`PathField`) could not close

@@ -155,10 +155,13 @@ export function InviteDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.close}
           </Button>
-          {!error && ticket && (
+          {!error && (
             <Button
               variant="primary"
               data-copy-ticket
+              // The ticket is still being minted: busy, not greyed.
+              disabled={!ticket}
+              aria-busy={!ticket || undefined}
               data-said={copied ?? undefined}
               onClick={copy}
             >
@@ -210,7 +213,14 @@ export function JoinDialog({
 
   const joinWith = (text: string) => {
     const t = text.trim();
-    if (!t || joining) return;
+    if (joining) return;
+    // Always pressable (`components/Why`): with no ticket, say so and put
+    // the caret in the box.
+    if (!t) {
+      setError(gui.need_ticket);
+      requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-ticket-input]")?.focus());
+      return;
+    }
     setJoining(true);
     setError(null);
     pair(t)
@@ -294,11 +304,9 @@ export function JoinDialog({
             <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
               {gui.delete_keep}
             </Button>
-            {ticket.trim() && (
-              <Button variant="primary" data-join disabled={joining} aria-busy={joining || undefined} onClick={join}>
-                {gui.join}
-              </Button>
-            )}
+            <Button variant="primary" data-join disabled={joining} aria-busy={joining || undefined} onClick={join}>
+              {gui.join}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

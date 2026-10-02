@@ -134,7 +134,14 @@ export function ImportDialog({
     });
 
   const go = () => {
-    if (going || picked.size === 0) return;
+    if (going) return;
+    // Always pressable (`components/Why`): with nothing picked, say so
+    // and put focus on the first row's box.
+    if (picked.size === 0) {
+      setError(gui.need_pick);
+      requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-import-row] input")?.focus());
+      return;
+    }
     setGoing(true);
     setError(null);
     // In the table's order, which is newest first — what the person
@@ -295,11 +302,9 @@ export function ImportDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
           </Button>
-          {picked.size > 0 && (
-            <Button variant="primary" data-import-go disabled={going} aria-busy={going || undefined} onClick={go} className="min-h-touch">
-              {gui.import_go(picked.size)}
-            </Button>
-          )}
+          <Button variant="primary" data-import-go disabled={going} aria-busy={going || undefined} onClick={go} className="min-h-touch">
+            {gui.import_go(picked.size)}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

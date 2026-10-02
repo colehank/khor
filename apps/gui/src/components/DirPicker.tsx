@@ -82,7 +82,16 @@ export function DirPicker({
 
   const take = () => {
     const path = settledPath(typed);
-    if (path === "" || taking) return;
+    if (taking) return;
+    // **Always pressable** (the owner, 2026-10-02; `components/Why`): with
+    // no path yet it says so and puts the caret in the box.
+    if (path === "") {
+      setRefused(gui.need_path);
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLElement>("input[data-dir-picker-path], [data-dir-picker-path] input")?.focus(),
+      );
+      return;
+    }
     setTaking(true);
     setRefused(null);
     Promise.resolve()
@@ -166,19 +175,16 @@ export function DirPicker({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
           </Button>
-          {/* Drawn once there is a path to take (F1.9: not greyed). */}
-          {settledPath(typed) !== "" && (
-            <Button
-              variant="primary"
-              data-dir-picker-take
-              disabled={taking}
-              aria-busy={taking || undefined}
-              onClick={take}
-              className="min-h-touch"
-            >
-              {gui.dir_picker_take}
-            </Button>
-          )}
+          <Button
+            variant="primary"
+            data-dir-picker-take
+            disabled={taking}
+            aria-busy={taking || undefined}
+            onClick={take}
+            className="min-h-touch"
+          >
+            {gui.dir_picker_take}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

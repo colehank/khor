@@ -3435,6 +3435,16 @@ group-rest = "其他"
 group-recent = "最近"
 # The seam between a list and its page, as a screen reader names it.
 list-seam = "调整列表宽度"
+# Inside a search field: empties it (the × beside the field leaves search).
+search-clear = "清除"
+# Why a dialog's act did not go yet (`components/Why`): said under the
+# box it needs, with the caret put there.
+need-path = "先填写目录"
+need-pin = "先输入 PIN"
+need-text = "先写下要说的话"
+need-pick = "先选择要导入的会话"
+need-ticket = "先粘贴配对票"
+need-relay = "先填写中继地址"
 # 机器栏、工作区栏的筛选(2026-09-29,负责人:「所有的session list应该都可以
 # filter吧？」)。和会话、额度两栏同一套:轴名是小标题,值是行上印着的事实。
 #

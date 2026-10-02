@@ -211,9 +211,23 @@ export function PaneBar({
               // the magnifier and, seated, the key hint.
               className={cn("pl-7", seat === "side" && "pr-10 @max-3xs/bar:pr-2")}
             />
+            {/* A clear button inside the field once it holds something
+                (F3.4; N20) — the × beside it leaves search. */}
+            {query !== "" && (
+              <button
+                type="button"
+                data-search-clear
+                aria-label={gui.search_clear}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onQuery("")}
+                className="absolute top-1/2 right-2 z-10 grid size-6 -translate-y-1/2 place-items-center rounded-full bg-fill-strong text-muted-foreground"
+              >
+                <IconClose className="size-affordance" />
+              </button>
+            )}
             {/* Which range the box is on (第十三轮 第 4 条): typing narrows
                 this column; the word says how to widen it. */}
-            {seat === "side" && (
+            {seat === "side" && query === "" && (
               <span className="pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2">
                 <SearchHint />
               </span>
@@ -395,6 +409,8 @@ export function PaneBar({
   ) : (
     <div
       data-pane-bar
+      // The one search field everywhere (F3.4; W06): glass, as the list's.
+      data-search-glass
       // `min-h`, not `h`: chips make the box taller than one row, and a
       // bar with a fixed height would clip them or squeeze the list.
       className={cn("flex min-h-pane-head flex-none items-center gap-in", seat === "head" ? "min-w-0 flex-1" : "border-b px-2")}

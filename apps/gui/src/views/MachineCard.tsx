@@ -662,8 +662,13 @@ export function MachineVerbs({
           if (riders.length === 0) return item(measure, v, false);
           return (
             <div key={v.key} data-verb-pill={measure ? undefined : v.key} className="flex flex-none items-center rounded-full glass-sel">
-              {item(measure, v, true)}
+              {/* **The ＋ on the left of 会话** (the audit fix plan F3.2;
+                  W02): the capsule stands at the head's right end and
+                  grows leftward, so 会话 — and 文件, 浏览 after it — keep
+                  their x when the ＋ appears; the second press on the
+                  same spot turns 会话 off. */}
               {riders.map((r) => item(measure, r, true))}
+              {item(measure, v, true)}
             </div>
           );
         })}
@@ -1805,12 +1810,17 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
               onChange={(e) => setTyped(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
             />
-            {/* Each drawn while it has something to do (F1.9). */}
-            {typed.trim() && (
-              <Button size="sm" data-watch-add className="min-h-touch" onClick={add}>
-                {gui.watch_add}
-              </Button>
-            )}
+            {/* Save is drawn while there is something to save (F1.9). */}
+            {/* Always pressable (`components/Why`): with nothing typed,
+                the press puts the caret in the box. */}
+            <Button
+              size="sm"
+              data-watch-add
+              className="min-h-touch"
+              onClick={() => (typed.trim() ? add() : document.querySelector<HTMLElement>("[data-watch-input]")?.focus())}
+            >
+              {gui.watch_add}
+            </Button>
             {(dirty || saving) && (
               <Button
                 size="sm"

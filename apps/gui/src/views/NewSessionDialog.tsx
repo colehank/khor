@@ -336,7 +336,14 @@ export function NewSessionDialog({
   /** 留言: the whole of `khor tell`. The message on refusal is the
       node's, in the catalog's words — this layer has none to add. */
   const send = () => {
-    if (!text.trim() || opening) return;
+    if (opening) return;
+    // Always pressable (`components/Why`): with nothing written, say so
+    // and put the caret in the line.
+    if (!text.trim()) {
+      setError(gui.need_text);
+      requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-tell-text]")?.focus());
+      return;
+    }
     setOpening(true);
     setError(null);
     tell(target, text)
@@ -690,11 +697,9 @@ export function NewSessionDialog({
             {gui.delete_keep}
           </Button>
           {kind === "tell" ? (
-            text.trim() && (
-              <Button variant="primary" data-tell-send disabled={opening} aria-busy={opening || undefined} onClick={send}>
-                {gui.send_it}
-              </Button>
-            )
+            <Button variant="primary" data-tell-send disabled={opening} aria-busy={opening || undefined} onClick={send}>
+              {gui.send_it}
+            </Button>
           ) : (
             <Button variant="primary" data-new-session-create disabled={opening} aria-busy={opening || undefined} onClick={create}>
               {gui.create}

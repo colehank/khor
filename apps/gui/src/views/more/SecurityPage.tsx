@@ -34,7 +34,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { cli, gui } from "@/gen/catalog";
+import { Why } from "@/components/Why";
+import { cli, gui, msg } from "@/gen/catalog";
 import { useHereHosts } from "@/lib/here";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { ActionRow } from "@/components/settings/ActionRow";
@@ -133,6 +134,16 @@ export function SecurityPage({
   // node's order — the PIN, then the lock, which `khor_node::lock`
   // refuses without one — and the facts are re-read either way, so a
   // lock that refused still shows the PIN that took.
+  /** Why the PIN cannot be saved yet, said under its box. */
+  const [pinWhy, setPinWhy] = useState<string | null>(null);
+  const tryPin = () => {
+    if (lock !== null && pin.length < lock.pin_min) {
+      setPinWhy(msg.lock_pin_too_short(lock.pin_min));
+      document.querySelector<HTMLElement>("[data-security-pin]")?.focus();
+      return;
+    }
+    savePin(pin);
+  };
   const savePin = (typed: string) => {
     setPin("");
     setPinning(false);
@@ -411,8 +422,7 @@ export function SecurityPage({
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (pin.length < lock.pin_min) return;
-                savePin(pin);
+                tryPin();
               }}
             >
               <Input
@@ -422,10 +432,14 @@ export function SecurityPage({
                 autoComplete="off"
                 aria-label={lock.has_pin ? gui.lock_change_pin : gui.lock_set_pin}
                 value={pin}
-                onChange={(e) => setPin(e.target.value)}
+                onChange={(e) => {
+                  setPin(e.target.value);
+                  setPinWhy(null);
+                }}
                 className="min-h-touch w-full"
               />
             </form>
+            <Why text={pinWhy} />
             <DialogFooter>
               {/* Taking the PIN away is the other thing this window can
                   do, on the left and plain — the one primary act is 存下. */}
@@ -450,18 +464,16 @@ export function SecurityPage({
               >
                 {gui.delete_keep}
               </Button>
-              {pin.length >= lock.pin_min && (
               <Button
                 variant="primary"
                 data-security-pin-save
-                // The floor is the node's number, carried on the answer
-                // so this box refuses with the same one the node would
-                // (`LockFacts::pin_min`) rather than a copy of it.
-                onClick={() => savePin(pin)}
+                // Always pressable (`components/Why`). The floor is the
+                // node's number, carried on the answer so this box refuses
+                // with the same one the node would (`LockFacts::pin_min`).
+                onClick={tryPin}
               >
                 {gui.lock_pin_save}
               </Button>
-              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -495,14 +507,18 @@ export function SecurityPage({
           )}
           <DialogFooter>
             <Button onClick={() => setResetting(false)}>{gui.delete_keep}</Button>
-            {me && typedName.trim() === me.shown && (
             <Button
               variant="destructive"
               data-reset-do
-              // The box is checked here only so the button is not live
-              // over an empty field; the answer that counts is the node's
-              // (`lock::reset_identity` refuses by name).
+              // Always pressable (`components/Why`): until the name is
+              // typed, the press says so; the answer that counts is the
+              // node's (`lock::reset_identity` refuses by name).
               onClick={() => {
+                if (typedName.trim() !== (me?.shown ?? "")) {
+                  setError(gui.reset_type_name);
+                  document.querySelector<HTMLElement>("[data-reset-name]")?.focus();
+                  return;
+                }
                 setError(null);
                 resetIdentity(typedName).then(
                   () => {
@@ -515,7 +531,6 @@ export function SecurityPage({
             >
               {gui.reset_do}
             </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

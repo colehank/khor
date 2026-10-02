@@ -281,15 +281,18 @@ export function NetworkPage({
           )}
           <DialogFooter>
             <Button onClick={() => setLeaving(false)}>{gui.delete_keep}</Button>
-            {/* Drawn once the name is typed (F1.9: not greyed). */}
-            {me && typedName.trim() === me.shown && (
             <Button
               variant="destructive"
               data-net-leave-do
-              // Checked here only so the button is not live over an
-              // empty box; the answer that counts is the node's, and it
-              // comes back as a sentence.
+              // Always pressable (`components/Why`): until the name is
+              // typed, the press says so and puts the caret in the box;
+              // the answer that counts is still the node's.
               onClick={() => {
+                if (typedName.trim() !== (me?.shown ?? "")) {
+                  setRefused(gui.identity_leave_type_name);
+                  document.querySelector<HTMLElement>("[data-net-leave-name]")?.focus();
+                  return;
+                }
                 setRefused(null);
                 setSaid(null);
                 leaveNetwork(typedName).then(
@@ -316,7 +319,6 @@ export function NetworkPage({
             >
               {gui.identity_leave_do}
             </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -179,7 +179,13 @@ export function NetSettings() {
                 onSubmit={async (e) => {
                   e.preventDefault();
                   const url = typed.trim();
-                  if (!url) return;
+                  // Always pressable (`components/Why`): with no address,
+                  // say so and put the caret in its box.
+                  if (!url) {
+                    setRefused(gui.need_relay);
+                    document.querySelector<HTMLElement>("[data-relay-add-url]")?.focus();
+                    return;
+                  }
                   const token = typedKey.trim() || null;
                   // Closed only on success: a refused address stays in
                   // the box next to the sentence saying why, so the fix
@@ -227,11 +233,9 @@ export function NetSettings() {
               )}
               <DialogFooter>
                 <Button onClick={() => setAdding(false)}>{gui.delete_keep}</Button>
-                {typed.trim() && (
-                  <Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
-                    {gui.watch_add}
-                  </Button>
-                )}
+                <Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
+                  {gui.watch_add}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>

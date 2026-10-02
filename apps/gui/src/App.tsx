@@ -1198,7 +1198,8 @@ export default function App() {
     <LandingStrip
       seats={navOrder.map(seatOf)}
       active={morePage === null ? landing : null}
-      moreOn={morePage !== null && morePage !== "identity"}
+      // Tinted on every page reached through it, 这台机器 too (F3.6; W23).
+      moreOn={morePage !== null}
       onGo={(key) => {
         if (morePage === null && landing === key) listPane.toggle();
         else goLanding(key as Landing);
@@ -1207,7 +1208,7 @@ export default function App() {
       // in the list column, the first one beside them.
       onMore={() => {
         // Open already: folds the list, like any open landing's glyph.
-        if (morePage !== null && morePage !== "identity") {
+        if (morePage !== null) {
           listPane.toggle();
           return;
         }
@@ -1218,11 +1219,18 @@ export default function App() {
       }}
     />
   );
-  /** Folded, the strip stays where it was on screen — the window's
-      top-left, now the start of the content's first row (`Region`'s
-      lead), the window's buttons' room before it. */
+  /** **Folded, the strip does not move** (the audit fix plan F3.1; W01):
+      the content's first row starts with a lead as wide as the list's
+      default column, the strip right-aligned in it exactly as it stands
+      over that column — so the glyph pressed to fold is still under the
+      pointer to unfold, and the tabs begin after it. Only a list dragged
+      wider than the default moves it, by at most the cap's 80. */
   const foldedLead = folded ? (
-    <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center self-stretch ps-wide-lead-start pe-row">
+    <div
+      data-folded-lead
+      {...WINDOW_DRAG}
+      className="flex w-list flex-none items-center justify-end self-stretch ps-wide-lead-start pe-row"
+    >
       {strip}
     </div>
   ) : null;
@@ -1279,8 +1287,12 @@ export default function App() {
     locked: !lock.settled || lock.locked,
     // What the rail's glyph does on a first press (the second press folds
     // the list, which a key repeated by accident should not).
+    // **⌘-digits follow the strip** (the audit fix plan F3.5; W03): the
+    // Nth glyph the strip shows, in the order 外观 → 导航 set. The Mac
+    // menu bar's View items still name the old fixed order (`menu.rs`,
+    // native — not changed here).
     go: (i) => {
-      const l = landings()[i];
+      const l = landings().find((x) => x.key === navOrder[i]);
       if (!l) return;
       setMorePage(null);
       setLanding(l.key);

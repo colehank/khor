@@ -539,15 +539,15 @@ aside[data-side] {
  * Its own element rather than a shadow on the face's box, because the
  * halo has to be able to breathe on its own — see below — and opacity is
  * the only channel a box-shadow cannot animate by itself. */
-/* **The ring is inside the face's box** (the audit fix plan F2.7; W08):
-   its outer edge is the box's edge, so a session's face stands on the
-   left line like every other face, instead of 3.4 past it. The gap is
-   the ground laid over the face's rim, the ring outside that. ⚠️ 墓碑:
-   two outset rings, 4 outside the box. */
+/* **The ring is outside the face** (the owner, 2026-10-02): the face's
+   box stands on the left line like every other face, and the state ring
+   reaches out past it the way a chosen block does. ⚠️ 墓碑 (F2.7, one
+   commit): the ring drawn inside the box to put its ink on the line —
+   on a tab's face it left 8 of face, and the owner could not read it. */
 [data-halo] {
   box-shadow:
-    inset 0 0 0 var(--halo-w) var(--halo-color),
-    inset 0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-under, var(--card));
+    0 0 0 var(--halo-gap) var(--halo-under, var(--card)),
+    0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-color);
 }
 
 /* **The gap ring is the ground the face stands on.** It was `--card`
@@ -558,6 +558,11 @@ aside[data-side] {
    there reads as a second ring. The one in front is the paper. */
 [data-tab-bar] {
   --halo-under: var(--background);
+  /* A tab's face is small: its ring and the gap inside it are 1.5 each,
+     so the face stays readable and the state still shows (the owner's
+     choice, 2026-10-02: 「我都要」). */
+  --halo-gap: 1.5px;
+  --halo-w: 1.5px;
 }
 [data-tab-bar] [data-tab][data-on="true"] {
   --halo-under: var(--card);
@@ -1445,7 +1450,7 @@ aside[data-side] {
    keeps its anatomy (`Omnibox`, `PaneBar`); the material, the height and
    the round ends are the glass controls'. Unlayered, so it wins over the
    field's own utilities. */
-[data-search-glass] :is(div[data-search-field], [data-search-wrap]) {
+[data-search-glass] :is(div[data-search-field], button[data-search-field], [data-search-wrap]) {
   position: relative;
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-blur);
@@ -1458,7 +1463,7 @@ aside[data-side] {
 /* Its rim, the glass utility's ring (round 7). A plain box's glass is on
    its wrapper (`data-search-wrap`): an input draws no pseudo-element, so
    the input itself goes clear inside it. */
-[data-search-glass] :is(div[data-search-field], [data-search-wrap])::before {
+[data-search-glass] :is(div[data-search-field], button[data-search-field], [data-search-wrap])::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -1569,6 +1574,20 @@ aside[data-side] {
   }
 }
 
+/* **A right-clicked row is ringed while its menu is open** (the audit fix
+   plan F3.6; W23): Finder's target ring, so the row the menu acts on is
+   never in doubt. */
+[data-side-row]:has([data-side-open][data-state="open"]) {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* What a list's search matched, in its rows (F3.4; `SideList`). */
+::highlight(khor-find) {
+  background-color: var(--fill-strong);
+  color: var(--foreground);
+}
+
 /* **One focus ring** (F1.3; SYS-03, W05): 2px of `--ring`, 2 off the
    control, following its radius. Low-specificity, so a full-bleed row
    that draws it inside (`-outline-offset-2`) still can. **And only for
@@ -1581,7 +1600,8 @@ aside[data-side] {
     outline-offset: 2px;
   }
 }
-html:not([data-modality="keyboard"]) :focus-visible {
+html:not([data-modality="keyboard"]) :focus-visible,
+html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]):focus-within {
   outline: none;
 }
 /* The switch keeps its gap: a ring lying on the olive track merges into

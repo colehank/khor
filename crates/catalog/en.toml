@@ -1737,6 +1737,16 @@ group-rest = "Others"
 group-recent = "Recent"
 # The seam between a list and its page, as a screen reader names it.
 list-seam = "Resize the list"
+# Inside a search field: empties it (the × beside the field leaves search).
+search-clear = "Clear"
+# Why a dialog's act did not go yet (`components/Why`): said under the
+# box it needs, with the caret put there.
+need-path = "Enter a directory first"
+need-pin = "Enter the PIN first"
+need-text = "Write something first"
+need-pick = "Choose what to import first"
+need-ticket = "Paste a pairing ticket first"
+need-relay = "Enter a relay address first"
 axis-connection = "Connection"
 axis-system = "System"
 system-apple = "macOS"

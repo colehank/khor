@@ -32,6 +32,7 @@ import { IconClose, IconSearch } from "@/components/icons";
 import { OmniMenu, useFloatedMenu, type Candidate, type MenuRows, type OmniAxis } from "@/components/OmniMenu";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
+import { useCoarse } from "@/hooks/use-coarse";
 import { cn } from "@/lib/utils";
 
 // **The rows live with the rows.** A menu is drawn in two places now — in
@@ -178,6 +179,9 @@ export function Omnibox({
 }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState(0);
+  /** Whether the arrows have moved the pick since the text changed. */
+  const [walked, setWalked] = useState(false);
+  const coarse = useCoarse();
   const box = useRef<HTMLInputElement>(null);
   // What the menu hangs under, in both places it can be drawn: the strip
   // is the control, and a completion list narrower than the box it
@@ -213,6 +217,7 @@ export function Omnibox({
 
   useEffect(() => {
     setPick(0);
+    setWalked(false);
   }, [query]);
 
   /** Which axis a candidate came from — committing means two different
@@ -408,6 +413,7 @@ export function Omnibox({
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               const step = e.key === "ArrowDown" ? 1 : flat.length - 1;
+              setWalked(true);
               setPick((p) => (Math.min(p, flat.length - 1) + step) % flat.length);
               return;
             }
@@ -431,6 +437,25 @@ export function Omnibox({
             }
           }}
         />
+        {/* **A clear button inside the field** (F3.4; N20), once there is
+            something to clear: the × beside the field leaves search,
+            this empties it. */}
+        {field && (query !== "" || chosen.length > 0) && (
+          <button
+            type="button"
+            data-search-clear
+            aria-label={gui.search_clear}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              onQuery("");
+              for (const k of chosen) onToggle(k);
+              box.current?.focus();
+            }}
+            className="grid size-6 flex-none place-items-center rounded-full bg-fill-strong text-muted-foreground"
+          >
+            <IconClose className="size-affordance" />
+          </button>
+        )}
         {trail}
       </div>
       {/* **Here only when it is not floating.** The floated one is the
@@ -438,9 +463,12 @@ export function Omnibox({
           `useFloatedMenu` above — one menu, two places to draw it. */}
       {shown && !floated && (
         <OmniMenu
-          rows={{ groups: offered, at }}
+          // **Nothing is picked in advance under a finger** (F3.4; N20):
+          // a highlighted first row is the keyboard's promise of what
+          // Enter does, and a finger has no Enter.
+          rows={{ groups: offered, at: coarse && !walked ? -1 : at }}
           onPick={press}
-          className="absolute top-full z-20 mt-1 rounded-lg shadow-(--shadow-float)"
+          className="absolute top-full z-20 mt-2"
           // From the list column's edge where the box is seated in the
           // left block's first row, from the box's own edge anywhere
           // else (tokens.css `--menu-inset`).

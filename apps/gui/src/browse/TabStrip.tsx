@@ -461,6 +461,16 @@ export function TabStrip({
         // `items-center`: 「+」 on the row's centreline with the tabs'
         // labels; the tabs themselves stretch to the floor (their foot).
         className={cn("flex min-w-0 items-center overflow-x-auto", glass ? "gap-0.5 self-stretch" : "flex-1 gap-1", glass && below && "flex-1")}
+        // **In the glass capsule a scrolled edge fades** (the audit fix plan
+        // F3.3; W09, N19): a mask over the 12 at each end that has a tab
+        // cut off behind it, instead of a glyph cut in half.
+        style={
+          glass && (cut.left || cut.right)
+            ? {
+                maskImage: `linear-gradient(to right, ${cut.left ? "transparent, black 12px" : "black, black"}, ${cut.right ? "black calc(100% - 12px), transparent" : "black, black"})`,
+              }
+            : undefined
+        }
       >
         {faces.map((f) => {
           const on = f.id === active;
@@ -528,7 +538,7 @@ export function TabStrip({
                 // The tab in front never gives.
                 glass
                   ? on
-                    ? "max-w-tab-on flex-none glass-sel font-title text-foreground"
+                    ? "max-w-tab-on flex-none glass-sel text-foreground"
                     : "max-w-tab flex-none text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"

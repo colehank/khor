@@ -1522,10 +1522,11 @@ export function WorkspacePane({
               // `px-2`), since this is the same anatomy.
               // In to the page's left line, where the tree's first mark
               // stands (F2.7; W08) — the field's edge is the line.
+              data-search-glass
               className="flex min-h-pane-head flex-none items-center gap-in border-b px-page"
             >
-              <div className="relative min-w-0 flex-1">
-                <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
+              <div data-search-wrap className="relative min-w-0 flex-1">
+                <IconSearch className="pointer-events-none absolute top-1/2 left-2 z-10 -translate-y-1/2 text-tertiary" />
                 <Input
                   data-tree-search
                   data-search-field

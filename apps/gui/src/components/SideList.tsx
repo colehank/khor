@@ -22,7 +22,7 @@
 //
 // It came out of `SessionsList`, which was the one list that already
 // did all of this; the other four had each grown part of it.
-import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { EmptyState, RegionState } from "@/components/RegionState";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
@@ -255,6 +255,40 @@ export function SideList({
       .join("\n"),
   );
 
+  // **What matched is marked in the rows** (the audit fix plan F3.4;
+  // N20): every place the typed word stands in a row's title or second
+  // line, painted with the CSS highlight registry so no row's drawing has
+  // to know about the search (`app.css` `::highlight(khor-find)`).
+  useEffect(() => {
+    const reg = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const Mark = (window as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+    const el = box.current;
+    const q = query.trim().toLowerCase();
+    if (!reg || !Mark) return;
+    if (!el || q === "") {
+      reg.delete("khor-find");
+      return;
+    }
+    const ranges: Range[] = [];
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) =>
+        n.parentElement?.closest("[data-side-title], [data-side-sub]") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const t = (n.textContent ?? "").toLowerCase();
+      for (let i = t.indexOf(q); i >= 0; i = t.indexOf(q, i + q.length)) {
+        const r = new Range();
+        r.setStart(n, i);
+        r.setEnd(n, i + q.length);
+        ranges.push(r);
+      }
+    }
+    reg.set("khor-find", new Mark(...ranges));
+    return () => {
+      reg.delete("khor-find");
+    };
+  });
+
   if (loading && rows.length === 0) {
     return (
       <div data-side-list {...mark} data-loading>
@@ -270,6 +304,11 @@ export function SideList({
     );
   }
 
+  /** **The list is one Tab stop** (the audit fix plan F3.8; W25): the
+      picked row, or the first, takes Tab; the arrows walk the rest
+      (`walkList`). ⌥⌘S puts the focus there (`lib/shortcuts`). */
+  const visible = (showOld ? [...fresh, ...aged] : fresh).filter((r) => !shutOf(r.group));
+  const stop = (visible.find((r) => r.selected) ?? visible[0])?.id;
   const one = (r: SideRow, prev: SideRow | undefined, size: number) => {
     const open = !shutOf(r.group);
     // **The row of the redesign** (2026-10-02): the face, then the words
@@ -282,6 +321,7 @@ export function SideList({
         type="button"
         data-side-open
         {...r.openData}
+        tabIndex={r.id === stop ? 0 : -1}
         onClick={r.onOpen}
         className={cn(
           "flex min-h-list-row min-w-0 flex-1 items-stretch gap-row text-left",
@@ -360,6 +400,7 @@ export function SideList({
             data-group-open={open}
             {...headData?.(r.group)}
             aria-expanded={open}
+            tabIndex={-1}
             onClick={() => toggle(r.group)}
             className={cn(
               "flex min-h-touch w-full items-end gap-xxs pt-in pb-xxs text-left text-group text-muted-foreground",
@@ -447,6 +488,7 @@ export function SideList({
           type="button"
           data-old-fold
           data-open={showOld}
+          tabIndex={-1}
           onClick={() => setShowOld((v) => !v)}
           className={cn(
             "flex min-h-row-1 w-full items-center text-left text-caption text-tertiary hover:bg-fill",
