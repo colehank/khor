@@ -129,7 +129,6 @@ kind-mark = "类型标记"
 # **一行设置的说明**:名字是 `<键>-note`,写这一项**会发生什么**
 # (components/SettingsGroup「note 写会发生什么」)。不是每个键都有;有的
 # 那一个,门要它的前半截是一个真存在的键(`crates/node/src/tests.rs`)。
-kind-mark-note = "类型标记画在头像上，或放在头像右下角"
 lang = "界面语言"
 # 标签页上限:超过这个数,再开一个就关掉最久没碰、没置顶、没有未保存改动的那个。
 # 取值 off 或 4–50;数字本身就是词,不进这张表。
@@ -229,7 +228,7 @@ usage = """
                         （doc/xls/ppt）、pdf 转成 markdown。读的是文字和
                         结构，不是排版
   code [--stop] <机器> [仓库路径]
-                        在那台机器上开 VS Code 的网页脸，打印本地链接
+                        在那台机器上开 VS Code 的网页版，打印本地链接
                         （链接里带密钥；不给路径就是它上次开的那个）。
                         一台机器一个服务端，换项目只是换链接。第一次会从
                         微软下一份服务端（约 640 MB），之后不用。它不是
@@ -252,7 +251,7 @@ usage = """
                         关掉一个之后会挪；**id** 认死一个不会挪，脚本用它
   usage [--days N]      各机器花掉的 token，按天按类别（默认 7 天）
   sessions [--by recent|category|device|state|place] [--all]
-                        session 列表（默认最近）；换一种排布，置顶永远在最上；
+                        session 列表（默认最近）；换一种排列方式，置顶永远在最上；
                         看过的旧会话默认只报条数，--all 全列出来。列表里只有
                         新建的、导入的和对设备的对话
   find <词>              一次搜会话、机器、工作区、浏览标签和设置页（窗口里 ⌘K 同一份）
@@ -312,7 +311,7 @@ usage = """
                         收下的文件都留着，再来消息它自己回来；导入的行只从
                         列表里拿掉，那边的会话一个字节不动，它回到候选里）
   serve                 常驻：应答别人、代跑本机动词、每 5 秒同步全网
-                        （顺带把网页脸也开在局域网上，见 web）
+                        （顺带把网页版也开在局域网上，见 web）
   relay --dev | --tls-cert 证书 --tls-key 私钥 | --acme 域名 [--acme-contact 邮箱]
         [--token 密钥 | --only-mine] [--rate 字节每秒] [--metrics 地址]
         [--bind 地址] [--http 地址] [--state 目录] | --stats [--state 目录]
@@ -325,13 +324,13 @@ usage = """
                         计量只存总数：每台设备连了几次、在线多久，加中继收发的
                         总字节，写在 --state 目录（默认 .khor/relay）；
                         --stats 打印这份计量，不起中继
-  web [--new]           网页脸的链接：拿手机或者别的电脑打开它，就是整个网。
-                        脸是 serve 开的，这条只发密钥；链接里带密钥，别贴进
+  web [--new]           网页版的链接：拿手机或者别的电脑打开它，就是整个网。
+                        网页版由 serve 开，这条只发密钥；链接里带密钥，别贴进
                         会同步的文档。--new 换一把，之前发出去的链接全作废
   gui                   开桌面 app 的窗口（桌面 app 是装在 khor 旁边的
                         khor-gui；没装它会告诉你去哪儿拿）
   faces                 本机开着哪几张 khor 界面：桌面 app 在不在跑、
-                        网页脸在不在听、听的是哪个端口。**这里的「脸」是
+                        网页版在不在听、听的是哪个端口。**这里的「脸」是
                         界面，不是头像**——头像那一个是 avatar
   quit                  收摊：停掉本机的 serve 和所有 session 宿主
                         （文件都留着，再 serve 就都回来）
@@ -339,7 +338,7 @@ usage = """
                         看钩子装没装；install 装上、uninstall 卸掉（都只碰
                         khor 自己那几条，做两遍=做一遍）
   lock [status|on|off|pin|timeout 分钟]
-                        屏幕上那几张脸的打开密码（app 窗口和网页脸）。
+                        屏幕上那几个界面的打开密码（app 窗口和网页版）。
                         **不锁命令行**——`khor` 后面站着的人已经登进这台
                         机器了。不带参数=看现在什么样；pin 从标准输入读
                         一行（不进 argv，也就不进 shell 历史和 ps），
@@ -387,7 +386,7 @@ usage = """
                         把本机的名字原样打一遍就是确认（和 forget 同一条规矩）。
                         拿一张新票 pair 可以再入网
   pause                 暂停接入网络：不再与别的机器同步，别的机器那边看见这台
-                        离线；本机的会话、工作区、网页脸照常用。关机重开还是暂停的
+                        离线；本机的会话、工作区、网页版照常用。关机重开还是暂停的
   resume                恢复接入：重新同步，下一轮就能对上
                         pause <机器>：只暂停和那一台的往来——不拨它、不接它、
                         不和它同步，它自己照常运行；devices 里那一行标（已暂停）。
@@ -427,7 +426,7 @@ doctor-name-version = "版本"
 doctor-name-identity = "身份密钥"
 doctor-name-store = "本机数据"
 doctor-name-serve = "常驻"
-doctor-name-web = "网页脸"
+doctor-name-web = "网页版"
 doctor-name-relays = "中继"
 doctor-name-peers = "其他机器"
 doctor-name-roads = "连接诊断"
@@ -1081,7 +1080,7 @@ git-behind = "落后 {0}，按 {1}前那次 fetch"
 borrowing = "借着 {0} 的网，代理口在 {1}；把浏览器或 HTTPS_PROXY 指过来。收口：khor close {2}"
 broken-blocks = "有 {0} 个块无法读取，这段对话不完整"
 serve-banner = "khor serve：{0} 在听，配对与同步都归它"
-web-banner = "网页脸正在 {0} 监听；运行 khor web 获取链接"
+web-banner = "网页版正在 {0} 监听；运行 khor web 获取链接"
 # `khor hooks`. The file is named on every run, installing or not: khor
 # is writing into something the user owns, and "which file" is the first
 # thing they need to be able to check.
@@ -1286,7 +1285,7 @@ runtime-wont-start = "无法启动运行时：{0}"
 which-session = "不知道汇报给哪个 session：设 KHOR_SESSION 或用 --session"
 not-a-state-word = "不是六个状态词之一：{0}"
 unknown-verb = "不认识的动词：{0}"
-not-a-way-to-arrange = "不是一种排布：{0}。有：{1}"
+not-a-way-to-arrange = "不是一种排列方式：{0}。有：{1}"
 attach-needs-tty = "attach 需要在终端中运行"
 attach-windows-later = "当前版本不支持（Windows 上的 attach 尚未实现）"
 no-termios = "无法获取终端参数"
@@ -2063,18 +2062,18 @@ host-child-wait = "无法等待子进程结束：{0}"
 # ── the web face (khor-web) ──
 # 拒绝的话要说清「怎么才对」,因为读到它的人多半在另一台机器上,
 # 手边没有这台机器的终端——只说「不行」等于让他回去猜。
-web-cant-listen = "网页脸无法启动，端口 {0} 已被占用：{1}。换一个端口：设置 KHOR_WEB_PORT 后再运行 khor serve"
-web-no-such-page = "网页脸没有这一页：{0}"
-web-bad-host = "网页脸只认地址，不认名字，而这个请求报的是「{0}」。\n  用 khor web 打印的那个链接；要是你自己搭了反向代理，那条路这一版不支持"
-web-bad-origin = "这个请求是另一个页面（{0}）发的，网页脸只答自己那一张"
+web-cant-listen = "网页版无法启动，端口 {0} 已被占用：{1}。换一个端口：设置 KHOR_WEB_PORT 后再运行 khor serve"
+web-no-such-page = "网页版没有这一页：{0}"
+web-bad-host = "网页版只认地址，不认名字，而这个请求报的是「{0}」。\n  用 khor web 打印的那个链接；要是你自己搭了反向代理，那条路这一版不支持"
+web-bad-origin = "这个请求是另一个页面（{0}）发的，网页版只回应自己的页面"
 web-no-key = "这个链接没有包含密钥。在那台机器上运行 khor web，用它输出的链接打开"
 web-wrong-key = "密钥不正确。可能那台机器已重新生成密钥——旧链接已失效，运行一次 khor web 获取新链接"
-web-no-key-yet = "这台机器还没有网页脸的密钥（serve 从未启动过？）。先运行 khor serve，再运行 khor web"
-web-key-empty = "网页脸的密钥文件为空：{0}。删除它后重启 serve，会重新生成密钥"
+web-no-key-yet = "这台机器还没有网页版的密钥（serve 从未启动过？）。先运行 khor serve，再运行 khor web"
+web-key-empty = "网页版的密钥文件为空：{0}。删除它后重启 serve，会重新生成密钥"
 # The upload cap's refusal ({0} is the cap in MB). It names the limit
 # and the way around it — bigger things ride `khor send` with a real
 # path on the machine that has them, not a browser upload.
-upload-too-big = "文件太大：网页脸的上传上限是 {0}MB。更大的用那台机器上的 khor send"
+upload-too-big = "文件太大：网页版的上传上限是 {0}MB。更大的用那台机器上的 khor send"
 # A malformed upload request — the two query arguments are the whole
 # contract, and a missing one is the caller's bug said plainly.
 upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两个参数"
@@ -2119,9 +2118,9 @@ sat-no-tools = "{0} 上没有 sha256sum/shasum 或 base64，无法校验写入�
 # What moved, plainly — no offer, no 待批: the far side has no khor to
 # ask, so the bytes just went (to its home directory).
 sat-sent = "已发送到 {0} 的主目录，{1} 字节"
-web-key-too-open = "网页脸的密钥权限过于开放（{0}），同一台机器上的其他用户可以读取并冒用它。\n  修复：chmod 600 {1}"
+web-key-too-open = "网页版的密钥权限过于开放（{0}），同一台机器上的其他用户可以读取并冒用它。\n  修复：chmod 600 {1}"
 # khor web 自己的输出。链接是要被人抄到另一台机器上的,所以它自己一行。
-web-face-here = "网页脸地址如下，用手机或其他电脑打开："
+web-face-here = "网页版地址如下，用手机或其他电脑打开："
 web-face-key-note = "链接中包含密钥，不要粘贴到会同步的文档中。重新生成：khor web --new"
 web-face-rotated = "已重新生成密钥，之前发出的链接全部失效。"
 # 借网在网页脸上做不到,而它做不到的方式很坑:借到的是 khor 那台机器上的
@@ -2274,7 +2273,7 @@ page-none-how = "点击上方的 ＋，打开一个网页"
 page-machine = "选择机器"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
-nav-order-note = "前三项在底部，其余收进「更多」。拖动调整顺序"
+nav-order-note = "前三项显示在底部"
 type-size = "字号"
 ui-size-system = "界面字号跟随系统"
 ui-size = "界面字号"
@@ -3239,7 +3238,7 @@ lock-section = "打开密码"
 # 开关那一行的名字。**说的是「锁不锁这几张脸」,不是「现在锁没锁」**:
 # 后者是每张脸自己的事,一个设置项答不了。
 lock-switch = "锁定这台机器的界面"
-lock-switch-note = "锁定 app 窗口和网页脸，不锁定命令行"
+lock-switch-note = "锁定 app 窗口和网页版，不锁定命令行"
 lock-set-pin = "设置 PIN"
 lock-change-pin = "更改 PIN"
 # PIN 那一行的值，在「设置 PIN…」按钮左边。**行名已经是「PIN」**，所以
@@ -3254,11 +3253,11 @@ lock-idle-never-pick = "永不"
 lock-idle-pick = "{0} 分钟"
 lock-now = "立即锁定"
 # 网页脸的钥匙那一节。**默认遮住**:这一页可能正被人看着,或者正在被录屏。
-web-key-section = "网页脸密钥"
+web-key-section = "网页版密钥"
 web-key-show = "显示"
 web-key-hide = "隐藏"
 web-key-rotate = "重新生成"
-web-key-none = "这台机器尚未开启过网页脸"
+web-key-none = "这台机器尚未开启过网页版"
 # 换钥匙之后那一句。不是装饰:之前发出去的每一条链接从这一刻起全都打不开,
 # 而那正是这个动作的全部意思。
 web-key-rotated = "已重新生成，之前发出的链接全部失效"
@@ -3410,25 +3409,26 @@ remove = "移除"
 # filter's menu because both answer "what am I looking at" — the
 # difference is that ticking words removes rows and this rearranges
 # them, so the choices are exclusive where the words are not.
-arrange = "排布"
+arrange = "排列方式"
 by-recent = "按最近"
 by-category = "按类别"
 by-device = "按机器"
 by-state = "按状态"
-# The 工作区 axis (`khor_node::list::Arrange::Place`). 「地方」 rather
-# than 「目录」: the row is grouped by the *project* its directory
-# belongs to, and two depths of one checkout are one group — calling
-# that a directory would promise a precision it does not have.
-by-place = "按地方"
+# The 工作区 axis (`khor_node::list::Arrange::Place`): 按目录 (the audit
+# fix plan F6.4, SYS-18). A row is grouped by the *project* its
+# directory belongs to, so two depths of one checkout are one group;
+# 目录 is still the word a person has for it. ⚠️ 墓碑: 「地方」, chosen
+# for that precision and read as nothing in particular.
+by-place = "按目录"
 # The 工作区 axis's heading in the filter box, beside 状态 and 类别.
-axis-place = "地方"
+axis-place = "所在目录"
 # The heading over rows with no place at all. **Two different things
 # land here and are said as one**, because the next move is the same
 # for both: a conversation with another machine never had a directory,
 # and a session khor could not place has one nobody wrote down. Not
 # 「未识别」 — that word belongs to the category axis and says "we
 # could not tell", which is only half of what this group holds.
-group-placeless = "不在任何地方"
+group-placeless = "没有目录"
 # The heading over the rows in no group, once a group (置顶) stands above
 # them: a list's own order (group-rest), and the sessions' by recency.
 group-rest = "其他"

@@ -1962,7 +1962,7 @@ export default function App() {
     ) : morePage === "settings" ? (
       <SettingsPage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "appearance" ? (
-      <AppearancePage onClose={leaveMorePage} onSettingChanged={settings.reread} />
+      <AppearancePage onClose={leaveMorePage} onSettingChanged={settings.reread} me={me} />
     ) : morePage === "security" ? (
       <SecurityPage
         onClose={leaveMorePage}

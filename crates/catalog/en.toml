@@ -69,7 +69,6 @@ confirm = "Confirm dangerous actions"
 
 theme = "Theme"
 kind-mark = "Kind mark"
-kind-mark-note = "Draws the kind on the avatar, or at its bottom-right corner"
 lang = "Interface language"
 tabs-limit = "Tab limit"
 session-form = "New sessions open as"
@@ -184,7 +183,7 @@ usage: khor <verb>
                         converted to markdown. It reads the text and
                         structure, not the layout
   code [--stop] <machine> [repo path]
-                        opens VS Code's web face on that machine,
+                        opens VS Code for the web on that machine,
                         prints a local link (the link carries a key;
                         no path = whichever one it last opened). One
                         server per machine — switching projects just
@@ -225,7 +224,7 @@ usage: khor <verb>
                         (defaults to 7 days)
   sessions [--by recent|category|device|state|place] [--all]
                         session list (defaults to recent); --by
-                        switches the layout, pinned rows always stay
+                        switches the arrangement; pinned rows stay
                         on top; already-seen old sessions default to
                         just a count, --all lists them all. The list
                         holds what you started, what you imported and
@@ -336,7 +335,7 @@ usage: khor <verb>
   serve                 stays resident: answers others, runs this
                         machine's commands on their behalf, syncs the
                         whole network every 5 seconds (also opens the
-                        web face on the LAN — see web)
+                        web access on the LAN — see web)
   relay --dev | --tls-cert cert --tls-key key | --acme domain [--acme-contact email]
         [--token key | --only-mine] [--rate bytes/s] [--metrics addr]
         [--bind addr] [--http addr] [--state dir] | --stats [--state dir]
@@ -354,9 +353,9 @@ usage: khor <verb>
                         long online, plus the relay's bytes — in the
                         --state directory (default .khor/relay);
                         --stats prints that metering and starts nothing
-  web [--new]           the web face's link: open it on your phone
+  web [--new]           the web access link: open it on your phone
                         or another computer and you have the whole
-                        network. serve is what opens the face — this
+                        network. serve is what opens it — this
                         just hands out the key; the link carries the
                         key, so don't paste it into a document that
                         syncs. --new rotates it — every link already
@@ -367,7 +366,7 @@ usage: khor <verb>
                         get it)
   faces                 which of khor's interfaces are up on this
                         machine: whether the desktop app is running,
-                        whether the web face is listening and on which
+                        whether web access is listening and on which
                         port. **"face" here means an interface, not the
                         avatar** — that one is avatar
   quit                  shuts down: stops this machine's serve and
@@ -380,7 +379,7 @@ usage: khor <verb>
                         the same as doing it once)
   lock [status|on|off|pin|timeout minutes]
                         the password on the screens (the app window and
-                        the web face). It does NOT lock this terminal —
+                        web access). It does NOT lock this terminal —
                         whoever types khor is already logged in here.
                         No arguments shows the current state; pin reads
                         one line from standard input (so it stays out of
@@ -462,7 +461,7 @@ usage: khor <verb>
   pause                 pauses this machine's place in the network: it
                         stops syncing with the others and they see it
                         offline, while its own sessions, workspaces and
-                        web face go on working. A restart is still paused
+                        web access go on working. A restart is still paused
   resume                resumes it: syncing again, and the next round
                         catches up
                         pause <machine> pauses talking to that one machine
@@ -497,7 +496,7 @@ doctor-name-version = "Version"
 doctor-name-identity = "Identity key"
 doctor-name-store = "Local data"
 doctor-name-serve = "Resident"
-doctor-name-web = "Web face"
+doctor-name-web = "Web access"
 doctor-name-relays = "Relays"
 doctor-name-peers = "Other machines"
 doctor-name-roads = "Connections"
@@ -752,7 +751,7 @@ git-behind = "{0} behind, as of the fetch {1} ago"
 borrowing = "Using {0}'s network, proxy port at {1}; point your browser or HTTPS_PROXY at it. Close: khor close {2}"
 broken-blocks = "{0} blocks couldn't be read, this part of the conversation is missing"
 serve-banner = "khor serve: {0} listening, handles pairing and sync"
-web-banner = "Web face listening on {0}; for a link, run khor web"
+web-banner = "Web access listening on {0}; for a link, run khor web"
 hooks-file = "Hooks written to: {0}"
 hook-here = "Installed"
 hook-missing = "Not installed"
@@ -870,7 +869,7 @@ runtime-wont-start = "Runtime won't start: {0}"
 which-session = "Don't know which session to report to: set KHOR_SESSION or use --session"
 not-a-state-word = "Not one of the six words: {0}"
 unknown-verb = "Unknown verb: {0}"
-not-a-way-to-arrange = "Not a layout: {0}. Options: {1}"
+not-a-way-to-arrange = "Not an arrangement: {0}. Options: {1}"
 attach-needs-tty = "attach needs to run in a terminal"
 attach-windows-later = "Not supported in this version (Windows attach is on the backlog)"
 no-termios = "Can't get terminal parameters"
@@ -1248,15 +1247,15 @@ cant-listen-loopback = "Can't listen on the local port: {0}"
 wrong-cookie = "Wrong cookie"
 host-child-wait = "Couldn't wait for the child process to exit: {0}"
 
-web-cant-listen = "The web face can't start — port {0} is taken: {1}. Use a different port: set KHOR_WEB_PORT, then khor serve"
-web-no-such-page = "The web face has no such page: {0}"
-web-bad-host = "The web face only recognizes addresses, not names, and this request reported \"{0}\".\n  Use the link khor web prints; if you set up your own reverse proxy, that path isn't supported in this version"
-web-bad-origin = "This request came from another page ({0}); the web face only answers to its own"
+web-cant-listen = "Web access can't start — port {0} is taken: {1}. Use a different port: set KHOR_WEB_PORT, then khor serve"
+web-no-such-page = "Web access has no such page: {0}"
+web-bad-host = "Web access only recognizes addresses, not names, and this request reported \"{0}\".\n  Use the link khor web prints; if you set up your own reverse proxy, that path isn't supported in this version"
+web-bad-origin = "This request came from another page ({0}); web access only answers to its own pages"
 web-no-key = "This link has no key. On that machine, run khor web and open the link it prints"
 web-wrong-key = "Wrong key. That machine probably rotated its key — the old link is now dead. Run khor web to get a new one"
-web-no-key-yet = "This machine has no web face key yet (has serve never run?). Run khor serve first, then khor web"
-web-key-empty = "The web face's key file is empty: {0}. Delete it — restarting serve will issue a new one"
-upload-too-big = "File too large: the web face's upload cap is {0}MB. For anything bigger, use khor send on that machine"
+web-no-key-yet = "This machine has no web access key yet (has serve never run?). Run khor serve first, then khor web"
+web-key-empty = "The web access key file is empty: {0}. Delete it — restarting serve will issue a new one"
+upload-too-big = "File too large: web access uploads are capped at {0}MB. For anything bigger, use khor send on that machine"
 upload-needs-machine-and-name = "Uploads need machine and name as query parameters"
 web-door-shut = "This address needs a key. On that machine, run khor web and open the link it prints once — this browser will be remembered after that"
 ssh-wont-run = "Can't run ssh: {0}"
@@ -1268,8 +1267,8 @@ sat-no-ssh-host = "{0} is a satellite, but its table has no ssh address on recor
 sat-send-elsewhere = "{0} is a satellite that speaks through {1}; send files with khor send on {1}"
 sat-no-tools = "{0} has neither sha256sum/shasum nor base64; saving there needs it to verify its own copy — without that, nothing is written"
 sat-sent = "Sent to {0}'s home directory, {1} bytes"
-web-key-too-open = "The web face's key file permissions are too open ({0}) — anyone else on this machine can read it and use it as you.\n  Fix: chmod 600 {1}"
-web-face-here = "The web face is here — open it from a phone or another computer:"
+web-key-too-open = "The web access key file's permissions are too open ({0}) — anyone else on this machine can read it and use it as you.\n  Fix: chmod 600 {1}"
+web-face-here = "Web access is here — open it from a phone or another computer:"
 web-face-key-note = "The link carries the key — don't paste it into a synced document. Rotate it: khor web --new"
 web-face-rotated = "Rotated to a new key — every link sent out before this is now dead."
 # "Borrow network" is the term chosen for 借网 elsewhere in this chunk; keep it consistent if other chunks name the same feature.
@@ -1285,7 +1284,7 @@ git-refused = "That machine declined this git request: {0}"
 write-predates = "That machine's khor is too old — it can't save the file back"
 no-vscode = "That machine has no VS Code"
 code-predates = "That machine's khor is too old — it can't open VS Code"
-cant-start-vscode = "Can't start VS Code's web face: {0}"
+cant-start-vscode = "Can't start VS Code for the web: {0}"
 no-vscode-output = "VS Code started but its output can't be read"
 vscode-never-answered = "VS Code never said where it's listening"
 # Two refusals, not one: an unknown key sends someone to the list of
@@ -1336,7 +1335,7 @@ page-none = "No pages open"
 page-none-how = "Use the ＋ above to open one"
 page-machine = "Choose machine"
 nav-order = "Navigation bar"
-nav-order-note = "The first three sit on the bar; the rest go under More. Drag to reorder"
+nav-order-note = "The first three show on the bar"
 type-size = "Text size"
 ui-size-system = "Interface text follows the system"
 ui-size = "Interface text size"
@@ -1641,7 +1640,7 @@ lock-section = "Screen lock"
 # The switch says **whether these faces lock**, not whether one is locked
 # right now — that is each face's own, and no setting can answer it.
 lock-switch = "Lock this machine's interfaces"
-lock-switch-note = "Locks the app window and the web face, never the command line"
+lock-switch-note = "Locks the app window and web access, never the command line"
 lock-set-pin = "Set a PIN"
 lock-change-pin = "Change the PIN"
 # The PIN row's value, left of its button. **The row is already called
@@ -1657,11 +1656,11 @@ lock-idle-pick = "{0} minutes"
 lock-now = "Lock now"
 # The web face's key. **Masked by default**: this page may be on a screen
 # somebody else is looking at, or in a recording.
-web-key-section = "Web face key"
+web-key-section = "Web access key"
 web-key-show = "Show"
 web-key-hide = "Hide"
 web-key-rotate = "Regenerate"
-web-key-none = "This machine has never raised a web face"
+web-key-none = "This machine has never turned on web access"
 # Not decoration: every link handed out before this stops working, and
 # that is the whole meaning of the act.
 web-key-rotated = "Done; every link handed out before this one is dead"
@@ -1723,14 +1722,14 @@ filter = "Filter"
 axis-state = "Status"
 axis-category = "Category"
 remove = "Remove"
-arrange = "Arrange"
+arrange = "Arrange by"
 by-recent = "By recent"
 by-category = "By category"
 by-device = "By machine"
 by-state = "By status"
-by-place = "By place"
-axis-place = "Place"
-group-placeless = "Not in any place"
+by-place = "By directory"
+axis-place = "Working directory"
+group-placeless = "No directory"
 # The heading over the rows in no group, once a group (置顶) stands above
 # them: a list's own order (group-rest), and the sessions' by recency.
 group-rest = "Others"

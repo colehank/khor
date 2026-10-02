@@ -6,6 +6,8 @@
 //
 // `data-setting-row="popup"` is the gate anchor; the `<select>` inside it
 // is what a gate checks to prove the system menu is the one that opens.
+import type { ReactNode } from "react";
+
 import { PopupButton } from "@/components/ui/popup-button";
 
 export function PopupRow({
@@ -16,6 +18,7 @@ export function PopupRow({
   choices,
   onPick,
   mark,
+  preview,
 }: {
   name: string;
   label: string;
@@ -25,6 +28,10 @@ export function PopupRow({
   onPick: (value: string) => void;
   /** Extra anchors on the row (a gate reads the row's value off it). */
   mark?: Record<string, string>;
+  /** What the choice looks like, drawn before the value — a setting
+      that changes a drawing shows the drawing, not a sentence about it
+      (the audit fix plan F6.4, SYS-19). */
+  preview?: ReactNode;
 }) {
   return (
     <div
@@ -42,6 +49,11 @@ export function PopupRow({
           (`check-face` 4I); the `pr-xxs` inset is only seen under the
           pointer, where the `fill` may spill that far into the row's
           padding. The control itself is the one `PopupButton`. */}
+      {preview && (
+        <span data-setting-preview aria-hidden="true" className="flex flex-none">
+          {preview}
+        </span>
+      )}
       <PopupButton
         value={value}
         choices={choices}

@@ -18,7 +18,7 @@
 // painted from a default this file kept would be a switch reporting a
 // value nothing stored — the 灰着的开关 docs/MORE.md refuses, wearing a
 // state.
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { setConfig, type ConfigRow } from "@/api";
 import { PopupRow } from "@/components/settings/PopupRow";
@@ -44,9 +44,11 @@ import { MoreSection, type MorePage } from "@/views/more/MorePage";
 function Row({
   row,
   onPick,
+  preview,
 }: {
   row: ConfigRow;
   onPick: (name: string, value: string) => void;
+  preview?: ReactNode;
 }) {
   const mark = { "data-config-row": row.name, "data-value": row.value };
   // **Two states, on and off, is a switch** (components/SettingsGroup:
@@ -113,6 +115,7 @@ function Row({
       choices={row.choices.map((c) => ({ value: c.value, label: c.label }))}
       onPick={(v) => onPick(row.name, v)}
       mark={mark}
+      preview={preview}
     />
   );
 }
@@ -120,6 +123,7 @@ function Row({
 export function ConfigSections({
   page,
   onChanged,
+  previews,
 }: {
   /** Which 「…」 page is asking. Which sections that is, and in what
       order, is the node's answer — the rows arrive grouped and each one
@@ -128,6 +132,10 @@ export function ConfigSections({
   /** The shell re-reads after a change, so what is on screen is what the
       node says rather than what this page just sent. */
   onChanged: () => void;
+  /** A drawing per key, for the rows whose choice changes a drawing —
+      handed in by the page that has the thing to draw, so this file
+      still matches no key. */
+  previews?: Record<string, ReactNode>;
 }) {
   const rows = useSettings();
   const reread = useSettingsReread();
@@ -173,7 +181,7 @@ export function ConfigSections({
             {mine
               .filter((o) => o.section === r.section)
               .map((o) => (
-                <Row key={o.name} row={o} onPick={press} />
+                <Row key={o.name} row={o} onPick={press} preview={previews?.[o.name]} />
               ))}
           </MoreSection>
         ),

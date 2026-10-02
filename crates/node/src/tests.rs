@@ -2881,11 +2881,9 @@ fn the_kind_mark_starts_on_the_face_and_takes_two_ways() {
     assert_eq!(config::set(&r, "kind-mark", "corner").unwrap(), "corner");
     assert_eq!(config::get(&r, "kind-mark").unwrap(), "corner");
     assert!(config::set(&r, "kind-mark", "swap").is_err());
-    assert_ne!(
-        khor_catalog::config::word("kind-mark-note"),
-        "kind-mark-note",
-        "the row says what it does"
-    );
+    // ⚠️ 墓碑 (the audit fix plan F6.4, SYS-19): the row had a note
+    // saying where each way puts the mark; the 外观 page draws this
+    // machine's face with the mark instead, so the note went.
 }
 
 // ── khor leave (docs/MORE.md 离开, 2026-09-20) ──────────────────────
