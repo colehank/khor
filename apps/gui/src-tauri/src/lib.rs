@@ -1442,7 +1442,10 @@ fn desktop_is_dark() -> bool {
 #[cfg(desktop)]
 fn repaint_the_ground(app: &tauri::AppHandle) {
     use tauri::{Manager, Theme};
-    let Some(w) = app.get_webview_window("main") else {
+    // A window, not a webview window: a browsing tab's page is a second
+    // webview in it, and `get_webview_window` answers `None` then
+    // (`menu::on_event`).
+    let Some(w) = app.get_window("main") else {
         return;
     };
     let dark = chosen_dark(|| matches!(w.theme(), Ok(Theme::Dark)));
@@ -2127,7 +2130,7 @@ async fn open_code_window(
     let at: tauri::Url = url.parse().map_err(|e| format!("{url}: {e}"))?;
     let mut build = tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(at))
         .title(&title);
-    if let Some(main) = app.get_webview_window("main") {
+    if let Some(main) = app.get_window("main") {
         let scale = main.scale_factor().unwrap_or(1.0).max(0.1);
         if let (Ok(size), Ok(pos)) = (main.outer_size(), main.outer_position()) {
             build = build
@@ -2584,7 +2587,10 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
             wear_on_the_app(wanted);
-            for (label, w) in handle.webview_windows() {
+            // Windows, not webview windows: the main one holds a browsing
+            // tab's page beside the face, and `webview_windows` leaves
+            // such a window out (`menu::on_event`).
+            for (label, w) in handle.windows() {
                 let Ok(win) = w.ns_window() else { continue };
                 if label == "main" {
                     follow_the_app(win);
@@ -2607,7 +2613,7 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
         // behind the theme change on the main thread.
         let handle = app.clone();
         let _ = app.run_on_main_thread(move || {
-            if let Some(w) = handle.get_webview_window("main")
+            if let Some(w) = handle.get_window("main")
                 && let Ok(win) = w.ns_window()
             {
                 traffic::place(win);

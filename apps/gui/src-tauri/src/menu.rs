@@ -474,21 +474,26 @@ pub fn follow_lang(_app: &AppHandle) {}
 
 /// A menu item was picked (or its accelerator fired where the page did
 /// not take the key).
+///
+/// **The main window is looked up as a window, never as a webview
+/// window** (2026-10-03, the native walk). tauri's `get_webview_window`
+/// answers `None` for a window holding more than its own webview, and
+/// khor's window holds a browsing tab's page beside the face from the
+/// first page opened until the tab closes — so every item of the menu
+/// bar went quiet once 浏览器 had been used. The editor windows hold one
+/// webview each and are still found the old way.
 pub fn on_event(app: &AppHandle, id: &str) {
-    let focused = app
+    let editor = app
         .webview_windows()
         .into_iter()
-        .find(|(_, w)| w.is_focused().unwrap_or(false));
+        .find(|(label, w)| label.starts_with("code:") && w.is_focused().unwrap_or(false))
+        .map(|(_, w)| w);
     // An editor window in front (`open_code_window`) is a window of its
     // own: its ⌘W and ⇧⌘W close it, and nothing of khor's page is asked.
-    let editor = focused
-        .as_ref()
-        .is_some_and(|(label, _)| label.starts_with("code:"));
-    if id == "close-window" || (id == "close-tab" && editor) {
-        let target = focused
-            .map(|(_, w)| w)
-            .or_else(|| app.get_webview_window("main"));
-        if let Some(w) = target {
+    if id == "close-window" || (id == "close-tab" && editor.is_some()) {
+        if let Some(w) = editor {
+            let _ = w.close();
+        } else if let Some(w) = app.get_window("main") {
             let _ = w.close();
         }
         return;
@@ -496,15 +501,14 @@ pub fn on_event(app: &AppHandle, id: &str) {
     if !ACTS.contains(&id) {
         return;
     }
-    let Some(main) = app.get_webview_window("main") else {
-        return;
-    };
     // Everything else is about the main window, which comes to the front
     // for it — ⌘1 from an editor goes to 会话 the way Mail's ⌘1 does.
-    if editor {
+    if editor.is_some()
+        && let Some(main) = app.get_window("main")
+    {
         let _ = main.set_focus();
     }
-    let _ = main.emit_to("main", "shortcut", id);
+    let _ = app.emit_to("main", "shortcut", id);
 }
 
 #[cfg(test)]
