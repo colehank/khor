@@ -3,7 +3,7 @@
  * row** (the redesign, 2026-10-02, the owner's 「方案 B」). One glass
  * capsule beside the window's buttons — **the largest control in that
  * row** (the owner: it read smaller than the session tabs beside it), 36
- * high with 36 × 30 pills and 22 glyphs — holding the landings in the
+ * high with 36 × 30 pills and `--ctl-glyph` glyphs — holding the landings in the
  * user's order (`lib/nav-order`, all five); 更多 is a 36 glass circle of
  * its own beside it.
  * The open one is a `fill-strong` pill with the brand's deep ink and its
@@ -60,7 +60,7 @@ function Seat({
           className={cn(
             "relative grid h-strip-item-h place-items-center rounded-full text-rail-ink hover:bg-fill",
             round ? "w-strip-item-h" : "w-strip-item",
-            "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring [&>svg]:size-strip-glyph",
+            "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
             on && "glass-sel text-[var(--rail-on-ink)] hover:glass-sel",
           )}
         >

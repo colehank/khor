@@ -751,7 +751,7 @@ export function MachineVerbs({
                 data-on={anyOn}
                 aria-label={gui.rail_more}
                 className={cn(
-                  "relative grid size-head-item-h place-items-center rounded-full text-foreground [&_svg]:size-head-glyph",
+                  "relative grid size-head-item-h place-items-center rounded-full text-foreground",
                   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                   "data-[on=true]:glass-sel data-[state=open]:glass-sel",
                 )}
@@ -787,13 +787,11 @@ export function MachineVerbs({
                   data-on={code.up || undefined}
                   onSelect={code.want}
                   className={cn(
-                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground",
+                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph",
                     code.up && "glass-sel",
                   )}
                 >
-                  <span className="flex size-nav-glyph flex-none items-center justify-center [&_svg]:size-4">
-                    <IconCode />
-                  </span>
+                  <IconCode />
                   {gui.code_tab}
                 </DropdownMenuItem>
               )}
@@ -3419,7 +3417,7 @@ function Column({
         )}
       >
         {children}
-        {on && (sort.dir === "up" ? <IconChevronUp className="size-3" /> : <IconChevronDown className="size-3" />)}
+        {on && (sort.dir === "up" ? <IconChevronUp className="size-affordance" /> : <IconChevronDown className="size-affordance" />)}
       </button>
     </div>
   );

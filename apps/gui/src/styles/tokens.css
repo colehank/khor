@@ -1080,7 +1080,10 @@
      that is the same lesson the strip's end learned one ruling earlier
      (44 boxes, three different marks). The chevron stays `size-3`: a
      directory says what it is with a small turn, and 28 of chevron
-     would be a different kind of shout. */
+     would be a different kind of shout.
+     **Since 2026-10-02 the air is gone** (icons.tsx `LIVE`: every shape
+     fills 0.90 of its box), so the slot keeps the row's 28 — names line
+     up on it — and the shape is drawn in 20 of it (`p-1`), 18 of ink. */
   --tree-slot: 28px;
   /* One row of the file tree. **28, not the 44 finger floor, on a
      screen with a pointer** (2026-09-16:「文件树的不同行间距太大了,屏幕
@@ -1110,12 +1113,12 @@
      and, folded, at the start of the content's row alike. **The strip is
      the largest control in that row** (the owner: it must never read
      smaller than the session tabs beside it): 36 high, 36 × 30 pills,
-     22 glyphs. */
+     glyphs at `--ctl-glyph` like every glass control's — 18 of ink, over
+     the tabs' 16 faces. ⚠️ 墓碑: `--strip-glyph` 22, its own number. */
   --wide-lead-start: 80px;
   --strip-h: 36px;
   --strip-item: 36px;
   --strip-item-h: 30px;
-  --strip-glyph: 22px;
   /* **A detail page's one left and right edge** (the redesign, the
      owner: the head's avatar and verbs stand exactly on the content's
      edges). R0's head and the page under it both inset by this: 24 in a
@@ -1606,6 +1609,15 @@
    * (nothing reads the token). The design system spends the name on the
    * inline mark's canvas (docs/design-system/guidelines/40-migration.md, 第十五轮). */
   --icon-mark: 16px;
+  /* **The small affordances' box** (2026-10-02): ×, the 预览 eye, a
+   * twisty, a sort arrow, a find bar's steps — marks that say what a
+   * press does to the thing beside them, not glyphs of a control. One box
+   * for the family wherever it sits (a tab, a list row, a column head),
+   * so × paints 12 of ink and the eye 11.4 (icons.tsx `LIVE`: 0.92 /
+   * 0.88) and a tab's × no longer outweighs its label. The glass
+   * controls' glyphs are `--ctl-glyph`; the popup button's stacked ⌃⌄
+   * keep their own 8 (two in an 18 pill). */
+  --affordance: 13px;
   /* The rest of the size family the design system names
    * (docs/design-system/tokens.json `size`): a switch (32×18, 第十七轮
    * draws it), the day's band under a tab (4), a dialog's width (380),
@@ -2126,6 +2138,7 @@
   --spacing-avatar-xl: var(--avatar-xl);
   --spacing-icon-rail: var(--icon-rail);
   --spacing-icon-mark: var(--icon-mark);
+  --spacing-affordance: var(--affordance);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
   --spacing-kind-mark-tab: var(--kind-mark-tab);
@@ -2140,15 +2153,13 @@
   --spacing-strip-item: var(--strip-item);
   --spacing-strip-h: var(--strip-h);
   --spacing-strip-item-h: var(--strip-item-h);
-  --spacing-strip-glyph: var(--strip-glyph);
   --spacing-page: var(--page-inset);
   --spacing-files-inset: var(--files-inset);
   --spacing-rows-inset: var(--rows-inset);
   --spacing-head-ctl: var(--head-ctl);
   --spacing-head-item-h: var(--head-item-h);
   --spacing-head-item-w: var(--head-item-w);
-  --spacing-head-glyph: var(--head-glyph);
-  --spacing-glass-icon: var(--glass-icon);
+  --spacing-ctl-glyph: var(--ctl-glyph);
   --spacing-glass-item-h: var(--glass-item-h);
   --spacing-glass-item-w: var(--glass-item-w);
   --spacing-glass-pad: var(--glass-pad);
@@ -2510,7 +2521,17 @@
    where they are; the pointer decides how big. */
 :root {
   --glass-btn: 32px;
-  --glass-icon: 16px;
+  /* **One glyph size for every glass control** (2026-10-02, the owner:
+     「icon在不同的地方大小要一样」 — the landings strip drew 22, the
+     machine head 18, VS Code beside it 16). The strip and its 更多, a
+     list's title row (筛选 / ＋, search), a detail head's verbs capsule,
+     VS Code and back circles, the folded 「…」: one number, set here and
+     read by one rule (`app.css`, 「a glass control's glyph」), never by a
+     call site. 20 in the 36 control a mouse gets — every glyph fills 0.90
+     of its box (icons.tsx `LIVE`), so 18 of ink with 5 of air in the 28 /
+     30 inner pill — and 24 in the 44 a finger gets. The floating bottom
+     bar's seats (64 high, a word under the glyph) keep `--nav-glyph`. */
+  --ctl-glyph: 20px;
   /* A button inside a capsule: the capsule's height less a 4 inset top
      and bottom, and its width less 2 a side, the capsule padded 3. */
   --glass-item-h: calc(var(--glass-btn) - 8px);
@@ -2520,11 +2541,10 @@
      owner: the verbs capsule reads as big as the avatar): the avatar,
      the verbs capsule and the back circle are all this tall, so they
      cannot drift. 36 under a mouse (the two title lines), 44 under a
-     finger; a capsule's button is 8 shorter, with an 18 / 22 glyph. */
+     finger; a capsule's button is 8 shorter, its glyph `--ctl-glyph`. */
   --head-ctl: 36px;
   --head-item-h: calc(var(--head-ctl) - 8px);
   --head-item-w: 38px;
-  --head-glyph: 18px;
   /* The least a detail head's name keeps beside its buttons; under it,
      the narrow head folds its verbs into one 「…」 (`MachineVerbs`). */
   --head-name-floor: 96px;
@@ -2569,10 +2589,9 @@
 @media (pointer: coarse) {
   :root {
     --glass-btn: 44px;
-    --glass-icon: 20px;
+    --ctl-glyph: 24px;
     --head-ctl: 44px;
     --head-item-w: 44px;
-    --head-glyph: 22px;
     --nav-h: 64px;
     --nav-item: 76px;
     --nav-glyph: 24px;

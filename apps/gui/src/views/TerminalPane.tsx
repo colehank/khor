@@ -773,13 +773,13 @@ export function TerminalPane({ id }: { id: string }) {
             {hitsText}
           </span>
           <Button size="icon" variant="ghost" data-term-find-prev aria-label={gui.match_prev} onClick={() => step(-1)}>
-            <IconChevronUp />
+            <IconChevronUp className="size-affordance" />
           </Button>
           <Button size="icon" variant="ghost" data-term-find-next aria-label={gui.match_next} onClick={() => step(1)}>
-            <IconChevronDown />
+            <IconChevronDown className="size-affordance" />
           </Button>
           <Button size="icon" variant="ghost" data-term-find-close aria-label={gui.close} onClick={stopFinding}>
-            <IconClose />
+            <IconClose className="size-affordance" />
           </Button>
         </div>
       )}

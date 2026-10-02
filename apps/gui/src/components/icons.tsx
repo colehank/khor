@@ -16,28 +16,96 @@ import { useId, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-// Stroke widths are ratios in disguise: the number only means anything
-// divided by its canvas. 24-canvas rail glyphs use 1.4; 16-canvas marks
-// use 1.5 (optically compensated — thinner would vanish at 1x); the
-// tick-and-cross density is 1.9, heavier because those two are read as
-// answers, not as pictures.
-export const STROKE = { rail: 1.4, sm: 1.5, bold: 1.9 } as const;
+// **One line weight, as a share of the box** (2026-10-02, the owner:
+// 「确保所有icon的大小一致」, and a ＋ beside 会话 in one capsule drew
+// 1.69 to its 1.05). It was two ratios — 1.4 on the 24 canvas, 1.5 on the
+// 16 — and a box holding one of each drew two weights. Now every stroked
+// glyph draws `line` of whatever box it is in: 1.44 at a 20 box, between
+// the two it replaces. The tick keeps its heavier density, `bold`, by the
+// same ratio as before (1.9 to 1.5): it is read as an answer, not a
+// picture.
+export const STROKE = { line: 0.072, bold: 0.091 } as const;
 
-// The cut shape's width: the cut line is the front form's outline
-// widened to 3, leaving a (3 - 1.4) / 2 = 0.8 gap on each side.
-const CUT = 3;
-// The same idea on the 16 canvas, where the line is 1.5: (2.6 - 1.5) / 2
-// leaves 0.55 either side. Not 3 scaled by 16/24 (= 2.0), because the
-// gap has to read at the size it is drawn, not stay proportional.
-const CUT16 = 2.6;
+// The family's cut: the gap a front form's line leaves either side where
+// it crosses what is behind it, as a share of the box (0.8 of 24 and 0.55
+// of 16 both came to it). The cut shape is the front form's outline at
+// the line weight plus a gap each side.
+const GAP = 0.034;
+
+/**
+ * **One live area for every mark** (2026-10-02, the owner: 「怎么不同的
+ * icon比例不一呀 vscode明显看起来更圆更大」, then 「我希望做饱满一点,
+ * 不要浪费空间」). A glyph's larger ink dimension fills the same share of
+ * whatever box it is drawn in — 0.90, with two optical classes either
+ * side: 0.88 for square masses (a rack, a plate, a page, a keyboard),
+ * which read bigger than their extent, and 0.92 for round and diagonal
+ * ones (a ring, a chevron, a cross), which read smaller. The ink is
+ * centred on the box. So one box gives one painted size, and a row of
+ * glyphs is one box size — never a smaller box for a mark that happens
+ * to fill its canvas.
+ *
+ * **Done with the viewBox, not by redrawing.** The paths stay where the
+ * family drew them on its 24 or 16 canvas; `fit` names the square of that
+ * canvas the ink sits in (measured by rasterising each glyph at 512 and
+ * scanning its ink — `getBBox` ignores strokes). Cropping the canvas
+ * scales the drawing up, so every stroke width and cut is set from the
+ * crop's side: the line is a share of the **box** (`STROKE`), and does not
+ * fatten with the drawing.
+ */
+type Fit = { x: number; y: number; side: number };
+const fit = (x: number, y: number, side: number): Fit => ({ x, y, side });
+const viewBox = (f: Fit) => `${f.x} ${f.y} ${f.side} ${f.side}`;
+/** The line, in a glyph's own units. */
+const lineOf = (f: Fit, w: number = STROKE.line) => w * f.side;
+/** The cut's width, in a glyph's own units; `extra` widens it (a share). */
+const cutOf = (f: Fit, extra = 0) => (STROKE.line + 2 * GAP + extra) * f.side;
+
+/** Each glyph's live area on its own canvas, measured (`fit`). Unmarked
+    is the 0.90 share; `square` is 0.88 and `round` (round or diagonal)
+    is 0.92. */
+const LIVE = {
+  sessions: fit(1.7, 1.81, 20.6),
+  devices: fit(1.45, 1.45, 21.11), // square
+  files: fit(1.45, 1.49, 21.11), // square
+  browser: fit(2.93, 2.93, 18.15), // round
+  more: fit(2.92, 2.92, 18.16),
+  gear: fit(2.92, 2.92, 18.17), // round
+  appearance: fit(2.92, 2.92, 18.17), // round
+  shield: fit(1.19, 1.33, 21.62),
+  network: fit(1.44, 0.74, 21.12), // round
+  pulse: fit(1.34, 1.34, 21.32), // square
+  branch: fit(0.55, 0.55, 14.89),
+  back: fit(1.93, 2.33, 11.33), // round
+  forward: fit(2.73, 2.33, 11.33), // round
+  reload: fit(1.78, 1.41, 12.44), // round
+  search: fit(1.84, 1.84, 12.63), // round
+  grip: fit(1.82, 1.82, 12.37), // square
+  plus: fit(1.96, 1.96, 12.08),
+  filter: fit(1, 1, 14), // square
+  check: fit(1.96, 1.97, 12.07), // round
+  close: fit(3.28, 3.28, 9.44), // round
+  chevronUp: fit(3.28, 3.28, 9.44), // round
+  chevronDown: fit(3.28, 3.28, 9.44), // round
+  chevronRight: fit(3.28, 3.28, 9.44), // round
+  attach: fit(1.19, 0.98, 13.22), // round
+  // Fitted on the larger of its two states: upright, pinned, it is taller.
+  pin: fit(2.87, 1.84, 11.29), // round
+  terminal: fit(2.45, 2.56, 11.1),
+  chat: fit(1.6, 2.3, 12.8),
+  keyboard: fit(1.17, 1.17, 13.66), // square
+  file: fit(1.07, 1.07, 13.87), // square
+  link: fit(2.14, 2.14, 11.73), // round
+} as const;
 
 type IconProps = { className?: string };
 
 function RailGlyph({
   className,
+  live,
   cut,
   children,
 }: IconProps & {
+  live: Fit;
   cut?: ReactNode;
   children: ReactNode | ((cutId: string) => ReactNode);
 }) {
@@ -46,17 +114,17 @@ function RailGlyph({
   return (
     <svg
       className={cn("size-icon-rail", className)}
-      viewBox="0 0 24 24"
+      viewBox={viewBox(live)}
       fill="none"
       stroke="currentColor"
-      strokeWidth={STROKE.rail}
+      strokeWidth={lineOf(live)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
     >
       {cut && (
         <mask id={cutId}>
-          <rect x="0" y="0" width="24" height="24" fill="white" />
+          <rect x={live.x} y={live.y} width={live.side} height={live.side} fill="white" />
           {cut}
         </mask>
       )}
@@ -78,7 +146,8 @@ export function IconSessions({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
-      cut={<path d={BUBBLE_FRONT} fill="black" stroke="black" strokeWidth={CUT} />}
+      live={LIVE.sessions}
+      cut={<path d={BUBBLE_FRONT} fill="black" stroke="black" strokeWidth={cutOf(LIVE.sessions)} />}
     >
       {(cutId) => (
         <>
@@ -101,7 +170,8 @@ export function IconQuota({ className }: IconProps) {
   return (
     <svg
       className={cn("size-icon-rail", className)}
-      viewBox="0 0 100 100"
+      // Its own 100 canvas cropped to the one live area (`LIVE`, round).
+      viewBox="9.63 11.53 77.04 77.04"
       fill="currentColor"
       aria-hidden="true"
     >
@@ -116,6 +186,7 @@ export function IconDevices({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
+      live={LIVE.devices}
       cut={
         <>
           <circle cx="7.2" cy="7.8" r="1.15" fill="black" />
@@ -143,7 +214,7 @@ export function IconDevices({ className }: IconProps) {
  */
 export function IconFiles({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
+    <RailGlyph className={className} live={LIVE.files}>
       {/* Back piece: an open path, its right and bottom left to the front. */}
       <path d="M3.5 16.9V6.3a1.7 1.7 0 0 1 1.7-1.7h4a1.2 1.2 0 0 1 1 .5l1.2 1.8h6.2a1.7 1.7 0 0 1 1.7 1.7v1.6" />
       {/* Front piece: a trapezoid leaning up to the right. */}
@@ -172,6 +243,7 @@ export function IconBrowser({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
+      live={LIVE.browser}
       cut={
         <ellipse
           cx="12"
@@ -181,12 +253,12 @@ export function IconBrowser({ className }: IconProps) {
           transform="rotate(-20 12 12)"
           fill="none"
           stroke="black"
-          // 0.2 wider than `CUT`, the family's one exception: the band
+          // 0.2 of 24 wider than the family's cut, its one exception: the band
           // crosses the sphere at a slant, and an equal-width cut leaves
           // a visually narrower gap along a slanted edge than a square
           // one. This is the value that makes the gap look the same as
           // the other glyphs', not a different rule.
-          strokeWidth={CUT + 0.2}
+          strokeWidth={cutOf(LIVE.browser, 0.2 / 24)}
         />
       }
     >
@@ -204,7 +276,7 @@ export function IconBrowser({ className }: IconProps) {
 /** More = three dots; lighter than the formed glyphs on purpose. */
 export function IconMore({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
+    <RailGlyph className={className} live={LIVE.more}>
       <circle cx="5.4" cy="12" r="1.55" fill="currentColor" stroke="none" />
       <circle cx="12" cy="12" r="1.55" fill="currentColor" stroke="none" />
       <circle cx="18.6" cy="12" r="1.55" fill="currentColor" stroke="none" />
@@ -230,7 +302,7 @@ export function IconMore({ className }: IconProps) {
     the dash pattern rather than eight hand-placed paths that can drift. */
 export function IconGear({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
+    <RailGlyph className={className} live={LIVE.gear}>
       {/* The dash pattern CLOSES. At r 7.7 the circumference is 48.38,
           so eight teeth are 3.02 on and 3.02 off, turned half a tooth
           so one sits at twelve o'clock. The previous pattern (1.9 /
@@ -251,7 +323,7 @@ export function IconGear({ className }: IconProps) {
     6.2), so the two read as a frame and a fill rather than one blot. */
 export function IconAppearance({ className }: IconProps) {
   return (
-    <RailGlyph className={className}>
+    <RailGlyph className={className} live={LIVE.appearance}>
       <circle cx="12" cy="12" r="7.7" />
       <path data-body d="M12 5.8a6.2 6.2 0 0 1 0 12.4Z" />
     </RailGlyph>
@@ -264,6 +336,7 @@ export function IconShield({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
+      live={LIVE.shield}
       cut={
         <>
           <circle cx="12" cy="10.5" r="1.5" fill="black" />
@@ -293,11 +366,12 @@ export function IconNetwork({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
+      live={LIVE.network}
       cut={
         <>
-          <circle cx="12" cy="5.4" r="2.45" fill="black" stroke="black" strokeWidth={CUT} />
-          <circle cx="5.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={CUT} />
-          <circle cx="18.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={CUT} />
+          <circle cx="12" cy="5.4" r="2.45" fill="black" stroke="black" strokeWidth={cutOf(LIVE.network)} />
+          <circle cx="5.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={cutOf(LIVE.network)} />
+          <circle cx="18.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={cutOf(LIVE.network)} />
         </>
       }
     >
@@ -329,7 +403,8 @@ export function IconPulse({ className }: IconProps) {
   return (
     <RailGlyph
       className={className}
-      cut={<path d={PULSE_TRACE} stroke="black" strokeWidth={CUT} />}
+      live={LIVE.pulse}
+      cut={<path d={PULSE_TRACE} stroke="black" strokeWidth={cutOf(LIVE.pulse)} />}
     >
       {(cutId) => (
         <>
@@ -356,13 +431,15 @@ export function IconPulse({ className }: IconProps) {
  */
 function Mark({
   className,
-  weight = "sm",
+  weight = "line",
   icon,
+  live,
   cut,
   children,
 }: IconProps & {
-  weight?: "sm" | "bold";
+  weight?: keyof typeof STROKE;
   icon?: string;
+  live: Fit;
   cut?: ReactNode;
   children: ReactNode | ((cutId: string) => ReactNode);
 }) {
@@ -374,17 +451,17 @@ function Mark({
       // it *is* (docs/SHELL.md 第四轮: no pin anywhere on the browse page).
       data-icon={icon}
       className={cn("size-4", className)}
-      viewBox="0 0 16 16"
+      viewBox={viewBox(live)}
       fill="none"
       stroke="currentColor"
-      strokeWidth={STROKE[weight]}
+      strokeWidth={lineOf(live, STROKE[weight])}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
     >
       {cut && (
         <mask id={cutId}>
-          <rect x="0" y="0" width="16" height="16" fill="white" />
+          <rect x={live.x} y={live.y} width={live.side} height={live.side} fill="white" />
           {cut}
         </mask>
       )}
@@ -400,11 +477,12 @@ export function IconBranch({ className }: IconProps) {
   return (
     <Mark
       className={className}
+      live={LIVE.branch}
       cut={
         <>
-          <circle cx="4.6" cy="3.4" r="1.55" fill="black" stroke="black" strokeWidth={CUT16} />
-          <circle cx="4.6" cy="12.6" r="1.55" fill="black" stroke="black" strokeWidth={CUT16} />
-          <circle cx="11.4" cy="4.8" r="1.55" fill="black" stroke="black" strokeWidth={CUT16} />
+          <circle cx="4.6" cy="3.4" r="1.55" fill="black" stroke="black" strokeWidth={cutOf(LIVE.branch)} />
+          <circle cx="4.6" cy="12.6" r="1.55" fill="black" stroke="black" strokeWidth={cutOf(LIVE.branch)} />
+          <circle cx="11.4" cy="4.8" r="1.55" fill="black" stroke="black" strokeWidth={cutOf(LIVE.branch)} />
         </>
       }
     >
@@ -431,7 +509,7 @@ export function IconBranch({ className }: IconProps) {
 /** Back chevron, 16-canvas mark. */
 export function IconBack({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.back}>
       <path d="M10 3.2 5.2 8l4.8 4.8" />
     </Mark>
   );
@@ -441,7 +519,7 @@ export function IconBack({ className }: IconProps) {
     own path so the pair cannot drift apart by a pixel. */
 export function IconForward({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.forward}>
       <path d="M6 3.2 10.8 8 6 12.8" />
     </Mark>
   );
@@ -451,7 +529,7 @@ export function IconForward({ className }: IconProps) {
     which is what says it comes back round rather than merely turns. */
 export function IconReload({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.reload}>
       {/* 306° of ring, and a head that is a real arrowhead. The old one
           made its head from two strokes meeting at a right angle, which
           at 16px reads as a corner, not as a point. The arc stops under
@@ -464,7 +542,7 @@ export function IconReload({ className }: IconProps) {
 
 export function IconSearch({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.search}>
       <circle cx="7" cy="7" r="4.2" />
       <path d="M10.2 10.2L13.5 13.5" />
     </Mark>
@@ -475,7 +553,7 @@ export function IconSearch({ className }: IconProps) {
     order, the redesign 2026-10-02): three rules, the system's 「≡」. */
 export function IconGrip({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.grip}>
       <path d="M3 5.5h10M3 8h10M3 10.5h10" />
     </Mark>
   );
@@ -483,7 +561,7 @@ export function IconGrip({ className }: IconProps) {
 
 export function IconPlus({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.plus}>
       <path d="M8 3v10M3 8h10" />
     </Mark>
   );
@@ -495,6 +573,7 @@ export function IconFilter({ className }: IconProps) {
   return (
     <Mark
       className={className}
+      live={LIVE.filter}
       cut={
         <>
           <circle cx="5.4" cy="4" r="2.4" fill="black" />
@@ -523,7 +602,7 @@ export function IconFilter({ className }: IconProps) {
     a second icon family on one screen reads as a second typeface. */
 export function IconCheck({ className }: IconProps) {
   return (
-    <Mark className={className} weight="bold">
+    <Mark className={className} live={LIVE.check} weight="bold">
       <path d="M3 8.5l3.2 3L13 4.5" />
     </Mark>
   );
@@ -531,7 +610,7 @@ export function IconCheck({ className }: IconProps) {
 
 export function IconClose({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.close}>
       <path d="M4 4l8 8M12 4l-8 8" />
     </Mark>
   );
@@ -542,7 +621,7 @@ export function IconClose({ className }: IconProps) {
     before / the one after", which is what ⇧⏎ / ⏎ do in the field. */
 export function IconChevronUp({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.chevronUp}>
       <path d="M4 10l4-4 4 4" />
     </Mark>
   );
@@ -550,7 +629,7 @@ export function IconChevronUp({ className }: IconProps) {
 
 export function IconChevronDown({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.chevronDown}>
       <path d="M4 6l4 4 4-4" />
     </Mark>
   );
@@ -562,7 +641,7 @@ export function IconChevronDown({ className }: IconProps) {
     in two positions; two drawings would have to be learned as two. */
 export function IconChevronRight({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.chevronRight}>
       <path d="M6 4l4 4-4 4" />
     </Mark>
   );
@@ -579,7 +658,10 @@ export function IconChevronRight({ className }: IconProps) {
     wear this and both were handed over as files** (2026-09-16:「VSCODE
     的 icon 用这个…预览的 ICON 用这个」) — the VS Code logo, which is
     somebody else's mark and not ours to redraw as strokes, and the
-    preview glyph the user picked. Everything else stays in `Mark`. */
+    preview glyph the user picked. Everything else stays in `Mark`.
+    **`box` is not the file's canvas**: both filled theirs edge to edge,
+    so each is padded out to the one live area (`LIVE`, square: 0.88) —
+    the shape untouched, scaled and centred. */
 function Fill({
   className,
   box,
@@ -603,7 +685,7 @@ function Fill({
     and the switch is about one editor in particular. */
 export function IconCode({ className }: IconProps) {
   return (
-    <Fill className={className} box="0 0 32 32">
+    <Fill className={className} box="-2.17 -2.17 36.34 36.34">
       <path d="M30.865 3.448l-6.583-3.167c-0.766-0.37-1.677-0.214-2.276 0.385l-12.609 11.505-5.495-4.167c-0.51-0.391-1.229-0.359-1.703 0.073l-1.76 1.604c-0.583 0.526-0.583 1.443-0.005 1.969l4.766 4.349-4.766 4.349c-0.578 0.526-0.578 1.443 0.005 1.969l1.76 1.604c0.479 0.432 1.193 0.464 1.703 0.073l5.495-4.172 12.615 11.51c0.594 0.599 1.505 0.755 2.271 0.385l6.589-3.172c0.693-0.333 1.13-1.031 1.13-1.802v-21.495c0-0.766-0.443-1.469-1.135-1.802zM24.005 23.266l-9.573-7.266 9.573-7.266z" />
     </Fill>
   );
@@ -613,7 +695,7 @@ export function IconCode({ className }: IconProps) {
     the family's density; drawn for the 16 canvas, not scaled in. */
 export function IconAttach({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.attach}>
       <path d="M12.9 7.1l-5.3 5.3a2.9 2.9 0 0 1-4.1-4.1l5.7-5.7a2 2 0 0 1 2.9 2.9l-5.4 5.4a1.1 1.1 0 0 1-1.6-1.6l4.9-4.9" />
     </Mark>
   );
@@ -638,7 +720,7 @@ export function IconAttach({ className }: IconProps) {
  */
 export function IconPin({ className, pinned = false }: IconProps & { pinned?: boolean }) {
   return (
-    <Mark className={cn("origin-center", pinned && "-rotate-45", className)} icon="pin">
+    <Mark className={cn("origin-center", pinned && "-rotate-45", className)} icon="pin" live={LIVE.pin}>
       {/* A real tack — head, collar, shaft, needle — drawn UPRIGHT
           inside a group turned 45°, so `pinned`'s `-rotate-45` above
           takes it back to upright rather than to some third angle. The
@@ -663,7 +745,7 @@ export function IconPin({ className, pinned = false }: IconProps & { pinned?: bo
  */
 export function IconTerminal({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.terminal}>
       <path d="M3.4 4.6L6.6 8l-3.2 3.4" />
       <path d="M8.2 11.6h4.4" />
     </Mark>
@@ -678,7 +760,7 @@ export function IconTerminal({ className }: IconProps) {
  */
 export function IconChat({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.chat}>
       {/* **This IS the rail's front bubble**, `BUBBLE_FRONT` taken to
           the 16 canvas (×0.906, shifted −0.47 / +0.1): same corner
           radius, same tail, same corner where the tail turns. One thing
@@ -708,11 +790,12 @@ export function IconKeyboard({ className }: IconProps) {
   return (
     <Mark
       className={className}
+      live={LIVE.keyboard}
       icon="keyboard"
       cut={
         <path
           stroke="black"
-          strokeWidth={STROKE.sm}
+          strokeWidth={lineOf(LIVE.keyboard)}
           strokeLinecap="round"
           d="M5.4 6.9h.01M8 6.9h.01M10.6 6.9h.01M5.4 9.5h5.2"
         />
@@ -732,7 +815,7 @@ export function IconKeyboard({ className }: IconProps) {
 /** A file — the transfer rows' mark (mandala path, verbatim). */
 export function IconFile({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.file}>
       <path d="M9 2.4H4.6c-.7 0-1.2.5-1.2 1.2v8.8c0 .7.5 1.2 1.2 1.2h6.8c.7 0 1.2-.5 1.2-1.2V5.8L9 2.4z" />
       <path d="M8.9 2.6v3.1h3.3" />
     </Mark>
@@ -754,7 +837,7 @@ export function IconFile({ className }: IconProps) {
     stripped, its ink made the current colour). */
 export function IconEye({ className }: IconProps) {
   return (
-    <Fill className={className} box="0 0 1024 1024">
+    <Fill className={className} box="-69.5 -69.5 1163.01 1163.01">
       <path d="M703.956003 63.996a31.998 31.998 0 1 1 0-63.996h186.932316C964.419724 0 1023.936004 59.51628 1023.936004 133.047685V319.980001a31.998 31.998 0 1 1-63.996 0V133.047685C959.940004 94.906068 929.029936 63.996 890.888319 63.996H703.956003z m255.984001 624.792951a31.998 31.998 0 1 1 63.996 0v202.099368C1023.936004 964.419724 964.419724 1023.936004 890.888319 1023.936004h-126.328104a31.998 31.998 0 1 1 0-63.996h126.328104c38.141616 0 69.051684-30.910068 69.051685-69.051685v-202.099368zM335.147053 959.940004a31.998 31.998 0 1 1 0 63.996H133.047685A133.047685 133.047685 0 0 1 0 890.888319V703.956003a31.998 31.998 0 1 1 63.996 0v186.932316C63.996 929.029936 94.906068 959.940004 133.047685 959.940004h202.099368zM63.996 319.980001a31.998 31.998 0 0 1-63.996 0V133.047685C0 59.51628 59.51628 0 133.047685 0H319.980001a31.998 31.998 0 0 1 0 63.996H133.047685C94.906068 63.996 63.996 94.906068 63.996 133.047685V319.980001zM511.968002 671.958003c109.625148 0 211.634773-56.892444 308.332729-175.989001C723.602775 376.872445 621.59315 319.980001 511.968002 319.980001c-109.625148 0-211.634773 56.892444-308.332729 175.989001C300.333229 615.065558 402.342854 671.958003 511.968002 671.958003z m0 63.996c-130.615837 0-249.968377-66.55584-357.993625-199.667521a63.996 63.996 0 0 1 0-80.63496C261.999625 322.539841 381.352165 255.984001 511.968002 255.984001c130.615837 0 249.968377 66.55584 357.993625 199.667521a63.996 63.996 0 0 1 0 80.63496C761.936379 669.398163 642.583839 735.954003 511.968002 735.954003z" />
       <path d="M511.968002 575.964002a79.995 79.995 0 1 0 0-159.99A79.995 79.995 0 0 0 511.968002 575.964002z m0 63.996a143.991001 143.991001 0 1 1 0-287.982001A143.991001 143.991001 0 0 1 511.968002 639.960002z" />
     </Fill>
@@ -768,7 +851,7 @@ export function IconEye({ className }: IconProps) {
  */
 export function IconLink({ className }: IconProps) {
   return (
-    <Mark className={className}>
+    <Mark className={className} live={LIVE.link}>
       <path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l1.7-1.7a2.6 2.6 0 0 0-3.7-3.7l-1 1" />
       <path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3L3.8 8a2.6 2.6 0 0 0 3.7 3.7l1-1" />
     </Mark>

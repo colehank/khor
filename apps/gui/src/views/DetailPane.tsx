@@ -377,7 +377,7 @@ export function DetailPane({
               />
               {sw.toggle && (
                 <IconChevronDown
-                  className={cn("size-3 flex-none text-tertiary", sw.expanded && "rotate-180")}
+                  className={cn("size-affordance flex-none text-tertiary", sw.expanded && "rotate-180")}
                 />
               )}
             </button>
