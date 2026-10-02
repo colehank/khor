@@ -43,7 +43,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { FloatNav, type NavSeat } from "@/components/FloatNav";
-import { LandingStrip, MeButton, SideToggle } from "@/components/LandingStrip";
+import { LandingStrip, MeButton } from "@/components/LandingStrip";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
@@ -106,7 +106,7 @@ import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
-import { Region, RegionLead } from "@/components/Region";
+import { Region, RegionLead, RegionTrail } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
@@ -1185,27 +1185,32 @@ export default function App() {
   /** The wide face's list put away by pressing the open landing again. */
   const folded = !narrow && listPane.collapsed;
   /** The wide face's top row (方案 B): the landings' glyphs beside the
-      window's buttons and the list's toggle. */
+      window's buttons, then 更多. The open landing pressed again folds its
+      list, and once more brings it back; another landing switches and
+      brings it back (the owner: no toggle button). */
   const strip = (
     <LandingStrip
       seats={navOrder.map(seatOf)}
       active={morePage === null ? landing : null}
-      // A glyph switches landings, and brings a folded list back
-      // (`goLanding` expands it); folding is the toggle's alone.
-      onGo={(key) => goLanding(key as Landing)}
-    />
-  );
-  const sideToggle = <SideToggle open={!folded} onToggle={() => listPane.toggle()} />;
-  const meButton = (
-    <MeButton
-      me={me ? { face: me.face, name: me.shown, paused: me.paused } : null}
-      on={morePage !== null}
-      onSettings={() => {
-        setMorePage("settings");
+      moreOn={morePage !== null && morePage !== "identity"}
+      onGo={(key) => {
+        if (morePage === null && landing === key) listPane.toggle();
+        else goLanding(key as Landing);
+      }}
+      // 更多's pages, the same place narrow's 设置 opens: the sections
+      // in the list column, the first one beside them.
+      onMore={() => {
+        setMorePage((was) => (was === null || was === "identity" ? "settings" : was));
         setSwitchingTabs(false);
         setScreen("detail");
         listPane.expand();
       }}
+    />
+  );
+  const meButton = (
+    <MeButton
+      me={me ? { face: me.face, paused: me.paused } : null}
+      on={morePage === "identity"}
       onMe={() => {
         setMorePage("identity");
         setScreen("detail");
@@ -1213,13 +1218,18 @@ export default function App() {
       }}
     />
   );
-  /** Folded, the toggle and the strip stay where they were on screen:
-      the window's top-left, now the start of the content's first row
-      (`Region`'s lead), the window's buttons' room before them. */
+  /** Folded, the strip stays where it was on screen — the window's
+      top-left, now the start of the content's first row (`Region`'s
+      lead), the window's buttons' room before it — and this machine's
+      face stays at that row's far end (`Region`'s trail). */
   const foldedLead = folded ? (
-    <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center gap-in self-stretch ps-wide-lead-start">
-      {sideToggle}
+    <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center self-stretch ps-wide-lead-start pe-row">
       {strip}
+    </div>
+  ) : null;
+  const foldedTrail = folded ? (
+    <div data-folded-trail className="flex flex-none items-center self-stretch pe-row">
+      {meButton}
     </div>
   ) : null;
   const nav = (
@@ -2278,16 +2288,16 @@ export default function App() {
       ) : (
         <div className="flex h-dvh flex-col">
           <div className="flex min-h-0 flex-1">
-          {/* **The left column** (the redesign, 方案 B as refined). Its
-              first row is the window's: the buttons' room, the list's
-              toggle, the landings' glyphs in one glass capsule, this
-              machine's face at the end (设置 and 这台机器). Its second row
-              is the phone's list head (`PaneBar`): the landing's name,
-              then 筛选 / ＋ and the search circle. Then the rows, and a
-              hairline on the one ground to the content.
-              **The toggle folds the column away**; the toggle and the
-              strip stay put, at the start of the content's first row
-              (`foldedLead`). Its width has one owner (docs/SHELL.md 第十五轮
+          {/* **The left column** (the redesign, 方案 B). Its first row is
+              the window's: the buttons' room, the landings' glyphs and 更多
+              in one glass capsule, this machine's face at the end (这台机
+              器). Its second row is the phone's list head (`PaneBar`): the
+              landing's name, then 筛选 / ＋ and the search circle. Then the
+              rows, and a hairline on the one ground to the content.
+              **Pressing the open landing's glyph folds the column away**;
+              the strip and the face stay in the window's top row, at the
+              two ends of the content's first row (`foldedLead`,
+              `foldedTrail`). Its width has one owner (docs/SHELL.md 第十五轮
               第 4 条): `--list-w`, from the one seam's state. */}
           <aside
             data-side
@@ -2299,9 +2309,8 @@ export default function App() {
             <div
               data-wide-top
               {...WINDOW_DRAG}
-              className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-row select-none"
+              className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-in select-none"
             >
-              {sideToggle}
               {strip}
               <span className="flex-1" />
               {meButton}
@@ -2318,6 +2327,7 @@ export default function App() {
               browsing address bar are rows of their own. */}
           <main data-main className="relative flex min-w-0 flex-1 flex-col bg-background">
           <RegionLead.Provider value={foldedLead}>
+          <RegionTrail.Provider value={foldedTrail}>
           {morePage ? (
             <Region
               kind="detail"
@@ -2435,6 +2445,7 @@ export default function App() {
               </div>
             </>
           )}
+          </RegionTrail.Provider>
           </RegionLead.Provider>
           </main>
           </div>

@@ -398,6 +398,7 @@ html:root[data-scanning] body {
 aside[data-side] {
   /* The list column and its hairline (the redesign, 方案 B: no rail). */
   width: calc(var(--list-w) + var(--hair));
+  min-width: var(--wide-column-min);
 }
 
 /* ⚠️ 墓碑 (the redesign, 2026-10-02): the narrow face took the board's
@@ -1443,10 +1444,4 @@ aside[data-side] {
    corner at the list's own 20, and the page under it matches. */
 :root[data-narrow] {
   --page-inset: var(--gap-group);
-}
-
-/* **The list toggle's pane is solid while the list is out** (the
-   redesign): the family's body piece, at its density, only then. */
-[data-side-toggle][aria-pressed="false"] svg [data-body] {
-  fill-opacity: 0;
 }

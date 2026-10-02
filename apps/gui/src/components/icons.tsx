@@ -471,20 +471,6 @@ export function IconSearch({ className }: IconProps) {
   );
 }
 
-/** The list column's toggle (the redesign, 2026-10-02: Apple's
-    「sidebar」 button): a window with a pane down its left. The pane is
-    the solid piece — drawn while the list is out, empty while it is
-    folded (`app.css` `[data-side-toggle]`). */
-export function IconSidebar({ className }: IconProps) {
-  return (
-    <Mark className={className} icon="sidebar">
-      <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="2.4" />
-      <path d="M6 2.6v10.8" />
-      <rect data-body x="2.3" y="3.3" width="3" height="9.4" rx="1.4" stroke="none" />
-    </Mark>
-  );
-}
-
 /** A row's handle for dragging it into another place (外观's navigation
     order, the redesign 2026-10-02): three rules, the system's 「≡」. */
 export function IconGrip({ className }: IconProps) {
