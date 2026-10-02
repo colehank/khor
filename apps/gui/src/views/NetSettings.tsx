@@ -169,7 +169,7 @@ export function NetSettings() {
           />
 
           <Dialog open={adding} onOpenChange={setAdding}>
-            <DialogContent data-relay-add-dialog>
+            <DialogContent form data-relay-add-dialog>
               <DialogHeader>
                 <DialogTitle>{gui.relays_add}</DialogTitle>
               </DialogHeader>

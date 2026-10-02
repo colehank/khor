@@ -74,10 +74,17 @@ function DialogContent({
     opener.current = trigger ?? (at instanceof HTMLElement && at !== document.body ? at : null);
   }
   const { onCloseAutoFocus, ...rest } = props;
+  const close = React.useRef<HTMLButtonElement>(null);
+  // State, not a ref: the content mounts when the dialog opens, after
+  // this component did, and the sheet's listeners need that moment.
+  const [sheet, setSheet] = React.useState<HTMLDivElement | null>(null);
+  const dismiss = React.useCallback(() => close.current?.click(), []);
+  useSheet(form, sheet, dismiss);
   return (
     <DialogPrimitive.Portal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
+        ref={setSheet}
         data-slot="dialog-content"
         data-form={form ? "" : undefined}
         onCloseAutoFocus={(e) => {
@@ -130,7 +137,14 @@ function DialogContent({
           props.onEscapeKeyDown?.(e);
         }}
       >
+        {/* **On a phone a form is a sheet** (the audit fix plan F7.4;
+            narrow P-E, `app.css` `[data-sheet-grabber]`): it rises from
+            the bottom, rides above the soft keyboard, and the grabber is
+            where a finger pulls it down to put it away. Drawn only on
+            the narrow face. */}
+        {form && <div data-sheet-grabber aria-hidden="true" />}
         {children}
+        {form && <DialogPrimitive.Close ref={close} hidden tabIndex={-1} aria-hidden="true" />}
         {/* ⚠️ 墓碑 (2026-09-30): the sheet's close mark stood here, a 16
             cross in the corner grown to a finger's box. A dialog has no
             cross (components/Dialog): its way out is 取消 left of its one
@@ -138,6 +152,80 @@ function DialogContent({
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );
+}
+
+/**
+ * The narrow sheet's two behaviours (F7.4): it rides the soft keyboard
+ * (`--sheet-kb`, the part of the layout viewport the keyboard covers, from
+ * `visualViewport`), and a pull down from its top quarter that goes past a
+ * quarter of its height, or is thrown, puts it away; anything less springs
+ * back. Inert on the wide face, where a form is a centred dialog.
+ */
+function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
+  React.useEffect(() => {
+    if (!on || !el) return;
+    const narrow = () => document.documentElement.hasAttribute("data-narrow");
+    const vv = window.visualViewport;
+    const ride = () => {
+      if (!vv) return;
+      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      el.style.setProperty("--sheet-kb", `${kb}px`);
+    };
+    ride();
+    vv?.addEventListener("resize", ride);
+    vv?.addEventListener("scroll", ride);
+    // Touch, not pointer, events: a pointer on a scrolling sheet is taken
+    // by the browser's pan (`pointercancel`) before it has moved far; a
+    // touch move that is prevented is the sheet's.
+    let from: number | null = null;
+    let dy = 0;
+    let speed = 0;
+    let lastY = 0;
+    let lastT = 0;
+    const down = (e: TouchEvent) => {
+      if (!narrow() || e.touches.length !== 1) return;
+      const y = e.touches[0].clientY;
+      // From the grabber's band only: the rest of the sheet is a form.
+      if (y - el.getBoundingClientRect().top > 28) return;
+      from = y;
+      lastY = y;
+      lastT = e.timeStamp;
+      dy = 0;
+      speed = 0;
+      el.setAttribute("data-sheet-pulling", "");
+    };
+    const move = (e: TouchEvent) => {
+      if (from === null) return;
+      e.preventDefault();
+      const y = e.touches[0].clientY;
+      dy = Math.max(0, y - from);
+      const dt = e.timeStamp - lastT;
+      if (dt > 0) speed = (y - lastY) / dt;
+      lastY = y;
+      lastT = e.timeStamp;
+      el.style.setProperty("--sheet-pull", `${dy}px`);
+    };
+    const up = () => {
+      if (from === null) return;
+      from = null;
+      el.removeAttribute("data-sheet-pulling");
+      const go = dy > el.getBoundingClientRect().height / 4 || speed > 0.5;
+      el.style.setProperty("--sheet-pull", "0px");
+      if (go) dismiss();
+    };
+    el.addEventListener("touchstart", down, { passive: true });
+    el.addEventListener("touchmove", move, { passive: false });
+    el.addEventListener("touchend", up);
+    el.addEventListener("touchcancel", up);
+    return () => {
+      vv?.removeEventListener("resize", ride);
+      vv?.removeEventListener("scroll", ride);
+      el.removeEventListener("touchstart", down);
+      el.removeEventListener("touchmove", move);
+      el.removeEventListener("touchend", up);
+      el.removeEventListener("touchcancel", up);
+    };
+  }, [on, el, dismiss]);
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {

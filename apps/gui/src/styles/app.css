@@ -557,6 +557,68 @@ aside[data-side] {
   animation: screen-in-from-left var(--dur-240) var(--ease-out);
 }
 
+/* **On a phone a form is a sheet** (`ui/dialog` `useSheet`, F7.4; narrow
+   P-E): the whole width, standing on the bottom edge and riding the soft
+   keyboard (`--sheet-kb`), its top corners round, a grabber at its top,
+   rising in and sinking out. A pull on the grabber moves it down
+   (`--sheet-pull`). Wide keeps the centred dialog. */
+[data-sheet-grabber] {
+  display: none;
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] {
+  top: auto;
+  left: 0;
+  right: 0;
+  bottom: var(--sheet-kb, 0px);
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - var(--sheet-kb, 0px) - 2rem);
+  overflow-y: auto;
+  translate: none;
+  transform: translateY(var(--sheet-pull, 0px));
+  border-radius: var(--menu-r) var(--menu-r) 0 0;
+  border-bottom: 0;
+  padding-top: calc(var(--gap-row) + 5px);
+  padding-bottom: calc(var(--page-inset) + var(--safe-bottom));
+  transition: transform var(--dur-240) var(--ease-out);
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form][data-sheet-pulling] {
+  transition: none;
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form][data-state="open"] {
+  animation: sheet-up var(--dur-240) var(--ease-out);
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form][data-state="closed"] {
+  animation: sheet-down var(--dur-180) var(--ease-out) forwards;
+}
+:root[data-narrow] [data-sheet-grabber] {
+  display: block;
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  border-radius: 999px;
+  background: var(--tertiary);
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes sheet-down {
+  to {
+    transform: translateY(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-narrow] [data-slot="dialog-content"][data-form] {
+    animation: none !important;
+    transition: none;
+  }
+}
+
 /* **A back swipe** (`hooks/use-edge-swipe`, F7.3): the page follows the
    finger (`--swipe`) over the one it came from, which waits a third of
    the way out and comes in with it — iOS's parallax. The page under is
