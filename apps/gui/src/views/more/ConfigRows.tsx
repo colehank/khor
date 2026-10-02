@@ -90,13 +90,13 @@ function Row({
         </div>
         <div data-setting-trail className="flex flex-none items-center gap-xxs rounded-full bg-fill p-0.5">
           {at > 0 && (
-            <button type="button" data-step="down" aria-label={`${row.label} −`} onClick={() => go(-1)} className="grid h-[calc(var(--ctl-md)-4px)] w-8 place-items-center rounded-full text-body hover:bg-fill-strong">
+            <button type="button" data-step="down" aria-label={`${row.label} −`} onClick={() => go(-1)} className="grid h-(--stepper-h) w-8 place-items-center rounded-full text-body hover:bg-fill-strong">
               −
             </button>
           )}
           <span className="min-w-[3ch] text-center text-body tabular-nums">{row.choices[at]?.label ?? row.value}</span>
           {at < row.choices.length - 1 && (
-            <button type="button" data-step="up" aria-label={`${row.label} +`} onClick={() => go(1)} className="grid h-[calc(var(--ctl-md)-4px)] w-8 place-items-center rounded-full text-body hover:bg-fill-strong">
+            <button type="button" data-step="up" aria-label={`${row.label} +`} onClick={() => go(1)} className="grid h-(--stepper-h) w-8 place-items-center rounded-full text-body hover:bg-fill-strong">
               +
             </button>
           )}

@@ -54,6 +54,8 @@ const KNOWN = [
   "Iosevka Nerd Font",
 ];
 
+/** The font size, in CSS pixels, that families are measured and loaded at. */
+const MEASURE_AT = 72;
 const KEY = "khor.term-font";
 const CHANGED = "khor:term-font";
 
@@ -92,8 +94,11 @@ export function fontsHere(): string[] {
     ctx.font = font;
     return ctx.measureText(probe).width;
   };
-  const bases = ["monospace", "serif"].map((g) => [g, width(`72px ${g}`)] as const);
-  present = KNOWN.filter((name) => bases.every(([g, w]) => Math.abs(width(`72px "${name}", ${g}`) - w) > 0.5));
+  // A canvas measurement, not a layout size: large, so a family's
+  // difference from the fallback is many pixels wide.
+  const size = `${MEASURE_AT}px`;
+  const bases = ["monospace", "serif"].map((g) => [g, width(`${size} ${g}`)] as const);
+  present = KNOWN.filter((name) => bases.every(([g, w]) => Math.abs(width(`${size} "${name}", ${g}`) - w) > 0.5));
   return present;
 }
 
@@ -207,7 +212,7 @@ function tell() {
     added fonts registered. */
 export function wearTermFont() {
   wear(storedChoice());
-  void document.fonts?.load(`14px "${SYMBOLS}"`, "").catch(() => {});
+  void document.fonts?.load(`${MEASURE_AT}px "${SYMBOLS}"`, "").catch(() => {});
   void all().then(async (fonts) => {
     for (const f of fonts) {
       try {

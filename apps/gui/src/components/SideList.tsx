@@ -504,10 +504,10 @@ export function SideList({
                         onClick={(e) => {
                           const row = e.currentTarget.closest<HTMLElement>("[data-row-swipe]");
                           row?.removeAttribute("data-row-revealed");
-                          row?.style.setProperty("--row-reveal", "0px");
+                          row?.style.removeProperty("--row-reveal");
                           void Promise.resolve().then(a.run).catch(() => {});
                         }}
-                        className="min-w-[74px] flex-none px-in text-callout"
+                        className="min-w-(--row-action-w) flex-none px-in text-callout"
                       >
                         {a.label}
                       </button>

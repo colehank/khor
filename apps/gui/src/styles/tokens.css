@@ -929,6 +929,50 @@
    * inline controls beside text; this is a floor under anything a finger
    * must land on, and the two move for different reasons. */
   --touch: 44px;
+  /* ── the redesign's own measures (2026-10-02; written here, read by
+   * name, check-px) ─────────────────────────────────────────────────
+   * Gesture state the page writes while a finger moves: at rest, 0. */
+  --pull: 0px;
+  --swipe: 0px;
+  --row-reveal: 0px;
+  --sheet-kb: 0px;
+  --sheet-pull: 0px;
+  /* The page lifted by an edge swipe casts this over the one under it. */
+  --shadow-swipe: -10px 0 30px rgba(0, 0, 0, 0.18);
+  /* A bottom sheet's grabber: 36 × 5, 6 under the sheet's top edge. */
+  --grabber-w: 36px;
+  --grabber-h: 5px;
+  --grabber-top: 6px;
+  /* The one focus ring's width and its offset (F1.3). */
+  --ring-w: 2px;
+  --ring-off: 2px;
+  /* A tab's face is small: its ring and its gap are 1.5 each (the owner,
+     2026-10-02: 「我都要」). */
+  --halo-tab: 1.5px;
+  /* Fades where a scroller is cut: a menu cut by its height, a page
+     scrolled under its head, a tab strip cut at its ends. */
+  --fade-menu: 24px;
+  --fade-head: 20px;
+  --fade-tabs: 12px;
+  /* A terminal key's hit box reaches its neighbour's: no dead gap. */
+  --term-key-reach: 6px;
+  /* A listing's hairline starts at its names: 16 inset, 20 kind box, 8. */
+  --files-hair-start: 44px;
+  /* A row's swiped-out actions are at least this wide each. */
+  --row-action-w: 74px;
+  /* The composer's menus and its who panel. */
+  --mode-menu-w: 232px;
+  --who-panel-w: 272px;
+  --who-label-w: 52px;
+  --who-mark: 18px;
+  --ctx-dial: calc(var(--composer-item) - 2px);
+  --stop-corner: 3px;
+  /* The file tree's kind glyph, nudged onto the chevron's ink axis. */
+  --tree-icon-nudge: 5.4px;
+  /* A settings stepper's button stands 2 inside the control height. */
+  --stepper-h: calc(var(--ctl-md) - 4px);
+  /* The sort chevron pair's overlap. */
+  --chevron-pair: 3px;
   /* **The floor a control actually gets** (2026-09-26, the user's
    * 「丑，太丑了」 after every control on a Mac stood 44 tall): with a
    * mouse it is the default control height, `--ctl-md`; a finger puts

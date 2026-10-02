@@ -639,7 +639,7 @@ export function FileTree({
                           chevrons' (W-V9): its box begins where the
                           chevron's ink does (5.4 further in than its box,
                           measured), at the chevron's 16. */}
-                      <FileKindIcon name={r.name} className="h-[var(--tree-slot)] w-[var(--tree-slot)] items-center ps-[calc(var(--tree-slot)/2-var(--affordance)/2+5.4px)] [&>svg]:!size-4" />
+                      <FileKindIcon name={r.name} className="h-[var(--tree-slot)] w-[var(--tree-slot)] items-center ps-[calc(var(--tree-slot)/2-var(--affordance)/2+var(--tree-icon-nudge))] [&>svg]:!size-4" />
                       {naming?.at === r.full && naming.kind === "rename" ? (
                         nameBox(moved(r.full), r.name)
                       ) : (

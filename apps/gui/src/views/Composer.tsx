@@ -194,7 +194,7 @@ export function StopSeat({ onStop, tip }: { onStop: () => void; tip: boolean }) 
       onClick={onStop}
       className={cn(SEAT, "bg-fill-strong text-foreground")}
     >
-      <span aria-hidden className="size-[calc(var(--composer-item)/3)] rounded-[3px] bg-current" />
+      <span aria-hidden className="size-[calc(var(--composer-item)/3)] rounded-(--stop-corner) bg-current" />
     </button>
   );
   return tip ? (
@@ -284,7 +284,7 @@ export function ModeSeat({
         sideOffset={16}
         data-chat-mode-list
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className="w-[232px]"
+        className="w-(--mode-menu-w)"
       >
         {choices.map((m) =>
           m.fixed ? (
@@ -465,7 +465,7 @@ function CtxDial({ pct }: { pct: number }) {
   return (
     // Sized to hold three digits at the caption's 11 (W-V13): 100 fits
     // the bowl.
-    <span className="relative grid size-[calc(var(--composer-item)-2px)] place-items-center">
+    <span className="relative grid size-(--ctx-dial) place-items-center">
       <svg viewBox={`0 0 ${S} ${S}`} aria-hidden="true" className="absolute inset-0 size-full">
         <path d={arc(S / 2, cy, r, ARC0, ARC0 + SPAN)} fill="none" stroke="currentColor" strokeOpacity={0.2} strokeWidth={W} strokeLinecap="round" />
         {pct > 0 && (
@@ -494,7 +494,7 @@ function whoRows(who: Who) {
       label: gui.new_session_agent,
       value: (
         <>
-          <who.Mark className="size-[18px] flex-none" />
+          <who.Mark className="size-(--who-mark) flex-none" />
           <span className="font-title">{who.name}</span>
         </>
       ),
@@ -576,13 +576,13 @@ export function WhoSeat({ who, tip }: { who: Who; tip: boolean }) {
         data-chat-who-panel
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className={cn(MENU, "flex w-[272px] max-w-none flex-col")}
+        className={cn(MENU, "flex w-(--who-panel-w) max-w-none flex-col")}
       >
         {rows.map((r, i) => (
           <div key={r.key}>
             {i > 0 && <div className="mx-3 h-px bg-border" />}
             <div data-who-row={r.key} className="flex min-h-10 items-center gap-3 px-3 py-1">
-              <span className="w-[52px] flex-none text-callout text-muted-foreground">{r.label}</span>
+              <span className="w-(--who-label-w) flex-none text-callout text-muted-foreground">{r.label}</span>
               <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-foreground">{r.value}</span>
             </div>
           </div>

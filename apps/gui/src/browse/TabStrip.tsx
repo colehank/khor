@@ -507,7 +507,7 @@ export function TabStrip({
         style={
           glass && (cut.left || cut.right)
             ? {
-                maskImage: `linear-gradient(to right, ${cut.left ? "transparent, black 12px" : "black, black"}, ${cut.right ? "black calc(100% - 12px), transparent" : "black, black"})`,
+                maskImage: `linear-gradient(to right, ${cut.left ? "transparent, black var(--fade-tabs)" : "black, black"}, ${cut.right ? "black calc(100% - var(--fade-tabs)), transparent" : "black, black"})`,
               }
             : undefined
         }
