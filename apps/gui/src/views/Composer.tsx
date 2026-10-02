@@ -181,6 +181,12 @@ export function StopSeat({ onStop, tip }: { onStop: () => void; tip: boolean }) 
 
 export type ModeChoice = { id: string; name: string; note: string | null };
 
+/** **Each agent's ordinary mode**, the one that wears no warning ink:
+    claude's `default` (asks before changes) and codex's `auto` (free
+    inside the workspace, asks past it — `codexagent::PRESETS`). Any
+    other mode is a session that will do more, or less, than usual. */
+export const ORDINARY_MODES = new Set(["default", "auto"]);
+
 /**
  * **The permission mode, a word with a chevron, and its menu in place.**
  *
@@ -206,7 +212,7 @@ export function ModeSeat({
   choices?: ModeChoice[];
   onPick?: (id: string) => void;
 }) {
-  const ink = current === "default" ? "text-muted-foreground" : "text-state-blocked";
+  const ink = ORDINARY_MODES.has(current) ? "text-muted-foreground" : "text-state-blocked";
   if (!choices || !onPick) {
     return (
       <span data-chat-mode data-mode-id={current} className={cn("flex h-composer-item flex-none items-center px-2.5 text-callout", ink)}>

@@ -48,7 +48,13 @@ for line in sys.stdin:
     elif method == "thread/start":
         open("fake.mode", "w").write("new")
         open("fake.params", "w").write(json.dumps(m["params"]))
-        emit({"jsonrpc": "2.0", "id": m["id"], "result": {"thread": {"id": SID}}})
+        # The policy the thread runs on, as codex answers it: the
+        # user's config said workspace-write without network.
+        emit({"jsonrpc": "2.0", "id": m["id"], "result": {
+            "thread": {"id": SID}, "approvalPolicy": "on-request",
+            "sandbox": {"type": "workspaceWrite", "writableRoots": [],
+                        "networkAccess": False, "excludeTmpdirEnvVar": False,
+                        "excludeSlashTmp": False}}})
         note("thread/started", {"thread": {"id": SID}})
     elif method == "thread/resume":
         open("fake.mode", "w").write("resume")
@@ -57,6 +63,7 @@ for line in sys.stdin:
     elif method == "turn/start":
         turn_no += 1
         tid = f"turn-{turn_no}"
+        open("fake.turn", "w").write(json.dumps(m["params"]))
         text = m["params"]["input"][0]["text"]
         emit({"jsonrpc": "2.0", "id": m["id"], "result": {"turn": {"id": tid}}})
         note("turn/started", {"threadId": SID, "turn": {"id": tid}})
@@ -159,6 +166,15 @@ for line in sys.stdin:
         }
     });
 
+    // The mode the thread opened in is read off codex's answer, and
+    // the list is codex's three presets.
+    let modes = handle.settings().modes.clone().expect("codex lists its modes");
+    assert_eq!(modes.current_mode_id.to_string(), "auto");
+    let ids: Vec<String> = modes.available_modes.iter().map(|m| m.id.to_string()).collect();
+    assert_eq!(ids, ["read-only", "auto", "full-access"]);
+    // Both attachments are advertised, because both are carried.
+    assert!(handle.facts().images && handle.facts().embeds, "＋ needs both");
+
     // A plain turn: the reply streams through and the tool act shows.
     let stop = handle.prompt("hello there").await.unwrap();
     assert_eq!(format!("{stop:?}"), "EndTurn");
@@ -171,6 +187,33 @@ for line in sys.stdin:
         said.contains("tool_call"),
         "the command item must surface as a tool act: {said}"
     );
+
+    // Until a mode is picked, a turn leaves the thread's own policy.
+    let turn: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.turn")).unwrap()).unwrap();
+    assert!(turn.get("approvalPolicy").is_none(), "{turn}");
+
+    // A picked mode rides the next turn, and attachments ride with it:
+    // the image as a data URL, the file as a text item naming it.
+    handle.set_mode("read-only").await.unwrap();
+    let stop = handle
+        .prompt_with(
+            "with things",
+            &[("image/png".to_owned(), "QUJD".to_owned())],
+            &[("notes.txt".to_owned(), "the notes".to_owned())],
+        )
+        .await
+        .unwrap();
+    assert_eq!(format!("{stop:?}"), "EndTurn");
+    let turn: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("cwd/fake.turn")).unwrap()).unwrap();
+    assert_eq!(turn["approvalPolicy"], "on-request", "{turn}");
+    assert_eq!(turn["sandboxPolicy"]["type"], "readOnly", "{turn}");
+    let kinds: Vec<&str> = turn["input"].as_array().unwrap().iter().map(|i| i["type"].as_str().unwrap()).collect();
+    assert_eq!(kinds, ["text", "text", "image"], "{turn}");
+    assert_eq!(turn["input"][2]["url"], "data:image/png;base64,QUJD");
+    assert!(turn["input"][1]["text"].as_str().unwrap().contains("the notes"));
+    assert!(handle.set_mode("bypassPermissions").await.is_err(), "claude's ids are not codex's");
 
     // The approval round-trip: the server request surfaces as an ACP
     // ask, and the answer lands on codex's own JSON-RPC id as accept.

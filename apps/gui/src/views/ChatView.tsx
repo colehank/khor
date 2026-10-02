@@ -392,13 +392,52 @@ function valuesOf(o: OptionListed): { heading: string | null; value: ValueListed
 /**
  * A mode's name **inside the menu**, where every listed mode needs one
  * to be picked by — so unlike `modeSaid` the ordinary mode has a word
- * here. Known ids get this face's words (the four claude modes, whose
- * meaning a person has met elsewhere); anything else is the agent's
- * own name for it, and its id when it gave none.
+ * here. Known ids get this face's words (claude's four, codex's three —
+ * `codexagent::PRESETS`, whose read-only and full access mean what
+ * claude's 只读不改 and 全部自动批准 mean to a person); anything else is
+ * the agent's own name for it, and its id when it gave none.
  */
 function modeWord(id: string, listed: ModeListed[]): string {
-  if (id === "default") return gui.chat_mode_default;
-  return modeSaid(id) ?? listed.find((m) => m.id === id)?.name ?? id;
+  switch (id) {
+    case "default":
+      return gui.chat_mode_default;
+    case "plan":
+    case "read-only":
+      return gui.chat_mode_plan;
+    case "acceptEdits":
+      return gui.chat_mode_accept_edits;
+    case "bypassPermissions":
+    case "full-access":
+      return gui.chat_mode_bypass;
+    case "auto":
+      return gui.chat_mode_codex_auto;
+    default:
+      return listed.find((m) => m.id === id)?.name ?? id;
+  }
+}
+
+/** The menu's second line: exactly what the mode asks about and what it
+    does not — this face's words for the ids it knows, else the agent's
+    own description. */
+function modeNote(id: string, listed: ModeListed[]): string | null {
+  switch (id) {
+    case "default":
+      return gui.chat_mode_default_note;
+    case "plan":
+      return gui.chat_mode_plan_note;
+    case "acceptEdits":
+      return gui.chat_mode_accept_edits_note;
+    case "bypassPermissions":
+      return gui.chat_mode_bypass_note;
+    case "read-only":
+      return gui.chat_mode_codex_read_only_note;
+    case "auto":
+      return gui.chat_mode_codex_auto_note;
+    case "full-access":
+      return gui.chat_mode_codex_full_access_note;
+    default:
+      return listed.find((m) => m.id === id)?.description ?? null;
+  }
 }
 
 /**
@@ -1360,7 +1399,7 @@ export function ChatView({
       choices={settings.modes.availableModes.map((m) => ({
         id: m.id,
         name: modeWord(m.id, settings.modes?.availableModes ?? []),
-        note: m.description ?? null,
+        note: modeNote(m.id, settings.modes?.availableModes ?? []),
       }))}
       onPick={(v) => void chatSetMode(id, v).catch(() => {})}
     />

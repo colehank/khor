@@ -34,6 +34,35 @@
 //!   `turn.status` distinguishes completed from interrupted; probed
 //!   for the interrupt path with `turn/interrupt { threadId, turnId }`.
 //!
+//! # Permission modes (2026-10-03, codex-cli 0.157.1's own schema,
+//! `codex app-server generate-ts`)
+//!
+//! Codex's permissions are two policies, not one mode: an **approval
+//! policy** (`untrusted` / `on-request` / `never`, or granular) and a
+//! **sandbox** (`read-only` / `workspace-write` / `danger-full-access`).
+//! `thread/start` and `thread/resume` take both and answer with the ones
+//! the thread actually runs on (`approvalPolicy`, `sandbox`) — the user's
+//! config.toml included — so the mode a session starts in is read off
+//! that answer, never assumed. **There is no request that changes them on
+//! a live thread**: `turn/start` takes `approvalPolicy` and
+//! `sandboxPolicy` "for this turn and subsequent turns", so a mode picked
+//! here is applied from the next turn on, and a turn already running
+//! keeps the policy it started with.
+//!
+//! The list offered is codex's own three presets (its `/approvals`):
+//! read-only (read-only sandbox, asks on request), auto (workspace-write
+//! without network, asks on request — codex's ordinary mode), and full
+//! access (no sandbox, never asks). A thread on anything else is listed
+//! as it is (`other`), in codex's words.
+//!
+//! # Attachments
+//!
+//! A turn's input is a list (`UserInput`): text, `image` by URL (a data
+//! URL carries the bytes, so nothing is written to disk), `localImage`
+//! by path, audio, skills and mentions. Images go as data-URL images; a
+//! text file goes as a text item that names it (`cagent`'s fence). So
+//! both prompt capabilities are advertised and ＋ is offered.
+//!
 //! # What is deliberately not translated
 //!
 //! The same judgment as `cagent`: only what a face paints — message
@@ -50,11 +79,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
-    AgentCapabilities, ContentBlock, ContentChunk, InitializeRequest, InitializeResponse,
-    LoadSessionRequest, LoadSessionResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionKind, PromptRequest, PromptResponse,
-    RequestPermissionOutcome, RequestPermissionRequest, SessionNotification, SessionUpdate,
-    StopReason, TextContent, ToolCall, ToolCallUpdate, ToolCallUpdateFields,
+    AgentCapabilities, ContentBlock, ContentChunk, CurrentModeUpdate, EmbeddedResourceResource,
+    InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
+    NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind,
+    PromptCapabilities, PromptRequest, PromptResponse, RequestPermissionOutcome,
+    RequestPermissionRequest, SessionMode, SessionModeState, SessionNotification, SessionUpdate,
+    SetSessionModeRequest, SetSessionModeResponse, StopReason, TextContent, ToolCall,
+    ToolCallUpdate, ToolCallUpdateFields,
 };
 use agent_client_protocol::{Agent, Client, ConnectionTo, Stdio};
 use khor_catalog::msg;
@@ -95,6 +126,155 @@ struct Shim {
     /// Answers the reader owes to requests the shim sent, by id.
     pending: Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>,
     next_id: AtomicU64,
+    /// The preset picked since the thread opened, if any: sent with the
+    /// next `turn/start` and every one after (the protocol has no live
+    /// change, module head). `None` leaves the thread's own policy.
+    preset: Mutex<Option<Preset>>,
+    /// The preset the thread opened in, read off codex's answer.
+    opened: Mutex<Option<Preset>>,
+    /// The thread's own policy when it is none of the presets — the
+    /// `other` entry's words, kept so a second load can say it again.
+    other: Mutex<Option<String>>,
+}
+
+/// One of codex's permission presets (its `/approvals` list).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Preset {
+    ReadOnly,
+    Auto,
+    FullAccess,
+}
+
+/// The presets in codex's order, by the ids the mode list wears.
+const PRESETS: [(&str, Preset); 3] = [
+    ("read-only", Preset::ReadOnly),
+    ("auto", Preset::Auto),
+    ("full-access", Preset::FullAccess),
+];
+
+/// The id a thread on none of the presets is listed under.
+const OTHER: &str = "other";
+
+impl Preset {
+    fn id(self) -> &'static str {
+        PRESETS.iter().find(|(_, p)| *p == self).map(|(id, _)| *id).unwrap_or("auto")
+    }
+
+    fn of(id: &str) -> Option<Preset> {
+        PRESETS.iter().find(|(i, _)| *i == id).map(|(_, p)| *p)
+    }
+
+    /// The two policies a `turn/start` carries for this preset, in the
+    /// protocol's spelling (`AskForApproval`, `SandboxPolicy`).
+    fn policies(self) -> (serde_json::Value, serde_json::Value) {
+        match self {
+            Preset::ReadOnly => (
+                serde_json::json!("on-request"),
+                serde_json::json!({ "type": "readOnly", "networkAccess": false }),
+            ),
+            Preset::Auto => (
+                serde_json::json!("on-request"),
+                serde_json::json!({
+                    "type": "workspaceWrite",
+                    "writableRoots": [],
+                    "networkAccess": false,
+                    "excludeTmpdirEnvVar": false,
+                    "excludeSlashTmp": false,
+                }),
+            ),
+            Preset::FullAccess => (
+                serde_json::json!("never"),
+                serde_json::json!({ "type": "dangerFullAccess" }),
+            ),
+        }
+    }
+}
+
+/// Which preset a thread's own policies are, read off a `thread/start`
+/// or `thread/resume` answer — `None` when they are none of the three.
+/// Exact on both halves: a workspace-write sandbox *with* network is not
+/// 「auto」, whose word says it asks before using the network.
+fn preset_in(answer: &serde_json::Value) -> Option<Preset> {
+    let approval = answer["approvalPolicy"].as_str()?;
+    let sandbox = &answer["sandbox"];
+    let network = sandbox["networkAccess"].as_bool().unwrap_or(false);
+    match (approval, sandbox["type"].as_str()?) {
+        ("on-request", "readOnly") if !network => Some(Preset::ReadOnly),
+        ("on-request", "workspaceWrite") if !network => Some(Preset::Auto),
+        ("never", "dangerFullAccess") => Some(Preset::FullAccess),
+        _ => None,
+    }
+}
+
+/// codex's own words for a policy that is none of the presets.
+fn other_words(answer: &serde_json::Value) -> String {
+    let approval = match &answer["approvalPolicy"] {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => "?".to_owned(),
+        v => v.as_object().and_then(|o| o.keys().next().cloned()).unwrap_or_else(|| v.to_string()),
+    };
+    let sandbox = answer["sandbox"]["type"].as_str().unwrap_or("?").to_owned();
+    msg::codex_mode_other(&approval, &sandbox)
+}
+
+/// The mode list a session opens with: the three presets, each with its
+/// line, and — when the thread runs on something else — that, current.
+fn modes_listed(current: Option<Preset>, other: Option<&str>) -> SessionModeState {
+    let mut listed: Vec<SessionMode> = PRESETS
+        .iter()
+        .map(|(id, p)| {
+            let (name, note) = match p {
+                Preset::ReadOnly => (msg::codex_mode_read_only(), msg::codex_mode_read_only_note()),
+                Preset::Auto => (msg::codex_mode_auto(), msg::codex_mode_auto_note()),
+                Preset::FullAccess => (msg::codex_mode_full_access(), msg::codex_mode_full_access_note()),
+            };
+            SessionMode::new(*id, name).description(note)
+        })
+        .collect();
+    let current = match (current, other) {
+        (Some(p), _) => p.id().to_owned(),
+        (None, Some(words)) => {
+            listed.push(SessionMode::new(OTHER, words.to_owned()));
+            OTHER.to_owned()
+        }
+        (None, None) => Preset::Auto.id().to_owned(),
+    };
+    SessionModeState::new(current, listed)
+}
+
+/// What one turn sends codex as its input: the typed text first, then
+/// each text file as a text item naming it, then each image as a data
+/// URL — the order a person wrote in (`khor_acp::Handle::prompt_with`).
+fn turn_input(prompt: &[ContentBlock]) -> Vec<serde_json::Value> {
+    let text = prompt
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::Text(t) => Some(t.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut input = vec![serde_json::json!({ "type": "text", "text": text, "text_elements": [] })];
+    for b in prompt {
+        if let ContentBlock::Resource(r) = b
+            && let EmbeddedResourceResource::TextResourceContents(t) = &r.resource
+        {
+            input.push(serde_json::json!({
+                "type": "text",
+                "text": format!("<file uri=\"{}\">\n{}\n</file>", t.uri, t.text),
+                "text_elements": [],
+            }));
+        }
+    }
+    for b in prompt {
+        if let ContentBlock::Image(i) = b {
+            input.push(serde_json::json!({
+                "type": "image",
+                "url": format!("data:{};base64,{}", i.mime_type, i.data),
+            }));
+        }
+    }
+    input
 }
 
 /// The body of `khor _codexagent` (and of `_codexagent` in every
@@ -120,11 +300,15 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         interrupted: AtomicBool::new(false),
         pending: Mutex::new(HashMap::new()),
         next_id: AtomicU64::new(1),
+        preset: Mutex::new(None),
+        opened: Mutex::new(None),
+        other: Mutex::new(None),
     });
     let s_new = shim.clone();
     let s_prompt = shim.clone();
     let s_load = shim.clone();
     let s_cancel = shim.clone();
+    let s_mode = shim.clone();
     let s_drain = shim.clone();
 
     Agent
@@ -133,8 +317,14 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
         .on_receive_request(
             async move |initialize: InitializeRequest, responder, _connection| {
                 responder.respond(
-                    InitializeResponse::new(initialize.protocol_version)
-                        .agent_capabilities(AgentCapabilities::new().load_session(true)),
+                    InitializeResponse::new(initialize.protocol_version).agent_capabilities(
+                        AgentCapabilities::new().load_session(true).prompt_capabilities(
+                            // Both carried (`turn_input`): images as
+                            // data-URL images, a text file as a text item
+                            // that names it.
+                            PromptCapabilities::new().image(true).embedded_context(true),
+                        ),
+                    ),
                 )
             },
             agent_client_protocol::on_receive_request!(),
@@ -146,26 +336,23 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             {
                 // The model codex said the thread runs on, in the
                 // session's `_meta` (`khor_acp::MODEL_META`): known the
-                // moment the thread starts.
-                Ok((sid, model)) => responder.respond(match model {
-                    Some(m) => NewSessionResponse::new(sid).meta(khor_acp::model_meta(&m)),
-                    None => NewSessionResponse::new(sid),
-                }),
+                // moment the thread starts. Beside it the modes, current
+                // as the thread's own answer says.
+                Ok((sid, model, _)) => {
+                    let mut opened = NewSessionResponse::new(sid);
+                    if let Some(m) = model {
+                        opened = opened.meta(khor_acp::model_meta(&m));
+                    }
+                    opened.modes = Some(s_new.modes());
+                    responder.respond(opened)
+                }
                 Err(e) => responder.respond_with_internal_error(e),
             },
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
             async move |prompt: PromptRequest, responder, connection| {
-                let text = prompt
-                    .prompt
-                    .iter()
-                    .filter_map(|b| match b {
-                        ContentBlock::Text(t) => Some(t.text.as_str()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let input = turn_input(&prompt.prompt);
                 let (tx, rx) = oneshot::channel::<StopReason>();
                 {
                     let mut turn = s_prompt.turn.lock().unwrap();
@@ -183,15 +370,15 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 // arrives off the reader thread, not off this loop.
                 connection.spawn(async move {
                     let sid = shim.session.lock().unwrap().clone().unwrap_or_default();
-                    let started = shim
-                        .request(
-                            "turn/start",
-                            serde_json::json!({
-                                "threadId": sid,
-                                "input": [{ "type": "text", "text": text }],
-                            }),
-                        )
-                        .await;
+                    let mut params = serde_json::json!({ "threadId": sid, "input": input });
+                    // A picked mode rides every turn from here on (the
+                    // protocol's only door, module head).
+                    if let Some(p) = *shim.preset.lock().unwrap() {
+                        let (approval, sandbox) = p.policies();
+                        params["approvalPolicy"] = approval;
+                        params["sandboxPolicy"] = sandbox;
+                    }
+                    let started = shim.request("turn/start", params).await;
                     match started {
                         Ok(v) => {
                             let tid = v["turn"]["id"].as_str().unwrap_or_default().to_owned();
@@ -234,7 +421,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                             .recorded_cwd(&sid)
                             .unwrap_or_else(|| load.cwd.clone());
                         match s_load.start_codex_resume(&cwd, &sid).await {
-                            Ok(m) => model = m,
+                            Ok((m, _)) => model = m,
                             Err(e) => return responder.respond_with_internal_error(e),
                         }
                     }
@@ -252,10 +439,38 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     let _ =
                         connection.send_notification(SessionNotification::new(sid.clone(), update));
                 }
-                responder.respond(match model {
-                    Some(m) => LoadSessionResponse::new().meta(khor_acp::model_meta(&m)),
-                    None => LoadSessionResponse::new(),
-                })
+                let mut loaded = LoadSessionResponse::new();
+                if let Some(m) = model {
+                    loaded = loaded.meta(khor_acp::model_meta(&m));
+                }
+                // A second load of the live thread lists the mode it is
+                // in now: the one picked, else the one it opened in.
+                loaded.modes = Some(s_load.modes());
+                responder.respond(loaded)
+            },
+            agent_client_protocol::on_receive_request!(),
+        )
+        .on_receive_request(
+            async move |set: SetSessionModeRequest, responder, connection| {
+                let id = set.mode_id.to_string();
+                let Some(p) = Preset::of(&id) else {
+                    // `other` is what the thread already runs on: picking
+                    // it again before anything else was picked is no
+                    // change; after one, codex has no way back to it.
+                    if id == OTHER && s_mode.preset.lock().unwrap().is_none() {
+                        return responder.respond(SetSessionModeResponse::new());
+                    }
+                    return responder.respond_with_internal_error(msg::codexagent_unknown_mode(&id));
+                };
+                // **Applied from the next turn** (module head): there is
+                // nothing to ask codex now, so the mode is this shim's to
+                // hold and the update says what the next turn will run.
+                *s_mode.preset.lock().unwrap() = Some(p);
+                let _ = connection.send_notification(SessionNotification::new(
+                    set.session_id.clone(),
+                    SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(p.id().to_owned())),
+                ));
+                responder.respond(SetSessionModeResponse::new())
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -310,7 +525,7 @@ impl Shim {
     async fn start_codex(
         self: &Arc<Self>,
         cwd: &std::path::Path,
-    ) -> Result<(String, Option<String>), String> {
+    ) -> Result<(String, Option<String>, Option<Preset>), String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
         let mut params = serde_json::json!({ "cwd": cwd.display().to_string() });
@@ -321,7 +536,7 @@ impl Shim {
             .ok_or_else(|| msg::codexagent_bad_answer("thread/start"))?
             .to_owned();
         *self.session.lock().unwrap() = Some(sid.clone());
-        Ok((sid, model_of(&started)))
+        Ok((sid, model_of(&started), self.policy_from(&started)))
     }
 
     /// Spawns the codex child **resuming** an existing thread — the
@@ -332,7 +547,7 @@ impl Shim {
         self: &Arc<Self>,
         cwd: &std::path::Path,
         sid: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<(Option<String>, Option<Preset>), String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
         let mut params = serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() });
@@ -342,7 +557,27 @@ impl Shim {
             return Err(msg::codexagent_bad_answer("thread/resume"));
         }
         *self.session.lock().unwrap() = Some(sid.to_owned());
-        Ok(model_of(&resumed))
+        Ok((model_of(&resumed), self.policy_from(&resumed)))
+    }
+
+    /// The preset a start or resume answer runs on, and — when it is
+    /// none — codex's words for what it is, kept for the mode list.
+    fn policy_from(&self, answer: &serde_json::Value) -> Option<Preset> {
+        let p = preset_in(answer);
+        *self.opened.lock().unwrap() = p;
+        if p.is_none() && answer.get("approvalPolicy").is_some() {
+            *self.other.lock().unwrap() = Some(other_words(answer));
+        }
+        p
+    }
+
+    /// The mode list, current as the session is now: the preset picked,
+    /// else the one the thread opened in, else codex's own words for
+    /// what it runs on. (An answer that named no policy at all — a codex
+    /// older than the field — lists `auto`, codex's default preset.)
+    fn modes(&self) -> SessionModeState {
+        let current = self.preset.lock().unwrap().or(*self.opened.lock().unwrap());
+        modes_listed(current, self.other.lock().unwrap().as_deref())
     }
 
     fn start_appserver(self: &Arc<Self>, cwd: &std::path::Path) -> Result<(), String> {
@@ -636,4 +871,89 @@ async fn answer_permission(
     let _ = shim.write_line(&serde_json::json!({
         "jsonrpc": "2.0", "id": request_id, "result": { "decision": decision },
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use agent_client_protocol::schema::v1::{
+        ContentBlock, EmbeddedResource, EmbeddedResourceResource, ImageContent, TextContent,
+        TextResourceContents,
+    };
+
+    use super::{Preset, modes_listed, preset_in, turn_input};
+
+    /// **The mode a session opens in is read off codex's answer**, both
+    /// halves exact: a workspace sandbox with the network open is not
+    /// 「auto」, whose words say it asks before going online.
+    #[test]
+    fn the_opening_mode_is_the_threads_own_policy() {
+        let answer = |approval: serde_json::Value, sandbox: serde_json::Value| {
+            serde_json::json!({ "approvalPolicy": approval, "sandbox": sandbox })
+        };
+        let ws = |net: bool| serde_json::json!({ "type": "workspaceWrite", "networkAccess": net });
+        assert_eq!(preset_in(&answer("on-request".into(), ws(false))), Some(Preset::Auto));
+        assert_eq!(preset_in(&answer("on-request".into(), ws(true))), None);
+        assert_eq!(
+            preset_in(&answer("on-request".into(), serde_json::json!({ "type": "readOnly", "networkAccess": false }))),
+            Some(Preset::ReadOnly)
+        );
+        assert_eq!(
+            preset_in(&answer("never".into(), serde_json::json!({ "type": "dangerFullAccess" }))),
+            Some(Preset::FullAccess)
+        );
+        assert_eq!(preset_in(&answer("untrusted".into(), ws(false))), None);
+        assert_eq!(preset_in(&serde_json::json!({})), None);
+    }
+
+    /// The policies a picked preset sends are spelt the way codex's
+    /// schema reads them (`AskForApproval`, `SandboxPolicy`), and each
+    /// reads back as the preset it came from.
+    #[test]
+    fn a_preset_sends_what_codex_reads_back_as_itself() {
+        for p in [Preset::ReadOnly, Preset::Auto, Preset::FullAccess] {
+            let (approval, sandbox) = p.policies();
+            let back = serde_json::json!({ "approvalPolicy": approval, "sandbox": sandbox });
+            assert_eq!(preset_in(&back), Some(p), "{back}");
+            assert_eq!(Preset::of(p.id()), Some(p));
+        }
+        assert_eq!(Preset::of("bypassPermissions"), None, "claude's ids are not codex's");
+    }
+
+    /// Three presets listed, current as given; a thread on none of them
+    /// is listed as it is and is the current one — never rounded.
+    #[test]
+    fn the_list_says_the_current_mode_truthfully() {
+        let ids = |s: &agent_client_protocol::schema::v1::SessionModeState| {
+            s.available_modes.iter().map(|m| m.id.to_string()).collect::<Vec<_>>()
+        };
+        let plain = modes_listed(Some(Preset::ReadOnly), None);
+        assert_eq!(plain.current_mode_id.to_string(), "read-only");
+        assert_eq!(ids(&plain), ["read-only", "auto", "full-access"]);
+        assert!(plain.available_modes.iter().all(|m| m.description.is_some()), "each mode has its line");
+        let other = modes_listed(None, Some("other words"));
+        assert_eq!(other.current_mode_id.to_string(), "other");
+        assert_eq!(ids(&other), ["read-only", "auto", "full-access", "other"]);
+    }
+
+    /// A turn's input: the typed text, then each text file as a text
+    /// item naming it, then each image as a data URL.
+    #[test]
+    fn attachments_ride_the_turn_in_the_order_written() {
+        let blocks = vec![
+            ContentBlock::Text(TextContent::new("look".to_owned())),
+            ContentBlock::Image(ImageContent::new("QUJD".to_owned(), "image/png".to_owned())),
+            ContentBlock::Resource(EmbeddedResource::new(EmbeddedResourceResource::TextResourceContents(
+                TextResourceContents::new("fn main() {}".to_owned(), "file://main.rs".to_owned()),
+            ))),
+        ];
+        let input = turn_input(&blocks);
+        assert_eq!(input.len(), 3);
+        assert_eq!(input[0]["type"], "text");
+        assert_eq!(input[0]["text"], "look");
+        assert_eq!(input[1]["type"], "text");
+        let file = input[1]["text"].as_str().unwrap();
+        assert!(file.contains("file://main.rs") && file.contains("fn main() {}"), "{file}");
+        assert_eq!(input[2]["type"], "image");
+        assert_eq!(input[2]["url"], "data:image/png;base64,QUJD");
+    }
 }

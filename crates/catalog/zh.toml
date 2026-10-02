@@ -1803,6 +1803,20 @@ cagent-mode-refused = "claude 拒绝切换到这个模式"
 cagent-mode-unanswered = "claude 没有回应模式切换"
 codexagent-no-pipe = "无法获取 codex 的输出"
 codexagent-bad-answer = "codex 对 {0} 的回答不是垫片认得的形状"
+# Codex's three permission presets (`codexagent::PRESETS`, codex's own
+# `/approvals` list), as the mode list names them to any ACP client. The
+# face draws its own words from [gui] by the same ids.
+codex-mode-read-only = "只读不改"
+codex-mode-read-only-note = "可以读文件、运行不改东西的命令；要改文件或联网时会先问"
+codex-mode-auto = "工作区内自动"
+codex-mode-auto-note = "在工作区里改文件、运行命令不问；要动工作区以外或联网时会先问"
+codex-mode-full-access = "全部自动批准"
+codex-mode-full-access-note = "改任何文件、运行任何命令、联网，都不问"
+# The session runs on a policy that is none of the three (the user's own
+# config.toml): said as codex spells it, never rounded to a preset.
+codex-mode-other = "其他：审批 {0}，沙箱 {1}"
+# A mode the shim did not list.
+codexagent-unknown-mode = "codex 没有「{0}」模式"
 # Registering an ACP agent (批⑥, `khor_sync::agents`). The name becomes
 # the row's 类, so two of these guard a name khor already answers to —
 # and the reserved one says which names those are rather than just "换
@@ -3790,6 +3804,19 @@ chat-mode-bypass = "全部自动批准"
 # still stays silent for it. 说的是它和别的档差在哪(改之前会问一句),
 # 不是「默认」——「默认」告诉不了人它会做什么。
 chat-mode-default = "编辑前询问"
+# codex's middle preset (`codexagent::PRESETS` `auto`), its ordinary
+# mode. Its own word, not a claude one: what it lets through is the
+# workspace, not a kind of act.
+chat-mode-codex-auto = "工作区内自动"
+# **The mode menu's second line**: exactly what the mode asks about and
+# what it does not, one per id (claude's four, codex's three).
+chat-mode-default-note = "改文件、运行命令前都会问"
+chat-mode-plan-note = "只读和规划，不改文件"
+chat-mode-accept-edits-note = "改文件不问；运行命令前会问"
+chat-mode-bypass-note = "改文件、运行命令都不问"
+chat-mode-codex-read-only-note = "可以读文件、运行不改东西的命令；要改文件或联网时会先问"
+chat-mode-codex-auto-note = "在工作区里改文件、运行命令不问；要动工作区以外或联网时会先问"
+chat-mode-codex-full-access-note = "改任何文件、运行任何命令、联网，都不问"
 # The mode menu's heading, over the list of modes the agent offers.
 chat-mode = "模式"
 # The diff panel's two halves inside an opened tool line. 一个字的标签,
