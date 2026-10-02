@@ -1214,7 +1214,7 @@ export function WorkspacePane({
           phone reading khor's web face is not. */}
       {root !== "" && codeWin.offered && (
         <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
-          <CodeButton code={codeWin} className="size-head-item-h rounded-full data-[on=true]:glass-sel [&_svg]:size-head-glyph" />
+          <CodeButton code={codeWin} className="size-head-item-h rounded-full data-[on=true]:glass-sel" />
         </div>
       )}
     </div>

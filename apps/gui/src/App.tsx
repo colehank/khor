@@ -2038,9 +2038,9 @@ export default function App() {
         >
           {/* The page's glyph (2026-09-27): the four drawn for these
               doors, 外观's light-and-dark, and 这台机器's own face — the
-              same face the rail's foot wears for it. 20 wide, the size
-              the narrow list gives a landing's glyph. */}
-          <span data-more-glyph={p} className="flex size-5 flex-none items-center justify-center text-rail-ink">
+              same face the rail's foot wears for it. `--nav-glyph` wide,
+              the size every menu row gives its glyph. */}
+          <span data-more-glyph={p} className="flex size-nav-glyph flex-none items-center justify-center text-rail-ink">
             {p === "identity" ? (
               // A face is a full disc and a glyph is not: at 16 it reads
               // the same size as the drawn marks beside it.

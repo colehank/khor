@@ -8,7 +8,8 @@
  *   together in one pill — filter and ＋, a page's verbs.
  *
  * The size is the pointer's (`--glass-btn`: 32 under a mouse, 44 under a
- * finger), never the width's. Both forward their ref and props, so a
+ * finger), never the width's; the glyph in either is `--ctl-glyph`, set by
+ * `app.css` on the seat. Both forward their ref and props, so a
  * Radix trigger can wear them (`asChild`).
  */
 import { forwardRef, type ComponentProps } from "react";
@@ -34,7 +35,7 @@ export const GlassCircle = forwardRef<HTMLButtonElement, ComponentProps<"button"
       data-glass-circle
       className={cn(
         "glass grid flex-none place-items-center rounded-full text-foreground",
-        size === "head" ? "size-head-ctl [&_svg]:size-head-glyph" : "size-glass-btn [&_svg]:size-glass-icon",
+        size === "head" ? "size-head-ctl" : "size-glass-btn",
         "disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         RING,
         className,
@@ -73,9 +74,9 @@ export const GlassItem = forwardRef<HTMLButtonElement, ComponentProps<"button"> 
         className={cn(
           "grid h-glass-item-h w-glass-item-w place-items-center rounded-full text-foreground",
           // Inside a head-sized capsule, the head's button and glyph.
-          "group-data-[size=head]/cap:h-head-item-h group-data-[size=head]/cap:w-head-item-w group-data-[size=head]/cap:[&_svg]:size-head-glyph",
+          "group-data-[size=head]/cap:h-head-item-h group-data-[size=head]/cap:w-head-item-w",
           "hover:bg-fill data-[on]:glass-sel data-[on]:text-[var(--rail-on-ink)] data-[state=open]:glass-sel",
-          "disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-glass-icon [&_svg]:shrink-0",
+          "disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
           RING,
           className,
         )}

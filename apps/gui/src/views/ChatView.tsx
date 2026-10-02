@@ -2018,7 +2018,7 @@ export function ChatView({
               data-chat-send
               aria-label={gui.send_it}
               onClick={say}
-              className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-glass-icon"
+              className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-ctl-glyph"
             >
               <IconChevronUp />
             </button>

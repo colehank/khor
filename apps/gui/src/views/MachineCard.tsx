@@ -657,7 +657,7 @@ export function MachineVerbs({
           <CodeButton
             code={code}
             mark={measure ? undefined : { "data-verb": "code" }}
-            className="size-head-item-h rounded-full data-[on=true]:glass-sel [&_svg]:size-head-glyph"
+            className="size-head-item-h rounded-full data-[on=true]:glass-sel"
           />
         </div>
       )}
@@ -720,7 +720,7 @@ export function MachineVerbs({
                 data-on={anyOn}
                 aria-label={gui.rail_more}
                 className={cn(
-                  "relative grid size-head-item-h place-items-center rounded-full text-foreground [&_svg]:size-head-glyph",
+                  "relative grid size-head-item-h place-items-center rounded-full text-foreground",
                   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
                   "data-[on=true]:glass-sel data-[state=open]:glass-sel",
                 )}

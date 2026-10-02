@@ -292,8 +292,8 @@ export function useCodeWindow(pointed: string | null, dir: string): CodeWindow {
  *
  * **Equal boxes give equal ink** (2026-10-02, the owner: 「确保所有icon的
  * 大小一致」). Every mark fills one share of its box (icons.tsx `LIVE`), so
- * the glyph takes the seat's box like the glyphs beside it — the caller
- * sizes it. ⚠️ 墓碑: it sat in a 16 box of its own beside 18s and 24s,
+ * the glyph takes the seat's box like the glyphs beside it: `--ctl-glyph`,
+ * set on the seat by `app.css` (`[data-code]`). ⚠️ 墓碑: it sat in a 16 box of its own beside 18s and 24s,
  * because it filled its canvas and they kept five sevenths of theirs.
  */
 export function CodeButton({ code, className, mark }: { code: CodeWindow; className?: string; mark?: Record<string, string> }) {

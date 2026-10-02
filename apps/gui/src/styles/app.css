@@ -1484,5 +1484,17 @@ aside[data-side] {
   --glass-btn: var(--strip-h);
   --glass-item-h: calc(var(--strip-h) - 8px);
   --glass-item-w: calc(var(--strip-h) - 4px);
-  --glass-icon: var(--head-glyph);
+}
+
+/* **A glass control's glyph** (2026-10-02, the owner: 「icon在不同的地方
+   大小要一样」). Whatever glyph sits in a glass control is `--ctl-glyph`
+   (`tokens.css`), sized here on the seat and never at a call site: the
+   circles and the capsules' buttons (`components/Glass`), the landings
+   strip and its 更多 (`[data-rail-item]`), and the three that are plain
+   buttons in a glass circle — the folded 「…」 and VS Code (`[data-code]`).
+   Unlayered, so it wins over the glyph's own default box. The floating
+   bottom bar is not here: its seats carry a word and keep `--nav-glyph`. */
+:is([data-glass-circle], [data-glass-item], [data-rail-item], [data-verbs-more], [data-code]) > svg {
+  width: var(--ctl-glyph);
+  height: var(--ctl-glyph);
 }

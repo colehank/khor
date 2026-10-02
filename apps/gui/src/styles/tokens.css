@@ -1105,14 +1105,12 @@
      and, folded, at the start of the content's row alike. **The strip is
      the largest control in that row** (the owner: it must never read
      smaller than the session tabs beside it): 36 high, 36 × 30 pills,
-     20 glyphs — 18 of ink, over the tabs' 16 faces. **20, not the 22 it
-     was** (2026-10-02): every glyph now fills 0.90 of its box, and 22
-     painted 20 in a 30 pill. */
+     glyphs at `--ctl-glyph` like every glass control's — 18 of ink, over
+     the tabs' 16 faces. ⚠️ 墓碑: `--strip-glyph` 22, its own number. */
   --wide-lead-start: 80px;
   --strip-h: 36px;
   --strip-item: 36px;
   --strip-item-h: 30px;
-  --strip-glyph: 20px;
   /* **A detail page's one left and right edge** (the redesign, the
      owner: the head's avatar and verbs stand exactly on the content's
      edges). R0's head and the page under it both inset by this: 24 in a
@@ -2136,15 +2134,13 @@
   --spacing-strip-item: var(--strip-item);
   --spacing-strip-h: var(--strip-h);
   --spacing-strip-item-h: var(--strip-item-h);
-  --spacing-strip-glyph: var(--strip-glyph);
   --spacing-page: var(--page-inset);
   --spacing-files-inset: var(--files-inset);
   --spacing-rows-inset: var(--rows-inset);
   --spacing-head-ctl: var(--head-ctl);
   --spacing-head-item-h: var(--head-item-h);
   --spacing-head-item-w: var(--head-item-w);
-  --spacing-head-glyph: var(--head-glyph);
-  --spacing-glass-icon: var(--glass-icon);
+  --spacing-ctl-glyph: var(--ctl-glyph);
   --spacing-glass-item-h: var(--glass-item-h);
   --spacing-glass-item-w: var(--glass-item-w);
   --spacing-glass-pad: var(--glass-pad);
@@ -2509,7 +2505,17 @@
    where they are; the pointer decides how big. */
 :root {
   --glass-btn: 32px;
-  --glass-icon: 16px;
+  /* **One glyph size for every glass control** (2026-10-02, the owner:
+     「icon在不同的地方大小要一样」 — the landings strip drew 22, the
+     machine head 18, VS Code beside it 16). The strip and its 更多, a
+     list's title row (筛选 / ＋, search), a detail head's verbs capsule,
+     VS Code and back circles, the folded 「…」: one number, set here and
+     read by one rule (`app.css`, 「a glass control's glyph」), never by a
+     call site. 20 in the 36 control a mouse gets — every glyph fills 0.90
+     of its box (icons.tsx `LIVE`), so 18 of ink with 5 of air in the 28 /
+     30 inner pill — and 24 in the 44 a finger gets. The floating bottom
+     bar's seats (64 high, a word under the glyph) keep `--nav-glyph`. */
+  --ctl-glyph: 20px;
   /* A button inside a capsule: the capsule's height less a 4 inset top
      and bottom, and its width less 2 a side, the capsule padded 3. */
   --glass-item-h: calc(var(--glass-btn) - 8px);
@@ -2519,11 +2525,10 @@
      owner: the verbs capsule reads as big as the avatar): the avatar,
      the verbs capsule and the back circle are all this tall, so they
      cannot drift. 36 under a mouse (the two title lines), 44 under a
-     finger; a capsule's button is 8 shorter, with an 18 / 22 glyph. */
+     finger; a capsule's button is 8 shorter, its glyph `--ctl-glyph`. */
   --head-ctl: 36px;
   --head-item-h: calc(var(--head-ctl) - 8px);
   --head-item-w: 38px;
-  --head-glyph: 18px;
   /* The least a detail head's name keeps beside its buttons; under it,
      the narrow head folds its verbs into one 「…」 (`MachineVerbs`). */
   --head-name-floor: 96px;
@@ -2570,10 +2575,9 @@
 @media (pointer: coarse) {
   :root {
     --glass-btn: 44px;
-    --glass-icon: 20px;
+    --ctl-glyph: 24px;
     --head-ctl: 44px;
     --head-item-w: 44px;
-    --head-glyph: 22px;
     --nav-h: 64px;
     --nav-more-glyph: 26px;
     --nav-item: 76px;
