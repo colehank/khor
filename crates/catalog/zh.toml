@@ -4342,6 +4342,10 @@ select-all = "全选"
 view = "显示"
 find = "搜索"
 fullscreen = "进入全屏幕"
+# ⌃⌘S (显示 › 隐藏边栏, the audit fix plan F6.7): the word says what
+# pressing it does, so it follows the list — hidden, it offers to show.
+hide-sidebar = "隐藏边栏"
+show-sidebar = "显示边栏"
 window = "窗口"
 minimize = "最小化"
 zoom = "缩放"

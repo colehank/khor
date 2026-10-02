@@ -276,6 +276,10 @@ export type ShellActs = {
   import: () => void;
   /** Folds the list or brings it back, where there is one to fold. */
   toggleList: (() => void) | null;
+  /** Whether that list is folded now — the menu's word follows it. */
+  listFolded: boolean;
+  /** The strip's landings in its order: the View menu's (`menu.rs`). */
+  order: string[];
 };
 
 /**
@@ -374,6 +378,8 @@ export function useShortcuts(acts: ShellActs) {
     new: now.new?.()?.label ?? null,
     lock: acts.lock !== null,
     locked: acts.locked,
+    order: acts.order,
+    list: acts.toggleList ? acts.listFolded : null,
   });
   useEffect(() => {
     if (!inApp || !trafficLights) return;

@@ -46,7 +46,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// The acts the page runs, by the ids their items carry. The same names
 /// as `Act` in `src/lib/shortcuts.ts`.
-const ACTS: [&str; 13] = [
+const ACTS: [&str; 14] = [
     "landing-1",
     "landing-2",
     "landing-3",
@@ -60,7 +60,33 @@ const ACTS: [&str; 13] = [
     "close-tab",
     "next-tab",
     "prev-tab",
+    "toggle-list",
 ];
+
+/// The five landings by the keys the page's strip orders them by
+/// (`src/lib/nav-order.ts` `NavKey`), in its default order.
+const LANDINGS: [&str; 5] = ["devices", "sessions", "quota", "workspaces", "browser"];
+
+/// **The View menu follows the strip** (the audit fix plan F3.5; W03):
+/// the page's order, mended the way the page mends it — unknown keys
+/// dropped, each kept once, the missing ones appended in the default's
+/// order — so the Nth item is the Nth glyph and ⌘N reaches it.
+pub fn landing_order(order: &[String]) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for k in order {
+        if let Some(known) = LANDINGS.iter().find(|l| **l == k.as_str())
+            && !out.contains(known)
+        {
+            out.push(known);
+        }
+    }
+    for l in LANDINGS {
+        if !out.contains(&l) {
+            out.push(l);
+        }
+    }
+    out
+}
 
 /// What the page says applies right now.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
@@ -76,6 +102,11 @@ pub struct MenuState {
     pub lock: bool,
     /// The face is locked — nothing that walks the window applies.
     pub locked: bool,
+    /// The strip's landings, in its order (`nav-order.ts`).
+    pub order: Vec<String>,
+    /// The list beside the content: `Some(folded)` where there is one
+    /// to fold (⌃⌘S), `None` where there is not.
+    pub list: Option<bool>,
 }
 
 #[cfg(target_os = "macos")]
@@ -88,6 +119,7 @@ struct Items {
     lock: MenuItem<tauri::Wry>,
     settings: MenuItem<tauri::Wry>,
     find: MenuItem<tauri::Wry>,
+    sidebar: MenuItem<tauri::Wry>,
     landings: Vec<MenuItem<tauri::Wry>>,
 }
 
@@ -102,6 +134,9 @@ pub struct Held {
     state: Mutex<MenuState>,
     #[cfg(target_os = "macos")]
     built_in: Mutex<Option<khor_catalog::lang::Lang>>,
+    /// The strip order the View menu was built in.
+    #[cfg(target_os = "macos")]
+    built_order: Mutex<Vec<&'static str>>,
 }
 
 /// Builds the menu and puts it on the app. Called once from `setup`, and
@@ -178,20 +213,27 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         ],
     )?;
 
-    let names = [
-        gui::sessions_tab(),
-        gui::devices_tab(),
-        gui::workspaces_tab(),
-        gui::accounts_tab(),
-        gui::browser_tab(),
-    ];
+    let held = app.state::<Held>();
+    let state = held.state.lock().map(|s| s.clone()).unwrap_or_default();
+    let order = landing_order(&state.order);
+    let name = |key: &str| match key {
+        "sessions" => gui::sessions_tab(),
+        "devices" => gui::devices_tab(),
+        "workspaces" => gui::workspaces_tab(),
+        "quota" => gui::accounts_tab(),
+        _ => gui::browser_tab(),
+    };
+    // `landing-N` is the strip's Nth seat, which is what the page runs
+    // for it (`go(N-1)`); the word is whichever landing sits there now.
     let mut landings = Vec::new();
-    for (i, name) in names.iter().enumerate() {
+    for (i, key) in order.iter().enumerate() {
         let id = format!("landing-{}", i + 1);
-        let key = format!("CmdOrCtrl+{}", i + 1);
-        landings.push(item(&id, name, Some(key.as_str()))?);
+        let accel = format!("CmdOrCtrl+{}", i + 1);
+        landings.push(item(&id, name(key), Some(accel.as_str()))?);
     }
     let find = item("find", m::find(), Some("CmdOrCtrl+K"))?;
+    // ⌃⌘S, the sidebar's key in Notes and Finder (F6.7).
+    let sidebar = item("toggle-list", m::hide_sidebar(), Some("Ctrl+Cmd+S"))?;
     let view = Submenu::with_items(
         app,
         m::view(),
@@ -203,6 +245,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &landings[3],
             &landings[4],
             &sep()?,
+            &sidebar,
             &find,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, Some(m::fullscreen()))?,
@@ -238,7 +281,6 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let menu = Menu::with_items(app, &[&app_menu, &file, &edit, &view, &window])?;
     app.set_menu(menu)?;
 
-    let held = app.state::<Held>();
     let items = Items {
         new,
         import,
@@ -248,10 +290,13 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         lock,
         settings,
         find,
+        sidebar,
         landings,
     };
-    let state = held.state.lock().map(|s| s.clone()).unwrap_or_default();
     apply(&items, &state);
+    if let Ok(mut o) = held.built_order.lock() {
+        *o = order;
+    }
     if let Ok(mut slot) = held.items.lock() {
         *slot = Some(items);
     }
@@ -286,19 +331,38 @@ fn apply(items: &Items, state: &MenuState) {
     for l in &items.landings {
         let _ = l.set_enabled(walk);
     }
+    let _ = items.sidebar.set_enabled(walk && state.list.is_some());
+    let _ = items.sidebar.set_text(if state.list == Some(true) {
+        khor_catalog::menu::show_sidebar()
+    } else {
+        khor_catalog::menu::hide_sidebar()
+    });
 }
 
 /// The page's word on what applies (`src/lib/shortcuts.ts`, on change).
 #[cfg(target_os = "macos")]
 pub fn set_state(app: &AppHandle, state: MenuState) {
     let held = app.state::<Held>();
+    // **A reorder under 外观 rebuilds the View menu**: its items' words
+    // and keys are set when it is built.
+    let reorder = held
+        .built_order
+        .lock()
+        .map(|o| *o != landing_order(&state.order))
+        .unwrap_or(false);
+    if let Ok(mut s) = held.state.lock() {
+        *s = state.clone();
+    }
+    if reorder {
+        if let Err(e) = install(app) {
+            eprintln!("khor: the menu bar did not rebuild in the new order: {e}");
+        }
+        return;
+    }
     if let Ok(items) = held.items.lock()
         && let Some(items) = items.as_ref()
     {
         apply(items, &state);
-    }
-    if let Ok(mut s) = held.state.lock() {
-        *s = state;
     }
 }
 
@@ -441,4 +505,25 @@ pub fn on_event(app: &AppHandle, id: &str) {
         let _ = main.set_focus();
     }
     let _ = main.emit_to("main", "shortcut", id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::landing_order;
+
+    /// The View menu's order is the strip's, mended as the page mends it.
+    #[test]
+    fn the_view_menu_follows_the_strip() {
+        let own = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            landing_order(&[]),
+            ["devices", "sessions", "quota", "workspaces", "browser"],
+            "no word from the page is the default order"
+        );
+        assert_eq!(
+            landing_order(&own(&["browser", "sessions", "nope", "sessions"])),
+            ["browser", "sessions", "devices", "quota", "workspaces"],
+            "unknown dropped, each once, the rest appended in the default's order"
+        );
+    }
 }

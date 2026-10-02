@@ -1315,6 +1315,8 @@ export default function App() {
     import: () => setDialog("import"),
     // ⌃⌘S: the same fold the open landing's glyph does (F6.7).
     toggleList: narrow ? null : () => listPane.toggle(),
+    listFolded: listPane.collapsed,
+    order: navOrder,
   });
 
   const sessions = landing === "sessions";

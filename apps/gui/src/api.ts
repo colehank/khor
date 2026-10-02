@@ -1613,6 +1613,10 @@ export type MenuState = {
   new: string | null;
   lock: boolean;
   locked: boolean;
+  /** The strip's landings in its order (`nav-order.ts`). */
+  order: string[];
+  /** `null` where there is no list to fold; else whether it is folded. */
+  list: boolean | null;
 };
 export const menuState = (state: MenuState) =>
   inApp ? call<null>("menu_state", { state }) : Promise.resolve(null);
