@@ -1429,15 +1429,42 @@ aside[data-side] {
    keeps its anatomy (`Omnibox`, `PaneBar`); the material, the height and
    the round ends are the glass controls'. Unlayered, so it wins over the
    field's own utilities. */
-[data-search-glass] [data-search-field] {
+[data-search-glass] :is(div[data-search-field], [data-search-wrap]) {
+  position: relative;
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  border: var(--hair) solid var(--glass-edge);
-  box-shadow: var(--glass-rim), var(--glass-shadow);
+  box-shadow: var(--glass-in), var(--glass-shadow);
   border-radius: calc(var(--glass-btn) / 2);
   min-height: var(--glass-btn);
   height: auto;
+}
+/* Its rim, the glass utility's ring (round 7). A plain box's glass is on
+   its wrapper (`data-search-wrap`): an input draws no pseudo-element, so
+   the input itself goes clear inside it. */
+[data-search-glass] :is(div[data-search-field], [data-search-wrap])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: var(--hair);
+  background: var(--glass-rim);
+  pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+[data-search-glass] [data-search-wrap] input[data-search-field] {
+  background: transparent;
+  min-height: var(--glass-btn);
+}
+
+/* **The glass is the rim's containing block** — made `relative` here
+   unless it is already placed (the floating navigation is `absolute`),
+   so its own position is never overridden. */
+.glass:not(.absolute, .fixed, .sticky) {
+  position: relative;
 }
 
 /* The narrow face's page edge: its head starts after the platform's

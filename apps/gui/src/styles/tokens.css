@@ -318,27 +318,33 @@
   --knob: #ffffff;
   /* **Glass** (the redesign, 2026-10-02: iOS 26's controls, drawn in CSS
      because this is a web view): a translucent fill, the ground blurred
-     and saturated behind it, a hairline edge and a soft shadow. Worn by
-     what floats over content, never by a region (`.glass` in `app.css`).
-     `--glass-menu` is the denser fill of a menu that opens from glass
-     (更多), where words have to be read over whatever is behind it. */
+     and saturated behind it, and a soft shadow. Worn by what floats over
+     content, never by a region (the `glass` utility). `--glass-menu` is
+     the denser fill of a menu that opens from glass (更多), where words
+     have to be read over whatever is behind it.
+     **Its edge is a one-pixel ring whose brightness changes with the
+     angle** (the owner's reference, round 7: the first rim's inner glow
+     read as thick): `--glass-rim`, drawn by the utility's `::before` and
+     cut to a ring by a mask — bright at the top-left, almost gone in the
+     middle, a little brighter again at the bottom-right. No border, no
+     inner blur; `--glass-in` is a hairline of tone inside it. */
   --glass: rgba(255, 255, 255, 0.64);
-  --glass-edge: rgba(26, 26, 20, 0.08);
-  --glass-shadow: 0 6px 20px rgba(26, 26, 20, 0.1);
-  /* **The rim** (the owner, 2026-10-02: the edge scatters light softly):
-     inside the hairline, a brighter line along the top and a faint glow
-     round the whole edge. Subtle — never read as a border. */
-  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 0 8px rgba(255, 255, 255, 0.5);
+  --glass-rim: linear-gradient(155deg, #ffffff 0%, rgba(255, 255, 255, 0.5) 28%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.85) 100%);
+  --glass-in: inset 0 0 0 0.5px rgba(26, 26, 20, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 1px 3px rgba(26, 26, 20, 0.05), 0 18px 44px -16px rgba(26, 26, 20, 0.2);
   /* **What is chosen inside glass is the ground showing through** (the
      owner): the page's own 米白 here, the content's black at night —
-     never a lighter grey block — set in by a very faint inner shadow.
-     The open landing, the front tab, a pressed verb, 更多 pressed, a
-     menu's chosen row. A chosen row in a list (not in glass) keeps
-     `fill-strong`. */
+     never a lighter grey block. Its edge is the reference's lens: a
+     specular line, a breath of blue on the left and of amber on the
+     right (`--glass-sel-shadow`), inside a one-pixel ring that changes
+     with the angle (`--glass-sel-rim`). The open landing, the front tab,
+     a pressed verb, 更多 pressed, a menu's chosen row. A chosen row in a
+     list (not in glass) keeps `fill-strong`. */
   --glass-sel: var(--background);
-  --glass-sel-shadow: inset 0 1px 2px rgba(26, 26, 20, 0.1);
+  --glass-sel-shadow: inset 0 -0.5px 0 rgba(255, 255, 255, 0.9), inset 1px 0 0 rgba(55, 140, 255, 0.14), inset -1px 0 0 rgba(255, 190, 40, 0.2);
+  --glass-sel-rim: conic-gradient(rgba(26, 26, 20, 0.015) 0deg, rgba(26, 26, 20, 0.04) 60deg, rgba(26, 26, 20, 0.15) 140deg, rgba(26, 26, 20, 0.05) 200deg, rgba(26, 26, 20, 0.1) 250deg, rgba(26, 26, 20, 0.015) 320deg, rgba(26, 26, 20, 0.015) 360deg);
   --glass-menu: rgba(255, 255, 255, 0.9);
-  --glass-blur: blur(24px) saturate(1.8);
+  --glass-blur: blur(28px) saturate(1.85);
 
   /* ── the six words (mandala's doctrine) ─────────────
    * **The four that call you sit a lightness apart from the two that do
@@ -1866,10 +1872,11 @@
   --segment: rgba(244, 244, 239, 0.16);
   --knob: #ffffff;
   --glass: rgba(120, 120, 114, 0.24);
-  --glass-edge: rgba(255, 255, 255, 0.1);
-  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  --glass-rim: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 8px rgba(255, 255, 255, 0.07);
-  --glass-sel-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+  --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.07) 30%, rgba(255, 255, 255, 0.02) 58%, rgba(255, 255, 255, 0.14) 100%);
+  --glass-in: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --glass-shadow: 0 20px 50px -16px rgba(0, 0, 0, 0.7);
+  --glass-sel-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.24), inset 1px 0 0 rgba(90, 170, 255, 0.14), inset -1px 0 0 rgba(255, 205, 80, 0.12);
+  --glass-sel-rim: conic-gradient(rgba(255, 255, 255, 0.22) 0deg, rgba(255, 255, 255, 0.03) 70deg, rgba(255, 255, 255, 0.14) 140deg, rgba(255, 255, 255, 0.02) 210deg, rgba(255, 255, 255, 0.04) 270deg, rgba(255, 255, 255, 0.42) 320deg, rgba(255, 255, 255, 0.22) 360deg);
   --glass-menu: rgba(40, 40, 38, 0.88);
 
   /* ── the same separation as light, arrived at from the other side ──
@@ -2063,7 +2070,6 @@
   --color-fill: var(--fill);
   --color-fill-strong: var(--fill-strong);
   --color-glass: var(--glass);
-  --color-glass-edge: var(--glass-edge);
   --color-glass-menu: var(--glass-menu);
   --color-segment: var(--segment);
   --color-knob: var(--knob);
@@ -2638,13 +2644,44 @@
   background: var(--glass);
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
-  border: var(--hair) solid var(--glass-edge);
-  box-shadow: var(--glass-rim), var(--glass-shadow);
+  box-shadow: var(--glass-in), var(--glass-shadow);
+  /* The rim: a one-pixel ring of `--glass-rim`, cut out of a full box by
+     a mask. Positioned against the glass (`app.css` makes the glass a
+     containing block without unseating one that is already placed). */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: var(--hair);
+    background: var(--glass-rim);
+    pointer-events: none;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
 }
 
 /* The chosen thing inside a piece of glass: the ground showing through
-   (`--glass-sel`). */
+   (`--glass-sel`), with the lens's edge and ring. Every one it is worn
+   by is already a containing block (`relative`), and none of them draws
+   a `::before` of its own. */
 @utility glass-sel {
+  position: relative;
   background: var(--glass-sel);
   box-shadow: var(--glass-sel-shadow);
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: var(--hair);
+    background: var(--glass-sel-rim);
+    pointer-events: none;
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
 }

@@ -1944,6 +1944,9 @@ export function ChatView({
                 the *sending*, and the control beside it says so by being
                 unpressable — a disabled box says the same thing about
                 the wrong half. */}
+            {/* The glass is on a wrapper: a textarea draws no pseudo-element,
+                and the glass's rim is one (`app.css` `.glass::before`). */}
+            <div data-chat-box className="glass flex min-h-glass-btn min-w-0 flex-1 rounded-2xl">
             <Textarea
               ref={box}
               data-chat-input
@@ -1997,9 +2000,11 @@ export function ChatView({
                   say();
                 }
               }}
-              // A glass box beside a round send (the redesign, 2026-10-02).
-              className="glass min-h-glass-btn min-w-0 flex-1 rounded-2xl"
+              // A glass box beside a round send (the redesign, 2026-10-02):
+              // the box itself is clear, on the glass of its wrapper.
+              className="min-h-glass-btn min-w-0 flex-1 rounded-2xl border-0 bg-transparent"
             />
+            </div>
             {/* Sending has a control of its own now that Enter is no
                 longer the only way to reach it — a box you can type into
                 during a turn needs somewhere to show that the sending is

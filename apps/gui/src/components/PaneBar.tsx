@@ -195,7 +195,7 @@ export function PaneBar({
             trail={seat === "side" ? <SearchHint /> : undefined}
           />
         ) : (
-          <div className="relative min-w-0 flex-1">
+          <div data-search-wrap className="relative min-w-0 flex-1">
             <IconSearch className="pointer-events-none absolute top-1/2 left-2 z-10 -translate-y-1/2 text-tertiary" />
             <Input
               data-pane-search
