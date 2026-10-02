@@ -81,6 +81,15 @@ export function WindowControls() {
  * page's head is its own (`NarrowHead`) — and there the buttons stay
  * where they were written.
  */
+/**
+ * **What stands at the start of the content's first row** (the redesign,
+ * 方案 B): the wide face's landings' strip, while the list column is
+ * folded away — it stays at the window's top-left. Provided by the shell
+ * around the content and taken by the first `Region` it reaches; a
+ * region inside that one gets none.
+ */
+export const RegionLead = createContext<ReactNode>(null);
+
 const ActionsSeat = createContext<HTMLElement | null | undefined>(undefined);
 
 /**
@@ -323,6 +332,7 @@ export function Region({
   className?: string;
   children: ReactNode;
 }) {
+  const lead = useContext(RegionLead);
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
@@ -337,6 +347,7 @@ export function Region({
         {...WINDOW_DRAG}
         className="relative flex h-pane-head flex-none items-end select-none"
       >
+        {lead}
         <div className="flex min-w-0 flex-1 self-stretch">
           {head ?? (
             <PageHead
@@ -392,6 +403,7 @@ export function Region({
           className,
         )}
       >
+        <RegionLead.Provider value={null}>
         <ActionsSeat.Provider value={head ? undefined : seat}>
           <SubtitleSeat.Provider value={head ? undefined : sub}>
             <AsideSeat.Provider value={head ? undefined : aside}>
@@ -399,6 +411,7 @@ export function Region({
             </AsideSeat.Provider>
           </SubtitleSeat.Provider>
         </ActionsSeat.Provider>
+        </RegionLead.Provider>
       </div>
     </div>
   );

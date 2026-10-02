@@ -1074,16 +1074,18 @@
   /* 64, not the 56 this began at: a 56px rail around a 26px glyph left
      15px of air, and the glyphs read as crowded before anyone got as
      far as their colour. */
-  /* 76 since the redesign (2026-10-02, the canvas's rail): the rail
-     stays on the wide face, icons only, on the one ground. */
-  --rail-w: 76px;
-  /* A rail button and its glyph (the canvas: 44 × 40, 24). */
-  --rail-btn-w: 44px;
-  --rail-btn-h: 40px;
-  --rail-glyph: 24px;
-  /* The wide face's head block runs over the rail and the list: the
-     landing's name starts over the list's own inset. */
-  --wide-head-start: calc(var(--rail-w) + var(--gap-group));
+  /* ⚠️ No rail draws this since the redesign (方案 B: the landings are a
+     strip in the window's top row, `LandingStrip`); kept because older
+     derivations below still read it. */
+  --rail-w: 64px;
+  /* **The wide face's top row** (the redesign, 方案 B): the window's
+     buttons' room (macOS draws them; a browser leaves the room), then the
+     landings' strip — at 80 from the window's edge, in the list column
+     and, folded, at the start of the content's row alike. A strip glyph's
+     button is 34 wide; this machine's face at the row's end is 24. */
+  --wide-strip-start: 80px;
+  --strip-item: 34px;
+  --me-face: 24px;
   /* **A detail page's one left and right edge** (the redesign, the
      owner: the head's avatar and verbs stand exactly on the content's
      edges). R0's head and the page under it both inset by this: 24 in a
@@ -1124,8 +1126,8 @@
      tab strip's right end) and Linux (system decorations) leave no
      strip here. */
   --traffic: 0px;
-  /* 300 since the redesign: the canvas's list column beside the rail. */
-  --list-w: 300px;
+  /* 320 since the redesign (方案 B): the canvas's left column. */
+  --list-w: 320px;
   /* The list pane's drag bounds. The floor is where the PaneBar stops
    * being usable — below ~180 the search field is a slit before the
    * pane itself has failed, so the pane should give way first. Under
@@ -2098,10 +2100,10 @@
      it (2026-09-29). */
   --spacing-pane-head: var(--pane-head);
   --spacing-glass-btn: var(--glass-btn);
-  --spacing-rail-btn-w: var(--rail-btn-w);
+  --spacing-wide-strip-start: var(--wide-strip-start);
+  --spacing-strip-item: var(--strip-item);
+  --spacing-me-face: var(--me-face);
   --spacing-page: var(--page-inset);
-  --spacing-rail-btn-h: var(--rail-btn-h);
-  --spacing-rail-glyph: var(--rail-glyph);
   --spacing-head-ctl: var(--head-ctl);
   --spacing-head-item-h: var(--head-item-h);
   --spacing-head-item-w: var(--head-item-w);

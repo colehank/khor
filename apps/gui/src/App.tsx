@@ -43,7 +43,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { FloatNav, type NavSeat } from "@/components/FloatNav";
-import { Rail } from "@/components/Rail";
+import { LandingStrip, MeButton } from "@/components/LandingStrip";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
@@ -106,9 +106,9 @@ import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
-import { Region } from "@/components/Region";
+import { Region, RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
-import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, NarrowHead, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
@@ -1184,25 +1184,29 @@ export default function App() {
   const me = devices.find((d) => d.me) ?? null;
   /** The wide face's list put away by pressing the open landing again. */
   const folded = !narrow && listPane.collapsed;
-  const rail = (
-    <Rail
+  /** The wide face's top row (方案 B): the landings' glyphs beside the
+      window's buttons. The open landing pressed again folds its list,
+      and once more brings it back; any other landing opens with its list. */
+  const strip = (
+    <LandingStrip
       seats={navOrder.map(seatOf)}
       active={morePage === null ? landing : null}
-      moreOn={morePage !== null && morePage !== "identity"}
       onGo={(key) => {
-        // The open landing pressed again folds its list, and once more
-        // brings it back; any other landing opens with its list.
         if (morePage === null && landing === key) listPane.toggle();
         else goLanding(key as Landing);
       }}
-      onMore={() => {
-        setMorePage((prev) => (prev === null || prev === "identity" ? "settings" : prev));
+    />
+  );
+  const meButton = (
+    <MeButton
+      me={me ? { face: me.face, name: me.shown, paused: me.paused } : null}
+      on={morePage !== null}
+      onSettings={() => {
+        setMorePage("settings");
         setSwitchingTabs(false);
         setScreen("detail");
         listPane.expand();
       }}
-      me={me ? { face: me.face, paused: me.paused } : null}
-      meOn={morePage === "identity"}
       onMe={() => {
         setMorePage("identity");
         setScreen("detail");
@@ -1210,6 +1214,14 @@ export default function App() {
       }}
     />
   );
+  /** Folded, the strip stays where it was on screen: the window's
+      top-left, now the start of the content's first row (`Region`'s
+      lead), the window's buttons' room before it. */
+  const foldedLead = folded ? (
+    <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center self-stretch ps-wide-strip-start">
+      {strip}
+    </div>
+  ) : null;
   const nav = (
     <FloatNav
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
@@ -1402,13 +1414,6 @@ export default function App() {
       <PaneBar
         seat="side"
         title={paneName}
-        count={
-          sessions
-            ? gui.count_sessions(rows.length)
-            : landing === "devices"
-              ? gui.head_machines(devices.length)
-              : undefined
-        }
         // Files and browser search machines, because machines are what
         // they list — so they borrow the machine pane's label rather
         // than growing one that names a thing the box cannot find.
@@ -1980,13 +1985,7 @@ export default function App() {
         <NarrowHead>
           {() => <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.nav_settings}</h1>}
         </NarrowHead>
-      ) : (
-        <SideSeat>
-          <h1 data-list-title className="min-w-0 flex-1 truncate text-title-sm leading-(--text-body--line-height) font-bold">
-            {gui.nav_settings}
-          </h1>
-        </SideSeat>
-      )}
+      ) : null}
       {morePageOrder.map((p) => (
         <button
           key={p}
@@ -2169,7 +2168,7 @@ export default function App() {
     <div data-side-l0 {...WINDOW_DRAG} className="flex min-w-0 flex-none flex-col">
       <SideHead
         narrow={narrow}
-        bare={!narrow && folded}
+        bare={false}
         seatRef={seats.setHead}
         claimed={seats.claimed}
         onJump={jump}
@@ -2273,34 +2272,35 @@ export default function App() {
       ) : (
         <div className="flex h-dvh flex-col">
           <div className="flex min-h-0 flex-1">
-          {/* **The left block** (the redesign, 2026-10-02, the owner: the
-              wide window keeps the rail). One head over the rail and the
-              list — the window's buttons' room, the landing's name over
-              its count, the glass capsule — then the rail, a hairline, and
-              the list column with its search field first. A hairline on
-              the one ground divides the block from the content.
-              **Pressing the open landing's glyph folds the list away**:
-              the block is the rail alone under the window's buttons, and
-              the name, the capsule and the search go with the list.
-              Its width has one owner (docs/SHELL.md 第十五轮 第 4 条):
-              `--list-w`, from the one seam's state. */}
+          {/* **The left column** (the redesign, 方案 B). Its first row is
+              the window's: the buttons' room, the landings' glyphs in one
+              glass capsule, this machine's face at the end (设置 and 这台
+              机器). Its second row is the list's search field and its
+              筛选 / ＋ capsule (`PaneBar`); then the rows. A hairline on the
+              one ground divides it from the content.
+              **Pressing the open landing's glyph folds the column away**;
+              the strip moves to the start of the content's first row
+              (`foldedLead`). Its width has one owner (docs/SHELL.md 第十五轮
+              第 4 条): `--list-w`, from the one seam's state. */}
           <aside
             data-side
-            data-folded={folded || undefined}
+            data-search-glass
+            hidden={folded}
             className="flex flex-none flex-col border-r bg-side"
-            style={{ "--list-w": `${folded ? 0 : listPane.width}px` } as CSSProperties}
+            style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
           >
+            <div
+              data-wide-top
+              {...WINDOW_DRAG}
+              className="flex h-pane-head flex-none items-center gap-in ps-wide-strip-start pe-row select-none"
+            >
+              {strip}
+              <span className="flex-1" />
+              {meButton}
+            </div>
             {sideHead}
-            <div className="flex min-h-0 flex-1">
-              {rail}
-              <div
-                ref={seats.setList}
-                data-side-list-seat
-                hidden={folded}
-                className="flex min-h-0 min-w-0 flex-1 border-l"
-              >
-                {morePage !== null && moreList}
-              </div>
+            <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
+              {morePage !== null && moreList}
             </div>
           </aside>
           {/* **The right side**: the app's ground, a first row at the
@@ -2309,6 +2309,7 @@ export default function App() {
               the row get a blank band; the sessions strip and the
               browsing address bar are rows of their own. */}
           <main data-main className="relative flex min-w-0 flex-1 flex-col bg-background">
+          <RegionLead.Provider value={foldedLead}>
           {morePage ? (
             <Region
               kind="detail"
@@ -2426,6 +2427,7 @@ export default function App() {
               </div>
             </>
           )}
+          </RegionLead.Provider>
           </main>
           </div>
           {dialogs}

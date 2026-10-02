@@ -489,7 +489,6 @@ export function BrowseLanding({
     <PaneBar
       seat="side"
       title={gui.browser_tab}
-      count={gui.switch_tabs(tabs.tabs.length)}
       searchLabel={kind.words.search}
       query={query}
       onQuery={setQuery}

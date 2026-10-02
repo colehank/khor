@@ -396,9 +396,8 @@ html:root[data-scanning] body {
    gave each of them the left block's width (2026-09-26: the rail's
    「机器」 hint drawn 353 wide). */
 aside[data-side] {
-  /* The rail, the list (0 while it is folded away) and the two
-     hairlines, the block's and the rail's (the redesign). */
-  width: calc(var(--rail-w) + var(--list-w) + 2 * var(--hair));
+  /* The list column and its hairline (the redesign, 方案 B: no rail). */
+  width: calc(var(--list-w) + var(--hair));
 }
 
 /* ⚠️ 墓碑 (the redesign, 2026-10-02): the narrow face took the board's

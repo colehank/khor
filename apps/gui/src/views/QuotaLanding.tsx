@@ -1358,7 +1358,6 @@ export function QuotaLanding({
     <PaneBar
       seat="side"
       title={gui.accounts_tab}
-      count={rows.length > 0 ? gui.count_accounts(rows.length) : undefined}
       searchLabel={gui.search_quota}
       query={query}
       onQuery={onQuery}
