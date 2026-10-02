@@ -610,11 +610,20 @@ export function MachineVerbs({
 }) {
   const here = useHereHosts();
   const narrow = useNarrow();
-  type Verb = { key: string; word: string; Icon: (p: { className?: string }) => ReactNode; on?: boolean; run: () => void };
+  type Verb = {
+    key: string;
+    word: string;
+    Icon: (p: { className?: string }) => ReactNode;
+    on?: boolean;
+    /** A companion the switch before it reveals while on: drawn inside
+        that switch's chosen pill, still a button of its own. */
+    rides?: boolean;
+    run: () => void;
+  };
   const verbs: Verb[] = [
     { key: "sessions", word: gui.machine_sessions, Icon: IconSessions, on: sessionsOn, run: onSessions },
     ...(sessionsOn && row.hosts
-      ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, run: () => onNewSession(row) }]
+      ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, rides: true, run: () => onNewSession(row) }]
       : []),
     { key: "browse-files", word: gui.browse_files, Icon: IconFiles, on: filesOn, run: onFiles },
     // 浏览, where this face can open a page at all (`useHereHosts`): in
@@ -632,24 +641,41 @@ export function MachineVerbs({
         <TooltipContent side="bottom">{word}</TooltipContent>
       </Tooltip>
     );
+  // **A switch and its companion share one chosen pill** (the owner,
+  // 2026-10-02: 「这个+要和session在一个圈里面」): while 会话 is on, the
+  // pill holds its glyph and the ＋ side by side — two buttons, one
+  // drawing. The pill is the switch's own fill moved one level out, so it
+  // grows by exactly the ＋ the capsule grows by.
+  const item = (measure: boolean, { key, word, Icon, on, run }: Verb, inPill: boolean) =>
+    tip(
+      word,
+      <GlassItem
+        key={key}
+        aria-label={word}
+        aria-pressed={on === undefined ? undefined : on}
+        data-verb={measure ? undefined : key}
+        on={inPill ? undefined : on}
+        onClick={run}
+        className={cn(inPill && on && "text-[var(--rail-on-ink)]")}
+      >
+        <Icon />
+      </GlassItem>,
+    );
   const pair = (measure: boolean) => (
     <>
       <GlassCapsule size="head" data-machine-verbs={measure ? undefined : ""}>
-        {verbs.map(({ key, word, Icon, on, run }) =>
-          tip(
-            word,
-            <GlassItem
-              key={key}
-              aria-label={word}
-              aria-pressed={on === undefined ? undefined : on}
-              data-verb={measure ? undefined : key}
-              on={on}
-              onClick={run}
-            >
-              <Icon />
-            </GlassItem>,
-          ),
-        )}
+        {verbs.map((v, i) => {
+          if (v.rides) return null;
+          const riders = [];
+          for (let j = i + 1; j < verbs.length && verbs[j].rides; j++) riders.push(verbs[j]);
+          if (riders.length === 0) return item(measure, v, false);
+          return (
+            <div key={v.key} data-verb-pill={measure ? undefined : v.key} className="flex flex-none items-center rounded-full glass-sel">
+              {item(measure, v, true)}
+              {riders.map((r) => item(measure, r, true))}
+            </div>
+          );
+        })}
       </GlassCapsule>
       {/* **VS Code is a button of its own** (the owner, 2026-10-02: 「作为一个
           新的页面，不要和已有的 icon 合并为一个 icon 组」). The capsule's
