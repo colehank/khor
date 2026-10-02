@@ -49,65 +49,140 @@ function boxIn(host: HTMLElement, e: Element, r?: string): Box {
     moment the trip starts, and a ref would have been born empty. */
 const seen = new Map<string, Box>();
 
+type Trip = { ghost: HTMLElement; anim: Animation; to: HTMLElement; host: HTMLElement };
+
+/** The stand-in's box now, in its host's coordinates. */
+function ghostBox(t: Trip): Box {
+  return boxIn(t.host, t.ghost, getComputedStyle(t.ghost).borderRadius);
+}
+
+/**
+ * Lands a trip: **the new item's own piece is drawn in full in the same
+ * frame the stand-in goes** (V08) — its ground would otherwise fade in
+ * over the hover rule's transition, a blink after the slide. So its
+ * transitions are off for that frame.
+ */
+function land(t: Trip) {
+  t.to.style.transition = "none";
+  t.to.removeAttribute("data-sel-arriving");
+  void t.to.offsetWidth;
+  t.ghost.remove();
+  requestAnimationFrame(() => {
+    t.to.style.transition = "";
+  });
+}
+
+function fly(h: HTMLElement, to: HTMLElement, from: Box, at: Box): Trip {
+  if (getComputedStyle(h).position === "static") h.style.position = "relative";
+  h.style.isolation = "isolate";
+  const ghost = document.createElement("span");
+  ghost.dataset.selGhost = "";
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.className = "glass-sel";
+  Object.assign(ghost.style, {
+    position: "absolute",
+    left: "0",
+    top: "0",
+    width: `${at.w}px`,
+    height: `${at.h}px`,
+    borderRadius: at.r,
+    zIndex: "-1",
+    pointerEvents: "none",
+  });
+  h.prepend(ghost);
+  to.setAttribute("data-sel-arriving", "");
+  const ease = getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
+  const anim = ghost.animate(
+    [
+      { transform: `translate(${from.x}px, ${from.y}px)`, width: `${from.w}px`, height: `${from.h}px`, borderRadius: from.r },
+      { transform: `translate(${at.x}px, ${at.y}px)`, width: `${at.w}px`, height: `${at.h}px`, borderRadius: at.r },
+    ],
+    { duration: 240, easing: ease, fill: "forwards" },
+  );
+  return { ghost, anim, to, host: h };
+}
+
+const still = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+const same = (a: Box, b: Box) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1 && Math.abs(a.w - b.w) < 1;
+
 export function useTravel(name: string, host: () => HTMLElement | null, key: string | null) {
-  const last = { get current() { return seen.get(name) ?? null; }, set current(b: Box | null) { if (b) seen.set(name, b); else seen.delete(name); } };
-  const trip = useRef<{ ghost: HTMLElement; anim: Animation; to: HTMLElement } | null>(null);
+  const trip = useRef<Trip | null>(null);
+
+  // **The slide starts on the press** (V08), before the page's work: a
+  // click on an item that is not the chosen one sends the stand-in on
+  // its way at once; the render that follows only confirms (or
+  // retargets) it. Capture, so it runs before the app's own handler.
+  useLayoutEffect(() => {
+    const h = host();
+    if (!h) return;
+    const press = (e: MouseEvent) => {
+      if (still()) return;
+      const item = (e.target as Element | null)?.closest<HTMLElement>('button, [data-tab]');
+      if (!item || !h.contains(item) || item.closest("[data-tab-close]")) return;
+      const now = pieceIn(h);
+      if (!now || now === item || now.contains(item)) return;
+      const from = trip.current ? ghostBox(trip.current) : boxIn(h, now);
+      if (trip.current) {
+        trip.current.anim.cancel();
+        land(trip.current);
+      }
+      const t = fly(h, item, from, boxIn(h, item, getComputedStyle(now).borderRadius));
+      trip.current = t;
+      t.anim.onfinish = () => {
+        if (trip.current === t) {
+          land(t);
+          trip.current = null;
+        }
+      };
+    };
+    h.addEventListener("click", press, true);
+    return () => {
+      h.removeEventListener("click", press, true);
+      // A host that goes (a landing's strip, mounted in the next
+      // landing's head) hands its stand-in's place to the next one.
+      const t = trip.current;
+      if (t) {
+        seen.set(name, ghostBox(t));
+        t.anim.cancel();
+        land(t);
+        trip.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useLayoutEffect(() => {
     const h = host();
     if (!h) return;
     const to = pieceIn(h);
-    const end = () => {
-      const t = trip.current;
-      if (!t) return;
-      t.to.removeAttribute("data-sel-arriving");
-      t.ghost.remove();
-      trip.current = null;
-    };
-    // Mid-trip: start from where the stand-in is now.
-    let from = last.current;
-    if (trip.current) {
-      from = boxIn(h, trip.current.ghost, getComputedStyle(trip.current.ghost).borderRadius);
-      trip.current.anim.cancel();
-      end();
-    }
-    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!to) {
-      last.current = null;
+      seen.delete(name);
       return;
     }
     const at = boxIn(h, to);
-    last.current = at;
-    if (!from || still || (Math.abs(from.x - at.x) < 1 && Math.abs(from.y - at.y) < 1 && Math.abs(from.w - at.w) < 1)) return;
-
-    if (getComputedStyle(h).position === "static") h.style.position = "relative";
-    h.style.isolation = "isolate";
-    const ghost = document.createElement("span");
-    ghost.dataset.selGhost = "";
-    ghost.setAttribute("aria-hidden", "true");
-    ghost.className = "glass-sel";
-    Object.assign(ghost.style, {
-      position: "absolute",
-      left: "0",
-      top: "0",
-      width: `${at.w}px`,
-      height: `${at.h}px`,
-      borderRadius: at.r,
-      zIndex: "-1",
-      pointerEvents: "none",
-    });
-    h.prepend(ghost);
-    to.setAttribute("data-sel-arriving", "");
-    const ease = getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
-    const anim = ghost.animate(
-      [
-        { transform: `translate(${from.x}px, ${from.y}px)`, width: `${from.w}px`, height: `${from.h}px`, borderRadius: from.r },
-        { transform: `translate(${at.x}px, ${at.y}px)`, width: `${at.w}px`, height: `${at.h}px`, borderRadius: at.r },
-      ],
-      { duration: 240, easing: ease, fill: "forwards" },
-    );
-    trip.current = { ghost, anim, to };
-    anim.onfinish = end;
+    const running = trip.current;
+    // Already on its way to this very item (started on the press).
+    if (running && running.to === to) {
+      seen.set(name, at);
+      return;
+    }
+    let from = seen.get(name) ?? null;
+    if (running) {
+      from = ghostBox(running);
+      running.anim.cancel();
+      land(running);
+      trip.current = null;
+    }
+    seen.set(name, at);
+    if (!from || still() || same(from, at)) return;
+    const t = fly(h, to, from, at);
+    trip.current = t;
+    t.anim.onfinish = () => {
+      if (trip.current === t) {
+        land(t);
+        trip.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 }

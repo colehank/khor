@@ -299,8 +299,24 @@ export function TabStrip({
     if (!el || !tab) return;
     const box = el.getBoundingClientRect();
     const t = tab.getBoundingClientRect();
-    if (t.left < box.left) el.scrollLeft -= box.left - t.left;
-    else if (t.right > box.right) el.scrollLeft += t.right - box.right;
+    if (t.left >= box.left - 0.5 && t.right <= box.right + 0.5) return;
+    // **The front tab whole, and the strip's left edge on a tab's start**
+    // (V07): of the tabs up to the front one, the earliest that lets the
+    // front one still fit is the one the strip starts at — so no orphan
+    // × or half a name is left at the left end; what is cut is at the
+    // right, under the fade, the start of what comes next.
+    const tabs = [...el.querySelectorAll<HTMLElement>("[data-tab]")];
+    const at = tabs.indexOf(tab);
+    const start = (e: HTMLElement) => e.getBoundingClientRect().left - box.left + el.scrollLeft;
+    const frontRight = t.right - box.left + el.scrollLeft;
+    let to = start(tab);
+    for (let j = 0; j <= at; j++) {
+      if (frontRight - start(tabs[j]) <= el.clientWidth) {
+        to = start(tabs[j]);
+        break;
+      }
+    }
+    el.scrollLeft = to;
   };
   useEffect(() => {
     const el = strip.current;
@@ -557,9 +573,12 @@ export function TabStrip({
                 // one width, which is what 2026-09-02 asked for; only
                 // once every stub is at the floor does the strip overflow.
                 // The tab in front never gives.
+                // **In the glass capsule, one ceiling for every tab** (V07):
+                // a tab coming to the front changes its colour, never its
+                // width — its neighbours do not move.
                 glass
                   ? on
-                    ? "max-w-tab-on flex-none glass-sel text-foreground"
+                    ? "max-w-tab flex-none glass-sel text-foreground"
                     : "max-w-tab flex-none text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"

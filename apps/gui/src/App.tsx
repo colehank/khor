@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import {
   fetchDevices,
@@ -1218,15 +1218,20 @@ export default function App() {
       }
       return;
     }
-    // A 「…」 page is open over this landing, so choosing a landing closes
-    // it — the one press that always answers 「带我回去」.
-    setMorePage(null);
-    setLanding(key);
-    // Narrow: the screen this seat was left on; wide has one.
-    setScreen(narrow ? (seatScreen.current[key] ?? "list") : "list");
-    setSwitchingTabs(false);
-    // Choosing a landing brings a list put away back, at the width it had.
-    listPane.expand();
+    // **A transition** (V08): the new landing is rendered in slices, so
+    // the chosen piece's slide, started on the press (`lib/travel`), is
+    // drawn while the page is being built instead of after it.
+    startTransition(() => {
+      // A 「…」 page is open over this landing, so choosing a landing
+      // closes it — the one press that always answers 「带我回去」.
+      setMorePage(null);
+      setLanding(key);
+      // Narrow: the screen this seat was left on; wide has one.
+      setScreen(narrow ? (seatScreen.current[key] ?? "list") : "list");
+      setSwitchingTabs(false);
+      // Choosing a landing brings a list put away back, at the width it had.
+      listPane.expand();
+    });
   };
   const me = devices.find((d) => d.me) ?? null;
   /** The wide face's list put away by pressing the open landing again. */
