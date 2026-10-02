@@ -328,22 +328,30 @@
      cut to a ring by a mask — bright at the top-left, almost gone in the
      middle, a little brighter again at the bottom-right. No border, no
      inner blur; `--glass-in` is a hairline of tone inside it. */
-  --glass: rgba(255, 255, 255, 0.64);
+  /* By day the glass is a grey tint over the 米白 (about #e3e3de), the
+     mirror of the night's (the owner, 2026-10-02, round 13: the bars are
+     not the white of the chosen thing). */
+  --glass: rgba(120, 120, 114, 0.14);
   --glass-rim: linear-gradient(155deg, #ffffff 0%, rgba(255, 255, 255, 0.5) 28%, rgba(255, 255, 255, 0.12) 55%, rgba(255, 255, 255, 0.85) 100%);
   --glass-in: inset 0 0 0 0.5px rgba(26, 26, 20, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
   --glass-shadow: 0 1px 3px rgba(26, 26, 20, 0.05), 0 18px 44px -16px rgba(26, 26, 20, 0.2);
-  /* **What is chosen inside glass is the ground showing through** (the
-     owner): the page's own 米白 here, the content's black at night —
-     never a lighter grey block. Its edge is the reference's lens: a
+  /* **What is chosen inside glass stands apart from the glass, the other
+     way in each theme** (the owner, after his reference: 「浅色下比底色更
+     亮，深色下比底色更暗」; round 13 overruled 「the ground showing
+     through」 for the day): **by day a raised white piece** on the grey
+     glass, with a soft drop shadow; **at night the content's black**
+     showing through the grey glass. Its edge is the reference's lens: a
      specular line, a breath of blue on the left and of amber on the
      right (`--glass-sel-shadow`), inside a one-pixel ring that changes
      with the angle (`--glass-sel-rim`). The open landing, the front tab,
-     a pressed verb, 更多 pressed, a menu's chosen row. A chosen row in a
-     list (not in glass) keeps `fill-strong`. */
-  --glass-sel: var(--background);
-  --glass-sel-shadow: inset 0 -0.5px 0 rgba(255, 255, 255, 0.9), inset 1px 0 0 rgba(55, 140, 255, 0.14), inset -1px 0 0 rgba(255, 190, 40, 0.2);
+     a pressed verb, 更多 pressed, a glass menu's chosen row. A chosen row
+     in a list (not in glass) keeps `fill-strong`. */
+  --glass-sel: #ffffff;
+  --glass-sel-shadow: inset 0 1px 0 #ffffff, inset 0 -0.5px 0 rgba(26, 26, 20, 0.06), inset 1px 0 0 rgba(55, 140, 255, 0.14), inset -1px 0 0 rgba(255, 190, 40, 0.2), 0 1px 1.5px rgba(26, 26, 20, 0.05), 0 4px 12px -7px rgba(26, 26, 20, 0.16);
   --glass-sel-rim: conic-gradient(rgba(26, 26, 20, 0.015) 0deg, rgba(26, 26, 20, 0.04) 60deg, rgba(26, 26, 20, 0.15) 140deg, rgba(26, 26, 20, 0.05) 200deg, rgba(26, 26, 20, 0.1) 250deg, rgba(26, 26, 20, 0.015) 320deg, rgba(26, 26, 20, 0.015) 360deg);
-  --glass-menu: rgba(255, 255, 255, 0.9);
+  /* A menu opened from glass: the same grey, denser, so its chosen row
+     can be white too. */
+  --glass-menu: rgba(232, 232, 227, 0.92);
   --glass-blur: blur(28px) saturate(1.85);
 
   /* ── the six words (mandala's doctrine) ─────────────
@@ -1875,6 +1883,7 @@
   --glass-rim: linear-gradient(155deg, rgba(255, 255, 255, 0.26) 0%, rgba(255, 255, 255, 0.07) 30%, rgba(255, 255, 255, 0.02) 58%, rgba(255, 255, 255, 0.14) 100%);
   --glass-in: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --glass-shadow: 0 20px 50px -16px rgba(0, 0, 0, 0.7);
+  --glass-sel: var(--background);
   --glass-sel-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.24), inset 1px 0 0 rgba(90, 170, 255, 0.14), inset -1px 0 0 rgba(255, 205, 80, 0.12);
   --glass-sel-rim: conic-gradient(rgba(255, 255, 255, 0.22) 0deg, rgba(255, 255, 255, 0.03) 70deg, rgba(255, 255, 255, 0.14) 140deg, rgba(255, 255, 255, 0.02) 210deg, rgba(255, 255, 255, 0.04) 270deg, rgba(255, 255, 255, 0.42) 320deg, rgba(255, 255, 255, 0.22) 360deg);
   --glass-menu: rgba(40, 40, 38, 0.88);
