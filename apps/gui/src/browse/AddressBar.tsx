@@ -47,6 +47,7 @@ export function AddressBar({
   onGo,
   onClear,
   trailing,
+  leading,
 }: {
   kind: BrowseKind;
   devices: DeviceRow[];
@@ -75,6 +76,8 @@ export function AddressBar({
    * happen to be adjacent.
    */
   trailing?: React.ReactNode;
+  /** Before the box: the narrow face's way back (the redesign). */
+  leading?: React.ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -197,6 +200,7 @@ export function AddressBar({
       // won — so this was a third number nobody had written down.
       className="flex min-h-pane-head flex-none items-center gap-1 border-b px-2"
     >
+      {leading}
       {boxUp ? (
         <Omnibox
           label={kind.words.address}

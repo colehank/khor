@@ -944,7 +944,7 @@ export function TabSwitcher({
                 strip's arrangement (`TabOpen`) — every sidebar's rows
                 answer a right-click, this one included (docs/SHELL.md
                 第二轮). */}
-            <TabOpen menu={f.menu}>
+            <TabOpen menu={[...(f.menu ?? []), { key: "close-tab", label: gui.close_tab, run: () => onClose(f.id) }]}>
             <button
               type="button"
               data-switch-open={f.id}
@@ -977,22 +977,10 @@ export function TabSwitcher({
               </span>
             </button>
             </TabOpen>
-            <Button
-              size="icon"
-              variant="ghost"
-              data-switch-close={f.id}
-              aria-label={gui.close_tab}
-              // Always drawn here, unlike the wide strip: a phone has no
-              // pointer to summon a control with, and a close that only
-              // appears on hover is a close that does not exist
-              // (`FilesPane`'s pin, same rule) — and on the face that
-              // has no pointer, a target under the floor is the same
-              // kind of nearly-not-there.
-              className="min-h-touch min-w-touch flex-none"
-              onClick={() => onClose(f.id)}
-            >
-              <IconClose />
-            </Button>
+            {/* ⚠️ 墓碑 (the redesign, 2026-10-02, the owner: one act, one
+                home): a × stood at the row's end, always drawn. Closing a
+                tab is the row's menu's now — right-click, or a long press
+                (`TabOpen` below gets it). */}
           </div>
         ))}
       </div>

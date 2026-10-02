@@ -2078,6 +2078,11 @@ export default function App() {
       // same seam and the same 「再按一次收起」 as every other one.
       pane={narrow ? null : listPane}
       caption={stale ? gui.backend_unreachable : undefined}
+      // Narrow: the tabs are the list screen and a page the detail one,
+      // the same pair every landing uses (the owner, 2026-10-02).
+      screen={screen}
+      onOpen={() => setScreen("detail")}
+      onBack={() => setScreen("list")}
     />
   );
 
@@ -2205,8 +2210,8 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div
-            key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : browses ? landing : screen}
-            data-screen={morePage ? "more" : browses ? landing : screen}
+            key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : screen}
+            data-screen={morePage ? "more" : screen}
             ref={setDetailBox}
             className="min-h-0 flex-1 overflow-hidden"
           >

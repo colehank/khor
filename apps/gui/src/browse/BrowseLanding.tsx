@@ -58,17 +58,17 @@ import { fetchPageIcons, forgetRecent, openLink, recentVisit, type DeviceRow } f
 import { AddressBar, type Remembered } from "@/browse/AddressBar";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import { NewTabPage } from "@/browse/NewTabPage";
-import { TabCount } from "@/browse/TabStrip";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
 import { placesInOrder, usePlaces } from "@/browse/use-places";
-import { IconBrowser, IconClose } from "@/components/icons";
+import { IconBack, IconBrowser } from "@/components/icons";
+import { GlassCircle } from "@/components/Glass";
+import { NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
 import { Region } from "@/components/Region";
 import type { RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
-import { Button } from "@/components/ui/button";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
 import { useTabHost } from "@/lib/shortcuts";
@@ -108,7 +108,15 @@ export function BrowseLanding({
   narrow,
   pane,
   caption,
+  screen = "list",
+  onOpen,
+  onBack,
 }: {
+  /** Narrow only: which of the pair is up — the tabs or the page — and
+      the shell's two moves between them. */
+  screen?: "list" | "detail";
+  onOpen?: () => void;
+  onBack?: () => void;
   /** 过期 / 离线: the shell's one line for R0's right end, after the
       address bar (`Region caption`; components/RegionState). */
   caption?: ReactNode;
@@ -152,7 +160,9 @@ export function BrowseLanding({
    * that is not hidden. That was this file's original judgment, and it
    * is true again for a reason it was not true for before.
    */
-  const [switching, setSwitching] = useState(false);
+  /** Narrow: the list was chosen from, or ＋ was pressed — the page is
+      the next screen (the shell's list ⇄ detail pair). */
+  const opened = () => onOpen?.();
   // ⌘W, ⌃⇥ / ⌃⇧⇥ on this landing's tabs (`lib/shortcuts`, 2026-09-28): the
   // tab in front closes — a pinned one is refused by the node, as its
   // row menu's 删除 is — and the steps walk the column's order.
@@ -339,29 +349,12 @@ export function BrowseLanding({
       menu: menuOf(t),
       onOpen: () => {
         tabs.focus(t.id);
-        setSwitching(false);
+        opened();
       },
-      // **A pinned tab has no ×, and no pin either** (docs/SHELL.md 第四轮
-      // 第 8 条:「浏览器不要置顶按钮了呀, 完全交给侧边栏list」): the pinned
-      // group it sits under is its mark, and it is unpinned from its menu
-      // before it can go. The seat stays, empty, so the rows keep one
-      // shape. The × is fire and forget — never drawn on a pinned tab, so
-      // the node's one refusal for it cannot be met here — and it closes
-      // without asking, as Chrome's does.
-      after: t.pinned ? (
-        <span aria-hidden="true" className="min-h-touch min-w-touch flex-none" />
-      ) : (
-        <Button
-          size="icon"
-          variant="ghost"
-          data-switch-close={t.id}
-          aria-label={gui.close_tab}
-          className="min-h-touch min-w-touch flex-none"
-          onClick={() => void tabs.close(t.id).catch(() => {})}
-        >
-          <IconClose />
-        </Button>
-      ),
+      // ⚠️ 墓碑 (the redesign, 2026-10-02, the owner: one act, one home):
+      // an unpinned row carried a ×, a pinned one an empty seat. Closing a
+      // page is the row's menu's 删除 — right-click, or a long press —
+      // like every other list's row acts.
       rowData: { "data-switch-tab": t.id, "data-on": on, "data-pinned": t.pinned },
       openData: { "data-switch-open": t.id },
     };
@@ -382,11 +375,11 @@ export function BrowseLanding({
   // switcher being down already makes this a no-op.
   const goTo = (device: string, place: string) => {
     tabs.goTo(device, place);
-    setSwitching(false);
   };
 
-  const address = (trailing?: React.ReactNode) => (
+  const address = (trailing?: React.ReactNode, leading?: React.ReactNode) => (
     <AddressBar
+      leading={leading}
       tab={tabs.current.id}
       kind={kind}
       devices={devices}
@@ -507,7 +500,7 @@ export function BrowseLanding({
           // A tab that did not match would open behind the box that
           // hid it; clearing it is what makes the new row visible.
           setQuery("");
-          setSwitching(false);
+          opened();
         },
       }}
     />
@@ -526,28 +519,30 @@ export function BrowseLanding({
   // the same choice the lock screen makes (`App.tsx`).
   const body = tabs.ready ? content : <div data-browse-waiting className="h-full" />;
 
+  // **Narrow: the list first, like every landing** (the owner, 2026-10-02):
+  // the tabs are the list screen, and a page — chosen from it, or a new
+  // one from ＋ — is the detail screen, its address bar in the head row
+  // with the way back at its start.
   if (narrow) {
-    return (
+    return screen === "detail" ? (
       <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
-        {tabs.ready &&
-          address(
-            // A switch (第四轮 第 10 条): the tab screen it opens, it closes.
-            <TabCount n={tabs.tabs.length} onPress={() => setSwitching((v) => !v)} open={switching} />,
-          )}
-        <div className="min-h-0 flex-1 overflow-hidden">
-          {switching ? (
-            // The narrow face's tab screen is this landing's sidebar,
-            // one screen wide — so it wears the same head (seated in the
-            // first row, 第十三轮) and the sidebar's ground.
-            <div className="flex h-full min-h-0 flex-col bg-side">
-              {head}
-              <div className="min-h-0 flex-1">{tabList}</div>
-            </div>
-          ) : (
-            body
-          )}
-        </div>
+        {tabs.ready && (
+          <NarrowHead>
+            {() =>
+              address(undefined, (
+                <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
+                  <IconBack />
+                </GlassCircle>
+              ))
+            }
+          </NarrowHead>
+        )}
+        <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
       </section>
+    ) : (
+      <ListPane mark="data-browse-tabs" name={kind.words.segment} pane={null} narrow seat="side" head={head} scroll={false}>
+        {tabList}
+      </ListPane>
     );
   }
 
