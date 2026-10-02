@@ -27226,7 +27226,14 @@ try {
   //   i. **wide, a finger** (an iPad): no session bar; the keys stand
   //      under the terminal; no keyboard switch;
   //   j. **wide, a mouse** (the desktop): unchanged — no bar, no keys, the
-  //      window's first row there.
+  //      window's first row there;
+  //   k. **the soft keyboard**, with a stand-in visual viewport (Chrome has
+  //      no soft keyboard): 300 of keyboard stamps the root, the shell is
+  //      what is left and the bar ends on the keyboard, the content above
+  //      it, the terminal has fewer rows and told the pty so, the home
+  //      indicator's room goes, the page does not scroll; the keyboard
+  //      going puts all of it back. Only a real keyboard on a phone shows
+  //      that WebKit reports it this way — the real-app checklist's.
   //
   // `FACE_ONLY=bar` runs this section alone.
   bar: {
@@ -27273,7 +27280,13 @@ try {
       feed = "";
       return r.fulfill({ contentType: "application/json", body: JSON.stringify({ bytes, seq, gone: false, reset: false }) });
     });
-    await page.route("**/term_resize", json(null));
+    /** Every size the terminal told the far pty, in order (k). */
+    const resized = [];
+    await page.route("**/term_resize", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      resized.push([b.cols, b.rows]);
+      return r.fulfill({ contentType: "application/json", body: "null" });
+    });
     await page.route("**/term_leave", json(null));
     await page.route("**/term_key", (r) => {
       sentKeys.push(JSON.parse(r.request().postData() || "{}").keys);
@@ -27591,6 +27604,72 @@ try {
       const firstRow = await count("[data-side-l0]");
       const strip = await count("[data-region-head] [data-session-tabs] [data-tab-strip]");
       if (bar || keys || firstRow !== 1 || strip !== 1) fail(`bar j · the desktop face: ${bar} session bar(s), ${keys} key row(s), ${firstRow} first row(s), ${strip} strip(s) in R0 — want 0, 0, 1, 1`);
+    }
+
+    // ── k. the soft keyboard (lib/viewport), with a stand-in visual
+    //       viewport — Chrome has no soft keyboard, and a phone's is the
+    //       visual viewport going short while the layout viewport does
+    //       not. Installed before the app's own scripts (the last thing
+    //       this file does to the page, so nothing after it sees the
+    //       stand-in). ──
+    await page.addInitScript(() => {
+      const fake = new EventTarget();
+      Object.assign(fake, { height: window.innerHeight, width: window.innerWidth, scale: 1, offsetTop: 0, offsetLeft: 0 });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: fake });
+      window.__keyboard = (covered) => {
+        fake.height = window.innerHeight - covered;
+        fake.dispatchEvent(new Event("resize"));
+      };
+    });
+    await fresh(390, 844);
+    if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+      fail("probe dead: bar k · a terminal never opened under the stand-in viewport");
+    } else {
+      await wait(500);
+      const read = () =>
+        page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;height:var(--safe-bottom)";
+          document.body.appendChild(probe);
+          const safe = probe.getBoundingClientRect().height;
+          probe.remove();
+          return {
+            stamped: document.documentElement.hasAttribute("data-keyboard"),
+            root: r("#root")?.height,
+            bar: r("[data-session-bar]")?.bottom,
+            content: r("[data-session-content]")?.bottom,
+            barTop: r("[data-session-bar]")?.top,
+            rows: document.querySelector("[data-terminal]")?.__xterm?.rows,
+            safe,
+            scrolled: window.scrollY,
+          };
+        });
+      const before = await read();
+      resized.length = 0;
+      await page.evaluate(() => window.__keyboard(300));
+      await until(2_000, async () => (await read()).rows !== before.rows);
+      await wait(300);
+      const up = await read();
+      const told = resized.at(-1);
+      await page.evaluate(() => window.__keyboard(0));
+      await until(2_000, async () => (await read()).rows === before.rows);
+      await wait(300);
+      const down = await read();
+      console.log(`bar k · keyboard 300 up: ${JSON.stringify(up)}, told the pty ${JSON.stringify(told)}; down: ${JSON.stringify(down)}; before ${JSON.stringify(before)}`);
+      const vh = 844;
+      if (!up.stamped || Math.abs(up.root - (vh - 300)) > 1 || Math.abs(up.bar - (vh - 300)) > 1) {
+        fail(`bar k · with 300 of keyboard the shell is ${up.root} tall and the bar ends at ${up.bar} (stamped ${up.stamped}) — the bar sits on the keyboard, at ${vh - 300} (lib/viewport)`);
+      }
+      if (up.content > up.barTop + 1) fail(`bar k · the content runs to ${up.content} under a bar at ${up.barTop}`);
+      if (!(up.rows < before.rows) || !told || told[1] !== up.rows) {
+        fail(`bar k · the terminal kept ${up.rows} rows of ${before.rows} and told the pty ${JSON.stringify(told)} — it refits to what the keyboard leaves`);
+      }
+      if (up.safe !== 0) fail(`bar k · --safe-bottom is ${up.safe} with the keyboard up — the keyboard covers the home indicator`);
+      if (up.scrolled !== 0) fail(`bar k · the page scrolled ${up.scrolled} — the shell is nailed down`);
+      if (down.stamped || Math.abs(down.bar - vh) > 1 || down.rows !== before.rows) {
+        fail(`bar k · the keyboard went and the shell reads ${JSON.stringify(down)} — back to ${vh}, ${before.rows} rows`);
+      }
     }
 
     for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);
