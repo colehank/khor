@@ -106,13 +106,13 @@ export function MachineCard({
           {/* The canvas's machine head (the redesign, 2026-10-02): the way
               back as a glass circle, the machine's own face, its name
               over one line of facts, and its verbs in a glass capsule. */}
-          <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
+          <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
           </GlassCircle>
-          {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} />}
+          {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
-            {row && <HeadFacts row={row} />}
+            {row && <HeadModel row={row} />}
           </span>
           {actions}
         </header>
@@ -132,13 +132,9 @@ export function MachineCard({
           are the strip's, said there once. Nothing on the narrow face,
           which has no R0 — the strip says the model there, first. */}
       {row && <HeadAvatar row={row} />}
-      {/* The second line is the canvas's one line of facts now — the
-          khor version and how old the reading is (the redesign,
-          2026-10-02); the model moved down into the facts band, where it
-          already was on the narrow face. */}
       {row && (
         <PageSubtitle>
-          <HeadFacts row={row} />
+          <HeadModel row={row} />
         </PageSubtitle>
       )}
       {row && sessions !== undefined ? (
@@ -161,7 +157,9 @@ export function MachineCard({
         <Body
           key={row.id}
           row={row}
-          sayModel
+          // The head says the model at both widths now (the redesign's
+          // narrow head has a second line), so the band does not.
+          sayModel={false}
           hooks={hooks}
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
@@ -188,23 +186,18 @@ export function MachineCard({
  * paper disc, then at 32 on nothing (「头像仅仅是类别头像哈，不是机器带
  * 角标的」).
  */
-/** The head's one line of facts (the canvas: 「khor 0.1.14 · 1 秒前」):
-    the khor version this machine runs and how old its reading is. Each
-    half only when the machine said it; neither, no line. */
-function HeadFacts({ row }: { row: DeviceRow }) {
-  const v = row.vitals?.vitals ?? null;
-  const age = row.vitals?.age_ms ?? 0;
-  const parts = [
-    v?.version ? `khor ${v.version}` : null,
-    row.vitals ? (age > 0 ? gui.card_age(ago(Date.now() - age)) : ago(Date.now())) : null,
-  ].filter((p): p is string => p !== null);
-  if (parts.length === 0) return null;
+/** The head's second line: **the model alone**, and nothing when the
+    machine did not report one (the owner, 2026-10-01: 「第二行型号就行
+    了」). The khor version and the reading's age are the facts band's. */
+function HeadModel({ row }: { row: DeviceRow }) {
+  const model = row.vitals?.vitals.model?.name;
+  if (!model) return null;
   return (
     <span
       data-machine-head-sub
-      className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+      className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground"
     >
-      {parts.join(" · ")}
+      {model}
     </span>
   );
 }
@@ -216,7 +209,7 @@ function HeadAvatar({ row }: { row: DeviceRow }) {
   // follows the Appearance setting with the row.
   return (
     <PageAvatar kind={system ?? "machine"}>
-      <MachineFace face={row.face} system={system} />
+      <MachineFace face={row.face} system={system} size="head" />
     </PageAvatar>
   );
 }
@@ -255,7 +248,7 @@ function Body({
   const answered = load !== null || why !== null;
   const never = !row.vitals && !answered;
   return (
-        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-page py-4">
           <div className="flex flex-col gap-row">
             <Strip row={row} sayModel={sayModel} />
             {never ? (
@@ -621,7 +614,7 @@ export function MachineVerbs({
       </Tooltip>
     );
   return (
-    <GlassCapsule data-machine-verbs>
+    <GlassCapsule size="head" data-machine-verbs>
       {tip(
         gui.machine_sessions,
         <GlassItem
@@ -645,7 +638,7 @@ export function MachineVerbs({
       )}
       {/* After them, the workspace's own mark and box (`CodeButton`). */}
       {code && (
-        <CodeButton code={code} mark={{ "data-verb": "code" }} className="h-glass-item-h w-glass-item-w rounded-full" />
+        <CodeButton code={code} mark={{ "data-verb": "code" }} className="h-head-item-h w-head-item-w rounded-full" />
       )}
     </GlassCapsule>
   );

@@ -43,6 +43,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { FloatNav, type NavSeat } from "@/components/FloatNav";
+import { Rail } from "@/components/Rail";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
@@ -107,7 +108,7 @@ import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
-import { FIND_ALL, NarrowHead, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
@@ -1181,6 +1182,34 @@ export default function App() {
     listPane.expand();
   };
   const me = devices.find((d) => d.me) ?? null;
+  /** The wide face's list put away by pressing the open landing again. */
+  const folded = !narrow && listPane.collapsed;
+  const rail = (
+    <Rail
+      seats={navOrder.map(seatOf)}
+      active={morePage === null ? landing : null}
+      moreOn={morePage !== null && morePage !== "identity"}
+      onGo={(key) => {
+        // The open landing pressed again folds its list, and once more
+        // brings it back; any other landing opens with its list.
+        if (morePage === null && landing === key) listPane.toggle();
+        else goLanding(key as Landing);
+      }}
+      onMore={() => {
+        setMorePage((prev) => (prev === null || prev === "identity" ? "settings" : prev));
+        setSwitchingTabs(false);
+        setScreen("detail");
+        listPane.expand();
+      }}
+      me={me ? { face: me.face, paused: me.paused } : null}
+      meOn={morePage === "identity"}
+      onMe={() => {
+        setMorePage("identity");
+        setScreen("detail");
+        setSwitchingTabs(false);
+      }}
+    />
+  );
   const nav = (
     <FloatNav
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
@@ -1373,6 +1402,13 @@ export default function App() {
       <PaneBar
         seat="side"
         title={paneName}
+        count={
+          sessions
+            ? gui.count_sessions(rows.length)
+            : landing === "devices"
+              ? gui.head_machines(devices.length)
+              : undefined
+        }
         // Files and browser search machines, because machines are what
         // they list — so they borrow the machine pane's label rather
         // than growing one that names a thing the box cannot find.
@@ -1511,7 +1547,10 @@ export default function App() {
       ? openDevice.shown
       : landing === "workspaces" && openWs
         ? openWs.path.split("/").filter(Boolean).pop() || openWs.machine
-        : paneName;
+        : // Nothing picked: the head is empty (the redesign). The
+          // landing's name and count are the left block's head now, and
+          // saying them again over the content is the name said twice.
+          "";
   // (Both browsing landings' starting points moved in with the shell,
   // which reads the device table itself — `BrowseLanding`.)
   /** The open machine's VS Code, with no folder — the fourth verb
@@ -1942,9 +1981,11 @@ export default function App() {
           {() => <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.nav_settings}</h1>}
         </NarrowHead>
       ) : (
-        <h1 data-list-title className="flex-none truncate px-group pt-xxs pb-in text-title-lg">
-          {gui.nav_settings}
-        </h1>
+        <SideSeat>
+          <h1 data-list-title className="min-w-0 flex-1 truncate text-title-sm leading-(--text-body--line-height) font-bold">
+            {gui.nav_settings}
+          </h1>
+        </SideSeat>
       )}
       {morePageOrder.map((p) => (
         <button
@@ -2123,7 +2164,7 @@ export default function App() {
     <div data-side-l0 {...WINDOW_DRAG} className="flex min-w-0 flex-none flex-col">
       <SideHead
         narrow={narrow}
-        bare={!narrow && morePage !== null}
+        bare={!narrow && folded}
         seatRef={seats.setHead}
         claimed={seats.claimed}
         onJump={jump}
@@ -2227,27 +2268,35 @@ export default function App() {
       ) : (
         <div className="flex h-dvh flex-col">
           <div className="flex min-h-0 flex-1">
-          {/* **The list column** (the redesign, 2026-10-02: Apple's Notes).
-              No rail: the column is the phone's list page — the window's
-              corner and the list's glass buttons on its first row, its
-              title under them, the rows, and the floating navigation over
-              its foot — and a hairline is all that divides it from the
-              content. The landing's list seats itself here (`ListPane`
-              seat="side"), wherever the landing wrote it.
-              **Its width has one owner** (docs/SHELL.md 第十五轮 第 4 条):
-              `--list-w`, from the one seam's state. It is never put away
-              now — the navigation lives in it. */}
+          {/* **The left block** (the redesign, 2026-10-02, the owner: the
+              wide window keeps the rail). One head over the rail and the
+              list — the window's buttons' room, the landing's name over
+              its count, the glass capsule — then the rail, a hairline, and
+              the list column with its search field first. A hairline on
+              the one ground divides the block from the content.
+              **Pressing the open landing's glyph folds the list away**:
+              the block is the rail alone under the window's buttons, and
+              the name, the capsule and the search go with the list.
+              Its width has one owner (docs/SHELL.md 第十五轮 第 4 条):
+              `--list-w`, from the one seam's state. */}
           <aside
             data-side
-            data-nav-host
-            className="relative flex flex-none flex-col border-r bg-side"
-            style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
+            data-folded={folded || undefined}
+            className="flex flex-none flex-col border-r bg-side"
+            style={{ "--list-w": `${folded ? 0 : listPane.width}px` } as CSSProperties}
           >
             {sideHead}
-            <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
-              {morePage !== null && moreList}
+            <div className="flex min-h-0 flex-1">
+              {rail}
+              <div
+                ref={seats.setList}
+                data-side-list-seat
+                hidden={folded}
+                className="flex min-h-0 min-w-0 flex-1 border-l"
+              >
+                {morePage !== null && moreList}
+              </div>
             </div>
-            {nav}
           </aside>
           {/* **The right side**: the app's ground, a first row at the
               same height as the block's, and a board floating under it

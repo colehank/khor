@@ -76,7 +76,11 @@ export function PaneBar({
   create,
   seat,
   title,
+  count,
 }: {
+  /** The list's size, said under the name in the wide head (「9 个会话」).
+      Absent where the column does not know it. */
+  count?: string;
   /** The landing's name, said as the list page's title where the bar
       is seated (the redesign; it used to ride only the pane's
       aria-label). */
@@ -345,10 +349,34 @@ export function PaneBar({
     </>
   );
   const hasActs = !!(filter && filterLabel) || !!actions?.length || !!create;
+  // **Wide: the head block and the column's search** (the redesign,
+  // 2026-10-02, the owner): the landing's name over its count and the
+  // glass capsule sit in the head that runs over the rail and the list;
+  // the search field is the first thing in the list column, a glass box
+  // across it that searches this list (⌘K widens it, as before).
+  const wideBar = (
+    <div data-pane-bar className="@container/bar flex min-h-list-head min-w-0 flex-1 items-center gap-in">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {title && (
+          <h1 data-list-title className="truncate text-title-sm leading-(--text-body--line-height) font-bold">
+            {title}
+          </h1>
+        )}
+        {count && (
+          <span data-list-count className="truncate text-caption text-muted-foreground tabular-nums">
+            {count}
+          </span>
+        )}
+      </div>
+      {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
+    </div>
+  );
   const bar = glass ? (
+    narrow ? (
     <div
       data-pane-bar
       data-searching={open || undefined}
+      data-search-glass
       className="@container/bar flex min-h-list-head min-w-0 flex-1 items-center gap-in"
       style={{ "--menu-inset": "var(--seat-menu-inset)" } as CSSProperties}
     >
@@ -368,7 +396,7 @@ export function PaneBar({
         </>
       ) : (
         <>
-          {narrow && title ? (
+          {title ? (
             <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
               {title}
             </h1>
@@ -393,6 +421,9 @@ export function PaneBar({
         </>
       )}
     </div>
+    ) : (
+      wideBar
+    )
   ) : (
     <div
       data-pane-bar
@@ -408,10 +439,10 @@ export function PaneBar({
   return (
     <>
       <SideSeat>{bar}</SideSeat>
-      {!narrow && title && (
-        <h1 data-list-title className="flex-none truncate px-group pt-xxs pb-in text-title-lg">
-          {title}
-        </h1>
+      {!narrow && (
+        <div data-search-glass className="flex flex-none px-row py-in">
+          {box}
+        </div>
       )}
     </>
   );

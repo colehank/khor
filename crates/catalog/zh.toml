@@ -2268,6 +2268,10 @@ nav = "导航"
 nav-settings = "设置"
 search-open = "搜索"
 search-close = "结束搜索"
+# The list column's count line, under the landing's name (wide).
+count-sessions = "{0} 个会话"
+count-workspaces = "{0} 个工作区"
+count-accounts = "{0} 个账户"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
 nav-order-note = "前三项在底部，其余收进「更多」。拖动调整顺序"

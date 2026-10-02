@@ -396,9 +396,9 @@ html:root[data-scanning] body {
    gave each of them the left block's width (2026-09-26: the rail's
    「机器」 hint drawn 353 wide). */
 aside[data-side] {
-  /* The list column alone since the redesign (no rail); its hairline is
-     a border inside this width. */
-  width: var(--list-w);
+  /* The rail, the list (0 while it is folded away) and the two
+     hairlines, the block's and the rail's (the redesign). */
+  width: calc(var(--rail-w) + var(--list-w) + 2 * var(--hair));
 }
 
 /* ⚠️ 墓碑 (the redesign, 2026-10-02): the narrow face took the board's
@@ -1422,4 +1422,26 @@ aside[data-side] {
 }
 [data-slider] input[type="range"]:focus-visible::-webkit-slider-thumb {
   outline: 2px solid var(--ring);
+}
+
+/* **A list's search field is glass** (the redesign, 2026-10-02): the
+   column's box on the wide face, the head's on the narrow one. The box
+   keeps its anatomy (`Omnibox`, `PaneBar`); the material, the height and
+   the round ends are the glass controls'. Unlayered, so it wins over the
+   field's own utilities. */
+[data-search-glass] [data-search-field] {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: var(--hair) solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+  border-radius: calc(var(--glass-btn) / 2);
+  min-height: var(--glass-btn);
+  height: auto;
+}
+
+/* The narrow face's page edge: its head starts after the platform's
+   corner at the list's own 20, and the page under it matches. */
+:root[data-narrow] {
+  --page-inset: var(--gap-group);
 }

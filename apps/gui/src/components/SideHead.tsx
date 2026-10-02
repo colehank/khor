@@ -360,8 +360,11 @@ export function SideHead({
       data-side-head
       // `min-w-0`: the row is the block's width and never sets it
       // (第十五轮 第 4 条) — what is seated in it gives way instead.
-      className={cn("relative flex min-h-list-head min-w-0 flex-none items-center bg-side select-none", narrow ? "pr-base" : "pr-row")}
-      style={{ paddingLeft: START }}
+      className={cn("relative flex min-h-list-head min-w-0 flex-none items-center bg-side select-none", narrow ? "pr-group" : "pr-row")}
+      // Wide, the head runs over the rail and the list: the name starts
+      // over the list's own inset, clear of the window's buttons (the
+      // redesign). Narrow, after the platform's corner.
+      style={{ paddingLeft: narrow ? START : "var(--wide-head-start)" }}
     >
       {/* The landing's head sits here. `hidden` while the box is widened
           — the same seat, the other range — and while there is nothing

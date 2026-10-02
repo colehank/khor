@@ -1358,6 +1358,7 @@ export function QuotaLanding({
     <PaneBar
       seat="side"
       title={gui.accounts_tab}
+      count={rows.length > 0 ? gui.count_accounts(rows.length) : undefined}
       searchLabel={gui.search_quota}
       query={query}
       onQuery={onQuery}
@@ -1409,7 +1410,7 @@ export function QuotaLanding({
   const isSub = current?.kind === "sub";
   const dials = current && isSub ? subDials(current) : [];
   const subDetail = current && isSub && (
-    <div data-quota-detail={current.id} className="flex flex-col gap-row p-row">
+    <div data-quota-detail={current.id} className="flex flex-col gap-row px-page py-row">
       {/* No head: the name is R0's, the plan and the age are R0's
           caption (`ReadCaption`). */}
       {/* **The dial, and what it is made of beside it.** Every window
@@ -1630,7 +1631,7 @@ export function QuotaLanding({
   );
 
   const detail = acc && current && !isSub && (
-    <div data-quota-detail={acc.reading.account} className="flex flex-col gap-row p-row">
+    <div data-quota-detail={acc.reading.account} className="flex flex-col gap-row px-page py-row">
       {/* No head: the name is R0's, the plan and the age are R0's
           caption (`ReadCaption`). */}
       {/* **The same two columns the subscription's card has**: the dial
@@ -1851,7 +1852,7 @@ export function QuotaLanding({
   const subtitle = current && VendorMark && (
     <>
     <PageAvatar kind={current.provider}>
-      <VendorMark className="block size-avatar" />
+      <VendorMark className="block size-head-ctl" />
     </PageAvatar>
     <PageSubtitle>
       <span
@@ -1954,9 +1955,13 @@ export function QuotaLanding({
               {/* **The only exit from this screen**, so it carries the
                   finger floor outright — the rule `DetailPane`'s back
                   button was rewritten for. */}
-              <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
+              <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
                 <IconBack />
               </GlassCircle>
+              {/* The head the machine page has (the redesign): the
+                  vendor's mark at the head's size, the name over the
+                  reading's caption. */}
+              {VendorMark && <VendorMark className="block size-head-ctl flex-none" />}
               {/* **The name, said once, here** — the narrow face's R0.
                   ⚠️ Rewritten 2026-09-27: this bar used to hold the way
                   back and nothing else, because the card's first line
@@ -1965,9 +1970,11 @@ export function QuotaLanding({
                   components/Toolbar), so the one place left to say it
                   is this bar, as wide R0 does — with the reading's
                   caption at its right end. */}
-              <span className="min-w-0 flex-1 truncate text-title-sm font-title">{current.name}</span>
-              <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
-                {caption}
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="min-w-0 truncate text-title-md font-title">{current.name}</span>
+                <span data-region-caption className="min-w-0 truncate text-callout text-muted-foreground tabular-nums">
+                  {caption}
+                </span>
               </span>
             </header>
             )}
