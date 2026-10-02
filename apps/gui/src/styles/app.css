@@ -1498,3 +1498,12 @@ aside[data-side] {
   width: var(--ctl-glyph);
   height: var(--ctl-glyph);
 }
+/* One step down where the seat is too short for it: a plain capsule
+   under a mouse outside the list column is 32, its buttons 24, and 18 of
+   ink would leave 3 above and below (the browser's steps, a pane bar's
+   filter / ＋ in the content). The list column's capsules are 36. */
+@media not (pointer: coarse) {
+  [data-glass-capsule]:not([data-size]):not(aside[data-side] *) {
+    --ctl-glyph: var(--ctl-glyph-tight);
+  }
+}

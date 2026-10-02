@@ -688,7 +688,7 @@ export function MachineVerbs({
           <CodeButton
             code={code}
             mark={measure ? undefined : { "data-verb": "code" }}
-            className="size-head-item-h rounded-full data-[on=true]:glass-sel"
+            className="h-head-item-h w-head-item-h rounded-full data-[on=true]:glass-sel"
           />
         </div>
       )}

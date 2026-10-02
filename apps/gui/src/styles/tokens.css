@@ -2532,6 +2532,9 @@
      30 inner pill — and 24 in the 44 a finger gets. The floating bottom
      bar's seats (64 high, a word under the glyph) keep `--nav-glyph`. */
   --ctl-glyph: 20px;
+  /* One step down, for the one seat too short for 20: a 32 capsule's 24
+     buttons (`app.css`, under 「a glass control's glyph」). */
+  --ctl-glyph-tight: 18px;
   /* A button inside a capsule: the capsule's height less a 4 inset top
      and bottom, and its width less 2 a side, the capsule padded 3. */
   --glass-item-h: calc(var(--glass-btn) - 8px);
