@@ -178,8 +178,8 @@ export function RowMenu({ items, children }: { items: RowAction[]; children: Rea
                 "min-h-touch",
                 // 删除 in `destructive` ink, not on its ground
                 // (components/Menu); the highlight still turns it white.
-                a.destructive && !a.failed && "text-destructive",
-                a.failed && "text-state-failed focus:text-state-failed",
+                a.destructive && !a.failed && "text-destructive focus:text-destructive data-[highlighted]:text-destructive",
+                a.failed && "text-state-failed focus:text-state-failed data-[highlighted]:text-state-failed",
               )}
               onSelect={(e) => {
                 // Radix closes on select; every path through `press`

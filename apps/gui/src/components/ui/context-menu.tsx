@@ -36,7 +36,8 @@ function ContextMenuContent({
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(
-          "z-50 max-h-(--radix-context-menu-content-available-height) max-w-64 min-w-40 origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border bg-popover p-[5px] text-popover-foreground shadow-(--shadow-float)",
+          "max-h-(--radix-context-menu-content-available-height) max-w-64 min-w-40 origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto",
+          "glass z-50 rounded-menu border-0 bg-glass-menu p-menu-inset text-foreground shadow-[var(--glass-in),var(--glass-shadow)]",
           "duration-[var(--dur-120)] ease-[var(--ease-out)]",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
@@ -55,7 +56,7 @@ function ContextMenuItem({
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
       className={cn(
-        "relative flex cursor-default items-center gap-in rounded-[5px] px-in py-xxs text-body outline-hidden select-none focus:bg-brand-strong focus:text-on-brand data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "relative flex min-h-menu-item cursor-default items-center gap-row rounded-menu-item px-row text-body outline-hidden select-none focus:glass-sel focus:text-foreground data-[highlighted]:glass-sel data-[highlighted]:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       {...props}
@@ -87,7 +88,7 @@ function ContextMenuSeparator({
   return (
     <ContextMenuPrimitive.Separator
       data-slot="context-menu-separator"
-      className={cn("mx-in my-[5px] h-px bg-border", className)}
+      className={cn("mx-row my-[5px] h-px bg-border", className)}
       {...props}
     />
   );

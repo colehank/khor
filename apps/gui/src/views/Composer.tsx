@@ -36,8 +36,9 @@ import { cn } from "@/lib/utils";
 import { gaugeColor } from "@/lib/vitals";
 
 /** Our glass menu (`FloatNav`'s 更多, the page field's machines). */
-const MENU = "glass rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]";
-const ITEM = "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground";
+/** Our glass menu, as a popover wears it (the who panel): the one menu's
+    material and geometry (`ui/dropdown-menu`). */
+const MENU = "glass rounded-menu border-0 bg-glass-menu p-menu-inset text-foreground shadow-[var(--glass-in),var(--glass-shadow)]";
 /** A button standing inside the capsule: one control's height less the
     rim's 6 above and below. */
 const SEAT = "grid size-composer-item flex-none place-items-center rounded-full [&_svg]:size-ctl-glyph";
@@ -140,7 +141,8 @@ export function PlusSeat(props: React.ComponentProps<"button">) {
       data-slot="button"
       aria-label={gui.chat_add}
       {...props}
-      className={cn(SEAT, "text-foreground hover:bg-fill data-[state=open]:glass-sel", props.className)}
+      data-glass-hit
+      className={cn(SEAT, "text-foreground data-[state=open]:glass-sel", props.className)}
     >
       <IconPlus />
     </button>
@@ -232,10 +234,11 @@ export function ModeSeat({
           type="button"
           data-slot="button"
           data-chat-mode-menu
+          data-glass-hit
           data-mode-id={current}
           aria-label={`${gui.chat_mode}: ${word}`}
           className={cn(
-            "flex h-composer-item flex-none items-center gap-1 rounded-full ps-2.5 pe-1.5 text-callout whitespace-nowrap hover:bg-fill",
+            "flex h-composer-item flex-none items-center gap-1 rounded-full ps-2.5 pe-1.5 text-callout whitespace-nowrap",
             "data-[state=open]:glass-sel data-[state=open]:pe-2.5",
             ink,
           )}
@@ -253,7 +256,7 @@ export function ModeSeat({
         sideOffset={16}
         data-chat-mode-list
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className={cn(MENU, "w-[232px] rounded-[18px]")}
+        className="w-[232px]"
       >
         {choices.map((m) => (
           <DropdownMenuItem
@@ -262,7 +265,7 @@ export function ModeSeat({
             data-on={m.id === current || undefined}
             onSelect={() => onPick(m.id)}
             className={cn(
-              "min-h-12 flex-col items-start justify-center gap-0 rounded-xl px-3 py-1.5 text-foreground focus:glass-sel focus:text-foreground",
+              "flex-col items-start justify-center gap-0 py-1.5",
               m.id === current && "glass-sel",
             )}
           >
@@ -311,10 +314,10 @@ export function AddSeat({ onAttach, options }: { onAttach?: () => void; options:
         sideOffset={16}
         data-chat-add-menu
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className={cn(MENU, "min-w-nav-menu")}
+        className="min-w-nav-menu"
       >
         {onAttach && (
-          <DropdownMenuItem data-chat-attach onSelect={onAttach} className={ITEM}>
+          <DropdownMenuItem data-chat-attach onSelect={onAttach}>
             {gui.chat_attach}
           </DropdownMenuItem>
         )}
@@ -330,7 +333,7 @@ export function AddSeat({ onAttach, options }: { onAttach?: () => void; options:
                 e.preventDefault();
                 o.onToggle();
               }}
-              className={cn(ITEM, "justify-between")}
+              className="justify-between"
             >
               <span>{o.name}</span>
               <Switch on={o.on} label={o.name} onToggle={o.onToggle} mark={{ "data-chat-option": o.id }} className="-my-3" />
@@ -341,10 +344,7 @@ export function AddSeat({ onAttach, options }: { onAttach?: () => void; options:
                 data-chat-option={o.id}
                 data-value={o.current}
                 title={o.note ?? undefined}
-                className={cn(
-                  ITEM,
-                  "relative flex cursor-default items-center outline-hidden select-none data-[state=open]:glass-sel",
-                )}
+                className="relative flex min-h-menu-item cursor-default items-center gap-row rounded-menu-item px-row text-body outline-hidden select-none data-[highlighted]:glass-sel data-[state=open]:glass-sel"
               >
                 <span className="min-w-0 flex-1">{o.name}</span>
                 <span className="text-muted-foreground">{o.values.find((v) => v.value === o.current)?.name ?? o.current}</span>
@@ -361,7 +361,7 @@ export function AddSeat({ onAttach, options }: { onAttach?: () => void; options:
                         data-option-value={v.value}
                         title={v.note ?? undefined}
                         onSelect={() => o.onPick(v.value)}
-                        className={cn(ITEM, v.value === o.current && "glass-sel")}
+                        className={cn(v.value === o.current && "glass-sel")}
                       >
                         {v.name}
                       </DropdownMenuItem>
@@ -485,13 +485,14 @@ export function WhoSeat({ who, tip }: { who: Who; tip: boolean }) {
       type="button"
       data-slot="button"
       data-composer-seat
+      data-glass-hit
       data-chat-who
       data-chat-usage={who.usage ? "" : undefined}
       data-usage-used={who.usage?.used}
       data-usage-size={who.usage?.size}
       aria-label={pct === null ? gui.chat_who : `${gui.chat_who}: ${gui.chat_context(String(pct))}`}
       className={cn(
-        "grid size-composer-item flex-none place-items-center rounded-full text-muted-foreground hover:bg-fill data-[state=open]:glass-sel",
+        "grid size-composer-item flex-none place-items-center rounded-full text-muted-foreground data-[state=open]:glass-sel",
       )}
     >
       {pct === null ? <who.Mark className="size-[calc(var(--composer-item)*0.55)]" /> : <CtxDial pct={pct} />}
@@ -524,7 +525,7 @@ export function WhoSeat({ who, tip }: { who: Who; tip: boolean }) {
         data-chat-who-panel
         onOpenAutoFocus={(e) => e.preventDefault()}
         onCloseAutoFocus={(e) => e.preventDefault()}
-        className={cn(MENU, "flex w-[272px] max-w-none flex-col rounded-[18px] px-1.5 py-1.5")}
+        className={cn(MENU, "flex w-[272px] max-w-none flex-col")}
       >
         {rows.map((r, i) => (
           <div key={r.key}>

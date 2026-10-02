@@ -10,6 +10,7 @@ import { mirroredLang, speakLang } from "./lang";
 import { followWindowKey } from "./lib/window-key";
 import { followVisualViewport } from "./lib/viewport";
 import { wearTypeSize } from "./lib/type-size";
+import { followModality } from "./lib/modality";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -49,6 +50,9 @@ followVisualViewport();
 
 // 外观's two text sizes, before the first frame (`lib/type-size`).
 wearTypeSize();
+
+// The focus ring is the keyboard's (`lib/modality`).
+followModality();
 
 // The keyless screen this file used to paint is the server's job now
 // (记住一次批): the page itself sits behind the key, so a browser with

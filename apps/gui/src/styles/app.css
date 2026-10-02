@@ -616,6 +616,17 @@ aside[data-side] {
     animation: none;
   }
 
+  /* Menus, popovers and tooltips appear without their zoom; a switch
+     flips and a chevron turns without travel (F1.8; SYS-11). */
+  [data-slot$="-content"] {
+    animation: none !important;
+  }
+  [role="switch"],
+  [role="switch"] *,
+  .transition-transform {
+    transition: none !important;
+  }
+
   /* The give goes, the dim stays — see the press rule above for why
      that split is the point rather than a leftover. */
   [data-slot="button"] {
@@ -1473,18 +1484,10 @@ aside[data-side] {
   --page-inset: var(--gap-group);
 }
 
-/* **The wide left column's two head rows are one size** (the owner,
-   2026-10-02: the top row's 更多 sits exactly over the title row's search
-   circle, the landings' capsule's end over 筛选 / ＋'s). Inside the column
-   the glass controls take the strip's size (`--strip-h`, 36) instead of
-   the pointer's, so the title row's capsule and circle and the strip's
-   pieces are one number, not two that happen to match; the rest of the
-   glass sizes are re-derived from it here, where they are read. */
-aside[data-side] {
-  --glass-btn: var(--strip-h);
-  --glass-item-h: calc(var(--strip-h) - 8px);
-  --glass-item-w: calc(var(--strip-h) - 4px);
-}
+/* ⚠️ 墓碑: the wide left column re-derived the glass sizes from the
+   strip's (`aside[data-side]`), so the title row's controls matched the
+   strip's and nothing else did. They are one size everywhere now
+   (tokens.css, F1.4). */
 
 /* **A glass control's glyph** (2026-10-02, the owner: 「icon在不同的地方
    大小要一样」). Whatever glyph sits in a glass control is `--ctl-glyph`
@@ -1498,12 +1501,113 @@ aside[data-side] {
   width: var(--ctl-glyph);
   height: var(--ctl-glyph);
 }
-/* One step down where the seat is too short for it: a plain capsule
-   under a mouse outside the list column is 32, its buttons 24, and 20 of
-   ink would leave 2 above and below (the browser's steps, a pane bar's
-   filter / ＋ in the content). The list column's capsules are 36. */
-@media not (pointer: coarse) {
-  [data-glass-capsule]:not([data-size]):not(aside[data-side] *) {
-    --ctl-glyph: var(--ctl-glyph-tight);
+/* **One answer for every glass control** (the audit fix plan F1.1–F1.2;
+   SYS-01, SYS-09, W12). Circles, capsule items, the landings strip, the
+   bottom bar, the head's verbs and VS Code, the capsule's seats: under
+   the pointer the same thin fill, pressed the same give and dim. Keyed on
+   what each *is* (its glass attribute), not on the wrapper a call site
+   happened to use — a Tooltip trigger renames `data-slot` and took the
+   press away from the head's verbs.
+
+   **The chosen one keeps its look under the pointer**: hover touches only
+   what is not chosen (`data-on`, an open menu, anything inside a chosen
+   pill). The fill is a background *image* laid over whatever the control
+   wears, so a glass circle keeps its tint under it. */
+:is([data-glass-circle], [data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-nav-item], [data-glass-hit]) {
+  transition:
+    background-color var(--dur-120) var(--ease-out),
+    transform var(--dur-120) var(--ease-out),
+    opacity var(--dur-120) var(--ease-out);
+}
+@media (hover: hover) {
+  :is([data-glass-circle], [data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-nav-item], [data-glass-hit]):hover:not([data-on="true"], [data-state="open"], .glass-sel, .glass-sel *, :disabled) {
+    background-image: linear-gradient(var(--fill), var(--fill));
   }
 }
+:is([data-glass-circle], [data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-nav-item], [data-glass-hit]):active:not(:disabled) {
+  transform: scale(var(--press));
+  opacity: 0.86;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-glass-circle], [data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-nav-item], [data-glass-hit]):active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* **Under a finger, nothing to press is smaller than 44 × 44** (the
+   audit fix plan F1.5; N02, SYS-16). The drawing keeps its size; what
+   grows is the hit box, a transparent `::after` at least 44 each way
+   centred on the control. Capsule items, the strip, the verbs and their
+   「…」, VS Code, the capsule's seats, a tab's ×, every shadcn button. A
+   control that is already placed (`absolute`, `fixed`, `sticky`) is its
+   own containing block; a static one is made one. */
+@media (pointer: coarse) {
+  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
+    position: relative;
+  }
+  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"])::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    translate: -50% -50%;
+  }
+  /* The terminal's keys fill their row: no dead gap between two caps. */
+  [data-term-key]::after {
+    width: calc(100% + 6px);
+  }
+  /* A slider is a finger's height to grab, its track drawn as before. */
+  [data-slider] input[type="range"] {
+    height: 44px;
+  }
+}
+
+/* **One focus ring** (F1.3; SYS-03, W05): 2px of `--ring`, 2 off the
+   control, following its radius. Low-specificity, so a full-bleed row
+   that draws it inside (`-outline-offset-2`) still can. **And only for
+   the keyboard** (`lib/modality`): a tap or a click on a field does not
+   ring it, and nothing is ringed before a key has been pressed. In the
+   base layer, so a call site's own offset (a full-bleed row's −2) wins. */
+@layer base {
+  :where(button, [role="button"], [role="tab"], [role="switch"], a[href], input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+html:not([data-modality="keyboard"]) :focus-visible {
+  outline: none;
+}
+/* The switch keeps its gap: a ring lying on the olive track merges into
+   it. */
+[role="switch"]:focus-visible {
+  outline-offset: 2px;
+}
+/* The popup button's `<select>` is invisible: the ring goes on the box
+   that is drawn. */
+[data-popup-button]:has(select:focus-visible) > div {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visible) > div {
+  outline: none;
+}
+/* A tab's ring inside its capsule, round like the tab. */
+[data-tab-open]:focus-visible {
+  outline-offset: -2px;
+  border-radius: var(--radius-full);
+}
+/* The slider: the thumb's ring is the one ring. */
+[data-slider] input[type="range"]:focus-visible {
+  outline: none;
+}
+/* xterm's helper textarea is a 6×15 box nobody sees; the pane says it
+   has the keyboard instead. */
+.xterm-helper-textarea:focus-visible {
+  outline: none;
+}
+html[data-modality="keyboard"] [data-terminal]:has(.xterm-helper-textarea:focus) {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+

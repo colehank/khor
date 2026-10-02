@@ -632,35 +632,26 @@ export function MachineVerbs({
     ...(here ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, on: webOn, run: onWeb }] : []),
   ];
   const coded = !!code?.offered;
-  const tip = (word: string, button: ReactNode) =>
-    narrow ? (
-      button
-    ) : (
-      <Tooltip key={word}>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent side="bottom">{word}</TooltipContent>
-      </Tooltip>
-    );
   // **A switch and its companion share one chosen pill** (the owner,
   // 2026-10-02: 「这个+要和session在一个圈里面」): while 会话 is on, the
   // pill holds its glyph and the ＋ side by side — two buttons, one
   // drawing. The pill is the switch's own fill moved one level out, so it
   // grows by exactly the ＋ the capsule grows by.
-  const item = (measure: boolean, { key, word, Icon, on, run }: Verb, inPill: boolean) =>
-    tip(
-      word,
-      <GlassItem
-        key={key}
-        aria-label={word}
-        aria-pressed={on === undefined ? undefined : on}
-        data-verb={measure ? undefined : key}
-        on={inPill ? undefined : on}
-        onClick={run}
-        className={cn(inPill && on && "text-[var(--rail-on-ink)]")}
-      >
-        <Icon />
-      </GlassItem>,
-    );
+  const item = (measure: boolean, { key, word, Icon, on, run }: Verb, inPill: boolean) => (
+    <GlassItem
+      key={key}
+      aria-label={word}
+      aria-pressed={on === undefined ? undefined : on}
+      data-verb={measure ? undefined : key}
+      on={inPill ? undefined : on}
+      onClick={run}
+      // The probe's copy is never pointed at.
+      tip={measure ? false : undefined}
+      className={cn(inPill && on && "text-[var(--rail-on-ink)]")}
+    >
+      <Icon />
+    </GlassItem>
+  );
   const pair = (measure: boolean) => (
     <>
       <GlassCapsule size="head" data-machine-verbs={measure ? undefined : ""}>
@@ -764,7 +755,7 @@ export function MachineVerbs({
               sideOffset={8}
               data-verbs-menu
               onCloseAutoFocus={(e) => e.preventDefault()}
-              className="glass min-w-nav-menu rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]"
+              className="min-w-nav-menu"
             >
               {verbs.map(({ key, word, Icon, on, run }) => (
                 <DropdownMenuItem
@@ -773,7 +764,7 @@ export function MachineVerbs({
                   data-on={on || undefined}
                   onSelect={run}
                   className={cn(
-                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph",
+                    "[&_svg]:size-nav-glyph",
                     on && "glass-sel text-[var(--rail-on-ink)]",
                   )}
                 >
@@ -787,7 +778,7 @@ export function MachineVerbs({
                   data-on={code.up || undefined}
                   onSelect={code.want}
                   className={cn(
-                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph",
+                    "[&_svg]:size-nav-glyph",
                     code.up && "glass-sel",
                   )}
                 >
@@ -3079,7 +3070,9 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
                   fill="currentColor"
                   fillOpacity={0.75}
                   stroke="transparent"
-                  strokeWidth={11}
+                  // At least a 24 circle to aim at (the audit fix plan
+                  // F1.5), whatever the reading's radius.
+                  strokeWidth={Math.max(11, 24 - 2 * dotR(r))}
                 >
                   {/* **First line is the command, verbatim what the
                       table's cell says** (`cmdText`) — 2026-09-06:

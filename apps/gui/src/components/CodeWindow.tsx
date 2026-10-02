@@ -28,6 +28,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Editor } from "@/gen/bindings/Editor";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 import { useHereHosts } from "@/lib/here";
 import { useHidden } from "@/hooks/use-hidden";
 import { basename } from "@/words";
@@ -309,7 +310,10 @@ export function CodeButton({ code, className, mark }: { code: CodeWindow; classN
           data-on={code.up}
           aria-label={gui.code_tab}
           onClick={code.want}
-          className={className}
+          // At its neighbours' ink, not the ghost button's muted one (the
+          // audit, SYS-09: it read dimmer, almost disabled); the hover is
+          // the glass controls' shared one (`app.css`, `[data-code]`).
+          className={cn("text-foreground hover:bg-transparent hover:text-foreground", className)}
         >
           <IconCode />
         </Button>

@@ -691,6 +691,8 @@ export function TabStrip({
                   <IconEye className="size-affordance" />
                 </Button>
               )}
+              <Tooltip>
+              <TooltipTrigger asChild>
               <button
                 type="button"
                 data-tab-close={f.id}
@@ -757,6 +759,9 @@ export function TabStrip({
                   <IconClose className="size-affordance" />
                 )}
               </button>
+              </TooltipTrigger>
+              <TooltipContent side={below ? "top" : "bottom"}>{gui.close_tab}</TooltipContent>
+              </Tooltip>
             </div>
           );
         })}

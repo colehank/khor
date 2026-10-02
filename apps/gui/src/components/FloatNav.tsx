@@ -62,7 +62,8 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
   );
 }
 
-const MENU_ITEM = "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph";
+/** The menu is the one menu (`ui/dropdown-menu`); its rows carry a nav glyph. */
+const MENU_ITEM = "[&_svg]:size-nav-glyph";
 
 export function FloatNav({
   seats,
@@ -130,7 +131,7 @@ export function FloatNav({
           // Choosing goes somewhere else; the focus does not come back to
           // 更多 and light it with a ring nobody asked for.
           onCloseAutoFocus={(e) => e.preventDefault()}
-          className="glass min-w-nav-menu rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]"
+          className="min-w-nav-menu"
         >
           {more.map((s) => (
             <DropdownMenuItem

@@ -58,10 +58,10 @@ function Seat({
           onClick={onClick}
           {...mark}
           className={cn(
-            "relative grid h-strip-item-h place-items-center rounded-full text-rail-ink hover:bg-fill",
+            "relative grid h-strip-item-h place-items-center rounded-full text-rail-ink",
             round ? "w-strip-item-h" : "w-strip-item",
-            "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-            on && "glass-sel text-[var(--rail-on-ink)] hover:glass-sel",
+            "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+            on && "glass-sel text-[var(--rail-on-ink)]",
           )}
         >
           {children}

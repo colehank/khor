@@ -1190,20 +1190,15 @@ export function WorkspacePane({
   const switches = (
     <div data-ws-switches className="flex flex-none items-center gap-in">
       <GlassCapsule size="head">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <GlassItem
-              aria-label={gui.ws_sessions_toggle}
-              aria-pressed={sessions}
-              data-ws-sessions-switch
-              on={sessions}
-              onClick={() => showSessions(!sessions)}
-            >
-              <IconSessions />
-            </GlassItem>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{gui.ws_sessions_toggle}</TooltipContent>
-        </Tooltip>
+        <GlassItem
+          aria-label={gui.ws_sessions_toggle}
+          aria-pressed={sessions}
+          data-ws-sessions-switch
+          on={sessions}
+          onClick={() => showSessions(!sessions)}
+        >
+          <IconSessions />
+        </GlassItem>
       </GlassCapsule>
       {/* **Only where there is an editor to open.** A machine without
           one, and a machine that could not be asked, both answer empty

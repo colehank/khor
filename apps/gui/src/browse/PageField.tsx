@@ -40,7 +40,6 @@ export function reachable(devices: DeviceRow[]): DeviceRow[] {
   return devices.filter((d) => d.me || (d.hop !== null && d.hop !== "quiet" && !d.paused));
 }
 
-const MENU_ITEM = "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground";
 
 export function PageField({
   tab,
@@ -91,7 +90,7 @@ export function PageField({
       sideOffset={8}
       data-page-machines
       onCloseAutoFocus={(e) => e.preventDefault()}
-      className="glass min-w-nav-menu rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]"
+      className="min-w-nav-menu"
     >
       {reachable(devices).map((d) => (
         <DropdownMenuItem
@@ -99,7 +98,7 @@ export function PageField({
           data-page-machine={d.name}
           data-on={machine?.id === d.id || undefined}
           onSelect={() => choose(d)}
-          className={cn(MENU_ITEM, machine?.id === d.id && "glass-sel")}
+          className={cn(machine?.id === d.id && "glass-sel")}
         >
           <MachineAvatar face={d.face} className="size-tab-face flex-none" />
           <span className="min-w-0 truncate">{d.shown}</span>
@@ -153,7 +152,8 @@ export function PageField({
                   data-page-machine-face
                   aria-label={machine.shown}
                   title={gui.page_machine}
-                  className="grid size-glass-item-h flex-none place-items-center rounded-full hover:bg-fill focus-visible:outline-2 focus-visible:outline-ring"
+                  data-glass-hit
+                  className="grid size-glass-item-h flex-none place-items-center rounded-full"
                 >
                   <MachineAvatar face={machine.face} className="size-tab-face" />
                 </button>

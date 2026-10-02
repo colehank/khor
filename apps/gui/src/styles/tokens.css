@@ -1116,9 +1116,11 @@
      glyphs at `--ctl-glyph` like every glass control's — 20 of ink, over
      the tabs' 16 faces. ⚠️ 墓碑: `--strip-glyph` 22, its own number. */
   --wide-lead-start: 80px;
-  --strip-h: 36px;
-  --strip-item: 36px;
-  --strip-item-h: 30px;
+  /* The strip is a glass capsule like any other (the audit fix plan
+     F1.4): its height and its pills are the capsule rule's. */
+  --strip-h: var(--glass-btn);
+  --strip-item: var(--glass-item-w);
+  --strip-item-h: var(--glass-item-h);
   /* **A detail page's one left and right edge** (the redesign, the
      owner: the head's avatar and verbs stand exactly on the content's
      edges). R0's head and the page under it both inset by this: 24 in a
@@ -2043,6 +2045,11 @@
 }
 
 @theme inline {
+  /* **Tailwind's `transition-*` utilities move on khor's curve** (the
+     audit fix plan F1.8; SYS-11): a switch's knob, a chevron's turn and
+     the seam were Tailwind's 150ms material curve beside khor's own. */
+  --default-transition-duration: var(--dur-180);
+  --default-transition-timing-function: var(--ease-out);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -2164,6 +2171,10 @@
   --spacing-composer: var(--composer-h);
   --spacing-composer-item: var(--composer-item);
   --radius-composer: calc(var(--composer-h) / 2);
+  --radius-menu: var(--menu-r);
+  --radius-menu-item: calc(var(--menu-r) - var(--menu-inset));
+  --spacing-menu-item: var(--menu-item);
+  --spacing-menu-inset: var(--menu-inset);
   --spacing-glass-item-h: var(--glass-item-h);
   --spacing-glass-item-w: var(--glass-item-w);
   --spacing-glass-pad: var(--glass-pad);
@@ -2520,11 +2531,20 @@
 
 /* **Floating glass and the list's rows** (the redesign, 2026-10-02). Two
    sizes, chosen by the pointer like the type ramp: a mouse gets the
-   window boards' (a 32 button, a 52 navigation capsule, 56 rows with a 32
+   window boards' (a 36 button, a 52 navigation capsule, 56 rows with a 32
    face), a finger the phone boards' (44, 64, 68 with 40). Width decides
-   where they are; the pointer decides how big. */
+   where they are; the pointer decides how big.
+
+   **Two control sizes, no more** (the audit fix plan F1.4; SYS-07, W13):
+   every glass head control is `--glass-btn` — 36 under a mouse, 44 under
+   a finger — the landings strip, a list's title row, a detail head's
+   verbs, the tab capsule, the browser's steps and address field; and the
+   controls inside a page's content (forms, settings buttons) are
+   `--ctl-md`, 28. The composer is its own (`--composer-h`). ⚠️ 墓碑: a 32
+   under a mouse outside the list column, which the list column patched
+   back to 36 for itself and nobody else. */
 :root {
-  --glass-btn: 32px;
+  --glass-btn: 36px;
   /* **One glyph size for every glass control** (2026-10-02, the owner:
      「icon在不同的地方大小要一样」 — the landings strip drew 22, the
      machine head 18, VS Code beside it 16). The strip and its 更多, a
@@ -2533,26 +2553,26 @@
      read by one rule (`app.css`, 「a glass control's glyph」), never by a
      call site. 22 in the 36 control a mouse gets (the owner chose the
      larger of two, 2026-10-02) — every glyph fills 0.90 of its box
-     (icons.tsx `LIVE`), so about 20 of ink with 4 of air in the 28 / 30
-     inner pill — and 26 in the 44 a finger gets, the same fill. The floating bottom
-     bar's seats (64 high, a word under the glyph) keep `--nav-glyph`. */
+     (icons.tsx `LIVE`), so about 20 of ink with 5 of air in the 30 inner
+     pill — and 26 in the 44 a finger gets, the same fill. The floating
+     bottom bar's seats (64 high, a word under the glyph) keep
+     `--nav-glyph`. ⚠️ 墓碑: `--ctl-glyph-tight`, one step down for a 32
+     capsule's 24 buttons — there is no 32 capsule any more. */
   --ctl-glyph: 22px;
-  /* One step down, for the one seat too short for 22: a 32 capsule's 24
-     buttons (`app.css`, under 「a glass control's glyph」). */
-  --ctl-glyph-tight: 18px;
-  /* A button inside a capsule: the capsule's height less a 4 inset top
-     and bottom, and its width less 2 a side, the capsule padded 3. */
-  --glass-item-h: calc(var(--glass-btn) - 8px);
-  --glass-item-w: calc(var(--glass-btn) - 4px);
+  /* **One inner geometry for every capsule** (F1.4): an item is the
+     capsule's height less its padding above and below, and 6 wider than
+     it is tall — 30 × 36 in a 36, 38 × 44 in a 44. */
   --glass-pad: 3px;
+  --glass-item-h: calc(var(--glass-btn) - 2 * var(--glass-pad));
+  --glass-item-w: calc(var(--glass-item-h) + 6px);
   /* **A detail head's control size** (the redesign, 2026-10-02, the
      owner: the verbs capsule reads as big as the avatar): the avatar,
      the verbs capsule and the back circle are all this tall, so they
      cannot drift. 36 under a mouse (the two title lines), 44 under a
-     finger; a capsule's button is 8 shorter, its glyph `--ctl-glyph`. */
-  --head-ctl: 36px;
-  --head-item-h: calc(var(--head-ctl) - 8px);
-  --head-item-w: 38px;
+     finger: the glass control size, and the capsule rule inside it. */
+  --head-ctl: var(--glass-btn);
+  --head-item-h: var(--glass-item-h);
+  --head-item-w: var(--glass-item-w);
   /* The least a detail head's name keeps beside its buttons; under it,
      the narrow head folds its verbs into one 「…」 (`MachineVerbs`). */
   --head-name-floor: 96px;
@@ -2587,8 +2607,19 @@
      shorter, 6 in from the rim. */
   --composer-h: 44px;
   --composer-item: calc(var(--composer-h) - 12px);
-  --glass-tabs: 34px;
-  --glass-tab: 28px;
+  /* **One menu** (the audit fix plan F1.6; SYS-10, W10): the dense
+     glass (`--glass-menu` with its rim, grey by day with a white chosen
+     row), 12 round with 28 items under a mouse, 20 round with 44 items
+     under a finger, inset 6, and the item's radius concentric with the
+     menu's. Every menu: 更多, 筛选, ＋, a row's menu, the mode, the
+     machine picker, the folded 「…」. */
+  --menu-r: 12px;
+  --menu-inset: 6px;
+  --menu-item: 28px;
+  /* The tab capsule is a glass head control too (F1.4): 36 / 44, its
+     pills the capsule rule's height. */
+  --glass-tabs: var(--glass-btn);
+  --glass-tab: var(--glass-item-h);
   --tab-face: 16px;
   /* The session bar's row at the foot of a session (52 on the canvas)
      and the accessory keys under it: a key cap and its floor width. */
@@ -2608,21 +2639,19 @@
   :root {
     --glass-btn: 44px;
     --ctl-glyph: 26px;
-    --head-ctl: 44px;
-    --head-item-w: 44px;
     --nav-h: 64px;
     --nav-item: 76px;
     --nav-glyph: 24px;
     --nav-gap: 24px;
     --list-row: 68px;
     --list-face: 40px;
-    --glass-tabs: 40px;
-    --glass-tab: 34px;
     --tab-face: 22px;
     --composer-h: 48px;
-    /* A tab's × under a finger: 32 wide by the tab's height, so a thumb
-       on the label does not close it. */
-    --tab-close: 32px;
+    --menu-r: 20px;
+    --menu-item: 44px;
+    /* A tab's × under a finger: 44 wide, its own cell, so a thumb on
+       the label does not close it (the audit fix plan F1.5). */
+    --tab-close: 44px;
   }
 }
 

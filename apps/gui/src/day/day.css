@@ -275,7 +275,7 @@
 }
 
 .dayblk .wipe {
-  animation: dayblk-wipe 0.85s cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: dayblk-wipe var(--dur-420) var(--ease-move) both;
 }
 @keyframes dayblk-wipe {
   from {
@@ -286,7 +286,7 @@
   }
 }
 .dayblk .fade {
-  animation: dayblk-fade 0.7s ease both;
+  animation: dayblk-fade var(--dur-420) var(--ease-out) both;
 }
 @keyframes dayblk-fade {
   from {
@@ -296,7 +296,7 @@
 .dayblk .draw {
   stroke-dasharray: 1;
   stroke-dashoffset: 1;
-  animation: dayblk-draw 0.85s cubic-bezier(0.25, 1, 0.5, 1) both;
+  animation: dayblk-draw var(--dur-420) var(--ease-move) both;
 }
 @keyframes dayblk-draw {
   to {
