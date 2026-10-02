@@ -1096,13 +1096,12 @@
      and, folded, at the start of the content's row alike. **The strip is
      the largest control in that row** (the owner: it must never read
      smaller than the session tabs beside it): 36 high, 36 × 30 pills,
-     22 glyphs. This machine's face at the row's end is 24. */
+     22 glyphs. */
   --wide-lead-start: 80px;
   --strip-h: 36px;
   --strip-item: 36px;
   --strip-item-h: 30px;
   --strip-glyph: 22px;
-  --me-face: 24px;
   /* **A detail page's one left and right edge** (the redesign, the
      owner: the head's avatar and verbs stand exactly on the content's
      edges). R0's head and the page under it both inset by this: 24 in a
@@ -1143,13 +1142,11 @@
      tab strip's right end) and Linux (system decorations) leave no
      strip here. */
   --traffic: 0px;
-  /* 360 since the redesign (方案 B): the canvas asked 340, and the top
-     row's own sum is wider — the window buttons' room (80), the strip at
-     the owner's size (six 36 pills, the rule and the capsule's padding,
-     about 229), this machine's face (32) and the gaps. So the column is
-     at least the row (`--wide-column-min`), and a drag cannot cut it. */
-  --list-w: 360px;
-  --wide-column-min: 360px;
+  /* 340 since the redesign (方案 B): the canvas's left column — and its
+     floor (`--wide-column-min`): the top row is the window buttons' room
+     (80) and the strip (about 229), and a drag must not cut it. */
+  --list-w: 340px;
+  --wide-column-min: 340px;
   /* The list pane's drag bounds. The floor is where the PaneBar stops
    * being usable — below ~180 the search field is a slit before the
    * pane itself has failed, so the pane should give way first. Under
@@ -2129,7 +2126,6 @@
   --spacing-strip-h: var(--strip-h);
   --spacing-strip-item-h: var(--strip-item-h);
   --spacing-strip-glyph: var(--strip-glyph);
-  --spacing-me-face: var(--me-face);
   --spacing-page: var(--page-inset);
   --spacing-head-ctl: var(--head-ctl);
   --spacing-head-item-h: var(--head-item-h);

@@ -15,16 +15,13 @@
  * window's top-left — at the start of the content's first row
  * (`Region`'s lead).
  *
- * `MeButton` is the row's other end: this machine's face, going straight
- * to 这台机器. The narrow face has neither: its navigation floats
- * (`FloatNav`).
+ * 这台机器 is inside 更多 (the owner, 2026-10-02: its face left the top
+ * row). The narrow face has no strip: its navigation floats (`FloatNav`).
  */
 import type { ReactNode } from "react";
 
-import { MachineAvatar } from "@/components/Avatar";
 import { IconMore } from "@/components/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { Avatar } from "@/gen/bindings/Avatar";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -109,40 +106,5 @@ export function LandingStrip({
         <IconMore />
       </Seat>
     </nav>
-  );
-}
-
-/** This machine's face at the far end of the top row, straight to
-    这台机器 — in the list column's row, and in the content's while the
-    list is folded. */
-export function MeButton({
-  me,
-  on,
-  onMe,
-}: {
-  me: { face: Avatar | null; paused: boolean } | null;
-  /** Whether 这台机器 is the page on screen. */
-  on: boolean;
-  onMe: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          data-slot="button"
-          data-rail-mark
-          data-on={on}
-          data-paused={me?.paused ? "" : undefined}
-          aria-label={gui.identity}
-          aria-current={on ? "page" : undefined}
-          onClick={onMe}
-          className="grid size-glass-btn flex-none place-items-center rounded-full hover:bg-fill data-[on=true]:bg-fill-strong focus-visible:outline-2 focus-visible:outline-ring"
-        >
-          <MachineAvatar face={me?.face ?? null} className="size-me-face" />
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">{gui.identity}</TooltipContent>
-    </Tooltip>
   );
 }

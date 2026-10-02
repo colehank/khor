@@ -89,9 +89,7 @@ export function WindowControls() {
  * region inside that one gets none.
  */
 export const RegionLead = createContext<ReactNode>(null);
-/** …and what stands at its far end then: this machine's face, which
-    must not leave the screen with the list column (the owner). */
-export const RegionTrail = createContext<ReactNode>(null);
+
 
 const ActionsSeat = createContext<HTMLElement | null | undefined>(undefined);
 
@@ -336,7 +334,6 @@ export function Region({
   children: ReactNode;
 }) {
   const lead = useContext(RegionLead);
-  const trail = useContext(RegionTrail);
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
@@ -381,7 +378,6 @@ export function Region({
             {caption}
           </span>
         )}
-        {trail}
         <WindowControls />
         {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand" />}
       </div>
@@ -409,7 +405,6 @@ export function Region({
         )}
       >
         <RegionLead.Provider value={null}>
-        <RegionTrail.Provider value={null}>
         <ActionsSeat.Provider value={head ? undefined : seat}>
           <SubtitleSeat.Provider value={head ? undefined : sub}>
             <AsideSeat.Provider value={head ? undefined : aside}>
@@ -417,7 +412,6 @@ export function Region({
             </AsideSeat.Provider>
           </SubtitleSeat.Provider>
         </ActionsSeat.Provider>
-        </RegionTrail.Provider>
         </RegionLead.Provider>
       </div>
     </div>

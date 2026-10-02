@@ -43,7 +43,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { FloatNav, type NavSeat } from "@/components/FloatNav";
-import { LandingStrip, MeButton } from "@/components/LandingStrip";
+import { LandingStrip } from "@/components/LandingStrip";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
@@ -106,7 +106,7 @@ import { MeshNow } from "@/views/MeshNow";
 import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
-import { Region, RegionLead, RegionTrail } from "@/components/Region";
+import { Region, RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
@@ -1207,29 +1207,12 @@ export default function App() {
       }}
     />
   );
-  const meButton = (
-    <MeButton
-      me={me ? { face: me.face, paused: me.paused } : null}
-      on={morePage === "identity"}
-      onMe={() => {
-        setMorePage("identity");
-        setScreen("detail");
-        setSwitchingTabs(false);
-      }}
-    />
-  );
   /** Folded, the strip stays where it was on screen — the window's
       top-left, now the start of the content's first row (`Region`'s
-      lead), the window's buttons' room before it — and this machine's
-      face stays at that row's far end (`Region`'s trail). */
+      lead), the window's buttons' room before it. */
   const foldedLead = folded ? (
     <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center self-stretch ps-wide-lead-start pe-row">
       {strip}
-    </div>
-  ) : null;
-  const foldedTrail = folded ? (
-    <div data-folded-trail className="flex flex-none items-center self-stretch pe-row">
-      {meButton}
     </div>
   ) : null;
   const nav = (
@@ -2002,7 +1985,33 @@ export default function App() {
           </h1>
         </SideSeat>
       )}
-      {morePageOrder.map((p) => (
+      {/* **这台机器 first, on the wide face** (the owner, 2026-10-02: its
+          face left the top row and lives in 更多): this machine's face and
+          name, over the word for the page. Narrow keeps it in its place
+          among the sections; its 更多 menu already leads to it. */}
+      {!narrow && (
+        <button
+          type="button"
+          data-more-open="identity"
+          data-more-me
+          data-on={morePage === "identity"}
+          onClick={() => {
+            setMorePage("identity");
+            setScreen("detail");
+          }}
+          className={cn(
+            "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start",
+            morePage === "identity" ? "bg-fill-strong" : "hover:bg-fill",
+          )}
+        >
+          <MachineAvatar face={me?.face ?? null} className="size-avatar flex-none" />
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-body font-title">{me?.shown ?? moreName("identity")}</span>
+            <span className="truncate text-callout text-muted-foreground">{moreName("identity")}</span>
+          </span>
+        </button>
+      )}
+      {morePageOrder.filter((p) => narrow || p !== "identity").map((p) => (
         <button
           key={p}
           type="button"
@@ -2289,15 +2298,14 @@ export default function App() {
         <div className="flex h-dvh flex-col">
           <div className="flex min-h-0 flex-1">
           {/* **The left column** (the redesign, 方案 B). Its first row is
-              the window's: the buttons' room, the landings' glyphs and 更多
-              in one glass capsule, this machine's face at the end (这台机
-              器). Its second row is the phone's list head (`PaneBar`): the
+              the window's: the buttons' room, then the landings' glyphs
+              and 更多 in one glass capsule (这台机器 is inside 更多). Its
+              second row is the phone's list head (`PaneBar`): the
               landing's name, then 筛选 / ＋ and the search circle. Then the
               rows, and a hairline on the one ground to the content.
               **Pressing the open landing's glyph folds the column away**;
-              the strip and the face stay in the window's top row, at the
-              two ends of the content's first row (`foldedLead`,
-              `foldedTrail`). Its width has one owner (docs/SHELL.md 第十五轮
+              the strip stays in the window's top row, at the start of the
+              content's first row (`foldedLead`). Its width has one owner (docs/SHELL.md 第十五轮
               第 4 条): `--list-w`, from the one seam's state. */}
           <aside
             data-side
@@ -2312,8 +2320,6 @@ export default function App() {
               className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-in select-none"
             >
               {strip}
-              <span className="flex-1" />
-              {meButton}
             </div>
             {sideHead}
             <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
@@ -2327,7 +2333,6 @@ export default function App() {
               browsing address bar are rows of their own. */}
           <main data-main className="relative flex min-w-0 flex-1 flex-col bg-background">
           <RegionLead.Provider value={foldedLead}>
-          <RegionTrail.Provider value={foldedTrail}>
           {morePage ? (
             <Region
               kind="detail"
@@ -2445,7 +2450,6 @@ export default function App() {
               </div>
             </>
           )}
-          </RegionTrail.Provider>
           </RegionLead.Provider>
           </main>
           </div>
