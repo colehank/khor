@@ -123,7 +123,7 @@ export function DeeperHeads({ children }: { children: ReactNode }) {
 /** The row a seated head is laid out as: the way back at its left,
     the title taking what is left, the screen's own buttons at the
     right. `self-stretch` so the whole row's blank is the head's. */
-export const HEAD_IN_ROW = "flex min-w-0 flex-1 items-center gap-in self-stretch pr-1";
+export const HEAD_IN_ROW = "flex min-w-0 flex-1 items-center gap-in self-stretch";
 
 /**
  * **A narrow detail screen's head, seated in the window's first row**

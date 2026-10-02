@@ -614,6 +614,7 @@ export function MachineVerbs({
       </Tooltip>
     );
   return (
+    <div data-machine-head-buttons className="flex flex-none items-center gap-in">
     <GlassCapsule size="head" data-machine-verbs>
       {tip(
         gui.machine_sessions,
@@ -636,11 +637,24 @@ export function MachineVerbs({
           </GlassItem>,
         ),
       )}
-      {/* After them, the workspace's own mark and box (`CodeButton`). */}
-      {code && (
-        <CodeButton code={code} mark={{ "data-verb": "code" }} className="h-head-item-h w-head-item-w rounded-full" />
-      )}
     </GlassCapsule>
+    {/* **VS Code is a button of its own** (the owner, 2026-10-02: 「作为一个
+        新的页面，不要和已有的 icon 合并为一个 icon 组」). The capsule's
+        verbs switch what this page shows; VS Code opens a page of its own,
+        so it is a glass circle beside them — the grammar of the list's
+        筛选 / ＋ and search, and of the landings and 更多. Drawn only where
+        there is an editor to open; chosen (the ground showing through)
+        while its window is up — still a button, not a switch. */}
+    {code?.offered && (
+      <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
+        <CodeButton
+          code={code}
+          mark={{ "data-verb": "code" }}
+          className="size-head-item-h rounded-full data-[on=true]:glass-sel"
+        />
+      </div>
+    )}
+    </div>
   );
 }
 
