@@ -65,7 +65,7 @@ import {
   followHistory,
   type ChatFrame,
 } from "@/api";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconChevronUp } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -1682,7 +1682,7 @@ export function ChatView({
         // live together on the row's own menu (`SessionsList`, 转成对话)
         // rather than one of them growing a button inside the pane that
         // merely looks at it.
-        <div className="flex-none border-t bg-card p-2">
+        <div className="flex-none px-row pt-xxs pb-in">
           <div className="flex items-center gap-2 px-2 py-1.5 text-callout">
             <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
               {gone ? gui.chat_no_record : gui.chat_readonly}
@@ -1690,7 +1690,7 @@ export function ChatView({
           </div>
         </div>
       ) : (
-      <div className="flex-none border-t bg-card p-2">
+      <div className="flex-none px-row pt-xxs pb-in">
         {/* The composer stands in the column the conversation is read in.
             At the pane's full width it would be a control several times
             wider than the text it writes into, and the eye would have to
@@ -1997,20 +1997,24 @@ export function ChatView({
                   say();
                 }
               }}
-              className="min-w-0 flex-1"
+              // A glass box beside a round send (the redesign, 2026-10-02).
+              className="glass min-h-glass-btn min-w-0 flex-1 rounded-2xl"
             />
             {/* Sending has a control of its own now that Enter is no
                 longer the only way to reach it — a box you can type into
                 during a turn needs somewhere to show that the sending is
                 the part that is unavailable. */}
-            <Button
-              size="sm"
+            <button
+              type="button"
+              data-slot="button"
               data-chat-send
+              aria-label={gui.send_it}
               disabled={inTurn || !text.trim()}
               onClick={say}
+              className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-glass-icon"
             >
-              {gui.send_it}
-            </Button>
+              <IconChevronUp />
+            </button>
             {inTurn && (
               <Button
                 size="sm"

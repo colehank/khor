@@ -71,7 +71,7 @@ import { createPortal } from "react-dom";
 import { TabStrip, type TabFace } from "@/browse/TabStrip";
 import { IconBack } from "@/components/icons";
 import { WINDOW_DRAG } from "@/components/shell";
-import { Button } from "@/components/ui/button";
+import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 
 type Seats = { trail: HTMLElement | null; under: HTMLElement | null };
@@ -140,11 +140,12 @@ export function SessionScreen({
       {/* No rule over the bar: the change of ground is the edge, and a
           line would cut the open tab off from the session it is joined
           to — the strip's own rule at the top (`TabStrip`). */}
-      <div data-session-bar className="flex flex-none flex-col bg-background pb-safe-bottom">
+      <div data-session-bar className="flex flex-none flex-col pb-safe-bottom">
         {/* Row 1 is R0 moved to the foot: a handle on the window where
             it is blank, like R0 (`shell.ts`). */}
         <div data-session-bar-tabs data-session-tabs aria-label={gui.session_tabs} {...WINDOW_DRAG} className="flex h-pane-head flex-none">
           <TabStrip
+            glass
             at="bottom"
             faces={faces}
             active={active}
@@ -156,16 +157,9 @@ export function SessionScreen({
             // so it never scrolls away with the tabs. The narrow face's
             // only exit, so it is at the finger's floor.
             head={
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={gui.back}
-                data-back
-                onClick={onBack}
-                className="min-h-touch min-w-touch flex-none"
-              >
+              <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
                 <IconBack />
-              </Button>
+              </GlassCircle>
             }
             tail={
               <>

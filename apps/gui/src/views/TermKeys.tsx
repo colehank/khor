@@ -34,7 +34,7 @@ import { useEffect, useState, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
 import { IconKeyboard } from "@/components/icons";
-import { Button } from "@/components/ui/button";
+import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -131,7 +131,9 @@ export function TermKeys({
       data-term-keys
       role="toolbar"
       aria-label={gui.term_keys}
-      className="flex h-key-row flex-none items-stretch overflow-x-auto bg-background px-xxs"
+      // The canvas's key row (the redesign, 2026-10-02): rounded caps on a
+      // `fill`, a row's inset at each end.
+      className="flex h-key-row flex-none items-center gap-1.5 overflow-x-auto px-row"
     >
       {KEYS.map((k) => {
         const held = k.name === "ctrl" && ctrl;
@@ -148,12 +150,12 @@ export function TermKeys({
             onClick={() => press(k)}
             // The box is the finger's floor, the cap is drawn inside it:
             // `p-xxs` round a `radius-xs` cap, the key cap's corner.
-            className="flex min-w-touch flex-none items-stretch p-xxs outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-ring"
+            className="flex h-key-cap min-w-key-cap-w flex-none items-stretch outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-ring"
           >
             <span
               className={cn(
-                "flex flex-1 items-center justify-center rounded-xs px-1 text-callout text-foreground",
-                held ? "bg-fill-strong" : "bg-card",
+                "flex flex-1 items-center justify-center rounded-lg px-2.5 text-callout font-label",
+                held ? "bg-fill-strong text-[var(--rail-on-ink)]" : "bg-fill text-foreground",
               )}
             >
               {k.cap}
@@ -188,9 +190,7 @@ export function KeyboardSwitch({ field }: { field: RefObject<HTMLElement | null>
     };
   }, [field]);
   return (
-    <Button
-      variant="ghost"
-      size="icon"
+    <GlassCircle
       data-keyboard-switch
       data-on={up}
       aria-pressed={up}
@@ -202,9 +202,9 @@ export function KeyboardSwitch({ field }: { field: RefObject<HTMLElement | null>
         if (up) el.blur();
         else el.focus({ preventScroll: true });
       }}
-      className={cn("min-h-touch min-w-touch flex-none", up && "bg-fill-strong")}
+      className={cn(up && "text-[var(--rail-on-ink)]")}
     >
       <IconKeyboard />
-    </Button>
+    </GlassCircle>
   );
 }

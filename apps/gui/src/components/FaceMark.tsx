@@ -63,7 +63,7 @@ export type KindMark = {
  */
 export const SIZES = {
   row: { face: "size-list-face", on: "size-kind-mark", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
-  tab: { face: "size-4", on: "size-kind-mark-tab", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
+  tab: { face: "size-tab-face", on: "size-kind-mark-tab", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
 } as const;
 
 /** Whether this app draws kind marks in the corner (「角标」) rather

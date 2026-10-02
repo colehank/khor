@@ -11,7 +11,7 @@ import {
   type MachineLog,
 } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
-import { IconAttach } from "@/components/icons";
+import { IconAttach, IconChevronUp } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -199,8 +199,13 @@ export function MachineChat({ id }: { id: string }) {
           second row** (`components/SessionBar`, 2026-10-02), the agent
           conversation's arrangement. */}
       <BarSeat at="under">
-      <div className="flex-none border-t bg-card px-3 py-2">
-      <div className="mx-auto flex w-full max-w-measure items-end gap-2 text-read">
+      {/* **A glass box and a round send** (the redesign, 2026-10-02): the
+          attach mark and the text in one glass capsule, the send beside
+          it as the brand's one solid circle (`brand-strong`, the
+          dialog's-one-act post). */}
+      <div className="flex-none px-row pt-xxs pb-in">
+      <div className="mx-auto flex w-full max-w-measure items-end gap-in text-read">
+        <div data-chat-box className="glass flex min-h-glass-btn min-w-0 flex-1 items-end rounded-2xl ps-1">
         <Button
           variant="ghost"
           size="icon"
@@ -208,7 +213,7 @@ export function MachineChat({ id }: { id: string }) {
           aria-label={gui.send_file}
           disabled={sendingFile}
           onClick={attach}
-          className="flex-none text-muted-foreground"
+          className="h-glass-item-h flex-none self-end rounded-full text-muted-foreground"
         >
           <IconAttach />
         </Button>
@@ -245,11 +250,20 @@ export function MachineChat({ id }: { id: string }) {
           // sits in, and a person should write in the size they read in.
           // On the paper like the bar it sits in (2026-09-30: nothing on
           // the board paints the frame's `background`).
-          className="min-h-0 flex-1 resize-none rounded-md border bg-card px-3 py-1.5 outline-none"
+          className="min-h-0 min-w-0 flex-1 resize-none self-center bg-transparent py-1.5 pe-row outline-none"
         />
-        <Button size="sm" data-chat-send disabled={sending || !draft.trim()} onClick={send}>
-          {gui.send_it}
-        </Button>
+        </div>
+        <button
+          type="button"
+          data-slot="button"
+          data-chat-send
+          aria-label={gui.send_it}
+          disabled={sending || !draft.trim()}
+          onClick={send}
+          className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-glass-icon"
+        >
+          <IconChevronUp />
+        </button>
       </div>
       </div>
       </BarSeat>

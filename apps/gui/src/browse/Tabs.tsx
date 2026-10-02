@@ -43,8 +43,11 @@ export function Tabs({
   bodyClass,
   frame = true,
   caption,
+  glass = false,
   children,
 }: {
+  /** The strip's glass look (`TabStrip` `glass`): the session tabs. */
+  glass?: boolean;
   /** A stale region's one line at R0's right end, after the strip
       (`Region caption`; components/RegionState). Framed strips only. */
   caption?: ReactNode;
@@ -98,6 +101,7 @@ export function Tabs({
         tail={tail}
         onSwitch={() => setOpen((o) => !o)}
         switching={open}
+        glass={glass}
       />
     </div>
   );

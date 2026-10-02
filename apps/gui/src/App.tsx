@@ -2284,6 +2284,7 @@ export default function App() {
               <div ref={setDetailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <Tabs
+                    glass
                     faces={tabFaces}
                     active={selected ?? ""}
                     onFocus={(id) => {

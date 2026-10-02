@@ -2096,6 +2096,11 @@
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
   --spacing-list-head: var(--list-head);
+  --spacing-glass-tabs: var(--glass-tabs);
+  --spacing-glass-tab: var(--glass-tab);
+  --spacing-tab-face: var(--tab-face);
+  --spacing-key-cap: var(--key-cap);
+  --spacing-key-cap-w: var(--key-cap-w);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
   /* The narrow session page's foot (2026-10-02): `h-key-row` on the
@@ -2157,6 +2162,10 @@
   --text-headline--line-height: var(--lh-headline);
   --text-headline--font-weight: 600;
   /* The navigation's seat names, iOS's tab bar 10 at every pointer. */
+  /* A session tab's name in the glass strip: 13 in a window, 15 on a
+     phone (the canvas). */
+  --text-tab: var(--fs-tab);
+  --text-tab--line-height: var(--lh-tab);
   --text-nav-label: 10px;
   --text-nav-label--line-height: 12px;
   --text-nav-label--font-weight: 500;
@@ -2376,6 +2385,8 @@
    `-apple-system-body`, `lib/ui-scale`), or the slider's value. */
 :root {
   --ui-scale: 1;
+  --fs-tab: calc(13px * var(--ui-scale));
+  --lh-tab: calc(18px * var(--ui-scale));
   --fs-title-lg: calc(22px * var(--ui-scale));
   --lh-title-lg: calc(28px * var(--ui-scale));
   --fs-title-md: calc(17px * var(--ui-scale));
@@ -2399,6 +2410,8 @@
 }
 @media (pointer: coarse) {
   :root {
+    --fs-tab: calc(15px * var(--ui-scale));
+    --lh-tab: calc(20px * var(--ui-scale));
     --fs-title-lg: calc(26px * var(--ui-scale));
     --lh-title-lg: calc(32px * var(--ui-scale));
     --fs-title-md: calc(20px * var(--ui-scale));
@@ -2443,6 +2456,15 @@
   --nav-menu: 236px;
   --list-row: 56px;
   --list-face: 32px;
+  /* The session tabs' glass capsule and the pills in it, and a tab's
+     face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
+  --glass-tabs: 34px;
+  --glass-tab: 28px;
+  --tab-face: 16px;
+  /* The session bar's row at the foot of a session (52 on the canvas)
+     and the accessory keys under it: a key cap and its floor width. */
+  --key-cap: 36px;
+  --key-cap-w: 40px;
   --list-head: var(--pane-head);
   /* What a scroller under the floating navigation keeps clear at its
      foot, so its last row can be scrolled out from under the glass. */
@@ -2458,6 +2480,9 @@
     --nav-gap: 24px;
     --list-row: 68px;
     --list-face: 40px;
+    --glass-tabs: 40px;
+    --glass-tab: 34px;
+    --tab-face: 22px;
   }
 }
 

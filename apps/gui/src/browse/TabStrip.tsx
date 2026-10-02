@@ -200,7 +200,16 @@ export function TabStrip({
   head,
   tail,
   at = "top",
+  glass = false,
 }: {
+  /** **The glass look** (the redesign, 2026-10-02): the tabs are pills in
+      one glass capsule — the one in front a `fill-strong` pill with its
+      ×, the rest ink — and the count sits at the capsule's end after a
+      hairline. `head` and `tail` stand outside the capsule, as glass
+      circles of their own. The session tabs wear it, at the foot of a
+      session on the narrow face and at the top of the content on the
+      wide one; a workspace's file tabs keep the strip they had. */
+  glass?: boolean;
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
@@ -403,22 +412,36 @@ export function TabStrip({
       // tab when it is crowded is the switcher, which has its own — and
       // the switcher is offered exactly when the strip has stopped
       // showing every tab.
-      className="flex h-pane-head min-w-0 flex-1 items-center gap-1 px-in"
+      className={cn(
+        "flex h-pane-head min-w-0 flex-1 items-center",
+        glass ? "gap-in px-row" : "gap-1 px-in",
+      )}
     >
       {head}
       {/* The scroller and the two fades over its ends. **No scrollbar**
           (第三轮 第 2 条:「标签会被移动条顶出窗口. 且此条无法拖动」):
           `app.css` hides it on `[data-tab-strip]`; the wheel, the fades,
           the count and the switcher are the ways past the edge. */}
-      <div className="relative flex min-w-0 flex-1 self-stretch">
-      {cut.left && (
+      <div
+        data-tab-capsule={glass || undefined}
+        className={cn(
+          "relative flex min-w-0",
+          // At a session's foot the capsule takes the row between the way
+          // back and the keyboard; over the wide face's content it is as
+          // long as its tabs (the canvas).
+          glass
+            ? cn("glass h-glass-tabs items-center self-center rounded-full px-glass-pad", below ? "flex-1" : "flex-initial")
+            : "flex-1 self-stretch",
+        )}
+      >
+      {!glass && cut.left && (
         <div
           data-tab-fade="left"
           aria-hidden="true"
           className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-linear-to-r from-background to-transparent"
         />
       )}
-      {cut.right && (
+      {!glass && cut.right && (
         <div
           data-tab-fade="right"
           aria-hidden="true"
@@ -430,7 +453,7 @@ export function TabStrip({
         data-tab-strip
         // `items-center`: 「+」 on the row's centreline with the tabs'
         // labels; the tabs themselves stretch to the floor (their foot).
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? "gap-0.5 self-stretch" : "flex-1 gap-1", glass && below && "flex-1")}
       >
         {faces.map((f) => {
           const on = f.id === active;
@@ -474,9 +497,11 @@ export function TabStrip({
                 // a tab whose colour stops short of where it can be
                 // pressed is a tab that lies about where it is, which is
                 // why the button below reaches into the foot.
-                below
-                  ? "group relative flex mb-tab-lip items-center gap-1 self-stretch rounded-b-md pr-0.5 pt-tab-lip pl-2"
-                  : "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
+                glass
+                  ? "group relative flex h-glass-tab items-center gap-1 self-center rounded-full pr-0.5 pl-1.5"
+                  : below
+                    ? "group relative flex mb-tab-lip items-center gap-1 self-stretch rounded-b-md pr-0.5 pt-tab-lip pl-2"
+                    : "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
                 // **Two widths, and each tab wears exactly one.** The one
                 // in front takes its own name's width — never less than a
                 // stub, so it does not read as the smallest tab on the
@@ -494,9 +519,13 @@ export function TabStrip({
                 // one width, which is what 2026-09-02 asked for; only
                 // once every stub is at the floor does the strip overflow.
                 // The tab in front never gives.
-                on
-                  ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
-                  : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
+                glass
+                  ? on
+                    ? "max-w-tab-on flex-none bg-fill-strong font-title text-foreground"
+                    : "max-w-tab flex-none pr-2 text-muted-foreground hover:bg-fill"
+                  : on
+                    ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
+                    : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
               )}
             >
               {/* **Every tab sits in a Tooltip, and only the front one's
@@ -547,8 +576,9 @@ export function TabStrip({
                 // clump in the app for one complaint about tabs.
                 className={cn(
                   "flex min-w-0 flex-1 items-center gap-tab-gap self-stretch text-left",
+                  glass && "text-tab",
                   // Into the foot, wherever the foot is.
-                  below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip",
+                  !glass && (below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip"),
                 )}
               >
                 {/* **A two-line file tab stands its glyph beside both
@@ -576,7 +606,7 @@ export function TabStrip({
                     kind={f.rename.kind}
                     id={f.rename.id}
                     title={f.label}
-                    className="min-w-0 flex-1 text-body"
+                    className={cn("min-w-0 flex-1", glass ? "text-tab" : "text-body")}
                     inputClassName="w-full text-callout"
                     nested
                     // The hook the width gate measures, kept on the box
@@ -616,7 +646,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 text-body", f.preview && "italic")}
+                    className={cn("flex min-w-0 flex-1", glass ? "text-tab" : "text-body", f.preview && "italic")}
                   >
                     <MidName text={f.label} />
                   </span>
@@ -690,11 +720,14 @@ export function TabStrip({
                 // is the ruling's, and a finger has the switcher's close
                 // at the floor.
                 className={cn(
-                  "flex h-full w-tab-close flex-none items-center justify-center rounded-sm text-muted-foreground outline-none",
+                  "flex h-full w-tab-close flex-none items-center justify-center text-muted-foreground outline-none",
+                  glass ? "rounded-full" : "rounded-sm",
                   "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
                   !on &&
                     !f.dirty &&
-                    "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+                    (glass
+                      ? "hidden"
+                      : "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"),
                 )}
                 onClick={() => onClose(f.id)}
               >
@@ -736,6 +769,12 @@ export function TabStrip({
           </Button>
         )}
       </div>
+      {glass && onSwitch && (crowded || switching) && (
+        <>
+          <span aria-hidden="true" className="h-4.5 w-px flex-none bg-border" />
+          <TabCount n={faces.length} onPress={onSwitch} open={switching} bare />
+        </>
+      )}
       </div>
       {/* Pinned against the scrolling row, in the order a hand reaches
           them: the way to see the ones that scrolled off, then the way
@@ -750,7 +789,7 @@ export function TabStrip({
           way *in* disappearing is not a way *out* disappearing, and
           holding the button drawn on `switching` would be drawing "go
           see your tabs" over the screen that is showing them. */}
-      {onSwitch && (crowded || switching) && <TabCount n={faces.length} onPress={onSwitch} open={switching} />}
+      {!glass && onSwitch && (crowded || switching) && <TabCount n={faces.length} onPress={onSwitch} open={switching} />}
       {tail}
     </div>
   );
@@ -769,7 +808,18 @@ export function TabStrip({
  * borrowed onto the wide face; the narrow face is just the width where
  * the condition is permanently true.
  */
-export function TabCount({ n, onPress, open = false }: { n: number; onPress: () => void; open?: boolean }) {
+export function TabCount({
+  n,
+  onPress,
+  open = false,
+  bare = false,
+}: {
+  n: number;
+  onPress: () => void;
+  open?: boolean;
+  /** Inside the glass capsule: the number alone, no box round it. */
+  bare?: boolean;
+}) {
   return (
     <Button
       variant="ghost"
@@ -788,7 +838,7 @@ export function TabCount({ n, onPress, open = false }: { n: number; onPress: () 
       // felt every time.
       className="min-h-touch min-w-touch flex-none"
     >
-      <span className="rounded-sm border px-1 text-caption tabular-nums">{n}</span>
+      <span className={cn("text-caption tabular-nums", bare ? "text-muted-foreground" : "rounded-sm border px-1")}>{n}</span>
     </Button>
   );
 }
