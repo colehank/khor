@@ -75,7 +75,7 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoInline, WhoSeat, type AddOption, type Who } from "@/views/Composer";
+import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, type AddOption, type Who } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
@@ -1344,7 +1344,7 @@ export function ChatView({
           onPick: (v) => void chatSetOption(id, o.id, v).catch(() => {}),
         },
   );
-  /** Who is answering, for the capsule's who seat and the inline model. */
+  /** Who is answering, for the capsule's who seat. */
   const who: Who = {
     Mark: sessionMark("gui", category),
     name: agentName(category, facts?.name ?? null),
@@ -1977,7 +1977,6 @@ export function ChatView({
               seatYields={!inTurn && !!text.trim()}
               trail={
                 <>
-                  <WhoInline who={who} />
                   {modeSeat}
                   <WhoSeat who={who} tip={!coarse} />
                   {/* Send only while there is something to send and the

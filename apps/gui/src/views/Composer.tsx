@@ -43,22 +43,21 @@ const MENU = "glass rounded-menu border-0 bg-glass-menu p-menu-inset text-foregr
     rim's 6 above and below. */
 const SEAT = "grid size-composer-item flex-none place-items-center rounded-full [&_svg]:size-ctl-glyph";
 
-/** What the text keeps before the model is written out inline. */
-const TEXT_FLOOR_INLINE = 320;
 /** What the text keeps while typing before the who seat gives way. */
 const TEXT_FLOOR_SEAT = 120;
-/** The least an inline model is worth drawing at: its mark and a few
-    characters. */
-const INLINE_MIN = 72;
 
 /**
- * The capsule. Two of its parts are decided by **its own width**, not
- * the window's: the model written out inline (`[data-composer-inline]`)
- * only while the text would still keep `TEXT_FLOOR_INLINE`, and then no
- * wider than leaves it that (it truncates before it pushes anything);
- * and the who seat (`[data-composer-seat]`), which gives way while
+ * The capsule. One of its parts is decided by **its own width**, not the
+ * window's: the who seat (`[data-composer-seat]`), which gives way while
  * there is text to send (`seatYields`) and the text would keep less
  * than `TEXT_FLOOR_SEAT` — on a 390 phone with the longest mode word.
+ *
+ * **No model is written inside the capsule** (the owner, 2026-10-03, on
+ * a Codex session: 「这里不要显示这个model水印」). The model is the who
+ * seat's panel's and its tooltip's. ⚠️ 墓碑: `WhoInline`, the agent's
+ * mark and the model id before the mode wherever the capsule had room —
+ * read as a watermark, and before usage was known it stood the same
+ * mark twice side by side with the seat's.
  */
 export function Composer({
   lead,
@@ -72,7 +71,6 @@ export function Composer({
   seatYields?: boolean;
 }) {
   const cap = useRef<HTMLDivElement>(null);
-  const [room, setRoom] = useState<number | null>(null);
   const [seatGone, setSeatGone] = useState(false);
   const seatW = useRef(0);
   const measure = useRef(() => {});
@@ -84,22 +82,15 @@ export function Composer({
     const inner = el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
     const seat = el.querySelector<HTMLElement>("[data-composer-seat]");
     if (seat && seat.offsetWidth > 0) seatW.current = seat.offsetWidth;
-    // Everything but the text and the inline model, as drawn now.
+    // Everything but the text, as drawn now.
     const others = [...el.children].filter(
-      (k): k is HTMLElement =>
-        k instanceof HTMLElement &&
-        !k.hasAttribute("data-composer-text") &&
-        !k.hasAttribute("data-composer-inline") &&
-        k.offsetWidth > 0,
+      (k): k is HTMLElement => k instanceof HTMLElement && !k.hasAttribute("data-composer-text") && k.offsetWidth > 0,
     );
     const free = inner - others.reduce((n, k) => n + k.offsetWidth + gap, 0);
     // With the seat back in, what the text would keep.
     const withSeat = seatGone ? free - seatW.current - gap : free;
     const gone = seatYields && seatW.current > 0 && withSeat < TEXT_FLOOR_SEAT;
     if (gone !== seatGone) setSeatGone(gone);
-    const left = (gone ? withSeat + seatW.current + gap : withSeat) - TEXT_FLOOR_INLINE - gap;
-    const next = left >= INLINE_MIN ? Math.floor(left) : null;
-    if (next !== room) setRoom(next);
   };
   useLayoutEffect(() => measure.current());
   useEffect(() => {
@@ -114,12 +105,7 @@ export function Composer({
       ref={cap}
       data-chat-box
       data-seat-gone={seatGone || undefined}
-      data-inline-gone={room === null || undefined}
-      style={{ "--inline-room": `${room ?? 0}px` } as React.CSSProperties}
-      className={cn(
-        "glass flex min-h-composer min-w-0 flex-1 items-end gap-1 rounded-composer p-1.5",
-        "data-[seat-gone]:[&_[data-composer-seat]]:hidden data-[inline-gone]:[&_[data-composer-inline]]:hidden",
-      )}
+      className="glass flex min-h-composer min-w-0 flex-1 items-end gap-1 rounded-composer p-1.5 data-[seat-gone]:[&_[data-composer-seat]]:hidden"
     >
       {lead}
       {children}
@@ -539,22 +525,5 @@ export function WhoSeat({ who, tip }: { who: Who; tip: boolean }) {
         ))}
       </PopoverContent>
     </Popover>
-  );
-}
-
-/** Where the capsule is wide enough, the model written out before the
-    mode: the agent's mark and the id, tertiary. The capsule decides
-    whether it is drawn and how wide (`Composer`). */
-export function WhoInline({ who }: { who: Who }) {
-  if (!who.model) return null;
-  return (
-    <span
-      data-composer-inline
-      data-chat-who-inline
-      className="flex h-composer-item max-w-(--inline-room) min-w-0 shrink items-center gap-1.5 ps-2 pe-1 text-tertiary"
-    >
-      <who.Mark className="size-3.5 flex-none text-muted-foreground" />
-      <span className="min-w-0 truncate font-mono text-callout">{who.model}</span>
-    </span>
   );
 }
