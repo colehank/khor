@@ -56,6 +56,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SideList, type SideRow } from "@/components/SideList";
 import { sessionKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
+import { useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
 
 /** One tab as it is shown: what it calls itself, whose machine it is
@@ -268,6 +269,9 @@ export function TabStrip({
       (`RegionLead`): the capsule follows the block, a gap after it. */
   const led = useContext(RegionLead) !== null;
   const strip = useRef<HTMLDivElement>(null);
+  // The front tab's piece slides to the tab brought forward, in the glass
+  // capsule (F7.2, `lib/travel`).
+  useTravel(below ? "tabs-below" : "tabs", () => (glass ? strip.current : null), active);
   // Whether the strip has given up on its own promise. Measured off the
   // element, not counted from `faces.length` and a width: how many tabs
   // fit depends on the region, which the rail, the window and the

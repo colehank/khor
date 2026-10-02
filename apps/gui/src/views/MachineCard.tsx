@@ -38,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cli, gui } from "@/gen/catalog";
 import { tickSet } from "@/lib/ruler";
 import { useKept } from "@/lib/kept";
+import { useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
 import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
@@ -732,6 +733,12 @@ export function MachineVerbs({
   }, [narrow, verbsKey]);
 
   const anyOn = sessionsOn || filesOn || webOn || !!code?.up;
+  // The chosen verb's piece slides to the one pressed (F7.2, `lib/travel`).
+  useTravel(
+    "verbs",
+    () => box.current?.querySelector<HTMLElement>("[data-machine-verbs]") ?? null,
+    sessionsOn ? "sessions" : filesOn ? "files" : webOn ? "web" : null,
+  );
   return (
     <div ref={box} data-machine-head-buttons data-folded={folded || undefined} className="relative flex flex-none items-center gap-in">
       {narrow && (

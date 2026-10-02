@@ -14,7 +14,7 @@
  * with the brand's deep ink, its glyph's solid piece filled (`rail-on-ink`,
  * `app.css`); the others are ink on the glass.
  */
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 import { MachineAvatar } from "@/components/Avatar";
 import { IconGear, IconMore } from "@/components/icons";
@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Avatar } from "@/gen/bindings/Avatar";
+import { useTravel } from "@/lib/travel";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -93,12 +94,16 @@ export function FloatNav({
   onMe: () => void;
   className?: string;
 }) {
+  // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
+  const bar = useRef<HTMLElement>(null);
+  useTravel("bar", () => bar.current, active ?? (moreOn ? "more" : null));
   return (
     // **Four seats in one capsule** (the owner, round 14: on the narrow
     // bar 更多 is not a button of its own — ⚠️ 墓碑, round 8 split it into
     // a circle beside the capsule; the wide strip keeps that). The three
     // landings, then 更多 with its word under the glyph, 314 wide.
     <nav
+      ref={bar}
       data-float-nav
       aria-label={gui.nav}
       // The padding keeps the hairline the glass had before its edge

@@ -20,11 +20,12 @@
  * 这台机器 is inside 更多 (the owner, 2026-10-02: its face left the top
  * row). The narrow face has no strip: its navigation floats (`FloatNav`).
  */
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 import { IconMore } from "@/components/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
+import { useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
 
 export type StripSeat = { key: string; name: string; glyph: ReactNode; badge?: number };
@@ -89,12 +90,16 @@ export function LandingStrip({
   onGo: (key: string) => void;
   onMore: () => void;
 }) {
+  // The chosen pill slides to the landing pressed (F7.2, `lib/travel`).
+  const strip = useRef<HTMLElement>(null);
+  useTravel("strip", () => strip.current, active);
   return (
     // The landings in one glass capsule, and 更多 a glass circle of its own
     // beside it (the owner, 2026-10-02: 「单独一个按钮，和别的四个分开」) —
     // the list head's grammar, a capsule and a circle.
     <div data-landing-pair className="flex flex-none items-center gap-in">
       <nav
+        ref={strip}
         data-landing-strip
         aria-label={gui.nav}
         className="glass flex h-strip-h flex-none items-center rounded-full px-glass-pad"
