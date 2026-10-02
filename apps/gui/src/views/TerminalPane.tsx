@@ -50,9 +50,10 @@
 //   - **⌘F is the terminal's own search** (`SearchAddon` + the bar in
 //     this file), not the page's — a page find would search the DOM of
 //     a webgl canvas and find nothing;
-//   - **a bell is a flash** on the frame, and **the title a program
-//     sets** (OSC 0/2) is shown in the corner: the shell said it, and a
-//     title that goes nowhere is a program talking to no one.
+//   - **a bell is a flash** on the frame. ⚠️ 墓碑 (2026-10-02, the owner:
+//     「不要显示水印」): the title a program sets (OSC 0/2) was shown in
+//     the top right corner, muted on a wash — 「zgh@Mac-mini:/Volumes/…」
+//     over the output. It is not drawn any more, and not kept.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -341,9 +342,6 @@ export function TerminalPane({ id }: { id: string }) {
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<{ at: number; of: number } | null>(null);
-  // What the program running inside called itself (OSC 0/2). Empty
-  // until something sets one; a shell that never does says nothing.
-  const [title, setTitle] = useState("");
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
   const bellTimer = useRef(0);
@@ -430,7 +428,6 @@ export function TerminalPane({ id }: { id: string }) {
       window.clearTimeout(bellTimer.current);
       bellTimer.current = window.setTimeout(() => setRang(false), BELL_MS);
     });
-    const titled = term.onTitleChange(setTitle);
     // Copy on select. The clipboard can refuse (no permission, no
     // secure context on a LAN address) and then ⌘C still works — this
     // is the shortcut, not the only way.
@@ -581,7 +578,6 @@ export function TerminalPane({ id }: { id: string }) {
       wrote.dispose();
       found.dispose();
       rung.dispose();
-      titled.dispose();
       selected.dispose();
       shifted();
       window.clearTimeout(bellTimer.current);
@@ -829,14 +825,6 @@ export function TerminalPane({ id }: { id: string }) {
             finding ? "top-[calc(var(--spacing)*12+var(--day-over))]" : "top-[calc(var(--spacing)+var(--day-over))]",
           )}
         >
-          {/* What the program calls itself. Muted and on a wash so it
-              reads over output without hiding it; `pointer-events-none`
-              from the column, so a click lands on the screen beneath. */}
-          {title && (
-            <div data-term-title className="max-w-72 truncate rounded bg-card/70 px-1 text-muted-foreground">
-              {title}
-            </div>
-          )}
           {gone && (
             <div data-term-over className="text-muted-foreground">
               {gui.term_over}

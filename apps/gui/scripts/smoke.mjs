@@ -5264,16 +5264,19 @@ for line in sys.stdin:
   await page.locator("[data-term-bottom]").click();
   await until("the live screen again", 20_000, async () => (await onScreen()).includes(200));
 
-  //      (2) the title a program sets (OSC 0) is shown; (3) a bell
+  //      (2) the title a program sets (OSC 0) is **not** drawn over
+  //      the screen (2026-10-02, the owner: 「不要显示水印」 — it was a
+  //      line muted on a wash in the pane's top right); (3) a bell
   //      flashes the frame. Both arrive as bytes through `cat` — the tty
   //      echoes the escape as `^[` and cat writes the real one — and the
   //      bell is caught by an observer armed *before* the byte is sent,
-  //      because the flash is shorter than a poll.
+  //      because the flash is shorter than a poll. The title has nothing
+  //      to wait for, so it is given the time it took to show before.
   await pasteVia(sbRow, "\x1b]0;smoke-title\x07\n");
-  await until("the title on the pane", 10_000, async () =>
-    (await page.locator("[data-term-title]").count()) === 1 &&
-    (await page.locator("[data-term-title]").innerText()).trim() === "smoke-title",
-  );
+  await new Promise((r) => setTimeout(r, 2_000));
+  if ((await page.locator("[data-term-title]").count()) !== 0) {
+    throw new Error("the program's title is drawn over the terminal");
+  }
   await page.evaluate(() => {
     const box = document.querySelector("[data-terminal]");
     window.__bellSeen = false;
