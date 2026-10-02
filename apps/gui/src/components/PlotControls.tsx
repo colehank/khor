@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { IconMore } from "@/components/icons";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -239,17 +240,24 @@ export function PlotSettings({
   }, [open, shape]);
   return (
     <span ref={here} data-plot-settings-at className="relative inline-flex">
-      <button
-        type="button"
-        data-plot-settings
-        data-open={open ? "" : undefined}
-        aria-expanded={open}
-        aria-label={rows.map((r) => r.word).join(" / ")}
-        onClick={() => setOpen(!open)}
-        className="inline-flex min-h-touch min-w-touch items-center justify-center text-muted-foreground hover:text-foreground"
-      >
-        <IconMore className="size-4" />
-      </button>
+      {/* A glyph-only control names itself (W-V7); round, so its ring is
+          (W-V6). */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            data-plot-settings
+            data-open={open ? "" : undefined}
+            aria-expanded={open}
+            aria-label={rows.map((r) => r.word).join(" / ")}
+            onClick={() => setOpen(!open)}
+            className="inline-flex min-h-touch min-w-touch items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+          >
+            <IconMore className="size-4" />
+          </button>
+        </TooltipTrigger>
+        {!open && <TooltipContent side="top">{rows.map((r) => r.word).join(" / ")}</TooltipContent>}
+      </Tooltip>
       {open && (
         // **On the figure, not beside it.** The panel is absolute so
         // opening it cannot push the drawing down — the same rule the
@@ -289,7 +297,7 @@ export function PlotSettings({
                     aria-pressed={o.key === r.chosen}
                     onClick={() => onPick(r.key, o.key)}
                     className={cn(
-                      "inline-flex min-h-touch min-w-touch items-center justify-center px-in text-callout hover:text-foreground",
+                      "inline-flex min-h-touch min-w-touch items-center justify-center rounded-sm px-in text-callout hover:text-foreground",
                       o.key === r.chosen ? "font-title text-foreground" : "text-muted-foreground",
                     )}
                   >

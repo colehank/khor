@@ -176,8 +176,30 @@ export function PaneBar({
       switcher — filter and ＋ are a glass capsule's items. ⚠️ 墓碑: bare
       ghost buttons off the seat. */
   const Plus = GlassItem;
+  /** Ends a search the circle opened, and gives the caret back to the
+      circle (W-V4) — it reappears where the field was. */
+  const endSearch = (from: HTMLElement | null) => {
+    const row = from?.closest("[data-pane-bar]");
+    onQuery("");
+    setSearching(false);
+    requestAnimationFrame(() => row?.querySelector<HTMLElement>("[data-search-open]")?.focus());
+  };
   const box = (
-      <div className="flex min-w-0 flex-1 items-center">
+      <div
+        className="flex min-w-0 flex-1 items-center"
+        // **Escape, the Mac's way** (W-V4): the first clears what is
+        // typed, the next — or the first, on an empty box — ends the
+        // search. An open list of completions takes its own Escape first.
+        onKeyDownCapture={(e) => {
+          if (!glass || e.key !== "Escape" || e.nativeEvent.isComposing) return;
+          const t = e.target as HTMLElement;
+          if (t.getAttribute("aria-expanded") === "true") return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (query !== "") onQuery("");
+          else endSearch(t);
+        }}
+      >
         {axes && axes.length > 0 && filter ? (
           <Omnibox
             label={searchLabel}
@@ -360,10 +382,7 @@ export function PaneBar({
           <GlassCircle
             aria-label={gui.search_close}
             data-search-close
-            onClick={() => {
-              onQuery("");
-              setSearching(false);
-            }}
+            onClick={(e) => endSearch(e.currentTarget)}
           >
             <IconClose />
           </GlassCircle>

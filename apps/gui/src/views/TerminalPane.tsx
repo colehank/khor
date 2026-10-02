@@ -732,7 +732,7 @@ export function TerminalPane({ id }: { id: string }) {
         the two steps, the way out. ⚠️ 墓碑: an opaque card over the
         screen's top-right corner. */}
     {finding && (
-      <div data-term-find-row className="flex flex-none justify-end px-row pt-[var(--day-over)] pb-xxs">
+      <div data-term-find-row className="flex flex-none justify-end px-page pt-[var(--day-over)] pb-xxs">
         <div data-term-find className="glass flex h-glass-btn min-w-0 items-center gap-1 rounded-full ps-3 pe-glass-pad">
           <input
             data-term-find-input

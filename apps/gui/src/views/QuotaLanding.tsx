@@ -2077,6 +2077,7 @@ export function QuotaLanding({
             kind="detail"
             title={current?.name ?? gui.accounts_tab}
             caption={staleSay}
+            capped
             className="overflow-y-auto"
           >
             {subtitle}

@@ -2535,7 +2535,7 @@ function Top({
           type="button"
           data-top-all
           onClick={() => setAll(true)}
-          className="flex min-h-touch items-center text-callout text-muted-foreground hover:text-foreground"
+          className="flex min-h-touch items-center rounded-sm text-callout text-muted-foreground hover:text-foreground"
         >
           {gui.top_show_all(ordered.length)}
         </button>
@@ -3481,7 +3481,7 @@ function Column({
       aria-sort={on ? (sort.dir === "up" ? "ascending" : "descending") : "none"}
       aria-busy={waiting || undefined}
       className={cn(
-        "font-body",
+        "rounded-xs font-body",
         // **No padding of its own.** It carried `px-row` on the
         // right-aligned heads, which inset the word 8px from the edge
         // its own numbers are flush against — the head and its column

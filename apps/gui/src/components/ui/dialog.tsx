@@ -65,15 +65,18 @@ function DialogContent({
   // most of these are opened from a menu or by state, not by a Radix
   // trigger, so Radix had nothing to return to and focus fell to the
   // page. What held focus as the dialog came up is kept and refocused.
+  // **Read when it opens** (W-V3), not when this component first drew:
+  // the dialog's wrapper is drawn with the page, long before anybody
+  // opens it, and what held focus then was the page itself.
   const opener = React.useRef<HTMLElement | null>(null);
-  if (opener.current === null && typeof document !== "undefined") {
+  const remember = () => {
     const at = document.activeElement;
     // Opened from a menu's item: the menu is going away, so its trigger.
     const menu = at instanceof HTMLElement ? at.closest<HTMLElement>('[role="menu"]') : null;
     const trigger = menu?.id ? document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(menu.id)}"]`) : null;
     opener.current = trigger ?? (at instanceof HTMLElement && at !== document.body ? at : null);
-  }
-  const { onCloseAutoFocus, ...rest } = props;
+  };
+  const { onCloseAutoFocus, onOpenAutoFocus, ...rest } = props;
   const close = React.useRef<HTMLButtonElement>(null);
   // State, not a ref: the content mounts when the dialog opens, after
   // this component did, and the sheet's listeners need that moment.
@@ -87,6 +90,10 @@ function DialogContent({
         ref={setSheet}
         data-slot="dialog-content"
         data-form={form ? "" : undefined}
+        onOpenAutoFocus={(e) => {
+          remember();
+          onOpenAutoFocus?.(e);
+        }}
         onCloseAutoFocus={(e) => {
           onCloseAutoFocus?.(e);
           if (e.defaultPrevented) return;

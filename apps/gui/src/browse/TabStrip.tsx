@@ -187,11 +187,14 @@ function PreviewMark() {
 function MidName({ text }: { text: string }) {
   const KEEP = 5;
   if (text.length <= KEEP * 2) return <span className="min-w-0 truncate">{text}</span>;
+  // **One gapless run** (W-V1): the label's own gap is for the preview
+  // mark, and between the two halves of a name it read as a typo
+  // (「www.baid u.com」).
   return (
-    <>
+    <span data-mid-name className="flex min-w-0">
       <span className="min-w-0 truncate">{text.slice(0, -KEEP)}</span>
       <span className="flex-none">{text.slice(-KEEP)}</span>
-    </>
+    </span>
   );
 }
 
@@ -789,10 +792,12 @@ export function TabStrip({
                 // is the ruling's, and a finger has the switcher's close
                 // at the floor.
                 className={cn(
-                  "flex h-full w-tab-close flex-none items-center justify-center outline-none",
+                  // The one ring (W-V6): no ring utilities of its own; the
+                  // base rule draws it, inside the cell.
+                  "flex h-full w-tab-close flex-none items-center justify-center focus-visible:-outline-offset-2",
                   glass ? "rounded-full" : "rounded-sm",
                   on || f.dirty ? "text-muted-foreground" : "text-tertiary group-hover:text-muted-foreground",
-                  "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
+                  "hover:bg-muted hover:text-foreground",
                 )}
                 onClick={() => onClose(f.id)}
               >
@@ -966,7 +971,10 @@ export function TabSwitcher({
     <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} seat={onBack ? "head" : seat} />
   );
   return (
-    <div data-tab-switcher className="flex h-full min-h-0 flex-col">
+    // In the content pane (no way back drawn), the switcher keeps to the
+    // pane's two lines like its head (W-V5): the list's own 8 inside,
+    // the rest here.
+    <div data-tab-switcher className={cn("flex h-full min-h-0 flex-col", !onBack && "px-[calc(var(--page-inset)-var(--gap-in))]")}>
       {onBack ? (
         <NarrowHead>
           {(seated) => {

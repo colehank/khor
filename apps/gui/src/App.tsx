@@ -1822,7 +1822,9 @@ export default function App() {
         ) : machineBody === "files" ? (
           <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} onOpenFile={setFileBack} />
         ) : machineBody === "sessions" ? (
-          <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-rows-inset">
+          // The rows' hairlines end on the page's right line (W-V5): the
+          // list's own 8 and its row's 12 inside, the rest here.
+          <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto ps-rows-inset pe-[calc(var(--page-inset)-var(--gap-in))]">
             <h2 className="flex min-h-touch items-end px-[calc(var(--page-inset)-var(--rows-inset))] pt-in pb-xxs text-group text-muted-foreground">
               {gui.machine_sessions}
             </h2>
@@ -2110,7 +2112,7 @@ export default function App() {
             setScreen("detail");
           }}
           className={cn(
-            "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start text-headline",
+            "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start text-headline focus-visible:-outline-offset-2",
             morePage === "identity" ? "bg-fill-strong" : "hover:bg-fill",
           )}
         >
@@ -2138,7 +2140,8 @@ export default function App() {
           // x the 这台机器 row's do, the title `headline` whether or not it
           // is the picked one, and the hairline under the words.
           className={cn(
-            "flex min-h-touch items-stretch gap-row rounded-md text-start text-headline",
+            // The ring inside the row, as every list row's (W-V6).
+            "flex min-h-touch items-stretch gap-row rounded-md text-start text-headline focus-visible:-outline-offset-2",
             // Narrow, the hairline runs to the screen's edge as every
             // list's does (V17): the row keeps its left inset only.
             narrow ? "ms-in ps-3" : "mx-in px-3",
@@ -2656,6 +2659,7 @@ export default function App() {
                     // alone (10-layout 「一个动作只有一个家」).
                     actions={machineVerbs}
                     flush={landing === "workspaces" && openWs !== null}
+                    capped={landing === "devices" && selectedDevice !== null && machineBody === "dashboard"}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
                     // (An open machine's model is R0's second line and its

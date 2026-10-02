@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
 import { useCoarse } from "@/hooks/use-coarse";
-import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, useGrowingText } from "@/views/Composer";
+import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, Tip, useGrowingText } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
@@ -208,7 +208,11 @@ export function MachineChat({ id }: { id: string }) {
       <div className="flex-none px-row pt-xxs pb-in">
       <div className="mx-auto flex w-full max-w-measure text-read">
         <Composer
-          lead={<PlusSeat data-attach-file aria-label={gui.send_file} disabled={sendingFile} aria-busy={sendingFile || undefined} onClick={attach} />}
+          lead={
+            <Tip label={gui.send_file}>
+              <PlusSeat data-attach-file aria-label={gui.send_file} disabled={sendingFile} aria-busy={sendingFile || undefined} onClick={attach} />
+            </Tip>
+          }
           trail={
             // Drawn only once there is something to send (progressive
             // disclosure: never a dimmed control).

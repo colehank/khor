@@ -1892,6 +1892,12 @@ aside[data-side] {
   }
 }
 
+/* The workspace's sessions column stands at the pane's right edge: its
+   head's glass ends on the content's right line (W-V5). */
+:root:not([data-narrow]) [data-ws-sessions] [data-pane-bar] {
+  padding-inline-end: var(--page-inset);
+}
+
 /* **A right-clicked row is ringed while its menu is open** (the audit fix
    plan F3.6; W23): Finder's target ring, so the row the menu acts on is
    never in doubt. */

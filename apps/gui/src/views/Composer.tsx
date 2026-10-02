@@ -136,6 +136,17 @@ export function useGrowingText(box: React.RefObject<HTMLTextAreaElement | null>,
 export const COMPOSER_TEXT =
   "min-h-composer-item max-h-chat-box min-w-0 flex-1 resize-none self-center border-0 bg-transparent px-1 py-[calc((var(--composer-item)-1lh)/2)] outline-none shadow-none placeholder:text-muted-foreground focus-visible:ring-0";
 
+/** **A glyph-only seat names itself** (W-V7): its word as a tooltip,
+    wrapped around whatever trigger it already is. */
+export function Tip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top">{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /** ＋ as a plain glyph button (the menu or the picker hangs off it). */
 export function PlusSeat(props: React.ComponentProps<"button">) {
   return (
@@ -331,12 +342,19 @@ export type AddOption =
  */
 export function AddSeat({ onAttach, options }: { onAttach?: () => void; options: AddOption[] }) {
   if (!onAttach && options.length === 0) return null;
-  if (options.length === 0) return <PlusSeat data-chat-add onClick={onAttach} />;
+  if (options.length === 0)
+    return (
+      <Tip label={gui.chat_add}>
+        <PlusSeat data-chat-add onClick={onAttach} />
+      </Tip>
+    );
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <PlusSeat data-chat-add />
-      </DropdownMenuTrigger>
+      <Tip label={gui.chat_add}>
+        <DropdownMenuTrigger asChild>
+          <PlusSeat data-chat-add />
+        </DropdownMenuTrigger>
+      </Tip>
       <DropdownMenuContent
         side="top"
         align="start"
@@ -535,13 +553,11 @@ export function WhoSeat({ who, tip }: { who: Who; tip: boolean }) {
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>{seat}</PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="top" data-chat-who-tip className="flex flex-col gap-0.5">
-            {rows.map((r) => (
-              <span key={r.key} className="flex items-center gap-1.5">
-                <span className="opacity-70">{r.label}</span>
-                {r.value}
-              </span>
-            ))}
+          {/* **One line, naming the seat** (W-V7): who · model ·
+              context — the panel a press opens says the rest, and a
+              tooltip that drew the whole panel showed it twice. */}
+          <TooltipContent side="top" data-chat-who-tip>
+            {[who.name, who.model, pct === null ? null : gui.chat_context(String(pct))].filter(Boolean).join(" · ")}
           </TooltipContent>
         </Tooltip>
       ) : (

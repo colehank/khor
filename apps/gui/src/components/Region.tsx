@@ -306,9 +306,14 @@ export function Region({
   caption,
   busy,
   flush,
+  capped,
   className,
   children,
 }: {
+  /** **The head stops where the page's content does** (W-V5): on a page
+      capped at `--detail-max`, the verbs and VS Code end on the
+      content's right edge, not on the window's. */
+  capped?: boolean;
   kind: RegionKind;
   /** What R0 holds where it is not a `PageHead` — the tab strip (tabs),
       the address bar (doc). **Absent, R0 is a `PageHead`** with the
@@ -350,7 +355,10 @@ export function Region({
         // (`shell.ts`): its blank moves the window, and what is pressable
         // inside it keeps its press by tauri's own rule.
         {...WINDOW_DRAG}
-        className="relative flex h-pane-head flex-none items-end select-none"
+        className={cn(
+          "relative flex h-pane-head flex-none items-end select-none",
+          capped && "max-w-[calc(var(--detail-max)+2*var(--page-inset))]",
+        )}
       >
         {lead}
         <div className="flex min-w-0 flex-1 self-stretch">

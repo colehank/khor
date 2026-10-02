@@ -308,7 +308,9 @@ export function NavOrderSection() {
                   data-nav-grip
                   aria-label={navName(key)}
                   aria-keyshortcuts="ArrowUp ArrowDown"
-                  className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center text-tertiary [&_svg]:size-4"
+                  // Round, and its ring drawn inside the row (W-V6): it was
+                  // square and cut off by the row's top.
+                  className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center rounded-full text-tertiary focus-visible:-outline-offset-2 [&_svg]:size-4"
                   {...grip(key)}
                 >
                   <IconGrip />

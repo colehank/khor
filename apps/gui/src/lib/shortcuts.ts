@@ -331,7 +331,9 @@ export function useShortcuts(acts: ShellActs) {
         case "focus-list": {
           const row = document.querySelector<HTMLElement>('[data-side-list] [data-side-open][tabindex="0"]');
           if (!row) return false;
-          row.focus();
+          // A key put it there: the ring shows at once (W-V6).
+          document.documentElement.dataset.modality = "keyboard";
+          row.focus({ focusVisible: true } as FocusOptions);
           return true;
         }
         case "toggle-list":
