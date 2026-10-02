@@ -2232,6 +2232,7 @@ function Top({
           would have been seven of them. */}
       <div
         ref={grid}
+        role="table"
         data-load-top
         data-panel
         data-top-cols={shown.join(" ")}
@@ -2239,7 +2240,7 @@ function Top({
         style={{ gridTemplateColumns: tracks }}
         className="text-callout tabular-nums"
       >
-        <div data-top-heads className="bg-card text-callout text-muted-foreground">
+        <div data-top-heads role="row" className="bg-card text-callout text-muted-foreground">
           {/* **The order the user named** (2026-09-05:「PID · 状态 ·
               USER · 时长 · CPU时间 · CPU · GPU · 内存 · 显存 · 读写 ·
               命令」): the pid you type next, then what the process *is*,
@@ -2283,7 +2284,7 @@ function Top({
           </div>
         ) : (
           ordered.map((r) => (
-            <div key={r.pid} data-top-row={r.pid}>
+            <div key={r.pid} role="row" data-top-row={r.pid}>
               {shown.map((k) =>
                 k === "name" ? (
                   /* Last, and it takes the table's leftover width —
@@ -2292,6 +2293,7 @@ function Top({
                 ) : (
                   <span
                     key={k}
+                    role="cell"
                     data-c={k}
                     {...{ [`data-top-${k}`]: "" }}
                     // **The one cell that can say more than it shows.**
@@ -3097,7 +3099,7 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
       data-c="cmd"
       data-cut={cut ? "" : undefined}
       data-open={open ? "" : undefined}
-      role={cut ? "button" : undefined}
+      role={cut ? "button" : "cell"}
       tabIndex={cut ? 0 : undefined}
       aria-expanded={cut ? open : undefined}
       onClick={cut ? () => setOpen((on) => !on) : undefined}
@@ -3217,7 +3219,10 @@ function Column({
   // thing a press moves.
   const waiting = asking === col;
   return (
-    <th
+    // A grid cell, so a `div` with the header's role: a `<th>` outside a
+    // table's rows is invalid markup and React says so on every render.
+    <div
+      role="columnheader"
       data-top-head={head ?? col}
       data-asking={waiting ? "" : undefined}
       aria-sort={on ? (sort.dir === "up" ? "ascending" : "descending") : "none"}
@@ -3255,7 +3260,7 @@ function Column({
         {children}
         {on && (sort.dir === "up" ? <IconChevronUp className="size-3" /> : <IconChevronDown className="size-3" />)}
       </button>
-    </th>
+    </div>
   );
 }
 

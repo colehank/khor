@@ -22,6 +22,13 @@
     />
     <title>Khor</title>
     <!--
+      **No favicon to fetch.** A browser asks `/favicon.ico` of every page
+      it loads, the dev server and the web face have none, and the 404 was
+      the one error on a clean run's console. An empty icon answers the
+      question without a request; the app's own icon is the bundle's.
+    -->
+    <link rel="icon" href="data:," />
+    <!--
       **The theme, stamped before the first pixel** (批 D2).
 
       Everything below and every stylesheet keys off `data-theme` now,

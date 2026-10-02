@@ -71,7 +71,10 @@ export function EmptyState({
       {/* The sentence and its hint are one statement: `gap-xxs` between
           them, where the button below stood `gap-row` off. */}
       <div className="flex flex-col items-center gap-xxs">
-        <p className="max-w-measure text-body text-muted-foreground">{children}</p>
+        {/* A `div`, not a `p`: callers hand in blocks (the workspace
+            list's sentence and its hint), and a block inside a paragraph
+            is invalid markup React reports on every render. */}
+        <div className="max-w-measure text-body text-muted-foreground">{children}</div>
         {hint && <p data-empty-hint className="max-w-measure text-callout text-muted-foreground">{hint}</p>}
       </div>
       {action}
