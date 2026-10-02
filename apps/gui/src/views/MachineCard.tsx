@@ -574,16 +574,16 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
 export function MachineVerbs({
   row,
   onNewSession,
-  onBorrowWeb,
   code,
   sessionsOn,
   onSessions,
   filesOn,
   onFiles,
+  webOn,
+  onWeb,
 }: {
   row: DeviceRow;
   onNewSession: (row: DeviceRow) => void;
-  onBorrowWeb: (row: DeviceRow) => void;
   /** **This machine's VS Code, with no folder** (2026-09-30, the owner:
       「机器页也加一个 VS Code 图标，打开这台机器的 VS Code，不指定目录」).
       The open workspace's switch and this one are one flow
@@ -604,6 +604,9 @@ export function MachineVerbs({
   onSessions: () => void;
   filesOn: boolean;
   onFiles: () => void;
+  /** 浏览 in place, the third switch (round 14). */
+  webOn: boolean;
+  onWeb: () => void;
 }) {
   const here = useHereHosts();
   const narrow = useNarrow();
@@ -614,8 +617,10 @@ export function MachineVerbs({
       ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, run: () => onNewSession(row) }]
       : []),
     { key: "browse-files", word: gui.browse_files, Icon: IconFiles, on: filesOn, run: onFiles },
-    // The canvas leaves 浏览 off the phone's capsule; it is a window's verb.
-    ...(here && !narrow ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, run: () => onBorrowWeb(row) }] : []),
+    // 浏览, where this face can open a page at all (`useHereHosts`): in
+    // place since round 14, so it is a switch at every width — the narrow
+    // head folds it into 「…」 when it does not fit.
+    ...(here ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, on: webOn, run: onWeb }] : []),
   ];
   const coded = !!code?.offered;
   const tip = (word: string, button: ReactNode) =>
@@ -699,7 +704,7 @@ export function MachineVerbs({
     return () => ro.disconnect();
   }, [narrow, verbsKey]);
 
-  const anyOn = sessionsOn || filesOn || !!code?.up;
+  const anyOn = sessionsOn || filesOn || webOn || !!code?.up;
   return (
     <div ref={box} data-machine-head-buttons data-folded={folded || undefined} className="relative flex flex-none items-center gap-in">
       {narrow && (

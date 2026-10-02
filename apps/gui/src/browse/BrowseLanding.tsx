@@ -52,21 +52,20 @@
 // file knows what a place looks like: no slash, no URL, no listing. All
 // of that arrives through `kind`, which is what lets the second
 // browsing landing be a descriptor rather than a second copy of this.
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
-import { fetchPageIcons, forgetRecent, openLink, recentVisit, type DeviceRow } from "@/api";
-import { AddressBar, type Remembered } from "@/browse/AddressBar";
+import { openLink, recentVisit, type DeviceRow } from "@/api";
+import { PageField } from "@/browse/PageField";
+import { Tabs } from "@/browse/Tabs";
+import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
-import { NewTabPage } from "@/browse/NewTabPage";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
-import { placesInOrder, usePlaces } from "@/browse/use-places";
-import { IconBack, IconBrowser } from "@/components/icons";
-import { GlassCircle } from "@/components/Glass";
-import { NarrowHead } from "@/components/SideHead";
+import { IconBrowser } from "@/components/icons";
+import { BarSeat, SessionScreen } from "@/components/SessionBar";
+import type { KindMark } from "@/components/FaceMark";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
-import { Region } from "@/components/Region";
 import type { RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -74,17 +73,10 @@ import { gui } from "@/gen/catalog";
 import { useTabHost } from "@/lib/shortcuts";
 import { groupLabel } from "@/words";
 
-/** The site a page is on, spelled as the node keys its kept icons
-    (`khor_node::favicon::origin`: `scheme://host[:port]`); `""` for
-    anything that is not an http(s) page. */
-function originOf(path: string): string {
-  try {
-    const u = new URL(path);
-    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : "";
-  } catch {
-    return "";
-  }
-}
+/** A page's kind mark, on its machine's face — in the list and on its tab
+    (the redesign): the face says which machine, the mark that it is a
+    page, the way a session wears its kind. */
+const PAGE_MARK: KindMark = { key: "page", glyph: (c: string) => <IconBrowser className={c} /> };
 
 /** What a tab calls itself: the way a browser tab wears a page's title
     rather than its URL. A machine with nothing open on it wears its own
@@ -191,31 +183,16 @@ export function BrowseLanding({
       so it is kept here and not there. The one a person meets is
       「删除」 on a pinned tab (`khor_node::tabs::close`). */
   const [refused, setRefused] = useState<Map<string, string>>(new Map());
-  /** Each tab's site icon, once its page has loaded here in this window. */
-  const [icons, setIcons] = useState<Map<string, string>>(new Map());
-  /** **And every icon fetched before, read off this disk by site**
-      (docs/SHELL.md 第五轮 第 8 条:「favicon 存盘…重开 app 就有」). The
-      node keeps what `pageIcon` got; this is a read of that file and asks
-      no site anything, so a restart draws each row's icon without a
-      request leaving from here. Read once when the landing mounts. */
-  const [kept, setKept] = useState<Record<string, string>>({});
-  useEffect(() => {
-    let live = true;
-    fetchPageIcons().then(
-      (m) => live && setKept(m),
-      // A cache that cannot be read is rows wearing the generic mark.
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
+  // ⚠️ 墓碑 (the redesign, 2026-10-02): each row's mark was its site's
+  // favicon, fetched and kept (`pageIcon`, `fetchPageIcons`). A row's face
+  // is the machine the page goes through now, and its mark the browser's
+  // kind, the way a session row carries its kind (the owner: 「现在完全不
+  // 知道是在那台机器」).
   /** Which tabs are loading, for the breath on their rows (docs/SHELL.md
       第十二轮). Kept by the landing rather than by the body, because the
       body is only ever mounted for the tab in front and a tab loading
       behind one has to breathe too. */
   const load = useLoading();
-  const places = usePlaces(kind);
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
   // What the kind is holding on the machines the tabs name, so it can
@@ -233,7 +210,6 @@ export function BrowseLanding({
 
   const deviceOf = (id: string | null) => (id ? (devices.find((d) => d.id === id) ?? null) : null);
   const machine = deviceOf(tabs.current.device);
-  const me = devices.find((d) => d.me) ?? null;
 
   /**
    * A tab's own menu: **置顶, what this column has of its own, then 删除
@@ -317,7 +293,6 @@ export function BrowseLanding({
     // pointed nowhere is called.
     // A site's root reads as its host, the way Chrome prints it.
     const bare = t.path.replace(/^https?:\/\//i, "").replace(/^([^/]+)\/$/, "$1");
-    const src = icons.get(t.id) ?? kept[originOf(t.path)];
     return {
       id: t.id,
       group: t.pinned ? "pin" : "",
@@ -329,14 +304,9 @@ export function BrowseLanding({
       // this row: the strip's own tab is 80 wide and has no room for a
       // ring around its face (第十二轮 第 3 条).
       halo: load.busy(t.id) ? "busy" : undefined,
-      // On the face or on its corner by the 外观 setting (`FaceMark`). A
-      // site's favicon is its own picture, drawn as it came on either —
-      // someone else's mark (README 图标); the page glyph takes the ink.
-      mark: {
-        key: src ? "favicon" : "page",
-        glyph: (c: string) =>
-          src ? <img src={src} alt="" className={`${c} rounded-sm`} /> : <IconBrowser className={c} />,
-      },
+      // The machine's face with the browser's kind mark, as a session row
+      // wears its kind (`FaceMark`, on the face or its corner by 外观).
+      mark: PAGE_MARK,
       title: (
         <span data-tab-label data-tab-name className="block truncate text-callout font-label">
           {t.title || bare || label}
@@ -361,41 +331,24 @@ export function BrowseLanding({
     };
   });
 
-  // Every place this screen remembers, each carrying the word for which
-  // list it came from. The address bar falls back to these when a
-  // machine stops answering, and the hint is what stops a remembered
-  // address passing for a live one.
-  const remembered: Remembered[] = placesInOrder(places).map((place) => ({
-    place,
-    hint: kind.words.recent,
-  }));
-
-  // Pointing the open tab somewhere puts the switcher away on either
-  // face: it was covering the tab that just moved, and leaving it up
-  // would hide the thing the press was for. No `narrow` test — the
-  // switcher being down already makes this a no-op.
-  const goTo = (device: string, place: string) => {
-    tabs.goTo(device, place);
-  };
-
-  const address = (trailing?: React.ReactNode, leading?: React.ReactNode) => (
-    <AddressBar
-      leading={leading}
+  /** The open page's machine: chosen first, then the address (the
+      owner: 「点击框，弹出可选机器，选择一个机器…然后，用户再输入地址」).
+      Choosing another on an open page reloads the same address through
+      it — the body is keyed by the machine, so it opens again. */
+  const field = (
+    <PageField
+      key={tabs.current.id}
       tab={tabs.current.id}
-      kind={kind}
-      devices={devices}
       machine={machine}
+      devices={devices}
       at={tabs.current.path}
-      remembered={remembered}
-      fallback={me}
-      onGo={goTo}
-      onClear={tabs.clear}
-      trailing={trailing}
+      onGo={(place) => machine && tabs.goTo(machine.id, place)}
+      onMachine={(d) => tabs.goTo(d.id, tabs.current.path, tabs.current.title)}
     />
   );
 
   const content =
-    machine && tabs.current.device ? (
+    machine && tabs.current.device && tabs.current.path ? (
       <div
         // Keyed by the tab, not by where the tab is: a tab that moves is
         // the same tab, and re-keying on the place would throw away the
@@ -415,10 +368,6 @@ export function BrowseLanding({
           // would leave the row on its bare address until the next word.
           onPlace={(place) => tabs.goTo(machine.id, place, tabs.current.title)}
           onTitle={(title) => tabs.goTo(machine.id, tabs.current.path, title)}
-          onIcon={(src) => {
-            const id = tabs.current.id;
-            setIcons((m) => (m.get(id) === src ? m : new Map(m).set(id, src)));
-          }}
           // What khor itself has out for this tab. Whether that is what
           // the row breathes on is `use-loading`'s call: in the app the
           // page's own report wins, and this only lights it.
@@ -429,44 +378,17 @@ export function BrowseLanding({
           onPopup={(place) => tabs.open(machine.id, place)}
           onLanded={(place) => {
             // **The visit is recorded here, once, for every kind.** The
-            // ledger is the node's (`khor_sync::recents`) and the body
-            // has no business writing to it — a kind that forgot to
-            // would silently have no history, which looks like the
-            // feature being broken somewhere else entirely. Fire and
-            // forget: a history that would not write must never be the
-            // reason a place does not open.
+            // ledger is the node's (`khor_sync::recents`); fire and forget.
             recentVisit(kind.kind, machine.name, place).catch(() => {});
-            // …and the memory this screen is holding is now a visit out
-            // of date. Asked again rather than patched locally: the node
-            // keeps that ledger, and a local copy would be a second one.
-            places.reload();
           }}
         />
       </div>
     ) : (
-      <NewTabPage
-        kind={kind}
-        places={places}
-        devices={devices}
-        narrow={narrow}
-        onOpen={goTo}
-        // **The ledger is written here, like every other visit.** The
-        // fresh tab is a reader of `usePlaces`; giving it the write as
-        // well would put two files in charge of one account (the same
-        // rule that keeps `recent_visit` out of the bodies).
-        //
-        // No local optimism: the row is not struck from the list on the
-        // way out, the ledger is re-read and the screen redraws from
-        // what it says. That makes a refused write show as the row
-        // staying — which is the truth — instead of a row vanishing off
-        // a screen whose account still has it (docs/UX.md 不知道就说不
-        // 知道, and 「做了但没变化」和「失败」长不一样的脸).
-        onForget={(place) => {
-          forgetRecent(kind.kind, place.name, place.place)
-            .catch(() => {})
-            .finally(places.reload);
-        }}
-      />
+      // ⚠️ 墓碑 (the redesign): a page with no address showed the new-tab
+      // page — the places visited and the machines to start on. The
+      // machine is chosen in the field now, the one way in; the page is
+      // empty until there is something to show.
+      <div data-page-empty className="h-full" />
     );
 
   const tabList = (
@@ -477,14 +399,7 @@ export function BrowseLanding({
 
   /**
    * **The column's head, the one every sidebar wears** (docs/SHELL.md
-   * 第二轮:「浏览器侧边栏也要和其他侧边栏一样有搜索和新建的组件在最上面」):
-   * a search box and a 「+」, in `PaneBar`, at `--pane-head`.
-   *
-   * ⚠️ 墓碑:this column had no head on purpose for one batch — Chrome's
-   * vertical tabs put the one thing it can do at the foot, and that was
-   * the user's own picture. The user overruled it: one kind of thing (a
-   * sidebar) has one look. The 「+」 moved up rather than being drawn
-   * twice; a foot *and* a head would be two places for one act.
+   * 第二轮): the landing's name, ＋ for a new page, and search.
    */
   const head = (
     <PaneBar
@@ -506,39 +421,59 @@ export function BrowseLanding({
     />
   );
 
-  // **One screen at a time** (docs/UX.md 姿势, docs/WORKSPACE.md 第 33
-  // 条): the tab list is one screen and the page is the other, with the
-  // count in the address bar as the way between them.
+  /** **The tabs as the session page draws them** (the owner: 「浏览器页做
+      成标签页逻辑算了，挪用 session 的即可」): a page is one more kind of tab
+      face — its machine's face with the browser's mark. */
+  const faces: TabFace[] = tabs.tabs.map((t) => {
+    const d = deviceOf(t.device);
+    const bare = t.path.replace(/^https?:\/\//i, "").replace(/^([^/]+)\/$/, "$1");
+    return {
+      id: t.id,
+      label: t.title || bare || tabLabel(kind, t.path, d),
+      face: d?.face ?? null,
+      path: t.path,
+      machine: d?.shown ?? null,
+      mark: PAGE_MARK,
+      menu: menuOf(t),
+    };
+  });
+
   // **Nothing is drawn against the stand-in tab** (`useBrowseTabs`'s
-  // `ready`). The list is a round trip now rather than a synchronous
-  // read of this window's own storage, and everything on this landing
-  // is keyed by the open tab's id — so a face built over the stand-in
-  // is torn down and rebuilt when the real one lands, taking whatever
-  // was being typed into the address box with it. One frame of the
-  // landing's own ground says nothing about anybody's tabs, which is
-  // the same choice the lock screen makes (`App.tsx`).
+  // `ready`): everything here is keyed by the open tab's id, and a face
+  // built over the stand-in would be torn down when the real one lands.
   const body = tabs.ready ? content : <div data-browse-waiting className="h-full" />;
 
-  // **Narrow: the list first, like every landing** (the owner, 2026-10-02):
-  // the tabs are the list screen, and a page — chosen from it, or a new
-  // one from ＋ — is the detail screen, its address bar in the head row
-  // with the way back at its start.
+  // **Narrow: the session page's layout** — the list is the first screen;
+  // a page is the next, its content over the whole top, and at its foot
+  // the session bar: ‹, the tabs, the count; under them the address
+  // field, in the seat a conversation's box takes, riding the keyboard.
   if (narrow) {
     return screen === "detail" ? (
-      <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
-        {tabs.ready && (
-          <NarrowHead>
-            {() =>
-              address(undefined, (
-                <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
-                  <IconBack />
-                </GlassCircle>
-              ))
-            }
-          </NarrowHead>
-        )}
-        <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
-      </section>
+      <SessionScreen
+        faces={faces}
+        active={tabs.current.id}
+        onFocus={(id) => tabs.focus(id)}
+        onClose={(id) => {
+          if (tabs.tabs.length === 1) onBack?.();
+          void tabs.close(id).catch(() => {});
+        }}
+        // The list is this landing's switcher: the count goes back to it.
+        onSwitch={() => onBack?.()}
+        switching={false}
+        onBack={() => onBack?.()}
+        caption={caption}
+      >
+        <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
+          <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
+          {tabs.ready && (
+            <BarSeat at="under">
+              <div data-page-field-seat className="flex flex-none px-row pt-xxs pb-in">
+                {field}
+              </div>
+            </BarSeat>
+          )}
+        </section>
+      </SessionScreen>
     ) : (
       <ListPane mark="data-browse-tabs" name={kind.words.segment} pane={null} narrow seat="side" head={head} scroll={false}>
         {tabList}
@@ -546,10 +481,11 @@ export function BrowseLanding({
     );
   }
 
+  // **Wide: the session landing's arrangement** — the list column, and
+  // over the content the tabs capsule; under it one row with the address
+  // field, then the page.
   return (
     <section data-browse-landing={kind.kind} className="flex h-full min-h-0 min-w-0 flex-col">
-      {/* Written here, drawn in the left block (第十三轮): the tabs
-          column beside the rail, its head in the block's first row. */}
       <ListPane
         mark="data-browse-tabs"
         name={kind.words.segment}
@@ -558,23 +494,29 @@ export function BrowseLanding({
         seam={{ "data-list-seam": "" }}
         seat="side"
         head={head}
-        // The switcher holds its own scroller.
         scroll={false}
       >
         {tabList}
       </ListPane>
-      {/* **文档 (C)** (docs/DESIGN.md 第五节, D7): the row in the column
-          *is* the tab, so there is no strip — R0 is the address bar and
-          the page is the board under it. Until the tabs have been read
-          there is no address to show, and R0 says the landing's name. */}
-      <Region
-        kind="doc"
-        title={kind.words.segment}
-        head={tabs.ready ? <div className="flex min-w-0 flex-1 flex-col">{address()}</div> : undefined}
-        caption={caption}
-      >
-        <div className="h-full min-h-0 overflow-hidden">{body}</div>
-      </Region>
+      {tabs.ready ? (
+        <Tabs
+          glass
+          faces={faces}
+          active={tabs.current.id}
+          onFocus={(id) => tabs.focus(id)}
+          onClose={(id) => void tabs.close(id).catch(() => {})}
+          stripData={{ "data-page-tabs": "" }}
+          caption={caption}
+          bodyClass="flex flex-col"
+        >
+          <div data-page-field-seat className="flex flex-none px-page pt-xxs pb-in">
+            {field}
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
+        </Tabs>
+      ) : (
+        <div data-browse-waiting className="h-full" />
+      )}
     </section>
   );
 }

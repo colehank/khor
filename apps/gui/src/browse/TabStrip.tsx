@@ -45,6 +45,7 @@ import { EditableName, useSinglePress } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
+import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { IconBack, IconClose, IconEye, IconPlus } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { PaneBar } from "@/components/PaneBar";
@@ -73,6 +74,9 @@ export type TabFace = {
       session列表一致」). A browsing tab has none and keeps the bare
       machine face. */
   session?: { word: string; kind: string; category: string | null };
+  /** A browsing page's kind mark on its machine's face (the redesign):
+      the face says which machine, the mark that it is a page. */
+  mark?: KindMark;
   /** What this tab's name renames, or absent when the name is not the
       user's to change (2026-09-11:「session 标签页不可双击重命名,我需要
       和机器一样」).
@@ -157,11 +161,11 @@ export type TabFace = {
     switcher's rows are list rows and keep a row's. */
 function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
   if (f.glyph) return <span className="flex-none">{f.glyph}</span>;
-  return f.session ? (
-    <SessionFace face={f.face} {...f.session} size={seat} />
-  ) : (
-    <MachineAvatar face={f.face} className={bare} />
-  );
+  if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
+  // A browsing page: the machine it goes through, wearing its kind's
+  // mark the way a session's tab does (the redesign, 2026-10-02).
+  if (f.mark) return <FaceMark face={{ machine: f.face }} mark={f.mark} size={seat} />;
+  return <MachineAvatar face={f.face} className={bare} />;
 }
 
 /**

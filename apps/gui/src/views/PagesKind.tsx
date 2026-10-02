@@ -195,7 +195,7 @@ function Surf({ tab, machine, place, onPlace, onLanded, onPopup, onTitle, onIcon
       // (docs/SHELL.md 第四轮 第 5 条).
       here={machine.me}
       onTitle={(t) => onTitle?.(t)}
-      onIcon={(src) => onIcon?.(src)}
+      onIcon={onIcon}
       onOpened={onLanded}
       // Where the page went is where the tab is, so it is `onPlace` and
       // not `onLanded`: the shell's two callbacks split on *intention*

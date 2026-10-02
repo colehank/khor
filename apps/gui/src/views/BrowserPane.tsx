@@ -86,7 +86,10 @@ export function BrowserPane({
   /** What the page calls itself, as it says so. */
   onTitle: (title: string) => void;
   /** The page's site icon, fetched through the page's own exit. */
-  onIcon: (src: string) => void;
+  /** The site's icon, for whoever draws one. **Absent, none is asked**
+      (the redesign, round 14: a page's row wears its machine's face and
+      the browser's mark, not the site's icon). */
+  onIcon?: (src: string) => void;
   /**
    * khor has errands out for this tab, or they have all come back
    * (docs/SHELL.md 第十二轮).
@@ -131,12 +134,14 @@ export function BrowserPane({
   // face with no page of its own that is the whole of what「still
   // loading」can mean (第十二轮).
   const iconOf = useCallback(
-    (at: string) =>
-      pageIcon(at, exit.current).then(
-        (src) => icon.current(src),
-        // No icon is a row wearing the generic page mark — nothing to say.
-        () => {},
-      ),
+    (at: string): Promise<void> =>
+      icon.current
+        ? pageIcon(at, exit.current).then(
+            (src) => icon.current?.(src),
+            // No icon is a row wearing the generic page mark — nothing to say.
+            () => {},
+          )
+        : Promise.resolve(),
     [],
   );
   const busy = useRef(onBusy);

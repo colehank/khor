@@ -101,6 +101,7 @@ import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { MachineFiles } from "@/views/MachineFiles";
+import { MachineWeb } from "@/views/MachineWeb";
 import { RegionState } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
@@ -467,7 +468,7 @@ export default function App() {
   // …and its files in place (2026-10-02, the owner: 「文件按钮点击后，不要
   // 跳转到工作区」). One value, so the two switches are exclusive: turning
   // one on turns the other off.
-  const [machineBody, setMachineBody] = useState<"dashboard" | "sessions" | "files">("dashboard");
+  const [machineBody, setMachineBody] = useState<"dashboard" | "sessions" | "files" | "web">("dashboard");
   useEffect(() => setMachineBody("dashboard"), [selectedDevice]);
   // …and which workspace is open. **A path and not a row**, because
   // the two ways in do not agree on what they have: the list hands over
@@ -1589,20 +1590,16 @@ export default function App() {
         onSessions={() => setMachineBody((b) => (b === "sessions" ? "dashboard" : "sessions"))}
         filesOn={machineBody === "files"}
         onFiles={() => setMachineBody((b) => (b === "files" ? "dashboard" : "files"))}
+        // 浏览 in place (round 14): the third switch, exclusive with the
+        // other two. ⚠️ 墓碑: it opened a new tab on the 浏览 landing.
+        webOn={machineBody === "web"}
+        onWeb={() => setMachineBody((b) => (b === "web" ? "dashboard" : "web"))}
         // The sessions pane's own wizard, opened with this machine picked
         // (2026-09-06:「会话是对应会话页的新建 session」).
         onNewSession={(row) => openNewSession(row.name)}
         // ⚠️ 墓碑 (2026-10-02): 文件 opened the 工作区 landing on this
         // machine's home (`openWs` with an empty path). It is a switch of
         // this page now; the files are drawn in place (`MachineFiles`).
-        // This machine's network, in a new tab of the browser landing
-        // (docs/NET.md 借网).
-        onBorrowWeb={(row) => {
-          setMorePage(null);
-          setLanding("browser");
-          pageTabs.open(row.id, "");
-          setScreen("detail");
-        }}
       />
     ) : undefined;
 
@@ -1756,7 +1753,9 @@ export default function App() {
       onUninstallHooks={onUninstallHooks}
       actions={narrow ? machineVerbs : undefined}
       body={
-        !openDevice ? undefined : machineBody === "files" ? (
+        !openDevice ? undefined : machineBody === "web" ? (
+          <MachineWeb key={openDevice.id} machine={openDevice} devices={devices} />
+        ) : machineBody === "files" ? (
           <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} />
         ) : machineBody === "sessions" ? (
           <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-rows-inset">
@@ -1894,6 +1893,10 @@ export default function App() {
    */
   const inSession =
     narrow && sessions && morePage === null && !switchingTabs && screen === "detail" && selected !== null && openTabs.length > 0;
+  /** …and a browsing page is the same screen (the redesign, 2026-10-02:
+      the browser takes the session page's layout): no head, no landings'
+      bar; the session bar at its foot. */
+  const fullScreen = inSession || (narrow && browses && morePage === null && screen === "detail");
   const sessionScreen = (
     <SessionScreen
       faces={tabFaces}
@@ -2226,8 +2229,8 @@ export default function App() {
         // **Clear of a phone's status bar** (`--safe-top`) on every
         // screen but a session's, which runs its paper up to the glass
         // and keeps the edge itself (`SessionScreen`).
-        <div data-nav-host={!inSession || undefined} className={cn("relative flex h-full flex-col", !inSession && "pt-safe-top")}>
-          {!inSession && sideHead}
+        <div data-nav-host={!fullScreen || undefined} className={cn("relative flex h-full flex-col", !fullScreen && "pt-safe-top")}>
+          {!fullScreen && sideHead}
           {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of
               the screen clear for macOS's three buttons; then the
@@ -2298,7 +2301,7 @@ export default function App() {
           {/* The navigation floats over every screen but a session's,
               whose foot is its own bar (the owner, 2026-10-02: 「会话里不
               显示」), and the tab switcher, which is a step of it. */}
-          {!inSession && !switchingTabs && nav}
+          {!fullScreen && !switchingTabs && nav}
           {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>

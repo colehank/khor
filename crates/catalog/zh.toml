@@ -2265,6 +2265,12 @@ nav = "导航"
 nav-settings = "设置"
 search-open = "搜索"
 search-close = "结束搜索"
+# The browser's address field (the redesign, 2026-10-02): a new page
+# chooses its machine first; the field says so until one is chosen. The
+# avatar at the field's left is the button that chooses it.
+page-choose-machine = "选择一台机器"
+page-address = "输入网址"
+page-machine = "选择机器"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
 nav-order-note = "前三项在底部，其余收进「更多」。拖动调整顺序"
