@@ -32,7 +32,7 @@ import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconBranch, IconPlus, IconSearch, IconSessions } from "@/components/icons";
-import { GlassCircle } from "@/components/Glass";
+import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
@@ -413,22 +413,8 @@ export function WorkspacePane({
     grew.current = Math.round(sidePane.width);
     void widenWindow(grew.current).then(() => setSessions(true));
   };
-  /** What both page buttons wear — R0's toolbar buttons, the machine
-      page's three (`MachineVerbs`): a ghost `ctl-md` square whose hit
-      follows `--hit` (28 under a pointer, 44 under a finger).
-   *
-   * **On is a grey block, `fill-strong`, under full ink** (2026-09-28,
-   * the owner: selected is grey; the brand green has its three posts and
-   * this is none of them). It was `--rail-on-ink` from 2026-09-16
-   * (rulings 26 and 44, 「点击后要有状态.这个icon要变成品牌绿」) — the
-   * rail's open glyph lent to a switch. The state still reads in more
-   * than hue: a block and full ink against no block and muted ink.
-   *
-   * ⚠️ 墓碑: `--ws-switch` (32, docs/SHELL.md 第 7 条, 2026-09-20) sized
-   * these while they stood beside the tree's search box and every pixel
-   * of that row was the box's. In R0 they are toolbar buttons like any
-   * other, and the token went with the row they were squeezed into. */
-  const toolClass = "min-h-touch min-w-touch flex-none data-[on=true]:bg-fill-strong data-[on=true]:text-foreground";
+  // (The toolbar buttons' look, `toolClass`, went with them: the switches
+  // are glass now, below.)
   /** 新建文件 / 新建目录 from the ＋ at the head of the tree (2026-09-28),
       stamped for the tree to take once (`FileTree`'s `make`). */
   const [make, setMake] = useState<{ kind: "file" | "dir"; at: number } | null>(null);
@@ -1196,42 +1182,41 @@ export function WorkspacePane({
    * 20 they were drawn at left a 38 row mostly air), `--hit` around it,
    * a `Tooltip` naming each (the design system's `Toolbar`). On is the
    * grey block (`toolClass`). */
+  // **The machine head's grammar** (the redesign, 2026-10-02, the owner
+  // approving): the sessions switch — this page's one switch — in a
+  // glass capsule, and VS Code, which opens a page of its own, a glass
+  // circle to its right; the head's size (`--head-ctl`) and chosen
+  // states. ⚠️ 墓碑: two ghost toolbar buttons, VS Code first.
   const switches = (
     <div data-ws-switches className="flex flex-none items-center gap-in">
+      <GlassCapsule size="head">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <GlassItem
+              aria-label={gui.ws_sessions_toggle}
+              aria-pressed={sessions}
+              data-ws-sessions-switch
+              on={sessions}
+              onClick={() => showSessions(!sessions)}
+            >
+              <IconSessions />
+            </GlassItem>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{gui.ws_sessions_toggle}</TooltipContent>
+        </Tooltip>
+      </GlassCapsule>
       {/* **Only where there is an editor to open.** A machine without
           one, and a machine that could not be asked, both answer empty
-          and both get no switch — offering a button that fails is worse
-          than offering nothing (`khor_gui_core::code`).
-
-          **Never on the web face**, and that is a fact about where the
-          pipe lands rather than a missing feature. The tunnel in front
-          of somebody's editor is bound to 127.0.0.1 on the machine
-          running the resident serve; a phone reading khor's web face is
-          not that machine, so the link would name a loopback it cannot
-          reach. */}
-      {root !== "" && <CodeButton code={codeWin} className={toolClass} />}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={gui.ws_sessions_toggle}
-            aria-pressed={sessions}
-            data-ws-sessions-switch
-            data-on={sessions}
-            onClick={() => showSessions(!sessions)}
-            className={toolClass}
-          >
-            {/* The rail's 24-canvas bubble at its own 24, the toolbar's
-                size (`MachineVerbs`): the box sets the size and the
-                glyph fills it. */}
-            <span className="flex size-6 flex-none [&_svg]:size-full">
-              <IconSessions />
-            </span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{gui.ws_sessions_toggle}</TooltipContent>
-      </Tooltip>
+          and both get no circle — offering a button that fails is worse
+          than offering nothing (`khor_gui_core::code`). **Never on the
+          web face**: the tunnel in front of somebody's editor is bound to
+          127.0.0.1 on the machine running the resident serve, which a
+          phone reading khor's web face is not. */}
+      {root !== "" && codeWin.offered && (
+        <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
+          <CodeButton code={codeWin} className="size-head-item-h rounded-full data-[on=true]:glass-sel" />
+        </div>
+      )}
     </div>
   );
 
