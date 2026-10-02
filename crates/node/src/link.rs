@@ -102,6 +102,154 @@ impl DeafWatch {
         now.duration_since(since) >= DEAF_AFTER
     }
 }
+// ── fresh ears (docs/IOS.md 第三步) ─────────────────────────────────
+
+/// What a resumable serve is asked from outside its loop.
+enum Wake {
+    /// New ears, then a round at once. `ears` answers when the new
+    /// endpoint is the one answering, `synced` with the round's outcomes;
+    /// either may have nobody listening (the deaf watch asks for none).
+    Resume {
+        ears: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+        synced: Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
+    },
+    /// Close the endpoint under the serve and leave it closed ([`deafen`]).
+    Deafen {
+        done: tokio::sync::oneshot::Sender<()>,
+    },
+}
+
+type Doors = std::sync::Mutex<
+    std::collections::HashMap<std::path::PathBuf, tokio::sync::mpsc::UnboundedSender<Wake>>,
+>;
+
+/// The resumable serves running in this process, by the home they hold.
+///
+/// **Process-global and keyed by home**, because what calls [`resume`]
+/// is not the code that started the serve: on a phone it is the app's
+/// lifecycle handler on the main thread, and the serve is a `Node` that
+/// was moved into its own runtime on another thread long before. The
+/// home is the one name both sides already have (`Node::root_from_env`).
+fn doors() -> &'static Doors {
+    static DOORS: std::sync::OnceLock<Doors> = std::sync::OnceLock::new();
+    DOORS.get_or_init(Default::default)
+}
+
+/// A serve's place in [`doors`], given up when the serve ends — and
+/// only its own: a later serve on the same home may have taken it.
+struct Listed {
+    root: std::path::PathBuf,
+    door: tokio::sync::mpsc::UnboundedSender<Wake>,
+}
+
+impl Listed {
+    fn new(root: &std::path::Path, door: tokio::sync::mpsc::UnboundedSender<Wake>) -> Self {
+        doors()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(root.to_path_buf(), door.clone());
+        Self {
+            root: root.to_path_buf(),
+            door,
+        }
+    }
+}
+
+impl Drop for Listed {
+    fn drop(&mut self) {
+        let mut doors = doors().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if doors.get(&self.root).is_some_and(|d| d.same_channel(&self.door)) {
+            doors.remove(&self.root);
+        }
+    }
+}
+
+fn door(root: &std::path::Path) -> Option<tokio::sync::mpsc::UnboundedSender<Wake>> {
+    doors()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(root)
+        .cloned()
+}
+
+/// Why a [`Node::rejoin`] did not reach the session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Rejoin {
+    /// The far machine was not reached — a dial that failed, a request
+    /// that never came back, the resident's own ears down. Worth asking
+    /// again.
+    Unreached(String),
+    /// The far machine answered, and there is no session to attach to
+    /// (it ended, or it left the table). The face's 「结束了」 is true.
+    Gone(String),
+}
+
+/// A [`resume`] under way: first the new ears, then the round.
+pub struct Resuming {
+    ears: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
+    synced: tokio::sync::oneshot::Receiver<Vec<(String, Result<String, String>)>>,
+}
+
+impl Resuming {
+    /// When the new endpoint is the one answering — the moment a face
+    /// attached through the old one can reach again ([`Node::rejoin`]).
+    /// Answers once; a second call answers `Ok` at once.
+    pub async fn ears(&mut self) -> Result<(), String> {
+        match self.ears.take() {
+            Some(rx) => rx.await.unwrap_or_else(|_| Err(msg::serve_gone_midway().into())),
+            None => Ok(()),
+        }
+    }
+
+    /// The round that followed, per machine — the same outcomes a
+    /// `khor sync` prints.
+    pub async fn synced(mut self) -> Result<Vec<(String, Result<String, String>)>, String> {
+        self.ears().await?;
+        self.synced
+            .await
+            .map_err(|_| msg::serve_gone_midway().to_string())
+    }
+}
+
+/// **Fresh ears for the resident on `root`**, in this process, without
+/// a restart (docs/IOS.md 第三步): a new endpoint on the same key, the
+/// old one and what rode it let go, the new roads published, and a sync
+/// round at once. `None` when no resumable serve holds that home here.
+///
+/// The phone's app calls this on its way back to the foreground
+/// (`applicationWillEnterForeground`); a laptop waking from sleep could
+/// call it the same way, and nothing here is a phone's.
+pub fn resume(root: &std::path::Path) -> Option<Resuming> {
+    let (ears, ears_rx) = tokio::sync::oneshot::channel();
+    let (synced, synced_rx) = tokio::sync::oneshot::channel();
+    door(root)?
+        .send(Wake::Resume {
+            ears: Some(ears),
+            synced: Some(synced),
+        })
+        .ok()?;
+    Some(Resuming {
+        ears: Some(ears_rx),
+        synced: synced_rx,
+    })
+}
+
+/// Closes the endpoint under the resumable serve on `root` and leaves
+/// it closed — **what a suspension does to a phone's ears**, done on
+/// purpose so a test can prove [`resume`] cures it (`tests/resume.rs`).
+/// Answers whether there was such a serve. Not for anything else: a
+/// serve deafened this way hears nobody until it is resumed or its deaf
+/// watch runs out.
+#[doc(hidden)]
+pub async fn deafen(root: &std::path::Path) -> bool {
+    let (done, done_rx) = tokio::sync::oneshot::channel();
+    let Some(door) = door(root) else { return false };
+    if door.send(Wake::Deafen { done }).is_err() {
+        return false;
+    }
+    done_rx.await.is_ok()
+}
+
 /// Per-device budget for one sync visit; the far side may simply be off.
 const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -224,40 +372,123 @@ impl Node {
     /// seconds. Writes `endpoint.json` so one-shot verbs can find both
     /// the live endpoint and the hand-off port.
     pub async fn serve(self) -> Result<(), String> {
-        let ep = std::sync::Arc::new(
-            // The one bind that serves this machine.
+        self.serve_as(false).await
+    }
+
+    /// [`Self::serve`], for a resident that is **resumed rather than
+    /// restarted** — a phone's (docs/IOS.md 第三步).
+    ///
+    /// iOS suspends an app seconds after it leaves the screen, and what
+    /// it holds goes deaf: the relay's connection, the peers' QUIC
+    /// connections, on a real device the sockets themselves. A desktop
+    /// serve that went deaf exits ([`DEAF_EXIT`]) and its keeper stands
+    /// up a new one; **nothing restarts a phone app**, and the system
+    /// reads an exit as a crash. So this serve gets new ears in place,
+    /// from [`resume`] (the app calls it on its way back to the
+    /// foreground) or from its own deaf watch, and differs from `serve`
+    /// in exactly these four ways, none of which a desktop sees:
+    ///
+    /// 1. it answers [`resume`]: a fresh endpoint on the same key, the
+    ///    old one closed and everything held on it forgotten, the new
+    ///    roads published, and a sync round **at once** rather than at
+    ///    the next tick ([`Self::fresh_ears`]);
+    /// 2. two minutes of deafness ask for the same, instead of
+    ///    [`DEAF_EXIT`];
+    /// 3. an endpoint that closes underneath it leaves it deaf, waiting
+    ///    for one of those two, instead of ending it;
+    /// 4. a hand-off listener that stops accepting (iOS reclaims a
+    ///    listening socket of a suspended app) is bound again, instead of
+    ///    being asked again in a loop that never yields.
+    pub async fn serve_resumable(self) -> Result<(), String> {
+        self.serve_as(true).await
+    }
+
+    /// The one bind that serves this machine: this key, these relays.
+    /// Also what [`Self::fresh_ears`] binds again.
+    async fn bind_ears(&self) -> Result<std::sync::Arc<iroh::Endpoint>, String> {
+        Ok(std::sync::Arc::new(
             endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
                 .await
                 .map_err(|e| e.to_string())?,
-        );
-        let addrs = endpoint::local_addrs(&ep);
-        // Own dialing hints go into the table so the snapshot handed to a
-        // pairing device already says how to reach us — relay roads
-        // included, or a peer behind a hostile network has no way in.
-        {
-            let mut roads = addrs.clone();
-            roads.extend(self.relays().iter().cloned());
-            let loaded = self.devices_loaded()?;
-            loaded.doc.upsert(self.device_str(), self.name(), &roads)?;
-            let mut store = loaded.store;
-            store.flush(&loaded.doc)?;
-        }
-        let handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .map_err(msg::cant_open_handoff_port)?;
-        let cookie = fresh_hex()?;
+        ))
+    }
+
+    /// Own dialing hints go into the table so the snapshot handed to a
+    /// pairing device already says how to reach us — relay roads
+    /// included, or a peer behind a hostile network has no way in.
+    /// Written again after fresh ears: a new endpoint has new ports.
+    fn publish_roads(&self, ep: &iroh::Endpoint) -> Result<Vec<String>, String> {
+        let addrs = endpoint::local_addrs(ep);
+        let mut roads = addrs.clone();
+        roads.extend(self.relays().iter().cloned());
+        let loaded = self.devices_loaded()?;
+        loaded.doc.upsert(self.device_str(), self.name(), &roads)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(addrs)
+    }
+
+    /// `endpoint.json`: where one-shot verbs find the live endpoint and
+    /// the hand-off port. Written again whenever either changes.
+    fn write_endpoint_file(
+        &self,
+        addrs: Vec<String>,
+        handoffs: &tokio::net::TcpListener,
+        cookie: &str,
+    ) -> Result<(), String> {
         let file = EndpointFile {
             id: self.device_str().to_owned(),
             addrs,
             pid: std::process::id(),
             relays: self.relays().to_vec(),
             ipc_port: handoffs.local_addr().map_err(|e| e.to_string())?.port(),
-            ipc_cookie: cookie.clone(),
+            ipc_cookie: cookie.to_owned(),
         };
         write_private(
             &self.root().join(".khor").join("endpoint.json"),
             &serde_json::to_vec(&file).map_err(|e| e.to_string())?,
-        )?;
+        )
+    }
+
+    /// **Fresh ears**: a new endpoint on the same key, and everything
+    /// this node held on the old one let go (docs/IOS.md 第三步).
+    ///
+    /// Rebinding rather than asking iroh to notice: `network_change` only
+    /// acts when the interfaces differ, and a phone back from its pocket
+    /// is usually on the very network it left — with a relay connection
+    /// and peers' QUIC connections that died while it was frozen, and on
+    /// a real device sockets the system took back. A new endpoint is the
+    /// cure the desktop's [`DEAF_EXIT`] buys with a restart, without one.
+    ///
+    /// What is let go, because it rode the old endpoint: the held
+    /// connections (`wires`) and the pipes in front of far sessions and
+    /// far editors (`reaches`, `codes`). A face attached through one of
+    /// those pipes sees its socket end and attaches again through
+    /// [`Self::rejoin`] — the same reach, on the new endpoint, and the
+    /// far host pours its ring to a fresh client as it always does.
+    /// Hosted borrows are left alone: a phone has none (docs/IOS.md 第二步).
+    async fn fresh_ears(&self) -> Result<std::sync::Arc<iroh::Endpoint>, String> {
+        let ep = tokio::time::timeout(DIAL_TIMEOUT, self.bind_ears())
+            .await
+            .map_err(|_| msg::dial_timed_out().to_string())??;
+        self.wires.lock().await.clear();
+        for (_, (_, _, handle)) in self.reaches.lock().await.drain() {
+            handle.abort();
+        }
+        for (_, (_, _, handle)) in self.codes.lock().await.drain() {
+            handle.abort();
+        }
+        Ok(ep)
+    }
+
+    async fn serve_as(self, resumable: bool) -> Result<(), String> {
+        let mut ep = self.bind_ears().await?;
+        let addrs = self.publish_roads(&ep)?;
+        let mut handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(msg::cant_open_handoff_port)?;
+        let cookie = fresh_hex()?;
+        self.write_endpoint_file(addrs, &handoffs, &cookie)?;
 
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
@@ -325,6 +556,11 @@ impl Node {
             let root = node.root().clone();
             tokio::spawn(async move {
                 let mut beat = tokio::time::interval(PAUSE_POLL);
+                // A process that was stopped (a phone in the background:
+                // `tokio`'s clock keeps running while nothing here does)
+                // owes one read on its way back, not one per half second
+                // it was away — the default would fire them all at once.
+                beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     beat.tick().await;
                     let r = root.clone();
@@ -341,10 +577,32 @@ impl Node {
         }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let mut ticker = tokio::time::interval(SYNC_EVERY);
+        // One pump on the way back from a stop, not one per five seconds
+        // away (the pause beat above has the reason).
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // [`resume`]'s door into this loop, and the deaf watch's own. Only
+        // a resumable serve is listed where [`resume`] looks; the sender
+        // kept here is also how the watch asks this loop for new ears.
+        let (wake, mut woken) = tokio::sync::mpsc::unbounded_channel::<Wake>();
+        let _listed = resumable.then(|| Listed::new(node.root(), wake.clone()));
+        // Whether the endpoint is still one to accept on: an endpoint
+        // that closed answers `None` at once and forever, so a resumable
+        // serve stops asking it until it has a new one.
+        let mut hearing = true;
         loop {
             tokio::select! {
-                incoming = ep.accept() => {
-                    let Some(incoming) = incoming else { break };
+                incoming = ep.accept(), if hearing => {
+                    let Some(incoming) = incoming else {
+                        // The endpoint closed under this serve. A serve
+                        // somebody restarts ends here, as it always has;
+                        // a resumable one stays deaf until `resume` or its
+                        // own watch gives it new ears.
+                        if !resumable { break }
+                        hearing = false;
+                        let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                        eprintln!("{}", msg::serve_ears_closed(&stamp));
+                        continue;
+                    };
                     // Paused: dropped without an answer, so the far side
                     // sees what a machine that is not there looks like —
                     // which is the state somebody asked for.
@@ -362,15 +620,98 @@ impl Node {
                     });
                 }
                 accepted = handoffs.accept() => {
-                    if let Ok((stream, _)) = accepted {
-                        let n = node.clone();
-                        let e = ep.clone();
-                        let c = cookie.clone();
-                        tokio::spawn(async move {
-                            let _ = n.handle_handoff(stream, &e, &c).await;
-                        });
+                    match accepted {
+                        Ok((stream, _)) => {
+                            let n = node.clone();
+                            let e = ep.clone();
+                            let c = cookie.clone();
+                            tokio::spawn(async move {
+                                let _ = n.handle_handoff(stream, &e, &c).await;
+                            });
+                        }
+                        // **A listener iOS took back.** A suspended app's
+                        // listening socket can come back defunct, and then
+                        // every accept fails at once: asked again in this
+                        // loop, it is a core spinning on an error. Bound
+                        // again on a fresh port, written where the verbs
+                        // look, and given a beat so a failing bind cannot
+                        // spin either.
+                        Err(_) if resumable => {
+                            if let Ok(fresh) = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await {
+                                handoffs = fresh;
+                                let _ = node.write_endpoint_file(endpoint::local_addrs(&ep), &handoffs, &cookie);
+                            }
+                            tokio::time::sleep(Duration::from_millis(100)).await;
+                        }
+                        Err(_) => {}
                     }
                 }
+                Some(asked) = woken.recv() => match asked {
+                    // The test's stand-in for what a suspension does to a
+                    // phone's endpoint: closed under the serve, nothing
+                    // heard, nothing sent (`deafen`).
+                    Wake::Deafen { done } => {
+                        ep.close().await;
+                        hearing = false;
+                        let _ = done.send(());
+                    }
+                    Wake::Resume { ears, synced } => {
+                        let begun = std::time::Instant::now();
+                        let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                        match node.fresh_ears().await {
+                            Ok(fresh) => {
+                                let old = std::mem::replace(&mut ep, fresh);
+                                hearing = true;
+                                // Closed off the loop: a graceful close
+                                // waits on its connections, and the new
+                                // ears are already the ones answering.
+                                tokio::spawn(async move { old.close().await });
+                                match node.publish_roads(&ep) {
+                                    Ok(addrs) => {
+                                        let _ = node.write_endpoint_file(addrs, &handoffs, &cookie);
+                                    }
+                                    Err(e) => eprintln!("{e}"),
+                                }
+                                // The round below is this interval's.
+                                ticker.reset();
+                                eprintln!(
+                                    "{}",
+                                    msg::serve_fresh_ears(&stamp, begun.elapsed().as_millis())
+                                );
+                                if let Some(ears) = ears {
+                                    let _ = ears.send(Ok(()));
+                                }
+                            }
+                            Err(why) => {
+                                eprintln!("{}", msg::serve_fresh_ears_failed(&stamp, &why));
+                                if let Some(ears) = ears {
+                                    let _ = ears.send(Err(why));
+                                }
+                            }
+                        }
+                        // **A round at once**, not at the next tick: what
+                        // the others wrote while this one was away is the
+                        // first thing a person coming back looks at. It
+                        // waits for a pump already in flight rather than
+                        // skipping (the tick's `try_lock`) — that pump was
+                        // on the old ears and ends as they close.
+                        let n = node.clone();
+                        let e = ep.clone();
+                        let deaf = deaf.clone();
+                        tokio::spawn(async move {
+                            let out = {
+                                let _g = n.sync_gate.lock().await;
+                                n.sync_with_all(&e).await
+                            };
+                            let _ = n.trust_tick();
+                            let heard = if n.self_admitted() { out.as_slice() } else { &[] };
+                            let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
+                            if let Some(synced) = synced {
+                                let _ = synced.send(out);
+                            }
+                        });
+                    }
+                },
                 _ = ticker.tick() => {
                     // A kept serve whose keeper is gone must leave: an
                     // orphan holds the endpoint key, so the guardian's
@@ -403,6 +744,7 @@ impl Node {
                     let n = node.clone();
                     let e = ep.clone();
                     let deaf = deaf.clone();
+                    let wake = wake.clone();
                     tokio::spawn(async move {
                         // Reap borrows whose rows were closed since the
                         // last tick, freeing their ports, before syncing.
@@ -432,21 +774,22 @@ impl Node {
                         if deaf.lock().expect("deaf watch poisoned").observe(heard) {
                             let stamp =
                                 jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                            eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
-                            // **Not on a phone.** Nothing stands an iOS
-                            // app back up — no keeper, and the system
-                            // reads an exit as a crash — and a phone out
-                            // of signal for two minutes hears nobody for
-                            // an ordinary reason. The app would simply
-                            // vanish in a lift. The watch starts over;
-                            // fresh ears without a restart are iOS
-                            // step 2 (docs/IOS.md).
-                            #[cfg(target_os = "ios")]
-                            {
+                            // **Not a resumable serve's way out.** Nothing
+                            // stands a phone app back up — no keeper, and
+                            // the system reads an exit as a crash — and a
+                            // phone out of signal for two minutes hears
+                            // nobody for an ordinary reason; the app would
+                            // simply vanish in a lift. It asks its own loop
+                            // for fresh ears instead (docs/IOS.md 第三步),
+                            // and the watch starts over.
+                            if resumable {
+                                eprintln!("{}", msg::serve_deaf_fresh_ears(&stamp, DEAF_AFTER.as_secs()));
                                 *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
+                                let _ = wake.send(Wake::Resume { ears: None, synced: None });
+                            } else {
+                                eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
+                                std::process::exit(DEAF_EXIT);
                             }
-                            #[cfg(not(target_os = "ios"))]
-                            std::process::exit(DEAF_EXIT);
                         }
                         // **Tidy up after the sync, never before it.**
                         // Compaction rewrites a document that the pump
@@ -679,6 +1022,19 @@ impl Node {
                         cookie,
                     },
                     Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::Rejoin { machine, session } => {
+                match self
+                    .reach_or_why(ep, &machine, &crate::SessionId(session), true)
+                    .await
+                {
+                    Ok((addr, cookie)) => ipc::Reply::Reaching {
+                        addr: addr.to_string(),
+                        cookie,
+                    },
+                    Err(Rejoin::Unreached(why)) => ipc::Reply::Unreached { why },
+                    Err(Rejoin::Gone(why)) => ipc::Reply::Refused { why },
                 }
             }
             ipc::Op::OpenAgentOn {
@@ -965,36 +1321,68 @@ impl Node {
         machine: &str,
         session: &crate::SessionId,
     ) -> Result<(std::net::SocketAddr, String), String> {
-        let (channel, home) = self.resolve(machine)?;
+        self.reach_or_why(ep, machine, session, false)
+            .await
+            .map_err(|e| match e {
+                Rejoin::Unreached(why) | Rejoin::Gone(why) => why,
+            })
+    }
+
+    /// [`Self::reach_on_with`], saying which of two things a failure
+    /// was ([`Rejoin`]): **the far machine was not reached**, or **it
+    /// was, and the session is not there to attach to**. Only the first
+    /// is worth asking again.
+    ///
+    /// `again`: the face asking is one whose pipe just ended, so the pipe
+    /// held for this session is not handed back even when its listener
+    /// still runs — the connection under it is what ended. Any other
+    /// face on that pipe ended with it and asks again the same way.
+    async fn reach_or_why(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        session: &crate::SessionId,
+        again: bool,
+    ) -> Result<(std::net::SocketAddr, String), Rejoin> {
+        let (channel, home) = self.resolve(machine).map_err(Rejoin::Gone)?;
         if home == self.device() {
             let dir = self
                 .live
                 .dir_of(session)
-                .ok_or_else(|| msg::not_a_session_id(&session.0))?;
-            let hf = crate::host::read_host_file(&dir)?;
+                .ok_or_else(|| Rejoin::Gone(msg::not_a_session_id(&session.0)))?;
+            let hf = crate::host::read_host_file(&dir).map_err(Rejoin::Gone)?;
             let addr: std::net::SocketAddr = ([127, 0, 0, 1], hf.port).into();
             return Ok((addr, hf.cookie));
         }
-        let (port, cookie) = match self
-            .ask(
-                ep,
-                &channel,
-                &Request::Reach {
-                    session: session.0.clone(),
-                },
-            )
-            .await?
-        {
+        // `ask`, in its two halves: a dial that fails, or a request that
+        // never comes back, is the far machine not reached; an answer
+        // that refuses is the far machine speaking.
+        let conn = self.dial_named(ep, &channel).await.map_err(Rejoin::Unreached)?;
+        let asked = request(
+            &conn,
+            &Request::Reach {
+                session: session.0.clone(),
+            },
+        )
+        .await;
+        let answer = match asked {
+            Ok(answer) => answer,
+            Err(why) => {
+                self.wires.lock().await.remove(&channel);
+                return Err(Rejoin::Unreached(why));
+            }
+        };
+        let (port, cookie) = match answer {
             Response::Reached { port, cookie } => (port, cookie),
-            Response::Refused { why } => return Err(why),
-            other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            Response::Refused { why } => return Err(Rejoin::Gone(why)),
+            other => return Err(Rejoin::Gone(msg::peer_non_answer(format_args!("{other:?}")))),
         };
         {
             let mut held = self.reaches.lock().await;
             match held.get(session) {
                 // Same live pipe, same far port: reuse it. One session,
                 // one local port, however many faces attach.
-                Some((addr, far, handle)) if !handle.is_finished() && *far == port => {
+                Some((addr, far, handle)) if !again && !handle.is_finished() && *far == port => {
                     return Ok((*addr, cookie));
                 }
                 // Either the pipe is gone or it points somewhere that no
@@ -1008,11 +1396,13 @@ impl Node {
                 None => {}
             }
         }
-        let borrow = self.tunnel_on(ep, machine).await?;
+        let borrow = self.tunnel_on(ep, machine).await.map_err(Rejoin::Unreached)?;
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
-            .map_err(|e| e.to_string())?;
-        let addr = listener.local_addr().map_err(|e| e.to_string())?;
+            .map_err(|e| Rejoin::Unreached(e.to_string()))?;
+        let addr = listener
+            .local_addr()
+            .map_err(|e| Rejoin::Unreached(e.to_string()))?;
         let target = format!("127.0.0.1:{port}");
         let handle = tokio::spawn(async move {
             let _ = crate::tunnel::serve_fixed(std::sync::Arc::new(borrow), listener, target).await;
@@ -4282,6 +4672,38 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             },
             None => Err(msg::reach_needs_serve().into()),
+        }
+    }
+
+    /// [`Self::reach`] for a face whose pipe to that session just ended
+    /// (docs/IOS.md 第三步) — and the answer says whether to try again.
+    ///
+    /// **The same reach, not a second road**: the resident binds a pipe
+    /// onto the far host on its own endpoint (a fresh one after
+    /// [`resume`]), and the far host pours its ring to the new client as
+    /// it does for every attacher — so what happened while the old pipe
+    /// was dead is on the screen again. The difference is the answer:
+    /// [`Rejoin::Unreached`] when the far machine was not reached (worth
+    /// asking again, after the next [`resume`] or a beat), [`Rejoin::Gone`]
+    /// when it answered and the session is not there.
+    pub async fn rejoin(
+        &self,
+        machine: &str,
+        session: &crate::SessionId,
+    ) -> Result<(String, String), Rejoin> {
+        let op = ipc::Op::Rejoin {
+            machine: machine.to_owned(),
+            session: session.0.clone(),
+        };
+        match self.via_serve(op).await {
+            Some(Ok(ipc::Reply::Reaching { addr, cookie })) => Ok((addr, cookie)),
+            Some(Ok(ipc::Reply::Unreached { why })) => Err(Rejoin::Unreached(why)),
+            Some(Ok(ipc::Reply::Refused { why })) => Err(Rejoin::Gone(why)),
+            Some(Ok(other)) => Err(Rejoin::Gone(msg::serve_non_answer(format_args!("{other:?}")))),
+            // The resident did not answer the hand-off: its own ears are
+            // what is down, which is the case for asking again.
+            Some(Err(why)) => Err(Rejoin::Unreached(why)),
+            None => Err(Rejoin::Unreached(msg::reach_needs_serve().into())),
         }
     }
 

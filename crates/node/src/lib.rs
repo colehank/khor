@@ -2860,6 +2860,9 @@ impl Node {
     /// sample is exactly the 不知道 the strip already has a cell for.
     pub(crate) async fn day_sampler(self: std::sync::Arc<Self>) {
         let mut tick = tokio::time::interval(day::SAMPLE_EVERY);
+        // One sample on the way back from a stopped process (a phone in
+        // the background), not every one it missed — `link::serve` says why.
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tick.tick().await;
             let me = self.clone();
@@ -2945,6 +2948,9 @@ impl Node {
     /// band paints as absence rather than a number nobody measured.
     pub(crate) async fn cpu_recorder(self: std::sync::Arc<Self>) {
         let mut tick = tokio::time::interval(history::RECORD_EVERY);
+        // One sample on the way back from a stopped process (a phone in
+        // the background), not every one it missed — `link::serve` says why.
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tick.tick().await;
             let root = self.root.clone();
@@ -3633,6 +3639,9 @@ impl Node {
     /// plain sight (离线轴).
     pub(crate) async fn satellite_sampler(&self) {
         let mut tick = tokio::time::interval(satellite::SAMPLE_EVERY);
+        // One sample on the way back from a stopped process (a phone in
+        // the background), not every one it missed — `link::serve` says why.
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tick.tick().await;
             let Ok(devs) = self.devices() else { continue };

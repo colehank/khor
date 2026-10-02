@@ -252,6 +252,19 @@ pub enum Op {
     /// line) — not as a count of zero, which a field defaulting to empty
     /// on an old serve would have painted as fact. Tail-appended.
     Roads,
+    /// Tail-appended: [`Op::ReachOn`] for a face whose pipe just ended
+    /// (`Node::rejoin`, docs/IOS.md 第三步) — the same reach, answered
+    /// so the face can tell **「not reached, try again」**
+    /// ([`Reply::Unreached`]) from **「reached, and the session is not
+    /// there」** ([`Reply::Refused`]). The first is a phone back from its
+    /// pocket, the second a terminal that really ended. A new op rather
+    /// than a new answer to `ReachOn`: a CLI of another build asking
+    /// that would not know the new answer, and nothing but the face
+    /// asks this one.
+    Rejoin {
+        machine: String,
+        session: String,
+    },
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -327,6 +340,7 @@ impl Op {
             Op::OpenOn { .. } => ("OpenOn", DEADLINE_FAR),
             Op::OpenAgentOn { .. } => ("OpenAgentOn", DEADLINE_FAR),
             Op::ReachOn { .. } => ("ReachOn", DEADLINE_FAR),
+            Op::Rejoin { .. } => ("Rejoin", DEADLINE_FAR),
             Op::CloseOn { .. } => ("CloseOn", DEADLINE_FAR),
             Op::CodeStopOn { .. } => ("CodeStopOn", DEADLINE_FAR),
             Op::SearchOn { .. } => ("SearchOn", DEADLINE_SLOW),
@@ -500,6 +514,12 @@ pub enum Reply {
     /// resident has dialled since it started.
     Roads {
         by_device: Vec<(String, khor_core::RoadTally)>,
+    },
+    /// Tail-appended with [`Op::Rejoin`]: that machine was not reached —
+    /// a dial that failed, ears that are down. Worth asking again; a
+    /// refusal from the far side is still [`Reply::Refused`].
+    Unreached {
+        why: String,
     },
 }
 

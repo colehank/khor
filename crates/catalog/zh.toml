@@ -1702,6 +1702,15 @@ quit-hosts = "已停止 {0} 个 session 宿主"
 # keeper stands it back up with fresh ears.
 serve-gone-deaf = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，退下换一双（keeper 会再起）"
 serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下一任，退场"
+# 能续上的 serve（手机，docs/IOS.md 第三步）不退出：系统把退出读成闪退，也没有
+# keeper 再起它。端点在底下关了就先聋着；回到前台（`link::resume`）或听不见满
+# 两分钟时就地换一副新耳朵——同一把钥匙的新端点，旧的和挂在它上面的都放掉，
+# 新地址写回设备表，马上同步一轮。
+serve-ears-closed = "[{0}] 端点在 serve 底下关了，暂时听不见；回到前台或两分钟没人应答时换一副新耳朵"
+serve-fresh-ears = "[{0}] 换了一副新耳朵（{1} 毫秒），马上同步一轮"
+serve-fresh-ears-failed = "[{0}] 没换成新耳朵：{1}"
+serve-deaf-fresh-ears = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，就地换一副（不退出）"
+serve-gone-midway = "serve 在换新耳朵的半路结束了"
 # The road question (Op::Hops) never leaves the process, so a late
 # answer means iroh itself is stuck: said here, 说不出 on the card.
 serve-hops-late = "[{0}] 问 iroh 走哪条路，{1} 毫秒内没答上来，先报「说不出」：{2}"
@@ -3645,6 +3654,18 @@ ticket = "配对票"
 ticket-qr = "配对票的二维码"
 copy-ticket = "复制配对票"
 paste-a-ticket = "在此粘贴配对票"
+# 加入网络的扫码（docs/IOS.md 第三步）：有相机扫码的那一头（手机的构建）在配对票的框旁边多一颗
+# 「扫码」。码里装的就是那串票本身（`khor_gui_core::qr`），扫到后填进同一个框、走同一个「加入」——
+# 一个加入，两种填法。扫的时候整屏是相机，上面一句说对准什么，下面一颗「取消」（`delete-keep`）。
+# 相机权限被拒时说一句话、给一颗「打开设置」，不留一颗按了没反应的按钮；打不开相机（模拟器就没有）
+# 也说一句。`camera-usage` 是 iOS 第一次问相机权限时系统弹窗里那句：`gen/apple` 的 Info.plist
+# （NSCameraUsageDescription）抄的就是它，`npm run mobile` 比对两处一字不差。
+scan-a-ticket = "扫码"
+scan-aim = "对准另一台机器「邀请设备」里的二维码"
+scan-camera-denied = "khor 没有使用相机的权限。在「设置」里允许后再扫，或者粘贴配对票"
+scan-open-settings = "打开设置"
+scan-no-camera = "无法打开相机。粘贴配对票也能加入"
+camera-usage = "扫描另一台机器上的配对二维码，加入它的网络"
 join = "加入"
 close = "关闭"
 # The chat input's hint. Not a label: the box is the pane's only
