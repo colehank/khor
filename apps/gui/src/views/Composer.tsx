@@ -196,7 +196,14 @@ export function StopSeat({ onStop, tip }: { onStop: () => void; tip: boolean }) 
   );
 }
 
-export type ModeChoice = { id: string; name: string; note: string | null };
+export type ModeChoice = {
+  id: string;
+  name: string;
+  note: string | null;
+  /** A mode the agent is in and does not offer: shown, chosen, not
+      pressable (V09). */
+  fixed?: boolean;
+};
 
 /** **Each agent's ordinary mode**, the one that wears no warning ink:
     claude's `default` (asks before changes) and codex's `workspace` (free
@@ -268,7 +275,19 @@ export function ModeSeat({
         onCloseAutoFocus={(e) => e.preventDefault()}
         className="w-[232px]"
       >
-        {choices.map((m) => (
+        {choices.map((m) =>
+          m.fixed ? (
+            <div
+              key={m.id}
+              data-mode-option={m.id}
+              data-mode-fixed
+              data-on={m.id === current || undefined}
+              className="glass-sel flex min-h-menu-item flex-col items-start justify-center gap-0 rounded-menu-item px-row py-1.5"
+            >
+              <span className="text-body font-title">{m.name}</span>
+              {m.note && <span className="text-caption text-muted-foreground">{m.note}</span>}
+            </div>
+          ) : (
           <DropdownMenuItem
             key={m.id}
             data-mode-option={m.id}
@@ -282,7 +301,8 @@ export function ModeSeat({
             <span className={cn("text-body", m.id === current && "font-title")}>{m.name}</span>
             {m.note && <span className="text-caption text-muted-foreground">{m.note}</span>}
           </DropdownMenuItem>
-        ))}
+          ),
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

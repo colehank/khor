@@ -21,19 +21,49 @@ function DropdownMenuTrigger({
   return <DropdownMenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 
+/**
+ * **A menu stops above what is under it** (V15): 8 from the screen's
+ * edges, and on the narrow face 8 above the bottom bar (or the safe area
+ * where no bar is drawn) — measured when it opens, since the bar floats.
+ */
+function bottomRoom(): number {
+  if (typeof document === "undefined" || !document.documentElement.hasAttribute("data-narrow")) return 8;
+  const bar = [...document.querySelectorAll<HTMLElement>("[data-float-nav]")].find(
+    (e) => e.getClientRects().length > 0 && !e.closest("[data-screen-under]"),
+  );
+  if (bar) return Math.max(8, window.innerHeight - bar.getBoundingClientRect().top + 8);
+  const safe = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-bottom")) || 0;
+  return safe + 8;
+}
+
+/** A menu cut by its height says so: the cut edge fades (V15). */
+function useCutEdges() {
+  return React.useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const mark = () => {
+      el.toggleAttribute("data-cut-top", el.scrollTop > 0);
+      el.toggleAttribute("data-cut-bottom", el.scrollHeight - el.clientHeight - el.scrollTop > 1);
+    };
+    requestAnimationFrame(mark);
+    el.addEventListener("scroll", mark, { passive: true });
+  }, []);
+}
+
 function DropdownMenuContent({
   className,
   sideOffset = 4,
   // A menu keeps 8 from the screen's edges (the audit fix plan F4.6; N22).
-  collisionPadding = 8,
+  collisionPadding,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const cut = useCutEdges();
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        ref={cut}
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
-        collisionPadding={collisionPadding}
+        collisionPadding={collisionPadding ?? { top: 8, left: 8, right: 8, bottom: bottomRoom() }}
         className={cn(
           "max-h-(--radix-dropdown-menu-content-available-height) min-w-40 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto",
           "glass z-50 rounded-menu border-0 bg-glass-menu p-menu-inset text-foreground shadow-[var(--glass-in),var(--glass-shadow)]",

@@ -27,15 +27,21 @@ export function useRowSwipe(ref: RefObject<HTMLElement | null>, on: boolean) {
     let start: { x: number; y: number; base: number } | null = null;
     let decided: "swipe" | "scroll" | null = null;
     let reveal = 0;
+    // A touch that only closed an open row does nothing else (V16).
+    let closing = false;
     const width = (r: HTMLElement) => r.querySelector<HTMLElement>("[data-row-actions-inner]")?.scrollWidth ?? 0;
     const set = (r: HTMLElement, px: number) => r.style.setProperty("--row-reveal", `${px}px`);
     const shut = (r: HTMLElement | null) => {
       if (!r) return;
-      r.removeAttribute("data-row-open");
+      r.removeAttribute("data-row-revealed");
       set(r, 0);
       if (open === r) open = null;
     };
     const down = (e: TouchEvent) => {
+      if (closing) {
+        start = null;
+        return;
+      }
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
       const hit = (e.target as Element | null)?.closest<HTMLElement>("[data-row-swipe]") ?? null;
@@ -84,7 +90,7 @@ export function useRowSwipe(ref: RefObject<HTMLElement | null>, on: boolean) {
       const full = width(row);
       if (reveal > full / 2) {
         set(row, full);
-        row.setAttribute("data-row-open", "");
+        row.setAttribute("data-row-revealed", "");
         open = row;
       } else {
         shut(row);
@@ -96,8 +102,25 @@ export function useRowSwipe(ref: RefObject<HTMLElement | null>, on: boolean) {
     list.addEventListener("touchmove", move, { passive: false });
     list.addEventListener("touchend", up);
     list.addEventListener("touchcancel", up);
+    // **While a row is open, the next touch anywhere else only closes
+    // it** (V16): its press is swallowed, so a tap on another row does
+    // not also open that row — iOS's rule.
+    const swallow = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
     const away = (e: Event) => {
-      if (open && !open.contains(e.target as Node)) shut(open);
+      if (!open || open.contains(e.target as Node)) return;
+      shut(open);
+      closing = true;
+      document.addEventListener("click", swallow, { capture: true, once: true });
+      const done = () => {
+        closing = false;
+        // A click that never came (a drag) must not swallow a later one.
+        window.setTimeout(() => document.removeEventListener("click", swallow, { capture: true }), 400);
+      };
+      document.addEventListener("pointerup", done, { capture: true, once: true });
+      document.addEventListener("pointercancel", done, { capture: true, once: true });
     };
     document.addEventListener("pointerdown", away, true);
     return () => {

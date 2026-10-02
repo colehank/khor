@@ -260,7 +260,7 @@ export function FilesPane({
                   // One row height and one hairline with the files under
                   // it (F4.2; W16).
                   className={cn(
-                    "group flex min-h-touch items-center border-b pr-4 hover:bg-muted/50",
+                    "group flex min-h-touch items-center pr-4 hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -332,7 +332,7 @@ export function FilesPane({
                   // down and only after a press, which is the harder
                   // version of the same bug to see.
                   className={cn(
-                    "group flex min-h-touch items-center gap-3 border-b px-4 text-callout",
+                    "group flex min-h-touch items-center gap-3 px-4 text-callout",
                     faded && "text-muted-foreground",
                     // The open file wears the list's chosen block (F4.2;
                     // W16), not bold.

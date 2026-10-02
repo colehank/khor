@@ -666,6 +666,8 @@ export function WorkspacesList({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <SideList
+        // Never read and nothing remembered: the rows' skeleton (V18).
+        loading={!known}
         rows={side}
         query={query}
         filtered={words.length > 0}

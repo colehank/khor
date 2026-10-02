@@ -24,7 +24,7 @@
 // did all of this; the other four had each grown part of it.
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { EmptyState, RegionState } from "@/components/RegionState";
+import { EmptyState } from "@/components/RegionState";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark, type FaceOf, type KindMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
@@ -299,9 +299,22 @@ export function SideList({
   });
 
   if (loading && rows.length === 0) {
+    // **One skeleton, shaped like the rows that are coming** (V18): the
+    // face's disc in its slot, a title and a second line over the inset
+    // hairline — the same x's as a row — on every list.
     return (
-      <div data-side-list {...mark} data-loading>
-        <RegionState state="loading-never" />
+      <div data-side-list {...mark} data-loading aria-busy="true" className={narrow ? "pb-in" : "px-in pb-in"}>
+        {["w-[56%]", "w-[42%]", "w-[64%]", "w-[48%]"].map((w, i) => (
+          <div key={i} data-skeleton className={cn("flex min-h-list-row items-stretch gap-row", narrow ? "ps-group" : "ps-row")}>
+            <span className="flex w-list-face flex-none items-center justify-center">
+              <span className="size-avatar rounded-full bg-fill" />
+            </span>
+            <span className={cn("flex min-w-0 flex-1 flex-col justify-center gap-1.5 border-b py-1", narrow ? "pe-group" : "pe-row")}>
+              <span className={cn("h-3.5 rounded-full bg-fill", w)} />
+              <span className="h-3 w-[30%] rounded-full bg-fill" />
+            </span>
+          </div>
+        ))}
       </div>
     );
   }
@@ -482,7 +495,7 @@ export function SideList({
                         data-destructive={a.destructive || undefined}
                         onClick={(e) => {
                           const row = e.currentTarget.closest<HTMLElement>("[data-row-swipe]");
-                          row?.removeAttribute("data-row-open");
+                          row?.removeAttribute("data-row-revealed");
                           row?.style.setProperty("--row-reveal", "0px");
                           void Promise.resolve().then(a.run).catch(() => {});
                         }}

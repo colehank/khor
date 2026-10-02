@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import {
   fetchQuotaBoard,
@@ -63,6 +63,7 @@ import {
   DIAL_ROW_SIZE,
   DIAL_ROW_STROKE,
   Face,
+  hugRatio,
   type Pip,
 } from "@/components/Face";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
+import { Why, useWhy } from "@/components/Why";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -671,6 +673,23 @@ function arcOf(r: Row): number | null {
 /** The middle of a row's dial. A registered row says what its reading
     says (`centre`); a probed subscription has no reading object, so its
     share is spelled here — the same rounding, on the same number. */
+/** The width of the row dial's ink, pips included (`hugRatio`). */
+const DIAL_ROW_INK = hugRatio(DIAL_ROW_SIZE, DIAL_ROW_STROKE) * DIAL_ROW_SIZE;
+
+/** A reading inside the row's dial, its unit a step smaller than its
+    digits (F4.4: 「85%」 stood 1px from the arc's ends) — the number is
+    the reading, the sign only says what kind. */
+function reading(text: string) {
+  const m = /^(.*?)(%)$/.exec(text);
+  if (!m) return text;
+  return (
+    <>
+      {m[1]}
+      <span className="text-[0.72em]">{m[2]}</span>
+    </>
+  );
+}
+
 function centreOf(r: Row): string {
   if (r.account) return centre(r.account);
   return r.fill == null ? "" : `${Math.round(r.fill * 100)}%`;
@@ -1252,17 +1271,27 @@ export function QuotaLanding({
       // Not a machine's face, so `art`, and no mark on it.
       face: {
         art: (
-          <Face
-            size={DIAL_ROW_SIZE}
-            stroke={DIAL_ROW_STROKE}
-            ratio={DIAL_ROW_RATIO}
-            crop
-            fraction={arcOf(r)}
-            strain={r.account?.strain ?? null}
-            pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+          // **The dial's first ink on the left line** (F2.7, the narrow
+          // check: a pip reached 16.2 against 20). The dial's ink is wider
+          // than the face's slot, so on the narrow face it is moved right
+          // by what it overhangs; the text column is 12 away and keeps 5.
+          <span
+            data-dial-row
+            className="flex [[data-narrow]_&]:translate-x-(--dial-overhang)"
+            style={{ "--dial-overhang": `calc((${DIAL_ROW_INK}px - var(--list-face)) / 2)` } as CSSProperties}
           >
-            {centreOf(r)}
-          </Face>
+            <Face
+              size={DIAL_ROW_SIZE}
+              stroke={DIAL_ROW_STROKE}
+              ratio={DIAL_ROW_RATIO}
+              crop
+              fraction={arcOf(r)}
+              strain={r.account?.strain ?? null}
+              pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
+            >
+              {reading(centreOf(r))}
+            </Face>
+          </span>
         ),
       },
       // **The kind's mark opens the title** (2026-09-30, the owner: 「额度
@@ -2427,8 +2456,15 @@ function RegisterDialog({
     setBusy(false);
   }, [open]);
 
+  // Always pressable (`components/Why`, V14): what the node would refuse
+  // for being missing is asked for here, the caret put in its box.
+  const why = useWhy();
   const create = () => {
     if (busy) return;
+    if (!name.trim()) return why.ask(gui.need_account_name, "#khor-quota-name");
+    if (kind !== "sub" && provider === "newapi" && !baseUrl.trim()) return why.ask(gui.need_address, "#khor-quota-address");
+    if (kind !== "sub" && !key.trim()) return why.ask(gui.need_key, "#khor-quota-key");
+    why.clear();
     setBusy(true);
     setError(null);
     const parsedBudget = budget.trim() === "" ? undefined : Number(budget);
@@ -2563,6 +2599,7 @@ function RegisterDialog({
               />
             </>
           )}
+          <Why text={why.why} />
           {error && (
             <p data-quota-dialog-error className="col-span-2 text-callout text-destructive">
               {error}

@@ -509,7 +509,10 @@ export function BrowseLanding({
           <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
           {tabs.ready && (
             <BarSeat at="under">
-              <div data-page-field-seat className="flex flex-none px-row pt-xxs pb-in">
+              {/* As tall as a conversation's capsule row, so the tab row
+                  over it stands where a session's does (the narrow check:
+                  706 against 702). */}
+              <div data-page-field-seat className="flex min-h-[calc(var(--composer-h)+var(--gap-xxs)+var(--gap-in))] flex-none items-end px-row pt-xxs pb-in">
                 {field}
               </div>
             </BarSeat>

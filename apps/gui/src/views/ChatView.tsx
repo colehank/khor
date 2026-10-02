@@ -437,6 +437,8 @@ function modeNote(id: string, listed: ModeListed[]): string | null {
       return gui.chat_mode_codex_auto_note;
     case "full-access":
       return gui.chat_mode_codex_full_access_note;
+    case "auto":
+      return gui.chat_mode_claude_auto_note;
     default:
       return listed.find((m) => m.id === id)?.description ?? null;
   }
@@ -1390,11 +1392,26 @@ export function ChatView({
     <ModeSeat
       current={settings.modes.currentModeId}
       word={modeWord(settings.modes.currentModeId, settings.modes.availableModes)}
-      choices={settings.modes.availableModes.map((m) => ({
-        id: m.id,
-        name: modeWord(m.id, settings.modes?.availableModes ?? []),
-        note: modeNote(m.id, settings.modes?.availableModes ?? []),
-      }))}
+      // **The menu always holds the mode the session is in** (V09). One
+      // the agent went into by itself and does not list (claude's own
+      // `auto`) heads the menu, chosen, and is not pressable.
+      choices={[
+        ...(settings.modes.availableModes.some((m) => m.id === settings.modes?.currentModeId)
+          ? []
+          : [
+              {
+                id: settings.modes.currentModeId,
+                name: modeWord(settings.modes.currentModeId, settings.modes.availableModes),
+                note: modeNote(settings.modes.currentModeId, settings.modes.availableModes),
+                fixed: true,
+              },
+            ]),
+        ...settings.modes.availableModes.map((m) => ({
+          id: m.id,
+          name: modeWord(m.id, settings.modes?.availableModes ?? []),
+          note: modeNote(m.id, settings.modes?.availableModes ?? []),
+        })),
+      ]}
       onPick={(v) => void chatSetMode(id, v).catch(() => {})}
     />
   ) : mode !== null && modeSaid(mode) !== null ? (
@@ -1576,6 +1593,14 @@ export function ChatView({
         {facts && items.length === 0 && (facts.needsLogin || !facts.replays) && (
           <div data-chat-facts className="pb-1 text-caption text-muted-foreground">
             {facts.needsLogin ? gui.chat_needs_login : gui.chat_no_replay}
+          </div>
+        )}
+        {/* An empty conversation says so, once and quietly (V18) — never
+            a blank page; not while a turn is coming, and not over the
+            line above when that one explains the emptiness better. */}
+        {facts && items.length === 0 && !inTurn && !facts.needsLogin && facts.replays && (
+          <div data-chat-empty className="pt-group text-center text-callout text-muted-foreground">
+            {gui.chat_empty}
           </div>
         )}
         {items.map((item, i) =>

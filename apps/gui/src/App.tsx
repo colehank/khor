@@ -2138,7 +2138,10 @@ export default function App() {
           // x the 这台机器 row's do, the title `headline` whether or not it
           // is the picked one, and the hairline under the words.
           className={cn(
-            "mx-in flex min-h-touch items-stretch gap-row rounded-md px-3 text-start text-headline",
+            "flex min-h-touch items-stretch gap-row rounded-md text-start text-headline",
+            // Narrow, the hairline runs to the screen's edge as every
+            // list's does (V17): the row keeps its left inset only.
+            narrow ? "ms-in ps-3" : "mx-in px-3",
             // The selected row wears the block only while it is the one
             // on screen — on the narrow list the page is a screen away.
             morePage === p && !narrow ? "bg-fill-strong" : "hover:bg-fill",
@@ -2163,6 +2166,7 @@ export default function App() {
           <span
             className={cn(
               "flex min-w-0 flex-1 items-center gap-row border-b py-1",
+              narrow && "pe-page",
               morePage === p && !narrow && "border-transparent",
             )}
           >

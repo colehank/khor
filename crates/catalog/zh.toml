@@ -3474,6 +3474,9 @@ need-text = "先写下要说的话"
 need-pick = "先选择要导入的会话"
 need-ticket = "先粘贴配对票"
 need-relay = "先填写中继地址"
+need-account-name = "先为这个账号命名"
+need-key = "先粘贴密钥"
+need-address = "先填写站点地址"
 # 安全's group over 重置身份.
 identity-section = "身份"
 # A machine's files with none open: the empty side says what it is for.
@@ -3802,6 +3805,8 @@ chat-no-replay = "这个智能体不支持回放历史对话，之前的内容�
 # as a verdict: khor 没法替谁走完某家的登录流程,能做的是在第一句话之前
 # 就说清楚为什么什么都没有,而不是让人对着一个不回话的框猜。
 chat-needs-login = "这个智能体需要先登录才能开始对话"
+# An empty conversation, said once and quietly (V18), not a blank page.
+chat-empty = "这里还没有可显示的消息"
 # The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
 # 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
 chat-plan = "计划"
@@ -3827,6 +3832,7 @@ chat-mode-codex-auto = "工作区内自动"
 # not one this face offers, but a session can be in it, and its word must
 # not be codex's (2026-10-03, seen on a fresh claude session).
 chat-mode-claude-auto = "由 Claude 判断"
+chat-mode-claude-auto-note = "Claude 自己判断哪些操作安全，安全的不问就做，其余会问"
 # **The mode menu's second line**: exactly what the mode asks about and
 # what it does not, one per id (claude's four, codex's three).
 chat-mode-default-note = "改文件、运行命令前都会问"

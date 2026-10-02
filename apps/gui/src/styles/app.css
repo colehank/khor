@@ -1826,10 +1826,10 @@ aside[data-side] {
    control that is already placed (`absolute`, `fixed`, `sticky`) is its
    own containing block; a static one is made one. */
 @media (pointer: coarse) {
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
+  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
     position: relative;
   }
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key])::after {
+  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
     content: "";
     position: absolute;
     left: 50%;
@@ -1848,6 +1848,48 @@ aside[data-side] {
   /* ⚠️ 墓碑 (V03): the range input alone was made 44 here, so its thumb
      sat 8 below the 28 track drawn beside it; the slider's drawing box
      is the hit's height now (`settings/Slider`). */
+}
+
+/* **Under a finger an in-content control is 44 as drawn** (V02, V03,
+   V13): a popup's chip, the font picker, a dialog's or a sheet's
+   buttons — one height with the fields and segments beside them, not a
+   28 or 32 drawing inside a 44 hit. */
+@media (pointer: coarse) {
+  [data-popup-button] > div,
+  [data-term-font],
+  [data-slot="dialog-footer"] [data-slot="button"] {
+    height: var(--touch);
+  }
+}
+
+/* A menu cut by its height fades at the cut edge (V15). */
+[data-slot="dropdown-menu-content"][data-cut-bottom] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+[data-slot="dropdown-menu-content"][data-cut-top]:not([data-cut-bottom]) {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 24px);
+  mask-image: linear-gradient(to bottom, transparent, #000 24px);
+}
+[data-slot="dropdown-menu-content"][data-cut-top][data-cut-bottom] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+
+/* **A listing's hairline starts at its names** (V17), the text column,
+   as every list's does: 16 of inset, the 20 kind box and its 8. */
+[data-files-list] :is(div:has(> [data-dir]), div:has(> button > [data-dir]), [data-file]) {
+  background-image: linear-gradient(var(--border), var(--border));
+  background-size: calc(100% - 44px) 1px;
+  background-position: right bottom;
+  background-repeat: no-repeat;
+}
+
+/* **No key equivalents under a finger** (V10): a phone has no ⌘. */
+@media (pointer: coarse) {
+  [data-menu-key] {
+    display: none;
+  }
 }
 
 /* **A right-clicked row is ringed while its menu is open** (the audit fix
@@ -1890,7 +1932,7 @@ aside[data-side] {
 /* **A page scrolled under its head fades into it** (the audit fix plan
    F4.11; N21) instead of being cut mid-glyph: 20 of mask at the top of
    a scroller that is not at its top (`lib/scroll-edge`). */
-[data-nav-clear][data-scrolled] {
+:is([data-nav-clear], [data-pane-body], [data-files-list])[data-scrolled] {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20px);
   mask-image: linear-gradient(to bottom, transparent, #000 20px);
 }

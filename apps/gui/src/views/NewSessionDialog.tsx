@@ -450,6 +450,7 @@ export function NewSessionDialog({
             <Input
               data-tell-text
               aria-label={gui.message_text}
+              placeholder={gui.chat_input}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && send()}

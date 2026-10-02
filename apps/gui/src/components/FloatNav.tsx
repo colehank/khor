@@ -159,7 +159,8 @@ export function FloatNav({
             <>
               <DropdownMenuSeparator className="mx-row my-1.5" />
               <DropdownMenuItem data-nav-me className={cn(MENU_ITEM, "py-1.5")} onSelect={onMe}>
-                <MachineAvatar face={me.face} className="size-ctl-md" />
+                {/* In the glyphs' box, so its name starts where theirs do. */}
+                <MachineAvatar face={me.face} className="size-nav-glyph" />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">{me.name}</span>
                   <span className="text-callout text-muted-foreground">{gui.identity}</span>

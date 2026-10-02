@@ -299,7 +299,9 @@ export function MoreFold({
         // line with the rows' words (F2.7; W08).
         className="flex min-h-touch list-none items-center gap-in ps-row text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
       >
-        <IconChevronRight className="size-affordance flex-none transition-transform group-open:rotate-90" />
+        {/* Its ink on the section's left line (F2.7: the arrow drew at
+            42 against 36) — the glyph's own box is wider than its ink. */}
+        <IconChevronRight className="-ms-1.5 size-affordance flex-none transition-transform group-open:rotate-90" />
         {label}
       </summary>
       {open && <div className="flex min-w-0 flex-col gap-group pt-2">{children}</div>}
