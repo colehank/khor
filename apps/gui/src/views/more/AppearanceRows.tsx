@@ -8,6 +8,7 @@ import { IconBrowser, IconDevices, IconFiles, IconGrip, IconQuota, IconSessions 
 import { Slider } from "@/components/settings/Slider";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
+import { useNarrow } from "@/hooks/use-narrow";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
 import { cn } from "@/lib/utils";
@@ -94,6 +95,7 @@ const navName = (key: NavKey): string =>
  * Each move is kept at once and the bar follows (`useNavOrder`).
  */
 export function NavOrderSection() {
+  const narrow = useNarrow();
   const order = useNavOrder();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<NavKey | null>(null);
@@ -142,16 +144,21 @@ export function NavOrderSection() {
   });
 
   return (
-    <MoreSection name="nav-order" label={gui.nav_order}>
-      <div data-setting-note className="text-callout text-muted-foreground">
-        {gui.nav_order_note}
-      </div>
+    <MoreSection name="nav-order" label={narrow ? gui.nav_order : gui.nav}>
+      {/* The sentence and the 更多 rule are about the narrow bar, which
+          seats three and folds the rest; the wide strip seats every
+          landing, and there the rows only set its order (the owner). */}
+      {narrow && (
+        <div data-setting-note className="text-callout text-muted-foreground">
+          {gui.nav_order_note}
+        </div>
+      )}
       <div ref={box} data-nav-order className="flex flex-col">
         {order.map((key, i) => {
           const Glyph = NAV_GLYPH[key];
           return (
             <div key={key} className="flex flex-col">
-              {i === NAV_SHOWN && (
+              {narrow && i === NAV_SHOWN && (
                 <div data-nav-order-fold className="flex items-center gap-2.5 px-row pt-in pb-xxs text-caption text-tertiary">
                   <span>{gui.rail_more}</span>
                   <span className="h-px flex-1 bg-border" />
