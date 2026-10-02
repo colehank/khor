@@ -277,23 +277,18 @@ export function SessionsList({
       />
     ),
     name: r.title,
-    // The preview line: the newest thing said or shown, and the machine
-    // a reported row came from — both 「where this row has been」.
-    sub:
-      r.last || r.source ? (
-        <span className="flex items-baseline gap-2 overflow-hidden whitespace-nowrap">
-          {r.last && (
-            <span data-last className="min-w-0 flex-1 truncate">
-              {r.last}
-            </span>
-          )}
-          {r.source && (
-            <span data-row-source className="flex-none">
-              {gui.from_device(r.source.device)}
-            </span>
-          )}
+    // The preview line: the newest thing said or shown, and nothing
+    // else. **Not the machine a reported row came from** (2026-10-02,
+    // the owner: the avatar already says it) — the face is that
+    // machine's, so naming it said it twice. The name still finds the
+    // row (`find` below).
+    sub: r.last ? (
+      <span className="flex items-baseline gap-2 overflow-hidden whitespace-nowrap">
+        <span data-last className="min-w-0 flex-1 truncate">
+          {r.last}
         </span>
-      ) : undefined,
+      </span>
+    ) : undefined,
     // The right column: the state word (this row's `fact`) over the age
     // (`aux`) — state is never colour alone, so the word stays.
     //

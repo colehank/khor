@@ -29,6 +29,7 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark, type FaceOf, type KindMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { useNarrow } from "@/hooks/use-narrow";
 import { walkList } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
@@ -225,6 +226,14 @@ export function SideList({
   // the question away: a setting that has not arrived reads as the
   // default, which asks.
   const asking = useSetting("confirm-delete") !== "off";
+  // **No selected row on the narrow face** (2026-10-02, the owner on a
+  // phone: going back to a list still showed the row it had opened). A
+  // selected row says "this is what is open beside me"; on the narrow
+  // face the list and what it opened are never on screen together — the
+  // list is one screen, the row's page the next — so coming back, there
+  // is nothing beside it to point at. Every landing's list is this one
+  // component, so this is the one place. The wide face is unchanged.
+  const narrow = useNarrow();
   const [pending, setPending] = useState<Pending | null>(null);
   // **The word says whether a question follows** (docs/design-system
   // 「带省略号表示还会再问一次」): 「删除…」 while the window will come
@@ -265,6 +274,7 @@ export function SideList({
 
   const one = (r: SideRow, prev: SideRow | undefined, size: number) => {
     const open = !shutOf(r.group);
+    const picked = !narrow && !!r.selected;
     const button = (
       <button
         type="button"
@@ -339,7 +349,7 @@ export function SideList({
             data-side-pinned={r.pinned}
             data-side-in={r.group}
             data-side-menu={r.menu.length > 0}
-            data-selected={!!r.selected}
+            data-selected={picked}
             {...r.rowData}
             // **Selected is painted by `app.css`, keyed on
             // `data-selected`** (第十五轮 第 2 条, D6): the brand's solid
@@ -347,7 +357,7 @@ export function SideList({
             // with the ordinary ink when it is not — two states and an
             // ink that changes with them, which a class here could not
             // say without knowing about the window.
-            className={cn("flex w-full items-center rounded-md", !r.selected && "hover:bg-fill", r.dim && !r.selected && "opacity-55")}
+            className={cn("flex w-full items-center rounded-md", !picked && "hover:bg-fill", r.dim && !picked && "opacity-55")}
           >
             {/* **The menu's trigger is the button, not the strip around
                 it**: the trigger carries the long press's

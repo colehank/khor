@@ -2482,7 +2482,17 @@ export default function App() {
         // **Clear of a phone's status bar** (`--safe-top`) on every
         // screen but a session's, which runs its paper up to the glass
         // and keeps the edge itself (`SessionScreen`).
-        <div className={cn("flex h-full flex-col", !inSession && "pt-safe-top")}>
+        //
+        // **The band under the status bar wears the ground of the row
+        // under it** (2026-10-02, the owner on a phone: the area where
+        // the system shows its own things was grey over a dark app). It
+        // was padding on this box, so it showed the page's own ground —
+        // the frame's grey — above L0's `side`; now it is a strip of
+        // L0's ground, and the status bar sits on the first row's
+        // colour, both themes. Zero high wherever there is no status
+        // bar (`--safe-top` is 0 off a phone).
+        <div className="flex h-full flex-col">
+          {!inSession && <div data-safe-top aria-hidden className="h-safe-top flex-none bg-side" />}
           {!inSession && sideHead}
           {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of

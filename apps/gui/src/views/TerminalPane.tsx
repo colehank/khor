@@ -65,6 +65,7 @@ import "@xterm/xterm/css/xterm.css";
 import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
 import { IconChevronDown, IconChevronUp, IconClose } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { RegionState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -313,6 +314,12 @@ export function TerminalPane({ id }: { id: string }) {
   // for a person, and throwing it away is what once flattened all of
   // them into one wrong word.
   const [why, setWhy] = useState<string | null>(null);
+  // **Until the attachment is made, the pane says it is coming**
+  // (2026-10-02, the phone: a far machine that had dropped off left the
+  // board blank for the reach's whole wait). A never-seen region shows
+  // its skeleton, never a blank board (guidelines/20-states); the
+  // sentence replaces it if the open fails.
+  const [opening, setOpening] = useState(true);
   // Why the last drop produced no paste, in khor's own words. Kept on
   // screen until a drop works (docs/UX.md 失败就地说).
   const [dropWhy, setDropWhy] = useState<string | null>(null);
@@ -488,10 +495,12 @@ export function TerminalPane({ id }: { id: string }) {
       void loop();
     };
 
+    setOpening(true);
     termOpen(id, term.cols, term.rows)
       .then(() => termAttach(id))
       .then((a) => {
         if (stopped) return;
+        setOpening(false);
         // Everything the feed holds — it began with the host's ring
         // dump, so the screen arrives *with its history*, the same
         // replay the host gives any attacher.
@@ -505,6 +514,7 @@ export function TerminalPane({ id }: { id: string }) {
         void loop();
       })
       .catch((e: unknown) => {
+        setOpening(false);
         setWhy(String((e as { message?: string })?.message ?? e));
       });
 
@@ -799,6 +809,11 @@ export function TerminalPane({ id }: { id: string }) {
         >
           {freshBelow ? gui.new_below : gui.to_bottom}
         </button>
+      )}
+      {opening && !why && (
+        <div data-term-opening className="absolute inset-0 z-10 bg-card">
+          <RegionState state="loading-never" />
+        </div>
       )}
       {why ? (
         // Centred, not a corner label: there is no screen behind it to

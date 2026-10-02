@@ -2123,7 +2123,7 @@ try {
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -23630,7 +23630,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -24014,7 +24014,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -24355,7 +24355,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24627,7 +24627,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25337,7 +25337,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -26167,7 +26167,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -27954,6 +27954,288 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "bar") console.log("bar · FACE_ONLY=bar: the other sections are skipped");
+
+  // ── 21) What the owner saw on a real iPhone (2026-10-02) ──────────
+  //
+  // Three things on the glass, each a bug report, each seen red on the
+  // face before the fix (ee144e3, handoff 001 fix lane):
+  //
+  //   a. **no selected row on the narrow face** (the owner: going back to
+  //      the list still showed the selected row; narrow has no such logic,
+  //      the list and another content are never on screen together). At
+  //      390 a session opened from the list and its back button, then a
+  //      machine and its back button: no row says `data-selected` and
+  //      none is painted `--fill-strong`. The control is the wide face,
+  //      where the open session's row is both;
+  //   b. **no machine name on a session row** (the owner: do not say which
+  //      machine a row came from, the avatar already says it). Two rows
+  //      reported by another machine — one
+  //      with a preview, one with none — and one of this machine's: no
+  //      `[data-row-source]`, the far machine's name nowhere in a row's
+  //      text, and the three rows one height (`--row-2`: the second line
+  //      is drawn empty, it does not take the row's height away). Wide
+  //      and narrow;
+  //   c. **the bands the system draws over wear the app's ground** (the
+  //      owner: the area above the app where the system shows its own
+  //      things was grey while the app content was dark). With a phone's
+  //      edges stood in (`--safe-top` 47, `--safe-bottom` 34 — Chrome has
+  //      no notch), the paint under the status bar is the first row's
+  //      ground and the paint under the home indicator the foot's, on
+  //      the list and in a session, in four pairs of the phone's and the
+  //      app's themes (the same, and opposite both ways). The status
+  //      bar's *ink* is UIKit's and is not on this page — `npm run
+  //      mobile` holds the iOS half, the simulator shows it.
+  //
+  // `FACE_ONLY=iphone` runs this section alone.
+  iphone: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "iphone") break iphone;
+  {
+    const base = {
+      kind: "tui",
+      word: "idle",
+      at_ms: Date.now(),
+      unread: 0,
+      source: null,
+      pinned: false,
+      imported: false,
+      stale: false,
+      quiet: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    };
+    const FAR = "far-mac-1002";
+    const here = { ...base, id: "tui/iphone-here", title: "iphone-here", last: "said on this machine" };
+    const farQuiet = { ...base, id: "tui/iphone-far", title: "iphone-far", home: FAR, source: { device: FAR, age_ms: 1200 } };
+    const farSaid = {
+      ...farQuiet,
+      id: "tui/iphone-far-said",
+      title: "iphone-far-said",
+      last: "said over there",
+    };
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json([here, farQuiet, farSaid]));
+    await page.route("**/term_open", json(null));
+    await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+    await page.route("**/term_stream", json({ bytes: "", seq: 0, gone: false, reset: false }));
+    await page.route("**/term_resize", json(null));
+    await page.route("**/term_leave", json(null));
+    await page.route("**/term_key", json(null));
+    const count = (sel) => page.locator(sel).count();
+    const fresh = async (width, height) => {
+      await page.evaluate(() => window.localStorage.clear());
+      await page.setViewportSize({ width, height });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    };
+    /** The ground a token paints, as the browser spells a computed colour. */
+    const tokenColour = (name) =>
+      page.evaluate((n) => {
+        const probe = document.createElement("div");
+        probe.style.background = `var(${n})`;
+        document.body.appendChild(probe);
+        const c = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return c;
+      }, name);
+    const lit = async () =>
+      page.evaluate((fill) => {
+        const rows = [...document.querySelectorAll("[data-side-row]")];
+        return {
+          rows: rows.length,
+          said: rows.filter((r) => r.getAttribute("data-selected") === "true").map((r) => r.getAttribute("data-side-row")),
+          painted: rows.filter((r) => getComputedStyle(r).backgroundColor === fill).map((r) => r.getAttribute("data-side-row")),
+        };
+      }, await tokenColour("--fill-strong"));
+    const openRow = async (id) => {
+      await open("sessions");
+      const row = `[data-list] [data-row="${id}"] [data-row-open]`;
+      if (!(await until(3_000, async () => (await count(row)) > 0))) return false;
+      await page.locator(row).click();
+      return until(5_000, async () => (await count("[data-session-screen], [data-detail-pane]")) > 0);
+    };
+
+    // ── a. no selected row on the narrow face ──
+    await fresh(1400, 900);
+    if (!(await openRow(here.id))) {
+      fail("probe dead: iphone a · the wide face never opened a session from the list");
+    } else {
+      await wait(300);
+      const wide = await lit();
+      console.log(`iphone a · wide, a session open: ${JSON.stringify(wide)}`);
+      if (wide.said.join() !== here.id || wide.painted.join() !== here.id) {
+        fail(`probe dead: iphone a · on the wide face the open session's row should be the selected one (control): ${JSON.stringify(wide)}`);
+      }
+    }
+    await fresh(390, 844);
+    if (!(await openRow(here.id))) {
+      fail("probe dead: iphone a · the narrow face never opened a session from the list");
+    } else if (!(await press("[data-session-bar] [data-back]")) || !(await until(3_000, async () => (await count("[data-side-row]")) > 0))) {
+      fail("probe dead: iphone a · the session's back button did not land back on the list");
+    } else {
+      const back = await lit();
+      console.log(`iphone a · narrow, back from a session: ${JSON.stringify(back)}`);
+      if (back.said.length || back.painted.length) {
+        fail(
+          `iphone a · back on the narrow list from a session, ${JSON.stringify(back.said)} still say data-selected and ` +
+            `${JSON.stringify(back.painted)} are painted --fill-strong — the narrow face has no selected row (the owner, ` +
+            "2026-10-02: the list and what it opened are never on screen together; components/SideList)",
+        );
+      }
+    }
+    const secondRow = async () => {
+      if ((await count("[data-list] [data-row-open]")) < 2) return false;
+      await page.locator("[data-list] [data-row-open]").nth(1).click();
+      await wait(500);
+      return true;
+    };
+    if (!(await open("devices")) || !(await secondRow())) {
+      fail("probe dead: iphone a · the narrow face never opened a machine from the list");
+    } else if (!(await press("[data-side-head] [data-back]")) || !(await until(3_000, async () => (await count("[data-side-row]")) > 0))) {
+      fail("probe dead: iphone a · the machine's back button did not land back on the list");
+    } else {
+      const back = await lit();
+      console.log(`iphone a · narrow, back from a machine: ${JSON.stringify(back)}`);
+      if (back.said.length || back.painted.length) {
+        fail(
+          `iphone a · back on the narrow machine list, ${JSON.stringify(back.said)} still say data-selected and ` +
+            `${JSON.stringify(back.painted)} are painted --fill-strong — every landing's list, not only the sessions'`,
+        );
+      }
+    }
+
+    // ── b. no machine name on a session row ──
+    for (const [w, h] of [
+      [1400, 900],
+      [390, 844],
+    ]) {
+      await fresh(w, h);
+      await open("sessions");
+      if (!(await until(3_000, async () => (await count(`[data-list] [data-row="${farQuiet.id}"]`)) > 0))) {
+        fail(`probe dead: iphone b · ${w} · the reported rows never drew`);
+        continue;
+      }
+      const got = await page.evaluate(
+        ({ ids, far }) =>
+          ids.map((id) => {
+            const row = document.querySelector(`[data-side-row="${id}"]`);
+            return {
+              id,
+              source: row ? row.querySelectorAll("[data-row-source]").length : -1,
+              named: row ? row.innerText.includes(far) : null,
+              height: row ? Math.round(row.getBoundingClientRect().height) : 0,
+            };
+          }),
+        { ids: [here.id, farQuiet.id, farSaid.id], far: FAR },
+      );
+      const row2 = Math.round(Number.parseFloat(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--row-2"))));
+      console.log(`iphone b · ${w}: ${JSON.stringify(got)} (--row-2 ${row2})`);
+      for (const g of got) {
+        if (g.source !== 0 || g.named) {
+          fail(
+            `iphone b · ${w} · ${g.id} names its machine (${g.source} [data-row-source], name in text: ${g.named}) — the avatar ` +
+              "already says which machine (the owner, 2026-10-02)",
+          );
+        }
+        if (g.height < row2 || g.height !== got[0].height) {
+          fail(`iphone b · ${w} · ${g.id} is ${g.height} high, the list's rows ${got.map((x) => x.height).join(" / ")} — one height, at least --row-2 ${row2}`);
+        }
+      }
+    }
+
+    // ── c. the bands under the status bar and the home indicator ──
+    await fresh(390, 844);
+    const PAIRS = [
+      ["light", "light"],
+      ["dark", "dark"],
+      ["light", "dark"],
+      ["dark", "light"],
+    ];
+    const edges = () =>
+      page.evaluate(() => {
+        document.documentElement.style.setProperty("--safe-top", "47px");
+        document.documentElement.style.setProperty("--safe-bottom", "34px");
+      });
+    /** The colour painted at a point: the nearest box there that paints. */
+    const groundAt = (x, y) =>
+      page.evaluate(
+        ([px, py]) => {
+          for (let el = document.elementFromPoint(px, py); el; el = el.parentElement) {
+            const c = getComputedStyle(el).backgroundColor;
+            if (c && c !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(c)) return c;
+          }
+          return getComputedStyle(document.documentElement).backgroundColor;
+        },
+        [x, y],
+      );
+    const bgOf = (sel) => page.evaluate((s) => {
+      const el = document.querySelector(s);
+      return el ? getComputedStyle(el).backgroundColor : null;
+    }, sel);
+    for (const [phone, app] of PAIRS) {
+      await page.emulateMedia({ colorScheme: phone });
+      await open("sessions");
+      await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), app);
+      await edges();
+      await wait(300);
+      const l0Top = await page.evaluate(() => document.querySelector("[data-side-head]")?.getBoundingClientRect().top ?? null);
+      if (l0Top === null || Math.abs(l0Top - 47) > 1) {
+        fail(`probe dead: iphone c · phone ${phone} / app ${app} · the first row stands at ${l0Top}, not under a 47 status bar — the stand-in edge did not take`);
+        continue;
+      }
+      const list = {
+        top: await groundAt(195, 20),
+        head: await bgOf("[data-side-head]"),
+        bottom: await groundAt(195, 844 - 12),
+        foot: await bgOf("[data-rail]"),
+      };
+      if (!(await openRow(here.id))) {
+        fail(`probe dead: iphone c · phone ${phone} / app ${app} · no session opened`);
+        continue;
+      }
+      await page.evaluate((t) => document.documentElement.setAttribute("data-theme", t), app);
+      await edges();
+      await wait(300);
+      const session = {
+        top: await groundAt(195, 20),
+        screen: await bgOf("[data-session-screen]"),
+        bottom: await groundAt(195, 844 - 12),
+        foot: await bgOf("[data-session-bar]"),
+      };
+      console.log(`iphone c · phone ${phone} / app ${app}: list ${JSON.stringify(list)} · session ${JSON.stringify(session)}`);
+      if (list.top !== list.head) {
+        fail(
+          `iphone c · phone ${phone} / app ${app} · under the status bar the list screen paints ${list.top}, its first row ` +
+            `${list.head} — the band the system draws over is the app's ground (the owner, 2026-10-02: it was grey)`,
+        );
+      }
+      if (list.bottom !== list.foot) fail(`iphone c · phone ${phone} / app ${app} · under the home indicator the list paints ${list.bottom}, its foot ${list.foot}`);
+      if (session.top !== session.screen) fail(`iphone c · phone ${phone} / app ${app} · under the status bar a session paints ${session.top}, its page ${session.screen}`);
+      if (session.bottom !== session.foot) fail(`iphone c · phone ${phone} / app ${app} · under the home indicator a session paints ${session.bottom}, its bar ${session.foot}`);
+      await press("[data-session-bar] [data-back]");
+    }
+    await page.evaluate(() => {
+      document.documentElement.style.removeProperty("--safe-top");
+      document.documentElement.style.removeProperty("--safe-bottom");
+    });
+    await page.emulateMedia({ colorScheme: "light" });
+
+    for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key"]) await page.unroute(r);
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json(rows));
+    await page.setViewportSize({ width: 1400, height: 900 });
+  }
+  }
+  if (process.env.FACE_ONLY === "iphone") console.log("iphone · FACE_ONLY=iphone: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

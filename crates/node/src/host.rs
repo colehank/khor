@@ -489,8 +489,18 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
 /// TCP address and still the host protocol — the terminal never learns
 /// there is a network under it, which is why nothing else in this file
 /// changes.
+///
+/// **The handshake has a deadline** ([`HANDSHAKE`]). For a far session
+/// the address is the resident's pipe, which accepts at once and only
+/// then dials the far machine — so a machine that has dropped off left
+/// this waiting on its `Welcome` for as long as the pipe took to give
+/// up, with nothing bounding it (2026-10-02, the phone that froze). The
+/// stream goes back to blocking without a timeout once welcomed: from
+/// then on a quiet terminal is a terminal nobody is typing in.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
     let mut s = TcpStream::connect(addr).map_err(|_| msg::host_gone().to_string())?;
+    let _ = s.set_read_timeout(Some(HANDSHAKE));
+    let _ = s.set_write_timeout(Some(HANDSHAKE));
     write_frame(
         &mut s,
         &Hello {
@@ -503,8 +513,16 @@ pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpS
     if !w.ok {
         return Err(w.why);
     }
+    let _ = s.set_read_timeout(None);
+    let _ = s.set_write_timeout(None);
     Ok(s)
 }
+
+/// How long [`connect_at`] waits for a host to welcome it: a far pipe's
+/// dial (≤ 10 s, `link::DIAL_TIMEOUT`, relay included) and the host's
+/// answer, which is immediate. A host on this machine answers in
+/// microseconds, so the deadline only ever bites a far one.
+pub const HANDSHAKE: Duration = Duration::from_secs(15);
 
 // ── the host process ────────────────────────────────────────
 
@@ -1174,5 +1192,48 @@ mod last_line_tests {
     #[test]
     fn a_tail_of_pure_control_bytes_is_no_preview() {
         assert_eq!(last_plain_line(b"\x1b[2J\x1b[H\r\r\n"), None);
+    }
+}
+
+#[cfg(test)]
+mod handshake_tests {
+    use super::connect_at;
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+
+    /// **A host that never says welcome is given up on** (2026-10-02,
+    /// the phone that froze). A far terminal's address is the resident's
+    /// pipe, which accepts at once and only then dials the far machine;
+    /// when that machine has dropped off, nothing came back and the
+    /// attach waited with no end. Here the pipe is a listener that
+    /// accepts and stays silent. The bound below is the test's, written
+    /// as a number on purpose: on the code before the deadline this
+    /// never returned, and the test says so instead of hanging.
+    #[test]
+    fn a_host_that_never_welcomes_is_given_up_on() {
+        let silent = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = silent.local_addr().unwrap().to_string();
+        std::thread::spawn(move || {
+            let held = silent.accept();
+            std::thread::sleep(Duration::from_secs(120));
+            drop(held);
+        });
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let begun = Instant::now();
+            let answer = connect_at(&addr, "cookie", 80, 24);
+            let _ = tx.send((answer.map(|_| ()), begun.elapsed()));
+        });
+        let (answer, took) = rx
+            .recv_timeout(Duration::from_secs(40))
+            .expect("connect_at must come back from a host that never answers");
+        assert!(
+            answer.is_err(),
+            "a silent host is not a welcome: {answer:?}"
+        );
+        assert!(
+            took >= Duration::from_secs(5),
+            "it waited for the far dial, not just a moment ({took:?})"
+        );
     }
 }

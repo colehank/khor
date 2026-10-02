@@ -1346,11 +1346,15 @@ impl Node {
     ) -> Result<(std::net::SocketAddr, String), Rejoin> {
         let (channel, home) = self.resolve(machine).map_err(Rejoin::Gone)?;
         if home == self.device() {
-            let dir = self
-                .live
-                .dir_of(session)
-                .ok_or_else(|| Rejoin::Gone(msg::not_a_session_id(&session.0)))?;
-            let hf = crate::host::read_host_file(&dir).map_err(Rejoin::Gone)?;
+            // This machine's own row: the same answer a far asker gets
+            // (`LiveKind::terminal_address`) — and none on a machine
+            // that hosts nothing, which has no host file to read.
+            self.refuse_unless_hosting().map_err(Rejoin::Gone)?;
+            let (live, bridging) = (self.live.clone(), session.clone());
+            let hf = tokio::task::spawn_blocking(move || live.terminal_address(&bridging))
+                .await
+                .map_err(|e| Rejoin::Gone(e.to_string()))?
+                .map_err(Rejoin::Gone)?;
             let addr: std::net::SocketAddr = ([127, 0, 0, 1], hf.port).into();
             return Ok((addr, hf.cookie));
         }
@@ -2113,29 +2117,23 @@ impl Node {
                 // box answered 宿主没了 — a sentence about a process
                 // nobody had asked to exist yet.
                 //
+                //
+                // **The seat names the file** (`LiveKind::terminal_address`):
+                // an agent in the person's tmux is reached through a
+                // viewer, whose address is not in `host.json`.
+                //
+                // A phone hosts nothing, so it has no host file to read
+                // and nothing to bridge (docs/IOS.md); an asker that read
+                // its row did not ask.
+                //
                 // Off the reactor for the Open arm's reason and one
                 // more: resolving the route re-runs the discovery sweep,
                 // which shells out to `ps` and `tmux`.
-                if !self.is_hosted(&id) {
-                    let (live, bridging) = (self.live.clone(), id.clone());
-                    tokio::task::spawn_blocking(move || live.attach_multiplexed(&bridging))
-                        .await
-                        .map_err(|e| e.to_string())??;
-                }
-                let dir = self
-                    .live
-                    .dir_of(&id)
-                    .ok_or_else(|| msg::not_a_session_id(&id.0))?;
-                let hf = crate::host::read_host_file(&dir)?;
-                // **A host file outlives its host.** Without this the
-                // asker gets an address whose far end is a closed port,
-                // the pipe drops the connection, and the attach reports
-                // 读不到帧: Connection reset — a sentence about a
-                // socket, for a session that simply ended. Measured
-                // (the probe's `sleep` ran out mid-test).
-                if !crate::link::pid_alive(hf.host_pid) {
-                    return Err(msg::host_gone().into());
-                }
+                self.refuse_unless_hosting()?;
+                let (live, bridging) = (self.live.clone(), id.clone());
+                let hf = tokio::task::spawn_blocking(move || live.terminal_address(&bridging))
+                    .await
+                    .map_err(|e| e.to_string())??;
                 Ok(Response::Reached {
                     port: hf.port,
                     cookie: hf.cookie,
