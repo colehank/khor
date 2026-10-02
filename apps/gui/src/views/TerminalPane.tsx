@@ -71,6 +71,7 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
+import { onTermSize } from "@/lib/type-size";
 import { KeyboardSwitch, TermKeys, ctrlOf } from "@/views/TermKeys";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
@@ -559,8 +560,16 @@ export function TerminalPane({ id }: { id: string }) {
       });
     });
     observer.observe(box);
+    // 外观's 终端字号 (the redesign, 2026-10-02): a new size reaches the
+    // open terminal at once — xterm re-measures its cells and the fit
+    // tells the far side the new rows and columns.
+    const sized = onTermSize((px) => {
+      term.options.fontSize = px;
+      fit.fit();
+    });
 
     return () => {
+      sized();
       stopped = true;
       window.clearTimeout(timer);
       pollNow.current = () => {};

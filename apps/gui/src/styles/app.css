@@ -1389,3 +1389,37 @@ aside[data-side] {
 /* ⚠️ 墓碑 (the redesign, 2026-10-02): the tab in front joined the
    board's top-left corner here. The board has no corner now, and the
    session tabs are glass pills (`TabStrip` `glass`). */
+
+/* **外观's sliders** (the redesign, 2026-10-02): a native range input, so
+   the keyboard, a screen reader and a finger all work as the platform
+   makes them; only its knob is drawn here. The track, its filled part
+   and the ticks are the component's own (`settings/Slider`), under the
+   input, whose own track is clear. */
+[data-slider] input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  margin: 0;
+}
+[data-slider] input[type="range"]::-webkit-slider-runnable-track {
+  background: transparent;
+}
+[data-slider] input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--slider-knob);
+  height: var(--slider-knob);
+  border-radius: var(--radius-full);
+  background: var(--knob);
+  box-shadow: var(--shadow-knob);
+}
+[data-slider] input[type="range"]::-moz-range-thumb {
+  width: var(--slider-knob);
+  height: var(--slider-knob);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--knob);
+  box-shadow: var(--shadow-knob);
+}
+[data-slider] input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--ring);
+}

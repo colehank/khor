@@ -2101,6 +2101,8 @@
   --spacing-glass-tab: var(--glass-tab);
   --spacing-tab-face: var(--tab-face);
   --spacing-key-cap: var(--key-cap);
+  --spacing-slider-knob: var(--slider-knob);
+  --spacing-slider-half: var(--slider-half);
   --spacing-key-cap-w: var(--key-cap-w);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
@@ -2466,6 +2468,9 @@
      and the accessory keys under it: a key cap and its floor width. */
   --key-cap: 36px;
   --key-cap-w: 40px;
+  /* 外观's sliders: iOS's 28 knob on a 4 track. */
+  --slider-knob: 28px;
+  --slider-half: calc(var(--slider-knob) / 2);
   --list-head: var(--pane-head);
   /* What a scroller under the floating navigation keeps clear at its
      foot, so its last row can be scrolled out from under the glass. */

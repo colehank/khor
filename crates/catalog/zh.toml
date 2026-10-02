@@ -2277,6 +2277,7 @@ type-size = "字号"
 ui-size-system = "界面字号跟随系统"
 ui-size = "界面字号"
 term-size = "终端字号"
+term-size-sample = "~ % khor ls"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
 machine-sessions-none = "这台机器上没有会话"

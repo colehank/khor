@@ -21,7 +21,9 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { IconBack, IconChevronRight, IconClose } from "@/components/icons";
 import { PageAction, PageSubtitle } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
+import { GlassCircle } from "@/components/Glass";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
 
 /**
@@ -158,17 +160,14 @@ export function MoreFrame({
           {(seated) =>
             seated ? (
               <header data-more-head className="flex min-w-0 flex-1 items-center gap-in self-stretch">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={gui.back}
-                  data-more-back
-                  onClick={onClose}
-                  className="min-h-touch min-w-touch flex-none"
-                >
+                {/* The canvas's settings head (the redesign): the way back as
+                    a glass circle, the page's name centred on the row. */}
+                <GlassCircle aria-label={gui.back} data-more-back onClick={onClose}>
                   <IconBack />
-                </Button>
-                <h1 className="min-w-0 flex-1 truncate text-title-sm font-title">{moreName(page)}</h1>
+                </GlassCircle>
+                <h1 className={cn("min-w-0 flex-1 truncate text-center text-title-sm font-title", !actions && "pr-glass-btn")}>
+                  {moreName(page)}
+                </h1>
                 {/* No R0 on this face: `PageAction` leaves them here,
                     in the one place a page's buttons are — the end of its
                     head row, the same slot R0's `data-page-actions` is. */}
@@ -199,7 +198,7 @@ export function MoreFrame({
             )
           }
         </NarrowHead>
-        <div className="min-h-0 flex-1 overflow-y-auto p-pane">
+        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto p-pane">
           {/* Capped at a reading measure and centred: these pages are
               prose and rows rather than a table, and a settings row
               stretched across a 1400 window puts its label and its

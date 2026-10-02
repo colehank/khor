@@ -10,6 +10,7 @@
 // machine (docs/MORE.md 第二轮 地图).
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFrame } from "@/views/more/MorePage";
+import { NavOrderSection, TypeSizeSection } from "@/views/more/AppearanceRows";
 
 export function AppearancePage({
   onClose,
@@ -22,6 +23,8 @@ export function AppearancePage({
   return (
     <MoreFrame page="appearance" onClose={onClose}>
       <ConfigSections page="appearance" onChanged={onSettingChanged} />
+      <TypeSizeSection />
+      <NavOrderSection />
     </MoreFrame>
   );
 }

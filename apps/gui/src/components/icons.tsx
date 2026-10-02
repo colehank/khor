@@ -471,6 +471,16 @@ export function IconSearch({ className }: IconProps) {
   );
 }
 
+/** A row's handle for dragging it into another place (外观's navigation
+    order, the redesign 2026-10-02): three rules, the system's 「≡」. */
+export function IconGrip({ className }: IconProps) {
+  return (
+    <Mark className={className}>
+      <path d="M3 5.5h10M3 8h10M3 10.5h10" />
+    </Mark>
+  );
+}
+
 export function IconPlus({ className }: IconProps) {
   return (
     <Mark className={className}>

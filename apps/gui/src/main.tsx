@@ -9,6 +9,7 @@ import { followSystemTheme, mirroredPref, wearTheme } from "./theme";
 import { mirroredLang, speakLang } from "./lang";
 import { followWindowKey } from "./lib/window-key";
 import { followVisualViewport } from "./lib/viewport";
+import { wearTypeSize } from "./lib/type-size";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -45,6 +46,9 @@ followWindowKey();
 // The soft keyboard takes room from the shell rather than covering it
 // (`lib/viewport`, 2026-10-02).
 followVisualViewport();
+
+// 外观's two text sizes, before the first frame (`lib/type-size`).
+wearTypeSize();
 
 // The keyless screen this file used to paint is the server's job now
 // (记住一次批): the page itself sits behind the key, so a browser with
