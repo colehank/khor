@@ -649,7 +649,19 @@ pub fn answer(
         // the app equivalent for everything a gate can reach: a refusal
         // would make every gate that walks the browsing landing red for
         // a reason that is about the bridge, not about the product.
-        "open_page" => to_json(&rt.block_on(crate::web::borrow_web(root, &arg("machine")?))?),
+        // **An empty machine is 「go direct」** — this machine's own network,
+        // no borrow — and the app answers it with an empty borrow without
+        // asking the node (`src-tauri` `open_page`). The bridge asked the
+        // node to borrow from a machine named "" and printed its refusal
+        // on every page opened here; it answers the same as the app now.
+        "open_page" => {
+            let machine = arg("machine")?;
+            if machine.is_empty() {
+                to_json(&crate::web::WebBorrow { session: String::new(), addr: String::new() })
+            } else {
+                to_json(&rt.block_on(crate::web::borrow_web(root, &machine))?)
+            }
+        }
         "move_page" | "hide_page" | "close_page" | "show_page" | "page_step" => {
             Ok("null".to_owned())
         }
