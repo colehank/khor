@@ -166,15 +166,19 @@ export function DirPicker({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
           </Button>
-          <Button
-            variant="primary"
-            data-dir-picker-take
-            disabled={settledPath(typed) === "" || taking}
-            onClick={take}
-            className="min-h-touch"
-          >
-            {gui.dir_picker_take}
-          </Button>
+          {/* Drawn once there is a path to take (F1.9: not greyed). */}
+          {settledPath(typed) !== "" && (
+            <Button
+              variant="primary"
+              data-dir-picker-take
+              disabled={taking}
+              aria-busy={taking || undefined}
+              onClick={take}
+              className="min-h-touch"
+            >
+              {gui.dir_picker_take}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -155,12 +155,11 @@ export function InviteDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.close}
           </Button>
-          {!error && (
+          {!error && ticket && (
             <Button
               variant="primary"
               data-copy-ticket
               data-said={copied ?? undefined}
-              disabled={!ticket}
               onClick={copy}
             >
               {copied === "copied" ? gui.copied : copied === "failed" ? gui.copy_failed : gui.copy_ticket}
@@ -261,6 +260,7 @@ export function JoinDialog({
                 data-scan-ticket
                 className="flex-none pointer-coarse:min-h-touch"
                 disabled={joining || scanning}
+                aria-busy={scanning || undefined}
                 onClick={scan}
               >
                 {gui.scan_a_ticket}
@@ -294,9 +294,11 @@ export function JoinDialog({
             <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
               {gui.delete_keep}
             </Button>
-            <Button variant="primary" data-join disabled={!ticket.trim() || joining} onClick={join}>
-              {gui.join}
-            </Button>
+            {ticket.trim() && (
+              <Button variant="primary" data-join disabled={joining} aria-busy={joining || undefined} onClick={join}>
+                {gui.join}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -413,6 +415,7 @@ export function PendingStrip() {
               data-approve={r.id}
               className="pointer-coarse:min-h-touch"
               disabled={busy}
+              aria-busy={busy || undefined}
               onClick={() => approve(r.id)}
             >
               {gui.approve}

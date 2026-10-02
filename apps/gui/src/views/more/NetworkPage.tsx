@@ -230,7 +230,7 @@ export function NetworkPage({
           window (components/SettingsGroup 「危险的动作」) — the shape
           安全's 重置身份 has. Not on a machine in no network:
           `Node::leave` refuses by name there. */}
-      {!alone && (
+      {!alone && me && (
         <MoreSection name="leave">
           <ActionRow
             name="leave"
@@ -242,7 +242,6 @@ export function NetworkPage({
             // `destructive` reads 3.95, under the text floor.
             variant="ghost"
             danger
-            disabled={!me}
             onPress={() => {
               setError(null);
               setRefused(null);
@@ -282,13 +281,14 @@ export function NetworkPage({
           )}
           <DialogFooter>
             <Button onClick={() => setLeaving(false)}>{gui.delete_keep}</Button>
+            {/* Drawn once the name is typed (F1.9: not greyed). */}
+            {me && typedName.trim() === me.shown && (
             <Button
               variant="destructive"
               data-net-leave-do
               // Checked here only so the button is not live over an
               // empty box; the answer that counts is the node's, and it
               // comes back as a sentence.
-              disabled={typedName.trim() !== (me?.shown ?? "") || !me}
               onClick={() => {
                 setRefused(null);
                 setSaid(null);
@@ -316,6 +316,7 @@ export function NetworkPage({
             >
               {gui.identity_leave_do}
             </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

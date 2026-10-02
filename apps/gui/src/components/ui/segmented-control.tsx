@@ -123,7 +123,7 @@ export function SegmentedControl<K extends string>({
               // a mouse the floor (`--hit`) is the track's own `ctl-md`;
               // a finger gets `--touch` around the same drawing.
               "relative flex min-h-touch min-w-touch flex-initial items-center justify-center rounded-sm px-row text-body text-foreground",
-              "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:opacity-40",
+              "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring",
               rule &&
                 "before:absolute before:top-1/2 before:left-0 before:h-3.5 before:w-px before:-translate-y-1/2 before:bg-border before:content-['']",
             )}

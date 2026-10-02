@@ -57,7 +57,7 @@ export const GlassCircle = forwardRef<HTMLButtonElement, ComponentProps<"button"
       className={cn(
         "glass grid flex-none place-items-center rounded-full text-foreground",
         size === "head" ? "size-head-ctl" : "size-glass-btn",
-        "disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "disabled:pointer-events-none aria-busy:animate-pulse motion-reduce:aria-busy:animate-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
         RING,
         className,
       )}
@@ -100,7 +100,7 @@ export const GlassItem = forwardRef<HTMLButtonElement, ComponentProps<"button"> 
           // Inside a head-sized capsule, the head's button and glyph.
           "group-data-[size=head]/cap:h-head-item-h group-data-[size=head]/cap:w-head-item-w",
           "data-[on]:glass-sel data-[on]:text-[var(--rail-on-ink)] data-[state=open]:glass-sel",
-          "disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+          "disabled:pointer-events-none aria-busy:animate-pulse motion-reduce:aria-busy:animate-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
           RING,
           className,
         )}

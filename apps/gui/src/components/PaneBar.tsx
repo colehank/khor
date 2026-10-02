@@ -144,13 +144,9 @@ export function PaneBar({
    * a menu. Given instead of `actions`, never beside it: two plus signs
    * on one bar is the second search box this file's head warns about.
    *
-   * **`disabled` is allowed here and is not the judgment `actions`
-   * makes.** A *menu* that greys its items teaches people not to open
-   * menus, because finding out costs a press and a read. A single
-   * button that visibly cannot be pressed costs a glance, and it is how
-   * a pane says「这里将来能加东西」while the thing it opens is still a
-   * batch away (工作区批①: the "+" is here, the cross-machine directory
-   * picker is 批②).
+   * **`disabled` means it is not drawn** (the audit fix plan F1.9, the
+   * owner's progressive disclosure). ⚠️ 墓碑: it drew a greyed "+" that
+   * said 「这里将来能加东西」.
    *
    * `mark` is a data attribute the caller hangs on it, for the
    * verification anchors that name this pane's "+" rather than any "+".
@@ -326,12 +322,11 @@ export function PaneBar({
         </Plus>
       )}
 
-      {create && (
+      {create && !create.disabled && (
         <Plus
           aria-label={create.label}
           data-pane-new
           {...(create.mark ? { [create.mark]: "" } : {})}
-          disabled={create.disabled}
           onClick={create.onSelect}
           // The finger floor, the same spelling the menu trigger above
           // wears — a control that cannot be pressed yet is still the
@@ -342,7 +337,7 @@ export function PaneBar({
       )}
     </>
   );
-  const hasActs = !!(filter && filterLabel) || !!actions?.length || !!create;
+  const hasActs = !!(filter && filterLabel) || !!actions?.length || !!(create && !create.disabled);
   // **The phone's list head, at both widths** (the redesign; wide since
   // the owner's refinement of 方案 B): the landing's name, then 筛选 / ＋
   // in one glass capsule, then the search circle, which opens the box in

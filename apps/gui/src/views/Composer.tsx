@@ -142,7 +142,7 @@ export function PlusSeat(props: React.ComponentProps<"button">) {
       aria-label={gui.chat_add}
       {...props}
       data-glass-hit
-      className={cn(SEAT, "text-foreground data-[state=open]:glass-sel", props.className)}
+      className={cn(SEAT, "text-foreground data-[state=open]:glass-sel aria-busy:animate-pulse motion-reduce:aria-busy:animate-none", props.className)}
     >
       <IconPlus />
     </button>
@@ -159,7 +159,8 @@ export function SendSeat({ onSend, disabled }: { onSend: () => void; disabled?: 
       aria-label={gui.send_it}
       disabled={disabled}
       onClick={onSend}
-      className={cn(SEAT, "bg-brand-strong text-on-brand disabled:opacity-40")}
+      aria-busy={disabled || undefined}
+      className={cn(SEAT, "bg-brand-strong text-on-brand aria-busy:animate-pulse motion-reduce:aria-busy:animate-none")}
     >
       <IconChevronUp />
     </button>

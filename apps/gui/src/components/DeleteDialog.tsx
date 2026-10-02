@@ -109,7 +109,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
           >
             {gui.delete_keep}
           </Button>
-          <Button variant="destructive" data-delete-go disabled={going} onClick={press}>
+          <Button variant="destructive" data-delete-go disabled={going} aria-busy={going || undefined} onClick={press}>
             {gui.delete}
           </Button>
         </DialogFooter>

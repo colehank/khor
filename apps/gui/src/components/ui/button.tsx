@@ -24,9 +24,11 @@ const buttonVariants = cva(
   // would then get a gap painted in the page's colour instead of the
   // card's — right in the one place the ring is hardest to see.
   // docs/design-system components/Button (2026-09-26): `radius-sm` 6,
-  // `body` 13 at 400, parts `gap-xxs` apart, 0.4 when disabled, a press
+  // `body` 13 at 400, parts `gap-xxs` apart, never greyed (the audit fix
+  // plan F1.9: a control that cannot act is not drawn; one that is busy
+  // says so by breathing, `aria-busy`), a press
   // that gives `--press` (app.css) — and no shadow on any of them.
-  "inline-flex items-center justify-center gap-xxs whitespace-nowrap rounded-sm text-body font-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-xxs whitespace-nowrap rounded-sm text-body font-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none aria-busy:animate-pulse aria-busy:cursor-progress motion-reduce:aria-busy:animate-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {

@@ -1805,19 +1805,25 @@ function WatchList({ row, watched, open }: { row: DeviceRow; watched: WatchedDir
               onChange={(e) => setTyped(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && add()}
             />
-            <Button size="sm" data-watch-add className="min-h-touch" disabled={!typed.trim()} onClick={add}>
-              {gui.watch_add}
-            </Button>
-            <Button
-              size="sm"
-              data-watch-save
-              data-failed={failed !== null}
-              className="min-h-touch data-[failed=true]:text-state-failed"
-              disabled={saving || !dirty}
-              onClick={save}
-            >
-              {failed !== null ? gui.watch_save_failed : gui.watch_save}
-            </Button>
+            {/* Each drawn while it has something to do (F1.9). */}
+            {typed.trim() && (
+              <Button size="sm" data-watch-add className="min-h-touch" onClick={add}>
+                {gui.watch_add}
+              </Button>
+            )}
+            {(dirty || saving) && (
+              <Button
+                size="sm"
+                data-watch-save
+                data-failed={failed !== null}
+                className="min-h-touch data-[failed=true]:text-state-failed"
+                disabled={saving}
+                aria-busy={saving || undefined}
+                onClick={save}
+              >
+                {failed !== null ? gui.watch_save_failed : gui.watch_save}
+              </Button>
+            )}
           </div>
           {failed !== null && (
             <div data-watch-error className="text-callout text-destructive">

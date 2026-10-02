@@ -167,7 +167,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
           }
           hint={error ? <span data-doctor-error data-selectable className="text-destructive">{error}</span> : undefined}
           actionLabel={cli.doctor_again}
-          disabled={asking}
+          busy={asking}
           onPress={ask}
           mark={{ "data-doctor-again": "" }}
         />

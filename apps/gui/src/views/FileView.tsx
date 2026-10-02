@@ -1358,6 +1358,7 @@ export function FileView({
                   size="sm"
                   data-take-theirs
                   disabled={saving}
+                  aria-busy={saving || undefined}
                   onClick={theirs}
                   className="min-h-touch min-w-touch"
                 >
@@ -1367,6 +1368,7 @@ export function FileView({
                   size="sm"
                   data-merge
                   disabled={saving}
+                  aria-busy={saving || undefined}
                   onClick={merge}
                   className="min-h-touch min-w-touch"
                 >
@@ -1376,6 +1378,7 @@ export function FileView({
                   size="sm"
                   data-keep-mine
                   disabled={saving}
+                  aria-busy={saving || undefined}
                   onClick={mine}
                   className="min-h-touch min-w-touch"
                 >

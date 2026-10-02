@@ -227,9 +227,11 @@ export function NetSettings() {
               )}
               <DialogFooter>
                 <Button onClick={() => setAdding(false)}>{gui.delete_keep}</Button>
-                <Button type="submit" form="relay-add" variant="primary" data-relay-add-do disabled={!typed.trim()}>
-                  {gui.watch_add}
-                </Button>
+                {typed.trim() && (
+                  <Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
+                    {gui.watch_add}
+                  </Button>
+                )}
               </DialogFooter>
             </DialogContent>
           </Dialog>

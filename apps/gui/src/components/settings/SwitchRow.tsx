@@ -9,7 +9,6 @@
 import type { ReactNode } from "react";
 
 import { Switch } from "@/components/settings/Switch";
-import { cn } from "@/lib/utils";
 
 export function SwitchRow({
   name,
@@ -17,7 +16,6 @@ export function SwitchRow({
   hint,
   on,
   onToggle,
-  disabled = false,
   mark,
   rowMark,
 }: {
@@ -27,7 +25,6 @@ export function SwitchRow({
   hint?: ReactNode;
   on: boolean;
   onToggle: () => void;
-  disabled?: boolean;
   /** Extra gate anchors on the switch itself. */
   mark?: Record<string, string>;
   /** Extra gate anchors on the row (a config key's name and value). */
@@ -40,7 +37,7 @@ export function SwitchRow({
       {...rowMark}
       className="flex items-center gap-row px-row py-in"
     >
-      <div className={cn("flex min-w-0 flex-1 flex-col", disabled && "opacity-40")}>
+      <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-body">{label}</span>
         {hint && <span data-setting-note className="text-callout text-muted-foreground">{hint}</span>}
       </div>
@@ -50,7 +47,7 @@ export function SwitchRow({
           a `-mr-2` here pulled the box right so a finger's 44 would
           centre on the track, and with a mouse the box *is* the track,
           so every switch stood 8 past the popups and buttons above it. */}
-      <Switch on={on} label={label} onToggle={onToggle} disabled={disabled} mark={mark} className="-my-2 justify-end" />
+      <Switch on={on} label={label} onToggle={onToggle} mark={mark} className="-my-2 justify-end" />
     </div>
   );
 }

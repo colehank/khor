@@ -42,7 +42,7 @@ export function Switch({
       onClick={onToggle}
       {...mark}
       className={cn(
-        "flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring disabled:opacity-50",
+        "flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring",
         className,
       )}
     >

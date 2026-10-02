@@ -315,6 +315,10 @@ export function NewSessionDialog({
   useEffect(() => {
     if (!targetHosts && kind !== "tell") setKind("tell");
   }, [targetHosts, kind]);
+  // The terminal form is claude's; another agent takes the conversation.
+  useEffect(() => {
+    if (agent !== "claude" && form === "term") setForm("chat");
+  }, [agent, form]);
 
   const create = () => {
     if (opening) return;
@@ -385,12 +389,15 @@ export function NewSessionDialog({
                   label={gui.new_session_machine}
                   value={target}
                   mark={{ "data-new-session-machine-select": "" }}
-                  choices={machines.map((d) => ({
-                    value: d.name,
-                    label: connectionWord(d) ? `${d.name} ${connectionWord(d)}` : d.name,
-                    disabled: d.sponsor !== null,
-                    mark: { "data-new-session-machine": d.name },
-                  }))}
+                  // A machine that cannot be reached directly is not
+                  // listed (the audit fix plan F1.9: not greyed).
+                  choices={machines
+                    .filter((d) => d.sponsor === null)
+                    .map((d) => ({
+                      value: d.name,
+                      label: connectionWord(d) ? `${d.name} ${connectionWord(d)}` : d.name,
+                      mark: { "data-new-session-machine": d.name },
+                    }))}
                   onPick={(name) => {
                     setMachine(name);
                     // A path typed for this disk means nothing on
@@ -418,12 +425,14 @@ export function NewSessionDialog({
                   ["agent", gui.new_session_agent],
                   ["shell", gui.new_session_kind_shell],
                 ] as const
-              ).map(([k, word]) => ({
-                key: k,
-                label: word,
-                disabled: k !== "tell" && !targetHosts,
-                mark: { "data-new-session-kind": k },
-              }))}
+              )
+                // The kinds this machine cannot host are not offered.
+                .filter(([k]) => k === "tell" || targetHosts)
+                .map(([k, word]) => ({
+                  key: k,
+                  label: word,
+                  mark: { "data-new-session-kind": k },
+                }))}
             />
           </div>
           {kind === "tell" && (
@@ -574,6 +583,7 @@ export function NewSessionDialog({
                                 variant="ghost"
                                 data-registry-attach={k.id}
                                 disabled={attaching !== null}
+                                aria-busy={attaching === k.id || undefined}
                                 onClick={() => attach(k.id)}
                               >
                                 {gui.new_session_attach}
@@ -614,29 +624,27 @@ export function NewSessionDialog({
                 </span>
               )}
               {/* **claude's own two forms**, right under its name and
-                  only alive for it: the ruling keeps claude-in-a-terminal
-                  reachable without making it a fourth kind. Greyed for
-                  the others rather than hidden — a form that exists for
-                  one agent and not another is a fact about the agent,
-                  and a choice that vanishes reads as khor having lost
-                  it. */}
-              <FormLabel mark={{ "data-new-session-label": "form" }}>{gui.new_session_form}</FormLabel>
-              <div data-new-session-forms className="flex min-w-0">
-                <SegmentedControl<"chat" | "term">
-                  label={gui.new_session_form}
-                  value={form}
-                  onChange={setForm}
-                  options={[
-                    { key: "chat", label: gui.view_chat, mark: { "data-new-session-chat": "" } },
-                    {
-                      key: "term",
-                      label: gui.view_terminal,
-                      disabled: agent !== "claude",
-                      mark: { "data-new-session-term": "" },
-                    },
-                  ]}
-                />
-              </div>
+                  only for it: the ruling keeps claude-in-a-terminal
+                  reachable without making it a fourth kind. ⚠️ 墓碑 (the
+                  owner's progressive disclosure, 2026-10-02; the audit
+                  fix plan F1.9): greyed for the others — a control that
+                  cannot be used is not drawn. */}
+              {agent === "claude" && (
+                <>
+                  <FormLabel mark={{ "data-new-session-label": "form" }}>{gui.new_session_form}</FormLabel>
+                  <div data-new-session-forms className="flex min-w-0">
+                    <SegmentedControl<"chat" | "term">
+                      label={gui.new_session_form}
+                      value={form}
+                      onChange={setForm}
+                      options={[
+                        { key: "chat", label: gui.view_chat, mark: { "data-new-session-chat": "" } },
+                        { key: "term", label: gui.view_terminal, mark: { "data-new-session-term": "" } },
+                      ]}
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
           {kind !== "tell" && (
@@ -682,11 +690,13 @@ export function NewSessionDialog({
             {gui.delete_keep}
           </Button>
           {kind === "tell" ? (
-            <Button variant="primary" data-tell-send disabled={!text.trim() || opening} onClick={send}>
-              {gui.send_it}
-            </Button>
+            text.trim() && (
+              <Button variant="primary" data-tell-send disabled={opening} aria-busy={opening || undefined} onClick={send}>
+                {gui.send_it}
+              </Button>
+            )
           ) : (
-            <Button variant="primary" data-new-session-create disabled={opening} onClick={create}>
+            <Button variant="primary" data-new-session-create disabled={opening} aria-busy={opening || undefined} onClick={create}>
               {gui.create}
             </Button>
           )}

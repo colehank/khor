@@ -124,9 +124,12 @@ export function LockScreen({
             {gui.lock_wrong}
           </div>
         )}
-        <Button type="submit" data-lock-open disabled={!pin || asking} className="min-h-touch w-full">
-          {gui.lock_open}
-        </Button>
+        {/* Drawn once a PIN is typed (F1.9: not greyed). */}
+        {pin && (
+          <Button type="submit" data-lock-open disabled={asking} aria-busy={asking || undefined} className="min-h-touch w-full">
+            {gui.lock_open}
+          </Button>
+        )}
         {systemUnlock && (
           <Button
             type="button"

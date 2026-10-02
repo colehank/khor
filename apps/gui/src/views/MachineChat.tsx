@@ -206,7 +206,7 @@ export function MachineChat({ id }: { id: string }) {
       <div className="flex-none px-row pt-xxs pb-in">
       <div className="mx-auto flex w-full max-w-measure text-read">
         <Composer
-          lead={<PlusSeat data-attach-file aria-label={gui.send_file} disabled={sendingFile} onClick={attach} />}
+          lead={<PlusSeat data-attach-file aria-label={gui.send_file} disabled={sendingFile} aria-busy={sendingFile || undefined} onClick={attach} />}
           trail={
             // Drawn only once there is something to send (progressive
             // disclosure: never a dimmed control).
@@ -417,6 +417,7 @@ function FileChip({ m, onAccepted }: { m: ChatMsgRow; onAccepted: () => void }) 
               data-accept-file
               data-failed={failed}
               disabled={accepting}
+              aria-busy={accepting || undefined}
               className="data-[failed=true]:text-state-failed"
               onClick={() => {
                 setAccepting(true);

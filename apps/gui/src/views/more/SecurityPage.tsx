@@ -242,15 +242,18 @@ export function SecurityPage({
                 of the button — not a note under 「PIN」 saying 「PIN 设过
                 了」 (⚠️ 墓碑 2026-09-28, the row said PIN twice).
 
-                **It and the idle row depend on the lock**, the way macOS
-                greys what sits under a switch that is off: there, not
-                live, until the lock is on (`check-face` 4I). */}
+                **It and the idle row are drawn only while the lock is on**
+                (the audit fix plan F1.9 / F4.1, the owner's progressive
+                disclosure): with no PIN yet, the switch asks for one
+                first. ⚠️ 墓碑: greyed under a switch that is off, the
+                way macOS does it (`check-face` 4I). */}
+{lock.on && (
+              <>
             <ActionRow
               name="lock-pin"
               label={gui.lock_pin}
               value={lock.has_pin ? gui.lock_pin_is_set : gui.lock_pin_not_set}
               actionLabel={lock.has_pin ? gui.lock_change_pin_ask : gui.lock_set_pin_ask}
-              disabled={!lock.on}
               onPress={() => {
                 setPin("");
                 setArming(false);
@@ -270,9 +273,10 @@ export function SecurityPage({
                 value: String(m),
                 label: m === 0 ? gui.lock_idle_never_pick : gui.lock_idle_pick(m),
               }))}
-              disabled={!lock.on}
               onPick={(v) => after(setLockTimeout(Number(v)))}
             />
+              </>
+            )}
 
           </>
         )}
@@ -374,13 +378,13 @@ export function SecurityPage({
       {/* No group name: the row's own title says it, and a heading
           over a one-row card saying the same words is the same fact
           twice. */}
+      {me && (
       <MoreSection name="reset">
         <ActionRow
           name="reset"
           label={gui.reset_section}
           hint={gui.reset_warn}
           actionLabel={gui.reset_ask}
-          disabled={!me}
           onPress={() => {
             setError(null);
             setTypedName("");
@@ -389,6 +393,7 @@ export function SecurityPage({
           mark={{ "data-reset-open": "" }}
         />
       </MoreSection>
+      )}
 
       {lock !== null && (
         <Dialog
@@ -445,17 +450,18 @@ export function SecurityPage({
               >
                 {gui.delete_keep}
               </Button>
+              {pin.length >= lock.pin_min && (
               <Button
                 variant="primary"
                 data-security-pin-save
                 // The floor is the node's number, carried on the answer
                 // so this box refuses with the same one the node would
                 // (`LockFacts::pin_min`) rather than a copy of it.
-                disabled={pin.length < lock.pin_min}
                 onClick={() => savePin(pin)}
               >
                 {gui.lock_pin_save}
               </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -489,13 +495,13 @@ export function SecurityPage({
           )}
           <DialogFooter>
             <Button onClick={() => setResetting(false)}>{gui.delete_keep}</Button>
+            {me && typedName.trim() === me.shown && (
             <Button
               variant="destructive"
               data-reset-do
               // The box is checked here only so the button is not live
               // over an empty field; the answer that counts is the node's
               // (`lock::reset_identity` refuses by name).
-              disabled={typedName.trim() !== (me?.shown ?? "") || !me}
               onClick={() => {
                 setError(null);
                 resetIdentity(typedName).then(
@@ -509,6 +515,7 @@ export function SecurityPage({
             >
               {gui.reset_do}
             </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

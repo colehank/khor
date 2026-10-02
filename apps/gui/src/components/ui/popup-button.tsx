@@ -99,7 +99,7 @@ export function PopupButton({
           // ⌃⌄ keys. Disabled at the push button's 0.4.
           "flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in text-body",
           look === "field" ? "w-full bg-fill" : "",
-          disabled ? "opacity-40" : look === "field" ? "group-hover:bg-fill-strong" : "group-hover:bg-fill",
+          look === "field" ? "group-hover:bg-fill-strong" : "group-hover:bg-fill",
         )}
       >
         <span data-popup-value className={cn("min-w-0 truncate tabular-nums", look === "field" && "flex-1")}>

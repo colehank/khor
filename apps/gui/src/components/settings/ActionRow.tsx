@@ -22,7 +22,7 @@ export function ActionRow({
   value,
   actionLabel,
   onPress,
-  disabled = false,
+  busy = false,
   variant = "default",
   danger = false,
   mark,
@@ -37,10 +37,11 @@ export function ActionRow({
   value?: ReactNode;
   actionLabel: string;
   onPress: () => void;
-  /** Not live: the button cannot be pressed, and the whole row reads
-      as off — title and value at the button's own disabled 0.4 — so a
-      row that depends on a switch above it looks it. */
-  disabled?: boolean;
+  /** The act is under way: the button breathes and takes no second
+      press. ⚠️ 墓碑 (the audit fix plan F1.9): `disabled`, which drew the
+      whole row at 0.4 — a row that cannot act now is not drawn at all,
+      by its caller. */
+  busy?: boolean;
   variant?: "default" | "ghost" | "destructive";
   /** The act throws something away (网络's 离开…): the button's word in
       the `destructive` ink. **Not the destructive fill** — that one is
@@ -66,7 +67,6 @@ export function ActionRow({
         className={cn(
           "flex flex-col gap-0",
           value === undefined ? "min-w-0 flex-1" : "flex-none",
-          disabled && "opacity-40",
         )}
       >
         <span className="text-body">{label}</span>
@@ -79,7 +79,6 @@ export function ActionRow({
           data-setting-value
           className={cn(
             "min-w-0 flex-1 break-all text-right text-body text-muted-foreground",
-            disabled && "opacity-40",
           )}
         >
           {value}
@@ -88,7 +87,8 @@ export function ActionRow({
       <Button
         variant={variant}
         size="sm"
-        disabled={disabled}
+        disabled={busy}
+        aria-busy={busy || undefined}
         onClick={onPress}
         data-setting-trail
         {...mark}

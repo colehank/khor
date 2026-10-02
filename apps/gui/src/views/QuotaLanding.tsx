@@ -2251,19 +2251,17 @@ function EditDialog({
               />
             </label>
           )}
-          {!isSub && (
+          {/* **Not drawn where the key is not** (`acc.mine`, the node's
+              own answer to 「is this reading mine to take」), so a secret
+              is not asked for and then refused. ⚠️ 墓碑 (the audit fix
+              plan F1.9): drawn shut and greyed. */}
+          {!isSub && acc.mine && (
           <label className="flex min-w-0 flex-col gap-1 text-callout">
             <span className="text-muted-foreground">{gui.accounts_key}</span>
             <Input
               data-quota-edit-key
               type="password"
               autoComplete="off"
-              // **Shut where the key is not**, so a secret is not asked
-              // for and then refused. `mine` is the node's own answer to
-              // 「is this reading mine to take」, and holding the key is
-              // exactly what that means (`quota_board`).
-              disabled={!acc.mine}
-              data-quota-edit-key-shut={!acc.mine}
               value={key}
               onChange={(e) => setKey(e.target.value)}
             />
@@ -2367,7 +2365,7 @@ function EditDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="primary" data-quota-save disabled={busy} onClick={save}>
+          <Button variant="primary" data-quota-save disabled={busy} aria-busy={busy || undefined} onClick={save}>
             {gui.accounts_edit}
           </Button>
         </DialogFooter>
@@ -2552,7 +2550,7 @@ function RegisterDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.delete_keep}
           </Button>
-          <Button variant="primary" data-quota-create disabled={busy} onClick={create}>
+          <Button variant="primary" data-quota-create disabled={busy} aria-busy={busy || undefined} onClick={create}>
             {gui.accounts_register}
           </Button>
         </DialogFooter>

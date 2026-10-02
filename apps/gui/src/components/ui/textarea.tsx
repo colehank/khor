@@ -54,7 +54,7 @@ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
         // `check-face` §11b). The hairline box stays: this is the
         // conversation's composer, a writing surface in the reading
         // column, not a form's text field (components/TextField 「不是它的」).
-        "min-h-ctl-md max-h-chat-box w-full min-w-0 resize-none overflow-y-auto rounded-md border border-input bg-transparent px-3 py-1.5 transition-[color,box-shadow] outline-none placeholder:text-muted-foreground disabled:pointer-events-none disabled:opacity-50",
+        "min-h-ctl-md max-h-chat-box w-full min-w-0 resize-none overflow-y-auto rounded-md border border-input bg-transparent px-3 py-1.5 transition-[color,box-shadow] outline-none placeholder:text-muted-foreground disabled:pointer-events-none",
         "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-2",
         "aria-invalid:border-destructive aria-invalid:ring-destructive/20",
         className,

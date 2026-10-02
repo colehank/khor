@@ -275,6 +275,7 @@ export function ImportDialog({
                       data-agent-ask={a.name}
                       data-asking={asking === a.name}
                       disabled={asking !== null}
+                      aria-busy={asking === a.name || undefined}
                       onClick={() => ask(a.name)}
                     >
                       {asking === a.name ? gui.new_session_seen_asking : gui.new_session_seen_ask}
@@ -294,9 +295,11 @@ export function ImportDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
           </Button>
-          <Button variant="primary" data-import-go disabled={picked.size === 0 || going} onClick={go} className="min-h-touch">
-            {gui.import_go(picked.size)}
-          </Button>
+          {picked.size > 0 && (
+            <Button variant="primary" data-import-go disabled={going} aria-busy={going || undefined} onClick={go} className="min-h-touch">
+              {gui.import_go(picked.size)}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

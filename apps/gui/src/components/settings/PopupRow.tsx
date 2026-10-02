@@ -7,7 +7,6 @@
 // `data-setting-row="popup"` is the gate anchor; the `<select>` inside it
 // is what a gate checks to prove the system menu is the one that opens.
 import { PopupButton } from "@/components/ui/popup-button";
-import { cn } from "@/lib/utils";
 
 export function PopupRow({
   name,
@@ -16,7 +15,6 @@ export function PopupRow({
   value,
   choices,
   onPick,
-  disabled = false,
   mark,
 }: {
   name: string;
@@ -25,7 +23,6 @@ export function PopupRow({
   value: string;
   choices: { value: string; label: string }[];
   onPick: (value: string) => void;
-  disabled?: boolean;
   /** Extra anchors on the row (a gate reads the row's value off it). */
   mark?: Record<string, string>;
 }) {
@@ -36,7 +33,7 @@ export function PopupRow({
       {...mark}
       className="flex items-center gap-row px-row py-in"
     >
-      <div className={cn("flex min-w-0 flex-1 flex-col", disabled && "opacity-40")}>
+      <div className="flex min-w-0 flex-1 flex-col">
         <span className="text-body">{label}</span>
         {hint && <span data-setting-note className="text-callout text-muted-foreground">{hint}</span>}
       </div>
@@ -50,7 +47,6 @@ export function PopupRow({
         choices={choices}
         onPick={onPick}
         label={label}
-        disabled={disabled}
         mark={{ "data-setting-select": name }}
         className="-mr-xxs"
       />

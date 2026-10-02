@@ -168,7 +168,7 @@ export function RemoveDialog({
           <Button data-remove-keep onClick={() => onOpenChange(false)}>
             {gui.delete_keep}
           </Button>
-          <Button variant="destructive" data-remove-go disabled={going} onClick={press}>
+          <Button variant="destructive" data-remove-go disabled={going} aria-busy={going || undefined} onClick={press}>
             {gui.delete}
           </Button>
         </DialogFooter>
