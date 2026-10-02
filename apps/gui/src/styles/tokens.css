@@ -1113,7 +1113,7 @@
      and, folded, at the start of the content's row alike. **The strip is
      the largest control in that row** (the owner: it must never read
      smaller than the session tabs beside it): 36 high, 36 × 30 pills,
-     glyphs at `--ctl-glyph` like every glass control's — 18 of ink, over
+     glyphs at `--ctl-glyph` like every glass control's — 20 of ink, over
      the tabs' 16 faces. ⚠️ 墓碑: `--strip-glyph` 22, its own number. */
   --wide-lead-start: 80px;
   --strip-h: 36px;
@@ -2527,12 +2527,13 @@
      list's title row (筛选 / ＋, search), a detail head's verbs capsule,
      VS Code and back circles, the folded 「…」: one number, set here and
      read by one rule (`app.css`, 「a glass control's glyph」), never by a
-     call site. 20 in the 36 control a mouse gets — every glyph fills 0.90
-     of its box (icons.tsx `LIVE`), so 18 of ink with 5 of air in the 28 /
-     30 inner pill — and 24 in the 44 a finger gets. The floating bottom
+     call site. 22 in the 36 control a mouse gets (the owner chose the
+     larger of two, 2026-10-02) — every glyph fills 0.90 of its box
+     (icons.tsx `LIVE`), so about 20 of ink with 4 of air in the 28 / 30
+     inner pill — and 26 in the 44 a finger gets, the same fill. The floating bottom
      bar's seats (64 high, a word under the glyph) keep `--nav-glyph`. */
-  --ctl-glyph: 20px;
-  /* One step down, for the one seat too short for 20: a 32 capsule's 24
+  --ctl-glyph: 22px;
+  /* One step down, for the one seat too short for 22: a 32 capsule's 24
      buttons (`app.css`, under 「a glass control's glyph」). */
   --ctl-glyph-tight: 18px;
   /* A button inside a capsule: the capsule's height less a 4 inset top
@@ -2592,7 +2593,7 @@
 @media (pointer: coarse) {
   :root {
     --glass-btn: 44px;
-    --ctl-glyph: 24px;
+    --ctl-glyph: 26px;
     --head-ctl: 44px;
     --head-item-w: 44px;
     --nav-h: 64px;
