@@ -48,7 +48,16 @@ const buttonVariants = cva(
         // `plain`: no ground, `secondary` ink, `fill` under the pointer.
         ghost: "text-muted-foreground hover:bg-fill hover:text-foreground",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-                link: "text-primary underline-offset-4 hover:underline",
+        // **A settings act is a pill** (the audit fix plan F6.3, SYS-21):
+        // `--fill` under `foreground`, fully round, the in-content height
+        // (`ctl-md` 28 under a mouse, the finger's 44 through
+        // `min-h-touch`) — one family with the glass and the capsules.
+        // An act that throws something away keeps its `destructive` ink
+        // on the same ground. ⚠️ 墓碑: 6-radius `fill-strong` slabs, the
+        // last of the pre-redesign buttons, which by day read as a
+        // disabled field.
+        pill: "rounded-full bg-fill text-foreground hover:bg-fill-strong",
+        link: "text-primary underline-offset-4 hover:underline",
       },
       // **None of these carries the finger floor, and that is on
       // purpose.** These three are the *look* of an inline control

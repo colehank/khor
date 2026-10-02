@@ -23,7 +23,6 @@ export function ActionRow({
   actionLabel,
   onPress,
   busy = false,
-  variant = "default",
   danger = false,
   mark,
   rowMark,
@@ -42,12 +41,10 @@ export function ActionRow({
       whole row at 0.4 — a row that cannot act now is not drawn at all,
       by its caller. */
   busy?: boolean;
-  variant?: "default" | "ghost" | "destructive";
-  /** The act throws something away (网络's 离开…): the button's word in
+  /** The act throws something away (网络's 离开…): the pill's word in
       the `destructive` ink. **Not the destructive fill** — that one is
       only the confirm window's (components/Button), and this row is the
-      way to that window, not the act. Pair it with `ghost`: on the push
-      button's `fill-strong` the dark `destructive` is 3.95. */
+      way to that window, not the act. */
   danger?: boolean;
   /** Extra anchors on the button. */
   mark?: Record<string, string>;
@@ -85,8 +82,7 @@ export function ActionRow({
         </span>
       )}
       <Button
-        variant={variant}
-        size="sm"
+        variant="pill"
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={onPress}

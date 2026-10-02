@@ -193,8 +193,9 @@ export function SecurityPage({
       actions={
         lock?.on ? (
           <Button
-            // The toolbar's push button: default `ctl-md`, `body` 13
-            // (components/Toolbar, 2026-09-30) — not the dense row's `sm`.
+            // The settings pill (F6.3): `ctl-md`, `body` 13 — not the
+            // dense row's `sm`.
+            variant="pill"
             // R0's one text button now: the overviews' 新会话… 邀请设备…
             // 登记… left for ＋ the same day (「一个动作只有一个家」); this
             // is a verb on the lock, not a thing made.

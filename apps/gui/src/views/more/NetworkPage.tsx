@@ -237,10 +237,6 @@ export function NetworkPage({
             label={gui.identity_leave_do}
             hint={gui.net_leave_note}
             actionLabel={gui.net_leave_ask}
-            // Red word on clear ground, as this act has always been
-            // drawn: on the push button's `fill-strong` the dark theme's
-            // `destructive` reads 3.95, under the text floor.
-            variant="ghost"
             danger
             onPress={() => {
               setError(null);
