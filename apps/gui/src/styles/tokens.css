@@ -1612,12 +1612,13 @@
   /* **The small affordances' box** (2026-10-02): ×, the 预览 eye, a
    * twisty, a sort arrow, a find bar's steps — marks that say what a
    * press does to the thing beside them, not glyphs of a control. One box
-   * for the family wherever it sits (a tab, a list row, a column head),
-   * so × paints 12 of ink and the eye 11.4 (icons.tsx `LIVE`: 0.92 /
-   * 0.88) and a tab's × no longer outweighs its label. The glass
-   * controls' glyphs are `--ctl-glyph`; the popup button's stacked ⌃⌄
-   * keep their own 8 (two in an 18 pill). */
-  --affordance: 13px;
+   * for the family wherever it sits (a tab, a list row, a column head).
+   * 16 since × and the chevrons are bare line glyphs (icons.tsx, 0.72 of
+   * the box): × and a twisty paint 11.5 of ink, as they did at 13 before,
+   * and the eye, which has a body, 14 — the two matched by weight. The
+   * glass controls' glyphs are `--ctl-glyph`; the popup button's stacked
+   * ⌃⌄ keep their own 10 (two in an 18 pill). */
+  --affordance: 16px;
   /* The rest of the size family the design system names
    * (docs/design-system/tokens.json `size`): a switch (32×18, 第十七轮
    * draws it), the day's band under a tab (4), a dialog's width (380),
@@ -2559,10 +2560,12 @@
      narrow), laid on a page: set in by the rest, so the faces stand on
      the page's left line (the machine's sessions). */
   --rows-inset: calc(var(--page-inset) - var(--gap-group));
-  /* A workspace's tree, set in so its first level's disclosure mark (a
-     12 glyph centred in the `--tree-slot`) stands on the page's left
-     line: 16 in a window, 12 on the narrow face. */
-  --tree-inset: calc(var(--page-inset) - (var(--tree-slot) - 0.75rem) / 2);
+  /* A workspace's tree, set in so its first level's disclosure mark
+     stands on the page's left line. The mark is a `>` centred in the
+     `--tree-slot` in an `--affordance` box; its ink's left edge is 0.113
+     of that box left of the slot's centre (a bare chevron, half as wide
+     as it is tall, leaning 0.09 toward its point: icons.tsx). */
+  --tree-inset: calc(var(--page-inset) - var(--tree-slot) / 2 + var(--affordance) * 0.113);
   --nav-h: 52px;
   --nav-item: 64px;
   --nav-glyph: 20px;

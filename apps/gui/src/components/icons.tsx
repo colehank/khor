@@ -60,9 +60,36 @@ const lineOf = (f: Fit, w: number = STROKE.line) => w * f.side;
 /** The cut's width, in a glyph's own units; `extra` widens it (a share). */
 const cutOf = (f: Fit, extra = 0) => (STROKE.line + 2 * GAP + extra) * f.side;
 
+/**
+ * **Bare line glyphs fit a smaller share** (2026-10-02, the owner:
+ * 「"+"等简单符号，都有点太大了。但别的icon不会」). Glyphs are matched by
+ * weight, not by extent: a figure that is only a few strokes reaching
+ * out to its ends shows nothing but that reach, so at the reach of a
+ * glyph with a body it reads a size bigger. The criterion is measured —
+ * ink coverage, painted ink over the ink's bounding box at the common
+ * line, rendered at 96: under 0.21 with nothing enclosed or filled is
+ * **bare**, 0.72 of the box (＋ 0.15, the tick 0.18, the chevrons and
+ * back / forward 0.20, × 0.21); an open figure just over it, or a bare
+ * one that sits among filled marks, is **light**, 0.80 (search 0.21 with
+ * its ring, reload 0.22, the terminal's `>_` 0.15 among the agents'
+ * filled marks). Everything else keeps its 0.88 / 0.90 / 0.92 (link 0.26
+ * and up). The line stays the common share of the box (`STROKE`): the
+ * figure gets shorter, not thinner.
+ */
+const BARE = 0.72;
+const LIGHT = 0.8;
+const ROUND = 0.92;
+const PLAIN = 0.9;
+/** A measured live area refitted from one share of the box to another,
+    about the same centre. */
+const reshare = (f: Fit, from: number, to: number): Fit => {
+  const side = (f.side * from) / to;
+  return fit(f.x - (side - f.side) / 2, f.y - (side - f.side) / 2, side);
+};
+
 /** Each glyph's live area on its own canvas, measured (`fit`). Unmarked
     is the 0.90 share; `square` is 0.88 and `round` (round or diagonal)
-    is 0.92. */
+    is 0.92; `reshare`d ones are bare or light (above). */
 const LIVE = {
   sessions: fit(1.7, 1.81, 20.6),
   devices: fit(1.45, 1.45, 21.11), // square
@@ -75,22 +102,22 @@ const LIVE = {
   network: fit(1.44, 0.74, 21.12), // round
   pulse: fit(1.34, 1.34, 21.32), // square
   branch: fit(0.55, 0.55, 14.89),
-  back: fit(1.93, 2.33, 11.33), // round
-  forward: fit(2.73, 2.33, 11.33), // round
-  reload: fit(1.78, 1.41, 12.44), // round
-  search: fit(1.84, 1.84, 12.63), // round
+  back: reshare(fit(1.93, 2.33, 11.33), ROUND, BARE),
+  forward: reshare(fit(2.73, 2.33, 11.33), ROUND, BARE),
+  reload: reshare(fit(1.78, 1.41, 12.44), ROUND, LIGHT),
+  search: reshare(fit(1.84, 1.84, 12.63), ROUND, LIGHT),
   grip: fit(1.82, 1.82, 12.37), // square
-  plus: fit(1.96, 1.96, 12.08),
+  plus: reshare(fit(1.96, 1.96, 12.08), PLAIN, BARE),
   filter: fit(1, 1, 14), // square
-  check: fit(1.96, 1.97, 12.07), // round
-  close: fit(3.28, 3.28, 9.44), // round
-  chevronUp: fit(3.28, 3.28, 9.44), // round
-  chevronDown: fit(3.28, 3.28, 9.44), // round
-  chevronRight: fit(3.28, 3.28, 9.44), // round
+  check: reshare(fit(1.96, 1.97, 12.07), ROUND, BARE),
+  close: reshare(fit(3.28, 3.28, 9.44), ROUND, BARE),
+  chevronUp: reshare(fit(3.28, 3.28, 9.44), ROUND, BARE),
+  chevronDown: reshare(fit(3.28, 3.28, 9.44), ROUND, BARE),
+  chevronRight: reshare(fit(3.28, 3.28, 9.44), ROUND, BARE),
   attach: fit(1.19, 0.98, 13.22), // round
   // Fitted on the larger of its two states: upright, pinned, it is taller.
   pin: fit(2.87, 1.84, 11.29), // round
-  terminal: fit(2.45, 2.56, 11.1),
+  terminal: reshare(fit(2.45, 2.56, 11.1), PLAIN, LIGHT),
   chat: fit(1.6, 2.3, 12.8),
   keyboard: fit(1.17, 1.17, 13.66), // square
   file: fit(1.07, 1.07, 13.87), // square

@@ -109,8 +109,8 @@ export function PopupButton({
           data-setting-trail
           className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"
         >
-          <IconChevronUp centred className="-mb-px size-2" />
-          <IconChevronDown centred className="size-2" />
+          <IconChevronUp centred className="-mb-[3px] size-2.5" />
+          <IconChevronDown centred className="size-2.5" />
         </span>
       </div>
       <select
