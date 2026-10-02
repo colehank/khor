@@ -656,7 +656,7 @@ export function WorkspacesList({
                 data-on={treeOpen}
                 className="flex flex-1 items-center justify-center text-muted-foreground"
               >
-                <IconChevronRight className={cn("size-2.5 transition-transform", !treeOpen && "rotate-180")} />
+                <IconChevronRight className={cn("size-affordance transition-transform", !treeOpen && "rotate-180")} />
               </span>
             )}
           </span>

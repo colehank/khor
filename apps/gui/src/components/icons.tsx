@@ -16,20 +16,21 @@ import { useId, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 
-// Stroke widths are ratios in disguise: the number only means anything
-// divided by its canvas. 24-canvas rail glyphs use 1.4; 16-canvas marks
-// use 1.5 (optically compensated — thinner would vanish at 1x); the
-// tick-and-cross density is 1.9, heavier because those two are read as
-// answers, not as pictures.
-export const STROKE = { rail: 1.4, sm: 1.5, bold: 1.9 } as const;
+// **One line weight, as a share of the box** (2026-10-02, the owner:
+// 「确保所有icon的大小一致」, and a ＋ beside 会话 in one capsule drew
+// 1.69 to its 1.05). It was two ratios — 1.4 on the 24 canvas, 1.5 on the
+// 16 — and a box holding one of each drew two weights. Now every stroked
+// glyph draws `line` of whatever box it is in: 1.44 at a 20 box, between
+// the two it replaces. The tick keeps its heavier density, `bold`, by the
+// same ratio as before (1.9 to 1.5): it is read as an answer, not a
+// picture.
+export const STROKE = { line: 0.072, bold: 0.091 } as const;
 
-// The cut shape's width: the cut line is the front form's outline
-// widened to 3, leaving a (3 - 1.4) / 2 = 0.8 gap on each side.
-const CUT = 3;
-// The same idea on the 16 canvas, where the line is 1.5: (2.6 - 1.5) / 2
-// leaves 0.55 either side. Not 3 scaled by 16/24 (= 2.0), because the
-// gap has to read at the size it is drawn, not stay proportional.
-const CUT16 = 2.6;
+// The family's cut: the gap a front form's line leaves either side where
+// it crosses what is behind it, as a share of the box (0.8 of 24 and 0.55
+// of 16 both came to it). The cut shape is the front form's outline at
+// the line weight plus a gap each side.
+const GAP = 0.034;
 
 /**
  * **One live area for every mark** (2026-10-02, the owner: 「怎么不同的
@@ -47,51 +48,53 @@ const CUT16 = 2.6;
  * family drew them on its 24 or 16 canvas; `fit` names the square of that
  * canvas the ink sits in (measured by rasterising each glyph at 512 and
  * scanning its ink — `getBBox` ignores strokes). Cropping the canvas
- * scales the drawing up, so every stroke width and cut is multiplied by
- * `k`, the crop's side over the canvas: the line keeps its ratio to the
- * **box** (1.4/24, 1.5/16) and does not fatten with the drawing.
+ * scales the drawing up, so every stroke width and cut is set from the
+ * crop's side: the line is a share of the **box** (`STROKE`), and does not
+ * fatten with the drawing.
  */
-type Fit = { x: number; y: number; side: number; k: number };
-const fit = (canvas: number) => (x: number, y: number, side: number): Fit => ({ x, y, side, k: side / canvas });
-const fit24 = fit(24);
-const fit16 = fit(16);
+type Fit = { x: number; y: number; side: number };
+const fit = (x: number, y: number, side: number): Fit => ({ x, y, side });
 const viewBox = (f: Fit) => `${f.x} ${f.y} ${f.side} ${f.side}`;
+/** The line, in a glyph's own units. */
+const lineOf = (f: Fit, w: number = STROKE.line) => w * f.side;
+/** The cut's width, in a glyph's own units; `extra` widens it (a share). */
+const cutOf = (f: Fit, extra = 0) => (STROKE.line + 2 * GAP + extra) * f.side;
 
 /** Each glyph's live area on its own canvas, measured (`fit`). Unmarked
     is the 0.90 share; `square` is 0.88 and `round` (round or diagonal)
     is 0.92. */
 const LIVE = {
-  sessions: fit24(1.9, 1.99, 20.2),
-  devices: fit24(1.65, 1.65, 20.7), // square
-  files: fit24(1.65, 1.67, 20.74), // square
-  browser: fit24(3.08, 3.08, 17.85), // round
-  more: fit24(2.92, 2.92, 18.16),
-  gear: fit24(3.06, 3.06, 17.89), // round
-  appearance: fit24(3.04, 3.04, 17.92), // round
-  shield: fit24(1.35, 1.49, 21.31),
-  network: fit24(1.6, 0.91, 20.81), // round
-  pulse: fit24(1.5, 1.5, 21), // square
-  branch: fit16(0.38, 0.38, 15.24),
-  back: fit16(1.79, 2.19, 11.63), // round
-  forward: fit16(2.58, 2.19, 11.63), // round
-  reload: fit16(1.7, 1.4, 12.61), // round
-  search: fit16(1.67, 1.67, 12.97), // round
-  grip: fit16(1.64, 1.64, 12.71), // square
-  plus: fit16(1.79, 1.79, 12.41),
-  filter: fit16(0.82, 0.82, 14.36), // square
-  check: fit16(1.76, 1.76, 12.48), // round
-  close: fit16(3.14, 3.14, 9.71), // round
-  chevronUp: fit16(3.14, 3.14, 9.71), // round
-  chevronDown: fit16(3.14, 3.14, 9.71), // round
-  chevronRight: fit16(3.14, 3.14, 9.71), // round
-  attach: fit16(1.02, 0.82, 13.59), // round
+  sessions: fit(1.7, 1.81, 20.6),
+  devices: fit(1.45, 1.45, 21.11), // square
+  files: fit(1.45, 1.49, 21.11), // square
+  browser: fit(2.93, 2.93, 18.15), // round
+  more: fit(2.92, 2.92, 18.16),
+  gear: fit(2.92, 2.92, 18.17), // round
+  appearance: fit(2.92, 2.92, 18.17), // round
+  shield: fit(1.19, 1.33, 21.62),
+  network: fit(1.44, 0.74, 21.12), // round
+  pulse: fit(1.34, 1.34, 21.32), // square
+  branch: fit(0.55, 0.55, 14.89),
+  back: fit(1.93, 2.33, 11.33), // round
+  forward: fit(2.73, 2.33, 11.33), // round
+  reload: fit(1.78, 1.41, 12.44), // round
+  search: fit(1.84, 1.84, 12.63), // round
+  grip: fit(1.82, 1.82, 12.37), // square
+  plus: fit(1.96, 1.96, 12.08),
+  filter: fit(1, 1, 14), // square
+  check: fit(1.96, 1.97, 12.07), // round
+  close: fit(3.28, 3.28, 9.44), // round
+  chevronUp: fit(3.28, 3.28, 9.44), // round
+  chevronDown: fit(3.28, 3.28, 9.44), // round
+  chevronRight: fit(3.28, 3.28, 9.44), // round
+  attach: fit(1.19, 0.98, 13.22), // round
   // Fitted on the larger of its two states: upright, pinned, it is taller.
-  pin: fit16(2.7, 1.67, 11.63), // round
-  terminal: fit16(2.28, 2.39, 11.43),
-  chat: fit16(1.43, 2.13, 13.15),
-  keyboard: fit16(1, 1, 14.01), // square
-  file: fit16(0.86, 0.86, 14.29), // square
-  link: fit16(1.97, 1.98, 12.03), // round
+  pin: fit(2.87, 1.84, 11.29), // round
+  terminal: fit(2.45, 2.56, 11.1),
+  chat: fit(1.6, 2.3, 12.8),
+  keyboard: fit(1.17, 1.17, 13.66), // square
+  file: fit(1.07, 1.07, 13.87), // square
+  link: fit(2.14, 2.14, 11.73), // round
 } as const;
 
 type IconProps = { className?: string };
@@ -114,7 +117,7 @@ function RailGlyph({
       viewBox={viewBox(live)}
       fill="none"
       stroke="currentColor"
-      strokeWidth={STROKE.rail * live.k}
+      strokeWidth={lineOf(live)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -144,7 +147,7 @@ export function IconSessions({ className }: IconProps) {
     <RailGlyph
       className={className}
       live={LIVE.sessions}
-      cut={<path d={BUBBLE_FRONT} fill="black" stroke="black" strokeWidth={CUT * LIVE.sessions.k} />}
+      cut={<path d={BUBBLE_FRONT} fill="black" stroke="black" strokeWidth={cutOf(LIVE.sessions)} />}
     >
       {(cutId) => (
         <>
@@ -250,12 +253,12 @@ export function IconBrowser({ className }: IconProps) {
           transform="rotate(-20 12 12)"
           fill="none"
           stroke="black"
-          // 0.2 wider than `CUT`, the family's one exception: the band
+          // 0.2 of 24 wider than the family's cut, its one exception: the band
           // crosses the sphere at a slant, and an equal-width cut leaves
           // a visually narrower gap along a slanted edge than a square
           // one. This is the value that makes the gap look the same as
           // the other glyphs', not a different rule.
-          strokeWidth={(CUT + 0.2) * LIVE.browser.k}
+          strokeWidth={cutOf(LIVE.browser, 0.2 / 24)}
         />
       }
     >
@@ -366,9 +369,9 @@ export function IconNetwork({ className }: IconProps) {
       live={LIVE.network}
       cut={
         <>
-          <circle cx="12" cy="5.4" r="2.45" fill="black" stroke="black" strokeWidth={CUT * LIVE.network.k} />
-          <circle cx="5.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={CUT * LIVE.network.k} />
-          <circle cx="18.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={CUT * LIVE.network.k} />
+          <circle cx="12" cy="5.4" r="2.45" fill="black" stroke="black" strokeWidth={cutOf(LIVE.network)} />
+          <circle cx="5.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={cutOf(LIVE.network)} />
+          <circle cx="18.5" cy="17.2" r="2.45" fill="black" stroke="black" strokeWidth={cutOf(LIVE.network)} />
         </>
       }
     >
@@ -401,7 +404,7 @@ export function IconPulse({ className }: IconProps) {
     <RailGlyph
       className={className}
       live={LIVE.pulse}
-      cut={<path d={PULSE_TRACE} stroke="black" strokeWidth={CUT * LIVE.pulse.k} />}
+      cut={<path d={PULSE_TRACE} stroke="black" strokeWidth={cutOf(LIVE.pulse)} />}
     >
       {(cutId) => (
         <>
@@ -428,13 +431,13 @@ export function IconPulse({ className }: IconProps) {
  */
 function Mark({
   className,
-  weight = "sm",
+  weight = "line",
   icon,
   live,
   cut,
   children,
 }: IconProps & {
-  weight?: "sm" | "bold";
+  weight?: keyof typeof STROKE;
   icon?: string;
   live: Fit;
   cut?: ReactNode;
@@ -451,7 +454,7 @@ function Mark({
       viewBox={viewBox(live)}
       fill="none"
       stroke="currentColor"
-      strokeWidth={STROKE[weight] * live.k}
+      strokeWidth={lineOf(live, STROKE[weight])}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -477,9 +480,9 @@ export function IconBranch({ className }: IconProps) {
       live={LIVE.branch}
       cut={
         <>
-          <circle cx="4.6" cy="3.4" r="1.55" fill="black" stroke="black" strokeWidth={CUT16 * LIVE.branch.k} />
-          <circle cx="4.6" cy="12.6" r="1.55" fill="black" stroke="black" strokeWidth={CUT16 * LIVE.branch.k} />
-          <circle cx="11.4" cy="4.8" r="1.55" fill="black" stroke="black" strokeWidth={CUT16 * LIVE.branch.k} />
+          <circle cx="4.6" cy="3.4" r="1.55" fill="black" stroke="black" strokeWidth={cutOf(LIVE.branch)} />
+          <circle cx="4.6" cy="12.6" r="1.55" fill="black" stroke="black" strokeWidth={cutOf(LIVE.branch)} />
+          <circle cx="11.4" cy="4.8" r="1.55" fill="black" stroke="black" strokeWidth={cutOf(LIVE.branch)} />
         </>
       }
     >
@@ -792,7 +795,7 @@ export function IconKeyboard({ className }: IconProps) {
       cut={
         <path
           stroke="black"
-          strokeWidth={STROKE.sm * LIVE.keyboard.k}
+          strokeWidth={lineOf(LIVE.keyboard)}
           strokeLinecap="round"
           d="M5.4 6.9h.01M8 6.9h.01M10.6 6.9h.01M5.4 9.5h5.2"
         />

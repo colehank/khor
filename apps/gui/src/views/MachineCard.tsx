@@ -3386,7 +3386,7 @@ function Column({
         )}
       >
         {children}
-        {on && (sort.dir === "up" ? <IconChevronUp className="size-2.5" /> : <IconChevronDown className="size-2.5" />)}
+        {on && (sort.dir === "up" ? <IconChevronUp className="size-affordance" /> : <IconChevronDown className="size-affordance" />)}
       </button>
     </div>
   );

@@ -2367,7 +2367,7 @@ export default function App() {
                   onClick={() => setMorePage(null)}
                   className="min-h-touch min-w-touch"
                 >
-                  <IconClose />
+                  <IconClose className="size-affordance" />
                 </Button>
               }
             >

@@ -352,7 +352,7 @@ export function SideList({
                 on 8,8, so turned it IS `chevronDown`. Not the back arrow
                 turned: that path sits 0.4 off centre, which is what read
                 as crooked (2026-09-26「展开按钮的icon甚至都没有整齐」). */}
-            <IconChevronRight className={cn("size-2.5 flex-none transition-transform", open && "rotate-90")} />
+            <IconChevronRight className={cn("size-affordance flex-none transition-transform", open && "rotate-90")} />
             <span data-group-label className="min-w-0 truncate">{label(r.group)}</span>
             <span data-group-size className="ml-auto flex-none font-body tabular-nums">
               {size}

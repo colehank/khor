@@ -90,7 +90,7 @@ export function OmniChip({
         onMouseDown={(e) => e.preventDefault()}
         onClick={onRemove}
       >
-        <IconClose className="size-3" />
+        <IconClose className="size-affordance" />
       </Button>
     </span>
   );

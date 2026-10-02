@@ -163,7 +163,7 @@ export function NewTabPage({
                   )}
                   onClick={() => onForget(place)}
                 >
-                  <IconClose />
+                  <IconClose className="size-affordance" />
                 </Button>
             </div>
           </div>
