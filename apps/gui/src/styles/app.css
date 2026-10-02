@@ -75,7 +75,7 @@ svg [data-body] {
    redesign, 2026-10-02): its foot keeps the capsule's room, so the last
    row can be brought up clear of the glass. A page's own scroller that
    the navigation floats over says so with `data-nav-clear`. */
-[data-nav-host] :is([data-pane-body], [data-nav-clear]) {
+[data-nav-host] :is([data-pane-body], [data-nav-clear], [data-machine-files] [data-files-list]) {
   padding-bottom: var(--nav-room);
 }
 

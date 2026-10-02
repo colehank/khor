@@ -100,6 +100,7 @@ import { IdentityPage } from "@/views/more/IdentityPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
+import { MachineFiles } from "@/views/MachineFiles";
 import { RegionState } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
@@ -463,8 +464,11 @@ export default function App() {
   /** Whether the open machine's page shows its sessions rather than its
       dashboard — the head's 会话 switch (the redesign, 2026-10-02). Back
       to the dashboard whenever another machine opens. */
-  const [machineSessions, setMachineSessions] = useState(false);
-  useEffect(() => setMachineSessions(false), [selectedDevice]);
+  // …and its files in place (2026-10-02, the owner: 「文件按钮点击后，不要
+  // 跳转到工作区」). One value, so the two switches are exclusive: turning
+  // one on turns the other off.
+  const [machineBody, setMachineBody] = useState<"dashboard" | "sessions" | "files">("dashboard");
+  useEffect(() => setMachineBody("dashboard"), [selectedDevice]);
   // …and which workspace is open. **A path and not a row**, because
   // the two ways in do not agree on what they have: the list hands over
   // a checkout it already knows about, and the machine card's 看它的
@@ -1581,19 +1585,16 @@ export default function App() {
       <MachineVerbs
         row={openDevice}
         code={machineCode}
-        sessionsOn={machineSessions}
-        onSessions={() => setMachineSessions((on) => !on)}
+        sessionsOn={machineBody === "sessions"}
+        onSessions={() => setMachineBody((b) => (b === "sessions" ? "dashboard" : "sessions"))}
+        filesOn={machineBody === "files"}
+        onFiles={() => setMachineBody((b) => (b === "files" ? "dashboard" : "files"))}
         // The sessions pane's own wizard, opened with this machine picked
         // (2026-09-06:「会话是对应会话页的新建 session」).
         onNewSession={(row) => openNewSession(row.name)}
-        // This machine's disk: home, not a workspace — the pane takes an
-        // empty path as that machine's home.
-        onBrowseFiles={(row) => {
-          setMorePage(null);
-          setLanding("workspaces");
-          setOpenWs({ device: row.id, machine: row.name, path: "" });
-          setScreen("detail");
-        }}
+        // ⚠️ 墓碑 (2026-10-02): 文件 opened the 工作区 landing on this
+        // machine's home (`openWs` with an empty path). It is a switch of
+        // this page now; the files are drawn in place (`MachineFiles`).
         // This machine's network, in a new tab of the browser landing
         // (docs/NET.md 借网).
         onBorrowWeb={(row) => {
@@ -1754,10 +1755,12 @@ export default function App() {
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
       actions={narrow ? machineVerbs : undefined}
-      sessions={
-        machineSessions ? (
-          <>
-            <h2 className="flex min-h-touch items-end px-group pt-in pb-xxs text-group text-muted-foreground">
+      body={
+        !openDevice ? undefined : machineBody === "files" ? (
+          <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} />
+        ) : machineBody === "sessions" ? (
+          <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-rows-inset">
+            <h2 className="flex min-h-touch items-end px-[calc(var(--page-inset)-var(--rows-inset))] pt-in pb-xxs text-group text-muted-foreground">
               {gui.machine_sessions}
             </h2>
             {/* The same rows and verbs the sessions landing draws, only
@@ -1779,7 +1782,7 @@ export default function App() {
               pinFailed={pinFailed}
               closeRefused={closeRefused}
             />
-          </>
+          </div>
         ) : undefined
       }
     />

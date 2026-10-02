@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
@@ -21,7 +21,13 @@ import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
    ended is this card reading them. */
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
-import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconPlus, IconSessions } from "@/components/icons";
+import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconCode, IconFiles, IconMore, IconPlus, IconSessions } from "@/components/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
@@ -66,14 +72,15 @@ export function MachineCard({
   onInstallHooks,
   onUninstallHooks,
   actions,
-  sessions,
+  body,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
-  /** **The machine's sessions, in place of its dashboard** (the redesign,
-      2026-10-02: the head's 会话 verb toggles the body). Drawn by the
-      shell, which holds the rows; absent, the dashboard. */
-  sessions?: ReactNode;
+  /** **What the head's switches put in place of the dashboard** (the
+      redesign, 2026-10-02): the machine's sessions or its files, drawn by
+      the shell, which holds the rows and the switches. Absent, the
+      dashboard. */
+  body?: ReactNode;
   onBack: () => void;
   /** This machine's hooks, or `null` until the first answer is in. */
   hooks: HooksState | null;
@@ -112,7 +119,7 @@ export function MachineCard({
             <IconBack />
           </GlassCircle>
           {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
-          <span className="flex min-w-0 flex-1 flex-col">
+          <span data-head-name className="flex min-w-0 flex-1 flex-col">
             <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
             {row && <HeadModel row={row} />}
           </span>
@@ -139,10 +146,8 @@ export function MachineCard({
           <HeadModel row={row} />
         </PageSubtitle>
       )}
-      {row && sessions !== undefined ? (
-        <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
-          {sessions}
-        </div>
+      {row && body !== undefined ? (
+        body
       ) : row && (
         // **Keyed by the machine**, so every piece of state on this card
         // belongs to the machine it was made on: a sort somebody set on
@@ -569,43 +574,50 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
 export function MachineVerbs({
   row,
   onNewSession,
-  onBrowseFiles,
   onBorrowWeb,
   code,
   sessionsOn,
   onSessions,
+  filesOn,
+  onFiles,
 }: {
   row: DeviceRow;
   onNewSession: (row: DeviceRow) => void;
-  onBrowseFiles: (row: DeviceRow) => void;
   onBorrowWeb: (row: DeviceRow) => void;
-  /** **The fourth verb: this machine's VS Code, with no folder**
-      (2026-09-30, the owner: 「机器页也加一个 VS Code 图标，打开这台机器的
-      VS Code，不指定目录」). The open workspace's switch and this one are
-      one flow (`components/CodeWindow`): drawn only where this machine
-      has an editor and never on the web face, the first press on a
-      machine asks, a second press brings the window forward. Held by the
-      shell rather than here — this row of buttons is drawn in R0 on the
-      wide face and in the narrow head on the other, and a remount across
-      the breakpoint would drop the window's handle. */
+  /** **This machine's VS Code, with no folder** (2026-09-30, the owner:
+      「机器页也加一个 VS Code 图标，打开这台机器的 VS Code，不指定目录」).
+      The open workspace's switch and this one are one flow
+      (`components/CodeWindow`): drawn only where this machine has an
+      editor and never on the web face, the first press on a machine asks,
+      a second press brings the window forward. Held by the shell rather
+      than here — this row of buttons is drawn in R0 on the wide face and
+      in the narrow head on the other, and a remount across the breakpoint
+      would drop the window's handle. */
   code?: CodeWindow;
-  /** **会话 is a switch now** (the redesign, 2026-10-02): pressed, the
-      page's body is this machine's sessions; pressed again, its
-      dashboard. Opening a new session here moves to ＋, which the
-      capsule shows while the sessions are the body. */
+  /** **会话 and 文件 are switches of this page's body** (the redesign,
+      2026-10-02): pressed, the body is this machine's sessions, or its
+      files in place (`MachineFiles` — the owner: 「文件按钮点击后，不要跳转
+      到工作区」); pressed again, the dashboard. The shell keeps them
+      exclusive. Opening a new session here is ＋, which the capsule shows
+      while the sessions are the body. */
   sessionsOn: boolean;
   onSessions: () => void;
+  filesOn: boolean;
+  onFiles: () => void;
 }) {
   const here = useHereHosts();
   const narrow = useNarrow();
-  const verbs = [
+  type Verb = { key: string; word: string; Icon: (p: { className?: string }) => ReactNode; on?: boolean; run: () => void };
+  const verbs: Verb[] = [
+    { key: "sessions", word: gui.machine_sessions, Icon: IconSessions, on: sessionsOn, run: onSessions },
     ...(sessionsOn && row.hosts
-      ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, go: onNewSession }]
+      ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, run: () => onNewSession(row) }]
       : []),
-    { key: "browse-files", word: gui.browse_files, Icon: IconFiles, go: onBrowseFiles },
+    { key: "browse-files", word: gui.browse_files, Icon: IconFiles, on: filesOn, run: onFiles },
     // The canvas leaves 浏览 off the phone's capsule; it is a window's verb.
-    ...(here && !narrow ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb }] : []),
+    ...(here && !narrow ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, run: () => onBorrowWeb(row) }] : []),
   ];
+  const coded = !!code?.offered;
   const tip = (word: string, button: ReactNode) =>
     narrow ? (
       button
@@ -615,47 +627,149 @@ export function MachineVerbs({
         <TooltipContent side="bottom">{word}</TooltipContent>
       </Tooltip>
     );
+  const pair = (measure: boolean) => (
+    <>
+      <GlassCapsule size="head" data-machine-verbs={measure ? undefined : ""}>
+        {verbs.map(({ key, word, Icon, on, run }) =>
+          tip(
+            word,
+            <GlassItem
+              key={key}
+              aria-label={word}
+              aria-pressed={on === undefined ? undefined : on}
+              data-verb={measure ? undefined : key}
+              on={on}
+              onClick={run}
+            >
+              <Icon />
+            </GlassItem>,
+          ),
+        )}
+      </GlassCapsule>
+      {/* **VS Code is a button of its own** (the owner, 2026-10-02: 「作为一个
+          新的页面，不要和已有的 icon 合并为一个 icon 组」). The capsule's
+          verbs switch what this page shows; VS Code opens a page of its
+          own, so it is a glass circle beside them. Drawn only where there
+          is an editor to open; chosen while its window is up — still a
+          button, not a switch. */}
+      {coded && code && (
+        <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
+          <CodeButton
+            code={code}
+            mark={measure ? undefined : { "data-verb": "code" }}
+            className="size-head-item-h rounded-full data-[on=true]:glass-sel"
+          />
+        </div>
+      )}
+    </>
+  );
+
+  // **Narrow: when they do not fit, they fold into one 「…」** (the owner,
+  // 2026-10-02: 「窄窗口在放不下的情况下，就干脆这几个按钮收为一个 "..."」).
+  // Decided by measuring, not by counting or by a width: the unfolded
+  // pair is laid out unseen (`measure`), and the head folds when what the
+  // name would keep beside it is under its floor (`--head-name-floor`).
+  // The name and the buttons share the row's flexible room, so that sum
+  // does not move when the buttons fold — no flicker at the edge.
+  const box = useRef<HTMLDivElement>(null);
+  const probe = useRef<HTMLDivElement>(null);
+  const [folded, setFolded] = useState(false);
+  const verbsKey = `${verbs.map((v) => v.key).join(",")}|${coded}`;
+  useLayoutEffect(() => {
+    if (!narrow) {
+      setFolded(false);
+      return;
+    }
+    const el = box.current;
+    const row = el?.parentElement;
+    if (!el || !row) return;
+    const check = () => {
+      const name = row.querySelector<HTMLElement>("[data-head-name]");
+      const full = probe.current?.getBoundingClientRect().width ?? 0;
+      if (!name || full === 0) return;
+      const cs = getComputedStyle(row);
+      const gap = parseFloat(cs.columnGap) || 0;
+      const floor = parseFloat(cs.getPropertyValue("--head-name-floor")) || 0;
+      const room = name.getBoundingClientRect().width + el.getBoundingClientRect().width;
+      setFolded(room - gap - full < floor);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [narrow, verbsKey]);
+
+  const anyOn = sessionsOn || filesOn || !!code?.up;
   return (
-    <div data-machine-head-buttons className="flex flex-none items-center gap-in">
-    <GlassCapsule size="head" data-machine-verbs>
-      {tip(
-        gui.machine_sessions,
-        <GlassItem
-          key="sessions"
-          aria-label={gui.machine_sessions}
-          aria-pressed={sessionsOn}
-          data-verb="sessions"
-          on={sessionsOn}
-          onClick={onSessions}
-        >
-          <IconSessions />
-        </GlassItem>,
+    <div ref={box} data-machine-head-buttons data-folded={folded || undefined} className="relative flex flex-none items-center gap-in">
+      {narrow && (
+        <div ref={probe} aria-hidden inert className="pointer-events-none invisible absolute top-0 right-0 flex items-center gap-in">
+          {pair(true)}
+        </div>
       )}
-      {verbs.map(({ key, word, Icon, go }) =>
-        tip(
-          word,
-          <GlassItem key={key} aria-label={word} data-verb={key} onClick={() => go(row)}>
-            <Icon />
-          </GlassItem>,
-        ),
+      {!folded ? (
+        pair(false)
+      ) : (
+        <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-slot="button"
+                data-verbs-more
+                data-on={anyOn}
+                aria-label={gui.rail_more}
+                className={cn(
+                  "relative grid size-head-item-h place-items-center rounded-full text-foreground [&_svg]:size-head-glyph",
+                  "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                  "data-[on=true]:glass-sel data-[state=open]:glass-sel",
+                )}
+              >
+                <IconMore />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              sideOffset={8}
+              data-verbs-menu
+              onCloseAutoFocus={(e) => e.preventDefault()}
+              className="glass min-w-nav-menu rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]"
+            >
+              {verbs.map(({ key, word, Icon, on, run }) => (
+                <DropdownMenuItem
+                  key={key}
+                  data-verb={key}
+                  data-on={on || undefined}
+                  onSelect={run}
+                  className={cn(
+                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph",
+                    on && "glass-sel text-[var(--rail-on-ink)]",
+                  )}
+                >
+                  <Icon />
+                  {word}
+                </DropdownMenuItem>
+              ))}
+              {coded && code && (
+                <DropdownMenuItem
+                  data-verb="code"
+                  data-on={code.up || undefined}
+                  onSelect={code.want}
+                  className={cn(
+                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground",
+                    code.up && "glass-sel",
+                  )}
+                >
+                  <span className="flex size-nav-glyph flex-none items-center justify-center [&_svg]:size-4">
+                    <IconCode />
+                  </span>
+                  {gui.code_tab}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )}
-    </GlassCapsule>
-    {/* **VS Code is a button of its own** (the owner, 2026-10-02: 「作为一个
-        新的页面，不要和已有的 icon 合并为一个 icon 组」). The capsule's
-        verbs switch what this page shows; VS Code opens a page of its own,
-        so it is a glass circle beside them — the grammar of the list's
-        筛选 / ＋ and search, and of the landings and 更多. Drawn only where
-        there is an editor to open; chosen (the ground showing through)
-        while its window is up — still a button, not a switch. */}
-    {code?.offered && (
-      <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
-        <CodeButton
-          code={code}
-          mark={{ "data-verb": "code" }}
-          className="size-head-item-h rounded-full data-[on=true]:glass-sel"
-        />
-      </div>
-    )}
     </div>
   );
 }

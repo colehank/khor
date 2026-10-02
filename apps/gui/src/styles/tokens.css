@@ -2133,6 +2133,8 @@
   --spacing-strip-item-h: var(--strip-item-h);
   --spacing-strip-glyph: var(--strip-glyph);
   --spacing-page: var(--page-inset);
+  --spacing-files-inset: var(--files-inset);
+  --spacing-rows-inset: var(--rows-inset);
   --spacing-head-ctl: var(--head-ctl);
   --spacing-head-item-h: var(--head-item-h);
   --spacing-head-item-w: var(--head-item-w);
@@ -2517,6 +2519,16 @@
   --head-item-h: calc(var(--head-ctl) - 8px);
   --head-item-w: 38px;
   --head-glyph: 18px;
+  /* The least a detail head's name keeps beside its buttons; under it,
+     the narrow head folds its verbs into one 「…」 (`MachineVerbs`). */
+  --head-name-floor: 96px;
+  /* A listing whose rows pad their own 16 (the machine's files): set in
+     by the rest, so its words stand on the page's left line. */
+  --files-inset: calc(var(--page-inset) - var(--gap-base));
+  /* A list whose rows set their face 20 in (`SideList`: 8 + 12 wide, 20
+     narrow), laid on a page: set in by the rest, so the faces stand on
+     the page's left line (the machine's sessions). */
+  --rows-inset: calc(var(--page-inset) - var(--gap-group));
   --nav-h: 52px;
   /* 更多's own glass circle beside the capsule (the owner, 2026-10-02):
      as tall as the capsule, a pressable round 8 smaller inside it, 10
