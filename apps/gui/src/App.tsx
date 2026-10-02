@@ -111,6 +111,7 @@ import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region, RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
+import { useKeptScroll } from "@/hooks/use-kept-scroll";
 import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
@@ -1181,12 +1182,39 @@ export default function App() {
       badge: key === "sessions" ? blockedOrUnread : undefined,
     };
   };
+  // **Each seat keeps its place** (the audit fix plan F7.1; N11): the
+  // narrow bar's seats each remember the screen they were on and how far
+  // down it was, the wide landings how far down their list and board
+  // were (the chosen row is each landing's own state already). Pressing
+  // the seat that is showing goes back to its root, and at the root, to
+  // the top — iOS's tab bar.
+  const placeKey = narrow
+    ? `${morePage ? `more:${morePage}` : landing}:${switchingTabs ? "tabs" : screen}`
+    : (morePage ?? landing);
+  const forgetScroll = useKeptScroll(placeKey);
+  const seatScreen = useRef<Partial<Record<Landing, "list" | "detail">>>({});
+  useEffect(() => {
+    if (morePage === null && !switchingTabs) seatScreen.current[landing] = screen;
+  }, [landing, screen, morePage, switchingTabs]);
   const goLanding = (key: Landing) => {
+    // The seat that is showing, pressed again: its root, then its top.
+    if (narrow && morePage === null && key === landing) {
+      setSwitchingTabs(false);
+      if (screen === "detail") {
+        forgetScroll(`${key}:detail`);
+        setScreen("list");
+      } else {
+        forgetScroll(`${key}:list`);
+        document.querySelectorAll<HTMLElement>("[data-pane-body], [data-nav-clear]").forEach((e) => e.scrollTo({ top: 0, behavior: "smooth" }));
+      }
+      return;
+    }
     // A 「…」 page is open over this landing, so choosing a landing closes
     // it — the one press that always answers 「带我回去」.
     setMorePage(null);
     setLanding(key);
-    setScreen("list");
+    // Narrow: the screen this seat was left on; wide has one.
+    setScreen(narrow ? (seatScreen.current[key] ?? "list") : "list");
     setSwitchingTabs(false);
     // Choosing a landing brings a list put away back, at the width it had.
     listPane.expand();
