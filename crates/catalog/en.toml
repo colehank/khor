@@ -1488,7 +1488,6 @@ ws-now-how = "Use the + beside the search box to add one"
 # Said in the one delete window every sidebar shares (`confirm-delete`,
 # docs/SHELL.md 第四轮).
 ws-remove-confirm = "Takes it off this list; the directory itself is untouched"
-tab-remove-confirm = "This tab will close"
 ws-marked = "{0} files changed"
 dir-picker = "Pick a directory"
 dir-picker-take = "Use this directory"

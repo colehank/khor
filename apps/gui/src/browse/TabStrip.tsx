@@ -944,7 +944,7 @@ export function TabSwitcher({
                 strip's arrangement (`TabOpen`) — every sidebar's rows
                 answer a right-click, this one included (docs/SHELL.md
                 第二轮). */}
-            <TabOpen menu={[...(f.menu ?? []), { key: "close-tab", label: gui.close_tab, run: () => onClose(f.id) }]}>
+            <TabOpen menu={[...(f.menu ?? []), { key: "close-tab", label: gui.close, run: () => onClose(f.id) }]}>
             <button
               type="button"
               data-switch-open={f.id}

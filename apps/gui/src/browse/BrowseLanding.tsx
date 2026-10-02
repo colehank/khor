@@ -240,11 +240,12 @@ export function BrowseLanding({
    * last behind a line** (2026-09-28 audit 第 16 条, Apple HIG; until then
    * docs/SHELL.md 第二轮's 「头两项永远是置顶、删除」).
    *
-   * ⚠️ This paragraph used to say 删除 asks nothing first, on the × beside
-   * it never asking. 第四轮 (「删除这些, 都要弹出一个弹窗」) made every
-   * column's 删除 raise the one window, this one's included
-   * (`tab_remove_confirm`); the × still does not ask, like Chrome's. A
-   * pinned tab is refused by the node; that sentence is the note.
+   * ⚠️ 墓碑 (2026-10-02): the last item was 删除, asked first since 第四轮
+   * (`tab_remove_confirm`), beside a × that never asked. The × went to
+   * this menu (one act, one home) and the owner named the act 关闭 — a
+   * page is closed, nothing is deleted — so it asks nothing, like
+   * Chrome's. A pinned tab is refused by the node; that sentence is the
+   * note.
    *
    * No 「在系统浏览器中打开」: the ruling asked for it where a road
    * already exists, and none does — a page here leaves through the
@@ -290,11 +291,11 @@ export function BrowseLanding({
         : []),
       // 删除 last, behind a line (2026-09-28 audit 第 16 条, Apple HIG).
       {
+        // **关闭, not 删除** (the owner, 2026-10-02): a page is closed, like
+        // a tab in the session switcher — nothing is deleted, so nothing
+        // is asked first and the item is not drawn as destructive.
         key: "close",
-        label: gui.delete,
-        askLabel: gui.delete_ask,
-        destructive: true,
-        ask: gui.tab_remove_confirm,
+        label: gui.close,
         note: refused.get(k("close")),
         run: () => answered("close")(tabs.close(t.id)),
       },
