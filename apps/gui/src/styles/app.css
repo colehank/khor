@@ -1,3 +1,12 @@
+/* **The one font khor ships** (F7.6): Nerd Fonts' "Symbols Only" mono
+   face, v3.5.1, MIT (its licence and the icon sets' table beside it,
+   `assets/fonts/NerdFonts-*`), the terminal stack's last family. */
+@font-face {
+  font-family: "khor-symbols";
+  src: url("../assets/fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+  font-display: block;
+}
+
 /* Only what utilities cannot say: keyframes, the two-density icon rule,
  * and reduced-motion guards. Layout and looks live as utilities in the
  * components, on the theme in tokens.css. */

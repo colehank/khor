@@ -4,20 +4,28 @@
 // has no keys for them yet.
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
-import { IconBrowser, IconDevices, IconFiles, IconGrip, IconQuota, IconSessions } from "@/components/icons";
+import { IconBrowser, IconChevronDown, IconChevronUp, IconClose, IconDevices, IconFiles, IconGrip, IconQuota, IconSessions } from "@/components/icons";
 import { Slider } from "@/components/settings/Slider";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
+import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
 import { cn } from "@/lib/utils";
 import { MoreSection } from "@/views/more/MorePage";
 
 const ROW = "flex items-center gap-row px-row py-in";
 
-/** 界面字号 (follows the system, or a slider of iOS's seven sizes) and
-    终端字号 (a slider of whole points, previewed in the terminal's face). */
+/** 界面字号: follows the system, or a slider of iOS's seven sizes. */
 export function TypeSizeSection() {
   const t = useTypeSize();
   return (
@@ -44,6 +52,121 @@ export function TypeSizeSection() {
           />
         </div>
       )}
+    </MoreSection>
+  );
+}
+
+/**
+ * **终端** (F7.6): the terminal's font and its size, previewed in one
+ * line drawn in the choice. The font row is the settings picker — the
+ * name and the two chevrons — opening the one menu: 系统默认, the
+ * monospace faces this device has (each name drawn in itself), the
+ * fonts added here (a heading only once there is one, each with its
+ * 移除), and 添加字体文件…. Per device; terminals only.
+ */
+export function TerminalSection() {
+  const t = useTypeSize();
+  const f = useTermFont();
+  const [here] = useState(() => fontsHere());
+  const [refused, setRefused] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  const name = f.choice || gui.term_font_system;
+  const pick = (file: File | undefined) => {
+    if (!file) return;
+    setRefused(null);
+    void addFontFile(file).then((why) => {
+      if (why === "too-big") setRefused(gui.term_font_too_big(FONT_MAX_MB));
+      else if (why === "bad") setRefused(gui.term_font_bad(file.name));
+    });
+  };
+  const item = (family: string, label: string, after?: ReactNode) => (
+    <DropdownMenuItem
+      key={family || "system"}
+      data-term-font-option={family || "system"}
+      data-on={f.choice === family || undefined}
+      onSelect={() => setTermFont(family)}
+      className={cn(f.choice === family && "glass-sel")}
+    >
+      <span className="min-w-0 flex-1 truncate" style={{ fontFamily: stackOf(family) }}>
+        {label}
+      </span>
+      {after}
+    </DropdownMenuItem>
+  );
+  return (
+    <MoreSection name="terminal" label={gui.view_terminal}>
+      <div data-setting-row="popup" data-setting-row-name="term-font" className={ROW}>
+        <span className="min-w-0 flex-1 text-body">{gui.term_font}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-term-font
+              aria-label={`${gui.term_font}: ${name}`}
+              className="-mr-xxs flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in text-body hover:bg-fill"
+            >
+              <span className="min-w-0 truncate">{name}</span>
+              <span
+                data-setting-trail
+                className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"
+              >
+                <IconChevronUp centred className="-mb-[3px] size-2.5" />
+                <IconChevronDown centred className="size-2.5" />
+              </span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" data-term-font-menu className="max-h-[60vh] min-w-56 overflow-y-auto">
+            {item("", gui.term_font_system)}
+            {here.map((n) => item(n, n))}
+            {f.added.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>{gui.term_font_added}</DropdownMenuLabel>
+                {f.added.map((a) =>
+                  item(
+                    a.family,
+                    a.family,
+                    <button
+                      type="button"
+                      data-term-font-remove={a.family}
+                      aria-label={`${gui.remove} ${a.family}`}
+                      title={gui.remove}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void removeFont(a.family);
+                      }}
+                      className="grid size-6 flex-none place-items-center rounded-full text-muted-foreground hover:bg-fill-strong"
+                    >
+                      <IconClose className="size-3.5" />
+                    </button>,
+                  ),
+                )}
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem data-term-font-add onSelect={() => picker.current?.click()}>
+              {gui.term_font_add}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <input
+          ref={picker}
+          type="file"
+          hidden
+          accept=".ttf,.otf,.woff,.woff2"
+          onChange={(e) => {
+            pick(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+      </div>
+      {refused && (
+        <div data-term-font-refused className="px-row text-callout text-destructive">
+          {refused}
+        </div>
+      )}
       <div data-setting-row="value" data-setting-row-name="term-size" className={ROW}>
         <span className="min-w-0 flex-1 text-body">{gui.term_size}</span>
         <span className="text-body text-muted-foreground tabular-nums">{t.term}</span>
@@ -62,8 +185,11 @@ export function TypeSizeSection() {
       </div>
       <div
         data-term-size-sample
-        className="truncate font-term text-muted-foreground"
-        style={{ fontSize: "var(--text-term)", lineHeight: "var(--text-term--line-height)" }}
+        className="truncate px-row text-muted-foreground"
+        // The live variable, not the `font-term` utility: the theme
+        // inlines the token's value there, and the sample must wear the
+        // choice the root now carries (`lib/term-font`).
+        style={{ fontFamily: "var(--font-term)", fontSize: "var(--text-term)", lineHeight: "var(--text-term--line-height)" }}
       >
         {gui.term_size_sample}
       </div>

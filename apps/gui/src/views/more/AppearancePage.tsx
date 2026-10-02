@@ -12,7 +12,7 @@ import type { DeviceRow } from "@/api";
 import { MachineFace } from "@/components/SessionFace";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFrame } from "@/views/more/MorePage";
-import { NavOrderSection, TypeSizeSection } from "@/views/more/AppearanceRows";
+import { NavOrderSection, TerminalSection, TypeSizeSection } from "@/views/more/AppearanceRows";
 
 export function AppearancePage({
   onClose,
@@ -34,6 +34,7 @@ export function AppearancePage({
         previews={me ? { "kind-mark": <MachineFace face={me.face} system={me.vitals?.vitals.system ?? null} /> } : undefined}
       />
       <TypeSizeSection />
+      <TerminalSection />
       <NavOrderSection />
     </MoreFrame>
   );

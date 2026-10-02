@@ -10,6 +10,7 @@ import { mirroredLang, speakLang } from "./lang";
 import { followWindowKey } from "./lib/window-key";
 import { followVisualViewport } from "./lib/viewport";
 import { wearTypeSize } from "./lib/type-size";
+import { wearTermFont } from "./lib/term-font";
 import { followModality } from "./lib/modality";
 import { followScrollEdge } from "./lib/scroll-edge";
 
@@ -51,6 +52,7 @@ followVisualViewport();
 
 // 外观's two text sizes, before the first frame (`lib/type-size`).
 wearTypeSize();
+wearTermFont();
 
 // The focus ring is the keyboard's (`lib/modality`).
 followModality();

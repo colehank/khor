@@ -2472,7 +2472,11 @@
    * 14/20 rather than the 14/17.5 it was: the grid was drawn at
    * `leading-tight`, which packs rows closer than any terminal sets
    * them and is a large part of what "低分辨率" was describing. */
-  --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  /* **The symbols face is the last family before the generic one**
+   * (F7.6; `lib/term-font`): Nerd Fonts' "Symbols Only" mono face,
+   * bundled, so a prompt's powerline and Nerd glyphs draw on every face.
+   * A chosen font goes in front of this stack, at the root. */
+  --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, "khor-symbols", monospace;
   --text-term: 14px;
   --text-term--line-height: 20px;
   --text-term--font-weight: 400;

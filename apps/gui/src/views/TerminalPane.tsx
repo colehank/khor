@@ -73,6 +73,7 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
+import { onTermFont } from "@/lib/term-font";
 import { KeyboardSwitch, TermKeys, ctrlOf } from "@/views/TermKeys";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
@@ -568,9 +569,23 @@ export function TerminalPane({ id }: { id: string }) {
       term.options.fontSize = px;
       fit.fit();
     });
+    // **A new font is measured and fitted in place** (F7.6): open
+    // terminals take it without reopening.
+    const fonted = onTermFont((stack) => {
+      term.options.fontFamily = stack;
+      fit.fit();
+    });
+    // The symbols face may arrive after the first frame was drawn with a
+    // fallback for its glyphs: once the page's fonts are in, redraw.
+    void document.fonts?.ready.then(() => {
+      if (stopped) return;
+      (term as unknown as { clearTextureAtlas?: () => void }).clearTextureAtlas?.();
+      term.refresh(0, term.rows - 1);
+    });
 
     return () => {
       sized();
+      fonted();
       stopped = true;
       window.clearTimeout(timer);
       pollNow.current = () => {};

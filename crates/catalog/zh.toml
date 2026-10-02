@@ -2292,7 +2292,17 @@ type-size = "字号"
 ui-size-system = "界面字号跟随系统"
 ui-size = "界面字号"
 term-size = "终端字号"
-term-size-sample = "~ % khor ls"
+# The terminal group's one line in the chosen font (F7.6): a prompt with
+# the characters fonts confuse (Il1 O0) and two Nerd glyphs — a branch
+# and a folder — that the bundled symbols face draws when the font
+# cannot.
+term-size-sample = "\ue0a0 main  \uf07b ~/khor ❯ Il1 O0 {}"
+term-font = "字体"
+term-font-system = "系统默认"
+term-font-added = "添加的字体"
+term-font-add = "添加字体文件…"
+term-font-bad = "无法读取这个字体文件：{0}"
+term-font-too-big = "字体文件不能超过 {0} MB"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
 # Pull to refresh on a list.
