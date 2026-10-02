@@ -2120,8 +2120,10 @@ try {
   // 2026-10-02), for the same reason.
   // **`FACE_ONLY=scan` walks section 19 alone** (加入网络的扫码, iOS 第三步,
   // 2026-10-02), for the same reason.
+  // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
+  // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -2506,6 +2508,10 @@ try {
   // broken row. Every landing with a list is now every landing but
   // 浏览 (`App.tsx` `hasList`), so **every stop goes through here.**
   const open = async (tab) => {
+    // **A narrow session page has no landings' bar** (2026-10-02,
+    // `components/SessionBar`): its 「‹」 is the way back to the list,
+    // where the bar is — so a walk standing in a session steps out first.
+    if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await press("[data-session-bar] [data-back]");
     const on = await page.locator(rail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
     return press(rail(tab));
@@ -13921,8 +13927,27 @@ try {
           close: [...document.querySelectorAll("[data-more-close]")].filter(vis).length,
         };
       });
+    // **A session is not one of these screens any more** (2026-10-02, the
+    // owner:「上方完全交给内容，下方是操作与标签页」): it has no first row at
+    // all, and its one 「‹」 is in the bar at its foot (`components/
+    // SessionBar`; `check-face` §20 measures that page). Read here once,
+    // so the screen that left this list is still held to 「one way back」.
+    if ((await open("sessions")) && (await press("[data-list] [data-row-open]"))) {
+      await wait(500);
+      const s = await page.evaluate(() => ({
+        firstRow: document.querySelectorAll("[data-side-head]").length,
+        heads: document.querySelectorAll("[data-detail-header]").length,
+        backs: document.querySelectorAll("[data-session-bar] [data-back]").length,
+      }));
+      console.log(`4J (b) · narrow · a session: ${JSON.stringify(s)}`);
+      if (s.firstRow !== 0 || s.heads !== 0 || s.backs !== 1) {
+        fail(`4J (b) · narrow · a session: ${s.firstRow} first row(s), ${s.heads} head(s), ${s.backs} 「‹」 in its bar — want 0, 0, 1`);
+      }
+      await press("[data-session-bar] [data-back]");
+    } else {
+      fail("probe dead: 4J (b) could not open a session on the narrow face");
+    }
     const DETAIL_STOPS = [
-      ["a session", async () => (await open("sessions")) && press("[data-list] [data-row-open]")],
       ["a machine", async () => (await open("devices")) && pressNth("[data-list] [data-row-open]", 1)],
       ["a workspace", async () => (await open("workspaces")) && openWs()],
       [
@@ -16998,50 +17023,65 @@ try {
     await wait(300);
   }
 
-  // ── 8b) narrow: the open sessions are a count and a switcher ──────
-  // The wide strip's other half (`TabStrip`'s head): a phone shows one
-  // screen, so the strip cannot be there, and the count is the way to
-  // every other tab. Mechanics only — tabs are pure front-end (state
-  // and localStorage) — so the mock is not asked anything it can lie
-  // about.
+  // ── 8b) narrow: the open sessions scroll, and the count opens the switcher ──
+  // **Since 2026-10-02 the narrow session page has the strip** — at its
+  // foot, in the session bar (`components/SessionBar`, the owner:「上方完
+  // 全交给内容，下方是操作与标签页」, and tabs that do not fit 「scroll
+  // horizontally, same behaviour as the desktop tab strip」). So the count
+  // is the wide strip's rule here too: drawn once the strip has stopped
+  // showing every tab, and the way to the switcher. ⚠️ 墓碑: until then
+  // the narrow face had no strip, a count was always in the session's
+  // head (`[data-detail-header] [data-tab-count]`), and this opened two
+  // tabs and read 2. Mechanics only — tabs are pure front-end (state and
+  // localStorage) — so the mock is not asked anything it can lie about.
   await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
   await open("sessions");
   await press("[data-list] [data-row-open]");
-  if ((await page.locator("[data-back]").count()) === 0) {
-    fail("probe dead: the narrow session detail never drew, so the tab count was never on a screen");
+  if ((await page.locator("[data-session-bar] [data-back]").count()) === 0) {
+    fail("probe dead: the narrow session page never drew its bar, so the tab count was never on a screen");
   } else {
-    await press("[data-back]");
-    await pressNth("[data-list] [data-row-open]", 1);
-    const narrowCount = page.locator("[data-detail-header] [data-tab-count]");
+    const narrowCount = page.locator("[data-session-bar] [data-tab-count]");
+    const rowsListed = async () => {
+      await press("[data-session-bar] [data-back]");
+      return page.locator("[data-list] [data-row-open]").count();
+    };
+    // Open rows until the strip scrolls: the count is that condition's.
+    let opened = 1;
+    for (let n = 1; (await narrowCount.count()) === 0; n += 1) {
+      if (n >= (await rowsListed())) break;
+      await pressNth("[data-list] [data-row-open]", n);
+      opened += 1;
+    }
     if ((await narrowCount.count()) !== 1) {
-      fail("no tab count on the narrow session detail — the only way to the other open tab is missing");
+      fail(`no tab count in the narrow session bar with ${opened} tabs open — a strip that scrolls has lost its way to the switcher`);
     } else {
       const said = Number((await narrowCount.innerText()).trim());
-      if (said !== 2) fail(`two rows were opened and the count says ${said}`);
+      if (said !== opened) fail(`${opened} rows were opened and the count says ${said}`);
       await narrowCount.click();
       await wait(400);
       const listed = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
-      if (listed !== 2) fail(`the switcher lists ${listed} of 2 open tabs`);
+      if (listed !== opened) fail(`the switcher lists ${listed} of ${opened} open tabs`);
       // **The way back is the one every narrow screen has** (2026-09-28):
       // 「‹」 in the window's first row, and it puts the switcher away
       // onto the tab that was in front. It had none — picking a tab or
       // pressing the rail were the only ways off this screen.
       const backs = await page.locator("[data-side-head] [data-back]").count();
+      const onFront = () => page.locator('[data-session-bar] [data-tab][data-on="true"] [data-halo]').count();
       if (backs !== 1) {
         fail(`the narrow tab switcher's first row carries ${backs} 「‹」 — a screen on a phone needs its way back (src/browse/TabStrip.tsx)`);
       } else {
         await press("[data-side-head] [data-back]");
-        if ((await page.locator("[data-tab-switcher]").count()) !== 0 || (await page.locator("[data-detail-header] [data-halo]").count()) !== 1) {
+        if ((await page.locator("[data-tab-switcher]").count()) !== 0 || (await onFront()) !== 1) {
           fail("「‹」 on the narrow tab switcher did not land back on the session that was in front");
         }
         await narrowCount.click();
         await wait(400);
       }
       // Switching really switches: pick the tab that is not in front
-      // and a session detail comes back.
+      // and a session page comes back.
       const other = await page
         .locator('[data-tab-switcher] [data-switch-tab][data-on="false"] [data-switch-open]')
         .first()
@@ -17050,16 +17090,16 @@ try {
       if ((await page.locator("[data-tab-switcher]").count()) !== 0) {
         fail("picking a tab did not put the switcher away");
       }
-      if ((await page.locator("[data-detail-header] [data-halo]").count()) !== 1) {
-        fail("the switcher's pick did not land on a session detail");
+      if ((await onFront()) !== 1 || (await page.locator(`[data-session-bar] [data-tab="${other}"][data-on="true"]`).count()) !== 1) {
+        fail("the switcher's pick did not land on that session's page");
       }
       // Closing from inside: the switcher stays up (it is the screen
-      // you are on — `TabStrip`'s own judgment) and the survivor stays.
+      // you are on — `TabStrip`'s own judgment) and the survivors stay.
       await narrowCount.click();
       await wait(400);
       await press(`[data-switch-close="${other}"]`);
       const left = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
-      if (left !== 1) fail(`closing one of two tabs left ${left} rows in the switcher`);
+      if (left !== opened - 1) fail(`closing one of ${opened} tabs left ${left} rows in the switcher`);
     }
   }
 
@@ -22294,6 +22334,9 @@ try {
     await wait(400);
     // The list screen: the walk above left a session open, and narrow
     // shows one screen at a time — the rail's glyph brings the list back.
+    // **Since 2026-10-02 a session page has no rail**: its bar's 「‹」 is
+    // the way to the list (`components/SessionBar`).
+    if (await page.locator("[data-session-bar] [data-back]").count()) await press("[data-session-bar] [data-back]");
     await press(rail("sessions"));
     await wait(300);
     const phone = await page.evaluate(() => {
@@ -22519,10 +22562,17 @@ try {
       }
     }
 
-    // ── (e) narrow: the header stays, and only what the strip would
-    //        have carried is in it ──
+    // ── (e) narrow: only what the strip carries, and since 2026-10-02
+    //        the strip itself — in the session bar at the foot
+    //        (`components/SessionBar`). The open tab is the session's face
+    //        and name, the bar's 「‹」 the way out; no facts, no head. ⚠️
+    //        墓碑: the narrow face had no strip until then and kept a head
+    //        of back + face + name (`[data-detail-header]`). ──
     await page.setViewportSize({ width: 390, height: 844 });
     await wait(400);
+    // Shrinking mid-session keeps the session up, and a session page has
+    // no landings' bar: out through its 「‹」 first.
+    if (await page.locator("[data-session-bar] [data-back]").count()) await press("[data-session-bar] [data-back]");
     await press(rail("sessions"));
     await wait(300);
     if (!(await press("[data-list] [data-row-open]"))) {
@@ -22530,23 +22580,26 @@ try {
     } else {
       await wait(400);
       const phone = await page.evaluate(() => {
-        const h = document.querySelector("[data-detail-header]");
-        if (!h) return null;
+        const bar = document.querySelector("[data-session-bar]");
+        if (!bar) return null;
+        const tab = bar.querySelector('[data-tab][data-on="true"]');
         return {
-          back: !!h.querySelector("[data-back]"),
-          face: !!h.querySelector("[data-halo]"),
-          name: !!h.querySelector("[data-editable-name], [data-title-input]"),
-          facts: h.querySelectorAll("[data-detail-facts]").length,
+          back: !!bar.querySelector("[data-back]"),
+          face: !!tab?.querySelector("[data-halo]"),
+          name: !!tab?.querySelector("[data-editable-name], [data-title-input], [data-tab-name]"),
+          facts: document.querySelectorAll("[data-detail-facts]").length,
+          heads: document.querySelectorAll("[data-detail-header]").length,
         };
       });
-      console.log(`第十四轮 · narrow detail head: ${JSON.stringify(phone)}`);
+      console.log(`第十四轮 · narrow session bar: ${JSON.stringify(phone)}`);
       if (!phone) {
-        fail("the narrow detail lost its header — 「窄档头只留返回键 + 脸 + 名字」, and back is the only way out of that screen");
-      } else if (!phone.back || !phone.face || !phone.name || phone.facts !== 0) {
+        fail("the narrow session page has no bar — back is the only way out of that screen, and the tab is its face and name");
+      } else if (!phone.back || !phone.face || !phone.name || phone.facts !== 0 || phone.heads !== 0) {
         fail(
-          `the narrow detail's header reads ${JSON.stringify(phone)} — back, the face and the name, and no 「工作区 · 类型」`,
+          `the narrow session bar reads ${JSON.stringify(phone)} — back, the open tab's face and name, no 「工作区 · 类型」, no head`,
         );
       }
+      await press("[data-session-bar] [data-back]");
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
@@ -23506,14 +23559,17 @@ try {
     await open("sessions");
     await until(5_000, async () => (await page.locator("[data-list] [data-row-open]").count()) > 0);
     await press("[data-list] [data-row-open]");
-    await until(3_000, async () => (await page.locator("[data-detail-header] [data-side-face]").count()) > 0);
-    const head = await fits("[data-detail-header]", null);
-    console.log(`lists (6) · narrow header ink vs header: ${JSON.stringify(head)}`);
-    if (head.length === 0) fail("probe dead: the narrow detail header drew no face — (6)'s narrow half measured nothing");
+    // Since 2026-10-02 the narrow face's session is the strip's tab in
+    // the bar at its foot (`components/SessionBar`) — the head this read
+    // (`[data-detail-header]`) is gone, and the face it held is the tab's.
+    await until(3_000, async () => (await page.locator("[data-session-bar] [data-tab] [data-side-face]").count()) > 0);
+    const head = await fits("[data-session-bar] [data-tab]", null);
+    console.log(`lists (6) · narrow bar tab ink vs tab: ${JSON.stringify(head)}`);
+    if (head.length === 0) fail("probe dead: the narrow session bar drew no tab with a face — (6)'s narrow half measured nothing");
     for (const m of head.filter((m) => !inside(m))) {
       fail(
-        `the narrow header's face reaches ${JSON.stringify(m.ink)} out of the header ${JSON.stringify(m.box)} — ` +
-          "it is the strip's face, sized for a tab (src/views/DetailPane.tsx)",
+        `the narrow bar tab's face reaches ${JSON.stringify(m.ink)} out of the tab ${JSON.stringify(m.box)} — ` +
+          "it is the strip's face, sized for a tab (src/browse/TabStrip.tsx)",
       );
     }
     await page.setViewportSize({ width: 1400, height: 900 });
@@ -23535,6 +23591,10 @@ try {
     return true;
   };
   const open = async (tab) => {
+    // **A narrow session page has no landings' bar** (2026-10-02,
+    // `components/SessionBar`): its 「‹」 is the way back to the list,
+    // where the bar is — so a walk standing in a session steps out first.
+    if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await press("[data-session-bar] [data-back]");
     const on = await page.locator(tailRail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await press(tailRail(tab === "sessions" ? "devices" : "sessions"));
     return press(tailRail(tab));
@@ -23570,7 +23630,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
   const chipKeys = () =>
@@ -23954,7 +24014,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -23992,6 +24052,8 @@ try {
         out: the walk may have left it put away, which the page remembers
         across a reload (section 11's `land` says the same). */
     const land = async (k) => {
+      // Out of a narrow session page first: it has no landings' bar.
+      if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await hit("[data-session-bar] [data-back]");
       await hit(railAt(k === "devices" ? "quota" : "devices"));
       const ok = await hit(railAt(k));
       const narrow = await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"));
@@ -24197,10 +24259,15 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     await wait(400);
     for (const [name, go] of [
-      ["a session's screen", async () => {
+      // ⚠️ 墓碑 (2026-10-02): 「a session's screen」 stood here — its head
+      // (‹, face, name) sat in this row. A session on the narrow face has
+      // no first row now: the content runs to the top and its row is the
+      // bar at the foot (`components/SessionBar`), held by §20. The list
+      // screen it goes back to is what keeps this row.
+      ["the sessions list", async () => {
         await land("sessions");
-        await hit("[data-list] [data-row-open]");
-        return until(5_000, async () => (await page.locator("[data-side-head] [data-back]").count()) > 0);
+        if (await page.locator("[data-session-bar] [data-back]").count()) await hit("[data-session-bar] [data-back]");
+        return until(5_000, async () => (await page.locator("[data-side-head] [data-pane-search], [data-side-head] input").count()) > 0);
       }],
       ["a workspace's screen", async () => {
         await land("workspaces");
@@ -24236,6 +24303,9 @@ try {
           fail("probe dead: row · a finger's session strip never drew two tabs");
           continue;
         }
+        // A phone's session page has no first row (§20 holds its bar):
+        // the row a finger meets on the narrow face is the list's.
+        if (w !== 1400 && (await page.locator("[data-session-bar] [data-back]").count())) await hit("[data-session-bar] [data-back]");
         judge(`a finger @${w}`, await readRow(), { want: fingerRow, lip: fingerLip, mustR0: w === 1400, mustTabs: w === 1400 });
       }
     } finally {
@@ -24285,7 +24355,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -24557,7 +24627,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -24620,6 +24690,8 @@ try {
         list out: an earlier section may have left it put away, which the
         page remembers across a reload. */
     const land = async (k) => {
+      // Out of a narrow session page first: it has no landings' bar.
+      if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await click("[data-session-bar] [data-back]");
       if ((await landingNow()) !== k) await click(railAt(k));
       const away = await page.evaluate(() => (document.querySelector("[data-list]")?.getBoundingClientRect().width ?? 0) < 8);
       if (away) await click(railAt(k));
@@ -25265,7 +25337,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -26095,7 +26167,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -27387,6 +27459,501 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "scan") console.log("scan · FACE_ONLY=scan: the other sections are skipped");
+
+  // ── 20) 窄档的会话页：内容在上，标签与操作在下 (iOS 第三步 A, 2026-10-02) ──
+  //
+  // The owner, showing another phone's terminal: 「我可能希望手机版的
+  // session 布局大概是这样。上方完全交给内容，下方是操作与标签页」; inside a
+  // session the landings' bar is not shown and a back control returns to
+  // the list; tabs that do not fit scroll sideways; a conversation has
+  // the same layout with its input box where a terminal has its keys.
+  // Width decides the layout, the pointer decides the touch things —
+  // never one for the other (`components/SessionBar`).
+  //
+  // Measurable values and the bytes only (30-behavior: placement is the
+  // real-app checklist's). At 390 × 844:
+  //
+  //   a. **a mouse** (a Mac window dragged narrow): inside a terminal
+  //      session there is no window first row (`[data-side-l0]`), no page
+  //      head, no landings' bar; the session bar sits on the window's
+  //      foot, the content wholly above it; its tab row is `--pane-head`;
+  //      the tabs are in it; there are no keys and no keyboard switch;
+  //   b. eight sessions open: the tabs stay on one line and the strip
+  //      scrolls (its content wider than it, every tab on one top, the
+  //      row still `--pane-head`), and the count is there;
+  //   c. the bar's 「‹」 goes back to the list, which has the window's
+  //      first row and the landings' bar again;
+  //   d. a machine conversation (留言) and an agent conversation: the
+  //      input box is in the bar, under the tab row; no keys;
+  //   e. **a finger**: the tab row is `--pane-head` (48 under a finger),
+  //      under it the keys, `--key-row` tall; the keyboard switch is in
+  //      the tab row; a conversation has its box there and no keys;
+  //   f. every key sends what a terminal sends — Esc 0x1b, Tab, Shift-Tab
+  //      `ESC [ Z`, the four arrows `ESC [ A–D` (and `ESC O A–D` once the
+  //      program sets application cursor keys, `ESC [ 1 ; 5 A` with Ctrl
+  //      latched), `/ - | :`; Ctrl latched then a `c` from the keyboard is
+  //      0x03 and the latch lets go; paste types the clipboard, bracketed
+  //      once the program asked (DECSET 2004);
+  //   g. a finger's vertical drag over a program that took the mouse
+  //      (tmux's mouse on, the alternate screen) sends wheel reports —
+  //      up the screen is a wheel down (SGR 65), down is up (64);
+  //   h. the keyboard switch focuses the terminal's text box and lets it
+  //      go, and says which it will do;
+  //   i. **wide, a finger** (an iPad): no session bar; the keys stand
+  //      under the terminal; no keyboard switch;
+  //   j. **wide, a mouse** (the desktop): unchanged — no bar, no keys, the
+  //      window's first row there;
+  //   k. **the soft keyboard**, with a stand-in visual viewport (Chrome has
+  //      no soft keyboard): 300 of keyboard stamps the root, the shell is
+  //      what is left and the bar ends on the keyboard, the content above
+  //      it, the terminal has fewer rows and told the pty so, the home
+  //      indicator's room goes, the page does not scroll; the keyboard
+  //      going puts all of it back. Only a real keyboard on a phone shows
+  //      that WebKit reports it this way — the real-app checklist's.
+  //
+  // `FACE_ONLY=bar` runs this section alone.
+  bar: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "bar") break bar;
+  {
+    const base = {
+      kind: "tui",
+      word: "idle",
+      at_ms: Date.now(),
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    };
+    const terms = Array.from({ length: 8 }, (_, n) => ({ ...base, id: `tui/bar-term-${n}`, title: `bar-term-${n}` }));
+    const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+    const guiRow = { ...base, id: "tui/bar-gui", kind: "gui", title: "bar-gui", category: "claude", attachable: false };
+    const barRows = [...terms, chatRow, guiRow];
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    /** What reached `term_key`, in order. */
+    const sentKeys = [];
+    /** Bytes the next `term_stream` hands the terminal — how a program's
+        modes (DECCKM, 2004, the mouse) are set on it. */
+    let feed = "";
+    let seq = 0;
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json(barRows));
+    await page.route("**/term_open", json(null));
+    await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+    await page.route("**/term_stream", (r) => {
+      const bytes = feed ? Buffer.from(feed, "binary").toString("base64") : "";
+      if (feed) seq += 1;
+      feed = "";
+      return r.fulfill({ contentType: "application/json", body: JSON.stringify({ bytes, seq, gone: false, reset: false }) });
+    });
+    /** Every size the terminal told the far pty, in order (k). */
+    const resized = [];
+    await page.route("**/term_resize", (r) => {
+      const b = JSON.parse(r.request().postData() || "{}");
+      resized.push([b.cols, b.rows]);
+      return r.fulfill({ contentType: "application/json", body: "null" });
+    });
+    await page.route("**/term_leave", json(null));
+    await page.route("**/term_key", (r) => {
+      sentKeys.push(JSON.parse(r.request().postData() || "{}").keys);
+      return r.fulfill({ contentType: "application/json", body: "null" });
+    });
+    await page.route("**/machine_log", json({ messages: [], broken: 0 }));
+
+    const count = (sel) => page.locator(sel).count();
+    const tokenPx = (name) =>
+      page.evaluate((n) => {
+        const probe = document.createElement("div");
+        probe.style.height = `var(${n})`;
+        document.body.appendChild(probe);
+        const h = probe.getBoundingClientRect().height;
+        probe.remove();
+        return h;
+      }, name);
+    const rect = (sel) =>
+      page.evaluate((s) => {
+        const el = document.querySelector(s);
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height, width: b.width };
+      }, sel);
+    const fresh = async (width, height) => {
+      await page.evaluate(() => window.localStorage.clear());
+      await page.setViewportSize({ width, height });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    };
+    /** Open a session from the list: the list screen first (the bar's
+        「‹」 where a session is up), then its row. */
+    const openRow = async (id) => {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await open("sessions");
+      const row = `[data-list] [data-row="${id}"] [data-row-open]`;
+      if (!(await until(3_000, async () => (await count(row)) > 0))) return false;
+      await page.locator(row).click();
+      return until(5_000, async () => (await count("[data-session-screen], [data-detail-pane]")) > 0);
+    };
+    const xtermUp = () =>
+      until(5_000, async () => page.evaluate(() => !!document.querySelector("[data-terminal]")?.__xterm?.textarea));
+    /** Bytes sent by `act`, after the terminal has had them. */
+    const sends = async (act) => {
+      sentKeys.length = 0;
+      await act();
+      await wait(350);
+      return sentKeys.join("");
+    };
+    /** Feed the program's bytes and wait for xterm to have parsed them. */
+    const program = async (bytes) => {
+      feed = bytes;
+      await until(2_000, async () => feed === "");
+      await wait(300);
+    };
+    const shown = (s) => JSON.stringify(s);
+
+    // ── a. a mouse, 390 wide ──
+    await fresh(390, 844);
+    if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+      fail("probe dead: bar a · a terminal session never opened on the narrow face");
+      break bar;
+    }
+    const paneHead = await tokenPx("--pane-head");
+    {
+      const firstRow = await count("[data-side-l0]");
+      const head = await count("[data-detail-header]");
+      const nav = await count("[data-rail]");
+      if (firstRow || head || nav) {
+        fail(
+          `bar a · inside a session the narrow face still draws ${firstRow} window first row(s), ${head} page head(s) and ${nav} landings' bar(s) — ` +
+            "the content takes everything above the bar (「上方完全交给内容」, 2026-10-02)",
+        );
+      }
+      const bar = await rect("[data-session-bar]");
+      const content = await rect("[data-session-content]");
+      const tabRow = await rect("[data-session-bar-tabs]");
+      const vh = await page.evaluate(() => window.innerHeight);
+      if (!bar || !content || !tabRow) {
+        fail(`probe dead: bar a · no session bar (${!!bar}), content (${!!content}) or tab row (${!!tabRow}) on the narrow session page`);
+      } else {
+        console.log(`bar a · mouse 390: content 0..${content.bottom.toFixed(1)}, bar ${bar.top.toFixed(1)}..${bar.bottom.toFixed(1)} of ${vh}, tab row ${tabRow.height}`);
+        if (Math.abs(bar.bottom - vh) > 1) fail(`bar a · the session bar ends at ${bar.bottom}, not the window's foot ${vh}`);
+        if (content.bottom > bar.top + 1) fail(`bar a · the content runs to ${content.bottom}, under the bar that starts at ${bar.top}`);
+        if (Math.abs(tabRow.height - paneHead) > 0.5) fail(`bar a · the bar's tab row is ${tabRow.height} tall, --pane-head is ${paneHead}`);
+      }
+      if ((await count(`[data-session-bar-tabs] [data-tab="${terms[0].id}"]`)) !== 1) fail("bar a · the open session's tab is not in the bar");
+      if ((await count("[data-session-bar] [data-back]")) !== 1) fail("bar a · the bar has no 「‹」");
+      const keys = await count("[data-term-keys]");
+      const sw = await count("[data-keyboard-switch]");
+      if (keys || sw) fail(`bar a · a mouse got ${keys} key row(s) and ${sw} keyboard switch(es) — the pointer decides the touch things, not the width`);
+    }
+
+    // ── b. eight open: one line, the strip scrolls ──
+    for (const t of terms.slice(1)) {
+      if (!(await openRow(t.id))) fail(`probe dead: bar b · ${t.id} never opened`);
+    }
+    await xtermUp();
+    {
+      const strip = await page.evaluate(() => {
+        const s = document.querySelector("[data-session-bar-tabs] [data-tab-strip]");
+        if (!s) return null;
+        const tops = [...s.querySelectorAll("[data-tab]")].map((t) => Math.round(t.getBoundingClientRect().top));
+        return { scroll: s.scrollWidth, client: s.clientWidth, tops, height: s.getBoundingClientRect().height };
+      });
+      const row = await rect("[data-session-bar-tabs]");
+      if (!strip || strip.tops.length !== terms.length) {
+        fail(`probe dead: bar b · the bar's strip holds ${strip?.tops.length ?? "no"} tabs, ${terms.length} are open`);
+      } else {
+        console.log(`bar b · ${strip.tops.length} tabs: strip ${strip.client} wide holding ${strip.scroll}, tops ${[...new Set(strip.tops)].join(",")}, row ${row?.height}`);
+        if (strip.scroll <= strip.client + 1) fail(`bar b · ${terms.length} tabs fit a 390 strip (${strip.scroll} in ${strip.client}) — the fixture no longer makes it scroll`);
+        if (new Set(strip.tops).size !== 1) fail(`bar b · the tabs stand on ${new Set(strip.tops).size} lines (${strip.tops.join(",")}) — they scroll, they do not wrap`);
+        if (row && Math.abs(row.height - paneHead) > 0.5) fail(`bar b · with ${terms.length} tabs the bar's tab row is ${row.height}, not --pane-head ${paneHead}`);
+      }
+      if ((await count("[data-session-bar-tabs] [data-tab-count]")) !== 1) fail("bar b · a strip that scrolls has no count in the bar (the wide strip's rule, `TabStrip`)");
+    }
+
+    // ── c. back to the list ──
+    await press("[data-session-bar] [data-back]");
+    {
+      const nav = await count("[data-rail]");
+      const firstRow = await count("[data-side-l0]");
+      const screen = await count("[data-session-screen]");
+      if (nav !== 1 || firstRow !== 1 || screen !== 0) {
+        fail(`bar c · 「‹」 left ${screen} session screen(s), and the list has ${nav} landings' bar(s) and ${firstRow} first row(s) — want 0, 1, 1`);
+      }
+    }
+
+    // ── d. a conversation keeps its box in the bar ──
+    for (const [what, id, box] of [
+      ["a machine conversation", chatRow.id, "[data-chat-composer]"],
+      ["an agent conversation", guiRow.id, "[data-chat-input]"],
+    ]) {
+      if (!(await openRow(id)) || !(await until(5_000, async () => (await count(box)) > 0))) {
+        fail(`probe dead: bar d · ${what} never drew its box`);
+        continue;
+      }
+      const inBar = await count(`[data-session-bar-under] ${box}`);
+      const tabRow = await rect("[data-session-bar-tabs]");
+      const boxAt = await rect(box);
+      if (inBar !== 1) fail(`bar d · ${what}'s box is not in the session bar (${inBar}) — 「where a terminal has its keys, a chat has its input box」`);
+      else if (tabRow && boxAt && boxAt.top < tabRow.bottom - 1) fail(`bar d · ${what}'s box starts at ${boxAt.top}, above the tab row's foot ${tabRow.bottom}`);
+      if (await count("[data-term-keys]")) fail(`bar d · ${what} drew the terminal's keys`);
+      console.log(`bar d · mouse: ${what}'s box at ${boxAt?.top.toFixed(1)}, tab row ${tabRow?.top.toFixed(1)}..${tabRow?.bottom.toFixed(1)}`);
+    }
+
+    // ── e–h. a finger ──
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+    try {
+      await fresh(390, 844);
+      if (!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches))) {
+        fail("probe void: bar e · the finger did not take — the touch half measured a mouse");
+        break bar;
+      }
+      if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+        fail("probe dead: bar e · a terminal session never opened under a finger");
+        break bar;
+      }
+      await until(3_000, async () => (await count("[data-session-bar] [data-term-keys]")) > 0);
+      const fingerHead = await tokenPx("--pane-head");
+      const keyRow = await tokenPx("--key-row");
+      {
+        const tabRow = await rect("[data-session-bar-tabs]");
+        const keys = await rect("[data-session-bar-under] [data-term-keys]");
+        const bar = await rect("[data-session-bar]");
+        const vh = await page.evaluate(() => window.innerHeight);
+        if (!tabRow || !keys || !bar) {
+          fail(`bar e · under a finger the bar has tab row ${!!tabRow}, keys ${!!keys} — the keys belong under the tabs`);
+        } else {
+          console.log(`bar e · finger 390: tab row ${tabRow.top.toFixed(1)}..${tabRow.bottom.toFixed(1)} (${tabRow.height}), keys ${keys.top.toFixed(1)}..${keys.bottom.toFixed(1)} (${keys.height}), bar foot ${bar.bottom} of ${vh}`);
+          if (Math.abs(tabRow.height - fingerHead) > 0.5) fail(`bar e · the tab row is ${tabRow.height} under a finger, --pane-head is ${fingerHead}`);
+          if (Math.abs(keys.height - keyRow) > 0.5) fail(`bar e · the key row is ${keys.height}, --key-row is ${keyRow}`);
+          if (keys.top < tabRow.bottom - 1) fail(`bar e · the keys start at ${keys.top}, above the tab row's foot ${tabRow.bottom}`);
+          if (Math.abs(bar.bottom - vh) > 1) fail(`bar e · the bar ends at ${bar.bottom}, not the window's foot ${vh}`);
+        }
+        if ((await count("[data-session-bar-tabs] [data-keyboard-switch]")) !== 1) fail("bar e · under a finger the tab row has no keyboard switch");
+      }
+
+      // ── f. the keys' bytes ──
+      // A key that is not there is a red, not a 30-second timeout that
+      // takes the rest of the section with it.
+      const key = async (name) => {
+        const k = page.locator(`[data-session-bar] [data-term-key="${name}"]`);
+        if ((await k.count()) === 0) return fail(`bar f · there is no ${name} key in the session bar`);
+        await k.click();
+      };
+      if ((await count("[data-session-bar] [data-term-key]")) === 0) fail("probe dead: bar f · no keys to press — every byte below is unmeasured");
+      else {
+      for (const [name, want] of [
+        ["esc", "\x1b"],
+        ["tab", "\t"],
+        ["backtab", "\x1b[Z"],
+        ["left", "\x1b[D"],
+        ["up", "\x1b[A"],
+        ["down", "\x1b[B"],
+        ["right", "\x1b[C"],
+        ["/", "/"],
+        ["-", "-"],
+        ["|", "|"],
+        [":", ":"],
+      ]) {
+        const got = await sends(() => key(name));
+        if (got !== want) fail(`bar f · the ${name} key sent ${shown(got)}, a terminal sends ${shown(want)}`);
+      }
+      // Ctrl latched, then a key from the soft keyboard.
+      await key("ctrl");
+      const latched = await page.locator('[data-term-key="ctrl"]').first().getAttribute("aria-pressed");
+      const ctrlC = await sends(async () => {
+        await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.textarea.focus());
+        await page.keyboard.press("c");
+      });
+      const after = await page.locator('[data-term-key="ctrl"]').first().getAttribute("aria-pressed");
+      if (latched !== "true" || ctrlC !== "\x03" || after !== "false") {
+        fail(`bar f · Ctrl then c sent ${shown(ctrlC)} (want "\\u0003"), the latch said ${latched} → ${after} (want true → false)`);
+      }
+      await key("ctrl");
+      const ctrlUp = await sends(() => key("up"));
+      if (ctrlUp !== "\x1b[1;5A") fail(`bar f · Ctrl then ↑ sent ${shown(ctrlUp)}, want "\\u001b[1;5A"`);
+      // Application cursor keys (DECCKM), as an editor sets them.
+      await program("\x1b[?1h");
+      const appUp = await sends(() => key("up"));
+      if (appUp !== "\x1bOA") fail(`bar f · ↑ under application cursor keys sent ${shown(appUp)}, want "\\u001bOA"`);
+      await program("\x1b[?1l");
+      // Paste: the clipboard, typed — and bracketed once the program asked.
+      await page.evaluate(() => {
+        Object.defineProperty(navigator.clipboard, "readText", { configurable: true, value: async () => "echo pasted" });
+      });
+      const plain = await sends(() => key("paste"));
+      if (plain !== "echo pasted") fail(`bar f · paste sent ${shown(plain)}, the clipboard holds "echo pasted"`);
+      await program("\x1b[?2004h");
+      const bracketed = await sends(() => key("paste"));
+      if (bracketed !== "\x1b[200~echo pasted\x1b[201~") fail(`bar f · paste under bracketed paste sent ${shown(bracketed)}`);
+      await program("\x1b[?2004l");
+      console.log("bar f · keys: Esc Tab ⇧Tab ←↑↓→ / - | : Ctrl+c ⌃↑ DECCKM↑ paste ×2 — checked");
+      }
+
+      // ── g. a finger's drag over a program that took the mouse ──
+      await program("\x1b[?1049h\x1b[?1000h\x1b[?1006h");
+      const screenBox = await rect("[data-terminal]");
+      const drag = async (dy) => {
+        const x = Math.round(screenBox.left + screenBox.width / 2);
+        const y0 = Math.round(screenBox.top + screenBox.height / 2);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+        for (let i = 1; i <= 6; i += 1) {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y0 + Math.round((dy * i) / 6) }] });
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      };
+      const upDrag = await sends(() => drag(-160));
+      const downDrag = await sends(() => drag(160));
+      console.log(`bar g · a finger up the screen sent ${shown(upDrag.slice(0, 40))}…, down ${shown(downDrag.slice(0, 40))}…`);
+      if (!upDrag.includes("\x1b[<65;")) fail(`bar g · a finger dragged up a program that took the mouse sent ${shown(upDrag)} — no wheel-down report (SGR 65)`);
+      if (!downDrag.includes("\x1b[<64;")) fail(`bar g · a finger dragged down sent ${shown(downDrag)} — no wheel-up report (SGR 64)`);
+      await program("\x1b[?1000l\x1b[?1006l\x1b[?1049l");
+
+      // ── h. the keyboard switch ──
+      await page.evaluate(() => document.activeElement?.blur?.());
+      await wait(100);
+      const sw = page.locator("[data-session-bar-tabs] [data-keyboard-switch]");
+      if ((await sw.count()) === 0) fail("bar h · no keyboard switch in the session bar to press");
+      else {
+      const was = await sw.getAttribute("aria-label");
+      await sw.click();
+      await wait(200);
+      const focused = await page.evaluate(() => document.activeElement === document.querySelector("[data-terminal]").__xterm.textarea);
+      const now = await sw.getAttribute("aria-label");
+      await sw.click();
+      await wait(200);
+      const blurred = await page.evaluate(() => document.activeElement !== document.querySelector("[data-terminal]").__xterm.textarea);
+      if (!focused || !blurred || was === now) {
+        fail(`bar h · the keyboard switch: focused the terminal ${focused}, let it go ${blurred}, said ${shown(was)} then ${shown(now)}`);
+      }
+      }
+
+      // e, for the conversations under a finger.
+      for (const [what, id, box] of [
+        ["a machine conversation", chatRow.id, "[data-chat-composer]"],
+        ["an agent conversation", guiRow.id, "[data-chat-input]"],
+      ]) {
+        if (!(await openRow(id)) || !(await until(5_000, async () => (await count(box)) > 0))) {
+          fail(`probe dead: bar e · ${what} never drew its box under a finger`);
+          continue;
+        }
+        const inBar = await count(`[data-session-bar-under] ${box}`);
+        const keys = await count("[data-term-keys]");
+        const sws = await count("[data-session-bar-tabs] [data-keyboard-switch]");
+        if (inBar !== 1 || keys !== 0 || sws !== 1) fail(`bar e · ${what} under a finger: box in the bar ${inBar}, key rows ${keys}, keyboard switches ${sws} — want 1, 0, 1`);
+      }
+
+      // ── i. wide, a finger ──
+      await fresh(1400, 900);
+      if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+        fail("probe dead: bar i · a terminal never opened wide under a finger");
+      } else {
+        await until(3_000, async () => (await count("[data-term-keys]")) > 0);
+        const bar = await count("[data-session-bar]");
+        const keys = await count("[data-detail-pane] [data-term-keys]");
+        const sws = await count("[data-keyboard-switch]");
+        if (bar || keys !== 1 || sws) fail(`bar i · wide under a finger: ${bar} session bar(s), ${keys} key row(s) under the terminal, ${sws} keyboard switch(es) — want 0, 1, 0`);
+      }
+    } finally {
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    }
+
+    // ── j. wide, a mouse: the desktop as it was ──
+    await fresh(1400, 900);
+    if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+      fail("probe dead: bar j · a terminal never opened on the desktop face");
+    } else if (await page.evaluate(() => matchMedia("(pointer: coarse)").matches)) {
+      fail("probe void: bar j · the finger is still on — the desktop half measured a finger");
+    } else {
+      const bar = await count("[data-session-bar]");
+      const keys = await count("[data-term-keys]");
+      const firstRow = await count("[data-side-l0]");
+      const strip = await count("[data-region-head] [data-session-tabs] [data-tab-strip]");
+      if (bar || keys || firstRow !== 1 || strip !== 1) fail(`bar j · the desktop face: ${bar} session bar(s), ${keys} key row(s), ${firstRow} first row(s), ${strip} strip(s) in R0 — want 0, 0, 1, 1`);
+    }
+
+    // ── k. the soft keyboard (lib/viewport), with a stand-in visual
+    //       viewport — Chrome has no soft keyboard, and a phone's is the
+    //       visual viewport going short while the layout viewport does
+    //       not. Installed before the app's own scripts (the last thing
+    //       this file does to the page, so nothing after it sees the
+    //       stand-in). ──
+    await page.addInitScript(() => {
+      const fake = new EventTarget();
+      Object.assign(fake, { height: window.innerHeight, width: window.innerWidth, scale: 1, offsetTop: 0, offsetLeft: 0 });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: fake });
+      window.__keyboard = (covered) => {
+        fake.height = window.innerHeight - covered;
+        fake.dispatchEvent(new Event("resize"));
+      };
+    });
+    await fresh(390, 844);
+    if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+      fail("probe dead: bar k · a terminal never opened under the stand-in viewport");
+    } else {
+      await wait(500);
+      const read = () =>
+        page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;height:var(--safe-bottom)";
+          document.body.appendChild(probe);
+          const safe = probe.getBoundingClientRect().height;
+          probe.remove();
+          return {
+            stamped: document.documentElement.hasAttribute("data-keyboard"),
+            root: r("#root")?.height,
+            bar: r("[data-session-bar]")?.bottom,
+            content: r("[data-session-content]")?.bottom,
+            barTop: r("[data-session-bar]")?.top,
+            rows: document.querySelector("[data-terminal]")?.__xterm?.rows,
+            safe,
+            scrolled: window.scrollY,
+          };
+        });
+      const before = await read();
+      resized.length = 0;
+      await page.evaluate(() => window.__keyboard(300));
+      await until(2_000, async () => (await read()).rows !== before.rows);
+      await wait(300);
+      const up = await read();
+      const told = resized.at(-1);
+      await page.evaluate(() => window.__keyboard(0));
+      await until(2_000, async () => (await read()).rows === before.rows);
+      await wait(300);
+      const down = await read();
+      console.log(`bar k · keyboard 300 up: ${JSON.stringify(up)}, told the pty ${JSON.stringify(told)}; down: ${JSON.stringify(down)}; before ${JSON.stringify(before)}`);
+      const vh = 844;
+      if (!up.stamped || Math.abs(up.root - (vh - 300)) > 1 || Math.abs(up.bar - (vh - 300)) > 1) {
+        fail(`bar k · with 300 of keyboard the shell is ${up.root} tall and the bar ends at ${up.bar} (stamped ${up.stamped}) — the bar sits on the keyboard, at ${vh - 300} (lib/viewport)`);
+      }
+      if (up.content > up.barTop + 1) fail(`bar k · the content runs to ${up.content} under a bar at ${up.barTop}`);
+      if (!(up.rows < before.rows) || !told || told[1] !== up.rows) {
+        fail(`bar k · the terminal kept ${up.rows} rows of ${before.rows} and told the pty ${JSON.stringify(told)} — it refits to what the keyboard leaves`);
+      }
+      if (up.safe !== 0) fail(`bar k · --safe-bottom is ${up.safe} with the keyboard up — the keyboard covers the home indicator`);
+      if (up.scrolled !== 0) fail(`bar k · the page scrolled ${up.scrolled} — the shell is nailed down`);
+      if (down.stamped || Math.abs(down.bar - vh) > 1 || down.rows !== before.rows) {
+        fail(`bar k · the keyboard went and the shell reads ${JSON.stringify(down)} — back to ${vh}, ${before.rows} rows`);
+      }
+    }
+
+    for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json(rows));
+  }
+  }
+  if (process.env.FACE_ONLY === "bar") console.log("bar · FACE_ONLY=bar: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

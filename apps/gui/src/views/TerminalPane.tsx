@@ -69,6 +69,9 @@ import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
+import { useCoarse } from "@/hooks/use-coarse";
+import { BarSeat } from "@/components/SessionBar";
+import { KeyboardSwitch, TermKeys, ctrlOf } from "@/views/TermKeys";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -232,6 +235,70 @@ function keepShiftedCommits(term: Terminal): () => void {
   };
 }
 
+/** A report xterm writes for the mouse (SGR `ESC [ <`, X10 `ESC [ M`) —
+    not a key, so a latched Ctrl lets it through and keeps waiting. */
+const MOUSE_REPORT = /^\x1b\[(<|M)/;
+
+/**
+ * **A finger's drag scrolls, whatever the program asked for** (2026-10-02,
+ * iOS 第三步 A). xterm scrolls its own history under a drag, but a
+ * full-screen program has none: the alternate screen keeps no scrollback,
+ * and a program that took the mouse (khor turns tmux's on for its own
+ * grouped session, `Tmux::grouped_attach_argv`) wants wheel reports, not a
+ * moved viewport. On a desktop the wheel does that — xterm turns it into
+ * the report, or into arrow keys on the alternate screen. A finger has no
+ * wheel, so in exactly those two cases its vertical drag is turned into
+ * the wheel events a trackpad would have sent, at the point under the
+ * finger, and xterm encodes them the way it encodes every other wheel.
+ * Elsewhere the drag is left to xterm's own touch scrolling.
+ */
+function dragsAsWheel(term: Terminal, box: HTMLElement): () => void {
+  let lastY: number | null = null;
+  let target: EventTarget | null = null;
+  const wants = () => term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";
+  const start = (e: TouchEvent) => {
+    lastY = e.touches.length === 1 ? e.touches[0].clientY : null;
+    target = e.target;
+  };
+  const move = (e: TouchEvent) => {
+    if (lastY === null || e.touches.length !== 1 || !wants()) return;
+    const t = e.touches[0];
+    const dy = t.clientY - lastY;
+    lastY = t.clientY;
+    // Taken either way: the page has nothing to scroll, and xterm's own
+    // drag would move a viewport that has no history to show.
+    e.preventDefault();
+    e.stopPropagation();
+    if (dy === 0) return;
+    // Natural scrolling: a finger moving up brings later lines, which is
+    // a wheel turned down.
+    (target ?? box).dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: -dy,
+        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        clientX: t.clientX,
+        clientY: t.clientY,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  };
+  const end = () => {
+    lastY = null;
+    target = null;
+  };
+  box.addEventListener("touchstart", start, { passive: true });
+  box.addEventListener("touchmove", move, { passive: false });
+  box.addEventListener("touchend", end, { passive: true });
+  box.addEventListener("touchcancel", end, { passive: true });
+  return () => {
+    box.removeEventListener("touchstart", start);
+    box.removeEventListener("touchmove", move);
+    box.removeEventListener("touchend", end);
+    box.removeEventListener("touchcancel", end);
+  };
+}
+
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
@@ -279,6 +346,17 @@ export function TerminalPane({ id }: { id: string }) {
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
   const bellTimer = useRef(0);
+  // **Ctrl, latched from the key row** (`TermKeys`, 2026-10-02): it waits
+  // for the next key from either the row or the soft keyboard. A ref as
+  // well as state because the `onData` handler below reads it, and that
+  // handler is wired once per terminal.
+  const coarse = useCoarse();
+  const [ctrl, setCtrlShown] = useState(false);
+  const ctrlRef = useRef(false);
+  const latch = (on: boolean) => {
+    ctrlRef.current = on;
+    setCtrlShown(on);
+  };
 
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -435,11 +513,22 @@ export function TerminalPane({ id }: { id: string }) {
     // bytes a terminal sends, and they go out the same `term_key` road
     // as ever. The immediate re-poll is what makes echo feel wired
     // rather than polled.
+    //
+    // A latched Ctrl (`TermKeys`) takes the next key xterm hands out — a
+    // character typed on the soft keyboard becomes its control form (C →
+    // 0x03) — and lets go; a mouse report passes and leaves it waiting.
     const data = term.onData((d) => {
-      termKey(id, d)
+      let out = d;
+      if (ctrlRef.current && !MOUSE_REPORT.test(d)) {
+        out = ctrlOf(d) ?? d;
+        ctrlRef.current = false;
+        setCtrlShown(false);
+      }
+      termKey(id, out)
         .then(() => pollNow.current())
         .catch(() => {});
     });
+    const dragged = dragsAsWheel(term, box);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
     // in history" in xterm's own coordinates — on the alternate screen
     // (a full-screen program) baseY stays 0 and neither of these can
@@ -478,6 +567,7 @@ export function TerminalPane({ id }: { id: string }) {
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
       data.dispose();
+      dragged();
       scrolled.dispose();
       wrote.dispose();
       found.dispose();
@@ -609,6 +699,7 @@ export function TerminalPane({ id }: { id: string }) {
   const hitsText = !query || !hits ? "" : hits.of === 0 ? gui.no_matches : hits.of < 0 ? `${hits.at + 1}` : `${hits.at + 1} / ${hits.of}`;
 
   return (
+    <>
     <div
       data-terminal
       data-term-bell={rang}
@@ -752,5 +843,21 @@ export function TerminalPane({ id }: { id: string }) {
         </div>
       )}
     </div>
+    {/* **Under a finger, the keys a soft keyboard lacks and the switch
+        for the keyboard** (`TermKeys`, 2026-10-02). On the narrow face
+        they go to the session bar (row 2, and row 1's right end); where
+        there is no bar — the wide face on an iPad — the row stands here,
+        under the screen, and the switch is not drawn. */}
+    {coarse && (
+      <>
+        <BarSeat at="trail">
+          <KeyboardSwitch field={keysRef} />
+        </BarSeat>
+        <BarSeat at="under">
+          <TermKeys term={termRef} ctrl={ctrl} onCtrl={latch} />
+        </BarSeat>
+      </>
+    )}
+    </>
   );
 }

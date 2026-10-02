@@ -684,6 +684,41 @@ export function IconChat({ className }: IconProps) {
   );
 }
 
+/**
+ * A keyboard — the soft keyboard's switch on the narrow session page's
+ * bar (2026-10-02, iOS 第三步 A): up when it is down, down when it is up.
+ * Drawn for the 16 canvas, the 32nd glyph. **The case is the solid
+ * piece** and the keys are punched through it with the family's cut — a
+ * row of three keys and the space bar, the shield's keyhole done four
+ * times — rather than drawn on top: keys drawn on a filled case would be
+ * ink on ink, and keys drawn as an outline's contents read at 16 as a
+ * grille.
+ */
+export function IconKeyboard({ className }: IconProps) {
+  return (
+    <Mark
+      className={className}
+      icon="keyboard"
+      cut={
+        <path
+          stroke="black"
+          strokeWidth={STROKE.sm}
+          strokeLinecap="round"
+          d="M5.4 6.9h.01M8 6.9h.01M10.6 6.9h.01M5.4 9.5h5.2"
+        />
+      }
+    >
+      {(cutId) => (
+        <path
+          data-body
+          mask={`url(#${cutId})`}
+          d="M4.1 4h7.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6V5.6A1.6 1.6 0 0 1 4.1 4Z"
+        />
+      )}
+    </Mark>
+  );
+}
+
 /** A file — the transfer rows' mark (mandala path, verbatim). */
 export function IconFile({ className }: IconProps) {
   return (

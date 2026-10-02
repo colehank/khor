@@ -2,7 +2,24 @@
 <html lang="zh">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      **A phone's edges and its keyboard** (2026-10-02, iOS 第三步 A).
+      `viewport-fit=cover`: the page reaches under the status bar and the
+      home indicator, and keeps itself clear of them with the edges the
+      system reports (`--safe-top` / `--safe-bottom`, tokens.css) — so the
+      terminal's paper runs to the top of the glass instead of a grey band.
+      `maximum-scale=1`: WebKit zooms the page into any focused field set
+      under 16, and the terminal's own text box is one; a zoom on every
+      tap of the terminal is not a page anybody asked to see closer (on
+      Safari a pinch still zooms — it ignores this for that). `interactive-
+      widget=resizes-content`: Chrome on Android makes the layout viewport
+      itself shorter under the keyboard; WebKit ignores it and is sized by
+      `lib/viewport` instead. A desktop window reads none of this.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>Khor</title>
     <!--
       **The theme, stamped before the first pixel** (批 D2).

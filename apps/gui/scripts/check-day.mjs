@@ -29,7 +29,7 @@
 //      the name that renames without the band so much as blinking, a
 //      choice that outlives a reload, no row at all for a day with no
 //      record, a skeleton rather than a blank while the day is on its
-//      way, and on the narrow face the head standing in for the tab.
+//      way, and on the narrow face the front tab in the session bar.
 //      Shown, it **floats over the session and takes none of its room**
 //      (「悬浮内容悬浮在session内容上即可」): the session does not move or
 //      shrink by a pixel, and a press on the row off a stretch is the
@@ -347,7 +347,7 @@ try {
   //   f. while the day is on its way and the strip is asked for, a
   //      skeleton in the band's own geometry, never a blank row (a
   //      context whose day route is held);
-  //   g. narrow — the head's face and name are the tab's stand-in (in ⑥e,
+  //   g. narrow — the front tab in the session bar at the foot is the switch (in ⑥e,
   //      where the phone's page is).
   const dayRows = (p) => p.locator("[data-detail-day]").count();
   const waitRows = async (p, want, ms = 1_500) => {
@@ -1336,11 +1336,15 @@ try {
       fail(`probe dead: ⑥e the narrow face never listed ${rowWithBlocked}`);
     } else {
       await phone.locator(`[data-row="${rowWithBlocked}"] [data-row-open]`).tap();
-      // ⓪g **The head is the front tab's stand-in**: the phone has no
-      // tabs and no hover, so the name and face in the window's first
-      // row are the switch — hidden at first here too (a fresh profile),
-      // one tap opens it, one more (at the end of ⑥) puts it away.
-      const toggle = phone.locator("[data-detail-header] [data-day-toggle]");
+      // ⓪g **The front tab is the switch on the phone too**: since
+      // 2026-10-02 the narrow session page has the strip, in the bar at
+      // its foot (`components/SessionBar`), and its front tab does what
+      // the wide one does — hidden at first here too (a fresh profile),
+      // one tap opens it, one more (at the end of ⑥) puts it away. ⚠️
+      // 墓碑: until then the phone had no tabs and the name and face in
+      // the window's first row stood in (`[data-detail-header]
+      // [data-day-toggle]`).
+      const toggle = phone.locator('[data-session-bar] [data-tab][data-on="true"] [data-tab-open]');
       const seated = await (async () => {
         const end = Date.now() + 10_000;
         while (Date.now() < end) {
@@ -1355,16 +1359,16 @@ try {
         if (b) await phone.touchscreen.tap(b.x + 10, b.y + b.height / 2);
       };
       if (!seated) {
-        fail("⓪g the narrow session's head has no [data-day-toggle] — on the face with no tabs, the head is the switch");
+        fail("⓪g the narrow session bar has no front tab to press — the front tab is the day's switch on the phone too");
       } else {
         if ((await dayRows(phone)) !== 0) fail("⓪g a fresh phone draws a day row before anybody asked for it");
         const was = await toggle.getAttribute("aria-expanded");
-        if (was !== "false") fail(`⓪g the narrow head says aria-expanded=${was} while the day is hidden`);
+        if (was !== "false") fail(`⓪g the narrow front tab says aria-expanded=${was} while the day is hidden`);
         await headTap();
-        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the narrow head drew no day row");
+        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the narrow front tab drew no day row");
         const now = await toggle.getAttribute("aria-expanded");
-        if (now !== "true") fail(`⓪g the narrow head says aria-expanded=${now} with the day shown`);
-        console.log(`⓪g narrow head: aria-expanded ${was} → tap → ${now}`);
+        if (now !== "true") fail(`⓪g the narrow front tab says aria-expanded=${now} with the day shown`);
+        console.log(`⓪g narrow front tab: aria-expanded ${was} → tap → ${now}`);
       }
       const end = Date.now() + 25_000;
       let pruns = [];
@@ -1411,7 +1415,7 @@ try {
         // ⓪g …and one more tap puts it away.
         await sleep(500);
         await headTap();
-        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the narrow head left the day row up");
+        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the narrow front tab left the day row up");
       }
     }
     if (phoneThrew.length) fail(`⑥ the narrow page threw: ${phoneThrew.join(" | ")}`);
