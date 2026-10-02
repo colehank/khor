@@ -24,11 +24,22 @@
 // Which twin shows is `app.css`'s business, on the same media query the
 // code colours switch on.
 //
+// **One live area, the house's** (2026-10-02, icons.tsx `LIVE`). Seti
+// draws its shapes in a font's em box, each with its own air — measured,
+// from 0.38 of the box (the default document) to all of it (elm, twig).
+// `FileKindIcon.live.json` names, per shape, the square of its canvas its
+// ink is centred in at 0.90, measured by rasterising; the shape is
+// untouched, only its `viewBox` is swapped. So a box paints one size
+// whatever the file is, and a seat sizes the ink by sizing the box.
+// `elm` and `twig` keep their own canvas: each carries a `<rect>` of 100%
+// that paints the whole box, so they have no ink to fit.
+//
 // **Only files.** A directory's slot holds its chevron (`FileTree`),
 // which already says what it is; Seti's folder glyph would be a second
 // answer to a question the row has answered.
 import definitions from "@/vendor/seti/definitions.json";
 import icons from "@/vendor/seti/icons.json";
+import live from "./FileKindIcon.live.json";
 
 import { cn } from "@/lib/utils";
 
@@ -71,7 +82,12 @@ const DEFS = definitions as unknown as {
   partials: [string, Pick][];
   default: Pick;
 };
-const SHAPES = icons as unknown as Record<string, string>;
+const SHAPES = Object.fromEntries(
+  Object.entries(icons as unknown as Record<string, string>).map(([k, svg]) => [
+    k,
+    svg.replace(/viewBox="[^"]*"/, `viewBox="${(live as Record<string, string>)[k]}"`),
+  ]),
+);
 
 function pick(name: string): Pick {
   if (Object.hasOwn(DEFS.files, name)) return DEFS.files[name];

@@ -657,7 +657,7 @@ export function MachineVerbs({
           <CodeButton
             code={code}
             mark={measure ? undefined : { "data-verb": "code" }}
-            className="size-head-item-h rounded-full data-[on=true]:glass-sel"
+            className="size-head-item-h rounded-full data-[on=true]:glass-sel [&_svg]:size-head-glyph"
           />
         </div>
       )}
@@ -756,13 +756,11 @@ export function MachineVerbs({
                   data-on={code.up || undefined}
                   onSelect={code.want}
                   className={cn(
-                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground",
+                    "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph",
                     code.up && "glass-sel",
                   )}
                 >
-                  <span className="flex size-nav-glyph flex-none items-center justify-center [&_svg]:size-4">
-                    <IconCode />
-                  </span>
+                  <IconCode />
                   {gui.code_tab}
                 </DropdownMenuItem>
               )}
@@ -3388,7 +3386,7 @@ function Column({
         )}
       >
         {children}
-        {on && (sort.dir === "up" ? <IconChevronUp className="size-3" /> : <IconChevronDown className="size-3" />)}
+        {on && (sort.dir === "up" ? <IconChevronUp className="size-2.5" /> : <IconChevronDown className="size-2.5" />)}
       </button>
     </div>
   );

@@ -1072,7 +1072,10 @@
      that is the same lesson the strip's end learned one ruling earlier
      (44 boxes, three different marks). The chevron stays `size-3`: a
      directory says what it is with a small turn, and 28 of chevron
-     would be a different kind of shout. */
+     would be a different kind of shout.
+     **Since 2026-10-02 the air is gone** (icons.tsx `LIVE`: every shape
+     fills 0.90 of its box), so the slot keeps the row's 28 — names line
+     up on it — and the shape is drawn in 20 of it (`p-1`), 18 of ink. */
   --tree-slot: 28px;
   /* One row of the file tree. **28, not the 44 finger floor, on a
      screen with a pointer** (2026-09-16:「文件树的不同行间距太大了,屏幕
@@ -1102,12 +1105,14 @@
      and, folded, at the start of the content's row alike. **The strip is
      the largest control in that row** (the owner: it must never read
      smaller than the session tabs beside it): 36 high, 36 × 30 pills,
-     22 glyphs. */
+     20 glyphs — 18 of ink, over the tabs' 16 faces. **20, not the 22 it
+     was** (2026-10-02): every glyph now fills 0.90 of its box, and 22
+     painted 20 in a 30 pill. */
   --wide-lead-start: 80px;
   --strip-h: 36px;
   --strip-item: 36px;
   --strip-item-h: 30px;
-  --strip-glyph: 22px;
+  --strip-glyph: 20px;
   /* **A detail page's one left and right edge** (the redesign, the
      owner: the head's avatar and verbs stand exactly on the content's
      edges). R0's head and the page under it both inset by this: 24 in a

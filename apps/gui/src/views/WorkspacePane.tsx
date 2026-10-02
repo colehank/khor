@@ -1103,12 +1103,12 @@ export function WorkspacePane({
         // **32, which is the two lines' own height** (2026-09-16:「标签
         // 页上, 文件类型的icon, 过小了…可以放大一点, 和这两行对齐」). The
         // tab is a name over a path, 18 and 14 of leading, and the glyph
-        // stands beside the pair rather than on the first line — so its
-        // box is the pair's height and Seti's shape paints about 23 of
-        // it. The size is set here because this is where the glyph is
+        // stands beside the pair rather than on the first line — so it
+        // paints about 25, most of the pair's height (a 28 box: every
+        // shape fills 0.90 of its box since 2026-10-02, `FileKindIcon`). The size is set here because this is where the glyph is
         // made; `TabStrip` places what it is handed and sizes nothing
         // (its own head says so).
-        glyph: <FileKindIcon name={basename(path)} className="size-8" />,
+        glyph: <FileKindIcon name={basename(path)} className="size-7" />,
         // 预览, on the tab it is about (2026-09-17 ruling 47). Only
         // where there is a second face to switch to — a `.rs` has one
         // face and grows no eye, exactly as the strip's far end drew
@@ -1214,7 +1214,7 @@ export function WorkspacePane({
           phone reading khor's web face is not. */}
       {root !== "" && codeWin.offered && (
         <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
-          <CodeButton code={codeWin} className="size-head-item-h rounded-full data-[on=true]:glass-sel" />
+          <CodeButton code={codeWin} className="size-head-item-h rounded-full data-[on=true]:glass-sel [&_svg]:size-head-glyph" />
         </div>
       )}
     </div>
@@ -2044,7 +2044,7 @@ function Hits({
           onClick={() => onOpen(path, null)}
           className="flex min-h-[var(--tree-row)] w-full items-center gap-2 px-3 text-left text-callout hover:bg-muted/50"
         >
-          <FileKindIcon name={basename(path)} className="size-[var(--tree-slot)] flex-none" />
+          <FileKindIcon name={basename(path)} className="size-[var(--tree-slot)] flex-none p-1" />
           <span className="min-w-0 flex-1 truncate">{marked(short(path), query)}</span>
         </button>
       ))}

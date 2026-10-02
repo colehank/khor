@@ -663,9 +663,12 @@ export function TabStrip({
               </Tooltip>
               {/* 预览, between the name and the ×: the order a person
                   reads the tab in is what it is, then what to do with
-                  it. `size-3.5` against the close's own glyph — this
-                  one is about the tab's content and the × is about the
-                  tab, so it is deliberately the smaller mark. */}
+                  it. The ×'s own box, the marks' 16: every mark fills
+                  one share of its box (icons.tsx `LIVE`), so one box is
+                  one painted size — the eye 14 of ink, the ruling's
+                  「小眼睛」, and the × beside it 14.7. ⚠️ 墓碑:
+                  「deliberately the smaller mark」 at `size-3.5` — in a
+                  box under the ×'s it painted 14 to the ×'s 9.5. */}
               {on && f.look && (
                 <Button
                   size="icon"
@@ -681,7 +684,7 @@ export function TabStrip({
                       : "text-muted-foreground",
                   )}
                 >
-                  <IconEye className="size-3.5" />
+                  <IconEye />
                 </Button>
               )}
               <button

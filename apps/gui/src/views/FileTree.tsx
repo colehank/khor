@@ -526,13 +526,13 @@ export function FileTree({
                           trailing slash — 「目录后面不用带 /,> 已经表明
                           了是目录」. */}
                       {/* The slot is 16 — the icon's size, text height —
-                          and the 12px chevron sits centred in it, so a
+                          and the 10px chevron sits centred in it, so a
                           directory's name and a file's start on one
                           line (2026-09-16:「文件类型 icon 太小了,应该
                           和字等高」, after 12 proved unreadable). */}
                       <span data-tree-slot className="flex size-[var(--tree-slot)] flex-none items-center justify-center" aria-hidden="true">
                         <IconChevronRight
-                          className={cn("size-3 flex-none transition-transform", on && "rotate-90")}
+                          className={cn("size-2.5 flex-none transition-transform", on && "rotate-90")}
                         />
                       </span>
                       {/* **The name wears the dot's ink** (2026-09-16:「目录
@@ -623,7 +623,7 @@ export function FileTree({
                           *empty* slot reading as membership; a slot
                           with the file's own mark in it is VS Code's
                           picture, and the ruling that followed. */}
-                      <FileKindIcon name={r.name} className="size-[var(--tree-slot)]" />
+                      <FileKindIcon name={r.name} className="size-[var(--tree-slot)] p-1" />
                       {naming?.at === r.full && naming.kind === "rename" ? (
                         nameBox(moved(r.full), r.name)
                       ) : (

@@ -297,7 +297,7 @@ export function MoreFold({
         // own measurement).
         className="flex min-h-touch list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
       >
-        <IconChevronRight className="size-3 flex-none transition-transform group-open:rotate-90" />
+        <IconChevronRight className="size-2.5 flex-none transition-transform group-open:rotate-90" />
         {label}
       </summary>
       {open && <div className="flex min-w-0 flex-col gap-group pt-2">{children}</div>}

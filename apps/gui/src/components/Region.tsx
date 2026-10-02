@@ -68,7 +68,7 @@ export function WindowControls() {
             b.key === "close" ? "hover:bg-destructive hover:text-on-destructive" : "hover:bg-secondary",
           )}
         >
-          {b.mark ?? <IconClose />}
+          {b.mark ?? <IconClose className="size-2.5" />}
         </button>
       ))}
     </div>

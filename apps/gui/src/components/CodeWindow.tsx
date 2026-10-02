@@ -290,12 +290,11 @@ export function useCodeWindow(pointed: string | null, dir: string): CodeWindow {
  * again brings the window forward rather than closing it — so it says no
  * `aria-pressed`. Draws nothing where the door is not `offered`.
  *
- * **Equal ink, not equal boxes** (2026-09-16:「右上角的icon, 明显大小
- * 不一」, then 「注意四个icon的大小一致性」). The mark fills its canvas and
- * the rail's glyphs beside it keep air inside their own (about five
- * sevenths of it), so their 24 paints about 17 and this box is 16: the
- * *painted* marks match within the gate's pixel and a half, which
- * `check-face` measures — never the class.
+ * **Equal boxes give equal ink** (2026-10-02, the owner: 「确保所有icon的
+ * 大小一致」). Every mark fills one share of its box (icons.tsx `LIVE`), so
+ * the glyph takes the seat's box like the glyphs beside it — the caller
+ * sizes it. ⚠️ 墓碑: it sat in a 16 box of its own beside 18s and 24s,
+ * because it filled its canvas and they kept five sevenths of theirs.
  */
 export function CodeButton({ code, className, mark }: { code: CodeWindow; className?: string; mark?: Record<string, string> }) {
   if (!code.offered) return null;
@@ -312,9 +311,7 @@ export function CodeButton({ code, className, mark }: { code: CodeWindow; classN
           onClick={code.want}
           className={className}
         >
-          <span className="flex size-4 flex-none [&_svg]:size-full">
-            <IconCode />
-          </span>
+          <IconCode />
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom">{gui.code_tab}</TooltipContent>
