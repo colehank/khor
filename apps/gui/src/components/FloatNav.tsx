@@ -115,7 +115,7 @@ export function FloatNav({
           // Choosing goes somewhere else; the focus does not come back to
           // 更多 and light it with a ring nobody asked for.
           onCloseAutoFocus={(e) => e.preventDefault()}
-          className="glass min-w-nav-menu rounded-2xl bg-glass-menu p-1.5"
+          className="glass min-w-nav-menu rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]"
         >
           {more.map((s) => (
             <DropdownMenuItem
