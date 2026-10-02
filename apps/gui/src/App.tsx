@@ -1200,7 +1200,12 @@ export default function App() {
       // 更多's pages, the same place narrow's 设置 opens: the sections
       // in the list column, the first one beside them.
       onMore={() => {
-        setMorePage((was) => (was === null || was === "identity" ? "settings" : was));
+        // Open already: folds the list, like any open landing's glyph.
+        if (morePage !== null && morePage !== "identity") {
+          listPane.toggle();
+          return;
+        }
+        setMorePage("settings");
         setSwitchingTabs(false);
         setScreen("detail");
         listPane.expand();

@@ -2146,6 +2146,9 @@
   --spacing-nav-glyph: var(--nav-glyph);
   --spacing-nav-gap: var(--nav-gap);
   --spacing-nav-room: var(--nav-room);
+  --spacing-nav-more-in: var(--nav-more-in);
+  --spacing-nav-more-glyph: var(--nav-more-glyph);
+  --spacing-nav-pair: var(--nav-pair-gap);
   --spacing-nav-menu: var(--nav-menu);
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
@@ -2515,6 +2518,12 @@
   --head-item-w: 38px;
   --head-glyph: 18px;
   --nav-h: 52px;
+  /* 更多's own glass circle beside the capsule (the owner, 2026-10-02):
+     as tall as the capsule, a pressable round 8 smaller inside it, 10
+     apart from the capsule; its glyph 22 under a mouse, 26 under a finger. */
+  --nav-more-in: calc(var(--nav-h) - 8px);
+  --nav-more-glyph: 22px;
+  --nav-pair-gap: 10px;
   --nav-item: 64px;
   --nav-glyph: 20px;
   --nav-gap: 16px;
@@ -2549,6 +2558,7 @@
     --head-item-w: 44px;
     --head-glyph: 22px;
     --nav-h: 64px;
+    --nav-more-glyph: 26px;
     --nav-item: 76px;
     --nav-glyph: 24px;
     --nav-gap: 24px;
