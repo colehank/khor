@@ -2392,7 +2392,16 @@ try {
           continue;
         }
         const r = el.getBoundingClientRect();
-        targets.push({ ...label(el), w: Math.round(r.width), h: Math.round(r.height) });
+        // **The hit box, not the drawing** (the audit fix plan F1.5,
+        // app.css 「Under a finger, nothing to press is smaller than 44」):
+        // a control keeps its drawn size and a transparent `::after`
+        // centred on it is what a finger lands on. Its box is the larger
+        // of the two; a control with no such box is judged as drawn.
+        const after = getComputedStyle(el, "::after");
+        const hit = after.content !== "none" && after.position === "absolute";
+        const w = Math.max(r.width, hit ? parseFloat(after.width) || 0 : 0);
+        const h = Math.max(r.height, hit ? parseFloat(after.height) || 0 : 0);
+        targets.push({ ...label(el), w: Math.round(w), h: Math.round(h) });
       }
       // **The hand is a link's** (2026-09-28): AppKit draws the arrow over
       // every control, and the pointing hand only over a link in text.

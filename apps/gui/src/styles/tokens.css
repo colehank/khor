@@ -2449,7 +2449,12 @@
   --text-doc-h3--line-height: 23px;
   --text-doc-h3--font-weight: 600;
 
-  --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* `khor-symbols` (app.css) before the generic family: a prompt's
+     private-use glyphs (Nerd Fonts) reach the UI too — a terminal row's
+     second line is its last line, and drew them as empty boxes on the
+     native app (2026-10-03). System fonts have no glyph there, so
+     nothing else falls through to it. */
+  --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "khor-symbols", sans-serif;
 
   /* ── the terminal's own face ─────────────────────────
    * A terminal is the one surface in this app whose type is not a

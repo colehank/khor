@@ -2570,7 +2570,10 @@ export default function App() {
               className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
             >
               <span className="flex-1" />
-              {strip}
+              {/* Folded, the strip stands in the content's lead
+                  (`foldedLead`) and only there: a second copy in the
+                  hidden column was a second set of the same buttons. */}
+              {!folded && strip}
             </div>
             {sideHead}
             <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">

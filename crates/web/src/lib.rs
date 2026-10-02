@@ -391,6 +391,8 @@ fn content_type(path: &str) -> &'static str {
         Some("json") => "application/json",
         Some("png") => "image/png",
         Some("woff2") => "font/woff2",
+        // The terminal's symbols fallback (`apps/gui/src/assets/fonts`).
+        Some("ttf") => "font/ttf",
         Some("ico") => "image/x-icon",
         _ => "application/octet-stream",
     }
