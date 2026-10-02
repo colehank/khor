@@ -338,26 +338,39 @@ function drawHeat(svg, T, W, narrow, fill){
       .concat([['r'+(BANDS.length+1), BANDS[BANDS.length-1]+'+']]);
     const word = (x,s,delay,extra={}) => txt(svg,{x,y:base,'font-size':cap,'font-weight':600,
       class:'fnt fade',style:`animation-delay:${delay}s`,...extra},s);
-    // **The ramp alone, its two ends written as shares** (2026-10-02, the
-    // owner: 「不要明度这个注释，直接 cmap 就行，写好是 <3% 和 >90% 就行」),
-    // and **from the page's left line**, where the row names start too:
-    // the word 「明度」 hung left of the plot and was cut at the page's
-    // edge. The swatches keep their ranges as tooltips.
+    // **Five parts on one line, evenly apart** (2026-10-03, the owner:
+    // 「f"3% {cmap} 90% {pink} 90%+"」): the low end as a share, the
+    // ramp, the high end, the strain swatch, and its threshold with a
+    // plus — **from the page's left line**, where the row names start.
+    // No `<` / `>`: the ramp between two numbers already says below and
+    // above. The swatch's sentence (内存/磁盘 90+) is its tooltip, so
+    // which rows can strain is still said, and the swatches of the ramp
+    // keep their ranges as theirs. ⚠️ 墓碑: 「<3% ramp >90%  ■ 内存/磁盘
+    // 90+」, the ramp nearly touching its numbers and a sentence on the
+    // line.
+    const GAP = 6;
+    // The words' own widths where the figure is on screen (an SVG text
+    // knows its length once attached), the estimate otherwise: the gaps
+    // are only even if the numbers are measured.
+    const wide = (n, s) => {
+      try { const w = n.getComputedTextLength(); if (w > 0) return w; } catch (e) { /* detached */ }
+      return textW(s, cap);
+    };
     let lx = 0;
-    const lo = '<' + BANDS[0] + '%', hi = '>' + BANDS[BANDS.length-1] + '%';
-    word(lx, lo, 1);
-    lx += textW(lo,cap) + 4;
+    const top = BANDS[BANDS.length-1];
+    const lo = BANDS[0] + '%', hi = top + '%', over = top + '%+';
+    lx += wide(word(lx, lo, 1), lo) + GAP;
     ramp.forEach(([c,s],k)=>{
       const cell = el(svg,'rect',{x:lx+k*CELL,y:ly,width:CELL-1,height:S,class:c+' fade',
         style:`animation-delay:${1+k*.03}s`,'data-day-ramp':s});
       el(cell,'title',{}).textContent = s;
     });
-    lx += ramp.length*CELL + 3;
-    word(lx, hi, 1.1);
-    lx += textW(hi,cap) + 16;
-    el(svg,'rect',{x:lx,y:ly,width:S,height:S,rx:1.5,class:'st fade',
-      style:'animation-delay:1.2s'});
-    word(lx+S+4, WORDS.strainLegend, 1.2);
+    lx += ramp.length*CELL - 1 + GAP;
+    lx += wide(word(lx, hi, 1.1), hi) + GAP;
+    const strain = el(svg,'rect',{x:lx,y:ly,width:S,height:S,rx:1.5,class:'st fade',
+      style:'animation-delay:1.2s','data-day-strain-swatch':''});
+    el(strain,'title',{}).textContent = WORDS.strainLegend;
+    word(lx+S+GAP, over, 1.2);
     if(T.some(t=>t.kind==='range'))
       word(X1, WORDS.cards||'', 1.25, {'text-anchor':'end'});
   }
