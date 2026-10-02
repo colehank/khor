@@ -123,6 +123,9 @@ struct Term {
     gone: AtomicBool,
     /// Open count, for React's double-mount, exactly as chat explains.
     holds: AtomicUsize,
+    /// Nobody holds it any more: a pipe that ends now is not asked for
+    /// again (`crate::rejoin`).
+    left: AtomicBool,
     /// The bytes themselves, exactly as the parser ate them (post-ACS
     /// filter — the two consumers must see one stream), head-trimmed at
     /// [`FEED_CAP`], with the modes of what was trimmed.
@@ -196,14 +199,15 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     // one list holds every machine's sessions, so one click has to mean
     // the same thing wherever the row lives. The CLI's `attach` forks on
     // this very question, and this door now matches it.
-    let conn = match n.far_machine(&sid)? {
+    let far = n.far_machine(&sid)?;
+    let conn = match &far {
         // Reached, not hosted here: the resident serve binds a local
         // port onto the far host, and what arrives is still a TCP
         // address speaking the host protocol — so everything below this
         // line is unchanged, and the terminal never learns there is a
         // network under it (`host::connect_at`).
         Some(machine) => {
-            let (addr, cookie) = reach_blocking(root, &machine, &sid)?;
+            let (addr, cookie) = reach_blocking(root, machine, &sid)?;
             khor_node::host::connect_at(&addr, &cookie, cols, rows)?
         }
         None => {
@@ -245,17 +249,46 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         acs: Mutex::new(crate::acs::Acs::default()),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
+        left: AtomicBool::new(false),
         feed: Mutex::new(Feed::default()),
         fed: AtomicU64::new(0),
     });
     let reader = term.clone();
+    let root = root.to_path_buf();
     std::thread::spawn(move || {
         use std::io::Read;
         let mut buf = [0u8; 8192];
+        // The next bytes are a new attachment's: the host's ring again,
+        // from its start (`start_over`).
+        let mut fresh = false;
         loop {
             match reading.read(&mut buf) {
-                Ok(0) | Err(_) => break,
+                Ok(0) | Err(_) => {
+                    // **A far pipe that ends asks again where that is
+                    // switched on** (a phone, `crate::rejoin`): the end
+                    // of a pipe is not the end of the session over
+                    // there. Only a far machine's answer that it is not
+                    // there ends this — elsewhere the end of the pipe
+                    // does, as it always has.
+                    let Some(machine) = far.as_deref().filter(|_| crate::rejoin::is_on()) else {
+                        break;
+                    };
+                    let (rows, cols) = plock(&reader.parser).screen().size();
+                    let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
+                        khor_node::host::connect_at(addr, cookie, cols, rows)
+                    }) else {
+                        break;
+                    };
+                    let Ok(again) = conn.try_clone() else { break };
+                    *plock(&reader.conn) = conn;
+                    reading = again;
+                    fresh = true;
+                }
                 Ok(n) => {
+                    if fresh {
+                        start_over(&reader);
+                        fresh = false;
+                    }
                     if let Some((cols, rows)) = paint(
                         &reader.acs,
                         &reader.parser,
@@ -273,6 +306,33 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     });
     registry.insert(id.to_owned(), term);
     Ok(())
+}
+
+/// An attachment made again (`crate::rejoin`) starts a new life: the
+/// host pours its whole ring to the new client, so the screen and the
+/// mode oracle start over, and so does the feed — a face whose cursor
+/// is in the old life is told to reset and replay ([`restart_feed`]).
+/// Called on the new attachment's first bytes, not before: until they
+/// arrive the face keeps showing the last screen it had.
+fn start_over(term: &Term) {
+    {
+        let mut parser = plock(&term.parser);
+        let (rows, cols) = parser.screen().size();
+        *parser = vt100::Parser::new(rows, cols, 0);
+    }
+    *plock(&term.acs) = crate::acs::Acs::default();
+    restart_feed(&term.feed, &term.fed);
+}
+
+/// Empties the feed and moves the cursor one past every place a face
+/// can hold in the old life, so every face's next [`take_since`] falls
+/// off the head and answers `reset` with only the new life's bytes —
+/// the replay a face already does for a feed that trimmed past it.
+fn restart_feed(feed: &Mutex<Feed>, fed: &AtomicU64) {
+    let mut g = plock(feed);
+    g.bytes.clear();
+    g.head = Modes::default();
+    fed.fetch_add(1, Ordering::Relaxed);
 }
 
 /// **The one path bytes take from the socket onward** — through the
@@ -572,6 +632,7 @@ pub fn term_leave(id: &str) -> Result<(), String> {
     if let Some(term) = registry.get(id)
         && term.holds.fetch_sub(1, Ordering::Relaxed) <= 1
     {
+        term.left.store(true, Ordering::Relaxed);
         registry.remove(id);
     }
     Ok(())
@@ -706,6 +767,30 @@ mod tests {
         );
     }
 
+    /// **An attachment made again starts a new life** (`crate::rejoin`):
+    /// every place a face held in the old one answers `reset` with the
+    /// new life's bytes alone — the host's ring, poured again, never
+    /// spliced after the screen the face already has (that would be the
+    /// whole ring twice) — and the new life then streams on as usual.
+    #[test]
+    fn a_rejoined_feed_resets_every_face_to_the_new_life() {
+        let feed = Mutex::new(Feed::default());
+        let fed = AtomicU64::new(0);
+        push_feed(&feed, &fed, b"\x1b[?1049hold screen");
+        let (_, caught_up) = take_all(&feed, &fed);
+        restart_feed(&feed, &fed);
+        let (bytes, end, reset) = take_since(&feed, &fed, caught_up);
+        assert!(reset, "a face that had read everything is told to start over");
+        assert!(bytes.is_empty(), "with nothing of the old life: {bytes:?}");
+        push_feed(&feed, &fed, b"ring again");
+        let (bytes, _, reset) = take_since(&feed, &fed, caught_up);
+        assert!(reset && bytes == b"ring again", "a face still in the old life gets the new one whole");
+        let (bytes, _, reset) = take_since(&feed, &fed, end);
+        assert!(!reset && bytes == b"ring again", "a face already in the new life streams on");
+        let (all, _) = take_all(&feed, &fed);
+        assert_eq!(all, b"ring again", "and the old modes are not the new life's");
+    }
+
     /// **A replay of a trimmed feed opens in the modes its head set** —
     /// the same rule as the host's ring, for a face that attaches (or
     /// starts over) after the first [`FEED_CAP`] of a tmux client. Both
@@ -760,6 +845,7 @@ mod tests {
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
             holds: AtomicUsize::new(1),
+            left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
         });

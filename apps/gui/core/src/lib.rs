@@ -18,6 +18,7 @@ pub mod git;
 pub mod import;
 pub mod qr;
 pub mod recents;
+pub mod rejoin;
 pub mod tabs;
 pub mod term;
 pub mod web;

@@ -191,6 +191,17 @@ impl Frames {
         )
     }
 
+    /// An attachment made again (`crate::rejoin`) starts a new life:
+    /// nothing of the old one is held, and the front moves one past every
+    /// cursor a face can hold in it — so every face's next poll says
+    /// `lost`, and the face does what it already does for a trimmed
+    /// list: clear, and ask for history (now on the new attachment).
+    fn restart(&mut self) {
+        let total = self.dropped + self.held.len() as u64;
+        self.held.clear();
+        self.dropped = total + 1;
+    }
+
     fn push(&mut self, f: ChatFrame) {
         self.held.push(f);
         if self.held.len() > frame_cap() {
@@ -213,6 +224,9 @@ struct Chat {
     /// under it (seen live: the pane polled a registry its own first
     /// mount had emptied).
     holds: AtomicUsize,
+    /// Nobody holds it any more: a pipe that ends now is not asked for
+    /// again (`crate::rejoin`).
+    left: AtomicBool,
 }
 
 fn chats() -> &'static Mutex<HashMap<String, Arc<Chat>>> {
@@ -287,9 +301,10 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
     // socket speaking the same frames — nothing below this line knows
     // there is a network under it. The GUI host ignores the terminal
     // size; 0×0 is what its own test clients send.
-    let conn = match n.far_machine(&sid)? {
+    let far = n.far_machine(&sid)?;
+    let conn = match &far {
         Some(machine) => {
-            let (addr, cookie) = crate::term::reach_blocking(root, &machine, &sid)?;
+            let (addr, cookie) = crate::term::reach_blocking(root, machine, &sid)?;
             khor_node::host::connect_at(&addr, &cookie, 0, 0)?
         }
         None => {
@@ -305,15 +320,41 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
+        left: AtomicBool::new(false),
     });
     let reader = chat.clone();
+    let root = root.to_path_buf();
     std::thread::spawn(move || {
-        while let Ok(note) = read_frame::<GuiNote>(&mut reading) {
-            let over = matches!(note, GuiNote::Gone);
-            reader.frames.lock().unwrap().push(frame_of(note));
-            if over {
+        loop {
+            let mut said_goodbye = false;
+            while let Ok(note) = read_frame::<GuiNote>(&mut reading) {
+                let over = matches!(note, GuiNote::Gone);
+                reader.frames.lock().unwrap().push(frame_of(note));
+                if over {
+                    said_goodbye = true;
+                    break;
+                }
+            }
+            // **A torn far pipe asks again where that is switched on**
+            // (a phone, `crate::rejoin`); the host's own goodbye never
+            // does — the conversation is over then, not the pipe.
+            if said_goodbye {
                 break;
             }
+            let Some(machine) = far.as_deref().filter(|_| crate::rejoin::is_on()) else {
+                break;
+            };
+            let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
+                khor_node::host::connect_at(addr, cookie, 0, 0)
+            }) else {
+                break;
+            };
+            let Ok(again) = conn.try_clone() else { break };
+            // The write half first, so the history a face asks for on
+            // seeing `lost` goes down the new attachment.
+            *reader.conn.lock().unwrap() = conn;
+            reader.frames.lock().unwrap().restart();
+            reading = again;
         }
         // A goodbye and a torn connection land the same way (ChatBatch).
         reader.gone.store(true, Ordering::Relaxed);
@@ -541,6 +582,7 @@ pub fn chat_leave(id: &str) -> Result<(), String> {
     if let Some(chat) = registry.get(id)
         && chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1
     {
+        chat.left.store(true, Ordering::Relaxed);
         registry.remove(id);
     }
     Ok(())
@@ -615,6 +657,30 @@ mod frame_cap_tests {
             f.held.len(),
             "a cursor at the end reads an empty slice"
         );
+    }
+
+    /// **An attachment made again starts a new life** (`crate::rejoin`):
+    /// a face that had read everything is told it `lost` frames — its
+    /// way back is history on the new attachment — and only the new
+    /// life's frames are handed out, never the old ones twice.
+    #[test]
+    fn a_rejoined_conversation_tells_every_face_it_lost_frames() {
+        let mut f = Frames::default();
+        for n in 0..10u64 {
+            f.push(numbered(n));
+        }
+        let caught_up = f.dropped + f.held.len() as u64;
+        f.restart();
+        let (from, lost) = f.since(caught_up);
+        assert!(lost, "a face that kept up is told to rebuild");
+        assert_eq!(from, 0);
+        assert!(f.held.is_empty(), "nothing of the old life is held");
+        f.push(numbered(100));
+        let (from, lost) = f.since(caught_up);
+        assert!(lost);
+        assert_eq!(stop_of(&f.held[from]), "100", "and it gets the new life's frames");
+        let (_, lost) = f.since(0);
+        assert!(lost, "a face from the very start rebuilds too");
     }
 
     /// Below the cap nothing moves — so the test above is measuring the

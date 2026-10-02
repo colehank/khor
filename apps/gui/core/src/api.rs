@@ -765,6 +765,13 @@ pub fn answer(
         "config" => to_json(&crate::config_rows(root)),
         "set_config" => to_json(&crate::set_config(root, &arg("name")?, &arg("value")?)?),
         "invite" => to_json(&crate::invite(root)?),
+        // 加入网络's 扫码 (docs/IOS.md 第三步): whether this face can read
+        // a pairing ticket's QR code with a camera. **A browser cannot**
+        // — the scanner is the phone app's (`tauri-plugin-barcode-
+        // scanner`), and the app answers for itself — so every HTTP skin
+        // answers no, and the face draws no entry rather than one that
+        // refuses (the step-2 rule: absent, not refused).
+        "scanner_here" => to_json(&false),
         // 待批 (docs/CONNECT.md 根不在场): who waits for the root holder,
         // and the holder's one act on them. `approve` pushes the roster,
         // so it dials — async for `pair`'s reason.
