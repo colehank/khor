@@ -318,9 +318,9 @@ try {
     // App.tsx), and this helper runs once per scheme — the second time
     // devices is already open. A hop through sessions makes devices a
     // fresh switch every time, which always leaves the list expanded.
-    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await page.locator('[data-rail-item][data-landing="sessions"]:visible').click();
     await wait(200);
-    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await page.locator('[data-rail-item][data-landing="devices"]:visible').click();
     await wait(400);
     // 加入网络… is on the machines landing's ＋ and nowhere else
     // (2026-09-30, 「一个动作只有一个家」): two acts, so ＋ drops a menu.
@@ -368,6 +368,7 @@ try {
         tertiary: g("--tertiary"),
         lq3: g("--lq3"),
         accent: g("--accent"),
+        fillStrong: g("--fill-strong"),
         words: Object.fromEntries(
           ["busy", "blocked", "done", "errored", "failed", "idle"].map((w) => [
             w,
@@ -391,7 +392,9 @@ try {
       fail(`${scheme}: --side does not resolve — the left block has no ground of its own (src/styles/tokens.css)`);
     } else {
       const sideRgb = flatten(parse(t.side), rgb(t.bg));
-      const tinted = flatten(parse(t.accent), sideRgb);
+      // The picked row's block (app.css: `--fill-strong`, a grey block
+      // since 2026-09-27); it was the `--accent` tint before.
+      const tinted = flatten(parse(t.fillStrong), sideRgb);
       const onSide = {
         title: contrast(flatten(parse(t.ink), sideRgb), sideRgb),
         sub: contrast(flatten(parse(t.inkMuted), sideRgb), sideRgb),
@@ -402,16 +405,26 @@ try {
       for (const [what, ratio] of Object.entries(onSide)) {
         if (ratio < TEXT_FLOOR) fail(`${scheme}: a row's ${what} reads ${say(ratio)} on the left block's ground, under ${TEXT_FLOOR}`);
       }
-      if (same(t.side, t.card) || same(t.side, t.bg)) {
-        fail(`${scheme}: --side is ${t.side}, the same as --card ${t.card} or --background ${t.bg} — the left block is meant to read as its own material`);
+      // ⚠️ Until the redesign this asked the block to be a ground of its
+      // own (第十三轮). One ground since 2026-10-02 (memory
+      // `khor-one-ground-redesign`): the list column stands on the page's
+      // own ground, and a second colour there is the thing to catch.
+      if (!same(t.side, t.bg)) {
+        fail(`${scheme}: --side is ${t.side}, not --background ${t.bg} — the list column stands on the one ground`);
       }
     }
 
-    // ── the paper and the frame (2026-09-30, 板是纸底是框) ─────────
+    // ── one ground (the redesign, 2026-10-02) ─────────────────────
     //
-    // Four grounds, one order: the paper at the end of the theme's
-    // range, the left block a step in from it, the frame a step further,
-    // and what floats a step off both of the grounds it lands on.
+    // ⚠️ This block held 「板是纸底是框」 (2026-09-30): the board's paper
+    // at the end of the range, the frame a step in, the left block
+    // between. The redesign decided one ground (memory
+    // `khor-one-ground-redesign`): the paper, the frame and the left
+    // block are the same colour, and that is what is held now. What
+    // floats keeps its rule as it stood for the paper: told from the
+    // ground by lightness in the dark (a black shadow on black is a
+    // darkening nobody sees), lifted by `--shadow-float` in the light,
+    // where it must still not be darker than the ground.
     {
       const L = {
         paper: lstar(rgb(t.card)),
@@ -419,44 +432,19 @@ try {
         frame: lstar(rgb(t.bg)),
         float: lstar(rgb(t.popover)),
       };
-      // Signed toward the frame: positive means 「further from the paper's
-      // end of the range」, which is darker in light and lighter in dark.
-      const away = (x) => (scheme === "light" ? L.paper - x : x - L.paper);
       console.log(
         `${scheme}: L* paper ${say(L.paper)}, side ${say(L.side)}, frame ${say(L.frame)}, float ${say(L.float)} — ` +
-          `frame ${say(away(L.frame))} from the paper, side ${say(away(L.side))} from the paper and ` +
-          `${say(away(L.frame) - away(L.side))} from the frame, float ${say(Math.abs(L.float - L.frame))} off the frame`,
+          `float ${say(Math.abs(L.float - L.frame))} off the ground`,
       );
-      for (const [name, v] of [["the left block", L.side], ["the frame", L.frame], ["what floats", L.float]]) {
-        if (away(v) < 0) {
-          fail(
-            `${scheme}: ${name} (L* ${say(v)}) is further toward the end of the range than the paper --card ` +
-              `(L* ${say(L.paper)}) — the paper is the ${scheme === "light" ? "whitest" : "blackest"} ground ` +
-              "this theme has (板是纸, tokens.css)",
-          );
-        }
+      if (!same(t.card, t.bg) || Math.abs(L.side - L.frame) > 0.01) {
+        fail(`${scheme}: --card ${t.card}, --background ${t.bg} and --side ${t.side} are not one ground`);
       }
-      if (away(L.frame) < FRAME_STEP) {
-        fail(
-          `${scheme}: the frame --background ${t.bg} is ${say(away(L.frame))} L* from the paper --card ${t.card}, ` +
-            `under ${FRAME_STEP} — a frame a person has to look for is not a frame (底是框, tokens.css)`,
-        );
+      const lift = scheme === "dark" ? L.float - L.frame : L.float - L.frame;
+      if (scheme === "dark" && lift < FLOAT_STEP) {
+        fail(`dark: --popover ${t.popover} is ${say(lift)} L* over the ground ${t.bg} — the lightest thing in a dark window is what floats, ${FLOAT_STEP} over it`);
       }
-      if (!(away(L.side) >= SIDE_STEP && away(L.frame) - away(L.side) >= SIDE_STEP)) {
-        fail(
-          `${scheme}: the left block --side ${t.side} is ${say(away(L.side))} L* from the paper and ` +
-            `${say(away(L.frame) - away(L.side))} from the frame — it stands between them, ${SIDE_STEP} from each, ` +
-            "or it reads as one of them rather than as its own piece of furniture",
-        );
-      }
-      if (Math.abs(L.float - L.frame) < FLOAT_STEP) {
-        fail(
-          `${scheme}: --popover ${t.popover} is ${say(Math.abs(L.float - L.frame))} L* off the frame ${t.bg} — ` +
-            `what floats over R0 or the gap round the board has to be ${FLOAT_STEP} off it`,
-        );
-      }
-      if (scheme === "dark" && L.float - L.frame < FLOAT_STEP) {
-        fail(`dark: --popover ${t.popover} is not lighter than the frame ${t.bg} — the lightest thing in a dark window is what floats`);
+      if (scheme === "light" && lift < 0) {
+        fail(`light: --popover ${t.popover} is darker than the ground ${t.bg} — what floats is lifted, never sunk`);
       }
     }
 
@@ -584,7 +572,10 @@ try {
       rgb(t.bg),
       flatten(parse(t.side), rgb(t.bg)),
       rgb(t.popover),
-      flatten(parse(t.accent), rgb(t.card)),
+      // ⚠️ The brand wash over the paper stood here while a selected row
+      // wore it; a selected row is a grey block since 2026-09-27 and its
+      // words take `--foreground` (app.css), so the wash carries no state
+      // word any more.
     ];
     const readings = WORDS.map((w) => {
       const colour = t.words[w];
@@ -819,9 +810,9 @@ try {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.reload({ waitUntil: "load" });
     await wait(1200);
-    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await page.locator('[data-rail-item][data-landing="devices"]:visible').click();
     await wait(200);
-    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await page.locator('[data-rail-item][data-landing="sessions"]:visible').click();
     await wait(400);
     const opener = page.locator("[data-list] [data-row-open]").first();
     if ((await opener.count()) === 0) throw new Error("probe dead: the routed session rows drew no [data-row-open] — no selected row to measure");
@@ -965,9 +956,9 @@ try {
     await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
     await page.reload({ waitUntil: "load" });
     await wait(1200);
-    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await page.locator('[data-rail-item][data-landing="devices"]:visible').click();
     await wait(200);
-    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await page.locator('[data-rail-item][data-landing="sessions"]:visible').click();
     await wait(400);
     const opener = page.locator("[data-list] [data-row-open]").first();
     if ((await opener.count()) === 0) throw new Error("probe dead: the routed terminal row drew no [data-row-open]");
@@ -1003,7 +994,15 @@ try {
           };
         });
         console.log(`${scheme}: the terminal's ground ${JSON.stringify(got)}`);
-        for (const where of ["box", "xterm", "board", "tab"]) {
+        // **The open tab is the chosen piece of glass** (the redesign,
+        // 2026-10-02, the owner: 「深色选中是底色的黑、浅色玻璃为灰、选中为
+        // 白」): white in light, the ground's black in dark. It was the
+        // paper itself while a tab was a fold of the board (板是纸).
+        const chosen = scheme === "light" ? "rgb(255, 255, 255)" : got.card;
+        if (got.tab && !same(got.tab, chosen)) {
+          fail(`${scheme}: the open tab is ${got.tab}, not the chosen glass ${chosen}`);
+        }
+        for (const where of ["box", "xterm", "board"]) {
           if (!got[where]) {
             fail(`${scheme}: probe dead — the terminal's ${where} could not be read`);
           } else if (!same(got[where], got.card)) {
@@ -1041,7 +1040,7 @@ try {
     );
     // Off the terminal first: its screen holds the keyboard, and the
     // question here is the hits, not who hears ⌘K inside a pty.
-    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await page.locator('[data-rail-item][data-landing="devices"]:visible').click();
     await wait(400);
     for (const scheme of ["light", "dark"]) {
       await flipTheme(page, scheme);
@@ -1207,9 +1206,9 @@ try {
       hosts: true,
     }));
     await page.route("**/devices", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(devices) }));
-    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    await page.locator('[data-rail-item][data-landing="sessions"]:visible').click();
     await wait(200);
-    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await page.locator('[data-rail-item][data-landing="devices"]:visible').click();
     const drawnBy = Date.now() + 8_000;
     const markSel = '[data-side-row] [data-mark-at="face"]';
     while ((await page.locator(markSel).count()) < devices.length && Date.now() < drawnBy) await wait(200);
@@ -1341,7 +1340,7 @@ try {
   }
 
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
-  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, the paper is the extreme and the frame a step off it, every ink reads on all four grounds, a row reads on the left block's ground, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
+  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, the paper, the frame and the list column are one ground, every ink reads on all four grounds, a row reads on the left block's ground, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
 } catch (e) {
   fail(String(e));
 } finally {

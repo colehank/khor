@@ -1284,7 +1284,12 @@ try {
     const geo = await page.evaluate(() => {
       const strip = document.querySelector("[data-detail-day] [data-day-strip]")?.getBoundingClientRect();
       const tab = document.querySelector('[data-tab][data-on="true"]')?.getBoundingClientRect();
-      return strip && { top: strip.top, bottom: strip.bottom, left: strip.left, right: strip.right, tab: tab && { left: tab.left, right: tab.right, bottom: tab.bottom } };
+      // **The tab is a capsule since the redesign** (2026-10-02): its
+      // rounded ends are not its pixels, so the probe walks the straight
+      // run between them — the corner's radius in from each end.
+      const el = document.querySelector('[data-tab][data-on="true"]');
+      const round = el ? Math.min(parseFloat(getComputedStyle(el).borderBottomLeftRadius) || 0, tab.height / 2) : 0;
+      return strip && { top: strip.top, bottom: strip.bottom, left: strip.left, right: strip.right, tab: tab && { left: tab.left + round, right: tab.right - round, bottom: tab.bottom } };
     });
     if (!geo?.tab) {
       fail("probe dead: ⑥f found no front tab over the band");
