@@ -26,7 +26,11 @@
 //            sizes it cannot be added one without the other (第 4 条:
 //            every landing with a column can put it away, because the
 //            rail toggles `pane` and every pane has one).
-import type { ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
+
+import { IconReload } from "@/components/icons";
+import { gui } from "@/gen/catalog";
+import { PULL_STRIP, usePullRefresh, type PullState } from "@/hooks/use-pull-refresh";
 
 import { SideListSeat } from "@/components/SideHead";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -45,8 +49,12 @@ export function ListPane({
   seat,
   ground,
   className,
+  onRefresh,
   children,
 }: {
+  /** Pull to refresh under a finger (`use-pull-refresh`): what a pull
+      past the threshold asks. Absent, the list does not pull. */
+  onRefresh?: () => Promise<unknown>;
   /** The data attribute this pane answers to (`data-list`,
       `data-ws-tree`…). **A prop rather than one name for all of them**:
       the gates and the smoke reach for a particular column, and a
@@ -110,6 +118,8 @@ export function ListPane({
   // worth keeping through a collapse. Narrow keeps the class-driven
   // flow: there the pane is the whole screen.
   const away = pane !== null && pane.collapsed;
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const pull = usePullRefresh(body, onRefresh);
   // The seam between this pane and the content: drag to size, drag
   // under the snap line to put the pane away, double-click for the
   // default, arrows to walk its stops. It takes no room — a hit margin
@@ -167,7 +177,8 @@ export function ListPane({
           // at** — `app.css` keys the containment off the overflow
           // utility itself, and this attribute is what a probe measures
           // (第 1 条).
-          <div data-pane-body className="min-h-0 flex-1 overflow-y-auto">
+          <div ref={setBody} data-pane-body className="min-h-0 flex-1 overflow-y-auto">
+            {onRefresh && <PullStrip {...pull} />}
             {children}
           </div>
         ) : (
@@ -178,4 +189,41 @@ export function ListPane({
     </>
   );
   return onSide && !narrow ? <SideListSeat>{pane_}</SideListSeat> : pane_;
+}
+
+/**
+ * The strip a pull opens over the list (the canvas's 「下拉刷新」 board):
+ * the family's reload mark, turning with the pull and spinning while the
+ * shell asks, and one line that says which of the four moments this is.
+ * As tall as the pull while a finger holds it, the strip's own height
+ * while it works, nothing at rest.
+ */
+function PullStrip({ state, pull }: { state: PullState; pull: number }) {
+  if (state === "idle" && pull === 0) return null;
+  const word =
+    state === "pulling"
+      ? gui.pull_to_sync
+      : state === "armed"
+        ? gui.release_to_sync
+        : state === "syncing"
+          ? gui.syncing
+          : gui.synced_now;
+  return (
+    <div
+      role="status"
+      data-pull={state}
+      className="flex items-end justify-center overflow-hidden"
+      style={{ height: pull, "--pull-turn": `${Math.min(1, pull / PULL_STRIP)}turn` } as CSSProperties}
+    >
+      <span className="flex h-pull-strip items-center gap-in text-callout text-muted-foreground tabular-nums">
+        <IconReload
+          className={cn(
+            "size-4 flex-none",
+            state === "syncing" ? "animate-spin" : "rotate-(--pull-turn)",
+          )}
+        />
+        {word}
+      </span>
+    </div>
+  );
 }

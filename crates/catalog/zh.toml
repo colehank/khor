@@ -2271,8 +2271,6 @@ search-close = "结束搜索"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
 nav-order-note = "前三项在底部，其余收进「更多」。拖动调整顺序"
-nav-order-up = "上移"
-nav-order-down = "下移"
 type-size = "字号"
 ui-size-system = "界面字号跟随系统"
 ui-size = "界面字号"
@@ -2280,12 +2278,10 @@ term-size = "终端字号"
 term-size-sample = "~ % khor ls"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
-machine-sessions-none = "这台机器上没有会话"
 # Pull to refresh on a list.
 pull-to-sync = "下拉同步"
 release-to-sync = "松开同步"
 syncing = "正在同步"
-syncing-waiting = "正在同步，{0} 台已到，{1} 还没回"
 synced-now = "已同步"
 row-unreachable = "够不到 {0} · {1}的样子"
 # ── 额度 ──────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { StatusWord } from "@/components/StatusWord";
-import { takeover, takeoverTerm, type SessionRow } from "@/api";
+import { takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
@@ -66,8 +66,12 @@ export function SessionsList({
   pinFailed,
   closeRefused,
   showVia = true,
+  devices = [],
 }: {
   rows: SessionRow[];
+  /** The machine table, for whether a row's machine can be reached (the
+      redesign: a row from one that cannot is dimmed, and says so). */
+  devices?: DeviceRow[];
   /** Not answered yet: a skeleton rather than 「there are none」. */
   loading?: boolean;
   query: string;
@@ -255,7 +259,17 @@ export function SessionsList({
       run: () => onClose(r),
     },
   ];
-  const side: SideRow[] = ticked.map((r) => ({
+  /** A row whose machine this one cannot reach now (`hop` 「quiet」), and
+      how old what the row shows is: the report's age where the row is a
+      report, else the machine's last reading. */
+  const far = (r: SessionRow): { shown: string; age: number } | null => {
+    const d = devices.find((x) => x.name === r.home);
+    if (!d || d.me || d.hop !== "quiet") return null;
+    return { shown: d.shown, age: r.source?.age_ms ?? d.vitals?.age_ms ?? 0 };
+  };
+  const side: SideRow[] = ticked.map((r) => {
+    const away = far(r);
+    return {
     id: r.id,
     group: r.group,
     pinned: r.pinned,
@@ -282,7 +296,11 @@ export function SessionsList({
     // ⚠️ 墓碑 (the redesign, 2026-10-02): 「来自 <machine>」 followed the
     // last line on a row that lives elsewhere. The face is that machine's
     // and says it; the row says what is happening, nothing else.
-    sub: r.last ? (
+    sub: away ? (
+      <span data-row-far className="block min-w-0 truncate">
+        {gui.row_unreachable(away.shown, gui.card_age(ago(Date.now() - away.age)))}
+      </span>
+    ) : r.last ? (
       <span data-last className="block min-w-0 truncate">
         {r.last}
       </span>
@@ -338,7 +356,7 @@ export function SessionsList({
     ),
     find: `${r.title} ${r.id} ${r.source?.device ?? ""} ${r.place ?? ""}`,
     selected: r.id === selected,
-    dim: r.quiet,
+    dim: r.quiet || away !== null,
     old: r.stale,
     menu: actions(r),
     onOpen: () => onSelect(r),
@@ -360,7 +378,8 @@ export function SessionsList({
       "data-title": r.title,
     },
     openData: { "data-row-open": "" },
-  }));
+    };
+  });
   return (
     <SideList
       rows={side}

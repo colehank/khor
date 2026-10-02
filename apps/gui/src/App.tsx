@@ -1366,6 +1366,9 @@ export default function App() {
       narrow={narrow}
       seam={{ "data-list-seam": "" }}
       seat="side"
+      // Pull to refresh (the redesign): the rows and the machines asked
+      // again. See `use-pull-refresh` for what it is not yet.
+      onRefresh={refresh}
       head={
       <PaneBar
         seat="side"
@@ -1437,6 +1440,7 @@ export default function App() {
         {sessions ? (
           <SessionsList
             rows={rows}
+            devices={devices}
             loading={!rowsRead}
             query={queries.sessions}
             words={words.sessions}
@@ -1719,6 +1723,7 @@ export default function App() {
                 where its tab lives. */}
             <SessionsList
               rows={rows.filter((r) => r.home === openDevice?.name)}
+              devices={devices}
               loading={!rowsRead}
               query=""
               words={[]}
