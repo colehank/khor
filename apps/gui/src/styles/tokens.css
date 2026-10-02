@@ -932,6 +932,29 @@
    * the window is built, and a row that changed height at 760 wide
    * would leave them five points off its middle. */
   --pane-head: 38px;
+  /* ── the session page on the narrow face (2026-10-02, iOS 第三步 A) ──
+   *
+   * The owner, of another phone's terminal: 「上方完全交给内容，下方是操作
+   * 与标签页」. Inside a session on the narrow face the content takes
+   * everything above and a bar at the foot holds the way back and the
+   * tabs — **that row is `--pane-head`**, the same first row a tab
+   * stands in at the top, so it is 38 under a mouse (a Mac window
+   * dragged narrow) and 48 under a finger. Under it, on a finger and on
+   * a terminal only, one more row: the keys a soft keyboard lacks (Esc,
+   * Ctrl, Tab, the arrows…). **The key row is the finger's floor**,
+   * because every key in it is a target and nothing else: a cap is
+   * drawn `--gap-xxs` inside its 44 box (`radius-xs`, the key cap's
+   * corner in the design system), the box is what a thumb lands on. */
+  --key-row: var(--touch);
+  /* **The phone's own edges, said by the phone** (`viewport-fit=cover`
+   * in `index.html`): the status bar and the notch over the top, the
+   * home indicator under the foot. Zero everywhere else — a desktop
+   * window has no such edge, so these cost the Mac nothing. The bottom
+   * one goes to nothing while the soft keyboard is up (`[data-keyboard]`
+   * at the foot of this file): the keyboard covers the indicator, and
+   * the bar sits straight on top of the keys. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   /* A tab's close cell (`components/Tab`): always this wide, the name
    * truncates before it. It was `--ctl-sm` until the control heights
    * went to macOS's 22 — a cell is not a control's look. */
@@ -2026,6 +2049,12 @@
   --spacing-pane-head: var(--pane-head);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
+  /* The narrow session page's foot (2026-10-02): `h-key-row` on the
+     keys a soft keyboard lacks, `pt-safe-top` / `pb-safe-bottom` where
+     a phone's own edges are kept clear. */
+  --spacing-key-row: var(--key-row);
+  --spacing-safe-top: var(--safe-top);
+  --spacing-safe-bottom: var(--safe-bottom);
 
   /* the four gaps → utilities (gap-in, mb-group, pt-pane…) */
   --spacing-in: var(--gap-in);
@@ -2350,4 +2379,12 @@
     --pane-head: 48px;
     --tab-lip: 2px;
   }
+}
+
+/* **The soft keyboard covers the home indicator** (2026-10-02). While it
+   is up (`lib/viewport` stamps the root from the visual viewport), the
+   session bar sits straight on top of the keys, so the room kept for the
+   indicator under it goes. */
+:root[data-keyboard] {
+  --safe-bottom: 0px;
 }

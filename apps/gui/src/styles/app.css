@@ -272,6 +272,17 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
+/* The keys a soft keyboard lacks (`views/TermKeys`, 2026-10-02) scroll
+   sideways the same way and for the same reason: a thumb swipes them,
+   and a bar under a row of keys is one more thing between the keys and
+   the keyboard. */
+[data-term-keys] {
+  scrollbar-width: none;
+}
+[data-term-keys]::-webkit-scrollbar {
+  display: none;
+}
+
 /* **A selected row: a grey block, not the brand** (2026-09-27, the
    owner: 选中行「太亮」; and 额度's rings vanished on the solid — their
    pale track has nothing to stand on over `--brand-strong`). This
@@ -364,6 +375,26 @@ aside[data-side] {
   /* `initial` (a square corner) rather than a literal 0: this file names
      no radius of its own (`check-type`). */
   border-radius: initial;
+}
+
+/* **The shell is as tall as what the keyboard leaves** (2026-10-02,
+   `lib/viewport`): while a soft keyboard is up the root carries the
+   visual viewport's height, and the whole app lays out in it — the
+   session bar lands on the keys and the terminal refits to what is left
+   above it. Nothing changes where the two viewports agree. */
+:root[data-keyboard] #root {
+  height: var(--app-h);
+}
+
+/* **The top of a session page on the narrow face** (2026-10-02): no head,
+   the content runs to the top of the glass — kept clear only of what the
+   platform puts there. A phone says its status bar (`--safe-top`); a Mac
+   window dragged narrow has macOS's three buttons in that corner, so the
+   strip is the first row's height there, and it moves the window (the
+   shell marks it, `components/SessionBar`). Same rule as L0's: the
+   corner is the platform's, the page only keeps out of it. */
+:root[data-traffic] [data-session-top] {
+  height: var(--pane-head);
 }
 
 /* Two selectors because the two properties inherit differently:
