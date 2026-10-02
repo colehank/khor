@@ -32,7 +32,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { useNarrow } from "@/hooks/use-narrow";
 import { useNewAct } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -161,7 +160,6 @@ export function PaneBar({
   // **⌘N is this 「+」** (`lib/shortcuts`, 2026-09-28) — the landing's one
   // 「+」 is the one seated in the first row, so only that bar lends it,
   // by its own name (the menu bar's 新建 item reads it).
-  const narrow = useNarrow();
   const primary = actions?.[0] ?? (create?.onSelect && !create.disabled ? create : null);
   useNewAct(
     seat === "side" && primary?.onSelect ? { label: primary.label, run: primary.onSelect } : null,
@@ -345,24 +343,17 @@ export function PaneBar({
     </>
   );
   const hasActs = !!(filter && filterLabel) || !!actions?.length || !!create;
-  // **Wide: the list's search and its buttons on one row** (the
-  // redesign, 方案 B): the glass search field takes the row, its
-  // placeholder naming the list (搜索会话 …) — there is no title row; the
-  // landings' strip above and the placeholder say where you are — and
-  // the 筛选 / ＋ capsule ends it. ⌘K widens the field, as before.
-  const wideBar = (
-    <div data-pane-bar data-search-glass className="@container/bar flex min-w-0 flex-1 items-center gap-in">
-      {box}
-      {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
-    </div>
-  );
+  // **The phone's list head, at both widths** (the redesign; wide since
+  // the owner's refinement of 方案 B): the landing's name, then 筛选 / ＋
+  // in one glass capsule, then the search circle, which opens the box in
+  // this row. On the wide face it is the left column's second row, under
+  // the window's own.
   const bar = glass ? (
-    narrow ? (
     <div
       data-pane-bar
       data-searching={open || undefined}
       data-search-glass
-      className="@container/bar flex min-h-list-head min-w-0 flex-1 items-center gap-in"
+      className="@container/bar flex min-h-glass-btn min-w-0 flex-1 items-center gap-in"
       style={{ "--menu-inset": "var(--seat-menu-inset)" } as CSSProperties}
     >
       {open ? (
@@ -406,9 +397,6 @@ export function PaneBar({
         </>
       )}
     </div>
-    ) : (
-      wideBar
-    )
   ) : (
     <div
       data-pane-bar

@@ -2268,6 +2268,9 @@ nav = "导航"
 nav-settings = "设置"
 # The wide face's avatar button at the end of the window's top row.
 me-menu = "这台机器与设置"
+# The wide face's list column toggle, said as what pressing it does.
+list-fold = "收起列表"
+list-unfold = "展开列表"
 search-open = "搜索"
 search-close = "结束搜索"
 # 外观: the bar's order, and the two text sizes.

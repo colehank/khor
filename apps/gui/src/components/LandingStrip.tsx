@@ -7,10 +7,12 @@
  * piece filled (`rail-on-ink`, `app.css`). Its name is the hint a
  * pointer gets.
  *
- * **Pressing the open landing again folds its list away**, and pressing a
- * glyph brings it back; the shell does the folding. Folded, the strip
- * stays where it was on screen — the window's top-left — at the start of
- * the content's first row (`Region`'s lead).
+ * **The list column folds by `SideToggle`**, Apple's sidebar button,
+ * which stands before the strip (the owner, 2026-10-02 — it replaced
+ * 「press the open landing again」). A glyph only switches landings, and
+ * brings a folded list back. Folded, the toggle and the strip stay where
+ * they were on screen — the window's top-left — at the start of the
+ * content's first row (`Region`'s lead).
  *
  * `MeButton` is the row's other end: this machine's face, opening a menu
  * of 设置 and 这台机器. The narrow face has neither: its navigation floats
@@ -19,7 +21,7 @@
 import type { ReactNode } from "react";
 
 import { MachineAvatar } from "@/components/Avatar";
-import { IconGear } from "@/components/icons";
+import { IconGear, IconSidebar } from "@/components/icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,5 +128,25 @@ export function MeButton({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** **The list column's toggle** (Apple's sidebar button): right after the
+    window's buttons, before the strip, and never moving — folded or not,
+    it is in the same place on screen. Its label says what pressing it
+    does; its pane is solid while the list is out (`app.css`). */
+export function SideToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      data-slot="button"
+      data-side-toggle
+      aria-pressed={open}
+      aria-label={open ? gui.list_fold : gui.list_unfold}
+      onClick={onToggle}
+      className="grid size-ctl-md flex-none place-items-center rounded-md text-muted-foreground hover:bg-fill focus-visible:outline-2 focus-visible:outline-ring [&_svg]:size-head-glyph"
+    >
+      <IconSidebar />
+    </button>
   );
 }

@@ -362,12 +362,14 @@ export function SideHead({
       // (第十五轮 第 4 条) — what is seated in it gives way instead.
       className={cn(
         "relative flex min-w-0 flex-none items-center bg-side select-none",
-        narrow ? "min-h-list-head pr-group" : "min-h-glass-btn pr-row pb-in",
+        // Wide: the left column's second row, the canvas's 48 with its
+        // name on the list's 20 (paddingLeft below).
+        narrow ? "min-h-list-head pr-group" : "min-h-12 pr-row pb-1.5",
       )}
       // Wide, this is the list column's second row (方案 B), under the
-      // window's top row: the column's own inset. Narrow, it is the
+      // window's top row: the name on the list's own 20. Narrow, it is the
       // screen's first row, after the platform's corner.
-      style={{ paddingLeft: narrow ? START : "var(--gap-row)" }}
+      style={{ paddingLeft: narrow ? START : "var(--gap-group)" }}
     >
       {/* The landing's head sits here. `hidden` while the box is widened
           — the same seat, the other range — and while there is nothing

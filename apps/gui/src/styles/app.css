@@ -1444,3 +1444,9 @@ aside[data-side] {
 :root[data-narrow] {
   --page-inset: var(--gap-group);
 }
+
+/* **The list toggle's pane is solid while the list is out** (the
+   redesign): the family's body piece, at its density, only then. */
+[data-side-toggle][aria-pressed="false"] svg [data-body] {
+  fill-opacity: 0;
+}

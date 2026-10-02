@@ -1080,10 +1080,11 @@
   --rail-w: 64px;
   /* **The wide face's top row** (the redesign, 方案 B): the window's
      buttons' room (macOS draws them; a browser leaves the room), then the
-     landings' strip — at 80 from the window's edge, in the list column
-     and, folded, at the start of the content's row alike. A strip glyph's
-     button is 34 wide; this machine's face at the row's end is 24. */
-  --wide-strip-start: 80px;
+     list's toggle and the landings' strip — the toggle at 78 from the
+     window's edge, in the list column and, folded, at the start of the
+     content's row alike, so it never moves. A strip glyph's button is
+     34 wide; this machine's face at the row's end is 24. */
+  --wide-lead-start: 78px;
   --strip-item: 34px;
   --me-face: 24px;
   /* **A detail page's one left and right edge** (the redesign, the
@@ -1126,8 +1127,8 @@
      tab strip's right end) and Linux (system decorations) leave no
      strip here. */
   --traffic: 0px;
-  /* 320 since the redesign (方案 B): the canvas's left column. */
-  --list-w: 320px;
+  /* 340 since the redesign (方案 B): the canvas's left column. */
+  --list-w: 340px;
   /* The list pane's drag bounds. The floor is where the PaneBar stops
    * being usable — below ~180 the search field is a slit before the
    * pane itself has failed, so the pane should give way first. Under
@@ -2100,7 +2101,7 @@
      it (2026-09-29). */
   --spacing-pane-head: var(--pane-head);
   --spacing-glass-btn: var(--glass-btn);
-  --spacing-wide-strip-start: var(--wide-strip-start);
+  --spacing-wide-lead-start: var(--wide-lead-start);
   --spacing-strip-item: var(--strip-item);
   --spacing-me-face: var(--me-face);
   --spacing-page: var(--page-inset);

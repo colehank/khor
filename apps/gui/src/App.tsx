@@ -43,7 +43,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
 import { FloatNav, type NavSeat } from "@/components/FloatNav";
-import { LandingStrip, MeButton } from "@/components/LandingStrip";
+import { LandingStrip, MeButton, SideToggle } from "@/components/LandingStrip";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
@@ -108,7 +108,7 @@ import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region, RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
-import { FIND_ALL, NarrowHead, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
@@ -1185,18 +1185,17 @@ export default function App() {
   /** The wide face's list put away by pressing the open landing again. */
   const folded = !narrow && listPane.collapsed;
   /** The wide face's top row (方案 B): the landings' glyphs beside the
-      window's buttons. The open landing pressed again folds its list,
-      and once more brings it back; any other landing opens with its list. */
+      window's buttons and the list's toggle. */
   const strip = (
     <LandingStrip
       seats={navOrder.map(seatOf)}
       active={morePage === null ? landing : null}
-      onGo={(key) => {
-        if (morePage === null && landing === key) listPane.toggle();
-        else goLanding(key as Landing);
-      }}
+      // A glyph switches landings, and brings a folded list back
+      // (`goLanding` expands it); folding is the toggle's alone.
+      onGo={(key) => goLanding(key as Landing)}
     />
   );
+  const sideToggle = <SideToggle open={!folded} onToggle={() => listPane.toggle()} />;
   const meButton = (
     <MeButton
       me={me ? { face: me.face, name: me.shown, paused: me.paused } : null}
@@ -1214,11 +1213,12 @@ export default function App() {
       }}
     />
   );
-  /** Folded, the strip stays where it was on screen: the window's
-      top-left, now the start of the content's first row (`Region`'s
-      lead), the window's buttons' room before it. */
+  /** Folded, the toggle and the strip stay where they were on screen:
+      the window's top-left, now the start of the content's first row
+      (`Region`'s lead), the window's buttons' room before them. */
   const foldedLead = folded ? (
-    <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center self-stretch ps-wide-strip-start">
+    <div data-folded-lead {...WINDOW_DRAG} className="flex flex-none items-center gap-in self-stretch ps-wide-lead-start">
+      {sideToggle}
       {strip}
     </div>
   ) : null;
@@ -1985,7 +1985,13 @@ export default function App() {
         <NarrowHead>
           {() => <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.nav_settings}</h1>}
         </NarrowHead>
-      ) : null}
+      ) : (
+        <SideSeat>
+          <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
+            {gui.nav_settings}
+          </h1>
+        </SideSeat>
+      )}
       {morePageOrder.map((p) => (
         <button
           key={p}
@@ -2272,14 +2278,15 @@ export default function App() {
       ) : (
         <div className="flex h-dvh flex-col">
           <div className="flex min-h-0 flex-1">
-          {/* **The left column** (the redesign, 方案 B). Its first row is
-              the window's: the buttons' room, the landings' glyphs in one
-              glass capsule, this machine's face at the end (设置 and 这台
-              机器). Its second row is the list's search field and its
-              筛选 / ＋ capsule (`PaneBar`); then the rows. A hairline on the
-              one ground divides it from the content.
-              **Pressing the open landing's glyph folds the column away**;
-              the strip moves to the start of the content's first row
+          {/* **The left column** (the redesign, 方案 B as refined). Its
+              first row is the window's: the buttons' room, the list's
+              toggle, the landings' glyphs in one glass capsule, this
+              machine's face at the end (设置 and 这台机器). Its second row
+              is the phone's list head (`PaneBar`): the landing's name,
+              then 筛选 / ＋ and the search circle. Then the rows, and a
+              hairline on the one ground to the content.
+              **The toggle folds the column away**; the toggle and the
+              strip stay put, at the start of the content's first row
               (`foldedLead`). Its width has one owner (docs/SHELL.md 第十五轮
               第 4 条): `--list-w`, from the one seam's state. */}
           <aside
@@ -2292,8 +2299,9 @@ export default function App() {
             <div
               data-wide-top
               {...WINDOW_DRAG}
-              className="flex h-pane-head flex-none items-center gap-in ps-wide-strip-start pe-row select-none"
+              className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-row select-none"
             >
+              {sideToggle}
               {strip}
               <span className="flex-1" />
               {meButton}
