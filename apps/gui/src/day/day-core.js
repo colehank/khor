@@ -99,6 +99,15 @@ let TYPE = { cap: 11, call: 12 };
  *  after it. An estimate — SVG has no layout — and a generous one: the
  *  legend is the only caller and air is cheaper than a collision. */
 const textW = (s, size) => String(s).length * size * 0.62;
+/** A word's width as the drawing will set it: laid into the figure,
+    measured, taken away. `textW` guesses Latin widths; a row name can be
+    「内存」. */
+function inkW(svg, s, size, weight){
+  const t = txt(svg, {x:0, y:0, 'font-size':size, 'font-weight':weight, opacity:0}, s);
+  const w = t.getComputedTextLength ? t.getComputedTextLength() : textW(s, size);
+  t.remove();
+  return w || textW(s, size);
+}
 /** The window: when the oldest bucket opens, and how wide one is. */
 let T0 = 0;
 let BUCKET_MS = 300000;
@@ -214,8 +223,15 @@ function runs(keyAt){
    ══════════════════════════════════════════════════════════════════ */
 function drawHeat(svg, T, W, narrow, fill){
   const {cap} = TYPE;
-  // GL 52 at narrow (was 46): a row name at `cap` bold is 「GPU ×4」 wide.
-  const GL = narrow?52:56, GR = narrow?42:58;
+  // **The row names start on the page's left line** (2026-10-02, the
+  // owner: one left line for the page): left-anchored at 0, and the plot
+  // starts after the widest of them. Bold measures wider
+  // than `textW`'s estimate, and a CJK name far wider, so they are
+  // measured as drawn (`inkW`). ⚠️ 墓碑: a fixed 52 / 56 gutter with
+  // the names right-anchored in it, which pushed the legend's word past
+  // the page's edge.
+  const GL = Math.ceil(Math.max(0, ...T.map(t=>inkW(svg,t.name,cap,700)))) + (narrow?8:10);
+  const GR = narrow?42:58;
   const CH = narrow?13:11, HB = Math.round(CH*0.64);
   // AXIS 是**最后一笔墨到图底还剩多少**,两张图的这个数是一组、要一起改:
   // 热力带(时间轴 + 明度图例)、叠放(轴名 + 计数,`FOOT`)。它们凑在一起是为了
@@ -242,8 +258,8 @@ function drawHeat(svg, T, W, narrow, fill){
 
   T.forEach((t,r)=>{
     const y = rowY(r);
-    txt(svg,{x:X0-8,y:y+CH/2+cap*0.36,'font-size':cap,'font-weight':700,
-      'text-anchor':'end',class:'lab fade',style:`animation-delay:${r*.05}s`}, t.name);
+    txt(svg,{x:0,y:y+CH/2+cap*0.36,'font-size':cap,'font-weight':700,
+      class:'lab fade',style:`animation-delay:${r*.05}s`}, t.name);
 
     const g = el(svg,'g',{class:'wipe',style:`animation-delay:${r*.06}s`,'data-day-row':t.key||t.name});
     if(t.kind==='range'){
@@ -322,9 +338,13 @@ function drawHeat(svg, T, W, narrow, fill){
       .concat([['r'+(BANDS.length+1), BANDS[BANDS.length-1]+'+']]);
     const word = (x,s,delay,extra={}) => txt(svg,{x,y:base,'font-size':cap,'font-weight':600,
       class:'fnt fade',style:`animation-delay:${delay}s`,...extra},s);
-    word(X0-8, WORDS.shade, 1, {'text-anchor':'end'});
-    let lx = X0;
-    const lo = ramp[0][1], hi = ramp[ramp.length-1][1];
+    // **The ramp alone, its two ends written as shares** (2026-10-02, the
+    // owner: 「不要明度这个注释，直接 cmap 就行，写好是 <3% 和 >90% 就行」),
+    // and **from the page's left line**, where the row names start too:
+    // the word 「明度」 hung left of the plot and was cut at the page's
+    // edge. The swatches keep their ranges as tooltips.
+    let lx = 0;
+    const lo = '<' + BANDS[0] + '%', hi = '>' + BANDS[BANDS.length-1] + '%';
     word(lx, lo, 1);
     lx += textW(lo,cap) + 4;
     ramp.forEach(([c,s],k)=>{
@@ -656,38 +676,19 @@ export function mount(host, opts) {
   const ro = host.querySelector('.ro');
   const sw = host.querySelector('.sw');
   const ch = host.querySelector('.ch');
-  // **Buttons, not the original's `<i>` with one delegated handler.**
-  // The one thing this face asks of every control is a finger-sized
-  // target, and the gate that measures it looks at the element carrying
-  // the press. Ten-pixel words in a gallery need no such thing.
+  // **The section's head row** (2026-09-28): the section's name on the
+  // left, and at the right end a seat for the reading's picker.
   //
-  // **The line is the section's heading** (2026-09-28, the owner: the
-  // machine card's parts are sections on the board, each with a small
-  // heading row). The section's name on the left; the two readings at
-  // the right end of the same row, where a heading keeps its control.
-  //
-  // **The two readings are a segmented control** (2026-09-28, docs/
-  // design-system components/SegmentedControl): two fixed readings of
-  // one day are the case it exists for — one track, the chosen reading
-  // a face in it — where the prototype had two words and a dot, the
-  // chosen one bold. It is a radiogroup: one tab stop, the arrow keys
-  // move the reading (the keydown below). The look is `day.css`'s
-  // `.seg`, from the app's tokens, the same numbers the React control
-  // reads.
+  // ⚠️ 墓碑 (2026-10-02, the owner: 「做成和设置页面一致的，上下箭头」):
+  // the two readings were a segmented radiogroup drawn here, with its
+  // own click and arrow-key handlers. The picker is the settings rows'
+  // popup button now, a React control the host seats into
+  // `[data-day-switch-seat]` and drives through `setView` below; this
+  // module draws the name and keeps the seat, and the seat is built once
+  // so what React put in it survives every redraw.
+  sw.innerHTML = '<span class="tt" data-day-title></span><span data-day-switch-seat></span>';
   const drawSwitch = () => {
-    sw.innerHTML =
-      '<span class="tt" data-day-title>' + (WORDS.title || '') + '</span>' +
-      '<span class="seg" role="radiogroup" aria-label="' + (WORDS.title || '') + '">' +
-      viewsOf()
-        .map(([v, label]) => {
-          const on = v === st.view;
-          return (
-            '<button type="button" role="radio" data-day-view-pick="' + v + '" data-on="' + on +
-            '" aria-checked="' + on + '" tabindex="' + (on ? 0 : -1) + '"><span>' + label + '</span></button>'
-          );
-        })
-        .join('') +
-      '</span>';
+    sw.querySelector('[data-day-title]').textContent = WORDS.title || '';
   };
   // The original showed a sentence here when nothing was under the
   // cursor — 「把鼠标横着扫过去,点一下钉住」. **Not brought over**: this
@@ -831,22 +832,6 @@ export function mount(host, opts) {
     drawSwitch();
     render();                                    // st.cur / st.pin kept
   };
-  sw.addEventListener('click', (ev) => {
-    const b = ev.target.closest('button[data-day-view-pick]');
-    if (!b) return;
-    pickView(b.dataset.dayViewPick);
-  });
-  //   The radiogroup's keys: ← → (and ↑ ↓) move the reading, and the
-  //   focus goes with it to the newly drawn button.
-  sw.addEventListener('keydown', (ev) => {
-    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
-    if (!step || !ev.target.closest('button[data-day-view-pick]')) return;
-    ev.preventDefault();
-    const vs = viewsOf().map(([v]) => v);
-    const next = vs[(vs.indexOf(st.view) + step + vs.length) % vs.length];
-    pickView(next);
-    sw.querySelector('button[data-day-view-pick="' + next + '"]')?.focus();
-  });
   const ro_ = new ResizeObserver(() => {
     const w = Math.round(ch.clientWidth);
     // **Height too, now that the drawing fills it.** Watching only the
@@ -858,6 +843,9 @@ export function mount(host, opts) {
   });
   ro_.observe(ch);
   return {
+    /** The host's picker chose a reading. The cursor and its pin are
+        kept, so the readout under the figure survives the switch. */
+    setView: pickView,
     update(day, words) {
       WORDS = words;
       N = Math.max(1, day.buckets.length);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
@@ -26,6 +27,7 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PopupButton } from "@/components/ui/popup-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cli, gui } from "@/gen/catalog";
 import { tickSet } from "@/lib/ruler";
@@ -3550,7 +3552,6 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
     para: cli.day_view_para,
     gap: cli.day_gap,
     now: cli.day_now,
-    shade: cli.day_shade,
     strainLegend: cli.day_strain_legend(90),
     peakAt: (pct, at) => cli.day_peak_at(pct, at),
     brushHead: (what, n, hours) => cli.day_brush_head(what, n, hours),
@@ -3558,13 +3559,22 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
     brushNone: (name) => cli.day_brush_none(name),
     brushEmpty: (name, band) => cli.day_brush_empty(name, band),
   };
+  // **The reading's picker is the settings rows' popup button** (2026-10-02,
+  // the owner: 「做成和设置页面一致的，上下箭头，默认是 log，点击后弹出的菜单
+  // 可切换到 Stats」), seated by a portal at the right end of the
+  // section's head row, which the module builds and keeps
+  // (`[data-day-switch-seat]`). The module draws; this chooses.
+  const [view, setView] = useState<"heat" | "para">("heat");
+  const [seat, setSeat] = useState<HTMLElement | null>(null);
   useEffect(() => {
     const node = box.current;
     if (!node) return;
     panel.current = mountDay(node);
+    setSeat(node.querySelector<HTMLElement>("[data-day-switch-seat]"));
     return () => {
       panel.current?.destroy();
       panel.current = null;
+      setSeat(null);
     };
   }, []);
   // **A new answer redraws; it does not remount.** The reading somebody
@@ -3604,7 +3614,29 @@ function DayChart({ day }: { day: Load["cpu_day"] }) {
   // do not vanish and come back** when a ring is pressed. They are
   // replaced, in place, by the drawer's own heading — one line, one
   // position, one height, so nothing moves.
-  return <div ref={box} data-day-band-axis className="h-full w-full" />;
+  return (
+    <>
+      <div ref={box} data-day-band-axis className="h-full w-full" />
+      {seat &&
+        createPortal(
+          <PopupButton
+            label={cli.day_title}
+            value={view}
+            choices={[
+              { value: "heat", label: cli.day_view_heat, mark: { "data-day-view-pick": "heat" } },
+              { value: "para", label: cli.day_view_para, mark: { "data-day-view-pick": "para" } },
+            ]}
+            onPick={(v) => {
+              const next = v === "para" ? "para" : "heat";
+              setView(next);
+              panel.current?.setView(next);
+            }}
+            mark={{ "data-day-view": view }}
+          />,
+          seat,
+        )}
+    </>
+  );
 }
 
 /**

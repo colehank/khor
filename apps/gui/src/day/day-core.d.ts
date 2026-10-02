@@ -17,7 +17,6 @@ export type DayWords = {
   para: string;
   gap: string;
   now: string;
-  shade: string;
   strainLegend: string;
   peakAt: (pct: string, at: string) => string;
   brushHead: (what: string, n: number, hours: string) => string;
@@ -27,6 +26,8 @@ export type DayWords = {
 };
 
 export type DayPanel = {
+  /** Choose the reading: 日志 (`heat`) or 统计 (`para`). */
+  setView: (view: "heat" | "para") => void;
   update: (day: CpuDay, words: DayWords) => void;
   destroy: () => void;
 };

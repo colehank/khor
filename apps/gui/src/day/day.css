@@ -148,62 +148,10 @@
   color: var(--tertiary);
   letter-spacing: 0;
 }
-/* **The two readings are a segmented control** (2026-09-28, docs/
-   design-system components/SegmentedControl) — the app's one, drawn
-   here from the app's tokens because this block is not React: one
-   `fill` track at `radius-sm`, `ctl-md` tall; the chosen reading a
-   `segment` face at `radius-xs`, `ctl-sm` tall, lifted by `knob`; a
-   hairline between two readings neither of which is chosen. The button
-   is the hit area (`--hit`), the face is drawn inside it — the switch's
-   arrangement. ⚠️ 墓碑: two words and a `·`, the chosen one bold. */
-.dayblk .sw .seg {
-  display: inline-flex;
-  align-items: center;
-  height: var(--ctl-md);
-  border-radius: var(--radius-sm);
-  background: var(--fill);
-  letter-spacing: normal;
-}
-.dayblk .sw button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-style: normal;
-  padding: 0 var(--gap-row);
-  min-height: var(--hit);
-  min-width: var(--hit);
-  border-radius: var(--radius-sm);
-  color: var(--foreground);
-}
-.dayblk .sw button > span {
-  position: relative;
-}
-.dayblk .sw button[data-on="true"]::before {
-  content: "";
-  position: absolute;
-  inset-inline: calc((var(--ctl-md) - var(--ctl-sm)) / 2);
-  top: 50%;
-  height: var(--ctl-sm);
-  transform: translateY(-50%);
-  border-radius: var(--radius-xs);
-  background: var(--segment);
-  box-shadow: var(--shadow-knob);
-}
-.dayblk .sw button[data-on="false"] + button[data-on="false"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  height: var(--gap-base);
-  width: 1px; /* `--hair` is a colour inside `.dayblk` */
-  transform: translateY(-50%);
-  background: var(--border);
-}
-.dayblk .sw button:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 0;
-}
+/* ⚠️ 墓碑 (2026-10-02): the two readings' segmented control was drawn
+   here (`.seg`, its buttons, the chosen face and the hairline between).
+   The picker is the settings rows' popup button now, seated by React in
+   `[data-day-switch-seat]` at the row's right end. */
 
 .dayblk .ch svg {
   display: block;

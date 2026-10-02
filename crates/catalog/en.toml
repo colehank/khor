@@ -662,7 +662,6 @@ day-view-para = "Stats"
 day-at = "{0} · {1}"
 day-gap = "not captured"
 day-now = "now"
-day-shade = "brightness"
 day-strain-legend = "memory/disk {0}+"
 day-brush-head = "{0}'s {1} moments ({2} hours):"
 
