@@ -267,6 +267,10 @@ export default function App() {
   // landing's head and its list column go. Made here, above every early
   // return, because they are a hook and the block is drawn below.
   const seats = useSideSeats();
+  // The page a back swipe uncovers has its own first row (F7.3, V01):
+  // the list's head is seated there, not in the row the page on top
+  // holds.
+  const underSeats = useSideSeats();
   // 设置 (docs/MORE.md), read once here and handed down through a
   // context: the four keys this batch lands are read on four screens
   // that are not each other's children (`src/settings.ts`).
@@ -1990,6 +1994,26 @@ export default function App() {
             : () => setScreen("list");
   const [swipeHost, setSwipeHost] = useState<HTMLDivElement | null>(null);
   useEdgeSwipe(swipeHost, swipeBack);
+  // Which kind of swipe this screen has: a file moves alone, over its
+  // listing (`app.css` `data-swipe-kind`).
+  const swipesFile = landing === "devices" && fileBack !== null;
+  useEffect(() => {
+    document.documentElement.dataset.swipeKind = swipesFile ? "file" : "page";
+  }, [swipesFile]);
+  // The list a page was opened from stays a moment under it, fading,
+  // while the page comes in (V19) — the same layer a swipe uncovers.
+  const [leaving, setLeaving] = useState(false);
+  const shownKey = `${morePage ?? landing}:${screen}`;
+  const lastShown = useRef(shownKey);
+  useEffect(() => {
+    const was = lastShown.current;
+    lastShown.current = shownKey;
+    if (!narrow || was === shownKey || !was.endsWith(":list") || screen !== "detail") return;
+    setLeaving(true);
+    const t = window.setTimeout(() => setLeaving(false), 280);
+    return () => window.clearTimeout(t);
+  }, [narrow, shownKey, screen]);
+
   const morePageEl =
     morePage === null ? null : morePage === "network" ? (
       <NetworkPage
@@ -2296,19 +2320,75 @@ export default function App() {
   // narrow is one screen at a time with the rail as a bottom bar. A
   // 「…」 page is neither half of that pair, so it takes the whole of
   // what is left of the window beside the rail (see `morePage`).
-  /** What a back swipe uncovers (F7.3): the list the page came from.
-      Absent where the page under is not a list this shell draws — a
-      file's listing is the machine page's own, 额度 and the browsing
-      landing hold their screens themselves, and the tab switcher's page
-      is a live terminal that must not be drawn twice. */
-  const under =
-    swipeBack === null || switchingTabs
+  /**
+   * **What a back swipe uncovers, complete** (F7.3; V01): the page the
+   * swipe goes to, as it is drawn when it is the screen — its own first
+   * row (`underSeats`) and the bottom bar, at the y they have then — so
+   * nothing jumps or blinks when the finger lets go. Also what a list
+   * leaves under the page it opens (V19), fading as that page comes in.
+   *
+   * - A landing's page uncovers the landing's list (额度's and the
+   *   browser's are their own landings drawn on their list screen).
+   * - A 「…」 page uncovers 更多's list.
+   * - The tab switcher uncovers its page's own chrome — the session bar,
+   *   without its terminal: a live terminal is never drawn twice.
+   * - A file uncovers nothing here: its listing is the machine page's
+   *   own, under the file (`MachineFiles`), and only the file moves.
+   */
+  const under: ReactNode =
+    !narrow || swipeBack === null || swipesFile
       ? null
-      : morePage
-        ? moreList
-        : !(landing === "devices" && fileBack) && !quotas && !browses
-          ? list
-          : null;
+      : switchingTabs
+        ? (
+            <SessionScreen
+              faces={tabFaces}
+              active={selected ?? ""}
+              onFocus={() => {}}
+              onClose={() => {}}
+              onSwitch={() => {}}
+              switching={false}
+              onBack={() => {}}
+            >
+              {null}
+            </SessionScreen>
+          )
+        : morePage
+          ? moreList
+          : quotas
+            ? (
+                <QuotaLanding
+                  narrow
+                  stale={stale}
+                  pane={null}
+                  query={queries.quota}
+                  onQuery={setQuery}
+                  words={words.quota}
+                  onToggleWord={toggleWord}
+                  screen="list"
+                  onOpen={() => {}}
+                  onBack={() => {}}
+                />
+              )
+            : browses
+              ? (
+                  <BrowseLanding
+                    key={browsing.kind.kind}
+                    kind={browsing.kind}
+                    devices={devices}
+                    tabs={browsing.tabs}
+                    narrow
+                    pane={null}
+                    screen="list"
+                    onOpen={() => {}}
+                    onBack={() => {}}
+                  />
+                )
+              : list;
+  /** Whether the page under draws its own bottom bar: only where the page
+      on top has none (a session, full screen) — elsewhere the one on
+      screen is already the list's, and stays put. Never under the
+      switcher, whose page is a session. */
+  const underNav = !switchingTabs && fullScreen;
 
   return (
     <SettingsProvider value={settings.rows}>
@@ -2324,6 +2404,25 @@ export default function App() {
         // screen but a session's, which runs its paper up to the glass
         // and keeps the edge itself (`SessionScreen`).
         <div data-nav-host={!fullScreen || undefined} className={cn("relative flex h-full flex-col", !fullScreen && "pt-safe-top")}>
+          {under && (
+            <div
+              data-screen-under
+              data-leaving={leaving || undefined}
+              aria-hidden
+              inert
+              className="absolute inset-0 flex flex-col overflow-hidden bg-background pt-safe-top"
+            >
+              <SideSeatsProvider value={underSeats.seats}>
+                {!switchingTabs && (
+                  <div data-side-l0-under className="flex min-w-0 flex-none flex-col">
+                    <SideHead narrow bare={false} seatRef={underSeats.setHead} claimed={underSeats.claimed} onJump={() => {}} />
+                  </div>
+                )}
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{under}</div>
+                {underNav && nav}
+              </SideSeatsProvider>
+            </div>
+          )}
           {!fullScreen && sideHead}
           {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of
@@ -2339,14 +2438,6 @@ export default function App() {
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
           <div ref={setSwipeHost} data-swipe-host className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {/* **The page a swipe goes back to, already there** (F7.3):
-              while a finger pulls the page off, the one under it is the
-              real list, drawn behind — nothing flashes when it lets go. */}
-          {under && (
-            <div data-screen-under aria-hidden inert className="absolute inset-0 overflow-hidden">
-              {under}
-            </div>
-          )}
           <div
             key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : screen}
             data-screen={morePage ? "more" : screen}

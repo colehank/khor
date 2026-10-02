@@ -93,7 +93,10 @@ export function SegmentedControl<K extends string>({
       {...mark}
       // A capsule with its chosen piece nested in it (the audit fix plan
       // F4.5; W21): both round, the inner one 3 in, so the radii nest.
-      className={cn("inline-flex h-ctl-md max-w-full min-w-0 items-center rounded-full bg-fill", className)}
+      // **As tall as its segments** (`--hit`: 28 under a mouse, 44 under
+      // a finger — V02): the track is the item plus its two pads, never a
+      // 28 track under a 44 piece. ⚠️ 墓碑: `h-ctl-md` at every pointer.
+      className={cn("inline-flex h-(--hit) max-w-full min-w-0 items-center rounded-full bg-fill", className)}
     >
       {options.map((o, i) => {
         const on = i === at;

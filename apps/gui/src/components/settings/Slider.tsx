@@ -47,7 +47,10 @@ export function Slider({
       <span aria-hidden="true" className="flex w-6 flex-none justify-center">
         {small}
       </span>
-      <div className="relative h-slider-knob min-w-0 flex-1">
+      {/* The drawing box is the hit's height (44 under a finger, the
+          knob's 28 under a mouse — V03), so the input filling it centres
+          its thumb on the track drawn at its middle. */}
+      <div className="relative h-[max(var(--slider-knob),var(--hit))] min-w-0 flex-1">
         <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-fill-strong" />
         <div
           className="absolute left-0 top-1/2 h-1 w-[calc(var(--slider-half)+(100%-var(--slider-knob))*var(--slider-at))] -translate-y-1/2 rounded-full bg-brand-strong"

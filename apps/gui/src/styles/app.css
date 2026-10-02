@@ -666,37 +666,84 @@ aside[data-side] {
   }
 }
 
-/* **A back swipe** (`hooks/use-edge-swipe`, F7.3): the page follows the
-   finger (`--swipe`) over the one it came from, which waits a third of
-   the way out and comes in with it — iOS's parallax. The page under is
-   drawn only while a finger holds the page; on letting go both ease to
-   where they are going, and the screen that then arrives does not play
-   its own entrance (`:root[data-swiped]`). */
+/* **A back swipe** (`hooks/use-edge-swipe`, F7.3; V01): the page —
+   its first row and its screen — follows the finger (`--swipe`) over
+   the page it came from, which is drawn whole under it
+   (`[data-screen-under]`: its own first row and bottom bar, at their own
+   y) and comes in from a third of the way out, iOS's parallax. On
+   letting go both ease to where they are going, and the screen that then
+   arrives does not play its own entrance (`:root[data-swiped]`). A file
+   is the exception: only the file moves, over its listing, and the head
+   both share stays put (`data-swipe-kind="file"`). */
 [data-screen-under] {
   visibility: hidden;
+  /* Its own stack: the bottom bar it draws stays under the page that is
+     being pulled away. */
+  z-index: 0;
 }
-[data-swipe-host][data-swiping] > [data-screen-under] {
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-screen-under] {
   visibility: visible;
-  transform: translateX(calc((var(--swipe, 0px) - 100%) * 0.3));
 }
-[data-swipe-host][data-swiping] > [data-screen] {
+/* The page under comes in from a third of the way out; its bottom bar
+   stays put, as a tab bar does. */
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav]) {
+  transform: translateX(calc((var(--swipe, 0px) - 100vw) * 0.3));
+}
+:root[data-settling]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav]) {
+  transition: transform var(--dur-240) var(--ease-out);
+}
+:root[data-swiping]:not([data-swipe-kind="file"]) :is([data-side-l0], [data-swipe-host]) {
   position: relative;
   z-index: 1;
-  background: var(--background);
+}
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-side-l0] {
+  transform: translateX(var(--swipe, 0px));
+}
+:root[data-settling]:not([data-swipe-kind="file"]) [data-side-l0] {
+  transition: transform var(--dur-240) var(--ease-out);
+}
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-swipe-host] > [data-screen] {
   transform: translateX(var(--swipe, 0px));
   box-shadow: -10px 0 30px rgba(0, 0, 0, 0.18);
 }
-[data-swipe-host][data-settling] > * {
+:root[data-settling]:not([data-swipe-kind="file"]) [data-swipe-host] > [data-screen] {
   transition: transform var(--dur-240) var(--ease-out);
 }
-:root[data-swiping] [data-side-l0] {
-  transform: translateX(var(--swipe, 0px));
+/* The screen is opaque, so the page under never shows through it. */
+[data-swipe-host] > [data-screen] {
+  position: relative;
+  background: var(--background);
 }
-:root[data-settling] [data-side-l0] {
+/* A file: only the file moves; its listing is under it. */
+:root[data-swiping][data-swipe-kind="file"] [data-files-under] {
+  visibility: visible !important;
+}
+:root[data-swiping][data-swipe-kind="file"] [data-files-page] {
+  transform: translateX(var(--swipe, 0px));
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.18);
+}
+:root[data-settling][data-swipe-kind="file"] [data-files-page] {
   transition: transform var(--dur-240) var(--ease-out);
 }
 :root[data-swiped] [data-screen] {
   animation: none;
+}
+/* **A list stays under the page it opens, fading** (V19): the arriving
+   page comes in over it instead of over the empty ground. */
+[data-screen-under][data-leaving] {
+  visibility: visible;
+  animation: under-leave var(--dur-240) var(--ease-out) forwards;
+}
+@keyframes under-leave {
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-screen-under][data-leaving] {
+    visibility: hidden;
+    animation: none;
+  }
 }
 
 /* A line arriving in the corner comes from the corner it lives in —
@@ -1779,10 +1826,10 @@ aside[data-side] {
    control that is already placed (`absolute`, `fixed`, `sticky`) is its
    own containing block; a static one is made one. */
 @media (pointer: coarse) {
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
+  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
     position: relative;
   }
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"])::after {
+  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key])::after {
     content: "";
     position: absolute;
     left: 50%;
@@ -1791,14 +1838,16 @@ aside[data-side] {
     height: max(100%, 44px);
     translate: -50% -50%;
   }
-  /* The terminal's keys fill their row: no dead gap between two caps. */
+  /* The terminal's keys fill their row: no dead gap between two caps
+     (V04: the box was only widened, and with no `content` it was never
+     drawn — every key hit 37, with 5 dead between). */
   [data-term-key]::after {
     width: calc(100% + 6px);
+    height: max(100%, 44px);
   }
-  /* A slider is a finger's height to grab, its track drawn as before. */
-  [data-slider] input[type="range"] {
-    height: 44px;
-  }
+  /* ⚠️ 墓碑 (V03): the range input alone was made 44 here, so its thumb
+     sat 8 below the 28 track drawn beside it; the slider's drawing box
+     is the hit's height now (`settings/Slider`). */
 }
 
 /* **A right-clicked row is ringed while its menu is open** (the audit fix

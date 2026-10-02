@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 import { useNarrow } from "@/hooks/use-narrow";
 import { FilesPane } from "@/views/FilesPane";
 import { FileView } from "@/views/FileView";
@@ -85,14 +86,24 @@ export function MachineFiles({
 
   if (narrow) {
     return (
-      <div data-machine-files className="flex min-h-0 flex-1 flex-col">
+      <div data-machine-files className="relative flex min-h-0 flex-1 flex-col">
         {/* **The listing stays mounted under an open file** (F4.2; N07),
-            hidden, so going back finds it where it was scrolled. */}
-        <div hidden={file !== null} className="flex min-h-0 flex-1 flex-col ps-files-inset">
+            so going back finds it where it was scrolled — and it is what
+            a back swipe uncovers (V01): drawn only while a finger holds
+            the file (`app.css` `[data-files-under]`). */}
+        <div
+          data-files-under={file !== null ? "" : undefined}
+          className={cn(
+            "flex min-h-0 flex-1 flex-col ps-files-inset",
+            file !== null && "invisible absolute inset-0",
+          )}
+        >
           {listing}
         </div>
         {file !== null && (
-          <>
+          // Only the file moves under a back swipe; the head both share
+          // stays put.
+          <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
             {/* The file's name; the way back is the page head's ‹. */}
             <div data-machine-file-head className="flex flex-none items-center px-page pb-in">
               <span className="min-w-0 truncate text-body font-title">{file.split("/").pop()}</span>
@@ -100,7 +111,7 @@ export function MachineFiles({
             {/* The line numbers start on the page's left line (N07): the
                 view's gutter pads 8 of its own. */}
             <div className="min-h-0 flex-1 ps-[calc(var(--page-inset)-0.5rem)]">{view}</div>
-          </>
+          </div>
         )}
       </div>
     );
