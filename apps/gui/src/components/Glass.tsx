@@ -74,7 +74,7 @@ export const GlassItem = forwardRef<HTMLButtonElement, ComponentProps<"button"> 
           "grid h-glass-item-h w-glass-item-w place-items-center rounded-full text-foreground",
           // Inside a head-sized capsule, the head's button and glyph.
           "group-data-[size=head]/cap:h-head-item-h group-data-[size=head]/cap:w-head-item-w group-data-[size=head]/cap:[&_svg]:size-head-glyph",
-          "hover:bg-fill data-[on]:bg-fill-strong data-[on]:text-[var(--rail-on-ink)] data-[state=open]:bg-fill",
+          "hover:bg-fill data-[on]:glass-sel data-[on]:text-[var(--rail-on-ink)] data-[state=open]:glass-sel",
           "disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:size-glass-icon [&_svg]:shrink-0",
           RING,
           className,

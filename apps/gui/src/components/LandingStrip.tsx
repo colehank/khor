@@ -58,7 +58,7 @@ function Seat({
           className={cn(
             "relative grid h-strip-item-h w-strip-item place-items-center rounded-full text-rail-ink hover:bg-fill",
             "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring [&>svg]:size-strip-glyph",
-            on && "bg-fill-strong text-[var(--rail-on-ink)] hover:bg-fill-strong",
+            on && "glass-sel text-[var(--rail-on-ink)] hover:glass-sel",
           )}
         >
           {children}

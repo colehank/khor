@@ -522,7 +522,7 @@ export function TabStrip({
                 // The tab in front never gives.
                 glass
                   ? on
-                    ? "max-w-tab-on flex-none bg-fill-strong font-title text-foreground"
+                    ? "max-w-tab-on flex-none glass-sel font-title text-foreground"
                     : "max-w-tab flex-none pr-2 text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"

@@ -1434,7 +1434,7 @@ aside[data-side] {
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   border: var(--hair) solid var(--glass-edge);
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--glass-rim), var(--glass-shadow);
   border-radius: calc(var(--glass-btn) / 2);
   min-height: var(--glass-btn);
   height: auto;

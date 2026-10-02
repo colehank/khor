@@ -35,7 +35,7 @@ export type NavSeat = { key: string; name: string; glyph: ReactNode; badge?: num
 const SEAT =
   "relative flex h-full w-nav-item flex-none flex-col items-center justify-center gap-px rounded-full text-foreground " +
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring " +
-  "[&_svg]:size-nav-glyph data-[on=true]:bg-fill-strong data-[on=true]:text-[var(--rail-on-ink)] data-[state=open]:bg-fill-strong";
+  "[&_svg]:size-nav-glyph data-[on=true]:glass-sel data-[on=true]:text-[var(--rail-on-ink)] data-[state=open]:glass-sel";
 
 function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () => void }) {
   return (
@@ -63,7 +63,7 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
   );
 }
 
-const MENU_ITEM = "min-h-touch gap-row rounded-xl px-row text-body focus:bg-fill focus:text-foreground [&_svg]:size-nav-glyph";
+const MENU_ITEM = "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel focus:text-foreground [&_svg]:size-nav-glyph";
 
 export function FloatNav({
   seats,
