@@ -2322,8 +2322,14 @@ export default function App() {
             <div
               data-wide-top
               {...WINDOW_DRAG}
-              className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-in select-none"
+              // **Right-aligned with the title row under it** (the owner,
+              // 2026-10-02: 「这要右对齐」): the window buttons' room at the
+              // left, then the strip pushed to the right edge — 更多 over the
+              // search circle, the capsule's end over 筛选 / ＋'s — on the
+              // same inset (`pe-row`, the title row's) and the same gap.
+              className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
             >
+              <span className="flex-1" />
               {strip}
             </div>
             {sideHead}

@@ -1472,3 +1472,17 @@ aside[data-side] {
 :root[data-narrow] {
   --page-inset: var(--gap-group);
 }
+
+/* **The wide left column's two head rows are one size** (the owner,
+   2026-10-02: the top row's 更多 sits exactly over the title row's search
+   circle, the landings' capsule's end over 筛选 / ＋'s). Inside the column
+   the glass controls take the strip's size (`--strip-h`, 36) instead of
+   the pointer's, so the title row's capsule and circle and the strip's
+   pieces are one number, not two that happen to match; the rest of the
+   glass sizes are re-derived from it here, where they are read. */
+aside[data-side] {
+  --glass-btn: var(--strip-h);
+  --glass-item-h: calc(var(--strip-h) - 8px);
+  --glass-item-w: calc(var(--strip-h) - 4px);
+  --glass-icon: var(--head-glyph);
+}
