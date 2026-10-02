@@ -22332,6 +22332,9 @@ try {
     await wait(400);
     // The list screen: the walk above left a session open, and narrow
     // shows one screen at a time — the rail's glyph brings the list back.
+    // **Since 2026-10-02 a session page has no rail**: its bar's 「‹」 is
+    // the way to the list (`components/SessionBar`).
+    if (await page.locator("[data-session-bar] [data-back]").count()) await press("[data-session-bar] [data-back]");
     await press(rail("sessions"));
     await wait(300);
     const phone = await page.evaluate(() => {
