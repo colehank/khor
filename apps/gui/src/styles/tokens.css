@@ -1097,7 +1097,8 @@
      box began, never negative (on macOS the box already starts past
      the rail). `--menu-inset` is what a menu reads, `0` everywhere but
      the seat, which sets it to this. */
-  --seat-menu-inset: max(0px, calc(var(--rail-w) - max(var(--traffic), var(--side-inset))));
+  /* 0 since the redesign: there is no rail for a seated menu to clear. */
+  --seat-menu-inset: 0px;
   --menu-inset: 0px;
   /* How wide the left block's first row keeps clear at its left end for
      **the system's own three buttons**, which khor never moves or

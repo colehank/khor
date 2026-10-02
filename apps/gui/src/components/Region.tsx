@@ -232,7 +232,7 @@ export function PageHead({
   avatarRef?: (el: HTMLElement | null) => void;
 }) {
   return (
-    <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch px-base">
+    <div data-page-head className="flex min-w-0 flex-1 items-center gap-row self-stretch pr-base pl-pane">
       {/* The mark and the name it stands for are one clump — `gap-in`,
           「inside one thing」 — where the page's buttons stand `gap-row`
           off. Both are centred in R0, so the mark and the pair share the

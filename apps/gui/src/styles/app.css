@@ -400,16 +400,9 @@ aside[data-side] {
   width: var(--list-w);
 }
 
-/* **The board is the whole screen on the narrow face** (docs/SHELL.md 第
-   十三轮 第 8 条:「窄档…其余不变」): the margin and the corner that lift
-   it off the ground on the wide face are the wide face's. Keyed on the
-   root's `data-narrow`, which the shell stamps from the one breakpoint. */
-:root[data-narrow] [data-board] {
-  margin: 0;
-  /* `initial` (a square corner) rather than a literal 0: this file names
-     no radius of its own (`check-type`). */
-  border-radius: initial;
-}
+/* ⚠️ 墓碑 (the redesign, 2026-10-02): the narrow face took the board's
+   margin and corner off here. The board has neither at any width now
+   (`Region`, one ground). */
 
 /* **The shell is as tall as what the keyboard leaves** (2026-10-02,
    `lib/viewport`): while a soft keyboard is up the root carries the
@@ -1392,11 +1385,6 @@ aside[data-side] {
   display: none;
 }
 
-/* **The tab in front joins the board** (components/Board `joined`,
-   components/Tab): when it is the first tab it stands right over the
-   board's top-left corner, and that corner goes square so the tab and
-   the board read as one piece. Any other tab in front stands on the
-   board's straight edge, where there is no corner to take off. */
-[data-region-kind="tabs"]:has([data-tab-strip] > [data-tab]:first-child[data-on="true"]) > [data-board] {
-  border-top-left-radius: 0;
-}
+/* ⚠️ 墓碑 (the redesign, 2026-10-02): the tab in front joined the
+   board's top-left corner here. The board has no corner now, and the
+   session tabs are glass pills (`TabStrip` `glass`). */
