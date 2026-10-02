@@ -46,6 +46,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { IconBack, IconClose, IconEye, IconPlus } from "@/components/icons";
+import { GlassCircle } from "@/components/Glass";
 import { PaneBar } from "@/components/PaneBar";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
@@ -903,16 +904,9 @@ export function TabSwitcher({
         <NarrowHead>
           {(seated) => {
             const back = (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={gui.back}
-                data-back
-                onClick={onBack}
-                className="min-h-touch min-w-touch flex-none"
-              >
+              <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
                 <IconBack />
-              </Button>
+              </GlassCircle>
             );
             return seated ? (
               <>

@@ -32,6 +32,7 @@ import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconBranch, IconPlus, IconSearch, IconSessions } from "@/components/icons";
+import { GlassCircle } from "@/components/Glass";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
@@ -1398,18 +1399,15 @@ export function WorkspacePane({
       <NarrowHead>
         {() => (
           <>
-            <Button
-              variant="ghost"
-              size="icon"
+            <GlassCircle
               aria-label={gui.back}
               {...(screen === "tree" ? { "data-back": "" } : { "data-ws-back": "" })}
               onClick={() =>
                 screen === "tree" ? onBack?.() : screen === "sessions" ? showSessions(false) : setScreen("tree")
               }
-              className="min-h-touch min-w-touch flex-none"
             >
               <IconBack />
-            </Button>
+            </GlassCircle>
             {/* The pair on R0's tight leading (`PageHead`, 2026-09-29):
                 the first row is 38 under a mouse, and 20 + 16 left one
                 pixel over and under. */}

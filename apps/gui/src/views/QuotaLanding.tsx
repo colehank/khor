@@ -42,6 +42,7 @@ import {
 import { EmptyState, RegionState } from "@/components/RegionState";
 import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
+import { GlassCircle } from "@/components/Glass";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { PaneBar, type FilterOption } from "@/components/PaneBar";
@@ -1953,16 +1954,9 @@ export function QuotaLanding({
               {/* **The only exit from this screen**, so it carries the
                   finger floor outright — the rule `DetailPane`'s back
                   button was rewritten for. */}
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={gui.back}
-                data-back
-                onClick={onBack}
-                className="min-h-touch min-w-touch"
-              >
+              <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
                 <IconBack />
-              </Button>
+              </GlassCircle>
               {/* **The name, said once, here** — the narrow face's R0.
                   ⚠️ Rewritten 2026-09-27: this bar used to hold the way
                   back and nothing else, because the card's first line

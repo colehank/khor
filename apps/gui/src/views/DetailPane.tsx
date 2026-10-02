@@ -5,6 +5,7 @@ import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
 import { EditableName, useSinglePress } from "@/components/EditableName";
 import { IconBack, IconChevronDown } from "@/components/icons";
+import { GlassCircle } from "@/components/Glass";
 import { NarrowHead } from "@/components/SideHead";
 import { useInBar } from "@/components/SessionBar";
 import { Button } from "@/components/ui/button";
@@ -319,16 +320,9 @@ export function DetailPane({
               control in this app that must not be under the floor** —
               it was an icon-only 30, and there is no second way out of
               a detail screen on a phone. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={gui.back}
-            data-back
-            onClick={onBack}
-            className="min-h-touch min-w-touch"
-          >
+          <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
-          </Button>
+          </GlassCircle>
           {/* The row's identity assembly, only where the strip is not
               there to carry it: on wide the front tab wears this exact
               face — halo for the state, corner mark for the kind — and
