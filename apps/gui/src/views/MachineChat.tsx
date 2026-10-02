@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
 import { useCoarse } from "@/hooks/use-coarse";
-import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat } from "@/views/Composer";
+import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, useGrowingText } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
@@ -62,6 +62,8 @@ export function MachineChat({ id }: { id: string }) {
   const stickToEnd = useRef(true);
   /** The box, for the keyboard's switch (`TermKeys`). */
   const box = useRef<HTMLTextAreaElement | null>(null);
+  // As tall as its lines, up to the capsule's ceiling (V05).
+  useGrowingText(box, draft);
   const coarse = useCoarse();
 
   const refresh = useCallback(() => {

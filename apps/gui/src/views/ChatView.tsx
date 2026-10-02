@@ -75,7 +75,7 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, type AddOption, type Who } from "@/views/Composer";
+import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
@@ -1216,18 +1216,8 @@ export function ChatView({
     else setFresh(true);
   }, [paint]);
 
-  // The box is as tall as what has been typed into it, up to the ceiling
-  // `--chat-box` sets. Measured rather than declared: `field-sizing`
-  // would do this in CSS and the desktop shell's WKWebView does not have
-  // it (`ui/textarea`). The height is cleared first because `scrollHeight`
-  // of an already-tall box is its own old height — without that line the
-  // box grows and never shrinks back.
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [text, still, gone]);
+  // The box is as tall as what has been typed into it (`useGrowingText`).
+  useGrowingText(box, text, still, gone);
 
   const toBottom = () => {
     const el = scroller.current;

@@ -1193,9 +1193,13 @@ export default function App() {
   // were (the chosen row is each landing's own state already). Pressing
   // the seat that is showing goes back to its root, and at the root, to
   // the top — iOS's tab bar.
+  // …keyed by the row that is open too (V06): two machines' pages are
+  // two places, and one's scroll is not the other's.
+  const openRow =
+    landing === "devices" ? (selectedDevice ?? "") : landing === "sessions" ? (selected ?? "") : landing === "workspaces" ? (openWs?.path ?? "") : "";
   const placeKey = narrow
-    ? `${morePage ? `more:${morePage}` : landing}:${switchingTabs ? "tabs" : screen}`
-    : (morePage ?? landing);
+    ? `${morePage ? `more:${morePage}` : landing}:${switchingTabs ? "tabs" : screen}:${screen === "detail" ? openRow : ""}`
+    : `${morePage ?? landing}:${openRow}`;
   const forgetScroll = useKeptScroll(placeKey);
   const seatScreen = useRef<Partial<Record<Landing, "list" | "detail">>>({});
   useEffect(() => {
@@ -1206,10 +1210,10 @@ export default function App() {
     if (narrow && morePage === null && key === landing) {
       setSwitchingTabs(false);
       if (screen === "detail") {
-        forgetScroll(`${key}:detail`);
+        forgetScroll(`${key}:detail:${openRow}`);
         setScreen("list");
       } else {
-        forgetScroll(`${key}:list`);
+        forgetScroll(`${key}:list:`);
         document.querySelectorAll<HTMLElement>("[data-pane-body], [data-nav-clear]").forEach((e) => e.scrollTo({ top: 0, behavior: "smooth" }));
       }
       return;

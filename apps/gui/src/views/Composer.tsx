@@ -114,6 +114,23 @@ export function Composer({
   );
 }
 
+/**
+ * **The capsule's text grows with what is typed** (V05): as tall as its
+ * lines, up to `--chat-box`, measured — `field-sizing` would say it in
+ * CSS and the Mac app's WKWebView does not have it. The height is
+ * cleared first, or a tall box would never shrink back. One rule for
+ * every capsule (the agent conversation's, a machine's notes).
+ */
+export function useGrowingText(box: React.RefObject<HTMLTextAreaElement | null>, ...deps: unknown[]) {
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+}
+
 /** The text inside the capsule: no box of its own, one line as tall as
     the seats beside it, growing to `--chat-box` (the caller measures). */
 export const COMPOSER_TEXT =

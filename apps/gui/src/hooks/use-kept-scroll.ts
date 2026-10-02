@@ -24,7 +24,7 @@ function scrollers(): HTMLElement[] {
 }
 
 export function useKeptScroll(key: string) {
-  const kept = useRef(new Map<string, number[]>());
+  const kept = useRef(new Map<string, { top: number; height: number }[]>());
   const now = useRef(key);
   now.current = key;
 
@@ -34,7 +34,7 @@ export function useKeptScroll(key: string) {
       if (!(t instanceof HTMLElement) || !t.matches(SCROLLERS)) return;
       kept.current.set(
         now.current,
-        scrollers().map((s) => s.scrollTop),
+        scrollers().map((s) => ({ top: s.scrollTop, height: s.scrollHeight })),
       );
     };
     document.addEventListener("scroll", on, true);
@@ -43,22 +43,37 @@ export function useKeptScroll(key: string) {
 
   useLayoutEffect(() => {
     const want = kept.current.get(key);
-    if (!want || want.every((t) => t === 0)) return;
+    if (!want || want.every((w) => w.top === 0)) return;
+    // **Put back once the content is back** (V06): a scroller set while
+    // its page is still arriving is pushed again by the browser's scroll
+    // anchoring as the rest lands above it (450 came back as 599). So
+    // each waits until it is as tall as it was when it was left — or
+    // until the wait runs out — with anchoring off meanwhile.
     let frames = 0;
     let raf = 0;
+    const held = new Set<HTMLElement>();
     const put = () => {
       const got = scrollers();
       let done = got.length >= want.length;
-      want.forEach((top, i) => {
+      want.forEach((w, i) => {
         const s = got[i];
         if (!s) return;
-        if (s.scrollHeight - s.clientHeight >= top) s.scrollTop = top;
+        if (!held.has(s)) {
+          held.add(s);
+          s.style.overflowAnchor = "none";
+        }
+        const ready = s.scrollHeight >= w.height - 1 || frames > 45;
+        if (ready && s.scrollHeight - s.clientHeight >= w.top) s.scrollTop = w.top;
         else done = false;
       });
-      if (!done && ++frames < 30) raf = requestAnimationFrame(put);
+      if (!done && ++frames < 60) raf = requestAnimationFrame(put);
+      else for (const s of held) s.style.overflowAnchor = "";
     };
     put();
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      for (const s of held) s.style.overflowAnchor = "";
+    };
   }, [key]);
 
   /** Forget a place's scroll: its root was asked for again. */
