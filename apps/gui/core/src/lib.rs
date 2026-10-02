@@ -16,6 +16,7 @@ pub mod code;
 pub mod files;
 pub mod git;
 pub mod import;
+mod landing;
 pub mod qr;
 pub mod recents;
 pub mod rejoin;

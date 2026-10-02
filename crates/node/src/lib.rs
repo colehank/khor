@@ -4681,12 +4681,25 @@ impl Node {
 
     /// Stands a host up for a discovered tmux session so a terminal can
     /// attach (`LiveKind::attach_multiplexed` has the whole judgment).
+    ///
+    /// **Refused on a machine that hosts nothing** (a phone, docs/IOS.md):
+    /// it has no tmux to bridge and no host file to find, and a door that
+    /// fell through to here for a far row must say so rather than look
+    /// for that row's host on this disk.
     pub fn attach_tmux(&self, id: &SessionId) -> Result<live::Seat, String> {
+        if !self.hosts {
+            return Err(msg::no_terminal_here(&id.0));
+        }
         self.live.attach_multiplexed(id)
     }
 
     /// The registry dir behind a live session id, for attach clients.
+    /// **None on a machine that hosts nothing**: no session's host lives
+    /// on it, so nothing there is an address to attach to.
     pub fn session_dir(&self, id: &SessionId) -> Option<PathBuf> {
+        if !self.hosts {
+            return None;
+        }
         self.live.dir_of(id).filter(|d| d.exists())
     }
 
@@ -4706,7 +4719,10 @@ impl Node {
     /// The question being asked is "is there a terminal to be had here",
     /// and the pid is the only part of that file which can answer it.
     pub fn is_hosted(&self, id: &SessionId) -> bool {
-        self.live.dir_of(id).is_some_and(|d| {
+        // A machine that hosts nothing hosts no terminal (docs/IOS.md),
+        // and is not asked to read host files to say so.
+        self.hosts
+            && self.live.dir_of(id).is_some_and(|d| {
             host::read_host_file(&d).is_ok_and(|hf| link::pid_running(hf.host_pid))
         })
     }

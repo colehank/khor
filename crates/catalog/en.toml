@@ -1685,7 +1685,10 @@ page-back = "Previous page"
 page-forward = "Next page"
 page-reload = "Reload"
 mesh-map = "Machines in the mesh"
-from-device = "From {0}"
+# Tombstone (2026-10-02): `from-device` named the machine a reported
+# session row came from, on the row's second line. Retired: the row's
+# avatar is that machine's face, so the name said it twice (the owner,
+# on a phone). The second line is the preview alone.
 pick-a-session = "Pick a session"
 empty-sessions = "No sessions yet"
 waiting-on-you = "Waiting on you"

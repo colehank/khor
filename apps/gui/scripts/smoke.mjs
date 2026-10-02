@@ -6688,20 +6688,17 @@ for line in sys.stdin:
   //      is not a hypothetical: it was this block's first draft, and
   //      planting exactly that break left the run green.
   //
-  //      The machine's name is on the row only when the row carries
-  //      one. Both halves, because "absent" is also what a broken
-  //      selector says: this row lives here and names no machine, and a
-  //      reported row in this same list does — the half that proves the
+  //      **No row names its machine in words** (2026-10-02, the owner:
+  //      the avatar already says it): the face is that machine's. Read
+  //      on a reported row, the one that used to carry the machine's
+  //      name — and the row has to be there, or "absent" is a broken
   //      finder.
-  if ((await page.locator(`[data-row="${wizId}"] [data-row-source]`).count()) !== 0) {
-    throw new Error("a session living on this machine must not name one");
-  }
   const fromElsewhere = (
     await page.locator("[data-row][data-source]").evaluateAll((els) => els.map((e) => e.dataset.row))
   )[0];
-  if (!fromElsewhere) throw new Error("probe dead: no reported row to check the other half with");
-  if ((await page.locator(`[data-row="${fromElsewhere}"] [data-row-source]`).count()) !== 1) {
-    throw new Error("a reported row must name the machine it came from");
+  if (!fromElsewhere) throw new Error("probe dead: no reported row to check");
+  if ((await page.locator(`[data-row="${fromElsewhere}"] [data-row-source]`).count()) !== 0) {
+    throw new Error("a reported row must not name its machine in words — its face is that machine's");
   }
   //      …and its tab wears that machine's face with the row's own
   //      state as the halo — the same assembly the row wears
