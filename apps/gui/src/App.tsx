@@ -459,6 +459,11 @@ export default function App() {
   // places, and one variable would have opening a machine close the
   // session you were reading.
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  /** Whether the open machine's page shows its sessions rather than its
+      dashboard — the head's 会话 switch (the redesign, 2026-10-02). Back
+      to the dashboard whenever another machine opens. */
+  const [machineSessions, setMachineSessions] = useState(false);
+  useEffect(() => setMachineSessions(false), [selectedDevice]);
   // …and which workspace is open. **A path and not a row**, because
   // the two ways in do not agree on what they have: the list hands over
   // a checkout it already knows about, and the machine card's 看它的
@@ -1530,6 +1535,8 @@ export default function App() {
       <MachineVerbs
         row={openDevice}
         code={machineCode}
+        sessionsOn={machineSessions}
+        onSessions={() => setMachineSessions((on) => !on)}
         // The sessions pane's own wizard, opened with this machine picked
         // (2026-09-06:「会话是对应会话页的新建 session」).
         onNewSession={(row) => openNewSession(row.name)}
@@ -1701,6 +1708,33 @@ export default function App() {
       onInstallHooks={onInstallHooks}
       onUninstallHooks={onUninstallHooks}
       actions={narrow ? machineVerbs : undefined}
+      sessions={
+        machineSessions ? (
+          <>
+            <h2 className="flex min-h-touch items-end px-group pt-in pb-xxs text-group text-muted-foreground">
+              {gui.machine_sessions}
+            </h2>
+            {/* The same rows and verbs the sessions landing draws, only
+                this machine's. Opening one goes to the sessions landing,
+                where its tab lives. */}
+            <SessionsList
+              rows={rows.filter((r) => r.home === openDevice?.name)}
+              loading={!rowsRead}
+              query=""
+              words={[]}
+              selected={null}
+              onSelect={(r) => {
+                setLanding("sessions");
+                onSelect(r);
+              }}
+              onPin={onPinSession}
+              onClose={onCloseSession}
+              pinFailed={pinFailed}
+              closeRefused={closeRefused}
+            />
+          </>
+        ) : undefined
+      }
     />
   ) : null;
 

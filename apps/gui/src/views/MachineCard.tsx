@@ -20,7 +20,9 @@ import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
    ended is this card reading them. */
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
-import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconSessions } from "@/components/icons";
+import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconPlus, IconSessions } from "@/components/icons";
+import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
+import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,9 +64,14 @@ export function MachineCard({
   onInstallHooks,
   onUninstallHooks,
   actions,
+  sessions,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
+  /** **The machine's sessions, in place of its dashboard** (the redesign,
+      2026-10-02: the head's 会话 verb toggles the body). Drawn by the
+      shell, which holds the rows; absent, the dashboard. */
+  sessions?: ReactNode;
   onBack: () => void;
   /** This machine's hooks, or `null` until the first answer is in. */
   hooks: HooksState | null;
@@ -95,25 +102,18 @@ export function MachineCard({
         // it was a second bar under L0's magnifier.
         <NarrowHead>
         {(seated) => (
-        <header className={seated ? "flex min-w-0 flex-1 items-center gap-2 self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-2 border-b px-3"}>
-          {/* The narrow face's only way back to the machine list, and it
-              was an icon-only 30 square. There is no second exit from a
-              detail screen on a phone, so this is the one control on
-              this card that must not be under the floor. */}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={gui.back}
-            data-back
-            onClick={onBack}
-            className="min-h-touch min-w-touch"
-          >
+        <header className={seated ? "flex min-w-0 flex-1 items-center gap-row self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"}>
+          {/* The canvas's machine head (the redesign, 2026-10-02): the way
+              back as a glass circle, the machine's own face, its name
+              over one line of facts, and its verbs in a glass capsule. */}
+          <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
-          </Button>
-          {/* **The name, once, here** — the narrow face's R0. The card
-              lost its own name line (「身份只出现一次」,
-              components/Toolbar), so this bar says it, as wide R0 does. */}
-          <span className="min-w-0 flex-1 truncate text-title-sm font-title">{row?.shown ?? ""}</span>
+          </GlassCircle>
+          {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} />}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
+            {row && <HeadFacts row={row} />}
+          </span>
           {actions}
         </header>
         )}
@@ -132,17 +132,20 @@ export function MachineCard({
           are the strip's, said there once. Nothing on the narrow face,
           which has no R0 — the strip says the model there, first. */}
       {row && <HeadAvatar row={row} />}
-      {row?.vitals?.vitals.model?.name && (
+      {/* The second line is the canvas's one line of facts now — the
+          khor version and how old the reading is (the redesign,
+          2026-10-02); the model moved down into the facts band, where it
+          already was on the narrow face. */}
+      {row && (
         <PageSubtitle>
-          <span
-            data-machine-head-sub
-            className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground"
-          >
-            {row.vitals.vitals.model.name}
-          </span>
+          <HeadFacts row={row} />
         </PageSubtitle>
       )}
-      {row && (
+      {row && sessions !== undefined ? (
+        <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+          {sessions}
+        </div>
+      ) : row && (
         // **Keyed by the machine**, so every piece of state on this card
         // belongs to the machine it was made on: a sort somebody set on
         // one machine's table is not an opinion about the next one's,
@@ -158,7 +161,7 @@ export function MachineCard({
         <Body
           key={row.id}
           row={row}
-          sayModel={narrow}
+          sayModel
           hooks={hooks}
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
@@ -185,6 +188,27 @@ export function MachineCard({
  * paper disc, then at 32 on nothing (「头像仅仅是类别头像哈，不是机器带
  * 角标的」).
  */
+/** The head's one line of facts (the canvas: 「khor 0.1.14 · 1 秒前」):
+    the khor version this machine runs and how old its reading is. Each
+    half only when the machine said it; neither, no line. */
+function HeadFacts({ row }: { row: DeviceRow }) {
+  const v = row.vitals?.vitals ?? null;
+  const age = row.vitals?.age_ms ?? 0;
+  const parts = [
+    v?.version ? `khor ${v.version}` : null,
+    row.vitals ? (age > 0 ? gui.card_age(ago(Date.now() - age)) : ago(Date.now())) : null,
+  ].filter((p): p is string => p !== null);
+  if (parts.length === 0) return null;
+  return (
+    <span
+      data-machine-head-sub
+      className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+    >
+      {parts.join(" · ")}
+    </span>
+  );
+}
+
 function HeadAvatar({ row }: { row: DeviceRow }) {
   const system = row.vitals?.vitals.system ?? null;
   // The list row's own avatar, drawn by the one component that knows the
@@ -231,7 +255,7 @@ function Body({
   const answered = load !== null || why !== null;
   const never = !row.vitals && !answered;
   return (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="flex flex-col gap-row">
             <Strip row={row} sayModel={sayModel} />
             {never ? (
@@ -553,6 +577,8 @@ export function MachineVerbs({
   onBrowseFiles,
   onBorrowWeb,
   code,
+  sessionsOn,
+  onSessions,
 }: {
   row: DeviceRow;
   onNewSession: (row: DeviceRow) => void;
@@ -568,47 +594,60 @@ export function MachineVerbs({
       wide face and in the narrow head on the other, and a remount across
       the breakpoint would drop the window's handle. */
   code?: CodeWindow;
+  /** **会话 is a switch now** (the redesign, 2026-10-02): pressed, the
+      page's body is this machine's sessions; pressed again, its
+      dashboard. Opening a new session here moves to ＋, which the
+      capsule shows while the sessions are the body. */
+  sessionsOn: boolean;
+  onSessions: () => void;
 }) {
   const here = useHereHosts();
-  // **An act that cannot exist is not drawn** (docs/IOS.md 第二步): no
-  // session on a machine that cannot host — a phone, said on its own
-  // row — and no page through another machine's network on a face that
-  // has no second webview to show it in (a phone's; `page-needs-desktop`
-  // is the refusal behind it).
+  const narrow = useNarrow();
   const verbs = [
-    ...(row.hosts ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconSessions, go: onNewSession }] : []),
+    ...(sessionsOn && row.hosts
+      ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, go: onNewSession }]
+      : []),
     { key: "browse-files", word: gui.browse_files, Icon: IconFiles, go: onBrowseFiles },
-    ...(here ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb }] : []),
+    // The canvas leaves 浏览 off the phone's capsule; it is a window's verb.
+    ...(here && !narrow ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, go: onBorrowWeb }] : []),
   ];
+  const tip = (word: string, button: ReactNode) =>
+    narrow ? (
+      button
+    ) : (
+      <Tooltip key={word}>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="bottom">{word}</TooltipContent>
+      </Tooltip>
+    );
   return (
-    <div data-machine-verbs className="flex flex-wrap items-center justify-end gap-in">
-      {verbs.map(({ key, word, Icon, go }) => (
-        <Tooltip key={key}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={word}
-              data-verb={key}
-              className="min-h-touch min-w-touch"
-              onClick={() => go(row)}
-            >
-              {/* The box sets the size and the glyph fills it: a
-                  `size-*` on the glyph itself sits beside its own
-                  `size-icon-rail`, which tailwind-merge does not read as
-                  a size and keeps (measured: both classes, 32 won). */}
-              <span className="flex size-6 flex-none [&_svg]:size-full">
-                <Icon />
-              </span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{word}</TooltipContent>
-        </Tooltip>
-      ))}
-      {/* After the three, the workspace's own mark and box: the logo is
-          drawn at 16 against the glyphs' 24, ink for ink (`CodeButton`). */}
-      {code && <CodeButton code={code} mark={{ "data-verb": "code" }} className="min-h-touch min-w-touch" />}
-    </div>
+    <GlassCapsule data-machine-verbs>
+      {tip(
+        gui.machine_sessions,
+        <GlassItem
+          key="sessions"
+          aria-label={gui.machine_sessions}
+          aria-pressed={sessionsOn}
+          data-verb="sessions"
+          on={sessionsOn}
+          onClick={onSessions}
+        >
+          <IconSessions />
+        </GlassItem>,
+      )}
+      {verbs.map(({ key, word, Icon, go }) =>
+        tip(
+          word,
+          <GlassItem key={key} aria-label={word} data-verb={key} onClick={() => go(row)}>
+            <Icon />
+          </GlassItem>,
+        ),
+      )}
+      {/* After them, the workspace's own mark and box (`CodeButton`). */}
+      {code && (
+        <CodeButton code={code} mark={{ "data-verb": "code" }} className="h-glass-item-h w-glass-item-w rounded-full" />
+      )}
+    </GlassCapsule>
   );
 }
 
