@@ -38,7 +38,7 @@
 // you all of them and a second way to a thing that is not hidden is
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { EditableName, useSinglePress } from "@/components/EditableName";
@@ -49,6 +49,7 @@ import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { IconBack, IconClose, IconEye, IconPlus } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { PaneBar } from "@/components/PaneBar";
+import { RegionLead } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -263,6 +264,9 @@ export function TabStrip({
   at?: "top" | "bottom";
 }) {
   const below = at === "bottom";
+  /** The list is folded and its strip's block leads this row
+      (`RegionLead`): the capsule follows the block, a gap after it. */
+  const led = useContext(RegionLead) !== null;
   const strip = useRef<HTMLDivElement>(null);
   // Whether the strip has given up on its own promise. Measured off the
   // element, not counted from `faces.length` and a width: how many tabs
@@ -424,9 +428,17 @@ export function TabStrip({
       // tab when it is crowded is the switcher, which has its own — and
       // the switcher is offered exactly when the strip has stopped
       // showing every tab.
+      // **A glass piece aligns by its glass edge** (the owner,
+      // 2026-10-03: 「浏览器这没有左对齐」): over the wide content the
+      // capsule's left edge stands on the page's left line (`px-page`,
+      // the machine page's avatar and the browser's steps capsule
+      // under it). ⚠️ 墓碑: `px-row`, 12 short of the line. At a
+      // session's foot the row keeps its own inset (`SessionBar`).
       className={cn(
         "flex h-pane-head min-w-0 flex-1 items-center",
-        glass ? "gap-in px-row" : "gap-1 px-in",
+        // Folded, the strip's block leads the row and the capsule
+        // follows it as before, a gap after it.
+        glass ? (below || led ? "gap-in px-row" : "gap-in px-page") : "gap-1 px-in",
       )}
     >
       {head}
