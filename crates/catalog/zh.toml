@@ -3370,7 +3370,10 @@ page-reload = "重新加载"
 # the machines — rather than the picture, because「坛城」 is how the layout
 # was arrived at and not something anybody needs to be told.
 mesh-map = "网里的机器"
-from-device = "来自 {0}"
+# Tombstone (2026-10-02): `from-device` named the machine a reported
+# session row came from, on the row's second line. Retired: the row's
+# avatar is that machine's face, so the name said it twice (the owner,
+# on a phone). The second line is the preview alone.
 pick-a-session = "选择一个会话"
 empty-sessions = "还没有会话"
 # The big canvas behind no selection: the network's now — **two**

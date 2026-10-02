@@ -31,6 +31,7 @@ import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
+import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
@@ -177,6 +178,11 @@ export function FileTree({
       seat the next click replaces (`khor config`). Double click pins
       either way, so 「预览」 is not a road with no exit. */
   const clickPins = useSetting("files-click") === "pin";
+  // **The open file is not marked on the narrow face** (2026-10-02, the
+  // lists' rule, `SideList`): there the tree and the file it opened are
+  // two screens, never side by side, so coming back to the tree there is
+  // no open file beside it to point at. `data-open` stays the fact.
+  const narrow = useNarrow();
 
   // **The tree is remounted per workspace** (`WorkspacePane` keys it),
   // so `machine` and `root` are constants here and nothing resets: a
@@ -583,7 +589,7 @@ export function FileTree({
                     // **Inset like a list's chosen block** (W-V9): 8 in
                     // from the pane's edges, drawn under the row.
                     "before:absolute before:inset-y-0 before:inset-x-2 before:-z-10 before:rounded-md before:content-['']",
-                    open === r.full ? "before:bg-fill-strong" : "hover:before:bg-fill",
+                    open === r.full && !narrow ? "before:bg-fill-strong" : "hover:before:bg-fill",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -611,7 +617,7 @@ export function FileTree({
                       // own weight.
                       className={cn(
                         "flex min-w-0 flex-1 items-center gap-2 self-stretch text-left",
-                        open === r.full && "font-title text-foreground",
+                        open === r.full && !narrow && "font-title text-foreground",
                         markInk(mark),
                       )}
                     >

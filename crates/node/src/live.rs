@@ -810,6 +810,50 @@ impl LiveKind {
         Ok(Seat::View)
     }
 
+    /// **The address a face attaches to for this row, on the machine
+    /// that hosts it** — what a far machine's `Reach` is answered with,
+    /// and this machine's own reach of itself.
+    ///
+    /// The row's own host when one is running (a conversation's ghost, a
+    /// khor terminal, a tmux session bridged as a shell) — the answer it
+    /// always was. Otherwise the bridge stands one up
+    /// ([`Self::attach_multiplexed`]), and **the seat it answers names
+    /// the file**: an agent sitting in the person's tmux is reached
+    /// through a viewer, and a viewer's address is `view.json`, never
+    /// `host.json` (`crate::host::view_file_path` has why they are two).
+    ///
+    /// Reading `host.json` whatever the seat was is how a phone opening
+    /// a Claude Code session that lived in tmux on a Mac was told the
+    /// session had no host (2026-10-02, `no-host`): the Mac stood its
+    /// viewer up, wrote `view.json`, and then looked for the other file.
+    /// The Mac's own window never hit it — its terminal door already
+    /// read the seat (`khor_gui_core::term::term_open`).
+    ///
+    /// Blocking: the bridge sweeps and may start a host.
+    pub fn terminal_address(&self, id: &SessionId) -> Result<crate::host::HostFile, String> {
+        if let Some(dir) = self.dir_of(id)
+            && let Ok(hf) = crate::host::read_host_file(&dir)
+            && crate::link::pid_running(hf.host_pid)
+        {
+            return Ok(hf);
+        }
+        let seat = self.attach_multiplexed(id)?;
+        let dir = self
+            .dir_of(id)
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let hf = match seat {
+            Seat::View => crate::host::read_view_file(&dir)?,
+            Seat::Host => crate::host::read_host_file(&dir)?,
+        };
+        // **A host file outlives its host.** An address whose far end is
+        // a closed port drops the pipe, and the attach then reports a
+        // socket error for a session that simply ended.
+        if !crate::link::pid_alive(hf.host_pid) {
+            return Err(msg::host_gone().into());
+        }
+        Ok(hf)
+    }
+
     /// Closes bridge hosts the seating in [`LiveKind::rows`] folded while
     /// they still run — the cleanup half of that judgment, on the serve
     /// tick like `Node::reap_borrows`: a listing can hide a row, but only

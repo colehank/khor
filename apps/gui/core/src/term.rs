@@ -184,62 +184,39 @@ pub(crate) fn reach_blocking(
 /// already-open terminal keeps its screen; a dead one is replaced). The
 /// host resizes its PTY to this size, so the whole screen repaints and
 /// the attacher sees a full frame rather than a fragment.
+///
+/// **The registry is not held while the attachment is made** (2026-10-02,
+/// the phone that froze): a far terminal is reached over the network,
+/// which takes up to the reach's deadline when that machine has dropped
+/// off, and every other terminal's poll, key and resize takes this same
+/// lock. Held across the reach, one unreachable machine stopped every
+/// terminal on screen — and those doors answer the window. So the lock
+/// is taken to look, let go, and taken again to put the new attachment
+/// in; an open that raced this one and got there first is the one kept.
 pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), String> {
-    let mut registry = plock(terms());
-    if let Some(term) = registry.get(id) {
-        if !term.gone.load(Ordering::Relaxed) {
-            term.holds.fetch_add(1, Ordering::Relaxed);
-            return Ok(());
-        }
-        registry.remove(id);
+    if hold_if_open(id) {
+        return Ok(());
     }
-    let n = Node::open(root.to_path_buf())?;
+    let attached = attach(root, id, cols, rows);
+    let mut registry = plock(terms());
+    // A leave that came while this open was reaching takes its hold
+    // (`crate::landing`): nobody is there to read what it attached.
+    let left = plock(landing()).land(id);
+    let (conn, far) = attached?;
+    if left {
+        let _ = conn.shutdown(std::net::Shutdown::Both);
+        return Ok(());
+    }
+    if let Some(theirs) = registry.get(id)
+        && !theirs.gone.load(Ordering::Relaxed)
+    {
+        // Another open made it while this one was reaching: theirs is
+        // the attachment, and this connection goes unused.
+        theirs.holds.fetch_add(1, Ordering::Relaxed);
+        let _ = conn.shutdown(std::net::Shutdown::Both);
+        return Ok(());
+    }
     let sid = SessionId(id.to_owned());
-    // **The fork is on the row, not on a flag** (`Node::far_machine`):
-    // one list holds every machine's sessions, so one click has to mean
-    // the same thing wherever the row lives. The CLI's `attach` forks on
-    // this very question, and this door now matches it.
-    let far = n.far_machine(&sid)?;
-    let conn = match &far {
-        // Reached, not hosted here: the resident serve binds a local
-        // port onto the far host, and what arrives is still a TCP
-        // address speaking the host protocol — so everything below this
-        // line is unchanged, and the terminal never learns there is a
-        // network under it (`host::connect_at`).
-        Some(machine) => {
-            let (addr, cookie) = reach_blocking(root, machine, &sid)?;
-            khor_node::host::connect_at(&addr, &cookie, cols, rows)?
-        }
-        None => {
-            // A row this machine does not host yet may still have a
-            // terminal to be had — a discovered tmux session, or an
-            // agent sitting inside one (its row's `term` said so). The
-            // bridge stands a host up under this very id (grouped
-            // client — `LiveKind::attach_multiplexed` has the judgment,
-            // including refusing rows with no route), and from here on
-            // it is any hosted session.
-            // **The seat decides the address.** A row can have a host
-            // of its own *and* sit in the person's tmux (a conversation
-            // khor started, resumed in a terminal), and then the
-            // terminal belongs to the viewer bridged onto tmux, never
-            // to the ghost. `attach_tmux` is the one judgment of which
-            // it is; a row in no tmux with a live host answers `Host`
-            // from its file and one sweep, which is what the ordinary
-            // open costs now.
-            let seat = match n.attach_tmux(&sid) {
-                Ok(seat) => seat,
-                Err(_) if n.is_hosted(&sid) => khor_node::live::Seat::Host,
-                Err(e) => return Err(e),
-            };
-            let dir = n
-                .session_dir(&sid)
-                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-            match seat {
-                khor_node::live::Seat::View => khor_node::host::connect_view(&dir, cols, rows)?,
-                khor_node::live::Seat::Host => connect(&dir, cols, rows)?,
-            }
-        }
-    };
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
         conn: Mutex::new(conn),
@@ -306,6 +283,89 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     });
     registry.insert(id.to_owned(), term);
     Ok(())
+}
+
+/// The connection [`term_open`] attaches with, and the far machine it
+/// came through (`None` when the row is hosted here). No lock is held:
+/// a far one waits on the network.
+fn attach(
+    root: &Path,
+    id: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(std::net::TcpStream, Option<String>), String> {
+    let n = Node::open(root.to_path_buf())?;
+    let sid = SessionId(id.to_owned());
+    // **The fork is on the row, not on a flag** (`Node::far_machine`):
+    // one list holds every machine's sessions, so one click has to mean
+    // the same thing wherever the row lives. The CLI's `attach` forks on
+    // this very question, and this door now matches it.
+    let far = n.far_machine(&sid)?;
+    let conn = match &far {
+        // Reached, not hosted here: the resident serve binds a local
+        // port onto the far host, and what arrives is still a TCP
+        // address speaking the host protocol — so everything below this
+        // line is unchanged, and the terminal never learns there is a
+        // network under it (`host::connect_at`).
+        Some(machine) => {
+            let (addr, cookie) = reach_blocking(root, machine, &sid)?;
+            khor_node::host::connect_at(&addr, &cookie, cols, rows)?
+        }
+        None => {
+            // A row this machine does not host yet may still have a
+            // terminal to be had — a discovered tmux session, or an
+            // agent sitting inside one (its row's `term` said so). The
+            // bridge stands a host up under this very id (grouped
+            // client — `LiveKind::attach_multiplexed` has the judgment,
+            // including refusing rows with no route), and from here on
+            // it is any hosted session.
+            // **The seat decides the address.** A row can have a host
+            // of its own *and* sit in the person's tmux (a conversation
+            // khor started, resumed in a terminal), and then the
+            // terminal belongs to the viewer bridged onto tmux, never
+            // to the ghost. `attach_tmux` is the one judgment of which
+            // it is; a row in no tmux with a live host answers `Host`
+            // from its file and one sweep, which is what the ordinary
+            // open costs now.
+            let seat = match n.attach_tmux(&sid) {
+                Ok(seat) => seat,
+                Err(_) if n.is_hosted(&sid) => khor_node::live::Seat::Host,
+                Err(e) => return Err(e),
+            };
+            let dir = n
+                .session_dir(&sid)
+                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
+            match seat {
+                khor_node::live::Seat::View => khor_node::host::connect_view(&dir, cols, rows)?,
+                khor_node::live::Seat::Host => connect(&dir, cols, rows)?,
+            }
+        }
+    };
+    Ok((conn, far))
+}
+
+/// An open terminal under `id` takes one more hold and answers yes; a
+/// dead one is taken out, the open is written down as on its way
+/// (`crate::landing`), and the answer is no — the look `term_open`
+/// makes before it reaches, with the lock let go again at once.
+fn hold_if_open(id: &str) -> bool {
+    let mut registry = plock(terms());
+    if let Some(term) = registry.get(id) {
+        if !term.gone.load(Ordering::Relaxed) {
+            term.holds.fetch_add(1, Ordering::Relaxed);
+            return true;
+        }
+        registry.remove(id);
+    }
+    plock(landing()).begin(id);
+    false
+}
+
+/// Terminal opens still reaching, and leaves that came before them.
+/// Taken only while [`terms`] is held.
+fn landing() -> &'static Mutex<crate::landing::Landing> {
+    static LANDING: OnceLock<Mutex<crate::landing::Landing>> = OnceLock::new();
+    LANDING.get_or_init(Default::default)
 }
 
 /// An attachment made again (`crate::rejoin`) starts a new life: the
@@ -629,11 +689,18 @@ pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
 /// for the same double-mount reason).
 pub fn term_leave(id: &str) -> Result<(), String> {
     let mut registry = plock(terms());
-    if let Some(term) = registry.get(id)
-        && term.holds.fetch_sub(1, Ordering::Relaxed) <= 1
-    {
-        term.left.store(true, Ordering::Relaxed);
-        registry.remove(id);
+    match registry.get(id) {
+        Some(term) => {
+            if term.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
+                term.left.store(true, Ordering::Relaxed);
+                registry.remove(id);
+            }
+        }
+        // Its open may still be reaching: the hold it would take is
+        // this leave's (`crate::landing`).
+        None => {
+            plock(landing()).leave_early(id);
+        }
     }
     Ok(())
 }

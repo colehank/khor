@@ -100,6 +100,108 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
   }
 }
 
+// ── 4) nothing that waits runs on the main thread ──────────────────
+// **The phone froze when a machine dropped off** (2026-10-02, the owner
+// on a real iPhone). Tauri runs a command declared without `async` on
+// the main thread — the one that draws the window and runs the page —
+// and holds it there until the command returns. `term_open` reached the
+// far machine from there, and an unreachable machine held the whole app
+// still for the reach's deadline. So every sync command is on this list
+// of ones that only touch memory, one local file or document, or AppKit
+// (which wants the main thread); anything that waits on the network, a
+// far machine, a process coming up or a cold disk read is `async` and
+// goes through `off_main` in `src-tauri/src/lib.rs`.
+//
+// A ratchet, both ways: a sync command not on the list is red (it runs
+// on the main thread and nobody said it is quick), and a name on the
+// list that is no longer a sync command is red (delete the line). It is
+// a static census — it reads the declaration, not what the body does —
+// so the list is only as true as the person who adds to it; the
+// simulator measures the rest (docs/IOS.md, handoff 001).
+const QUICK = new Set([
+  // Lists and documents on this machine's own disk.
+  "sessions", "day_strips", "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
+  "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
+  "update_account", "register_account", "remove_account", "seen", "rename_session",
+  "rename_machine", "relays", "set_relays", "tell", "pin_session", "pin_device", "forget_device",
+  "set_watch", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
+  "history", "history_follow", "machine_log", "import_candidates", "import_sessions", "agents",
+  "agents_known", "agents_known_taken", "register_known_agent", "agent_seen", "invite",
+  "pending_list", "root_words", "set_paused", "set_machine_paused", "config", "set_config",
+  "about", "web_key", "rotate_web_key", "reset_identity", "page_icons",
+  // This machine's own settings files.
+  "hooks_state", "install_hooks", "uninstall_hooks", "lock_state", "set_lock", "set_lock_pin",
+  "set_lock_timeout", "unlock", "doctor_fix",
+  // An attachment already open: memory, and a write to its socket.
+  "chat_poll", "chat_say", "chat_answer", "chat_stop", "chat_set_mode", "chat_set_option",
+  "chat_replay", "chat_leave", "term_attach", "term_stream", "term_key", "term_resize", "term_leave",
+  // Answers the build knows, or plain memory.
+  "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
+  // The system's: windows, menus, the theme, a link handed to the OS.
+  "set_window_theme", "menu_state", "open_link", "show_menu", "size_menu", "menu_pick",
+  "hide_menu", "widen", "move_page", "hide_page", "show_page", "close_page", "page_step",
+  "window_minimize", "window_maximize_toggle", "window_close",
+]);
+// The ones that waited on the main thread on 2026-10-02, named so the
+// red says which: each must be `async`.
+const WAITS = [
+  "term_open", "chat_open", "term_drop", "close_session", "usage", "agent_ask",
+  "takeover", "takeover_term", "resume_session",
+];
+{
+  const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;
+  const sync = new Set();
+  const all = new Set();
+  for (const m of lib.matchAll(decl)) {
+    all.add(m[3]);
+    if (!m[2] && !/async/.test(m[1] ?? "")) sync.add(m[3]);
+  }
+  if (all.size < 100) {
+    probeDead(`read only ${all.size} commands out of src-tauri/src/lib.rs — the declaration pattern no longer matches`);
+  }
+  for (const name of WAITS) {
+    if (!all.has(name)) probeDead(`no command \`${name}\` in src-tauri/src/lib.rs — renamed? update this gate`);
+    else if (sync.has(name)) {
+      fail(
+        `\`${name}\` is a sync command, so tauri runs it on the main thread — and it waits (the network, a far ` +
+          "machine, a process coming up). Make it `async` and run its body through `off_main`.",
+      );
+    }
+  }
+  for (const name of [...sync].sort()) {
+    if (!QUICK.has(name) && !WAITS.includes(name)) {
+      fail(
+        `\`${name}\` is a sync command (runs on the main thread) and is not on check-mobile's QUICK list. If it only ` +
+          "touches memory, a local file or AppKit, add it there; if it can wait, make it `async` through `off_main`.",
+      );
+    }
+  }
+  for (const name of [...QUICK].sort()) {
+    if (!sync.has(name)) fail(`census stale: \`${name}\` is on QUICK but is not a sync command any more — delete the line`);
+  }
+}
+
+// ── 5) the status bar wears the app's theme ─────────────────────────
+// **The status bar's ink followed the phone, not the app** (2026-10-02,
+// the owner). It is UIKit's: its default style is dark ink on a light
+// window and light ink on a dark one, and the window followed the phone
+// because `set_window_theme` did nothing on iOS. The iOS half has to set
+// the windows' interface style. Static — what it looks like is read in
+// the simulator (docs/IOS.md, `/Volumes/disk0/khor-wt-fix-shots/`).
+{
+  const body = /fn set_window_theme\([^)]*\)\s*\{([\s\S]*?)\n\}\n/.exec(lib)?.[1];
+  if (body === undefined) {
+    probeDead("no `fn set_window_theme` in src-tauri/src/lib.rs");
+  } else if (!/#\[cfg\(target_os = "ios"\)\][\s\S]*wear_on_the_windows/.test(body)) {
+    fail(
+      "set_window_theme has no iOS half: the app's theme never reaches UIKit, so the status bar's ink follows the " +
+        "phone — dark ink over a dark app on a light phone",
+    );
+  } else if (!/setOverrideUserInterfaceStyle/.test(lib)) {
+    fail("wear_on_the_windows no longer sets overrideUserInterfaceStyle — the status bar would follow the phone again");
+  }
+}
+
 // ── 1) the type-check — skipped only when a probe says it cannot run ─
 if (!dead) {
   const check = spawnSync("cargo", ["check", "--target", TARGET, "-p", "khor-gui"], {
@@ -118,5 +220,6 @@ if (!dead) {
 
 if (bad) process.exit(1);
 console.log(
-  `mobile: khor-gui type-checks for ${TARGET}, run is the mobile entry point, and the camera's sentence is the catalog's`,
+  `mobile: khor-gui type-checks for ${TARGET}, run is the mobile entry point, the camera's sentence is the catalog's, ` +
+    "every sync command is a quick one (nothing that waits runs on the main thread), and the iOS windows wear the app's theme",
 );

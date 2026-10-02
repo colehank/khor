@@ -5,6 +5,27 @@
 use khor_gui_core::{DeviceRow, FaceChoices, SessionRow};
 use khor_node::Node;
 
+/// **A command that waits goes off the main thread** (2026-10-02, the
+/// phone that froze when a machine dropped off).
+///
+/// Tauri runs a command declared without `async` on the main thread —
+/// the thread that draws the window and runs the page — and holds it
+/// there until the command returns. A command that waits on the network
+/// (reaching a far terminal, closing a far session) held the whole app
+/// still for as long as the far machine took to not answer: the reach's
+/// deadline, tens of seconds. These run on tokio's blocking pool
+/// instead, so the window keeps drawing while they wait, and the
+/// node's own deadlines (`khor_node::ipc` `DEADLINE_FAR` and kin) still
+/// bound how long the wait is. `npm run mobile` holds the table: a sync
+/// command is either on its list of quick ones or it is one of these.
+async fn off_main<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// `by` is the arrangement key (`khor_node::list::Arrange`). The window
 /// passes the one the user last chose; it is that screen's own state,
 /// not something the network holds an opinion about.
@@ -330,13 +351,13 @@ async fn load(
 }
 
 /// **Blocking, and the first call can take seconds**: reading every
-/// transcript on this machine is 18 s cold (`khor_node::usage`). Tauri
-/// runs commands on a worker thread rather than on the UI thread, so
-/// this does not freeze the window — and every call after the first is
-/// a walk of directory entries.
+/// transcript on this machine is 18 s cold (`khor_node::usage`). So it
+/// runs off the main thread ([`off_main`]) — ⚠️ this note used to say
+/// tauri already ran every command on a worker thread; it runs a sync
+/// one on the main thread, and the first read froze the window.
 #[tauri::command]
-fn usage() -> Result<khor_node::Usage, String> {
-    khor_gui_core::usage(&Node::root_from_env())
+async fn usage() -> Result<khor_node::Usage, String> {
+    off_main(|| khor_gui_core::usage(&Node::root_from_env())).await
 }
 
 /// The subscription's remaining windows. Answers a shape carrying its own
@@ -354,9 +375,11 @@ fn seen(id: String) -> Result<(), String> {
     khor_gui_core::seen(&Node::root_from_env(), &id)
 }
 
+/// A row on another machine closes there, over the network
+/// ([`off_main`]).
 #[tauri::command]
-fn close_session(id: String) -> Result<(), String> {
-    khor_gui_core::close_session(&Node::root_from_env(), &id)
+async fn close_session(id: String) -> Result<(), String> {
+    off_main(move || khor_gui_core::close_session(&Node::root_from_env(), &id)).await
 }
 
 #[tauri::command]
@@ -454,9 +477,11 @@ fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
 /// The six chat commands are one attachment registry in gui-core: the
 /// window polls for frames because that is the shape both skins can
 /// serve (`khor_gui_core::chat` module head).
+/// A conversation on another machine is reached over the network
+/// ([`off_main`]).
 #[tauri::command]
-fn chat_open(id: String) -> Result<bool, String> {
-    khor_gui_core::chat::chat_open(&Node::root_from_env(), &id)
+async fn chat_open(id: String) -> Result<bool, String> {
+    off_main(move || khor_gui_core::chat::chat_open(&Node::root_from_env(), &id)).await
 }
 
 #[tauri::command]
@@ -674,9 +699,11 @@ fn pdf_here() -> bool {
 /// mirroring chat: the window replays the feed and tails it, because
 /// a byte stream is the shape both skins can serve
 /// (`khor_gui_core::term` module head — xterm.js is the renderer).
+/// A terminal on another machine is reached over the network
+/// ([`off_main`]).
 #[tauri::command]
-fn term_open(id: String, cols: u16, rows: u16) -> Result<(), String> {
-    khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows)
+async fn term_open(id: String, cols: u16, rows: u16) -> Result<(), String> {
+    off_main(move || khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows)).await
 }
 
 #[tauri::command]
@@ -705,8 +732,8 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
 /// line — the frontend, the bridge's table — learns there is a network
 /// under it.
 #[tauri::command]
-fn term_drop(id: String, paths: Vec<String>) -> Result<(), String> {
-    khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths)
+async fn term_drop(id: String, paths: Vec<String>) -> Result<(), String> {
+    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths)).await
 }
 
 #[tauri::command]
@@ -2238,14 +2265,16 @@ fn page_step(tab: String, way: String) -> Result<(), String> {
 /// prints it (`khor_gui_core::Ticket`).
 /// 接管 (批C): ends the session's terminal side; the conversation
 /// continues here (`khor_gui_core::takeover`).
+/// Waits for the old process to go and the new host to come up
+/// (seconds), so off the main thread ([`off_main`]).
 #[tauri::command]
-fn takeover(id: String) -> Result<(), String> {
-    khor_gui_core::takeover(&Node::root_from_env(), &id)
+async fn takeover(id: String) -> Result<(), String> {
+    off_main(move || khor_gui_core::takeover(&Node::root_from_env(), &id)).await
 }
 
 #[tauri::command]
-fn takeover_term(id: String) -> Result<(), String> {
-    khor_gui_core::takeover_term(&Node::root_from_env(), &id)
+async fn takeover_term(id: String) -> Result<(), String> {
+    off_main(move || khor_gui_core::takeover_term(&Node::root_from_env(), &id)).await
 }
 
 /// The wizard's door (会话身份批B): a fresh agent session, born in the
@@ -2378,10 +2407,11 @@ fn agent_seen(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> 
 
 /// Puts the question to the agent itself. **Starts it — measured
 /// 1.5s with the package cached, 5.64s without** — so it hangs off a
-/// person's press and nothing else.
+/// person's press and nothing else — and waits off the main thread
+/// ([`off_main`]).
 #[tauri::command]
-fn agent_ask(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> {
-    khor_gui_core::agents::agent_ask(&Node::root_from_env(), &name)
+async fn agent_ask(name: String) -> Result<khor_gui_core::agents::AgentSaid, String> {
+    off_main(move || khor_gui_core::agents::agent_ask(&Node::root_from_env(), &name)).await
 }
 
 /// **Windows draws its own three, and these are what they press**
@@ -2455,10 +2485,14 @@ fn import_sessions(ids: Vec<String>) -> Result<Vec<String>, String> {
 }
 
 /// Opens a conversation the agent already has, at **its own** cwd —
-/// not a fresh one, and not the wizard's 目录 answer.
+/// not a fresh one, and not the wizard's 目录 answer. It waits for the
+/// conversation's host to come up, so off the main thread ([`off_main`]).
 #[tauri::command]
-fn resume_session(agent: String, session: String) -> Result<String, String> {
-    khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
+async fn resume_session(agent: String, session: String) -> Result<String, String> {
+    off_main(move || {
+        khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
+    })
+    .await
 }
 
 // ── 安全 (docs/MORE.md) ─────────────────────────────────────────────
@@ -2598,8 +2632,54 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
             }
         });
     }
-    #[cfg(not(target_os = "macos"))]
+    // **A phone wears it on its windows** (2026-10-02, the owner on a
+    // real iPhone: the status bar's band did not match the app). The
+    // status bar is UIKit's, and its ink follows the interface style of
+    // the window under it — the system's, until this. An app set dark on
+    // a light phone had dark ink on a dark band.
+    #[cfg(target_os = "ios")]
+    {
+        let _ = app.run_on_main_thread(move || wear_on_the_windows(&theme));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
     let _ = (app, theme);
+}
+
+/// Sets every window's `overrideUserInterfaceStyle` to the choice —
+/// `auto` clears it (unspecified), so the window follows the phone — and
+/// asks for the status bar again. The status bar's default style is
+/// dark ink on a light window and light ink on a dark one, so this is
+/// what makes it readable over the app's own ground in either theme.
+/// The page's `prefers-color-scheme` follows the window too, which is
+/// the same answer the page already wears (`src/theme.ts`). Main thread
+/// only.
+#[cfg(target_os = "ios")]
+fn wear_on_the_windows(theme: &str) {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    // UIUserInterfaceStyle: unspecified 0, light 1, dark 2.
+    let style: isize = match theme {
+        "light" => 1,
+        "dark" => 2,
+        _ => 0,
+    };
+    // SAFETY: UIKit on the main thread (`run_on_main_thread`); every
+    // object here is the application's own, read and set by documented
+    // selectors. No UIScene manifest, so `windows` lists them all
+    // (`gen/apple` does not opt in — docs/IOS.md).
+    unsafe {
+        let ui_app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
+        let windows: *mut AnyObject = msg_send![ui_app, windows];
+        let count: usize = msg_send![windows, count];
+        for i in 0..count {
+            let window: *mut AnyObject = msg_send![windows, objectAtIndex: i];
+            let _: () = msg_send![window, setOverrideUserInterfaceStyle: style];
+            let root: *mut AnyObject = msg_send![window, rootViewController];
+            if !root.is_null() {
+                let _: () = msg_send![root, setNeedsStatusBarAppearanceUpdate];
+            }
+        }
+    }
 }
 
 /// Sets NSApp's appearance **now** — `None` clears it, so the app follows

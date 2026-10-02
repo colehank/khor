@@ -283,37 +283,53 @@ fn frame_of(note: GuiNote) -> ChatFrame {
 /// call attached anew — the caller that asks for history on open must
 /// not ask twice for one attachment (React mounts effects twice in
 /// dev, and a host answers every replay it is asked for).
+///
+/// **The registry is not held while the attachment is made**, for the
+/// terminal's reason (`crate::term::term_open`): a far conversation is
+/// reached over the network, and every other conversation's poll and
+/// send take this same lock.
 pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
-    let mut registry = chats().lock().unwrap();
-    if let Some(chat) = registry.get(id) {
-        if !chat.gone.load(Ordering::Relaxed) {
-            chat.holds.fetch_add(1, Ordering::Relaxed);
-            return Ok(false);
+    {
+        let mut registry = chats()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(chat) = registry.get(id) {
+            if !chat.gone.load(Ordering::Relaxed) {
+                chat.holds.fetch_add(1, Ordering::Relaxed);
+                return Ok(false);
+            }
+            registry.remove(id);
         }
-        registry.remove(id);
+        landing()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .begin(id);
     }
-    let n = Node::open(root.to_path_buf())?;
+    let attached = attach(root, id);
+    let mut registry = chats()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A leave that came while this open was reaching takes its hold
+    // (`crate::landing`).
+    let left = landing()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .land(id);
+    let (conn, far) = attached?;
+    if left {
+        let _ = conn.shutdown(std::net::Shutdown::Both);
+        return Ok(false);
+    }
+    if let Some(theirs) = registry.get(id)
+        && !theirs.gone.load(Ordering::Relaxed)
+    {
+        // Another open made it while this one was reaching: theirs is
+        // the attachment, and this connection goes unused.
+        theirs.holds.fetch_add(1, Ordering::Relaxed);
+        let _ = conn.shutdown(std::net::Shutdown::Both);
+        return Ok(false);
+    }
     let sid = SessionId(id.to_owned());
-    // **The fork is on the row, not on a flag** (`Node::far_machine`),
-    // the terminal's own rule one door over: a conversation born on
-    // another machine (the wizard's 在哪台) is reached through the pipe
-    // the resident binds onto its host, and what arrives is the same
-    // socket speaking the same frames — nothing below this line knows
-    // there is a network under it. The GUI host ignores the terminal
-    // size; 0×0 is what its own test clients send.
-    let far = n.far_machine(&sid)?;
-    let conn = match &far {
-        Some(machine) => {
-            let (addr, cookie) = crate::term::reach_blocking(root, machine, &sid)?;
-            khor_node::host::connect_at(&addr, &cookie, 0, 0)?
-        }
-        None => {
-            let dir = n
-                .session_dir(&sid)
-                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
-            connect(&dir, 0, 0)?
-        }
-    };
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let chat = Arc::new(Chat {
         conn: Mutex::new(conn),
@@ -361,6 +377,42 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
     });
     registry.insert(id.to_owned(), chat);
     Ok(true)
+}
+
+/// The connection [`chat_open`] attaches with, and the far machine it
+/// came through (`None` when the conversation is hosted here). No lock
+/// is held: a far one waits on the network.
+fn attach(root: &Path, id: &str) -> Result<(TcpStream, Option<String>), String> {
+    let n = Node::open(root.to_path_buf())?;
+    let sid = SessionId(id.to_owned());
+    // **The fork is on the row, not on a flag** (`Node::far_machine`),
+    // the terminal's own rule one door over: a conversation born on
+    // another machine (the wizard's 在哪台) is reached through the pipe
+    // the resident binds onto its host, and what arrives is the same
+    // socket speaking the same frames — nothing below this line knows
+    // there is a network under it. The GUI host ignores the terminal
+    // size; 0×0 is what its own test clients send.
+    let far = n.far_machine(&sid)?;
+    let conn = match &far {
+        Some(machine) => {
+            let (addr, cookie) = crate::term::reach_blocking(root, machine, &sid)?;
+            khor_node::host::connect_at(&addr, &cookie, 0, 0)?
+        }
+        None => {
+            let dir = n
+                .session_dir(&sid)
+                .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
+            connect(&dir, 0, 0)?
+        }
+    };
+    Ok((conn, far))
+}
+
+/// Conversation opens still reaching, and leaves that came before them.
+/// Taken only while [`chats`] is held.
+fn landing() -> &'static Mutex<crate::landing::Landing> {
+    static LANDING: OnceLock<Mutex<crate::landing::Landing>> = OnceLock::new();
+    LANDING.get_or_init(Default::default)
 }
 
 fn chat_of(id: &str) -> Result<Arc<Chat>, String> {
@@ -579,11 +631,21 @@ pub struct Followed {
 /// going away must not take the conversation with it.
 pub fn chat_leave(id: &str) -> Result<(), String> {
     let mut registry = chats().lock().unwrap();
-    if let Some(chat) = registry.get(id)
-        && chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1
-    {
-        chat.left.store(true, Ordering::Relaxed);
-        registry.remove(id);
+    match registry.get(id) {
+        Some(chat) => {
+            if chat.holds.fetch_sub(1, Ordering::Relaxed) <= 1 {
+                chat.left.store(true, Ordering::Relaxed);
+                registry.remove(id);
+            }
+        }
+        // Its open may still be reaching: the hold it would take is
+        // this leave's (`crate::landing`).
+        None => {
+            landing()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .leave_early(id);
+        }
     }
     Ok(())
 }

@@ -205,6 +205,13 @@ export function SideList({
       them — the column's word for its own order (sessions: 最近). */
   rest?: string;
 }) {
+  // **No selected row on the narrow face** (2026-10-02, the owner on a
+  // phone: going back to a list still showed the row it had opened). A
+  // selected row says "this is what is open beside me"; on the narrow
+  // face the list and what it opened are never on screen together — the
+  // list is one screen, the row's page the next — so coming back, there
+  // is nothing beside it to point at. Every landing's list is this one
+  // component, so this is the one place. The wide face is unchanged.
   const narrow = useNarrow();
   const shown = rows.filter((r) => finds(query, r.find));
   // **A query reads everything**, the fold included: it is the person
@@ -338,6 +345,7 @@ export function SideList({
     // lists. `list-row` / `list-face` are the pointer's sizes (68 / 40
     // under a finger, 56 / 32 under a mouse). The hairline is the text
     // block's foot, so a picked row's grey block (wide) hides its own.
+    const picked = !narrow && !!r.selected;
     const button = (
       <button
         type="button"
@@ -366,7 +374,7 @@ export function SideList({
           className={cn(
             "flex min-w-0 flex-1 items-center gap-row border-b py-1",
             narrow ? "pe-group" : "pe-row",
-            r.selected && !narrow && "border-transparent",
+            picked && "border-transparent",
           )}
         >
         <span className="min-w-0 flex-1">
@@ -453,7 +461,7 @@ export function SideList({
             data-side-pinned={r.pinned}
             data-side-in={r.group}
             data-side-menu={r.menu.length > 0}
-            data-selected={!!r.selected}
+            data-selected={picked}
             {...r.rowData}
             // **Selected is painted by `app.css`, keyed on
             // `data-selected`** (第十五轮 第 2 条, D6): the brand's solid
@@ -467,8 +475,8 @@ export function SideList({
             className={cn(
               "flex w-full items-center",
               !narrow && "rounded-lg",
-              !r.selected && !narrow && "hover:bg-fill",
-              r.dim && !r.selected && "opacity-55",
+              !picked && !narrow && "hover:bg-fill",
+              r.dim && !picked && "opacity-55",
             )}
           >
             {/* **The menu's trigger is the button, not the strip around

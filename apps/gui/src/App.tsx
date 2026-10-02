@@ -2425,7 +2425,16 @@ export default function App() {
         // **Clear of a phone's status bar** (`--safe-top`) on every
         // screen but a session's, which runs its paper up to the glass
         // and keeps the edge itself (`SessionScreen`).
-        <div data-nav-host={!fullScreen || undefined} className={cn("relative flex h-full flex-col", !fullScreen && "pt-safe-top")}>
+        //
+        // **The band under the status bar wears the ground of the row
+        // under it** (2026-10-02, the owner on a phone: the area where
+        // the system shows its own things was grey over a dark app). The
+        // band is this box's `pt-safe-top`, so the box paints L0's
+        // ground (`bg-side`, the one ground since the redesign) and the
+        // status bar sits on the first row's colour, both themes. Zero
+        // high wherever there is no status bar (`--safe-top` is 0 off a
+        // phone).
+        <div data-nav-host={!fullScreen || undefined} className={cn("relative flex h-full flex-col", !fullScreen && "bg-side pt-safe-top")}>
           {under && (
             <div
               data-screen-under
