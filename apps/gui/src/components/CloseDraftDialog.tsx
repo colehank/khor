@@ -66,7 +66,7 @@ export function CloseDraftDialog({
     >
       <DialogContent data-close-draft data-quit={quit || undefined}>
         <DialogHeader>
-          <DialogTitle>{gui.file_unsaved}</DialogTitle>
+          <DialogTitle>{gui.watch_unsaved}</DialogTitle>
         </DialogHeader>
         <div data-close-draft-says className="text-body text-muted-foreground">
           {quit ? gui.quit_drafts(quitting) : gui.tab_close_draft(name ?? "")}

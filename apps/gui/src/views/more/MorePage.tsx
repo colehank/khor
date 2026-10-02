@@ -139,7 +139,7 @@ export function MoreFrame({
           <PageSubtitle>
             <span
               data-more-head-sub
-              className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+              className="min-w-0 truncate text-callout text-muted-foreground tabular-nums"
             >
               {subtitle}
             </span>
@@ -245,7 +245,7 @@ export function MoreSection({
     // where the text does. `app.css` `[data-settings-card]` draws the
     // lines and pads whatever in it is not a settings row.
     <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
-      {shown && <h2 className="ml-row text-group text-tertiary">{shown}</h2>}
+      {shown && <h2 className="ml-row text-group text-muted-foreground">{shown}</h2>}
       <div data-settings-card {...mark} className="flex min-w-0 flex-col">
         {children}
       </div>

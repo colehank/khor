@@ -1873,7 +1873,7 @@ export function QuotaLanding({
     <PageSubtitle>
       <span
         data-quota-head-sub
-        className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+        className="min-w-0 truncate text-callout text-muted-foreground tabular-nums"
       >
         <ReadCaption row={current} />
       </span>

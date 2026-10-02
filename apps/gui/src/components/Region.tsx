@@ -265,14 +265,14 @@ export function PageHead({
             cut before the directory's own name is. On `caption`'s
             leading, so the line stays the name's 18 tall. */}
         <div className="flex min-w-0 items-baseline gap-in">
-          <h1 data-page-title className="min-w-0 truncate text-title-sm leading-(--text-body--line-height) font-title">
+          <h1 data-page-title className="min-w-0 truncate text-title-sm font-title">
             {title}
           </h1>
           {asideRef && (
             <span
               ref={asideRef}
               data-page-title-aside
-              className="flex min-w-0 shrink-[1000] items-baseline gap-xxs overflow-hidden whitespace-nowrap text-callout leading-(--text-caption--line-height) text-muted-foreground empty:hidden"
+              className="flex min-w-0 shrink-[1000] items-baseline gap-xxs overflow-hidden whitespace-nowrap text-callout text-muted-foreground empty:hidden"
             />
           )}
         </div>

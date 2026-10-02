@@ -37,7 +37,7 @@ export function SectionHead({
 }) {
   return (
     <div data-section-head className="flex flex-none items-center gap-in" style={{ height: "var(--slot-head-h)" }}>
-      <h2 {...mark} className="min-w-0 flex-1 truncate text-group text-tertiary">
+      <h2 {...mark} className="min-w-0 flex-1 truncate text-group text-muted-foreground">
         {title}
       </h2>
       {children}

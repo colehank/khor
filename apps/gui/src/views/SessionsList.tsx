@@ -298,7 +298,7 @@ export function SessionsList({
     // and says it; the row says what is happening, nothing else.
     sub: away ? (
       <span data-row-far className="block min-w-0 truncate">
-        {gui.row_unreachable(away.shown, gui.card_age(ago(Date.now() - away.age)))}
+        {gui.row_unreachable(gui.card_age(ago(Date.now() - away.age)))}
       </span>
     ) : r.last && /[\p{L}\p{N}]/u.test(r.last) ? (
       // A line with something to read: a prompt's frame (「╰─ ─╯」) is

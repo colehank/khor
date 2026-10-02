@@ -56,14 +56,14 @@
   --massLo: rgba(26, 26, 20, 0.16);
   --thread: rgba(26, 26, 20, 0.42);
   --recent: rgba(26, 26, 20, 0.64);
-  --mut: rgba(26, 26, 20, 0.62);
-  --fnt: rgba(26, 26, 20, 0.4);
-  --hair: rgba(26, 26, 20, 0.14);
+  /* ⚠️ 墓碑 (the audit fix plan F5.1; SYS-15): `--mut`, `--fnt` and a
+     colour-valued `--hair` stood here, a second ink ladder 0.01–0.05 off
+     the app's — and `--hair` is the app's one-pixel *length*, which a
+     shared component inside this block would have read as a colour. The
+     app's own tokens are used now; only the value ramps above, which
+     encode data, are this block's. */
 }
 :root[data-theme="dark"] .dayblk {
-  --mut: rgba(238, 238, 231, 0.6);
-  --fnt: rgba(238, 238, 231, 0.38);
-  --hair: rgba(238, 238, 231, 0.14);
   --r1: rgba(238, 238, 231, 0.11);
   --r2: rgba(238, 238, 231, 0.18);
   --r3: rgba(238, 238, 231, 0.25);
@@ -128,7 +128,7 @@
   flex: none;
   height: var(--slot-head-h);
   font-size: var(--text-callout);
-  color: var(--fnt);
+  color: var(--muted-foreground);
   white-space: nowrap;
   letter-spacing: 0.02em;
   display: flex;
@@ -159,22 +159,22 @@
 }
 .dayblk .ro {
   font-size: var(--text-callout);
-  color: var(--mut);
+  color: var(--muted-foreground);
   margin-top: 6px;
   min-height: var(--text-callout--line-height);
   line-height: var(--text-callout--line-height);
   font-variant-numeric: tabular-nums;
 }
 .dayblk .ro b {
-  font-weight: 700;
+  font-weight: 600;
   color: var(--fg);
 }
 .dayblk .ro .gone {
-  color: var(--fnt);
+  color: var(--tertiary);
 }
 .dayblk .ro .sp {
   color: var(--strain);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .dayblk .r1 {
@@ -253,16 +253,16 @@
   fill: var(--strain);
 }
 .dayblk .lab {
-  fill: var(--mut);
+  fill: var(--muted-foreground);
 }
 .dayblk .fnt {
-  fill: var(--fnt);
+  fill: var(--tertiary);
 }
 .dayblk .ink {
   fill: var(--fg);
 }
 .dayblk .hair {
-  stroke: var(--hair);
+  stroke: var(--border);
 }
 .dayblk .inkline {
   stroke: var(--fg);

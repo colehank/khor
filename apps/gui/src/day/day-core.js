@@ -258,7 +258,7 @@ function drawHeat(svg, T, W, narrow, fill){
 
   T.forEach((t,r)=>{
     const y = rowY(r);
-    txt(svg,{x:0,y:y+CH/2+cap*0.36,'font-size':cap,'font-weight':700,
+    txt(svg,{x:0,y:y+CH/2+cap*0.36,'font-size':cap,'font-weight':400,
       class:'lab fade',style:`animation-delay:${r*.05}s`}, t.name);
 
     const g = el(svg,'g',{class:'wipe',style:`animation-delay:${r*.06}s`,'data-day-row':t.key||t.name});
@@ -310,7 +310,7 @@ function drawHeat(svg, T, W, narrow, fill){
       // The peak and its unit, both on the scale: the number at `call`,
       // the `%` at `cap` right after it (the unit used to be 7px).
       const call = TYPE.call;
-      txt(svg,{x:X1+8,y:y+CH/2+call*0.36,'font-size':call,'font-weight':800,
+      txt(svg,{x:X1+8,y:y+CH/2+call*0.36,'font-size':call,'font-weight':600,
         class:((t.strain&&pk.v>=90)?'sf':'ink')+' fade',style:'animation-delay:.95s',
         'data-day-peak':t.key||t.name}, Math.round(pk.v));
       txt(svg,{x:X1+8+textW(Math.round(pk.v),call)+1,y:y+CH/2+call*0.36,'font-size':cap,'font-weight':600,
@@ -410,7 +410,7 @@ function drawPara(svg, T, W, narrow, fill){
 
   el(svg,'line',{x1:AX[0],y1:mapY(90),x2:AX[n-1],y2:mapY(90),'stroke-width':.8,
     'stroke-dasharray':'3 3',class:'sk fade',opacity:.7});
-  txt(svg,{x:AX[0]-6,y:mid(mapY(90)),'font-size':cap,'font-weight':700,'text-anchor':'end',
+  txt(svg,{x:AX[0]-6,y:mid(mapY(90)),'font-size':cap,'font-weight':600,'text-anchor':'end',
     class:'sf fade'},'90');
 
   T.forEach((t,k)=>{
@@ -424,7 +424,7 @@ function drawPara(svg, T, W, narrow, fill){
       txt(svg,{x:x-6,y:mid(mapY(gv)),'font-size':cap,'font-weight':600,'text-anchor':'end',
         class:'fnt fade'},String(gv));
     });
-    txt(svg,{x,y:BOT+6+cap+4,'font-size':cap,'font-weight':800,
+    txt(svg,{x,y:BOT+6+cap+4,'font-size':cap,'font-weight':400,
       'text-anchor':'middle',class:'lab fade',style:`animation-delay:${k*.04}s`,
       'data-day-row':t.key||t.name}, short ? t.short : t.name);
     const got = (t.kind==='range'?t.hi:t.v).filter(v=>v!=null).length;
@@ -548,7 +548,7 @@ function drawPara(svg, T, W, narrow, fill){
     let ly = mid(mapY(pk.v));
     if(obstacle!=null && ly + 2.5 > obstacle) ly = obstacle - 2.5;
     txt(svg,{x:AX[k]+(left?-8:8),y:ly.toFixed(2),'font-size':cap,
-      'font-weight':800,'text-anchor':left?'end':'start',
+      'font-weight':600,'text-anchor':left?'end':'start',
       class:(strained?'sf':'ink')+' fade','data-day-peak-label':t.key||t.name,
       style:`paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:${.9+k*.04}s`},
       // **Narrow says the number only** (2026-09-28): at `cap` 11 a
@@ -569,7 +569,7 @@ function drawPara(svg, T, W, narrow, fill){
       const lv=topOf(T[n-1],last);
       if(lv!=null){
         const y=mapY(lv), clash = peakY[n-1]!=null && Math.abs(peakY[n-1]-y)<cap+4;
-        txt(svg,{x:AX[n-1]+(n>1?-8:8),y:clash?y+cap+5:y-8,'font-size':cap,'font-weight':800,
+        txt(svg,{x:AX[n-1]+(n>1?-8:8),y:clash?y+cap+5:y-8,'font-size':cap,'font-weight':600,
           'text-anchor':n>1?'end':'start',class:'ink fade',
           style:'paint-order:stroke;stroke:var(--card);stroke-width:3.4px;animation-delay:1s'},
           WORDS.now);
@@ -592,7 +592,7 @@ function timeAxis(svg, X0, X1, slot, yb, narrow){
     txt(svg,{x,y:yb+4+cap,'font-size':cap,'font-weight':600,'text-anchor':'middle',
       class:'fnt fade'},String(Hh).padStart(2,'0')+':00');
   });
-  txt(svg,{x:X1,y:yb+4+cap,'font-size':cap,'font-weight':700,'text-anchor':'end',
+  txt(svg,{x:X1,y:yb+4+cap,'font-size':cap,'font-weight':600,'text-anchor':'end',
     class:'lab fade'},WORDS.now);
 }
 

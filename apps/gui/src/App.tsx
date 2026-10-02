@@ -375,7 +375,7 @@ export default function App() {
       e.preventDefault();
       // Deprecated and still required: some engines only ask when this
       // is set, and the string is never shown by any of them.
-      e.returnValue = gui.file_unsaved;
+      e.returnValue = gui.watch_unsaved;
     };
     window.addEventListener("beforeunload", leaving);
     return () => {

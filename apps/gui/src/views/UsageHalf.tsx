@@ -731,7 +731,7 @@ function Trend({
               // (`PLOT.tick`, caption 11) — it drew at 8.5, under it
               // (2026-09-28, `check-face` 8a ⓪).
               fontSize={PLOT.tick}
-              fontWeight={700}
+              fontWeight={600}
               textAnchor={busiest > days.length * 0.75 ? "end" : "start"}
               fill="currentColor"
             >
@@ -767,7 +767,7 @@ function Trend({
                 <text x={bx} y={PLOT.padT + ih + 12} fontSize={PLOT.tick} textAnchor="middle" fill="currentColor" fillOpacity={0.6}>
                   {r.word.length > 13 ? `${r.word.slice(0, 12)}…` : r.word}
                 </text>
-                <text x={bx} y={top - 4} fontSize={PLOT.tick} fontWeight={700} textAnchor="middle" fill="currentColor">
+                <text x={bx} y={top - 4} fontSize={PLOT.tick} fontWeight={600} textAnchor="middle" fill="currentColor">
                   {count(v)}
                 </text>
               </g>
@@ -776,7 +776,7 @@ function Trend({
           {/* **A bent axis that does not say so is a chart that lies
               quietly.** The day view has no such line because it cannot
               bend; this one can, so it says which ruler it is on. */}
-          <text x={W - PLOT.padR} y={H - 2} fontSize={PLOT.tick} fontWeight={700} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
+          <text x={W - PLOT.padR} y={H - 2} fontSize={PLOT.tick} fontWeight={600} textAnchor="end" fill="currentColor" fillOpacity={PLOT.tickWordInk}>
             {RULER_WORD[modelRuler.kind]()}
           </text>
         </svg>
@@ -1146,7 +1146,7 @@ function Stats({
                     // 8a ⓪). A crowded corner drops names — `berth`
                     // returns nothing — and the point keeps its `title`.
                     fontSize={PLOT.tick}
-                    fontWeight={on ? 800 : 600}
+                    fontWeight={600}
                     textAnchor={berthed.anchor}
                     fill="currentColor"
                     fillOpacity={on ? 1 : 0.75}

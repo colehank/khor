@@ -202,7 +202,7 @@ function HeadModel({ row }: { row: DeviceRow }) {
   return (
     <span
       data-machine-head-sub
-      className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground"
+      className="min-w-0 truncate text-callout text-muted-foreground"
     >
       {model}
     </span>
@@ -517,7 +517,7 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
       >
         {facts.map(([k, label, value]) => (
           <div key={k} data-strip-fact={k} className="flex min-w-0 flex-col border-l pl-row">
-            <dt data-strip-label className="truncate text-caption text-tertiary">
+            <dt data-strip-label className="truncate text-caption text-muted-foreground">
               {label}
             </dt>
             <dd data-strip-value data-selectable className="min-w-0 truncate text-body text-foreground">

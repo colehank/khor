@@ -202,7 +202,7 @@ export function MandalaMap({
       <PageSubtitle>
         <span
           data-machines-head-sub
-          className="min-w-0 truncate text-callout leading-(--text-caption--line-height) text-muted-foreground tabular-nums"
+          className="min-w-0 truncate text-callout text-muted-foreground tabular-nums"
         >
           {gui.head_machines(rows.length)}
           {others.length > 0 && (

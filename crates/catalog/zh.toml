@@ -1310,7 +1310,7 @@ trust-garbled = "签名记录读不出来：格式不对，或者被截断了"
 trust-bad-signature = "签名对不上：这份记录不是根钥匙签的，或者签完被改过"
 trust-other-root = "这份记录属于另一把根钥匙"
 trust-bad-cert-inside = "名单里有一张证书验不过"
-not-a-machine-id-short = "这不是一个机器 id"
+not-a-machine-id-short = "这不是一个机器 ID"
 not-a-ticket-base64 = "这不是有效的配对票（无法解码 base64）"
 not-a-ticket-content = "这不是有效的配对票（内容不匹配）"
 
@@ -1373,7 +1373,7 @@ endpoint-file-garbled = "无法解析 endpoint.json：{0}"
 # ── the wire between machines (node) ──
 request-unreadable = "读不完请求：{0}"
 cant-write-reply = "写不出应答：{0}"
-bad-invite = "配对码无效或已被使用"
+bad-invite = "配对票无效或已被使用"
 # A separate word from the one above, because the two have different
 # fixes: a wrong or spent code means look at what you pasted, an expired
 # one means ask for another. One word for both would send people hunting
@@ -1381,7 +1381,7 @@ bad-invite = "配对码无效或已被使用"
 # from the constant that enforces it, so the sentence cannot drift from
 # the rule.
 invite-expired = "这张配对票已过期（出票后 {0} 分钟内有效），在那台机器上重新生成一张：khor invite"
-cant-burn-invite = "无法作废配对码：{0}"
+cant-burn-invite = "无法作废配对票：{0}"
 not-paired = "这台机器不在机器列表中，需要先配对"
 # 名单是信任的唯一出处（docs/CONNECT.md 身份）。「不在名单上」和「没配对」是两件事：
 # 前者配过、在等持根的机器批（或已被撤销），后者从没配过。
@@ -1419,7 +1419,7 @@ cant-send = "发送失败：{0}"
 no-answer = "无法读取应答：{0}"
 serve-not-running-for-invite = "khor serve 未运行——先在这台机器上启动 khor serve，配对票需要包含它的地址"
 cant-make-invites-dir = "无法创建邀请目录：{0}"
-cant-save-invite = "无法保存配对码：{0}"
+cant-save-invite = "无法保存配对票：{0}"
 cant-reach-named = "无法连接 {0}：{1}"
 cant-reach-plain = "无法连接：{0}"
 dial-timed-out = "连接超时"
@@ -1603,7 +1603,7 @@ tunnel-no-route = "出口无法连接目标地址：{0}"
 # The borrow row's title, and why a borrow needs a running serve: the
 # proxy is long-lived, so it must live in the process that holds the key.
 borrowing-title = "借 {0} 的网"
-borrow-needs-serve = "借网需要 serve 正在运行（代理口运行在常驻进程中）"
+borrow-needs-serve = "浏览需要 serve 正在运行（代理口运行在常驻进程中）"
 # Same shape, same reason: the pipe to another machine's terminal lives
 # in the resident process, so a one-shot verb has nowhere to put it.
 reach-needs-serve = "连接其他机器的终端需要 serve 正在运行（通道运行在常驻进程中）"
@@ -1727,7 +1727,7 @@ serve-keeper-stayed = "[{0}] serve 换了新版，keeper 自己没换过去（{1
 cwd-pinned = "站到 {0}；从此读仓库不看进程是在哪儿起的"
 no-standing-dir = "说不出这条命令是在哪个目录里起的（多半是那个目录被删了）；把落点写出来再来一次"
 cwd-pin-failed = "站不到 {0}（{1}）；还站在起它的那个目录上，那个目录要是被删了，读仓库会被回绝"
-borrow-self = "这就是本机的网络，无需借网；直接打开即可"
+borrow-self = "这就是本机的网络，直接打开即可"
 # A page opened in the app is a second webview parented to the window, and
 # `Window::add_child` exists on desktop alone — mobile needs a native
 # plugin adding a WKWebView or a WebView by hand (定形 单元 3/4).
@@ -1902,7 +1902,7 @@ already-a-terminal = "它已经是终端形式了：{0}"
 # error on the spawning side, never something a user typed.
 host-bad-convention = "宿主参数不合约定"
 no-such-session-because = "没有这个 session：{0}（{1}）"
-not-a-machine-id = "这不是一个机器 id：{0}"
+not-a-machine-id = "这不是一个机器 ID：{0}"
 # A machine's name is a label, not a path segment and not a key, so it
 # takes any text — CJK, spaces, emoji. The one limit is how much of a
 # row it may eat, counted in characters rather than bytes because a CJK
@@ -2132,7 +2132,7 @@ web-face-rotated = "已重新生成密钥，之前发出的链接全部失效。
 # 还拖了一句「列表和置顶在这儿是好用的」当安慰——三样都是这仓文案判据明写着
 # 不许说的:实现、原因、以及没人要的安慰。**一个人在这儿要的只有一件事:
 # 去哪儿做得成。**
-web-borrow-needs-app = "借网只能在桌面 app 中使用"
+web-borrow-needs-app = "通过其他机器浏览只能在桌面 app 中使用"
 web-face-not-serving = "serve 未运行，目前没有进程在监听这个地址。先运行 khor serve"
 # serve 活着但脸没起来——和上一条分开,因为该做的事不一样:上一条是「去起 serve」,
 # 这一条是「去看 serve 的输出,那个口八成被占了」。合成一句会把人支去做错的事。
@@ -2242,7 +2242,6 @@ window-maximize = "最大化 / 还原"
 window-close = "关闭窗口"
 # 左块第一行那一个搜索框的两种范围(docs/SHELL.md 第十三轮):打字只筛这一列;
 # ⌘K 或 ⇥ 放大到全部(命令行是 khor find)。框里那枚小字标出现在是哪种。
-search-all = "搜全部"
 find-everything = "搜索全部"
 find-hint = "会话、机器、工作区、标签页、设置页"
 find-nothing = "未找到结果"
@@ -2271,7 +2270,7 @@ search-close = "结束搜索"
 page-choose-machine = "选择一台机器"
 page-address = "输入网址"
 page-none = "没有打开的网页"
-page-none-how = "点击上方的 +，打开一个网页"
+page-none-how = "点击上方的 ＋，打开一个网页"
 page-machine = "选择机器"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
@@ -2288,7 +2287,7 @@ pull-to-sync = "下拉同步"
 release-to-sync = "松开同步"
 syncing = "正在同步"
 synced-now = "已同步"
-row-unreachable = "够不到 {0} · {1}的样子"
+row-unreachable = "无法获取 · {0}"
 # ── 额度 ──────────────────────────────────────────────────────────
 # The rail's sixth landing: registered API accounts as rings. 「额度」
 # not 「用量」— `khor usage` (花了多少) already owns that word.
@@ -2297,7 +2296,7 @@ accounts-empty = "还没有登记 API 账号。登记后，用量会显示在这
 # 空状态那句话下面的一行：登记在哪儿（2026-10-01 负责人：「空状态不加添加工作区和
 # 登记」）。空状态不再摆「登记…」按钮，创建类动作只有 L0 搜索框旁的 ＋ 一个家，
 # 这一行只指路，不是第二扇门。「搜索框旁」宽档窄档都对（窄档的 ＋ 也在那一行）。
-accounts-empty-how = "点击搜索框旁的 + 登记账户"
+accounts-empty-how = "点击上方的 ＋，登记账号"
 accounts-register = "登记"
 accounts-provider = "服务提供商"
 accounts-provider-newapi = "new-api 站"
@@ -2658,7 +2657,7 @@ new-session-kind = "会话类型"
 # one idea in one wording.
 new-session-agent-pick = "使用的智能体"
 new-session-form = "打开方式"
-new-session-kind-shell = "shell"
+new-session-kind-shell = "命令行"
 # Said under the 智能体 buttons **only when nothing is registered and
 # the registry really answered** (批⑥). Without it the open position is
 # invisible to anyone who never opens a terminal: two buttons look like
@@ -2668,16 +2667,16 @@ new-session-kind-shell = "shell"
 # Not shown while the answer is still coming, and not shown when it
 # failed — "you have none" and "we could not ask" are different facts,
 # and the second one has its own line.
-new-session-more-agents = "其他 agent 用 khor agents add 接入"
+new-session-more-agents = "其他智能体用 khor agents add 接入"
 # 随包带的 ACP 注册表快照,就地展开在智能体那一行底下(`khor agents
 # known` 的同一份数据)。**在界面上开这扇门的理由,和上面那句是同一个**:
 # 只用界面的人没有第二条路知道这 40 个的存在。
 new-session-add-agent = "添加…"
-new-session-registry = "khor 支持的 agent"
+new-session-registry = "khor 支持的智能体"
 # 出处和日期,和 CLI 那份头一样带着——**一张会过期的表必须自己说出它是
 # 什么时候的**,不然它读起来像「现在有这些」。
 new-session-registry-taken = "{0} 的快照，共 {1} 个"
-new-session-search = "搜索 agent"
+new-session-search = "搜索智能体"
 new-session-attach = "接入"
 # 已经登记过的那些。画成一个不可点的状态而不是把它们藏掉:藏掉的话
 # 「我明明记得有这个」会让人以为快照缩水了。
@@ -2780,7 +2779,7 @@ workspaces-empty = "还没有工作区"
 # derived list and then true of nothing; 「khor ws add」 was true but
 # pointed off the screen, because 批② had not built the picker behind
 # the 「+」 yet. It has now, so this points at the 「+」.
-workspaces-how = "点击上方的 +，选择一台机器上的目录"
+workspaces-how = "点击上方的 ＋，选择一台机器上的目录"
 # ⚠️ **`workspaces-sessions` was deleted here on 2026-09-14** (工作区
 # 批①). It counted the vendor records that folded into a derived row,
 # and the row is not derived any more — what a row says now is where it
@@ -2800,7 +2799,7 @@ ws-add-ask = "添加工作区…"
 ws-now-changed = "最近改动"
 # 一个工作区都没有时，总览那句「还没有工作区」下面的一行：添加在哪儿（2026-10-01
 # 负责人：「空状态不加添加工作区和登记」）。按钮撤了，只指路到 ＋。
-ws-now-how = "点击搜索框旁的 + 添加工作区"
+ws-now-how = "点击上方的 ＋，添加工作区"
 # On a row the word is `delete` (docs/SHELL.md 第二轮). ⚠️ 墓碑:it said
 # 移出工作区 until 2026-09-21, because 删除 beside a directory name reads
 # as touching the directory (user, 2026-09-14). The user overruled that
@@ -3053,7 +3052,6 @@ git-hunk = "这一处改动"
 # is the sheet that catches a tab being closed over a draft** — the row
 # that used to say it over the file is gone (see below), and that dialog
 # is a title, not a strip over somebody's text.
-file-unsaved = "未存"
 # **`file-save`、`file-saved`、`file-undo` 三个键撤掉了**
 # (2026-09-16):「修改文件不要显示"存好了"和"回到存之前", 类似要在文件上方
 # 新增一列的东西都不要」—— the user.
@@ -3116,7 +3114,7 @@ doctor = "诊断"
 # 头像开的那一页。**不叫「我」**——khor 里没有账号,一台机器就是一个身份,
 # 页名说的就是这台机器自己。
 identity = "这台机器"
-identity-id = "机器 id"
+identity-id = "机器 ID"
 identity-version = "khor 版本"
 # 网络页在这台机器还没配过对时,「已连接的机器」那一行说的那一句:
 # 这时候唯一的问题是「怎么再加一台」,页头的邀请设备… / 加入网络… 答它。
@@ -3135,7 +3133,7 @@ identity-faces = "khor 的界面"
 # 太尴尬了」):每一条都先过一遍「系统设置里会不会这么写」。
 # 它们从头像卡搬到了网络页:说的是这台机器和这张网的关系,
 # 不是这台机器是谁。暂停排在离开前面——可逆的在不可逆的前面。
-identity-pause-warn = "暂停后不再与其他设备同步，其他设备会看到这台机器离线；本机的会话、工作区照常使用。设备列表不变——这不是离开网络，随时可以恢复。"
+identity-pause-warn = "暂停后不再与其他机器同步，其他机器会看到这台机器离线；本机的会话、工作区照常使用。机器列表不变——这不是离开网络，随时可以恢复。"
 # 「暂停」「恢复」: the network page says them about this machine, and a
 # machine row's menu about that machine (docs/SHELL.md 第五轮 第 10 条) —
 # one act, one word, which is why the key lost its `identity-` prefix.
@@ -3144,8 +3142,8 @@ resume = "恢复"
 # A machine row this machine has stopped talking to (第 10 条), under its
 # name; the row is also drawn grey.
 machine-paused = "已暂停"
-identity-paused-now = "已暂停——其他设备会看到这台机器离线"
-identity-leave-warn = "本机将退出网络：设备列表只保留本机，其他设备留在这里的数据一并清除。本机的会话、工作区、身份、设置不受影响；用一张新的配对票 pair 可以重新加入。"
+identity-paused-now = "已暂停——其他机器会看到这台机器离线"
+identity-leave-warn = "本机将退出网络：机器列表只保留本机，其他机器留在这里的数据一并清除。本机的会话、工作区、身份、设置不受影响；用一张新的配对票 pair 可以重新加入。"
 identity-leave-type-name = "输入这台机器的名称以确认"
 identity-leave-do = "离开网络"
 # ── 网络页是一页设置 (2026-09-28 负责人):状态 / 中继 / 离开网络 ────────
@@ -3179,10 +3177,10 @@ roads-none = "还没有连接读数"
 roads-unanswered = "serve 没有回答"
 # 开关:打开就是 `khor pause`。说明写会发生什么。
 net-pause-sync = "暂停同步"
-net-pause-note = "其他设备会看到这台机器离线；本机照常使用"
+net-pause-note = "其他机器会看到这台机器离线；本机照常使用"
 net-relays = "中继"
 # 离开网络那一行:和安全页「重置身份 · 重置…」同一个形状,确认在窗里。
-net-leave-note = "设备列表只保留本机；用新的配对票可以重新加入"
+net-leave-note = "机器列表只保留本机；用新的配对票可以重新加入"
 net-leave-ask = "离开…"
 # 头像页上编辑器那一节的名字。`avatar.axis-*` 是三根轴各自的名字,
 # 它们上面还缺一个「这一节是什么」。
@@ -3560,7 +3558,7 @@ delete-ask = "删除…"
 # 按钮)仍用不带省略号的原词,所以是另一个键,不是改原词。
 new-session-ask = "新会话…"
 import-sessions-ask = "导入…"
-make-a-ticket-ask = "邀请设备…"
+make-a-ticket-ask = "邀请机器…"
 join-with-a-ticket-ask = "加入网络…"
 accounts-register-ask = "登记…"
 identity-leave-ask = "离开网络…"
@@ -3656,7 +3654,7 @@ open-term-on-ask = "打开会话…"
 browse-files = "浏览文件"
 # The third verb, the one the browser landing is for (docs/NET.md 借网):
 # this machine's network, borrowed from where you are standing.
-borrow-web = "借网"
+borrow-web = "浏览"
 # The hook, on this machine's own card. Two names because the button has
 # two jobs and shows the one it will do next — the same rule the pin
 # follows.
@@ -3707,7 +3705,7 @@ hooks-buy-you = "安装后，会话回答完一轮才会显示「完成」"
 # 留下——它既是那一档的词,也是留言框的名字,一件事一个词。
 message-text = "留言"
 send-it = "发送"
-make-a-ticket = "邀请设备"
+make-a-ticket = "邀请机器"
 join-with-a-ticket = "加入网络"
 # 待批与根钥匙的恢复词（docs/CONNECT.md 身份）。
 pending-title = "待批"
@@ -3737,7 +3735,7 @@ paste-a-ticket = "在此粘贴配对票"
 # 也说一句。`camera-usage` 是 iOS 第一次问相机权限时系统弹窗里那句：`gen/apple` 的 Info.plist
 # （NSCameraUsageDescription）抄的就是它，`npm run mobile` 比对两处一字不差。
 scan-a-ticket = "扫码"
-scan-aim = "对准另一台机器「邀请设备」里的二维码"
+scan-aim = "对准另一台机器「邀请机器」里的二维码"
 scan-camera-denied = "khor 没有使用相机的权限。在「设置」里允许后再扫，或者粘贴配对票"
 scan-open-settings = "打开设置"
 scan-no-camera = "无法打开相机。粘贴配对票也能加入"
@@ -3770,11 +3768,11 @@ chat-stop = "中断"
 # 白的对话读起来像「还没人说过话」,而实情是这个 agent 不会回放——
 # 上面可能有过很多话,只是这扇窗看不到。29/32 的注册表 agent 会回放,
 # 剩下的不会,所以这句话是接第三方 agent 之后才真正用得上的。
-chat-no-replay = "这个 agent 不支持回放历史对话，之前的内容无法显示"
+chat-no-replay = "这个智能体不支持回放历史对话，之前的内容无法显示"
 # When the agent advertises ways to log in. Said as a likely cause, not
 # as a verdict: khor 没法替谁走完某家的登录流程,能做的是在第一句话之前
 # 就说清楚为什么什么都没有,而不是让人对着一个不回话的框猜。
-chat-needs-login = "这个 agent 需要先登录才能开始对话"
+chat-needs-login = "这个智能体需要先登录才能开始对话"
 # The agent's own plan (ACP `plan`). 一行标题,底下是条目——不写「计划」两个字
 # 当标签,因为条目本身就长得像计划,一个说明它是什么的标签是在解释实现。
 chat-plan = "计划"
@@ -3854,7 +3852,7 @@ chat-refused-no-turn = "当前没有进行中的回合"
 # A mode or an option the agent would not take (`refused::SETTING_REFUSED`).
 # 「没收」: the control on screen stays where it was, so the sentence is
 # about the agent's answer, not about anything having broken here.
-chat-refused-setting = "agent 未接受这项设置，保持不变"
+chat-refused-setting = "智能体未接受这项设置，保持不变"
 # Ending a session, from the pane that is showing it. **One sentence per
 # kind, because 关闭 does genuinely different things** — read off the
 # three `KindSurface::close` implementations rather than guessed:
@@ -3886,7 +3884,7 @@ close-warn-terminal = "这个终端会关闭，里面正在运行的程序也会
 close-warn-tmux = "khor 里的这个终端会关闭；tmux 会话和里面的程序照常运行"
 # ACP 对话那一行(gui 形态,docs/SHELL.md 第八轮):删掉的是 khor 里这一行和它起的 agent 进程,
 # 对话本身还在那个 agent 那里,在「导入」里还能再找回来。
-close-warn-gui = "只删除 khor 中的这一行，对话仍保留在该 agent 中，可以再次导入"
+close-warn-gui = "只删除 khor 中的这一行，对话仍保留在该智能体中，可以再次导入"
 # chat 收起批 rewrote this again (传输并入对话批 had it down to "costs
 # nothing", which described a close that visibly did nothing — the one
 # face docs/UX.md forbids). Now the sentence carries the two facts a
@@ -4164,7 +4162,7 @@ match-next = "下一个"
 # 这块是 token」**。上面那半讲的是钱和额度,这半讲的是 token,两者之间只隔一条
 # 横线;把这行也删掉,等于把唯一区分它们的那句话删了。机器卡片不需要,是因为
 # 那张卡整张都在讲同一台机器。
-usage-title = "token 用量"
+usage-title = "Token 用量"
 # 趋势区的两个视角。按天是一天一根堆叠柱,按模型是一根柱一个模型。
 usage-view-day = "按天"
 usage-view-model = "按模型"

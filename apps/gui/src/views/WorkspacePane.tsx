@@ -1260,7 +1260,7 @@ export function WorkspacePane({
   const subtitle = (
     // `callout` on `caption`'s leading: R0 is 38 since 2026-09-29 and the
     // name over this line is set a rung tight to fit it (`PageHead`).
-    <div data-ws-subtitle className="flex min-w-0 flex-1 items-center gap-xxs text-callout leading-(--text-caption--line-height) text-muted-foreground">
+    <div data-ws-subtitle className="flex min-w-0 flex-1 items-center gap-xxs text-callout text-muted-foreground">
       <Tooltip open={whereTip && whereCut} onOpenChange={setWhereTip}>
         <TooltipTrigger asChild>
           {/* **Selectable, and a focus stop so it can be.** R0 moves the
@@ -1398,11 +1398,11 @@ export function WorkspacePane({
                 the first row is 38 under a mouse, and 20 + 16 left one
                 pixel over and under. */}
             <div className="flex min-w-0 flex-1 flex-col justify-center">
-              <span data-ws-head-name className="min-w-0 truncate text-title-sm leading-(--text-body--line-height) font-title">
+              <span data-ws-head-name className="min-w-0 truncate text-title-sm font-title">
                 {root === "" ? machine : basename(root)}
               </span>
               {branch !== "" && (
-                <div data-ws-head-sub className="flex h-lh flex-wrap overflow-hidden text-callout leading-(--text-caption--line-height) text-muted-foreground">
+                <div data-ws-head-sub className="flex h-lh flex-wrap overflow-hidden text-callout text-muted-foreground">
                   {/* A line tall, or the first line would be 0 high and
                       the wrapped branch would land inside the clip. */}
                   <span aria-hidden="true" className="h-lh w-0" />

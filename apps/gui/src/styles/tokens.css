@@ -2248,7 +2248,9 @@
    * (`--text-code`'s tombstone, `check-wk`). */
   --text-title-lg: var(--fs-title-lg);
   --text-title-lg--line-height: var(--lh-title-lg);
-  --text-title-lg--font-weight: 700;
+  /* 600, the scale's heaviest (the audit fix plan F5.2; SYS-12): three
+     weights, 400 / 500 / 600, and size does a title's work. */
+  --text-title-lg--font-weight: 600;
   --text-title-md: var(--fs-title-md);
   --text-title-md--line-height: var(--lh-title-md);
   --text-title-md--font-weight: 600;

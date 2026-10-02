@@ -412,7 +412,7 @@ export function PendingStrip() {
 
   return (
     <div data-pending className="px-in pb-in">
-      <div className="px-in pt-in pb-xxs text-group text-tertiary">{gui.pending_title}</div>
+      <div className="px-in pt-in pb-xxs text-group text-muted-foreground">{gui.pending_title}</div>
       {waiting.rows.map((r) => (
         <div key={r.id} data-pending-row={r.id} className="flex min-h-row-1 min-w-0 items-center gap-row px-in">
           <span className="min-w-0 flex-1 truncate text-body">{r.name}</span>

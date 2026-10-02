@@ -41,6 +41,13 @@
 import { gaugeColor } from "@/lib/vitals";
 import type { Strain } from "@/api";
 
+/** The type scale's steps, in px (tokens.css `--fs-*` at scale 1). */
+const TYPE_STEPS = [11, 12, 13, 15, 17, 22, 26, 34];
+/** The scale step nearest a size computed from a box. */
+export function snapType(px: number): number {
+  return TYPE_STEPS.reduce((best, s) => (Math.abs(s - px) < Math.abs(best - px) ? s : best), TYPE_STEPS[0]);
+}
+
 /** The dial opens at −195° and sweeps 210°, leaving its gap at the
     bottom — a gauge, not a pie. 0° is three o'clock. */
 export const ARC0 = -195;
@@ -627,11 +634,16 @@ export function Face({
           </line>
         );
       })}
+      {/* **The number at a size the scale names, at 600** (the audit fix
+          plan F5.2; SYS-12, SYS-13): `19 × k` drifted with the box (36.49,
+          10.96) and 800 was a fourth weight. Snapped to the nearest step,
+          and set a little higher in the bowl so a small dial's number
+          clears its arc's ends (N26). */}
       <text
         x={cx}
-        y={cy + 6 * k}
-        fontSize={19 * k}
-        fontWeight={800}
+        y={cy + 5 * k}
+        fontSize={snapType(19 * k)}
+        fontWeight={600}
         textAnchor="middle"
         fill="currentColor"
         className="tabular-nums"

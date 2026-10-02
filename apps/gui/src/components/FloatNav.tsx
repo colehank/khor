@@ -49,7 +49,9 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
       className={SEAT}
     >
       {seat.glyph}
-      <span className={cn("text-nav-label", on && "font-title")}>{seat.name}</span>
+      {/* One weight in both states (F5.2; SYS-12): the chosen piece and the
+          tint say which, and the word does not change width under it. */}
+      <span className="text-nav-label">{seat.name}</span>
       {seat.badge !== undefined && seat.badge > 0 && (
         <span
           data-nav-badge
@@ -120,7 +122,7 @@ export function FloatNav({
             className={cn(SEAT, "data-[state=open]:glass-sel")}
           >
             <IconMore />
-            <span className={cn("text-nav-label", moreOn && "font-title")}>{gui.rail_more}</span>
+            <span className="text-nav-label">{gui.rail_more}</span>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
