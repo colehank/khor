@@ -27,19 +27,22 @@ export function TypeSizeSection() {
         on={t.followSystem}
         onToggle={() => setTypeSize({ ...t, followSystem: !t.followSystem })}
       />
-      <div data-setting-row="slider" data-setting-row-name="ui-size" className={ROW}>
-        <Slider
-          label={gui.ui_size}
-          min={0}
-          max={UI_STEPS.length - 1}
-          value={t.uiStep}
-          ticks={UI_STEPS.length}
-          disabled={t.followSystem}
-          onChange={(uiStep) => setTypeSize({ ...t, uiStep })}
-          small={<span className="text-caption">A</span>}
-          large={<span className="text-title-lg font-body">A</span>}
-        />
-      </div>
+      {/* Only while the switch is off (the owner: a control that cannot
+          be used now is not drawn, never dimmed). */}
+      {!t.followSystem && (
+        <div data-setting-row="slider" data-setting-row-name="ui-size" className={ROW}>
+          <Slider
+            label={gui.ui_size}
+            min={0}
+            max={UI_STEPS.length - 1}
+            value={t.uiStep}
+            ticks={UI_STEPS.length}
+            onChange={(uiStep) => setTypeSize({ ...t, uiStep })}
+            small={<span className="text-caption">A</span>}
+            large={<span className="text-title-lg font-body">A</span>}
+          />
+        </div>
+      )}
       <div data-setting-row="value" data-setting-row-name="term-size" className={ROW}>
         <span className="min-w-0 flex-1 text-body">{gui.term_size}</span>
         <span className="text-body text-muted-foreground tabular-nums">{t.term}</span>

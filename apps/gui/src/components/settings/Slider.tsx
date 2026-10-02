@@ -8,7 +8,6 @@
 // runs from half a knob in from one end to half a knob in from the other.
 import type { CSSProperties, ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
 
 export function Slider({
   label,
@@ -18,7 +17,6 @@ export function Slider({
   value,
   ticks,
   onChange,
-  disabled = false,
   small,
   large,
   mark,
@@ -31,7 +29,6 @@ export function Slider({
   /** How many tick marks under the track, ends included. */
   ticks: number;
   onChange: (value: number) => void;
-  disabled?: boolean;
   /** The marks at the two ends: the smallest and the largest size. */
   small: ReactNode;
   large: ReactNode;
@@ -42,7 +39,7 @@ export function Slider({
     <div
       data-slider
       {...mark}
-      className={cn("flex min-h-touch flex-1 items-center gap-3.5", disabled && "opacity-40")}
+      className="flex min-h-touch flex-1 items-center gap-3.5"
       style={{ "--slider-at": at } as CSSProperties}
     >
       <span aria-hidden="true" className="flex-none">
@@ -52,7 +49,6 @@ export function Slider({
         <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-fill-strong" />
         <div
           className="absolute left-0 top-1/2 h-1 w-[calc(var(--slider-half)+(100%-var(--slider-knob))*var(--slider-at))] -translate-y-1/2 rounded-full bg-brand-strong"
-          hidden={disabled}
         />
         <div className="absolute inset-x-slider-half top-1/2 flex -translate-y-1/2 justify-between">
           {Array.from({ length: ticks }, (_, i) => (
@@ -66,7 +62,6 @@ export function Slider({
           max={max}
           step={step}
           value={value}
-          disabled={disabled}
           onChange={(e) => onChange(Number(e.target.value))}
           className="absolute inset-0 h-full w-full"
         />

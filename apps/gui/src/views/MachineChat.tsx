@@ -253,17 +253,21 @@ export function MachineChat({ id }: { id: string }) {
           className="min-h-0 min-w-0 flex-1 resize-none self-center bg-transparent py-1.5 pe-row outline-none"
         />
         </div>
+        {/* Drawn only once there is something to send (progressive
+            disclosure: never a dimmed control). */}
+        {draft.trim() && (
         <button
           type="button"
           data-slot="button"
           data-chat-send
           aria-label={gui.send_it}
-          disabled={sending || !draft.trim()}
+          disabled={sending}
           onClick={send}
           className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-glass-icon"
         >
           <IconChevronUp />
         </button>
+        )}
       </div>
       </div>
       </BarSeat>

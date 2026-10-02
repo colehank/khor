@@ -2004,17 +2004,20 @@ export function ChatView({
                 longer the only way to reach it — a box you can type into
                 during a turn needs somewhere to show that the sending is
                 the part that is unavailable. */}
+            {/* Only while there is something to send and the agent can
+                take it; during a turn the stop stands here instead. */}
+            {!inTurn && text.trim() && (
             <button
               type="button"
               data-slot="button"
               data-chat-send
               aria-label={gui.send_it}
-              disabled={inTurn || !text.trim()}
               onClick={say}
               className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-glass-icon"
             >
               <IconChevronUp />
             </button>
+            )}
             {inTurn && (
               <Button
                 size="sm"
