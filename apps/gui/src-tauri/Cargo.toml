@@ -87,6 +87,18 @@ embed_plist = "1"
 # there is no `open` or `xdg-open` to start in an app's sandbox, and the
 # desktop road answered a raw OS error there. **Already in the tree**
 # under wry on iOS; only the features named here are compiled.
+#
+# **加入网络's 扫码** (docs/IOS.md 第三步): the official v2 barcode
+# scanner, on the phone builds only (it compiles to nothing elsewhere,
+# `#![cfg(mobile)]`, and supports Android and iOS alone). MIT OR
+# Apache-2.0. **Held to 2.4**: 2.5 asks for tauri 2.12, and this tree is
+# on 2.11 — the scanner is not worth moving the whole shell for. The
+# face reaches it through the plugin's own JS (`@tauri-apps/plugin-
+# barcode-scanner`, same version line), under the narrow grant in
+# `capabilities/scan.json`.
+[target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
+tauri-plugin-barcode-scanner = "~2.4"
+
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSDictionary"] }

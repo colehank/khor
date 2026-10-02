@@ -49,5 +49,7 @@
 	</array>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>扫描另一台机器上的配对二维码，加入它的网络</string>
 </dict>
 </plist>

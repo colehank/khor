@@ -19,6 +19,12 @@
 //   2. `run` still carries `tauri::mobile_entry_point`. Without it the
 //      library type-checks and links, and the Xcode project's `start_app`
 //      has nothing to call — a phone app that opens onto nothing.
+//   3. the camera can be asked for (加入网络's 扫码, docs/IOS.md 第三步):
+//      the iOS `Info.plist` carries `NSCameraUsageDescription`, and it is
+//      the catalog's `camera-usage`, word for word. Without the key the
+//      scanner refuses before it asks (iOS would kill an app that asked
+//      without it); a key that drifted from the catalog is a sentence the
+//      catalog no longer owns (docs/UX.md 文案 — words live there).
 //
 // **What it cannot block:** anything that compiles and misbehaves on the
 // phone — a command that answers `Ok` for a thing a phone cannot do, a
@@ -76,6 +82,24 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
   );
 }
 
+// ── 3) the camera's sentence ───────────────────────────────────────
+{
+  const plist = readFileSync(join(gui, "src-tauri", "gen", "apple", "khor-gui_iOS", "Info.plist"), "utf8");
+  const said = /<key>NSCameraUsageDescription<\/key>\s*<string>([^<]*)<\/string>/.exec(plist)?.[1];
+  const zh = readFileSync(join(repo, "crates", "catalog", "zh.toml"), "utf8");
+  const owned = /^camera-usage = "([^"]*)"$/m.exec(zh)?.[1];
+  if (owned === undefined) {
+    probeDead("crates/catalog/zh.toml has no `camera-usage` — the sentence the Info.plist must carry");
+  } else if (said === undefined) {
+    fail(
+      "src-tauri/gen/apple/khor-gui_iOS/Info.plist has no NSCameraUsageDescription — the scanner " +
+        "refuses before it asks, and 加入网络's 扫码 can never open the camera",
+    );
+  } else if (said !== owned) {
+    fail(`Info.plist's NSCameraUsageDescription is 「${said}」, the catalog's camera-usage 「${owned}」 — one sentence, two copies that drifted`);
+  }
+}
+
 // ── 1) the type-check — skipped only when a probe says it cannot run ─
 if (!dead) {
   const check = spawnSync("cargo", ["check", "--target", TARGET, "-p", "khor-gui"], {
@@ -93,4 +117,6 @@ if (!dead) {
 }
 
 if (bad) process.exit(1);
-console.log(`mobile: khor-gui type-checks for ${TARGET}, and run is the mobile entry point`);
+console.log(
+  `mobile: khor-gui type-checks for ${TARGET}, run is the mobile entry point, and the camera's sentence is the catalog's`,
+);

@@ -1,0 +1,13 @@
+{
+  "identifier": "scan",
+  "description": "加入网络's 扫码 on a phone (docs/IOS.md 第三步): khor's own page may ask the camera for a pairing ticket's QR code, and nothing else of the scanner. Five commands, each one the flow uses: check and request the camera permission, scan (windowed — the page draws its own way out), cancel that scan, and open the system's settings for khor when the permission was refused, so a refusal ends in a sentence with somewhere to go. Not vibrate, not the plugin's `default` set. Phone builds only: the plugin does not exist on a desktop, and neither does this grant.",
+  "platforms": ["iOS", "android"],
+  "windows": ["main"],
+  "permissions": [
+    "barcode-scanner:allow-check-permissions",
+    "barcode-scanner:allow-request-permissions",
+    "barcode-scanner:allow-scan",
+    "barcode-scanner:allow-cancel",
+    "barcode-scanner:allow-open-app-settings"
+  ]
+}

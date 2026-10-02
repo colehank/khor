@@ -2743,6 +2743,43 @@ fn set_machine_paused(machine: String, on: bool) -> Result<String, String> {
     khor_gui_core::set_machine_paused(&Node::root_from_env(), &machine, on)
 }
 
+/// Whether this face can read a pairing ticket's QR code with a camera
+/// (加入网络's 扫码, docs/IOS.md 第三步): the phone builds carry the
+/// scanner, a desktop does not. **A fact of the build, not a guess from
+/// the browser** — the same footing as `khor_core::hosts_here` — and a
+/// face that hears no draws no entry (absent, not refused). Every HTTP
+/// skin answers no (`khor_gui_core::api`).
+#[tauri::command]
+fn scanner_here() -> bool {
+    cfg!(mobile)
+}
+
+/// The phone is back in front (`WindowEvent::Resumed`): new ears for the
+/// node, far attachments asked for again on them, and — once the round
+/// that follows has come back — a word to the page that what it lists is
+/// worth reading again (`node:woken`, `src/hooks/use-woken.ts`). Off the
+/// main thread: it waits on the network, and UIKit is waiting on this
+/// handler.
+#[cfg(not(desktop))]
+fn resume_the_node(app: tauri::AppHandle) {
+    use tauri::Emitter;
+    std::thread::spawn(move || {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+            return;
+        };
+        let begun = std::time::Instant::now();
+        let root = Node::root_from_env();
+        let outcome = rt.block_on(khor_gui_core::rejoin::resume(&root));
+        let ms = begun.elapsed().as_millis() as u64;
+        match &outcome {
+            Some(Ok(out)) => eprintln!("khor resume: round back in {ms} ms: {out:?}"),
+            Some(Err(why)) => eprintln!("khor resume: {why} ({ms} ms)"),
+            None => eprintln!("khor resume: no resumable serve on this home"),
+        }
+        let _ = app.emit_to("main", "node:woken", ms);
+    });
+}
+
 /// The app. On a phone the system starts it through this same function:
 /// `mobile_entry_point` exports the `start_app` symbol the Xcode project
 /// in `gen/apple` calls — without it the iOS library links and nothing
@@ -2795,12 +2832,26 @@ pub fn run() {
     // (one mesh, no client/server split). Running `khor serve` on the
     // same home at the same time is the known conflict; handover is on
     // the ledger.
+    //
+    // **On a phone it is resumed, not restarted** (docs/IOS.md 第三步):
+    // iOS suspends the app seconds after it leaves the screen, and
+    // nothing stands a phone app back up — so its serve takes new ears in
+    // place (`serve_resumable`, `on_window_event`'s `Resumed`), and a far
+    // terminal or conversation whose pipe ends attaches again rather than
+    // ending (`khor_gui_core::rejoin`). A desktop's serve and faces are
+    // exactly what they were.
+    #[cfg(mobile)]
+    khor_gui_core::rejoin::set_on(true);
     std::thread::spawn(|| {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         rt.block_on(async {
             match Node::open(Node::root_from_env()) {
                 Ok(n) => {
-                    if let Err(e) = n.serve().await {
+                    #[cfg(desktop)]
+                    let served = n.serve().await;
+                    #[cfg(not(desktop))]
+                    let served = n.serve_resumable().await;
+                    if let Err(e) = served {
                         eprintln!("serve ended: {e}");
                     }
                 }
@@ -2831,6 +2882,11 @@ pub fn run() {
     khor_node::vitals::local::start(&Node::root_from_env());
 
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    // 加入网络's 扫码 (docs/IOS.md 第三步): the camera reads a pairing
+    // ticket's QR code on a phone. Its grant is `capabilities/scan.json`;
+    // whether the face draws the entry at all is `scanner_here`.
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     // **khor's own menu bar** (`menu.rs`), so tauri's default is not
     // built first: its ⌘W was 「Close Window」, and on khor's one window
     // that stops the node. A picked item goes back to the page as the act
@@ -2965,8 +3021,25 @@ pub fn run() {
                     _ => {}
                 }
             }
+            // **Back to the foreground** (docs/IOS.md 第三步). The signal is
+            // UIKit's `applicationWillEnterForeground`, which tauri hands
+            // every window as `WindowEvent::Resumed` — **not**
+            // `RunEvent::Resumed`, which despite its name is the event
+            // loop waking from a poll and fires all the time. Chosen over
+            // the page's `visibilitychange` because it is native and
+            // early: the node is given new ears before the page has run a
+            // line, and nothing here depends on a page being alive to ask.
+            // It fires only after a real trip to the background (not when
+            // a notification is pulled down over the app). ⚠️ It comes
+            // from the app delegate: an Info.plist that opts into the
+            // UIScene lifecycle (`UIApplicationSceneManifest`) moves the
+            // call to a scene delegate tao leaves empty, and this goes
+            // silent — `gen/apple` does not opt in.
             #[cfg(not(desktop))]
-            let _ = (window, event);
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Resumed) {
+                use tauri::Manager;
+                resume_the_node(window.app_handle().clone());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             tabs_list,
@@ -3107,6 +3180,7 @@ pub fn run() {
             set_config,
             menu_state,
             invite,
+            scanner_here,
             pending_list,
             approve,
             root_words,
