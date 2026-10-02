@@ -381,8 +381,11 @@ export function Region({
         data-board
         data-board-flush={flush ? "" : undefined}
         className={cn(
+          // **One ground** (2026-10-02): the board is no longer a paper
+          // inset in a frame — no margin, no corner, at any width. A
+          // workspace's three columns keep the hairline under R0.
           "min-h-0 flex-1 overflow-hidden bg-card",
-          flush ? "border-t" : "mx-in mb-in rounded-xl",
+          flush && "border-t",
           className,
         )}
       >

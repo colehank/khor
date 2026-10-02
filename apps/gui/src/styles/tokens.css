@@ -79,6 +79,16 @@
      frame before the stamp lands, and for any face that never stamps. */
 
   /* ── shadcn scheme, mandala light values ─────────── */
+  /* **One ground** (the redesign, 2026-10-02, the owner after a day on a
+     real iPhone). Light is 米白 #f4f4ef, dark pure black; the paper, the
+     frame and the left block are one value now, and what separates a
+     list from its content, or a row from the next, is a hairline
+     (`--border`). `--card` and `--side` stay as names because a hundred
+     places ask for them, and each is the ground. Controls that float (the
+     navigation, a list's buttons, a page's verbs, the session bar) are
+     glass (`--glass*` below), never a second ground. The paragraphs that
+     follow are the three-ground rule this replaced, kept for their
+     measurements. Spec: the 「khor 新布局」 canvas (`gen.mjs` `P`). */
   /* **The board is paper, the ground is its frame** (2026-09-30, the
      owner: 「用灰色背景，黑色内容怎么样」, then 「大改，浅色也类似的去做。
      这是抽象的更改，要作用到整个 app 上」). One rule, both themes:
@@ -104,9 +114,9 @@
      **The paper is pure white** because white is the extreme: at L 1.0
      there is no chroma left to hold, so this palette's warmth (h 106.6,
      C .007–.008) lives in the frame and the left block. */
-  --background: #ebebe5;
+  --background: #f4f4ef;
   --foreground: rgba(26, 26, 20, 0.94);
-  --card: #ffffff;
+  --card: var(--background);
   /* **The left block's own ground** (docs/SHELL.md 第十三轮 第 1 条:
      「竖栏和列表一种底色, 体现出侧边栏和侧边栏内容是一体的」): the rail
      and every list column sit on it, under a first row of the same
@@ -123,7 +133,7 @@
      macOS app the system's sidebar material stands here instead (D4).
      `check-palette` reads a row's two lines against it; `check-boot`
      holds the first frame to it. */
-  --side: #f4f4ef;
+  --side: var(--background);
   --card-foreground: rgba(26, 26, 20, 0.94);
   /* What floats — a dialog, a sheet, a menu, the search results, a
      tip. **The paper's value on this theme and not on the other**: on
@@ -204,8 +214,8 @@
    * puts dark ink there. */
   --on-destructive: #ffffff;
   --destructive-foreground: var(--on-destructive);
-  --border: rgba(26, 26, 20, 0.1);
-  --input: rgba(26, 26, 20, 0.1);
+  --border: rgba(26, 26, 20, 0.12);
+  --input: rgba(26, 26, 20, 0.12);
   /* The focus ring, ink for the same reason and to the same reading.
    *
    * **Written out rather than `var(--primary)`**, though the two happen
@@ -306,6 +316,17 @@
    * Named so the component does not write `bg-white` (2026-09-28); not
    * `--segment`, which is white only in the light theme. */
   --knob: #ffffff;
+  /* **Glass** (the redesign, 2026-10-02: iOS 26's controls, drawn in CSS
+     because this is a web view): a translucent fill, the ground blurred
+     and saturated behind it, a hairline edge and a soft shadow. Worn by
+     what floats over content, never by a region (`.glass` in `app.css`).
+     `--glass-menu` is the denser fill of a menu that opens from glass
+     (更多), where words have to be read over whatever is behind it. */
+  --glass: rgba(255, 255, 255, 0.64);
+  --glass-edge: rgba(26, 26, 20, 0.08);
+  --glass-shadow: 0 6px 20px rgba(26, 26, 20, 0.1);
+  --glass-menu: rgba(255, 255, 255, 0.9);
+  --glass-blur: blur(24px) saturate(1.8);
 
   /* ── the six words (mandala's doctrine) ─────────────
    * **The four that call you sit a lightness apart from the two that do
@@ -1695,6 +1716,8 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  /* (One ground since 2026-10-02, pure black: see the light block. What
+     follows is the rule it replaced.) */
   /* **Grey frame, black paper** (2026-09-30, the owner: 「用灰色背景，黑色
      内容怎么样」 — the open tab was the board's grey and the terminal under
      it the ground's black, two pieces where there should be one). The
@@ -1712,13 +1735,13 @@
      value as the popover: ink 12.39, secondary 5.72, 空闲 5.05,
      destructive 5.53 with its new value. Lighter than this, the
      popover above it runs out of room: see there. */
-  --background: #242422;
+  --background: #000000;
   --foreground: rgba(238, 238, 231, 0.96);
-  --card: #0f0f0e;
+  --card: var(--background);
   /* Between the paper and the frame, as on the light theme: 4.40 L* over
      the paper, 5.44 under the frame. The rail's glyph measures 8.30 on
      it (floor 5.5), its body 4.71 (floor 3.0). */
-  --side: #191917;
+  --side: var(--background);
   --card-foreground: rgba(238, 238, 231, 0.96);
   /* **A step lighter than the frame, because a shadow cannot lift
      anything off the paper** (2026-09-28, re-derived 2026-09-30). Black
@@ -1760,7 +1783,7 @@
      depend on it no longer do, but every piece of secondary text in
      the app does, and that is a different measurement from the one
      that set this. */
-  --muted-foreground: rgba(238, 238, 231, 0.6);
+  --muted-foreground: rgba(238, 238, 231, 0.62);
   /* 12.23 against this theme's paper, against the light theme's 12.25
      — the pair is the point, and the reasoning is on the light value
      (this number was measured on #0f0f0e when that was the ground; it is
@@ -1783,8 +1806,8 @@
   --destructive: #e07f75;
   --on-destructive: #1a1a14;
   --destructive-foreground: var(--on-destructive);
-  --border: rgba(238, 238, 231, 0.08);
-  --input: rgba(238, 238, 231, 0.08);
+  --border: rgba(238, 238, 231, 0.14);
+  --input: rgba(238, 238, 231, 0.14);
   --ring: var(--brand-strong);
 
   --lq1: #f2f7c0;
@@ -1799,10 +1822,14 @@
   --brand-ink: #dbeb93;
   --shadow-float: 0 12px 32px rgba(0, 0, 0, 0.45);
   --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --fill: rgba(244, 244, 239, 0.07);
-  --fill-strong: rgba(244, 244, 239, 0.12);
+  --fill: rgba(244, 244, 239, 0.08);
+  --fill-strong: rgba(244, 244, 239, 0.15);
   --segment: rgba(244, 244, 239, 0.16);
   --knob: #ffffff;
+  --glass: rgba(120, 120, 114, 0.24);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --glass-menu: rgba(40, 40, 38, 0.88);
 
   /* ── the same separation as light, arrived at from the other side ──
    * The light theme pushed the four that call you *down* in lightness
@@ -1992,6 +2019,9 @@
   --color-on-brand: var(--on-brand);
   --color-fill: var(--fill);
   --color-fill-strong: var(--fill-strong);
+  --color-glass: var(--glass);
+  --color-glass-edge: var(--glass-edge);
+  --color-glass-menu: var(--glass-menu);
   --color-segment: var(--segment);
   --color-knob: var(--knob);
   --color-brand-ink: var(--brand-ink);
@@ -2387,4 +2417,16 @@
    indicator under it goes. */
 :root[data-keyboard] {
   --safe-bottom: 0px;
+}
+
+/* **Glass** (the redesign, 2026-10-02; the values are `--glass*` above).
+   One utility so every floating control is the same material: the
+   navigation capsule, a list's buttons, a page's verbs, the session bar's
+   pieces. The corner is the caller's (a capsule is `rounded-full`). */
+@utility glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: var(--hair) solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
 }

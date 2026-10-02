@@ -487,9 +487,10 @@ export default function App() {
   // transparent over an `NSVisualEffectView` (`src-tauri` `build_the_window`)
   // — so only there is the root stamped, and `app.css` lets the block's
   // ground go clear under the stamp. Every other face keeps `--side`.
-  useEffect(() => {
-    if (trafficLights) document.documentElement.setAttribute("data-material", "sidebar");
-  }, []);
+  // ⚠️ 墓碑 (2026-10-02, the redesign's one ground): the root was
+  // stamped `data-material="sidebar"` here on the macOS app, and the left
+  // block went clear over AppKit's sidebar material. There is one ground
+  // now at every width, the Mac window included, so the page paints it.
   useEffect(() => {
     const root = document.documentElement;
     if (trafficLights && !fullscreen) root.setAttribute("data-traffic", "");
@@ -2580,7 +2581,7 @@ export default function App() {
               「…」 page) or a list put away is the rail alone. */}
           <aside
             data-side
-            className="flex min-w-traffic flex-none flex-col bg-side"
+            className="flex min-w-traffic flex-none flex-col border-r bg-side"
             style={{ "--list-w": `${listPane.collapsed && morePage === null ? 0 : listPane.width}px` } as CSSProperties}
           >
             {sideHead}
