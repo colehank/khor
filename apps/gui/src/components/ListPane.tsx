@@ -137,6 +137,7 @@ export function ListPane({
         {...seam}
         role="separator"
         aria-orientation="vertical"
+        aria-label={gui.list_seam}
         tabIndex={0}
         {...pane.aria}
         {...pane.handleProps}

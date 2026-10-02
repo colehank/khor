@@ -30,6 +30,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import {
   IconAppearance,
   IconBrowser,
+  IconChevronRight,
   IconClose,
   IconDevices,
   IconFiles,
@@ -2011,13 +2012,15 @@ export default function App() {
             setScreen("detail");
           }}
           className={cn(
-            "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start",
+            "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start text-headline",
             morePage === "identity" ? "bg-fill-strong" : "hover:bg-fill",
           )}
         >
-          <MachineAvatar face={me?.face ?? null} className="size-avatar flex-none" />
+          <span className="flex w-list-face flex-none items-center justify-center">
+            <MachineAvatar face={me?.face ?? null} className="size-avatar flex-none" />
+          </span>
           <span className="flex min-w-0 flex-col">
-            <span className="truncate text-body font-title">{me?.shown ?? moreName("identity")}</span>
+            <span className="truncate">{me?.shown ?? moreName("identity")}</span>
             <span className="truncate text-callout text-muted-foreground">{moreName("identity")}</span>
           </span>
         </button>
@@ -2032,18 +2035,22 @@ export default function App() {
             setMorePage(p);
             setScreen("detail");
           }}
+          // **A list row like every other list's** (the audit fix plan
+          // F2.1): the glyph in the face's slot so the words start on the
+          // x the 这台机器 row's do, the title `headline` whether or not it
+          // is the picked one, and the hairline under the words.
           className={cn(
-            "mx-in flex min-h-touch items-center gap-row rounded-md px-3 text-start text-body",
-            // The selected row wears the brand only while it is the one
+            "mx-in flex min-h-touch items-stretch gap-row rounded-md px-3 text-start text-headline",
+            // The selected row wears the block only while it is the one
             // on screen — on the narrow list the page is a screen away.
-            morePage === p && !narrow ? "bg-fill-strong font-title" : "hover:bg-fill",
+            morePage === p && !narrow ? "bg-fill-strong" : "hover:bg-fill",
           )}
         >
           {/* The page's glyph (2026-09-27): the four drawn for these
               doors, 外观's light-and-dark, and 这台机器's own face — the
               same face the rail's foot wears for it. `--nav-glyph` wide,
               the size every menu row gives its glyph. */}
-          <span data-more-glyph={p} className="flex size-nav-glyph flex-none items-center justify-center text-rail-ink">
+          <span data-more-glyph={p} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
             {p === "identity" ? (
               // A face is a full disc and a glyph is not: at 16 it reads
               // the same size as the drawn marks beside it.
@@ -2051,11 +2058,19 @@ export default function App() {
             ) : (
               (() => {
                 const Glyph = MORE_GLYPH[p];
-                return <Glyph className="size-full" />;
+                return <Glyph className="size-nav-glyph" />;
               })()
             )}
           </span>
-          {moreName(p)}
+          <span
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-row border-b py-1",
+              morePage === p && !narrow && "border-transparent",
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate">{moreName(p)}</span>
+            {narrow && <IconChevronRight className="size-affordance flex-none text-tertiary" />}
+          </span>
         </button>
       ))}
     </nav>

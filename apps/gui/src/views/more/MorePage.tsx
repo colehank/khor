@@ -295,7 +295,9 @@ export function MoreFold({
         // The finger floor on both axes: 「高级」 is two characters, and
         // the marker beside them does not make a target (`MoreSwitch`'s
         // own measurement).
-        className="flex min-h-touch list-none items-center gap-in text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
+        // In by the row's inset, so the chevron stands on the column's
+        // line with the rows' words (F2.7; W08).
+        className="flex min-h-touch list-none items-center gap-in ps-row text-callout font-label text-muted-foreground [&::-webkit-details-marker]:hidden"
       >
         <IconChevronRight className="size-affordance flex-none transition-transform group-open:rotate-90" />
         {label}

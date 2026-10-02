@@ -1283,25 +1283,27 @@ export function QuotaLanding({
       // and it renames the session row's way: double-click, type, Enter
       // (`EditableName`, `nested` inside the button that opens the row).
       title: (
-        <span data-quota-name className="flex min-w-0 items-baseline gap-xxs text-body">
-          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em]" />
-          <span className="block min-w-0 flex-1">
+        // The vendor's mark after the name (F2.1: nothing stands before a
+        // title, so every list's words start on one x).
+        <span data-quota-name className="flex min-w-0 items-baseline gap-xxs">
+          <span className="block min-w-0">
             <EditableName
               kind="account"
               id={r.id}
               title={r.name}
-              className="block text-body"
+              className="block"
               inputClassName="w-full text-body"
               nested
             />
           </span>
+          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em] text-muted-foreground" />
         </span>
       ),
       name: r.name,
       sub: <span data-quota-sub-line>{subLine(r)}</span>,
       // **The right end is when this was read**, not what it says.
       trailing: (
-        <span data-quota-age-cell className="flex-none text-caption tabular-nums text-tertiary">
+        <span data-quota-age-cell className="flex-none text-caption tabular-nums text-muted-foreground">
           {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
         </span>
       ),

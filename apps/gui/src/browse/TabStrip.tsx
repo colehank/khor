@@ -52,6 +52,8 @@ import { PaneBar } from "@/components/PaneBar";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SideList, type SideRow } from "@/components/SideList";
+import { sessionKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 
@@ -937,65 +939,40 @@ export function TabSwitcher({
       ) : (
         box
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {shown.map((f) => (
-          <div
-            key={f.id}
-            data-switch-tab={f.id}
-            data-on={f.id === active}
-            className={cn(
-              // `py-1` where it was `py-2`: the row's own height now
-              // comes from the two controls in it, both of which are at
-              // the finger's floor, and keeping the old padding on top
-              // of that would have made a tab list of 60-tall rows out
-              // of one that reads fine at 52.
-              "flex items-center gap-2 rounded-md px-2 py-1",
-              f.id === active && "bg-muted",
-            )}
-          >
-            {/* The row's menu hangs on the button that opens the tab, the
-                strip's arrangement (`TabOpen`) — every sidebar's rows
-                answer a right-click, this one included (docs/SHELL.md
-                第二轮). */}
-            <TabOpen menu={[...(f.menu ?? []), { key: "close-tab", label: gui.close, run: () => onClose(f.id) }]}>
-            <button
-              type="button"
-              data-switch-open={f.id}
-              onClick={() => onFocus(f.id)}
-              // The name and the path are what a person aims at here;
-              // at content height the row's padding looked like part of
-              // the target and was the parent's.
-              className="flex min-h-touch min-w-0 flex-1 items-center gap-2 text-left"
-            >
-              <TabAvatar f={f} bare="size-avatar flex-none" seat="row" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                {/* **The same two names the strip's label wears**, because
-                    it is the same fact: what this tab is called, as
-                    painted. Since 2026-09-20 the rows are the browsing
-                    landing's tabs as well as its switcher (docs/SHELL.md
-                    第 2 条), so a probe reaching for 「the tab's title」
-                    has to find it in whichever seat the tabs are in —
-                    `check-tabs` was looking only at the strip's and read
-                    the column as a landing with no titles at all. */}
-                <span data-tab-label data-tab-name className="truncate text-callout font-label">
+      {/* **The rows are the list's rows** (the audit fix plan F2.6;
+          N13): the same anatomy every list wears — the face in its slot,
+          the name over the path, the hairline, the picked block — so a
+          session looks the same here as in its list. Closing is the
+          row's menu's, as before. ⚠️ 墓碑: rows of their own, 44 high
+          with a 40 face and a grey block. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <SideList
+          rows={shown.map(
+            (f): SideRow => ({
+              id: f.id,
+              group: "",
+              pinned: false,
+              face: f.glyph ? { art: f.glyph } : { machine: f.face },
+              mark: f.session ? sessionKind(f.session.kind, f.session.category) : f.mark,
+              halo: f.session?.word,
+              title: (
+                <span data-tab-label data-tab-name className="block truncate">
                   {f.label}
                 </span>
-                {/* The whole path under the name: on a phone the strip
-                    is not there to give the tab context, so the row has
-                    to carry it. Truncated from the tail — a slashed
-                    path read right to left is not a path. */}
-                {f.path && (
-                  <span className="truncate text-caption text-muted-foreground">{f.path}</span>
-                )}
-              </span>
-            </button>
-            </TabOpen>
-            {/* ⚠️ 墓碑 (the redesign, 2026-10-02, the owner: one act, one
-                home): a × stood at the row's end, always drawn. Closing a
-                tab is the row's menu's now — right-click, or a long press
-                (`TabOpen` below gets it). */}
-          </div>
-        ))}
+              ),
+              name: f.label,
+              sub: f.path || undefined,
+              find: `${f.label} ${f.path}`,
+              selected: f.id === active,
+              menu: [...(f.menu ?? []), { key: "close-tab", label: gui.close, run: () => onClose(f.id) }],
+              onOpen: () => onFocus(f.id),
+              rowData: { "data-switch-tab": f.id, "data-on": f.id === active },
+              openData: { "data-switch-open": f.id },
+            }),
+          )}
+          label={() => ""}
+          none={gui.no_matches}
+        />
       </div>
     </div>
   );

@@ -3429,6 +3429,12 @@ axis-place = "地方"
 # 「未识别」 — that word belongs to the category axis and says "we
 # could not tell", which is only half of what this group holds.
 group-placeless = "不在任何地方"
+# The heading over the rows in no group, once a group (置顶) stands above
+# them: a list's own order (group-rest), and the sessions' by recency.
+group-rest = "其他"
+group-recent = "最近"
+# The seam between a list and its page, as a screen reader names it.
+list-seam = "调整列表宽度"
 # 机器栏、工作区栏的筛选(2026-09-29,负责人:「所有的session list应该都可以
 # filter吧？」)。和会话、额度两栏同一套:轴名是小标题,值是行上印着的事实。
 #

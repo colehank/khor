@@ -76,6 +76,16 @@ import { groupLabel } from "@/words";
 /** A page's kind mark, on its machine's face — in the list and on its tab
     (the redesign): the face says which machine, the mark that it is a
     page, the way a session wears its kind. */
+/** A page's host, as a person names a site (`www.baidu.com`); the
+    address as it stands when it is not a URL. */
+function hostOf(path: string): string {
+  try {
+    return new URL(path).host || path;
+  } catch {
+    return path.replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  }
+}
+
 const PAGE_MARK: KindMark = { key: "page", glyph: (c: string) => <IconBrowser className={c} /> };
 
 /** What a tab calls itself: the way a browser tab wears a page's title
@@ -292,7 +302,7 @@ export function BrowseLanding({
     // title when it has said one, else the bare address, else what a tab
     // pointed nowhere is called.
     // A site's root reads as its host, the way Chrome prints it.
-    const bare = t.path.replace(/^https?:\/\//i, "").replace(/^([^/]+)\/$/, "$1");
+    const host = hostOf(t.path);
     return {
       id: t.id,
       group: t.pinned ? "pin" : "",
@@ -307,13 +317,15 @@ export function BrowseLanding({
       // The machine's face with the browser's kind mark, as a session row
       // wears its kind (`FaceMark`, on the face or its corner by 外观).
       mark: PAGE_MARK,
+      // **The page's title over its host** (F2.4; N16, W22): one line
+      // where the two would say the same thing.
       title: (
-        <span data-tab-label data-tab-name className="block truncate text-callout font-label">
-          {t.title || bare || label}
+        <span data-tab-label data-tab-name className="block truncate">
+          {t.title || host || label}
         </span>
       ),
-      name: t.title || bare || label,
-      sub: bare || undefined,
+      name: t.title || host || label,
+      sub: t.title && host && t.title !== host ? host : undefined,
       // What the row shows — its name and its place — and nothing else.
       find: `${label} ${t.title} ${t.path}`,
       selected: on,

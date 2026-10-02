@@ -141,7 +141,8 @@ pub fn host_error_path(dir: &Path) -> PathBuf {
 pub fn read_last(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("last.txt")).ok()?;
     let line = text.trim();
-    (!line.is_empty() && !looks_like_a_tmux_status_line(line)).then(|| line.to_owned())
+    // A frame written before the filter existed is still on disk.
+    (khor_core::says_something(line) && !looks_like_a_tmux_status_line(line)).then(|| line.to_owned())
 }
 
 /// Whether a line is tmux's status bar rather than anything a person
@@ -217,7 +218,7 @@ fn last_plain_line(bytes: &[u8]) -> Option<String> {
     }
     out.lines()
         .rev()
-        .find(|l| !l.trim().is_empty())
+        .find(|l| khor_core::says_something(l))
         .map(khor_core::preview)
 }
 
@@ -1100,6 +1101,15 @@ mod last_line_tests {
     fn ansi_is_stripped_and_the_last_visible_line_wins() {
         let bytes = b"\x1b[32mhello\x1b[0m world\r\n\x1b]0;title\x07$ make test\r\n\r\n";
         assert_eq!(last_plain_line(bytes).as_deref(), Some("$ make test"));
+    }
+
+    /// **A prompt's frame is never a preview** (the audit fix plan F2.3):
+    /// a line of box drawing gives way to the line above it.
+    #[test]
+    fn a_frame_only_line_gives_way_to_the_line_above() {
+        let bytes = "cargo test -p khor-node\r\n\u{256d}\u{2500} \u{2500}\u{256e}\r\n\u{2570}\u{2500} \u{2500}\u{256f}\r\n".as_bytes();
+        assert_eq!(last_plain_line(bytes).as_deref(), Some("cargo test -p khor-node"));
+        assert!(last_plain_line("\u{2570}\u{2500}\u{256f}\r\n".as_bytes()).is_none());
     }
 
     /// **A tmux status line is never a preview** (副行要么人话要么空白).

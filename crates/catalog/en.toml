@@ -1731,6 +1731,12 @@ by-state = "By status"
 by-place = "By place"
 axis-place = "Place"
 group-placeless = "Not in any place"
+# The heading over the rows in no group, once a group (置顶) stands above
+# them: a list's own order (group-rest), and the sessions' by recency.
+group-rest = "Others"
+group-recent = "Recent"
+# The seam between a list and its page, as a screen reader names it.
+list-seam = "Resize the list"
 axis-connection = "Connection"
 axis-system = "System"
 system-apple = "macOS"

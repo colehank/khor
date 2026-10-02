@@ -288,12 +288,12 @@ export function DevicesList({
           kind="machine"
           id={d.id}
           title={d.shown}
-          className="block text-body"
+          className="block"
           inputClassName="w-full text-body"
           nested
         />
       ) : (
-        <span className="block truncate text-body">{d.shown}</span>
+        <span className="block truncate">{d.shown}</span>
       ),
       name: d.shown,
       // How this machine is reached — the fact a person picks a row by;

@@ -94,12 +94,21 @@ export function useListWidth(
    * other columns move. */
   max: () => number = () => Math.floor(window.innerWidth / 2),
 ) {
-  const bounds = useRef<{ def: number; min: number; snap: number } | null>(null);
+  const bounds = useRef<{ def: number; min: number; snap: number; cap: number } | null>(null);
   if (bounds.current === null) {
+    // **The wide list's bounds are what is drawn** (the audit fix plan
+    // F2.8; W19): its column cannot be drawn under `--wide-column-min`
+    // (the top row's room), so that is its floor here too — a stored width
+    // under the drawn one was a dead zone the pointer had to cross back
+    // through. A drag past the floor folds it (F6.7), and it is capped at
+    // `--list-w-max`, where rows stop being rows.
+    const list = seam === "list";
+    const min = list ? tokenPx("--wide-column-min", 340) : tokenPx("--list-w-min", 180);
     bounds.current = {
       def: tokenPx("--list-w", 288),
-      min: tokenPx("--list-w-min", 180),
-      snap: tokenPx("--list-w-snap", 100),
+      min,
+      snap: list ? min - tokenPx("--list-w-snap", 100) / 2 : tokenPx("--list-w-snap", 100),
+      cap: list ? tokenPx("--list-w-max", 420) : Infinity,
     };
   }
   const b = bounds.current;
@@ -116,7 +125,7 @@ export function useListWidth(
           Number.isFinite((p as ListPref).w)
         ) {
           return {
-            w: Math.max(b.min, (p as ListPref).w),
+            w: Math.min(Math.max(b.min, (p as ListPref).w), b.cap),
             collapsed: (p as ListPref).collapsed === true,
           };
         }
@@ -178,7 +187,7 @@ export function useListWidth(
         ? { w: d.origin.w, collapsed: false }
         : { w: b.min, collapsed: false };
     } else {
-      d.live = { w: Math.min(Math.max(raw, b.min), Math.max(max(), b.min)), collapsed: false };
+      d.live = { w: Math.min(Math.max(raw, b.min), Math.max(Math.min(max(), b.cap), b.min)), collapsed: false };
     }
     setPref(d.live);
   };
@@ -218,7 +227,7 @@ export function useListWidth(
    * brought back at all, which before this it could not be.
    */
   const step = (dir: -1 | 1) => {
-    const ceiling = Math.max(max(), b.min);
+    const ceiling = Math.max(Math.min(max(), b.cap), b.min);
     // Away, floor, default, ceiling — in order, and de-duplicated in
     // case a window is narrow enough that half of it is under the
     // floor (then the ladder simply has fewer rungs).
@@ -308,8 +317,9 @@ export function useListWidth(
         aloud: where it sits between its two ends. */
     aria: {
       "aria-valuenow": pref.collapsed ? 0 : Math.round(pref.w),
+      // 0 is the folded pane; the top is the ceiling the drag stops at.
       "aria-valuemin": 0,
-      "aria-valuemax": Math.round(b.def),
+      "aria-valuemax": Math.round(Math.max(Math.min(max(), b.cap), b.min)),
     },
   };
 }

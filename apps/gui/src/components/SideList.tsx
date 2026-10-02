@@ -32,6 +32,7 @@ import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { useNarrow } from "@/hooks/use-narrow";
 import { walkList } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
+import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 
 type Data = Record<string, string | number | boolean | null | undefined>;
@@ -173,6 +174,7 @@ export function SideList({
   mark,
   filtered = false,
   headData,
+  rest = gui.group_rest,
 }: {
   rows: SideRow[];
   /** The column has not been answered yet: a skeleton, not `empty`. */
@@ -198,6 +200,9 @@ export function SideList({
   filtered?: boolean;
   /** Extra anchors on a group's heading, for a column's older gates. */
   headData?: (group: string) => Data;
+  /** The heading over the rows in no group, once a group stands above
+      them — the column's word for its own order (sessions: 最近). */
+  rest?: string;
 }) {
   const narrow = useNarrow();
   const shown = rows.filter((r) => finds(query, r.find));
@@ -215,7 +220,7 @@ export function SideList({
    * column remembers its own (「收起状态各列各记」).
    */
   const [shut, setShut] = useState<Set<string>>(() => new Set());
-  const shutOf = (group: string) => group !== "" && shut.has(group);
+  const shutOf = (group: string) => shut.has(group);
   const toggle = (group: string) =>
     setShut((was) => {
       const next = new Set(was);
@@ -284,7 +289,10 @@ export function SideList({
           RING,
         )}
       >
-        <span className="flex flex-none items-center">
+        {/* **One leading slot** (the audit fix plan F2.1): the face's
+            width on every list, so the words start on one x whatever the
+            face is — a session's, a machine's, the 额度 dial. */}
+        <span data-side-face-slot className="flex w-list-face flex-none items-center justify-center">
           {"machine" in r.face ? (
             <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
           ) : (
@@ -300,7 +308,11 @@ export function SideList({
           )}
         >
         <span className="min-w-0 flex-1">
-          <span data-side-title className="block min-w-0">
+          {/* **One title**: `headline` (13 / 600 under a mouse, 17 / 600
+              under a finger), on every list and whether or not the row
+              is the picked one — a picked row shows by its block, never
+              by its weight (F2.1; SYS-05, N15, W09). */}
+          <span data-side-title className="block min-w-0 truncate text-headline">
             {r.title}
           </span>
           {/* Always drawn, empty where a row has nothing to say under its
@@ -311,6 +323,11 @@ export function SideList({
           </span>
         </span>
         {r.trailing}
+        {/* A row that opens a page says so on the narrow face, where the
+            page is the next screen (F2.1). */}
+        {narrow && r.onOpen && (
+          <IconChevronRight data-side-drill className="size-affordance flex-none text-tertiary" />
+        )}
         </span>
       </button>
     );
@@ -332,7 +349,10 @@ export function SideList({
             over nothing. It is also the group's handle; what pressing it
             does next is said by the chevron and `aria-expanded`, and the
             count shows only while the group is shut. */}
-        {r.group !== "" && r.group !== prev?.group && (
+        {/* **A group's extent is visible** (F2.2; N05, W07): once a group
+            stands above them, the rows in none get a heading of their
+            own, so a folded 置顶 does not seem to own the whole list. */}
+        {(r.group !== "" ? r.group !== prev?.group : prev !== undefined && prev.group !== "") && (
           <button
             type="button"
             data-side-group={r.group}
@@ -353,10 +373,14 @@ export function SideList({
                 turned: that path sits 0.4 off centre, which is what read
                 as crooked (2026-09-26「展开按钮的icon甚至都没有整齐」). */}
             <IconChevronRight className={cn("size-affordance flex-none transition-transform", open && "rotate-90")} />
-            <span data-group-label className="min-w-0 truncate">{label(r.group)}</span>
-            <span data-group-size className="ml-auto flex-none font-body tabular-nums">
-              {size}
-            </span>
+            <span data-group-label className="min-w-0 truncate">{r.group === "" ? rest : label(r.group)}</span>
+            {/* The count only while the group is folded: open, its rows
+                are the count. */}
+            {!open && (
+              <span data-group-size className="ml-auto flex-none font-body tabular-nums">
+                {size}
+              </span>
+            )}
           </button>
         )}
         {open && (

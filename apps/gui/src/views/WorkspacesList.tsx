@@ -32,7 +32,7 @@ import {
   type GitStatus,
   type WorkspaceRow,
 } from "@/api";
-import { IconBranch, IconChevronRight, IconFiles } from "@/components/icons";
+import { IconBranch, IconFiles } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { type RowAction } from "@/components/RowMenu";
@@ -40,7 +40,6 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { cn } from "@/lib/utils";
 import { ago, axisOf, groupLabel, valueOf } from "@/words";
 import { IGNORED } from "@/views/fileRow";
 
@@ -311,6 +310,21 @@ function rememberWsOpened(device: string, path: string) {
   } catch {
     /* the overview's list is lost and nothing else is */
   }
+}
+
+/** A line cut at its **start** when it does not fit: `…/working/khor`
+    keeps the end, which is the part a person reads in a path. */
+function HeadCut({ text, ...data }: { text: string; [mark: `data-${string}`]: unknown }) {
+  return (
+    <span
+      {...(data as Record<string, unknown>)}
+      dir="rtl"
+      title={text}
+      className="block min-w-0 truncate text-left"
+    >
+      <bdi dir="ltr">{text}</bdi>
+    </span>
+  );
 }
 
 export function WorkspacesList({
@@ -590,39 +604,31 @@ export function WorkspacesList({
         ? { key: "branch", glyph: (c: string) => <IconBranch className={c} /> }
         : { key: "folder", glyph: (c: string) => <IconFiles className={c} /> },
       title: (
-        <span className="flex w-full items-center gap-1.5">
-          {/* **The name gives way last** (「list 宽度折叠的时候, 优先折叠
-              branch 名,保留工作区名」— 2026-09-16): the branch beside it
-              starts at a base of zero and takes only the leftover, so
-              the name is the one item that shrinks, and only once the
-              branch has given up everything it had. */}
-          <span data-ws-name className="min-w-0 truncate text-body font-title text-foreground">
-            {r.name}
-          </span>
-          {/* **The branch, or nothing at all** — not a repository, a
-              machine that could not be asked, a detached HEAD: all
-              three arrive here as nothing. */}
-          <span data-ws-git className="min-w-0 flex-1 truncate text-right text-callout text-muted-foreground">
+        <span data-ws-name className="block min-w-0 truncate">
+          {r.name}
+        </span>
+      ),
+      name: r.name,
+      // Where it is, in full — the machine and the absolute path are one
+      // fact, and this pair is what the CLI prints. **Not shortened to
+      // `~`**: whose home that is, is a fact about the far machine. **Cut
+      // at its start** (F2.5; N10): the last segment is the part a person
+      // reads, and the end is where it is.
+      sub: <HeadCut data-ws-where text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />,
+      // The row's meta at the right end, as every list's (F2.1): the
+      // branch — or nothing at all: not a repository, a machine that could
+      // not be asked, a detached HEAD all arrive here as nothing — over
+      // when it was last touched, caption, tabular.
+      trailing: (
+        <span className="flex max-w-[45%] min-w-0 flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground">
+          <span data-ws-git className="max-w-full truncate">
             {git && git.branch !== ""
               ? changed > 0
                 ? `${git.branch} · ${gui.ws_marked(changed)}`
                 : git.branch
               : ""}
           </span>
-        </span>
-      ),
-      name: r.name,
-      // Where it is, in full — the machine and the absolute path are one
-      // fact, and this pair is what the CLI prints. **Not shortened to
-      // `~`**: whose home that is, is a fact about the far machine.
-      sub: (
-        <span className="flex w-full items-baseline gap-1.5">
-          <span data-ws-where className="truncate">
-            {r.machine === "" ? r.path : `${r.machine}:${r.path}`}
-          </span>
-          <span data-ws-touched className="ml-auto shrink-0 tabular-nums">
-            {at > 0 ? ago(at) : ""}
-          </span>
+          <span data-ws-touched>{at > 0 ? ago(at) : ""}</span>
         </span>
       ),
       // **The three things the row says out loud**: its name, its
@@ -635,32 +641,11 @@ export function WorkspacesList({
       // workspace」 and nothing else; only the one already in front has
       // a second meaning left, and the selection never changes under it.
       onOpen: () => (isOpen && onTree !== undefined ? onTree() : onOpen(r)),
-      // The tree's state, on the open row only — a drawing, not a
-      // button (「『<』保留为状态展示」), pointing at the tree when it is
-      // out and back at this list when it is folded.
-      //
-      // **Its cell is on every row, empty on all but the open one**
-      // (2026-09-28 audit 第 14 条). Drawn only where it was needed, the
-      // cell arrived with the selection and took its width out of the
-      // row: the right column — 「main · 5 个文件改过」 over 「1 分钟」 —
-      // jumped 28px left the moment a row was chosen. Selection paints;
-      // it does not move what is in the row. `w-ctl-md` rather than the
-      // touch floor it had: it is a drawing, not a target, and a finger
-      // needs no room around something it cannot press.
-      after:
-        onTree !== undefined ? (
-          <span data-ws-tree-cell aria-hidden="true" className="flex w-ctl-md flex-none self-stretch">
-            {isOpen && (
-              <span
-                data-ws-tree-mark
-                data-on={treeOpen}
-                className="flex flex-1 items-center justify-center text-muted-foreground"
-              >
-                <IconChevronRight className={cn("size-affordance transition-transform", !treeOpen && "rotate-180")} />
-              </span>
-            )}
-          </span>
-        ) : undefined,
+      // ⚠️ 墓碑 (the audit fix plan F2.5; W17): a cell at every row's end
+      // held the open row's tree chevron, an empty gutter on the others
+      // that cut every row 28 short of the other lists. The row is the
+      // control and the tree is beside it; the open row says so by its
+      // block.
       // Whether this row's tree is out, said on the line rather than only
       // drawn: the chevron is `aria-hidden` and may not be there at all.
       rowData: {

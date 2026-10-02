@@ -2152,6 +2152,15 @@ pub struct QuotaAnswer {
     pub trouble: Option<QuotaTrouble>,
 }
 
+/// Whether a line says anything a person can read: a letter or a digit
+/// somewhere in it. A line of only box drawing, block elements,
+/// whitespace or punctuation — a prompt's frame (「╰─ ─╯」), a rule — is
+/// not a preview (the audit fix plan F2.3: 5 of 6 terminal rows showed
+/// one under their title).
+pub fn says_something(line: &str) -> bool {
+    line.chars().any(char::is_alphanumeric)
+}
+
 /// One line of preview out of arbitrary said text, for
 /// [`Session::last`]: whitespace runs (newlines included) collapse to
 /// single spaces, and the result is cut at a character boundary. The

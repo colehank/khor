@@ -336,9 +336,9 @@ input[type="search"]::-webkit-search-decoration {
   --muted-foreground: var(--foreground);
   --tertiary: var(--foreground);
 }
-:root:not([data-window-key="false"]):not([data-narrow]) [data-side-row][data-selected="true"] [data-side-title] {
-  font-weight: var(--text-headline--font-weight);
-}
+/* ⚠️ 墓碑 (the audit fix plan F2.1; W09): in front, a picked row's title
+   stepped up to `headline`'s weight. Every title is `headline` now, and a
+   picked row shows by its block alone. */
 
 /* **The system's sidebar material behind the left block** (docs/SHELL.md
    第十五轮 第 7 条, D4). Stamped on the macOS app alone (`App`), whose
@@ -539,10 +539,15 @@ aside[data-side] {
  * Its own element rather than a shadow on the face's box, because the
  * halo has to be able to breathe on its own — see below — and opacity is
  * the only channel a box-shadow cannot animate by itself. */
+/* **The ring is inside the face's box** (the audit fix plan F2.7; W08):
+   its outer edge is the box's edge, so a session's face stands on the
+   left line like every other face, instead of 3.4 past it. The gap is
+   the ground laid over the face's rim, the ring outside that. ⚠️ 墓碑:
+   two outset rings, 4 outside the box. */
 [data-halo] {
   box-shadow:
-    0 0 0 var(--halo-gap) var(--halo-under, var(--card)),
-    0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-color);
+    inset 0 0 0 var(--halo-w) var(--halo-color),
+    inset 0 0 0 calc(var(--halo-gap) + var(--halo-w)) var(--halo-under, var(--card));
 }
 
 /* **The gap ring is the ground the face stands on.** It was `--card`

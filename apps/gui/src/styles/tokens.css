@@ -1175,6 +1175,9 @@
    * and lives where the drag is measured). */
   --list-w-min: 180px;
   --list-w-snap: 100px;
+  /* The wide list's ceiling (the audit fix plan F2.8; W19): past it a
+     row's title and its state stand half a window apart. */
+  --list-w-max: 420px;
   /* How narrow the file may be squeezed by a column beside it
      (2026-09-17 ruling 52). **The floor of the thing being read**, not
      of a control: 240 is about forty columns of the file view's mono at

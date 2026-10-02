@@ -285,7 +285,7 @@ export function SessionsList({
       <EditableName
         id={r.id}
         title={r.title}
-        className="block font-title"
+        className="block"
         inputClassName="w-full font-title"
         nested
       />
@@ -300,7 +300,9 @@ export function SessionsList({
       <span data-row-far className="block min-w-0 truncate">
         {gui.row_unreachable(away.shown, gui.card_age(ago(Date.now() - away.age)))}
       </span>
-    ) : r.last ? (
+    ) : r.last && /[\p{L}\p{N}]/u.test(r.last) ? (
+      // A line with something to read: a prompt's frame (「╰─ ─╯」) is
+      // no preview (F2.3; the node skips it too, `says_something`).
       <span data-last className="block min-w-0 truncate">
         {r.last}
       </span>
@@ -315,7 +317,7 @@ export function SessionsList({
     // words that did not line up. Whatever else rides this line stands
     // to the word's left.
     trailing: (
-      <span className="flex flex-none flex-col items-end gap-xxs text-caption text-tertiary">
+      <span className="flex flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground">
         <span className="flex items-center gap-xxs">
           {showVia && r.via && (
             <span
@@ -391,6 +393,7 @@ export function SessionsList({
       // A tick that left nothing is 「nothing matched」 too.
       empty={rows.length === 0 ? gui.empty_sessions : gui.no_matches}
       none={gui.no_matches}
+      rest={gui.group_recent}
       old={{ more: (n) => gui.old_sessions(n), less: gui.collapse_old }}
     />
   );

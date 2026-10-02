@@ -190,11 +190,13 @@ impl Screen {
         self.parser.screen_mut().set_size(rows, cols);
     }
 
-    /// The last line with anything on it — a hosted row's preview
-    /// (khor_core::Session::last). `visible` already drops trailing
-    /// blanks, so its last element is that line.
+    /// The last line that says something — a hosted row's preview
+    /// (khor_core::Session::last): from the bottom, the first line with a
+    /// letter or a digit in it. A prompt's frame (「╰─ ─╯」) or a rule
+    /// is passed over for the line above it, and a screen of nothing but
+    /// those answers none.
     pub fn last_line(&self) -> Option<String> {
-        self.visible().pop()
+        self.visible().into_iter().rev().find(|l| l.chars().any(char::is_alphanumeric))
     }
 
     /// The visible rows, right-trimmed, with trailing blank rows
