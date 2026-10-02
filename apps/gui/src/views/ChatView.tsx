@@ -74,6 +74,9 @@ import { PopupButton } from "@/components/ui/popup-button";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
+import { useCoarse } from "@/hooks/use-coarse";
+import { BarSeat } from "@/components/SessionBar";
+import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 
@@ -882,6 +885,7 @@ export function ChatView({
   const scroller = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
   const box = useRef<HTMLTextAreaElement>(null);
+  const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
   // typed at a button afterwards (`useKeysTo`). Off while there is no
   // box to take them: a recorded conversation has nowhere to speak
@@ -1659,6 +1663,12 @@ export function ChatView({
         </div>
       )}
       </div>
+      {/* **On the narrow face the footer is the session bar's second
+          row** (`components/SessionBar`, 2026-10-02: 「where a terminal
+          has its row of accessory keys, a chat has its input box」) —
+          under the tabs, on the keyboard when it is up. Everywhere else
+          it stands here, as it always did. */}
+      <BarSeat at="under">
       {/* A recorded past has no channel to speak into: no input, and
           the only thing its footer can say is that the record is
           missing. */}
@@ -1672,7 +1682,7 @@ export function ChatView({
         // live together on the row's own menu (`SessionsList`, 转成对话)
         // rather than one of them growing a button inside the pane that
         // merely looks at it.
-        <div className="flex-none border-t p-2">
+        <div className="flex-none border-t bg-card p-2">
           <div className="flex items-center gap-2 px-2 py-1.5 text-callout">
             <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
               {gone ? gui.chat_no_record : gui.chat_readonly}
@@ -1680,7 +1690,7 @@ export function ChatView({
           </div>
         </div>
       ) : (
-      <div className="flex-none border-t p-2">
+      <div className="flex-none border-t bg-card p-2">
         {/* The composer stands in the column the conversation is read in.
             At the pane's full width it would be a control several times
             wider than the text it writes into, and the eye would have to
@@ -2022,6 +2032,14 @@ export function ChatView({
         )}
         </div>
       </div>
+      )}
+      </BarSeat>
+      {/* The keyboard's switch, under a finger, where there is a box to
+          type in (`TermKeys`): row 1's right end of the session bar. */}
+      {coarse && !still && !gone && (
+        <BarSeat at="trail">
+          <KeyboardSwitch field={box} />
+        </BarSeat>
       )}
     </div>
   );

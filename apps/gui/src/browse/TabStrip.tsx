@@ -199,6 +199,7 @@ export function TabStrip({
   switching = false,
   head,
   tail,
+  at = "top",
 }: {
   faces: TabFace[];
   active: string;
@@ -228,7 +229,19 @@ export function TabStrip({
       **Outside the scroller**, unlike 「+」: these are not about the
       tabs, so they must not scroll away with them. */
   tail?: ReactNode;
+  /**
+   * Which side of its content the strip stands on (2026-10-02, iOS 第三步
+   * A). `"top"` is every strip there was: R0, the tabs standing on the
+   * board and joined to it by their foot. `"bottom"` is the narrow
+   * session page's bar (`components/SessionBar`): the content is above,
+   * so the open tab **hangs** from it — its foot is at the top, its
+   * rounded corners at the bottom, the label still on the row's
+   * centreline — and the paper it is joined to is the session over it.
+   * Same tabs, same widths, same scroll; only the joint moves.
+   */
+  at?: "top" | "bottom";
 }) {
+  const below = at === "bottom";
   const strip = useRef<HTMLDivElement>(null);
   // Whether the strip has given up on its own promise. Measured off the
   // element, not counted from `faces.length` and a width: how many tabs
@@ -461,7 +474,9 @@ export function TabStrip({
                 // a tab whose colour stops short of where it can be
                 // pressed is a tab that lies about where it is, which is
                 // why the button below reaches into the foot.
-                "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
+                below
+                  ? "group relative flex mb-tab-lip items-center gap-1 self-stretch rounded-b-md pr-0.5 pt-tab-lip pl-2"
+                  : "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
                 // **Two widths, and each tab wears exactly one.** The one
                 // in front takes its own name's width — never less than a
                 // stub, so it does not read as the smallest tab on the
@@ -530,7 +545,11 @@ export function TabStrip({
                 // word. Its own token (tokens.css `--tab-gap`) rather
                 // than a step up in `--gap-in`, which would move every
                 // clump in the app for one complaint about tabs.
-                className="-mb-tab-lip flex min-w-0 flex-1 items-center gap-tab-gap self-stretch pb-tab-lip text-left"
+                className={cn(
+                  "flex min-w-0 flex-1 items-center gap-tab-gap self-stretch text-left",
+                  // Into the foot, wherever the foot is.
+                  below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip",
+                )}
               >
                 {/* **A two-line file tab stands its glyph beside both
                     lines** (2026-09-16:「标签页上, 文件类型的icon, 过小
@@ -606,7 +625,7 @@ export function TabStrip({
               </TooltipTrigger>
               </TabOpen>
               {again && (
-                <TooltipContent data-tab-hint side="bottom">
+                <TooltipContent data-tab-hint side={below ? "top" : "bottom"}>
                   {again.hint}
                 </TooltipContent>
               )}

@@ -6,6 +6,7 @@ import { SessionFace } from "@/components/SessionFace";
 import { EditableName, useSinglePress } from "@/components/EditableName";
 import { IconBack, IconChevronDown } from "@/components/icons";
 import { NarrowHead } from "@/components/SideHead";
+import { useInBar } from "@/components/SessionBar";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
@@ -230,6 +231,12 @@ export function DetailPane({
   tabs?: ReactNode;
 }) {
   const shown = useDayShown();
+  /** Whether this pane is the narrow session page's content, with its
+      tabs in the bar under it (`components/SessionBar`, 2026-10-02): no
+      head then — the bar's tab is this session's face, name and switch,
+      as the wide strip's is — and the day floats at the foot, over the
+      tab that opens it. */
+  const inBar = useInBar();
   /** The day's switch, where this pane has a day at all: on the wide
       face it is the front tab's (`App`), and on the narrow one the head
       below is that tab's stand-in and wears it. One answer for both. */
@@ -266,7 +273,7 @@ export function DetailPane({
       data-detail-pane
       className={cn(
         "flex h-full min-w-0 flex-col [--day-under:var(--card)]",
-        drawn ? "[--day-over:calc(2*var(--gap-xxs)+var(--spacing))]" : "[--day-over:calc(0*var(--spacing))]",
+        drawn && !inBar ? "[--day-over:calc(2*var(--gap-xxs)+var(--spacing))]" : "[--day-over:calc(0*var(--spacing))]",
       )}
     >
       {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
@@ -298,7 +305,7 @@ export function DetailPane({
           (`NarrowHead`, 2026-09-28): it was a second bar under L0's
           magnifier. Where there is no narrow shell — a workspace's
           session column on the wide face — it stays a bar in place. */}
-      {narrow && (
+      {narrow && !inBar && (
         <NarrowHead>
         {(seated) => (
         <header
@@ -438,7 +445,7 @@ export function DetailPane({
           scrolls under it — so the band reads over a terminal's first
           line without a hard cut. Only the stretches take a press: a
           gap between them, and the fade, are the session's. */}
-      {drawn && (
+      {drawn && !inBar && (
         <div className="relative z-30 h-0 flex-none">
           <div
             data-detail-day
@@ -521,6 +528,21 @@ export function DetailPane({
               )}
             </div>
           )}
+        </div>
+      )}
+      {/* **In the bar's screen the day hangs at the foot** (2026-10-02):
+          the tab that opens it is under the session there, so the band
+          floats over the session's last lines, fading upward out of the
+          paper — the same seat of no height, on the other edge. */}
+      {drawn && inBar && (
+        <div className="relative z-30 h-0 flex-none">
+          <div
+            data-detail-day
+            id={DAY_ROW_ID}
+            className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-(--day-under) from-65% to-transparent"
+          >
+            <DayStrip runs={day ?? null} />
+          </div>
         </div>
       )}
     </section>

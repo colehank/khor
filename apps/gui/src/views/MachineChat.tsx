@@ -17,6 +17,9 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
+import { BarSeat } from "@/components/SessionBar";
+import { useCoarse } from "@/hooks/use-coarse";
+import { KeyboardSwitch } from "@/views/TermKeys";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
     list reads, and two different clocks would show two conversations. */
@@ -57,6 +60,9 @@ export function MachineChat({ id }: { id: string }) {
   const [sending, setSending] = useState(false);
   const scroller = useRef<HTMLDivElement | null>(null);
   const stickToEnd = useRef(true);
+  /** The box, for the keyboard's switch (`TermKeys`). */
+  const box = useRef<HTMLTextAreaElement | null>(null);
+  const coarse = useCoarse();
 
   const refresh = useCallback(() => {
     machineLog(id).then(
@@ -189,7 +195,10 @@ export function MachineChat({ id }: { id: string }) {
       {/* The rule spans the pane, the controls stand in the column — the
           same split as the agent conversation's composer, and for the
           same reason: the line divides two regions, the column is where
-          the writing is. */}
+          the writing is. **On the narrow face it is the session bar's
+          second row** (`components/SessionBar`, 2026-10-02), the agent
+          conversation's arrangement. */}
+      <BarSeat at="under">
       <div className="flex-none border-t bg-card px-3 py-2">
       <div className="mx-auto flex w-full max-w-measure items-end gap-2 text-read">
         <Button
@@ -219,6 +228,7 @@ export function MachineChat({ id }: { id: string }) {
           />
         )}
         <textarea
+          ref={box}
           data-chat-composer
           aria-label={gui.message_text}
           value={draft}
@@ -242,6 +252,12 @@ export function MachineChat({ id }: { id: string }) {
         </Button>
       </div>
       </div>
+      </BarSeat>
+      {coarse && (
+        <BarSeat at="trail">
+          <KeyboardSwitch field={box} />
+        </BarSeat>
+      )}
     </div>
   );
 }

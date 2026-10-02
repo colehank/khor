@@ -3270,6 +3270,30 @@ relays-key = "中继密钥"
 relays-key-hint = "密钥（没有就留空）"
 relays-keyed = "带密钥"
 back = "返回"
+# The narrow session page's foot (2026-10-02, iOS 第三步 A). The switch
+# for the soft keyboard: the system's own two verbs, the one that says
+# what a press will do. 「隐藏键盘」 is what iOS's own keyboard key is
+# called; there is no 「收起」 here.
+keyboard-show = "显示键盘"
+keyboard-hide = "隐藏键盘"
+# The row of keys a soft keyboard lacks, read aloud as one group. The
+# caps say the keys' own names — the ones printed on a keyboard, so
+# they stay in Latin on both languages — and each cap's spoken name is
+# the key's name as macOS's 键盘查看器 says it.
+term-keys = "终端按键"
+key-esc = "Esc"
+key-esc-name = "Escape"
+key-ctrl = "Ctrl"
+key-ctrl-name = "Control"
+key-tab = "Tab"
+key-tab-name = "Tab 键"
+key-backtab = "⇧Tab"
+key-backtab-name = "Shift-Tab"
+key-paste = "粘贴"
+key-left = "左箭头"
+key-up = "上箭头"
+key-down = "下箭头"
+key-right = "右箭头"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —
 # same word in English, two different acts, so they get their own.

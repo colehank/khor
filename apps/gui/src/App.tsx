@@ -111,6 +111,7 @@ import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { FIND_ALL, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
@@ -1359,7 +1360,12 @@ export default function App() {
         // and its glyph boxes sit at `--side-inset` — the very edge the
         // first row's controls start on. A border here made the rail's
         // content box one narrower and the glyph half a pixel off.
-        narrow ? "flex-row justify-around gap-1 border-t bg-side py-1" : "w-rail flex-col gap-xxs bg-side pt-xxs pb-row",
+        // **…and over a phone's home indicator** (`--safe-bottom`,
+        // 2026-10-02): the bar's own `py-1` plus the edge the system
+        // reports, zero on a desktop window.
+        narrow
+          ? "flex-row justify-around gap-1 border-t bg-side pt-1 pb-[calc(var(--spacing)+var(--safe-bottom))]"
+          : "w-rail flex-col gap-xxs bg-side pt-xxs pb-row",
       )}
     >
       {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l) => (
@@ -2151,6 +2157,43 @@ export default function App() {
       page's head there is 「‹」 like every detail screen's (10-layout
       窄档, 2026-09-28), and 「‹」 that skipped the list would not be
       「返回」. */
+  /**
+   * **A session on the narrow face: content on top, the way back and the
+   * tabs at the foot** (`components/SessionBar`, 2026-10-02, the owner:
+   * 「上方完全交给内容，下方是操作与标签页」). Whenever an open session is
+   * the screen — never on the list, the switcher, a 「…」 page — and on
+   * the width alone: a Mac window dragged narrow gets it too. Inside it
+   * the window's first row (L0) and the landings' bar are not drawn; the
+   * bar's 「‹」 is the way back to the list, which keeps both.
+   */
+  const inSession =
+    narrow && sessions && morePage === null && !switchingTabs && screen === "detail" && selected !== null && openTabs.length > 0;
+  const sessionScreen = (
+    <SessionScreen
+      faces={tabFaces}
+      active={selected ?? ""}
+      onFocus={(id) => {
+        sessionTabs.focus(id);
+        setScreen("detail");
+      }}
+      // The last tab's × leaves the page with it: there is no session
+      // left for this screen to be, and the list is where it came from
+      // (the gone-row rule's answer, above, for a row that ended).
+      onClose={(id) => {
+        if (openTabs.length === 1) setScreen("list");
+        sessionTabs.close(id);
+      }}
+      // Once the strip scrolls, its count opens the switcher — the
+      // narrow shell's own screen, with its 「‹」 back to this one.
+      onSwitch={() => setSwitchingTabs(true)}
+      switching={switchingTabs}
+      onBack={() => setScreen("list")}
+      caption={stale ? gui.backend_unreachable : undefined}
+    >
+      {detail}
+    </SessionScreen>
+  );
+
   const leaveMorePage = () => (narrow ? setScreen("list") : setMorePage(null));
   const morePageEl =
     morePage === null ? null : morePage === "network" ? (
@@ -2428,8 +2471,14 @@ export default function App() {
     <HereHostsProvider value={hosts}>
     <TooltipProvider delayDuration={0}>
       {narrow ? (
-        <div className="flex h-dvh flex-col">
-          {sideHead}
+        // **As tall as `#root`, not the screen** (2026-10-02): `#root`
+        // follows what the soft keyboard leaves (`lib/viewport`), and a
+        // `100dvh` would not — the keyboard covers, it does not resize.
+        // **Clear of a phone's status bar** (`--safe-top`) on every
+        // screen but a session's, which runs its paper up to the glass
+        // and keeps the edge itself (`SessionScreen`).
+        <div className={cn("flex h-full flex-col", !inSession && "pt-safe-top")}>
+          {!inSession && sideHead}
           {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of
               the screen clear for macOS's three buttons; then the
@@ -2492,10 +2541,15 @@ export default function App() {
                   : switchingTabs && openTabs.length > 0
                     ? tabSwitcher
                     : screen === "detail" && detail
-                      ? detail
+                      ? inSession
+                        ? sessionScreen
+                        : detail
                       : list}
           </div>
-          {rail}
+          {/* The landings' bar belongs to the lists: inside a session
+              the bar at the foot is the session's (the owner, 2026-10-02:
+              「会话里不显示」). */}
+          {!inSession && rail}
           {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
