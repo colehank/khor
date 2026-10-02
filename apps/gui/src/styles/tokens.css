@@ -154,14 +154,15 @@
   --secondary: rgba(26, 26, 20, 0.06);
   --secondary-foreground: rgba(26, 26, 20, 0.78);
   --muted: rgba(26, 26, 20, 0.06);
-  /* 0.63, up from 0.62 on 2026-09-23 (docs/SHELL.md 第十三轮): the lists
-     moved onto `--side`, a darker ground than the card's, and a row's
-     second line on a **selected** row there — this ink over `--accent`
-     over `--side` — measured 4.40, under the 4.5 a line of text needs.
-     One point of alpha puts it at 4.54; lightening `--side` instead
-     would have moved the user's chosen ground for a gain of 0.04.
+  /* **.70 since 2026-10-03, from .63** (the audit fix plan F6.2, SYS-20):
+     the two themes are held to one reading of the ladder, not to one
+     alpha. At .63 this read 4.88 on the frame against dark's 6.86, so
+     every second line was about a third weaker by day. .70 reads 6.15
+     on the frame, 5.70 on the glass and 5.87 on a menu (dark: 6.86 /
+     6.33). The 2026-09-23 floor it replaced — a selected row's second
+     line over `--accent` over `--side` at 4.54 — is now well clear.
      `check-palette` reads it. */
-  --muted-foreground: rgba(26, 26, 20, 0.63);
+  --muted-foreground: rgba(26, 26, 20, 0.7);
   /* The ink a conversation is read in — softer than `--foreground`, and
    * worn only by prose. Measures 12.25 on this theme's paper (`--card`,
    * white), where `--foreground` measures 14.87.
@@ -203,10 +204,12 @@
   --accent: var(--brand-wash);
   /* The third ink (docs/design-system README 「三层墨」): times, counts,
    * key hints, group headers — **never something a person must read**;
-   * it is macOS's tertiaryLabelColor and sits under 4.5 on purpose
-   * (2.79 on the frame light, 3.37 on the dark popover — the lowest
-   * it lands on, 2026-09-30). */
-  --tertiary: rgba(26, 26, 20, 0.45);
+   * it is macOS's tertiaryLabelColor and sits under 4.5 on purpose.
+   * **.56 since 2026-10-03, from .45** (F6.2, SYS-20): 2.84 on the frame
+   * read weaker than dark's 3.54; .56 reads 3.92 on the frame, 3.73 on
+   * the glass and 3.80 on a menu (dark: 3.54 / 3.64, 3.37 on its
+   * popover, the lowest it lands on). */
+  --tertiary: rgba(26, 26, 20, 0.56);
   --accent-foreground: rgba(26, 26, 20, 0.94);
   --destructive: #b23a2e;
   /* **What stands on a solid is named for the solid** (`on-*`, 第十五轮):
