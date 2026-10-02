@@ -2739,9 +2739,10 @@
     /* **…and the first row with it** (2026-09-29). The row went to
        macOS's compact 38 for a mouse; a finger's target is 44 and a
        row of 38 cannot hold it — a tab would stand out of its band and
-       be clipped by the strip's scroller. So under a finger the row is
-       the 48 it was, and a tab's lip is what centres a 44 label in it:
-       (48 − 44) / 2. `check-boot` holds both halves of that sum. */
+       be clipped by the strip's scroller. The row is 52 at every
+       pointer since the redesign, and a tab's lip is what centres a 44
+       label in it: (52 − 44) / 2. `check-boot` holds both halves of
+       that sum. */
     --tab-lip: 4px;
   }
 }

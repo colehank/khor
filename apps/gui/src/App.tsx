@@ -4,6 +4,7 @@ import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
+  syncNow,
   fetchWorkspaces,
   installHooks,
   launchOn,
@@ -185,6 +186,9 @@ const UNWATCHED_MS = 10_000;
  * and that reason survives a minute of lateness intact.
  */
 const HOOKS_MS = 60_000;
+/** How long a pull waits for its sync round before it reads the rows
+    anyway (`refresh`). */
+const SYNC_WAIT_MS = 6_000;
 
 /** Each landing's stored ticks, one entry per pane (`lib/session-filter`)
     — sessions, machines, workspaces and 额度 each tick their own axes.
@@ -323,11 +327,6 @@ export default function App() {
   // condition exists to remove.
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => onFullscreen(setFullscreen), []);
-  // **The left block on the system's sidebar material** (docs/SHELL.md
-  // 第十五轮 第 7 条, D4): only the macOS app has it — its window is
-  // transparent over an `NSVisualEffectView` (`src-tauri` `build_the_window`)
-  // — so only there is the root stamped, and `app.css` lets the block's
-  // ground go clear under the stamp. Every other face keeps `--side`.
   // ⚠️ 墓碑 (2026-10-02, the redesign's one ground): the root was
   // stamped `data-material="sidebar"` here on the macOS app, and the left
   // block went clear over AppKit's sidebar material. There is one ground
@@ -743,7 +742,16 @@ export default function App() {
   // reordered here** — the order is the node's answer, and guessing it
   // locally would mean the screen briefly shows an order the library
   // never produced (and permanently shows it if the call fails).
+  // **Pulling a list down is a sync round** (the redesign): every machine
+  // is asked now (`syncNow`, the node's `sync_now`), then the rows and the
+  // machines are read again — so a machine that answered shows what it
+  // has, and one that did not is marked quiet by its road and its rows
+  // dim with 无法获取 and the time they were last heard (`SessionsList`).
+  // **Bounded**: a machine that is away costs a dial's timeout, and the
+  // spinner does not wait for it — the round goes on, the next poll
+  // reads what it brought.
   const refresh = useCallback(async () => {
+    await Promise.race([syncNow().catch(() => undefined), new Promise((r) => setTimeout(r, SYNC_WAIT_MS))]);
     const [s, d] = await Promise.all([fetchSessions(arrangeBy), fetchDevices()]);
     setRows(s);
     setDevices(d);

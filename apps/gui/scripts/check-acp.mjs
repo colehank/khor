@@ -285,8 +285,12 @@ const probe = () => {
   const usage = u && {
     used: Number(u.getAttribute("data-usage-used")),
     size: Number(u.getAttribute("data-usage-size")),
-    share: (u.querySelector("[data-usage-share]")?.textContent ?? "").trim(),
-    cost: (u.querySelector("[data-usage-cost]")?.textContent ?? "").trim(),
+    // The share is the dial's: its number and the seat's name for a
+    // screen reader (the composer capsule, 2026-10-02).
+    share: `${(u.textContent ?? "").trim()} ${u.getAttribute("aria-label") ?? ""}`,
+    // **No cost anywhere in the composer** (the owner, 2026-10-02:
+    // 「右边不写美元」): whatever of the cost the page prints.
+    cost: /\$|USD|0\.39/.test(document.body.innerText) ? document.body.innerText.match(/.{0,12}(\$|USD|0\.39).{0,12}/)?.[0] ?? "?" : "",
   };
   const factsLine = document.querySelector("[data-chat-facts]");
   const planEls = [...document.querySelectorAll("[data-plan-entry]")];
@@ -310,6 +314,9 @@ const probe = () => {
     mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
+    input: !!document.querySelector("[data-chat-input]"),
+    who: !!document.querySelector("[data-chat-who]"),
+    text: document.body.innerText,
     // The settings row: the mode menu's face and every option control,
     // each with what it says it is set to.
     //
@@ -320,7 +327,9 @@ const probe = () => {
     // holding the right value and drawing the wrong word would fail.
     modeMenu: (() => {
       const el = document.querySelector("[data-chat-mode-menu]");
-      return el ? { text: faceOf(el), id: el.getAttribute("data-mode-id"), tag: el.tagName.toLowerCase() } : null;
+      return el
+        ? { text: faceOf(el), id: el.getAttribute("data-mode-id"), tag: el.tagName.toLowerCase(), popup: el.getAttribute("aria-haspopup") }
+        : null;
     })(),
     options: [...document.querySelectorAll("[data-chat-option]")].map((el) => ({
       id: el.getAttribute("data-chat-option"),
@@ -328,6 +337,7 @@ const probe = () => {
       on: el.getAttribute("aria-checked"),
       value: el.getAttribute("data-value"),
       tag: el.tagName.toLowerCase(),
+      popup: el.getAttribute("aria-haspopup"),
     })),
   };
 };
@@ -360,7 +370,7 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false }) => {
+  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false, openAdd = false }) => {
     const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -441,6 +451,13 @@ try {
         box?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
       });
       await wait(600);
+    }
+    if (openAdd) {
+      // The agent's own settings live in the ＋ menu since the redesign
+      // (the composer capsule, 2026-10-02): opened for real, so what is
+      // read is what a person sees there.
+      await page.locator("[data-chat-add]").click();
+      await wait(400);
     }
     const out = await page.evaluate(probe);
     if (send) {
@@ -565,6 +582,7 @@ try {
         },
         { kind: "history_end" },
       ],
+      openAdd: true,
     });
     if (m.errs.length) fail(`settings: the page threw — ${m.errs[0]}`);
     if (!m.column) {
@@ -577,12 +595,14 @@ try {
       } else {
         console.log(`settings · mode menu: ${m.modeMenu.text}`);
       }
-      // **A choice among values opens the system's menu** (components/
-      // PopupButton, 「系统的东西交给系统画」): the mode and a listed
-      // select are native `<select>`s, not menus of this app's drawing.
+      // **A choice among values opens a menu** — the composer's own glass
+      // menu since the redesign (2026-10-02: the mode is a seat in the
+      // capsule, a listed select is a submenu of ＋), where it was a
+      // native `<select>` (components/PopupButton, 2026-09-28). What is
+      // held is that each is a control announcing the menu it opens.
       for (const [what, got] of [["the mode menu", m.modeMenu], ["the model select", m.options.find((o) => o.id === "model")]]) {
-        if (got && got.tag !== "select") {
-          fail(`settings: ${what} is a <${got.tag}> — a choice among values is a popup button over the system's menu`);
+        if (got && got.popup !== "menu") {
+          fail(`settings: ${what} is a <${got.tag}> announcing ${JSON.stringify(got.popup)} — a choice among values opens a menu`);
         }
       }
       if (m.mode !== null) {
@@ -611,6 +631,58 @@ try {
       fail("settings: an agent with nothing to set must draw no controls");
     } else {
       console.log("settings · nothing listed: nothing drawn");
+    }
+  }
+
+  // ── batch 3c: an old host's frames ───────────────────────────────
+  //
+  // The owner's running conversations are hosted by the binary before the
+  // redesign (`khor-gui _host`), and the new face attaches to them. That
+  // host names no model in its settings (`khor_acp::Settings.model` came
+  // with the redesign), keeps no usage to hand a face on attach, and its
+  // settings frame is `{ modes, options }` alone. The wire half is
+  // `khor-gui-core`'s `old_host_tests` (the old note, encoded, read by the
+  // new reader); this is the drawing half: those frames, as gui-core hands
+  // them on, must draw a whole conversation with nothing invented — no
+  // dial without a reading, no model, the mode seat on the old mode.
+  {
+    const m = await look({
+      scheme: "dark",
+      motion: "no-preference",
+      frames: [
+        { kind: "agent", name: "claude", replays: true, images: true, embeds: true, lists: false, needs_login: false },
+        {
+          kind: "settings",
+          settings: {
+            modes: {
+              currentModeId: "default",
+              availableModes: [
+                { id: "default", name: "Default" },
+                { id: "acceptEdits", name: "Accept Edits" },
+                { id: "plan", name: "Plan Mode" },
+              ],
+            },
+            options: [],
+          },
+        },
+        { kind: "history", update: { sessionId: "s", update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "旧宿主上的一句话" } } } },
+        { kind: "history", update: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "旧宿主的回答" } } } },
+        { kind: "history_end" },
+      ],
+    });
+    if (m.errs.length) fail(`old host: the page threw — ${m.errs[0]}`);
+    if (!m.column || !m.input) {
+      fail(`old host: the conversation did not draw (column ${m.column}, input ${m.input})`);
+    } else {
+      for (const said of ["旧宿主上的一句话", "旧宿主的回答"]) {
+        if (!m.text.includes(said)) fail(`old host: ${JSON.stringify(said)} is not on the page`);
+      }
+      if (!m.modeMenu || m.modeMenu.id !== "default") {
+        fail(`old host: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the old host's current mode (default)`);
+      }
+      if (m.usage) fail(`old host: a context dial was drawn with no reading from the host (${JSON.stringify(m.usage)})`);
+      if (!m.who) fail("old host: the composer's who seat is missing — with no reading it is the agent's mark");
+      if (!m.errs.length) console.log("old host · a conversation from an old host draws: words, mode seat on default, no dial, no model");
     }
   }
 
@@ -1353,8 +1425,11 @@ try {
         if (!m.usage.share.includes("32")) {
           fail(`${say}: 320000 of 1000000 printed as "${m.usage.share}" — 32 is nowhere in it`);
         }
-        if (!m.usage.cost.includes("0.39")) {
-          fail(`${say}: the cost printed as "${m.usage.cost}", wanted 0.39 in it`);
+        // ⚠️ This asserted the cost was printed (0.39) until the redesign;
+        // the owner decided the composer writes no dollars (2026-10-02),
+        // so it now asserts the cost is nowhere on the page.
+        if (m.usage.cost) {
+          fail(`${say}: the cost reached the page as "${m.usage.cost}" — the composer writes no dollars`);
         }
       }
 

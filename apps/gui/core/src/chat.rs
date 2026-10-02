@@ -759,3 +759,97 @@ mod frame_cap_tests {
         assert_eq!(stop_of(&f.held[from]), "4");
     }
 }
+
+#[cfg(test)]
+mod old_host_tests {
+    use super::*;
+    use serde::Serialize;
+
+    /// **The host's note as the binary before the redesign wrote it**
+    /// (`khor_node::gui_host::GuiNote` at ee144e3), spelled out here so
+    /// the wire stays held when the live enum moves. The owner's running
+    /// sessions are hosted by that binary (`khor-gui _host`), and the new
+    /// face attaches to them: every frame below is one such a host sends.
+    #[derive(Serialize)]
+    #[allow(dead_code)]
+    enum OldNote {
+        Note(String),
+        Ask { ask: u64, title: String, options: Vec<(String, String)> },
+        Turn(String),
+        Gone,
+        History(String),
+        HistoryEnd,
+        Turning,
+        Answered { ask: u64, option: Option<String> },
+        Agent { name: Option<String>, replays: bool, images: bool, embeds: bool, lists: bool, needs_login: bool },
+        Refused { why: String },
+        Settings(String),
+    }
+
+    /// Through the real codec, as bytes: length-prefixed MessagePack.
+    fn over_the_wire(old: &OldNote) -> ChatFrame {
+        let mut bytes = Vec::new();
+        write_frame(&mut bytes, old).expect("encode");
+        let note: GuiNote = read_frame(&mut bytes.as_slice()).expect("the new reader takes the old frame");
+        frame_of(note)
+    }
+
+    /// **An old host's frames parse**: its settings carry no `model` (the
+    /// redesign added it), it sends no stored usage on attach, and its
+    /// handshake and settings frames are the old shapes. Each arrives as
+    /// the frame the face expects, with nothing invented.
+    #[test]
+    fn an_old_hosts_frames_parse() {
+        let agent = over_the_wire(&OldNote::Agent {
+            name: Some("claude".into()),
+            replays: true,
+            images: true,
+            embeds: true,
+            lists: false,
+            needs_login: false,
+        });
+        assert!(matches!(agent, ChatFrame::Agent { replays: true, images: true, .. }), "{agent:?}");
+
+        // The old `settings_json`: modes and options, nothing else.
+        let old_settings = serde_json::json!({
+            "modes": {
+                "currentModeId": "default",
+                "availableModes": [
+                    { "id": "default", "name": "Default" },
+                    { "id": "acceptEdits", "name": "Accept Edits" },
+                    { "id": "plan", "name": "Plan" }
+                ]
+            },
+            "options": []
+        })
+        .to_string();
+        match over_the_wire(&OldNote::Settings(old_settings)) {
+            ChatFrame::Settings { settings } => {
+                assert_eq!(settings["modes"]["currentModeId"], "default");
+                assert!(settings.get("model").is_none(), "an old host names no model: {settings}");
+            }
+            other => panic!("not a settings frame: {other:?}"),
+        }
+
+        let said = serde_json::json!({
+            "sessionId": "s",
+            "update": { "sessionUpdate": "agent_message_chunk", "content": { "type": "text", "text": "hello" } }
+        })
+        .to_string();
+        assert!(matches!(over_the_wire(&OldNote::Note(said.clone())), ChatFrame::Note { .. }));
+        assert!(matches!(over_the_wire(&OldNote::History(said)), ChatFrame::History { .. }));
+        assert!(matches!(over_the_wire(&OldNote::HistoryEnd), ChatFrame::HistoryEnd));
+        assert!(matches!(over_the_wire(&OldNote::Turning), ChatFrame::Turning));
+        assert!(matches!(over_the_wire(&OldNote::Turn("end_turn".into())), ChatFrame::Turn { .. }));
+        assert!(matches!(
+            over_the_wire(&OldNote::Ask { ask: 1, title: "Run".into(), options: vec![("y".into(), "Yes".into())] }),
+            ChatFrame::Ask { ask: 1, .. }
+        ));
+        assert!(matches!(
+            over_the_wire(&OldNote::Answered { ask: 1, option: Some("y".into()) }),
+            ChatFrame::Answered { ask: 1, .. }
+        ));
+        assert!(matches!(over_the_wire(&OldNote::Refused { why: "no-turn".into() }), ChatFrame::Refused { .. }));
+        assert!(matches!(over_the_wire(&OldNote::Gone), ChatFrame::Gone));
+    }
+}

@@ -2075,6 +2075,37 @@ pub async fn pair(root: &Path, ticket: &str) -> Result<String, String> {
     node.pair(ticket).await
 }
 
+/// One machine's answer to a sync round (`khor sync`): whether it was
+/// reached, and the node's own sentence either way.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct SyncOutcome {
+    /// The machine, by the name on the glass.
+    pub machine: String,
+    pub ok: bool,
+    /// What was exchanged, or why it could not be.
+    pub said: String,
+}
+
+/// **A sync round with every machine, now** (`khor sync`) — what pulling
+/// a list down asks for (the redesign, 2026-10-02). Through the resident
+/// serve when there is one (`Node::sync_now`), so the round is the one
+/// the serve would have run on its own beat, only sooner. Async for
+/// `pair`'s reason: it dials, and a machine that is away costs a dial's
+/// timeout.
+pub async fn sync_now(root: &Path) -> Result<Vec<SyncOutcome>, String> {
+    let node = open(root)?;
+    Ok(node
+        .sync_now()
+        .await?
+        .into_iter()
+        .map(|(machine, verdict)| match verdict {
+            Ok(said) => SyncOutcome { machine, ok: true, said },
+            Err(said) => SyncOutcome { machine, ok: false, said },
+        })
+        .collect())
+}
+
 /// One machine waiting for the root holder (`khor pending`) — the node's
 /// [`khor_node::PendingRow`], minted here for [`LeaveOutcome`]'s reason:
 /// what crosses to a face is this crate's own type.

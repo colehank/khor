@@ -1286,41 +1286,28 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 ///
 /// Everything else here is what that file used to say, unchanged, plus
 /// the ground: setting it on the builder paints the window from its
-/// first frame rather than a moment later (`paint_the_window_before_the_page`
-/// has the measurements).
+/// first frame rather than a moment later (`ground` has the
+/// measurements).
 #[cfg(desktop)]
 fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
     let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("Khor")
         .inner_size(1080.0, 720.0)
-        .min_inner_size(400.0, 500.0);
+        .min_inner_size(400.0, 500.0)
+        .background_color(ground(chosen_dark(desktop_is_dark)));
     #[cfg(target_os = "macos")]
     {
         win = win
             .title_bar_style(tauri::utils::TitleBarStyle::Overlay)
-            .hidden_title(true)
-            // **The left block on the system's sidebar material** (docs/
-            // SHELL.md 第十五轮 第 7 条, D4): AppKit's own
-            // `NSVisualEffectView` in its sidebar material behind the
-            // webview, which only shows where the page paints nothing —
-            // the left block, whose ground goes transparent on this
-            // platform alone (`app.css` `:root[data-material]`); the
-            // right side, the board and R0 keep painting their own.
-            // `FollowsWindowActiveState`: it goes flat with the window
-            // behind another, as every Mac sidebar does.
-            //
-            // The window has to be transparent for the material to be
-            // seen, and on macOS that is tauri's `macos-private-api`
-            // (`Cargo.toml`, `tauri.conf.json` — the cost is written
-            // there: no Mac App Store).
-            .transparent(true)
-            .effects(
-                tauri::window::EffectsBuilder::new()
-                    .effect(tauri::window::Effect::Sidebar)
-                    .state(tauri::window::EffectState::FollowsWindowActiveState)
-                    .build(),
-            );
+            .hidden_title(true);
+        // ⚠️ Tombstone (the redesign, 2026-10-02): the window was built
+        // transparent over AppKit's sidebar material (docs/SHELL.md round
+        // 15 item 7, D4), and the left block's ground went clear to show
+        // it. **One ground now**: the list column and the content stand on
+        // the same `--background`, so there is no material, and the window
+        // is opaque and painted that ground from its first frame (the
+        // builder's `background_color` above).
         if let Some(lights) = traffic::measure() {
             traffic::remember(lights);
             win = win.traffic_light_position(tauri::LogicalPosition::new(
@@ -1387,84 +1374,79 @@ fn traffic_room() -> f64 {
     0.0
 }
 
-/// Give the window the app's own ground **before the page has one**.
+/// **The app's ground, as a window colour** — `--background` from
+/// `apps/gui/src/styles/tokens.css`, light and dark.
 ///
-/// ⚠️ **Measured 2026-09-11 by screenshotting a cold launch**: the
-/// window is on screen at ~500 ms and the first HTML paints at ~760 ms.
-/// For that quarter second the webview shows its platform default —
-/// near-white on macOS — and on a dark desktop that is a flash of the
-/// wrong colour, then a settle. `index.html` paints a first frame of its
-/// own, and it cannot help here: it has to arrive first, and this is
-/// about the time before anything arrives.
+/// ⚠️ **These two values are checked against tokens.css** by
+/// `apps/gui/scripts/check-boot.mjs`, which reads this file: a palette
+/// that moves and leaves these behind is a flash of last month's colour
+/// at every launch, and at the edge of every live resize, with nothing to
+/// say so.
 ///
-/// **Which colour is not a constant, which is why this is code and not
-/// a line in `tauri.conf.json`.** That file takes one
-/// `backgroundColor`, and this app has two grounds; a single value
-/// would trade the dark desktop's flash for a light one's. `theme()`
-/// asks the system what it is, right now, and the window is painted to
-/// match.
-///
-/// ⚠️ **These two values are `--background` from
-/// `apps/gui/src/styles/tokens.css`, light and dark.** They are
-/// checked against it by `apps/gui/scripts/check-boot.mjs`, which reads
-/// this file — the same gate that checks the ones in `index.html`, for
-/// the same reason: a palette that moves and leaves these behind is a
-/// quarter-second flash of last month's colour with nothing to say so.
-///
-/// ⚠️ **`setup` is not early enough to cover the whole gap, measured
-/// after the fact.** Reading the pixel at the centre of the window out
-/// of cold-launch screenshots:
-///
-/// ```text
-/// 528 ms   #1e1e1e   the platform default, before and after this change
-/// 709 ms   #0f0f0e   this ground (the frame is #242422 since 2026-09-30)
-/// 760 ms   the first HTML frame
-/// ```
-///
-/// So it moves the settle from ~760 ms to ~700 ms and leaves the first
-/// ~200 ms as it was. **Covering those needs the colour on the window
-/// *builder*, which means building the window here instead of in
-/// `tauri.conf.json`** — and that means this file owning the title, the
-/// size and the two minimums as well. Worth doing when something else
-/// already needs the window built in Rust; not worth it for 200 ms of
-/// colour on its own.
-///
-/// **It does not cover a desktop that changes theme while the app
-/// runs.** The page follows that on its own (`prefers-color-scheme`),
-/// and this ground is only ever seen at launch, so the cost of being
-/// stale is a colour nobody is looking at.
+/// The window wears it from the builder (`build_the_window`), so its very
+/// first frame is the ground rather than the platform's default (measured
+/// 2026-09-11: ~200 ms of `#1e1e1e` before the first HTML on a dark
+/// desktop). WKWebView draws no background of its own once a colour is
+/// given (wry's `drawsBackground`), so the window's ground is what shows
+/// until the page paints, and wherever it has not yet painted during a
+/// resize.
 #[cfg(desktop)]
-fn paint_the_window_before_the_page(app: &tauri::AppHandle) {
+fn ground(dark: bool) -> tauri::webview::Color {
+    if dark {
+        tauri::webview::Color(0x00, 0x00, 0x00, 0xff)
+    } else {
+        tauri::webview::Color(0xf4, 0xf4, 0xef, 0xff)
+    }
+}
+
+/// **The store's choice, not the desktop's answer** (D2): `dark` and
+/// `light` win; `auto`, and a store this process cannot read, is the
+/// desktop, asked through `desktop`.
+#[cfg(desktop)]
+fn chosen_dark(desktop: impl FnOnce() -> bool) -> bool {
+    match khor_node::config::get(&Node::root_from_env(), "theme") {
+        Ok("dark") => true,
+        Ok("light") => false,
+        _ => desktop(),
+    }
+}
+
+/// Whether the desktop is dark, **before any window exists** to ask —
+/// AppKit's own global default, which is what `NSApp`'s appearance
+/// resolves from while nothing has set one.
+#[cfg(target_os = "macos")]
+fn desktop_is_dark() -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    let key = NSString::from_str("AppleInterfaceStyle");
+    let style: *mut NSString = unsafe {
+        let defaults: *mut AnyObject = msg_send![class!(NSUserDefaults), standardUserDefaults];
+        msg_send![defaults, stringForKey: &*key]
+    };
+    !style.is_null() && unsafe { (*style).to_string() } == "Dark"
+}
+
+/// Elsewhere the window is asked once it exists (`repaint_the_ground`);
+/// until then, the light ground.
+#[cfg(all(desktop, not(target_os = "macos")))]
+fn desktop_is_dark() -> bool {
+    false
+}
+
+/// Paints the main window's ground again, for the theme khor wears now —
+/// at startup on a platform whose desktop could not be asked before the
+/// window existed, after the page changes the choice (`set_window_theme`)
+/// and after the desktop changes under `auto` (`ThemeChanged`). Nothing to
+/// do if the platform refuses: the failure is a flash, not a fault.
+#[cfg(desktop)]
+fn repaint_the_ground(app: &tauri::AppHandle) {
     use tauri::{Manager, Theme};
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
-    // **The store's choice, not the desktop's answer** (批 D2). This is
-    // the one reader of `theme` on the Rust side, and it has to be: the
-    // window is painted before any HTML exists, so the page cannot do
-    // it. `auto` — and a store this process cannot read — is the
-    // desktop, which is what khor did before the key existed.
-    let dark = match khor_node::config::get(&Node::root_from_env(), "theme") {
-        Ok("dark") => true,
-        Ok("light") => false,
-        _ => matches!(w.theme(), Ok(Theme::Dark)),
-    };
-    let ground = if dark {
-        tauri::webview::Color(0x24, 0x24, 0x22, 0xff)
-    } else {
-        tauri::webview::Color(0xeb, 0xeb, 0xe5, 0xff)
-    };
-    // Nothing to do if the platform refuses: the failure is the old
-    // behaviour, which is a flash rather than a fault.
-    //
-    // **Not on macOS since 第十五轮** (D4): the window there is
-    // transparent over the sidebar material (`build_the_window`), and an
-    // opaque ground on the webview would paint over the material for good
-    // — the material itself is what stands in the window before the page.
-    #[cfg(not(target_os = "macos"))]
-    let _ = w.set_background_color(Some(ground));
-    #[cfg(target_os = "macos")]
-    let _ = ground;
+    let dark = chosen_dark(|| matches!(w.theme(), Ok(Theme::Dark)));
+    let _ = w.set_background_color(Some(ground(dark)));
 }
 
 /// Back, forward and reload for one tab's page.
@@ -2630,6 +2612,10 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
             {
                 traffic::place(win);
             }
+            // …and the window's ground follows the page's (one ground in
+            // both themes): what shows at a live resize's edge before the
+            // page has painted it.
+            repaint_the_ground(&handle);
         });
     }
     // **A phone wears it on its windows** (2026-10-02, the owner on a
@@ -2770,6 +2756,13 @@ fn invite() -> Result<khor_gui_core::Ticket, String> {
 #[tauri::command]
 async fn pair(ticket: String) -> Result<String, String> {
     khor_gui_core::pair(&Node::root_from_env(), &ticket).await
+}
+
+/// A sync round with every machine, now — pulling a list down
+/// (`khor_gui_core::sync_now`). Async for `pair`'s reason.
+#[tauri::command]
+async fn sync_now() -> Result<Vec<khor_gui_core::SyncOutcome>, String> {
+    khor_gui_core::sync_now(&Node::root_from_env()).await
 }
 
 /// Who waits for the root holder (docs/CONNECT.md 根不在场).
@@ -2995,7 +2988,7 @@ pub fn run() {
             #[cfg(desktop)]
             hang_menu_window(app.handle());
             #[cfg(desktop)]
-            paint_the_window_before_the_page(app.handle());
+            repaint_the_ground(app.handle());
             // **A phone's one window, plain.** The config declares no
             // window (`build_the_window` says why), so nothing would be on
             // screen without this; everything that function sets is a
@@ -3068,6 +3061,7 @@ pub fn run() {
                             Ok("light") => tauri::Theme::Light,
                             _ => *theme,
                         };
+                        repaint_the_ground(window.app_handle());
                         for (label, w) in window.app_handle().webview_windows() {
                             if label.starts_with("code:") {
                                 #[cfg(target_os = "macos")]
@@ -3265,6 +3259,7 @@ pub fn run() {
             approve,
             root_words,
             pair,
+            sync_now,
             leave,
             set_paused,
             set_machine_paused

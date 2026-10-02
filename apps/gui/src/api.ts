@@ -10,6 +10,7 @@ import { gui, msg } from "./gen/catalog";
 // different menus for one idea, which is the failure `OmniChip`'s
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
+import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -885,6 +886,9 @@ export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
     copy of a number only `link::INVITE_WINDOW_MS` decides. */
 export const invite = () => call<Ticket>("invite");
 export const pair = (ticket: string) => call<string>("pair", { ticket });
+/** `khor sync` — a round with every machine, now: what pulling a list
+    down asks for. One answer per machine, reached or not. */
+export const syncNow = () => call<SyncOutcome[]>("sync_now");
 
 /* ── 加入网络's 扫码 (docs/IOS.md 第三步) ──────────────────────────────
  *

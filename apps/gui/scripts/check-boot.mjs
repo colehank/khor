@@ -49,40 +49,37 @@ if (probe.length < 2) {
 
 const want = { background: token("background"), card: token("card"), side: token("side") };
 
-// What the boot frame uses, in source order: body (light), rail
-// (light), column (light), then the dark trio under the stamp. **The
-// rail and the column are one ground now** (docs/SHELL.md 第十三轮 第 1
-// 条: 「竖栏和列表一种底色」) — `--side`, on both.
+// What the boot frame uses, in source order: the ground (light), then
+// the ground under the dark stamp. **One ground since the redesign**
+// (2026-10-02): the list column and the content stand on the same
+// `--background`, so the frame is that colour and a hairline where the
+// column ends — the hairline is `--border`, a translucent ink, not a
+// ground, and is not read here. `--side` must resolve to `--background`
+// in both themes, or the column would arrive on a second colour.
 const found = [...html.matchAll(/background:\s*(#[0-9a-fA-F]{3,8})/g)].map((m) => m[1]);
-if (found.length !== 6) {
-  fail(`expected 6 colours in the boot frame (ground, rail, column — light then dark), found ${found.length}: ${found.join(", ")}`);
+if (found.length !== 2) {
+  fail(`expected 2 colours in the boot frame (the one ground, light then dark), found ${found.length}: ${found.join(", ")}`);
 } else {
-  const [bodyLight, railLight, columnLight, darkGround, darkRail, darkColumn] = found;
+  const [bodyLight, darkGround] = found;
   const eq = (a, b) => a.toLowerCase() === b.toLowerCase();
   if (!eq(bodyLight, want.background.light)) {
     fail(`the light ground is ${bodyLight}, --background is ${want.background.light}`);
   }
-  if (!eq(railLight, want.side.light)) {
-    fail(`the light rail is ${railLight}, --side is ${want.side.light}`);
-  }
-  if (!eq(columnLight, want.side.light)) {
-    fail(`the light column is ${columnLight}, --side is ${want.side.light}`);
-  }
   if (!eq(darkGround, want.background.dark)) {
     fail(`the dark ground is ${darkGround}, --background is ${want.background.dark}`);
   }
-  if (!eq(darkRail, want.side.dark)) {
-    fail(`the dark rail is ${darkRail}, --side is ${want.side.dark}`);
-  }
-  if (!eq(darkColumn, want.side.dark)) {
-    fail(`the dark column is ${darkColumn}, --side is ${want.side.dark}`);
+}
+for (const theme of ["light", "dark"]) {
+  const v = want.side[theme];
+  if (v !== "var(--background)" && v.toLowerCase() !== want.background[theme].toLowerCase()) {
+    fail(`--side (${theme}) is ${v}, not --background — the list column would stand on a second ground`);
   }
 }
 
 // **And the frame before that one.** The window itself is painted from
 // Rust, because it has to be coloured before any HTML exists and the
 // tauri config file takes one value while this app has two grounds
-// (`paint_the_window_before_the_page`). That is a third copy of
+// (`ground`). That is a third copy of
 // `--background`, on the other side of a language boundary, and it rots
 // the same way — into a quarter-second flash of last month's colour with
 // nothing anywhere to say so.
@@ -97,7 +94,7 @@ const rust = readFileSync(
 // tauri when the window is built, in Rust, where no token is readable.
 // So three numbers are written twice, each read here from both files,
 // and a disagreement is refused: the same arrangement the two grounds
-// above have. `--pane-head` is written as a number (38 since 2026-09-29),
+// above have. `--pane-head` is written as a number (52 since the redesign),
 // so it is matched as the literal it is.
 const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"), "utf8");
 {
@@ -115,7 +112,7 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
   const gapIn = px("gap-in");
   // `--pane-head` is written as a number — a decision about the window's
   // first rows, not the sum of the finger's floor and a tab's lip
-  // (docs/design-system/guidelines/40-migration.md). 38 since 2026-09-29.
+  // (docs/design-system/guidelines/40-migration.md). 52 since the redesign.
   const paneHead = px("pane-head");
   const pairs = [
     ["the first row's height", "PANE_HEAD", paneHead, "--pane-head"],
@@ -148,7 +145,14 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
   // the finger (`@media (pointer: coarse)`, where `--hit` is `--touch`
   // and the row goes back to 48). `check-face` §12 measures it drawn.
   {
-    const coarse = /@media \(pointer: coarse\) \{\s*:root \{([\s\S]*?)\n  \}\n\}/.exec(css)?.[1] ?? null;
+    // Every `@media (pointer: coarse) { :root { … } }` block, in order (the
+    // type scale has one of its own); a later one wins, as in CSS.
+    const blocks = [...css.matchAll(/@media \(pointer: coarse\) \{\s*:root \{([\s\S]*?)\n  \}\n\}/g)].map((m) => m[1]);
+    const coarse = blocks.length ? blocks.join("\n") : null;
+    const last = (text, name) => {
+      const all = [...text.matchAll(new RegExp(`--${name}:\\s*([^;]+);`, "g"))];
+      return all.length ? all[all.length - 1][1].trim() : null;
+    };
     const decl = (text, name) => new RegExp(`--${name}:\\s*([^;]+);`).exec(text)?.[1].trim() ?? null;
     const asPx = (v) => {
       if (v === null) return null;
@@ -162,7 +166,9 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
     } else {
       const postures = [
         ["a mouse", { row: paneHead, hit: asPx(decl(css, "hit")), lip }],
-        ["a finger", { row: asPx(decl(coarse, "pane-head")), hit: asPx(decl(coarse, "hit")), lip: asPx(decl(coarse, "tab-lip")) }],
+        // The row is 52 at every pointer since the redesign: a finger
+        // block that does not set it keeps the mouse's.
+        ["a finger", { row: asPx(last(coarse, "pane-head")) ?? paneHead, hit: asPx(last(coarse, "hit")), lip: asPx(last(coarse, "tab-lip")) }],
       ];
       for (const [who, p] of postures) {
         if (p.row === null || p.hit === null || p.lip === null) {
@@ -201,51 +207,39 @@ const traffic = readFileSync(join(here, "..", "src-tauri", "src", "traffic.rs"),
   }
 }
 
-// ── the left block's first frame, by platform (第十五轮 第 7 条, D4) ──
+// ── one ground on every face, the Mac window included (the redesign) ──
 //
-// On the macOS app the left block stands on the system's sidebar
-// material, so its ground is **clear** there and opaque everywhere else.
-// That is four things in four files, and each is read here:
+// ⚠️ This section guarded the opposite rule until 2026-10-02 (docs/
+// SHELL.md round 15 item 7, D4): a transparent macOS window over AppKit's
+// sidebar material, and the left block's ground cleared to show it. The
+// redesign decided one ground (memory `khor-one-ground-redesign`), so what
+// is held now is that nothing of the material is left to come back:
 //
-//   - the window is built transparent with the sidebar effect, inside
-//     the macOS half of `build_the_window` (src-tauri/src/lib.rs);
-//   - tauri's private API is switched on in both places tauri-build
-//     holds together (tauri.conf.json, src-tauri/Cargo.toml);
-//   - the webview is not painted an opaque ground on macOS, or the
-//     material would never show (`paint_the_window_before_the_page`);
-//   - the page clears `--side` only inside `[data-side]` and only under
-//     the stamp `App` sets on the macOS app — **and `--side` itself
-//     stays an opaque colour in both themes**: a translucent `--side`
-//     would be the fake material this round forbids.
+//   - the macOS half of `build_the_window` builds no transparent window
+//     and no effect;
+//   - the window is given the ground on its builder, for every desktop
+//     platform (`background_color(ground(…))`), so its first frame is the
+//     page's colour rather than the platform's default;
+//   - the page sets no `data-material` stamp and app.css has no rule
+//     keyed on one.
 {
   const before = bad;
-  const conf = JSON.parse(readFileSync(join(here, "..", "src-tauri", "tauri.conf.json"), "utf8"));
-  const cargo = readFileSync(join(here, "..", "src-tauri", "Cargo.toml"), "utf8");
   const appCss = readFileSync(join(here, "..", "src", "styles", "app.css"), "utf8");
   const appTsx = readFileSync(join(here, "..", "src", "App.tsx"), "utf8");
+  const code = (text) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const build = rust.match(/fn build_the_window[\s\S]*?\n}\n/)?.[0] ?? "";
-  const mac = build.match(/#\[cfg\(target_os = "macos"\)\]\s*\{[\s\S]*?\n {4}\}/)?.[0] ?? "";
-  if (!/\.transparent\(true\)/.test(mac) || !/Effect::Sidebar/.test(mac)) {
-    fail("the macOS window is not built transparent with the sidebar effect (src-tauri/src/lib.rs build_the_window) — D4's material has nothing to show through");
+  if (!build) fail("cannot find build_the_window in src-tauri/src/lib.rs — this check is now blind");
+  const live = code(build);
+  if (/\.transparent\(true\)/.test(live) || /\.effects\(/.test(live)) {
+    fail("build_the_window builds a transparent window or a window effect — the redesign has one ground and no material");
   }
-  if (conf.app?.macOSPrivateApi !== true || !/features = \[[^\]]*"macos-private-api"/.test(cargo)) {
-    fail("tauri's macos-private-api is not on in both tauri.conf.json (app.macOSPrivateApi) and src-tauri/Cargo.toml — a transparent window needs it");
+  if (!/\.background_color\(ground\(/.test(live.split('#[cfg(target_os = "macos")]')[0])) {
+    fail("build_the_window does not give every desktop window the ground on its builder (before the macOS-only half) — the first frame is the platform's default");
   }
-  const paint = rust.match(/fn paint_the_window_before_the_page[\s\S]*?\n}\n/)?.[0] ?? "";
-  if (!/#\[cfg\(not\(target_os = "macos"\)\)\]\s*let _ = w\.set_background_color/.test(paint)) {
-    fail("the window's ground is painted on macOS too (paint_the_window_before_the_page) — an opaque webview covers the material for good");
+  if (/data-material/.test(code(appCss)) || /setAttribute\("data-material"/.test(code(appTsx))) {
+    fail("the page still stamps or keys on data-material — the material's clear ground would come back");
   }
-  if (!/:root\[data-material="sidebar"\][^{]*\[data-side\]\s*\{\s*--side:\s*transparent;/.test(appCss)) {
-    fail("app.css does not clear --side inside [data-side] under :root[data-material=\"sidebar\"] — the block paints over the material");
-  }
-  if (!/if \(trafficLights\) document\.documentElement\.setAttribute\("data-material", "sidebar"\)/.test(appTsx)) {
-    fail("App.tsx does not stamp data-material=\"sidebar\" on the macOS app alone (trafficLights) — the clear ground would reach faces with no material");
-  }
-  for (const theme of ["light", "dark"]) {
-    const v = want.side[theme];
-    if (!/^#[0-9a-f]{6}$/i.test(v)) fail(`--side (${theme}) is ${v} — it must stay opaque; a translucent ground is not the material`);
-  }
-  if (bad === before) console.log("left block: macOS window transparent over the sidebar material, --side cleared in the block under the stamp only, opaque elsewhere");
+  if (bad === before) console.log("one ground: the Mac window opaque with no material, every desktop window built on the ground, no data-material stamp");
 }
 
 const painted = [...rust.matchAll(/Color\(0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0x([0-9a-f]{2}), 0xff\)/g)].map(
@@ -324,7 +318,7 @@ if (bad) {
   process.exit(1);
 }
 console.log(
-  `boot gate: the first frame's 6 colours match --background and --side, the window's 2 grounds match ` +
+  `boot gate: the first frame's 2 colours match --background (and --side is it), the window's 2 grounds match ` +
     `--background, the first row's three numbers agree with src-tauri, and the theme stamp (${STAMP}, mirror ${JSON.stringify(mirrorInTs)}) is spelled the ` +
     `same in the frame, the module and the palette`,
 );

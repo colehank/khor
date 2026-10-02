@@ -794,6 +794,9 @@ pub fn answer(
         // questions (`root_unshown`, `root_words_seen`) went with the
         // prompt on 2026-10-01: the words are on demand.
         "pair" => to_json(&rt.block_on(crate::pair(root, &arg("ticket")?))?),
+        // 下拉刷新 (the redesign): a sync round with every machine, now.
+        // Async for `pair`'s reason: it dials.
+        "sync_now" => to_json(&rt.block_on(crate::sync_now(root))?),
         // 离开这张网 (docs/MORE.md 离开). Async for `pair`'s reason: it
         // goes out over the wire before it touches this disk.
         "leave" => to_json(&rt.block_on(crate::leave(root, &arg("machine")?))?),

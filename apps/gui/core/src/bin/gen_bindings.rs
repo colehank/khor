@@ -51,6 +51,8 @@ fn main() {
     // 待批's answer: asked on its own beat by the devices list, embedded
     // in nothing. Walks into `PendingRow` from here.
     khor_gui_core::Waiting::export_all_to(&dir).expect("export Waiting");
+    // A pull's sync round (`sync_now`), one per machine.
+    khor_gui_core::SyncOutcome::export_all_to(&dir).expect("export SyncOutcome");
     // 诊断's rows: asked on their own beat, embedded in nothing.
     khor_gui_core::DoctorRow::export_all_to(&dir).expect("export DoctorRow");
     // 安全's own facts: asked by the lock screen before anything else is

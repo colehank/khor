@@ -11,10 +11,9 @@
 // (`ListPane`). ⚠️ 墓碑: a 46-tall strip that wrote 下拉同步 / 松开同步 /
 // 正在同步 / 已同步 and pushed the list down by its height.
 //
-// What 「asks again」 does is the caller's (`onRefresh`): today the shell
-// re-reads the rows and the machines. A sync round with the network would
-// be the honest version of the gesture, and no face can start one yet —
-// the node has `sync_now`, the bridge and the app do not expose it.
+// What 「asks again」 does is the caller's (`onRefresh`): the shell runs a
+// sync round with every machine (`syncNow`, the node's `sync_now`), then
+// re-reads the rows and the machines.
 import { useEffect, useRef, useState } from "react";
 
 import { useCoarse } from "@/hooks/use-coarse";

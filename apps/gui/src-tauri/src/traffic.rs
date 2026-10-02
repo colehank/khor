@@ -37,16 +37,15 @@
 //! on every draw, which is what keeps the buttons in place; khor only
 //! makes the number the right one.
 
-/// **How tall the left block's first row is** (docs/SHELL.md 第十三轮 第
-/// 1 条; 38 since 2026-09-29, macOS's compact toolbar), duplicated here
-/// from `src/styles/tokens.css`'s `--pane-head` for the one thing CSS
-/// cannot do: tell macOS where to put the three system buttons so they
-/// sit on this row's centre — the centreline the search box, the title
-/// and the tabs share. `check-boot.mjs` reads both and refuses a
-/// disagreement — the same arrangement the window's two grounds already
-/// have. (A finger's taller row never meets these buttons: no Mac is
-/// pressed with one.)
-pub const PANE_HEAD: f64 = 38.0;
+/// **How tall the left block's first row is** (52 at every pointer since
+/// the redesign, 2026-10-02; macOS's compact 38 before it), duplicated
+/// here from `src/styles/tokens.css`'s `--pane-head` for the one thing
+/// CSS cannot do: tell macOS where to put the three system buttons so
+/// they sit on this row's centre — the centreline the landing strip,
+/// the title and the tabs share. `check-boot.mjs` reads both and refuses
+/// a disagreement — the same arrangement the window's two grounds
+/// already have.
+pub const PANE_HEAD: f64 = 52.0;
 
 /// **Where the first button's left edge goes**: the rail's own glyph
 /// box — a `--rail-item` box centred in `--rail-w`, `(64 − 48) / 2` (第
@@ -200,12 +199,11 @@ mod tests {
 
     /// **The arithmetic, against the numbers that were actually wrong.**
     /// This Mac draws a 14-tall button sitting 9 above its container's
-    /// bottom; on the 38 row (`PANE_HEAD`, since 2026-09-29) that makes
-    /// 21 the answer, for a centre of 19 — and `12`, which is what the
-    /// config said, puts that centre at 10, nine points high (docs/
-    /// SHELL.md 第十一轮's reading on the 38 row it had then, which is
-    /// the row again; the same numbers `npm run wk` reads off a real
-    /// window). The 48 row it had in between is kept as a second height.
+    /// bottom; on the 52 row (`PANE_HEAD`, since the redesign) that makes
+    /// 28 the answer, for a centre of 26 — and `12`, which is what the
+    /// config once said, puts that centre at 10 (docs/SHELL.md round
+    /// 11's reading; the same numbers `npm run wk` reads off a real
+    /// window). The 38 and 48 rows it had before are kept as heights.
     #[test]
     fn the_inset_puts_the_trio_on_the_rows_centre() {
         let now = Lights {
@@ -214,8 +212,9 @@ mod tests {
             span: 60.0,
         };
         let centre = |y: f64| y - now.inside + now.button / 2.0;
-        assert_eq!(inset_y(PANE_HEAD, &now), 21.0);
-        assert_eq!(centre(inset_y(PANE_HEAD, &now)), 19.0);
+        assert_eq!(inset_y(PANE_HEAD, &now), 28.0);
+        assert_eq!(centre(inset_y(PANE_HEAD, &now)), 26.0);
+        assert_eq!(centre(inset_y(38.0, &now)), 19.0);
         // What `12` produced.
         assert_eq!(centre(12.0), 10.0);
         // A taller row moves it — the 48 this row was until 2026-09-29,
@@ -230,9 +229,9 @@ mod tests {
             span: 52.0,
         };
         let older_centre = |y: f64| y - older.inside + older.button / 2.0;
-        assert_eq!(older_centre(inset_y(PANE_HEAD, &older)), 19.0);
-        // The room the row keeps clear: from the rail's glyph box, the
-        // trio, and one gap — where the search box starts.
+        assert_eq!(older_centre(inset_y(PANE_HEAD, &older)), 26.0);
+        // The room the row keeps clear: the inset, the trio, and one gap
+        // — where the landing strip starts, before x 78.
         assert_eq!(room(X, GAP, &older), 68.0);
         assert_eq!(room(X, GAP, &now), 76.0);
     }

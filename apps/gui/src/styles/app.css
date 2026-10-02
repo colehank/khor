@@ -349,24 +349,11 @@ input[type="search"]::-webkit-search-decoration {
    stepped up to `headline`'s weight. Every title is `headline` now, and a
    picked row shows by its block alone. */
 
-/* **The system's sidebar material behind the left block** (docs/SHELL.md
-   第十五轮 第 7 条, D4). Stamped on the macOS app alone (`App`), whose
-   window is transparent over AppKit's sidebar `NSVisualEffectView`
-   (`src-tauri` `build_the_window`): the page paints nothing where the
-   material should show — the document's own ground and the block's
-   `--side` go clear, **inside the block only** (a workspace's tree in the
-   board is on the paper, `--card`). The right side (`[data-main]`, `bg-background`),
-   the board and R0 paint their own, so the material is the left block's
-   and nothing else's. **Not a translucent colour**: where the material is
-   absent (every other face, and the narrow face, which has no block) the
-   ground stays the opaque `--side` / `--background` it was. */
-:root[data-material="sidebar"]:not([data-narrow]),
-:root[data-material="sidebar"]:not([data-narrow]) body {
-  background: transparent;
-}
-:root[data-material="sidebar"]:not([data-narrow]) aside[data-side] {
-  --side: transparent;
-}
+/* ⚠️ Tombstone (the redesign, 2026-10-02): on the macOS app the left
+   block's ground went clear under `:root[data-material="sidebar"]`, over
+   AppKit's sidebar material behind a transparent window (docs/SHELL.md
+   round 15 item 7, D4). One ground now: the window is opaque and the
+   page paints `--background` everywhere. */
 
 /* **The camera behind the page** (加入网络's 扫码, docs/IOS.md 第三步).
    The scan is windowed: the plugin puts the camera under the webview and
