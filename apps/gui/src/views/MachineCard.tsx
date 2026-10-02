@@ -45,7 +45,7 @@ import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { useHereHosts } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
-import { ago, hopWord, lasting, systemWord } from "@/words";
+import { ago, hopWord, lasting, systemWord, count } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -441,7 +441,7 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
       "uptime",
       gui.card_uptime,
       <span data-uptime className="tabular-nums">
-        {days >= 1 ? cli.age_days(days) : cli.age_hours(hours)}
+        {days >= 1 ? count.days(days) : count.hours(hours)}
       </span>,
     ]);
   }

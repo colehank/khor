@@ -1,7 +1,22 @@
 // Wording helpers on top of the generated catalog. The display word is
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
-import { avatar, category, cli, gui, hop, state } from "./gen/catalog";
+import { avatar, category, cli, gui, hop, one, state } from "./gen/catalog";
+
+/**
+ * **Counted words, singular where the language has one** (`[one]` in the
+ * catalog; 2026-10-03, 「1 minutes ago」): every count of time the face
+ * prints goes through here, the GUI's twin of `khor_catalog::count`.
+ */
+export const count = {
+  seconds: (n: number) => (n === 1 ? one.second(n) : cli.age_seconds(n)),
+  minutes: (n: number) => (n === 1 ? one.minute(n) : cli.age_minutes(n)),
+  hours: (n: number) => (n === 1 ? one.hour(n) : cli.age_hours(n)),
+  days: (n: number) => (n === 1 ? one.day(n) : cli.age_days(n)),
+  upDays: (n: number) => (n === 1 ? one.up_day(n) : cli.uptime_days(n)),
+  upHours: (n: number) => (n === 1 ? one.up_hour(n) : cli.uptime_hours(n)),
+  lockIdleAfter: (n: number) => (n === 1 ? one.lock_idle_after(n) : cli.lock_idle_after(n)),
+};
 
 export function word(key: string): string {
   return (state as Record<string, string>)[key] ?? key;
@@ -340,19 +355,19 @@ export function lasting(ms: number): string {
  */
 export function stretch(ms: number): string {
   const m = Math.max(1, Math.round(ms / 60_000));
-  if (m < 60) return cli.age_minutes(m);
+  if (m < 60) return count.minutes(m);
   const h = Math.floor(m / 60);
   const rest = m % 60;
-  return rest === 0 ? cli.age_hours(h) : `${cli.age_hours(h)} ${cli.age_minutes(rest)}`;
+  return rest === 0 ? count.hours(h) : `${count.hours(h)} ${count.minutes(rest)}`;
 }
 
 /** A duration in the coarsest unit that still says something. */
 function span(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return cli.age_seconds(s);
+  if (s < 60) return count.seconds(s);
   const m = Math.floor(s / 60);
-  if (m < 60) return cli.age_minutes(m);
+  if (m < 60) return count.minutes(m);
   const h = Math.floor(m / 60);
-  if (h < 24) return cli.age_hours(h);
-  return cli.age_days(Math.floor(h / 24));
+  if (h < 24) return count.hours(h);
+  return count.days(Math.floor(h / 24));
 }

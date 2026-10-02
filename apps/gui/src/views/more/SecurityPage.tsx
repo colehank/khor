@@ -41,6 +41,7 @@ import { ConfigSections } from "@/views/more/ConfigRows";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
+import { count } from "@/words";
 import { MoreFrame, MoreSection } from "@/views/more/MorePage";
 import { RootWordsDialog } from "@/views/PairDialogs";
 
@@ -183,7 +184,7 @@ export function SecurityPage({
             <>
               {gui.head_lock_on}
               <span aria-hidden="true"> · </span>
-              {lock.timeout_min > 0 ? cli.lock_idle_after(lock.timeout_min) : cli.lock_idle_never}
+              {lock.timeout_min > 0 ? count.lockIdleAfter(lock.timeout_min) : cli.lock_idle_never}
             </>
           ) : (
             gui.head_lock_off
@@ -282,7 +283,7 @@ export function SecurityPage({
               value={String(lock.timeout_min)}
               choices={lock.timeouts.map((m) => ({
                 value: String(m),
-                label: m === 0 ? gui.lock_idle_never_pick : gui.lock_idle_pick(m),
+                label: m === 0 ? gui.lock_idle_never_pick : m === 1 ? count.minutes(m) : gui.lock_idle_pick(m),
               }))}
               onPick={(v) => after(setLockTimeout(Number(v)))}
             />

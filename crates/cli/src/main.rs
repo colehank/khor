@@ -925,7 +925,7 @@ fn lock(rest: &[String]) -> Result<(), String> {
             if s.timeout_min == 0 {
                 cli::lock_idle_never().to_owned()
             } else {
-                cli::lock_idle_after(s.timeout_min)
+                khor_catalog::count::lock_idle_after(u64::from(s.timeout_min))
             }
         );
     };
@@ -2342,18 +2342,19 @@ fn status_word(token: &str) -> &str {
 /// seconds; `run_secs` is already whole seconds, so taking seconds here
 /// is the same function with the round trip removed.
 fn lasting(secs: u64) -> String {
+    use khor_catalog::count;
     if secs < 60 {
-        return cli::age_seconds(secs);
+        return count::seconds(secs);
     }
     let m = secs / 60;
     if m < 60 {
-        return cli::age_minutes(m);
+        return count::minutes(m);
     }
     let h = m / 60;
     if h < 24 {
-        return cli::age_hours(h);
+        return count::hours(h);
     }
-    cli::age_days(h / 24)
+    count::days(h / 24)
 }
 
 /// Accumulated CPU as a **stopwatch**, where 时长 beside it is a
@@ -2694,7 +2695,7 @@ mod top_table {
                 "12392",
                 cli::top_st_run(),
                 "zgh",
-                &cli::age_hours(1),
+                &khor_catalog::count::hours(1),
                 "1:00:00",
                 "70%",
                 "110.0M",
@@ -2705,7 +2706,7 @@ mod top_table {
                 "7",
                 cli::top_st_spawning(),
                 "zgh",
-                &cli::age_minutes(1),
+                &khor_catalog::count::minutes(1),
                 "0:00",
                 "0%",
                 "512B",
@@ -2716,7 +2717,7 @@ mod top_table {
                 "96042",
                 "unknown-13",
                 "",
-                &cli::age_days(1),
+                &khor_catalog::count::days(1),
                 "",
                 "11%",
                 "100.0M",
@@ -5133,15 +5134,16 @@ fn group_word(group: &str) -> String {
 }
 
 fn human_age(ms: u64) -> String {
+    use khor_catalog::count;
     let s = ms / 1000;
     if s < 120 {
-        cli::age_seconds(s)
+        count::seconds(s)
     } else if s < 7200 {
-        cli::age_minutes(s / 60)
+        count::minutes(s / 60)
     } else if s < 172_800 {
-        cli::age_hours(s / 3600)
+        count::hours(s / 3600)
     } else {
-        cli::age_days(s / 86_400)
+        count::days(s / 86_400)
     }
 }
 

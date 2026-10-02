@@ -2321,6 +2321,11 @@ accounts-provider-moonshot-cn = "Moonshot 国内站"
 accounts-provider-openrouter = "OpenRouter"
 # Codex 的 ChatGPT 套餐——只有订阅,没有计费(第九轮)。
 accounts-provider-codex = "Codex"
+# **A subscription's provider is the product's own name** (the owner,
+# 2026-10-03): 「订阅 · Claude」, never 「订阅 · Claude API」 — an API key
+# and a subscription are two different things one vendor sells. Codex's
+# product name is already `accounts-provider-codex`'s word.
+quota-sub-provider-claude = "Claude"
 # 读订阅登录的那家工具的名字——专名,照厂商的写法(第九轮)。填进 accounts-trouble-*、
 # accounts-sub-note 的 {0}。Codex 就用 accounts-provider-codex:同一段里不许两个键一句话。
 vendor-claude = "Claude Code"
@@ -3865,7 +3870,7 @@ chat-who-context = "上下文"
 # terminal's scrollback wears the same pair, and a key called `chat-*`
 # on a terminal is how a reader ends up grepping for the wrong surface.
 to-bottom = "回到底部"
-new-below = "下面有新的"
+new-below = "有新消息"
 # An op this face sent that the host did not take (#88). Two keys travel
 # the wire (`gui_host::refused`), two sentences live here — **not one
 # vague "没生效"**, because the two have different next steps: wait, or
@@ -4352,3 +4357,20 @@ zoom = "缩放"
 next-tab = "显示下一个标签页"
 prev-tab = "显示上一个标签页"
 front = "前置全部窗口"
+
+# ── 单数 ─────────────────────────────────────────────────────────────
+# **A count of one, where English says it differently** (2026-10-03:
+# 「1 minutes ago」). Chinese has no plural, so these read as the counted
+# words they stand beside (`cli.age-*`, `cli.uptime-*`,
+# `cli.lock-idle-after`) — in a section of their own, because the
+# one-text-per-name rule would refuse them beside their twins. Picked by
+# `khor_catalog::count` (Rust) and `words.ts` `count` (the GUI), never
+# at a call site.
+[one]
+second = "{0} 秒"
+minute = "{0} 分钟"
+hour = "{0} 小时"
+day = "{0} 天"
+up-day = "已运行 {0} 天"
+up-hour = "已运行 {0} 小时"
+lock-idle-after = "闲置 {0} 分钟后自动锁定"

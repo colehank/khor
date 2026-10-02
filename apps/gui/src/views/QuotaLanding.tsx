@@ -757,7 +757,10 @@ function valueWord(axis: string, value: string): string {
  * thing this is.
  */
 function subLine(r: Row): string {
-  return [kindWord(r.kind), providerWord(r.provider)].join(" · ");
+  // A subscription names the product (「订阅 · Claude」), not the API the
+  // same vendor sells (`quota-sub-provider-claude`, 2026-10-03).
+  const who = r.kind === "sub" && r.provider === "claude" ? gui.quota_sub_provider_claude : providerWord(r.provider);
+  return [kindWord(r.kind), who].join(" · ");
 }
 
 /** The `disabled_reason` key as a status word — never a sentence
