@@ -2491,6 +2491,10 @@ function Top({
                     // is the whole reason it was kept, so it must be
                     // readable somewhere even when the cell clips.
                     title={k === "status" && r.status !== null ? r.status : undefined}
+                    // The quantity's name, which the narrow row writes
+                    // before its value (`app.css` `[data-tight]`): there
+                    // is no head row to say which number is which.
+                    data-label={k === "cpu" || k === "gpu" || k === "mem" || k === "vram" ? COLS[k].head() : undefined}
                     className={cn(
                       "whitespace-nowrap",
                       COLS[k].align === "right" ? "text-right" : "text-left",

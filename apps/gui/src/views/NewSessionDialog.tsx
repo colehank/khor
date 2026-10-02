@@ -525,7 +525,10 @@ export function NewSessionDialog({
                   data-on={browsing}
                   aria-expanded={browsing}
                   onClick={() => (browsing ? setBrowsing(false) : browse())}
-                  className="min-h-touch flex-none"
+                  // The finger's box is the button's `::after` (`app.css`),
+                  // so the row is as tall as the segments beside it — a
+                  // 44 floor here made 「Run with」's group the loose one.
+                  className="flex-none"
                 >
                   {gui.new_session_add_agent}
                 </Button>

@@ -1153,9 +1153,28 @@ aside[data-side] {
   flex: 1 0 100%;
   order: -1;
 }
-[data-tight] > [data-load-top] [data-top-row] > :is([data-c="cpu"], [data-c="gpu"], [data-c="vram"], [data-c="mem"]) {
-  flex: 0 0 5.5em;
-  text-align: right;
+/* **Each number says what it is, at a fixed x** (F4 review): the
+   second line starts on the page's line, every field its name in the
+   muted ink then its value, tabular, each field one width so the four
+   stand in columns down the list. ⚠️ 墓碑: right-aligned 5.5em boxes
+   with no names, floating at an indent nothing explained. */
+[data-tight] > [data-load-top] [data-top-row] > :is([data-c="cpu"], [data-c="gpu"]) {
+  flex: 0 0 6.5em;
+  text-align: left;
+}
+[data-tight] > [data-load-top] [data-top-row] > :is([data-c="mem"], [data-c="vram"]) {
+  flex: 0 0 8.5em;
+  text-align: left;
+}
+[data-tight] > [data-load-top] [data-top-row] > [data-label]:not(:empty)::before {
+  content: attr(data-label) "\00a0";
+  color: var(--muted-foreground);
+}
+/* No head row on a phone, so no rule for one: the first row's own
+   hairline would stand under the seam's, an empty band between two
+   lines (F4 review). */
+[data-tight] > [data-load-top] [data-top-heads] + [data-top-row] {
+  border-block-start: 0;
 }
 /* Wide: a gutter before 命令, so a right-aligned number never runs into
    the command beside it (F4.3; W15). */
@@ -1643,7 +1662,15 @@ aside[data-side] {
    same left edge. */
 :root[data-narrow] [data-form-grid] {
   grid-template-columns: minmax(0, 1fr);
-  row-gap: var(--gap-xxs);
+  row-gap: var(--gap-in);
+}
+/* **Two gaps and only two** (the F4 review): a label stands `gap-in`
+   over its control (and a note `gap-in` under it), and each question
+   after the first opens `gap-base` under the last one. ⚠️ 墓碑: one
+   `gap-xxs` for both, so the groups ran together and a note sat as
+   close to the next label as to its own control. */
+:root[data-narrow] [data-form-grid] > [data-form-label]:not(:first-child) {
+  margin-top: calc(var(--gap-base) - var(--gap-in));
 }
 :root[data-narrow] [data-form-grid] > * {
   grid-column: 1 / -1;

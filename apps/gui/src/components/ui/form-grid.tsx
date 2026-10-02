@@ -48,11 +48,11 @@ export function FormLabel({
 }) {
   const cls = "text-right text-muted-foreground";
   return htmlFor ? (
-    <label htmlFor={htmlFor} {...mark} className={cls}>
+    <label htmlFor={htmlFor} data-form-label {...mark} className={cls}>
       {children}
     </label>
   ) : (
-    <span {...mark} className={cls}>
+    <span data-form-label {...mark} className={cls}>
       {children}
     </span>
   );

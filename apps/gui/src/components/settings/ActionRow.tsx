@@ -82,7 +82,6 @@ export function ActionRow({
         </span>
       )}
       <Button
-        variant="pill"
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={onPress}

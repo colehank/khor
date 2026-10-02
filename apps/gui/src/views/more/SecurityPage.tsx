@@ -193,9 +193,8 @@ export function SecurityPage({
       actions={
         lock?.on ? (
           <Button
-            // The settings pill (F6.3): `ctl-md`, `body` 13 — not the
-            // dense row's `sm`.
-            variant="pill"
+            // A push button (a pill since F6.3): `ctl-md`, `body` 13 —
+            // not the dense row's `sm`.
             // R0's one text button now: the overviews' 新会话… 邀请设备…
             // 登记… left for ＋ the same day (「一个动作只有一个家」); this
             // is a verb on the lock, not a thing made.

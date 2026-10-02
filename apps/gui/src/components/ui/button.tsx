@@ -23,12 +23,14 @@ const buttonVariants = cva(
   // ring offset has to be *told* its colour, and a button on a card
   // would then get a gap painted in the page's colour instead of the
   // card's — right in the one place the ring is hardest to see.
-  // docs/design-system components/Button (2026-09-26): `radius-sm` 6,
-  // `body` 13 at 400, parts `gap-xxs` apart, never greyed (the audit fix
+  // docs/design-system components/Button (2026-09-26): `body` 13 at 400,
+  // **fully round** (the F4 review, 2026-10-03: every text button that
+  // is not glass is a pill — the dialogs' with the settings'; ⚠️ 墓碑:
+  // `radius-sm` 6, the last of the pre-redesign family), parts `gap-xxs` apart, never greyed (the audit fix
   // plan F1.9: a control that cannot act is not drawn; one that is busy
   // says so by breathing, `aria-busy`), a press
   // that gives `--press` (app.css) — and no shadow on any of them.
-  "inline-flex items-center justify-center gap-xxs whitespace-nowrap rounded-sm text-body font-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none aria-busy:animate-pulse aria-busy:cursor-progress motion-reduce:aria-busy:animate-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-xxs whitespace-nowrap rounded-full text-body font-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none aria-busy:animate-pulse aria-busy:cursor-progress motion-reduce:aria-busy:animate-none [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -37,7 +39,10 @@ const buttonVariants = cva(
         // 第十五轮 `--primary` is `--brand-strong`, and a default that
         // painted it made every unmarked button on every page a solid
         // olive block — the brand voltage in a place it is not allowed.
-        default: "bg-fill-strong text-foreground hover:bg-fill-strong/80",
+        //
+        // **On `--fill`, under `fill-strong` when pointed at** (F6.3):
+        // the settings pill's ground, which every push button now is.
+        default: "bg-fill text-foreground hover:bg-fill-strong",
         // **The** one primary act of a dialog, and nowhere else: at most
         // one per dialog, never two in a row. `check-face` (第十七轮)
         // goes red on a primary outside `[role=dialog]`, and on two in
@@ -48,15 +53,6 @@ const buttonVariants = cva(
         // `plain`: no ground, `secondary` ink, `fill` under the pointer.
         ghost: "text-muted-foreground hover:bg-fill hover:text-foreground",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        // **A settings act is a pill** (the audit fix plan F6.3, SYS-21):
-        // `--fill` under `foreground`, fully round, the in-content height
-        // (`ctl-md` 28 under a mouse, the finger's 44 through
-        // `min-h-touch`) — one family with the glass and the capsules.
-        // An act that throws something away keeps its `destructive` ink
-        // on the same ground. ⚠️ 墓碑: 6-radius `fill-strong` slabs, the
-        // last of the pre-redesign buttons, which by day read as a
-        // disabled field.
-        pill: "rounded-full bg-fill text-foreground hover:bg-fill-strong",
         link: "text-primary underline-offset-4 hover:underline",
       },
       // **None of these carries the finger floor, and that is on

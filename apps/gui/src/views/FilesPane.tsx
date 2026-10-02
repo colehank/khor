@@ -285,11 +285,21 @@ export function FilesPane({
                     // half its old height inside a taller stripe that
                     // lights up. The hover wash is the row's, and the
                     // row is exactly as tall as this.
-                    className="flex min-h-touch min-w-0 flex-1 items-center gap-2 self-stretch px-4 text-left text-callout"
+                    // Stretched to the row, which wears the floor with its
+                    // hairline inside it — the file row's arrangement, so
+                    // the two are one height (F4 review; a floor here too
+                    // made the folder row its hairline taller).
+                    className="flex min-w-0 flex-1 items-center gap-2 self-stretch px-4 text-left text-callout"
                   >
                     {/* **A folder has its glyph** (F4.2; N08, W16), so every
-                        name in the listing starts on one x. */}
-                    <IconFiles className="size-5 flex-none text-muted-foreground" />
+                        name in the listing starts on one x — **in the file
+                        kind's own 20 box** (F4 review): the rail glyph
+                        keeps its own size whatever class it is handed, so
+                        it stood 32 wide, the row 33 tall against a file's
+                        28 and the name 12 further right. */}
+                    <span aria-hidden="true" className="inline-flex size-5 flex-none text-muted-foreground [&>svg]:size-full">
+                      <IconFiles />
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{e.name}</span>
                     <Mark mark={marks?.get(full)} dir />
                     {narrow && <IconChevronRight className="size-affordance flex-none text-tertiary" />}
