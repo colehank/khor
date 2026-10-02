@@ -31,6 +31,7 @@ import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { useNarrow } from "@/hooks/use-narrow";
 import { walkList } from "@/lib/shortcuts";
+import { useRowSwipe } from "@/hooks/use-row-swipe";
 import { cn } from "@/lib/utils";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
@@ -237,6 +238,10 @@ export function SideList({
   // 「带省略号表示还会再问一次」): 「删除…」 while the window will come
   // up, the plain word once 不再提醒 has taken it away — it is the same
   // press either way, and only one of the two labels is true at a time.
+  /** What a slid row offers (F7.5): its pin and its destructive item,
+      as the menu has them (and through the same ask). */
+  const swipeOf = (r: SideRow): RowAction[] =>
+    menuOf(r).filter((a) => a.key === "pin" || a.destructive);
   const menuOf = (r: SideRow): RowAction[] =>
     r.menu.map((a) =>
       a.ask === undefined || !asking
@@ -254,6 +259,10 @@ export function SideList({
       .map((r) => r.id)
       .join("\n"),
   );
+  // Slide a row left for its pin and its delete (F7.5, narrow).
+  // On only while the rows are drawn: the loading and empty faces are
+  // other elements, and the list box comes and goes with them.
+  useRowSwipe(box, narrow && shown.length > 0 && !(loading && rows.length === 0));
 
   // **What matched is marked in the rows** (the audit fix plan F3.4;
   // N20): every place the typed word stands in a row's title or second
@@ -427,6 +436,7 @@ export function SideList({
         {open && (
           <div
             data-side-row={r.id}
+            data-row-swipe={narrow && swipeOf(r).length > 0 ? "" : undefined}
             data-side-pinned={r.pinned}
             data-side-in={r.group}
             data-side-menu={r.menu.length > 0}
@@ -453,8 +463,43 @@ export function SideList({
                 `onPointerDown`, and a press handler on a bare `<div>` is
                 a target only a pointer can find. On the button, focus
                 reaches it and the keyboard's Menu key opens it. */}
-            {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
-            {r.after}
+            {narrow && swipeOf(r).length > 0 ? (
+              <>
+                {/* **Slid left, the row shows what can be done to it**
+                    (F7.5; `hooks/use-row-swipe`): the menu's own items,
+                    in its words, revealed from the right edge. */}
+                <div data-row-face className="flex min-w-0 flex-1 items-center">
+                  {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
+                  {r.after}
+                </div>
+                <div data-row-actions>
+                  <div data-row-actions-inner className="flex h-full">
+                    {swipeOf(r).map((a) => (
+                      <button
+                        key={a.key}
+                        type="button"
+                        data-row-action={a.key}
+                        data-destructive={a.destructive || undefined}
+                        onClick={(e) => {
+                          const row = e.currentTarget.closest<HTMLElement>("[data-row-swipe]");
+                          row?.removeAttribute("data-row-open");
+                          row?.style.setProperty("--row-reveal", "0px");
+                          void Promise.resolve().then(a.run).catch(() => {});
+                        }}
+                        className="min-w-[74px] flex-none px-in text-callout"
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
+                {r.after}
+              </>
+            )}
           </div>
         )}
       </Fragment>

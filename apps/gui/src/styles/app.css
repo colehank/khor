@@ -557,6 +557,44 @@ aside[data-side] {
   animation: screen-in-from-left var(--dur-240) var(--ease-out);
 }
 
+/* **A row slid left** (`hooks/use-row-swipe`, F7.5): the row's face
+   moves left by `--row-reveal` and the actions open from the right edge
+   by as much — the pin on the fill, the delete on the destructive red. */
+[data-row-swipe] {
+  position: relative;
+  overflow: hidden;
+}
+[data-row-face] {
+  transform: translateX(calc(-1 * var(--row-reveal, 0px)));
+  transition: transform var(--dur-240) var(--ease-out);
+}
+[data-row-actions] {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  display: flex;
+  justify-content: flex-end;
+  width: var(--row-reveal, 0px);
+  overflow: hidden;
+  transition: width var(--dur-240) var(--ease-out);
+}
+[data-row-swiping] :is([data-row-face], [data-row-actions]) {
+  transition: none;
+}
+[data-row-action] {
+  background: var(--fill-strong);
+  color: var(--foreground);
+}
+[data-row-action][data-destructive] {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+@media (prefers-reduced-motion: reduce) {
+  :is([data-row-face], [data-row-actions]) {
+    transition: none;
+  }
+}
+
 /* **On a phone a form is a sheet** (`ui/dialog` `useSheet`, F7.4; narrow
    P-E): the whole width, standing on the bottom edge and riding the soft
    keyboard (`--sheet-kb`), its top corners round, a grabber at its top,
