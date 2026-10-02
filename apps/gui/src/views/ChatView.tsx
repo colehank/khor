@@ -409,8 +409,10 @@ function modeWord(id: string, listed: ModeListed[]): string {
     case "bypassPermissions":
     case "full-access":
       return gui.chat_mode_bypass;
-    case "auto":
+    case "workspace":
       return gui.chat_mode_codex_auto;
+    case "auto":
+      return gui.chat_mode_claude_auto;
     default:
       return listed.find((m) => m.id === id)?.name ?? id;
   }
@@ -431,7 +433,7 @@ function modeNote(id: string, listed: ModeListed[]): string | null {
       return gui.chat_mode_bypass_note;
     case "read-only":
       return gui.chat_mode_codex_read_only_note;
-    case "auto":
+    case "workspace":
       return gui.chat_mode_codex_auto_note;
     case "full-access":
       return gui.chat_mode_codex_full_access_note;
@@ -463,6 +465,8 @@ function modeSaid(id: string): string | null {
       return gui.chat_mode_accept_edits;
     case "bypassPermissions":
       return gui.chat_mode_bypass;
+    case "auto":
+      return gui.chat_mode_claude_auto;
     default:
       return id;
   }

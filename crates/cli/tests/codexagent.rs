@@ -169,9 +169,9 @@ for line in sys.stdin:
     // The mode the thread opened in is read off codex's answer, and
     // the list is codex's three presets.
     let modes = handle.settings().modes.clone().expect("codex lists its modes");
-    assert_eq!(modes.current_mode_id.to_string(), "auto");
+    assert_eq!(modes.current_mode_id.to_string(), "workspace");
     let ids: Vec<String> = modes.available_modes.iter().map(|m| m.id.to_string()).collect();
-    assert_eq!(ids, ["read-only", "auto", "full-access"]);
+    assert_eq!(ids, ["read-only", "workspace", "full-access"]);
     // Both attachments are advertised, because both are carried.
     assert!(handle.facts().images && handle.facts().embeds, "＋ needs both");
 

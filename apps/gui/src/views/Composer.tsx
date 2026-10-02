@@ -182,10 +182,10 @@ export function StopSeat({ onStop, tip }: { onStop: () => void; tip: boolean }) 
 export type ModeChoice = { id: string; name: string; note: string | null };
 
 /** **Each agent's ordinary mode**, the one that wears no warning ink:
-    claude's `default` (asks before changes) and codex's `auto` (free
+    claude's `default` (asks before changes) and codex's `workspace` (free
     inside the workspace, asks past it — `codexagent::PRESETS`). Any
     other mode is a session that will do more, or less, than usual. */
-export const ORDINARY_MODES = new Set(["default", "auto"]);
+export const ORDINARY_MODES = new Set(["default", "workspace"]);
 
 /**
  * **The permission mode, a word with a chevron, and its menu in place.**

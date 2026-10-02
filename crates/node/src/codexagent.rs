@@ -50,8 +50,9 @@
 //! keeps the policy it started with.
 //!
 //! The list offered is codex's own three presets (its `/approvals`):
-//! read-only (read-only sandbox, asks on request), auto (workspace-write
-//! without network, asks on request — codex's ordinary mode), and full
+//! read-only (read-only sandbox, asks on request), workspace (codex's
+//! `auto`: workspace-write without network, asks on request — its
+//! ordinary mode), and full
 //! access (no sandbox, never asks). A thread on anything else is listed
 //! as it is (`other`), in codex's words.
 //!
@@ -148,7 +149,10 @@ enum Preset {
 /// The presets in codex's order, by the ids the mode list wears.
 const PRESETS: [(&str, Preset); 3] = [
     ("read-only", Preset::ReadOnly),
-    ("auto", Preset::Auto),
+    // `workspace`, not codex's own `auto`: claude has an `auto` mode
+    // too, and a face that words modes by id would call one by the
+    // other's name.
+    ("workspace", Preset::Auto),
     ("full-access", Preset::FullAccess),
 ];
 
@@ -157,7 +161,7 @@ const OTHER: &str = "other";
 
 impl Preset {
     fn id(self) -> &'static str {
-        PRESETS.iter().find(|(_, p)| *p == self).map(|(id, _)| *id).unwrap_or("auto")
+        PRESETS.iter().find(|(_, p)| *p == self).map(|(id, _)| *id).unwrap_or("workspace")
     }
 
     fn of(id: &str) -> Option<Preset> {
@@ -928,11 +932,11 @@ mod tests {
         };
         let plain = modes_listed(Some(Preset::ReadOnly), None);
         assert_eq!(plain.current_mode_id.to_string(), "read-only");
-        assert_eq!(ids(&plain), ["read-only", "auto", "full-access"]);
+        assert_eq!(ids(&plain), ["read-only", "workspace", "full-access"]);
         assert!(plain.available_modes.iter().all(|m| m.description.is_some()), "each mode has its line");
         let other = modes_listed(None, Some("other words"));
         assert_eq!(other.current_mode_id.to_string(), "other");
-        assert_eq!(ids(&other), ["read-only", "auto", "full-access", "other"]);
+        assert_eq!(ids(&other), ["read-only", "workspace", "full-access", "other"]);
     }
 
     /// A turn's input: the typed text, then each text file as a text

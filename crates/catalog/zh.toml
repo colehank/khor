@@ -3823,6 +3823,10 @@ chat-mode-default = "编辑前询问"
 # mode. Its own word, not a claude one: what it lets through is the
 # workspace, not a kind of act.
 chat-mode-codex-auto = "工作区内自动"
+# claude's own `auto` mode (its classifier approves what it judges safe):
+# not one this face offers, but a session can be in it, and its word must
+# not be codex's (2026-10-03, seen on a fresh claude session).
+chat-mode-claude-auto = "由 Claude 判断"
 # **The mode menu's second line**: exactly what the mode asks about and
 # what it does not, one per id (claude's four, codex's three).
 chat-mode-default-note = "改文件、运行命令前都会问"
