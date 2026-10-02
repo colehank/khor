@@ -2620,6 +2620,9 @@
     --glass-tab: 34px;
     --tab-face: 22px;
     --composer-h: 48px;
+    /* A tab's × under a finger: 32 wide by the tab's height, so a thumb
+       on the label does not close it. */
+    --tab-close: 32px;
   }
 }
 

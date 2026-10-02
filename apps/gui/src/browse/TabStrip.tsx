@@ -527,7 +527,7 @@ export function TabStrip({
                 glass
                   ? on
                     ? "max-w-tab-on flex-none glass-sel font-title text-foreground"
-                    : "max-w-tab flex-none pr-2 text-muted-foreground hover:bg-fill"
+                    : "max-w-tab flex-none text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
                     : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
@@ -706,13 +706,18 @@ export function TabStrip({
                 // `absolute` over the name's end on a patch of `--muted`,
                 // which was the × drawn on top of the word.
                 //
-                // Drawn on the open tab and under the pointer, the session
-                // rows' rule: a close on every tab at once is the strip's
-                // loudest repetition, and the open one needs it always
-                // because that is the tab a person is finished with. Not
-                // in front and not hovered, the cell keeps its width and
-                // paints nothing — so a stub never changes shape when the
-                // pointer arrives.
+                // **On every tab** (the redesign, 2026-10-02, the owner:
+                // 「那些标签页, 可以把关闭的 "x" 带上去, 不然, 一定得打开
+                // 标签才能关闭」): the front tab's in secondary ink, the
+                // others' in tertiary, taking secondary when the tab is
+                // under the pointer. A press closes that tab where it
+                // stands — it is not brought forward first, so the tab in
+                // front stays in front. ⚠️ 墓碑: drawn only on the open tab
+                // and under the pointer (the session rows' rule), which left
+                // a phone no way to close a tab without opening it. Its own
+                // target, the tab's full height and `--tab-close` wide (24
+                // under a mouse, 32 under a finger), so a thumb on the label
+                // does not close it; the label gives width before it does.
                 //
                 // **A tab with a draft keeps its mark drawn**, dot or
                 // not: the dot *is* the report that something is waiting
@@ -728,14 +733,10 @@ export function TabStrip({
                 // is the ruling's, and a finger has the switcher's close
                 // at the floor.
                 className={cn(
-                  "flex h-full w-tab-close flex-none items-center justify-center text-muted-foreground outline-none",
+                  "flex h-full w-tab-close flex-none items-center justify-center outline-none",
                   glass ? "rounded-full" : "rounded-sm",
+                  on || f.dirty ? "text-muted-foreground" : "text-tertiary group-hover:text-muted-foreground",
                   "hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50",
-                  !on &&
-                    !f.dirty &&
-                    (glass
-                      ? "hidden"
-                      : "opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"),
                 )}
                 onClick={() => onClose(f.id)}
               >
