@@ -2161,6 +2161,9 @@
   --spacing-head-item-h: var(--head-item-h);
   --spacing-head-item-w: var(--head-item-w);
   --spacing-ctl-glyph: var(--ctl-glyph);
+  --spacing-composer: var(--composer-h);
+  --spacing-composer-item: var(--composer-item);
+  --radius-composer: calc(var(--composer-h) / 2);
   --spacing-glass-item-h: var(--glass-item-h);
   --spacing-glass-item-w: var(--glass-item-w);
   --spacing-glass-pad: var(--glass-pad);
@@ -2576,6 +2579,14 @@
   --list-face: 32px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
+  /* **The conversation's input, one glass capsule** (the redesign,
+     2026-10-02, the owner after Gemini's): 44 under a mouse, 48 under a
+     finger, its ends round at its one-line height and kept at that radius
+     as lines are added (a rounded rectangle, not a growing pill). The
+     things inside it — ＋, the mode word, send or interrupt — are 12
+     shorter, 6 in from the rim. */
+  --composer-h: 44px;
+  --composer-item: calc(var(--composer-h) - 12px);
   --glass-tabs: 34px;
   --glass-tab: 28px;
   --tab-face: 16px;
@@ -2608,6 +2619,7 @@
     --glass-tabs: 40px;
     --glass-tab: 34px;
     --tab-face: 22px;
+    --composer-h: 48px;
   }
 }
 

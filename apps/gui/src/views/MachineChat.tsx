@@ -11,7 +11,6 @@ import {
   type MachineLog,
 } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
-import { IconAttach, IconChevronUp } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -19,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
 import { useCoarse } from "@/hooks/use-coarse";
+import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
@@ -199,27 +199,23 @@ export function MachineChat({ id }: { id: string }) {
           second row** (`components/SessionBar`, 2026-10-02), the agent
           conversation's arrangement. */}
       <BarSeat at="under">
-      {/* **A glass box and a round send** (the redesign, 2026-10-02): the
-          attach mark and the text in one glass capsule, the send beside
-          it as the brand's one solid circle (`brand-strong`, the
-          dialog's-one-act post). */}
+      {/* **The conversation's capsule** (`Composer`, the redesign,
+          2026-10-02): ＋ to send a file, the text, and send once there is
+          something to send. No mode and no interrupt — a note has no
+          agent on the other end. */}
       <div className="flex-none px-row pt-xxs pb-in">
-      <div className="mx-auto flex w-full max-w-measure items-end gap-in text-read">
-        <div data-chat-box className="glass flex min-h-glass-btn min-w-0 flex-1 items-end rounded-2xl ps-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          data-attach-file
-          aria-label={gui.send_file}
-          disabled={sendingFile}
-          onClick={attach}
-          className="h-glass-item-h flex-none self-end rounded-full text-muted-foreground"
+      <div className="mx-auto flex w-full max-w-measure text-read">
+        <Composer
+          lead={<PlusSeat data-attach-file aria-label={gui.send_file} disabled={sendingFile} onClick={attach} />}
+          trail={
+            // Drawn only once there is something to send (progressive
+            // disclosure: never a dimmed control).
+            draft.trim() ? <SendSeat onSend={send} disabled={sending} /> : null
+          }
         >
-          <IconAttach />
-        </Button>
         {/* The browser forms' picker: a real <input type=file>, hidden —
-            the button above is its face. Value cleared after each pick
-            so the same file twice still fires onChange. */}
+            ＋ is its face. Value cleared after each pick so the same file
+            twice still fires onChange. */}
         {!inApp && (
           <input
             ref={fileInput}
@@ -240,6 +236,7 @@ export function MachineChat({ id }: { id: string }) {
           rows={1}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
@@ -248,26 +245,9 @@ export function MachineChat({ id }: { id: string }) {
           // No size of its own, for the reason the shared box gives up
           // its own (`ui/textarea`): the size belongs to the column this
           // sits in, and a person should write in the size they read in.
-          // On the paper like the bar it sits in (2026-09-30: nothing on
-          // the board paints the frame's `background`).
-          className="min-h-0 min-w-0 flex-1 resize-none self-center bg-transparent py-1.5 pe-row outline-none"
+          className={COMPOSER_TEXT}
         />
-        </div>
-        {/* Drawn only once there is something to send (progressive
-            disclosure: never a dimmed control). */}
-        {draft.trim() && (
-        <button
-          type="button"
-          data-slot="button"
-          data-chat-send
-          aria-label={gui.send_it}
-          disabled={sending}
-          onClick={send}
-          className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-ctl-glyph"
-        >
-          <IconChevronUp />
-        </button>
-        )}
+        </Composer>
       </div>
       </div>
       </BarSeat>

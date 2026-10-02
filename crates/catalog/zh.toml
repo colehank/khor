@@ -3722,6 +3722,10 @@ close = "关闭"
 # The chat input's hint. Not a label: the box is the pane's only
 # control, and the hint says what typing here reaches.
 chat-input = "输入消息…"
+# The ＋ at the left end of the conversation's capsule, and the one
+# item its menu always has when the agent takes files.
+chat-add = "添加到对话"
+chat-attach = "添加文件…"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the
@@ -3730,12 +3734,12 @@ chat-over = "对话已结束"
 # A discovered session whose transcript could not be found or read. Not
 # chat-over: nothing ended — there is simply no record to paint.
 chat-no-record = "没有找到这段对话的记录"
-# Ends the turn that is running. 停止 is what it does to the *turn*,
+# Ends the turn that is running. 中断 is what it does to the *turn*,
 # not to the session: the agent stays, its conversation stays, and the
 # next line goes on where this one left off — which is exactly 空闲's
-# boundary with 失败. Sits beside the input because the input is what
-# it gives back.
-chat-stop = "停止"
+# boundary with 失败. In send's seat inside the capsule while a turn
+# runs (the owner, 2026-10-02: 「运行中发送改为中断按钮」).
+chat-stop = "中断"
 # In the conversation face, when the agent on the other end cannot replay
 # its own past (`session/load`). **「没有」和「拿不到」是两件事**:一段空
 # 白的对话读起来像「还没人说过话」,而实情是这个 agent 不会回放——

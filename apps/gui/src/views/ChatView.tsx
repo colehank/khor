@@ -65,17 +65,16 @@ import {
   followHistory,
   type ChatFrame,
 } from "@/api";
-import { IconBack, IconChevronUp } from "@/components/icons";
+import { IconBack } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/settings/Switch";
-import { PopupButton } from "@/components/ui/popup-button";
 import { gui } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
+import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, type AddOption } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
@@ -1179,24 +1178,32 @@ export function ChatView({
   /** How large one attached file may be, as source text. */
   const DOC_MAX = 256 * 1024;
 
-  const takeShot = async (e: React.ClipboardEvent) => {
-    // **Two capabilities on one affordance, each gating only its own
-    // kind.** An agent that takes pictures but not files must accept
-    // the picture and leave the file alone — one combined gate would
-    // make each capability answer for the other.
-    const wanted = [...e.clipboardData.items].filter((i) => i.kind === "file");
-    const pics = facts?.images
-      ? wanted.filter((i) => i.type.startsWith("image/")).map((i) => i.getAsFile())
-      : [];
-    const texts = facts?.embeds
-      ? wanted
-          .filter((i) => !i.type.startsWith("image/"))
-          .map((i) => i.getAsFile())
-          .filter((f): f is File => f !== null && looksTextual(f))
-      : [];
-    if (pics.length === 0 && texts.length === 0) return;
-    const files = pics.filter((f): f is File => f !== null);
+  /** A paste: the files on the clipboard, when the agent takes them. */
+  const takeShot = (e: React.ClipboardEvent) => {
+    const wanted = [...e.clipboardData.items]
+      .filter((i) => i.kind === "file")
+      .map((i) => i.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (takes(wanted).length === 0) return;
     e.preventDefault();
+    void takeFiles(wanted);
+  };
+
+  /**
+   * **Two capabilities on one affordance, each gating only its own
+   * kind.** An agent that takes pictures but not files must accept the
+   * picture and leave the file alone — one combined gate would make each
+   * capability answer for the other.
+   */
+  const takes = (all: File[]) =>
+    all.filter((f) => (f.type.startsWith("image/") ? !!facts?.images : !!facts?.embeds && looksTextual(f)));
+
+  /** What a paste and ＋'s picker both feed: pictures as shots, text
+      files as documents, each against its own limit. */
+  const takeFiles = async (all: File[]) => {
+    const wanted = takes(all);
+    const files = wanted.filter((f) => f.type.startsWith("image/"));
+    const texts = wanted.filter((f) => !f.type.startsWith("image/"));
     for (const f of texts) {
       if (f.size > DOC_MAX) {
         setShotErr(
@@ -1255,6 +1262,63 @@ export function ChatView({
       f.name,
     );
   };
+
+  /** ＋'s picker takes what a paste takes (`takes`): pictures where the
+      agent takes images, readable text where it takes embedded files. */
+  const picker = useRef<HTMLInputElement>(null);
+  const attachable = !!facts?.images || !!facts?.embeds;
+  const accepts = [
+    facts?.images ? "image/*" : "",
+    facts?.embeds
+      ? "text/*,application/json,application/xml,application/x-yaml,.rs,.ts,.tsx,.js,.mjs,.jsx,.py,.go,.java,.rb,.sh,.zsh,.toml,.yaml,.yml,.json,.md,.txt,.css,.html,.sql,.c,.h,.cpp,.hpp,.swift,.kt"
+      : "",
+  ]
+    .filter(Boolean)
+    .join(",");
+  /** The agent's own settings, in its own words, for ＋'s menu. The
+      change is asked of the host and the control follows the answer
+      (`settings` frame), never its own press. */
+  const addOptions: AddOption[] = (settings?.options ?? []).map((o) =>
+    o.type === "boolean"
+      ? {
+          kind: "switch",
+          id: o.id,
+          name: o.name,
+          note: o.description ?? null,
+          on: o.currentValue === true,
+          onToggle: () => void chatSetOption(id, o.id, o.currentValue !== true).catch(() => {}),
+        }
+      : {
+          kind: "values",
+          id: o.id,
+          name: o.name,
+          note: o.description ?? null,
+          current: String(o.currentValue ?? ""),
+          values: valuesOf(o).map((v) => ({
+            value: v.value.value,
+            name: v.value.name,
+            note: v.value.description ?? null,
+            heading: v.heading,
+          })),
+          onPick: (v) => void chatSetOption(id, o.id, v).catch(() => {}),
+        },
+  );
+  /** The mode: a menu where the agent offers modes; the word alone where
+      it only reports one that is not the ordinary one; nothing else. */
+  const modeSeat = settings?.modes ? (
+    <ModeSeat
+      current={settings.modes.currentModeId}
+      word={modeWord(settings.modes.currentModeId, settings.modes.availableModes)}
+      choices={settings.modes.availableModes.map((m) => ({
+        id: m.id,
+        name: modeWord(m.id, settings.modes?.availableModes ?? []),
+        note: m.description ?? null,
+      }))}
+      onPick={(v) => void chatSetMode(id, v).catch(() => {})}
+    />
+  ) : mode !== null && modeSaid(mode) !== null ? (
+    <ModeSeat current={mode} word={modeSaid(mode) ?? mode} />
+  ) : null;
 
   const say = () => {
     const line = text.trim();
@@ -1722,98 +1786,11 @@ export function ChatView({
             Beside the context reading and for the same reason: both are
             things a person checks before typing, and neither is worth a
             row of its own. */}
-        {/* **What can be set, as controls, above the box.** The mode
-            menu first because it is the one that changes what the agent
-            will *do*; then whatever else the agent listed, a select
-            each or a switch, in the agent's own words — khor names the
-            four modes it knows and nothing else. Nothing is drawn for
-            an agent that listed nothing, which is most of them. The
-            change is asked of the host and the control follows the
-            answer (`settings` frame), never its own press. */}
-        {settings && (settings.modes || settings.options.length > 0) && (
-          <div
-            data-chat-settings
-            className="flex flex-wrap items-center justify-end gap-x-row gap-y-1 px-2 pb-1 text-callout"
-          >
-            {/* **A choice among values is a popup button** (components/
-                PopupButton, 2026-09-28): the system's menu, never a menu
-                of our own drawing. They were Radix dropdowns with radio
-                items — a hand-drawn menu standing in for 「pick one」.
-                The mode's own description rides on its menu item and
-                on the button's tooltip, which is what a native menu can
-                carry. Not a segmented control, because the list is the
-                agent's and it grows. */}
-            {settings.modes && (
-              <PopupButton
-                label={gui.chat_mode}
-                value={settings.modes.currentModeId}
-                choices={settings.modes.availableModes.map((m) => ({
-                  value: m.id,
-                  label: modeWord(m.id, settings.modes?.availableModes ?? []),
-                  note: m.description ?? undefined,
-                  mark: { "data-mode-option": m.id },
-                }))}
-                onPick={(v) => void chatSetMode(id, v).catch(() => {})}
-                mark={{ "data-chat-mode-menu": "", "data-mode-id": settings.modes.currentModeId }}
-                // The mode's ink, as the marker wears it: anything but
-                // the ordinary mode is 「something is different here」.
-                className={settings.modes.currentModeId === "default" ? undefined : "text-state-blocked"}
-              />
-            )}
-            {settings.options.map((o) =>
-              o.type === "boolean" ? (
-                // **A genuine on/off, so the one Switch look**
-                // (components/Switch): the agent's own name for it beside
-                // the switch, the switch itself carrying no words. It was
-                // a bordered chip that turned olive-ringed when on — a
-                // second drawing of on/off that only this row had.
-                <span key={o.id} title={o.description ?? undefined} className="flex items-center gap-xxs">
-                  <span className="text-muted-foreground">{o.name}</span>
-                  <Switch
-                    on={o.currentValue === true}
-                    label={o.name}
-                    onToggle={() => void chatSetOption(id, o.id, o.currentValue !== true).catch(() => {})}
-                    mark={{ "data-chat-option": o.id }}
-                    className="-my-3"
-                  />
-                </span>
-              ) : (
-                // The agent's name for it beside the button, the way the
-                // switch wears its own; the values and their headings
-                // (a group per heading) are the system menu's.
-                <span key={o.id} title={o.description ?? undefined} className="flex items-center gap-xxs">
-                  <span className="text-muted-foreground">{o.name}</span>
-                  <PopupButton
-                    label={o.name}
-                    value={String(o.currentValue ?? "")}
-                    choices={valuesOf(o).map((v) => ({
-                      value: v.value.value,
-                      label: v.value.name,
-                      note: v.value.description ?? undefined,
-                      group: v.heading ?? undefined,
-                      mark: { "data-option-value": v.value.value },
-                    }))}
-                    onPick={(v) => void chatSetOption(id, o.id, v).catch(() => {})}
-                    mark={{ "data-chat-option": o.id, "data-value": String(o.currentValue ?? "") }}
-                  />
-                </span>
-              ),
-            )}
-          </div>
-        )}
-        {/* The marker, only without the menu: with a menu above it the
-            same word would be drawn twice, and the menu already wears
-            the mode's ink. */}
-        {!settings?.modes && mode !== null && modeSaid(mode) !== null && (
-          <div
-            data-chat-mode
-            data-mode-id={mode}
-            className="flex justify-end px-2 pb-1 text-caption"
-            style={{ color: "var(--state-blocked)" }}
-          >
-            {modeSaid(mode)}
-          </div>
-        )}
+        {/* ⚠️ 墓碑 (the redesign, 2026-10-02): a row above the box held the
+            mode's popup button and the agent's other settings, and a
+            marker said the mode when it could not be changed. The mode
+            is a word inside the capsule now (`ModeSeat`), and the other
+            settings are in ＋'s menu (`AddSeat`). */}
         {usage && (
           <div
             data-chat-usage
@@ -1896,7 +1873,7 @@ export function ChatView({
               )}
             </div>
           )}
-          <div className="relative flex items-end gap-2">
+          <div className="relative flex items-end">
             {/* The agent's own commands, above the box that will carry
                 them. Absolute so opening it does not push the
                 conversation up — a list that moves the text you are
@@ -1937,16 +1914,52 @@ export function ChatView({
                 ))}
               </div>
             )}
+            {/* ＋'s picker: the kinds a paste takes, into the same path. */}
+            {attachable && (
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                data-chat-file-input
+                accept={accepts}
+                onChange={(e) => {
+                  const list = [...(e.target.files ?? [])];
+                  e.target.value = "";
+                  void takeFiles(list);
+                }}
+              />
+            )}
+            <Composer
+              lead={<AddSeat onAttach={attachable ? () => picker.current?.click() : undefined} options={addOptions} />}
+              trail={
+                <>
+                  {modeSeat}
+                  {/* Send only while there is something to send and the
+                      agent can take it; during a turn the interrupt
+                      stands in its seat. At rest with an empty box,
+                      neither: the mode is the capsule's last thing. */}
+                  {!inTurn && text.trim() && <SendSeat onSend={say} />}
+                  {inTurn && (
+                    <StopSeat
+                      tip={!coarse}
+                      onStop={() => {
+                        // The turn's own ending is what clears the box:
+                        // this asks, the host answers with a `Turn` frame
+                        // like any other ending. Painting it stopped here
+                        // would be a guess about somebody else's process.
+                        chatStop(id).catch(() => {});
+                      }}
+                    />
+                  )}
+                </>
+              }
+            >
             {/* The box is never closed while the conversation is alive.
                 It used to be `disabled` for the length of a turn, which
                 threw away the one thing there is to do while waiting:
                 write the next line. What a running turn takes away is
-                the *sending*, and the control beside it says so by being
-                unpressable — a disabled box says the same thing about
-                the wrong half. */}
-            {/* The glass is on a wrapper: a textarea draws no pseudo-element,
-                and the glass's rim is one (`app.css` `.glass::before`). */}
-            <div data-chat-box className="glass flex min-h-glass-btn min-w-0 flex-1 rounded-2xl">
+                the *sending*. */}
             <Textarea
               ref={box}
               data-chat-input
@@ -2000,45 +2013,9 @@ export function ChatView({
                   say();
                 }
               }}
-              // A glass box beside a round send (the redesign, 2026-10-02):
-              // the box itself is clear, on the glass of its wrapper.
-              className="min-h-glass-btn min-w-0 flex-1 rounded-2xl border-0 bg-transparent"
+              className={COMPOSER_TEXT}
             />
-            </div>
-            {/* Sending has a control of its own now that Enter is no
-                longer the only way to reach it — a box you can type into
-                during a turn needs somewhere to show that the sending is
-                the part that is unavailable. */}
-            {/* Only while there is something to send and the agent can
-                take it; during a turn the stop stands here instead. */}
-            {!inTurn && text.trim() && (
-            <button
-              type="button"
-              data-slot="button"
-              data-chat-send
-              aria-label={gui.send_it}
-              onClick={say}
-              className="grid size-glass-btn flex-none place-items-center rounded-full bg-brand-strong text-on-brand disabled:opacity-40 [&_svg]:size-ctl-glyph"
-            >
-              <IconChevronUp />
-            </button>
-            )}
-            {inTurn && (
-              <Button
-                size="sm"
-                variant="secondary"
-                data-chat-stop
-                onClick={() => {
-                  // The turn's own ending is what clears the box: this
-                  // asks, the host answers with a `Turn` frame like any
-                  // other ending. Painting it stopped here would be a
-                  // guess about somebody else's process.
-                  chatStop(id).catch(() => {});
-                }}
-              >
-                {gui.chat_stop}
-              </Button>
-            )}
+            </Composer>
           </div>
           </>
         )}
