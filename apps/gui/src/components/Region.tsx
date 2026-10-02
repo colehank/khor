@@ -276,7 +276,11 @@ export function PageHead({
             />
           )}
         </div>
-        {subRef && <div ref={subRef} data-page-subtitle className="flex min-w-0 empty:hidden" />}
+        {/* **The second line keeps its room when it is empty** (the audit
+            fix plan F4.9; W21): a page with no subtitle has its name on
+            the same line as one with — the name dropped 6 when the line
+            went. */}
+        {subRef && <div ref={subRef} data-page-subtitle className="flex min-h-(--text-caption--line-height) min-w-0" />}
       </div>
       </div>
       {caption && (

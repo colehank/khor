@@ -26,6 +26,8 @@ import { EmptyState } from "@/components/RegionState";
 import { fetchLs, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
+import { IconBack, IconChevronRight, IconFiles } from "@/components/icons";
+import { useNarrow } from "@/hooks/use-narrow";
 import { RowMenu } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -161,6 +163,7 @@ export function FilesPane({
   }, [machine, path, again]);
 
 
+  const narrow = useNarrow();
   const up = () => {
     if (!listing) return;
     onPath(listing.path.slice(0, listing.path.lastIndexOf("/")) || "/");
@@ -216,9 +219,18 @@ export function FilesPane({
                 // raising, and the wash it lights up with is painted on
                 // the row itself — grown, the lit box and the pressable
                 // box stay the same box.
-                className="flex min-h-touch w-full items-center gap-2 border-b px-4 py-2 text-left text-callout text-muted-foreground hover:bg-muted/50"
+                // **Where this is, in 上一级's place** (the audit fix plan
+                // F4.2; N08, W16): the way up is a ‹ before the current
+                // directory's name, so the listing says which directory
+                // it is; 上一级 is the button's name.
+                aria-label={gui.up_dir}
+                title={listing.path}
+                className="flex min-h-touch w-full items-center gap-2 border-b px-4 text-left text-callout text-muted-foreground hover:bg-muted/50"
               >
-                {gui.up_dir}
+                <IconBack className="size-affordance flex-none" />
+                <span data-files-here className="min-w-0 truncate font-label text-foreground">
+                  {listing.path.split("/").filter(Boolean).pop() ?? listing.path}
+                </span>
               </button>
             )}
             {listing.entries.length === 0 && (
@@ -245,8 +257,10 @@ export function FilesPane({
                   // other way to line these up is to give the file row a
                   // hole the size of a pin, and that is worse than the
                   // wobble: it is blank space defended by a rule.
+                  // One row height and one hairline with the files under
+                  // it (F4.2; W16).
                   className={cn(
-                    "group flex items-center pr-4 hover:bg-muted/50",
+                    "group flex min-h-touch items-center border-b pr-4 hover:bg-muted/50",
                     faded && "text-muted-foreground",
                   )}
                 >
@@ -271,10 +285,14 @@ export function FilesPane({
                     // half its old height inside a taller stripe that
                     // lights up. The hover wash is the row's, and the
                     // row is exactly as tall as this.
-                    className="flex min-h-touch min-w-0 flex-1 items-center gap-2 px-4 py-2 text-left text-callout"
+                    className="flex min-h-touch min-w-0 flex-1 items-center gap-2 self-stretch px-4 text-left text-callout"
                   >
-                    <span className="min-w-0 flex-1 truncate">{e.name}/</span>
+                    {/* **A folder has its glyph** (F4.2; N08, W16), so every
+                        name in the listing starts on one x. */}
+                    <IconFiles className="size-5 flex-none text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{e.name}</span>
                     <Mark mark={marks?.get(full)} dir />
+                    {narrow && <IconChevronRight className="size-affordance flex-none text-tertiary" />}
                   </button>
                   </RowMenu>
                   {/* ⚠️ 墓碑: a pin button stood here, writing 「置顶的目录」
@@ -304,8 +322,11 @@ export function FilesPane({
                   // down and only after a press, which is the harder
                   // version of the same bug to see.
                   className={cn(
-                    "group flex min-h-touch items-center gap-3 px-4 text-callout",
+                    "group flex min-h-touch items-center gap-3 border-b px-4 text-callout",
                     faded && "text-muted-foreground",
+                    // The open file wears the list's chosen block (F4.2;
+                    // W16), not bold.
+                    open === full && "rounded-md border-transparent bg-fill-strong text-foreground",
                   )}
                 >
                   {/* **The name is the way in now** (工作区批2). It
@@ -330,7 +351,7 @@ export function FilesPane({
                     // stop being true because somebody is reading it.
                     className={cn(
                       "flex min-w-0 flex-1 items-center gap-2 self-stretch text-left",
-                      open === full && "font-title text-foreground",
+                      open === full && "text-foreground",
                       markInk(marks?.get(full)),
                     )}
                   >

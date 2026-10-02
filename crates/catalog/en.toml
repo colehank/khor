@@ -1442,6 +1442,8 @@ card-faces = "Interfaces"
 new-session-dir = "Directory"
 dir-path-hint = "Directory path"
 new-session-name = "Name"
+# The name box's placeholder: an empty name is named for you.
+new-session-name-hint = "Optional"
 new-session-agent = "Agent"
 # "Kind" rather than "Type" — the Chinese source deliberately avoids 类型
 # here because quota-kind already owns that word; keeping "Kind" distinct
@@ -1747,6 +1749,12 @@ need-text = "Write something first"
 need-pick = "Choose what to import first"
 need-ticket = "Paste a pairing ticket first"
 need-relay = "Enter a relay address first"
+# 安全's group over 重置身份.
+identity-section = "Identity"
+# A machine's files with none open: the empty side says what it is for.
+files-pick = "Choose a file"
+# Under a machine's top processes: the rest of them.
+top-show-all = "Show all {0}"
 axis-connection = "Connection"
 axis-system = "System"
 system-apple = "macOS"

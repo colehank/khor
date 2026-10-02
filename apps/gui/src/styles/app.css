@@ -492,17 +492,21 @@ aside[data-side] {
  * (the shell swaps them, `App`), and faking an exit would mean keeping
  * a dead pane mounted — on this pane that means a live terminal or a
  * chat attachment held open to be looked at while it slides away. */
+/* **No empty frame** (the audit fix plan F4.12; N24): the arriving
+   screen starts half there, not at nothing — at 0 the first frames were
+   the bare ground. The two pages moving together is the edge swipe's
+   (F7.3). */
 @keyframes screen-in-from-right {
   from {
     transform: translateX(4%);
-    opacity: 0;
+    opacity: 0.5;
   }
 }
 
 @keyframes screen-in-from-left {
   from {
     transform: translateX(-4%);
-    opacity: 0;
+    opacity: 0.5;
   }
 }
 
@@ -1086,9 +1090,8 @@ aside[data-side] {
    each row becomes three lines of its own — identity, then the command
    line, then the quantities. Same reasoning as the drawer's rows, and
    the same mechanism: the table's own width decides, not the window's. */
-[data-load-top-box][data-tight] {
-  max-height: var(--top-h-tight);
-}
+/* ⚠️ 墓碑 (F4.3): the tight table had a height of its own to scroll in;
+   it flows in the page now, the top rows and 显示全部. */
 [data-tight] > [data-load-top] {
   display: block;
 }
@@ -1108,19 +1111,27 @@ aside[data-side] {
   padding-block: calc(var(--gap-in) / 2);
   border-block-start: var(--hair) solid var(--border);
 }
-[data-tight] > [data-load-top] [data-top-row] > [data-c="pid"] {
-  flex: 0 0 var(--cw-pid);
+/* **Two lines a row** (the audit fix plan F4.3; N06): the command, then
+   the quantities with their units in columns — CPU, GPU, memory, card
+   memory, each one fixed width and right-aligned, tabular, so they line
+   up down the list. The identifiers and the times stay in the wide
+   table; a phone row that wrapped them was three lines of numbers with
+   no head. */
+[data-tight] > [data-load-top] [data-top-row] > :is([data-c="pid"], [data-c="status"], [data-c="user"], [data-c="time"], [data-c="cputime"], [data-c="io"]) {
+  display: none;
 }
 [data-tight] > [data-load-top] [data-top-row] > [data-c="cmd"] {
   flex: 1 0 100%;
+  order: -1;
 }
-[data-tight] > [data-load-top] [data-top-row] > [data-c="time"],
-[data-tight] > [data-load-top] [data-top-row] > [data-c="cpu"],
-[data-tight] > [data-load-top] [data-top-row] > [data-c="gpu"],
-[data-tight] > [data-load-top] [data-top-row] > [data-c="vram"],
-[data-tight] > [data-load-top] [data-top-row] > [data-c="mem"] {
-  flex: 0 0 auto;
-  text-align: left;
+[data-tight] > [data-load-top] [data-top-row] > :is([data-c="cpu"], [data-c="gpu"], [data-c="vram"], [data-c="mem"]) {
+  flex: 0 0 5.5em;
+  text-align: right;
+}
+/* Wide: a gutter before 命令, so a right-aligned number never runs into
+   the command beside it (F4.3; W15). */
+:not([data-tight]) > [data-load-top] :is([data-c="cmd"], [data-top-head="cmd"]) {
+  padding-inline-start: var(--gap-group);
 }
 /* An empty quantity takes no room narrow: a machine with no cards would
    otherwise carry two invisible gaps on every row. */
@@ -1352,8 +1363,24 @@ aside[data-side] {
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
-[data-settings-card] > :not([data-setting-row]) {
+[data-settings-card] > :not([data-setting-row], [data-nav-order]) {
   padding: var(--gap-in) var(--gap-row);
+}
+/* 外观's navigation rows are rows of the card: inset like its rows, and
+   their hairlines the card's — from the words to the card's edge
+   (the audit fix plan F4.9; W21). */
+[data-nav-order-row] {
+  position: relative;
+  padding-inline: var(--gap-row);
+}
+[data-nav-order] > * + * [data-nav-order-row]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: var(--gap-row);
+  right: 0;
+  height: var(--hair);
+  background: var(--border);
 }
 /* **One height for every one-line row, whatever it holds**: a control
    (`ctl-md`) and the row's padding above and below it. A switch, a fact
@@ -1580,6 +1607,48 @@ aside[data-side] {
 [data-side-row]:has([data-side-open][data-state="open"]) {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* **A form on the narrow face is one column** (the audit fix plan F4.5;
+   N12): each question's label over its control, every control on the
+   same left edge. */
+:root[data-narrow] [data-form-grid] {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: var(--gap-xxs);
+}
+:root[data-narrow] [data-form-grid] > * {
+  grid-column: 1 / -1;
+  text-align: start;
+}
+
+/* Notes under settings rows keep their last line from being one word
+   (F4.9; N23), and the digits a page lines up are tabular (SYS-14). */
+[data-setting-note] {
+  text-wrap: pretty;
+}
+:is([data-setting-trail], [data-setting-value], [data-more-fact], dd, [data-day-band-axis] text, .dayblk text) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* **A page scrolled under its head fades into it** (the audit fix plan
+   F4.11; N21) instead of being cut mid-glyph: 20 of mask at the top of
+   a scroller that is not at its top (`lib/scroll-edge`). */
+[data-nav-clear][data-scrolled] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 20px);
+  mask-image: linear-gradient(to bottom, transparent, #000 20px);
+}
+/* The terminal on a phone: even margins of 8, and no scrollbar taking a
+   width on the right (F4.10; N18) — a finger scrolls it. */
+@media (pointer: coarse) {
+  [data-terminal] {
+    padding-inline: 8px;
+  }
+  [data-terminal] .xterm-viewport {
+    scrollbar-width: none;
+  }
+  [data-terminal] .xterm-viewport::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* What a list's search matched, in its rows (F3.4; `SideList`). */

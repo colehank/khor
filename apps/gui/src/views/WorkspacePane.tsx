@@ -1086,10 +1086,16 @@ export function WorkspacePane({
         face: null,
         path,
         machine,
-        // Relative to the workspace root, which is the half that tells
-        // two tabs called `mod.rs` apart. The absolute path is the
-        // hover title's, and both are on the menu.
-        sub: under(root, path),
+        // **Where it is, not its name again** (the audit fix plan F4.7;
+        // W17): the folder it sits in, relative to the workspace root —
+        // the half that tells two tabs called `mod.rs` apart — or the
+        // workspace's own name for a file at its root. The absolute path
+        // is the hover title's, and both are on the menu.
+        sub: (() => {
+          const rel = under(root, path);
+          const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
+          return dir || basename(root) || rel;
+        })(),
         // What the open file has left to whisper — today, a diff that
         // stopped short (第十四轮 第 2 条). Only the front tab has a
         // view to report it, so only the front tab wears it.
@@ -1296,7 +1302,7 @@ export function WorkspacePane({
             </span>
           </span>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="break-all">
+        <TooltipContent side="bottom" className="[overflow-wrap:anywhere]">
           {where}
         </TooltipContent>
       </Tooltip>

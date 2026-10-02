@@ -112,7 +112,7 @@ export function IdentityPage({
           <MoreFact name="name" label={gui.machine_name}>
             <span data-identity-name className="inline-flex max-w-full items-center gap-in align-middle">
               <MachineAvatar face={me.face} className="size-kind-mark flex-none" />
-              <span className="min-w-0 break-all">{me.shown}</span>
+              <span className="min-w-0 [overflow-wrap:anywhere]">{me.shown}</span>
             </span>
           </MoreFact>
         )}

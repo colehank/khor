@@ -578,7 +578,8 @@ export function FileTree({
                   // weight stays: two marks of one state cost nothing
                   // and the row is legible without colour.
                   className={cn(
-                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout",
+                    // Round like every list's chosen block (F4.7; W17).
+                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 rounded-md pr-3 text-callout",
                     open === r.full ? "bg-fill-strong" : "hover:bg-fill",
                     faded && "text-muted-foreground",
                   )}

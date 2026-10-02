@@ -69,6 +69,39 @@ function Row({
       />
     );
   }
+  // **A long run of numbers is a stepper** (the audit fix plan F4.9;
+  // W21: 标签页上限 was a picker of 47): − and ＋ walk the node's own
+  // choices, in their order, and the value stands between them.
+  // (One word among them — 「关」 — is a step too, at its end.)
+  const numeric = row.choices.length > 12 && row.choices.filter((c) => !/^-?\d+$/.test(c.value)).length <= 1;
+  if (numeric) {
+    const at = row.choices.findIndex((c) => c.value === row.value);
+    const go = (by: number) => {
+      const next = row.choices[Math.min(row.choices.length - 1, Math.max(0, at + by))];
+      if (next && next.value !== row.value) onPick(row.name, next.value);
+    };
+    return (
+      <div data-setting-row="stepper" data-setting-row-name={row.name} {...mark} className="flex items-center gap-row px-row py-in">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="text-body">{row.label}</span>
+          {row.note && <span data-setting-note className="text-callout text-muted-foreground">{row.note}</span>}
+        </div>
+        <div data-setting-trail className="flex flex-none items-center gap-xxs rounded-full bg-fill p-0.5">
+          {at > 0 && (
+            <button type="button" data-step="down" aria-label={`${row.label} −`} onClick={() => go(-1)} className="grid h-[calc(var(--ctl-md)-4px)] w-8 place-items-center rounded-full text-body hover:bg-fill-strong">
+              −
+            </button>
+          )}
+          <span className="min-w-[3ch] text-center text-body tabular-nums">{row.choices[at]?.label ?? row.value}</span>
+          {at < row.choices.length - 1 && (
+            <button type="button" data-step="up" aria-label={`${row.label} +`} onClick={() => go(1)} className="grid h-[calc(var(--ctl-md)-4px)] w-8 place-items-center rounded-full text-body hover:bg-fill-strong">
+              +
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <PopupRow
       name={row.name}

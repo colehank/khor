@@ -103,8 +103,14 @@ function DialogContent({
           // it wears what floats**, never the board's `card` (⚠️ 墓碑
           // 2026-09-28: on the dark theme `card` *is* the board, and a form
           // on it sat flush, the same colour — `check-face` 4I).
-          "fixed top-1/2 left-1/2 z-50 grid max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
-          form ? "w-[32rem]" : "w-dialog",
+          "fixed left-1/2 z-50 grid max-w-[calc(100%-2rem)] -translate-x-1/2 gap-row rounded-lg border bg-popover p-pane shadow-(--shadow-float) outline-none",
+          // **A form does not re-centre as it changes** (the audit fix plan
+          // F4.5; N12): its top stays put and it grows downward in a
+          // window; on the narrow face it stands on the bottom and grows
+          // up, where the thumb is. A question stays centred.
+          form
+            ? "top-[16vh] w-[32rem] [[data-narrow]_&]:top-auto [[data-narrow]_&]:bottom-[calc(var(--safe-bottom)+1rem)]"
+            : "top-1/2 w-dialog -translate-y-1/2",
           "duration-[var(--dur-180)] ease-[var(--ease-out)]",
           "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,

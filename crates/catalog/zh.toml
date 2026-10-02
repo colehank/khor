@@ -2632,6 +2632,8 @@ new-session-dir = "目录"
 # 推荐」 — no places listed under it, completions only once typing starts.
 dir-path-hint = "目录路径"
 new-session-name = "名称"
+# The name box's placeholder: an empty name is named for you.
+new-session-name-hint = "可不填"
 new-session-agent = "智能体"
 # The wizard's second step (2026-09-06:「点击后就是选机器、选类型(这就包括留言、
 # 智能体、shell)、起名字、定目录」). Three kinds and no fourth: 留言 wears
@@ -3445,6 +3447,12 @@ need-text = "先写下要说的话"
 need-pick = "先选择要导入的会话"
 need-ticket = "先粘贴配对票"
 need-relay = "先填写中继地址"
+# 安全's group over 重置身份.
+identity-section = "身份"
+# A machine's files with none open: the empty side says what it is for.
+files-pick = "选择一个文件"
+# Under a machine's top processes: the rest of them.
+top-show-all = "显示全部 {0} 个"
 # 机器栏、工作区栏的筛选(2026-09-29,负责人:「所有的session list应该都可以
 # filter吧？」)。和会话、额度两栏同一套:轴名是小标题,值是行上印着的事实。
 #

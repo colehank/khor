@@ -11,6 +11,7 @@ import { followWindowKey } from "./lib/window-key";
 import { followVisualViewport } from "./lib/viewport";
 import { wearTypeSize } from "./lib/type-size";
 import { followModality } from "./lib/modality";
+import { followScrollEdge } from "./lib/scroll-edge";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -53,6 +54,9 @@ wearTypeSize();
 
 // The focus ring is the keyboard's (`lib/modality`).
 followModality();
+
+// A page scrolled under its head fades into it (`lib/scroll-edge`).
+followScrollEdge();
 
 // The keyless screen this file used to paint is the server's job now
 // (记住一次批): the page itself sits behind the key, so a browser with

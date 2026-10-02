@@ -108,6 +108,20 @@ export function PageField({
   );
 
   const open = machine !== null && at !== "";
+  /** **One machine to go through is not a choice** (the audit fix plan
+      F4.6; N22): the face is shown, not offered, and nothing opens. */
+  const only = reachable(devices).length <= 1;
+  /** Whether the caret is in the address: the whole address then; at
+      rest, the host first (Safari's), cut with an ellipsis. */
+  const [typing, setTyping] = useState(false);
+  const host = (() => {
+    try {
+      const u = new URL(at);
+      return u.host + (u.pathname === "/" ? "" : u.pathname);
+    } catch {
+      return at;
+    }
+  })();
   return (
     <div data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
       {open && (
@@ -128,20 +142,36 @@ export function PageField({
       <DropdownMenu open={picking} onOpenChange={setPicking}>
         {machine === null ? (
           // No machine yet: the whole field is the way to choose one, and
-          // there is no caret to type into.
-          <DropdownMenuTrigger asChild>
+          // there is no caret to type into. With one machine there is
+          // nothing to choose: the press takes it.
+          only ? (
             <button
               type="button"
               data-page-field
               data-page-field-empty
+              onClick={() => {
+                const d = reachable(devices)[0];
+                if (d) choose(d);
+              }}
               className="glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full px-row text-left text-body text-tertiary"
             >
               {gui.page_choose_machine}
             </button>
-          </DropdownMenuTrigger>
+          ) : (
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-page-field
+                data-page-field-empty
+                className="glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full px-row text-left text-body text-tertiary"
+              >
+                {gui.page_choose_machine}
+              </button>
+            </DropdownMenuTrigger>
+          )
         ) : (
           <label data-page-field className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-row">
-            {fixed ? (
+            {fixed || only ? (
               <span data-page-machine-face className="grid size-glass-item-h flex-none place-items-center">
                 <MachineAvatar face={machine.face} className="size-tab-face" />
               </span>
@@ -164,10 +194,14 @@ export function PageField({
               data-page-address
               aria-label={gui.address_page}
               placeholder={gui.page_address}
-              value={draft}
-              onFocus={() => (editing.current = true)}
+              value={typing ? draft : host}
+              onFocus={() => {
+                editing.current = true;
+                setTyping(true);
+              }}
               onBlur={() => {
                 editing.current = false;
+                setTyping(false);
                 setDraft(at);
               }}
               onChange={(e) => setDraft(e.target.value)}
@@ -184,7 +218,7 @@ export function PageField({
                   input.current?.blur();
                 }
               }}
-              className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary"
+              className="min-w-0 flex-1 truncate bg-transparent text-body outline-none placeholder:text-tertiary"
             />
           </label>
         )}

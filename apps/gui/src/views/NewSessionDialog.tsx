@@ -660,6 +660,7 @@ export function NewSessionDialog({
               <Input
                 id="khor-new-session-name"
                 data-new-session-name
+                placeholder={gui.new_session_name_hint}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && create()}

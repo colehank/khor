@@ -78,7 +78,7 @@ export function ActionRow({
         <span
           data-setting-value
           className={cn(
-            "min-w-0 flex-1 break-all text-right text-body text-muted-foreground",
+            "min-w-0 flex-1 [overflow-wrap:anywhere] text-right text-body text-muted-foreground",
           )}
         >
           {value}

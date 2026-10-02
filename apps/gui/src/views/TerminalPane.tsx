@@ -64,8 +64,8 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
+import { GlassItem } from "@/components/Glass";
 import { IconChevronDown, IconChevronUp, IconClose } from "@/components/icons";
-import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -98,17 +98,21 @@ const SCROLLBACK = 2000;
     a flash; a flash that stays is a border, and a border says nothing. */
 const BELL_MS = 160;
 
-/** Where the search paints what it found: the terminal's own yellow,
-    thinned for every match and solid under the one the search stands
-    on. Terminal colours rather than app tokens, the same rule as
-    `ANSI16` — these sit on top of program output, whose colours are
-    the terminal's. */
-const FOUND = {
-  matchBackground: "#c4a00055",
-  matchOverviewRuler: "#c4a000",
-  activeMatchBackground: "#c4a000bb",
-  activeMatchColorOverviewRuler: "#c4a000",
-};
+/** Where the search paints what it found: **the accent's tint**, thin
+    for every match and strong under the one the search stands on (the
+    audit fix plan F4.8; W18) — read off the theme when the search runs,
+    since xterm takes colours, not variables. ⚠️ 墓碑: the terminal's own
+    yellow, a third accent beside the olive and the pink. */
+function found() {
+  const brand = getComputedStyle(document.documentElement).getPropertyValue("--brand-strong").trim() || "#99bb36";
+  const hex = /^#[0-9a-f]{6}$/i.test(brand) ? brand : "#99bb36";
+  return {
+    matchBackground: `${hex}44`,
+    matchOverviewRuler: hex,
+    activeMatchBackground: `${hex}aa`,
+    activeMatchColorOverviewRuler: hex,
+  };
+}
 
 /** The key that opens the search: ⌘F on a Mac. Elsewhere ⌃⇧F, because
     ⌃F is a byte a shell wants (readline's forward-char) and stealing
@@ -682,13 +686,13 @@ export function TerminalPane({ id }: { id: string }) {
       setHits(null);
       return;
     }
-    s.findNext(q, { incremental: true, decorations: FOUND });
+    s.findNext(q, { incremental: true, decorations: found() });
   };
   const step = (dir: 1 | -1) => {
     const s = searchRef.current;
     if (!s || !query) return;
-    if (dir > 0) s.findNext(query, { decorations: FOUND });
-    else s.findPrevious(query, { decorations: FOUND });
+    if (dir > 0) s.findNext(query, { decorations: found() });
+    else s.findPrevious(query, { decorations: found() });
   };
   const stopFinding = () => {
     searchRef.current?.clearDecorations();
@@ -701,10 +705,52 @@ export function TerminalPane({ id }: { id: string }) {
   // lists' own 没有匹配的 for none, "3 / 12" otherwise. Past the
   // highlight limit the addon stops counting and says -1; the place
   // still means something, the total does not.
-  const hitsText = !query || !hits ? "" : hits.of === 0 ? gui.no_matches : hits.of < 0 ? `${hits.at + 1}` : `${hits.at + 1} / ${hits.of}`;
+  // Visible from the start (F4.8; W18): 「0」 before a word is typed.
+  const hitsText = !query || !hits ? "0" : hits.of === 0 ? gui.no_matches : hits.of < 0 ? `${hits.at + 1}` : `${hits.at + 1} / ${hits.of}`;
 
   return (
     <>
+    {/* **The find bar is a row of its own above the screen** (the audit
+        fix plan F4.8; W18): a glass capsule at the head controls' height,
+        pushing the terminal down rather than lying over the lines it
+        found — Safari's and Terminal's arrangement. A field, the count,
+        the two steps, the way out. ⚠️ 墓碑: an opaque card over the
+        screen's top-right corner. */}
+    {finding && (
+      <div data-term-find-row className="flex flex-none justify-end px-row pt-[var(--day-over)] pb-xxs">
+        <div data-term-find className="glass flex h-glass-btn min-w-0 items-center gap-1 rounded-full ps-3 pe-glass-pad">
+          <input
+            data-term-find-input
+            autoFocus
+            value={query}
+            placeholder={gui.search_terminal}
+            onChange={(e) => look(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                stopFinding();
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                step(e.shiftKey ? -1 : 1);
+              }
+            }}
+            className="min-w-0 w-48 bg-transparent text-callout outline-none placeholder:text-tertiary"
+          />
+          <span data-term-find-hits className="min-w-12 text-right text-caption tabular-nums text-muted-foreground">
+            {hitsText}
+          </span>
+          <GlassItem data-term-find-prev aria-label={gui.match_prev} onClick={() => step(-1)}>
+            <IconChevronUp className="size-affordance" />
+          </GlassItem>
+          <GlassItem data-term-find-next aria-label={gui.match_next} onClick={() => step(1)}>
+            <IconChevronDown className="size-affordance" />
+          </GlassItem>
+          <GlassItem data-term-find-close aria-label={gui.close} onClick={stopFinding}>
+            <IconClose className="size-affordance" />
+          </GlassItem>
+        </div>
+      </div>
+    )}
     <div
       data-terminal
       data-term-bell={rang}
@@ -740,49 +786,6 @@ export function TerminalPane({ id }: { id: string }) {
       {/* xterm's mount. Everything inside is the renderer's own — the
           gates read the buffer through `__xterm`, not this subtree. */}
       <div data-term-screen ref={mountRef} className="h-full w-full" />
-      {/* The search bar, over the top-right corner of the screen. A
-          field, the count, the two steps, the way out — the shape every
-          find bar has, because a person arriving here has used one. */}
-      {finding && (
-        <div
-          data-term-find
-          // Floats over the screen, so the one floating language
-          // (20-states 浮层, 2026-09-28): `popover`, `float`, `radius-lg`.
-          // Below the day while that floats over the top of the pane
-          // (`--day-over`, `DetailPane`), so the two never overprint.
-          className="absolute right-2 top-[calc(var(--spacing)+var(--day-over))] z-20 flex items-center gap-1 rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
-        >
-          <input
-            data-term-find-input
-            autoFocus
-            value={query}
-            placeholder={gui.search_terminal}
-            onChange={(e) => look(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                stopFinding();
-              } else if (e.key === "Enter") {
-                e.preventDefault();
-                step(e.shiftKey ? -1 : 1);
-              }
-            }}
-            className="h-ctl-sm w-48 bg-transparent px-2 text-callout outline-none"
-          />
-          <span data-term-find-hits className="min-w-12 text-right text-caption tabular-nums text-muted-foreground">
-            {hitsText}
-          </span>
-          <Button size="icon" variant="ghost" data-term-find-prev aria-label={gui.match_prev} onClick={() => step(-1)}>
-            <IconChevronUp className="size-affordance" />
-          </Button>
-          <Button size="icon" variant="ghost" data-term-find-next aria-label={gui.match_next} onClick={() => step(1)}>
-            <IconChevronDown className="size-affordance" />
-          </Button>
-          <Button size="icon" variant="ghost" data-term-find-close aria-label={gui.close} onClick={stopFinding}>
-            <IconClose className="size-affordance" />
-          </Button>
-        </div>
-      )}
       {/* The way back down, and the only sign that anything arrived
           while the reader was up in history. Two sentences on one
           control: "something came in" and "you are simply not at the
@@ -822,7 +825,7 @@ export function TerminalPane({ id }: { id: string }) {
             // Under the search bar while that is up, so the two never
             // overprint each other — and under the day while that floats
             // over the top of the pane (`--day-over`, `DetailPane`).
-            finding ? "top-[calc(var(--spacing)*12+var(--day-over))]" : "top-[calc(var(--spacing)+var(--day-over))]",
+            finding ? "top-[var(--spacing)]" : "top-[calc(var(--spacing)+var(--day-over))]",
           )}
         >
           {gone && (

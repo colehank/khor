@@ -143,7 +143,11 @@ export function FileView({
   readAt = 0,
   goLine = null,
   onNote,
+  git = true,
 }: {
+  /** Whether to ask git for the gutter. A machine's disk (`MachineFiles`)
+      is not a checkout, and asking there is a refusal per file. */
+  git?: boolean;
   machine: string;
   /** Absolute, on that machine. */
   path: string;
@@ -386,6 +390,7 @@ export function FileView({
     let live = true;
     setDiff(null);
     setShown(null);
+    if (!git) return;
     fetchGitDiff(machine, path)
       .then((d) => live && setDiff(d))
       // **Swallowed on purpose** (第十四轮 第 2 条): a diff khor could
@@ -396,7 +401,7 @@ export function FileView({
     return () => {
       live = false;
     };
-  }, [machine, path, diffAt]);
+  }, [machine, path, diffAt, git]);
 
   // **The one thing the vanished rows still had to say**, handed to
   // the tab that owns this file so it can wear it as a hover title

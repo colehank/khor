@@ -1885,6 +1885,8 @@ function clock(ms: number): string {
     Two hundred is past any question a person asks a card ("what is
     eating this machine") and small enough to be free (~16 KB). */
 const TOP_LIMIT = 200;
+/** How many rows the table shows before 显示全部 (F4.3). */
+const TOP_SHOWN = 20;
 
 /** How often an open card re-asks. Five seconds is the vitals beat the
     rings above already move on; the table and the band moving on
@@ -2303,6 +2305,12 @@ function Top({
   // See `COLS` for why that is not tidiness.
   const shown = COL_ORDER.filter((k) => !(k in FILLS) || seen[k as keyof Seen]);
   const ordered = sortRows(rows, sort);
+  // **The top rows, and 显示全部** (the audit fix plan F4.3; W15, N06): the
+  // table flows in the page with no scroller of its own (a scroller in a
+  // scroller is where a finger gets caught), so it shows the first
+  // `TOP_SHOWN` until asked for the rest.
+  const [all, setAll] = useState(false);
+  const drawn = all ? ordered : ordered.slice(0, TOP_SHOWN);
   const box = useRef<HTMLDivElement>(null);
   const grid = useRef<HTMLDivElement>(null);
   // **The table stacks when its tracks do not fit, and that is asked
@@ -2328,13 +2336,18 @@ function Top({
   // shows on a table short enough not to scroll.
   useEffect(() => {
     if (!hot) return;
+    // A point past the top rows asks for all of them first.
+    if (!all && !drawn.some((r) => r.pid === hot.pid)) {
+      setAll(true);
+      return;
+    }
     const b = box.current;
     const row = b?.querySelector(`[data-top-row="${hot.pid}"]`);
     const cell = row?.firstElementChild;
-    const head = b?.querySelector("[data-top-heads] > *");
     if (!b || !row || !cell) return;
-    const headH = head ? head.getBoundingClientRect().height : 0;
-    b.scrollTop += cell.getBoundingClientRect().top - b.getBoundingClientRect().top - headH - 4;
+    // The page scrolls now, not the table (F4.3): the row's first cell
+    // into the middle of the view.
+    cell.scrollIntoView({ block: "center" });
     row.setAttribute("data-hot", "");
     // **Reduced motion gets a longer, still highlight, not nothing.**
     // The stylesheet drops the fade; if the mark also vanished at the
@@ -2346,7 +2359,8 @@ function Top({
       window.clearTimeout(t);
       row.removeAttribute("data-hot");
     };
-  }, [hot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hot, all]);
   const press = (col: SortCol) => {
     // Pressing the column it is already on turns it over. Pressing a
     // new one starts the way that column is read — biggest first for a
@@ -2379,13 +2393,16 @@ function Top({
   // stop 「even」 from becoming 「too narrow to read」**: a share smaller
   // than a column's floor simply does not apply, and a table narrower
   // than the floors added up stops being a grid at all (`useOverflows`).
-  const tracks = shown.map((k) => `minmax(${COLS[k].w}, ${COLS[k].fr}fr)`).join(" ");
+  // **Sized to content** (the audit fix plan F4.3; W15): every column is
+  // as wide as its widest reading, over its floor, and 命令 takes what is
+  // left — the even shares stood 95 apart whatever was in them, with 读写
+  // running into the command. ⚠️ 墓碑: `minmax(floor, share fr)`.
+  const tracks = shown.map((k) => (k === "name" ? `minmax(${COLS[k].w}, 1fr)` : `minmax(${COLS[k].w}, max-content)`)).join(" ");
   return (
     <div
       ref={box}
       data-load-top-box
       data-tight={tight ? "" : undefined}
-      className="max-h-top-h overflow-y-auto"
     >
       {/* `data-top-cols` is **which columns this table actually has, in
           order**, and `data-top-frs` the share each was given — so a
@@ -2449,7 +2466,7 @@ function Top({
             {why}
           </div>
         ) : (
-          ordered.map((r) => (
+          drawn.map((r) => (
             <div key={r.pid} role="row" data-top-row={r.pid}>
               {shown.map((k) =>
                 k === "name" ? (
@@ -2497,6 +2514,16 @@ function Top({
           ))
         )}
       </div>
+      {!why && !all && ordered.length > TOP_SHOWN && (
+        <button
+          type="button"
+          data-top-all
+          onClick={() => setAll(true)}
+          className="flex min-h-touch items-center text-callout text-muted-foreground hover:text-foreground"
+        >
+          {gui.top_show_all(ordered.length)}
+        </button>
+      )}
     </div>
   );
 }
@@ -2597,6 +2624,43 @@ const AXES = {
   vram: { word: () => cli.vitals_name_vram, of: (r: Load["top"][number]) => r.gpu_mem, tick: (v: number, d: number) => bytes(v, d) },
   time: { word: () => cli.top_time, of: (r: Load["top"][number]) => r.run_secs, tick: (v: number) => lasting(v * 1000), fold: true },
 } as const;
+
+/** A log ruler's ticks at its decades — 10ⁿ inside the data's span, with
+    the two ends — each label at the decimals the decade needs. */
+function decades(
+  r: { lo: number; hi: number },
+  a: { tick: (v: number, d: number) => string },
+): { v: number; label: string }[] {
+  const vs = new Set<number>([r.lo, r.hi]);
+  if (r.hi > 0) {
+    for (let k = Math.floor(Math.log10(Math.max(r.lo, r.hi / 1e6))); 10 ** k <= r.hi; k += 1) {
+      const v = 10 ** k;
+      if (v > r.lo && v < r.hi) vs.add(v);
+    }
+  }
+  return [...vs]
+    .sort((x, y) => x - y)
+    .map((v) => ({ v, label: a.tick(v, v === 0 ? 0 : Math.max(0, Math.min(6, -Math.floor(Math.log10(v))))) }));
+}
+
+/** Drops the labels that would overlap the one kept before them (the
+    tick mark stays): along x by the label's measured-ish width, along y
+    by a line of tick text. */
+function thin(ts: { v: number; label: string }[], at: (v: number) => number, axis: "x" | "y") {
+  const room = (t: { label: string }) => (axis === "x" ? t.label.length * PLOT.tick * 0.62 : PLOT.tick + 3);
+  let edge = -Infinity;
+  const sorted = [...ts].sort((p, q) => (axis === "x" ? at(p.v) - at(q.v) : at(q.v) - at(p.v)));
+  const keep = new Set<number>();
+  for (const t of sorted) {
+    const pos = axis === "x" ? at(t.v) : -at(t.v);
+    const half = room(t) / 2;
+    if (pos - half >= edge + 4) {
+      keep.add(t.v);
+      edge = pos + half;
+    }
+  }
+  return ts.map((t) => (keep.has(t.v) ? t : { ...t, label: "" }));
+}
 
 /* ⚠️ **Tombstone: `tickSet` was defined here until 2026-09-08.** It is
    `lib/ruler` now, unchanged, because the 额度 page's usage half needs
@@ -2911,8 +2975,13 @@ function Scatter({ rows, onPoint }: { rows: Load["top"]; onPoint: (pid: number) 
   // An axis that looks evenly spaced while a transform hides underneath
   // is the one that misleads.
   const steps = tickFractions();
-  const xTicks = tickSet(rx, ax, steps);
-  const yTicks = tickSet(ry, ay, steps);
+  // **True log ticks, and never two labels on top of each other** (the
+  // audit fix plan F4.3; W15, N06): a log ruler is labelled at its
+  // decades (0.01%, 0.1%, 1%…) rather than at even fractions of the axis,
+  // whose labels read uneven over even spacing; and a label that would
+  // overlap the one kept before it is dropped, its tick mark kept.
+  const xTicks = thin(rx.kind === "log" && !("fold" in ax) ? decades(rx, ax) : tickSet(rx, ax, steps), sx, "x");
+  const yTicks = thin(ry.kind === "log" && !("fold" in ay) ? decades(ry, ay) : tickSet(ry, ay, steps), sy, "y");
   return (
     <div
       data-top-plot
@@ -3293,7 +3362,7 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
       {/* **One box, one line, one truncation.** The name and the word
           are two spans only so they can wear two inks; they are not two
           columns, and neither carries a width of its own. */}
-      <span ref={line} data-cmd-line className={cn("min-w-0", open ? "break-all" : "truncate")}>
+      <span ref={line} data-cmd-line className={cn("min-w-0", open ? "[overflow-wrap:anywhere]" : "truncate")}>
         <span data-cmd-name>{name}</span>
         {word && (
           <>
@@ -3339,7 +3408,7 @@ function Cut({ name, arg }: { name: string; arg: string | null }) {
           overflows here is a path, and a path has no spaces to break
           at. */}
       {!open && (
-        <TooltipContent side="top" className="max-w-[var(--tip-cmd-max)] break-all whitespace-normal text-left">
+        <TooltipContent side="top" className="max-w-[var(--tip-cmd-max)] [overflow-wrap:anywhere] whitespace-normal text-left">
           <span data-cmd-full>{full}</span>
         </TooltipContent>
       )}

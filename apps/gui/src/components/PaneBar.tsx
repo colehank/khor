@@ -12,13 +12,12 @@
 //
 // Every control carries a name from the catalog. A control the eye reads
 // by its shape still has to say what it is out loud.
-import { Fragment, useState, type ComponentProps, type CSSProperties } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { IconClose, IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Omnibox, type OmniAxis } from "@/components/Omnibox";
 import { SearchHint, SideSeat } from "@/components/SideHead";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -170,9 +169,11 @@ export function PaneBar({
   const glass = seat === "side";
   const [searching, setSearching] = useState(query !== "");
   const open = !glass || searching || query !== "";
-  /** The ＋ button's two clothes: a glass capsule's item seated, the
-      ghost button elsewhere. */
-  const Plus = glass ? GlassItem : PlainPlus;
+  /** **The glass head controls everywhere** (the audit fix plan F4.7;
+      W17): seated or not — the workspace's sessions column, the tab
+      switcher — filter and ＋ are a glass capsule's items. ⚠️ 墓碑: bare
+      ghost buttons off the seat. */
+  const Plus = GlassItem;
   const box = (
       <div className="flex min-w-0 flex-1 items-center">
         {axes && axes.length > 0 && filter ? (
@@ -241,26 +242,9 @@ export function PaneBar({
       {filter && filterLabel && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            {glass ? (
-              <GlassItem aria-label={filterLabel} data-pane-filter on={filter.chosen.length > 0}>
-                <IconFilter />
-              </GlassItem>
-            ) : (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={filterLabel}
-                data-pane-filter
-                data-on={filter.chosen.length > 0}
-                // The finger floor, the same spelling the rail and the row
-                // pins wear: the hit area grows, the glyph keeps its size,
-                // and the ghost wash paints this box — so what lights up is
-                // what is pressable.
-                className="min-h-touch min-w-touch data-[on=true]:text-primary"
-              >
-                <IconFilter />
-              </Button>
-            )}
+            <GlassItem aria-label={filterLabel} data-pane-filter on={filter.chosen.length > 0}>
+              <IconFilter />
+            </GlassItem>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {arrange && (
@@ -416,7 +400,7 @@ export function PaneBar({
       className={cn("flex min-h-pane-head flex-none items-center gap-in", seat === "head" ? "min-w-0 flex-1" : "border-b px-2")}
     >
       {box}
-      {acts}
+      {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
     </div>
   );
   if (!glass) return bar;
@@ -427,8 +411,3 @@ export function PaneBar({
   );
 }
 
-/** ＋ off the seat: the ghost button, at the finger floor — a control
-    that cannot be pressed yet is still the size it will be. */
-function PlainPlus({ className, ...props }: ComponentProps<"button">) {
-  return <Button variant="ghost" size="icon" className={cn("min-h-touch min-w-touch", className)} {...props} />;
-}

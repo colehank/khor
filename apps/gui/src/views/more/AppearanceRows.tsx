@@ -168,10 +168,10 @@ export function NavOrderSection() {
                 data-nav-order-row={key}
                 data-dragging={dragging === key || undefined}
                 className={cn(
-                  // The card pads what is not a settings row (`app.css`
-                  // `[data-settings-card]`): no padding of its own, so the
-                  // glyph stands on the column's line (F2.7; W08).
-                  "flex min-h-touch items-center gap-row border-b [&_svg]:size-nav-glyph",
+                  // A row of the card (`app.css` `[data-nav-order-row]`):
+                  // its inset and its hairline, so the glyph stands on
+                  // the column's line and the line ends on its edge.
+                  "flex min-h-touch items-center gap-row [&_svg]:size-nav-glyph",
                   dragging === key && "bg-fill",
                 )}
               >

@@ -16,10 +16,9 @@
  * Wide: the listing in a column, the file beside it. Narrow: one screen
  * at a time — the listing, or the file under a way back to it.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { GlassCircle } from "@/components/Glass";
-import { IconBack } from "@/components/icons";
+import { EmptyState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { FilesPane } from "@/views/FilesPane";
@@ -27,7 +26,19 @@ import { FileView } from "@/views/FileView";
 
 type Draft = Parameters<NonNullable<Parameters<typeof FileView>[0]["onDraft"]>>[0];
 
-export function MachineFiles({ machine, here }: { machine: string; here: boolean }) {
+export function MachineFiles({
+  machine,
+  here,
+  onOpenFile,
+}: {
+  machine: string;
+  here: boolean;
+  /** **One back button** (the audit fix plan F4.2; N07): while a file is
+      open on the narrow face, the page head's ‹ leaves the file rather
+      than the page — handed up as the way out, `null` when there is no
+      file to leave. */
+  onOpenFile?: (back: (() => void) | null) => void;
+}) {
   const narrow = useNarrow();
   // `""` is the machine's home, the listing's own contract.
   const [at, setAt] = useState("");
@@ -35,6 +46,11 @@ export function MachineFiles({ machine, here }: { machine: string; here: boolean
   // What was typed into a file and not saved, kept when another file is
   // opened — the workspace pane's rule (`FileView`'s `draft`).
   const [drafts, setDrafts] = useState<Map<string, NonNullable<Draft>>>(() => new Map());
+  useEffect(() => {
+    if (!narrow) return;
+    onOpenFile?.(file !== null ? () => setFile(null) : null);
+    return () => onOpenFile?.(null);
+  }, [narrow, file, onOpenFile]);
 
   const listing = (
     <FilesPane
@@ -52,6 +68,7 @@ export function MachineFiles({ machine, here }: { machine: string; here: boolean
       key={`${machine} ${file}`}
       machine={machine}
       path={file}
+      git={false}
       draft={drafts.get(file)}
       onDraft={(d) =>
         setDrafts((was) => {
@@ -69,26 +86,33 @@ export function MachineFiles({ machine, here }: { machine: string; here: boolean
   if (narrow) {
     return (
       <div data-machine-files className="flex min-h-0 flex-1 flex-col">
-        {file === null ? (
-          <div className="flex min-h-0 flex-1 flex-col ps-files-inset">{listing}</div>
-        ) : (
+        {/* **The listing stays mounted under an open file** (F4.2; N07),
+            hidden, so going back finds it where it was scrolled. */}
+        <div hidden={file !== null} className="flex min-h-0 flex-1 flex-col ps-files-inset">
+          {listing}
+        </div>
+        {file !== null && (
           <>
-            <div data-machine-file-head className="flex flex-none items-center gap-in px-page pb-in">
-              <GlassCircle aria-label={gui.back} data-back onClick={() => setFile(null)}>
-                <IconBack />
-              </GlassCircle>
+            {/* The file's name; the way back is the page head's ‹. */}
+            <div data-machine-file-head className="flex flex-none items-center px-page pb-in">
               <span className="min-w-0 truncate text-body font-title">{file.split("/").pop()}</span>
             </div>
-            <div className="min-h-0 flex-1">{view}</div>
+            {/* The line numbers start on the page's left line (N07): the
+                view's gutter pads 8 of its own. */}
+            <div className="min-h-0 flex-1 ps-[calc(var(--page-inset)-0.5rem)]">{view}</div>
           </>
         )}
       </div>
     );
   }
+  // No rule over the listing: a machine page's head has none in any of
+  // its modes (F4.2; W16). An empty right side says what it is for.
   return (
-    <div data-machine-files className="flex min-h-0 flex-1 border-t">
+    <div data-machine-files className="flex min-h-0 flex-1">
       <div className="flex min-h-0 w-list flex-none flex-col border-r ps-files-inset">{listing}</div>
-      <div className="min-h-0 min-w-0 flex-1">{view}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {view || <EmptyState data-files-pick>{gui.files_pick}</EmptyState>}
+      </div>
     </div>
   );
 }

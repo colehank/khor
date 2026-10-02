@@ -186,7 +186,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
             </span>
           );
           const said = (
-            <span data-doctor-said data-selectable className="break-all">
+            <span data-doctor-said data-selectable className="[overflow-wrap:anywhere]">
               {fixed[r.key] ?? r.said}
             </span>
           );
@@ -234,7 +234,7 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
                     className="flex min-w-0 flex-wrap items-baseline gap-row text-body"
                   >
                     <span className="min-w-0 flex-none">{r.name}</span>
-                    <span data-doctor-said data-selectable className="min-w-0 flex-1 break-all text-callout text-muted-foreground">
+                    <span data-doctor-said data-selectable className="min-w-0 flex-1 [overflow-wrap:anywhere] text-callout text-muted-foreground">
                       {r.said}
                     </span>
                   </div>

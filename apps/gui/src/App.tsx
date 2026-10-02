@@ -51,7 +51,7 @@ import { useCodeWindow } from "@/components/CodeWindow";
 import { HereHostsProvider, hereHosts } from "@/lib/here";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
-import { Button } from "@/components/ui/button";
+import { GlassCircle } from "@/components/Glass";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
 import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
@@ -470,6 +470,10 @@ export default function App() {
   // 跳转到工作区」). One value, so the two switches are exclusive: turning
   // one on turns the other off.
   const [machineBody, setMachineBody] = useState<"dashboard" | "sessions" | "files" | "web">("dashboard");
+  /** The open file's way out on the narrow machine page, while there is
+      one: the head's ‹ takes it first (`MachineFiles`). */
+  const [fileBack, setFileBackState] = useState<{ go: () => void } | null>(null);
+  const setFileBack = useCallback((back: (() => void) | null) => setFileBackState(back ? { go: back } : null), []);
   useEffect(() => setMachineBody("dashboard"), [selectedDevice]);
   // …and which workspace is open. **A path and not a row**, because
   // the two ways in do not agree on what they have: the list hands over
@@ -1759,7 +1763,8 @@ export default function App() {
     <MachineCard
       row={openDevice}
       narrow={narrow}
-      onBack={() => setScreen("list")}
+      // An open file is left first (`MachineFiles`, one back button).
+      onBack={() => (fileBack ? fileBack.go() : setScreen("list"))}
       hooks={hooks}
       hooksFailed={hooksFailed}
       onInstallHooks={onInstallHooks}
@@ -1769,7 +1774,7 @@ export default function App() {
         !openDevice ? undefined : machineBody === "web" ? (
           <MachineWeb key={openDevice.id} machine={openDevice} devices={devices} />
         ) : machineBody === "files" ? (
-          <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} />
+          <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} onOpenFile={setFileBack} />
         ) : machineBody === "sessions" ? (
           <div data-machine-sessions data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-rows-inset">
             <h2 className="flex min-h-touch items-end px-[calc(var(--page-inset)-var(--rows-inset))] pt-in pb-xxs text-group text-muted-foreground">
@@ -2388,17 +2393,12 @@ export default function App() {
               // narrow face has no R0 and keeps the frame's own head.
               // A page's own buttons (网络's two, 安全's 立即锁定) are
               // seated before this by the page itself (`PageAction`).
+              // A glass circle like every head's way out (the audit fix
+              // plan F4.9; W21).
               actions={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={gui.close}
-                  data-more-close
-                  onClick={() => setMorePage(null)}
-                  className="min-h-touch min-w-touch"
-                >
-                  <IconClose className="size-affordance" />
-                </Button>
+                <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
+                  <IconClose />
+                </GlassCircle>
               }
             >
               {morePageEl}

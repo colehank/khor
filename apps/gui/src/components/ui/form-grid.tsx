@@ -22,7 +22,12 @@ export function FormGrid({ className, children, ...rest }: HTMLAttributes<HTMLDi
   return (
     <div
       {...rest}
-      className={cn("grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-row gap-y-row text-callout", className)}
+      data-form-grid
+      // The question column keeps one width whatever questions are drawn
+      // (the audit fix plan F4.5; N12: changing the kind moved every
+      // control 28 left). Narrow, one column — label over control
+      // (`app.css` `[data-form-grid]`).
+      className={cn("grid min-w-0 grid-cols-[minmax(7em,max-content)_minmax(0,1fr)] items-center gap-x-row gap-y-row text-callout", className)}
     >
       {children}
     </div>

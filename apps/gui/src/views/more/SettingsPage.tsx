@@ -44,6 +44,26 @@ function bytes(n: bigint): string {
   return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`;
 }
 
+/** A path that breaks after its slashes, never inside a name (the audit
+    fix plan F4.9; N23: 「/Volumes/disk0/kho / r-redesign-home」). */
+function SlashBreaks({ text }: { text: string }) {
+  const parts = text.split("/");
+  return (
+    <>
+      {parts.map((p, i) => (
+        <span key={i}>
+          {p}
+          {i < parts.length - 1 && (
+            <>
+              /<wbr />
+            </>
+          )}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function SettingsPage({
   onClose,
   onSettingChanged,
@@ -99,7 +119,11 @@ export function SettingsPage({
               <ActionRow
                 name="store-open"
                 label={gui.store_path}
-                value={<span data-more-fact="store-path">{about.root}</span>}
+                value={
+                  <span data-more-fact="store-path">
+                    <SlashBreaks text={about.root} />
+                  </span>
+                }
                 actionLabel={gui.store_open}
                 mark={{ "data-store-open": "" }}
                 onPress={() => {
@@ -109,7 +133,9 @@ export function SettingsPage({
             ) : (
               // The path is still a fact worth reading; the act is not drawn.
               <MoreFact name="store-path" label={gui.store_path}>
-                <span data-more-fact="store-path">{about.root}</span>
+                <span data-more-fact="store-path">
+                  <SlashBreaks text={about.root} />
+                </span>
               </MoreFact>
             )}
             <MoreFact name="store-size" label={gui.store_size}>

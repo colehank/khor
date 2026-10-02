@@ -91,7 +91,9 @@ export function SegmentedControl<K extends string>({
       aria-label={label}
       data-segmented
       {...mark}
-      className={cn("inline-flex h-ctl-md max-w-full min-w-0 items-center rounded-sm bg-fill", className)}
+      // A capsule with its chosen piece nested in it (the audit fix plan
+      // F4.5; W21): both round, the inner one 3 in, so the radii nest.
+      className={cn("inline-flex h-ctl-md max-w-full min-w-0 items-center rounded-full bg-fill", className)}
     >
       {options.map((o, i) => {
         const on = i === at;
@@ -132,7 +134,7 @@ export function SegmentedControl<K extends string>({
               <span
                 aria-hidden
                 data-segment-face
-                className="absolute inset-x-0.75 top-1/2 h-ctl-sm -translate-y-1/2 rounded-xs bg-segment shadow-knob"
+                className="absolute inset-x-0.75 top-1/2 h-[calc(100%-6px)] -translate-y-1/2 rounded-full bg-segment shadow-knob"
               />
             )}
             <span className="relative min-w-0 truncate">{o.label}</span>

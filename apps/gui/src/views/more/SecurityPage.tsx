@@ -311,44 +311,51 @@ export function SecurityPage({
             the way a secure field carries its own reveal — and the
             row's one act stays at the trailing edge. What 换一把 did is
             said under the key, as the row's note. */}
+        {/* **No key, no 换一把** (the audit fix plan F4.1; W04, N23): a
+            machine that has never raised its web face has no key to
+            rotate, so the row says so and offers nothing. */}
+        {key === null ? (
+          <div data-setting-row="note" data-setting-row-name="web-key" className="px-row py-in text-body text-muted-foreground">
+            {gui.web_key_none}
+          </div>
+        ) : (
         <ActionRow
-          name="web-key"
-          label={
-            key === null ? (
-              <span className="text-muted-foreground">{gui.web_key_none}</span>
-            ) : (
-              <span className="flex min-w-0 items-center gap-in">
-                <span data-web-key data-selectable className="min-w-0 truncate font-mono">
-                  {showKey ? key : "•".repeat(key.length)}
+            name="web-key"
+            label={
+              (
+                <span className="flex min-w-0 items-center gap-in">
+                  <span data-web-key data-selectable className="min-w-0 truncate font-mono">
+                    {showKey ? key : "•".repeat(key.length)}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    data-web-key-show
+                    aria-pressed={showKey}
+                    onClick={() => setShowKey((was) => !was)}
+                    className="min-h-touch min-w-touch flex-none"
+                  >
+                    {showKey ? gui.web_key_hide : gui.web_key_show}
+                  </Button>
                 </span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-web-key-show
-                  aria-pressed={showKey}
-                  onClick={() => setShowKey((was) => !was)}
-                  className="min-h-touch min-w-touch flex-none"
-                >
-                  {showKey ? gui.web_key_hide : gui.web_key_show}
-                </Button>
-              </span>
-            )
-          }
-          hint={rotated ? <span data-web-key-rotated>{gui.web_key_rotated}</span> : undefined}
-          actionLabel={gui.web_key_rotate}
-          onPress={() => {
-            setError(null);
-            rotateWebKey().then(
-              (fresh) => {
-                setKey(fresh);
-                setShowKey(false);
-                setRotated(true);
-              },
-              (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
-            );
-          }}
-          mark={{ "data-web-key-rotate": "" }}
-        />
+              )
+            }
+            hint={rotated ? <span data-web-key-rotated>{gui.web_key_rotated}</span> : undefined}
+            actionLabel={gui.web_key_rotate}
+            onPress={() => {
+              setError(null);
+              rotateWebKey().then(
+                (fresh) => {
+                  setKey(fresh);
+                  setShowKey(false);
+                  setRotated(true);
+                },
+                (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
+              );
+            }}
+            mark={{ "data-web-key-rotate": "" }}
+          />
+        )}
       </MoreSection>
       )}
 
@@ -390,7 +397,8 @@ export function SecurityPage({
           over a one-row card saying the same words is the same fact
           twice. */}
       {me && (
-      <MoreSection name="reset">
+      // Under a head of its own (F4.1; W04): it floated after the web key.
+      <MoreSection name="reset" label={gui.identity_section}>
         <ActionRow
           name="reset"
           label={gui.reset_section}

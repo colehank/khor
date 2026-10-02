@@ -1283,10 +1283,12 @@ export function QuotaLanding({
       // and it renames the session row's way: double-click, type, Enter
       // (`EditableName`, `nested` inside the button that opens the row).
       title: (
-        // The vendor's mark after the name (F2.1: nothing stands before a
-        // title, so every list's words start on one x).
+        // ⚠️ The audit fix plan (F2.1) put the mark after the name, so every
+        // list's words start on one x; the owner's own ruling above has it
+        // open the title, and the ruling stands.
         <span data-quota-name className="flex min-w-0 items-baseline gap-xxs">
-          <span className="block min-w-0">
+          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em]" />
+          <span className="block min-w-0 flex-1">
             <EditableName
               kind="account"
               id={r.id}
@@ -1296,7 +1298,6 @@ export function QuotaLanding({
               nested
             />
           </span>
-          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em] text-muted-foreground" />
         </span>
       ),
       name: r.name,
@@ -1431,7 +1432,12 @@ export function QuotaLanding({
           — then it is a pip like any other; when it has none it is a
           figure below and no mark, because a mark needs an angle and an
           angle needs a denominator (`creditsPct`). */}
-      <div data-quota-lead className="flex flex-wrap items-center gap-x-group gap-y-row">
+      {/* **Narrow: the windows under the dial, full width** (the audit fix
+          plan F4.4; N09): beside it, the names were cut to 「5…」「7..」. */}
+      <div
+        data-quota-lead
+        className={cn("flex gap-x-group gap-y-row", narrow ? "flex-col items-stretch" : "flex-wrap items-center")}
+      >
         {/* ⚠️ **Tombstone: this dial was a button for about an hour,
             and before that there was a row of words under the list.
             Neither is here now, and the story is worth keeping because
@@ -1513,8 +1519,8 @@ export function QuotaLanding({
                   置」 — the same 「39%7」 the older comment on this block
                   warns about, re-made the moment the reset moved in
                   here. Caught by that very gate, 2026-09-07. */}
-              <dt className="flex min-w-0 items-baseline gap-2 text-body">
-                <span data-quota-window-name className="truncate">{d.word}</span>
+              <dt className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-body">
+                <span data-quota-window-name className="whitespace-nowrap">{d.word}</span>
                 {d.resets_at !== null && (
                   <span className="flex-none text-callout text-muted-foreground">
                     {gui.quota_resets(until(d.resets_at * 1000))}
@@ -1528,7 +1534,7 @@ export function QuotaLanding({
                   the next reader does not take the missing argument for
                   an oversight). */}
               <Bar pct={d.pct} />
-              <dd data-quota-window-pct className="text-right font-title tabular-nums">
+              <dd data-quota-window-pct className="min-w-[4ch] text-right font-title tabular-nums">
                 {Math.round(d.pct)}%
               </dd>
             </div>

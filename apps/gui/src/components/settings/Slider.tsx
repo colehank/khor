@@ -42,7 +42,9 @@ export function Slider({
       className="flex min-h-touch flex-1 items-center gap-3.5"
       style={{ "--slider-at": at } as CSSProperties}
     >
-      <span aria-hidden="true" className="flex-none">
+      {/* The end marks in boxes of one width, so two sliders' tracks —
+          and their ticks — start and end on one x (F4.9; W21). */}
+      <span aria-hidden="true" className="flex w-6 flex-none justify-center">
         {small}
       </span>
       <div className="relative h-slider-knob min-w-0 flex-1">
@@ -66,7 +68,7 @@ export function Slider({
           className="absolute inset-0 h-full w-full"
         />
       </div>
-      <span aria-hidden="true" className="flex-none">
+      <span aria-hidden="true" className="flex w-6 flex-none justify-center">
         {large}
       </span>
     </div>

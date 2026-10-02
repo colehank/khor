@@ -343,7 +343,7 @@ export function MoreFact({
           docs/IOS.md) wraps beside it instead of squeezing it to one
           character a line. */}
       <span className="flex-1 whitespace-nowrap">{label}</span>
-      <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 break-all text-right text-muted-foreground">
+      <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 [overflow-wrap:anywhere] text-right text-muted-foreground">
         {children}
       </span>
     </div>
