@@ -232,6 +232,9 @@ export function MachineChat({ id }: { id: string }) {
           ref={box}
           data-chat-composer
           aria-label={gui.message_text}
+          // The same word the agent conversation's capsule wears: one
+          // capsule, one invitation (the closing pass, 2026-10-03).
+          placeholder={gui.chat_input}
           value={draft}
           rows={1}
           onChange={(e) => setDraft(e.target.value)}
