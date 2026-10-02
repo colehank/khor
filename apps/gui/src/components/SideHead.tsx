@@ -232,10 +232,10 @@ function kindWord(kind: string): string {
 /**
  * Where the row's controls start: after macOS's three buttons where
  * there are any (`--traffic`, measured by the window), and otherwise on
- * the rail's own glyph box (`--side-inset`) — so the search box starts
- * where the rail's line is (第 2 条), on every face.
+ * the list's own left edge (`--gap-group`, the canvas's 20) — the rail
+ * whose glyph box this used to start on is gone (the redesign).
  */
-const START = "max(var(--traffic), var(--side-inset))";
+const START = "max(var(--traffic), var(--gap-group))";
 
 export function SideHead({
   narrow,
@@ -360,7 +360,7 @@ export function SideHead({
       data-side-head
       // `min-w-0`: the row is the block's width and never sets it
       // (第十五轮 第 4 条) — what is seated in it gives way instead.
-      className="relative flex min-h-pane-head min-w-0 flex-none items-center bg-side select-none"
+      className={cn("relative flex min-h-list-head min-w-0 flex-none items-center bg-side select-none", narrow ? "pr-base" : "pr-row")}
       style={{ paddingLeft: START }}
     >
       {/* The landing's head sits here. `hidden` while the box is widened

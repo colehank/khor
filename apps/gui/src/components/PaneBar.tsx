@@ -12,9 +12,10 @@
 //
 // Every control carries a name from the catalog. A control the eye reads
 // by its shape still has to say what it is out loud.
-import { Fragment, type CSSProperties } from "react";
+import { Fragment, useState, type ComponentProps, type CSSProperties } from "react";
 
-import { IconFilter, IconPlus, IconSearch } from "@/components/icons";
+import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
+import { IconClose, IconFilter, IconPlus, IconSearch } from "@/components/icons";
 import { Omnibox, type OmniAxis } from "@/components/Omnibox";
 import { SearchHint, SideSeat } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { useNarrow } from "@/hooks/use-narrow";
 import { useNewAct } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +75,12 @@ export function PaneBar({
   arrange,
   create,
   seat,
+  title,
 }: {
+  /** The landing's name, said as the list page's title where the bar
+      is seated (the redesign; it used to ride only the pane's
+      aria-label). */
+  title?: string;
   /** Names the search box and stands in as its placeholder. */
   searchLabel: string;
   /**
@@ -154,114 +161,98 @@ export function PaneBar({
   // **⌘N is this 「+」** (`lib/shortcuts`, 2026-09-28) — the landing's one
   // 「+」 is the one seated in the first row, so only that bar lends it,
   // by its own name (the menu bar's 新建 item reads it).
+  const narrow = useNarrow();
   const primary = actions?.[0] ?? (create?.onSelect && !create.disabled ? create : null);
   useNewAct(
     seat === "side" && primary?.onSelect ? { label: primary.label, run: primary.onSelect } : null,
   );
-  const bar = (
-    <div
-      data-pane-bar
-      // `min-h`, not `h`: chips make the box taller than one row, and a
-      // bar with a fixed height would clip them or squeeze the list.
-      //
-      // **`--pane-head`, which is also the tab band's height**
-      // (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的高度一致,
-      // 保持和谐」). It read `min-h-ctl-lg` and *measured* 44, because
-      // the search box inside it carries the finger floor and won — a
-      // number nobody wrote against a band that was 48. One token now
-      // says both, so they cannot drift apart again by one of them
-      // being retuned.
-      //
-      // **Seated, no padding at the left and no rule under**: the row
-      // it sits in already starts at the rail's glyph box (第十三轮 第 2
-      // 条: the search box's left edge is that line) and is one piece
-      // with the block under it.
-      className={cn(
-        "flex min-h-pane-head flex-none items-center gap-in",
-        // `@container/bar`: the search slot below asks how wide this
-        // bar is, not how wide the window is (第十五轮 第 4 条).
-        seat === "side" ? "@container/bar min-w-0 flex-1 pr-1" : seat === "head" ? "min-w-0 flex-1" : "border-b px-2",
-      )}
-      // A menu hung from this box starts at the list column, not over
-      // the rail (tokens.css `--seat-menu-inset`).
-      style={seat === "side" ? ({ "--menu-inset": "var(--seat-menu-inset)" } as CSSProperties) : undefined}
-    >
-      {/* **One search slot, two shapes.** A pane that has axes to narrow
-          by gets the omnibox; one that does not gets the plain box it
-          always had. Not a second control and not a second box — the
-          alternative is what this file's head warns about, two search
-          fields that look alike and behave differently. */}
-      {/* **Always a box, never a button** (2026-09-27, the owner: 「搜索
-          应该是个筐而非按钮」). It used to turn into a magnifier button
-          when the list was dragged narrower than 256 (第十五轮 第 4 条);
-          now the box itself gives way — it has no minimum width, so the
-          block's width still has one owner — and what goes first is the
-          ⌘K hint inside it, then the placeholder's words. */}
+  // **Seated, the bar is the list page's head** (the redesign,
+  // 2026-10-02: Apple's Preview on a phone, Notes in a window): the
+  // landing's name, then filter and ＋ in one glass capsule, then search
+  // as a glass circle of its own. Narrow puts the name on the row; wide
+  // gives the row to the window's corner and the buttons, and the name a
+  // row of its own under it (below). The search circle opens the box in
+  // the row's place; a query left in it keeps it open.
+  const glass = seat === "side";
+  const [searching, setSearching] = useState(query !== "");
+  const open = !glass || searching || query !== "";
+  /** The ＋ button's two clothes: a glass capsule's item seated, the
+      ghost button elsewhere. */
+  const Plus = glass ? GlassItem : PlainPlus;
+  const box = (
       <div className="flex min-w-0 flex-1 items-center">
-      {axes && axes.length > 0 && filter ? (
-        <Omnibox
-          label={searchLabel}
-          query={query}
-          onQuery={onQuery}
-          axes={axes}
-          chosen={filter.chosen}
-          onToggle={filter.onToggle}
-          onSubmit={onSubmit}
-          field
-          // **The same ⌘K the plain box wears** (components/SearchField:
-          // one anatomy in L0). Sessions and 额度 narrow by chips, and
-          // their box was the one L0 box with no hint (2026-09-28 audit).
-          trail={seat === "side" ? <SearchHint /> : undefined}
-        />
-      ) : (
-        <div className="relative min-w-0 flex-1">
-          <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
-          <Input
-            data-pane-search
-            data-search-field
-            type="search"
-            aria-label={searchLabel}
-            placeholder={searchLabel}
-            value={query}
-            onChange={(e) => onQuery(e.target.value)}
-            // The look is the text field's own (`ui/input`, components/
-            // TextField, 2026-09-28): `fill`, `radius-sm`, `body`, the
-            // `ring` on focus, and the finger floor (`min-h-touch`,
-            // tokens.css `--touch`) that used to be written here — a
-            // `min-h` because tailwind-merge does not read `ctl-md` as a
-            // height, so only a floor beats `h-ctl-md` (`button.tsx`
-            // wrote that trap down first). What is left here is room for
-            // the magnifier and, seated, the key hint.
-            className={cn("pl-7", seat === "side" && "pr-10 @max-3xs/bar:pr-2")}
+        {axes && axes.length > 0 && filter ? (
+          <Omnibox
+            label={searchLabel}
+            query={query}
+            onQuery={onQuery}
+            axes={axes}
+            chosen={filter.chosen}
+            onToggle={filter.onToggle}
+            onSubmit={onSubmit}
+            field
+            // **The same ⌘K the plain box wears** (components/SearchField:
+            // one anatomy in L0). Sessions and 额度 narrow by chips, and
+            // their box was the one L0 box with no hint (2026-09-28 audit).
+            trail={seat === "side" ? <SearchHint /> : undefined}
           />
-          {/* Which range the box is on (第十三轮 第 4 条): typing narrows
-              this column; the word says how to widen it. */}
-          {seat === "side" && (
-            <span className="pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2">
-              <SearchHint />
-            </span>
-          )}
+        ) : (
+          <div className="relative min-w-0 flex-1">
+            <IconSearch className="pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-tertiary" />
+            <Input
+              data-pane-search
+              data-search-field
+              type="search"
+              aria-label={searchLabel}
+              placeholder={searchLabel}
+              value={query}
+              onChange={(e) => onQuery(e.target.value)}
+              // The look is the text field's own (`ui/input`, components/
+              // TextField, 2026-09-28): `fill`, `radius-sm`, `body`, the
+              // `ring` on focus, and the finger floor (`min-h-touch`,
+              // tokens.css `--touch`) that used to be written here — a
+              // `min-h` because tailwind-merge does not read `ctl-md` as a
+              // height, so only a floor beats `h-ctl-md` (`button.tsx`
+              // wrote that trap down first). What is left here is room for
+              // the magnifier and, seated, the key hint.
+              className={cn("pl-7", seat === "side" && "pr-10 @max-3xs/bar:pr-2")}
+            />
+            {/* Which range the box is on (第十三轮 第 4 条): typing narrows
+                this column; the word says how to widen it. */}
+            {seat === "side" && (
+              <span className="pointer-events-none absolute top-1/2 right-2 flex -translate-y-1/2">
+                <SearchHint />
+              </span>
+            )}
+          </div>
+        )}
         </div>
-      )}
-      </div>
-
+  );
+  const acts = (
+    <>
       {filter && filterLabel && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={filterLabel}
-              data-pane-filter
-              data-on={filter.chosen.length > 0}
-              // The finger floor, the same spelling the rail and the row
-              // pins wear: the hit area grows, the glyph keeps its size,
-              // and the ghost wash paints this box — so what lights up is
-              // what is pressable.
-              className="min-h-touch min-w-touch data-[on=true]:text-primary"
-            >
-              <IconFilter />
-            </Button>
+            {glass ? (
+              <GlassItem aria-label={filterLabel} data-pane-filter on={filter.chosen.length > 0}>
+                <IconFilter />
+              </GlassItem>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={filterLabel}
+                data-pane-filter
+                data-on={filter.chosen.length > 0}
+                // The finger floor, the same spelling the rail and the row
+                // pins wear: the hit area grows, the glyph keeps its size,
+                // and the ghost wash paints this box — so what lights up is
+                // what is pressable.
+                className="min-h-touch min-w-touch data-[on=true]:text-primary"
+              >
+                <IconFilter />
+              </Button>
+            )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {arrange && (
@@ -319,9 +310,9 @@ export function PaneBar({
       {actions && actions.length > 1 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label={gui.new_item} data-pane-new className="min-h-touch min-w-touch">
+            <Plus aria-label={gui.new_item} data-pane-new>
               <IconPlus />
-            </Button>
+            </Plus>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {actions.map((a) => (
@@ -332,22 +323,13 @@ export function PaneBar({
           </DropdownMenuContent>
         </DropdownMenu>
       ) : actions && actions.length > 0 && (
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={actions[0].label}
-          data-pane-new
-          onClick={actions[0].onSelect}
-          className="min-h-touch min-w-touch"
-        >
+        <Plus aria-label={actions[0].label} data-pane-new onClick={actions[0].onSelect}>
           <IconPlus />
-        </Button>
+        </Plus>
       )}
 
       {create && (
-        <Button
-          variant="ghost"
-          size="icon"
+        <Plus
           aria-label={create.label}
           data-pane-new
           {...(create.mark ? { [create.mark]: "" } : {})}
@@ -356,12 +338,87 @@ export function PaneBar({
           // The finger floor, the same spelling the menu trigger above
           // wears — a control that cannot be pressed yet is still the
           // size it will be, so turning it on moves nothing.
-          className="min-h-touch min-w-touch"
         >
           <IconPlus />
-        </Button>
+        </Plus>
+      )}
+    </>
+  );
+  const hasActs = !!(filter && filterLabel) || !!actions?.length || !!create;
+  const bar = glass ? (
+    <div
+      data-pane-bar
+      data-searching={open || undefined}
+      className="@container/bar flex min-h-list-head min-w-0 flex-1 items-center gap-in"
+      style={{ "--menu-inset": "var(--seat-menu-inset)" } as CSSProperties}
+    >
+      {open ? (
+        <>
+          {box}
+          <GlassCircle
+            aria-label={gui.search_close}
+            data-search-close
+            onClick={() => {
+              onQuery("");
+              setSearching(false);
+            }}
+          >
+            <IconClose />
+          </GlassCircle>
+        </>
+      ) : (
+        <>
+          {narrow && title ? (
+            <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
+              {title}
+            </h1>
+          ) : (
+            <span className="flex-1" />
+          )}
+          {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
+          <GlassCircle
+            aria-label={gui.search_open}
+            data-search-open
+            onClick={(e) => {
+              const row = e.currentTarget.parentElement;
+              setSearching(true);
+              // The box takes the row on the next frame; the caret goes
+              // into it, the way pressing search on a phone brings up the
+              // keyboard.
+              requestAnimationFrame(() => row?.querySelector<HTMLInputElement>("input")?.focus());
+            }}
+          >
+            <IconSearch />
+          </GlassCircle>
+        </>
       )}
     </div>
+  ) : (
+    <div
+      data-pane-bar
+      // `min-h`, not `h`: chips make the box taller than one row, and a
+      // bar with a fixed height would clip them or squeeze the list.
+      className={cn("flex min-h-pane-head flex-none items-center gap-in", seat === "head" ? "min-w-0 flex-1" : "border-b px-2")}
+    >
+      {box}
+      {acts}
+    </div>
   );
-  return seat === "side" ? <SideSeat>{bar}</SideSeat> : bar;
+  if (!glass) return bar;
+  return (
+    <>
+      <SideSeat>{bar}</SideSeat>
+      {!narrow && title && (
+        <h1 data-list-title className="flex-none truncate px-group pt-xxs pb-in text-title-lg">
+          {title}
+        </h1>
+      )}
+    </>
+  );
+}
+
+/** ＋ off the seat: the ghost button, at the finger floor — a control
+    that cannot be pressed yet is still the size it will be. */
+function PlainPlus({ className, ...props }: ComponentProps<"button">) {
+  return <Button variant="ghost" size="icon" className={cn("min-h-touch min-w-touch", className)} {...props} />;
 }

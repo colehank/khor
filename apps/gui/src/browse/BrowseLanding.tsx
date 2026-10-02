@@ -495,6 +495,7 @@ export function BrowseLanding({
   const head = (
     <PaneBar
       seat="side"
+      title={gui.browser_tab}
       searchLabel={kind.words.search}
       query={query}
       onQuery={setQuery}

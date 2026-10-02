@@ -34,7 +34,6 @@ import {
   IconDevices,
   IconFiles,
   IconGear,
-  IconMore,
   IconNetwork,
   IconPulse,
   IconQuota,
@@ -43,6 +42,7 @@ import {
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
+import { FloatNav, type NavSeat } from "@/components/FloatNav";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
 import { useCodeWindow } from "@/components/CodeWindow";
@@ -50,12 +50,7 @@ import { HereHostsProvider, hereHosts } from "@/lib/here";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
 import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
@@ -85,6 +80,7 @@ import {
   storedWords,
 } from "@/lib/session-filter";
 import { draftCount, watchDrafts } from "@/lib/drafts";
+import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { cn } from "@/lib/utils";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
@@ -111,7 +107,7 @@ import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
-import { FIND_ALL, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, NarrowHead, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
@@ -223,32 +219,11 @@ const landings = (): { key: Landing; name: string; glyph: ReactNode }[] => [
   { key: "browser", name: gui.browser_tab, glyph: <IconBrowser /> },
 ];
 
-/**
- * Whether a landing keeps a column beside its content — which is the
- * same question as 「does pressing its rail glyph a second time put
- * something away」 (docs/SHELL.md 第 4 条).
- *
- * **One predicate, not a list of names at each call site.** The rail's
- * second press was spelled `l.key === "sessions" || … || "workspaces"`
- * and 额度 was simply not in it: nobody decided that, the landing was
- * added after the line was written. A landing that grows a list now has
- * one place to say so, and the gate presses every rail glyph twice
- * rather than the three somebody remembered.
- *
- * **Every landing, since 批二.** 浏览 was the last one without a
- * column — 「all page and no list」 — and its tabs became that column
- * (docs/SHELL.md 第 2 条). So the answer is now the same for all five,
- * and this is kept as a function rather than deleted for two reasons:
- * the sixth landing is the one this exists for, and a call site reading
- * `hasList(l.key)` says *why* the rail toggles, which `true` would not.
- */
-const hasList = (_l: Landing): boolean => true;
-
-/** How many landings the narrow bar seats before folding the rest
-    (2026-09-02:「窄屏的时候,下面的侧边栏最多只显示四个icon,多余的
-    折叠为...」). Four glyphs, the fold and this machine's face sit a
-    390 bar comfortably; the wide rail is a column and folds nothing. */
-const NARROW_SHOWN = 4;
+// ⚠️ 墓碑 (the redesign, 2026-10-02): the rail — a column of glyphs down
+// the left on the wide face, a bar along the foot on the narrow one, with
+// `RailItem`, `hasList` and `NARROW_SHOWN` — is gone. Its job is the
+// floating navigation's (`components/FloatNav`): at most four seats, the
+// first three landings in the user's order (`lib/nav-order`) and 更多.
 
 const NO_QUERIES: Record<Landing, string> = {
   sessions: "",
@@ -257,150 +232,6 @@ const NO_QUERIES: Record<Landing, string> = {
   workspaces: "",
   browser: "",
 };
-
-function RailItem({
-  label,
-  tab,
-  on,
-  narrow,
-  badge,
-  onClick,
-  className,
-  children,
-}: {
-  label: string;
-  /** Which landing this glyph opens, when it opens one. */
-  tab?: Landing;
-  on?: boolean;
-  narrow: boolean;
-  badge?: number;
-  onClick?: () => void;
-  /**
-   * Extra styling for one item. **Exists for the mark**, which is not a
-   * fifth landing and therefore has to sit a group's distance from the
-   * four that are. It is a margin rather than a gap because the gap
-   * between rail items belongs to the nav, and one item cannot change
-   * it for itself.
-   *
-   * It used to exist for the opposite kind of reason: the mark's glyph
-   * is a picture, the selected look was a text colour, and a text colour
-   * tints a drawn glyph while doing nothing at all to a picture — so
-   * that one item said "I am open" its own way, and ended up the only
-   * item in the rail with a block behind it while being the only one
-   * that is not a place to go. Every item wears the block now
-   * (`app.css`), so that reason is gone and this carries only spacing.
-   */
-  className?: string;
-  children: React.ReactNode;
-}) {
-  const button = (
-    <Button
-      variant="ghost"
-      aria-label={label}
-      data-rail-item
-      data-landing={tab}
-      data-on={on}
-      onClick={onClick}
-      className={cn(
-        // Two deliberate choices in one string, both measured.
-        //
-        // **`px-2 py-2`, not the spacing tokens** — the one place in
-        // this rail that does not speak in them. `cn()` is
-        // tailwind-merge, and tailwind-merge does not read `in` as a
-        // padding, so `p-in` does not displace the vendored button's own
-        // `px-4`: both survive into the markup and the winner is
-        // whichever the stylesheet emitted last. Cost when that was
-        // tried here: every rail item went from 44 wide to 60, and the
-        // six of them no longer fit a phone's rail.
-        //
-        // **`shrink-0`** — what a rail out of room does about it. A row
-        // that overflows shrinks its items, and this row's items hold a
-        // button's padding but no text, so the first thing to give is
-        // the mark's `<img>`: it went to **width 0** while the rail
-        // reported no overflow at all, which is a missing app icon that
-        // nothing on screen and no layout inspection would report.
-        // (`flex-none` on the image itself was tried and is not the fix:
-        // it holds the height, because height is the column button's
-        // main axis, and the width still went to nothing.) With this,
-        // the same squeeze overflows the rail visibly instead —
-        // measured, and both outcomes are asserted in
-        // `scripts/check-rail.mjs`.
-        //
-        // (Numbers here carry no unit on purpose: `check-px.mjs` reads
-        // lines rather than syntax, so a number-and-unit is a build
-        // error even inside a comment.)
-        // **`h-rail-item`, a square** (components/Rail, 2026-09-26): the
-        // box is the rail's own 48 on every pointer, not the control
-        // floor — when the floor dropped to `--ctl-md` for a mouse the
-        // rail shrank with it to a 32 pitch, tighter than the design
-        // (「侧边栏的icon间距过小」). Items stand `gap-xxs` apart.
-        // The history of the floor, kept for the width below:
-        // **`min-w-touch`** — the finger floor (tokens.css
-        // `--touch`): the hit area grows to 44, the glyph keeps its
-        // `--icon-rail` size, and because the selected block and the
-        // hover wash paint this very button box, the highlight is the
-        // hit area — nothing is pressable that does not light up whole.
-        // Measured before this: every rail item was 44×30, under every
-        // guideline's floor (`check-face.mjs` now holds the line).
-        "group relative h-rail-item min-w-touch flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
-        // **`w-rail-item`** (docs/SHELL.md 第十三轮 第 2 条): the glyph
-        // box's width is a token now, because the first row's controls
-        // — and macOS's three buttons — start on this box's left edge,
-        // and `src-tauri/src/traffic.rs` carries that edge as a number.
-        // It is what the box measured already (a `--icon-rail` glyph and
-        // eight of padding each side); the token only names it.
-        "w-rail-item",
-        // **Pointing at an item paints the ground, never the glyph.**
-        // The `ghost` variant carries `hover:text-foreground`, which on
-        // this rail made a hovered *resting* item heavier than the open
-        // one — 12.20 against 10.01 (`check-rail` caught it the hour
-        // the open glyph stopped being full ink). A person dragging the
-        // pointer down the rail would have been shown a different
-        // answer to 我在哪一页 under every item they passed.
-        //
-        // Said as a `hover:` of its own because it has to be: a
-        // pseudo-class outranks a plain utility however the order runs
-        // — the same rule that made `focus:` need saying twice in
-        // `RowMenu`.
-        "hover:text-rail-ink",
-        // **Open takes the brand's hue, and since 2026-08-31 the glyph
-        // is the whole of what says open** — the block behind it is
-        // gone (`app.css` carries the tombstone and the numbers).
-        //
-        // It was full ink until 2026-09-01, on a measurement that was
-        // right about one colour and wrong about the family: `--lq3` on
-        // paper is 2.22, under the 3.0 SC 1.4.11 asks of a graphic — so
-        // *that* green is a plate and not a mark. **A green deep enough
-        // is a mark**, and the token carries one per ground for exactly
-        // that reason (`--rail-on-ink`). The other half of the signal
-        // is the body filling solid, one rule away in the same file.
-        on && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
-        className,
-      )}
-    >
-      {children}
-      {badge !== undefined && badge > 0 && (
-        <span className="absolute right-1 top-1 min-w-4 rounded-full bg-badge px-1 text-center text-caption leading-4 tabular-nums text-badge-foreground">
-          {badge}
-        </span>
-      )}
-    </Button>
-  );
-  // The name shows itself the instant you point at it — the whole reason
-  // this is Radix and not the OS title with its 1.5s wait. Narrow has no
-  // pointer to hover with; the glyphs stand alone there, and the
-  // aria-label still names them for anyone listening.
-  return narrow ? (
-    button
-  ) : (
-    <Tooltip>
-      <TooltipTrigger asChild>{button}</TooltipTrigger>
-      <TooltipContent side="right" data-rail-tip>
-        {label}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
 
 /** The glyph beside each 「…」 page in its list (`identity` wears this
     machine's face instead, drawn where the list is). */
@@ -1318,253 +1149,57 @@ export default function App() {
     { key: "join", label: gui.join_with_a_ticket_ask, onSelect: () => setDialog("join") },
   ];
 
-  // Whether the open landing is one the narrow bar folded away — the
-  // 「…」trigger lights for it, because the rail must always answer
-  // 我在哪一页, even for a page whose own glyph is off the bar.
-  //
-  // **…or one of the more sections** (docs/SHELL.md 第十七轮 §1).
-  // 身份 is behind the avatar and lights that one instead.
-  const foldedOn =
-    (morePage !== null && morePage !== "identity") ||
-    (narrow && landings().slice(NARROW_SHOWN).some((l) => l.key === landing));
-  const rail = (
-    <nav
-      // **Named, because two things now ask for it by name**: the gate
-      // that measures the gap at its head (第 58 条) and this attribute
-      // right below it (第 59 条).
-      data-rail
-      // **L1, one of the window's three handles** (「窗口的可拖动部分是
-      // 顶部空白区域、侧边栏空白区域」 — the user, 第八轮 第 59 条),
-      // marked once by the shell (`components/shell.ts`): the rail's
-      // blank moves the window, and every glyph and menu in here keeps
-      // its press by tauri's own rule. Inert on the web face.
-      {...WINDOW_DRAG}
-      className={cn(
-        "flex items-center select-none",
-        // Two gaps, one per face. The column rail holds its items a
-        // `--gap-row` apart: at `--gap-in` the four landings read as a
-        // single clump (that is the distance for the *parts* of one
-        // thing), while a whole `--gap-group` centered them into a
-        // free-floating cluster that read as layout gone wrong — this
-        // rail is a list, and row-step is the list's own step. The narrow
-        // bar keeps `gap-in`: `justify-around` is already spending the
-        // row's width, and a phone's rail has no room to give
-        // (`scripts/check-rail.mjs` measures what overflow does there).
-        // `gap-1` on the narrow bar, not `gap-in`: eight items at the
-        // finger floor are 352 wide before any gap, and the sixth
-        // landing (额度) put `gap-in`'s eight-per-gap over a 390 phone by
-        // twelve — the bar overflowed and the whole page scrolled
-        // sideways (check-tabs found it). `justify-around` still spreads
-        // whatever room is left, so the group reads as one.
-        // **On the block's ground** (第十三轮 第 1 条): the rail and the
-        // list are one material, and the rule at the rail's right edge
-        // is the one line the user kept (「还是要有线」) — from under the
-        // block's first row, where this nav starts, to the foot.
-        // **No `border-r` on the wide rail**: the line between the
-        // rail and the list is drawn on the list's seat (`App`'s
-        // `[data-side-list-seat]`), so this nav is the full `--rail-w`
-        // and its glyph boxes sit at `--side-inset` — the very edge the
-        // first row's controls start on. A border here made the rail's
-        // content box one narrower and the glyph half a pixel off.
-        // **…and over a phone's home indicator** (`--safe-bottom`,
-        // 2026-10-02): the bar's own `py-1` plus the edge the system
-        // reports, zero on a desktop window.
-        narrow
-          ? "flex-row justify-around gap-1 border-t bg-side pt-1 pb-[calc(var(--spacing)+var(--safe-bottom))]"
-          : "w-rail flex-col gap-xxs bg-side pt-xxs pb-row",
-      )}
-    >
-      {(narrow ? landings().slice(0, NARROW_SHOWN) : landings()).map((l) => (
-        <RailItem
-          key={l.key}
-          label={l.name}
-          tab={l.key}
-          // ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮): the first glyph
-          // wore `mt-traffic` — the gap macOS's three buttons stood in.
-          // They stand in the window's own row now, above this rail on
-          // every platform, so the rail starts where its padding says.
-          // **Not lit while a 「…」 page is up.** A landing is still
-          // remembered — coming back out of the mesh returns to it — but
-          // remembering it and being the thing on screen are two facts,
-          // and painting both at once puts two selected items in one
-          // rail with the wrong one lit.
-          on={morePage === null && landing === l.key}
-          narrow={narrow}
-          // Only the sessions glyph counts anything: the badge rule is
-          // that it must be able to reach zero (docs/UX.md 状态呈现),
-          // and machines do not go away when you have looked at them.
-          badge={l.key === "sessions" ? blockedOrUnread : undefined}
-          onClick={() => {
-            // The open landing's glyph pressed again puts its list away
-            // and brings it back (2026-09-02:「再次点击侧边栏icon,应该
-            // 收起这个列表,再次点击打开。初次点击默认是打开的」) — the
-            // activity-bar gesture, and a second handle on the same
-            // fold the seam's drag owns. Only where a list exists to
-            // put away (the two inbox landings) and only wide: narrow
-            // shows one screen, so there is nothing beside the list to
-            // give its room to.
-            const again = morePage === null && landing === l.key;
-            // A 「…」 page is open over this landing, so pressing a rail
-            // glyph has to close it — otherwise the one press that
-            // always answers 「带我回去」 would do nothing visible.
-            setMorePage(null);
-            setLanding(l.key);
-            setScreen("list");
-            setSwitchingTabs(false);
-            // …and workspaces since 2026-09-16 (「再次点击侧边栏工作区
-            // icon,是收起工作区。这点一直没有实现」): it was left out
-            // of this pair for no reason anybody wrote down.
-            //
-            // **…and 额度 since 2026-09-20** (第 4 条:「额度页面, 再次
-            // 点击额度按钮也应该收起额度侧边栏」). It was left out for
-            // the same non-reason — its column was a `w-72` of its own
-            // rather than the shell's, so there was nothing here to
-            // toggle. The list is `ListPane` now and this is one rule
-            // the rail gives, not something each landing implements:
-            // **the test is whether the landing has a list**, which is
-            // one predicate below rather than a set of landing names
-            // that the next landing gets left out of.
-            if (again && !narrow && hasList(l.key)) {
-              listPane.toggle();
-            } else {
-              // Choosing a landing reopens a collapsed list: the rail is
-              // the anchor a hidden pane comes back from (the seam's own
-              // handle is the other way), and it comes back at the width
-              // it had, not at the default.
-              listPane.expand();
-            }
-          }}
-        >
-          {l.glyph}
-        </RailItem>
-      ))}
-      {!narrow && <span className="flex-1" />}
-      {/* 「…」, and it is **one glyph with one menu on both faces now**
-          (docs/MORE.md 入口:「按下是就地菜单」).
-
-          It used to be two different controls: a menu on the narrow bar
-          (the landings past the fourth, plus 设置) and a plain button on
-          the wide rail that opened the settings dialog. 设置 stopped
-          being one thing behind that press — it is three — so the wide
-          side grew the same menu rather than a second way of choosing
-          between three pages.
-
-          What still differs per face is what is *above* the three: the
-          narrow bar folds the landings it has no room for (2026-09-02:
-          「窄屏的时候,下面的侧边栏最多只显示四个icon,多余的折叠为...」)
-          and a rule separates them from the pages, because a landing and
-          a page are not the same kind of destination. The wide rail
-          seats every landing, so there is nothing to fold and the menu
-          is the three rows alone.
-
-          The trigger's classes mirror `RailItem`'s button — one look for
-          every rail seat; the reasons live there. */}
-      {/* 「…」 opens 更多 directly — no menu popup (docs/SHELL.md 第十七轮 §1).
-          On narrow, folded landings still need a way in: they get it via
-          the dedicated MoreNarrowMenu rendered outside the rail below.  */}
-      <Button
-        variant="ghost"
-        aria-label={gui.rail_more}
-        data-rail-item
-        data-rail-more
-        data-on={foldedOn}
-        onClick={() => {
-          setMorePage((prev) => prev ?? "settings");
-          setSwitchingTabs(false);
-          setScreen("list");
-        }}
-        className={cn(
-          "group relative h-rail-item min-w-touch w-rail-item flex-col justify-center gap-0 rounded-md px-2 py-2 shrink-0 text-rail-ink",
-          "hover:text-rail-ink",
-          foldedOn && "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]",
-        )}
-      >
-        <IconMore />
-      </Button>
-      {/* This machine, at the foot of the rail — **and it is the way
-          into the mesh now**.
-          「不要右上角的 icon 了吧。取而代之,用左下角的点击作为原来的
-          khor 页面」 — the user, 2026-08-29. The app's mark used to sit
-          at the head of this rail and open the mark's place; the face
-          sat down here as a fact about this machine that was
-          deliberately **not** a button.
-
-          Both halves of that swapped, and the second half is the one
-          worth writing down: the old comment here argued that a face
-          parked at a control's distance from a control reads as one
-          more thing to press, and used spacing to say it was not one.
-          **It is one now, so the argument is not patched, it is
-          spent** — what is left is the spacing, which now says the same
-          thing the mark's `mb-group` used to say at the other end: this
-          is not a fifth landing.
-
-          It reads better than the mark did, and that is why this is not
-          merely obedience: the mark's place is this machine in the
-          middle of the mesh, so pressing **this machine's own face** to
-          get there says where you are going. A logo says nothing about
-          where it leads — it was the app's identity being asked to
-          double as navigation.
-
-          Drawn on both faces, unlike before. The face used to be
-          wide-only because it was decoration and a phone's rail has no
-          room for decoration; it is the only door to the mesh now, and
-          a door cannot be wide-only.
-
-          # It opens the identity card now, and the mesh is one press further
-
-          「点击左下角头像, 是选择接入已有khor网络...」 — the user,
-          2026-09-18, and the ruling that followed (docs/MORE.md) kept the
-          half that needs no hypergraph: **this machine, as a card**.
-          Pressing your own face to be told who you are is the sentence
-          this seat was already saying; pressing it to be shown a picture
-          of everybody was the nearest thing available at the time.
-
-          **The mesh did not lose its door, it moved behind this one**
-          (`IdentityPage`'s 网里的机器). That is a ruling I made rather
-          than one docs/MORE.md wrote down, and it is in the handoff: the
-          alternative was retiring `MarkPlace` in a batch that is not
-          about the network, and the network page 「等这张宏图」 is where
-          that picture is going to be re-decided anyway. */}
-      <RailItem
-        label={gui.identity}
-        on={morePage === "identity"}
-        narrow={narrow}
-        onClick={() => {
-          setMorePage("identity");
-          // A page, not 更多's section list: on the narrow face "list"
-          // would show the six rows instead of this machine.
-          setScreen("detail");
-          setSwitchingTabs(false);
-        }}
-        // Whitespace is the whole separator, and it is deliberately not
-        // a line. A rule would have to be drawn twice to say one thing —
-        // horizontal in the column rail, vertical in the narrow bottom
-        // bar — so it is said in the one form that does not change shape
-        // with the rail.
-        className={narrow ? "ms-group" : "mt-group"}
-      >
-        {/* `data-rail-mark` names **the way into the mark's place**, not
-            the artwork that used to wear it — that is what every gate
-            and the smoke reach for, and what they are checking did not
-            change when the picture did. Same derivation as this
-            machine's row in the device list, so the two are the same
-            picture; that is the whole promise, and it is checkable on
-            one screen. */}
-        {/* 暂停 (docs/MORE.md): the mark carries it, because the rail
-            is the one thing on screen the whole time and a machine that
-            is deliberately quiet should not have to be asked. An
-            attribute rather than a second glyph — the picture is this
-            machine's face and a badge over it would be a second thing
-            to recognise. */}
-        <span
-          data-rail-mark
-          data-paused={devices.find((d) => d.me)?.paused ? "" : undefined}
-          className="block size-avatar"
-        >
-          <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-full" />
-        </span>
-      </RailItem>
-    </nav>
+  // **The floating navigation** (the redesign, 2026-10-02). Its seats
+  // are the user's first three landings; 更多 holds the rest, 设置 and
+  // this machine, and is lit while any of them is on screen.
+  const navOrder = useNavOrder();
+  const seatOf = (key: Landing): NavSeat => {
+    const l = landings().find((x) => x.key === key)!;
+    return {
+      key,
+      name: l.name,
+      glyph: l.glyph,
+      // Only the sessions seat counts anything: the badge rule is that it
+      // must be able to reach zero (docs/UX.md 状态呈现), and machines do
+      // not go away when you have looked at them.
+      badge: key === "sessions" ? blockedOrUnread : undefined,
+    };
+  };
+  const goLanding = (key: Landing) => {
+    // A 「…」 page is open over this landing, so choosing a landing closes
+    // it — the one press that always answers 「带我回去」.
+    setMorePage(null);
+    setLanding(key);
+    setScreen("list");
+    setSwitchingTabs(false);
+    // Choosing a landing brings a list put away back, at the width it had.
+    listPane.expand();
+  };
+  const me = devices.find((d) => d.me) ?? null;
+  const nav = (
+    <FloatNav
+      seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
+      more={navOrder.slice(NAV_SHOWN).map(seatOf)}
+      active={morePage === null ? landing : null}
+      moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
+      onGo={(key) => goLanding(key as Landing)}
+      onSettings={() => {
+        setMorePage("settings");
+        setSwitchingTabs(false);
+        // Narrow: the sections' list, one screen; wide: the first page
+        // beside the sections in the list column.
+        setScreen(narrow ? "list" : "detail");
+      }}
+      me={me ? { face: me.face, name: me.shown } : null}
+      onMe={() => {
+        setMorePage("identity");
+        setScreen("detail");
+        setSwitchingTabs(false);
+      }}
+      // Floating over the foot of whatever holds it — the screen, or the
+      // list column — centred, clear of a phone's home indicator.
+      className="absolute bottom-[calc(var(--nav-gap)+var(--safe-bottom))] left-1/2 z-30 -translate-x-1/2"
+    />
   );
 
   // **The keyboard and the menu bar** (`lib/shortcuts`, 2026-09-28): the
@@ -1729,6 +1364,7 @@ export default function App() {
       head={
       <PaneBar
         seat="side"
+        title={paneName}
         // Files and browser search machines, because machines are what
         // they list — so they borrow the machine pane's label rather
         // than growing one that names a thing the box cannot find.
@@ -2259,28 +1895,18 @@ export default function App() {
       onKeyDown={(e) => walkList(e, "[data-more-landing], [data-more-open]")}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1"
     >
-      {narrow &&
-        landings()
-          .slice(NARROW_SHOWN)
-          .map((l) => (
-            <button
-              key={l.key}
-              type="button"
-              data-more-landing={l.key}
-              data-on={false}
-              onClick={() => {
-                setMorePage(null);
-                setLanding(l.key);
-                setScreen("list");
-                setSwitchingTabs(false);
-                listPane.expand();
-              }}
-              className="mx-in flex min-h-touch items-center gap-row rounded-md px-3 text-start text-body hover:bg-fill"
-            >
-              <span className="size-5 flex-none [&_svg]:size-full">{l.glyph}</span>
-              {l.name}
-            </button>
-          ))}
+      {/* The list page's title, 设置 — in the head row on the narrow face,
+          a row of its own under the window's corner on the wide one (the
+          same two places `PaneBar` puts a landing's). */}
+      {narrow ? (
+        <NarrowHead>
+          {() => <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.nav_settings}</h1>}
+        </NarrowHead>
+      ) : (
+        <h1 data-list-title className="flex-none truncate px-group pt-xxs pb-in text-title-lg">
+          {gui.nav_settings}
+        </h1>
+      )}
       {morePageOrder.map((p) => (
         <button
           key={p}
@@ -2458,7 +2084,7 @@ export default function App() {
     <div data-side-l0 {...WINDOW_DRAG} className="flex min-w-0 flex-none flex-col">
       <SideHead
         narrow={narrow}
-        bare={!narrow && (morePage !== null || listPane.collapsed)}
+        bare={!narrow && morePage !== null}
         seatRef={seats.setHead}
         claimed={seats.claimed}
         onJump={jump}
@@ -2483,7 +2109,7 @@ export default function App() {
         // **Clear of a phone's status bar** (`--safe-top`) on every
         // screen but a session's, which runs its paper up to the glass
         // and keeps the edge itself (`SessionScreen`).
-        <div className={cn("flex h-full flex-col", !inSession && "pt-safe-top")}>
+        <div data-nav-host={!inSession || undefined} className={cn("relative flex h-full flex-col", !inSession && "pt-safe-top")}>
           {!inSession && sideHead}
           {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of
@@ -2552,49 +2178,37 @@ export default function App() {
                         : detail
                       : list}
           </div>
-          {/* The landings' bar belongs to the lists: inside a session
-              the bar at the foot is the session's (the owner, 2026-10-02:
-              「会话里不显示」). */}
-          {!inSession && rail}
+          {/* The navigation floats over every screen but a session's,
+              whose foot is its own bar (the owner, 2026-10-02: 「会话里不
+              显示」), and the tab switcher, which is a step of it. */}
+          {!inSession && !switchingTabs && nav}
           {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       ) : (
         <div className="flex h-dvh flex-col">
           <div className="flex min-h-0 flex-1">
-          {/* **One block down the left** (docs/SHELL.md 第十三轮 第 1 条):
-              the rail and the list on one ground, a first row across
-              both. The landing's list column seats itself in the second
-              row beside the rail (`ListPane` seat="side"), wherever the
-              landing wrote it — 額度's and 浏览's are written inside
-              their landings, the shell's own is `list` below.
-              `min-w-traffic`: with the list put away the block is the
-              rail alone, and macOS's three buttons must still fit in
-              its first row. */}
-          {/* **Its width has one owner** (docs/SHELL.md 第十五轮 第 4 条,
-              挂账 2): `--list-w`, set here from the one seam's state, and
-              `app.css` makes the block `--rail-w` + the line + that. The
-              first row, the list and the ground are all this box's
-              width — before, the block was as wide as its widest child,
-              and the search box's own minimum held the ground out past
-              a list dragged narrow. A landing with no list column (a
-              「…」 page) or a list put away is the rail alone. */}
+          {/* **The list column** (the redesign, 2026-10-02: Apple's Notes).
+              No rail: the column is the phone's list page — the window's
+              corner and the list's glass buttons on its first row, its
+              title under them, the rows, and the floating navigation over
+              its foot — and a hairline is all that divides it from the
+              content. The landing's list seats itself here (`ListPane`
+              seat="side"), wherever the landing wrote it.
+              **Its width has one owner** (docs/SHELL.md 第十五轮 第 4 条):
+              `--list-w`, from the one seam's state. It is never put away
+              now — the navigation lives in it. */}
           <aside
             data-side
-            className="flex min-w-traffic flex-none flex-col border-r bg-side"
-            style={{ "--list-w": `${listPane.collapsed && morePage === null ? 0 : listPane.width}px` } as CSSProperties}
+            data-nav-host
+            className="relative flex flex-none flex-col border-r bg-side"
+            style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
           >
             {sideHead}
-            <div className="flex min-h-0 flex-1">
-              {rail}
-              {/* **The line** (「还是要有线」): between the rail and the
-                  list, from under the first row to the foot — on the
-                  seat rather than on the rail, so it stays when the list
-                  is put away and the rail keeps its full width. */}
-              <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1 border-l">
-                {morePage !== null && moreList}
-              </div>
+            <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
+              {morePage !== null && moreList}
             </div>
+            {nav}
           </aside>
           {/* **The right side**: the app's ground, a first row at the
               same height as the block's, and a board floating under it

@@ -2260,6 +2260,33 @@ new-session-machine = "目标机器"
 session-tabs = "打开的会话"
 # 窄屏栏放不下的落点折进的那个口(2026-09-02:「最多只显示四个icon,多余的折叠为...」)。
 rail-more = "更多"
+# ── the floating navigation (the redesign, 2026-10-02) ──────────────
+# Its name for a screen reader, 更多's 设置 (the 「…」 pages' list — not
+# `settings`, which is 通用, one page of it), and a list's round search
+# button and the way out of the box it opens.
+nav = "导航"
+nav-settings = "设置"
+search-open = "搜索"
+search-close = "结束搜索"
+# 外观: the bar's order, and the two text sizes.
+nav-order = "底部导航"
+nav-order-note = "前三项在底部，其余收进「更多」。拖动调整顺序"
+nav-order-up = "上移"
+nav-order-down = "下移"
+type-size = "字号"
+ui-size-system = "界面字号跟随系统"
+ui-size = "界面字号"
+term-size = "终端字号"
+# A machine's page: its sessions instead of its dashboard.
+machine-sessions = "这台机器上的会话"
+machine-sessions-none = "这台机器上没有会话"
+# Pull to refresh on a list.
+pull-to-sync = "下拉同步"
+release-to-sync = "松开同步"
+syncing = "正在同步"
+syncing-waiting = "正在同步，{0} 台已到，{1} 还没回"
+synced-now = "已同步"
+row-unreachable = "够不到 {0} · {1}的样子"
 # ── 额度 ──────────────────────────────────────────────────────────
 # The rail's sixth landing: registered API accounts as rings. 「额度」
 # not 「用量」— `khor usage` (花了多少) already owns that word.

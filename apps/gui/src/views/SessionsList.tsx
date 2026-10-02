@@ -279,21 +279,14 @@ export function SessionsList({
     name: r.title,
     // The preview line: the newest thing said or shown, and the machine
     // a reported row came from — both 「where this row has been」.
-    sub:
-      r.last || r.source ? (
-        <span className="flex items-baseline gap-2 overflow-hidden whitespace-nowrap">
-          {r.last && (
-            <span data-last className="min-w-0 flex-1 truncate">
-              {r.last}
-            </span>
-          )}
-          {r.source && (
-            <span data-row-source className="flex-none">
-              {gui.from_device(r.source.device)}
-            </span>
-          )}
-        </span>
-      ) : undefined,
+    // ⚠️ 墓碑 (the redesign, 2026-10-02): 「来自 <machine>」 followed the
+    // last line on a row that lives elsewhere. The face is that machine's
+    // and says it; the row says what is happening, nothing else.
+    sub: r.last ? (
+      <span data-last className="block min-w-0 truncate">
+        {r.last}
+      </span>
+    ) : undefined,
     // The right column: the state word (this row's `fact`) over the age
     // (`aux`) — state is never colour alone, so the word stays.
     //
@@ -337,11 +330,9 @@ export function SessionsList({
         </span>
         {r.at_ms > 0 &&
           (r.quiet ? (
-            <span data-quiet-note className="text-callout">
-              {quietFor(r.at_ms)}
-            </span>
+            <span data-quiet-note>{quietFor(r.at_ms)}</span>
           ) : (
-            <span className="text-callout tabular-nums">{ago(r.at_ms)}</span>
+            <span className="tabular-nums">{ago(r.at_ms)}</span>
           ))}
       </span>
     ),

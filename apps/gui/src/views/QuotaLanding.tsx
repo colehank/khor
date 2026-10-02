@@ -1356,6 +1356,7 @@ export function QuotaLanding({
   const bar = (
     <PaneBar
       seat="side"
+      title={gui.accounts_tab}
       searchLabel={gui.search_quota}
       query={query}
       onQuery={onQuery}

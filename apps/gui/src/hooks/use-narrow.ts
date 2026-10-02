@@ -9,7 +9,7 @@
 // day a stylesheet actually needed the number (2026-09-04).
 import { useEffect, useState } from "react";
 
-export const NARROW_QUERY = "(max-width: 719px)";
+export const NARROW_QUERY = "(max-width: 759px)";
 
 export function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);

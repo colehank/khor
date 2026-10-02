@@ -62,7 +62,7 @@ export type KindMark = {
  * 28 (2026-09-28 audit 第 6 条).
  */
 export const SIZES = {
-  row: { face: "size-avatar", on: "size-kind-mark", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
+  row: { face: "size-list-face", on: "size-kind-mark", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
   tab: { face: "size-4", on: "size-kind-mark-tab", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
 } as const;
 

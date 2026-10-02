@@ -29,6 +29,7 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark, type FaceOf, type KindMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { useNarrow } from "@/hooks/use-narrow";
 import { walkList } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
@@ -198,6 +199,7 @@ export function SideList({
   /** Extra anchors on a group's heading, for a column's older gates. */
   headData?: (group: string) => Data;
 }) {
+  const narrow = useNarrow();
   const shown = rows.filter((r) => finds(query, r.find));
   // **A query reads everything**, the fold included: it is the person
   // asking for a row wherever it is. The fold is the untouched view's.
@@ -265,19 +267,38 @@ export function SideList({
 
   const one = (r: SideRow, prev: SideRow | undefined, size: number) => {
     const open = !shutOf(r.group);
+    // **The row of the redesign** (2026-10-02): the face, then the words
+    // over an inset hairline that starts where the words do — Apple's
+    // lists. `list-row` / `list-face` are the pointer's sizes (68 / 40
+    // under a finger, 56 / 32 under a mouse). The hairline is the text
+    // block's foot, so a picked row's grey block (wide) hides its own.
     const button = (
       <button
         type="button"
         data-side-open
         {...r.openData}
         onClick={r.onOpen}
-        className={cn("flex min-h-row-2 min-w-0 flex-1 items-center gap-row px-in py-1 text-left", RING)}
-      >
-        {"machine" in r.face ? (
-          <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
-        ) : (
-          <FaceMark face={r.face} halo={r.halo} />
+        className={cn(
+          "flex min-h-list-row min-w-0 flex-1 items-stretch gap-row text-left",
+          narrow ? "ps-group" : "ps-row",
+          RING,
         )}
+      >
+        <span className="flex flex-none items-center">
+          {"machine" in r.face ? (
+            <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
+          ) : (
+            <FaceMark face={r.face} halo={r.halo} />
+          )}
+        </span>
+        <span
+          data-side-text
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-row border-b py-1",
+            narrow ? "pe-group" : "pe-row",
+            r.selected && !narrow && "border-transparent",
+          )}
+        >
         <span className="min-w-0 flex-1">
           <span data-side-title className="block min-w-0">
             {r.title}
@@ -290,6 +311,7 @@ export function SideList({
           </span>
         </span>
         {r.trailing}
+        </span>
       </button>
     );
     return (
@@ -301,9 +323,9 @@ export function SideList({
             one is still this row's neighbour, which leaves the rule
             right under the heading. The seam's colour: `border-t` is
             `--color-border`, the same token `ListPane`'s seam wears. */}
-        {prev?.group === "pin" && r.group !== "pin" && (
-          <div data-side-list-rule aria-hidden className="mx-in my-xxs border-t" />
-        )}
+        {/* ⚠️ 墓碑 (the redesign): a rule stood here between the pinned
+            group and the rest. Every row has its own hairline now, and
+            the next group's heading is the boundary. */}
         {/* A heading starts where the group changes between neighbouring
             rows: the rows arrive grouped, so this notices a boundary
             rather than deciding one, and a heading can never be drawn
@@ -319,7 +341,11 @@ export function SideList({
             {...headData?.(r.group)}
             aria-expanded={open}
             onClick={() => toggle(r.group)}
-            className={cn("flex min-h-touch w-full items-center gap-xxs rounded-md px-in pt-in pb-xxs text-left text-group text-tertiary", RING)}
+            className={cn(
+              "flex min-h-touch w-full items-end gap-xxs pt-in pb-xxs text-left text-group text-muted-foreground",
+              narrow ? "px-group" : "rounded-md px-row",
+              RING,
+            )}
           >
             {/* The family's chevron at 12 (components/GroupHeader), right
                 when shut and turned a quarter when open — it is centred
@@ -347,7 +373,15 @@ export function SideList({
             // with the ordinary ink when it is not — two states and an
             // ink that changes with them, which a class here could not
             // say without knowing about the window.
-            className={cn("flex w-full items-center rounded-md", !r.selected && "hover:bg-fill", r.dim && !r.selected && "opacity-55")}
+            // A picked row is a rounded grey block on the wide face and
+            // nothing on the narrow one, where the list is a screen of its
+            // own and the picked thing is the next screen (the redesign).
+            className={cn(
+              "flex w-full items-center",
+              !narrow && "rounded-lg",
+              !r.selected && !narrow && "hover:bg-fill",
+              r.dim && !r.selected && "opacity-55",
+            )}
           >
             {/* **The menu's trigger is the button, not the strip around
                 it**: the trigger carries the long press's
@@ -378,7 +412,7 @@ export function SideList({
       // ↑ ↓ Home End walk the rows, the headings and the fold; ⏎ / Space
       // open the one with the ring — they are buttons (`lib/shortcuts`).
       onKeyDown={(e) => walkList(e, WALK)}
-      className="px-in pb-in"
+      className={narrow ? "pb-in" : "px-in pb-in"}
     >
       <DeleteDialog pending={pending} onDone={() => setPending(null)} />
       {run(fresh)}
@@ -390,7 +424,11 @@ export function SideList({
           data-old-fold
           data-open={showOld}
           onClick={() => setShowOld((v) => !v)}
-          className={cn("flex min-h-row-1 w-full items-center rounded-md px-in text-left text-caption text-tertiary hover:bg-fill", RING)}
+          className={cn(
+            "flex min-h-row-1 w-full items-center text-left text-caption text-tertiary hover:bg-fill",
+            narrow ? "px-group" : "rounded-md px-row",
+            RING,
+          )}
         >
           {showOld ? old.less : old.more(aged.length)}
         </button>

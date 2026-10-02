@@ -66,8 +66,16 @@ svg [data-body] {
   }
 }
 
-[data-rail-item][data-on="true"] svg [data-body] {
+[data-rail-item][data-on="true"] svg [data-body],
+:is([data-nav-item], [data-nav-more])[data-on="true"] svg [data-body] {
   fill-opacity: 1;
+}
+
+/* **A list scrolls out from under the floating navigation** (the
+   redesign, 2026-10-02): its foot keeps the capsule's room, so the last
+   row can be brought up clear of the glass. */
+[data-nav-host] [data-pane-body] {
+  padding-bottom: var(--nav-room);
 }
 
 /* **A kind mark painted on a face is one density** (类型标记「浮现」,
@@ -301,15 +309,16 @@ input[type="search"]::-webkit-search-decoration {
 
    **Everything but the face** (`[data-side-face]`) keeps its own inks: a
    quota row's ring and a session's kind mark and halo are drawn there. */
-[data-side-row][data-selected="true"] {
+/* (The redesign: wide only — a narrow list has no picked state.) */
+:root:not([data-narrow]) [data-side-row][data-selected="true"] {
   background-color: var(--fill-strong);
 }
-[data-side-row][data-selected="true"] > :not([data-side-open]),
-[data-side-row][data-selected="true"] [data-side-open] > :not([data-side-face]) {
+:root:not([data-narrow]) [data-side-row][data-selected="true"] > :not([data-side-open]),
+:root:not([data-narrow]) [data-side-row][data-selected="true"] [data-side-open] [data-side-text] {
   --muted-foreground: var(--foreground);
   --tertiary: var(--foreground);
 }
-[data-side-row][data-selected="true"] [data-word-text] {
+:root:not([data-narrow]) [data-side-row][data-selected="true"] [data-word-text] {
   color: var(--foreground) !important;
 }
 
@@ -326,7 +335,7 @@ input[type="search"]::-webkit-search-decoration {
   --muted-foreground: var(--foreground);
   --tertiary: var(--foreground);
 }
-:root:not([data-window-key="false"]) [data-side-row][data-selected="true"] [data-side-title] {
+:root:not([data-window-key="false"]):not([data-narrow]) [data-side-row][data-selected="true"] [data-side-title] {
   font-weight: var(--text-headline--font-weight);
 }
 
@@ -386,7 +395,9 @@ html:root[data-scanning] body {
    gave each of them the left block's width (2026-09-26: the rail's
    「机器」 hint drawn 353 wide). */
 aside[data-side] {
-  width: calc(var(--rail-w) + var(--hair) + var(--list-w));
+  /* The list column alone since the redesign (no rail); its hairline is
+     a border inside this width. */
+  width: var(--list-w);
 }
 
 /* **The board is the whole screen on the narrow face** (docs/SHELL.md 第

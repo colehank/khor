@@ -934,7 +934,7 @@
    * window's edge on the 48 row: the blank the owner pointed at.
    * `check-boot` holds the arithmetic in both postures (a finger's lip
    * is at the foot of this file); `check-face` §12 measures it drawn. */
-  --tab-lip: 5px;
+  --tab-lip: 12px;
   /* **38: macOS's compact toolbar** (2026-09-29; 48 from 第十五轮 until
    * then) — Safari's and Finder's with 「使用紧凑布局」, every page ten
    * pixels taller. **Written, not summed** (docs/design-system/
@@ -952,7 +952,9 @@
    * its three buttons can be centred on: AppKit places them once, when
    * the window is built, and a row that changed height at 760 wide
    * would leave them five points off its middle. */
-  --pane-head: 38px;
+  /* 52 at every pointer since the redesign (2026-10-02): the canvas's
+     first row, list column and content alike. */
+  --pane-head: 52px;
   /* ── the session page on the narrow face (2026-10-02, iOS 第三步 A) ──
    *
    * The owner, of another phone's terminal: 「上方完全交给内容，下方是操作
@@ -1107,7 +1109,8 @@
      tab strip's right end) and Linux (system decorations) leave no
      strip here. */
   --traffic: 0px;
-  --list-w: 288px;
+  /* 340 since the redesign: the canvas's list column. */
+  --list-w: 340px;
   /* The list pane's drag bounds. The floor is where the PaneBar stops
    * being usable — below ~180 the search field is a slit before the
    * pane itself has failed, so the pane should give way first. Under
@@ -1967,6 +1970,8 @@
   --radius-md: 8px;
   --radius-lg: 10px;
   --radius-xl: 12px;
+  /* A menu that opens from glass (更多), iOS's 20. */
+  --radius-2xl: 20px;
   --radius-full: 9999px;
 }
 
@@ -2077,6 +2082,20 @@
      / `pb-tab-lip` on a tab, the room over its label and the foot under
      it (2026-09-29). */
   --spacing-pane-head: var(--pane-head);
+  --spacing-glass-btn: var(--glass-btn);
+  --spacing-glass-icon: var(--glass-icon);
+  --spacing-glass-item-h: var(--glass-item-h);
+  --spacing-glass-item-w: var(--glass-item-w);
+  --spacing-glass-pad: var(--glass-pad);
+  --spacing-nav-h: var(--nav-h);
+  --spacing-nav-item: var(--nav-item);
+  --spacing-nav-glyph: var(--nav-glyph);
+  --spacing-nav-gap: var(--nav-gap);
+  --spacing-nav-room: var(--nav-room);
+  --spacing-nav-menu: var(--nav-menu);
+  --spacing-list-row: var(--list-row);
+  --spacing-list-face: var(--list-face);
+  --spacing-list-head: var(--list-head);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
   /* The narrow session page's foot (2026-10-02): `h-key-row` on the
@@ -2125,29 +2144,33 @@
    * WebKit snaps some boxes' rows to whole pixels and leaves others
    * alone, and a fractional leading is a caret walking off its letter
    * (`--text-code`'s tombstone, `check-wk`). */
-  --text-title-lg: 22px;
-  --text-title-lg--line-height: 28px;
+  --text-title-lg: var(--fs-title-lg);
+  --text-title-lg--line-height: var(--lh-title-lg);
   --text-title-lg--font-weight: 700;
-  --text-title-md: 17px;
-  --text-title-md--line-height: 22px;
+  --text-title-md: var(--fs-title-md);
+  --text-title-md--line-height: var(--lh-title-md);
   --text-title-md--font-weight: 600;
-  --text-title-sm: 15px;
-  --text-title-sm--line-height: 20px;
+  --text-title-sm: var(--fs-title-sm);
+  --text-title-sm--line-height: var(--lh-title-sm);
   --text-title-sm--font-weight: 600;
-  --text-headline: 13px;
-  --text-headline--line-height: 18px;
+  --text-headline: var(--fs-headline);
+  --text-headline--line-height: var(--lh-headline);
   --text-headline--font-weight: 600;
-  --text-body: 13px;
-  --text-body--line-height: 18px;
+  /* The navigation's seat names, iOS's tab bar 10 at every pointer. */
+  --text-nav-label: 10px;
+  --text-nav-label--line-height: 12px;
+  --text-nav-label--font-weight: 500;
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-body);
   --text-body--font-weight: 400;
-  --text-callout: 12px;
-  --text-callout--line-height: 16px;
+  --text-callout: var(--fs-callout);
+  --text-callout--line-height: var(--lh-callout);
   --text-callout--font-weight: 400;
-  --text-caption: 11px;
-  --text-caption--line-height: 14px;
+  --text-caption: var(--fs-caption);
+  --text-caption--line-height: var(--lh-caption);
   --text-caption--font-weight: 400;
-  --text-group: 11px;
-  --text-group--line-height: 14px;
+  --text-group: var(--fs-group);
+  --text-group--line-height: var(--lh-group);
   --text-group--font-weight: 600;
   /* ⚠️ 墓碑 (第十五轮): `--text-hero` 26/32 stood here — 「the one display
    * size, a number big enough to be read as a shape」 (a quota arc's
@@ -2225,8 +2248,8 @@
    * pair out on WebKit and goes red on any leading that is not a whole
    * number of pixels; 22 over 14.4 is 1.53, the nearest whole one
    * above 1.5. The prose rhythm loses 0.4px a row to it. */
-  --text-read: 16px;
-  --text-read--line-height: 24px;
+  --text-read: var(--fs-read);
+  --text-read--line-height: var(--lh-read);
   --text-read--font-weight: 400;
   /* **`mono`, 13, since 第十五轮** (docs/design-system/tokens.json: code,
    * paths, ids). The paragraphs above are the history of `--text-code`
@@ -2236,8 +2259,8 @@
    * pixels** (WebKit snaps a textarea's rows and not a pre's; `check-wk`
    * lays the pair out and goes red on a fraction), so 13 × 1.5 = 19.5 is
    * written 20. */
-  --text-mono: 13px;
-  --text-mono--line-height: 20px;
+  --text-mono: var(--fs-mono);
+  --text-mono--line-height: var(--lh-mono);
   --text-mono--font-weight: 400;
 
   /* ── ink weights ─────────────────────────────────────
@@ -2342,6 +2365,102 @@
   --term-dim: 55%;
 }
 
+
+/* **The type ramp, as two sizes and one scale** (the redesign,
+   2026-10-02). The fourteen styles keep their names; what they resolve
+   to is `--fs-*` / `--lh-*` here, so a stylesheet can move them — the
+   theme above inlines `var()`, not a number. A mouse gets macOS's sizes
+   (body 13); a finger gets iOS's (body 17), the sizes the phone boards
+   are drawn in. `--ui-scale` is 外观's 界面字号: 1 by default, the
+   system's own text size where the platform tells a page (iOS, through
+   `-apple-system-body`, `lib/ui-scale`), or the slider's value. */
+:root {
+  --ui-scale: 1;
+  --fs-title-lg: calc(22px * var(--ui-scale));
+  --lh-title-lg: calc(28px * var(--ui-scale));
+  --fs-title-md: calc(17px * var(--ui-scale));
+  --lh-title-md: calc(22px * var(--ui-scale));
+  --fs-title-sm: calc(15px * var(--ui-scale));
+  --lh-title-sm: calc(20px * var(--ui-scale));
+  --fs-headline: calc(13px * var(--ui-scale));
+  --lh-headline: calc(18px * var(--ui-scale));
+  --fs-body: calc(13px * var(--ui-scale));
+  --lh-body: calc(18px * var(--ui-scale));
+  --fs-callout: calc(12px * var(--ui-scale));
+  --lh-callout: calc(16px * var(--ui-scale));
+  --fs-caption: calc(11px * var(--ui-scale));
+  --lh-caption: calc(14px * var(--ui-scale));
+  --fs-group: calc(11px * var(--ui-scale));
+  --lh-group: calc(14px * var(--ui-scale));
+  --fs-read: calc(16px * var(--ui-scale));
+  --lh-read: calc(24px * var(--ui-scale));
+  --fs-mono: calc(13px * var(--ui-scale));
+  --lh-mono: calc(20px * var(--ui-scale));
+}
+@media (pointer: coarse) {
+  :root {
+    --fs-title-lg: calc(26px * var(--ui-scale));
+    --lh-title-lg: calc(32px * var(--ui-scale));
+    --fs-title-md: calc(20px * var(--ui-scale));
+    --lh-title-md: calc(25px * var(--ui-scale));
+    --fs-title-sm: calc(17px * var(--ui-scale));
+    --lh-title-sm: calc(22px * var(--ui-scale));
+    --fs-headline: calc(17px * var(--ui-scale));
+    --lh-headline: calc(22px * var(--ui-scale));
+    --fs-body: calc(17px * var(--ui-scale));
+    --lh-body: calc(22px * var(--ui-scale));
+    --fs-callout: calc(14px * var(--ui-scale));
+    --lh-callout: calc(19px * var(--ui-scale));
+    --fs-caption: calc(12px * var(--ui-scale));
+    --lh-caption: calc(16px * var(--ui-scale));
+    --fs-group: calc(13px * var(--ui-scale));
+    --lh-group: calc(18px * var(--ui-scale));
+    --fs-read: calc(16px * var(--ui-scale));
+    --lh-read: calc(24px * var(--ui-scale));
+    --fs-mono: calc(13px * var(--ui-scale));
+    --lh-mono: calc(20px * var(--ui-scale));
+  }
+}
+
+/* **Floating glass and the list's rows** (the redesign, 2026-10-02). Two
+   sizes, chosen by the pointer like the type ramp: a mouse gets the
+   window boards' (a 32 button, a 52 navigation capsule, 56 rows with a 32
+   face), a finger the phone boards' (44, 64, 68 with 40). Width decides
+   where they are; the pointer decides how big. */
+:root {
+  --glass-btn: 32px;
+  --glass-icon: 16px;
+  /* A button inside a capsule: the capsule's height less a 4 inset top
+     and bottom, and its width less 2 a side, the capsule padded 3. */
+  --glass-item-h: calc(var(--glass-btn) - 8px);
+  --glass-item-w: calc(var(--glass-btn) - 4px);
+  --glass-pad: 3px;
+  --nav-h: 52px;
+  --nav-item: 64px;
+  --nav-glyph: 20px;
+  --nav-gap: 16px;
+  /* 更多's menu, as wide as the canvas draws it. */
+  --nav-menu: 236px;
+  --list-row: 56px;
+  --list-face: 32px;
+  --list-head: var(--pane-head);
+  /* What a scroller under the floating navigation keeps clear at its
+     foot, so its last row can be scrolled out from under the glass. */
+  --nav-room: calc(var(--nav-h) + 2 * var(--nav-gap) + var(--safe-bottom));
+}
+@media (pointer: coarse) {
+  :root {
+    --glass-btn: 44px;
+    --glass-icon: 20px;
+    --nav-h: 64px;
+    --nav-item: 76px;
+    --nav-glyph: 24px;
+    --nav-gap: 24px;
+    --list-row: 68px;
+    --list-face: 40px;
+  }
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
@@ -2406,8 +2525,7 @@
        be clipped by the strip's scroller. So under a finger the row is
        the 48 it was, and a tab's lip is what centres a 44 label in it:
        (48 − 44) / 2. `check-boot` holds both halves of that sum. */
-    --pane-head: 48px;
-    --tab-lip: 2px;
+    --tab-lip: 4px;
   }
 }
 
