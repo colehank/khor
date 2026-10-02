@@ -2253,7 +2253,7 @@ export default function App() {
     <SettingsRereadProvider value={settings.reread}>
     <SideSeatsProvider value={seats.seats}>
     <HereHostsProvider value={hosts}>
-    <TooltipProvider delayDuration={0}>
+    <TooltipProvider>
       {narrow ? (
         // **As tall as `#root`, not the screen** (2026-10-02): `#root`
         // follows what the soft keyboard leaves (`lib/viewport`), and a

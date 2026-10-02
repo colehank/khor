@@ -7,22 +7,28 @@
 // paper as every other floating thing here; and it carries no arrow —
 // the rail label is a name, not a callout.
 //
-// `delayDuration = 0` is a product decision, not a default worth losing:
-// the rail is icon-only, so the name is the only thing that says where a
-// glyph goes. A tooltip that waits is a name that is not there.
+// **A tooltip waits, then follows** (the audit fix plan F6.1,
+// 2026-10-03): about 600ms before the first name appears, as a Mac does,
+// so a pointer passing over the window does not shower it with labels;
+// once one is showing, its neighbours answer at once for 300ms
+// (`skipDelayDuration`), so reading along a row of glyphs is not a wait
+// per glyph. ⚠️ 墓碑: `delayDuration = 0` — every pass of the pointer
+// lit a label.
 import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 
 import { cn } from "@/lib/utils";
 
 function TooltipProvider({
-  delayDuration = 0,
+  delayDuration = 600,
+  skipDelayDuration = 300,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
   return (
     <TooltipPrimitive.Provider
       data-slot="tooltip-provider"
       delayDuration={delayDuration}
+      skipDelayDuration={skipDelayDuration}
       {...props}
     />
   );
