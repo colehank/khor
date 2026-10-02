@@ -97,6 +97,29 @@ const LIVE = {
   link: fit(2.14, 2.14, 11.73), // round
 } as const;
 
+/**
+ * **Pointed marks lean toward their point** (2026-10-02, the owner:
+ * 「返回icon在圆形按钮下怎么怪怪的，感觉靠右侧了」). A chevron centred by
+ * its ink box is not centred to the eye: its point is a single dot and its
+ * two arm tips are a wide edge, so a `<` reads as pushed toward its tips.
+ * These few are moved 0.09 of their box toward the point — by moving the
+ * fitted viewBox, so the path and the size are untouched — and every
+ * other mark stays centred by its ink. `IconForward` is `IconBack`'s exact
+ * mirror on the 16 canvas. A seat that stacks two of them as one pair
+ * (the popup button's ⌃⌄) asks for them `centred`, or they would part.
+ */
+const LEAN = 0.09;
+const lean = (f: Fit, dx: number, dy: number): Fit => fit(f.x - dx * LEAN * f.side, f.y - dy * LEAN * f.side, f.side);
+const mirror = (f: Fit): Fit => fit(16 - f.x - f.side, f.y, f.side);
+const BACK = lean(LIVE.back, -1, 0);
+const POINTED = {
+  back: BACK,
+  forward: mirror(BACK),
+  chevronUp: lean(LIVE.chevronUp, 0, -1),
+  chevronDown: lean(LIVE.chevronDown, 0, 1),
+  chevronRight: lean(LIVE.chevronRight, 1, 0),
+} as const;
+
 type IconProps = { className?: string };
 
 function RailGlyph({
@@ -509,7 +532,7 @@ export function IconBranch({ className }: IconProps) {
 /** Back chevron, 16-canvas mark. */
 export function IconBack({ className }: IconProps) {
   return (
-    <Mark className={className} live={LIVE.back}>
+    <Mark className={className} live={POINTED.back}>
       <path d="M10 3.2 5.2 8l4.8 4.8" />
     </Mark>
   );
@@ -519,7 +542,7 @@ export function IconBack({ className }: IconProps) {
     own path so the pair cannot drift apart by a pixel. */
 export function IconForward({ className }: IconProps) {
   return (
-    <Mark className={className} live={LIVE.forward}>
+    <Mark className={className} live={POINTED.forward}>
       <path d="M6 3.2 10.8 8 6 12.8" />
     </Mark>
   );
@@ -619,17 +642,17 @@ export function IconClose({ className }: IconProps) {
 /** The two steps through a list of matches (the terminal's search).
     A chevron and not an arrow: an arrow says "go", these say "the one
     before / the one after", which is what ⇧⏎ / ⏎ do in the field. */
-export function IconChevronUp({ className }: IconProps) {
+export function IconChevronUp({ className, centred = false }: IconProps & { centred?: boolean }) {
   return (
-    <Mark className={className} live={LIVE.chevronUp}>
+    <Mark className={className} live={centred ? LIVE.chevronUp : POINTED.chevronUp}>
       <path d="M4 10l4-4 4 4" />
     </Mark>
   );
 }
 
-export function IconChevronDown({ className }: IconProps) {
+export function IconChevronDown({ className, centred = false }: IconProps & { centred?: boolean }) {
   return (
-    <Mark className={className} live={LIVE.chevronDown}>
+    <Mark className={className} live={centred ? LIVE.chevronDown : POINTED.chevronDown}>
       <path d="M4 6l4 4 4-4" />
     </Mark>
   );
@@ -641,7 +664,7 @@ export function IconChevronDown({ className }: IconProps) {
     in two positions; two drawings would have to be learned as two. */
 export function IconChevronRight({ className }: IconProps) {
   return (
-    <Mark className={className} live={LIVE.chevronRight}>
+    <Mark className={className} live={POINTED.chevronRight}>
       <path d="M6 4l4 4-4 4" />
     </Mark>
   );
