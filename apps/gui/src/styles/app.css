@@ -338,6 +338,29 @@ input[type="search"]::-webkit-search-decoration {
   --side: transparent;
 }
 
+/* **The camera behind the page** (加入网络's 扫码, docs/IOS.md 第三步).
+   The scan is windowed: the plugin puts the camera under the webview and
+   clears the webview, so the picture shows exactly where the page paints
+   nothing. While it runs (`ScanLayer` stamps the root) the grounds go
+   clear and everything in `body` but the scanner's own layer is hidden —
+   the app, the dialog that asked, its scrim. Hidden, not unmounted: the
+   field the scan fills is in that dialog. **`html:root`, not `:root`**:
+   `index.html`'s first frame paints the dark ground with
+   `:root[data-theme="dark"] body`, the same weight as `:root[…] body`,
+   and in the built page it comes later than this stylesheet's `<link>`
+   — measured 2026-10-02 on `vite build`: the plain spelling left the
+   body `rgb(36, 36, 34)` on the dark theme, the camera behind an opaque
+   page; this one leaves it clear. (Under the dev server the stylesheet
+   is injected after the page and the plain spelling wins too, so
+   `check-face` cannot see the difference; it reads the result.) */
+html:root[data-scanning],
+html:root[data-scanning] body {
+  background: transparent;
+}
+:root[data-scanning] body > :not([data-scanner]) {
+  visibility: hidden;
+}
+
 /* **The left block's width, from one number** (docs/SHELL.md 第十五轮
    第 4 条, 挂账 2:「设置侧边栏宽度的时候, 背后的背景没有跟着变」).
    The rail, the line beside it, and the list's width — `--list-w`, which

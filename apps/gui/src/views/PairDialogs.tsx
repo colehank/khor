@@ -8,14 +8,19 @@
 // So these two are one act seen from its two ends, not a client and a
 // server.
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   approveMachine,
+  fetchScannerHere,
   fetchWaiting,
   invite,
+  openCameraSettings,
   pair,
   rootWords,
   said,
+  scanTicket,
+  stopScan,
   type Ticket,
   type Waiting,
 } from "@/api";
@@ -167,7 +172,14 @@ export function InviteDialog({
   );
 }
 
-/** Takes someone's ticket and joins. */
+/**
+ * Takes someone's ticket and joins — **one join, two ways to enter the
+ * ticket** (docs/IOS.md 第三步). It is typed or pasted into the field, or,
+ * where this face has a camera (`fetchScannerHere`: the phone builds),
+ * read off the other machine's 邀请设备 QR code: the code is the ticket
+ * itself, so what the camera reads lands in this same field and goes
+ * down this same `join`. A face without a camera draws no 扫码 at all.
+ */
 export function JoinDialog({
   open,
   onOpenChange,
@@ -178,55 +190,160 @@ export function JoinDialog({
   const [ticket, setTicket] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [scanner, setScanner] = useState(false);
+  /** The camera is up: the page steps aside for it (`ScanLayer`). */
+  const [scanning, setScanning] = useState(false);
+  /** Why the camera gave nothing — said, never a dead button. */
+  const [camera, setCamera] = useState<"denied" | "failed" | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setTicket("");
     setError(null);
     setJoining(false);
+    setCamera(null);
+    let live = true;
+    fetchScannerHere().then((here) => live && setScanner(here));
+    return () => {
+      live = false;
+    };
   }, [open]);
 
-  const join = () => {
-    if (!ticket.trim() || joining) return;
+  const joinWith = (text: string) => {
+    const t = text.trim();
+    if (!t || joining) return;
     setJoining(true);
     setError(null);
-    pair(ticket.trim())
+    pair(t)
       // Nothing to announce: the new machine's row arrives on the next
       // poll wearing its own face, which is the report.
       .then(() => onOpenChange(false))
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => setJoining(false));
   };
+  const join = () => joinWith(ticket);
+
+  // The scan fills the field and presses 加入 — the person already chose
+  // this ticket by pointing the camera at it, and the field shows what
+  // was read in case the join says no.
+  const scan = () => {
+    setCamera(null);
+    setError(null);
+    void scanTicket(() => setScanning(true)).then((read) => {
+      setScanning(false);
+      if ("ticket" in read) {
+        setTicket(read.ticket);
+        joinWith(read.ticket);
+      } else if ("refused" in read) {
+        setCamera(read.refused);
+      }
+    });
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-join-dialog>
-        <DialogHeader>
-          <DialogTitle>{gui.join_with_a_ticket}</DialogTitle>
-        </DialogHeader>
-        <Input
-          data-ticket-input
-          aria-label={gui.paste_a_ticket}
-          placeholder={gui.paste_a_ticket}
-          value={ticket}
-          onChange={(e) => setTicket(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && join()}
-        />
-        {error && (
-          <div data-dialog-error className="text-callout text-destructive">
-            {error}
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent form data-join-dialog>
+          <DialogHeader>
+            <DialogTitle>{gui.join_with_a_ticket}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-in">
+            <Input
+              data-ticket-input
+              aria-label={gui.paste_a_ticket}
+              placeholder={gui.paste_a_ticket}
+              value={ticket}
+              onChange={(e) => setTicket(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && join()}
+            />
+            {scanner && (
+              <Button
+                data-scan-ticket
+                className="flex-none pointer-coarse:min-h-touch"
+                disabled={joining || scanning}
+                onClick={scan}
+              >
+                {gui.scan_a_ticket}
+              </Button>
+            )}
           </div>
-        )}
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
-            {gui.delete_keep}
-          </Button>
-          <Button variant="primary" data-join disabled={!ticket.trim() || joining} onClick={join}>
-            {gui.join}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {camera === "denied" && (
+            <div data-scan-denied className="flex flex-col items-start gap-in text-callout text-destructive">
+              <span>{gui.scan_camera_denied}</span>
+              <Button
+                size="sm"
+                data-scan-settings
+                className="pointer-coarse:min-h-touch"
+                onClick={() => void openCameraSettings()}
+              >
+                {gui.scan_open_settings}
+              </Button>
+            </div>
+          )}
+          {camera === "failed" && (
+            <div data-scan-failed className="text-callout text-destructive">
+              {gui.scan_no_camera}
+            </div>
+          )}
+          {error && (
+            <div data-dialog-error className="text-callout text-destructive">
+              {error}
+            </div>
+          )}
+          <DialogFooter>
+            <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+              {gui.delete_keep}
+            </Button>
+            <Button variant="primary" data-join disabled={!ticket.trim() || joining} onClick={join}>
+              {gui.join}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {scanning && <ScanLayer />}
+    </>
+  );
+}
+
+/**
+ * What the page is while the camera reads (docs/IOS.md 第三步).
+ *
+ * The scan is **windowed**: the plugin puts the camera *behind* the
+ * webview and makes the webview clear, so the picture shows only where
+ * the page paints nothing. While this is up the document says so
+ * (`html[data-scanning]`, `app.css`): the page's grounds go clear and
+ * everything but this layer is hidden, dialog and scrim included. What
+ * is left is a sentence saying what to point at, a frame to point it
+ * with, and 取消 — the way out the plugin's full-screen mode does not
+ * have. Its ink is the one that does not change with the theme
+ * (`mark-ink-light` over `mark-veil-dark`), because what is under it is
+ * a camera, not the paper.
+ *
+ * In `body` rather than in the dialog: the dialog is centred with a
+ * transform, which would make a fixed layer inside it the dialog's size.
+ */
+function ScanLayer() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-scanning", "");
+    return () => root.removeAttribute("data-scanning");
+  }, []);
+  return createPortal(
+    <div
+      data-scanner
+      className="pointer-events-auto fixed inset-0 z-50 flex flex-col items-center justify-between text-mark-ink-light"
+    >
+      <div className="w-full bg-mark-veil-dark/50 px-pane pt-[max(env(safe-area-inset-top),var(--gap-pane))] pb-base text-center text-body">
+        {gui.scan_aim}
+      </div>
+      <div aria-hidden className="size-60 flex-none rounded-lg border-2 border-mark-ink-light" />
+      <div className="flex w-full justify-center bg-mark-veil-dark/50 px-pane pt-base pb-[max(env(safe-area-inset-bottom),var(--gap-pane))]">
+        <Button data-scan-cancel className="pointer-coarse:min-h-touch" onClick={() => void stopScan()}>
+          {gui.delete_keep}
+        </Button>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

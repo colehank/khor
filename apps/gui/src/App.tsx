@@ -64,6 +64,7 @@ import { gui } from "@/gen/catalog";
 import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { useWoken } from "@/hooks/use-woken";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useSessionTabs } from "@/hooks/use-session-tabs";
 import { tabsLimitOf } from "@/browse/tab-limit";
@@ -734,6 +735,10 @@ export default function App() {
   const [hooksFailed, setHooksFailed] = useState(false);
 
   const hidden = useHidden();
+  // Back from the background with the node caught up (docs/IOS.md 第三步):
+  // the rows and the machines ask again at once, the way `hidden` makes
+  // them (`use-woken`).
+  const woken = useWoken();
 
   /* ⚠️ **Tombstone: these were one effect until 2026-09-11** — one
      `Promise.all` of three calls on the 2 s beat, under a comment that
@@ -787,7 +792,7 @@ export default function App() {
     // is the one that notices first. **A road that could break for
     // `devices` alone would go unsaid here** — if one ever exists, the
     // sentence belongs where the failure is, not on the busiest caller.
-  }, [arrangeBy, hidden, lock.locked]);
+  }, [arrangeBy, hidden, woken, lock.locked]);
 
   // **The machines, at the pace of whichever screen is up.** The vitals
   // in a row move every few seconds and the machines landing draws them;
@@ -821,7 +826,7 @@ export default function App() {
     // property the rows rely on for `hidden`, and it is why the slow
     // beat is not felt on arrival — only by a card left open, which is
     // the machines landing and therefore fast again.
-  }, [hidden, landing]);
+  }, [hidden, woken, landing]);
 
   // **Whether this machine's hooks are installed** — polled rather than
   // read once on mount, because `khor hooks install` in a terminal is the
