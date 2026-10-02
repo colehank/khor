@@ -52,7 +52,7 @@
 // file knows what a place looks like: no slash, no URL, no listing. All
 // of that arrives through `kind`, which is what lets the second
 // browsing landing be a descriptor rather than a second copy of this.
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { openLink, recentVisit, type DeviceRow } from "@/api";
 import { PageField } from "@/browse/PageField";
@@ -393,7 +393,22 @@ export function BrowseLanding({
 
   const tabList = (
     <div data-tab-switcher className="h-full min-h-0 overflow-y-auto">
-      <SideList rows={side} query={query} label={groupLabel} none={gui.no_matches} />
+      <SideList
+        rows={side}
+        query={query}
+        label={groupLabel}
+        // **Nothing open is a state of its own** (the redesign: no page is
+        // made for an empty landing any more, `useBrowseTabs`): one quiet
+        // sentence, and where the way to start is — the ＋ above, as the
+        // sessions' and the workspaces' columns say it.
+        empty={
+          <div data-page-none className="flex flex-col items-center gap-xxs">
+            <span>{gui.page_none}</span>
+            <span className="text-callout">{gui.page_none_how}</span>
+          </div>
+        }
+        none={gui.no_matches}
+      />
     </div>
   );
 
@@ -447,8 +462,23 @@ export function BrowseLanding({
   // a page is the next, its content over the whole top, and at its foot
   // the session bar: ‹, the tabs, the count; under them the address
   // field, in the seat a conversation's box takes, riding the keyboard.
+  // The last page closed under the page screen (from the terminal, or
+  // another window, between two beats): back to the list, which says so.
+  // Only on the way from some to none — ＋ on an empty list opens the
+  // page screen a round trip before its page exists.
+  const had = useRef(false);
+  const count = tabs.tabs.length;
+  useEffect(() => {
+    if (count > 0) {
+      had.current = true;
+      return;
+    }
+    if (!tabs.empty || !had.current) return;
+    had.current = false;
+    if (narrow && screen === "detail") onBack?.();
+  }, [count, tabs.empty, narrow, screen, onBack]);
   if (narrow) {
-    return screen === "detail" ? (
+    return screen === "detail" && !tabs.empty ? (
       <SessionScreen
         faces={faces}
         active={tabs.current.id}
@@ -514,6 +544,10 @@ export function BrowseLanding({
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
         </Tabs>
+      ) : tabs.empty ? (
+        // Nothing open: the column says so; the content stays empty, with
+        // no tabs capsule and no field to aim at nothing.
+        <div data-page-none-body className="h-full" />
       ) : (
         <div data-browse-waiting className="h-full" />
       )}

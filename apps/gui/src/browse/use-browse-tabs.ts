@@ -37,12 +37,18 @@
 // and then vanishing a round trip later (docs/UX.md 「做了但没变化」和
 // 「失败」长不一样的脸).
 //
-// # The one thing this file still decides
+// # An empty list is an empty list
 //
-// **A landing with no tabs at all gets one.** The node leaves the list
-// empty when the last tab closes — it is a store, and 「what a landing
-// with nothing open draws」 is a question about a screen. This side
-// answers it, because this side is the screen.
+// ⚠️ 墓碑 (the redesign, 2026-10-02): **a landing with no tabs used to
+// get one** — minted here whenever the list read empty, for the
+// new-tab page that was always on screen. The browser takes the
+// session page's tab logic now, and a page nobody opened is a row
+// nobody asked for: every list that read empty for a moment (the last
+// page closed, a landing remounted) grew an empty page in the node's
+// store, and a scratch node collected seven. Nothing is minted on this
+// side any more; a tab is made by ＋ or by arriving with a place
+// (`add`, `open`), and a landing with none draws its empty state
+// (`empty`).
 //
 // # It has to keep up with the other process
 //
@@ -101,9 +107,12 @@ const shape = (open: TabsOpen): BrowseTab[] =>
 
 export type BrowseTabs = {
   tabs: BrowseTab[];
-  /** The open one. Never undefined: a landing with nothing open mints a
-      fresh tab rather than drawing nothing. */
+  /** The open one. Never undefined: with nothing open it is the
+      stand-in (`ready` false). */
   current: BrowseTab;
+  /** The node has answered and nothing is open: the landing's empty
+      state, not a frame to wait through. */
+  empty: boolean;
   /**
    * Whether `current` is a real tab yet.
    *
@@ -189,24 +198,10 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
   const front = useRef("");
   front.current = active;
   /**
-   * Whether the first read has come back. Until it has, the landing
-   * must not decide it is empty and mint a tab — that would be a tab
-   * per launch, written to the file, for every person whose list was
-   * simply still in flight.
-   *
-   * ⚠️ **State, not a ref, and that distinction was a real bug for an
-   * hour.** As a ref it never re-ran the effect below: the first read
-   * answers 「nothing open」, so `tabs.length` goes 0 → 0 and the only
-   * other dependency was that ref — which React does not watch. So the
-   * landing settled into 「empty and never asked」 and drew no address
-   * bar at all, which `npm run tabs` reported as 「probe dead: an
-   * address bar with no name」. **A value an effect must re-run on is a
-   * dependency, and a dependency cannot be a ref.**
+   * Whether the first read has come back. Until it has, an empty list
+   * is a list still in flight, not an empty landing.
    */
   const [settled, setSettled] = useState(false);
-  // One mint at a time. Without this, two renders of an empty landing
-  // both see 「no tabs」 and both ask for one.
-  const minting = useRef(false);
 
   /**
    * How many writes are in the air.
@@ -240,11 +235,9 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
     fetchTabs(kind)
       .then((open) => live && take(open))
       .catch(() => {
-        // **A store that will not answer is not an empty store.** The
-        // landing draws its fresh tab either way, and what must not
-        // happen is that reading 「I could not」 gets written back as
-        // 「there is nothing」 — so `settled` stays false and nothing is
-        // minted against a node that is not talking.
+        // **A store that will not answer is not an empty store**, so
+        // `settled` stays false: the landing waits rather than saying
+        // nothing is open.
         if (live) setTabs([]);
       });
     return () => {
@@ -257,21 +250,6 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
       .then(take)
       .catch(() => {});
   }, [kind, sending, take]);
-
-  // **The one judgment left on this side**: a landing with nothing open
-  // draws a tab. The node leaves the list empty because it is a store;
-  // this is a screen, and a screen with nothing on it is not a state
-  // this landing has.
-  useEffect(() => {
-    if (!settled || tabs.length > 0 || minting.current) return;
-    minting.current = true;
-    sending(openTab(kind, "", "").then(() => fetchTabs(kind)))
-      .then(take)
-      .catch(() => {})
-      .finally(() => {
-        minting.current = false;
-      });
-  }, [kind, sending, settled, tabs.length, take]);
 
   const focus = useCallback(
     (id: string) => {
@@ -343,5 +321,17 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
   }, [kind, watch, take]);
 
   const current = tabs.find((t) => t.id === active) ?? tabs[0] ?? PENDING;
-  return { tabs, current, ready: current !== PENDING, focus, add, goTo, open, clear, close, pin };
+  return {
+    tabs,
+    current,
+    ready: current !== PENDING,
+    empty: settled && tabs.length === 0,
+    focus,
+    add,
+    goTo,
+    open,
+    clear,
+    close,
+    pin,
+  };
 }

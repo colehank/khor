@@ -2270,6 +2270,8 @@ search-close = "结束搜索"
 # avatar at the field's left is the button that chooses it.
 page-choose-machine = "选择一台机器"
 page-address = "输入网址"
+page-none = "没有打开的网页"
+page-none-how = "点击上方的 +，打开一个网页"
 page-machine = "选择机器"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
