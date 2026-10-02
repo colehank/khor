@@ -245,6 +245,7 @@ export function MachineChat({ id }: { id: string }) {
           // No size of its own, for the reason the shared box gives up
           // its own (`ui/textarea`): the size belongs to the column this
           // sits in, and a person should write in the size they read in.
+          data-composer-text
           className={COMPOSER_TEXT}
         />
         </Composer>

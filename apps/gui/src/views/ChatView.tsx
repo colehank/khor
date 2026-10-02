@@ -74,7 +74,8 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
-import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, type AddOption } from "@/views/Composer";
+import { sessionMark } from "@/components/BrandIcons";
+import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoInline, WhoSeat, type AddOption, type Who } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
@@ -313,6 +314,9 @@ type OptionListed = {
 type Settings = {
   modes: { currentModeId: string; availableModes: ModeListed[] } | null;
   options: OptionListed[];
+  /** The model id, when the agent said it (khor's shims, in `_meta`;
+      the host holds it — `khor_acp::MODEL_META`). */
+  model: string | null;
 };
 
 /** The settings this frame carries, if it is one. Read loosely — the
@@ -322,7 +326,7 @@ function settingsIn(frame: ChatFrame): Settings | null {
   if (frame.kind !== "settings") return null;
   const carried = frame.settings;
   if (typeof carried !== "object" || carried === null) return null;
-  const s = carried as { modes?: unknown; options?: unknown };
+  const s = carried as { modes?: unknown; options?: unknown; model?: unknown };
   const modes =
     typeof s.modes === "object" && s.modes !== null
       ? (s.modes as { currentModeId?: unknown; availableModes?: unknown })
@@ -338,7 +342,37 @@ function settingsIn(frame: ChatFrame): Settings | null {
           }
         : null,
     options: Array.isArray(s.options) ? (s.options as OptionListed[]) : [],
+    model: typeof s.model === "string" && s.model.trim() ? s.model.trim() : null,
   };
+}
+
+/**
+ * The model a conversation runs on, where it can be known: what the host
+ * holds (`settings.model`: codex's shim says it when the thread starts,
+ * claude's on its first turn), or else the agent's own `model` option —
+ * how an agent off the registry names it, when it does — by the value's
+ * id, which is the provider's spelling.
+ */
+function modelOf(settings: Settings | null): string | null {
+  if (!settings) return null;
+  if (settings.model) return settings.model;
+  const o = settings.options.find((x) => x.category === "model" && typeof x.currentValue === "string");
+  return typeof o?.currentValue === "string" && o.currentValue ? o.currentValue : null;
+}
+
+/** The agent's name as a person knows it: the vendor's product for the
+    three khor knows, else the agent's own name for itself. */
+function agentName(category: string | null, said: string | null): string | null {
+  switch (category) {
+    case "claude":
+      return gui.vendor_claude;
+    case "codex":
+      return gui.accounts_provider_codex;
+    case "cursor":
+      return gui.vendor_cursor;
+    default:
+      return said;
+  }
 }
 
 /** A select's values, groups opened out, each with the heading it sat
@@ -802,9 +836,13 @@ function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Paintin
 export function ChatView({
   id,
   still = false,
+  category = null,
 }: {
   id: string;
   still?: boolean;
+  /** The row's vendor (`SessionRow::category`): which mark and which
+      name the composer's who seat wears. */
+  category?: string | null;
 }) {
   const [paint, setPaint] = useState<Painting>(BLANK);
   /** The agent's own commands, as of the last frame that carried a set. */
@@ -858,6 +896,8 @@ export function ChatView({
       3 of the registry's 32 probed agents do not replay and 19 refuse
       to open a session before a login. */
   const [facts, setFacts] = useState<{
+    /** The agent's own name for itself (ACP `agentInfo`). */
+    name: string | null;
     replays: boolean;
     needsLogin: boolean;
     /** The gate on attaching a picture at all. */
@@ -1001,6 +1041,7 @@ export function ChatView({
             for (const f of batch.frames) {
               if (f.kind === "agent") {
                 setFacts({
+                  name: f.name,
                   replays: f.replays,
                   needsLogin: f.needs_login,
                   images: f.images,
@@ -1303,6 +1344,13 @@ export function ChatView({
           onPick: (v) => void chatSetOption(id, o.id, v).catch(() => {}),
         },
   );
+  /** Who is answering, for the capsule's who seat and the inline model. */
+  const who: Who = {
+    Mark: sessionMark("gui", category),
+    name: agentName(category, facts?.name ?? null),
+    model: modelOf(settings),
+    usage: usage ? { used: usage.used, size: usage.size } : null,
+  };
   /** The mode: a menu where the agent offers modes; the word alone where
       it only reports one that is not the ordinary one; nothing else. */
   const modeSeat = settings?.modes ? (
@@ -1791,21 +1839,11 @@ export function ChatView({
             marker said the mode when it could not be changed. The mode
             is a word inside the capsule now (`ModeSeat`), and the other
             settings are in ＋'s menu (`AddSeat`). */}
-        {usage && (
-          <div
-            data-chat-usage
-            data-usage-used={usage.used}
-            data-usage-size={usage.size}
-            className="flex justify-end gap-2 px-2 pb-1 text-caption text-muted-foreground"
-          >
-            <span data-usage-share>
-              {gui.chat_context(String(Math.round((usage.used / usage.size) * 100)))}
-            </span>
-            {usage.cost && (
-              <span data-usage-cost>{gui.chat_cost(usage.cost.amount.toFixed(2))}</span>
-            )}
-          </div>
-        )}
+        {/* ⚠️ 墓碑 (the redesign, 2026-10-02): the context share and the
+            cost were a line above the box (「上下文 41%」, 「$0.38」). The
+            share is the dial in the capsule's who seat now (`WhoSeat`),
+            and the cost is gone from the composer (the owner: 「右边不写
+            美元」). */}
         {gone ? (
           <div className="px-2 py-1.5 text-callout text-muted-foreground">{gui.chat_over}</div>
         ) : (
@@ -1932,9 +1970,16 @@ export function ChatView({
             )}
             <Composer
               lead={<AddSeat onAttach={attachable ? () => picker.current?.click() : undefined} options={addOptions} />}
+              // The seat gives way while there is text to send, where the
+              // text would otherwise keep too little (a phone with the
+              // longest mode word); it is back when the box is empty or a
+              // turn runs.
+              seatYields={!inTurn && !!text.trim()}
               trail={
                 <>
+                  <WhoInline who={who} />
                   {modeSeat}
+                  <WhoSeat who={who} tip={!coarse} />
                   {/* Send only while there is something to send and the
                       agent can take it; during a turn the interrupt
                       stands in its seat. At rest with an empty box,
@@ -2013,6 +2058,7 @@ export function ChatView({
                   say();
                 }
               }}
+              data-composer-text
               className={COMPOSER_TEXT}
             />
             </Composer>

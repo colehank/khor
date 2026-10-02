@@ -2312,6 +2312,7 @@ accounts-provider-codex = "Codex"
 # 读订阅登录的那家工具的名字——专名,照厂商的写法(第九轮)。填进 accounts-trouble-*、
 # accounts-sub-note 的 {0}。Codex 就用 accounts-provider-codex:同一段里不许两个键一句话。
 vendor-claude = "Claude Code"
+vendor-cursor = "Cursor Agent"
 accounts-name = "账号名称"
 accounts-address = "地址"
 accounts-key = "密钥"
@@ -3799,11 +3800,10 @@ chat-image-too-big = "这张图 {0}MB，超过 {1}MB 发不出去"
 # invent one (`cagent::window_in`), so no reading and a reading of zero
 # must not look the same here.
 chat-context = "上下文 {0}%"
-# What this conversation has cost, when the agent reports it. Cumulative
-# for the session, which is the agent's own definition of the field —
-# so it grows and never resets, and a reader watching it move is
-# watching the session, not the turn.
-chat-cost = "${0}"
+# The seat inside the capsule that holds the context dial (or the
+# agent's mark before any usage), and its panel's context row.
+chat-who = "这段对话的智能体、模型与上下文"
+chat-who-context = "上下文"
 # The way back to the tail, and what it says when something arrived
 # while the reader was up in the past. One control, two words: where it
 # takes you never changes, so a second control would be two buttons

@@ -46,7 +46,7 @@ use agent_client_protocol::schema::v1::{
     InitializeResponse, LoadSessionRequest, LoadSessionResponse, NewSessionRequest,
     NewSessionResponse, PermissionOption, PermissionOptionKind, PromptCapabilities, PromptRequest,
     PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionMode,
-    SessionModeState, SessionNotification, SessionUpdate, SetSessionModeRequest,
+    SessionInfoUpdate, SessionModeState, SessionNotification, SessionUpdate, SetSessionModeRequest,
     SetSessionModeResponse, StopReason, TextContent, ToolCall, ToolCallContent, ToolCallLocation,
     ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, UsageUpdate,
 };
@@ -635,6 +635,19 @@ async fn drain(
                     let _ = conn.send_notification(SessionNotification::new(
                         sid.clone(),
                         SessionUpdate::CurrentModeUpdate(CurrentModeUpdate::new(mode.to_owned())),
+                    ));
+                }
+                // **The model, the moment claude names it.** The init
+                // frame carries the one it runs on; nothing before the
+                // first turn does (claude starts on the first input).
+                // `_meta` is where it rides (`khor_acp::MODEL_META`): ACP
+                // has no stable field for a model.
+                if let Some(model) = f["model"].as_str().filter(|m| !m.is_empty()) {
+                    let _ = conn.send_notification(SessionNotification::new(
+                        sid.clone(),
+                        SessionUpdate::SessionInfoUpdate(
+                            SessionInfoUpdate::new().meta(khor_acp::model_meta(model)),
+                        ),
                     ));
                 }
                 let commands: Vec<AvailableCommand> = f["slash_commands"]

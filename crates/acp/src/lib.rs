@@ -190,6 +190,37 @@ impl Refusal {
 pub struct Settings {
     pub modes: Option<SessionModeState>,
     pub options: Vec<SessionConfigOption>,
+    /// The model the session runs on, as the provider spells it, when
+    /// the agent said so in the session's `_meta` ([`MODEL_META`]):
+    /// khor's own shims do — codex knows it when the thread starts,
+    /// claude on its first turn's init frame (`session_info_update`).
+    /// An agent off the registry names its model, when it does, as a
+    /// `model` option instead; a face reads that one from `options`.
+    pub model: Option<String>,
+}
+
+/// The `_meta` key khor's shims put the model id under — on the
+/// session's opening answer, or on a `session_info_update` when it is
+/// learned later. ACP has no stable field for it (`models` is an
+/// unstable extension), and `_meta` is the protocol's own place for
+/// what it does not spell.
+pub const MODEL_META: &str = "modelId";
+
+/// The model id a `_meta` carries ([`MODEL_META`]), if any.
+pub fn model_in(meta: Option<&serde_json::Map<String, serde_json::Value>>) -> Option<String> {
+    meta?
+        .get(MODEL_META)?
+        .as_str()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned)
+}
+
+/// A `_meta` that says the model id ([`MODEL_META`]).
+pub fn model_meta(model: &str) -> serde_json::Map<String, serde_json::Value> {
+    let mut meta = serde_json::Map::new();
+    meta.insert(MODEL_META.to_owned(), serde_json::Value::String(model.to_owned()));
+    meta
 }
 
 /// What the connection tells the caller, in protocol shape.
@@ -726,6 +757,7 @@ async fn open_one(
             (
                 sid,
                 Settings {
+                    model: model_in(loaded.meta.as_ref()),
                     modes: loaded.modes,
                     options: loaded.config_options.unwrap_or_default(),
                 },
@@ -740,6 +772,7 @@ async fn open_one(
             (
                 opened.session_id,
                 Settings {
+                    model: model_in(opened.meta.as_ref()),
                     modes: opened.modes,
                     options: opened.config_options.unwrap_or_default(),
                 },

@@ -266,12 +266,15 @@ pub mod refused {
 
 /// [`GuiNote::Settings`]'s body: the two lists as the protocol spells
 /// them (camelCase, the shapes `crates/acp` carries through).
+/// `model` rides beside them: the model id when the agent said it
+/// (`khor_acp::MODEL_META`), held here like the rest so a face that
+/// attaches after the turn that taught it is still told.
 fn settings_json(s: &khor_acp::Settings) -> String {
-    serde_json::json!({ "modes": s.modes, "options": s.options }).to_string()
+    serde_json::json!({ "modes": s.modes, "options": s.options, "model": s.model }).to_string()
 }
 
 fn has_settings(s: &khor_acp::Settings) -> bool {
-    s.modes.is_some() || !s.options.is_empty()
+    s.modes.is_some() || !s.options.is_empty() || s.model.is_some()
 }
 
 /// An option change the agent took but answered with no list — the
@@ -709,6 +712,10 @@ pub fn gui_host_main(
         // re-attach (found by the smoke, 2026-09-02, the moment a block
         // left a conversation and came back to it).
         let mut commands: Option<String> = None;
+        // The last context reading, for the same reason: it rides the
+        // turn that measured it, and a face attaching afterwards would
+        // show no dial until the next turn ends.
+        let mut usage: Option<String> = None;
         let (set_tx, mut set_rx) =
             tokio::sync::mpsc::unbounded_channel::<(u64, Result<Setting, String>)>();
         let handle = Arc::new(handle);
@@ -726,6 +733,9 @@ pub fn gui_host_main(
                         if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
                             commands = Some(json.clone());
                         }
+                        if matches!(n.update, SessionUpdate::UsageUpdate(_)) {
+                            usage = Some(json.clone());
+                        }
                         fanout.send(&GuiNote::Note(json));
                         // The agent moving its own settings: the note
                         // went through whole above, and this is the
@@ -742,6 +752,15 @@ pub fn gui_host_main(
                                 settings.options = u.config_options.clone();
                                 true
                             }
+                            // The model, learned after opening (claude's
+                            // shim says it off the first turn's init).
+                            SessionUpdate::SessionInfoUpdate(u) => match khor_acp::model_in(u.meta.as_ref()) {
+                                Some(m) if settings.model.as_deref() != Some(m.as_str()) => {
+                                    settings.model = Some(m);
+                                    true
+                                }
+                                _ => false,
+                            },
                             _ => false,
                         };
                         if moved {
@@ -784,6 +803,9 @@ pub fn gui_host_main(
                             fanout.send_to(who, &GuiNote::Settings(settings_json(&settings)));
                         }
                         if let Some(json) = &commands {
+                            fanout.send_to(who, &GuiNote::Note(json.clone()));
+                        }
+                        if let Some(json) = &usage {
                             fanout.send_to(who, &GuiNote::Note(json.clone()));
                         }
                         if in_turn.is_some() {

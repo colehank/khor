@@ -144,7 +144,13 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                 .start_codex(&new.cwd)
                 .await
             {
-                Ok(sid) => responder.respond(NewSessionResponse::new(sid)),
+                // The model codex said the thread runs on, in the
+                // session's `_meta` (`khor_acp::MODEL_META`): known the
+                // moment the thread starts.
+                Ok((sid, model)) => responder.respond(match model {
+                    Some(m) => NewSessionResponse::new(sid).meta(khor_acp::model_meta(&m)),
+                    None => NewSessionResponse::new(sid),
+                }),
                 Err(e) => responder.respond_with_internal_error(e),
             },
             agent_client_protocol::on_receive_request!(),
@@ -213,6 +219,7 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
             async move |load: LoadSessionRequest, responder, connection| {
                 let sid = load.session_id.0.to_string();
                 let started = s_load.session.lock().unwrap().clone();
+                let mut model = None;
                 match started {
                     Some(cur) if cur == sid => {}
                     Some(_) => {
@@ -226,8 +233,9 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                         let cwd = crate::adaptor::codex::Codex::at(home)
                             .recorded_cwd(&sid)
                             .unwrap_or_else(|| load.cwd.clone());
-                        if let Err(e) = s_load.start_codex_resume(&cwd, &sid).await {
-                            return responder.respond_with_internal_error(e);
+                        match s_load.start_codex_resume(&cwd, &sid).await {
+                            Ok(m) => model = m,
+                            Err(e) => return responder.respond_with_internal_error(e),
                         }
                     }
                 }
@@ -244,7 +252,10 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
                     let _ =
                         connection.send_notification(SessionNotification::new(sid.clone(), update));
                 }
-                responder.respond(LoadSessionResponse::new())
+                responder.respond(match model {
+                    Some(m) => LoadSessionResponse::new().meta(khor_acp::model_meta(&m)),
+                    None => LoadSessionResponse::new(),
+                })
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -294,8 +305,12 @@ async fn serve(root: PathBuf) -> Result<(), agent_client_protocol::Error> {
 
 impl Shim {
     /// Spawns the codex child and opens a fresh thread; the thread's
-    /// own uuid is the session id.
-    async fn start_codex(self: &Arc<Self>, cwd: &std::path::Path) -> Result<String, String> {
+    /// own uuid is the session id, and beside it the model the answer
+    /// names (`thread/start`'s `model`), when it names one.
+    async fn start_codex(
+        self: &Arc<Self>,
+        cwd: &std::path::Path,
+    ) -> Result<(String, Option<String>), String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
         let mut params = serde_json::json!({ "cwd": cwd.display().to_string() });
@@ -306,7 +321,7 @@ impl Shim {
             .ok_or_else(|| msg::codexagent_bad_answer("thread/start"))?
             .to_owned();
         *self.session.lock().unwrap() = Some(sid.clone());
-        Ok(sid)
+        Ok((sid, model_of(&started)))
     }
 
     /// Spawns the codex child **resuming** an existing thread — the
@@ -317,7 +332,7 @@ impl Shim {
         self: &Arc<Self>,
         cwd: &std::path::Path,
         sid: &str,
-    ) -> Result<(), String> {
+    ) -> Result<Option<String>, String> {
         self.start_appserver(cwd)?;
         self.handshake().await?;
         let mut params = serde_json::json!({ "threadId": sid, "cwd": cwd.display().to_string() });
@@ -327,7 +342,7 @@ impl Shim {
             return Err(msg::codexagent_bad_answer("thread/resume"));
         }
         *self.session.lock().unwrap() = Some(sid.to_owned());
-        Ok(())
+        Ok(model_of(&resumed))
     }
 
     fn start_appserver(self: &Arc<Self>, cwd: &std::path::Path) -> Result<(), String> {
@@ -491,6 +506,11 @@ fn scheduler_into(params: &mut serde_json::Value) -> Result<(), String> {
 /// The codex→ACP pump: every server frame, routed. The permission
 /// round-trip is awaited inline on purpose — codex itself is paused on
 /// that very answer.
+/// The model a `thread/start` or `thread/resume` answer names.
+fn model_of(answer: &serde_json::Value) -> Option<String> {
+    answer["model"].as_str().filter(|m| !m.is_empty()).map(str::to_owned)
+}
+
 async fn drain(
     shim: Arc<Shim>,
     mut frames: mpsc::UnboundedReceiver<serde_json::Value>,

@@ -1365,6 +1365,7 @@ accounts-provider-moonshot-cn = "Moonshot (China)"
 accounts-provider-openrouter = "OpenRouter"
 accounts-provider-codex = "Codex"
 vendor-claude = "Claude Code"
+vendor-cursor = "Cursor Agent"
 # zh.toml uses the conversational "叫什么" (what's it called) here and
 # the plain "名字" for `new-session-name` — kept distinct in English too.
 accounts-name = "Nickname"
@@ -1835,7 +1836,10 @@ chat-file = "{0}"
 chat-file-too-big = "{0} is {1}KB, over the {2}KB limit — can't send"
 chat-image-too-big = "This image is {0}MB, over the {1}MB limit — can't send"
 chat-context = "Context {0}%"
-chat-cost = "${0}"
+# The seat inside the capsule that holds the context dial (or the
+# agent's mark before any usage), and its panel's context row.
+chat-who = "This conversation's agent, model and context"
+chat-who-context = "Context"
 to-bottom = "Back to bottom"
 new-below = "New below"
 chat-refused-turn-in-flight = "Another window is already talking — that message wasn't sent, and it's back with you"

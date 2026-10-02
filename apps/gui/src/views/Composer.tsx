@@ -16,10 +16,12 @@
  * and no interrupt.
  */
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-import type { ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconPlus } from "@/components/icons";
+import { arc, ARC0, SPAN } from "@/components/Face";
 import { Switch } from "@/components/settings/Switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -31,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { gaugeColor } from "@/lib/vitals";
 
 /** Our glass menu (`FloatNav`'s 更多, the page field's machines). */
 const MENU = "glass rounded-2xl border-0 bg-glass-menu p-1.5 shadow-[var(--glass-in),var(--glass-shadow)]";
@@ -39,11 +42,83 @@ const ITEM = "min-h-touch gap-row rounded-xl px-row text-body focus:glass-sel fo
     rim's 6 above and below. */
 const SEAT = "grid size-composer-item flex-none place-items-center rounded-full [&_svg]:size-ctl-glyph";
 
-export function Composer({ lead, children, trail }: { lead?: ReactNode; children: ReactNode; trail?: ReactNode }) {
+/** What the text keeps before the model is written out inline. */
+const TEXT_FLOOR_INLINE = 320;
+/** What the text keeps while typing before the who seat gives way. */
+const TEXT_FLOOR_SEAT = 120;
+/** The least an inline model is worth drawing at: its mark and a few
+    characters. */
+const INLINE_MIN = 72;
+
+/**
+ * The capsule. Two of its parts are decided by **its own width**, not
+ * the window's: the model written out inline (`[data-composer-inline]`)
+ * only while the text would still keep `TEXT_FLOOR_INLINE`, and then no
+ * wider than leaves it that (it truncates before it pushes anything);
+ * and the who seat (`[data-composer-seat]`), which gives way while
+ * there is text to send (`seatYields`) and the text would keep less
+ * than `TEXT_FLOOR_SEAT` — on a 390 phone with the longest mode word.
+ */
+export function Composer({
+  lead,
+  children,
+  trail,
+  seatYields = false,
+}: {
+  lead?: ReactNode;
+  children: ReactNode;
+  trail?: ReactNode;
+  seatYields?: boolean;
+}) {
+  const cap = useRef<HTMLDivElement>(null);
+  const [room, setRoom] = useState<number | null>(null);
+  const [seatGone, setSeatGone] = useState(false);
+  const seatW = useRef(0);
+  const measure = useRef(() => {});
+  measure.current = () => {
+    const el = cap.current;
+    if (!el) return;
+    const cs = getComputedStyle(el);
+    const gap = parseFloat(cs.columnGap) || 0;
+    const inner = el.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    const seat = el.querySelector<HTMLElement>("[data-composer-seat]");
+    if (seat && seat.offsetWidth > 0) seatW.current = seat.offsetWidth;
+    // Everything but the text and the inline model, as drawn now.
+    const others = [...el.children].filter(
+      (k): k is HTMLElement =>
+        k instanceof HTMLElement &&
+        !k.hasAttribute("data-composer-text") &&
+        !k.hasAttribute("data-composer-inline") &&
+        k.offsetWidth > 0,
+    );
+    const free = inner - others.reduce((n, k) => n + k.offsetWidth + gap, 0);
+    // With the seat back in, what the text would keep.
+    const withSeat = seatGone ? free - seatW.current - gap : free;
+    const gone = seatYields && seatW.current > 0 && withSeat < TEXT_FLOOR_SEAT;
+    if (gone !== seatGone) setSeatGone(gone);
+    const left = (gone ? withSeat + seatW.current + gap : withSeat) - TEXT_FLOOR_INLINE - gap;
+    const next = left >= INLINE_MIN ? Math.floor(left) : null;
+    if (next !== room) setRoom(next);
+  };
+  useLayoutEffect(() => measure.current());
+  useEffect(() => {
+    const el = cap.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => measure.current());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div
+      ref={cap}
       data-chat-box
-      className="glass flex min-h-composer min-w-0 flex-1 items-end gap-1 rounded-composer p-1.5"
+      data-seat-gone={seatGone || undefined}
+      data-inline-gone={room === null || undefined}
+      style={{ "--inline-room": `${room ?? 0}px` } as React.CSSProperties}
+      className={cn(
+        "glass flex min-h-composer min-w-0 flex-1 items-end gap-1 rounded-composer p-1.5",
+        "data-[seat-gone]:[&_[data-composer-seat]]:hidden data-[inline-gone]:[&_[data-composer-inline]]:hidden",
+      )}
     >
       {lead}
       {children}
@@ -299,5 +374,185 @@ export function AddSeat({ onAttach, options }: { onAttach?: () => void; options:
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** Who is answering: the agent's mark and name, the model it runs on,
+    and how full its context is. Each absent when it is not known. */
+export type Who = {
+  Mark: ComponentType<{ className?: string }>;
+  name: string | null;
+  model: string | null;
+  usage: { used: number; size: number } | null;
+};
+
+/** `82k`, `1.2M`: a token count a person reads at a glance. */
+function compact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(n);
+}
+
+/**
+ * **The context as a dial** (the owner, 2026-10-02: 「上下文用环表示,
+ * 也就是我们额度那种环. 里面写数字」): the quota and machine dials' own
+ * geometry (`components/Face`: `ARC0`, `SPAN`, `arc`), its gap at the
+ * bottom, track and value with round caps, and the share as a bare number
+ * inside. From 90 up the value and the number take the strain ink, as
+ * those dials do (`gaugeColor`).
+ */
+function CtxDial({ pct }: { pct: number }) {
+  const S = 28;
+  const W = 2.5;
+  const r = S / 2 - W;
+  // The 210° arc reaches r above its centre and r·sin 15° below it:
+  // centred on that extent, not on the circle it is cut from.
+  const below = Math.sin((ARC0 + SPAN) * (Math.PI / 180));
+  const cy = S / 2 + (r * (1 - below)) / 2;
+  const ink = gaugeColor(pct >= 90 ? "critical" : null);
+  const end = ARC0 + (Math.min(100, Math.max(0, pct)) / 100) * SPAN;
+  return (
+    <span className="relative grid size-[calc(var(--composer-h)*0.585)] place-items-center">
+      <svg viewBox={`0 0 ${S} ${S}`} aria-hidden="true" className="absolute inset-0 size-full">
+        <path d={arc(S / 2, cy, r, ARC0, ARC0 + SPAN)} fill="none" stroke="currentColor" strokeOpacity={0.2} strokeWidth={W} strokeLinecap="round" />
+        {pct > 0 && (
+          <path d={arc(S / 2, cy, r, ARC0, end)} fill="none" stroke={ink} strokeWidth={W} strokeLinecap="round" />
+        )}
+      </svg>
+      <span
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] leading-3 font-title tabular-nums"
+        // In the arc's bowl: the box's middle, a pixel low, where the
+        // open bottom leaves it room.
+        style={{ color: ink, top: `${((S / 2 + 1) / S) * 100}%` }}
+      >
+        {pct}
+      </span>
+    </span>
+  );
+}
+
+/** The three facts, as rows of a label and a value; a row whose value
+    is unknown is absent. The panel and the tooltip both read these. */
+function whoRows(who: Who) {
+  const rows: { key: string; label: string; value: ReactNode }[] = [];
+  if (who.name)
+    rows.push({
+      key: "agent",
+      label: gui.new_session_agent,
+      value: (
+        <>
+          <who.Mark className="size-[18px] flex-none" />
+          <span className="font-title">{who.name}</span>
+        </>
+      ),
+    });
+  if (who.model)
+    rows.push({ key: "model", label: gui.accounts_models, value: <span className="min-w-0 truncate font-mono text-callout">{who.model}</span> });
+  if (who.usage) {
+    const pct = Math.round((who.usage.used / who.usage.size) * 100);
+    rows.push({
+      key: "context",
+      label: gui.chat_who_context,
+      value: (
+        <>
+          <span className="tabular-nums">{pct}%</span>
+          <span className="text-callout text-muted-foreground tabular-nums">
+            {compact(who.usage.used)} / {compact(who.usage.size)}
+          </span>
+        </>
+      ),
+    });
+  }
+  return rows;
+}
+
+/**
+ * **Who is answering, inside the capsule** (the owner, 2026-10-02: the
+ * line above it 「占用了窄屏的空间」 — 「有没有什么办法, 让这些信息显示在
+ * 这个框里面? 比如窄屏是一个 i 的 icon, 点击后显示」). One seat between
+ * the mode and send: the context dial once usage is known, the agent's
+ * mark before. Pressing it opens a small glass panel in place with the
+ * three facts — nothing in it is pressable; it closes on an outside
+ * press, Escape, or the seat again. Under a mouse the same facts are the
+ * seat's tooltip. No cost anywhere in the composer (「右边不写美元」).
+ */
+export function WhoSeat({ who, tip }: { who: Who; tip: boolean }) {
+  const [open, setOpen] = useState(false);
+  const pct = who.usage ? Math.round((who.usage.used / who.usage.size) * 100) : null;
+  const rows = whoRows(who);
+  const seat = (
+    <button
+      type="button"
+      data-slot="button"
+      data-composer-seat
+      data-chat-who
+      data-chat-usage={who.usage ? "" : undefined}
+      data-usage-used={who.usage?.used}
+      data-usage-size={who.usage?.size}
+      aria-label={pct === null ? gui.chat_who : `${gui.chat_who}: ${gui.chat_context(String(pct))}`}
+      className={cn(
+        "grid size-composer-item flex-none place-items-center rounded-full text-muted-foreground hover:bg-fill data-[state=open]:glass-sel",
+      )}
+    >
+      {pct === null ? <who.Mark className="size-[calc(var(--composer-item)*0.55)]" /> : <CtxDial pct={pct} />}
+    </button>
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      {tip && !open && rows.length > 0 ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>{seat}</PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" data-chat-who-tip className="flex flex-col gap-0.5">
+            {rows.map((r) => (
+              <span key={r.key} className="flex items-center gap-1.5">
+                <span className="opacity-70">{r.label}</span>
+                {r.value}
+              </span>
+            ))}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <PopoverTrigger asChild>{seat}</PopoverTrigger>
+      )}
+      <PopoverContent
+        side="top"
+        align="end"
+        sideOffset={16}
+        alignOffset={-6}
+        data-chat-who-panel
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onCloseAutoFocus={(e) => e.preventDefault()}
+        className={cn(MENU, "flex w-[272px] max-w-none flex-col rounded-[18px] px-1.5 py-1.5")}
+      >
+        {rows.map((r, i) => (
+          <div key={r.key}>
+            {i > 0 && <div className="mx-3 h-px bg-border" />}
+            <div data-who-row={r.key} className="flex min-h-10 items-center gap-3 px-3 py-1">
+              <span className="w-[52px] flex-none text-callout text-muted-foreground">{r.label}</span>
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 text-body text-foreground">{r.value}</span>
+            </div>
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Where the capsule is wide enough, the model written out before the
+    mode: the agent's mark and the id, tertiary. The capsule decides
+    whether it is drawn and how wide (`Composer`). */
+export function WhoInline({ who }: { who: Who }) {
+  if (!who.model) return null;
+  return (
+    <span
+      data-composer-inline
+      data-chat-who-inline
+      className="flex h-composer-item max-w-(--inline-room) min-w-0 shrink items-center gap-1.5 ps-2 pe-1 text-tertiary"
+    >
+      <who.Mark className="size-3.5 flex-none text-muted-foreground" />
+      <span className="min-w-0 truncate font-mono text-callout">{who.model}</span>
+    </span>
   );
 }

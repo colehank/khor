@@ -470,7 +470,7 @@ export function DetailPane({
         // is no terminal under it to show. Keyed so switching sessions
         // remounts the chat — its cursor, frames and attachment all
         // belong to one conversation.
-        <ChatView key={row.id} id={row.id} />
+        <ChatView key={row.id} id={row.id} category={row.category} />
       ) : row && row.attachable ? (
         // A session with a terminal to be had: hosted here already, or a
         // discovered tmux session the bridge stands a host up for on
