@@ -1313,6 +1313,8 @@ export default function App() {
     lock: lock.facts?.on ? lock.now : null,
     find: () => window.dispatchEvent(new Event(FIND_ALL)),
     import: () => setDialog("import"),
+    // ⌃⌘S: the same fold the open landing's glyph does (F6.7).
+    toggleList: narrow ? null : () => listPane.toggle(),
   });
 
   const sessions = landing === "sessions";

@@ -104,6 +104,8 @@ export function SessionsList({
       — the row comes back in its new form on the next poll, or it does
       not come back at all and this sentence says why. */
   const [turnRefused, setTurnRefused] = useState<Map<string, string>>(new Map());
+  /** The row whose title box the menu's 重命名 opened, if any. */
+  const [renaming, setRenaming] = useState<string | null>(null);
   // The ticked words narrow here; the box is `SideList`'s one rule,
   // against what each row says it can be found by (`find` below) — the
   // same four things `visibleSessions` reads, so the two agree.
@@ -119,12 +121,16 @@ export function SessionsList({
    * menu holding one thing is a menu that teaches people not to open
    * menus, which is the same judgment `App` makes about an empty "+".
    *
-   * **Rename is deliberately not here.** It already has a way in — the
-   * title's own double-click and F2 (`EditableName`) — and a second
-   * path to one action is the thing this repo keeps taking back out.
-   * The two that are here had no way in that a finger could reach:
-   * the pin was a hover-only button, and close lived one screen away in
-   * the detail header. 复制 id came the same road on 2026-09-02 — the
+   * **重命名 is here** (the audit fix plan F6.7, wide P-2, approved by
+   * the owner): a row's title in the list is not a control of its own,
+   * so its one way in was a double-click — which a finger does not do
+   * and a keyboard cannot. The item opens the same box in place
+   * (`renaming`, `EditableName`'s controlled door). ⚠️ 墓碑: 「rename is
+   * deliberately not here」, on the reading that double-click and F2
+   * were enough; F2 is the standalone title's, not the row's.
+   * The pin had no way in that a finger could reach either (a
+   * hover-only button), and close lived one screen away in the detail
+   * header. 复制 id came the same road on 2026-09-02 — the
    * detail header sheds it (「id用户知道也没用」), and its one real
    * reader, a person wiring this session up from another machine,
    * finds it here beside the other things done *to* a row.
@@ -234,6 +240,16 @@ export function SessionsList({
       failed: pinFailed.has(r.id),
       run: () => onPin(r),
     },
+    {
+      key: "rename",
+      label: gui.rename,
+      // Opened once the menu has gone: a box mounted while the menu
+      // still holds focus is refused it (Radix's focus scope), and the
+      // name would sit in an editor nobody is typing in.
+      run: () => {
+        requestAnimationFrame(() => requestAnimationFrame(() => setRenaming(r.id)));
+      },
+    },
     ...turnInto(r),
     {
       // The id is paste material, not reading material. The menu
@@ -288,6 +304,9 @@ export function SessionsList({
         className="block"
         inputClassName="w-full font-title"
         nested
+        // Opened from the row's menu; otherwise the double-click's.
+        open={renaming === r.id ? true : undefined}
+        onClose={() => setRenaming(null)}
       />
     ),
     name: r.title,

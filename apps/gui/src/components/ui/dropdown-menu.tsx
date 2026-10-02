@@ -149,6 +149,21 @@ function DropdownMenuSeparator({
   );
 }
 
+/** **The key an item answers to, right-aligned** (the audit fix plan
+    F6.7, wide P-2): a Mac menu's key equivalent, in the third ink so
+    the item's word stays the thing read. Only where the item has a key
+    (`keyLabel`); an item without one shows nothing here. */
+function DropdownMenuShortcut({ className, ...props }: React.ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="dropdown-menu-shortcut"
+      data-menu-key
+      className={cn("ml-auto pl-base text-callout tracking-wide text-tertiary", className)}
+      {...props}
+    />
+  );
+}
+
 export {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -159,4 +174,5 @@ export {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
 };

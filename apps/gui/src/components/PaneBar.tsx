@@ -27,11 +27,12 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { useNewAct } from "@/lib/shortcuts";
+import { keyLabel, useNewAct } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
@@ -156,6 +157,7 @@ export function PaneBar({
   // 「+」 is the one seated in the first row, so only that bar lends it,
   // by its own name (the menu bar's 新建 item reads it).
   const primary = actions?.[0] ?? (create?.onSelect && !create.disabled ? create : null);
+  const newKey = keyLabel("new");
   useNewAct(
     seat === "side" && primary?.onSelect ? { label: primary.label, run: primary.onSelect } : null,
   );
@@ -307,9 +309,12 @@ export function PaneBar({
             </Plus>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {actions.map((a) => (
+            {actions.map((a, i) => (
               <DropdownMenuItem key={a.key} data-new-item={a.key} onSelect={a.onSelect}>
                 {a.label}
+                {/* The first act is the one ⌘N runs (`useNewAct` above),
+                    and only from the seated bar. */}
+                {i === 0 && seat === "side" && newKey && <DropdownMenuShortcut>{newKey}</DropdownMenuShortcut>}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>

@@ -22,6 +22,7 @@
 // | ⌃⇥  ⇧⌘]               | next-tab     | one tab right, wrapping                         |
 // | ⌃⇧⇥ ⇧⌘[               | prev-tab     | one tab left, wrapping                          |
 // | ⌥⌘S                   | focus-list   | the list's one Tab stop, from anywhere          |
+// | ⌃⌘S (Mac only)        | toggle-list  | folds the list, or brings it back (wide)        |
 //
 // ⌘ is Ctrl off a Mac (Windows, Linux, and a browser there). **On a Mac
 // Ctrl is not ⌘**: ⌃W, ⌃K and ⌃L are a text field's and a terminal's own
@@ -92,13 +93,14 @@ export type Act =
   | "close-tab"
   | "next-tab"
   | "prev-tab"
-  | "focus-list";
+  | "focus-list"
+  | "toggle-list";
 
 /** One way to press an act. `mod` is ⌘ on a Mac and Ctrl elsewhere;
     `ctrl` is the Control key itself on every platform. Matched on `code`
     (the key's place) where a shift changes the character — `]` is `}`
     with ⇧ held — and on `key` where the letter is the point. */
-type Chord = { key?: string; code?: string; mod?: true; ctrl?: true; shift?: true; alt?: true };
+type Chord = { key?: string; code?: string; mod?: true; ctrl?: true; shift?: true; alt?: true; mac?: true };
 
 /** The map. `web: false` is a key the browser owns (see the head). */
 export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
@@ -132,6 +134,11 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
   // keeps Tab for its shell (the audit fix plan F3.8; W25). ⌥⌘S, the
   // sidebar's key in Notes.
   { act: "focus-list", chords: [{ code: "KeyS", mod: true, alt: true }], web: true },
+  // **The sidebar's own key** (the audit fix plan F6.7, wide P-5): ⌃⌘S,
+  // View › Hide Sidebar in Notes and Finder — the same fold pressing the
+  // open landing does. **Mac only** (`mac`): off a Mac `mod` is Ctrl, and
+  // the chord would come out as Ctrl+S, which is every editor's save.
+  { act: "toggle-list", chords: [{ code: "KeyS", mod: true, ctrl: true, mac: true }], web: false },
 ];
 
 const IS_MAC = /mac/i.test(navigator.platform || navigator.userAgent);
@@ -147,6 +154,7 @@ export function actOf(e: Keyish, face: "app" | "web", mac = IS_MAC): Act | null 
   for (const { act, chords, web } of KEYMAP) {
     if (face === "web" && !web) continue;
     for (const c of chords) {
+      if (c.mac && !mac) continue;
       // ⌃⇥ is Control on every platform; off a Mac that is also `mod`.
       const wantCtrl = !!c.ctrl || (!!c.mod && !mac);
       const wantMeta = !!c.mod && mac;
@@ -158,6 +166,23 @@ export function actOf(e: Keyish, face: "app" | "web", mac = IS_MAC): Act | null 
     }
   }
   return null;
+}
+
+/**
+ * **The key an act answers to, as a menu writes it** (the audit fix plan
+ * F6.7, wide P-2): 「⌘N」 on a Mac — modifiers in the system's order,
+ * ⌃⌥⇧⌘ — and 「Ctrl+N」 elsewhere. `null` where this face does not take
+ * the key (a browser's own, on the web face), so a menu never offers a
+ * key that would do something else.
+ */
+export function keyLabel(act: Act, face: "app" | "web" = onWebFace ? "web" : "app", mac = IS_MAC): string | null {
+  const entry = KEYMAP.find((k) => k.act === act);
+  if (!entry || (face === "web" && !entry.web)) return null;
+  const c = entry.chords.find((x) => !x.mac || mac);
+  if (!c) return null;
+  const name = c.key ? (c.key.length === 1 ? c.key.toUpperCase() : c.key) : (c.code ?? "").replace(/^Key|^Digit/, "").replace("Comma", ",");
+  if (mac) return `${c.ctrl ? "⌃" : ""}${c.alt ? "⌥" : ""}${c.shift ? "⇧" : ""}${c.mod ? "⌘" : ""}${name}`;
+  return [c.ctrl || c.mod ? "Ctrl" : "", c.alt ? "Alt" : "", c.shift ? "Shift" : "", name].filter(Boolean).join("+");
 }
 
 // ── the acts a landing lends while it is on screen ─────────────────────
@@ -249,6 +274,8 @@ export type ShellActs = {
   lock: (() => void) | null;
   find: () => void;
   import: () => void;
+  /** Folds the list or brings it back, where there is one to fold. */
+  toggleList: (() => void) | null;
 };
 
 /**
@@ -303,6 +330,10 @@ export function useShortcuts(acts: ShellActs) {
           row.focus();
           return true;
         }
+        case "toggle-list":
+          if (!acts.toggleList) return false;
+          acts.toggleList();
+          return true;
         case "next-tab":
         case "prev-tab":
           if (acts.closePage || !now.tabs || now.tabs.count < 2) return false;
