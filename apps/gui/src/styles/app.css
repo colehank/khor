@@ -469,6 +469,35 @@ aside[data-side] {
   transition: opacity var(--dur-120) var(--ease-out);
 }
 
+/* **A pulled list moves its parts, not its box** (`ListPane`,
+ * `use-pull-refresh`, the audit fix plan F6.5). The head and the list
+ * ride `--pull` down by transform, so nothing below is laid out again,
+ * and the spinner (`[data-pull]`) stands in the room left above the
+ * title. Narrow, the screen's title row (`[data-side-l0]`) rides with
+ * them, marked on the nav host (`data-pull-on`). Under the finger they follow it at once; let go, they ease to
+ * the spinner's room and back. The host is marked only while a pull is
+ * on (`ListPane`), so at rest nothing here applies. */
+[data-pull-host] > :not([data-pull]),
+[data-pull-on] [data-side-l0] {
+  transform: translateY(var(--pull, 0px));
+  transition: transform var(--dur-240) var(--ease-out);
+}
+[data-pull-host][data-pull-drag] > :not([data-pull]),
+[data-pull-drag] [data-side-l0] {
+  transition: none;
+}
+/* Over the pane, which is positioned while it pulls and comes later. */
+[data-pull-on] [data-side-l0] {
+  position: relative;
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-pull-host] > :not([data-pull]),
+  [data-pull-on] [data-side-l0] {
+    transition: none;
+  }
+}
+
 /* Where a row's FLIP lands (`SessionsList` `useRowFlip`). The rule
  * lives here rather than in the inline style the hook writes, because
  * the hook's job is to say *where a row came from* and this says *how

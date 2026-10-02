@@ -26,11 +26,12 @@
 //            sizes it cannot be added one without the other (第 4 条:
 //            every landing with a column can put it away, because the
 //            rail toggles `pane` and every pane has one).
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { IconReload } from "@/components/icons";
 import { gui } from "@/gen/catalog";
-import { PULL_STRIP, usePullRefresh, type PullState } from "@/hooks/use-pull-refresh";
+import { PULL_HOLD, usePullRefresh, type PullState } from "@/hooks/use-pull-refresh";
 
 import { SideListSeat } from "@/components/SideHead";
 import type { PaneWidth } from "@/hooks/use-list-width";
@@ -120,6 +121,36 @@ export function ListPane({
   const away = pane !== null && pane.collapsed;
   const [body, setBody] = useState<HTMLDivElement | null>(null);
   const pull = usePullRefresh(body, onRefresh);
+  const pulling = !!onRefresh && (pull.state !== "idle" || pull.pull > 0);
+  const dragging = pull.state === "pulling" || pull.state === "armed";
+  // **Narrow, the title rides too**: there the large title is the
+  // screen's own head (`SideHead`, `[data-side-l0]`), a sibling of this
+  // pane under the nav host, so the pull is said on the host and the
+  // spinner stands above the title, where iOS puts it (the audit fix
+  // plan F6.5). Wide, the pane's own head and list ride and the
+  // spinner stands at the pane's top.
+  const host = narrow ? (body?.closest<HTMLElement>("[data-nav-host]") ?? null) : null;
+  const [above, setAbove] = useState<{ top: number; left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!host) return;
+    host.style.setProperty("--pull", `${pull.pull}px`);
+    if (pulling) host.dataset.pullOn = "";
+    else delete host.dataset.pullOn;
+    if (dragging) host.dataset.pullDrag = "";
+    else delete host.dataset.pullDrag;
+  }, [host, pull.pull, pulling, dragging]);
+  useLayoutEffect(() => {
+    if (!host || !pulling) {
+      setAbove(null);
+      return;
+    }
+    const head = host.querySelector("[data-side-l0]")?.getBoundingClientRect();
+    const box = body?.getBoundingClientRect();
+    if (head && box) setAbove({ top: head.top - pull.pull, left: box.left, width: box.width });
+    // Measured once as a pull begins; the title's place does not move
+    // under a finger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host, pulling]);
   // The seam between this pane and the content: drag to size, drag
   // under the snap line to put the pane away, double-click for the
   // default, arrows to walk its stops. It takes no room — a hit margin
@@ -158,8 +189,16 @@ export function ListPane({
       <section
         {...{ [mark]: "" }}
         aria-label={name}
+        // A pull moves the pane's own parts, never its box (`app.css`
+        // `[data-pull-host]`): the head and the list ride `--pull` down
+        // and the spinner stands in the room they leave. Only while a
+        // pull is on: a transform at rest would still make the head a
+        // stacking context and a containing block for anything fixed.
+        data-pull-host={pulling ? "" : undefined}
+        data-pull-drag={dragging ? "" : undefined}
         className={cn(
           "flex h-full min-h-0 flex-col overflow-hidden",
+          onRefresh && "relative",
           onSide || ground === "side" ? "bg-side" : "bg-card",
           !narrow && !away && !onSide && (side === "left" ? "border-r" : "border-l"),
           // **The sidebar beside the rail takes the block's width, and
@@ -170,8 +209,13 @@ export function ListPane({
           onSide && !narrow && "min-w-0 flex-1",
           className,
         )}
-        style={narrow || pane === null || onSide ? undefined : { width: away ? 0 : pane.width }}
+        style={{
+          ...(narrow || pane === null || onSide ? {} : { width: away ? 0 : pane.width }),
+          ...(onRefresh ? ({ "--pull": `${pull.pull}px` } as CSSProperties) : {}),
+        }}
       >
+        {onRefresh &&
+          (host ? above && createPortal(<PullSpinner {...pull} at={above} />, document.body) : <PullSpinner {...pull} />)}
         {head}
         {scroll ? (
           // **Named so the shell's scroll rule has something to point
@@ -179,7 +223,6 @@ export function ListPane({
           // utility itself, and this attribute is what a probe measures
           // (第 1 条).
           <div ref={setBody} data-pane-body className="min-h-0 flex-1 overflow-y-auto">
-            {onRefresh && <PullStrip {...pull} />}
             {children}
           </div>
         ) : (
@@ -193,14 +236,22 @@ export function ListPane({
 }
 
 /**
- * The strip a pull opens over the list (the canvas's 「下拉刷新」 board):
- * the family's reload mark, turning with the pull and spinning while the
- * shell asks, and one line that says which of the four moments this is.
- * As tall as the pull while a finger holds it, the strip's own height
- * while it works, nothing at rest.
+ * The spinner a pull shows above the pane's title (the audit fix plan
+ * F6.5): the family's reload mark, turning with the pull and spinning
+ * while the shell asks — and no word on screen. The four moments are
+ * said to a screen reader only, in the catalog's words.
  */
-function PullStrip({ state, pull }: { state: PullState; pull: number }) {
-  if (state === "idle" && pull === 0) return null;
+function PullSpinner({
+  state,
+  pull,
+  at,
+}: {
+  state: PullState;
+  pull: number;
+  /** Narrow: where the screen's title stood when the pull began — the
+      spinner is fixed over the room the title leaves. */
+  at?: { top: number; left: number; width: number };
+}) {
   const word =
     state === "pulling"
       ? gui.pull_to_sync
@@ -208,21 +259,34 @@ function PullStrip({ state, pull }: { state: PullState; pull: number }) {
         ? gui.release_to_sync
         : state === "syncing"
           ? gui.syncing
-          : gui.synced_now;
+          : state === "done"
+            ? gui.synced_now
+            : "";
   return (
     <div
-      role="status"
       data-pull={state}
-      className="flex items-end justify-center overflow-hidden"
-      style={{ height: pull, "--pull-turn": `${Math.min(1, pull / PULL_STRIP)}turn` } as CSSProperties}
+      aria-hidden={state === "idle" || undefined}
+      className={cn(
+        "pointer-events-none top-0 flex items-center justify-center overflow-hidden text-muted-foreground",
+        at ? "fixed z-50" : "absolute inset-x-0",
+      )}
+      style={
+        {
+          height: pull,
+          ...(at && { top: at.top, left: at.left, width: at.width }),
+          "--pull-turn": `${Math.min(1, pull / PULL_HOLD)}turn`,
+        } as CSSProperties
+      }
     >
-      <span className="flex h-pull-strip items-center gap-in text-callout text-muted-foreground tabular-nums">
+      {(state !== "idle" || pull > 0) && (
         <IconReload
           className={cn(
-            "size-4 flex-none",
-            state === "syncing" ? "animate-spin" : "rotate-(--pull-turn)",
+            "size-5 flex-none",
+            state === "syncing" ? "animate-spin motion-reduce:animate-none" : "rotate-(--pull-turn)",
           )}
         />
+      )}
+      <span role="status" className="sr-only">
         {word}
       </span>
     </div>

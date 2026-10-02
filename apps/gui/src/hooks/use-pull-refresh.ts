@@ -1,8 +1,15 @@
 // **Pull to refresh** (the redesign, 2026-10-02): a list under a finger,
 // pulled down from its top, asks again. The gesture is the platform's —
-// drag past a threshold, let go, a strip says it is working, then that
-// it is done — and only under a finger (`pointer: coarse`): a mouse has
-// no pull, and its list re-reads on its own beat anyway.
+// the pane follows the finger, past a threshold it is armed, let go and
+// a spinner turns above the title while the pane holds just the
+// spinner's room, then the pane settles back — and only under a finger
+// (`pointer: coarse`): a mouse has no pull, and its list re-reads on its
+// own beat anyway.
+//
+// **Only a spinner** (the audit fix plan F6.5, narrow P-H): no word on
+// screen, as on iOS; the four moments are said to a screen reader
+// (`ListPane`). ⚠️ 墓碑: a 46-tall strip that wrote 下拉同步 / 松开同步 /
+// 正在同步 / 已同步 and pushed the list down by its height.
 //
 // What 「asks again」 does is the caller's (`onRefresh`): today the shell
 // re-reads the rows and the machines. A sync round with the network would
@@ -16,10 +23,12 @@ export type PullState = "idle" | "pulling" | "armed" | "syncing" | "done";
 
 /** How far a finger has to pull, in CSS pixels of strip, to arm it. */
 const ARM = 64;
-/** The strip's own resting height while it works. */
-export const PULL_STRIP = 46;
-/** How long 「已同步」 stays before the strip folds away. */
-const DONE_MS = 900;
+/** The room the pane holds open above itself while it works: the
+    spinner's, and no more. */
+export const PULL_HOLD = 36;
+/** How long 「已同步」 stays said (to a screen reader) once the pane has
+    settled. */
+const DONE_MS = 600;
 
 export function usePullRefresh(
   scroller: HTMLElement | null,
@@ -70,15 +79,15 @@ export function usePullRefresh(
         return;
       }
       busy.current = true;
-      setPull(PULL_STRIP);
+      setPull(PULL_HOLD);
       setState("syncing");
       void go()
         .catch(() => {})
         .finally(() => {
           setState("done");
+          setPull(0);
           window.setTimeout(() => {
             busy.current = false;
-            setPull(0);
             setState("idle");
           }, DONE_MS);
         });
