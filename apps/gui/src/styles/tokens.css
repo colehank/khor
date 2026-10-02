@@ -1580,6 +1580,13 @@
    * `caec6d2` value. The argument never depended on which number it
    * was, which is exactly why nobody noticed it stop being true.) */
   --measure: 46em;
+  /* **A detail page stops at about 960** (the audit fix plan F6.6,
+   * W24): the machine page and 额度's detail stretched with the window,
+   * and at 1600 a quota label stood 920 from where its bar began. The
+   * content is capped and stays on the page's left line — the room to
+   * its right is the window's, not a column to fill. (Settings already
+   * stop at `--measure`.) */
+  --detail-max: 960px;
   --avatar: 32px;
   /* The floor of this machine's face on the machines' map (`MandalaMap`).
    * Its own token rather than a class override on `size-avatar`: `cn()`
@@ -2147,6 +2154,7 @@
      resolution list), and the spacing table is where this app's named
      widths already live. */
   --spacing-measure: var(--measure);
+  --spacing-detail: var(--detail-max);
   --spacing-avatar: var(--avatar);
   --spacing-avatar-lg: var(--avatar-lg);
   --spacing-avatar-xl: var(--avatar-xl);

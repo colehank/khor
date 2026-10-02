@@ -256,7 +256,8 @@ function Body({
   const never = !row.vitals && !answered;
   return (
         <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-page py-4">
-          <div className="flex flex-col gap-row">
+          {/* Capped and left on the page's line (`--detail-max`). */}
+          <div className="flex max-w-detail flex-col gap-row">
             <Strip row={row} sayModel={sayModel} />
             {never ? (
               <RegionState state="loading-never" />
@@ -506,13 +507,17 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
           } as CSSProperties
         }
         className={cn(
-          "grid justify-between gap-x-row gap-y-row",
+          // **Equal columns** (the audit fix plan F6.6, W24): each fact
+          // takes the same share, so the lines between them fall at
+          // even steps. ⚠️ 墓碑: `auto` columns spread apart by
+          // `justify-between`, whose gaps followed the words.
+          "grid gap-x-row gap-y-row",
           // Pulled left by one cell's line and gap, so a row's first cell
           // keeps its words on the board's padding and its line outside.
           "-ml-[calc(var(--gap-row)+var(--hair))]",
-          "grid-cols-[repeat(var(--strip-three),auto)]",
-          "@sm/strip:grid-cols-[repeat(var(--strip-two),auto)]",
-          "@xl/strip:grid-cols-[repeat(var(--strip-one),auto)]",
+          "grid-cols-[repeat(var(--strip-three),minmax(0,1fr))]",
+          "@sm/strip:grid-cols-[repeat(var(--strip-two),minmax(0,1fr))]",
+          "@xl/strip:grid-cols-[repeat(var(--strip-one),minmax(0,1fr))]",
         )}
       >
         {facts.map(([k, label, value]) => (

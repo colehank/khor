@@ -1415,7 +1415,7 @@ export function QuotaLanding({
   const isSub = current?.kind === "sub";
   const dials = current && isSub ? subDials(current) : [];
   const subDetail = current && isSub && (
-    <div data-quota-detail={current.id} className="flex flex-col gap-row px-page py-row">
+    <div data-quota-detail={current.id} className="box-content flex max-w-detail flex-col gap-row px-page py-row">
       {/* No head: the name is R0's, the plan and the age are R0's
           caption (`ReadCaption`). */}
       {/* **The dial, and what it is made of beside it.** Every window
@@ -1645,7 +1645,7 @@ export function QuotaLanding({
   );
 
   const detail = acc && current && !isSub && (
-    <div data-quota-detail={acc.reading.account} className="flex flex-col gap-row px-page py-row">
+    <div data-quota-detail={acc.reading.account} className="box-content flex max-w-detail flex-col gap-row px-page py-row">
       {/* No head: the name is R0's, the plan and the age are R0's
           caption (`ReadCaption`). */}
       {/* **The same two columns the subscription's card has**: the dial
