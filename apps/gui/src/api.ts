@@ -1709,6 +1709,8 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
 /** A line from the face into the app's own log (its stderr, which the
     device's console keeps): what a page saw that only a device shows. */
 export const faceNote = (line: string) => call<null>("face_note", { line });
+/** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
+export const bellHaptic = () => call<null>("bell_haptic");
 /** A finished command, said by the system (roadmap 2.4, `lib/finished`). */
 export const notifyFinished = (title: string, body: string) => call<null>("notify_finished", { title, body });
 /** Files dropped on a terminal. The paths go over as they are and the

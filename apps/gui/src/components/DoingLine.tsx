@@ -27,12 +27,35 @@ export function DoingLine({ doing, now = Date.now() }: { doing: Doing; now?: num
         : SLOT;
   const [before, after] = text.split(SLOT);
   return (
-    <span data-doing={doing.running ? "running" : "ran"} data-exit={doing.exit ?? undefined} className="block min-w-0 truncate">
-      {before}
-      <span data-doing-command className="font-term">
-        {doing.command}
+    <span data-doing={doing.running ? "running" : "ran"} data-exit={doing.exit ?? undefined} className="block min-w-0">
+      <span className="block min-w-0 truncate">
+        {before}
+        <span data-doing-command className="font-term">
+          {doing.command}
+        </span>
+        {after}
       </span>
-      {after}
+      {doing.running && doing.progress !== null && <ProgressLine doing={doing} />}
+    </span>
+  );
+}
+
+/**
+ * **A program's own progress, as a thin line** (roadmap 4.1): what it said
+ * with `OSC 9 ; 4` (ConEmu's, read by Windows Terminal, Ghostty and
+ * WezTerm for their tab and taskbar), the figure as the line's length, a
+ * busy one with no figure as a full faint line, a failed one in the
+ * failed ink.
+ */
+export function ProgressLine({ doing }: { doing: Doing }) {
+  const p = doing.progress ?? 0;
+  const busy = p === 255;
+  return (
+    <span data-progress={busy ? "busy" : p} data-progress-failed={doing.progress_failed || undefined} className="mt-xxs block h-[var(--ring-w)] overflow-hidden rounded-full bg-fill">
+      <span
+        className={doing.progress_failed ? "block h-full bg-[var(--state-failed)]" : busy ? "block h-full bg-[var(--state-busy)] opacity-40" : "block h-full bg-[var(--state-busy)]"}
+        style={{ width: `${busy ? 100 : p}%` }}
+      />
     </span>
   );
 }

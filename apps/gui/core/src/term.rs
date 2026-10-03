@@ -478,6 +478,13 @@ fn push_feed(feed: &Mutex<Feed>, fed: &AtomicU64, bytes: &[u8]) {
         let gone: Vec<u8> = g.bytes.drain(..over).collect();
         g.head.feed(&gone);
     }
+    // A trim that fell inside a sequence runs on to its end, even into
+    // later pushes: a replay never opens with a picture's base64
+    // (roadmap 3.3; the host's ring keeps pictures apart instead).
+    while g.head.mid_sequence() {
+        let Some(b) = g.bytes.pop_front() else { break };
+        g.head.feed(&[b]);
+    }
     fed.fetch_add(bytes.len() as u64, Ordering::Relaxed);
 }
 
@@ -915,6 +922,30 @@ mod tests {
         assert!(
             idle.is_empty() && still == end && !reset,
             "idle is empty at the same cursor"
+        );
+    }
+
+    /// **A trim never leaves the head inside a picture** (roadmap 3.3):
+    /// an `imgcat` plot that straddles the cap, or is still arriving
+    /// when the trim reaches it, is cut whole, so a face attaching then
+    /// draws text and not base64. The cursor still counts every byte.
+    #[test]
+    fn a_trim_inside_a_picture_cuts_the_whole_picture() {
+        let feed = Mutex::new(Feed::default());
+        let fed = AtomicU64::new(0);
+        let lines = b"line of output\r\n".repeat(FEED_CAP / 16);
+        push_feed(&feed, &fed, b"\x1b]1337;File=inline=1:");
+        push_feed(&feed, &fed, &vec![b'Q'; 4096]);
+        push_feed(&feed, &fed, &lines);
+        push_feed(&feed, &fed, &vec![b'Q'; 4096]);
+        push_feed(&feed, &fed, b"\x07after the picture\r\n");
+        let (bytes, end) = take_all(&feed, &fed);
+        assert!(bytes.starts_with(b"after the picture"), "{:?}", &bytes[..24]);
+        assert_eq!(end, fed.load(Ordering::Relaxed));
+        assert_eq!(
+            end - plock(&feed).bytes.len() as u64,
+            21 + 4096 + lines.len() as u64 + 4096 + 1,
+            "the head cursor moved past the picture's end"
         );
     }
 

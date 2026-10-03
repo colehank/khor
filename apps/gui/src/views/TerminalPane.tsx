@@ -57,15 +57,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { ImageAddon } from "@xterm/addon-image";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { faceNote, inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
-import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
+import { usePinch } from "@/hooks/use-pinch";
+import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -78,7 +80,10 @@ import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
-import { askNewSession, handOff } from "@/lib/composer-handoff";
+import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
+import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
+import { termBell } from "@/lib/term-bell";
+import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
@@ -115,6 +120,14 @@ const CHUNK_CHARS = 16 * 1024;
 /** How long the frame lights for a bell (BEL). iTerm2's visual bell is
     a flash; a flash that stays is a border, and a border says nothing. */
 const BELL_MS = 160;
+
+/** A pane's picture store (MB, oldest out first) and the largest picture
+    it decodes (pixels). The addon's defaults are 128 MB and 4096²; a pane
+    takes half the store on a Mac, and a quarter of each on a phone. */
+const PICTURES_MB = 64;
+const PICTURES_MB_FINGER = 32;
+const PICTURE_PX = 4096 * 4096;
+const PICTURE_PX_FINGER = 2048 * 2048;
 
 /** Where the search paints what it found: **the accent's tint**, thin
     for every match and strong under the one the search stands on (the
@@ -176,8 +189,11 @@ function asksToFind(ev: KeyboardEvent): boolean {
     through). In a browser, the browser's own new tab — `open` on the
     serving machine would open it on the wrong screen when the face is
     being read from a phone. */
-function follow(uri: string) {
-  if (inApp) openLink(uri).catch(() => {});
+function follow(uri: string, machine: string | null | undefined) {
+  // **In the app, a browsing tab through the terminal's own machine**
+  // (roadmap 3.2): a dev server's `localhost:3000` printed on a far
+  // machine is that machine's. A browser face keeps its own tab.
+  if (inApp) askOpenUrl(machine ?? "", uri);
   else window.open(uri, "_blank", "noopener");
 }
 
@@ -413,7 +429,14 @@ const TAP_SLOP = 10;
  * keyboard, so a hardware keyboard keeps typing; a focus that went to
  * another field (the find bar, a sheet) is left there.
  */
-function tapsAskFirst(term: Terminal, box: HTMLElement, marks: Marks): () => void {
+function tapsAskFirst(
+  term: Terminal,
+  box: HTMLElement,
+  marks: Marks,
+  /** A tap on a cell, first: a picture or a link there opens (roadmap
+      3.2, 3.3); true when it took the tap, and the keyboard is left be. */
+  tapped: (row: number, col: number) => boolean,
+): () => void {
   const field = term.textarea;
   if (!field) return () => {};
   let startX = 0;
@@ -454,6 +477,10 @@ function tapsAskFirst(term: Terminal, box: HTMLElement, marks: Marks): () => voi
     if (still) {
       const wake = termWake();
       const at = cellAt(term, startX, startY);
+      if (at && tapped(at.row, at.col)) {
+        still = false;
+        return;
+      }
       const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
       if (here && !keyboardUp(field)) raiseKeyboard(field);
       else if (!here && wake === "auto" && keyboardUp(field)) lowerKeyboard(field);
@@ -958,6 +985,88 @@ function framesWhole(term: Terminal): { paint: (bytes: Uint8Array) => void; flus
   return { paint, flush, drop };
 }
 
+/** A two-finger tap: both fingers down this briefly, barely moving. */
+const TWO_TAP_MS = 300;
+/** A sideways swipe that steps tabs: this far, mostly sideways, this
+    briefly, and not from the screen's left edge, which is the page's own
+    edge swipe back (iOS reserves it the same way). */
+const SWIPE_PT = 80;
+const SWIPE_MS = 400;
+const EDGE_PT = 24;
+
+/**
+ * **The phone's gestures on a terminal** (roadmap 4.4), the set Blink Shell
+ * and Termius use: a two-finger tap is Esc; a pinch sizes the terminal's
+ * text, landing on the setting's own steps (`lib/type-size`, every 2 pt
+ * from 10 to 22) when the fingers lift; a quick sideways swipe goes to the
+ * next or previous session tab.
+ */
+function phoneGestures(term: Terminal, box: HTMLElement): () => void {
+  let fingers = 0;
+  let downAt = 0;
+  let d0 = 0;
+  let scale = 1;
+  let travel = 0;
+  let x0 = 0;
+  let y0 = 0;
+  let x1 = 0;
+  let y1 = 0;
+  const gap = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const start = (e: TouchEvent) => {
+    if (e.touches.length === 1) {
+      fingers = 1;
+      downAt = performance.now();
+      x0 = x1 = e.touches[0].clientX;
+      y0 = y1 = e.touches[0].clientY;
+      travel = 0;
+    } else if (e.touches.length === 2) {
+      fingers = 2;
+      d0 = gap(e.touches);
+      scale = 1;
+    }
+  };
+  const move = (e: TouchEvent) => {
+    if (e.touches.length === 2 && fingers === 2) {
+      scale = gap(e.touches) / d0;
+      travel = Math.max(travel, Math.abs(gap(e.touches) - d0));
+    } else if (e.touches.length === 1 && fingers === 1) {
+      x1 = e.touches[0].clientX;
+      y1 = e.touches[0].clientY;
+    }
+  };
+  const end = (e: TouchEvent) => {
+    if (e.touches.length > 0) return;
+    const took = performance.now() - downAt;
+    if (fingers === 2) {
+      if (travel > 12) {
+        const t = typeSize();
+        const want = Math.round((t.term * scale) / 2) * 2;
+        const term_ = Math.max(TERM_MIN, Math.min(TERM_MAX, want));
+        if (term_ !== t.term) setTypeSize({ ...t, term: term_ });
+      } else if (took < TWO_TAP_MS) {
+        term.input("\x1b", true);
+      }
+    } else if (fingers === 1) {
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      if (Math.abs(dx) > SWIPE_PT && Math.abs(dx) > 2 * Math.abs(dy) && took < SWIPE_MS && x0 > EDGE_PT) {
+        askStepTab(dx < 0 ? 1 : -1);
+      }
+    }
+    fingers = 0;
+  };
+  box.addEventListener("touchstart", start, { passive: true });
+  box.addEventListener("touchmove", move, { passive: true });
+  box.addEventListener("touchend", end, { passive: true });
+  box.addEventListener("touchcancel", end, { passive: true });
+  return () => {
+    box.removeEventListener("touchstart", start);
+    box.removeEventListener("touchmove", move);
+    box.removeEventListener("touchend", end);
+    box.removeEventListener("touchcancel", end);
+  };
+}
+
 /** Whether a box has a size a terminal can be measured in. */
 const hasSize = (el: HTMLElement) => el.clientWidth > 0 && el.clientHeight > 0;
 
@@ -1276,6 +1385,14 @@ export function TerminalPane({
   // strip of its own at the screen's foot, not at the cursor, which a
   // redrawing program moves under it.
   const [composingText, setComposingText] = useState<string | null>(null);
+  // A picture the program drew, opened whole (roadmap 3.3).
+  const [peek, setPeek] = useState<string | null>(null);
+  const peekRef = useRef(peek);
+  peekRef.current = peek;
+  const pinch = usePinch();
+  // **A question the pane asks before acting** (roadmap 4.3): a paste of
+  // several lines, or a program wanting to read the clipboard.
+  const [asking, setAsking] = useState<{ text: string; detail?: string; yes: string; no: string; go: () => void; stop: () => void } | null>(null);
   // A command block's actions (roadmap 2.3), where it was pressed: from a
   // right-click, or a long press on its prompt.
   const [blockMenu, setBlockMenu] = useState<{ x: number; y: number; acts: { name: string; label: string; run: () => void }[] } | null>(null);
@@ -1328,7 +1445,7 @@ export function TerminalPane({
       // the same road (`follow`).
       linkHandler: {
         activate: (ev, uri) => {
-          if (ev.metaKey || ev.ctrlKey) follow(uri);
+          if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
         },
       },
       // **The size reports programs ask for** (T-1: CSI 14 t, 16 t, 18 t
@@ -1384,10 +1501,46 @@ export function TerminalPane({
     // write and refuse (or ask about) the read. The read form (`?`) is
     // answered with nothing, so a program waiting for it times out as it
     // would on any terminal that refuses.
+    // **Reading is asked about once per terminal** (roadmap 4.3; T-8 had
+    // refused it outright): the answer — kitty's `clipboard_control` and
+    // WezTerm ask the same way — holds until the pane closes. A refusal
+    // answers nothing, so the program times out as on any terminal that
+    // refuses.
+    let mayRead: boolean | null = null;
+    const readClipboard = (target: string) => {
+      void navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+          send(`\x1b]52;${target};${b64}\x07`);
+        })
+        .catch(() => {});
+    };
     const osc52 = term.parser.registerOscHandler(52, (data) => {
       const semi = data.indexOf(";");
       const payload = semi >= 0 ? data.slice(semi + 1) : "";
-      if (payload === "?" || payload === "") return true;
+      const target = semi >= 0 ? data.slice(0, semi) || "c" : "c";
+      if (payload === "?") {
+        // A question from history answers nothing (`replay`).
+        if (replaying > 0) return true;
+        if (mayRead === true) readClipboard(target);
+        else if (mayRead === null) {
+          setAsking({
+            text: gui.clip_read_ask,
+            yes: gui.clip_read_allow,
+            no: gui.clip_read_deny,
+            go: () => {
+              mayRead = true;
+              readClipboard(target);
+            },
+            stop: () => {
+              mayRead = false;
+            },
+          });
+        }
+        return true;
+      }
+      if (payload === "") return true;
       try {
         const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
         void navigator.clipboard?.writeText(new TextDecoder().decode(bytes)).catch(() => {});
@@ -1452,12 +1605,47 @@ export function TerminalPane({
     // selection than a wish to leave, so the modifier is the intent.
     term.loadAddon(
       new WebLinksAddon((ev, uri) => {
-        if (ev.metaKey || ev.ctrlKey) follow(uri);
+        if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
       }),
     );
+    // **Pictures in place** (roadmap 3.3): sixel and iTerm2's inline
+    // images, through the xterm.js team's own addon (@xterm/addon-image,
+    // MIT) — what `imgcat`, `chafa`, `timg` and matplotlib's terminal
+    // backends draw. Its store is bounded per pane and lets the oldest go
+    // first (`storageLimit`), smaller under a finger, as is the largest
+    // picture it will decode; a replay's pictures come from the host's
+    // own store (`khor_node::pictures`), not from the text ring.
+    const small = window.matchMedia("(pointer: coarse)").matches;
+    const pictures = new ImageAddon({
+      storageLimit: small ? PICTURES_MB_FINGER : PICTURES_MB,
+      pixelLimit: small ? PICTURE_PX_FINGER : PICTURE_PX,
+    });
+    term.loadAddon(pictures);
+    (box as HTMLDivElement & { __pictures?: ImageAddon }).__pictures = pictures;
+    const picture =(row: number, col: number) => {
+      const canvas = pictures.getImageAtBufferCell(col, row);
+      if (!canvas) return false;
+      setPeek(canvas.toDataURL());
+      return true;
+    };
+    // Under a mouse a ⌘-click opens one, the gesture links use.
+    const pictureClick = (ev: MouseEvent) => {
+      if (!(ev.metaKey || ev.ctrlKey) || ev.button !== 0) return;
+      const at = cellAt(term, ev.clientX, ev.clientY);
+      if (at && picture(at.row, at.col)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    box.addEventListener("mousedown", pictureClick, true);
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
     // nor falls through to the page's own find. Everything else passes.
     term.attachCustomKeyEventHandler((ev) => {
+      // An open picture is closed by Esc; the program never sees it.
+      if (peekRef.current && ev.key === "Escape") {
+        if (ev.type === "keydown") setPeek(null);
+        return false;
+      }
       if (ev.type === "keydown" && asksToFind(ev)) {
         ev.preventDefault();
         setFinding(true);
@@ -1479,6 +1667,10 @@ export function TerminalPane({
       return true;
     });
     const rung = term.onBell(() => {
+      // The person's bell setting (roadmap 4.2): off is silent; under a
+      // finger it is felt as well as seen.
+      if (!termBell()) return;
+      if (window.matchMedia("(pointer: coarse)").matches) bellHaptic().catch(() => {});
       setRang(true);
       window.clearTimeout(bellTimer.current);
       bellTimer.current = window.setTimeout(() => setRang(false), BELL_MS);
@@ -1506,7 +1698,28 @@ export function TerminalPane({
     const marks = trackMarks(term);
     // For the gates, as `__xterm` is.
     (box as HTMLDivElement & { __marks?: Marks }).__marks = marks;
-    const asks = tapsAskFirst(term, box, marks);
+    // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
+    // a mouse a ⌘-click on an underlined path; under a finger a tap.
+    const here = machine ?? "";
+    const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd();
+    const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
+      askOpenPath(here, t.path, t.dir, t.line);
+    const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
+    const tapped = (row: number, col: number) => {
+      if (picture(row, col)) return true;
+      const url = urlAt(term, row, col);
+      if (url) {
+        follow(url, machine);
+        return true;
+      }
+      void pathsOn(term, here, cwdAt, row).then((found) => {
+        const hit = found.find((f) => col + 1 >= f.x0 && col + 1 <= f.x1);
+        if (hit) openPath(hit.target);
+      });
+      return false;
+    };
+    const asks = tapsAskFirst(term, box, marks, tapped);
+    const gestures = phoneGestures(term, box);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -1797,6 +2010,34 @@ export function TerminalPane({
         pollNow.current();
       })();
     };
+    // **A paste of more than one line asks first** (roadmap 4.3): how many
+    // lines and the first, then 粘贴 or 取消 — iTerm2's and Windows
+    // Terminal's multi-line paste warning, because a newline in a paste
+    // is an Enter a person did not press. Every paste comes through here:
+    // the system's (⌘V, iOS's callout) and the key row's (`term.paste`).
+    // xterm still brackets what goes when the program asked for that.
+    const pasteRaw = term.paste.bind(term);
+    const guarded = (text: string) => {
+      const lines = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
+      if (lines.length < 2) return pasteRaw(text);
+      setAsking({
+        text: gui.paste_ask(lines.length),
+        detail: lines[0],
+        yes: gui.key_paste,
+        no: gui.delete_keep,
+        go: () => pasteRaw(text),
+        stop: () => {},
+      });
+    };
+    term.paste = guarded;
+    const pasted = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      guarded(text);
+    };
+    term.textarea?.addEventListener("paste", pasted, true);
     const data = term.onData((d) => {
       const reply = isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
@@ -1942,6 +2183,7 @@ export function TerminalPane({
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
       data.dispose();
+      term.textarea?.removeEventListener("paste", pasted, true);
       dragged();
       native.stop();
       selects();
@@ -1959,6 +2201,9 @@ export function TerminalPane({
         field?.removeEventListener(k, composed as EventListener);
       }
       asks();
+      gestures();
+      linked.dispose();
+      box.removeEventListener("mousedown", pictureClick, true);
       marks.dispose();
       shown();
       window.clearTimeout(bellTimer.current);
@@ -2193,6 +2438,46 @@ export function TerminalPane({
         </div>
         <div data-term-room ref={roomRef} aria-hidden />
       </div>
+      {asking && (
+        <div
+          data-term-ask
+          role="alertdialog"
+          className="glass absolute inset-x-2 bottom-2 z-20 flex flex-col gap-in rounded-lg p-3 font-sans"
+        >
+          <span className="text-body">{asking.text}</span>
+          {asking.detail && (
+            <span data-term-ask-detail className="truncate text-callout text-muted-foreground" style={{ fontFamily: "var(--font-term)" }}>
+              {asking.detail}
+            </span>
+          )}
+          <span className="flex justify-end gap-in">
+            <button
+              type="button"
+              data-term-ask-no
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                asking.stop();
+                setAsking(null);
+              }}
+              className="min-h-touch rounded-md px-3 text-body hover:bg-fill"
+            >
+              {asking.no}
+            </button>
+            <button
+              type="button"
+              data-term-ask-yes
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                asking.go();
+                setAsking(null);
+              }}
+              className="min-h-touch rounded-md bg-fill-strong px-3 text-body"
+            >
+              {asking.yes}
+            </button>
+          </span>
+        </div>
+      )}
       {composingText && (
         <div
           data-term-composing
@@ -2201,6 +2486,25 @@ export function TerminalPane({
           style={{ fontFamily: "var(--font-term)" }}
         >
           {composingText}
+        </div>
+      )}
+      {peek && (
+        // **A picture, opened whole** (roadmap 3.3): over the pane, fitted,
+        // two fingers to look closer (`usePinch`, the conversation's own).
+        // The ground around it, ×, or Esc closes it.
+        <div
+          data-term-picture
+          role="dialog"
+          aria-label={gui.term_picture}
+          className="absolute inset-0 z-30 flex items-center justify-center bg-background p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPeek(null);
+          }}
+        >
+          <img ref={pinch} src={peek} alt="" className="h-full w-full object-contain" />
+          <GlassCircle aria-label={gui.close} data-term-picture-close className="absolute bottom-2 right-2" onClick={() => setPeek(null)}>
+            <IconClose />
+          </GlassCircle>
         </div>
       )}
       {blockMenu && (
@@ -2251,7 +2555,14 @@ export function TerminalPane({
           // it was a pill with a shadow of its own (2026-09-28).
           className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-lg border bg-popover px-3 py-1 text-caption shadow-(--shadow-float)"
         >
-          {freshBelow ? gui.new_below : gui.to_bottom}
+          {freshBelow ? (
+            <span className="flex items-center gap-xxs">
+              <IconArrow to="down" className="size-3.5" />
+              {gui.term_new_output}
+            </span>
+          ) : (
+            gui.to_bottom
+          )}
         </button>
       )}
       {/* **Reconnecting, said over the screen it holds** (round

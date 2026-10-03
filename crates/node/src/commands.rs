@@ -122,6 +122,9 @@ pub struct Ledger {
     recent: VecDeque<Command>,
     cwd: Option<String>,
     title: Option<String>,
+    progress: Option<u8>,
+    progress_failed: bool,
+    notice: Option<(String, u64)>,
     next: u64,
     offset: u64,
     /// Any mark seen at all: the shell has an integration.
@@ -291,6 +294,43 @@ impl Ledger {
                     self.set_cwd(path);
                 }
             }
+            // ConEmu's progress (`9;4;state;percent`, which Windows
+            // Terminal, Ghostty and WezTerm read too): 0 clears, 1 a
+            // figure, 2 failed, 3 busy with no figure, 4 paused.
+            "9" if rest.starts_with("4;") => {
+                let mut f = rest[2..].split(';');
+                let state = f.next().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0);
+                let pct = f.next().and_then(|v| v.parse::<u8>().ok()).unwrap_or(0).min(100);
+                let (progress, failed) = match state {
+                    0 => (None, false),
+                    1 | 4 => (Some(pct), false),
+                    2 => (Some(pct), true),
+                    _ => (Some(255), false),
+                };
+                if (progress, failed) != (self.progress, self.progress_failed) {
+                    self.progress = progress;
+                    self.progress_failed = failed;
+                    self.changed = true;
+                }
+            }
+            // ConEmu's other `9;n;…` verbs are not notifications.
+            "9" if rest.split(';').next().is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())) => {}
+            // iTerm2's notification: `9;text`.
+            "9" => self.notify(rest, now),
+            // urxvt's and Ghostty's: `777;notify;title;body`.
+            "777" => {
+                let mut f = rest.splitn(3, ';');
+                if f.next() == Some("notify") {
+                    let title = f.next().unwrap_or("");
+                    let body = f.next().unwrap_or("");
+                    let text = match (title.is_empty(), body.is_empty()) {
+                        (false, false) => format!("{title}: {body}"),
+                        (false, true) => title.to_owned(),
+                        _ => body.to_owned(),
+                    };
+                    self.notify(&text, now);
+                }
+            }
             "0" | "2" => {
                 let t = rest.trim();
                 let t = (!t.is_empty()).then(|| t.to_owned());
@@ -377,12 +417,24 @@ impl Ledger {
         c.ended_ms = Some(now);
         c.exit = exit;
         c.end_at = Some(self.offset);
+        // A finished command's progress is over, whatever it last said.
+        self.progress = None;
+        self.progress_failed = false;
         self.recent.push_back(c.clone());
         while self.recent.len() > RECENT {
             self.recent.pop_front();
         }
         self.finished.push(c);
         self.phase = Phase::Unknown;
+        self.changed = true;
+    }
+
+    fn notify(&mut self, text: &str, now: u64) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        self.notice = Some((text.chars().take(200).collect(), now));
         self.changed = true;
     }
 
@@ -405,6 +457,10 @@ impl Ledger {
             cwd: self.cwd.clone(),
             title: self.title.clone(),
             full_screen: self.modes.program_holds_screen(),
+            progress: self.progress,
+            progress_failed: self.progress_failed,
+            notice: self.notice.as_ref().map(|(t, _)| t.clone()),
+            notice_ms: self.notice.as_ref().map_or(0, |(_, at)| *at),
         }
     }
 
@@ -626,6 +682,23 @@ mod tests {
         assert_eq!(l.doing().title.as_deref(), Some("build"));
         l.feed(b"\x1b[?1049l\x1b]133;D;0\x07", 2000);
         assert!(!l.doing().full_screen && !l.doing().running);
+    }
+
+    #[test]
+    fn progress_and_notifications_are_read() {
+        let mut l = fed(b"\x1b]133;C\x07\x1b]9;4;1;42\x07");
+        assert_eq!(l.doing().progress, Some(42));
+        l.feed(b"\x1b]9;4;3;0\x07", 2);
+        assert_eq!(l.doing().progress, Some(255));
+        l.feed(b"\x1b]9;4;2;80\x1b\\", 3);
+        assert!(l.doing().progress_failed);
+        l.feed(b"\x1b]9;build done\x07", 4);
+        assert_eq!(l.doing().notice.as_deref(), Some("build done"));
+        assert_eq!(l.doing().notice_ms, 4);
+        l.feed(b"\x1b]9;1;500\x07\x1b]777;notify;make;all tests passed\x07", 5);
+        assert_eq!(l.doing().notice.as_deref(), Some("make: all tests passed"));
+        l.feed(b"\x1b]133;D;0\x07", 6);
+        assert_eq!(l.doing().progress, None, "a finished command's progress is over");
     }
 
     #[test]

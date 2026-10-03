@@ -64,18 +64,31 @@ export type Finished = {
   command: string;
   exit: number | null;
   ms: number;
+  /** A program's own notification (`OSC 9` / `OSC 777`, roadmap 4.1)
+      rather than a finished command: said as it is. */
+  notice?: string;
 };
 
 /** Watches successive row lists; see the module head. */
 export class FinishedWatch {
   /** Sessions seen running, by when their command started. */
   private running = new Map<string, number>();
+  /** The last program notification seen per session, by when. */
+  private noticed = new Map<string, number>();
 
   see(rows: SessionRow[], onScreen: (id: string) => boolean): Finished[] {
     const after = finishedAfter() * 1000;
     const out: Finished[] = [];
     for (const r of rows) {
       const d = r.doing;
+      // A program's own notification, newer than the last one seen here
+      // (the first sight of a session only records where it stands).
+      const at = d?.notice_ms ?? 0;
+      const before = this.noticed.get(r.id);
+      this.noticed.set(r.id, at);
+      if (d?.notice && before !== undefined && at > before && !onScreen(r.id)) {
+        out.push({ id: r.id, title: r.title, machine: r.home, command: "", exit: null, ms: 0, notice: d.notice });
+      }
       if (!d || !d.command || d.started_ms === 0) continue;
       if (d.running) {
         this.running.set(r.id, d.started_ms);

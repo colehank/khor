@@ -1,13 +1,14 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { hereActs, shortDir, termName } from "@/components/DoingLine";
+import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
   notifyFinished,
+  openTab,
   syncNow,
   fetchWorkspaces,
   installHooks,
@@ -455,7 +456,8 @@ export default function App() {
     for (const f of done) {
       const took = lasted(f.ms);
       const body =
-        f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took);
+        f.notice ??
+        (f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took));
       notifyFinished(f.title, body).catch(() => {});
       // The system's notice brings the app forward when it is pressed,
       // and says nothing more to it; so the window that comes forward
@@ -1425,6 +1427,23 @@ export default function App() {
   // map and the rules are there; what is here is what only the shell can
   // do — walk the rail, open a 「…」 page, and lend the session tabs to
   // ⌘W and ⌃⇥ while they are the strip on screen.
+  // A sideways swipe on a terminal (roadmap 4.4): the next or previous
+  // session tab, the same step ⌃⇥ takes.
+  const stepTab = useRef<(by: number) => void>(() => {});
+  stepTab.current = (by) => {
+    if (openTabs.length < 2) return;
+    const at = openTabs.indexOf(selected ?? "");
+    const next = openTabs[(at + by + openTabs.length) % openTabs.length];
+    if (next === undefined) return;
+    sessionTabs.focus(next);
+    setSwitchingTabs(false);
+    setScreen("detail");
+  };
+  useEffect(() => {
+    const asked = (e: Event) => stepTab.current((e as CustomEvent<{ by: number }>).detail.by);
+    window.addEventListener(STEP_TAB_EVENT, asked);
+    return () => window.removeEventListener(STEP_TAB_EVENT, asked);
+  }, []);
   useTabHost(
     landing === "sessions" && morePage === null && openTabs.length > 0
       ? {
@@ -1529,6 +1548,8 @@ export default function App() {
               path: r.doing?.cwd ?? r.place ?? "",
               // Where the shell stands, under the name (roadmap 2.5).
               sub: r.doing?.cwd ? shortDir(r.doing.cwd) : undefined,
+              // What the program says of its progress (roadmap 4.1).
+              progress: r.doing?.running && r.doing.progress !== null ? <ProgressLine doing={r.doing} /> : undefined,
               // Where the shell stands, and its two acts (roadmap 2.5).
               menu: r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : undefined,
               session: { word: r.word, kind: r.kind, category: r.category },
@@ -1603,6 +1624,59 @@ export default function App() {
     };
     window.addEventListener(OPEN_DIR_EVENT, asked);
     return () => window.removeEventListener(OPEN_DIR_EVENT, asked);
+  }, []);
+  // **A path or a URL a terminal printed** (roadmap 3.2): a directory is
+  // that machine's files there; a file opens in the workspace that holds
+  // it, or in its own directory's, at its line (`reveal`, the
+  // conversation's road); a URL is a browsing tab out through that
+  // terminal's machine.
+  const openPathRef = useRef<(machine: string, path: string, dir: boolean, line: number | null) => void>(() => {});
+  openPathRef.current = (machine, path, dir, line) => {
+    const d = machine === "" ? devices.find((x) => x.me) : devices.find((x) => x.name === machine);
+    if (!d) return;
+    const name = machine || d.name;
+    if (dir) return openDirRef.current(name, path);
+    void fetchWorkspaces()
+      .catch(() => [] as WorkspaceRow[])
+      .then((list) => {
+        const ws = holding(list, d.id, path);
+        setMorePage(null);
+        setLanding("workspaces");
+        setOpenWs(
+          ws
+            ? { device: ws.device, machine: ws.machine || ws.device, path: ws.path }
+            : { device: d.id, machine: name, path: path.slice(0, path.lastIndexOf("/")) || "/" },
+        );
+        setReveal({ path, line, at: Date.now() });
+        setScreen("detail");
+      });
+  };
+  const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
+  openUrlRef.current = (machine, url) => {
+    const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
+    void openTab("page", d?.id ?? "", url)
+      .then(() => {
+        setMorePage(null);
+        setLanding("browser");
+        setScreen("detail");
+      })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    const path = (e: Event) => {
+      const { machine, path: p, dir, line } = (e as CustomEvent<{ machine: string; path: string; dir: boolean; line: number | null }>).detail;
+      openPathRef.current(machine, p, dir, line);
+    };
+    const url = (e: Event) => {
+      const { machine, url: u } = (e as CustomEvent<{ machine: string; url: string }>).detail;
+      openUrlRef.current(machine, u);
+    };
+    window.addEventListener(OPEN_PATH_EVENT, path);
+    window.addEventListener(OPEN_URL_EVENT, url);
+    return () => {
+      window.removeEventListener(OPEN_PATH_EVENT, path);
+      window.removeEventListener(OPEN_URL_EVENT, url);
+    };
   }, []);
 
   const list = (
