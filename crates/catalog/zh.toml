@@ -2371,6 +2371,13 @@ finished-on-plain = "{0} 在 {1} 完成 · {2}"
 # 2.5): the files there, on that machine; a new session there.
 open-dir = "打开所在文件夹"
 new-session-here = "在这里新开会话"
+# A paste of more than one line asks first, showing how many and the
+# first (roadmap 4.3); a program asking to read the clipboard (OSC 52)
+# is asked about once per terminal.
+paste-ask = "粘贴 {0} 行？"
+clip-read-ask = "终端里的程序想读取剪贴板"
+clip-read-allow = "允许读取"
+clip-read-deny = "不允许"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"

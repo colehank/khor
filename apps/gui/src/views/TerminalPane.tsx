@@ -1287,6 +1287,9 @@ export function TerminalPane({
   // strip of its own at the screen's foot, not at the cursor, which a
   // redrawing program moves under it.
   const [composingText, setComposingText] = useState<string | null>(null);
+  // **A question the pane asks before acting** (roadmap 4.3): a paste of
+  // several lines, or a program wanting to read the clipboard.
+  const [asking, setAsking] = useState<{ text: string; detail?: string; yes: string; no: string; go: () => void; stop: () => void } | null>(null);
   // A command block's actions (roadmap 2.3), where it was pressed: from a
   // right-click, or a long press on its prompt.
   const [blockMenu, setBlockMenu] = useState<{ x: number; y: number; acts: { name: string; label: string; run: () => void }[] } | null>(null);
@@ -1392,10 +1395,46 @@ export function TerminalPane({
     // write and refuse (or ask about) the read. The read form (`?`) is
     // answered with nothing, so a program waiting for it times out as it
     // would on any terminal that refuses.
+    // **Reading is asked about once per terminal** (roadmap 4.3; T-8 had
+    // refused it outright): the answer — kitty's `clipboard_control` and
+    // WezTerm ask the same way — holds until the pane closes. A refusal
+    // answers nothing, so the program times out as on any terminal that
+    // refuses.
+    let mayRead: boolean | null = null;
+    const readClipboard = (target: string) => {
+      void navigator.clipboard
+        ?.readText()
+        .then((text) => {
+          const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+          send(`\x1b]52;${target};${b64}\x07`);
+        })
+        .catch(() => {});
+    };
     const osc52 = term.parser.registerOscHandler(52, (data) => {
       const semi = data.indexOf(";");
       const payload = semi >= 0 ? data.slice(semi + 1) : "";
-      if (payload === "?" || payload === "") return true;
+      const target = semi >= 0 ? data.slice(0, semi) || "c" : "c";
+      if (payload === "?") {
+        // A question from history answers nothing (`replay`).
+        if (replaying > 0) return true;
+        if (mayRead === true) readClipboard(target);
+        else if (mayRead === null) {
+          setAsking({
+            text: gui.clip_read_ask,
+            yes: gui.clip_read_allow,
+            no: gui.clip_read_deny,
+            go: () => {
+              mayRead = true;
+              readClipboard(target);
+            },
+            stop: () => {
+              mayRead = false;
+            },
+          });
+        }
+        return true;
+      }
+      if (payload === "") return true;
       try {
         const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
         void navigator.clipboard?.writeText(new TextDecoder().decode(bytes)).catch(() => {});
@@ -1820,6 +1859,34 @@ export function TerminalPane({
         pollNow.current();
       })();
     };
+    // **A paste of more than one line asks first** (roadmap 4.3): how many
+    // lines and the first, then 粘贴 or 取消 — iTerm2's and Windows
+    // Terminal's multi-line paste warning, because a newline in a paste
+    // is an Enter a person did not press. Every paste comes through here:
+    // the system's (⌘V, iOS's callout) and the key row's (`term.paste`).
+    // xterm still brackets what goes when the program asked for that.
+    const pasteRaw = term.paste.bind(term);
+    const guarded = (text: string) => {
+      const lines = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
+      if (lines.length < 2) return pasteRaw(text);
+      setAsking({
+        text: gui.paste_ask(lines.length),
+        detail: lines[0],
+        yes: gui.key_paste,
+        no: gui.delete_keep,
+        go: () => pasteRaw(text),
+        stop: () => {},
+      });
+    };
+    term.paste = guarded;
+    const pasted = (e: ClipboardEvent) => {
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      if (!text) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      guarded(text);
+    };
+    term.textarea?.addEventListener("paste", pasted, true);
     const data = term.onData((d) => {
       const reply = isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
@@ -1965,6 +2032,7 @@ export function TerminalPane({
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
       data.dispose();
+      term.textarea?.removeEventListener("paste", pasted, true);
       dragged();
       native.stop();
       selects();
@@ -2217,6 +2285,46 @@ export function TerminalPane({
         </div>
         <div data-term-room ref={roomRef} aria-hidden />
       </div>
+      {asking && (
+        <div
+          data-term-ask
+          role="alertdialog"
+          className="glass absolute inset-x-2 bottom-2 z-20 flex flex-col gap-in rounded-lg p-3 font-sans"
+        >
+          <span className="text-body">{asking.text}</span>
+          {asking.detail && (
+            <span data-term-ask-detail className="truncate text-callout text-muted-foreground" style={{ fontFamily: "var(--font-term)" }}>
+              {asking.detail}
+            </span>
+          )}
+          <span className="flex justify-end gap-in">
+            <button
+              type="button"
+              data-term-ask-no
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                asking.stop();
+                setAsking(null);
+              }}
+              className="min-h-touch rounded-md px-3 text-body hover:bg-fill"
+            >
+              {asking.no}
+            </button>
+            <button
+              type="button"
+              data-term-ask-yes
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                asking.go();
+                setAsking(null);
+              }}
+              className="min-h-touch rounded-md bg-fill-strong px-3 text-body"
+            >
+              {asking.yes}
+            </button>
+          </span>
+        </div>
+      )}
       {composingText && (
         <div
           data-term-composing
