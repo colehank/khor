@@ -505,3 +505,48 @@ async fn a_dark_machine_costs_its_own_budget_and_is_backed_off() {
         "the pump dialled a dark machine {failed_dials} times in a minute"
     );
 }
+
+/// **A phone going to the background lets its wires go at once**
+/// (`link::suspending`, the app's `WindowEvent::Suspended`): the desk
+/// reads it not connected in a moment, not after its silence limit, and
+/// the phone's way back (`link::resume`) is direct again.
+///
+/// The phone here is an in-process resumable serve — what the iPhone app
+/// runs — on a scratch home with the loopback relay.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_phone_going_to_the_background_reads_not_connected_at_once() {
+    let (ra, rb, rr) = (scratch("phone-a"), scratch("phone-b"), scratch("phone-r"));
+    let (_relay, url) = local_relay(&rr.0);
+    home_on(&ra.0, &url);
+    home_on(&rb.0, &url);
+    let phone = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let serve_a = tokio::spawn(async move { phone.serve_resumable().await });
+    let _b = serve(&rb.0, "beta");
+    stood_up(&[&ra.0, &rb.0]).await;
+    let alpha = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let beta = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let ticket = alpha.invite().unwrap();
+    timeout(Duration::from_secs(90), beta.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .expect("pairing succeeds");
+    let alpha_id = alpha.device_str().to_owned();
+    until_reads(&beta, &alpha_id, Hop::Direct, Duration::from_secs(30)).await;
+
+    assert!(
+        khor_node::link::suspending(&ra.0).await,
+        "the phone's resident takes the suspension"
+    );
+    let quiet = until_reads(&beta, &alpha_id, Hop::Idle, Duration::from_secs(30)).await;
+    let mut resuming = khor_node::link::resume(&ra.0).expect("the phone's resident resumes");
+    resuming.ears().await.expect("new ears");
+    let back = until_reads(&beta, &alpha_id, Hop::Direct, Duration::from_secs(30)).await;
+    eprintln!(
+        "[phone] suspended: the desk read 未连接 after {quiet:?} (silence limit: 15 s); resumed: 直连 after {back:?}"
+    );
+    assert!(
+        quiet < Duration::from_secs(3),
+        "the desk took {quiet:?} to see the phone go"
+    );
+    serve_a.abort();
+}

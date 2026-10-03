@@ -722,6 +722,17 @@ impl Node {
                     tokio::spawn(async move {
                         if let Ok(conn) = incoming.await {
                             n.wires.serving(&conn);
+                            // **A machine that dials in is back**: one this
+                            // node holds no wire to — a phone returning to
+                            // the front, a laptop waking — is visited now,
+                            // not at the next beat or after its backoff.
+                            let remote = conn.remote_id().to_string();
+                            if conn.alpn() == endpoint::ALPN
+                                && n.wires.live(&remote, wires::Proto::Main).is_none()
+                            {
+                                let (n, e) = (n.clone(), e.clone());
+                                tokio::spawn(async move { n.visit_now(&e, &remote).await });
+                            }
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
                                 let _ = n.serve_tunnel(conn).await;
                             } else {
@@ -6003,6 +6014,15 @@ impl Node {
             .map(|d| async move { (d.name.clone(), self.round_with(ep, d, force).await) })
             .collect();
         join_all(visits).await
+    }
+
+    /// A round with one machine by id, now — backoff or not. Nothing for
+    /// a key not in the table (a stranger pairing).
+    async fn visit_now(&self, ep: &iroh::Endpoint, id: &str) {
+        let Ok(loaded) = self.devices_loaded() else { return };
+        let Some(d) = loaded.doc.get(id) else { return };
+        drop(loaded);
+        let _ = self.round_with(ep, &d, true).await;
     }
 
     /// One machine's round: skipped with a reason, joined, or run.
