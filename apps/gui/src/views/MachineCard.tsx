@@ -35,7 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cli, gui } from "@/gen/catalog";
+import { cli, gui, msg } from "@/gen/catalog";
 import { tickSet } from "@/lib/ruler";
 import { useKept } from "@/lib/kept";
 import { useTravel } from "@/lib/travel";
@@ -253,7 +253,21 @@ function Body({
   // with the device row and the process table from `useKept`, so a
   // machine seen before draws its last content on the first frame and
   // never this — the fast gate's second claim.
-  const answered = load !== null || why !== null;
+  // **A machine known to be out of reach is said so at once** (P6,
+  // 2026-10-03): the device table already says 「未连接」, so the page
+  // does not wait out the node's deadline behind skeletons. The asking
+  // goes on quietly underneath (`useLoad` retries), and the first answer
+  // that lands replaces the sentence.
+  const far = isFar(row) && load === null;
+  /** What the process table says when there is nothing to show: the
+      machine by name, in the words a person reads, when the trouble is
+      that it cannot be reached — the node's own sentence (its timeout and
+      the paths it tried) is the hover's. Any other refusal (an older
+      khor declining a column) is said as the node said it. */
+  const unreachable =
+    far || (why !== null && [row.name, row.shown].some((n) => why === msg.machine_unreachable_timeout(n)));
+  const lost = unreachable ? gui.machine_cant_reach(row.shown) : why;
+  const answered = load !== null || lost !== null;
   const never = !row.vitals && !answered;
   return (
         <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-page py-4">
@@ -264,7 +278,7 @@ function Body({
               <RegionState state="loading-never" />
             ) : (
               <>
-                <Readings row={row} day={load?.cpu_day ?? null} dayLost={load === null && why !== null} top={load?.top ?? []} />
+                <Readings row={row} day={load?.cpu_day ?? null} dayLost={load === null && lost !== null} top={load?.top ?? []} />
                 {/* **No process table for a machine that cannot host**
                     (docs/IOS.md 第二步): a phone's app may not see other
                     processes, so its table is always empty — and an empty
@@ -273,7 +287,8 @@ function Body({
                 {!row.hosts ? null : answered ? (
                   <Busy
                     load={load}
-                    why={why}
+                    why={lost}
+                    whyDetail={why}
                     sort={shown ?? sort}
                     asking={asking}
                     onSort={setSort}
@@ -2122,6 +2137,7 @@ const cpuClock = (ms: number) => {
 function Busy({
   load,
   why,
+  whyDetail = null,
   sort,
   asking,
   onSort,
@@ -2129,6 +2145,8 @@ function Busy({
 }: {
   load: Load | null;
   why: string | null;
+  /** The node's own sentence behind `why`, for the hover. */
+  whyDetail?: string | null;
   /** Which optional columns any row on this machine has ever filled.
       **Latched 「seen」 facts, not properties of the hardware or of the
       far khor's version**, and together they decide which columns the
@@ -2159,7 +2177,7 @@ function Busy({
   if (why) {
     return (
       <TopSection>
-        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} seen={seen} hot={null} />
+        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} whyDetail={whyDetail} seen={seen} hot={null} />
       </TopSection>
     );
   }
@@ -2312,6 +2330,7 @@ function Top({
   asking,
   onSort,
   why,
+  whyDetail = null,
   seen,
   hot,
 }: {
@@ -2325,6 +2344,8 @@ function Top({
   /** Why the machine did not answer this ask. Set means: draw the heads
       and this sentence, and no rows — see `Busy`. */
   why?: string | null;
+  /** The node's own sentence behind `why`, for the hover. */
+  whyDetail?: string | null;
   /** **Which columns this table has, decided by the machine and not by
       the rows in front of you** — see `Seen`.
 
@@ -2516,7 +2537,12 @@ function Top({
           ))}
         </div>
         {why ? (
-          <div data-load-why className="py-row text-callout text-muted-foreground" style={{ gridColumn: `span ${cells}` }}>
+          <div
+            data-load-why
+            title={whyDetail && whyDetail !== why ? whyDetail : undefined}
+            className="py-row text-callout text-muted-foreground"
+            style={{ gridColumn: `span ${cells}` }}
+          >
             {why}
           </div>
         ) : (

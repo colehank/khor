@@ -1381,6 +1381,7 @@ synced-now = "Synced"
 row-unreachable = "Unreachable · {0}"
 day-unreachable = "Unreachable"
 reading-unreachable = "Unreachable · last {0}"
+machine-cant-reach = "Can't reach {0}"
 # "Quota" (not "Usage") — the `khor usage` command already owns that word.
 accounts-tab = "Quota"
 accounts-empty = "No API accounts registered yet — register one and its usage shows up here."
