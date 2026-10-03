@@ -293,6 +293,13 @@ pub struct WireCounts {
     /// count on the doctor's line names whose it is. Tail field.
     #[serde(default)]
     pub by_peer: Vec<(String, u64, u64)>,
+    /// UDP bytes the wires this resident dialed have sent and received,
+    /// every wire it ever held included (round NET-3: what its rounds
+    /// cost the road). Tail fields.
+    #[serde(default)]
+    pub sent_bytes: u64,
+    #[serde(default)]
+    pub received_bytes: u64,
 }
 
 /// **This machine's connections, as a page shows them** (round NET-2,

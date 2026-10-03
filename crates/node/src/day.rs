@@ -442,6 +442,77 @@ fn push(out: &mut Vec<Run>, cell: DayCell) {
     }
 }
 
+/// **A day as the minutes since the asker's copy ended** (round NET-3):
+/// what crosses instead of the whole record when the asker already holds
+/// one. A record changes only at its newest minute — a sample lands in
+/// the current cell, every older cell is history — so an asker whose
+/// copy ended at minute `E` needs, per row, only the cells from `E` on
+/// (`E` itself included: it may have been sampled again since), and the
+/// list of rows still there.
+///
+/// Built by [`Day::since`], applied by [`apply_since`]. The asker checks
+/// the result against the whole answer's digest the sender carries
+/// alongside, and asks for the whole record if they differ — so this is
+/// a saving, never a second source of truth.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DaySince {
+    /// The window's first minute after this answer.
+    pub from: i64,
+    /// The cells from the asker's last minute on, for `watched`.
+    pub watched: String,
+    /// Every row still in the record, with its cells from the asker's
+    /// last minute on. A row the asker holds and this does not name has
+    /// left the record.
+    pub rows: Vec<(String, String)>,
+}
+
+impl Day {
+    /// The minutes from `held_end` (the last minute of the asker's copy)
+    /// to this record's end — `None` when `held_end` is not inside this
+    /// window, and the whole record is what to send.
+    pub fn since(&self, held_end: i64) -> Option<DaySince> {
+        let at = self.slot(held_end)?;
+        let tail = |cells: &[u8]| String::from_utf8_lossy(&cells[at..]).into_owned();
+        Some(DaySince {
+            from: self.from,
+            watched: tail(&self.watched),
+            rows: self.rows.iter().map(|(id, cells)| (id.clone(), tail(cells))).collect(),
+        })
+    }
+
+    /// The last minute a record in its wire form covers.
+    pub fn end_of_wire(text: &str) -> Option<i64> {
+        let stored = serde_json::from_str::<Stored>(text).ok()?;
+        Some(stored.from + MINUTES as i64 - 1)
+    }
+}
+
+/// The asker's copy (wire form) brought up to date by `since`, in wire
+/// form — `None` when the two do not fit together (the caller then asks
+/// for the whole record).
+pub fn apply_since(held: &str, since: &DaySince) -> Option<String> {
+    let mut day = Day::from_stored(serde_json::from_str::<Stored>(held).ok()?)?;
+    day.roll(since.from + MINUTES as i64 - 1);
+    if day.from != since.from {
+        return None;
+    }
+    let lay = |cells: &mut Vec<u8>, tail: &str| -> Option<()> {
+        let tail = tail.as_bytes();
+        let at = MINUTES.checked_sub(tail.len())?;
+        cells[at..].copy_from_slice(tail);
+        Some(())
+    };
+    lay(&mut day.watched, &since.watched)?;
+    let mut rows = BTreeMap::new();
+    for (id, tail) in &since.rows {
+        let mut cells = day.rows.remove(id).unwrap_or_else(|| blank(ABSENT));
+        lay(&mut cells, tail)?;
+        rows.insert(id.clone(), cells);
+    }
+    day.rows = rows;
+    Some(day.to_wire())
+}
+
 fn shift_left(cells: &mut Vec<u8>, by: usize, fill: u8) {
     cells.drain(..by);
     cells.resize(MINUTES, fill);
@@ -454,6 +525,40 @@ fn minute(now_ms: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The minutes since an asker's copy rebuild the record exactly**
+    /// (round NET-3): a copy taken at 10:00, the record sampled on to
+    /// 10:07 with a row joining and one leaving, and the copy brought up
+    /// to date from what [`Day::since`] carries is byte for byte the
+    /// record's own wire form — at a fraction of its size. The control:
+    /// a copy from outside the window gets no delta at all.
+    #[test]
+    fn the_minutes_since_a_copy_rebuild_the_record() {
+        let t0 = 1_700_000_000_000i64;
+        let mut day = Day::empty(t0);
+        for m in 0..30 {
+            let at = t0 - (30 - m) * CELL_MS;
+            day.observe(at, [("a".to_owned(), State::Busy), ("gone".to_owned(), State::Idle)]);
+        }
+        day.observe(t0, [("a".to_owned(), State::Busy)]);
+        let copy = day.to_wire();
+        let held_end = Day::end_of_wire(&copy).unwrap();
+        // The current minute sampled again, then seven more minutes; a
+        // row joins, and "gone" is evicted by hand the way make_room
+        // would.
+        day.observe(t0 + 30_000, [("a".to_owned(), State::Blocked)]);
+        for m in 1..=7 {
+            day.observe(t0 + m * CELL_MS, [("a".to_owned(), State::Idle), ("new".to_owned(), State::Busy)]);
+        }
+        day.rows.remove("gone");
+        let since = day.since(held_end).expect("the copy's end is in the window");
+        let rebuilt = apply_since(&copy, &since).expect("they fit");
+        assert_eq!(rebuilt, day.to_wire(), "byte for byte the record");
+        let delta = serde_json::to_string(&since).unwrap().len();
+        assert!(delta * 20 < day.to_wire().len(), "{delta} B against {}", day.to_wire().len());
+
+        assert!(day.since(held_end - MINUTES as i64 * 2).is_none(), "a copy from another day is sent whole");
+    }
 
     /// **Over the wire and rolled forward.** A record a peer sent
     /// thirty minutes ago must read as that peer's day up to then and

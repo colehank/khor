@@ -124,7 +124,13 @@ pub fn own_tmux() -> &'static Path {
 pub const TMUX_SOCKET: &str = "khor-scratch";
 
 pub fn khor(home: &Path) -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_khor"));
+    khor_from(home, Path::new(env!("CARGO_BIN_EXE_khor")))
+}
+
+/// [`khor`], from another build of khor — an older one, for a test of
+/// two versions talking (`sync_mixed.rs`).
+pub fn khor_from(home: &Path, bin: &Path) -> Command {
+    let mut cmd = Command::new(bin);
     cmd.env("KHOR_HOME", home)
         .env("KHOR_WEB_PORT", "0")
         .env("TMUX_TMPDIR", own_tmux())
@@ -185,8 +191,13 @@ pub fn serve(dir: &Path, name: &str) -> Reaped {
 
 /// [`serve`] with extra environment (`KHOR_RELAY_ONLY`, say).
 pub fn serve_with(dir: &Path, name: &str, env: &[(&str, &str)]) -> Reaped {
+    serve_from(dir, name, env, Path::new(env!("CARGO_BIN_EXE_khor")))
+}
+
+/// [`serve_with`], from another build of khor.
+pub fn serve_from(dir: &Path, name: &str, env: &[(&str, &str)], bin: &Path) -> Reaped {
     Reaped(
-        khor(dir)
+        khor_from(dir, bin)
             .arg("serve")
             .envs(env.iter().copied())
             .env("KHOR_NAME", name)
@@ -247,6 +258,15 @@ pub async fn pair_on(
     tag: &str,
     road: Option<Impair>,
 ) -> (Pair, Option<tokio::task::JoinHandle<()>>) {
+    pair_built(tag, road, Path::new(env!("CARGO_BIN_EXE_khor"))).await
+}
+
+/// [`pair_on`], alpha's resident from another build of khor.
+pub async fn pair_built(
+    tag: &str,
+    road: Option<Impair>,
+    alpha_bin: &Path,
+) -> (Pair, Option<tokio::task::JoinHandle<()>>) {
     let (ra, rb, rr) = (
         scratch(&format!("{tag}-a")),
         scratch(&format!("{tag}-b")),
@@ -272,7 +292,7 @@ pub async fn pair_on(
     } else {
         &[]
     };
-    let a = serve_with(&ra.0, "alpha", env);
+    let a = serve_from(&ra.0, "alpha", env, alpha_bin);
     let b = serve_with(&rb.0, "beta", env);
     stood_up(&[&ra.0, &rb.0]).await;
     let alpha = Node::open_as(ra.0.clone(), "alpha").unwrap();
