@@ -2359,6 +2359,14 @@ block-to-agent = "发给智能体"
 command-prev = "上一条命令"
 command-next = "下一条命令"
 key-group-commands = "命令"
+# A command that finished while its session was not on screen
+# (roadmap 2.4): the setting, and the notice — {0} the command, {1}
+# the machine, {2} its exit status, {3} how long it ran.
+finished-notify = "命令完成时通知"
+finished-notify-off = "不通知"
+finished-notify-after = "超过 {0}"
+finished-on = "{0} 在 {1} 完成 · 退出 {2} · {3}"
+finished-on-plain = "{0} 在 {1} 完成 · {2}"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"

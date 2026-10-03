@@ -743,6 +743,22 @@ async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::ter
     khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
+/// **A command that finished while nobody was looking, said by the system**
+/// (roadmap 2.4): the face decides when (`lib/finished`), this only shows
+/// it. The first one asks for the permission where the system wants that
+/// asked (a phone); a refusal is the system's answer and costs nothing.
+#[tauri::command]
+fn notify_finished(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    let n = app.notification();
+    if n.permission_state().map_err(|e| e.to_string())? != PermissionState::Granted
+        && n.request_permission().map_err(|e| e.to_string())? != PermissionState::Granted
+    {
+        return Ok(());
+    }
+    n.builder().title(title).body(body).show().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
@@ -3257,6 +3273,8 @@ pub fn run() {
     // whether the face draws the entry at all is `scanner_here`.
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    // A finished command, said by the system (roadmap 2.4, `notify_finished`).
+    let builder = builder.plugin(tauri_plugin_notification::init());
     // **khor's own menu bar** (`menu.rs`), so tauri's default is not
     // built first: its ⌘W was 「Close Window」, and on khor's one window
     // that stops the node. A picked item goes back to the page as the act
@@ -3512,6 +3530,7 @@ pub fn run() {
             term_attach,
             term_stream,
             term_wait,
+            notify_finished,
             term_key,
             term_drop,
             term_resize,

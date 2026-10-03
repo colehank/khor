@@ -22,6 +22,8 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { setTermCursor, useTermCursor, type CursorShape } from "@/lib/term-cursor";
 import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/term-history";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
+import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
+import { lasted } from "@/words";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
@@ -79,6 +81,7 @@ export function TerminalSection() {
   const wake = useTermWake();
   const cursor = useTermCursor();
   const history = useTermHistory();
+  const finishedAfter = useFinishedAfter();
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
@@ -231,6 +234,16 @@ export function TerminalSection() {
         value={String(history)}
         choices={HISTORY_CHOICES.map((n) => ({ value: String(n), label: n.toLocaleString() }))}
         onPick={(n) => setTermHistory(Number(n))}
+      />
+      <PopupRow
+        name="finished-notify"
+        label={gui.finished_notify}
+        value={String(finishedAfter)}
+        choices={FINISHED_CHOICES.map((n) => ({
+          value: String(n),
+          label: n === 0 ? gui.finished_notify_off : gui.finished_notify_after(lasted(n * 1000)),
+        }))}
+        onPick={(n) => setFinishedAfter(Number(n))}
       />
       {coarse && (
         <PopupRow
