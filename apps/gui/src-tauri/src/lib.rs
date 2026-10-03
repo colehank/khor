@@ -3210,6 +3210,7 @@ pub fn run() {
         rt.block_on(async {
             match Node::open(Node::root_from_env()) {
                 Ok(n) => {
+                    take_the_home(&n).await;
                     let served = n.serve_resumable().await;
                     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                     match served {
@@ -3589,6 +3590,31 @@ pub fn run() {
                 eprintln!("[{stamp}] khor app: exiting");
             }
         });
+}
+
+/// **One resident per home, and on a machine with the app it is the
+/// app's** (round NET-2): a kept `khor serve` already holding this home
+/// — started by a login guardian before the app opened — is asked to
+/// leave (TERM to its keeper, which takes its serve with it), and the
+/// log says so. Two endpoints on one key knock each other off the relay,
+/// which every other machine reads as this one coming and going.
+async fn take_the_home(n: &Node) {
+    let Some(keeper) = n.kept_resident() else {
+        return;
+    };
+    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+    eprintln!("[{stamp}] khor app: a kept serve (pid {keeper}) holds this home; asking it to leave");
+    // SAFETY: a signal to the pid this home's own serve.pid names.
+    unsafe {
+        libc::kill(keeper as libc::pid_t, libc::SIGTERM);
+    }
+    for _ in 0..50 {
+        if n.kept_resident().is_none() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    eprintln!("[{stamp}] khor app: the kept serve (pid {keeper}) did not leave within 5 s");
 }
 
 /// Writes one line naming a terminating signal and who sent it, then

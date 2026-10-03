@@ -3995,6 +3995,16 @@ fn mcp(_rest: &[String]) -> Result<(), String> {
 /// and only a process standing outside can log a death like that and
 /// start the next life).
 fn serve(_rest: &[String]) -> Result<(), String> {
+    // **Never a second resident beside the app** (round NET-2): the app
+    // holds this home's key, and a second endpoint on it knocks both off
+    // the relay. Said and left — a guardian that starts this at login
+    // must not fight the app the person opened.
+    if let Ok(n) = Node::open(Node::root_from_env())
+        && let Some(pid) = n.app_resident()
+    {
+        eprintln!("{}", cli::serve_app_holds(pid));
+        return Ok(());
+    }
     if !khor_node::keeper::is_inner() {
         // The keeper's own pid, where `khor quit` and the installer
         // both look. serve-up writes the same number when it is the

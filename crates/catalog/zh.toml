@@ -1086,6 +1086,7 @@ git-behind = "落后 {0}，按 {1}前那次 fetch"
 borrowing = "借着 {0} 的网，代理口在 {1}；把浏览器或 HTTPS_PROXY 指过来。收口：khor close {2}"
 broken-blocks = "有 {0} 个块无法读取，这段对话不完整"
 serve-banner = "khor serve：{0} 在听，配对与同步都归它"
+serve-app-holds = "khor 应用正在当这台机器的常驻（pid {0}）——不在它旁边再起一个 serve"
 web-banner = "网页版正在 {0} 监听；运行 khor web 获取链接"
 # `khor hooks`. The file is named on every run, installing or not: khor
 # is writing into something the user owns, and "which file" is the first

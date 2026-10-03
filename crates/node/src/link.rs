@@ -5582,6 +5582,29 @@ impl Node {
         Ok((served, hosts))
     }
 
+    /// The app's resident holding this home right now, by pid — `None`
+    /// when the resident is a kept `khor serve`, or there is none. What
+    /// keeps a second resident from starting beside the app (`khor serve`,
+    /// `khor-serve-up`, the installer): two endpoints on one key knock
+    /// each other off the relay (`endpoint::bind`).
+    pub fn app_resident(&self) -> Option<u32> {
+        self.endpoint_file()
+            .ok()
+            .flatten()
+            .filter(|e| e.app && pid_running(e.pid))
+            .map(|e| e.pid)
+    }
+
+    /// A kept `khor serve` holding this home, by its keeper's pid
+    /// (`serve.pid`) — `None` when there is none. The app stops it on its
+    /// way up (`src-tauri`'s `take_the_home`): one resident per home.
+    pub fn kept_resident(&self) -> Option<u32> {
+        fs::read_to_string(self.root().join(".khor").join("serve.pid"))
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+            .filter(|&p| p != std::process::id() && pid_running(p))
+    }
+
     /// Creates a one-time pairing ticket. Needs `khor serve` running —
     /// the ticket carries the live endpoint's addresses.
     ///
