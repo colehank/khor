@@ -95,6 +95,35 @@ fn reading_request(kind: &str) -> Option<Request> {
     })
 }
 
+/// **What a pull's part file holds bytes of** (round NET-4): the
+/// machine and path it is pulled from, and the (size, mtime) every slice
+/// was checked against. Beside the part file, so a pull of the same file
+/// into the same place carries on from it (`Node::pull_path_with`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PullNote {
+    machine: String,
+    sat: Option<String>,
+    path: String,
+    total: u64,
+    at_ms: u64,
+}
+
+impl PullNote {
+    fn path_of(part: &std::path::Path) -> std::path::PathBuf {
+        let mut name = part.file_name().unwrap_or_default().to_os_string();
+        name.push(".json");
+        part.with_file_name(name)
+    }
+
+    fn read(path: &std::path::Path) -> Option<PullNote> {
+        serde_json::from_slice(&fs::read(path).ok()?).ok()
+    }
+
+    fn write(&self, path: &std::path::Path) -> Result<(), String> {
+        fs::write(path, serde_json::to_vec(self).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    }
+}
+
 /// What a [`Response::Versions`] carries: the documents whose versions
 /// differ, with the far version, and the readings that changed.
 type VersionsAnswer = (Vec<(String, String)>, Vec<(String, serde_bytes::ByteBuf)>);
@@ -5579,63 +5608,137 @@ impl Node {
         self.line_to(ep, &dial_to, wires::Proto::Main)
             .await
             .map_err(|e| unreached_words(&dial_to.name, e))?;
-        let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
-        // The change contract: the first slice's (total, mtime) must
-        // hold for every slice after it — two readings that differ are
-        // two files, and no digest guards this path (proto::PathSlice).
-        let mut contract: Option<(u64, u64)> = None;
-        let mut offset = 0u64;
-        let outcome = loop {
-            let req = match &sat {
-                Some(s) => Request::SatFetchPath {
-                    sat: s.clone(),
-                    path: path.to_owned(),
-                    offset,
-                },
-                None => Request::FetchPath {
-                    path: path.to_owned(),
-                    offset,
-                },
+        // **A pull resumes from what it already has** (round NET-4), the
+        // way an offer does from its `.partial`: the bytes so far stay in
+        // the part file, and beside it what they are bytes *of* — which
+        // machine, which path, and the (size, mtime) every slice was
+        // checked against. A pull of the same file into the same place
+        // carries on from there if the far file still answers to that
+        // reading, and starts over if it does not.
+        let note_path = PullNote::path_of(&fell.part);
+        let held = PullNote::read(&note_path)
+            .filter(|n| n.machine == dial_to.id && n.sat == sat && n.path == path)
+            .and_then(|n| {
+                let had = std::fs::metadata(&fell.part).ok()?.len();
+                (had <= n.total).then_some((n, had))
+            });
+        let (mut out, mut contract, mut offset) = match held {
+            Some((note, had)) => (
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&fell.part)
+                    .map_err(|e| e.to_string())?,
+                Some((note.total, note.at_ms)),
+                had,
+            ),
+            None => (
+                std::fs::File::create(&fell.part).map_err(|e| e.to_string())?,
+                None,
+                0,
+            ),
+        };
+        let resumed_from = offset;
+        let ask = |at: u64| match &sat {
+            Some(s) => Request::SatFetchPath {
+                sat: s.clone(),
+                path: path.to_owned(),
+                offset: at,
+            },
+            None => Request::FetchPath {
+                path: path.to_owned(),
+                offset: at,
+            },
+        };
+        // Why a pull stopped: the far machine not reached (the part file
+        // stays, to be carried on from), or something the part cannot be
+        // carried on from (it goes).
+        enum Stop {
+            Unreached(String),
+            Spoiled(String),
+        }
+        let outcome: Result<u64, Stop> = 'pull: loop {
+            // The first slice alone until the file's (size, mtime) is
+            // known; then up to `PULL_AHEAD` asked at once, written in
+            // order (the offers' shape, `pull_one`).
+            let total = contract.map(|(t, _)| t);
+            let offsets: Vec<u64> = match total {
+                None => vec![offset],
+                Some(t) => (0..PULL_AHEAD)
+                    .map(|k| offset + k * proto::SLICE)
+                    .take_while(|o| *o < t)
+                    .collect(),
             };
-            let resp = self.ask_on(ep, &dial_to, &req).await;
-            match resp {
-                Ok(Response::PathSlice {
-                    total,
-                    at_ms,
-                    bytes,
-                }) => {
-                    match contract {
-                        None => contract = Some((total, at_ms)),
-                        Some(c) if c != (total, at_ms) => {
-                            break Err(msg::file_changed_mid_pull().into());
-                        }
-                        Some(_) => {}
-                    }
-                    if bytes.is_empty() && total > 0 {
-                        break Err(msg::empty_slice().into());
-                    }
-                    if let Err(e) = out.write_all(&bytes) {
-                        break Err(e.to_string());
-                    }
-                    offset += bytes.len() as u64;
-                    if offset >= total {
-                        break Ok(offset);
-                    }
+            if offsets.is_empty() {
+                break Ok(offset);
+            }
+            let reqs: Vec<Request> = offsets.iter().map(|&at| ask(at)).collect();
+            let asks = reqs.iter().map(|r| self.ask_on(ep, &dial_to, r)).collect();
+            for (at, resp) in offsets.iter().zip(join_all(asks).await) {
+                if *at != offset {
+                    break;
                 }
-                Ok(Response::Refused { why }) => break Err(why),
-                Ok(other) => break Err(msg::peer_non_answer(format_args!("{other:?}"))),
-                Err(e) => break Err(e),
+                match resp {
+                    Ok(Response::PathSlice {
+                        total,
+                        at_ms,
+                        bytes,
+                    }) => {
+                        match contract {
+                            None => {
+                                contract = Some((total, at_ms));
+                                let _ = PullNote {
+                                    machine: dial_to.id.clone(),
+                                    sat: sat.clone(),
+                                    path: path.to_owned(),
+                                    total,
+                                    at_ms,
+                                }
+                                .write(&note_path);
+                            }
+                            // The file changed since the bytes held were
+                            // read: they are another file's. A resumed
+                            // pull starts over; one under way says so.
+                            Some(c) if c != (total, at_ms) => {
+                                if offset == resumed_from && resumed_from > 0 {
+                                    let _ = out.set_len(0);
+                                    offset = 0;
+                                    contract = None;
+                                    continue 'pull;
+                                }
+                                break 'pull Err(Stop::Spoiled(msg::file_changed_mid_pull().into()));
+                            }
+                            Some(_) => {}
+                        }
+                        if bytes.is_empty() && total > 0 {
+                            break 'pull Err(Stop::Spoiled(msg::empty_slice().into()));
+                        }
+                        if let Err(e) = out.write_all(&bytes) {
+                            break 'pull Err(Stop::Spoiled(e.to_string()));
+                        }
+                        offset += bytes.len() as u64;
+                        if offset >= total {
+                            break 'pull Ok(offset);
+                        }
+                    }
+                    Ok(Response::Refused { why }) => break 'pull Err(Stop::Spoiled(why)),
+                    Ok(other) => {
+                        break 'pull Err(Stop::Spoiled(msg::peer_non_answer(format_args!("{other:?}"))));
+                    }
+                    Err(e) => break 'pull Err(Stop::Unreached(e)),
+                }
             }
         };
+        drop(out);
         match outcome {
-            Ok(moved) => {
-                drop(out);
+            Ok(total) => {
                 std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;
-                Ok((moved, fell.dest))
+                let _ = std::fs::remove_file(&note_path);
+                Ok((total - resumed_from.min(total), fell.dest))
             }
-            Err(why) => {
-                drop(out);
+            Err(Stop::Unreached(why)) => Err(why),
+            Err(Stop::Spoiled(why)) => {
                 let _ = std::fs::remove_file(&fell.part);
+                let _ = std::fs::remove_file(&note_path);
                 Err(why)
             }
         }
