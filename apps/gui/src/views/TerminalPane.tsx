@@ -1081,7 +1081,16 @@ export function TerminalPane({
     reopeners.set(id, reopenHere);
 
     setOpening(true);
-    void join(false);
+    // **Opened at the size it will have** (T-27, the terminal audit: the
+    // pty got 114×40 at open and 114×46 two seconds later — two SIGWINCHs,
+    // the first wrong — because the first fit ran before the pane's final
+    // layout). The open waits for the next frame, when the layout this
+    // mount started has been done, and fits once more first.
+    const firstFrame = window.requestAnimationFrame(() => {
+      if (stopped) return;
+      fit.fit();
+      void join(false);
+    });
 
     // Keys travel whole: xterm encodes every key, modifier, mouse
     // report and (bracketed, when the program asked) paste into the
@@ -1215,6 +1224,7 @@ export function TerminalPane({
       resizing?.dispose();
       reopenRef.current = null;
       if (reopeners.get(id) === reopenHere) reopeners.delete(id);
+      window.cancelAnimationFrame(firstFrame);
       stoppedWebgl = true;
       document.removeEventListener("visibilitychange", shownAgain);
       term.element?.removeEventListener("webglcontextlost", lost, true);
