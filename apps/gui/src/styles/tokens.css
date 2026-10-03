@@ -2509,12 +2509,13 @@
   --text-doc-h3--line-height: 23px;
   --text-doc-h3--font-weight: 600;
 
-  /* `khor-symbols` (app.css) before the generic family: a prompt's
-     private-use glyphs (Nerd Fonts) reach the UI too — a terminal row's
-     second line is its last line, and drew them as empty boxes on the
-     native app (2026-10-03). System fonts have no glyph there, so
-     nothing else falls through to it. */
-  --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "khor-symbols", sans-serif;
+  /* `khor-symbols` and `khor-symbols-text` (app.css) before the generic
+     family: a prompt's private-use glyphs (Nerd Fonts) and a program's
+     text symbols (`⏺ ● ✔`) reach the UI too — a terminal row's second
+     line is its last line, and drew the first as empty boxes on the
+     native app and the second as emoji on the phone (2026-10-03). System
+     fonts have no glyph there, so nothing else falls through to them. */
+  --font-sans: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "khor-symbols", "khor-symbols-text", sans-serif;
 
   /* ── the terminal's own face ─────────────────────────
    * A terminal is the one surface in this app whose type is not a
@@ -2541,7 +2542,7 @@
    * (F7.6; `lib/term-font`): Nerd Fonts' "Symbols Only" mono face,
    * bundled, so a prompt's powerline and Nerd glyphs draw on every face.
    * A chosen font goes in front of this stack, at the root. */
-  --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, "khor-symbols", monospace;
+  --font-term: "SF Mono", SFMono-Regular, Menlo, Consolas, "khor-symbols", "khor-symbols-text", monospace;
   --text-term: 14px;
   --text-term--line-height: 20px;
   --text-term--font-weight: 400;

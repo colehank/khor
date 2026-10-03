@@ -1,9 +1,19 @@
-/* **The one font khor ships** (F7.6): Nerd Fonts' "Symbols Only" mono
-   face, v3.5.1, MIT (its licence and the icon sets' table beside it,
-   `assets/fonts/NerdFonts-*`), the terminal stack's last family. */
+/* **The two fonts khor ships** (F7.6), the terminal stack's last
+   families. Nerd Fonts' "Symbols Only" mono face, v3.5.1, MIT (its
+   licence and the icon sets' table beside it, `assets/fonts/NerdFonts-*`)
+   for a prompt's icons; and a subset of Noto Sans Symbols, OFL
+   (`assets/fonts/Noto-*`), for the text symbols a program prints (`⏺ ●
+   ✔ ✗ ⚠`) that the monospace faces lack — without it a phone, which has
+   no Apple Symbols, falls back to the colour emoji face and draws them
+   as emoji (the owner's iPhone, 2026-10-03). */
 @font-face {
   font-family: "khor-symbols";
   src: url("../assets/fonts/SymbolsNerdFontMono-Regular.ttf") format("truetype");
+  font-display: block;
+}
+@font-face {
+  font-family: "khor-symbols-text";
+  src: url("../assets/fonts/NotoSansSymbols-subset.ttf") format("truetype");
   font-display: block;
 }
 

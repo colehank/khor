@@ -2,11 +2,15 @@
 // owner 2026-10-03: 「这个作为兜底，用户可以在终端设置里选择字体，如 ubuntu
 // mono，Nerd font 等，并可自己上传字体」).
 //
-// - **A symbols face is always the last family** before the generic one
-//   (`khor-symbols`, Nerd Fonts' "Symbols Only" mono face, bundled under
-//   `assets/fonts` with its licence): a prompt's powerline and Nerd glyphs
-//   draw in the Mac app, the web face and on a phone, whatever font is
-//   chosen. It is the only font khor ships.
+// - **Two symbol faces are always the last families** before the generic
+//   one, whatever font is chosen: `khor-symbols` (Nerd Fonts' "Symbols
+//   Only" mono face) for a prompt's powerline and Nerd glyphs, and
+//   `khor-symbols-text` (a Noto Sans Symbols subset) for the text symbols
+//   a program prints — `⏺ ● ✔ ✗ ⚠` — which the monospace faces lack. The
+//   second keeps a phone from drawing them as emoji: it has no Apple
+//   Symbols to fall back to, only the colour emoji face. Both are bundled
+//   under `assets/fonts` with their licences; they are the only fonts
+//   khor ships.
 // - **The choice is this device's** (`localStorage`), not synced:
 //   devices have different fonts. Terminals only; the code view keeps
 //   its own.
@@ -22,8 +26,9 @@ import { useEffect, useState } from "react";
 
 /** Today's stack, before a choice: the system's monospace faces. */
 const SYSTEM = `"SF Mono", SFMono-Regular, Menlo, Consolas`;
-/** The bundled symbols face (`app.css` `@font-face`). */
+/** The bundled symbol faces (`app.css` `@font-face`). */
 export const SYMBOLS = "khor-symbols";
+export const SYMBOLS_TEXT = "khor-symbols-text";
 /** The largest font file taken, in MB. */
 export const FONT_MAX_MB = 10;
 
@@ -65,7 +70,7 @@ type Stored = AddedFont & { bytes: ArrayBuffer };
 /** The full stack for a choice (`""` is the system's). */
 export function stackOf(choice: string): string {
   const head = choice ? `"${choice.replace(/"/g, "")}", ` : "";
-  return `${head}${SYSTEM}, "${SYMBOLS}", monospace`;
+  return `${head}${SYSTEM}, "${SYMBOLS}", "${SYMBOLS_TEXT}", monospace`;
 }
 
 function storedChoice(): string {
@@ -207,12 +212,14 @@ function tell() {
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: { choice: storedChoice(), added } }));
 }
 
-/** At startup (`main.tsx`): the choice on the root, the symbols face
-    asked for so the first terminal does not draw before it, and the
+/** At startup (`main.tsx`): the choice on the root, the symbol faces
+    asked for so the first terminal does not draw before them, and the
     added fonts registered. */
 export function wearTermFont() {
   wear(storedChoice());
-  void document.fonts?.load(`${MEASURE_AT}px "${SYMBOLS}"`, "").catch(() => {});
+  for (const [face, glyph] of [[SYMBOLS, ""], [SYMBOLS_TEXT, "⏺"]]) {
+    void document.fonts?.load(`${MEASURE_AT}px "${face}"`, glyph).catch(() => {});
+  }
   void all().then(async (fonts) => {
     for (const f of fonts) {
       try {
