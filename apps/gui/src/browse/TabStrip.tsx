@@ -94,6 +94,8 @@ export type TabFace = {
       renamable」 would put an editor on the second kind, where Enter
       would write into a table that has no row for it. */
   rename?: { kind: "session" | "machine"; id: string };
+  /** A terminal's progress line under its name (roadmap 4.1). */
+  progress?: ReactNode;
   /** A second line under the name, on the **strip** (工作区批⑧:
       「标签上显示文件名,下方显示其路径」). `path` is the whole address
       and belongs to the hover title and the switcher; this is the short
@@ -730,6 +732,7 @@ export function TabStrip({
                         {f.sub}
                       </span>
                     )}
+                    {f.progress}
                   </span>
                 ) : f.sub ? (
                   // **Two lines, and the second one is the way to tell

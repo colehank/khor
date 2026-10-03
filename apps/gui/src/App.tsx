@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { hereActs, shortDir, termName } from "@/components/DoingLine";
+import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT } from "@/lib/composer-handoff";
 import {
@@ -448,7 +448,8 @@ export default function App() {
     for (const f of done) {
       const took = lasted(f.ms);
       const body =
-        f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took);
+        f.notice ??
+        (f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took));
       notifyFinished(f.title, body).catch(() => {});
       // The system's notice brings the app forward when it is pressed,
       // and says nothing more to it; so the window that comes forward
@@ -1507,6 +1508,8 @@ export default function App() {
               path: r.doing?.cwd ?? r.place ?? "",
               // Where the shell stands, under the name (roadmap 2.5).
               sub: r.doing?.cwd ? shortDir(r.doing.cwd) : undefined,
+              // What the program says of its progress (roadmap 4.1).
+              progress: r.doing?.running && r.doing.progress !== null ? <ProgressLine doing={r.doing} /> : undefined,
               // Where the shell stands, and its two acts (roadmap 2.5).
               menu: r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : undefined,
               session: { word: r.word, kind: r.kind, category: r.category },
