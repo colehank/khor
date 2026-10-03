@@ -22,6 +22,9 @@ import type { GitStatus } from "./gen/bindings/GitStatus";
 import type { Editor } from "./gen/bindings/Editor";
 import type { GitRow } from "./gen/bindings/GitRow";
 import type { GitDiff } from "./gen/bindings/GitDiff";
+import type { GitBlame } from "./gen/bindings/GitBlame";
+import type { GitLog } from "./gen/bindings/GitLog";
+import type { GitShow } from "./gen/bindings/GitShow";
 import type { GitHunk } from "./gen/bindings/GitHunk";
 import type { Wrote } from "./gen/bindings/Wrote";
 import type { Merged } from "./gen/bindings/Merged";
@@ -88,6 +91,9 @@ export type {
   GitStatus,
   GitRow,
   GitDiff,
+  GitBlame,
+  GitLog,
+  GitShow,
   GitHunk,
   Wrote,
   Merged,
@@ -424,6 +430,13 @@ export const fetchCheckout = (machine: string, dir: string) =>
     `fetchGitStatus`'s reason. */
 export const fetchGitDiff = (machine: string, path: string) =>
   call<GitDiff>("git_diff", { machine, path });
+/** One file's history (round UX-4, `khor_gui_core::git`): the commits
+    that changed it, newest first; who wrote each of HEAD's lines; and the
+    file as one revision had it, with where the current file differs. */
+export const fetchGitLog = (machine: string, path: string) => call<GitLog>("git_log", { machine, path });
+export const fetchGitBlame = (machine: string, path: string) => call<GitBlame>("git_blame", { machine, path });
+export const fetchGitShow = (machine: string, path: string, rev: string) =>
+  call<GitShow>("git_show", { machine, path, rev });
 /** Saves a whole file back (`khor_gui_core::files::write_text`).
 
     `was` is the `digest` that came with the text. **It is the whole of
@@ -1436,7 +1449,7 @@ export const pageStep = (tab: string, way: "back" | "forward" | "reload") =>
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll",
   tab: string,
   said: (text: string) => void,
 ): () => void {

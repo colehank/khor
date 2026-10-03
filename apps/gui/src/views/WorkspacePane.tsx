@@ -52,6 +52,7 @@ import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
 import { type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
+import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { reportDrafts } from "@/lib/drafts";
@@ -73,6 +74,7 @@ import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
+import { RevisionView, shortId } from "@/views/FileHistory";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { FilePage, FileVerbs, placeAt, topLine } from "@/views/FilePage";
 import { useFullScreen } from "@/lib/full-screen";
@@ -278,6 +280,11 @@ export function WorkspacePane({
    * ✓ comes back (`editHere`). Never remembered: every file opens to be
    * read. */
   const [face, setFace] = useState<"source" | "preview">("source");
+  /** A revision from the file's git 历史, shown where the file is
+      (round UX-4); cleared when another file comes to the front. */
+  const [rev, setRev] = useState<GitCommit | null>(null);
+  const [revCompare, setRevCompare] = useState(false);
+  useEffect(() => setRev(null), [file]);
   useEffect(() => setFace(file !== null && rendererOf(file) !== null ? "preview" : "source"), [file]);
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
@@ -1248,7 +1255,29 @@ export function WorkspacePane({
       分享, 「…」, and 编辑 where the file has a face to read it on — the
       phone's file page's circles, beside the tab they are about. */
   const fileTail =
-    !narrow && file !== null && diffOf(file) === null ? (
+    !narrow && file !== null && diffOf(file) === null && rev !== null ? (
+      // A revision from git 历史 where the file was (round UX-4): back to
+      // the file as it is, and the compare switch.
+      <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
+        {/* Which revision this is, where the phone's name pill says it. */}
+        <span data-file-rev-chip title={`${rev.author} · ${rev.subject}`} className="glass rounded-full px-row py-1 font-mono text-callout text-foreground">
+          {shortId(rev)}
+        </span>
+        <GlassCircle aria-label={gui.file_rev_back} tip={gui.file_rev_back} data-file-rev-back onClick={() => setRev(null)}>
+          <IconBack />
+        </GlassCircle>
+        <GlassCircle
+          aria-label={revCompare ? gui.file_rev_alone : gui.file_rev_compare}
+          aria-pressed={revCompare}
+          tip={revCompare ? gui.file_rev_alone : gui.file_rev_compare}
+          data-file-rev-compare
+          onClick={() => setRevCompare(!revCompare)}
+          className={cn(revCompare && "glass-sel text-[var(--rail-on-ink)]")}
+        >
+          <IconBranch />
+        </GlassCircle>
+      </div>
+    ) : !narrow && file !== null && diffOf(file) === null ? (
       <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
         <FileVerbs
           machine={machine}
@@ -1260,6 +1289,11 @@ export function WorkspacePane({
             setGitAt((n) => n + 1);
           }}
           onMoved={moved}
+          history={git !== null}
+          onRevision={(c) => {
+            setRev(c);
+            setRevCompare(false);
+          }}
         />
         {rendererOf(file) !== null && (
           <GlassCircle
@@ -1816,6 +1850,7 @@ export function WorkspacePane({
               }}
               onMoved={moved}
               code={codeWin}
+              history={git !== null}
             />
           ) : (
           <div ref={readFirst.box} className="contents">
@@ -1847,6 +1882,8 @@ export function WorkspacePane({
               path={diffOf(file) ?? ""}
               narrow={narrow}
             />
+          ) : rev !== null ? (
+            <RevisionView machine={machine} path={file} rev={rev} compare={revCompare} narrow={narrow} />
           ) : (
             <FileView
               key={`${machine} ${file}`}

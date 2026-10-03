@@ -123,6 +123,124 @@ pub async fn diff(root: &Path, machine: &str, path: &str) -> Result<GitDiff, Str
     })
 }
 
+// ── One file's history (round UX-4, the file page's git 历史) ──────────
+
+/// One commit as a history row reads it (`khor_node::git::Commit`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitCommit {
+    /// Full hex; the face shortens it.
+    pub id: String,
+    pub author: String,
+    #[ts(type = "number")]
+    pub when_ms: i64,
+    pub subject: String,
+}
+
+/// The commits that changed one file, newest first. `more`: the list or
+/// the walk stopped early.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitLog {
+    pub commits: Vec<GitCommit>,
+    pub more: bool,
+}
+
+/// One run of HEAD's lines a commit wrote: `start` 0-based, `len` lines,
+/// `commit` an index into [`GitBlame::commits`].
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitBlameRun {
+    pub start: u32,
+    pub len: u32,
+    pub commit: u32,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitBlame {
+    pub commits: Vec<GitCommit>,
+    pub runs: Vec<GitBlameRun>,
+}
+
+/// A revision of one file, and where the file as it is now differs from
+/// it — the gutter's own shape, so comparing is the diff view.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitShow {
+    pub text: String,
+    /// The text stopped at the file view's read cap.
+    pub cut: bool,
+    pub diff: GitDiff,
+}
+
+fn commit(c: khor_node::git::Commit) -> GitCommit {
+    GitCommit {
+        id: c.id,
+        author: c.author,
+        when_ms: c.when_ms,
+        subject: c.subject,
+    }
+}
+
+fn hunk(h: khor_node::proto::Hunk) -> GitHunk {
+    GitHunk {
+        at: h.at,
+        lines: h.lines,
+        was: h.was,
+    }
+}
+
+async fn ask(root: &Path, machine: &str, q: khor_node::git::GitAsk) -> Result<khor_node::git::GitAnswer, String> {
+    Node::open(root.to_path_buf())?.git_on(machine, &q).await
+}
+
+/// One file's log off any machine (`khor_node::Node::git_on`).
+pub async fn log(root: &Path, machine: &str, path: &str) -> Result<GitLog, String> {
+    use khor_node::git::{GitAnswer, GitAsk};
+    match ask(root, machine, GitAsk::Log { path: path.to_owned(), limit: 200 }).await? {
+        GitAnswer::Log { commits, more } => Ok(GitLog {
+            commits: commits.into_iter().map(commit).collect(),
+            more,
+        }),
+        other => Err(format!("{other:?}")),
+    }
+}
+
+/// Who wrote each of one file's lines, as HEAD has it.
+pub async fn blame(root: &Path, machine: &str, path: &str) -> Result<GitBlame, String> {
+    use khor_node::git::{GitAnswer, GitAsk};
+    match ask(root, machine, GitAsk::Blame { path: path.to_owned() }).await? {
+        GitAnswer::Blame { commits, runs } => Ok(GitBlame {
+            commits: commits.into_iter().map(commit).collect(),
+            runs: runs
+                .into_iter()
+                .map(|r| GitBlameRun {
+                    start: r.start,
+                    len: r.len,
+                    commit: r.commit,
+                })
+                .collect(),
+        }),
+        other => Err(format!("{other:?}")),
+    }
+}
+
+/// One file as revision `rev` had it.
+pub async fn show(root: &Path, machine: &str, path: &str, rev: &str) -> Result<GitShow, String> {
+    use khor_node::git::{GitAnswer, GitAsk};
+    let q = GitAsk::Show {
+        path: path.to_owned(),
+        rev: rev.to_owned(),
+    };
+    match ask(root, machine, q).await? {
+        GitAnswer::Show { text, cut, hunks, more } => Ok(GitShow {
+            text,
+            cut,
+            diff: GitDiff {
+                hunks: hunks.into_iter().map(hunk).collect(),
+                more,
+            },
+        }),
+        other => Err(format!("{other:?}")),
+    }
+}
+
 /// Whether that directory is a checkout (`khor_node::Node::checkout_on`;
 /// empty names this machine). **Asked beside [`status`], not after it**:
 /// the workspace row's branch-or-folder corner is this answer, and the

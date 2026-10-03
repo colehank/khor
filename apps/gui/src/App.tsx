@@ -2409,9 +2409,11 @@ export default function App() {
               the size every menu row gives its glyph. */}
           <span data-more-glyph={p} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
             {p === "identity" ? (
-              // A face is a full disc and a glyph is not: at 16 it reads
-              // the same size as the drawn marks beside it.
-              <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-4" />
+              // **At the glyph box's full size, like a row's avatar**
+              // (UX-4, decided): the drawn marks fill 88–92 % of their box
+              // and the face at 16 filled 76 %, the one small icon in the
+              // column. ⚠️ 墓碑: 16, 「a full disc reads as big as a glyph」.
+              <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-nav-glyph" />
             ) : (
               (() => {
                 const Glyph = MORE_GLYPH[p];

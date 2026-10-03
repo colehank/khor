@@ -1697,6 +1697,14 @@
    * glass controls' glyphs are `--ctl-glyph`; the popup button's stacked
    * ⌃⌄ keep their own 10 (two in an 18 pill). */
   --affordance: 16px;
+  /* **The tabs circle's figure** (round UX-3, `SessionBar`'s
+   * `TabsGlyph`): two 16 squares, a page behind a page, the front one
+   * holding the count. Their corner, their stroke (the weight of a
+   * line glyph at 22, 0.72 of the box drawn at 1.4) and the count's
+   * size, which has to fit two digits in the square. */
+  --badge-radius: 4px;
+  --badge-stroke: 1.4px;
+  --badge-text: 10px;
   /* The rest of the size family the design system names
    * (docs/design-system/tokens.json `size`): a switch (32×18, 第十七轮
    * draws it), the day's band under a tab (4), a dialog's width (380),
@@ -1826,6 +1834,47 @@
  *
  * Unlayered, beside `:root` itself: `@layer base` would lose to the
  * declaration above however specific this selector is. */
+/* **预览背景: the one scoped exception to a root-only palette** (round
+ * UX-4; docs/design-system, 颜色). A rendered document can be read on the
+ * ground it was written for — a light page in the dark theme, or the
+ * other way — without the app around it changing. Only the preview's
+ * root wears `data-ground`, and only the ground tokens are said again
+ * under it: the paper, the inks on it, the hairline and the code block's
+ * fill. The values are each theme's own, repeated here because a custom
+ * property cannot read another theme's value; a change to either theme's
+ * ground changes these too. Everything else (the accent, the state
+ * colours, the glass) stays the app's. */
+[data-ground="light"] {
+  color-scheme: light;
+  --background: #f4f4ef;
+  --card: var(--background);
+  --foreground: rgba(26, 26, 20, 0.94);
+  --card-foreground: rgba(26, 26, 20, 0.94);
+  --read-ink: rgba(26, 26, 20, 0.88);
+  --muted-foreground: rgba(26, 26, 20, 0.7);
+  --muted: rgba(26, 26, 20, 0.06);
+  --fill: rgba(26, 26, 20, 0.06);
+  --fill-strong: rgba(26, 26, 20, 0.1);
+  --border: rgba(26, 26, 20, 0.12);
+  background: var(--card);
+  color: var(--foreground);
+}
+[data-ground="dark"] {
+  color-scheme: dark;
+  --background: #000000;
+  --card: var(--background);
+  --foreground: rgba(238, 238, 231, 0.96);
+  --card-foreground: rgba(238, 238, 231, 0.96);
+  --read-ink: rgba(238, 238, 231, 0.86);
+  --muted-foreground: rgba(238, 238, 231, 0.62);
+  --muted: rgba(244, 244, 239, 0.07);
+  --fill: rgba(244, 244, 239, 0.08);
+  --fill-strong: rgba(244, 244, 239, 0.15);
+  --border: rgba(238, 238, 231, 0.14);
+  background: var(--card);
+  color: var(--foreground);
+}
+
 :root[data-traffic] {
   /* A starting value only, and deliberately close: the app measures the
      buttons and writes the real width onto this element at startup
@@ -2264,6 +2313,8 @@
   --spacing-nav-menu: var(--nav-menu);
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
+  --spacing-blame-col: var(--blame-col);
+  --spacing-deck-strip: var(--deck-strip);
   --spacing-list-head: var(--list-head);
   --spacing-glass-tabs: var(--glass-tabs);
   --spacing-glass-tab: var(--glass-tab);
@@ -2691,6 +2742,12 @@
   --nav-menu: 236px;
   --list-row: 56px;
   --list-face: 32px;
+  /* **The blame column** (round UX-4, Mac only): a short hash and an
+   * author on the first line of each run, cut where it runs out. */
+  --blame-col: 22ch;
+  /* **The browser's folded row** (round UX-3 §3): a strip with the
+   * page's title, the height of one caption line with room. */
+  --deck-strip: 24px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
   /* **The conversation's input, one glass capsule** (the redesign,

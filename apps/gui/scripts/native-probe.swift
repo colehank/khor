@@ -15,6 +15,9 @@
 //   menubar <pid>                → JSON: that process's menu bar, each item's name,
 //                                  enabled, command key and modifier mask
 //   pick <pid> <menu> <item>     → presses one menu item of that process
+//   resize <pid> <w> <h>         → sets that process's main window's size
+//                                  through accessibility (what the green
+//                                  button and tiling do); prints the AX result
 //
 // **Posted to the pid, never to the HID stream** (the keys and menus half
 // of the gate, 2026-09-28): a key sent through the system goes to whatever
@@ -221,7 +224,20 @@ case "menus":
   }
   print(up.count)
 
+case "resize":
+  // A size set from outside the app (UX-4): AppKit lays the title bar out
+  // again, and the three buttons have to be put back (`traffic::place`).
+  let pid = Int32(args[2])!
+  var size = CGSize(width: Double(args[3])!, height: Double(args[4])!)
+  let app = AXUIElementCreateApplication(pid)
+  var wins: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &wins) == .success,
+        let list = wins as? [AXUIElement], let w = list.first,
+        let v = AXValueCreate(.cgSize, &size) else { print("-1"); exit(0) }
+  print(AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, v).rawValue)
+  spin(0.5)
+
 default:
-  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item>\n".data(using: .utf8)!)
+  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item> | resize <pid> <w> <h>\n".data(using: .utf8)!)
   exit(2)
 }

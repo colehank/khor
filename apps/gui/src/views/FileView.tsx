@@ -28,6 +28,7 @@ import {
   type Preview,
   fetchFileStat,
   fetchFileText,
+  fetchGitBlame,
   fetchGitDiff,
   mergeFileText,
   pullFile,
@@ -35,6 +36,7 @@ import {
   saveFileText,
   type FileStat,
   type FileText,
+  type GitBlame,
   type GitDiff,
   type GitHunk,
 } from "@/api";
@@ -43,7 +45,11 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFileLines } from "@/lib/highlight";
+import { blameOfLines, useBlameShown } from "@/lib/blame";
+import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
+import { useCoarse } from "@/hooks/use-coarse";
+import { ago } from "@/words";
 import { usePinch } from "@/hooks/use-pinch";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
@@ -462,6 +468,26 @@ export function FileView({
     };
   }, [machine, path, diffAt, git]);
 
+  // **Blame, when it is asked for** (round UX-4): a Mac's column beside
+  // the numbers, asked of the machine holding the file once per file and
+  // again after a save, and mapped onto the lines as they are now.
+  const blameShown = useBlameShown();
+  const ground = usePreviewGround();
+  const coarse = useCoarse();
+  const [blame, setBlame] = useState<GitBlame | null>(null);
+  useEffect(() => {
+    let live = true;
+    setBlame(null);
+    if (!git || !blameShown.on || coarse) return;
+    fetchGitBlame(machine, path)
+      .then((b) => live && setBlame(b))
+      // The gutter's rule: what khor could not read is not drawn.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [machine, path, diffAt, git, blameShown.on, coarse]);
+
   // **The one thing the vanished rows still had to say**, handed to
   // the tab that owns this file so it can wear it as a hover title
   // (第十四轮 第 2 条). In an effect rather than during the render,
@@ -580,6 +606,12 @@ export function FileView({
       disagreed would move every one of them. `paintFileLines` refuses to
       hand back a different count for exactly that reason. */
   const rows = useMemo(() => (body.length === 0 ? [] : body.split("\n")), [body]);
+  /** Who wrote each line, in this buffer's lines; nothing while the
+      buffer differs from the disk, for the change bars' reason (`hunks` below). */
+  const blamed = useMemo(
+    () => (blame === null || diff === null || dirty ? null : blameOfLines(rows.length, blame, diff.hunks)),
+    [blame, diff, dirty, rows.length],
+  );
   /** Where each source line starts, in pixels down from the sheet's own
       top, plus one last entry for the bottom of the last line — so a
       hunk covering lines `at`…`at+n` is `tops[at-1]` to `tops[at-1+n]`
@@ -1247,7 +1279,7 @@ export function FileView({
           exactly as it was — and typing into a preview is not possible,
           because there is nothing there to focus. */}
       {face === "preview" && renders !== null ? (
-        <div data-file-preview={renders} className="min-h-0 flex-1 overflow-auto">
+        <div data-file-preview={renders} {...groundAttr(ground.ground)} className="min-h-0 flex-1 overflow-auto">
           {renders === "md" ? (
             <Markdown text={body} className="prose-khor px-6 py-4" lines />
           ) : (
@@ -1341,6 +1373,32 @@ export function FileView({
               </div>
             ))}
           </pre>
+          {blamed !== null && (
+            <pre
+              data-blame
+              aria-hidden="true"
+              className="w-blame-col shrink-0 select-none overflow-hidden border-r px-2 font-mono text-caption text-muted-foreground"
+            >
+              {blamed.map((c, i) => {
+                // Said once per run: the first line a commit wrote here
+                // carries its hash and author, the rest of the run is blank.
+                const first = i === 0 || blamed[i - 1]?.id !== c?.id;
+                return (
+                  <div
+                    key={i}
+                    data-blame-line={i + 1}
+                    title={c === null ? gui.blame_uncommitted : `${c.id.slice(0, 7)} ${c.author} · ${ago(c.when_ms)}\n${c.subject}`}
+                    // The code's line height, not the caption's: the
+                    // name sits on its line's first row like the number.
+                    className="truncate leading-[var(--text-mono--line-height)]"
+                    style={tops.length > i + 1 ? { height: tops[i + 1] - tops[i] } : undefined}
+                  >
+                    {first ? (c === null ? gui.blame_uncommitted : `${c.id.slice(0, 7)} ${c.author}`) : " "}
+                  </div>
+                );
+              })}
+            </pre>
+          )}
           <Gutter
             hunks={hunks}
             shown={shown}

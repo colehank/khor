@@ -969,6 +969,21 @@ aside[data-side] {
   font-weight: var(--shiki-dark-font-weight, inherit);
 }
 
+/* A preview on a ground of its own (预览背景, round UX-4) paints its code
+   in that ground's colours, whatever the app's theme. */
+:root:is([data-theme]) [data-ground="light"] [data-md] span[style*="--shiki"] {
+  color: var(--shiki-light);
+  text-decoration: var(--shiki-light-text-decoration, inherit);
+  font-style: var(--shiki-light-font-style, inherit);
+  font-weight: var(--shiki-light-font-weight, inherit);
+}
+:root:is([data-theme]) [data-ground="dark"] [data-md] span[style*="--shiki"] {
+  color: var(--shiki-dark);
+  text-decoration: var(--shiki-dark-text-decoration, inherit);
+  font-style: var(--shiki-dark-font-style, inherit);
+  font-weight: var(--shiki-dark-font-weight, inherit);
+}
+
 /* The parts under a dial: one grid for every row in the drawer, so the
    bar's two edges are one value each down the whole list. Rows join the
    grid with `display: contents` rather than being boxes of their own —
@@ -2180,6 +2195,13 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
   padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
   scroll-padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+}
+/* A revision compared with the file (round UX-4, git 历史) is the diff
+   view, whose two halves scroll on their own: the view as a whole clears
+   the name and the circles instead. */
+[data-file-page] [data-diff-tab] {
+  padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+  padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
 }
 
 /* **The deck steps aside while the keyboard is up** (round UX-3): the row

@@ -129,8 +129,21 @@ export function SessionScreen({
   onBack,
   onTitle,
   caption,
+  folded = false,
+  onUnfold,
+  loading = false,
   children,
 }: {
+  /** **The browser's row folds to a strip while the page is read**
+      (round UX-3 §3, built in UX-4 with the phone page's `page:scroll`):
+      ‹ and the tabs circle go, the pill becomes a thin strip with the
+      title — and a hairline while the page loads — and a tap on it, a
+      scroll up or the top of the page brings the row back. The terminal
+      never folds. */
+  folded?: boolean;
+  onUnfold?: () => void;
+  /** The page is loading: the folded strip's hairline. */
+  loading?: boolean;
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
@@ -218,7 +231,23 @@ export function SessionScreen({
           the row under it (the keys, the box, the address) rides the
           keyboard alone (`app.css`). */}
       <div data-session-bar className="flex flex-none flex-col pb-safe-bottom">
-        <div data-session-deck {...WINDOW_DRAG} className="flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
+        {folded && (
+          <button
+            type="button"
+            data-deck-strip
+            onClick={onUnfold}
+            className="relative flex h-deck-strip flex-none items-center justify-center overflow-hidden px-row text-caption text-muted-foreground"
+          >
+            <span className="min-w-0 truncate">{face?.label ?? ""}</span>
+            {loading && <span data-deck-strip-loading aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px animate-pulse bg-brand-strong" />}
+          </button>
+        )}
+        <div
+          data-session-deck
+          {...WINDOW_DRAG}
+          hidden={folded}
+          className="flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row"
+        >
           <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
           </GlassCircle>
@@ -305,8 +334,8 @@ const SWIPE_STEPS = 40;
 function TabsGlyph({ n }: { n: number }) {
   return (
     <span data-tabs-glyph className="relative block size-6">
-      <span aria-hidden="true" className="absolute top-0.5 right-0.5 size-4 rounded-[4px] border-[1.4px] border-current opacity-50" />
-      <span className="absolute bottom-0.5 left-0.5 grid size-4 place-items-center rounded-[4px] border-[1.4px] border-current bg-[var(--glass)] text-[10px] leading-none font-title tabular-nums">
+      <span aria-hidden="true" className="absolute top-0.5 right-0.5 size-4 rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current opacity-50" />
+      <span className="absolute bottom-0.5 left-0.5 grid size-4 place-items-center rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current bg-[var(--glass)] text-[length:var(--badge-text)] leading-none font-title tabular-nums">
         {n}
       </span>
     </span>

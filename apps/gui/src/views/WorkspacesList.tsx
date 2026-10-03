@@ -662,15 +662,11 @@ export function WorkspacesList({
           // **A list emptied by the ticks is not an empty list either**
           // — the box's rule below, for the same reason: 「还没有工作区」
           // over a filter would hide three projects behind one untick.
-          list.length > 0 ? (
-            noneMatch
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-10 text-center">
-              <span className="text-body font-title text-foreground">{gui.workspaces_empty}</span>
-              <span className="text-callout text-muted-foreground">{gui.workspaces_how}</span>
-            </div>
-          )
+          // ⚠️ 墓碑 (UX-4): no workspace at all was a bold title and its
+          // hint in a box of their own, the one list drawn its own way.
+          list.length > 0 ? noneMatch : <span data-ws-list-empty>{gui.workspaces_empty}</span>
         }
+        emptyHow={list.length > 0 ? undefined : gui.workspaces_how}
         // **A list emptied by the box is not an empty list** (ruling 50):
         // 「还没有工作区」 under a typed word would be khor telling somebody
         // they have no projects while three are one backspace away.

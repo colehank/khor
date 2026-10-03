@@ -170,6 +170,7 @@ export function SideList({
   query = "",
   label,
   empty,
+  emptyHow,
   none,
   old,
   mark,
@@ -186,6 +187,10 @@ export function SideList({
   label: (group: string) => string;
   /** Drawn when the column has no rows at all. */
   empty?: ReactNode;
+  /** **Where the way to fill it lives**, under `empty` (UX-4: one empty
+      state, `EmptyState`'s sentence and hint, on every list): 「点击上方的
+      ＋…」. Not said under `none` — a filter is undone, not filled. */
+  emptyHow?: ReactNode;
   /** Drawn when the box has filtered every row away — a different fact
       from 「there are none」, and the wrong one would be a lie. */
   none?: ReactNode;
@@ -328,7 +333,7 @@ export function SideList({
   if (shown.length === 0) {
     return (
       <div data-side-list {...mark} data-empty className="flex min-h-0 flex-1 flex-col">
-        <EmptyState>{rows.length === 0 ? empty : none}</EmptyState>
+        <EmptyState hint={rows.length === 0 ? emptyHow : undefined}>{rows.length === 0 ? empty : none}</EmptyState>
       </div>
     );
   }

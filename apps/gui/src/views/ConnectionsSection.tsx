@@ -84,12 +84,17 @@ export function ConnectionsSection() {
   const now = Date.now();
   return (
     <MoreSection name="connections" label={gui.card_connection} mark={{ "data-connections": "" }}>
-      <MoreFact name="conn-home" label={gui.conn_home}>
+      <MoreFact
+        name="conn-home"
+        label={gui.conn_home}
+        // Why the home relay cannot be reached, under the row (UX-4).
+        note={conn.home_relay && !conn.home_connected && conn.home_error ? conn.home_error : undefined}
+      >
         <span data-conn-home={conn.home_relay ?? ""} className="font-mono">
           {conn.home_relay
             ? conn.home_connected
               ? gui.conn_home_ok(hostOf(conn.home_relay))
-              : gui.conn_home_down(hostOf(conn.home_relay), conn.home_error ?? "")
+              : gui.conn_home_down(hostOf(conn.home_relay))
             : gui.conn_home_none}
         </span>
       </MoreFact>
@@ -101,17 +106,22 @@ export function ConnectionsSection() {
         </MoreFact>
       ))}
       {conn.peers.map((p) => (
-        <MoreFact key={p.id} name="conn-peer" label={p.shown}>
-          <span data-conn-peer={p.id} data-hop={p.hop} className="flex flex-col items-end tabular-nums">
-            <span>
-              {linkWord(p.hop, p.heard_ms)}
-              {p.rtt_ms !== null && ` · ${gui.conn_peer_rtt(p.rtt_ms)}`}
-            </span>
-            {p.last_failure && p.failure_ago_ms !== null && (
-              <span data-conn-failure className="text-callout">
-                {gui.conn_peer_failed(ago(now - p.failure_ago_ms), p.last_failure)}
-              </span>
-            )}
+        <MoreFact
+          key={p.id}
+          name="conn-peer"
+          label={p.shown}
+          // The last error is a sentence about the row, on its own line
+          // under the name (UX-4): beside the value it wrapped into a
+          // ragged right column.
+          note={
+            p.last_failure && p.failure_ago_ms !== null ? (
+              <span data-conn-failure>{gui.conn_peer_failed(ago(now - p.failure_ago_ms), p.last_failure)}</span>
+            ) : undefined
+          }
+        >
+          <span data-conn-peer={p.id} data-hop={p.hop} className="tabular-nums">
+            {linkWord(p.hop, p.heard_ms)}
+            {p.rtt_ms !== null && ` · ${gui.conn_peer_rtt(p.rtt_ms)}`}
           </span>
         </MoreFact>
       ))}

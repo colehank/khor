@@ -27,6 +27,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use gix::bstr::{BString, ByteSlice};
+use serde::{Deserialize, Serialize};
 
 use crate::proto::Hunk;
 
@@ -441,6 +442,234 @@ fn hunks(old: &[u8], new: &[u8]) -> Diff {
         }
     }
     Diff { hunks: out, more }
+}
+
+// ── One file's history (round UX-4, the file page's git 历史) ──────────
+
+/// How many commits one log answer carries at most, and how many a walk
+/// looks at to find them. A file touched once in a long history would
+/// otherwise cost the whole history to answer; past [`WALK`] the list
+/// says `more` rather than walking on.
+pub(crate) const LOG: u32 = 200;
+pub(crate) const WALK: usize = 20_000;
+
+/// How many bytes of a revision one [`GitAnswer::Show`] carries — the
+/// file view's own read cap (`proto::SLICE`), so a revision opens where
+/// the current file would.
+pub(crate) const SHOWN: usize = 256 * 1024;
+
+/// A question about one file's history. **One wire word for the three**
+/// (`proto::Request::Git`), each its own variant here, so a later
+/// question rides the same word and an older khor refuses the word once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GitAsk {
+    /// The commits that changed `path`, newest first, following the first
+    /// parent (what `git log --first-parent -- path` lists).
+    Log { path: String, limit: u32 },
+    /// Who last changed each line of `path` as HEAD has it.
+    Blame { path: String },
+    /// `path` as revision `rev` had it, and where the file as it is now
+    /// differs from that.
+    Show { path: String, rev: String },
+}
+
+/// One commit, as a history row reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Commit {
+    /// The full hex id; the face shortens it.
+    pub id: String,
+    pub author: String,
+    /// Committer time, epoch milliseconds.
+    pub when_ms: i64,
+    /// The message's first paragraph, on one line.
+    pub subject: String,
+}
+
+/// A run of lines one commit wrote, in HEAD's lines: `start` 0-based,
+/// `len` lines, `commit` an index into the answer's commits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlameRun {
+    pub start: u32,
+    pub len: u32,
+    pub commit: u32,
+}
+
+/// The answer to a [`GitAsk`], variant for variant.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GitAnswer {
+    Log { commits: Vec<Commit>, more: bool },
+    Blame { commits: Vec<Commit>, runs: Vec<BlameRun> },
+    /// `text` is the revision's file, decoded lossily and cut at
+    /// [`SHOWN`] (`cut` says so); `hunks` are where the current file
+    /// differs from it, in the current file's lines — the gutter's own
+    /// shape, so 「与当前比较」 is the diff view the file already has.
+    Show { text: String, cut: bool, hunks: Vec<Hunk>, more: bool },
+}
+
+/// Answers one history question on this machine.
+pub fn answer(ask: &GitAsk) -> Result<GitAnswer, String> {
+    match ask {
+        GitAsk::Log { path, limit } => log(Path::new(path), (*limit).clamp(1, LOG)),
+        GitAsk::Blame { path } => blame(Path::new(path)),
+        GitAsk::Show { path, rev } => show(Path::new(path), rev),
+    }
+}
+
+/// The repository `path` is in, and `path` relative to its root.
+fn open_rel(path: &Path) -> Result<(gix::Repository, String), String> {
+    let root = repo_root(path).ok_or_else(|| khor_catalog::msg::no_checkout().to_owned())?;
+    let repo = gix::open(&root).map_err(|e| e.to_string())?;
+    let rel = path.strip_prefix(&root).map_err(|e| e.to_string())?;
+    Ok((repo, rel.to_string_lossy().replace('\\', "/")))
+}
+
+fn commit_of(c: &gix::Commit<'_>) -> Commit {
+    let author = c.author().map(|a| a.name.to_str_lossy().into_owned()).unwrap_or_default();
+    let when_ms = c.time().map(|t| t.seconds * 1000).unwrap_or(0);
+    let subject = c
+        .message()
+        .map(|m| m.summary().to_str_lossy().into_owned())
+        .unwrap_or_default();
+    Commit {
+        id: c.id.to_string(),
+        author,
+        when_ms,
+        subject,
+    }
+}
+
+/// The blob id `rel` has in a commit's tree, `None` where it has none.
+fn blob_in(repo: &gix::Repository, commit: gix::ObjectId, rel: &str) -> Option<gix::ObjectId> {
+    let tree = repo.find_commit(commit).ok()?.tree().ok()?;
+    tree.lookup_entry_by_path(rel).ok()?.map(|e| e.object_id())
+}
+
+fn log(path: &Path, limit: u32) -> Result<GitAnswer, String> {
+    let (repo, rel) = open_rel(path)?;
+    let Ok(head) = repo.head_id() else {
+        // No commit yet: no history, which is not an error.
+        return Ok(GitAnswer::Log { commits: Vec::new(), more: false });
+    };
+    let walk = repo
+        .rev_walk([head.detach()])
+        .first_parent_only()
+        .all()
+        .map_err(|e| e.to_string())?;
+    let mut commits = Vec::new();
+    let mut more = false;
+    for (seen, info) in walk.enumerate() {
+        let info = info.map_err(|e| e.to_string())?;
+        if seen >= WALK || commits.len() >= limit as usize {
+            more = true;
+            break;
+        }
+        let here = blob_in(&repo, info.id, &rel);
+        let before = info.parent_ids.first().and_then(|p| blob_in(&repo, *p, &rel));
+        if here.is_some() && here != before {
+            let c = repo.find_commit(info.id).map_err(|e| e.to_string())?;
+            commits.push(commit_of(&c));
+        }
+    }
+    Ok(GitAnswer::Log { commits, more })
+}
+
+fn blame(path: &Path) -> Result<GitAnswer, String> {
+    let (repo, rel) = open_rel(path)?;
+    let head = repo.head_id().map_err(|e| e.to_string())?.detach();
+    let out = repo
+        .blame_file(rel.as_bytes().as_bstr(), head, Default::default())
+        .map_err(|e| e.to_string())?;
+    let mut index: BTreeMap<gix::ObjectId, u32> = BTreeMap::new();
+    let mut commits = Vec::new();
+    let mut runs = Vec::new();
+    for e in &out.entries {
+        let at = match index.get(&e.commit_id) {
+            Some(i) => *i,
+            None => {
+                let c = repo.find_commit(e.commit_id).map_err(|e| e.to_string())?;
+                commits.push(commit_of(&c));
+                let i = (commits.len() - 1) as u32;
+                index.insert(e.commit_id, i);
+                i
+            }
+        };
+        runs.push(BlameRun {
+            start: e.start_in_blamed_file,
+            len: e.len.get(),
+            commit: at,
+        });
+    }
+    Ok(GitAnswer::Blame { commits, runs })
+}
+
+fn show(path: &Path, rev: &str) -> Result<GitAnswer, String> {
+    let (repo, rel) = open_rel(path)?;
+    let id = gix::ObjectId::from_hex(rev.as_bytes()).map_err(|e| e.to_string())?;
+    let old = match blob_in(&repo, id, &rel) {
+        Some(blob) => repo.find_object(blob).map_err(|e| e.to_string())?.data.clone(),
+        None => Vec::new(),
+    };
+    let new = std::fs::read(path).map_err(|e| e.to_string())?;
+    let Diff { hunks, more } = hunks(&old, &new);
+    let cut = old.len() > SHOWN;
+    let text = String::from_utf8_lossy(&old[..old.len().min(SHOWN)]).into_owned();
+    Ok(GitAnswer::Show { text, cut, hunks, more })
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    /// This crate's own manifest, in the checkout the test is compiled
+    /// inside (the reason `status_tests` gives).
+    fn manifest() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")
+    }
+
+    #[test]
+    fn a_tracked_file_has_a_history_newest_first() {
+        let GitAnswer::Log { commits, .. } = answer(&GitAsk::Log {
+            path: manifest().to_string_lossy().into_owned(),
+            limit: 5,
+        })
+        .unwrap() else {
+            panic!("not a log")
+        };
+        assert!(!commits.is_empty(), "the manifest was committed at least once");
+        assert!(commits.len() <= 5);
+        assert!(commits.windows(2).all(|w| w[0].when_ms >= w[1].when_ms || w[0].when_ms == 0));
+        assert_eq!(commits[0].id.len(), 40);
+    }
+
+    #[test]
+    fn blame_covers_every_line_of_head() {
+        let GitAnswer::Blame { commits, runs } = answer(&GitAsk::Blame {
+            path: manifest().to_string_lossy().into_owned(),
+        })
+        .unwrap() else {
+            panic!("not a blame")
+        };
+        let (repo, rel) = open_rel(&manifest()).unwrap();
+        let head = head_blob(&repo, &rel).unwrap();
+        let lines = head.lines().count() as u32;
+        assert_eq!(runs.iter().map(|r| r.len).sum::<u32>(), lines);
+        assert!(runs.iter().all(|r| (r.commit as usize) < commits.len()));
+    }
+
+    #[test]
+    fn a_revision_shows_what_it_had() {
+        let (repo, rel) = open_rel(&manifest()).unwrap();
+        let head = repo.head_id().unwrap().to_string();
+        let GitAnswer::Show { text, cut, .. } = answer(&GitAsk::Show {
+            path: manifest().to_string_lossy().into_owned(),
+            rev: head,
+        })
+        .unwrap() else {
+            panic!("not a show")
+        };
+        assert!(!cut);
+        assert_eq!(text.as_bytes(), head_blob(&repo, &rel).unwrap().as_slice());
+    }
 }
 
 #[cfg(test)]

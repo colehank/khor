@@ -106,6 +106,7 @@ export function DiffView({
   machine,
   path,
   narrow,
+  against,
 }: {
   machine: string;
   /** Absolute, on that machine. */
@@ -113,6 +114,10 @@ export function DiffView({
   /** Stacked instead of side by side. Two 40-column halves of a phone
       screen are two columns of nothing (docs/UX.md 窄档). */
   narrow: boolean;
+  /** **Another revision than HEAD** (round UX-4, git 历史's 「与当前比较」):
+      its name for the left side and the hunks from it to the file as it
+      is now, already answered (`git_show`), so only the file is read. */
+  against?: { label: string; hunks: GitHunk[] };
 }) {
   const [now, setNow] = useState<string[] | null>(null);
   const [hunks, setHunks] = useState<GitHunk[] | null>(null);
@@ -127,7 +132,7 @@ export function DiffView({
     // list means「this file matches HEAD」, which is a real answer and
     // the one thing that must never stand in for「khor could not read
     // the repository」 (`khor_gui_core::git`).
-    Promise.all([fetchFileText(machine, path), fetchGitDiff(machine, path)]).then(
+    Promise.all([fetchFileText(machine, path), against ? Promise.resolve(against) : fetchGitDiff(machine, path)]).then(
       ([text, diff]) => {
         if (!live) return;
         setNow(text.binary ? [] : text.text.split("\n"));
@@ -138,7 +143,7 @@ export function DiffView({
     return () => {
       live = false;
     };
-  }, [machine, path]);
+  }, [machine, path, against]);
 
   const sides = useMemo(
     () => (now === null || hunks === null ? null : sideBySide(now, hunks)),
@@ -161,7 +166,7 @@ export function DiffView({
     >
       <Side
         which="head"
-        label={gui.diff_head}
+        label={against?.label ?? gui.diff_head}
         rows={sides.head}
         className={narrow ? "min-h-0 flex-1 border-b" : "min-w-0 flex-1 border-r"}
       />

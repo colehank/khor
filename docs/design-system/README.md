@@ -63,6 +63,15 @@ khor 是一张点对点的设备网，它应该读起来像随 macOS 一起装�
 
 暗色的 `destructive` 为此提了一档（`#d4756b` → `#e07f75`，只动 OKLCH 亮度）：浮层升到 `#2e2e2c` 后，菜单里的「删除…」只剩 4.25。亮色的 `read-ink` 由 0.90 调到 0.88：纸变白以后 0.90 读 13.10，两个主题在纸上被拉回同一个读数。
 
+### 局部例外：预览背景
+
+调色板只在根上换（`:root[data-theme]`），**只有一处例外**（round UX-4，负责人定）：文件「…」里的「预览背景 · 跟随 / 浅色 / 深色」。渲染出来的文档可以放在它写的时候的那张底上读——深色界面里读一份浅底的文档，或者反过来——而 app 别处不变。
+
+- **只在预览的根上**：`data-ground="light" | "dark"`。宽窗口是 `[data-file-preview]` 那一块；手机的文件页是整页（文件名药丸和底下的圆钮浮在文档上，所以它们也站在这张底上，不然就是 app 的墨落在不是 app 的底上）。比较视图、源码和编辑不受影响。
+- **只重述底的那几个 token**：纸（`background` / `card`）、纸上的墨（`foreground` / `card-foreground` / `read-ink` / `muted-foreground`）、发丝线（`border`）、代码块与填充（`muted` / `fill` / `fill-strong`），加上 `color-scheme` 和代码高亮用哪一套颜色。强调色、六个词、玻璃都还是 app 的。
+- **值是两套主题各自的原值，在 `tokens.css` 里照抄了一遍**——自定义属性读不到另一个主题的值。所以改任一主题的底，这里要跟着改。
+- 按设备存（`khor.preview-ground`），和文件的字号一样。
+
 ## 字
 
 字体栈永远是系统的：`sans` 是 `system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`，`mono` 是 `"SF Mono", SFMono-Regular, Menlo, Consolas, monospace`。不打包字体文件，因为这套系统的目标就是看起来像系统自带的。

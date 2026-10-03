@@ -2215,6 +2215,8 @@ no-checkout = "这个路径不在 git 仓库里"
 # blamed on the version.
 git-predates = "那台机器上的 khor 版本较旧，无法读取 git"
 git-refused = "那台机器拒绝了这次 git 请求：{0}"
+git-history-satellite = "这台机器经由 ssh 接入，khor 读不到它的 git 历史"
+chat-ended = "这段对话已结束"
 # An older khor asked to save a file. **Only the wordless refusal gets
 # this** (the `load-*` pair's measured lesson): a refusal that carries
 # words is that machine's own answer about that path, and blaming its
@@ -2271,7 +2273,7 @@ mcp-told = "留言已送达"
 # 往返多久、多久前听到、上次出了什么错——doctor 的连接诊断，做成可以截图的一页。
 conn-home = "家中继"
 conn-home-ok = "{0} · 已连接"
-conn-home-down = "{0} · 连接不上：{1}"
+conn-home-down = "{0} · 连接不上"
 conn-home-none = "还没有住进任何中继"
 conn-relay-ms = "{0} 毫秒"
 conn-relay-quiet = "测不到往返"
@@ -3507,6 +3509,7 @@ mesh-map = "网里的机器"
 # on a phone). The second line is the preview alone.
 pick-a-session = "选择一个会话"
 empty-sessions = "还没有会话"
+empty-sessions-how = "点击上方的 ＋，开一个会话"
 # The big canvas behind no selection: the network's now — **two**
 # headings and what stands under each. 等你的事 is the blocked rows —
 # the word's own definition (docs/SESSION.md 待批: an approval this
@@ -3945,6 +3948,23 @@ file-open-other = "用其他应用打开"
 file-in-code = "在 VS Code 中打开"
 file-size-down = "缩小"
 file-size-up = "放大"
+# 文件页「…」里的 git 历史（round UX-4）：一个文件的提交，点一行就在原处只读打开那一版；
+# 「与当前比较」用已有的差异视图。blame 只在 Mac 上，开着时行号旁一列写每行最后是谁、哪次提交改的。
+file-history = "git 历史"
+file-history-none = "这个文件还没有提交过"
+file-history-more = "更早的提交没有列出"
+file-rev-compare = "与当前比较"
+file-rev-alone = "只看这一版"
+file-rev-back = "回到当前"
+file-rev-cut = "这一版太长，只显示了开头"
+blame-show = "显示 blame"
+blame-hide = "隐藏 blame"
+blame-uncommitted = "未提交"
+# 文件「…」里的预览背景（round UX-4）：只管渲染出来的文档，跟随界面，或固定浅色、深色。按设备存。
+preview-ground = "预览背景"
+preview-ground-auto = "跟随"
+preview-ground-light = "浅色"
+preview-ground-dark = "深色"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

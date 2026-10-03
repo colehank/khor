@@ -893,13 +893,19 @@ function absorb(paint: Painting, frames: ChatFrame[], readOnly = false): Paintin
  */
 export function ChatView({
   id,
-  still = false,
+  still: recorded = false,
+  ended = false,
   category = null,
   machine = null,
   home = null,
 }: {
   id: string;
   still?: boolean;
+  /** **The conversation is over: its host is gone** (UX-4, decided; the
+      row's 失败). Not opened — there is nobody to attach to — and read
+      off the vendor's record where there is one (claude), as a
+      discovered session is; 「对话已结束」 in the input's place, no 重试. */
+  ended?: boolean;
   /** The machine this conversation runs on, by the name a person reads
       (`SessionRow::home`) — what a file's caption says it is on. */
   home?: string | null;
@@ -910,6 +916,9 @@ export function ChatView({
       name the composer's who seat wears. */
   category?: string | null;
 }) {
+  /** Read from a record rather than attached: a discovered session, or an
+      ended claude conversation, whose transcript outlives its host. */
+  const still = recorded || (ended && category === "claude");
   const [paint, setPaint] = useState<Painting>(BLANK);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
@@ -1025,6 +1034,12 @@ export function ChatView({
   useEffect(() => {
     let stopped = false;
     let cursor = 0;
+    if (ended && !still) {
+      // Over, and no record to read: nothing to open and nothing to retry.
+      setOpenWhy(null);
+      setGone(true);
+      return;
+    }
     if (still) {
       // **Read-only, but not read-once.** This used to fetch the
       // transcript a single time, on the reasoning that a discovered
@@ -1221,7 +1236,7 @@ export function ChatView({
       pollNow.current = () => {};
       chatLeave(id).catch(() => {});
     };
-  }, [id, still, attempt]);
+  }, [id, still, ended, attempt]);
 
   // The paces, and one rule covering all of them: **a shorter pace has
   // to take effect at once, a longer one never does.** Waiting out a
@@ -1975,9 +1990,9 @@ export function ChatView({
         <div className="flex-none px-row pt-xxs pb-in">
           <div className="flex items-center gap-2 px-2 py-1.5 text-callout">
             <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
-              {gone ? (openWhy ?? gui.chat_no_record) : gui.chat_readonly}
+              {ended ? gui.chat_over : gone ? (openWhy ?? gui.chat_no_record) : gui.chat_readonly}
             </span>
-            {gone && openWhy && (
+            {gone && openWhy && !ended && (
               <Button data-chat-retry size="sm" onClick={() => setAttempt((n) => n + 1)}>
                 {gui.region_retry}
               </Button>
