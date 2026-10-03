@@ -67,11 +67,13 @@ enum Parse {
     Ground,
     Esc,
     /// Inside `CSI`; `private` once a leading `?` was seen, `foreign`
-    /// once a byte made it some other sequence than a DEC mode set.
+    /// once a byte made it some other sequence than a DEC mode set;
+    /// `lead` a leading `>`, `<` or `=` (the kitty keyboard protocol's).
     Csi {
         private: bool,
         foreign: bool,
         started: bool,
+        lead: u8,
     },
     /// Inside a string (OSC, DCS, SOS, PM, APC) until BEL or `ESC \`.
     Str,
@@ -88,7 +90,16 @@ pub struct Modes {
     /// Only modes that were ever set or reset; the rest are default.
     set: BTreeMap<u16, bool>,
     keypad: bool,
+    /// The kitty keyboard protocol's flag stacks, main screen then
+    /// alternate (`CSI > flags u` pushes, `CSI < n u` pops, `CSI = f ; m u`
+    /// sets): a program that asked once — Claude Code at its start — and
+    /// then drew for hours still expects them after a trimmed head.
+    kitty: [Vec<u16>; 2],
 }
+
+/// The kitty protocol's stack bound, as the face keeps it
+/// (`apps/gui/src/lib/term-kitty.ts`).
+const KITTY_MAX: usize = 16;
 
 impl Modes {
     /// Eats bytes in stream order. Sequences may be split across calls
@@ -121,6 +132,7 @@ impl Modes {
                             private: false,
                             foreign: false,
                             started: false,
+                            lead: 0,
                         };
                     }
                     b']' | b'P' | b'X' | b'^' | b'_' => self.parse = Parse::Str,
@@ -129,6 +141,7 @@ impl Modes {
                     b'c' => {
                         self.set.clear();
                         self.keypad = false;
+                        self.kitty = Default::default();
                     }
                     0x1b => self.parse = Parse::Esc,
                     _ => {}
@@ -138,6 +151,7 @@ impl Modes {
                 private,
                 foreign,
                 started,
+                lead,
             } => match b {
                 0x1b => self.parse = Parse::Esc,
                 b'?' if !started => {
@@ -145,6 +159,15 @@ impl Modes {
                         private: true,
                         foreign,
                         started: true,
+                        lead,
+                    }
+                }
+                b'>' | b'<' | b'=' if !started => {
+                    self.parse = Parse::Csi {
+                        private,
+                        foreign,
+                        started: true,
+                        lead: b,
                     }
                 }
                 b'0'..=b'9' => {
@@ -159,6 +182,7 @@ impl Modes {
                         private,
                         foreign,
                         started: true,
+                        lead,
                     };
                 }
                 b';' => {
@@ -167,6 +191,7 @@ impl Modes {
                         private,
                         foreign,
                         started: true,
+                        lead,
                     };
                 }
                 0x40..=0x7e => {
@@ -178,8 +203,16 @@ impl Modes {
                         for &p in &self.params {
                             if TRACKED.iter().any(|&(m, _)| m == p) {
                                 self.set.insert(p, b == b'h');
+                                // Leaving the alternate screen leaves its
+                                // keyboard flags behind.
+                                if b == b'l' && matches!(p, 47 | 1047 | 1049) {
+                                    self.kitty[1].clear();
+                                }
                             }
                         }
+                    }
+                    if b == b'u' && lead != 0 && !foreign {
+                        self.kitty_op(lead);
                     }
                 }
                 // Intermediates, other parameter bytes (`>`, `!`, `:`…):
@@ -189,6 +222,7 @@ impl Modes {
                         private,
                         foreign: true,
                         started: true,
+                        lead,
                     }
                 }
                 // C0 controls execute inside a CSI without ending it.
@@ -206,6 +240,36 @@ impl Modes {
                     Parse::Str
                 };
             }
+        }
+    }
+
+    /// One kitty keyboard protocol request, on the screen in use.
+    fn kitty_op(&mut self, lead: u8) {
+        let alt = [47, 1047, 1049].iter().any(|&m| self.is_set(m));
+        let first = self.params.first().copied();
+        let stack = &mut self.kitty[usize::from(alt)];
+        match lead {
+            b'>' => {
+                if stack.len() >= KITTY_MAX {
+                    stack.remove(0);
+                }
+                stack.push(first.unwrap_or(0));
+            }
+            b'<' => {
+                let n = usize::from(first.filter(|&n| n > 0).unwrap_or(1));
+                stack.truncate(stack.len().saturating_sub(n));
+            }
+            b'=' => {
+                let flags = first.unwrap_or(0);
+                let mode = self.params.get(1).copied().filter(|&m| m > 0).unwrap_or(1);
+                let was = stack.pop().unwrap_or(0);
+                stack.push(match mode {
+                    2 => was | flags,
+                    3 => was & !flags,
+                    _ => flags,
+                });
+            }
+            _ => {}
         }
     }
 
@@ -237,6 +301,14 @@ impl Modes {
     /// default, so an untrimmed replay is unchanged.
     pub fn preamble(&self) -> Vec<u8> {
         let mut out = Vec::new();
+        // The main screen's keyboard flags first, while the fresh terminal
+        // is on it; the alternate screen's after the switch below.
+        let push = |out: &mut Vec<u8>, stack: &[u16]| {
+            for f in stack {
+                out.extend_from_slice(format!("\x1b[>{f}u").as_bytes());
+            }
+        };
+        push(&mut out, &self.kitty[0]);
         for &(mode, default) in TRACKED {
             match self.set.get(&mode) {
                 Some(&on) if on != default => {
@@ -247,6 +319,7 @@ impl Modes {
                 _ => {}
             }
         }
+        push(&mut out, &self.kitty[1]);
         if self.keypad {
             out.extend_from_slice(b"\x1b=");
         }
@@ -257,6 +330,37 @@ impl Modes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The kitty keyboard protocol's flags survive a trimmed head**
+    /// (roadmap 5.1): Claude Code pushes them once at its start. Per
+    /// screen, the main screen's before the switch and the alternate's
+    /// after, popped and set as the spec says, and forgotten when the
+    /// program leaves the alternate screen or resets the terminal.
+    #[test]
+    fn kitty_keyboard_flags_are_kept_per_screen() {
+        // Claude Code's shape: one push on the main screen.
+        assert_eq!(after(b"\x1b[>1u"), b"\x1b[>1u");
+        // A pop that empties leaves nothing to restore.
+        assert!(after(b"\x1b[>1u\x1b[<u").is_empty());
+        // Set, then OR and AND-NOT on the top entry.
+        assert_eq!(after(b"\x1b[>1u\x1b[=8;2u"), b"\x1b[>9u");
+        assert_eq!(after(b"\x1b[>9u\x1b[=1;3u"), b"\x1b[>8u");
+        // An editor on the alternate screen above a shell that asked too.
+        assert_eq!(
+            after(b"\x1b[>1u\x1b[?1049h\x1b[>3u"),
+            b"\x1b[>1u\x1b[?1049h\x1b[>3u"
+        );
+        // Leaving the alternate screen drops its stack, not the main one.
+        assert_eq!(after(b"\x1b[>1u\x1b[?1049h\x1b[>3u\x1b[?1049l"), b"\x1b[>1u");
+        // A full reset forgets both; other sequences with the same leads
+        // (DA2 `CSI > c`, `CSI = c`) change nothing.
+        assert!(after(b"\x1b[>1u\x1bc").is_empty());
+        assert!(after(b"\x1b[>c\x1b[=c\x1b[>0;1m").is_empty());
+        // Pushes past the bound evict the oldest.
+        let many: Vec<u8> = (1..=20).flat_map(|n| format!("\x1b[>{n}u").into_bytes()).collect();
+        let kept = String::from_utf8(after(&many)).unwrap();
+        assert!(kept.starts_with("\x1b[>5u") && kept.ends_with("\x1b[>20u"), "{kept}");
+    }
 
     fn after(bytes: &[u8]) -> Vec<u8> {
         let mut m = Modes::default();

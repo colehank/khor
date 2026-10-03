@@ -93,6 +93,7 @@ import { programOf } from "@/components/DoingLine";
 import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
+import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 
@@ -1687,8 +1688,22 @@ export function TerminalPane({
         term.clear();
         return false;
       }
+      // **The kitty keyboard protocol** (roadmap 5.1, `lib/term-kitty`):
+      // once a program asked for it, the keys it can tell apart.
+      if (ev.type === "keydown" || ev.type === "keyup") {
+        const k = kittyKey(term, ev, ev.type === "keyup");
+        if (k !== null) {
+          ev.preventDefault();
+          term.input(k, true);
+          return false;
+        }
+      }
       return true;
     });
+    // The protocol's flags, kept per screen; its answer goes out the way
+    // xterm's own do, so a replayed question answers into nothing.
+    const kitty = kittyProtocol(term, (bytes) => term.input(bytes, false));
+    (box as HTMLDivElement & { __kitty?: () => number }).__kitty = () => kittyFlags(term);
     const rung = term.onBell(() => {
       // The person's bell setting (roadmap 4.2): off is silent; under a
       // finger it is felt as well as seen.
@@ -1867,6 +1882,7 @@ export function TerminalPane({
           frames.drop();
           term.reset();
           predict.clear();
+          kitty.reset();
         }
         if (b.bytes) {
           if (b.reset || gap > CATCH_UP_MS) {
@@ -1942,6 +1958,7 @@ export function TerminalPane({
             frames.drop();
             term.reset();
             predict.clear();
+            kitty.reset();
           }
           // Everything the feed holds — it began with the host's ring
           // dump, so the screen arrives *with its history*, the same
@@ -2084,7 +2101,7 @@ export function TerminalPane({
       // latch nor waits for one.
       if (!reply && !MOUSE_REPORT.test(d)) blink.typed();
       if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
-        out = d.length === 1 ? typed(d, m) : d;
+        out = d.length === 1 ? (kittyTyped(term, d, m.ctrl, m.alt) ?? typed(d, m)) : d;
         latch({ ctrl: false, alt: false });
       }
       send(out);
@@ -2253,6 +2270,7 @@ export function TerminalPane({
       linked.dispose();
       box.removeEventListener("mousedown", pictureClick, true);
       predictResized.dispose();
+      kitty.dispose();
       term.textarea?.removeEventListener("compositionstart", composeOn);
       term.textarea?.removeEventListener("compositionend", composeOff);
       marks.dispose();

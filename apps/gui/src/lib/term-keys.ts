@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 
 import { gui } from "@/gen/catalog";
+import { kittyNamed, kittyTyped } from "@/lib/term-kitty";
 
 /** The latched modifiers the next key goes out with. */
 export type Mods = { ctrl: boolean; alt: boolean };
@@ -114,10 +115,24 @@ export const KEYS: KeyDef[] = [
   { name: "del", cap: "Del", group: "move", send: (_, m) => tilde(3, m) },
   { name: "ctrl", cap: gui.key_ctrl, label: gui.key_ctrl_name, group: "mod" },
   { name: "alt", cap: gui.key_alt, group: "mod" },
-  ...SYMBOLS.map((ch): KeyDef => ({ name: ch, cap: ch, group: "symbol", send: (_, m) => typed(ch, m) })),
-  { name: "esc", cap: gui.key_esc, label: gui.key_esc_name, group: "function", send: (_, m) => (m.alt ? "\x1b\x1b" : "\x1b") },
-  { name: "tab", cap: gui.key_tab, label: gui.key_tab_name, group: "function", send: (_, m) => (m.alt ? "\x1b\t" : "\t") },
-  { name: "backtab", cap: gui.key_backtab, label: gui.key_backtab_name, group: "function", send: () => "\x1b[Z" },
+  // Under the kitty keyboard protocol (roadmap 5.1) these four are spelled
+  // as the program asked; otherwise as xterm spells them.
+  ...SYMBOLS.map((ch): KeyDef => ({ name: ch, cap: ch, group: "symbol", send: (t, m) => kittyTyped(t, ch, m.ctrl, m.alt) ?? typed(ch, m) })),
+  {
+    name: "esc",
+    cap: gui.key_esc,
+    label: gui.key_esc_name,
+    group: "function",
+    send: (t, m) => kittyNamed(t, "Escape", false, m.alt) ?? (m.alt ? "\x1b\x1b" : "\x1b"),
+  },
+  {
+    name: "tab",
+    cap: gui.key_tab,
+    label: gui.key_tab_name,
+    group: "function",
+    send: (t, m) => kittyNamed(t, "Tab", false, m.alt) ?? (m.alt ? "\x1b\t" : "\t"),
+  },
+  { name: "backtab", cap: gui.key_backtab, label: gui.key_backtab_name, group: "function", send: (t) => kittyNamed(t, "Tab", true, false) ?? "\x1b[Z" },
   ...F_KEYS.map(([cap, send]): KeyDef => ({ name: cap.toLowerCase(), cap, group: "function", send: (_, m) => send(m) })),
   { name: "paste", cap: gui.key_paste, group: null },
 ];

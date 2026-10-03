@@ -51,6 +51,9 @@ pub enum Kind {
     Colour(u16),
     Decrqss,
     Decrqm,
+    /// The kitty keyboard protocol's flags, `CSI ? u` (roadmap 5.1; the
+    /// faces keep them, `lib/term-kitty`).
+    KittyFlags,
 }
 
 /// One escape sequence at the start of `b`, and how long it is; `None`
@@ -110,6 +113,7 @@ fn question(s: &Seq<'_>) -> Option<Kind> {
             (b'c', b"") if params.first() == Some(&b'>') => Some(Kind::Da2),
             (b'n', b"") if *params == b"5" => Some(Kind::Dsr5),
             (b'p', b"$") => Some(Kind::Decrqm),
+            (b'u', b"") if *params == b"?" => Some(Kind::KittyFlags),
             _ => None,
         },
         Seq::String { kind: b']', body } => {
@@ -134,6 +138,10 @@ fn answer(s: &Seq<'_>) -> Option<Kind> {
             (b'c', b"") if params.first() == Some(&b'>') => Some(Kind::Da2),
             (b'n', b"") if *params == b"0" || *params == b"3" => Some(Kind::Dsr5),
             (b'y', b"$") => Some(Kind::Decrqm),
+            // `CSI ? flags u`; a key in that protocol never has the `?`.
+            (b'u', b"") if params.len() > 1 && params[0] == b'?' && params[1..].iter().all(u8::is_ascii_digit) => {
+                Some(Kind::KittyFlags)
+            }
             _ => None,
         },
         Seq::String { kind: b']', body } => {
@@ -242,7 +250,10 @@ impl Ledger {
                 Kind::Da2 => Some(b"\x1b[>0;276;0c".to_vec()),
                 Kind::Dsr5 => Some(b"\x1b[0n".to_vec()),
                 Kind::Colour(ps) => self.colours.get(&ps).cloned(),
-                Kind::Decrqss | Kind::Decrqm => None,
+                // The flags are the faces'; a program that hears only
+                // its DA1 sentinel concludes there is no protocol, which
+                // is true of a terminal nobody is looking at.
+                Kind::Decrqss | Kind::Decrqm | Kind::KittyFlags => None,
             };
             match answer {
                 Some(a) => out.extend_from_slice(&a),
@@ -277,6 +288,24 @@ mod tests {
     }
 
     /// T-4: two faces answer one question; the pty gets one answer.
+    /// The kitty keyboard protocol's question (roadmap 5.1): the first
+    /// face's flags reach the program, the second face's copy does not,
+    /// and the protocol's keys - `CSI 13;2u`, `CSI 27u` - are never
+    /// weighed as answers.
+    #[test]
+    fn kitty_flags_are_answered_once_and_its_keys_pass() {
+        let mut l = Ledger::default();
+        let t = Instant::now();
+        l.saw_output(b"\x1b[>1u\x1b[?u\x1b[c", t);
+        assert_eq!(l.take_input(b"\x1b[?1u", t), b"\x1b[?1u");
+        assert_eq!(l.take_input(b"\x1b[?1u", t), b"", "the second face's copy");
+        assert_eq!(l.take_input(b"\x1b[13;2u\x1b[27u\x1b[105;5u", t), b"\x1b[13;2u\x1b[27u\x1b[105;5u");
+        // No face: the DA1 sentinel is answered, the flags are not.
+        let mut l = Ledger::default();
+        l.saw_output(b"\x1b[?u\x1b[c", t);
+        assert_eq!(l.fallback(t + FALLBACK_AFTER), b"\x1b[?1;2c");
+    }
+
     #[test]
     fn the_first_answer_wins_and_the_copy_is_dropped() {
         let now = t0();
