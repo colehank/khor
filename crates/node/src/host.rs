@@ -985,7 +985,11 @@ fn host_serving(
         let history = history.clone();
         let session = id.0.clone();
         std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
+            // **One read is one chunk on every face, up to 64 KiB** (item
+            // 18 B): a program's redraw that the PTY hands over in one
+            // read reaches the face whole, not cut at 8 KiB into two
+            // chunks a face could paint apart.
+            let mut buf = vec![0u8; 64 * 1024];
             // The preview line (`last.txt`): derived after every read,
             // written only when it changed. Not throttled — a throttle
             // here has no trailing edge, and the one update that matters
