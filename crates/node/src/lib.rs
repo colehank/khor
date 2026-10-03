@@ -375,6 +375,10 @@ pub struct Node {
     /// reading does not cross again (round NET-3, `Request::Versions`).
     /// Memory only: after a restart the first round asks for everything.
     pub(crate) readings_held: Arc<Mutex<std::collections::HashMap<(String, String), link::HeldReading>>>,
+    /// The day this node last got from each machine's `Load`, by device
+    /// id, with its stamp — handed back on the next ask so an unchanged
+    /// day does not cross again (round NET-4, `Request::LoadSince`).
+    pub(crate) days_held: Arc<Mutex<std::collections::HashMap<String, (u64, khor_core::CpuDay)>>>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1030,6 +1034,7 @@ impl Node {
             store_gate: tokio::sync::RwLock::new(()),
             rounds: Arc::default(),
             readings_held: Arc::default(),
+            days_held: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
@@ -3069,6 +3074,26 @@ impl Node {
     /// question rather than a re-sort of the two hundred busiest by
     /// CPU (`top::rank`). Before it existed the card had to choose
     /// between a wrong order and ten thousand rows every five seconds.
+    /// [`Self::load`] for an asker that holds the day stamped `held`
+    /// (`Request::LoadSince`): the table, the day's stamp, and the day
+    /// only when the stamp moved.
+    pub fn load_since(
+        root: &Path,
+        top: usize,
+        by: khor_core::TopBy,
+        desc: bool,
+        held: u64,
+    ) -> (Vec<khor_core::TopRow>, u64, Option<khor_core::CpuDay>) {
+        let history = history::CpuHistory::open(&Self::history_dir(root));
+        let now = now_ms();
+        let stamp = history.stamp(now);
+        (
+            top::sample_top(if top == 0 { usize::MAX } else { top }, by, desc),
+            stamp,
+            (stamp != held).then(|| history.day(now)),
+        )
+    }
+
     pub fn load(root: &Path, top: usize, by: khor_core::TopBy, desc: bool) -> khor_core::Load {
         khor_core::Load {
             top: top::sample_top(if top == 0 { usize::MAX } else { top }, by, desc),

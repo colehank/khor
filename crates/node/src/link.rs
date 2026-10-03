@@ -2446,6 +2446,15 @@ impl Node {
                 .map_err(|e| e.to_string())?;
                 Ok(Response::Load { load })
             }
+            Request::LoadSince { top, by, desc, day } => {
+                let root = self.root().to_path_buf();
+                let (top, day, cpu_day) = tokio::task::spawn_blocking(move || {
+                    crate::Node::load_since(&root, top as usize, by, desc, day)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+                Ok(Response::LoadSince { top, day, cpu_day })
+            }
             Request::Vitals => {
                 // The background sampler's last round, at most one beat
                 // old (`vitals::local`, docs/SHELL.md 第十六轮) — no
@@ -3590,6 +3599,35 @@ impl Node {
             return tokio::task::spawn_blocking(move || Self::load(&root, top as usize, by, desc))
                 .await
                 .map_err(|e| e.to_string());
+        }
+        // **The day only when it moved** (round NET-4): asked with the
+        // stamp of the day held from the last answer; an unchanged day
+        // is filled in from that. A refusal — an older khor that does
+        // not know the question, or a column it cannot rank by — falls
+        // through to the plain ask below, whose answer says which.
+        let held = {
+            let days = self.days_held.lock().unwrap_or_else(|p| p.into_inner());
+            days.get(&home.hex()).cloned()
+        };
+        let since = Request::LoadSince {
+            top,
+            by,
+            desc,
+            day: held.as_ref().map(|(stamp, _)| *stamp).unwrap_or(0),
+        };
+        if let Ok(Response::LoadSince { top, day, cpu_day }) = self.ask(ep, &channel, &since).await {
+            let cpu_day = match (cpu_day, held) {
+                (Some(fresh), _) => Some(fresh),
+                (None, Some((stamp, kept))) if stamp == day => Some(kept),
+                _ => None,
+            };
+            if let Some(cpu_day) = cpu_day {
+                self.days_held
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(home.hex(), (day, cpu_day.clone()));
+                return Ok(khor_core::Load { top, cpu_day });
+            }
         }
         let req = Request::Load { top, by, desc };
         // **Asked twice, because this one is a reading.** The first ask

@@ -584,6 +584,21 @@ pub enum Request {
         docs: Vec<(String, serde_bytes::ByteBuf)>,
         readings: Vec<(String, serde_bytes::ByteBuf)>,
     },
+    /// [`Request::Load`], **with the stamp of the day the asker already
+    /// holds** (round NET-4; 0: none). The table is answered every time
+    /// — it is what moves — and the day only when its stamp differs
+    /// (`history::CpuHistory::stamp`, which changes once a minute at
+    /// most): a machine card open on a far machine asked for the whole
+    /// day, five series of 288 buckets, every five seconds. Answered as
+    /// [`Response::LoadSince`]. A new variant for this file's first rule:
+    /// a khor that predates it refuses the frame, and the asker asks
+    /// [`Request::Load`] instead.
+    LoadSince {
+        top: u32,
+        by: khor_core::TopBy,
+        desc: bool,
+        day: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -866,6 +881,13 @@ pub enum Response {
         since: crate::day::DaySince,
         full: serde_bytes::ByteBuf,
     },
+    /// [`Request::LoadSince`]'s answer: the table, the day's stamp, and
+    /// the day itself only when that stamp is not the one asked with.
+    LoadSince {
+        top: Vec<khor_core::TopRow>,
+        day: u64,
+        cpu_day: Option<khor_core::CpuDay>,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -956,6 +978,7 @@ impl Request {
                 | Request::Checkout { .. }
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
+                | Request::LoadSince { .. }
         )
     }
 
@@ -995,6 +1018,7 @@ impl Request {
                 | Request::Checkout { .. }
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
+                | Request::LoadSince { .. }
         )
     }
 
@@ -1318,6 +1342,22 @@ mod tests {
                     bytes: serde_bytes::ByteBuf::new(),
                 },
                 &b"SatWrite"[..],
+            ),
+            (
+                Request::Versions {
+                    docs: Vec::new(),
+                    readings: Vec::new(),
+                },
+                &b"Versions"[..],
+            ),
+            (
+                Request::LoadSince {
+                    top: 8,
+                    by: khor_core::TopBy::Busiest,
+                    desc: false,
+                    day: 0,
+                },
+                &b"LoadSince"[..],
             ),
         ] {
             let bytes = encode(&op).unwrap();
