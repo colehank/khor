@@ -15,5 +15,7 @@
 	</array>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>让 khor 直接连到同一个网络里的你的其他机器，不必绕道中继</string>
 </dict>
 </plist>

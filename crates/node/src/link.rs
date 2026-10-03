@@ -1078,7 +1078,7 @@ impl Node {
                 by_device: crate::roads::tally(&self.roads),
             },
             ipc::Op::Wires => ipc::Reply::Wires {
-                counts: self.wires.counts.snapshot(),
+                counts: self.wires.counts_now(),
             },
             // **Never queues behind a pump already running**: a machine
             // in a round is joined, not visited twice, and every other

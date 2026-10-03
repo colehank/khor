@@ -261,7 +261,7 @@ pub struct Link {
 /// **How the resident's wires have fared since it started** — the
 /// counters `khor doctor` prints so a word on somebody's screen can be
 /// traced to what produced it (round NET-FIX).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireCounts {
     /// Wires opened, and dials that did not produce one.
     pub dialed: u64,
@@ -288,6 +288,11 @@ pub struct WireCounts {
     /// Status questions the resident was asked and did not answer in
     /// time (any op past its deadline).
     pub ops_late: u64,
+    /// The two failures above, per machine (device id, failed dials,
+    /// wires retired unanswered) — only machines with either — so a
+    /// count on the doctor's line names whose it is. Tail field.
+    #[serde(default)]
+    pub by_peer: Vec<(String, u64, u64)>,
 }
 
 /// **How this machine's recent dials to another one went** (docs/
