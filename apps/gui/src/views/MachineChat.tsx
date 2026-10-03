@@ -216,7 +216,10 @@ export function MachineChat({ id }: { id: string }) {
           trail={
             // Drawn only once there is something to send (progressive
             // disclosure: never a dimmed control).
-            draft.trim() ? <SendSeat onSend={send} disabled={sending} /> : null
+            // **The keyboard stays up after a note** (P7, 2026-10-03, the
+            // owner's ruling): the press does not take the focus from the
+            // text, so the next line is typed at once, as in Messages.
+            draft.trim() ? <SendSeat onSend={send} disabled={sending} keepFocus /> : null
           }
         >
         {/* The browser forms' picker: a real <input type=file>, hidden —
