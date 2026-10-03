@@ -492,10 +492,11 @@ aside[data-side] {
 [data-pull-drag] [data-side-l0] {
   transition: none;
 }
-/* Over the pane, which is positioned while it pulls and comes later. */
+/* Over the pane, which is positioned while it pulls and comes later
+   (and is under it: the head is a band, `[data-band]`). */
 [data-pull-on] [data-side-l0] {
   position: relative;
-  z-index: 1;
+  z-index: 3;
 }
 @media (prefers-reduced-motion: reduce) {
   [data-pull-host] > :not([data-pull]),
@@ -682,6 +683,10 @@ aside[data-side] {
 :root[data-swiping]:not([data-swipe-kind="file"]) :is([data-side-l0], [data-swipe-host]) {
   position: relative;
   z-index: 1;
+}
+/* The head stays over the screen pulled up under it (`[data-band]`). */
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-side-l0][data-band] {
+  z-index: 3;
 }
 :root[data-swiping]:not([data-swipe-kind="file"]) [data-side-l0] {
   transform: translateX(var(--swipe));
@@ -1925,10 +1930,63 @@ aside[data-side] {
   font-variant-numeric: tabular-nums;
 }
 
-/* **A page scrolled under its head fades into it** (the audit fix plan
-   F4.11; N21) instead of being cut mid-glyph: 20 of mask at the top of
-   a scroller that is not at its top (`lib/scroll-edge`). */
-:is([data-nav-clear], [data-pane-body], [data-files-list])[data-scrolled] {
+/* **A head stays, and what scrolls passes under it on glass** (round
+   HEADS, 2026-10-03, the owner: 「和 apple 一样，标题那块毛玻璃」;
+   `lib/scroll-edge` `band`). A head that is a band (`data-band`) stands
+   over the box after it, which is pulled up to the band's top
+   (`data-band-over`, only where that box's top is a scroller), and the
+   scroller starts its rows under the band (`--band-h`, the band's own
+   height, measured) and keeps a row brought into view by a key or an
+   anchor clear of it. **The material is drawn only while something is
+   under the band** (`data-scrolled` on the band): the ground's glass
+   (`--band`, `--band-blur`) and the page's hairline along its bottom
+   edge, faded in and out. At rest the band is the plain ground with no
+   hairline. No rim: it is a bar, not a floating piece — the glass
+   controls inside it keep theirs. The material is a pseudo-element, so
+   nothing is laid out again when it comes (no shift, no 1px jump).
+   ⚠️ 墓碑: a 20 mask faded the scroller's top edge under its head
+   (F4.11; N21); the band hides what is under it now. */
+[data-band] {
+  position: relative;
+  z-index: 3;
+}
+[data-band]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--band);
+  -webkit-backdrop-filter: var(--band-blur);
+  backdrop-filter: var(--band-blur);
+  box-shadow: inset 0 calc(-1 * var(--hair)) var(--border);
+  opacity: 0;
+  transition: opacity var(--dur-180) var(--ease-out);
+}
+[data-band][data-scrolled]::before {
+  opacity: 1;
+}
+/* A phone's band reaches up under the status bar, as iOS's bar does:
+   nothing shows above the title through it. */
+[data-band][data-band-reach]::before {
+  top: calc(-1 * var(--safe-top));
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-band]::before {
+    transition: none;
+  }
+}
+[data-band-over] > [data-band] + * {
+  margin-top: calc(-1 * var(--band-h));
+}
+[data-band-scroll] {
+  padding-top: calc(var(--band-h) + var(--band-pad));
+  scroll-padding-top: var(--band-h);
+}
+/* **Where no band covers a scroller, its top edge still fades** once
+   scrolled (the audit fix plan F4.11; N21), rather than a row being cut
+   mid-glyph by the box's edge: 20 of mask (`lib/scroll-edge` `EDGED`). */
+:is([data-nav-clear], [data-pane-body], [data-files-list])[data-scrolled]:not([data-band-scroll]) {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-head));
   mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-head));
 }

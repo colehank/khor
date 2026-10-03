@@ -356,6 +356,20 @@
      can be white too. */
   --glass-menu: rgba(232, 232, 227, 0.92);
   --glass-blur: blur(28px) saturate(1.85);
+  /* **A head with content under it is a bar of the ground's own glass**
+     (round HEADS, 2026-10-03; `app.css` `[data-band]`): the ground at a
+     translucency that still reads as the ground, blurred, with a
+     hairline under it — an iOS / macOS navigation bar once something
+     scrolls beneath it. A bar, not a floating piece: no rim, no shadow.
+     Only while something is under it; at rest the head is the plain
+     ground. */
+  --band: rgba(244, 244, 239, 0.78);
+  --band-blur: blur(20px) saturate(1.6);
+  /* A band's height, written by `lib/scroll-edge` on the band's parent,
+     and a scroller's own top padding, written on it there: nothing until
+     then. */
+  --band-h: 0px;
+  --band-pad: 0px;
 
   /* ── the six words (mandala's doctrine) ─────────────
    * **The four that call you sit a lightness apart from the two that do
@@ -950,7 +964,8 @@
      2026-10-02: 「我都要」). */
   --halo-tab: 1.5px;
   /* Fades where a scroller is cut: a menu cut by its height, a page
-     scrolled under its head, a tab strip cut at its ends. */
+     scrolled with no band over it (`app.css` `[data-band]`), a tab strip
+     cut at its ends. */
   --fade-menu: 24px;
   --fade-head: 20px;
   --fade-tabs: 12px;
@@ -1959,6 +1974,7 @@
   --glass-sel-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.24), inset 1px 0 0 rgba(90, 170, 255, 0.14), inset -1px 0 0 rgba(255, 205, 80, 0.12);
   --glass-sel-rim: conic-gradient(rgba(255, 255, 255, 0.22) 0deg, rgba(255, 255, 255, 0.03) 70deg, rgba(255, 255, 255, 0.14) 140deg, rgba(255, 255, 255, 0.02) 210deg, rgba(255, 255, 255, 0.04) 270deg, rgba(255, 255, 255, 0.42) 320deg, rgba(255, 255, 255, 0.22) 360deg);
   --glass-menu: rgba(40, 40, 38, 0.88);
+  --band: rgba(0, 0, 0, 0.72);
 
   /* ── the same separation as light, arrived at from the other side ──
    * The light theme pushed the four that call you *down* in lightness

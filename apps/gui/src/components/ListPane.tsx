@@ -267,13 +267,16 @@ function PullSpinner({
       data-pull={state}
       aria-hidden={state === "idle" || undefined}
       className={cn(
-        "pointer-events-none top-0 flex items-center justify-center overflow-hidden text-muted-foreground",
+        "pointer-events-none flex items-center justify-center overflow-hidden text-muted-foreground",
         at ? "fixed z-50" : "absolute inset-x-0",
       )}
       style={
         {
           height: pull,
-          ...(at && { top: at.top, left: at.left, width: at.width }),
+          // Wide, under the band over the column (`lib/scroll-edge`): the
+          // list's top is the band's bottom, and the room opens there.
+          top: at ? at.top : "var(--band-h)",
+          ...(at && { left: at.left, width: at.width }),
           "--pull-turn": `${Math.min(1, pull / PULL_HOLD)}turn`,
         } as CSSProperties
       }

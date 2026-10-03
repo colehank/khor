@@ -33,6 +33,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { keyLabel, useNewAct } from "@/lib/shortcuts";
+import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 
 /** One choice in the filter menu. `key` is the backend's key, never a
@@ -74,6 +75,7 @@ export function PaneBar({
   arrange,
   create,
   seat,
+  band: bandProp,
   title,
 }: {
   /** The landing's name, said as the list page's title where the bar
@@ -97,6 +99,11 @@ export function PaneBar({
    * no ⌘K hint and no ⌘N; the narrow tab switcher's, beside its 「‹」.
    */
   seat?: "side" | "head";
+  /** A head standing over its own column's scroller (the workspace's
+      sessions column): it is a band (`lib/scroll-edge`), so the rows pass
+      under it on glass and its rule is the band's, drawn only while a
+      row is under it. */
+  band?: boolean;
   query: string;
   onQuery: (q: string) => void;
   /**
@@ -169,6 +176,7 @@ export function PaneBar({
   // row of its own under it (below). The search circle opens the box in
   // the row's place; a query left in it keeps it open.
   const glass = seat === "side";
+  const banded = !!bandProp && seat === undefined;
   const [searching, setSearching] = useState(query !== "");
   const open = !glass || searching || query !== "";
   /** **The glass head controls everywhere** (the audit fix plan F4.7;
@@ -421,7 +429,12 @@ export function PaneBar({
       data-search-glass
       // `min-h`, not `h`: chips make the box taller than one row, and a
       // bar with a fixed height would clip them or squeeze the list.
-      className={cn("flex min-h-pane-head flex-none items-center gap-in", seat === "head" ? "min-w-0 flex-1" : "border-b px-2")}
+      ref={banded ? band : undefined}
+      data-band={banded || undefined}
+      className={cn(
+        "flex min-h-pane-head flex-none items-center gap-in",
+        seat === "head" ? "min-w-0 flex-1" : banded ? "px-2" : "border-b px-2",
+      )}
     >
       {box}
       {hasActs && <GlassCapsule>{acts}</GlassCapsule>}

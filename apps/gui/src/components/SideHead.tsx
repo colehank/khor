@@ -368,8 +368,10 @@ export function SideHead({
       data-side-head
       // `min-w-0`: the row is the block's width and never sets it
       // (第十五轮 第 4 条) — what is seated in it gives way instead.
+      // No ground of its own: the row is a band's (`lib/scroll-edge`), and
+      // the glass the band wears when a list is under it is behind it.
       className={cn(
-        "relative flex min-w-0 flex-none items-center bg-side select-none",
+        "relative flex min-w-0 flex-none items-center select-none",
         // Wide: the left column's second row, the canvas's 48 with its
         // name on the list's 20 (paddingLeft below).
         narrow ? "min-h-list-head pr-group" : "min-h-12 pr-row pb-1.5",

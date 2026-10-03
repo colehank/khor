@@ -673,9 +673,13 @@ export function FileView({
         // within the line kept as far as the line still reaches.
         // **Only when the line count held** — a keystroke that adds a
         // line is an edit, and the caret's own scroll owns that.
+        // **And only once the reader is into the lines**: at the top of
+        // the page there is no line to keep, and the scroller's own top
+        // padding changing (the band over it, `lib/scroll-edge`) is not
+        // a re-wrap — anchored, it scrolled the first line under the head.
         const prev = lastTops.current;
-        if (prev !== null && prev.tops.length === next.length && next.length > 1) {
-          const st = b.scrollTop;
+        const st = b.scrollTop;
+        if (prev !== null && st > prev.pad && prev.tops.length === next.length && next.length > 1) {
           let i = 0;
           while (i + 2 < prev.tops.length && prev.pad + prev.tops[i + 1] <= st + 0.5) i += 1;
           const within = Math.max(0, st - (prev.pad + prev.tops[i]));

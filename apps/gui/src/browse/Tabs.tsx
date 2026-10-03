@@ -29,6 +29,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { TabStrip, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Region } from "@/components/Region";
+import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 
 export function Tabs({
@@ -124,7 +125,11 @@ export function Tabs({
     </Region>
   ) : (
     <>
-      <div className="flex h-pane-head flex-none">{strip}</div>
+      {/* A band like a region's head (`lib/scroll-edge`): what scrolls
+          under the strip passes beneath it on glass. */}
+      <div ref={band} data-band className="flex h-pane-head flex-none">
+        {strip}
+      </div>
       <div className={cn("min-h-0 flex-1 bg-card", bodyClass)}>{body}</div>
     </>
   );
