@@ -54,14 +54,15 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { openLink, recentVisit, type DeviceRow } from "@/api";
+import { openLink, pageStep, recentVisit, type DeviceRow } from "@/api";
 import { PageField } from "@/browse/PageField";
 import { Tabs } from "@/browse/Tabs";
 import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
-import { IconBrowser } from "@/components/icons";
+import { IconArrow, IconBrowser, IconReload } from "@/components/icons";
+import { GlassItem } from "@/components/Glass";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import type { KindMark } from "@/components/FaceMark";
@@ -360,6 +361,30 @@ export function BrowseLanding({
     />
   );
 
+  /** The deck's address editor (round UX-3): open while asked for. */
+  const [editing, setEditing] = useState(false);
+  useEffect(() => setEditing(false), [tabs.current.id]);
+  /** Whether this tab has somewhere to be: its ← → and reload are drawn
+      then, and the editor is not needed to start. */
+  const somewhere = !!(machine && tabs.current.device && tabs.current.path);
+  const fieldOnDeck = (
+    <PageField
+      key={tabs.current.id}
+      tab={tabs.current.id}
+      machine={machine}
+      devices={devices}
+      at={tabs.current.path}
+      steps={false}
+      autoFocus={editing}
+      onLeave={() => setEditing(false)}
+      onGo={(place) => {
+        setEditing(false);
+        if (machine) tabs.goTo(machine.id, place);
+      }}
+      onMachine={(d) => tabs.goTo(d.id, tabs.current.path, tabs.current.title)}
+    />
+  );
+
   const content =
     machine && tabs.current.device && tabs.current.path ? (
       <div
@@ -500,21 +525,47 @@ export function BrowseLanding({
           if (tabs.tabs.length === 1) onBack?.();
           void tabs.close(id).catch(() => {});
         }}
-        // The list is this landing's switcher: the count goes back to it.
-        onSwitch={() => onBack?.()}
-        switching={false}
+        // ＋ in the tabs sheet: a new page, as the list's ＋ opens one.
+        onNew={() => {
+          tabs.add();
+          opened();
+        }}
         onBack={() => onBack?.()}
+        onTitle={() => setEditing(true)}
         caption={caption}
       >
         <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
-          {tabs.ready && (
+          {/* **The page's own things are the pill's** (round UX-3): ← → at
+              its left, reload at its right; the address is edited under
+              the deck only when asked for (the title pressed, or a page
+              with nowhere to be yet), riding the keyboard. */}
+          {tabs.ready && somewhere && (
+            <>
+              <BarSeat at="pill">
+                <span data-deck-history className="flex items-center">
+                  <GlassItem aria-label={gui.page_back} data-page-step="back" onClick={() => void pageStep(tabs.current.id, "back").catch(() => {})}>
+                    <IconArrow to="left" />
+                  </GlassItem>
+                  <GlassItem aria-label={gui.page_forward} data-page-step="forward" onClick={() => void pageStep(tabs.current.id, "forward").catch(() => {})}>
+                    <IconArrow to="right" />
+                  </GlassItem>
+                </span>
+              </BarSeat>
+              <BarSeat at="lead">
+                <GlassItem aria-label={gui.page_reload} data-page-step="reload" onClick={() => void pageStep(tabs.current.id, "reload").catch(() => {})}>
+                  <IconReload />
+                </GlassItem>
+              </BarSeat>
+            </>
+          )}
+          {tabs.ready && (editing || !somewhere) && (
             <BarSeat at="under">
-              {/* As tall as a conversation's capsule row, so the tab row
-                  over it stands where a session's does (the narrow check:
-                  706 against 702). */}
+              {/* As tall as a conversation's capsule row, so the deck over
+                  it stands where a session's does (the narrow check: 706
+                  against 702). */}
               <div data-page-field-seat className="flex min-h-[calc(var(--composer-h)+var(--gap-xxs)+var(--gap-in))] flex-none items-end px-row pt-xxs pb-in">
-                {field}
+                {fieldOnDeck}
               </div>
             </BarSeat>
           )}

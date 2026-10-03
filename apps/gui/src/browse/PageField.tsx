@@ -50,6 +50,9 @@ export function PageField({
   onGo,
   onMachine,
   fixed = false,
+  steps = true,
+  autoFocus = false,
+  onLeave,
 }: {
   /** The page this field steps (back, forward, reload). */
   tab: string;
@@ -60,6 +63,14 @@ export function PageField({
   onGo: (place: string) => void;
   onMachine?: (machine: DeviceRow) => void;
   fixed?: boolean;
+  /** Draw ← → ↻ beside the field — not on the phone's deck, whose pill
+      carries them (round UX-3). */
+  steps?: boolean;
+  /** Put the caret in the address at once: the deck opened the field to
+      be typed in (round UX-3). */
+  autoFocus?: boolean;
+  /** The caret left the address: the deck puts the field away. */
+  onLeave?: () => void;
 }) {
   const [draft, setDraft] = useState(at);
   const [picking, setPicking] = useState(false);
@@ -144,7 +155,7 @@ export function PageField({
   })();
   return (
     <div ref={row} data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
-      {open && (
+      {open && steps && (
         <GlassCapsule>
           {(
             [
@@ -219,10 +230,12 @@ export function PageField({
                 editing.current = true;
                 setTyping(true);
               }}
+              autoFocus={autoFocus}
               onBlur={() => {
                 editing.current = false;
                 setTyping(false);
                 setDraft(at);
+                onLeave?.();
                 // At rest the address reads from its host (the line above);
                 // the field kept the scroll the typing left it at, so a long
                 // address showed its tail, its start cut with no ellipsis.
