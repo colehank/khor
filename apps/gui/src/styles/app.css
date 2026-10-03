@@ -969,6 +969,21 @@ aside[data-side] {
   font-weight: var(--shiki-dark-font-weight, inherit);
 }
 
+/* A preview on a ground of its own (预览背景, round UX-4) paints its code
+   in that ground's colours, whatever the app's theme. */
+:root:is([data-theme]) [data-ground="light"] [data-md] span[style*="--shiki"] {
+  color: var(--shiki-light);
+  text-decoration: var(--shiki-light-text-decoration, inherit);
+  font-style: var(--shiki-light-font-style, inherit);
+  font-weight: var(--shiki-light-font-weight, inherit);
+}
+:root:is([data-theme]) [data-ground="dark"] [data-md] span[style*="--shiki"] {
+  color: var(--shiki-dark);
+  text-decoration: var(--shiki-dark-text-decoration, inherit);
+  font-style: var(--shiki-dark-font-style, inherit);
+  font-weight: var(--shiki-dark-font-weight, inherit);
+}
+
 /* The parts under a dial: one grid for every row in the drawer, so the
    bar's two edges are one value each down the whole list. Rows join the
    grid with `display: contents` rather than being boxes of their own —

@@ -1834,6 +1834,47 @@
  *
  * Unlayered, beside `:root` itself: `@layer base` would lose to the
  * declaration above however specific this selector is. */
+/* **预览背景: the one scoped exception to a root-only palette** (round
+ * UX-4; docs/design-system, 颜色). A rendered document can be read on the
+ * ground it was written for — a light page in the dark theme, or the
+ * other way — without the app around it changing. Only the preview's
+ * root wears `data-ground`, and only the ground tokens are said again
+ * under it: the paper, the inks on it, the hairline and the code block's
+ * fill. The values are each theme's own, repeated here because a custom
+ * property cannot read another theme's value; a change to either theme's
+ * ground changes these too. Everything else (the accent, the state
+ * colours, the glass) stays the app's. */
+[data-ground="light"] {
+  color-scheme: light;
+  --background: #f4f4ef;
+  --card: var(--background);
+  --foreground: rgba(26, 26, 20, 0.94);
+  --card-foreground: rgba(26, 26, 20, 0.94);
+  --read-ink: rgba(26, 26, 20, 0.88);
+  --muted-foreground: rgba(26, 26, 20, 0.7);
+  --muted: rgba(26, 26, 20, 0.06);
+  --fill: rgba(26, 26, 20, 0.06);
+  --fill-strong: rgba(26, 26, 20, 0.1);
+  --border: rgba(26, 26, 20, 0.12);
+  background: var(--card);
+  color: var(--foreground);
+}
+[data-ground="dark"] {
+  color-scheme: dark;
+  --background: #000000;
+  --card: var(--background);
+  --foreground: rgba(238, 238, 231, 0.96);
+  --card-foreground: rgba(238, 238, 231, 0.96);
+  --read-ink: rgba(238, 238, 231, 0.86);
+  --muted-foreground: rgba(238, 238, 231, 0.62);
+  --muted: rgba(244, 244, 239, 0.07);
+  --fill: rgba(244, 244, 239, 0.08);
+  --fill-strong: rgba(244, 244, 239, 0.15);
+  --border: rgba(238, 238, 231, 0.14);
+  background: var(--card);
+  color: var(--foreground);
+}
+
 :root[data-traffic] {
   /* A starting value only, and deliberately close: the app measures the
      buttons and writes the real width onto this element at startup

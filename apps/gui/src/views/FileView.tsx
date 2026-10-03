@@ -46,6 +46,7 @@ import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFileLines } from "@/lib/highlight";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
+import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
 import { useCoarse } from "@/hooks/use-coarse";
 import { ago } from "@/words";
@@ -471,6 +472,7 @@ export function FileView({
   // the numbers, asked of the machine holding the file once per file and
   // again after a save, and mapped onto the lines as they are now.
   const blameShown = useBlameShown();
+  const ground = usePreviewGround();
   const coarse = useCoarse();
   const [blame, setBlame] = useState<GitBlame | null>(null);
   useEffect(() => {
@@ -1277,7 +1279,7 @@ export function FileView({
           exactly as it was — and typing into a preview is not possible,
           because there is nothing there to focus. */}
       {face === "preview" && renders !== null ? (
-        <div data-file-preview={renders} className="min-h-0 flex-1 overflow-auto">
+        <div data-file-preview={renders} {...groundAttr(ground.ground)} className="min-h-0 flex-1 overflow-auto">
           {renders === "md" ? (
             <Markdown text={body} className="prose-khor px-6 py-4" lines />
           ) : (

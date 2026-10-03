@@ -13,6 +13,7 @@ import { Waiting } from "@/components/RegionState";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
+import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { cn } from "@/lib/utils";
 import { DiffView } from "@/views/DiffView";
 import { rendererOf } from "@/views/FileView";
@@ -112,6 +113,7 @@ export function RevisionView({
   const [shown, setShown] = useState<GitShow | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
   const [since, setSince] = useState(() => Date.now());
+  const { ground } = usePreviewGround();
   useEffect(() => {
     let live = true;
     setShown(null);
@@ -139,7 +141,7 @@ export function RevisionView({
   return (
     <div data-file-rev={rev.id} className="flex min-h-0 flex-1 flex-col">
       {md ? (
-        <div data-file-preview="md" className="min-h-0 flex-1 overflow-auto">
+        <div data-file-preview="md" {...groundAttr(ground)} className="min-h-0 flex-1 overflow-auto">
           <Markdown text={shown.text} className="prose-khor px-6 py-4" />
         </div>
       ) : (

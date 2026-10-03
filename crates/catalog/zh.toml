@@ -3958,6 +3958,11 @@ file-rev-cut = "这一版太长，只显示了开头"
 blame-show = "显示 blame"
 blame-hide = "隐藏 blame"
 blame-uncommitted = "未提交"
+# 文件「…」里的预览背景（round UX-4）：只管渲染出来的文档，跟随界面，或固定浅色、深色。按设备存。
+preview-ground = "预览背景"
+preview-ground-auto = "跟随"
+preview-ground-light = "浅色"
+preview-ground-dark = "深色"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

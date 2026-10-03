@@ -47,6 +47,7 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useCoarse } from "@/hooks/use-coarse";
 import { useBlameShown } from "@/lib/blame";
 import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
+import { groundAttr, GROUNDS, usePreviewGround } from "@/lib/preview-ground";
 import { baseName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
@@ -154,6 +155,7 @@ function useFileVerbs({
   const [renaming, setRenaming] = useState(false);
   const size = useFileSize();
   const blame = useBlameShown();
+  const ground = usePreviewGround();
   const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => {
     void revealHere().then(setFinder);
@@ -250,6 +252,25 @@ function useFileVerbs({
             </Button>
           </div>
         )}
+        {/* 预览背景, for a document that renders (round UX-4): three keys on
+            one row like 字号's, the one in use pressed. */}
+        {rendererOf(path) !== null && (
+          <div data-preview-ground className="flex min-h-menu-item items-center gap-in px-row text-body">
+            <span className="flex-1">{gui.preview_ground}</span>
+            {GROUNDS.map((g) => (
+              <Button
+                key={g}
+                size="sm"
+                aria-pressed={ground.ground === g}
+                data-preview-ground-key={g}
+                onClick={() => ground.set(g)}
+                className={cn(ground.ground === g && "glass-sel text-[var(--rail-on-ink)]")}
+              >
+                {g === "auto" ? gui.preview_ground_auto : g === "light" ? gui.preview_ground_light : gui.preview_ground_dark}
+              </Button>
+            ))}
+          </div>
+        )}
         <DropdownMenuSeparator />
         {menu
           .filter((m) => m.destructive)
@@ -287,7 +308,7 @@ function useFileVerbs({
       />
     </>
   );
-  return { shareCircle, moreCircle, dialogs, said, size };
+  return { shareCircle, moreCircle, dialogs, said, size, ground: ground.ground };
 }
 
 /** 重命名: the name only, in its directory (`FileTree`'s rule: a typed
@@ -495,6 +516,11 @@ export function FilePage({
     <div
       data-file-page
       data-writing={writing || undefined}
+      // **预览背景 covers the page, not only the text** (round UX-4): the
+      // name and the circles float over the document, so they wear the
+      // ground it is read on, or they would be the app's ink on a ground
+      // that is not the app's.
+      {...(rev === null ? face === "preview" : !compare && rendererOf(path) === "md") ? groundAttr(verbs.ground) : {}}
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
