@@ -107,11 +107,14 @@ fn raw_id() -> Option<String> {
 /// **An iPhone: `identifierForVendor`** (docs/IOS.md 第二步) — the id
 /// iOS keeps for this app's vendor on this device. It survives a rename
 /// (the device name is a label, the very thing this module refuses to
-/// trust) and an app update; it changes only when every app of the
-/// vendor is removed, which takes the store with it, and it is a
-/// different id on a different phone — so a store restored onto another
-/// device would be refused rather than worn, if it ever got there
-/// (`backup::keep_out` sees that it does not).
+/// trust) and an update **from the same install channel only**: Apple
+/// computes it differently for a development install and for a
+/// TestFlight or App Store one, so a TestFlight build over a cable build
+/// sees a new id (2026-10-03), and so does an install after every app of
+/// the vendor was removed. It is a different id on a different phone.
+/// That is why the store's stamp does not refuse on iOS
+/// (`claim_store_stamp`): the store is in the app's sandbox, and
+/// `backup::keep_out` keeps it from reaching another device.
 ///
 /// UIKit hands it out on the main thread: asked there directly (the app
 /// asks once at launch, `khor_gui::run`, so the answer is kept before any

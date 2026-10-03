@@ -56,8 +56,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.1.0
-        CFBundleVersion: "0.1.0"
+        CFBundleShortVersionString: 0.1.14
+        CFBundleVersion: "0.1.14"
     entitlements:
       path: khor-gui_iOS/khor-gui_iOS.entitlements
     scheme:

@@ -3771,3 +3771,28 @@ fn a_phones_checklist_is_the_computers_minus_what_is_not_there() {
         "a phone keeps what is about itself and the network"
     );
 }
+
+// ── the store's stamp on a phone (2026-10-03, the TestFlight install) ──
+
+/// **A sandboxed store is this device's whatever its stamp says**: the
+/// TestFlight build installed over the cable build found the stamp
+/// written under the development install's `identifierForVendor`, with
+/// the same name (`localhost`), and refused its own store. Sandboxed, the
+/// stamp is rewritten to today's id instead; unsandboxed (macOS, Linux)
+/// the same disagreement is still the refusal it always was.
+#[test]
+fn a_sandboxed_store_takes_a_new_vendor_id() {
+    let r = root("stamp-sandbox");
+    stamp_store(&r, "localhost", Some("dev-install-id".into()), true).unwrap();
+
+    // The id moved under the store, the name did not.
+    let refused = stamp_store(&r, "localhost", Some("testflight-id".into()), false);
+    assert!(refused.is_err(), "unsandboxed, another id is another machine");
+
+    stamp_store(&r, "localhost", Some("testflight-id".into()), true)
+        .expect("sandboxed, the store is this device's");
+    let now = Owner::parse(&fs::read_to_string(r.join(".khor").join("owner")).unwrap());
+    assert_eq!(now.machine.as_deref(), Some("testflight-id"), "the stamp follows the new id");
+    stamp_store(&r, "localhost", Some("testflight-id".into()), false)
+        .expect("and once rewritten it is mine by the ordinary rule");
+}

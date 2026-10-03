@@ -1,7 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Khor",
-  "version": "0.1.0",
   "identifier": "io.github.colehank.khor",
   "build": {
     "beforeDevCommand": "npm run dev",

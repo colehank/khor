@@ -719,11 +719,40 @@ fn claim_store(root: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
+/// # On a phone, the stamp cannot refuse the store
+///
+/// On iOS the fingerprint is `identifierForVendor`, and Apple computes it
+/// differently by install channel: a development install (cable, Xcode)
+/// and a TestFlight or App Store install of the same app get different
+/// ids, and so do installs before and after deleting every app of the
+/// vendor. The owner met it on 2026-10-03: the TestFlight build installed
+/// over the cable build refused its own store as 「localhost 的」 — both
+/// names are the phone's `localhost`, only the id had moved.
+///
+/// And the refusal protects nothing there. A store in the app's sandbox
+/// can only be on this device — no shared home reaches it, and the one
+/// way out, a backup restored onto another phone, is closed by
+/// [`backup::keep_out`]. So on iOS the store is this machine's whatever
+/// the stamp says, and the stamp is rewritten with today's fingerprint
+/// and name (the 「fallen behind」 branch below). macOS and Linux keep the
+/// check: there the store is a directory any machine on the mount can open.
 fn claim_store_stamp(root: &std::path::Path) -> Result<(), String> {
+    let here = gethostname::gethostname().to_string_lossy().to_string();
+    stamp_store(root, &here, hardware::fingerprint(), cfg!(target_os = "ios"))
+}
+
+/// [`claim_store_stamp`] with what it asks of the machine handed in:
+/// the name, the fingerprint, and whether the store lives in a sandbox
+/// only this device can reach (iOS), where the stamp may not refuse.
+fn stamp_store(
+    root: &std::path::Path,
+    here: &str,
+    fp: Option<String>,
+    sandboxed: bool,
+) -> Result<(), String> {
     let dir = root.join(".khor");
     let stamp = dir.join("owner");
-    let here = gethostname::gethostname().to_string_lossy().to_string();
-    let fp = hardware::fingerprint();
+    let here = here.to_string();
     let mine = Owner {
         machine: fp.clone(),
         name: Some(here.clone()),
@@ -736,7 +765,7 @@ fn claim_store_stamp(root: &std::path::Path) -> Result<(), String> {
         return std::fs::write(&stamp, mine.render()).map_err(|e| e.to_string());
     };
     let owner = Owner::parse(&text);
-    if !owner.is_mine(&here, fp.as_deref()) {
+    if !sandboxed && !owner.is_mine(&here, fp.as_deref()) {
         // Essentially always a name, because this writes both; the
         // other branch is a hand-edited file, and a fingerprint stub is
         // at least something the person can compare against a file.
