@@ -831,8 +831,37 @@ impl Node {
                     let n = node.clone();
                     let e = ep.clone();
                     tokio::spawn(async move {
-                        if let Ok(conn) = incoming.await {
-                            n.wires.serving(&conn);
+                        let Ok(accepting) = incoming.accept() else { return };
+                        // **Early data is taken** (round NET-3): a machine
+                        // redialling with a ticket from an earlier wire
+                        // sends its first request inside the handshake,
+                        // and a reading is answered at once — one round
+                        // trip instead of two. What may not ride early is
+                        // held until the handshake completes
+                        // (`Request::rides_early`, in `handle`).
+                        let early = accepting.into_0rtt();
+                        let (done_tx, done) = tokio::sync::watch::channel(None::<bool>);
+                        // **Completed means open.** iroh's
+                        // `handshake_completed` on an incoming early
+                        // connection also resolves `Ok` when the connection
+                        // is lost before the handshake ever finished (it
+                        // drops noq's accepted flag) — measured: a client
+                        // that never finished resolved it the moment the
+                        // connection closed. So a connection already closed
+                        // when it resolves did not complete, and what waits
+                        // for the handshake is dropped.
+                        let completed = {
+                            let early = early.clone();
+                            async move {
+                                early
+                                    .handshake_completed()
+                                    .await
+                                    .ok()
+                                    .filter(|conn| conn.close_reason().is_none())
+                            }
+                        };
+                        let once_done = |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
+                            n.wires.serving(conn);
                             // **A machine that dials in is back**: one this
                             // node holds no wire to — a phone returning to
                             // the front, a laptop waking — is visited now,
@@ -841,15 +870,38 @@ impl Node {
                             if conn.alpn() == endpoint::ALPN
                                 && n.wires.live(&remote, wires::Proto::Main).is_none()
                             {
-                                let (n, e) = (n.clone(), e.clone());
                                 tokio::spawn(async move { n.visit_now(&e, &remote).await });
                             }
+                        };
+                        let early_from = early
+                            .remote_id()
+                            .ok()
+                            .filter(|_| early.alpn().as_deref() == Some(endpoint::ALPN));
+                        let Some(remote) = early_from else {
+                            // A tunnel, or a machine not known until the
+                            // handshake says who it is: after it, as before.
+                            let Some(conn) = completed.await else { return };
+                            once_done(n.clone(), e.clone(), &conn);
+                            let remote = conn.remote_id().to_string();
+                            let _ = done_tx.send(Some(true));
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
                                 let _ = n.serve_tunnel(conn).await;
                             } else {
-                                let _ = n.handle(conn, e).await;
+                                let _ = n.handle(conn, remote, e, done).await;
                             }
+                            return;
+                        };
+                        {
+                            let (n, e) = (n.clone(), e.clone());
+                            tokio::spawn(async move {
+                                let conn = completed.await;
+                                let _ = done_tx.send(Some(conn.is_some()));
+                                if let Some(conn) = conn {
+                                    once_done(n, e, &conn);
+                                }
+                            });
                         }
+                        let _ = n.handle(early, remote.to_string(), e, done).await;
                     });
                 }
                 accepted = handoffs.accept() => {
@@ -1184,6 +1236,15 @@ impl Node {
             },
             ipc::Op::Wires => ipc::Reply::Wires {
                 counts: self.wires.counts_now(),
+            },
+            ipc::Op::LetGo { machine } => match self.resolve(&machine) {
+                Ok((_, home)) => {
+                    self.wires.let_go(&home.hex());
+                    ipc::Reply::Wires {
+                        counts: self.wires.counts_now(),
+                    }
+                }
+                Err(why) => ipc::Reply::Refused { why },
             },
             ipc::Op::Connections => ipc::Reply::Connections {
                 view: self.connections_now(ep).await,
@@ -1803,6 +1864,11 @@ impl Node {
         d: &DeviceInfo,
         req: &Request,
     ) -> Result<Response, String> {
+        match self.ask_early(ep, d, req).await {
+            Early::Answered(resp) => return Ok(resp),
+            Early::Failed(e) => return Err(unreached_words(&d.name, e)),
+            Early::NotTaken => {}
+        }
         let line = self
             .line_to(ep, d, wires::Proto::Main)
             .await
@@ -1820,6 +1886,120 @@ impl Node {
                 self.exchange_on(&line, req).await.map_err(Miss::words)
             }
             other => other.map_err(Miss::words),
+        }
+    }
+
+    /// **A redial that carries its first question** (round NET-3): with
+    /// no wire held to `d` and a request that may ride early data
+    /// (`Request::rides_early`), the dial resumes the TLS session of an
+    /// earlier wire and sends the request inside the handshake — the
+    /// answer comes back in one round trip instead of the handshake's
+    /// plus the request's. The wire is then held as any other.
+    ///
+    /// `NotTaken` when there is a wire, the request may not ride early,
+    /// or there is no session to resume (a first dial to that machine
+    /// since this resident started, or the far side rejected the early
+    /// data); the wire this made, if any, is held, and the ask goes on
+    /// as usual over it.
+    async fn ask_early(&self, ep: &iroh::Endpoint, d: &DeviceInfo, req: &Request) -> Early {
+        if !req.rides_early()
+            || crate::pause::peer_on(self.root(), &d.id)
+            || self.wires.live(&d.id, wires::Proto::Main).is_some()
+        {
+            return Early::NotTaken;
+        }
+        let lock = self.wires.dial_lock(&d.id, wires::Proto::Main);
+        let _one = lock.lock().await;
+        if self.wires.live(&d.id, wires::Proto::Main).is_some() {
+            return Early::NotTaken;
+        }
+        let Ok(addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
+            return Early::NotTaken;
+        };
+        let Ok(frame) = proto::encode(req) else {
+            return Early::NotTaken;
+        };
+        let within = DIAL_TIMEOUT
+            .max(self.wires.last_rtt(&d.id).saturating_mul(12))
+            .min(Duration::from_secs(60));
+        let started = std::time::Instant::now();
+        let attempt = async {
+            let connecting = ep
+                .connect_with_opts(addr, ALPN, Default::default())
+                .await
+                .map_err(|e| DialFailure::Refused(e.to_string()))?;
+            let early = match connecting.into_0rtt() {
+                Ok(early) => early,
+                // Nothing to resume: an ordinary handshake, then the ask
+                // as usual on the wire it made.
+                Err(connecting) => {
+                    let conn = connecting
+                        .await
+                        .map_err(|e| DialFailure::Refused(e.to_string()))?;
+                    return Ok((conn, None));
+                }
+            };
+            // The question goes out with the handshake; its answer is
+            // waited for apart, so the wire is handed to every other ask
+            // the moment the handshake is done, not when this answer is.
+            let asked = {
+                let (early, frame, budget) = (early.clone(), frame.clone(), req.budget());
+                tokio::spawn(async move {
+                    let (mut send, mut recv) = early.open_bi().await.ok()?;
+                    send.write_all(&frame).await.ok()?;
+                    send.finish().ok()?;
+                    let bytes = tokio::time::timeout(budget, recv.read_to_end(MAX_FRAME))
+                        .await
+                        .ok()?
+                        .ok()?;
+                    proto::decode::<Response>(&bytes).ok()
+                })
+            };
+            match early
+                .handshake_completed()
+                .await
+                .map_err(|e| DialFailure::Refused(e.to_string()))?
+            {
+                iroh::endpoint::ZeroRttStatus::Accepted(conn) => Ok((conn, Some(asked))),
+                // Rejected: the far side kept nothing of it; asked again
+                // on the wire, which is up.
+                iroh::endpoint::ZeroRttStatus::Rejected(conn) => {
+                    asked.abort();
+                    Ok((conn, None))
+                }
+            }
+        };
+        match tokio::time::timeout(within, attempt).await {
+            Ok(Ok((conn, asked))) => {
+                crate::roads::replied(&self.roads, &d.id, started.elapsed());
+                crate::roads::watch(&self.roads, &d.id, &conn);
+                self.wires.adopt(&d.id, wires::Proto::Main, conn.clone());
+                drop(_one);
+                match asked {
+                    Some(asked) => match asked.await.ok().flatten() {
+                        Some(resp) => {
+                            self.wires.heard(&d.id, wires::Proto::Main, &conn);
+                            Early::Answered(resp)
+                        }
+                        // No answer to the early question: asked again on
+                        // the wire, which is up — a reading, so twice is
+                        // the same as once.
+                        None => Early::NotTaken,
+                    },
+                    None => Early::NotTaken,
+                }
+            }
+            Ok(Err(e)) => {
+                self.wires.failed(&d.id, wires::Proto::Main, msg::cant_reach_named(&d.name, match &e {
+                    DialFailure::Refused(why) => why,
+                    DialFailure::TimedOut => "",
+                }));
+                Early::Failed(e)
+            }
+            Err(_) => {
+                self.wires.failed(&d.id, wires::Proto::Main, msg::machine_unreachable_timeout(&d.name));
+                Early::Failed(DialFailure::TimedOut)
+            }
         }
     }
 
@@ -1891,12 +2071,19 @@ impl Node {
     /// 2–13 ms). Nothing here relies on order: a sync round is sequential
     /// on the asking side, each request carries all it needs, and the
     /// gate (`admit`) and pause are asked per request.
-    async fn handle(
+    ///
+    /// `done` says whether the handshake has completed (`Some(true)`), or
+    /// failed: a request that arrived as early data and may not ride it
+    /// (`Request::rides_early`) waits for `Some(true)` and is dropped on
+    /// anything else — a replay of captured early data never completes a
+    /// handshake, so it never reaches anything that changes something.
+    async fn handle<T: iroh::endpoint::ConnectionState>(
         self: std::sync::Arc<Self>,
-        conn: iroh::endpoint::Connection,
+        conn: iroh::endpoint::Connection<T>,
+        remote: String,
         ep: std::sync::Arc<iroh::Endpoint>,
+        done: tokio::sync::watch::Receiver<Option<bool>>,
     ) -> Result<(), String> {
-        let remote = conn.remote_id().to_string();
         let seats = std::sync::Arc::new(tokio::sync::Semaphore::new(STREAMS_AT_ONCE));
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             // 按机器暂停 (SHELL.md 第五轮 第 3 条): a machine this one has
@@ -1911,14 +2098,27 @@ impl Node {
             let Ok(seat) = seats.clone().acquire_owned().await else {
                 return Ok(());
             };
-            let (node, ep, remote) = (self.clone(), ep.clone(), remote.clone());
+            let (node, ep, remote, mut done) = (self.clone(), ep.clone(), remote.clone(), done.clone());
             tokio::spawn(async move {
                 let _seat = seat;
+                let early = recv.is_0rtt();
                 let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
                     return;
                 };
                 let resp = match proto::decode::<Request>(&bytes) {
-                    Ok(req) => node.dispatch(&remote, req, &ep).await,
+                    Ok(req) => {
+                        if early && !req.rides_early() {
+                            while done.borrow().is_none() {
+                                if done.changed().await.is_err() {
+                                    return;
+                                }
+                            }
+                            if *done.borrow() != Some(true) {
+                                return;
+                            }
+                        }
+                        node.dispatch(&remote, req, &ep).await
+                    }
                     Err(e) => Response::Refused { why: e },
                 };
                 let Ok(frame) = proto::encode(&resp) else {
@@ -6154,6 +6354,20 @@ impl Node {
     /// How the resident's wires have fared since it started
     /// (`khor_core::WireCounts`), for `khor doctor`. Only the resident
     /// can answer, for the reason [`Self::links`] gives.
+    /// Retires the resident's wires to `machine` (`ipc::Op::LetGo`).
+    pub async fn let_go_of(&self, machine: &str) -> Result<khor_core::WireCounts, RoadsUnread> {
+        match self
+            .via_serve(ipc::Op::LetGo {
+                machine: machine.to_owned(),
+            })
+            .await
+        {
+            Some(Ok(ipc::Reply::Wires { counts })) => Ok(counts),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
+        }
+    }
+
     pub async fn wire_counts(&self) -> Result<khor_core::WireCounts, RoadsUnread> {
         match self.via_serve(ipc::Op::Wires).await {
             Some(Ok(ipc::Reply::Wires { counts })) => Ok(counts),
@@ -7108,6 +7322,16 @@ pub(crate) struct Line {
     pub(crate) name: String,
     pub(crate) proto: wires::Proto,
     pub(crate) conn: iroh::endpoint::Connection,
+}
+
+/// What [`Node::ask_early`] came to.
+enum Early {
+    /// Answered inside the redial's handshake.
+    Answered(Response),
+    /// The redial itself failed: the far machine was not reached.
+    Failed(DialFailure),
+    /// Not tried, or tried without an answer: ask as usual.
+    NotTaken,
 }
 
 /// Why one exchange produced no answer — three things, because only the

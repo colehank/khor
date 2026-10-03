@@ -959,6 +959,45 @@ impl Request {
         )
     }
 
+    /// **Whether this may ride 0-RTT** (round NET-3): sent inside the
+    /// handshake of a redial and answered before that handshake is done.
+    /// Early data can be replayed by anyone who captured it (RFC 9001
+    /// §9.2, RFC 8446 §8), so only what changes nothing over there and
+    /// costs little to answer twice: a reading of memory, one directory,
+    /// one file slice, one `git` or `stat`. Not a sync (it merges), not a
+    /// payload slice (it marks the offer started), not a reach (it hands
+    /// out a session's cookie), not a search (a tree walk is a replay
+    /// worth making). Everything else waits for the handshake on both
+    /// ends: the asker sends it after, and an answering machine that sees
+    /// one arrive early holds it until the handshake completes.
+    pub fn rides_early(&self) -> bool {
+        matches!(
+            self,
+            Request::Sessions
+                | Request::Usage
+                | Request::Vitals
+                | Request::Ls { .. }
+                | Request::FetchPath { .. }
+                | Request::SatVitals { .. }
+                | Request::SatLs { .. }
+                | Request::Watched
+                | Request::SatFetchPath { .. }
+                | Request::SatTouched { .. }
+                | Request::SatGitStatus { .. }
+                | Request::SatGitDiff { .. }
+                | Request::Days
+                | Request::Places
+                | Request::Quotas
+                | Request::Load { .. }
+                | Request::Touched { .. }
+                | Request::GitStatus { .. }
+                | Request::GitDiff { .. }
+                | Request::Checkout { .. }
+                | Request::SatCheckout { .. }
+                | Request::Versions { .. }
+        )
+    }
+
     /// **How long the answer may take once the far machine has it** —
     /// a backstop, not the liveness check. A wire that has gone dead is
     /// caught in seconds whatever this says (`crate::wires::ACK_WITHIN`,

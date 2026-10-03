@@ -545,6 +545,21 @@ impl Wires {
 
     /// Lets go of every wire: the endpoint under them is being replaced,
     /// or the app is going to the background.
+    /// Retires this machine's wires, both protocols, on request — the
+    /// next ask dials afresh. What `ipc::Op::LetGo` does: a diagnostic,
+    /// and the measurement of what a redial costs (round NET-3).
+    pub(crate) fn let_go(&self, id: &str) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        for proto in [Proto::Main, Proto::Tunnel] {
+            if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
+                && slot.conn.is_some()
+            {
+                drop_wire(slot, Retired::NewEars);
+                self.counts.retired(Retired::NewEars);
+            }
+        }
+    }
+
     pub(crate) fn clear(&self, why: Retired) {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         for slot in slots.values_mut() {
