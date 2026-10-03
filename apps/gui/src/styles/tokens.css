@@ -1697,6 +1697,14 @@
    * glass controls' glyphs are `--ctl-glyph`; the popup button's stacked
    * ⌃⌄ keep their own 10 (two in an 18 pill). */
   --affordance: 16px;
+  /* **The tabs circle's figure** (round UX-3, `SessionBar`'s
+   * `TabsGlyph`): two 16 squares, a page behind a page, the front one
+   * holding the count. Their corner, their stroke (the weight of a
+   * line glyph at 22, 0.72 of the box drawn at 1.4) and the count's
+   * size, which has to fit two digits in the square. */
+  --badge-radius: 4px;
+  --badge-stroke: 1.4px;
+  --badge-text: 10px;
   /* The rest of the size family the design system names
    * (docs/design-system/tokens.json `size`): a switch (32×18, 第十七轮
    * draws it), the day's band under a tab (4), a dialog's width (380),

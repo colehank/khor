@@ -305,8 +305,8 @@ const SWIPE_STEPS = 40;
 function TabsGlyph({ n }: { n: number }) {
   return (
     <span data-tabs-glyph className="relative block size-6">
-      <span aria-hidden="true" className="absolute top-0.5 right-0.5 size-4 rounded-[4px] border-[1.4px] border-current opacity-50" />
-      <span className="absolute bottom-0.5 left-0.5 grid size-4 place-items-center rounded-[4px] border-[1.4px] border-current bg-[var(--glass)] text-[10px] leading-none font-title tabular-nums">
+      <span aria-hidden="true" className="absolute top-0.5 right-0.5 size-4 rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current opacity-50" />
+      <span className="absolute bottom-0.5 left-0.5 grid size-4 place-items-center rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current bg-[var(--glass)] text-[length:var(--badge-text)] leading-none font-title tabular-nums">
         {n}
       </span>
     </span>
