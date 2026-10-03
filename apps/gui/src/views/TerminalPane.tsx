@@ -388,6 +388,11 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
   return { col, row: term.buffer.active.viewportY + inView };
 }
 
+/** A downward swipe this long (pt) and this fast (pt/ms) puts the
+    keyboard away. */
+const DISMISS_PT = 60;
+const DISMISS_SPEED = 0.5;
+
 /** Travel past which a touch is a drag, not a tap. */
 const TAP_SLOP = 10;
 
@@ -420,12 +425,30 @@ function tapsAskFirst(term: Terminal, box: HTMLElement, marks: Marks): () => voi
     downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
+    lastX = startX;
+    lastY = startY;
   };
+  let lastX = 0;
+  let lastY = 0;
   const moved = (e: TouchEvent) => {
     const t = e.touches[0];
-    if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
+    if (!t) return;
+    lastX = t.clientX;
+    lastY = t.clientY;
+    if (Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
   const lifted = () => {
+    // **A downward swipe puts the keyboard away**, in every mode (the
+    // owner's ruling with the ux lane's deck): iOS's own gesture for it in
+    // a scrolling view (`keyboardDismissMode`). A swipe, not a slow drag
+    // through history: far enough, fast enough, more down than sideways.
+    const dy = lastY - startY;
+    const took = performance.now() - downAt;
+    if (!still && dy > DISMISS_PT && dy / took > DISMISS_SPEED && dy > Math.abs(lastX - startX) && keyboardUp(field)) {
+      lowerKeyboard(field);
+      still = false;
+      return;
+    }
     // A long press is a selection (`pressSelects`), not a tap.
     if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
     if (still) {

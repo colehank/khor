@@ -11,6 +11,8 @@
 // only for a focus a gesture made). Lowering is the reverse, and keeps
 // the focus. Under a mouse there is no soft keyboard and none of this
 // applies: the field is a plain focused field.
+import { termWake, type Wake } from "@/lib/term-tap";
+
 const CHANGED = "khor:soft-keyboard";
 
 /** Whether the person has the keyboard up on the session page: kept
@@ -20,6 +22,9 @@ const CHANGED = "khor:soft-keyboard";
 let wanted = false;
 let open = 0;
 let forget = 0;
+/** The terminal field the keyboard is about: the one a terminal last
+    held the focus with. */
+let current: HTMLElement | null = null;
 
 /** A terminal is on screen until the answer is called. */
 export function terminalShown(): () => void {
@@ -45,6 +50,7 @@ function refocus(field: HTMLElement) {
     and a reload do. The keyboard stays as it was — up if the person had
     it up on this page (a tab chosen by a press keeps it), down otherwise. */
 export function holdFocus(field: HTMLElement, finger: boolean) {
+  current = field;
   if (finger) field.setAttribute("inputmode", wanted ? "text" : "none");
   if (document.activeElement !== field) field.focus({ preventScroll: true });
   window.dispatchEvent(new Event(CHANGED));
@@ -52,6 +58,7 @@ export function holdFocus(field: HTMLElement, finger: boolean) {
 
 /** Raise the soft keyboard. Only from inside a press. */
 export function raiseKeyboard(field: HTMLElement) {
+  current = field;
   wanted = true;
   field.setAttribute("inputmode", "text");
   refocus(field);
@@ -84,3 +91,29 @@ export function onKeyboardChange(run: () => void): () => void {
     document.removeEventListener("focusout", later);
   };
 }
+
+/**
+ * **The keyboard, for the session page's deck** (roadmap 2.2 with the ux
+ * lane's UX-3): the deck draws a keyboard circle only in the `button` mode
+ * and calls these; the modes, a tap's mapping and the raise and lower path
+ * stay here and in `lib/term-tap`. One store key (`khor.term-wake`).
+ *
+ * - `raise()` / `lower()`: the terminal on screen's keyboard, from inside
+ *   the press that asked (iOS raises a keyboard only for a gesture).
+ * - `up()`: whether it is up now.
+ * - `mode()`: `auto`, `screen` or `button` (`lib/term-tap`'s `termWake`).
+ */
+export const terminalKeyboard = {
+  raise() {
+    if (current?.isConnected) raiseKeyboard(current);
+  },
+  lower() {
+    if (current?.isConnected) lowerKeyboard(current);
+  },
+  up(): boolean {
+    return keyboardUp(current);
+  },
+  mode(): Wake {
+    return termWake();
+  },
+};
