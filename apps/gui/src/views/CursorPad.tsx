@@ -3,12 +3,15 @@
 // 手指已经离开了但方向键一直在往某个方向移动的情况」).
 
 // ── The numbers to tune ───────────────────────────────────────────────
-/** Travel that counts as a flick: crossing it sends the one arrow (pt). */
+/** The dead zone round where the finger landed: outside it the stick
+    points somewhere (pt). */
 export const PAD_DEAD = 12;
-/** A finger that stays within this of where it settled is still (pt). */
-export const PAD_STILL = 4;
-/** Still this long after a flick, and the arrow repeats (ms). */
+/** Held this long in one direction, and the arrow repeats (ms). */
 export const PAD_HOLD_MS = 400;
+/** How far past the diagonal the finger must go to change axis: the other
+    axis must outweigh the held one by this much (tan 55° ≈ 1.43, ten
+    degrees of hysteresis either side of 45°). */
+export const PAD_SWITCH = 1.43;
 /** The repeat's first rate, arrows per second… */
 export const PAD_RATE = 6;
 /** …its rate once it has run `PAD_RAMP_MS`. */
@@ -55,15 +58,11 @@ if (typeof document !== "undefined") {
 /** One gesture on the pad, from the finger's landing. */
 type Gesture = {
   pointer: number;
-  /** Where the finger landed. */
+  /** Where the finger landed: the stick's centre. */
   x0: number;
   y0: number;
-  /** The way the flick locked, once it crossed the dead zone. */
+  /** The way the stick points now; null inside the dead zone. */
   way: Way | null;
-  /** Where the finger settled last, for the stillness test. */
-  sx: number;
-  sy: number;
-  rest: number;
   repeat: number;
   /** When the repeat began, for its two rates. */
   repeatFrom: number;
@@ -75,22 +74,45 @@ type Gesture = {
 };
 
 /**
- * **The cursor pad: a joystick, one arrow per flick** (the owner, after the
- * per-distance pad: 「轻滑一下就是移动一下，连着一个方向不动一会再连跳」).
+ * **Which way a stick at (`dx`, `dy`) from its centre points**, given the
+ * way it pointed before: the axis with the larger displacement, with a
+ * hysteresis band round each diagonal so a finger resting on one does not
+ * flicker between two arrows (`PAD_SWITCH`). The dead zone is radial, the
+ * way game sticks do it (Josh Sutphin, "Doing Thumbstick Dead Zones Right",
+ * 2013: a circle round the centre, not a square per axis).
+ */
+export function wayAt(dx: number, dy: number, was: Way | null): Way | null {
+  if (Math.hypot(dx, dy) < PAD_DEAD) return null;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const horizontal = (): Way => (dx > 0 ? "right" : "left");
+  const vertical = (): Way => (dy > 0 ? "down" : "up");
+  if (was === "left" || was === "right") return ay > ax * PAD_SWITCH ? vertical() : horizontal();
+  if (was === "up" || was === "down") return ax > ay * PAD_SWITCH ? horizontal() : vertical();
+  return ax >= ay ? horizontal() : vertical();
+}
+
+/**
+ * **The cursor pad: a joystick** (the owner, after the per-distance pad:
+ * 「轻滑一下就是移动一下，连着一个方向不动一会再连跳」; then item 19: a
+ * stick must change direction while the finger is still down).
  * Pinned second from the row's right end. A finger lands on it and the
- * whole screen is its pad until it lifts (pointer capture).
+ * whole screen is its pad until it lifts (pointer capture); where it landed
+ * is the stick's centre.
  *
- * - Nothing until the finger has travelled `PAD_DEAD`; a tap sends nothing.
- * - Crossing it locks the axis that dominates and the way along it, and
- *   sends **exactly one arrow**. Further travel sends nothing: three
- *   columns is three flicks, or a hold.
- * - A finger still (within `PAD_STILL`) for `PAD_HOLD_MS` repeats the locked
- *   arrow, `PAD_RATE` a second, `PAD_RATE_FAST` after `PAD_RAMP_MS`. Moving
- *   stops the repeat; the next stillness starts it again. Lift ends it all.
+ * - The way is **where the finger is now** relative to that centre
+ *   (`wayAt`), re-read on every move: nothing inside the dead zone; outside
+ *   it, the larger axis, with hysteresis round the diagonals.
+ * - Pointing a new way — out of the dead zone, or across to another side
+ *   without lifting — sends that arrow at once and starts its repeat over:
+ *   `PAD_HOLD_MS`, then `PAD_RATE` a second, `PAD_RATE_FAST` after
+ *   `PAD_RAMP_MS`. Moving within the same way sends nothing more.
+ * - Back inside the dead zone the repeat stops; lifting ends it all.
  *
- * Termius's space-bar cursor works the same way — move to step, hold for
- * a series in that direction (docs.termius.com/terminal/mobile-terminal) —
- * without its three speed gears: one ramp, no acceleration by distance.
+ * Termius's space-bar cursor repeats the same way while held
+ * (docs.termius.com/terminal/mobile-terminal), and a game stick's d-pad
+ * emulation re-reads its direction continuously rather than latching the
+ * first one.
  *
  * **The repeat dies with the gesture, however it ends**: `pointerup`,
  * `pointercancel`, `lostpointercapture`, the window losing focus, the page
@@ -100,17 +122,15 @@ type Gesture = {
  *
  * Arrows go through `cursorKey`, so an editor's application mode and a
  * latched Ctrl or Alt (word jumps) hold; the latches let go at the first
- * arrow, as on every key. While a gesture is locked the cap shows that
- * way's arrow in the held grey; repeating, the arrow wears the accent.
+ * arrow, as on every key. While the stick points the cap shows that way's
+ * arrow in the held grey; repeating, the arrow wears the accent.
  */
 export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
   const g = useRef<Gesture | null>(null);
   const [way, setWay] = useState<Way | null>(null);
   const [repeating, setRepeating] = useState(false);
   const stopRepeat = (s: Gesture) => {
-    window.clearTimeout(s.rest);
     window.clearTimeout(s.repeat);
-    s.rest = 0;
     s.repeat = 0;
   };
   const endRef = useRef<() => void>(() => {});
@@ -146,16 +166,15 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
     }
     t.input(cursorKey(t, LETTER[w], s.mods), true);
   };
-  const wayOf = (axis: "x" | "y", sign: number): Way =>
-    axis === "x" ? (sign > 0 ? "right" : "left") : sign > 0 ? "down" : "up";
   /** One repeat beat, rescheduled each time: the rate steps up after a
       second, and the watchdog is asked on every beat. */
   const beat = (s: Gesture, w: Way) => {
-    if (g.current !== s) return;
+    if (g.current !== s || s.way !== w) return;
     if (performance.now() - s.heard > PAD_WATCHDOG_MS && touching === 0 && buttons === 0) {
       end();
       return;
     }
+    setRepeating(true);
     send(s, w);
     const rate = performance.now() - s.repeatFrom < PAD_RAMP_MS ? PAD_RATE : PAD_RATE_FAST;
     s.repeat = window.setTimeout(() => beat(s, w), 1000 / rate);
@@ -170,9 +189,6 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
       x0: e.clientX,
       y0: e.clientY,
       way: null,
-      sx: e.clientX,
-      sy: e.clientY,
-      rest: 0,
       repeat: 0,
       repeatFrom: 0,
       heard: performance.now(),
@@ -180,39 +196,25 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
       freed: false,
     };
   };
-  /** The next stillness, from where the finger is now. */
-  const settle = (s: Gesture, x: number, y: number) => {
-    s.sx = x;
-    s.sy = y;
-    window.clearTimeout(s.rest);
-    s.rest = window.setTimeout(() => {
-      s.rest = 0;
-      if (g.current !== s || !s.way) return;
-      setRepeating(true);
-      s.repeatFrom = performance.now();
-      beat(s, s.way);
-    }, PAD_HOLD_MS);
-  };
   const move = (e: PointerEvent<HTMLButtonElement>) => {
     const s = g.current;
     if (!s || e.pointerId !== s.pointer) return;
     s.heard = performance.now();
-    if (!s.way) {
-      const dx = e.clientX - s.x0;
-      const dy = e.clientY - s.y0;
-      if (Math.hypot(dx, dy) < PAD_DEAD) return;
-      s.way = Math.abs(dx) >= Math.abs(dy) ? wayOf("x", dx) : wayOf("y", dy);
-      send(s, s.way);
-      settle(s, e.clientX, e.clientY);
+    const now = wayAt(e.clientX - s.x0, e.clientY - s.y0, s.way);
+    if (now === s.way) return;
+    // A new way, or none: whatever repeated stops here.
+    stopRepeat(s);
+    setRepeating(false);
+    s.way = now;
+    if (!now) {
+      setWay(null);
       return;
     }
-    if (Math.hypot(e.clientX - s.sx, e.clientY - s.sy) <= PAD_STILL) return;
-    // It moved: a repeat ends, and stillness is measured from here.
-    if (s.repeat) {
-      stopRepeat(s);
-      setRepeating(false);
-    }
-    settle(s, e.clientX, e.clientY);
+    send(s, now);
+    s.repeat = window.setTimeout(() => {
+      s.repeatFrom = performance.now();
+      beat(s, now);
+    }, PAD_HOLD_MS);
   };
   /** The gesture's own pointer ending, from wherever it is heard. */
   const ended = (e: PointerEvent<HTMLButtonElement>) => {
