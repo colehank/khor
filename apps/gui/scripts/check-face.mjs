@@ -13649,13 +13649,14 @@ try {
       await press("[data-more-close]");
     }
 
-    // (e) the floating surfaces lift in the dark. Against the board's
-    // own ground **and the frame's** (2026-09-30, 板是纸底是框: the board
-    // is the black paper and the frame round it grey, and what floats
-    // lands on both), in L* rather than contrast — the claim is that a
-    // person sees an edge where the surface meets what is under it. 4 is
-    // the step `check-palette` asks of the tokens (`FLOAT_STEP`); until
-    // today it was quoted as the old `canvas` → `card` step (4.4).
+    // (e) the floating surfaces lift in the dark, off the one ground (the
+    // redesign, 2026-10-02), in L* rather than contrast — the claim is
+    // that a person sees an edge where the surface meets what is under
+    // it. 4 is the step `check-palette` asks of the tokens (`FLOAT_STEP`).
+    // ⚠️ 墓碑 (UX-5): this read the surface against the board **and the
+    // frame round it** (2026-09-30, 板是纸底是框: black paper, grey frame).
+    // One ground has no frame to lift off; what is asked of the frame now
+    // is that it is the board's own colour.
     const LIFT = 4;
     await page.emulateMedia({ colorScheme: "dark" });
     await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark");
@@ -13771,11 +13772,8 @@ try {
                 `under the ${LIFT} a floating surface needs to read as above the board (--popover, tokens.css)`,
             );
           }
-          if (!(got.dFrame >= LIFT)) {
-            fail(
-              `4I · in the dark ${what} is ${got.surface} against a ${got.frame} frame — ${got.dFrame} L* apart, ` +
-                `under the ${LIFT} it needs to read as above the frame round the board too (--popover, tokens.css)`,
-            );
+          if (got.frame !== got.ground) {
+            fail(`4I · in the dark the window round the board is ${got.frame}, the board ${got.ground} — one ground (the redesign)`);
           }
           if (!got.shadow || got.radius !== got.wantRadius) {
             fail(
