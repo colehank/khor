@@ -84,10 +84,26 @@ export function PageField({
     caret.current = false;
     requestAnimationFrame(() => input.current?.focus());
   }, [machine]);
+  /** **The picker does not cover the tabs** (the audit fix plan F4.6; N22).
+      On the narrow face the field is the session bar's second row, under
+      the tabs and 「‹」, and a menu opening upward from it lay over both:
+      there it opens above the whole bar, 8 clear of it. Measured as it
+      opens; elsewhere (the wide head) it opens where it always did. */
+  const row = useRef<HTMLDivElement>(null);
+  const [lift, setLift] = useState<number | null>(null);
+  const pick = (open: boolean) => {
+    if (open) {
+      const at = row.current;
+      const trigger = at?.querySelector("[data-page-machine-face], [data-page-field-empty]")?.getBoundingClientRect();
+      const bar = at?.closest("[data-session-screen]")?.querySelector("[data-session-bar]")?.getBoundingClientRect();
+      setLift(trigger && bar && bar.top < trigger.top ? trigger.top - bar.top + 8 : null);
+    }
+    setPicking(open);
+  };
   const menu = (
     <DropdownMenuContent
       align="start"
-      sideOffset={8}
+      {...(lift === null ? { sideOffset: 8 } : { side: "top" as const, sideOffset: lift, avoidCollisions: false })}
       data-page-machines
       onCloseAutoFocus={(e) => e.preventDefault()}
       className="min-w-nav-menu"
@@ -123,7 +139,7 @@ export function PageField({
     }
   })();
   return (
-    <div data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
+    <div ref={row} data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
       {open && (
         <GlassCapsule>
           {(
@@ -139,7 +155,7 @@ export function PageField({
           ))}
         </GlassCapsule>
       )}
-      <DropdownMenu open={picking} onOpenChange={setPicking}>
+      <DropdownMenu open={picking} onOpenChange={pick}>
         {machine === null ? (
           // No machine yet: the whole field is the way to choose one, and
           // there is no caret to type into. With one machine there is
