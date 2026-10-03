@@ -1984,6 +1984,10 @@ no-host = "这个 session 没有宿主（临时的，或宿主还没起来）"
 host-file-garbled = "无法解析宿主记录：{0}"
 no-frame = "无法读取帧：{0}"
 frame-too-big = "帧超限：{0}"
+# A machine asked to watch the folders a tree has open, that cannot
+# (no watcher there). Not shown to a person: the face falls back to
+# asking the tree, which is what this says.
+watch-unavailable = "这台机器监视不了目录，目录树照旧问着看"
 half-a-frame = "帧不完整：{0}"
 cant-find-self = "找不到 khor 自身的可执行文件：{0}"
 host-wont-start = "宿主无法启动：{0}"

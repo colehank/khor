@@ -1448,6 +1448,18 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::WatchOn {
+                machine,
+                dirs,
+                since,
+                wait_ms,
+            } => match self
+                .watch_with(ep, &machine, &dirs, since, Duration::from_millis(wait_ms).min(ipc::WATCH_WAIT))
+                .await
+            {
+                Ok(changes) => ipc::Reply::DirsChanged { changes },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::StatOn { machine, path } => match self.stat_with(ep, &machine, &path).await {
                 Ok((total, at_ms, digest)) => ipc::Reply::Stat {
                     total,
@@ -2152,6 +2164,33 @@ impl Node {
                 let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
                     return;
                 };
+                // **A watch keeps its stream** (`crate::watch`): answered
+                // as it goes, not once — through the same gate as every
+                // other request.
+                if let Ok(Request::Watch { dirs }) = proto::decode::<Request>(&bytes) {
+                    if early && *done.borrow() != Some(true) {
+                        while done.borrow().is_none() {
+                            if done.changed().await.is_err() {
+                                return;
+                            }
+                        }
+                        if *done.borrow() != Some(true) {
+                            return;
+                        }
+                    }
+                    match node.admit(&remote) {
+                        Ok(()) => crate::watch::serve(dirs, send).await,
+                        Err(why) => {
+                            if let Ok(frame) = proto::encode(&Response::Refused { why }) {
+                                let mut out = (frame.len() as u32).to_be_bytes().to_vec();
+                                out.extend_from_slice(&frame);
+                                let _ = send.write_all(&out).await;
+                                let _ = send.finish();
+                            }
+                        }
+                    }
+                    return;
+                }
                 let resp = match proto::decode::<Request>(&bytes) {
                     Ok(req) => {
                         if early && !req.rides_early() {
@@ -2483,6 +2522,9 @@ impl Node {
                 .map_err(|e| e.to_string())?;
                 Ok(Response::Load { load })
             }
+            // A watch is a stream, answered in `handle` before this; one
+            // that arrives here came by a road that answers once.
+            Request::Watch { .. } => Err(msg::watch_unavailable().into()),
             Request::Stat { path } => {
                 // One `stat` and at most one slice off the disk, off the
                 // reactor for the `Ls` arm's reason.
@@ -4495,6 +4537,80 @@ impl Node {
     /// A satellite's file does not come through this road — the sponsor
     /// serves those off a staging copy with `SatFetchPath`, which is
     /// the account already in docs/handoff/001.md.
+    /// **Which of these directories on `machine` changed since `since`**
+    /// (round NET-4, `crate::watch`), held up to `wait` (at most
+    /// `ipc::WATCH_WAIT`) for one to. Only a resident watches: with none, and for this machine
+    /// itself or a satellite (a tree here is asked off this disk; a
+    /// satellite has no watcher of khor's), the answer is `unavailable`,
+    /// and the face asks the tree as before.
+    pub async fn dirs_changed(
+        &self,
+        machine: &str,
+        dirs: &[String],
+        since: u64,
+        wait: Duration,
+    ) -> Result<crate::watch::DirChanges, String> {
+        let unavailable = || crate::watch::DirChanges {
+            seq: since,
+            dirs: dirs.to_vec(),
+            unavailable: true,
+        };
+        if machine.is_empty() || machine == self.name() {
+            return Ok(unavailable());
+        }
+        match self
+            .via_serve(ipc::Op::WatchOn {
+                machine: machine.to_owned(),
+                dirs: dirs.to_vec(),
+                since,
+                wait_ms: wait.as_millis() as u64,
+            })
+            .await
+        {
+            Some(reply) => match reply? {
+                ipc::Reply::DirsChanged { changes } => Ok(changes),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Ok(unavailable()),
+        }
+    }
+
+    async fn watch_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        dirs: &[String],
+        since: u64,
+        wait: Duration,
+    ) -> Result<crate::watch::DirChanges, String> {
+        let (channel, home) = self.resolve(machine)?;
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        if home == self.device() || target.sponsor.is_some() {
+            return Ok(crate::watch::DirChanges {
+                seq: since,
+                dirs: dirs.to_vec(),
+                unavailable: true,
+            });
+        }
+        let line = self
+            .line_to(ep, &target, wires::Proto::Main)
+            .await
+            .map_err(|e| unreached_words(&target.name, e))?;
+        let watches = self.watches.clone();
+        let id = target.id.clone();
+        Ok(self
+            .watches
+            .wait(&target.id, dirs, since, wait, |n, fresh| {
+                tokio::spawn(crate::watch::run(watches, id, n, line.conn.clone(), fresh))
+            })
+            .await)
+    }
+
     /// What a file on any machine is now, without its bytes
     /// (`crate::files::stat`): `(size, mtime, digest)`, the digest empty
     /// for a file bigger than one slice.

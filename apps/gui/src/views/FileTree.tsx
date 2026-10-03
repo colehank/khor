@@ -23,7 +23,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyState, RegionState, Waiting } from "@/components/RegionState";
-import { fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { dirsWait, fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { useHidden } from "@/hooks/use-hidden";
 import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
@@ -93,6 +94,21 @@ function remembered(machine: string, root: string): Set<string> {
   }
 }
 
+/**
+ * **What each tree last held, and where its watch had got to** (round
+ * NET-4): a tree coming back on screen — the narrow face walking back
+ * from a file, a workspace reopened — starts from this, and asks its
+ * machine's watch what changed since (`dirsWait`, answered by the
+ * resident without crossing the road) instead of listing every open
+ * level again. Only while that machine is watched: where it cannot be,
+ * the tree asks as it always did.
+ */
+const trees = new Map<string, { listings: Map<string, DirListing>; seq: number }>();
+const treeKey = (machine: string, root: string) => `${machine}\u0000${root}`;
+
+/** How long one watch question is held when nothing changes. */
+const WATCH_HOLD_MS = 20_000;
+
 export function FileTree({
   machine,
   root,
@@ -154,7 +170,16 @@ export function FileTree({
 }) {
   /** Every directory this tree has an answer for. The root is asked at
       once; the rest are asked when they are opened. */
-  const [listings, setListings] = useState<Map<string, DirListing>>(new Map());
+  const [listings, setListings] = useState<Map<string, DirListing>>(
+    () => new Map(trees.get(treeKey(machine, root))?.listings ?? []),
+  );
+  /** Whether this machine's levels are watched (`dirsWait`): `null`
+      until the first answer, then a fact. Read by the asks after khor's
+      own changes — a watched tree is told, not re-asked. */
+  const watching = useRef<boolean | null>(null);
+  /** The watch's counter this tree has caught up to. */
+  const seq = useRef(trees.get(treeKey(machine, root))?.seq ?? 0);
+  const hidden = useHidden();
   /** …and the ones that refused, in the node's own sentence. Kept apart
       from the listings for `WorkspacePane`'s reason: 「could not read」
       and 「empty」 are different facts and only one of them is a fact
@@ -172,7 +197,7 @@ export function FileTree({
       between the dial and the answer must not become two dials, and a
       piece of state for that would itself cause the render that starts
       the second one. */
-  const asked = useRef(new Set<string>());
+  const asked = useRef(new Set<string>(listings.keys()));
   /** When the root was asked for, while it is out — what the wait says
       (`Waiting`, round NET-FIX) — and a counter 重试 turns, so the asking
       effect runs again for a path taken off `asked`. */
@@ -298,10 +323,75 @@ export function FileTree({
     });
   }, [failed, listings, expanded, want, machine, root]);
 
+  /** The level a watch said changed, asked again — that level alone,
+      its listing on screen until the new one lands. */
+  const refresh = (dirs: string[]) => {
+    for (const d of dirs) asked.current.delete(d);
+    setWant((was) => new Set(was));
+  };
+
+  // **Kept for the next mount** (`trees`): what this tree holds, and
+  // how far its watch had got.
+  useEffect(() => {
+    trees.set(treeKey(machine, root), { listings, seq: seq.current });
+  }, [listings, machine, root]);
+
+  /**
+   * **The watch** (round NET-4): while the tree is on screen, one
+   * question at a time to this machine's watch — which of the levels
+   * held changed since the counter this tree has — and the ones named
+   * are asked again. The first question does not wait, so a tree that
+   * came back from `trees` learns at once which levels went stale while
+   * it was away. Where the machine cannot be watched (this machine, a
+   * satellite, the web face, an older khor) the answer says so, and the
+   * tree asks every level it held, as it always did.
+   */
+  useEffect(() => {
+    if (hidden) return;
+    let stopped = false;
+    let first = true;
+    const loop = async () => {
+      while (!stopped) {
+        const dirs = [...want].filter((d) => listings.has(d) || asked.current.has(d));
+        if (dirs.length === 0) {
+          await new Promise((r) => setTimeout(r, 500));
+          continue;
+        }
+        try {
+          const w = await dirsWait(machine, dirs, seq.current, first ? 0 : WATCH_HOLD_MS);
+          if (stopped) return;
+          if (w.unavailable) {
+            // Cannot be watched: what came from `trees` is asked again
+            // once, and the tree asks as it always did from here.
+            if (watching.current === null && seq.current > 0) refresh(dirs);
+            watching.current = false;
+            return;
+          }
+          watching.current = true;
+          first = false;
+          seq.current = w.seq;
+          if (w.dirs.length > 0) refresh(w.dirs.filter((d) => listings.has(d)));
+        } catch {
+          // Not reached just now: the next question will say.
+          await new Promise((r) => setTimeout(r, 5_000));
+        }
+      }
+    };
+    void loop();
+    return () => {
+      stopped = true;
+    };
+    // The loop reads the latest `want` and `listings` on each turn
+    // through this effect re-running when they change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machine, hidden, want, listings.size]);
+
   /** Ask that directory again. Everything below it goes too: a listing
       for a path under one that just changed is an answer about a tree
-      that may no longer be there. */
+      that may no longer be there. **Not on a watched tree**, after khor's
+      own change: the watch says which level moved, a moment later. */
   const reread = (dir: string) => {
+    if (watching.current === true) return;
     const under = (p: string) => p === dir || p.startsWith(`${dir}/`);
     for (const p of [...asked.current]) if (under(p)) asked.current.delete(p);
     const drop = <T,>(m: Map<string, T>) =>

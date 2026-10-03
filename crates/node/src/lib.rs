@@ -54,6 +54,7 @@ pub mod trust;
 pub mod tunnel;
 pub mod usage;
 pub mod vitals;
+pub mod watch;
 pub mod workspace;
 pub(crate) mod wires;
 
@@ -379,6 +380,9 @@ pub struct Node {
     /// id, with its stamp — handed back on the next ask so an unchanged
     /// day does not cross again (round NET-4, `Request::LoadSince`).
     pub(crate) days_held: Arc<Mutex<std::collections::HashMap<String, (u64, khor_core::CpuDay)>>>,
+    /// The directories faces asked to have watched on other machines,
+    /// and what changed in them (round NET-4, `watch::Watches`).
+    pub(crate) watches: Arc<watch::Watches>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1035,6 +1039,7 @@ impl Node {
             rounds: Arc::default(),
             readings_held: Arc::default(),
             days_held: Arc::default(),
+            watches: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

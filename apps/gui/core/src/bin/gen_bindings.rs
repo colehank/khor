@@ -71,6 +71,7 @@ fn main() {
     // One file's text, asked for when a file is opened; no row embeds it.
     khor_gui_core::files::FileText::export_all_to(&dir).expect("export FileText");
     khor_gui_core::files::FileStat::export_all_to(&dir).expect("export FileStat");
+    khor_gui_core::files::DirWatch::export_all_to(&dir).expect("export DirWatch");
     khor_gui_core::git::GitStatus::export_all_to(&dir).expect("export GitStatus");
     khor_gui_core::git::GitDiff::export_all_to(&dir).expect("export GitDiff");
     khor_gui_core::files::Wrote::export_all_to(&dir).expect("export Wrote");

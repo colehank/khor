@@ -605,6 +605,14 @@ pub enum Request {
     /// (round NET-4). Answered as [`Response::Stat`]; a khor that
     /// predates it refuses, and the face reads the file as before.
     Stat { path: String },
+    /// **Watch these directories and say when one changes** (round
+    /// NET-4, `crate::watch`): asked on a stream of its own, which stays
+    /// open — answered first with [`Response::Watching`] and then one
+    /// [`Response::Changed`] per burst of changes, each as a length-
+    /// prefixed frame, until the asker lets the stream go. A khor that
+    /// predates it refuses, and so does one that cannot watch; the
+    /// asker's faces then ask `Ls`, as before.
+    Watch { dirs: Vec<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -901,6 +909,12 @@ pub enum Response {
         at_ms: u64,
         digest: String,
     },
+    /// [`Request::Watch`]'s first frame: the directories it is watching
+    /// (one that is gone, or not a directory, is left out).
+    Watching { dirs: Vec<String> },
+    /// One burst of changes on a [`Request::Watch`] stream: the watched
+    /// directories whose listings changed.
+    Changed { dirs: Vec<String> },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1380,6 +1394,7 @@ mod tests {
                 },
                 &b"Stat"[..],
             ),
+            (Request::Watch { dirs: Vec::new() }, &b"Watch"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

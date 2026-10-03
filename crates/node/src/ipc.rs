@@ -281,7 +281,21 @@ pub enum Op {
     /// [`crate::proto::Request::Stat`] through the resident: what a file
     /// on that machine is now, without its bytes. Tail-appended.
     StatOn { machine: String, path: String },
+    /// Which of these directories on that machine changed since `since`
+    /// (`crate::watch::Watches`), held up to `wait_ms` (at most
+    /// [`WATCH_WAIT`]) for one to — 0 asks without waiting, which is what
+    /// a tree coming back on screen does. Tail-appended.
+    WatchOn {
+        machine: String,
+        dirs: Vec<String>,
+        since: u64,
+        wait_ms: u64,
+    },
 }
+
+/// How long a [`Op::WatchOn`] is held when nothing changes: under
+/// [`DEADLINE_FAR`], which bounds it.
+pub const WATCH_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// **In-process at the serve**: the answer is in the serve's own memory
 /// or on its own disk (`Hops` reads the endpoint's view of its roads,
@@ -340,6 +354,7 @@ impl Op {
             Op::Connections => ("Connections", DEADLINE_LOCAL),
             Op::LetGo { .. } => ("LetGo", DEADLINE_LOCAL),
             Op::StatOn { .. } => ("StatOn", DEADLINE_FAR),
+            Op::WatchOn { .. } => ("WatchOn", DEADLINE_FAR),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -464,6 +479,8 @@ pub enum Reply {
         at_ms: u64,
         digest: String,
     },
+    /// Tail-appended with [`Op::WatchOn`].
+    DirsChanged { changes: crate::watch::DirChanges },
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.
     GitStatus {

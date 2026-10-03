@@ -267,6 +267,37 @@ pub async fn stat_text(root: &Path, machine: &str, path: &str) -> Result<FileSta
     })
 }
 
+/// Which of a tree's open levels changed on that machine since `seq`
+/// (`Node::dirs_changed`, round NET-4): the far machine watches them and
+/// the resident holds the answer. `unavailable` when it cannot be
+/// watched (this machine, a satellite, an older khor, no resident) —
+/// the tree then asks its levels, as before.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DirWatch {
+    #[ts(type = "number")]
+    pub seq: u64,
+    pub dirs: Vec<String>,
+    pub unavailable: bool,
+}
+
+pub async fn dirs_wait(
+    root: &Path,
+    machine: &str,
+    dirs: Vec<String>,
+    since: u64,
+    wait_ms: u64,
+) -> Result<DirWatch, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let c = n
+        .dirs_changed(machine, &dirs, since, std::time::Duration::from_millis(wait_ms))
+        .await?;
+    Ok(DirWatch {
+        seq: c.seq,
+        dirs: c.dirs,
+        unavailable: c.unavailable,
+    })
+}
+
 pub async fn read_text(root: &Path, machine: &str, path: &str) -> Result<FileText, String> {
     let n = Node::open(root.to_path_buf())?;
     let (total, at_ms, bytes) = n.read_head(machine, path).await?;

@@ -17,6 +17,7 @@ import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
 import type { FileText } from "./gen/bindings/FileText";
 import type { FileStat } from "./gen/bindings/FileStat";
+import type { DirWatch } from "./gen/bindings/DirWatch";
 import type { GitStatus } from "./gen/bindings/GitStatus";
 import type { Editor } from "./gen/bindings/Editor";
 import type { GitRow } from "./gen/bindings/GitRow";
@@ -81,6 +82,7 @@ export type {
   WorkspaceRow,
   FileText,
   FileStat,
+  DirWatch,
   GitStatus,
   GitRow,
   GitDiff,
@@ -1184,6 +1186,11 @@ export const followHistory = (id: string, from: number) =>
     all come from the node; `""` asks for that machine's home. */
 export const fetchLs = (machine: string, path: string) =>
   call<DirListing>("ls", { machine, path });
+/** Which of these open levels changed on that machine since `since`,
+    held up to `waitMs` for one to (`khor_gui_core::files::dirs_wait`):
+    the far machine watches them. `unavailable` says ask instead. */
+export const dirsWait = (machine: string, dirs: string[], since: number, waitMs: number) =>
+  call<DirWatch>("dirs_wait", { machine, dirs, since, wait_ms: waitMs });
 /** Takes a file into this machine's downloads; answers where it
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>
