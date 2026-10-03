@@ -1446,7 +1446,7 @@ export const pageStep = (tab: string, way: "back" | "forward" | "reload") =>
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll",
   tab: string,
   said: (text: string) => void,
 ): () => void {

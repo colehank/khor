@@ -99,6 +99,11 @@ function tabLabel(kind: BrowseKind, place: string, machine: DeviceRow | null): s
   return kind.leafOf(place);
 }
 
+/** How far down a page has to be before its row folds (points). */
+const FOLD_AT = 48;
+/** How far back up (points) brings the row back. */
+const UNFOLD_BY = 24;
+
 /** The stand-in for a kind that holds nothing, so the shell calls one
     hook either way (`BrowseKind.useHeld`). It takes the list it is not
     going to read, because a signature that differed would let the two
@@ -369,6 +374,39 @@ export function BrowseLanding({
     setSteps(null);
     return onPageWord("page:steps", tabs.current.id, (t) => setSteps({ back: t[0] === "1", forward: t[1] === "1" }));
   }, [tabs.current.id]);
+  /** **The row folds while the page is read** (round UX-3 §3): down past
+      the fold's threshold folds it, a scroll up by a hand's width or the
+      top of the page brings it back — the phone page's `page:scroll`. */
+  const [folded, setFolded] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  useEffect(() => {
+    setFolded(false);
+    setPageLoading(false);
+    const id = tabs.current.id;
+    let turned: number | null = null;
+    const offScroll = onPageWord("page:scroll", id, (t) => {
+      const [y, way] = t.split(",");
+      const at = Number(y);
+      if (!Number.isFinite(at)) return;
+      if (at <= FOLD_AT) {
+        turned = null;
+        setFolded(false);
+      } else if (way === "down") {
+        turned = null;
+        setFolded(true);
+      } else {
+        // Up by a few lines before it comes back, so a finger settling at
+        // the end of a downward flick does not undo it.
+        turned ??= at;
+        if (turned - at >= UNFOLD_BY) setFolded(false);
+      }
+    });
+    const offLoad = onPageWord("page:load", id, (t) => setPageLoading(t === "started"));
+    return () => {
+      offScroll();
+      offLoad();
+    };
+  }, [tabs.current.id]);
   /** The deck's address editor (round UX-3): open while asked for. */
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [tabs.current.id]);
@@ -541,6 +579,9 @@ export function BrowseLanding({
         onBack={() => onBack?.()}
         onTitle={() => setEditing(true)}
         caption={caption}
+        folded={folded && !editing}
+        onUnfold={() => setFolded(false)}
+        loading={pageLoading}
       >
         <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-hidden">{body}</div>

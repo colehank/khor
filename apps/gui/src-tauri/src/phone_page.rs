@@ -38,8 +38,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use objc2::rc::{Allocated, Retained};
-use objc2::runtime::AnyObject;
-use objc2::{class, msg_send};
+use objc2::runtime::{AnyObject, NSObject};
+use objc2::{class, define_class, msg_send, ClassType};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use tauri::{Emitter, Manager};
 
@@ -59,10 +59,82 @@ struct Page {
     /// last told (`page:steps`, round UX-3: the deck greys ← and draws →
     /// only where there is somewhere to go).
     told_steps: Option<(bool, bool)>,
+    /// The view's scroll view, watched for `page:scroll` (round UX-4).
+    scroll: Retained<AnyObject>,
+    /// Where it was last told to be, and when.
+    told_y: f64,
+    told_at: Option<std::time::Instant>,
 }
 
 thread_local! {
     static PAGES: RefCell<HashMap<String, Page>> = RefCell::new(HashMap::new());
+    /// The one observer every page's scroll view reports to.
+    static WATCH: Retained<ScrollWatch> = unsafe { msg_send![ScrollWatch::class(), new] };
+}
+
+/// The app, for the scroll observer, which is called by UIKit with
+/// nothing of khor's in hand.
+static APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and this class
+    // has no ivars and no `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "KhorPageScrollWatch"]
+    struct ScrollWatch;
+
+    impl ScrollWatch {
+        // SAFETY: the signature is NSKeyValueObserving's.
+        #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
+        fn observe_value(
+            &self,
+            _key: *mut AnyObject,
+            object: *mut AnyObject,
+            _change: *mut AnyObject,
+            _context: *mut std::ffi::c_void,
+        ) {
+            scrolled(object);
+        }
+    }
+);
+
+/// **Where the page is scrolled, as it moves** (round UX-4, the deck's
+/// fold): `page:scroll` with `y,down` or `y,up`, at most once a frame and
+/// only for a real move. Observed (KVO on `contentOffset`) rather than
+/// polled, so the fold follows the finger rather than the 400 ms beat.
+fn scrolled(view: *mut AnyObject) {
+    let Some(app) = APP.get() else { return };
+    let mut word: Option<PageWord> = None;
+    PAGES.with(|pages| {
+        // A change made while this module holds the pages (a frame set
+        // inside `open`) is not a scroll anybody made.
+        let Ok(mut pages) = pages.try_borrow_mut() else { return };
+        for (tab, page) in pages.iter_mut() {
+            if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
+                continue;
+            }
+            let at: NSPoint = unsafe { msg_send![&*page.scroll, contentOffset] };
+            let dy = at.y - page.told_y;
+            if dy.abs() < 1.0 {
+                return;
+            }
+            let now = std::time::Instant::now();
+            if page.told_at.is_some_and(|t| now.duration_since(t).as_millis() < 16) {
+                return;
+            }
+            page.told_y = at.y;
+            page.told_at = Some(now);
+            let way = if dy > 0.0 { "down" } else { "up" };
+            word = Some(PageWord {
+                tab: tab.clone(),
+                text: format!("{:.0},{way}", at.y),
+            });
+            return;
+        }
+    });
+    if let Some(w) = word {
+        let _ = app.emit_to("main", "page:scroll", w);
+    }
 }
 
 static POLLING: AtomicBool = AtomicBool::new(false);
@@ -162,6 +234,7 @@ pub fn open(
     wiring: Wiring,
 ) -> Result<(), String> {
     start_polling(app);
+    let _ = APP.set(app.clone());
     unsafe {
         let rect = frame_of(face, at);
         let reused = PAGES.with(|pages| {
@@ -176,6 +249,7 @@ pub fn open(
                     let _: () = msg_send![&*page.view, setHidden: false];
                     return true;
                 }
+                unwatch(page);
                 let _: () = msg_send![&*page.view, removeFromSuperview];
                 pages.remove(tab);
             }
@@ -222,6 +296,12 @@ pub fn open(
         let parent: *mut AnyObject = msg_send![face, superview];
         let _: () = msg_send![parent, addSubview: &*view];
         load(&view, url);
+        let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
+        WATCH.with(|w| {
+            let key = NSString::from_str("contentOffset");
+            // 1: NSKeyValueObservingOptionNew.
+            let _: () = msg_send![&*scroll, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
+        });
         PAGES.with(|pages| {
             pages.borrow_mut().insert(
                 tab.to_owned(),
@@ -233,6 +313,9 @@ pub fn open(
                     told_title: String::new(),
                     loading: true,
                     told_steps: None,
+                    scroll,
+                    told_y: 0.0,
+                    told_at: None,
                 },
             );
         });
@@ -261,9 +344,20 @@ pub fn hide(tab: &str, hidden: bool) {
     });
 }
 
+/// Stops watching a page's scroll view, before the page goes.
+fn unwatch(page: &Page) {
+    WATCH.with(|w| {
+        let key = NSString::from_str("contentOffset");
+        unsafe {
+            let _: () = msg_send![&*page.scroll, removeObserver: &**w, forKeyPath: &*key];
+        }
+    });
+}
+
 pub fn close(tab: &str) {
     PAGES.with(|pages| {
         if let Some(page) = pages.borrow_mut().remove(tab) {
+            unwatch(&page);
             unsafe {
                 let _: () = msg_send![&*page.view, removeFromSuperview];
             }

@@ -129,8 +129,21 @@ export function SessionScreen({
   onBack,
   onTitle,
   caption,
+  folded = false,
+  onUnfold,
+  loading = false,
   children,
 }: {
+  /** **The browser's row folds to a strip while the page is read**
+      (round UX-3 §3, built in UX-4 with the phone page's `page:scroll`):
+      ‹ and the tabs circle go, the pill becomes a thin strip with the
+      title — and a hairline while the page loads — and a tap on it, a
+      scroll up or the top of the page brings the row back. The terminal
+      never folds. */
+  folded?: boolean;
+  onUnfold?: () => void;
+  /** The page is loading: the folded strip's hairline. */
+  loading?: boolean;
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
@@ -218,7 +231,23 @@ export function SessionScreen({
           the row under it (the keys, the box, the address) rides the
           keyboard alone (`app.css`). */}
       <div data-session-bar className="flex flex-none flex-col pb-safe-bottom">
-        <div data-session-deck {...WINDOW_DRAG} className="flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
+        {folded && (
+          <button
+            type="button"
+            data-deck-strip
+            onClick={onUnfold}
+            className="relative flex h-deck-strip flex-none items-center justify-center overflow-hidden px-row text-caption text-muted-foreground"
+          >
+            <span className="min-w-0 truncate">{face?.label ?? ""}</span>
+            {loading && <span data-deck-strip-loading aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px animate-pulse bg-brand-strong" />}
+          </button>
+        )}
+        <div
+          data-session-deck
+          {...WINDOW_DRAG}
+          hidden={folded}
+          className="flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row"
+        >
           <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
           </GlassCircle>
