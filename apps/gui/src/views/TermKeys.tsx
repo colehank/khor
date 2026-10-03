@@ -43,6 +43,7 @@ import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { GROUPS, KEYS, KEY_BY_NAME, cursorKey, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
+import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { cn } from "@/lib/utils";
 
 const NO_MODS: Mods = { ctrl: false, alt: false };
@@ -492,23 +493,18 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
  * The soft keyboard's one switch: up when it is down, down when it is up
  * — in the bar's first row, at its right end, which is where R0 keeps the
  * open thing's verbs (`components/SessionBar`). Only under a finger: a
- * mouse has a real keyboard and nothing to raise. It reads 「up」 as the
- * field having the focus, which is what raises a phone's keyboard; up, it
+ * mouse has a real keyboard and nothing to raise. It raises and lowers
+ * the keyboard without moving the focus (`lib/soft-keyboard`); up, it
  * wears the app's 「on」 grey.
  */
 export function KeyboardSwitch({ field }: { field: RefObject<HTMLElement | null> }) {
   const [up, setUp] = useState(false);
+  // "Up" is the field's own mode, not the focus: the terminal holds the
+  // focus whether or not a keyboard is showing (`lib/soft-keyboard`).
   useEffect(() => {
-    const sync = () => setUp(field.current !== null && document.activeElement === field.current);
-    // `focusout` runs before the focus has gone anywhere; read after it.
-    const later = () => queueMicrotask(sync);
+    const sync = () => setUp(keyboardUp(field.current));
     sync();
-    document.addEventListener("focusin", sync);
-    document.addEventListener("focusout", later);
-    return () => {
-      document.removeEventListener("focusin", sync);
-      document.removeEventListener("focusout", later);
-    };
+    return onKeyboardChange(sync);
   }, [field]);
   return (
     <GlassCircle
@@ -520,8 +516,8 @@ export function KeyboardSwitch({ field }: { field: RefObject<HTMLElement | null>
       onClick={() => {
         const el = field.current;
         if (!el) return;
-        if (up) el.blur();
-        else el.focus({ preventScroll: true });
+        if (up) lowerKeyboard(el);
+        else raiseKeyboard(el);
       }}
       className={cn(up && "text-[var(--rail-on-ink)]")}
     >

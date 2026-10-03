@@ -76,6 +76,7 @@ import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { tapRaisesKeyboard } from "@/lib/term-tap";
+import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { typed, type Mods } from "@/lib/term-keys";
 
@@ -334,57 +335,61 @@ function keepCompositionInView(term: Terminal): () => void {
     not a key, so a latched Ctrl lets it through and keeps waiting. */
 const MOUSE_REPORT = /^\x1b\[(<|M)/;
 
-/** How long after a finger lands a focus still counts as that tap's —
-    WebKit synthesizes the mousedown xterm focuses on when the finger
-    lifts. */
-const TAP_MS = 1500;
+/** Travel past which a touch is a drag, not a tap. */
+const TAP_SLOP = 10;
 
 /**
- * **A tap raises the keyboard only if the person asked for that**
- * (2026-10-03, 外观 → 终端 「点击终端时弹出键盘」, `lib/term-tap`).
+ * **The terminal holds the focus; a tap raises the keyboard only if the
+ * person asked for that** (2026-10-03: 外观 → 终端 「点击终端时弹出键盘」,
+ * `lib/term-tap`; the focus model, `lib/soft-keyboard`).
  *
- * xterm focuses its textarea from its own mousedown handler, and WebKit
- * also focuses the textarea natively when a tap lands on it (it sits at
- * the cursor, invisible). Both are refused while the setting is off and
- * the textarea does not already have the focus: the first by this one
- * field's `focus` (a finger landed in the pane moments ago), the second
- * by cancelling the tap's end on the field itself. **Already focused is
- * left alone** — xterm's mousedown keeps the focus where it is, so a tap
- * with the keyboard up keeps it up. A pointer that is not a finger, and a
- * focus from anywhere else (the bar's keyboard switch, a key typed on a
- * Mac), go through as before.
+ * The field is focused whenever the page is open (`holdFocus`), with no
+ * keyboard under a finger. A tap — a touch that ends where it began — with
+ * the setting on raises the keyboard from inside the touch's end, which is
+ * a gesture iOS will show a keyboard for. With it off a tap neither raises
+ * nor drops anything: xterm's own mousedown focuses a field that is
+ * already focused. **If the focus leaves for nowhere** — the system put
+ * the keyboard away, or a tap blurred the field — it comes back without a
+ * keyboard, so a hardware keyboard keeps typing; a focus that went to
+ * another field (the find bar, a sheet) is left there.
  */
 function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
   const field = term.textarea;
   if (!field) return () => {};
-  let tapping = false;
-  let timer = 0;
-  const refuses = () => tapping && document.activeElement !== field && !tapRaisesKeyboard();
-  const landed = (e: PointerEvent) => {
-    if (e.pointerType !== "touch") return;
-    tapping = true;
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => (tapping = false), TAP_MS);
+  let startX = 0;
+  let startY = 0;
+  let still = false;
+  const began = (e: TouchEvent) => {
+    still = e.touches.length === 1;
+    startX = e.touches[0]?.clientX ?? 0;
+    startY = e.touches[0]?.clientY ?? 0;
   };
-  const elsewhere = (e: PointerEvent) => {
-    if (!(e.target instanceof Node) || !box.contains(e.target)) tapping = false;
+  const moved = (e: TouchEvent) => {
+    const t = e.touches[0];
+    if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
-  const lifted = (e: TouchEvent) => {
-    if (e.target === field && refuses()) e.preventDefault();
+  const lifted = () => {
+    if (still && tapRaisesKeyboard() && !keyboardUp(field)) raiseKeyboard(field);
+    still = false;
   };
-  const own = field.focus.bind(field);
-  field.focus = (options?: FocusOptions) => {
-    if (!refuses()) own(options);
+  const left = (e: FocusEvent) => {
+    // A mouse's page keeps its own focus rules (`useKeysTo`).
+    if (e.relatedTarget || !window.matchMedia("(pointer: coarse)").matches) return;
+    window.setTimeout(() => {
+      const at = document.activeElement;
+      if (!field.isConnected || (at && at !== document.body)) return;
+      lowerKeyboard(field);
+    }, 0);
   };
-  box.addEventListener("pointerdown", landed, true);
-  document.addEventListener("pointerdown", elsewhere, true);
-  box.addEventListener("touchend", lifted, { capture: true, passive: false });
+  box.addEventListener("touchstart", began, { passive: true });
+  box.addEventListener("touchmove", moved, { passive: true });
+  box.addEventListener("touchend", lifted);
+  field.addEventListener("focusout", left);
   return () => {
-    window.clearTimeout(timer);
-    box.removeEventListener("pointerdown", landed, true);
-    document.removeEventListener("pointerdown", elsewhere, true);
-    box.removeEventListener("touchend", lifted, true);
-    delete (field as { focus?: unknown }).focus;
+    box.removeEventListener("touchstart", began);
+    box.removeEventListener("touchmove", moved);
+    box.removeEventListener("touchend", lifted);
+    field.removeEventListener("focusout", left);
   };
 }
 
@@ -709,6 +714,13 @@ export function TerminalPane({ id }: { id: string }) {
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
+    // **The page opened, or this tab was chosen: the terminal has the
+    // keys** (2026-10-03, `lib/soft-keyboard`). Now, inside the press that
+    // opened it, so a keyboard that was up on this page stays up; under a
+    // finger without raising one otherwise.
+    const finger = window.matchMedia("(pointer: coarse)").matches;
+    if (term.textarea) holdFocus(term.textarea, finger);
+    const shown = terminalShown();
     // For the gates: the buffer is the screen, and reading it beats
     // scraping renderer DOM that webgl does not produce. Smoke reads
     // `document.querySelector('[data-terminal]').__xterm`.
@@ -799,6 +811,9 @@ export function TerminalPane({ id }: { id: string }) {
             fit.fit();
             termResize(id, term.cols, term.rows).catch(() => {});
             term.scrollToBottom();
+            // A reload keeps the terminal the focus, and the keyboard as
+            // it was.
+            if (term.textarea) holdFocus(term.textarea, finger);
           }
           void loop();
         })
@@ -910,6 +925,7 @@ export function TerminalPane({ id }: { id: string }) {
       late();
       composing();
       asks();
+      shown();
       window.clearTimeout(bellTimer.current);
       resizing?.dispose();
       reopenRef.current = null;
