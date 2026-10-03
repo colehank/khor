@@ -319,6 +319,10 @@ export function useShortcuts(acts: ShellActs) {
           acts.lock();
           return true;
         case "find":
+          // **⌘K in a terminal clears it** (T-17, iTerm2's and Terminal's
+          // ⌘K): left to the terminal (`TerminalPane`), not the app's
+          // find, while the terminal has the keys.
+          if (IS_MAC && document.activeElement?.classList.contains("xterm-helper-textarea")) return false;
           acts.find();
           return true;
         case "import":

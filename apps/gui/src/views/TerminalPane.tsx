@@ -130,6 +130,36 @@ function found() {
     ⌃F is a byte a shell wants (readline's forward-char) and stealing
     it would be the app taking a key the program had. */
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent);
+/**
+ * **A Mac's editing keys say what a Mac terminal says** (T-17, the
+ * terminal audit: ⌥←/→ went out as `ESC [ 1 ; 3 D`/`C`, which zsh does not
+ * bind; ⌘←/→ and ⌘⌫ sent nothing; ⌥⌫ a bare ESC). The bytes are iTerm2's
+ * "Natural Text Editing" key preset (iterm2.com, Profiles › Keys): word
+ * left and right are the meta forms `ESC b`/`ESC f` every readline and
+ * zsh binds, ⌥⌫ is ^W (delete the word before), ⌘← ⌘→ are ^A/^E (line
+ * start and end), ⌘⌫ is ^U (delete to line start).
+ * `null` for any other key.
+ */
+function macEditing(ev: KeyboardEvent): string | null {
+  if (!IS_MAC || ev.type !== "keydown" || ev.shiftKey || ev.ctrlKey) return null;
+  if (ev.altKey && !ev.metaKey) {
+    if (ev.key === "ArrowLeft") return "\x1bb";
+    if (ev.key === "ArrowRight") return "\x1bf";
+    if (ev.key === "Backspace") return "\x17";
+  }
+  if (ev.metaKey && !ev.altKey) {
+    if (ev.key === "ArrowLeft") return "\x01";
+    if (ev.key === "ArrowRight") return "\x05";
+    if (ev.key === "Backspace") return "\x15";
+  }
+  return null;
+}
+
+/** ⌘K, which clears a Mac terminal (iTerm2, Terminal: Clear Buffer). */
+function asksToClear(ev: KeyboardEvent): boolean {
+  return IS_MAC && ev.type === "keydown" && ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === "k";
+}
+
 function asksToFind(ev: KeyboardEvent): boolean {
   if (ev.key.toLowerCase() !== "f" || ev.altKey) return false;
   return IS_MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && ev.shiftKey;
@@ -754,6 +784,19 @@ export function TerminalPane({
       if (ev.type === "keydown" && asksToFind(ev)) {
         ev.preventDefault();
         setFinding(true);
+        return false;
+      }
+      const editing = macEditing(ev);
+      if (editing) {
+        ev.preventDefault();
+        term.input(editing, true);
+        return false;
+      }
+      if (asksToClear(ev)) {
+        ev.preventDefault();
+        // The scrollback and the screen, the prompt line kept: what
+        // iTerm2's Clear Buffer leaves. The program is not told.
+        term.clear();
         return false;
       }
       return true;
