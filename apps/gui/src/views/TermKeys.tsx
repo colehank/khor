@@ -225,6 +225,24 @@ function KeySheet({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
                   </span>
                 </button>
               ))}
+              {/* The machine's commands, searched (roadmap 2.6): the
+                  phone's ⌘⇧;. */}
+              <button
+                type="button"
+                data-term-key="history"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  const box = term.current?.element?.closest("[data-terminal]") as
+                    | (HTMLElement & { __history?: () => void })
+                    | null
+                    | undefined;
+                  setOpen(false);
+                  box?.__history?.();
+                }}
+                className={CAP_BOX}
+              >
+                <span className={capFace(false)}>{gui.command_history}</span>
+              </button>
             </div>
           </section>
           <button
