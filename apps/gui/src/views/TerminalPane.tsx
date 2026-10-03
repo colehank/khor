@@ -77,7 +77,8 @@ import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermHistory, termHistory } from "@/lib/term-history";
-import { tapRaisesKeyboard } from "@/lib/term-tap";
+import { inInput, trackMarks, type Marks } from "@/lib/term-marks";
+import { termWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { typed, type Mods } from "@/lib/term-keys";
@@ -375,25 +376,37 @@ function keepCompositionInView(term: Terminal): () => void {
     not a key, so a latched Ctrl lets it through and keeps waiting. */
 const MOUSE_REPORT = /^\x1b\[(<|M)/;
 
+/** The buffer cell under a point, clamped to the screen. */
+function cellAt(term: Terminal, x: number, y: number): { col: number; row: number } | null {
+  const screen = term.element?.querySelector(".xterm-screen");
+  if (!screen) return null;
+  const r = screen.getBoundingClientRect();
+  const col = Math.max(0, Math.min(term.cols - 1, Math.floor(((x - r.left) / r.width) * term.cols)));
+  const inView = Math.max(0, Math.min(term.rows - 1, Math.floor(((y - r.top) / r.height) * term.rows)));
+  return { col, row: term.buffer.active.viewportY + inView };
+}
+
 /** Travel past which a touch is a drag, not a tap. */
 const TAP_SLOP = 10;
 
 /**
- * **The terminal holds the focus; a tap raises the keyboard only if the
- * person asked for that** (2026-10-03: 外观 → 终端 「点击终端时弹出键盘」,
- * `lib/term-tap`; the focus model, `lib/soft-keyboard`).
+ * **The terminal holds the focus; a tap raises the keyboard only where
+ * the person asked for that** (2026-10-03; roadmap 2.2, `lib/term-tap`'s
+ * three modes; the focus model, `lib/soft-keyboard`).
  *
  * The field is focused whenever the page is open (`holdFocus`), with no
- * keyboard under a finger. A tap — a touch that ends where it began — with
- * the setting on raises the keyboard from inside the touch's end, which is
- * a gesture iOS will show a keyboard for. With it off a tap neither raises
- * nor drops anything: xterm's own mousedown focuses a field that is
- * already focused. **If the focus leaves for nowhere** — the system put
+ * keyboard under a finger. A tap — a touch that ends where it began — is
+ * judged at its end, which is a gesture iOS will show a keyboard for:
+ * `screen` raises it anywhere; `auto` raises it on the line being typed
+ * (`inInput`, from the shell's marks) and puts it away anywhere else;
+ * `button` leaves it to the bar's switch. xterm's own mousedown focuses a
+ * field that is already focused, and a program that took the mouse still
+ * gets the click as before. **If the focus leaves for nowhere** — the system put
  * the keyboard away, or a tap blurred the field — it comes back without a
  * keyboard, so a hardware keyboard keeps typing; a focus that went to
  * another field (the find bar, a sheet) is left there.
  */
-function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
+function tapsAskFirst(term: Terminal, box: HTMLElement, marks: Marks): () => void {
   const field = term.textarea;
   if (!field) return () => {};
   let startX = 0;
@@ -413,7 +426,13 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
   const lifted = () => {
     // A long press is a selection (`pressSelects`), not a tap.
     if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
-    if (still && tapRaisesKeyboard() && !keyboardUp(field)) raiseKeyboard(field);
+    if (still) {
+      const wake = termWake();
+      const at = cellAt(term, startX, startY);
+      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
+      if (here && !keyboardUp(field)) raiseKeyboard(field);
+      else if (!here && wake === "auto" && keyboardUp(field)) lowerKeyboard(field);
+    }
     still = false;
   };
   const left = (e: FocusEvent) => {
@@ -462,14 +481,6 @@ function pressSelects(term: Terminal, box: HTMLElement): () => void {
   let y0 = 0;
   let selecting = false;
   let anchor: { col: number; row: number } | null = null;
-  const cellAt = (x: number, y: number) => {
-    const screen = term.element?.querySelector(".xterm-screen");
-    if (!screen) return null;
-    const r = screen.getBoundingClientRect();
-    const col = Math.max(0, Math.min(term.cols - 1, Math.floor(((x - r.left) / r.width) * term.cols)));
-    const inView = Math.max(0, Math.min(term.rows - 1, Math.floor(((y - r.top) / r.height) * term.rows)));
-    return { col, row: term.buffer.active.viewportY + inView };
-  };
   const blank = (row: number, col: number) => {
     const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
     return ch === "" || ch === " ";
@@ -498,7 +509,7 @@ function pressSelects(term: Terminal, box: HTMLElement): () => void {
     x0 = e.touches[0].clientX;
     y0 = e.touches[0].clientY;
     timer = window.setTimeout(() => {
-      const at = cellAt(x0, y0);
+      const at = cellAt(term, x0, y0);
       if (!at) return;
       selecting = true;
       selectWord(at);
@@ -513,7 +524,7 @@ function pressSelects(term: Terminal, box: HTMLElement): () => void {
     }
     e.preventDefault();
     e.stopImmediatePropagation();
-    const at = cellAt(t.clientX, t.clientY);
+    const at = cellAt(term, t.clientX, t.clientY);
     if (at) extend(at);
   };
   const end = (e: TouchEvent) => {
@@ -1220,7 +1231,10 @@ export function TerminalPane({
     const shifted = keepShiftedCommits(term);
     const late = keepLateCommits(term);
     const composing = keepCompositionInView(term);
-    const asks = tapsAskFirst(term, box);
+    // The shell's marks on xterm's buffer (roadmap 2.2, 2.3), from the
+    // first byte replayed on.
+    const marks = trackMarks(term);
+    const asks = tapsAskFirst(term, box, marks);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -1545,6 +1559,7 @@ export function TerminalPane({
       late();
       composing();
       asks();
+      marks.dispose();
       shown();
       window.clearTimeout(bellTimer.current);
       resizing?.dispose();

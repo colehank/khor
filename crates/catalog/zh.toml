@@ -2342,10 +2342,13 @@ term-font-added = "添加的字体"
 term-font-add = "添加字体文件…"
 term-font-bad = "无法读取这个字体文件：{0}"
 term-font-too-big = "字体文件不能超过 {0} MB"
-# 外观 → 终端, only under a finger (2026-10-03, the owner): whether a tap
-# in the terminal raises the keyboard; off, only the bar's switch does.
-term-tap-keyboard = "点击终端时弹出键盘"
-term-tap-keyboard-note = "关闭时，键盘只由底栏的键盘按钮控制"
+# Appearance → Terminal, only under a finger (roadmap 2.2): when a tap
+# raises the keyboard. Replaces term-tap-keyboard.
+term-wake = "键盘唤醒"
+term-wake-note = "自动：点在正在输入的那一行时弹出键盘，点在别处时收起"
+term-wake-auto = "自动"
+term-wake-screen = "点击屏幕"
+term-wake-button = "点击按钮"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"

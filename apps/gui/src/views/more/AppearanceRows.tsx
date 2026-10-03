@@ -21,7 +21,7 @@ import { useCoarse } from "@/hooks/use-coarse";
 import { useNarrow } from "@/hooks/use-narrow";
 import { setTermCursor, useTermCursor, type CursorShape } from "@/lib/term-cursor";
 import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/term-history";
-import { setTapRaisesKeyboard, useTapRaisesKeyboard } from "@/lib/term-tap";
+import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
@@ -76,7 +76,7 @@ export function TerminalSection() {
   const t = useTypeSize();
   const f = useTermFont();
   const coarse = useCoarse();
-  const tapRaises = useTapRaisesKeyboard();
+  const wake = useTermWake();
   const cursor = useTermCursor();
   const history = useTermHistory();
   const [editingKeys, setEditingKeys] = useState(false);
@@ -233,12 +233,16 @@ export function TerminalSection() {
         onPick={(n) => setTermHistory(Number(n))}
       />
       {coarse && (
-        <SwitchRow
-          name="term-tap-keyboard"
-          label={gui.term_tap_keyboard}
-          hint={gui.term_tap_keyboard_note}
-          on={tapRaises}
-          onToggle={() => setTapRaisesKeyboard(!tapRaises)}
+        <PopupRow
+          name="term-wake"
+          label={gui.term_wake}
+          hint={wake === "auto" ? gui.term_wake_note : undefined}
+          value={wake}
+          choices={WAKES.map((w) => ({
+            value: w,
+            label: { auto: gui.term_wake_auto, screen: gui.term_wake_screen, button: gui.term_wake_button }[w],
+          }))}
+          onPick={(w) => setTermWake(w as Wake)}
         />
       )}
       {/* The key row above the keyboard, and its editor — the one the
