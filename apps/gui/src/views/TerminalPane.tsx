@@ -97,6 +97,9 @@ const LIVE_MS = 50;
 /** A beat this long after the last one is a catch-up: what it carries
     was asked while nobody was looking, and is replayed (`replay`). */
 const CATCH_UP_MS = 2_000;
+/** The most characters one `term_key` carries: 64 KiB once UTF-8 encoded
+    (T-16). */
+const CHUNK_CHARS = 16 * 1024;
 
 /** The scrollback xterm keeps, matched to the parser's own
     (`khor_gui_core::term::SCROLLBACK`) so the two authorities never
@@ -910,6 +913,11 @@ export function TerminalPane({
     // answered while a send is in flight is coalesced into the next one,
     // so a burst costs one round trip, not one per key. Tauri's own IPC
     // was already ordered; a browser's fetches are not.
+    //
+    // **And no frame over 64 KiB** (T-16): the host takes at most 1 MiB a
+    // frame, and a paste bigger than that used to go as one. A chunk is
+    // 16 Ki characters — 64 KiB at most once UTF-8 encoded — and the
+    // chunks keep their order like everything else here.
     let outbox = "";
     let sending = false;
     const send = (bytes: string) => {
@@ -918,8 +926,11 @@ export function TerminalPane({
       sending = true;
       void (async () => {
         while (outbox && !stopped) {
-          const next = outbox;
-          outbox = "";
+          // Never split a surrogate pair across two frames.
+          let cut = Math.min(outbox.length, CHUNK_CHARS);
+          if (cut < outbox.length && /[\ud800-\udbff]/.test(outbox[cut - 1])) cut -= 1;
+          const next = outbox.slice(0, cut);
+          outbox = outbox.slice(cut);
           await termKey(id, next).catch(() => {});
         }
         sending = false;
