@@ -349,7 +349,7 @@ export function useShortcuts(acts: ShellActs) {
           // Not under a finger: there the circle is the way.
           if (window.matchMedia("(pointer: coarse)").matches) return false;
           const box = document.querySelector<HTMLElement & { __reopen?: () => Promise<void> }>(
-            "[data-detail-pane] [data-terminal]",
+            "[data-detail-pane] [data-kept-terminal][data-active] [data-terminal]",
           );
           if (!box?.__reopen) return false;
           void box.__reopen();

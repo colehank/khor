@@ -568,8 +568,13 @@ export async function reopenTerminal(id: string): Promise<boolean> {
 export function TerminalPane({
   id,
   machine,
+  active = true,
 }: {
   id: string;
+  /** Whether this is the tab on screen. A kept tab that is not
+      (`DetailPane`, T-11) stays attached at the hidden pace and draws
+      nothing in the bar. */
+  active?: boolean;
   /** The far machine this terminal lives on, by the name people read —
       `null` for one hosted here. What a wait and a reconnect name. */
   machine?: string | null;
@@ -617,7 +622,7 @@ export function TerminalPane({
   // the hand-rolled composition guards this file used to carry
   // (keyCode 229, compositionend, the parked caret) live there.
   const keysRef = useRef<HTMLTextAreaElement | null>(null);
-  useKeysTo(keysRef, true);
+  useKeysTo(keysRef, active);
   // Whether the reader is up in history, and whether output arrived
   // while they were — the two sentences the way-back-down control
   // carries. Survived the pivot on purpose: xterm holds the reader's
@@ -1076,11 +1081,19 @@ export function TerminalPane({
   // screen ten seconds stale on return is the wrong thing to come back
   // to), a longer one waits out the beat already in flight.
   useEffect(() => {
-    const next = hidden ? HIDDEN_MS : LIVE_MS;
+    const next = hidden || !active ? HIDDEN_MS : LIVE_MS;
     const shorter = next < pace.current;
     pace.current = next;
     if (shorter) pollNow.current();
-  }, [hidden]);
+  }, [hidden, active]);
+  // **Chosen again: the terminal has the keys, the screen is current**
+  // (`lib/soft-keyboard`, item 11) — without leaving or re-attaching.
+  useEffect(() => {
+    if (!active) return;
+    const field = termRef.current?.textarea;
+    if (field) holdFocus(field, window.matchMedia("(pointer: coarse)").matches);
+    pollNow.current();
+  }, [active]);
 
   // The theme can flip while a terminal is up, and xterm holds colours,
   // not tokens — so the tokens are re-resolved when the OS scheme or
@@ -1365,6 +1378,7 @@ export function TerminalPane({
         session again from scratch (`reopen`). On the wide face it stands
         at the end of the tab strip, among the page's verbs. While it
         joins the glyph turns and nothing else changes; it stays pressable. */}
+    {active && (
     <BarSeat at="lead">
       <GlassCircle
         data-term-reload
@@ -1376,7 +1390,8 @@ export function TerminalPane({
         <IconReload className={cn(joining && "animate-spin motion-reduce:animate-none")} />
       </GlassCircle>
     </BarSeat>
-    {coarse && (
+    )}
+    {coarse && active && (
       <>
         <BarSeat at="trail">
           <KeyboardSwitch field={keysRef} />
