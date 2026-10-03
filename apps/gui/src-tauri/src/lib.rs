@@ -164,6 +164,13 @@ async fn touched(machine: Option<String>, path: String) -> Result<i64, String> {
     .await
 }
 
+/// What an open file is now, without its bytes
+/// (`khor_gui_core::files::stat_text`).
+#[tauri::command]
+async fn stat_text(machine: String, path: String) -> Result<khor_gui_core::files::FileStat, String> {
+    khor_gui_core::files::stat_text(&Node::root_from_env(), &machine, &path).await
+}
+
 /// One file off a machine, for reading (`khor_gui_core::files::read_text`).
 #[tauri::command]
 async fn read_text(
@@ -3475,6 +3482,7 @@ pub fn run() {
             trash_here,
             pdf_here,
             read_text,
+            stat_text,
             git_status,
             checkout,
             git_diff,

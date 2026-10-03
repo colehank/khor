@@ -128,6 +128,36 @@ pub fn read_slice(path: &str, offset: u64) -> Result<(u64, u64, Vec<u8>), String
     Ok((total, at_ms, buf))
 }
 
+/// **What a file is now, without its bytes** (round NET-4): its size,
+/// its mtime, and — when it fits one slice, which is when a view holds
+/// it whole and can save it — the [`digest`] of its bytes. What a face
+/// asks on coming back to a window with a file open, instead of the file
+/// itself: the same answer as last time means the screen is current.
+/// The same refusals as [`read_slice`].
+pub fn stat(path: &str) -> Result<(u64, u64, String), String> {
+    if !std::path::Path::new(path).is_absolute() {
+        return Err(msg::path_not_absolute(path));
+    }
+    let meta = std::fs::metadata(path).map_err(|e| msg::cant_list_dir(path, e))?;
+    if meta.is_dir() {
+        return Err(msg::not_a_file_path(path));
+    }
+    let total = meta.len();
+    let at_ms = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let digest = if total <= crate::proto::SLICE {
+        let (_, _, bytes) = read_slice(path, 0)?;
+        digest(&bytes)
+    } else {
+        String::new()
+    };
+    Ok((total, at_ms, digest))
+}
+
 /// What a file's bytes hash to, hex. **blake3 and not the mtime**, for
 /// [`write_whole`]'s benefit: a clock has a granularity (a second, on
 /// some filesystems still in use) and two edits inside one tick are

@@ -1448,6 +1448,14 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::StatOn { machine, path } => match self.stat_with(ep, &machine, &path).await {
+                Ok((total, at_ms, digest)) => ipc::Reply::Stat {
+                    total,
+                    at_ms,
+                    digest,
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::ReadHead { machine, path } => {
                 match self.read_head_with(ep, &machine, &path).await {
                     Ok((total, at_ms, bytes)) => ipc::Reply::Head {
@@ -2474,6 +2482,19 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string())?;
                 Ok(Response::Load { load })
+            }
+            Request::Stat { path } => {
+                // One `stat` and at most one slice off the disk, off the
+                // reactor for the `Ls` arm's reason.
+                let (total, at_ms, digest) =
+                    tokio::task::spawn_blocking(move || crate::files::stat(&path))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::Stat {
+                    total,
+                    at_ms,
+                    digest,
+                })
             }
             Request::LoadSince { top, by, desc, day } => {
                 let root = self.root().to_path_buf();
@@ -4474,6 +4495,85 @@ impl Node {
     /// A satellite's file does not come through this road — the sponsor
     /// serves those off a staging copy with `SatFetchPath`, which is
     /// the account already in docs/handoff/001.md.
+    /// What a file on any machine is now, without its bytes
+    /// (`crate::files::stat`): `(size, mtime, digest)`, the digest empty
+    /// for a file bigger than one slice.
+    pub async fn stat_of(&self, machine: &str, path: &str) -> Result<(u64, u64, String), String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::files::stat(path);
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::StatOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Stat {
+                    total,
+                    at_ms,
+                    digest,
+                } => Ok((total, at_ms, digest)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.stat_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn stat_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(u64, u64, String), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::files::stat(path);
+        }
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        // A satellite's file is read off its sponsor's staged copy; there
+        // is no cheaper question to ask over ssh, so the first slice is
+        // the answer, and the digest is taken here.
+        if target.sponsor.is_some() {
+            let (total, at_ms, bytes) = self.read_at_with(ep, machine, path, 0).await?;
+            let digest = if bytes.len() as u64 == total {
+                crate::files::digest(&bytes)
+            } else {
+                String::new()
+            };
+            return Ok((total, at_ms, digest));
+        }
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Stat {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
+        {
+            Response::Stat {
+                total,
+                at_ms,
+                digest,
+            } => Ok((total, at_ms, digest)),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
     pub async fn read_head(
         &self,
         machine: &str,

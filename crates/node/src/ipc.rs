@@ -278,6 +278,9 @@ pub enum Op {
     /// `crates/cli/tests/redial.rs` measures a redial with (round NET-3).
     /// Tail-appended.
     LetGo { machine: String },
+    /// [`crate::proto::Request::Stat`] through the resident: what a file
+    /// on that machine is now, without its bytes. Tail-appended.
+    StatOn { machine: String, path: String },
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -336,6 +339,7 @@ impl Op {
             Op::Wires => ("Wires", DEADLINE_LOCAL),
             Op::Connections => ("Connections", DEADLINE_LOCAL),
             Op::LetGo { .. } => ("LetGo", DEADLINE_LOCAL),
+            Op::StatOn { .. } => ("StatOn", DEADLINE_FAR),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -452,6 +456,13 @@ pub enum Reply {
         total: u64,
         at_ms: u64,
         bytes: serde_bytes::ByteBuf,
+    },
+    /// Tail-appended with [`Op::StatOn`]: size, mtime, and the digest of
+    /// a file that fits one slice.
+    Stat {
+        total: u64,
+        at_ms: u64,
+        digest: String,
     },
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.

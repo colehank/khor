@@ -168,6 +168,11 @@ pub fn answer(
         ))?),
         // One slice of a file, for reading. `pull` is the other verb
         // and it spends a disk; this one spends a screen.
+        "stat_text" => to_json(&rt.block_on(crate::files::stat_text(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+        ))?),
         "read_text" => to_json(&rt.block_on(crate::files::read_text(
             root,
             &arg("machine")?,

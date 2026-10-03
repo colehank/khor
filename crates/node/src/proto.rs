@@ -599,6 +599,12 @@ pub enum Request {
         desc: bool,
         day: u64,
     },
+    /// What a file is now, without its bytes (`crate::files::stat`):
+    /// asked by a face coming back to a window with the file open, which
+    /// re-reads it only when the answer differs from what it holds
+    /// (round NET-4). Answered as [`Response::Stat`]; a khor that
+    /// predates it refuses, and the face reads the file as before.
+    Stat { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -888,6 +894,13 @@ pub enum Response {
         day: u64,
         cpu_day: Option<khor_core::CpuDay>,
     },
+    /// [`Request::Stat`]'s answer: size, mtime, and the digest of the
+    /// bytes when the file fits one slice (empty otherwise).
+    Stat {
+        total: u64,
+        at_ms: u64,
+        digest: String,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -979,6 +992,7 @@ impl Request {
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
                 | Request::LoadSince { .. }
+                | Request::Stat { .. }
         )
     }
 
@@ -1019,6 +1033,7 @@ impl Request {
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
                 | Request::LoadSince { .. }
+                | Request::Stat { .. }
         )
     }
 
@@ -1358,6 +1373,12 @@ mod tests {
                     day: 0,
                 },
                 &b"LoadSince"[..],
+            ),
+            (
+                Request::Stat {
+                    path: String::new(),
+                },
+                &b"Stat"[..],
             ),
         ] {
             let bytes = encode(&op).unwrap();

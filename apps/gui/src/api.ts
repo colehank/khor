@@ -16,6 +16,7 @@ import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
 import type { FileText } from "./gen/bindings/FileText";
+import type { FileStat } from "./gen/bindings/FileStat";
 import type { GitStatus } from "./gen/bindings/GitStatus";
 import type { Editor } from "./gen/bindings/Editor";
 import type { GitRow } from "./gen/bindings/GitRow";
@@ -79,6 +80,7 @@ export type {
   TabsOpen,
   WorkspaceRow,
   FileText,
+  FileStat,
   GitStatus,
   GitRow,
   GitDiff,
@@ -384,6 +386,11 @@ export const fetchTouched = (machine: string, path: string) =>
     other verb and it spends a disk. */
 export const fetchFileText = (machine: string, path: string) =>
   call<FileText>("read_text", { machine, path });
+/** What an open file is now, without its bytes: size, mtime, and the
+    digest of a file that fits one slice (`khor_gui_core::files::
+    stat_text`). Asked instead of the file on coming back to a window. */
+export const fetchFileStat = (machine: string, path: string) =>
+  call<FileStat>("stat_text", { machine, path });
 /** One checkout's branch and marks (`khor_gui_core::git::status`).
     `dir` is the workspace root in that machine's own spelling.
 

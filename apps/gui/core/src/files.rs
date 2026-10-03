@@ -243,6 +243,30 @@ pub struct FileText {
 /// decodes without complaint — and files full of them are exactly what
 /// most binaries are. The sniff above is the second half of the answer,
 /// and without it the first half passes an executable to a code view.
+/// What an open file is now, without its bytes (`Node::stat_of`): what
+/// a face asks on coming back to the window, re-reading the file only
+/// when this differs from the [`FileText`] it holds (round NET-4).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct FileStat {
+    #[ts(type = "number")]
+    pub total: u64,
+    #[ts(type = "number")]
+    pub at_ms: u64,
+    /// [`FileText::digest`]'s, for a file that fits one slice; empty
+    /// for one that does not.
+    pub digest: String,
+}
+
+pub async fn stat_text(root: &Path, machine: &str, path: &str) -> Result<FileStat, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let (total, at_ms, digest) = n.stat_of(machine, path).await?;
+    Ok(FileStat {
+        total,
+        at_ms,
+        digest,
+    })
+}
+
 pub async fn read_text(root: &Path, machine: &str, path: &str) -> Result<FileText, String> {
     let n = Node::open(root.to_path_buf())?;
     let (total, at_ms, bytes) = n.read_head(machine, path).await?;
