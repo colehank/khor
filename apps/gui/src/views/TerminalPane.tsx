@@ -245,6 +245,90 @@ function keepShiftedCommits(term: Terminal): () => void {
   };
 }
 
+/**
+ * **What an iOS keyboard commits outside a composition reaches the pty**
+ * (2026-10-03, the owner with 拼音: 「。」 and 「，」 vanished, space did
+ * nothing; English letters and pinyin words arrived).
+ *
+ * Traced in the simulator with the 简体拼音 keyboard: every key of an
+ * input method's keyboard comes as `keydown` with keyCode 229, and a
+ * character it commits without composing — space, 「。」, 「，」 — lands
+ * as `insertText` **in a later task**:
+ *
+ *     keydown " " (229) · …next task… · beforeinput/input insertText " " · keyup
+ *
+ * xterm 6 drops it on both of its roads. Its 229 road diffs the textarea
+ * one `setTimeout(0)` after the keydown, finds nothing yet, and sends
+ * nothing; its `input` road takes an `insertText` only when no keydown is
+ * outstanding, and the keyup comes after. A pinyin word is fine: it
+ * arrives through `compositionend`, which xterm reads. A desktop input
+ * method lands the text before the diff runs, so this never showed off a
+ * phone.
+ *
+ * So this takes exactly that case: a 229 keydown outside a composition
+ * whose diff found the field unchanged (this timer is queued after
+ * xterm's own, so it runs after it), followed by an `insertText` before
+ * the keyup. Every other commit xterm already sends, and sending it here
+ * too would double it. Answers the undo.
+ */
+function keepLateCommits(term: Terminal): () => void {
+  const field = term.textarea;
+  if (!field) return () => {};
+  let missed = false;
+  let lifted = false;
+  let timer = 0;
+  const down = (e: KeyboardEvent) => {
+    missed = false;
+    lifted = false;
+    window.clearTimeout(timer);
+    if (e.keyCode !== 229 || e.isComposing) return;
+    const before = field.value;
+    timer = window.setTimeout(() => {
+      missed = field.value === before;
+    }, 0);
+  };
+  const up = () => {
+    lifted = true;
+  };
+  const input = (e: Event) => {
+    const ev = e as InputEvent;
+    if (!missed || lifted || ev.inputType !== "insertText" || !ev.data || ev.isComposing) return;
+    missed = false;
+    term.input(ev.data, true);
+  };
+  field.addEventListener("keydown", down, true);
+  field.addEventListener("keyup", up, true);
+  field.addEventListener("input", input, true);
+  return () => {
+    window.clearTimeout(timer);
+    field.removeEventListener("keydown", down, true);
+    field.removeEventListener("keyup", up, true);
+    field.removeEventListener("input", input, true);
+  };
+}
+
+/**
+ * **What is being composed stays on the screen** (2026-10-03). xterm draws
+ * the pinyin being typed at the cursor (`.composition-view`, one line, no
+ * wrap); near the right edge it ran past it, under the pane's clip, and
+ * the letters being chosen from could not be read. It is moved left just
+ * enough to end at the screen's edge — never past its left.
+ */
+function keepCompositionInView(term: Terminal): () => void {
+  const view = term.element?.querySelector<HTMLElement>(".composition-view");
+  const screen = term.element?.querySelector<HTMLElement>(".xterm-screen");
+  if (!view || !screen) return () => {};
+  const clamp = () => {
+    if (!view.classList.contains("active")) return;
+    const room = screen.clientWidth - view.offsetWidth;
+    const left = Number.parseFloat(view.style.left) || 0;
+    if (left > room) view.style.left = `${Math.max(0, room)}px`;
+  };
+  const watch = new MutationObserver(clamp);
+  watch.observe(view, { attributes: true, attributeFilter: ["style", "class"], childList: true, characterData: true, subtree: true });
+  return () => watch.disconnect();
+}
+
 /** A report xterm writes for the mouse (SGR `ESC [ <`, X10 `ESC [ M`) —
     not a key, so a latched Ctrl lets it through and keeps waiting. */
 const MOUSE_REPORT = /^\x1b\[(<|M)/;
@@ -598,6 +682,8 @@ export function TerminalPane({ id }: { id: string }) {
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
     const shifted = keepShiftedCommits(term);
+    const late = keepLateCommits(term);
+    const composing = keepCompositionInView(term);
     const asks = tapsAskFirst(term, box);
     fit.fit();
     termRef.current = term;
@@ -760,6 +846,8 @@ export function TerminalPane({ id }: { id: string }) {
       rung.dispose();
       selected.dispose();
       shifted();
+      late();
+      composing();
       asks();
       window.clearTimeout(bellTimer.current);
       term.dispose();

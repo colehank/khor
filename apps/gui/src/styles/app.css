@@ -2028,6 +2028,26 @@ aside[data-side] {
   [data-terminal] .xterm-viewport::-webkit-scrollbar {
     display: none;
   }
+  /* **The keys' field stays in the corner** (2026-10-03, the owner:
+     「输入到屏幕边的时候整个页面会拉长」). xterm moves its hidden textarea
+     to the cursor and widens it to what is being composed; at the right
+     edge it reached past the pane, and WebKit scrolled the pane sideways
+     to show the caret — measured 32 px, the prompt cut at its left. A
+     phone's candidates live in the keyboard's own bar and need no caret
+     position, so under a finger the field is a 1 px box at the screen's
+     top-left; xterm's inline styles yield to these. */
+  [data-terminal] .xterm-helper-textarea {
+    left: 0 !important;
+    top: 0 !important;
+    width: var(--hair) !important;
+    height: var(--hair) !important;
+  }
+}
+/* …and the pane itself cannot be scrolled by anything: `hidden` still
+   lets a caret or `scrollIntoView` move it, `clip` does not (engines
+   without `clip` keep `hidden`). */
+[data-terminal] {
+  overflow: clip;
 }
 
 /* What a list's search matched, in its rows (F3.4; `SideList`). */
