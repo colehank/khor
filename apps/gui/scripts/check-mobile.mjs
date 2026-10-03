@@ -232,6 +232,43 @@ const WAITS = [
   }
 }
 
+// ── 6) a command reads its arguments by the names the face sends ────
+// **Tauri reads a command's arguments as camelCase unless told
+// otherwise** (tauri-macros: `ArgumentCase::Camel` by default). The face
+// and the bridge speak snake_case for `only_mine` and `base_url`, so in
+// the app `set_relays` refused for a missing argument and the account
+// commands dropped `base_url` without a word (round NET-5). A census, both
+// ways: a command with a multi-word argument is either declared
+// `rename_all = "snake_case"`, or every call the face makes to it with a
+// literal object uses camelCase keys.
+{
+  const api = readFileSync(join(gui, "src", "api.ts"), "utf8");
+  const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(?:async\s+)?fn\s+([a-z_0-9]+)\s*\(([^)]*)\)/g;
+  for (const m of lib.matchAll(decl)) {
+    const [, attr = "", name, args] = m;
+    const multi = args
+      .split(",")
+      .map((a) => a.split(":")[0].trim())
+      .filter((a) => a.includes("_") && !a.startsWith("_"));
+    if (multi.length === 0) continue;
+    const snake = /rename_all\s*=\s*"snake_case"/.test(attr);
+    const literal = new RegExp(`call<[^>]*>\\("${name}",\\s*\\{([^}]*)\\}`).exec(api)?.[1] ?? "";
+    for (const arg of multi) {
+      const camel = arg.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      const keyed = (k) => new RegExp(`(^|[\\s,{])${k}\\s*[:,}]`).test(literal);
+      if (!snake && keyed(arg)) {
+        fail(
+          `\`${name}\` takes \`${arg}\` and the face sends it as \`${arg}\`, but tauri reads \`${camel}\`: ` +
+            'declare it `#[tauri::command(rename_all = "snake_case")]` (the bridge reads snake_case too)',
+        );
+      }
+      if (snake && keyed(camel)) {
+        fail(`\`${name}\` is declared snake_case and the face sends \`${camel}\`: send \`${arg}\``);
+      }
+    }
+  }
+}
+
 // ── 1) the type-check — skipped only when a probe says it cannot run ─
 if (!dead) {
   const check = spawnSync("cargo", ["check", "--target", TARGET, "-p", "khor-gui"], {
@@ -251,5 +288,6 @@ if (!dead) {
 if (bad) process.exit(1);
 console.log(
   `mobile: khor-gui type-checks for ${TARGET}, run is the mobile entry point, the camera's and the local network's sentences are the catalog's, ` +
-    "every sync command is a quick one (nothing that waits runs on the main thread), and the iOS windows wear the app's theme",
+    "every sync command is a quick one (nothing that waits runs on the main thread), the iOS windows wear the app's theme, " +
+    "and every command reads its arguments by the names the face sends",
 );
