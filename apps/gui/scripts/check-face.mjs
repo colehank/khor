@@ -27765,10 +27765,6 @@ try {
         ["esc", "\x1b"],
         ["tab", "\t"],
         ["backtab", "\x1b[Z"],
-        ["left", "\x1b[D"],
-        ["up", "\x1b[A"],
-        ["down", "\x1b[B"],
-        ["right", "\x1b[C"],
         ["/", "/"],
         ["-", "-"],
         ["|", "|"],
@@ -27788,12 +27784,44 @@ try {
       if (latched !== "true" || ctrlC !== "\x03" || after !== "false") {
         fail(`bar f · Ctrl then c sent ${shown(ctrlC)} (want "\\u0003"), the latch said ${latched} → ${after} (want true → false)`);
       }
+      // The cursor key (2026-10-03): one key dragged like a trackpad, one
+      // arrow per cell of travel along the axis the drag locked to, and
+      // nothing for a tap.
+      const cursor = async (cellsX, cellsY) => {
+        const k = page.locator('[data-session-bar] [data-term-key="cursor"]');
+        if ((await k.count()) === 0) return fail("bar f · there is no cursor key in the session bar");
+        const at = await k.boundingBox();
+        const cell = await page.evaluate(() => {
+          const t = document.querySelector("[data-terminal]").__xterm;
+          const r = t.element.querySelector(".xterm-screen").getBoundingClientRect();
+          return { w: r.width / t.cols, h: r.height / t.rows };
+        });
+        const x = at.x + at.width / 2;
+        const y = at.y + at.height / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(x + (cellsX * cell.w * i) / 10, y + (cellsY * cell.h * i) / 10);
+        await page.mouse.up();
+      };
+      for (const [what, cx, cy, want] of [
+        ["a tap", 0, 0, ""],
+        ["3.4 cells left", -3.4, 0.4, "\x1b[D\x1b[D\x1b[D"],
+        ["2.5 cells right", 2.5, -0.3, "\x1b[C\x1b[C"],
+        ["2.2 rows up", 0.5, -2.2, "\x1b[A\x1b[A"],
+        ["1.5 rows down", 0, 1.5, "\x1b[B"],
+      ]) {
+        const got = await sends(() => cursor(cx, cy));
+        if (got !== want) fail(`bar f · the cursor key dragged ${what} sent ${shown(got)}, want ${shown(want)}`);
+      }
       await key("ctrl");
-      const ctrlUp = await sends(() => key("up"));
-      if (ctrlUp !== "\x1b[1;5A") fail(`bar f · Ctrl then ↑ sent ${shown(ctrlUp)}, want "\\u001b[1;5A"`);
+      const ctrlLeft = await sends(() => cursor(-2.3, 0));
+      const ctrlAfter = await page.locator('[data-term-key="ctrl"]').first().getAttribute("aria-pressed");
+      if (ctrlLeft !== "\x1b[1;5D\x1b[1;5D" || ctrlAfter !== "false") {
+        fail(`bar f · Ctrl then the cursor key 2 cells left sent ${shown(ctrlLeft)} (want two ⌃←), the latch said ${ctrlAfter} (want false)`);
+      }
       // Application cursor keys (DECCKM), as an editor sets them.
       await program("\x1b[?1h");
-      const appUp = await sends(() => key("up"));
+      const appUp = await sends(() => cursor(0, -1.3));
       if (appUp !== "\x1bOA") fail(`bar f · ↑ under application cursor keys sent ${shown(appUp)}, want "\\u001bOA"`);
       await program("\x1b[?1l");
       // Paste: the clipboard, typed — and bracketed once the program asked.

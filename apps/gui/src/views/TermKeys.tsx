@@ -14,7 +14,8 @@
 // `onData` → `term_key` like every other keystroke and scrolls the screen
 // back to the cursor the way typing does. The arrows ask xterm which
 // cursor-key mode the program set (DECCKM: `ESC O A` in an editor's
-// application mode, `ESC [ A` otherwise). Paste reads the clipboard and
+// application mode, `ESC [ A` otherwise); they are one key, the cursor
+// key, dragged like a trackpad (`CursorKey`). Paste reads the clipboard and
 // hands the text to xterm's own paste (`Terminal.paste`), which brackets
 // it when the program asked for that (DECSET 2004) — the same path ⌘V
 // takes on a Mac.
@@ -30,10 +31,10 @@
 // out of the terminal, or the keyboard would drop on every press — so a
 // press is answered on `mousedown` with `preventDefault` (WebKit's tap
 // focuses on its synthesized mousedown) and acted on at the click.
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
-import { IconKeyboard } from "@/components/icons";
+import { IconArrow, IconKeyboard, IconMove } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -71,7 +72,8 @@ type Key = {
 
 /** The row, in the order a hand reaches: the escape and the modifier
     first, then what moves through a form, then the characters a shell
-    lives on, then the arrows together at the end. */
+    lives on. The arrows are not caps of the row: they are the cursor
+    key, pinned after it (`CursorKey`). */
 const KEYS: Key[] = [
   { name: "esc", cap: gui.key_esc, label: gui.key_esc_name, send: () => "\x1b" },
   { name: "ctrl", cap: gui.key_ctrl, label: gui.key_ctrl_name },
@@ -83,11 +85,17 @@ const KEYS: Key[] = [
     cap: ch,
     send: (_: Terminal, ctrl: boolean) => (ctrl ? (ctrlOf(ch) ?? ch) : ch),
   })),
-  { name: "left", cap: "←", label: gui.key_left, send: (t, c) => arrow(t, "D", c) },
-  { name: "up", cap: "↑", label: gui.key_up, send: (t, c) => arrow(t, "A", c) },
-  { name: "down", cap: "↓", label: gui.key_down, send: (t, c) => arrow(t, "B", c) },
-  { name: "right", cap: "→", label: gui.key_right, send: (t, c) => arrow(t, "C", c) },
 ];
+
+/** A cap's two looks: its box is the finger's floor, the cap drawn inside
+    it (`p-xxs` round a `radius-xs` cap, the key cap's corner); held, it
+    wears the app's 「on」 grey. */
+const CAP_BOX = "flex h-key-cap min-w-key-cap-w flex-none items-stretch outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-ring";
+const capFace = (held: boolean) =>
+  cn(
+    "flex flex-1 items-center justify-center rounded-lg px-2.5 text-callout font-label",
+    held ? "bg-fill-strong text-[var(--rail-on-ink)]" : "bg-fill text-foreground",
+  );
 
 export function TermKeys({
   term,
@@ -132,38 +140,151 @@ export function TermKeys({
       role="toolbar"
       aria-label={gui.term_keys}
       // The canvas's key row (the redesign, 2026-10-02): rounded caps on a
-      // `fill`, a row's inset at each end.
-      className="flex h-key-row flex-none items-center gap-1.5 overflow-x-auto px-row"
+      // `fill`, a row's inset at each end. The caps scroll sideways; the
+      // cursor key stays at the right end, outside them (the owner:
+      // 「移动光标只占一个键盘上方的按钮，常驻」).
+      className="flex h-key-row flex-none items-center gap-1.5 pr-row"
     >
-      {KEYS.map((k) => {
-        const held = k.name === "ctrl" && ctrl;
-        return (
-          <button
-            key={k.name}
-            type="button"
-            data-term-key={k.name}
-            data-on={k.name === "ctrl" ? held : undefined}
-            aria-pressed={k.name === "ctrl" ? held : undefined}
-            aria-label={k.label}
-            // The caret stays in the terminal (the file head).
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => press(k)}
-            // The box is the finger's floor, the cap is drawn inside it:
-            // `p-xxs` round a `radius-xs` cap, the key cap's corner.
-            className="flex h-key-cap min-w-key-cap-w flex-none items-stretch outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-ring"
-          >
-            <span
-              className={cn(
-                "flex flex-1 items-center justify-center rounded-lg px-2.5 text-callout font-label",
-                held ? "bg-fill-strong text-[var(--rail-on-ink)]" : "bg-fill text-foreground",
-              )}
+      <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto pl-row">
+        {KEYS.map((k) => {
+          const held = k.name === "ctrl" && ctrl;
+          return (
+            <button
+              key={k.name}
+              type="button"
+              data-term-key={k.name}
+              data-on={k.name === "ctrl" ? held : undefined}
+              aria-pressed={k.name === "ctrl" ? held : undefined}
+              aria-label={k.label}
+              // The caret stays in the terminal (the file head).
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => press(k)}
+              className={CAP_BOX}
             >
-              {k.cap}
-            </span>
-          </button>
-        );
-      })}
+              <span className={capFace(held)}>{k.cap}</span>
+            </button>
+          );
+        })}
+      </div>
+      <CursorKey term={term} ctrl={ctrl} onCtrl={onCtrl} />
     </div>
+  );
+}
+
+type Way = "left" | "right" | "up" | "down";
+const LETTER: Record<Way, "A" | "B" | "C" | "D"> = { up: "A", down: "B", right: "C", left: "D" };
+
+/** One drag on the cursor key, from the finger's landing. */
+type Gesture = {
+  pointer: number;
+  x: number;
+  y: number;
+  /** A cell, in px, read when the finger landed. */
+  cw: number;
+  ch: number;
+  /** The axis the first whole cell of travel chose; the other is ignored
+      until the finger lifts. */
+  axis: "x" | "y" | null;
+  /** Cells sent so far along the axis, signed — the finger coming back
+      takes them back. */
+  sent: number;
+  /** Ctrl as it was when the finger landed: the whole drag is ⌃-arrows. */
+  ctrl: boolean;
+};
+
+/** xterm's cell, as drawn: the screen over its columns and rows. */
+function cellOf(t: Terminal): { cw: number; ch: number } | null {
+  const screen = t.element?.querySelector(".xterm-screen");
+  if (!screen || t.cols === 0 || t.rows === 0) return null;
+  const r = screen.getBoundingClientRect();
+  const cw = r.width / t.cols;
+  const ch = r.height / t.rows;
+  return cw > 0 && ch > 0 ? { cw, ch } : null;
+}
+
+/**
+ * **The cursor key: a trackpad, not four arrows** (2026-10-03, the
+ * owner). A finger lands on it and the whole screen is its pad until the
+ * finger lifts (pointer capture). The cursor follows the finger one cell
+ * per cell: each time the travel crosses another cell width, one ← or →;
+ * another cell height, one ↑ or ↓ — through `arrow()`, so an editor's
+ * application mode and a latched Ctrl (⌃← ⌃→, word jumps) hold, and the
+ * latch lets go once the first arrow has gone, as the other keys do. The
+ * axis that clears a cell first is the gesture's; the other is ignored
+ * until the finger lifts — no diagonals, no acceleration.
+ *
+ * **A tap sends nothing.** This is the most reachable spot on the row and
+ * will be touched by accident, and → would accept a shell's suggestion.
+ * While a drag is locked the cap shows that way's arrow in the held grey;
+ * at rest, four arrows on the plain fill. It never takes the focus
+ * (`mousedown` is refused, as on every cap), so the keyboard stays as it
+ * was.
+ */
+function CursorKey({
+  term,
+  ctrl,
+  onCtrl,
+}: {
+  term: RefObject<Terminal | null>;
+  ctrl: boolean;
+  onCtrl: (on: boolean) => void;
+}) {
+  const g = useRef<Gesture | null>(null);
+  const [way, setWay] = useState<Way | null>(null);
+  const end = () => {
+    g.current = null;
+    setWay(null);
+  };
+  const down = (e: PointerEvent<HTMLButtonElement>) => {
+    const t = term.current;
+    const cell = t ? cellOf(t) : null;
+    if (!cell) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    g.current = { pointer: e.pointerId, x: e.clientX, y: e.clientY, ...cell, axis: null, sent: 0, ctrl };
+  };
+  const move = (e: PointerEvent<HTMLButtonElement>) => {
+    const s = g.current;
+    const t = term.current;
+    if (!s || !t || e.pointerId !== s.pointer) return;
+    const dx = (e.clientX - s.x) / s.cw;
+    const dy = (e.clientY - s.y) / s.ch;
+    if (!s.axis) {
+      if (Math.abs(dx) >= 1 && Math.abs(dx) >= Math.abs(dy)) s.axis = "x";
+      else if (Math.abs(dy) >= 1) s.axis = "y";
+      else return;
+    }
+    const want = Math.trunc(s.axis === "x" ? dx : dy);
+    while (s.sent !== want) {
+      const forward = want > s.sent;
+      const w: Way = s.axis === "x" ? (forward ? "right" : "left") : forward ? "down" : "up";
+      s.sent += forward ? 1 : -1;
+      setWay(w);
+      // The latch lets go before the first arrow, as on every key; the
+      // gesture keeps the Ctrl it landed with to its end.
+      if (ctrl) onCtrl(false);
+      t.input(arrow(t, LETTER[w], s.ctrl), true);
+    }
+  };
+  return (
+    <button
+      type="button"
+      data-term-key="cursor"
+      data-way={way ?? undefined}
+      aria-label={gui.key_cursor}
+      onMouseDown={(e) => e.preventDefault()}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onLostPointerCapture={end}
+      // The pad is the finger's: no page scroll, no sideways scroll of
+      // the row under it.
+      className={cn(CAP_BOX, "touch-none")}
+    >
+      <span className={capFace(way !== null)}>
+        {way ? <IconArrow to={way} className="size-5" /> : <IconMove className="size-5" />}
+      </span>
+    </button>
   );
 }
 

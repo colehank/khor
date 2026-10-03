@@ -122,6 +122,10 @@ const LIVE = {
   keyboard: fit(1.17, 1.17, 13.66), // square
   file: fit(1.07, 1.07, 13.87), // square
   link: fit(2.14, 2.14, 11.73), // round
+  // The cursor key's (2026-10-03): ink 11 across, centred on the 16
+  // canvas; a few strokes reaching out to their ends, so bare.
+  move: reshare(fit(1.36, 1.36, 13.29), PLAIN, BARE),
+  arrow: reshare(fit(1.36, 1.36, 13.29), PLAIN, BARE),
 } as const;
 
 /**
@@ -858,6 +862,32 @@ export function IconKeyboard({ className }: IconProps) {
           d="M4.1 4h7.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6V5.6A1.6 1.6 0 0 1 4.1 4Z"
         />
       )}
+    </Mark>
+  );
+}
+
+/** The cursor key at rest (2026-10-03, `views/TermKeys`): four arrows
+    from one centre — it moves the cursor any way it is dragged. */
+export function IconMove({ className }: IconProps) {
+  return (
+    <Mark className={className} live={LIVE.move}>
+      <path d="M8 2.5v11M2.5 8h11M6.2 4.3 8 2.5l1.8 1.8M6.2 11.7 8 13.5l1.8-1.8M4.3 6.2 2.5 8l1.8 1.8M11.7 6.2 13.5 8l-1.8 1.8" />
+    </Mark>
+  );
+}
+
+const ARROW = {
+  left: "M13.5 8h-11M6.5 4l-4 4 4 4",
+  right: "M2.5 8h11M9.5 4l4 4-4 4",
+  up: "M8 13.5v-11M4 6.5l4-4 4 4",
+  down: "M8 2.5v11M4 9.5l4 4 4-4",
+} as const;
+
+/** One arrow — the cursor key while a drag is locked to that way. */
+export function IconArrow({ className, to }: IconProps & { to: keyof typeof ARROW }) {
+  return (
+    <Mark className={className} live={LIVE.arrow}>
+      <path d={ARROW[to]} />
     </Mark>
   );
 }

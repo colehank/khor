@@ -294,10 +294,10 @@ input[type="search"]::-webkit-search-decoration {
    sideways the same way and for the same reason: a thumb swipes them,
    and a bar under a row of keys is one more thing between the keys and
    the keyboard. */
-[data-term-keys] {
+[data-term-keys-scroll] {
   scrollbar-width: none;
 }
-[data-term-keys]::-webkit-scrollbar {
+[data-term-keys-scroll]::-webkit-scrollbar {
   display: none;
 }
 
