@@ -95,7 +95,9 @@ export type Act =
   | "prev-tab"
   | "focus-list"
   | "toggle-list"
-  | "reload-term";
+  | "reload-term"
+  | "prev-command"
+  | "next-command";
 
 /** One way to press an act. `mod` is ⌘ on a Mac and Ctrl elsewhere;
     `ctrl` is the Control key itself on every platform. Matched on `code`
@@ -135,6 +137,10 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
   // circle's act, `TerminalPane`). The app's only: in a browser ⌘R is the
   // page's own reload.
   { act: "reload-term", chords: [{ key: "r", mod: true }], web: false },
+  // **⌘↑ ⌘↓, from prompt to prompt** in the terminal in front (roadmap
+  // 2.3; VS Code's terminal: scroll to previous / next command).
+  { act: "prev-command", chords: [{ key: "ArrowUp", mod: true }], web: true },
+  { act: "next-command", chords: [{ key: "ArrowDown", mod: true }], web: true },
   // The list's one Tab stop, from anywhere — a terminal included, which
   // keeps Tab for its shell (the audit fix plan F3.8; W25). ⌥⌘S, the
   // sidebar's key in Notes.
@@ -357,6 +363,18 @@ export function useShortcuts(acts: ShellActs) {
           );
           if (!box?.__reopen) return false;
           void box.__reopen();
+          return true;
+        }
+        case "prev-command":
+        case "next-command": {
+          // A text field of the page's own keeps ⌘↑ ⌘↓ for its caret.
+          const at = document.activeElement;
+          const box = document.querySelector<HTMLElement & { __jump?: (dir: -1 | 1) => void }>(
+            "[data-detail-pane] [data-kept-terminal][data-active] [data-terminal]",
+          );
+          if (!box?.__jump) return false;
+          if (at instanceof HTMLInputElement || (at instanceof HTMLTextAreaElement && !box.contains(at))) return false;
+          box.__jump(act === "prev-command" ? -1 : 1);
           return true;
         }
         case "next-tab":

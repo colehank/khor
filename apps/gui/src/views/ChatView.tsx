@@ -50,6 +50,7 @@
 //   cost more than the walls of source did, the way back is this one
 //   element — the fold and the frames are unchanged, which is why the
 //   change is reversible and this note can be short.
+import { takeHandOff } from "@/lib/composer-handoff";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -944,7 +945,11 @@ export function ChatView({
       Cleared by sending, like the text beside them. */
   const [shots, setShots] = useState<[string, string][]>([]);
   /** Files attached to the line being written, as `[name, text]`. */
-  const [docs, setDocs] = useState<[string, string][]>([]);
+  // A terminal block handed to the next conversation (roadmap 2.3).
+  const [docs, setDocs] = useState<[string, string][]>(() => {
+    const handed = takeHandOff();
+    return handed ? [handed] : [];
+  });
   /** Why the last paste did not attach, if it did not. */
   const [shotErr, setShotErr] = useState<string | null>(null);
   /** Which tool lines are open. **Closed by default and per line**: a

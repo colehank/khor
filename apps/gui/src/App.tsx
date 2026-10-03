@@ -1,5 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { NEW_SESSION_EVENT } from "@/lib/composer-handoff";
 import {
   fetchDevices,
   fetchHooks,
@@ -553,6 +554,16 @@ export default function App() {
     setNewSessionInPlace(inPlace);
     setDialog("new");
   }, []);
+  // A terminal block's "Send to Agent" (roadmap 2.3, `lib/composer-handoff`):
+  // the wizard on that machine, in that directory.
+  useEffect(() => {
+    const asked = (e: Event) => {
+      const { machine, dir } = (e as CustomEvent<{ machine: string; dir: string }>).detail;
+      openNewSession(machine, dir);
+    };
+    window.addEventListener(NEW_SESSION_EVENT, asked);
+    return () => window.removeEventListener(NEW_SESSION_EVENT, asked);
+  }, [openNewSession]);
   /** Whether the open wizard was started from a workspace's own column,
       and the id it left there. **Two pieces of state and not one**: the
       first is true while the dialog is up and the second outlives it,

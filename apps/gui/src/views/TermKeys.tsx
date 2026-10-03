@@ -37,7 +37,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
-import { IconGrip, IconKeyboard, IconMore } from "@/components/icons";
+import { IconChevronDown, IconChevronUp, IconGrip, IconKeyboard, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -198,6 +198,35 @@ function KeySheet({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
               </div>
             </section>
           ))}
+          {/* From prompt to prompt (roadmap 2.3): the phone's ⌘↑ ⌘↓. The
+              sheet goes away so the jump can be seen. */}
+          <section data-term-key-group="commands" className="flex flex-col gap-in">
+            <h3 className="text-group text-muted-foreground">{gui.key_group_commands}</h3>
+            <div className="flex flex-wrap gap-1.5">
+              {([-1, 1] as const).map((dir) => (
+                <button
+                  key={dir}
+                  type="button"
+                  data-term-key={dir < 0 ? "command-prev" : "command-next"}
+                  aria-label={dir < 0 ? gui.command_prev : gui.command_next}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    const box = term.current?.element?.closest("[data-terminal]") as
+                      | (HTMLElement & { __jump?: (d: -1 | 1) => void })
+                      | null
+                      | undefined;
+                    box?.__jump?.(dir);
+                    setOpen(false);
+                  }}
+                  className={CAP_BOX}
+                >
+                  <span className={capFace(false)}>
+                    {dir < 0 ? <IconChevronUp className="size-5" /> : <IconChevronDown className="size-5" />}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
           <button
             type="button"
             data-term-keys-edit

@@ -21,6 +21,8 @@ export type Block = {
   end?: IMarker;
   exit?: number | null;
   command?: string;
+  /** Where the shell stood when it ran (OSC 7). */
+  cwd?: string;
 };
 
 export type Marks = {
@@ -32,6 +34,8 @@ export type Marks = {
   running: () => boolean;
   /** Whether the shell has marked anything at all. */
   marked: () => boolean;
+  /** Where the shell stands (OSC 7), if it said. */
+  cwd: () => string | undefined;
   /** Called when a block starts or ends. */
   onChange: (f: () => void) => IDisposable;
   dispose: () => void;
@@ -48,6 +52,7 @@ export function trackMarks(term: Terminal): Marks {
   let list: Block[] = [];
   let seen = false;
   let named: string | undefined;
+  let cwd: string | undefined;
   const listeners = new Set<() => void>();
   const changed = () => listeners.forEach((f) => f());
   const alive = () => {
@@ -82,6 +87,7 @@ export function trackMarks(term: Terminal): Marks {
         const m = here();
         if (!m) return;
         b.output = m;
+        b.cwd = cwd;
         for (const p of params) {
           if (p.startsWith("cmdline_url=")) {
             try {
@@ -126,8 +132,21 @@ export function trackMarks(term: Terminal): Marks {
     return true;
   });
 
+  const dir = term.parser.registerOscHandler(7, (data) => {
+    const m = /^file:\/\/[^/]*(\/.*)$/.exec(data);
+    if (m) {
+      try {
+        cwd = decodeURIComponent(m[1]);
+      } catch {
+        cwd = m[1];
+      }
+    }
+    return true;
+  });
+
   return {
     blocks: alive,
+    cwd: () => cwd,
     current: () => {
       const b = last();
       return b && !b.end ? b : null;
@@ -144,6 +163,7 @@ export function trackMarks(term: Terminal): Marks {
     dispose: () => {
       fin.dispose();
       vsc.dispose();
+      dir.dispose();
       listeners.clear();
       list.forEach((b) => {
         b.prompt.dispose();

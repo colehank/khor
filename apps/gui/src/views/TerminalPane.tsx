@@ -55,7 +55,7 @@
 //     the top right corner, muted on a wash — 「zgh@Mac-mini:/Volumes/…」
 //     over the output. It is not drawn any more, and not kept.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
@@ -77,7 +77,9 @@ import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermHistory, termHistory } from "@/lib/term-history";
-import { inInput, trackMarks, type Marks } from "@/lib/term-marks";
+import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
+import { askNewSession, handOff } from "@/lib/composer-handoff";
+import { programOf } from "@/components/DoingLine";
 import { termWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
@@ -475,7 +477,12 @@ const PRESS_SLOP = 8;
  * cancelled, so the native scroller never starts — and before the press
  * is long, a drag scrolls as ever.
  */
-function pressSelects(term: Terminal, box: HTMLElement): () => void {
+function pressSelects(
+  term: Terminal,
+  box: HTMLElement,
+  /** A long press the caller takes instead (a block's prompt, 2.3). */
+  claims: (row: number, x: number, y: number) => boolean,
+): () => void {
   let timer = 0;
   let x0 = 0;
   let y0 = 0;
@@ -511,6 +518,7 @@ function pressSelects(term: Terminal, box: HTMLElement): () => void {
     timer = window.setTimeout(() => {
       const at = cellAt(term, x0, y0);
       if (!at) return;
+      if (claims(at.row, x0, y0)) return;
       selecting = true;
       selectWord(at);
     }, LONG_PRESS_MS);
@@ -743,6 +751,101 @@ function blinksOnInput(term: Terminal): { quiet: () => void; typed: () => void }
     },
     typed: () => renderer()?._cursorBlinkStateManager?.value?.restartBlinkAnimation?.(),
   };
+}
+
+/** The block a buffer line belongs to: from its prompt to the next one. */
+function blockAt(marks: Marks, line: number): Block | null {
+  const all = marks.blocks();
+  for (let i = all.length - 1; i >= 0; i--) {
+    if (all[i].prompt.line <= line) return all[i];
+  }
+  return null;
+}
+
+/** Whether a line is a block's prompt or its typed command (not output). */
+function onPromptOf(b: Block, line: number): boolean {
+  const last = b.output ? b.output.line - 1 : b.prompt.line;
+  return line >= b.prompt.line && line <= Math.max(last, b.prompt.line);
+}
+
+/** Buffer lines as text, a wrapped line joined to the one it continues. */
+function linesText(term: Terminal, from: number, to: number): string {
+  const buf = term.buffer.active;
+  let out = "";
+  for (let i = from; i < to; i++) {
+    const line = buf.getLine(i);
+    if (!line) continue;
+    if (i > from && !line.isWrapped) out += "\n";
+    out += line.translateToString(!buf.getLine(i + 1)?.isWrapped);
+  }
+  return out.replace(/\s+$/, "");
+}
+
+/** A block's output, from where it ran to where the next prompt began. */
+function outputOf(term: Terminal, b: Block): string {
+  if (!b.output) return "";
+  const end = b.end ? b.end.line : term.buffer.active.length;
+  return linesText(term, b.output.line, end);
+}
+
+/** A block's command: as the shell named it, else as typed. */
+function commandOf(term: Terminal, b: Block): string {
+  if (b.command) return b.command;
+  if (!b.input) return "";
+  const end = b.output ? b.output.line : b.input.marker.line + 1;
+  return linesText(term, b.input.marker.line, end).slice(b.input.col).trim();
+}
+
+/**
+ * **Command blocks, drawn** (roadmap 2.3): a hairline where each prompt
+ * starts, and once a command has ended, its exit status as a 2 px stripe
+ * in the left margin beside the whole block — the state inks, done green
+ * for 0 and failed red otherwise. xterm decorations pinned to the marks'
+ * markers, so they ride the scrollback; VS Code draws its command
+ * decorations the same way (a gutter mark per command, coloured by exit).
+ */
+function drawBlocks(term: Terminal, marks: Marks): () => void {
+  const drawn = new Map<Block, IDisposable[]>();
+  const draw = () => {
+    for (const b of marks.blocks()) {
+      const has = drawn.get(b) ?? [];
+      if (has.length === 0) {
+        const hair = term.registerDecoration({ marker: b.prompt, width: term.cols, height: 1 });
+        hair?.onRender((el) => el.classList.add("term-block-hair"));
+        if (hair) has.push(hair);
+      }
+      if (b.end && has.length === 1) {
+        const height = Math.max(1, b.end.line - b.prompt.line);
+        const tint = term.registerDecoration({ marker: b.prompt, x: 0, width: 1, height });
+        tint?.onRender((el) => {
+          el.classList.add("term-block-tint");
+          el.dataset.exit = String(b.exit ?? "");
+        });
+        if (tint) has.push(tint);
+      }
+      drawn.set(b, has);
+    }
+  };
+  const changed = marks.onChange(draw);
+  draw();
+  return () => {
+    changed.dispose();
+    drawn.forEach((ds) => ds.forEach((d) => d.dispose()));
+    drawn.clear();
+  };
+}
+
+/** Scrolls to the previous (`-1`) or next (`1`) prompt from the screen's
+    top; past the last one, to the bottom. */
+function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
+  const top = term.buffer.active.viewportY;
+  const lines = marks.blocks().map((b) => b.prompt.line);
+  const to = dir < 0 ? lines.filter((l) => l < top).pop() : lines.find((l) => l > top);
+  if (to === undefined) {
+    if (dir > 0) term.scrollToBottom();
+    return;
+  }
+  term.scrollToLine(to);
 }
 
 /** Whether a box has a size a terminal can be measured in. */
@@ -1038,6 +1141,9 @@ export function TerminalPane({
   const [hits, setHits] = useState<{ at: number; of: number } | null>(null);
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
+  // A command block's actions (roadmap 2.3), where it was pressed: from a
+  // right-click, or a long press on its prompt.
+  const [blockMenu, setBlockMenu] = useState<{ x: number; y: number; acts: { name: string; label: string; run: () => void }[] } | null>(null);
   const bellTimer = useRef(0);
   // **Ctrl and Alt, latched from the key row** (`TermKeys`, 2026-10-02;
   // Alt 2026-10-03): each waits for the next key from the row, its sheet
@@ -1050,6 +1156,24 @@ export function TerminalPane({
     modsRef.current = m;
     setModsShown(m);
   };
+
+  // The block menu goes away on a press anywhere else, Esc, or a scroll.
+  useEffect(() => {
+    if (!blockMenu) return;
+    const away = () => setBlockMenu(null);
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") away();
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", esc, true);
+    const scroller = scrollerRef.current;
+    scroller?.addEventListener("scroll", away, { passive: true });
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", esc, true);
+      scroller?.removeEventListener("scroll", away);
+    };
+  }, [blockMenu]);
 
   useLayoutEffect(() => {
     const box = boxRef.current;
@@ -1234,6 +1358,8 @@ export function TerminalPane({
     // The shell's marks on xterm's buffer (roadmap 2.2, 2.3), from the
     // first byte replayed on.
     const marks = trackMarks(term);
+    // For the gates, as `__xterm` is.
+    (box as HTMLDivElement & { __marks?: Marks }).__marks = marks;
     const asks = tapsAskFirst(term, box, marks);
     fit.fit();
     termRef.current = term;
@@ -1476,7 +1602,62 @@ export function TerminalPane({
       }
       send(out);
     });
-    const selects = pressSelects(term, box);
+    // **Command blocks** (roadmap 2.3): drawn from the marks; a block's
+    // actions on a right-click or a long press on its prompt; ⌘↑ ⌘↓, the
+    // menu's jumps and the key sheet's two chevrons move between prompts.
+    const unblock = drawBlocks(term, marks);
+    const actsFor = (b: Block) => {
+      const command = commandOf(term, b);
+      const acts: { name: string; label: string; run: () => void }[] = [];
+      if (b.output) {
+        acts.push({
+          name: "copy-output",
+          label: gui.block_copy_output,
+          run: () => void navigator.clipboard?.writeText(outputOf(term, b)).catch(() => {}),
+        });
+      }
+      if (command) {
+        acts.push({
+          name: "copy-command",
+          label: gui.block_copy_command,
+          run: () => void navigator.clipboard?.writeText(command).catch(() => {}),
+        });
+        // Again only at a prompt: into a running program it would be
+        // keystrokes, not a command.
+        const at = marks.current();
+        if (!marks.running() && at?.input && !at.output) {
+          acts.push({ name: "rerun", label: gui.block_rerun, run: () => send(`\x15${command}\r`) });
+        }
+      }
+      if (b.output) {
+        acts.push({
+          name: "to-agent",
+          label: gui.block_to_agent,
+          run: () => {
+            const status = b.exit === undefined || b.exit === null ? "" : `\n(exit ${b.exit})`;
+            handOff(`${programOf(command) || "output"}.txt`, `$ ${command}${status}\n\n${outputOf(term, b)}\n`);
+            askNewSession(machine ?? "", b.cwd ?? marks.cwd() ?? "");
+          },
+        });
+      }
+      return acts;
+    };
+    const showBlock = (row: number, x: number, y: number, promptOnly: boolean): boolean => {
+      const b = blockAt(marks, row);
+      if (!b || (promptOnly && !onPromptOf(b, row))) return false;
+      const acts = actsFor(b);
+      if (acts.length === 0) return false;
+      const r = box.getBoundingClientRect();
+      setBlockMenu({ x: x - r.left, y: y - r.top, acts });
+      return true;
+    };
+    const rightClick = (e: MouseEvent) => {
+      const at = cellAt(term, e.clientX, e.clientY);
+      if (at && showBlock(at.row, e.clientX, e.clientY, false)) e.preventDefault();
+    };
+    box.addEventListener("contextmenu", rightClick);
+    (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => jumpToPrompt(term, marks, dir);
+    const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
     const dragged = fingerWheels(term, box);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
@@ -1550,6 +1731,8 @@ export function TerminalPane({
       dragged();
       native.stop();
       selects();
+      unblock();
+      box.removeEventListener("contextmenu", rightClick);
       scrolled.dispose();
       wrote.dispose();
       found.dispose();
@@ -1781,7 +1964,7 @@ export function TerminalPane({
       {/* xterm's mount. Everything inside is the renderer's own — the
           gates read the buffer through `__xterm`, not this subtree. */}
       <div data-term-scroller ref={scrollerRef} className="h-full w-full overflow-x-hidden overflow-y-auto">
-        <div data-term-stick className="sticky top-0 h-full w-full overflow-hidden">
+        <div data-term-stick className="sticky top-0 h-full w-full">
           <div
             data-term-screen
             ref={mountRef}
@@ -1792,6 +1975,35 @@ export function TerminalPane({
         </div>
         <div data-term-room ref={roomRef} aria-hidden />
       </div>
+      {blockMenu && (
+        <div
+          data-term-block-menu
+          role="menu"
+          className="glass absolute z-20 flex min-w-44 flex-col rounded-lg p-1"
+          style={{
+            left: Math.max(8, Math.min(blockMenu.x, (boxRef.current?.clientWidth ?? 0) - 192)),
+            top: Math.max(8, Math.min(blockMenu.y, (boxRef.current?.clientHeight ?? 0) - 48 * blockMenu.acts.length)),
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {blockMenu.acts.map((a) => (
+            <button
+              key={a.name}
+              type="button"
+              role="menuitem"
+              data-term-block-act={a.name}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setBlockMenu(null);
+                a.run();
+              }}
+              className="min-h-touch rounded-md px-3 text-left text-body hover:bg-fill"
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
       {/* The way back down, and the only sign that anything arrived
           while the reader was up in history. Two sentences on one
           control: "something came in" and "you are simply not at the

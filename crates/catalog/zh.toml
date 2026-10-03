@@ -2349,6 +2349,16 @@ term-wake-note = "自动：点在正在输入的那一行时弹出键盘，点�
 term-wake-auto = "自动"
 term-wake-screen = "点击屏幕"
 term-wake-button = "点击按钮"
+# A command block's actions (roadmap 2.3), on a right-click or a long
+# press on its prompt; and the two jumps between prompts, in the key
+# sheet's group of their own.
+block-copy-output = "复制输出"
+block-copy-command = "复制命令"
+block-rerun = "重新运行"
+block-to-agent = "发给智能体"
+command-prev = "上一条命令"
+command-next = "下一条命令"
+key-group-commands = "命令"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"
@@ -4458,6 +4468,8 @@ select-all = "全选"
 view = "显示"
 find = "搜索"
 reload-term = "刷新终端"
+prev-command = "跳到上一条命令"
+next-command = "跳到下一条命令"
 fullscreen = "进入全屏幕"
 # ⌃⌘S (显示 › 隐藏边栏, the audit fix plan F6.7): the word says what
 # pressing it does, so it follows the list — hidden, it offers to show.

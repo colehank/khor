@@ -2030,8 +2030,38 @@ aside[data-side] {
    stays for an engine bar on the viewport itself; the native scroller the
    history scrolls in (`scrollsNatively`, item 15) hides its bar the same
    way. */
+/* The margins are the native scroller's own padding rather than the box's
+   (roadmap 2.3): a command block's exit stripe sits in the left one, so
+   the scroller must not clip it away. The grid still starts 8 in. */
 [data-terminal] {
+  padding-inline: 0;
+}
+[data-terminal] [data-term-scroller] {
   padding-inline: var(--gap-in);
+}
+/* The screen is clipped above and below (its fractional shift) and on the
+   right (the hidden bar's width), never in the left margin. */
+[data-terminal] [data-term-stick] {
+  clip-path: inset(0 0 0 calc(-1 * var(--gap-in)));
+}
+/* **Command blocks** (roadmap 2.3, `drawBlocks`): a hairline where each
+   prompt starts; the exit status as a stripe the focus ring's width in the
+   middle of the left margin, the state inks. Never in the way of a press. */
+[data-terminal] .term-block-hair {
+  border-top: var(--hair) solid var(--border);
+  pointer-events: none;
+}
+[data-terminal] .term-block-tint {
+  width: var(--ring-w) !important;
+  margin-left: calc(var(--gap-in) / -2);
+  background: var(--state-failed);
+  pointer-events: none;
+}
+[data-terminal] .term-block-tint[data-exit="0"] {
+  background: var(--state-done);
+}
+[data-terminal] .term-block-tint[data-exit=""] {
+  background: var(--state-idle);
 }
 [data-terminal] .xterm-scrollable-element > .scrollbar {
   display: none;
