@@ -63,7 +63,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { faceNote, inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
+import { faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
@@ -78,7 +78,8 @@ import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
-import { askNewSession, handOff } from "@/lib/composer-handoff";
+import { askNewSession, askOpenPath, askOpenUrl, handOff } from "@/lib/composer-handoff";
+import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import { termWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
@@ -176,8 +177,11 @@ function asksToFind(ev: KeyboardEvent): boolean {
     through). In a browser, the browser's own new tab — `open` on the
     serving machine would open it on the wrong screen when the face is
     being read from a phone. */
-function follow(uri: string) {
-  if (inApp) openLink(uri).catch(() => {});
+function follow(uri: string, machine: string | null | undefined) {
+  // **In the app, a browsing tab through the terminal's own machine**
+  // (roadmap 3.2): a dev server's `localhost:3000` printed on a far
+  // machine is that machine's. A browser face keeps its own tab.
+  if (inApp) askOpenUrl(machine ?? "", uri);
   else window.open(uri, "_blank", "noopener");
 }
 
@@ -413,7 +417,13 @@ const TAP_SLOP = 10;
  * keyboard, so a hardware keyboard keeps typing; a focus that went to
  * another field (the find bar, a sheet) is left there.
  */
-function tapsAskFirst(term: Terminal, box: HTMLElement, marks: Marks): () => void {
+function tapsAskFirst(
+  term: Terminal,
+  box: HTMLElement,
+  marks: Marks,
+  /** A tap on a cell, first: a link there opens (roadmap 3.2). */
+  tapped: (row: number, col: number) => void,
+): () => void {
   const field = term.textarea;
   if (!field) return () => {};
   let startX = 0;
@@ -454,6 +464,7 @@ function tapsAskFirst(term: Terminal, box: HTMLElement, marks: Marks): () => voi
     if (still) {
       const wake = termWake();
       const at = cellAt(term, startX, startY);
+      if (at) tapped(at.row, at.col);
       const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
       if (here && !keyboardUp(field)) raiseKeyboard(field);
       else if (!here && wake === "auto" && keyboardUp(field)) lowerKeyboard(field);
@@ -1325,7 +1336,7 @@ export function TerminalPane({
       // the same road (`follow`).
       linkHandler: {
         activate: (ev, uri) => {
-          if (ev.metaKey || ev.ctrlKey) follow(uri);
+          if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
         },
       },
       // **The size reports programs ask for** (T-1: CSI 14 t, 16 t, 18 t
@@ -1449,7 +1460,7 @@ export function TerminalPane({
     // selection than a wish to leave, so the modifier is the intent.
     term.loadAddon(
       new WebLinksAddon((ev, uri) => {
-        if (ev.metaKey || ev.ctrlKey) follow(uri);
+        if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
       }),
     );
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
@@ -1503,7 +1514,22 @@ export function TerminalPane({
     const marks = trackMarks(term);
     // For the gates, as `__xterm` is.
     (box as HTMLDivElement & { __marks?: Marks }).__marks = marks;
-    const asks = tapsAskFirst(term, box, marks);
+    // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
+    // a mouse a ⌘-click on an underlined path; under a finger a tap.
+    const here = machine ?? "";
+    const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd();
+    const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
+      askOpenPath(here, t.path, t.dir, t.line);
+    const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
+    const tapped = (row: number, col: number) => {
+      const url = urlAt(term, row, col);
+      if (url) return follow(url, machine);
+      void pathsOn(term, here, cwdAt, row).then((found) => {
+        const hit = found.find((f) => col + 1 >= f.x0 && col + 1 <= f.x1);
+        if (hit) openPath(hit.target);
+      });
+    };
+    const asks = tapsAskFirst(term, box, marks, tapped);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -1956,6 +1982,7 @@ export function TerminalPane({
         field?.removeEventListener(k, composed as EventListener);
       }
       asks();
+      linked.dispose();
       marks.dispose();
       shown();
       window.clearTimeout(bellTimer.current);

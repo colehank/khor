@@ -2,12 +2,13 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState, typ
 
 import { hereActs, shortDir, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT } from "@/lib/composer-handoff";
 import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
   notifyFinished,
+  openTab,
   syncNow,
   fetchWorkspaces,
   installHooks,
@@ -1580,6 +1581,59 @@ export default function App() {
     };
     window.addEventListener(OPEN_DIR_EVENT, asked);
     return () => window.removeEventListener(OPEN_DIR_EVENT, asked);
+  }, []);
+  // **A path or a URL a terminal printed** (roadmap 3.2): a directory is
+  // that machine's files there; a file opens in the workspace that holds
+  // it, or in its own directory's, at its line (`reveal`, the
+  // conversation's road); a URL is a browsing tab out through that
+  // terminal's machine.
+  const openPathRef = useRef<(machine: string, path: string, dir: boolean, line: number | null) => void>(() => {});
+  openPathRef.current = (machine, path, dir, line) => {
+    const d = machine === "" ? devices.find((x) => x.me) : devices.find((x) => x.name === machine);
+    if (!d) return;
+    const name = machine || d.name;
+    if (dir) return openDirRef.current(name, path);
+    void fetchWorkspaces()
+      .catch(() => [] as WorkspaceRow[])
+      .then((list) => {
+        const ws = holding(list, d.id, path);
+        setMorePage(null);
+        setLanding("workspaces");
+        setOpenWs(
+          ws
+            ? { device: ws.device, machine: ws.machine || ws.device, path: ws.path }
+            : { device: d.id, machine: name, path: path.slice(0, path.lastIndexOf("/")) || "/" },
+        );
+        setReveal({ path, line, at: Date.now() });
+        setScreen("detail");
+      });
+  };
+  const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
+  openUrlRef.current = (machine, url) => {
+    const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
+    void openTab("page", d?.id ?? "", url)
+      .then(() => {
+        setMorePage(null);
+        setLanding("browser");
+        setScreen("detail");
+      })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    const path = (e: Event) => {
+      const { machine, path: p, dir, line } = (e as CustomEvent<{ machine: string; path: string; dir: boolean; line: number | null }>).detail;
+      openPathRef.current(machine, p, dir, line);
+    };
+    const url = (e: Event) => {
+      const { machine, url: u } = (e as CustomEvent<{ machine: string; url: string }>).detail;
+      openUrlRef.current(machine, u);
+    };
+    window.addEventListener(OPEN_PATH_EVENT, path);
+    window.addEventListener(OPEN_URL_EVENT, url);
+    return () => {
+      window.removeEventListener(OPEN_PATH_EVENT, path);
+      window.removeEventListener(OPEN_URL_EVENT, url);
+    };
   }, []);
 
   const list = (
