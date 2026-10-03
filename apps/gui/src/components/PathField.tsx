@@ -210,7 +210,13 @@ export function PathField({
         }}
       />
       {/* Hangs under the box, no overlay (20-states 浮层: 搜索结果垂在框
-          下面). The app's one menu, so it reads as the omnibox's does. */}
+          下面). The app's one menu, so it reads as the omnibox's does.
+          **In the flow on a narrow face** (UX-4): a dialog there is a
+          sheet at the foot of the screen that scrolls its own content
+          (`ui/dialog`), so a list hung out of it ran off the window and
+          over the sheet's buttons, and one turned upward was cut at the
+          sheet's top. In the flow it still hangs under the box, and the
+          sheet, held by its foot, grows upward to fit it. */}
       {open && (
         <div id={list} role="listbox" data-path-suggestions>
           <OmniMenu
@@ -226,7 +232,7 @@ export function PathField({
               at,
             }}
             onPick={take}
-            className="absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float)"
+            className="absolute top-full z-20 mt-1 w-full rounded-lg shadow-(--shadow-float) [[data-narrow]_&]:static"
           />
         </div>
       )}
