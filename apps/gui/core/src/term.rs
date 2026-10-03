@@ -127,6 +127,9 @@ struct Term {
     gone: AtomicBool,
     /// Between a far pipe ending and the next one carrying bytes.
     rejoining: AtomicBool,
+    /// Rung whenever the feed grows or a flag above changes: what a
+    /// [`term_wait`] sleeps on instead of the face polling on a beat.
+    arrived: tokio::sync::Notify,
     /// Open count, for React's double-mount, exactly as chat explains.
     holds: AtomicUsize,
     /// Nobody holds it any more: a pipe that ends now is not asked for
@@ -232,6 +235,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         acs: Mutex::new(crate::acs::Acs::default()),
         gone: AtomicBool::new(false),
         rejoining: AtomicBool::new(false),
+        arrived: tokio::sync::Notify::new(),
         holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
         feed: Mutex::new(Feed::default()),
@@ -258,6 +262,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                         break;
                     };
                     reader.rejoining.store(true, Ordering::Relaxed);
+                    reader.arrived.notify_waiters();
                     let (rows, cols) = plock(&reader.parser).screen().size();
                     let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
                         khor_node::host::connect_at(addr, cookie, cols, rows)
@@ -285,10 +290,12 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                         let mut conn = plock(&reader.conn);
                         let _ = write_frame(&mut *conn, &ClientOp::Resize { cols, rows });
                     }
+                    reader.arrived.notify_waiters();
                 }
             }
         }
         reader.gone.store(true, Ordering::Relaxed);
+        reader.arrived.notify_waiters();
     });
     registry.insert(id.to_owned(), term);
     Ok(())
@@ -516,6 +523,26 @@ pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
         reset,
         rejoining: term.rejoining.load(Ordering::Relaxed),
     })
+}
+
+/// [`term_stream`], **pushed rather than polled**: answers the moment the
+/// feed grows past `since` (or the attachment ends, or starts or stops
+/// rejoining), and at the latest after `longest` with nothing new.
+///
+/// ⚠️ 墓碑 (round NET-2): the face asked [`term_stream`] every 50 ms, so
+/// an echo that had already crossed the network waited on average 25 ms
+/// more, and up to 50, for the next beat. A face in the app now holds one
+/// of these open at a time (the bridge's HTTP loop serves one request at
+/// a time, so the browser face keeps the beat).
+pub async fn term_wait(id: &str, since: u64, longest: std::time::Duration) -> Result<TermChunk, String> {
+    let term = term_of(id)?;
+    let woke = term.arrived.notified();
+    tokio::pin!(woke);
+    woke.as_mut().enable();
+    if term.fed.load(Ordering::Relaxed) == since && !term.gone.load(Ordering::Relaxed) {
+        let _ = tokio::time::timeout(longest, woke).await;
+    }
+    term_stream(id, since)
 }
 
 /// Keystrokes, as the bytes a terminal would send — the face translates
@@ -922,6 +949,7 @@ mod tests {
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
             rejoining: AtomicBool::new(false),
+            arrived: tokio::sync::Notify::new(),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
@@ -945,6 +973,60 @@ mod tests {
         assert_eq!(B64.decode(chunk.bytes.as_bytes()).unwrap(), b"!");
         assert!(chunk.gone, "a torn socket reaches the face");
         assert!(!chunk.reset);
+
+        plock(terms()).remove(&id);
+    }
+
+    /// **A pushed wait answers when the bytes arrive, not on a beat**
+    /// (round NET-2): held open with nothing new, it returns the moment
+    /// the feed grows — measured against the 50 ms beat it replaces.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_wait_answers_when_the_bytes_arrive() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let term = Arc::new(Term {
+            conn: Mutex::new(conn),
+            parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
+            acs: Mutex::new(crate::acs::Acs::default()),
+            gone: AtomicBool::new(false),
+            rejoining: AtomicBool::new(false),
+            arrived: tokio::sync::Notify::new(),
+            holds: AtomicUsize::new(1),
+            left: AtomicBool::new(false),
+            feed: Mutex::new(Feed::default()),
+            fed: AtomicU64::new(0),
+        });
+        let id = format!("tui/feed-wait-{}", std::process::id());
+        plock(terms()).insert(id.clone(), term.clone());
+
+        let mut lags = Vec::new();
+        for _ in 0..20 {
+            let since = term.fed.load(Ordering::Relaxed);
+            let feeder = term.clone();
+            let arrives = std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                let at = std::time::Instant::now();
+                push_feed(&feeder.feed, &feeder.fed, b"x");
+                feeder.arrived.notify_waiters();
+                at
+            });
+            let chunk = term_wait(&id, since, std::time::Duration::from_secs(2)).await.unwrap();
+            let answered = std::time::Instant::now();
+            let at = arrives.join().unwrap();
+            assert_eq!(B64.decode(chunk.bytes.as_bytes()).unwrap(), b"x");
+            lags.push(answered.duration_since(at));
+        }
+        lags.sort();
+        let median = lags[lags.len() / 2];
+        eprintln!("[wait] arrival -> answer median {median:?}, worst {:?} (the beat it replaces: 0-50 ms, 25 on average)", lags[lags.len() - 1]);
+        assert!(median < std::time::Duration::from_millis(5), "{lags:?}");
+
+        // Nothing new: it waits, then answers with nothing.
+        let since = term.fed.load(Ordering::Relaxed);
+        let began = std::time::Instant::now();
+        let chunk = term_wait(&id, since, std::time::Duration::from_millis(200)).await.unwrap();
+        assert!(began.elapsed() >= std::time::Duration::from_millis(190));
+        assert!(chunk.bytes.is_empty());
 
         plock(terms()).remove(&id);
     }

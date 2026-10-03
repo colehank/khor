@@ -595,6 +595,9 @@ pub fn answer(
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
         "term_stream" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
+        // The bridge answers one request at a time, so it never holds one
+        // open: here a wait is the stream's answer as it stands.
+        "term_wait" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
         "term_key" => {
             crate::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())

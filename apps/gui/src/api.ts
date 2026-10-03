@@ -1593,6 +1593,12 @@ export const termOpen = (id: string, cols: number, rows: number) =>
 export const termAttach = (id: string) => call<TermStart>("term_attach", { id });
 export const termStream = (id: string, since: number) =>
   call<TermChunk>("term_stream", { id, since });
+/** `termStream`, held open until the feed grows past `since` (or `ms`
+    passes): output arrives the moment it is there instead of on the next
+    beat. The app's only — the bridge and the web face answer one request
+    at a time, so there it is the stream's answer as it stands. */
+export const termWait = (id: string, since: number, ms: number) =>
+  call<TermChunk>("term_wait", { id, since, ms });
 /** Keystrokes as the bytes a terminal sends — xterm encodes every key,
     modifier, mouse report and paste; the backend stays a pipe. */
 export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });

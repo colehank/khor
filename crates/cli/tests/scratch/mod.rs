@@ -22,7 +22,32 @@ impl Drop for Scratch {
         if std::env::var_os("KHOR_TEST_KEEP").is_some() {
             return;
         }
+        reap_hosts(&self.0);
         let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Stops every session host recorded under a scratch home, by the pids
+/// in its own host files — a session a test opened outlives the test's
+/// serves, and must not outlive the test.
+pub fn reap_hosts(home: &Path) {
+    let Ok(dirs) = std::fs::read_dir(home.join(".khor").join("sessions")) else {
+        return;
+    };
+    for d in dirs.flatten() {
+        let Ok(text) = std::fs::read_to_string(d.path().join("host.json")) else {
+            continue;
+        };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        for key in ["child_pid", "host_pid"] {
+            if let Some(pid) = v[key].as_i64().filter(|p| *p > 1) {
+                let _ = Command::new("kill")
+                    .args(["-TERM", &pid.to_string()])
+                    .status();
+            }
+        }
     }
 }
 

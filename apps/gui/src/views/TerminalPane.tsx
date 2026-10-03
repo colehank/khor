@@ -63,7 +63,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
+import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
@@ -93,6 +93,9 @@ const ANSI16 = [
     keystroke asks again immediately (`pollNow`), so echo latency is
     the round trip, not this number. */
 const LIVE_MS = 50;
+/** How long one pushed wait is held open with nothing new (`termWait`).
+    Short enough that a pane torn down mid-wait frees its question soon. */
+const WAIT_MS = 1000;
 
 /** The scrollback xterm keeps, matched to the parser's own
     (`khor_gui_core::term::SCROLLBACK`) so the two authorities never
@@ -753,7 +756,11 @@ export function TerminalPane({
     const tick = async () => {
       const mine = generation;
       try {
-        const b = await termStream(id, seq);
+        // **Pushed in the app while the pane is looked at** (round
+        // NET-2): the node answers the moment bytes arrive, so an echo
+        // no longer waits for the next beat. Elsewhere, the beat.
+        const pushed = inApp && pace.current === LIVE_MS;
+        const b = await (pushed ? termWait(id, seq, WAIT_MS) : termStream(id, seq));
         if (stopped || mine !== generation) return;
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
@@ -782,7 +789,7 @@ export function TerminalPane({
       }
       if (!stopped) {
         window.clearTimeout(timer);
-        timer = window.setTimeout(() => void loop(), pace.current);
+        timer = window.setTimeout(() => void loop(), inApp && pace.current === LIVE_MS ? 0 : pace.current);
       }
     };
     pollNow.current = () => {

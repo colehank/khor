@@ -716,6 +716,13 @@ fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk,
     khor_gui_core::term::term_stream(&id, since)
 }
 
+/// The stream, pushed: held open until the feed grows (`term::term_wait`).
+/// Async, so the wait is on tokio's threads and never on the main one.
+#[tauri::command]
+async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
+    khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+}
+
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
@@ -3480,6 +3487,7 @@ pub fn run() {
             term_open,
             term_attach,
             term_stream,
+            term_wait,
             term_key,
             term_drop,
             term_resize,

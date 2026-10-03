@@ -230,9 +230,12 @@ pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {
 
 pub fn write_frame<T: Serialize>(s: &mut (impl Write + ?Sized), t: &T) -> Result<(), String> {
     let bytes = proto::encode(t)?;
-    s.write_all(&(bytes.len() as u32).to_be_bytes())
-        .and_then(|()| s.write_all(&bytes))
-        .map_err(msg::handoff_failed)
+    // One write, length and body together: two small writes are the
+    // pattern Nagle's algorithm holds the second of for an ack.
+    let mut frame = Vec::with_capacity(4 + bytes.len());
+    frame.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&bytes);
+    s.write_all(&frame).map_err(msg::handoff_failed)
 }
 
 pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<T, String> {
@@ -500,6 +503,8 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
 /// then on a quiet terminal is a terminal nobody is typing in.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
     let mut s = TcpStream::connect(addr).map_err(|_| msg::host_gone().to_string())?;
+    // A keystroke is one small frame: never held back for an ack.
+    let _ = s.set_nodelay(true);
     let _ = s.set_read_timeout(Some(HANDSHAKE));
     let _ = s.set_write_timeout(Some(HANDSHAKE));
     write_frame(
@@ -560,7 +565,65 @@ struct Shared {
     /// snapshot and join atomically or it double-receives the bytes the
     /// reader is broadcasting.
     ring: Mutex<Ring>,
-    clients: Mutex<Vec<TcpStream>>,
+    clients: Mutex<Vec<Client>>,
+}
+
+/// How many bytes may wait for one client before it is let go. A face
+/// that far behind is better served by the ring — it attaches again
+/// (`rejoin`) and is poured the last [`RING`] bytes, reset and replay —
+/// than by the program waiting for it.
+const CLIENT_BEHIND: usize = 2 * RING;
+
+/// **One attached face, fed by a thread of its own.**
+///
+/// ⚠️ 墓碑 (round NET-2): the PTY reader wrote every chunk to every client
+/// itself, blocking, with the ring and the client list locked. A face
+/// whose socket stopped draining — a far viewer behind a slow relay, a
+/// phone frozen in the background — filled its socket buffer, the write
+/// blocked, and the program's output stopped for everyone: the session
+/// itself waited on its slowest reader. Now the reader only queues (an
+/// unbounded channel, but counted), each client's thread does the
+/// writing, and a client more than [`CLIENT_BEHIND`] behind is closed
+/// rather than waited for — the same choice Eternal Terminal's catch-up
+/// buffer makes (a bounded buffer per reader; past it, the reader starts
+/// over from what is kept).
+struct Client {
+    /// For shutting the socket from outside its writer.
+    socket: TcpStream,
+    tx: std::sync::mpsc::Sender<Arc<[u8]>>,
+    queued: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Client {
+    fn new(socket: TcpStream) -> std::io::Result<Client> {
+        let _ = socket.set_nodelay(true);
+        let mut writing = socket.try_clone()?;
+        let (tx, rx) = std::sync::mpsc::channel::<Arc<[u8]>>();
+        let queued = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let left = queued.clone();
+        std::thread::spawn(move || {
+            while let Ok(bytes) = rx.recv() {
+                if writing.write_all(&bytes).is_err() {
+                    let _ = writing.shutdown(std::net::Shutdown::Both);
+                    return;
+                }
+                left.fetch_sub(bytes.len(), Ordering::Relaxed);
+            }
+        });
+        Ok(Client { socket, tx, queued })
+    }
+
+    /// Queues `bytes` without waiting. `false` when the client is gone or
+    /// too far behind — it is shut, and its face starts over from the
+    /// ring when it attaches again.
+    fn feed(&self, bytes: &Arc<[u8]>) -> bool {
+        let was = self.queued.fetch_add(bytes.len(), Ordering::Relaxed);
+        if was + bytes.len() > CLIENT_BEHIND || self.tx.send(bytes.clone()).is_err() {
+            let _ = self.socket.shutdown(std::net::Shutdown::Both);
+            return false;
+        }
+        true
+    }
 }
 
 /// How often the host looks at what its child is doing.
@@ -830,8 +893,11 @@ fn host_serving(
                 }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
+                let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
-                clients.retain_mut(|c| c.write_all(&buf[..n]).is_ok());
+                // Queued, never written here: the program must not wait
+                // for its slowest reader (`Client`).
+                clients.retain(|c| c.feed(&chunk));
                 drop(clients);
                 drop(ring);
                 // Never for a tmux client (`mux_client`): its bottom
@@ -864,8 +930,21 @@ fn host_serving(
                 }
             }
             output_done.store(true, Ordering::SeqCst);
+            // Each client's queue drains first (its writer runs until the
+            // channel is empty), then the socket closes with it.
             for c in shared.clients.lock().unwrap().drain(..) {
-                let _ = c.shutdown(std::net::Shutdown::Both);
+                drop(c.tx);
+                let socket = c.socket;
+                let queued = c.queued;
+                std::thread::spawn(move || {
+                    for _ in 0..200 {
+                        if queued.load(Ordering::Relaxed) == 0 {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    let _ = socket.shutdown(std::net::Shutdown::Both);
+                });
             }
         });
     }
@@ -992,14 +1071,22 @@ fn host_serving(
                     continue;
                 }
                 {
+                    // The replay is the client's first queued chunk, under
+                    // the ring's lock so nothing the reader broadcasts is
+                    // missed or doubled — and queued, not written, so a
+                    // slow far viewer attaching does not stall the program
+                    // while 256 KiB cross a relay.
                     let ring = shared.ring.lock().unwrap();
-                    if conn.write_all(&ring.replay()).is_err() {
-                        continue;
-                    }
                     let Ok(readable) = conn.try_clone() else {
                         continue;
                     };
-                    shared.clients.lock().unwrap().push(conn);
+                    let Ok(client) = Client::new(conn) else {
+                        continue;
+                    };
+                    if !client.feed(&Arc::from(ring.replay())) {
+                        continue;
+                    }
+                    shared.clients.lock().unwrap().push(client);
                     drop(ring);
                     let master = master.clone();
                     let writer = writer.clone();
