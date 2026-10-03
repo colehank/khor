@@ -26,10 +26,16 @@ async fn a_keystroke_comes_back_in_a_round_trip_and_output_streams() {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    // `TERM_LOSS_PCT`: a share of chunks held one round trip (a loss
+    // under the relay's TCP, `scratch::slow_road`).
+    let loss: u32 = std::env::var("TERM_LOSS_PCT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let road = (rtt > 0).then(|| Impair {
         rtt: Duration::from_millis(rtt),
-        loss_pct: 0,
-        stall: Duration::ZERO,
+        loss_pct: loss,
+        stall: Duration::from_millis(rtt),
     });
     let (p, _road) = pair_on("echo", road).await;
     let sid = p

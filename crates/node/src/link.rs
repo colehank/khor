@@ -613,6 +613,20 @@ impl Node {
     /// The endpoint the resident answers on from now (`Node::ears`).
     fn set_ears(&self, ep: &std::sync::Arc<iroh::Endpoint>) {
         *self.ears.lock().unwrap_or_else(|p| p.into_inner()) = Some(ep.clone());
+        // **What the relays say about who left** (round NET-5,
+        // `wires::Wires::departed`), for as long as these ears live: the
+        // subscription ends when the endpoint does.
+        let mut left = ep.relay_departures();
+        let wires = self.wires.clone();
+        tokio::spawn(async move {
+            loop {
+                match left.recv().await {
+                    Ok(id) => wires.departed(&id.to_string()),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 
     /// The endpoint the resident answers on now, for a task that outlives
@@ -2019,9 +2033,15 @@ impl Node {
         let Ok(frame) = proto::encode(req) else {
             return Early::NotTaken;
         };
-        let within = DIAL_TIMEOUT
+        let mut within = DIAL_TIMEOUT
             .max(self.wires.last_rtt(&d.id).saturating_mul(12))
             .min(Duration::from_secs(60));
+        // As `dial`: short for a machine its relay just said left.
+        if self.wires.gone_lately(&d.id) {
+            within = within.min(
+                Duration::from_secs(3).max(self.wires.last_rtt(&d.id).saturating_mul(6)),
+            );
+        }
         let started = std::time::Instant::now();
         let attempt = async {
             let connecting = ep
@@ -8289,6 +8309,14 @@ impl Node {
         let mut within = DIAL_TIMEOUT
             .max(self.wires.last_rtt(id).saturating_mul(12))
             .min(Duration::from_secs(60));
+        // A machine its relay just said left, and that has not been heard
+        // from since: a short dial — long enough for one that came straight
+        // back on a new connection, not the full wait on one that is gone.
+        if self.wires.gone_lately(id) {
+            within = within.min(
+                Duration::from_secs(3).max(self.wires.last_rtt(id).saturating_mul(6)),
+            );
+        }
         if let Some(by) = by {
             within = within.min(by.saturating_duration_since(std::time::Instant::now()));
         }

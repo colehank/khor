@@ -12,7 +12,19 @@
 
 ## 补丁
 
-三处，各一个文件。
+四处。
+
+### 4. `src/socket/transports/relay/actor.rs`、`src/socket.rs`、`src/endpoint.rs`：中继说谁走了（2026-10-04，NET-5 轮）
+
+中继服务器在一个端点断开时，给之前收过它包的端点发 `EndpointGone`。iroh 1.2 收到只是从内部的
+`endpoints_present` 里删掉，不告诉任何连接，也不告诉应用。补丁：`HomeRelayWatch` 多一个
+`departed: broadcast::Sender<EndpointId>`，收到 `EndpointGone` 时发出去；`Socket` 留一份，
+`Endpoint::relay_departures()` 给出订阅。改动约 30 行。khor 这边 `link::Node::set_ears` 订阅，
+`wires::Wires::departed` 把走中继的那条线当场收回、记下「刚走」，此后拨它只给短时间
+（3 秒或 6 个往返），直到又听到它。
+测试：`crates/node/tests/departed.rs`（两台只能走回环中继，一台关耳朵，另一台的状态词立刻离开
+「中继」，问它 3 秒内失败；不接这个补丁时要等 10 秒的拨号）；`crates/cli/tests/diagnose.rs`
+（进程被杀：状态词 14 秒 → 4 毫秒，第一次问 14 秒 → 3 秒）。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 3. `src/net_report.rs`：首选中继（2026-10-03，NET-2 轮，负责人批）
 

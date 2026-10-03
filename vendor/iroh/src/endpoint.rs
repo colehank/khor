@@ -1401,6 +1401,18 @@ impl Endpoint {
         self.inner.home_relay_status()
     }
 
+    /// **The peers a relay just saw leave** (khor patch 4, vendor/iroh/KHOR.md).
+    ///
+    /// A relay server sends `EndpointGone` to the endpoints a departing
+    /// peer had been sending to, the moment that peer's relay connection
+    /// ends. iroh only drops it from an internal set; this hands each one
+    /// to the subscriber, who can stop waiting on a peer that is not there.
+    /// Only the departures of peers that had sent to this endpoint through
+    /// a relay are told; a peer reached directly says nothing here.
+    pub fn relay_departures(&self) -> tokio::sync::broadcast::Receiver<EndpointId> {
+        self.inner.relay_departures()
+    }
+
     /// Returns a [`Watcher`] for any net report runs from this [`Endpoint`].
     ///
     /// <div class="warning">
