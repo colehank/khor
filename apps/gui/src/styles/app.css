@@ -1902,6 +1902,17 @@ aside[data-side] {
   }
 }
 
+/* **No tooltips under a finger** (2026-10-03): a tooltip is the pointer's
+   help tag, and a finger has no hover. Radix opens one on focus too, so
+   on the phone a closing menu handed the focus back to ＋ and left 「新建」
+   floating under it (measured in the simulator app, `ux-94`). The name
+   stays for a screen reader; only the bubble is not drawn. */
+@media (pointer: coarse) {
+  [data-slot="tooltip-content"] {
+    display: none;
+  }
+}
+
 /* The workspace's sessions column stands at the pane's right edge: its
    head's glass ends on the content's right line (W-V5). */
 :root:not([data-narrow]) [data-ws-sessions] [data-pane-bar] {
