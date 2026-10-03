@@ -15,18 +15,22 @@
  *
  * Wide: the listing in a column, the file beside it. Narrow: one screen
  * at a time — the listing, or the file under a way back to it.
+ *
+ * **The file is the file page** (round UX-3, `FilePage`): no title rows,
+ * the name a pill at the top, ‹ · 分享 · 「…」 · 编辑 floating at the
+ * bottom — on the narrow face the whole window (the machine's head steps
+ * aside, `useFullScreen`), on the wide face the column beside the listing.
  */
 import { useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
+import { useFullScreen } from "@/lib/full-screen";
 import { cn } from "@/lib/utils";
 import { useNarrow } from "@/hooks/use-narrow";
-import { useReadFirst } from "@/hooks/use-read-first";
+import { FilePage } from "@/views/FilePage";
 import { FilesPane } from "@/views/FilesPane";
-import { FileView } from "@/views/FileView";
-
-type Draft = Parameters<NonNullable<Parameters<typeof FileView>[0]["onDraft"]>>[0];
+import type { Draft } from "@/views/FileView";
 
 export function MachineFiles({
   machine,
@@ -42,8 +46,8 @@ export function MachineFiles({
       twice. */
   start?: { path: string; at: number } | null;
   /** **One back button** (the audit fix plan F4.2; N07): while a file is
-      open on the narrow face, the page head's ‹ leaves the file rather
-      than the page — handed up as the way out, `null` when there is no
+      open on the narrow face, the way back leaves the file rather than
+      the page — handed up for the edge swipe, `null` when there is no
       file to leave. */
   onOpenFile?: (back: (() => void) | null) => void;
 }) {
@@ -51,6 +55,9 @@ export function MachineFiles({
   // `""` is the machine's home, the listing's own contract.
   const [at, setAt] = useState(() => (start ? start.path.slice(0, start.path.lastIndexOf("/")) || "/" : ""));
   const [file, setFile] = useState<string | null>(start?.path ?? null);
+  /** Bumped to read the listing again after the file page renamed or
+      deleted what it showed. */
+  const [reread, setReread] = useState(0);
   useEffect(() => {
     if (start === null) return;
     setAt(start.path.slice(0, start.path.lastIndexOf("/")) || "/");
@@ -58,18 +65,17 @@ export function MachineFiles({
   }, [start]);
   // What was typed into a file and not saved, kept when another file is
   // opened — the workspace pane's rule (`FileView`'s `draft`).
-  const [drafts, setDrafts] = useState<Map<string, NonNullable<Draft>>>(() => new Map());
-  const [saveAt, setSaveAt] = useState(0);
-  /** Read first under a finger, 「编辑」 / 「保存」 in the file's head (P1). */
-  const readFirst = useReadFirst(file, file !== null && drafts.has(file), () => setSaveAt((n) => n + 1));
+  const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
   useEffect(() => {
     if (!narrow) return;
     onOpenFile?.(file !== null ? () => setFile(null) : null);
     return () => onOpenFile?.(null);
   }, [narrow, file, onOpenFile]);
+  useFullScreen(narrow && file !== null);
 
   const listing = (
     <FilesPane
+      key={reread}
       machine={machine}
       path={at}
       onPath={setAt}
@@ -80,17 +86,20 @@ export function MachineFiles({
     />
   );
   const view = file !== null && (
-    <FileView
+    <FilePage
       key={`${machine} ${file}`}
       machine={machine}
       path={file}
-      git={false}
-      saveAt={saveAt}
-      onSaved={readFirst.saved}
-      // Only where the head that offers 「编辑」 is drawn (the narrow
-      // screen's name row); the wide listing beside the file has none.
-      reading={narrow && readFirst.reading}
-      onCanEdit={readFirst.onCanEdit}
+      here={here}
+      onBack={() => setFile(null)}
+      onGone={() => {
+        setFile(null);
+        setReread((n) => n + 1);
+      }}
+      onMoved={(_, to) => {
+        setFile(to);
+        setReread((n) => n + 1);
+      }}
       draft={drafts.get(file)}
       onDraft={(d) =>
         setDrafts((was) => {
@@ -122,33 +131,8 @@ export function MachineFiles({
           {listing}
         </div>
         {file !== null && (
-          // Only the file moves under a back swipe; the head both share
-          // stays put.
-          <div ref={readFirst.box} data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
-            {/* The file's name, and under a finger 「编辑」 / 「保存」 at
-                its end (P1); the way back is the page head's ‹. */}
-            <div data-machine-file-head className="flex flex-none items-center gap-row px-page pb-in">
-              <span className="min-w-0 flex-1 truncate text-body font-title">{file.split("/").pop()}</span>
-              {readFirst.item && (
-                <button
-                  type="button"
-                  data-file-edit={readFirst.item.writing ? "save" : "edit"}
-                  onClick={readFirst.item.onPress}
-                  className="-my-2 min-h-touch flex-none rounded-full px-in text-callout font-title text-foreground"
-                >
-                  {readFirst.item.label}
-                </button>
-              )}
-            </div>
-            {/* The line numbers start on the page's left line (N07): the
-                view's gutter pads 8 of its own. **A flex column**, so the
-                view is held to the screen and its own scroller scrolls
-                (2026-10-03, the owner's phone: 「从机器进入工作区文件不可
-                拖动」). As a block it let the view grow to the whole file's
-                height — 19 336 px for a 605-line lock file — inside a
-                screen that clips, so there was nothing a finger could
-                scroll and the file's name slid under the page head. */}
-            <div className="flex min-h-0 flex-1 flex-col ps-[calc(var(--page-inset)-0.5rem)]">{view}</div>
+          <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
+            {view}
           </div>
         )}
       </div>

@@ -2133,3 +2133,13 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   outline: none;
 }
 
+
+/* **The file page's text clears what floats over it** (round UX-3): the
+   name at the top centre and the row of circles at the bottom. Padding on
+   the scroller itself, so the text still passes under both while it
+   moves and the first and last lines can rest clear of them. */
+[data-file-page] :is([data-file-scroll], [data-file-preview]) {
+  padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+  padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
+  scroll-padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+}

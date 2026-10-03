@@ -3876,6 +3876,12 @@ chat-file-reveal = "在访达中显示"
 chat-file-share = "分享"
 # 智能体写了或改了一个文件,卡片上说的那个动作。
 chat-file-wrote = "已写入"
+# 文件页（round UX-3）底部「分享」在 Mac 上的两项之一（另一项借 `chat-file-reveal`），
+# 和「…」里的两项与字号的两颗键。远处的文件先取到本机的临时目录再交出去。
+file-open-other = "用其他应用打开"
+file-in-code = "在 VS Code 中打开"
+file-size-down = "缩小"
+file-size-up = "放大"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

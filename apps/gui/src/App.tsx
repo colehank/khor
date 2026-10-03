@@ -105,6 +105,7 @@ import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { MachineFiles } from "@/views/MachineFiles";
+import { FullScreenProvider } from "@/lib/full-screen";
 import { MachineWeb } from "@/views/MachineWeb";
 import { RegionState } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
@@ -328,6 +329,13 @@ export default function App() {
   // behind for buttons that are not there is the 无效面积 this whole
   // condition exists to remove.
   const [fullscreen, setFullscreen] = useState(false);
+  /** Panes holding the narrow face full screen (`lib/full-screen`): a file
+      open in a workspace or on a machine page (round UX-3). */
+  const [fullClaims, setFullClaims] = useState(0);
+  const claimFull = useCallback(() => {
+    setFullClaims((n) => n + 1);
+    return () => setFullClaims((n) => n - 1);
+  }, []);
   useEffect(() => onFullscreen(setFullscreen), []);
   // ⚠️ 墓碑 (2026-10-02, the redesign's one ground): the root was
   // stamped `data-material="sidebar"` here on the macOS app, and the left
@@ -2043,7 +2051,8 @@ export default function App() {
   /** …and a browsing page is the same screen (the redesign, 2026-10-02:
       the browser takes the session page's layout): no head, no landings'
       bar; the session bar at its foot. */
-  const fullScreen = inSession || (narrow && browses && morePage === null && screen === "detail");
+  const fullScreen =
+    inSession || (narrow && browses && morePage === null && screen === "detail") || (narrow && fullClaims > 0);
   const sessionScreen = (
     <SessionScreen
       faces={tabFaces}
@@ -2525,6 +2534,7 @@ export default function App() {
     <SettingsRereadProvider value={settings.reread}>
     <SideSeatsProvider value={seats.seats}>
     <HereHostsProvider value={hosts}>
+    <FullScreenProvider value={claimFull}>
     <TooltipProvider>
       {narrow ? (
         // **As tall as `#root`, not the screen** (2026-10-02): `#root`
@@ -2818,6 +2828,7 @@ export default function App() {
         </div>
       )}
     </TooltipProvider>
+    </FullScreenProvider>
     </HereHostsProvider>
     </SideSeatsProvider>
     </SettingsRereadProvider>

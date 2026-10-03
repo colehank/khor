@@ -623,6 +623,13 @@ async fn pull(machine: String, path: String) -> Result<String, String> {
     khor_gui_core::files::pull(&Node::root_from_env(), &machine, &path).await
 }
 
+/// The same file in a temporary folder here, for this machine's other
+/// apps (`files::pull_temp`); a path already here answers itself.
+#[tauri::command]
+async fn pull_temp(machine: String, path: String) -> Result<String, String> {
+    khor_gui_core::files::pull_temp(&Node::root_from_env(), &machine, &path).await
+}
+
 /// Takes a path off a machine's disk. This machine's goes to the
 /// recycle bin; every other machine's is deleted (`files::remove`).
 #[tauri::command]
@@ -3560,6 +3567,7 @@ pub fn run() {
             history_follow,
             ls,
             pull,
+            pull_temp,
             term_open,
             term_attach,
             term_stream,

@@ -17,6 +17,7 @@
 // second address. So when the workspace list is open, this opens with
 // the sessions folded, and opening them is one press away.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 
 import {
   fetchGitStatus,
@@ -31,7 +32,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconBranch, IconFiles, IconPlus, IconSearch, IconSessions } from "@/components/icons";
+import { IconBack, IconBranch, IconCheck, IconFiles, IconPencil, IconPlus, IconSearch, IconSessions } from "@/components/icons";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
@@ -70,9 +71,11 @@ import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
-import { FileView, rendererOf, type Draft } from "@/views/FileView";
+import { beginEditing, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
+import { FilePage, FileVerbs, placeAt, topLine } from "@/views/FilePage";
+import { useFullScreen } from "@/lib/full-screen";
 import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceEmpty";
 
 export function WorkspacePane({
@@ -268,13 +271,26 @@ export function WorkspacePane({
    * 可预览,就是一个预览的 icon,再次点击回到源码」(the user). `FileView`
    * is handed the answer.
    *
-   * **The face rides with the tab, and every tab starts on 源码.** The
-   * rule is 批⑤'s and it has not moved: 「打开先是源码」, never
-   * remembered. It was a fact about the view before, and the view is
-   * remounted on every file, so it reset itself; up here the reset has
-   * to be written, which is the effect below. */
+   * **The face rides with the tab, and a file that has a second face
+   * opens on it** (round UX-3, the owner's ruling 2026-10-04: preview is
+   * the default, the old toggle is gone; ⚠️ 墓碑: 批⑤'s 「打开先是源码」).
+   * 编辑 at the strip's right end opens the source at the same place and
+   * ✓ comes back (`editHere`). Never remembered: every file opens to be
+   * read. */
   const [face, setFace] = useState<"source" | "preview">("source");
-  useEffect(() => setFace("source"), [file]);
+  useEffect(() => setFace(file !== null && rendererOf(file) !== null ? "preview" : "source"), [file]);
+  /** The middle column, where the reader's place is read and put back. */
+  const mid = useRef<HTMLDivElement>(null);
+  /** Where to put the reader once the face has changed (a source line). */
+  const restore = useRef<number | null>(null);
+  /** A ✓ waiting on its save before the face goes back to reading. */
+  const savingBack = useRef(false);
+  useLayoutEffect(() => {
+    const line = restore.current;
+    if (line === null) return;
+    restore.current = null;
+    placeAt(mid.current, line);
+  }, [face]);
   /** Which tab is waiting on 存了再关 / 不存,关掉 / 别关, by path. */
   const [closing, setClosing] = useState<string | null>(null);
   /** A tab whose 存了再关 was pressed and whose file is not the one in
@@ -1124,20 +1140,15 @@ export function WorkspacePane({
         // where there is a second face to switch to — a `.rs` has one
         // face and grows no eye, exactly as the strip's far end drew
         // none for it before this moved.
-        look:
-          !isDiff && rendererOf(path) !== null
-            ? {
-                on: face === "preview",
-                label: gui.file_face_preview,
-                onToggle: () => setFace((f) => (f === "preview" ? "source" : "preview")),
-              }
-            : undefined,
+        // ⚠️ 墓碑 (round UX-3): `look`, the 预览 eye on the tab (ruling 47).
+        // A file with a second face opens on it now, and 编辑 at the
+        // strip's right end is the way to its source (`fileTail`).
         edit: !isDiff && key === file ? readFirst.item : null,
         menu: tabMenu(key),
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tabs, machine, root, drafts, preview, shut, face, file, fileNote, readFirst.item?.label, readFirst.item === null],
+    [tabs, machine, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null],
   );
 
   /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
@@ -1199,6 +1210,70 @@ export function WorkspacePane({
   // glass capsule, and VS Code, which opens a page of its own, a glass
   // circle to its right; the head's size (`--head-ctl`) and chosen
   // states. ⚠️ 墓碑: two ghost toolbar buttons, VS Code first.
+  /** **The phone's file is a full-screen page** (round UX-3): the file
+      screen of the narrow face, for anything but a diff. */
+  const onPage = narrow && screen === "file" && file !== null && diffOf(file) === null;
+  useFullScreen(onPage);
+  /** What the view hands back about its unsaved copy, for one file.
+      **Nothing is written when nothing changed** (reported from an effect,
+      `FileView`); typing pins a preview tab (「在里面打了字,就钉住」). */
+  const draftOf = (path: string) => (d: Draft | null) => {
+    setDrafts((was) => {
+      const had = was.get(path);
+      if (d === null ? had === undefined : had === d) return was;
+      const now = new Map(was);
+      if (d === null) now.delete(path);
+      else now.set(path, d);
+      return now;
+    });
+    if (d !== null) setPreview((was) => (was === path ? null : was));
+  };
+  /** 编辑 at the same place, and ✓ back to reading there (round UX-3). */
+  const editHere = () => {
+    restore.current = topLine(mid.current);
+    flushSync(() => setFace("source"));
+    beginEditing(mid.current);
+  };
+  const readHere = () => {
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    if (file !== null && drafts.has(file)) {
+      savingBack.current = true;
+      setSaveAt((n) => n + 1);
+      return;
+    }
+    restore.current = topLine(mid.current);
+    setFace("preview");
+  };
+  /** **The file's verbs at the strip's right end** (round UX-3, the Mac):
+      分享, 「…」, and 编辑 where the file has a face to read it on — the
+      phone's file page's circles, beside the tab they are about. */
+  const fileTail =
+    !narrow && file !== null && diffOf(file) === null ? (
+      <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
+        <FileVerbs
+          machine={machine}
+          path={file}
+          here={here}
+          code={codeWin}
+          onGone={(p) => {
+            drop(p);
+            setGitAt((n) => n + 1);
+          }}
+          onMoved={moved}
+        />
+        {rendererOf(file) !== null && (
+          <GlassCircle
+            aria-label={face === "source" ? gui.watch_save : gui.accounts_edit}
+            tip={face === "source" ? gui.watch_save : gui.accounts_edit}
+            data-file-edit={face === "source" ? "save" : "edit"}
+            onClick={face === "source" ? readHere : editHere}
+            className={cn(face === "source" && "glass-sel text-[var(--rail-on-ink)]")}
+          >
+            {face === "source" ? <IconCheck /> : <IconPencil />}
+          </GlassCircle>
+        )}
+      </div>
+    ) : null;
   const switches = (
     <div data-ws-switches className="flex flex-none items-center gap-in">
       {/* **The tree's own switch, on the wide head** (P4, 2026-10-03, the
@@ -1413,7 +1488,7 @@ export function WorkspacePane({
         what does not fit onto a second one that is clipped, behind an
         empty first item so that a lone branch can wrap too. Dropped
         whole rather than cut to 「ma…」. */}
-    {narrow && (
+    {narrow && !onPage && (
       <NarrowHead>
         {() => (
           <>
@@ -1670,6 +1745,7 @@ export function WorkspacePane({
         )}
         {(!narrow || screen === "file") && (
         <div
+          ref={mid}
           data-ws-mid
           // **Named so the seams can ask how much room it has**
           // (2026-09-17 ruling 52). A column being dragged may take
@@ -1708,6 +1784,33 @@ export function WorkspacePane({
               a count until the third round — the wiring each seat did for
               itself, forgotten in one of them, which is why it lives in
               one place now. */}
+          {onPage && file !== null ? (
+            // **The phone's file is the file page** (round UX-3): no head,
+            // no strip — the name over the text and the circles under it.
+            // A diff keeps the strip's view; it has nothing to edit.
+            <FilePage
+              key={`${machine} ${file}`}
+              machine={machine}
+              path={file}
+              here={here}
+              git
+              draft={drafts.get(file)}
+              onDraft={draftOf(file)}
+              saveAt={saveAt}
+              readAt={readAt}
+              goLine={goLine !== null && goLine.path === file ? goLine : null}
+              onSaved={() => setGitAt((n) => n + 1)}
+              onNote={setFileNote}
+              onBack={() => setScreen("tree")}
+              onGone={(p) => {
+                drop(p);
+                setGitAt((n) => n + 1);
+                setScreen("tree");
+              }}
+              onMoved={moved}
+              code={codeWin}
+            />
+          ) : (
           <div ref={readFirst.box} className="contents">
           <Tabs
             faces={tabFaces}
@@ -1715,6 +1818,7 @@ export function WorkspacePane({
             onFocus={(id) => setFile(id.slice(machine.length + 1))}
             onClose={(id) => shut(id.slice(machine.length + 1))}
             stripData={{ "data-ws-tab-strip": "" }}
+            tail={fileTail}
             bodyClass="flex flex-col"
             // This strip heads the middle column, between the tree and
             // the sessions column — not the region (第十三轮 第 5 条's
@@ -1751,6 +1855,11 @@ export function WorkspacePane({
               onSaved={() => {
                 setGitAt((n) => n + 1);
                 readFirst.saved();
+                if (savingBack.current) {
+                  savingBack.current = false;
+                  restore.current = topLine(mid.current);
+                  setFace("preview");
+                }
               }}
               reading={readFirst.reading}
               onCanEdit={readFirst.onCanEdit}
@@ -1768,32 +1877,12 @@ export function WorkspacePane({
               // 35), only ever for the file it named.
               goLine={goLine !== null && goLine.path === file ? goLine : null}
               draft={drafts.get(file)}
-              onDraft={(d) => {
-                setDrafts((was) => {
-                  // A draft that matches the disk is not a draft — the
-                  // view says so by handing back `null`, and that is
-                  // what puts the tab's dot out again.
-                  //
-                  // **Nothing is written when nothing changed.** This
-                  // is reported from an effect now (`FileView`), so a
-                  // new Map every time would be a render every time,
-                  // and a render that re-runs the effect that caused
-                  // it (工作区批⑧).
-                  const had = was.get(file);
-                  if (d === null ? had === undefined : had === d) return was;
-                  const now = new Map(was);
-                  if (d === null) now.delete(file);
-                  else now.set(file, d);
-                  return now;
-                });
-                // 「在里面打了字,就钉住」— typing is a person saying
-                // they are staying, exactly as a double click is.
-                if (d !== null) setPreview((was) => (was === file ? null : was));
-              }}
+              onDraft={draftOf(file)}
             />
           )}
           </Tabs>
           </div>
+          )}
         </div>
         )}
         {(narrow ? screen === "sessions" : sessions) && (

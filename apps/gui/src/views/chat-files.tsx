@@ -267,12 +267,12 @@ export function MachineFilePick({
 
 /** Whether Finder can show this machine's files, asked once a page. */
 let revealing: Promise<boolean> | null = null;
-const revealHere = () => (revealing ??= fetchRevealHere().catch(() => false));
+export const revealHere = () => (revealing ??= fetchRevealHere().catch(() => false));
 
 /** The file's bytes for the share sheet, from the reads the preview
     already makes: a picture or a PDF as the preview carries it, text as
     text. `null` for anything else, which is not offered. */
-async function bytesOf(machine: string, path: string): Promise<File | null> {
+export async function bytesOf(machine: string, path: string): Promise<File | null> {
   const name = shownName(path);
   const kind = kindOf(path);
   if (kind === "text") {
@@ -290,7 +290,7 @@ async function bytesOf(machine: string, path: string): Promise<File | null> {
 
 /** The system's share sheet takes files here (a phone's WebKit; a desktop
     browser may take only links). */
-const shares = () =>
+export const shares = () =>
   typeof navigator.share === "function" &&
   typeof navigator.canShare === "function" &&
   navigator.canShare({ files: [new File([""], "x.txt", { type: "text/plain" })] });

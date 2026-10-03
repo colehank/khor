@@ -60,6 +60,13 @@ type Node = { children?: ReactNode; className?: string };
     block that is still arriving is told from one that has closed. */
 type Positioned = { node?: { position?: { start?: { offset?: number } } } };
 
+/** The source line a top-level block was marked with (`rehypeSourceLines`),
+    as the attribute the file page reads; nothing when not marked. */
+const at = (node: unknown) => {
+  const line = (node as { properties?: { dataSrcLine?: unknown } } | undefined)?.properties?.dataSrcLine;
+  return line === undefined ? {} : { "data-src-line": String(line) };
+};
+
 const parts: Components = {
   // The element `remarkPaths` makes. Not an HTML tag, so it is spelled
   // with a hyphen (the one shape a custom element may have) and the
@@ -76,17 +83,17 @@ const parts: Components = {
   // The gap between paragraphs grew with that leading: at the old one it
   // was a third of a line, which is barely a gap, and blocks of prose
   // this long need to be told apart from the lines inside them.
-  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+  p: ({ children, node }) => <p {...at(node)} className="my-2 first:mt-0 last:mb-0">{children}</p>,
   // Three levels of heading, then flat: a chat turn that needs a fourth
   // is not a document the pane should try to typeset.
-  h1: ({ children }) => <h1 className="mt-3 mb-1 text-title-md font-title first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="mt-3 mb-1 text-body font-title first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="mt-2 mb-1 font-title first:mt-0">{children}</h3>,
-  h4: ({ children }) => <h4 className="mt-2 mb-1 font-title first:mt-0">{children}</h4>,
-  h5: ({ children }) => <h5 className="mt-2 mb-1 font-title first:mt-0">{children}</h5>,
-  h6: ({ children }) => <h6 className="mt-2 mb-1 font-title first:mt-0">{children}</h6>,
-  ul: ({ children }) => <ul className="my-1.5 list-disc space-y-0.5 pl-5">{children}</ul>,
-  ol: ({ children }) => <ol className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>,
+  h1: ({ children, node }) => <h1 {...at(node)} className="mt-3 mb-1 text-title-md font-title first:mt-0">{children}</h1>,
+  h2: ({ children, node }) => <h2 {...at(node)} className="mt-3 mb-1 text-body font-title first:mt-0">{children}</h2>,
+  h3: ({ children, node }) => <h3 {...at(node)} className="mt-2 mb-1 font-title first:mt-0">{children}</h3>,
+  h4: ({ children, node }) => <h4 {...at(node)} className="mt-2 mb-1 font-title first:mt-0">{children}</h4>,
+  h5: ({ children, node }) => <h5 {...at(node)} className="mt-2 mb-1 font-title first:mt-0">{children}</h5>,
+  h6: ({ children, node }) => <h6 {...at(node)} className="mt-2 mb-1 font-title first:mt-0">{children}</h6>,
+  ul: ({ children, node }) => <ul {...at(node)} className="my-1.5 list-disc space-y-0.5 pl-5">{children}</ul>,
+  ol: ({ children, node }) => <ol {...at(node)} className="my-1.5 list-decimal space-y-0.5 pl-5">{children}</ol>,
   li: ({ children }) => <li>{children}</li>,
   strong: ({ children }) => <strong className="font-title">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
@@ -96,10 +103,10 @@ const parts: Components = {
   // passage somebody *said* were one picture. The tool line gave the
   // shape up rather than tinting it: a left rule is what quotation has
   // always been marked with, and colour in this app is spoken for.
-  blockquote: ({ children }) => (
-    <blockquote className="my-2 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>
+  blockquote: ({ children, node }) => (
+    <blockquote {...at(node)} className="my-2 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>
   ),
-  hr: () => <hr className="my-3 border-t" />,
+  hr: ({ node }) => <hr {...at(node)} className="my-3 border-t" />,
   // `pre` is the block's frame — the scroller, the paper and the corner.
   // Its `code` child drops back to a bare run so the inline treatment
   // below does not paint a second box inside this one.
@@ -118,15 +125,15 @@ const parts: Components = {
   // that wrote it and stopped being true one batch later — the sentence
   // is kept as its own correction because a note that describes the
   // *previous* state reads exactly like a note describing this one.)
-  pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-mono">
+  pre: ({ children, node }) => (
+    <pre {...at(node)} className="my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-mono">
       {children}
     </pre>
   ),
   // A table is the one part that can be wider than the pane; it scrolls
   // inside its own frame rather than pushing the conversation sideways.
-  table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
+  table: ({ children, node }) => (
+    <div {...at(node)} className="my-2 overflow-x-auto">
       <table className="w-full border-collapse text-callout">{children}</table>
     </div>
   ),
@@ -297,12 +304,31 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
  * Both props are plain values, so the default shallow compare is the
  * right one: a block is the same block exactly when its text is.
  */
+/** **Each block says which source line it starts on** (round UX-3, the
+    file page): a top-level block gets `data-src-line`, so the page can
+    find the line a reader was at in the rendered file and open the editor
+    there, and come back to the same block after saving. Positions are
+    the parser's own, so nothing is counted twice. */
+function rehypeSourceLines() {
+  type Hast = { type: string; tagName?: string; properties?: Record<string, unknown>; position?: { start: { line: number } }; children?: Hast[] };
+  return (tree: Hast) => {
+    for (const kid of tree.children ?? []) {
+      if (kid.type === "element" && kid.position) {
+        kid.properties = { ...kid.properties, dataSrcLine: kid.position.start.line };
+      }
+    }
+  };
+}
+
 export const Markdown = memo(function Markdown({
   text,
   className,
+  lines = false,
 }: {
   text: string;
   className?: string;
+  /** Mark each top-level block with its source line (`rehypeSourceLines`). */
+  lines?: boolean;
 }) {
   // One table per text rather than one for the module, because `code`
   // has to be told where the unterminated fence is. It is rebuilt
@@ -320,6 +346,7 @@ export const Markdown = memo(function Markdown({
         // **After gfm**, so the addresses it autolinks are already
         // `link` nodes and the path pass leaves them alone.
         remarkPlugins={[remarkGfm, remarkBreaks, remarkPaths]}
+        rehypePlugins={lines ? [rehypeSourceLines] : []}
         components={components}
       >
         {text}

@@ -126,6 +126,10 @@ const LIVE = {
   // canvas; a few strokes reaching out to their ends, so bare.
   move: reshare(fit(1.36, 1.36, 13.29), PLAIN, BARE),
   arrow: reshare(fit(1.36, 1.36, 13.29), PLAIN, BARE),
+  // The file page's two (round UX-3, 2026-10-04), on the 16 canvas: a
+  // pencil laid on the diagonal (round), and the tray with its arrow.
+  pencil: fit(1.99, 1.95, 12.06), // round
+  share: fit(1.2, 0.9, 13.6),
 } as const;
 
 /**
@@ -934,6 +938,30 @@ export function IconLink({ className }: IconProps) {
     <Mark className={className} live={LIVE.link}>
       <path d="M6.6 9.4a2.6 2.6 0 0 0 3.9.3l1.7-1.7a2.6 2.6 0 0 0-3.7-3.7l-1 1" />
       <path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3L3.8 8a2.6 2.6 0 0 0 3.7 3.7l1-1" />
+    </Mark>
+  );
+}
+
+/** 编辑 (round UX-3, the file page's bottom-right circle): a pencil on
+    the diagonal — the barrel is the solid piece, the point a line. */
+export function IconPencil({ className }: IconProps) {
+  return (
+    <Mark className={className} live={LIVE.pencil} icon="pencil">
+      <path data-body d="M10.7 2.8l2.5 2.5-6.8 6.8-2.5-2.5Z" />
+      <path d="M3.9 9.6L3.2 12.8l3.2-.7" />
+    </Mark>
+  );
+}
+
+/** 分享 (round UX-3): the system's own figure — an arrow leaving an open
+    tray. The arrow's head is the solid piece; the tray and the shaft are
+    lines, the tray left open at the top where the arrow goes out. */
+export function IconShare({ className }: IconProps) {
+  return (
+    <Mark className={className} live={LIVE.share} icon="share">
+      <path d="M5.6 6.6H4.6a1.1 1.1 0 0 0-1.1 1.1v5a1.1 1.1 0 0 0 1.1 1.1h6.8a1.1 1.1 0 0 0 1.1-1.1v-5a1.1 1.1 0 0 0-1.1-1.1h-1" />
+      <path d="M8 4.6v5.8" />
+      <path data-body d="M8 1.8l2.4 2.8H5.6Z" />
     </Mark>
   );
 }

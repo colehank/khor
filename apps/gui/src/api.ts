@@ -1242,6 +1242,10 @@ export const fetchLs = (machine: string, path: string) =>
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>
   call<string>("pull", { machine, path });
+/** The same file in a temporary folder on this machine, for handing to
+    its other apps (`khor_gui_core::files::pull_temp`); a path already
+    here comes back as it is. */
+export const pullTemp = (machine: string, path: string) => call<string>("pull_temp", { machine, path });
 /** Takes a path off whichever machine holds it (`khor_node::Link::
     remove_path`). `machine` empty is this one.
 

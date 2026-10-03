@@ -543,6 +543,9 @@ pub fn answer(
         "pull" => {
             to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
         }
+        "pull_temp" => {
+            to_json(&rt.block_on(crate::files::pull_temp(root, &arg("machine")?, &arg("path")?))?)
+        }
         // Taking a path off a disk. `machine` empty is this one, which
         // is also the only one with a recycle bin behind it.
         "remove" => {

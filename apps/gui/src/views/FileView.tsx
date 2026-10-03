@@ -1194,7 +1194,7 @@ export function FileView({
       {face === "preview" && renders !== null ? (
         <div data-file-preview={renders} className="min-h-0 flex-1 overflow-auto">
           {renders === "md" ? (
-            <Markdown text={body} className="prose-khor px-6 py-4" />
+            <Markdown text={body} className="prose-khor px-6 py-4" lines />
           ) : (
             <Table text={body} sep={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />
           )}
@@ -2012,7 +2012,9 @@ export function beginEditing(box: HTMLElement | null): void {
   const ed = box?.querySelector<HTMLTextAreaElement>("textarea[data-edit]");
   const scroller = box?.querySelector<HTMLElement>("[data-file-scroll]");
   if (!ed || !scroller) return;
-  const top = scroller.getBoundingClientRect().top;
+  // Past the scroller's own padding: the file page keeps its first line
+  // clear of the name over it (round UX-3).
+  const top = scroller.getBoundingClientRect().top + parseFloat(getComputedStyle(scroller).paddingTop || "0");
   const first = [...scroller.querySelectorAll<HTMLElement>("[data-line]")].find(
     (l) => l.getBoundingClientRect().bottom > top,
   );

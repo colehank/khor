@@ -67,6 +67,25 @@ pub async fn pull(root: &Path, machine: &str, path: &str) -> Result<String, Stri
     Ok(dest.display().to_string())
 }
 
+/// The same file, fetched for handing to this machine's other apps (round
+/// UX-3, the file page's 分享 on a Mac): into a folder of khor's own under
+/// the system's temporary directory, not the downloads — what is handed
+/// on is a copy for the moment, not a file the person asked to keep. A
+/// path already on this machine answers itself.
+pub async fn pull_temp(root: &Path, machine: &str, path: &str) -> Result<String, String> {
+    let n = Node::open(root.to_path_buf())?;
+    if machine.is_empty() || machine == n.name() {
+        return Ok(path.to_owned());
+    }
+    if !n.hosts() {
+        return Err(khor_catalog::msg::pull_needs_a_computer().to_owned());
+    }
+    let dir = std::env::temp_dir().join("khor-share");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let (_, dest) = n.pull_path(machine, path, &dir).await?;
+    Ok(dest.display().to_string())
+}
+
 fn dirs_download() -> std::path::PathBuf {
     let home = std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     let dl = home.join("Downloads");
