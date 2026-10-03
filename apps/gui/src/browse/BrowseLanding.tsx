@@ -62,6 +62,7 @@ import type { BrowseKind, HeldTab } from "@/browse/kind";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
 import { IconBrowser } from "@/components/icons";
+import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import type { KindMark } from "@/components/FaceMark";
 import { ListPane } from "@/components/ListPane";
@@ -325,7 +326,7 @@ export function BrowseLanding({
         </span>
       ),
       name: t.title || host || label,
-      sub: t.title && host && t.title !== host ? host : undefined,
+      sub: t.title && host && t.title !== host ? <PathCut text={host} /> : undefined,
       // What the row shows — its name and its place — and nothing else.
       find: `${label} ${t.title} ${t.path}`,
       selected: on,

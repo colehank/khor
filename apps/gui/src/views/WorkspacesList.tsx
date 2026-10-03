@@ -42,6 +42,7 @@ import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { ago, axisOf, groupLabel, valueOf } from "@/words";
 import { IGNORED } from "@/views/fileRow";
+import { PathCut } from "@/components/PathCut";
 
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
@@ -310,21 +311,6 @@ function rememberWsOpened(device: string, path: string) {
   } catch {
     /* the overview's list is lost and nothing else is */
   }
-}
-
-/** A line cut at its **start** when it does not fit: `…/working/khor`
-    keeps the end, which is the part a person reads in a path. */
-function HeadCut({ text, ...data }: { text: string; [mark: `data-${string}`]: unknown }) {
-  return (
-    <span
-      {...(data as Record<string, unknown>)}
-      dir="rtl"
-      title={text}
-      className="block min-w-0 truncate text-left"
-    >
-      <bdi dir="ltr">{text}</bdi>
-    </span>
-  );
 }
 
 export function WorkspacesList({
@@ -614,7 +600,7 @@ export function WorkspacesList({
       // `~`**: whose home that is, is a fact about the far machine. **Cut
       // at its start** (F2.5; N10): the last segment is the part a person
       // reads, and the end is where it is.
-      sub: <HeadCut data-ws-where text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />,
+      sub: <PathCut data-ws-where text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />,
       // The row's meta at the right end, as every list's (F2.1): the
       // branch — or nothing at all: not a repository, a machine that could
       // not be asked, a detached HEAD all arrive here as nothing — over

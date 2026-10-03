@@ -29,6 +29,7 @@ import { useEffect, useState } from "react";
 
 import { fetchWorkspaces, type DeviceRow, type WorkspaceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { PathCut } from "@/components/PathCut";
 import { EmptyState, RegionState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { ago } from "@/words";
@@ -128,7 +129,7 @@ export function WorkspacesNow({
                   )}
                 </span>
                 <span className="flex min-w-0 items-baseline gap-in text-callout text-muted-foreground">
-                  <span className="min-w-0 truncate">{r.machine === "" ? r.path : `${r.machine}:${r.path}`}</span>
+                  <PathCut className="flex-1" text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />
                   <span data-ws-now-touched className="ml-auto flex-none tabular-nums">
                     {at > 0 ? ago(at) : ""}
                   </span>
