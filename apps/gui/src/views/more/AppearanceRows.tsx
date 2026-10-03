@@ -4,7 +4,7 @@
 // has no keys for them yet.
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 
-import { IconBrowser, IconChevronDown, IconChevronUp, IconClose, IconDevices, IconFiles, IconGrip, IconQuota, IconSessions } from "@/components/icons";
+import { IconBrowser, IconChevronDown, IconChevronRight, IconChevronUp, IconClose, IconDevices, IconFiles, IconGrip, IconQuota, IconSessions } from "@/components/icons";
 import { Slider } from "@/components/settings/Slider";
 import {
   DropdownMenu,
@@ -24,6 +24,7 @@ import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, 
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
 import { cn } from "@/lib/utils";
 import { MoreSection } from "@/views/more/MorePage";
+import { KeyRowEditor } from "@/views/TermKeys";
 
 const ROW = "flex items-center gap-row px-row py-in";
 
@@ -73,6 +74,7 @@ export function TerminalSection() {
   const f = useTermFont();
   const coarse = useCoarse();
   const tapRaises = useTapRaisesKeyboard();
+  const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -207,6 +209,23 @@ export function TerminalSection() {
           on={tapRaises}
           onToggle={() => setTapRaisesKeyboard(!tapRaises)}
         />
+      )}
+      {/* The key row above the keyboard, and its editor — the one the
+          row's 「…」 opens (`views/TermKeys`). A finger's only. */}
+      {coarse && (
+        <>
+          <button
+            type="button"
+            data-setting-row="nav"
+            data-setting-row-name="term-key-row"
+            onClick={() => setEditingKeys(true)}
+            className={cn(ROW, "w-full text-left")}
+          >
+            <span className="min-w-0 flex-1 text-body">{gui.term_key_row}</span>
+            <IconChevronRight className="size-affordance text-tertiary" />
+          </button>
+          <KeyRowEditor open={editingKeys} onOpenChange={setEditingKeys} />
+        </>
       )}
     </MoreSection>
   );

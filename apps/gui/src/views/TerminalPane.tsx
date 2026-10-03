@@ -64,8 +64,8 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
-import { GlassItem } from "@/components/Glass";
-import { IconChevronDown, IconChevronUp, IconClose } from "@/components/icons";
+import { GlassCircle, GlassItem } from "@/components/Glass";
+import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -76,7 +76,8 @@ import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { tapRaisesKeyboard } from "@/lib/term-tap";
-import { KeyboardSwitch, TermKeys, ctrlOf } from "@/views/TermKeys";
+import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
+import { typed, type Mods } from "@/lib/term-keys";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -535,11 +536,31 @@ function fingerScrolls(term: Terminal, box: HTMLElement): () => void {
   };
 }
 
+/** The open terminals' re-joins, by session (`reopenTerminal`). */
+const reopeners = new Map<string, () => Promise<void>>();
+
+/**
+ * **Join an open terminal again from scratch** — the reload circle's act
+ * (2026-10-03), for anything else that knows a terminal is stuck (the
+ * network lane's reconnect strip). Answers false when no pane has that
+ * session open; otherwise resolves once the join has answered, joined or
+ * not (a failed join says why in the pane).
+ */
+export async function reopenTerminal(id: string): Promise<boolean> {
+  const reopen = reopeners.get(id);
+  if (!reopen) return false;
+  await reopen();
+  return true;
+}
+
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [gone, setGone] = useState(false);
+  // The reload circle's join in flight (`reopen`): its glyph turns.
+  const [joining, setJoining] = useState(false);
+  const reopenRef = useRef<(() => Promise<void>) | null>(null);
   // Why the terminal never opened, in khor's own words. **Not the same
   // fact as `gone`**: `gone` means the host this pane was watching
   // ended, and 这个终端结束了 is true of it; a failed open means there
@@ -585,16 +606,16 @@ export function TerminalPane({ id }: { id: string }) {
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
   const bellTimer = useRef(0);
-  // **Ctrl, latched from the key row** (`TermKeys`, 2026-10-02): it waits
-  // for the next key from either the row or the soft keyboard. A ref as
-  // well as state because the `onData` handler below reads it, and that
-  // handler is wired once per terminal.
+  // **Ctrl and Alt, latched from the key row** (`TermKeys`, 2026-10-02;
+  // Alt 2026-10-03): each waits for the next key from the row, its sheet
+  // or the soft keyboard. A ref as well as state because the `onData`
+  // handler below reads them, and that handler is wired once per terminal.
   const coarse = useCoarse();
-  const [ctrl, setCtrlShown] = useState(false);
-  const ctrlRef = useRef(false);
-  const latch = (on: boolean) => {
-    ctrlRef.current = on;
-    setCtrlShown(on);
+  const [mods, setModsShown] = useState<Mods>({ ctrl: false, alt: false });
+  const modsRef = useRef<Mods>({ ctrl: false, alt: false });
+  const latch = (m: Mods) => {
+    modsRef.current = m;
+    setModsShown(m);
   };
 
   useLayoutEffect(() => {
@@ -697,10 +718,14 @@ export function TerminalPane({ id }: { id: string }) {
     let seq = 0;
     let timer = 0;
     let busy = false;
+    // Which join the screen belongs to (`reopen`): a beat that was in
+    // flight across a re-join writes nothing.
+    let generation = 0;
     const tick = async () => {
+      const mine = generation;
       try {
         const b = await termStream(id, seq);
-        if (stopped) return;
+        if (stopped || mine !== generation) return;
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
         // writing a stream whose head is missing.
@@ -735,28 +760,63 @@ export function TerminalPane({ id }: { id: string }) {
       void loop();
     };
 
-    setOpening(true);
-    termOpen(id, term.cols, term.rows)
-      .then(() => termAttach(id))
-      .then((a) => {
-        if (stopped) return;
-        setOpening(false);
-        // Everything the feed holds — it began with the host's ring
-        // dump, so the screen arrives *with its history*, the same
-        // replay the host gives any attacher.
-        if (a.bytes) term.write(b64bytes(a.bytes));
-        seq = a.seq;
-        // Wired only now: a resize racing the open would size a pty
-        // the open is about to size again.
-        term.onResize(({ cols, rows }) => {
-          termResize(id, cols, rows).catch(() => {});
+    let resizing: { dispose(): void } | null = null;
+    /** Opens the session and takes its screen. **Again** is `reopen`
+        (2026-10-03, the owner: 「term 得有个刷新键…因为有时候会卡住」):
+        this face leaves first, the screen is dropped, and the session is
+        joined from scratch — the screen and the history the host keeps
+        come back as any new attacher gets them. A join that fails says
+        why in the pane, as a first join does, and can be pressed again. */
+    const join = (again: boolean): Promise<void> => {
+      const mine = ++generation;
+      window.clearTimeout(timer);
+      if (again) setJoining(true);
+      const opened = again
+        ? termLeave(id)
+            .catch(() => {})
+            .then(() => termOpen(id, term.cols, term.rows))
+        : termOpen(id, term.cols, term.rows);
+      return opened
+        .then(() => termAttach(id))
+        .then((a) => {
+          if (stopped || mine !== generation) return;
+          setOpening(false);
+          setJoining(false);
+          setWhy(null);
+          setGone(false);
+          if (again) term.reset();
+          // Everything the feed holds — it began with the host's ring
+          // dump, so the screen arrives *with its history*, the same
+          // replay the host gives any attacher.
+          if (a.bytes) term.write(b64bytes(a.bytes));
+          seq = a.seq;
+          // Wired only now: a resize racing the open would size a pty
+          // the open is about to size again.
+          resizing ??= term.onResize(({ cols, rows }) => {
+            termResize(id, cols, rows).catch(() => {});
+          });
+          if (again) {
+            fit.fit();
+            termResize(id, term.cols, term.rows).catch(() => {});
+            term.scrollToBottom();
+          }
+          void loop();
+        })
+        .catch((e: unknown) => {
+          if (stopped || mine !== generation) return;
+          setOpening(false);
+          setJoining(false);
+          setWhy(String((e as { message?: string })?.message ?? e));
         });
-        void loop();
-      })
-      .catch((e: unknown) => {
-        setOpening(false);
-        setWhy(String((e as { message?: string })?.message ?? e));
-      });
+    };
+    const reopenHere = () => join(true);
+    reopenRef.current = reopenHere;
+    // For the gates, as `__xterm` is.
+    (box as HTMLDivElement & { __reopen?: () => Promise<void> }).__reopen = reopenHere;
+    reopeners.set(id, reopenHere);
+
+    setOpening(true);
+    void join(false);
 
     // Keys travel whole: xterm encodes every key, modifier, mouse
     // report and (bracketed, when the program asked) paste into the
@@ -764,15 +824,16 @@ export function TerminalPane({ id }: { id: string }) {
     // as ever. The immediate re-poll is what makes echo feel wired
     // rather than polled.
     //
-    // A latched Ctrl (`TermKeys`) takes the next key xterm hands out — a
+    // The latches (`TermKeys`) take the next key xterm hands out — a
     // character typed on the soft keyboard becomes its control form (C →
-    // 0x03) — and lets go; a mouse report passes and leaves it waiting.
+    // 0x03) and, for Alt, gets an ESC before it — and let go; a mouse
+    // report passes and leaves them waiting.
     const data = term.onData((d) => {
       let out = d;
-      if (ctrlRef.current && !MOUSE_REPORT.test(d)) {
-        out = ctrlOf(d) ?? d;
-        ctrlRef.current = false;
-        setCtrlShown(false);
+      const m = modsRef.current;
+      if ((m.ctrl || m.alt) && !MOUSE_REPORT.test(d)) {
+        out = d.length === 1 ? typed(d, m) : d;
+        latch({ ctrl: false, alt: false });
       }
       termKey(id, out)
         .then(() => pollNow.current())
@@ -850,6 +911,9 @@ export function TerminalPane({ id }: { id: string }) {
       composing();
       asks();
       window.clearTimeout(bellTimer.current);
+      resizing?.dispose();
+      reopenRef.current = null;
+      if (reopeners.get(id) === reopenHere) reopeners.delete(id);
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
@@ -1118,13 +1182,29 @@ export function TerminalPane({ id }: { id: string }) {
         they go to the session bar (row 2, and row 1's right end); where
         there is no bar — the wide face on an iPad — the row stands here,
         under the screen, and the switch is not drawn. */}
+    {/* **Reload, right of ‹** (2026-10-03, the owner: 「term 得有个刷新键，
+        可以在返回键右侧，点击后刷新这个终端，因为有时候会卡住」): joins the
+        session again from scratch (`reopen`). On the wide face it stands
+        at the end of the tab strip, among the page's verbs. While it
+        joins the glyph turns and nothing else changes; it stays pressable. */}
+    <BarSeat at="lead">
+      <GlassCircle
+        data-term-reload
+        data-joining={joining || undefined}
+        aria-label={gui.term_reload}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => void reopenRef.current?.()}
+      >
+        <IconReload className={cn(joining && "animate-spin motion-reduce:animate-none")} />
+      </GlassCircle>
+    </BarSeat>
     {coarse && (
       <>
         <BarSeat at="trail">
           <KeyboardSwitch field={keysRef} />
         </BarSeat>
         <BarSeat at="under">
-          <TermKeys term={termRef} ctrl={ctrl} onCtrl={latch} />
+          <TermKeys term={termRef} mods={mods} onMods={latch} />
         </BarSeat>
       </>
     )}

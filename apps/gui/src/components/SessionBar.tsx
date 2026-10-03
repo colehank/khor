@@ -74,19 +74,29 @@ import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 
-type Seats = { trail: HTMLElement | null; under: HTMLElement | null };
+type Seats = { lead: HTMLElement | null; trail: HTMLElement | null; under: HTMLElement | null };
 
 const SeatsContext = createContext<Seats | null>(null);
 
+/** **The open session's verbs on the wide face** (2026-10-03): the end of
+    R0's tab strip, where a page's verbs stand. A view's `lead` goes there
+    when there is no bar; the provider is the wide shell's (`App`). */
+export const VerbSeat = createContext<HTMLElement | null>(null);
+
 /**
  * Something the open session puts in the bar: `under` is row 2 (the keys,
- * the input box), `trail` is row 1's right end (the keyboard switch).
- * Without a bar around it, `under` stands where it was written and
- * `trail` is not drawn.
+ * the input box), `trail` is row 1's right end (the keyboard switch),
+ * `lead` is row 1 right after ‹ (the terminal's reload). Without a bar
+ * around it, `under` stands where it was written, `lead` goes to the wide
+ * face's verbs (`VerbSeat`) where there is one, and `trail` is not drawn.
  */
-export function BarSeat({ at, children }: { at: "trail" | "under"; children: ReactNode }) {
+export function BarSeat({ at, children }: { at: "lead" | "trail" | "under"; children: ReactNode }) {
   const seats = useContext(SeatsContext);
-  if (!seats) return at === "under" ? <>{children}</> : null;
+  const verbs = useContext(VerbSeat);
+  if (!seats) {
+    if (at === "under") return <>{children}</>;
+    return at === "lead" && verbs ? createPortal(children, verbs) : null;
+  }
   const el = seats[at];
   return el ? createPortal(children, el) : null;
 }
@@ -122,9 +132,10 @@ export function SessionScreen({
   caption?: ReactNode;
   children: ReactNode;
 }) {
+  const [lead, setLead] = useState<HTMLElement | null>(null);
   const [trail, setTrail] = useState<HTMLElement | null>(null);
   const [under, setUnder] = useState<HTMLElement | null>(null);
-  const seats = useMemo(() => ({ trail, under }), [trail, under]);
+  const seats = useMemo(() => ({ lead, trail, under }), [lead, trail, under]);
   return (
     <div data-session-screen className="flex h-full min-h-0 flex-col bg-card">
       {/* The top of the glass is the platform's: a phone's status bar
@@ -156,10 +167,15 @@ export function SessionScreen({
             // The way out, pinned before the scroller (`TabStrip` `head`)
             // so it never scrolls away with the tabs. The narrow face's
             // only exit, so it is at the finger's floor.
+            // Right after it, the open session's own verbs (the
+            // terminal's reload): two circles side by side, not a capsule.
             head={
-              <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
-                <IconBack />
-              </GlassCircle>
+              <>
+                <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
+                  <IconBack />
+                </GlassCircle>
+                <span ref={setLead} data-session-bar-lead className="flex flex-none items-center gap-in empty:hidden" />
+              </>
             }
             tail={
               <>

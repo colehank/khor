@@ -232,6 +232,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         landings.push(item(&id, name(key), Some(accel.as_str()))?);
     }
     let find = item("find", m::find(), Some("CmdOrCtrl+K"))?;
+    // ⌘R: the terminal in front joined again (2026-10-03, the reload
+    // circle's act); the page answers it only while a terminal is open.
+    let reload_term = item("reload-term", m::reload_term(), Some("CmdOrCtrl+R"))?;
     // ⌃⌘S, the sidebar's key in Notes and Finder (F6.7).
     let sidebar = item("toggle-list", m::hide_sidebar(), Some("Ctrl+Cmd+S"))?;
     let view = Submenu::with_items(
@@ -247,6 +250,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &sep()?,
             &sidebar,
             &find,
+            &reload_term,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, Some(m::fullscreen()))?,
         ],

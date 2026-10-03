@@ -94,7 +94,8 @@ export type Act =
   | "next-tab"
   | "prev-tab"
   | "focus-list"
-  | "toggle-list";
+  | "toggle-list"
+  | "reload-term";
 
 /** One way to press an act. `mod` is ⌘ on a Mac and Ctrl elsewhere;
     `ctrl` is the Control key itself on every platform. Matched on `code`
@@ -130,6 +131,10 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
     ],
     web: false,
   },
+  // **⌘R, the terminal in front joined again** (2026-10-03; the reload
+  // circle's act, `TerminalPane`). The app's only: in a browser ⌘R is the
+  // page's own reload.
+  { act: "reload-term", chords: [{ key: "r", mod: true }], web: false },
   // The list's one Tab stop, from anywhere — a terminal included, which
   // keeps Tab for its shell (the audit fix plan F3.8; W25). ⌥⌘S, the
   // sidebar's key in Notes.
@@ -340,6 +345,16 @@ export function useShortcuts(acts: ShellActs) {
           if (!acts.toggleList) return false;
           acts.toggleList();
           return true;
+        case "reload-term": {
+          // Not under a finger: there the circle is the way.
+          if (window.matchMedia("(pointer: coarse)").matches) return false;
+          const box = document.querySelector<HTMLElement & { __reopen?: () => Promise<void> }>(
+            "[data-detail-pane] [data-terminal]",
+          );
+          if (!box?.__reopen) return false;
+          void box.__reopen();
+          return true;
+        }
         case "next-tab":
         case "prev-tab":
           if (acts.closePage || !now.tabs || now.tabs.count < 2) return false;
