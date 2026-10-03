@@ -486,7 +486,16 @@ pub fn answer(
                     .collect(),
                 _ => Vec::new(),
             };
-            crate::chat::chat_say_with(&arg("id")?, &arg("text")?, images, files)?;
+            // **Handed to a thread**: the bridge answers one request at a
+            // time, and a turn carrying photos to a far machine takes as
+            // long as the road does — every poll behind it would wait.
+            // How it went reaches the face on the conversation itself:
+            // the batch's `sending`, and a `Refused` frame if it did not
+            // go (`chat::chat_say_with`).
+            let (id, text) = (arg("id")?, arg("text")?);
+            std::thread::spawn(move || {
+                let _ = crate::chat::chat_say_with(&id, &text, images, files);
+            });
             Ok("null".to_owned())
         }
         "chat_answer" => {

@@ -509,9 +509,31 @@ async fn chat_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::cha
     khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
+/// One turn, with what it carries: `images` as `[mime, base64]` and
+/// `files` as `[name, text]` pairs. **Async, off the main thread**: a
+/// turn carrying photos to a far machine takes as long as the road does
+/// (2026-10-04: two phone photos held the interface for minutes), and
+/// it goes in slices with its progress on the poll (`chat::chat_say_with`).
+///
+/// ⚠️ 墓碑: this command took `id` and `text` only, so a picture or a
+/// file attached in the app never left it — the web face's bridge was
+/// the one door that carried them.
 #[tauri::command]
-fn chat_say(id: String, text: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_say(&id, &text)
+async fn chat_say(
+    id: String,
+    text: String,
+    images: Option<Vec<(String, String)>>,
+    files: Option<Vec<(String, String)>>,
+) -> Result<(), String> {
+    off_main(move || {
+        khor_gui_core::chat::chat_say_with(
+            &id,
+            &text,
+            images.unwrap_or_default(),
+            files.unwrap_or_default(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]

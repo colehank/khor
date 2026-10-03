@@ -947,6 +947,9 @@ export function ChatView({
   const [docs, setDocs] = useState<[string, string][]>([]);
   /** Why the last paste did not attach, if it did not. */
   const [shotErr, setShotErr] = useState<string | null>(null);
+  /** A turn with attachments on its way: bytes sent and in all, from the
+      poll (`ChatBatch.sending`); `null` when nothing is crossing. */
+  const [sending, setSending] = useState<[number, number] | null>(null);
   /** Which tool lines are open. **Closed by default and per line**: a
       conversation is read for what was said, and twenty shell commands
       unfolded is a transcript of the machine rather than of the work.
@@ -1081,6 +1084,7 @@ export function ChatView({
         .then((batch) => {
           if (stopped) return;
           cursor = batch.next;
+          setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
           // **The past this face was holding is no longer backed by
           // anything.** The attachment's frame list is capped
           // (`khor_gui_core::chat::FRAME_CAP`), and this says the trim
@@ -1264,12 +1268,13 @@ export function ChatView({
   /**
    * How large one attached image may be, in bytes of source data.
    *
-   * **5 MB, and the limit exists because the transport is a frame, not
-   * a stream.** The picture crosses as base64 inside one msgpack frame
-   * — base64 is 4/3 of the source, so this is ~6.7 MB on the wire —
-   * and a frame is read whole at both ends. A phone screenshot is under
-   * a megabyte; a raw camera photo is not, and the person who pastes
-   * one deserves the number rather than a turn that hangs.
+   * **5 MB, a person's limit more than the wire's.** The picture
+   * crosses as base64 (4/3 of the source, ~6.7 MB), and a turn that big
+   * goes in slices with its progress on screen (`chat_say_with`; the
+   * host takes up to 64 MB a turn). A phone screenshot is under a
+   * megabyte; a raw camera photo is not, and over a slow road every
+   * megabyte is seconds — the person who pastes one deserves the number
+   * rather than a long wait they did not choose.
    */
   const SHOT_MAX = 5 * 1024 * 1024;
 
@@ -1987,6 +1992,11 @@ export function ChatView({
               Each one can be taken back off — the picture is still on
               the clipboard, so this undoes the attaching and not the
               having. */}
+          {sending && (
+            <div data-chat-sending className="px-2 pb-1 text-caption tabular-nums text-muted-foreground">
+              {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}
+            </div>
+          )}
           {(shots.length > 0 || docs.length > 0 || shotErr) && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
               {shots.map(([, data], i) => (

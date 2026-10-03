@@ -1944,6 +1944,11 @@ chat-image = "Image {0}"
 chat-file = "{0}"
 chat-file-too-big = "{0} is {1}KB, over the {2}KB limit — can't send"
 chat-image-too-big = "This image is {0}MB, over the {1}MB limit — can't send"
+# A turn with pictures or files on its way to the machine that runs the
+# agent, megabytes sent so far and in all (gui-core's chat_say_with
+# sends it in slices). Shown while it crosses a slow road, so a send
+# that takes a while does not look like one that did nothing.
+chat-sending = "Sending {0} of {1} MB"
 chat-context = "Context {0}%"
 # The seat inside the capsule that holds the context dial (or the
 # agent's mark before any usage), and its panel's context row.
