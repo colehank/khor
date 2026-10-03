@@ -101,10 +101,11 @@ const CATCH_UP_MS = 2_000;
     (T-16). */
 const CHUNK_CHARS = 16 * 1024;
 
-/** The scrollback xterm keeps, matched to the parser's own
-    (`khor_gui_core::term::SCROLLBACK`) so the two authorities never
-    disagree about how far back "back" goes. */
-const SCROLLBACK = 2000;
+/** The scrollback xterm keeps (item 15 C: was tmux's default of 2000).
+    The parser in `khor_gui_core::term` keeps none any more, so this is the
+    only history a face has; after a re-attach it holds what the host's
+    ring (`RING` in `host.rs`) still has, not more. */
+const SCROLLBACK = 10_000;
 
 /** How long the frame lights for a bell (BEL). iTerm2's visual bell is
     a flash; a flash that stays is a border, and a border says nothing. */
