@@ -77,19 +77,35 @@ async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
     String::from_utf8(buf).map_err(msg::tunnel_bad_handshake)
 }
 
-/// A held tunnel to one exit: the live connection, and — for a one-shot
-/// caller — the endpoint it dialed from. Streams are opened from `conn`
-/// via [`dial`] and borrow it, so a caller keeps the `Borrow` alive for
+/// Where a lease's pipes go: a wire the resident holds and re-opens as
+/// it must (`crate::wires`) — fetched for each new pipe, so a lease
+/// outlives the death of any one connection under it.
+pub type WireSource = std::sync::Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Connection, String>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// A held tunnel to one exit. Streams are opened through it via [`dial`]
+/// and borrow its connection, so a caller keeps the `Borrow` alive for
 /// as long as any stream runs. One `Borrow` is one lease — many streams
 /// share it (docs/NET.md 出口是一层：一台出口一个 lease，多消费者共享).
 ///
-/// The endpoint is `Option` because who owns it differs by caller: a
-/// one-shot CLI/test dials a fresh endpoint the `Borrow` must keep alive;
-/// the resident serve dials on its own long-lived endpoint, which outlives
-/// any borrow and must not be owned here.
+/// **Two shapes, by who holds the connection.** A one-shot CLI or test
+/// dials a fresh endpoint and one connection the `Borrow` keeps alive
+/// for its life. The resident holds the exit's tunnel wire in its
+/// registry, and the `Borrow` asks for the current one per pipe: a wire
+/// retired for silence or replaced with fresh ears is not the lease's
+/// end — the next pipe dials a new one, and a page or a terminal pipe
+/// opened afterwards just works (round NET-FIX).
 pub struct Borrow {
     _ep: Option<iroh::Endpoint>,
-    conn: Connection,
+    lease: Lease,
+}
+
+enum Lease {
+    Fixed(Connection),
+    Held(WireSource),
 }
 
 impl Borrow {
@@ -97,19 +113,33 @@ impl Borrow {
     pub fn new(ep: iroh::Endpoint, conn: Connection) -> Self {
         Borrow {
             _ep: Some(ep),
-            conn,
+            lease: Lease::Fixed(conn),
         }
     }
 
-    /// A borrow dialed on an endpoint someone else keeps alive (the
-    /// resident serve's).
+    /// A borrow on a connection someone else keeps alive.
     pub fn on_shared(conn: Connection) -> Self {
-        Borrow { _ep: None, conn }
+        Borrow {
+            _ep: None,
+            lease: Lease::Fixed(conn),
+        }
+    }
+
+    /// A borrow whose pipes go over whatever wire `source` holds now.
+    pub fn on_wire(source: WireSource) -> Self {
+        Borrow {
+            _ep: None,
+            lease: Lease::Held(source),
+        }
     }
 
     /// Opens one pipe through this lease to `target`.
     pub async fn open(&self, target: &str) -> Result<(SendStream, RecvStream), String> {
-        dial(&self.conn, target).await
+        let conn = match &self.lease {
+            Lease::Fixed(conn) => conn.clone(),
+            Lease::Held(source) => source().await?,
+        };
+        dial(&conn, target).await
     }
 }
 

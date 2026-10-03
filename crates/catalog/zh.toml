@@ -38,10 +38,11 @@ unknown = "未识别"
 # 校园网上实测直连 3.8–9.8ms、中继 6.0ms——人从手感上分不出来,所以
 # 「悄悄退回中继」需要一个词才看得见。
 #
-# 五个词里有三个是「没话说」,而它们是三件事:「未连接」是答案、
-# 「serve 未运行」有解(去起 serve)、「未知」两者都不是。
-# 合成任意两个,都会让人去做错的事,或者根本不知道该做什么。
-# (2026-09-28 从「没在连 / serve 没在跑 / 说不出」换成标准词;三件事没变。)
+# 读的是常驻手里那条长连接选中的路,两次采样一致才换词;没有连接、或连接
+# 静默被收回,就是「未连接」。「serve 未运行」有解(去起 serve),所以单列。
+# (2026-10-03 NET 轮去掉了「未知」:它曾代表五件不相干的事——iroh 地址簿
+# 里没有、状态查询失败、答得晚、少一行、手机换了新端点——没有一件是
+# 「路不知道」。现在各说各的:未连接,或者保留上一次的读数。)
 #
 # 没有「直连+中继」这一档:实测直连开着的时候中继一直也开着(iroh 拿它当
 # 保险,不拆),所以那个词会出现在每一条健康的行上——常年都在的词等于没有词,
@@ -50,9 +51,8 @@ unknown = "未识别"
 direct = "直连"
 relay = "中继"
 quiet = "未连接"
-# 本机没有常驻,压根没人能读这个数——和「未知」分开,因为它有解:去起 serve。
+# 本机没有常驻,压根没人能读这个数——和「未连接」分开,因为它有解:去起 serve。
 no-serve = "serve 未运行"
-unsure = "未知"
 
 [avatar]
 axis-palette = "色板"
@@ -544,6 +544,10 @@ doctor-road-fresh = "{0} 首包 {1}ms"
 doctor-roads-none = "serve 这次启动后还没有连过别的机器"
 doctor-roads-no-serve = "serve 未运行，没有连接读数"
 doctor-roads-unanswered = "serve 没有回答（可能比这一版旧）"
+doctor-road-unread = "连接未读"
+doctor-wires = "长连接：拨号 {0} 次（失败 {1}），答得晚 {2}，读取重试 {3}"
+doctor-wires-retired = "收回 静默 {0}、无响应 {1}、已关闭 {2}、换网 {3}、换端点 {4}"
+doctor-wires-reads = "读数 直连 {0}、中继 {1}、未连接 {2}；网络变化 {3}；状态查询超时 {4}"
 doctor-hooks-ok = "claude 的钩子均已安装"
 doctor-hooks-part = "{0} 个事件的钩子未安装，或指向另一个 khor"
 doctor-hooks-unread = "无法读取 claude 的设置"
@@ -620,6 +624,7 @@ age-seconds = "{0} 秒"
 age-minutes = "{0} 分钟"
 age-hours = "{0} 小时"
 age-days = "{0} 天"
+link-last-heard = "{0} · 上次 {1}前"
 # A machine's readings (khor_core::Vitals). Each unit prints its own
 # denominator: 「78%」 and 「78% / 12 核」 are two different sentences, and
 # only the second one can be acted on.
@@ -1421,6 +1426,9 @@ cant-make-invites-dir = "无法创建邀请目录：{0}"
 cant-save-invite = "无法保存配对票：{0}"
 cant-reach-named = "无法连接 {0}：{1}"
 cant-reach-plain = "无法连接：{0}"
+machine-silent = "{0} 没有响应"
+answer-late = "{0} 在 {1} 秒内没有答完"
+peer-backing-off = "上次没连上，{0} 秒后再试"
 dial-timed-out = "连接超时"
 inviter-unreachable-timeout = "无法连接出票的机器（超时）"
 inviter-unreachable = "无法连接出票的机器：{0}"
@@ -1707,9 +1715,8 @@ serve-fresh-ears = "[{0}] 换了一副新耳朵（{1} 毫秒），马上同步�
 serve-fresh-ears-failed = "[{0}] 没换成新耳朵：{1}"
 serve-deaf-fresh-ears = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，就地换一副（不退出）"
 serve-gone-midway = "serve 在换新耳朵的半路结束了"
-# The road question (Op::Hops) never leaves the process, so a late
-# answer means iroh itself is stuck: said here, 说不出 on the card.
-serve-hops-late = "[{0}] 问 iroh 走哪条路，{1} 毫秒内没答上来，先报「说不出」：{2}"
+serve-network-changed = "[{0}] 网络变了（或刚从睡眠醒来）——三秒内没回音的连接收回，然后同步一轮"
+round-cancelled = "同步被中断"
 # 76's preventive half: on a network filesystem, replacing the binary
 # can kill the running keeper on another machine (SIGBUS suspicion), so
 # the keeper re-execs from a local copy and nothing khor keeps running
@@ -2249,6 +2256,7 @@ mcp-closed = "session 已关闭"
 mcp-told = "留言已送达"
 
 [gui]
+link-last-heard = "{0} · 上次 {1}前"
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"
 window-maximize = "最大化 / 还原"

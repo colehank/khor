@@ -16,7 +16,7 @@ use khor_sync::store::Doc;
 use khor_sync::{chat, wire};
 
 use crate::proto::{self, MAX_FRAME, Request, Response};
-use crate::{Node, ipc};
+use crate::{Node, ipc, wires};
 
 /// How often the serve loop syncs with everyone — and, on the same beat,
 /// reaps borrows whose rows are gone.
@@ -48,6 +48,14 @@ pub const SYNC_EVERY: Duration = Duration::from_secs(5);
 const PAUSE_POLL: Duration = Duration::from_millis(500);
 
 const DEAF_AFTER: Duration = Duration::from_secs(120);
+
+/// How far the wall clock may run ahead of the monotonic one between two
+/// looks at the wires before it is read as a sleep. Both clocks advance
+/// together while the process is merely stopped or busy; only a
+/// suspended machine stops the monotonic clock (`CLOCK_UPTIME_RAW` on
+/// macOS, `CLOCK_MONOTONIC` on Linux) and not the wall. Five seconds is
+/// above any adjustment NTP slews in and below any sleep worth noticing.
+const SLEPT_AFTER: Duration = Duration::from_secs(5);
 
 /// The exit code of a serve that concluded it had gone deaf. Non-zero
 /// on purpose: a clean exit would tell the keeper to stay down.
@@ -115,6 +123,16 @@ enum Wake {
     },
     /// Close the endpoint under the serve and leave it closed ([`deafen`]).
     Deafen {
+        done: tokio::sync::oneshot::Sender<()>,
+    },
+    /// The network under this machine changed, or it woke from sleep
+    /// ([`network_changed`]): tell iroh, judge every wire by whether it
+    /// is heard right after, and visit everyone once that is known.
+    Network,
+    /// The app is going to the background ([`suspending`]): let every
+    /// wire go now, closed, so the far machines read 未连接 at once
+    /// instead of after their silence limit.
+    Suspend {
         done: tokio::sync::oneshot::Sender<()>,
     },
 }
@@ -234,6 +252,31 @@ pub fn resume(root: &std::path::Path) -> Option<Resuming> {
     })
 }
 
+/// **The network under this machine changed, or it woke from sleep**:
+/// the resident on `root` tells iroh (`Endpoint::network_change`), keeps
+/// every wire that is heard within [`wires::AFTER_CHANGE`] and retires
+/// the rest, then visits every machine. Answers whether a resident here
+/// took it. The Mac app calls this on `NSWorkspaceDidWakeNotification`,
+/// the phone on a path change; the resident also notices a sleep on its
+/// own, by its wall clock jumping past its monotonic one.
+pub fn network_changed(root: &std::path::Path) -> bool {
+    door(root).is_some_and(|d| d.send(Wake::Network).is_ok())
+}
+
+/// **The app is going to the background**: the resident on `root` lets
+/// every wire go, closed — the far machines learn at once rather than
+/// after [`wires::SILENT_AFTER`], and nothing is left half-open for the
+/// system to reclaim under it. The endpoint stays; [`resume`] gives it
+/// new ears on the way back. Answers once the wires are let go.
+pub async fn suspending(root: &std::path::Path) -> bool {
+    let (done, done_rx) = tokio::sync::oneshot::channel();
+    let Some(door) = door(root) else { return false };
+    if door.send(Wake::Suspend { done }).is_err() {
+        return false;
+    }
+    done_rx.await.is_ok()
+}
+
 /// Closes the endpoint under the resumable serve on `root` and leaves
 /// it closed — **what a suspension does to a phone's ears**, done on
 /// purpose so a test can prove [`resume`] cures it (`tests/resume.rs`).
@@ -288,6 +331,13 @@ pub fn dial_budget_seconds() -> u64 {
 /// off still fails in exactly `DIAL_TIMEOUT`, the same as before any of
 /// this.
 const RELAY_HEAD_START: Duration = Duration::from_millis(1500);
+
+/// How many requests from one connection are answered at once. Enough
+/// that a slow one (a search, a big listing, a satellite's ssh) never
+/// holds a quick one behind it; a bound so one machine asking without
+/// pause cannot take every thread this one has. QUIC's own stream limit
+/// (100 open bidirectional streams) is what holds the asker beyond it.
+const STREAMS_AT_ONCE: usize = 32;
 
 /// How long a pairing ticket can be used after it is minted.
 ///
@@ -413,6 +463,22 @@ impl Node {
         ))
     }
 
+    /// The endpoint the resident answers on from now (`Node::ears`).
+    fn set_ears(&self, ep: &std::sync::Arc<iroh::Endpoint>) {
+        *self.ears.lock().unwrap_or_else(|p| p.into_inner()) = Some(ep.clone());
+    }
+
+    /// The endpoint the resident answers on now, for a task that outlives
+    /// the call that started it. `None` on a node that is not serving.
+    pub(crate) fn current_ears(&self) -> Option<std::sync::Arc<iroh::Endpoint>> {
+        self.ears.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    /// The resident's own handle, when this node is the one serving.
+    pub(crate) fn me(&self) -> Option<std::sync::Arc<Node>> {
+        self.me.get().and_then(std::sync::Weak::upgrade)
+    }
+
     /// Own dialing hints go into the table so the snapshot handed to a
     /// pairing device already says how to reach us — relay roads
     /// included, or a peer behind a hostile network has no way in.
@@ -471,7 +537,7 @@ impl Node {
         let ep = tokio::time::timeout(DIAL_TIMEOUT, self.bind_ears())
             .await
             .map_err(|_| msg::dial_timed_out().to_string())??;
-        self.wires.lock().await.clear();
+        self.wires.clear(wires::Retired::NewEars);
         for (_, (_, _, handle)) in self.reaches.lock().await.drain() {
             handle.abort();
         }
@@ -514,6 +580,10 @@ impl Node {
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.
         let node = std::sync::Arc::new(self);
+        // The resident's handle on itself and on its current ears, for
+        // the tasks it spawns that outlive one call (`Node::me`).
+        let _ = node.me.set(std::sync::Arc::downgrade(&node));
+        node.set_ears(&ep);
         // The satellite sampler (附属机器批): its own task on its own
         // minute beat — a sample is an ssh dial, and the 5s pump must
         // not inherit that weight.
@@ -576,19 +646,59 @@ impl Node {
             });
         }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
+        // [`resume`]'s door into this loop, and the deaf watch's own. Only
+        // a resumable serve is listed where [`resume`] looks; the sender
+        // kept here is also how the watch asks this loop for new ears,
+        // and how the wire watch below reports a wake.
+        let (wake, mut woken) = tokio::sync::mpsc::unbounded_channel::<Wake>();
+        let _listed = resumable.then(|| Listed::new(node.root(), wake.clone()));
+        // **The wire watch** (`crate::wires`): once a second, what each
+        // wire has heard, which road it is on, and the silent ones
+        // retired. The same beat notices a sleep: the monotonic clock
+        // stops while a Mac or a Linux box is suspended and the wall clock
+        // does not, so a wall clock that ran ahead of it is a wake —
+        // treated like a network change, because after a sleep it often
+        // is one, and every wire has to prove it is still alive either way.
+        {
+            let n = node.clone();
+            let wake = wake.clone();
+            tokio::spawn(async move {
+                let mut beat = tokio::time::interval(wires::TICK);
+                beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                let mut mono = std::time::Instant::now();
+                let mut wall = std::time::SystemTime::now();
+                loop {
+                    beat.tick().await;
+                    n.wires.tick();
+                    let ran = mono.elapsed();
+                    let walked = wall.elapsed().unwrap_or_default();
+                    if walked > ran + SLEPT_AFTER {
+                        let _ = wake.send(Wake::Network);
+                    }
+                    mono = std::time::Instant::now();
+                    wall = std::time::SystemTime::now();
+                }
+            });
+        }
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         // One pump on the way back from a stop, not one per five seconds
         // away (the pause beat above has the reason).
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        // [`resume`]'s door into this loop, and the deaf watch's own. Only
-        // a resumable serve is listed where [`resume`] looks; the sender
-        // kept here is also how the watch asks this loop for new ears.
-        let (wake, mut woken) = tokio::sync::mpsc::unbounded_channel::<Wake>();
-        let _listed = resumable.then(|| Listed::new(node.root(), wake.clone()));
         // Whether the endpoint is still one to accept on: an endpoint
         // that closed answers `None` at once and forever, so a resumable
         // serve stops asking it until it has a new one.
         let mut hearing = true;
+        // A resume in flight, and everyone waiting on it; the bind's
+        // result comes back to this loop on `bound`.
+        type Waiting = (
+            Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
+            Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
+        );
+        let mut resuming: Option<Vec<Waiting>> = None;
+        let (bound_tx, mut bound_rx) = tokio::sync::mpsc::unbounded_channel::<(
+            Result<std::sync::Arc<iroh::Endpoint>, String>,
+            std::time::Instant,
+        )>();
         loop {
             tokio::select! {
                 incoming = ep.accept(), if hearing => {
@@ -611,10 +721,11 @@ impl Node {
                     let e = ep.clone();
                     tokio::spawn(async move {
                         if let Ok(conn) = incoming.await {
+                            n.wires.serving(&conn);
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
                                 let _ = n.serve_tunnel(conn).await;
                             } else {
-                                let _ = n.handle(conn, &e).await;
+                                let _ = n.handle(conn, e).await;
                             }
                         }
                     });
@@ -655,63 +766,111 @@ impl Node {
                         hearing = false;
                         let _ = done.send(());
                     }
-                    Wake::Resume { ears, synced } => {
-                        let begun = std::time::Instant::now();
+                    Wake::Suspend { done } => {
+                        node.wires.clear(wires::Retired::Suspended);
+                        node.wires.let_go_served(wires::Retired::Suspended);
+                        let _ = done.send(());
+                    }
+                    Wake::Network => {
+                        node.wires.network_changed();
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                        match node.fresh_ears().await {
-                            Ok(fresh) => {
-                                let old = std::mem::replace(&mut ep, fresh);
-                                hearing = true;
-                                // Closed off the loop: a graceful close
-                                // waits on its connections, and the new
-                                // ears are already the ones answering.
-                                tokio::spawn(async move { old.close().await });
-                                match node.publish_roads(&ep) {
-                                    Ok(addrs) => {
-                                        let _ = node.write_endpoint_file(addrs, &handoffs, &cookie);
-                                    }
-                                    Err(e) => eprintln!("{e}"),
-                                }
-                                // The round below is this interval's.
-                                ticker.reset();
-                                eprintln!(
-                                    "{}",
-                                    msg::serve_fresh_ears(&stamp, begun.elapsed().as_millis())
-                                );
-                                if let Some(ears) = ears {
-                                    let _ = ears.send(Ok(()));
-                                }
-                            }
-                            Err(why) => {
-                                eprintln!("{}", msg::serve_fresh_ears_failed(&stamp, &why));
-                                if let Some(ears) = ears {
-                                    let _ = ears.send(Err(why));
-                                }
-                            }
-                        }
-                        // **A round at once**, not at the next tick: what
-                        // the others wrote while this one was away is the
-                        // first thing a person coming back looks at. It
-                        // waits for a pump already in flight rather than
-                        // skipping (the tick's `try_lock`) — that pump was
-                        // on the old ears and ends as they close.
+                        eprintln!("{}", msg::serve_network_changed(&stamp));
                         let n = node.clone();
                         let e = ep.clone();
                         let deaf = deaf.clone();
                         tokio::spawn(async move {
-                            let out = {
-                                let _g = n.sync_gate.lock().await;
-                                n.sync_with_all(&e).await
-                            };
-                            let _ = n.trust_tick();
+                            e.network_change().await;
+                            // Once the wires that are going to answer have
+                            // answered, and the rest are retired: a visit
+                            // to everyone, the backed-off included — the
+                            // network they failed on is not this one.
+                            tokio::time::sleep(wires::AFTER_CHANGE + wires::TICK).await;
+                            let out = n.sync_peers(&e, true).await;
                             let heard = if n.self_admitted() { out.as_slice() } else { &[] };
                             let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
-                            if let Some(synced) = synced {
-                                let _ = synced.send(out);
-                            }
+                        });
+                    }
+                    Wake::Resume { ears, synced } => {
+                        // **Off this loop**: binding waits on the network,
+                        // and the arms above — the app's own status
+                        // questions among them — must not wait behind it.
+                        // The old ears keep answering meanwhile. A second
+                        // resume while one is binding joins it: two binds
+                        // on one key knock each other off the relay.
+                        if let Some(waiting) = resuming.as_mut() {
+                            waiting.push((ears, synced));
+                            continue;
+                        }
+                        resuming = Some(vec![(ears, synced)]);
+                        let n = node.clone();
+                        let back = bound_tx.clone();
+                        tokio::spawn(async move {
+                            let begun = std::time::Instant::now();
+                            let fresh = n.fresh_ears().await;
+                            let _ = back.send((fresh, begun));
                         });
                     }
                 },
+                Some((fresh, begun)) = bound_rx.recv() => {
+                    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                    let waiting = resuming.take().unwrap_or_default();
+                    let mut synced_to = Vec::new();
+                    match fresh {
+                        Ok(fresh) => {
+                            let old = std::mem::replace(&mut ep, fresh);
+                            node.set_ears(&ep);
+                            hearing = true;
+                            // Closed off the loop: a graceful close waits
+                            // on its connections, and the new ears are
+                            // already the ones answering.
+                            tokio::spawn(async move { old.close().await });
+                            match node.publish_roads(&ep) {
+                                Ok(addrs) => {
+                                    let _ = node.write_endpoint_file(addrs, &handoffs, &cookie);
+                                }
+                                Err(e) => eprintln!("{e}"),
+                            }
+                            // The round below is this interval's.
+                            ticker.reset();
+                            eprintln!(
+                                "{}",
+                                msg::serve_fresh_ears(&stamp, begun.elapsed().as_millis())
+                            );
+                            for (ears, synced) in waiting {
+                                if let Some(ears) = ears {
+                                    let _ = ears.send(Ok(()));
+                                }
+                                synced_to.extend(synced);
+                            }
+                        }
+                        Err(why) => {
+                            eprintln!("{}", msg::serve_fresh_ears_failed(&stamp, &why));
+                            for (ears, synced) in waiting {
+                                if let Some(ears) = ears {
+                                    let _ = ears.send(Err(why.clone()));
+                                }
+                                synced_to.extend(synced);
+                            }
+                        }
+                    }
+                    // **A round at once**, not at the next tick: what the
+                    // others wrote while this one was away is the first
+                    // thing a person coming back looks at. Every machine,
+                    // the backed-off included: the network they failed on
+                    // may not be this one.
+                    let n = node.clone();
+                    let e = ep.clone();
+                    let deaf = deaf.clone();
+                    tokio::spawn(async move {
+                        let out = n.sync_peers(&e, true).await;
+                        let _ = n.trust_tick();
+                        let heard = if n.self_admitted() { out.as_slice() } else { &[] };
+                        let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
+                        for synced in synced_to {
+                            let _ = synced.send(out.clone());
+                        }
+                    });
+                }
                 _ = ticker.tick() => {
                     // A kept serve whose keeper is gone must leave: an
                     // orphan holds the endpoint key, so the guardian's
@@ -728,18 +887,14 @@ impl Node {
                         eprintln!("{}", msg::serve_orphaned(&stamp));
                         std::process::exit(1);
                     }
-                    // Off the accept loop: an unreachable device stalls a
-                    // visit for DIAL_TIMEOUT, and a serve that goes deaf
-                    // for that long fails everyone else. Skip when the
-                    // previous pump still runs instead of piling up.
                     // Paused: no pump, and **no hearing test either**.
-                    // The deaf watch exits the process when everyone
+                    // The deaf watch concludes deafness when everyone
                     // with a road has been silent for DEAF_AFTER, which
                     // is exactly what a pause looks like from in here —
-                    // left running, it would restart a machine somebody
-                    // deliberately quieted, over and over. The local
-                    // handoff arm stays open: a paused machine is still
-                    // a machine its own faces talk to.
+                    // left running, it would replace the ears of a
+                    // machine somebody deliberately quieted, over and
+                    // over. The local handoff arm stays open: a paused
+                    // machine is still a machine its own faces talk to.
                     if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
                     let e = ep.clone();
@@ -753,35 +908,64 @@ impl Node {
                         // through its own agent row (the fold in
                         // `LiveKind::rows` hides them; this stops them).
                         n.live.reap_folded_bridges();
-                        let Ok(_g) = n.sync_gate.try_lock() else { return };
-                        let out = n.sync_with_all(&e).await;
-                        // The serve's own hearing test: a long-lived
-                        // endpoint can go silently, bidirectionally
-                        // unreachable while the process looks healthy
-                        // (批23). Every observed cure was a restart, so
-                        // when everyone with a road has been dead for
-                        // DEAF_AFTER straight, prescribe it: exit, and
-                        // the keeper stands up a fresh endpoint.
+                        // **Tidy up before the visits start**, at the one
+                        // moment of a beat when no round is likely to be
+                        // running: compaction rewrites a document, so it
+                        // waits for the store to be free of rounds and
+                        // never makes one wait (`try_write`). An ordinary
+                        // tick does nothing here at all — the scan is a
+                        // handful of `read_dir`s, and only a document past
+                        // `store::PILE` is rewritten.
+                        //
+                        // ⚠️ **The resident serve is the only process
+                        // that may do this** (`Node::compact_piles`).
+                        if let Ok(store) = n.store_gate.try_write() {
+                            let c = n.clone();
+                            let done = tokio::task::spawn_blocking(move || c.compact_piles())
+                                .await
+                                .unwrap_or_default();
+                            drop(store);
+                            for (dir, c) in done {
+                                let stamp =
+                                    jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                                eprintln!(
+                                    "{stamp} compacted {} — {} blocks into {}",
+                                    dir.display(),
+                                    c.before,
+                                    c.after
+                                );
+                            }
+                        }
+                        // Every machine at once, each on its own wire and
+                        // budget; one still in a round from an earlier
+                        // beat is joined rather than visited twice, and
+                        // one backing off after failed dials is left alone
+                        // until its wait is over (`Node::sync_peers`).
+                        let out = n.sync_peers(&e, false).await;
                         // …and the trust beat on the same visit: the
                         // roster that just arrived may name this machine,
                         // and the holder's may be due for a new date.
                         let _ = n.trust_tick();
+                        // The serve's own hearing test: a long-lived
+                        // endpoint can go silently, bidirectionally
+                        // unreachable while the process looks healthy
+                        // (批23). Every observed cure was new ears, so
+                        // when everyone with a road has been dead for
+                        // DEAF_AFTER straight, prescribe them.
                         // A machine waiting for approval (or revoked) is
                         // refused by everyone on purpose; that silence is
-                        // an answer, not deafness, and restarting over it
-                        // every two minutes would fix nothing.
+                        // an answer, not deafness, and replacing ears over
+                        // it every two minutes would fix nothing.
                         let heard = if n.self_admitted() { out.as_slice() } else { &[] };
                         if deaf.lock().expect("deaf watch poisoned").observe(heard) {
                             let stamp =
                                 jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                            // **Not a resumable serve's way out.** Nothing
-                            // stands a phone app back up — no keeper, and
-                            // the system reads an exit as a crash — and a
-                            // phone out of signal for two minutes hears
-                            // nobody for an ordinary reason; the app would
-                            // simply vanish in a lift. It asks its own loop
-                            // for fresh ears instead (docs/IOS.md 第三步),
-                            // and the watch starts over.
+                            // **New ears in place**, for every resumable
+                            // serve — the phone, and the app on a desktop
+                            // too (round NET-FIX: the Mac app used to exit
+                            // here, taking its window with it). Only a
+                            // serve with a keeper behind it still exits,
+                            // and the keeper stands up a fresh process.
                             if resumable {
                                 eprintln!("{}", msg::serve_deaf_fresh_ears(&stamp, DEAF_AFTER.as_secs()));
                                 *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
@@ -790,36 +974,6 @@ impl Node {
                                 eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
                                 std::process::exit(DEAF_EXIT);
                             }
-                        }
-                        // **Tidy up after the sync, never before it.**
-                        // Compaction rewrites a document that the pump
-                        // above may have just added blocks to, so doing
-                        // it second means one fewer round where the new
-                        // blocks are the ones left uncompacted. It is
-                        // also the cheap half: the scan is a handful of
-                        // `read_dir`s and only a document past
-                        // `store::PILE` is rewritten, so an ordinary
-                        // tick does nothing at all.
-                        //
-                        // ⚠️ **The resident serve is the only process
-                        // that may do this** (`Node::compact_piles`).
-                        // Off the async thread because it is file work,
-                        // and behind the same sync gate this tick
-                        // already holds, so a rewrite and a pump never
-                        // touch one document at once.
-                        let c = n.clone();
-                        let done = tokio::task::spawn_blocking(move || c.compact_piles())
-                            .await
-                            .unwrap_or_default();
-                        for (dir, c) in done {
-                            let stamp =
-                                jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                            eprintln!(
-                                "{stamp} compacted {} — {} blocks into {}",
-                                dir.display(),
-                                c.before,
-                                c.after
-                            );
                         }
                     });
                 }
@@ -869,6 +1023,10 @@ impl Node {
             Err(_) => {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                 eprintln!("{}", msg::serve_op_late(&stamp, name, mine.as_secs()));
+                self.wires
+                    .counts
+                    .ops_late
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 ipc::Reply::Refused {
                     why: msg::serve_op_timed_out(name, deadline.as_secs()),
                 }
@@ -888,48 +1046,22 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::Hops => {
-                // Every device gets a row, including this machine and
-                // the ones nothing has ever dialled: a device left out
-                // would read as absent rather than as unread, and those
-                // are different answers.
-                let devices = self.devices().unwrap_or_default();
-                let asks = devices
-                    .iter()
-                    .map(|d| {
-                        let id = d.id.clone();
-                        (d.id.clone(), async move {
-                            endpoint::roads_in_use(ep, &id).await
-                        })
-                    })
-                    .collect();
-                let (by_device, late) = hops_within(asks, HOPS_BUDGET).await;
-                // Said, not swallowed: 说不出 on the card is true, and this
-                // line is where the *why* goes — a stalled endpoint is a
-                // fault worth finding in the serve's log.
-                if !late.is_empty() {
-                    let names: Vec<&str> = devices
-                        .iter()
-                        .filter(|d| late.contains(&d.id))
-                        .map(|d| d.name.as_str())
-                        .collect();
-                    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
-                    eprintln!(
-                        "{}",
-                        msg::serve_hops_late(&stamp, HOPS_BUDGET.as_millis(), names.join(", "))
-                    );
-                }
-                ipc::Reply::Hops { by_device }
-            }
+            ipc::Op::Hops => ipc::Reply::Hops {
+                by_device: self.links_now(),
+            },
             ipc::Op::Roads => ipc::Reply::Roads {
                 by_device: crate::roads::tally(&self.roads),
             },
-            ipc::Op::SyncNow => {
-                let _g = self.sync_gate.lock().await;
-                ipc::Reply::Synced {
-                    outcomes: self.sync_with_all(ep).await,
-                }
-            }
+            ipc::Op::Wires => ipc::Reply::Wires {
+                counts: self.wires.counts.snapshot(),
+            },
+            // **Never queues behind a pump already running**: a machine
+            // in a round is joined, not visited twice, and every other
+            // machine is visited now, in parallel, the backed-off ones
+            // included — somebody asked (`Node::sync_peers`).
+            ipc::Op::SyncNow => ipc::Reply::Synced {
+                outcomes: self.sync_peers(ep, true).await,
+            },
             ipc::Op::Accept { session } => {
                 match self.accept_with(ep, &crate::SessionId(session)).await {
                     Ok((moved, landed)) => ipc::Reply::Accepted { moved, landed },
@@ -1361,21 +1493,22 @@ impl Node {
         // `ask`, in its two halves: a dial that fails, or a request that
         // never comes back, is the far machine not reached; an answer
         // that refuses is the far machine speaking.
-        let conn = self.dial_named(ep, &channel).await.map_err(Rejoin::Unreached)?;
-        let asked = request(
-            &conn,
-            &Request::Reach {
-                session: session.0.clone(),
-            },
-        )
-        .await;
-        let answer = match asked {
-            Ok(answer) => answer,
-            Err(why) => {
-                self.wires.lock().await.remove(&channel);
-                return Err(Rejoin::Unreached(why));
-            }
-        };
+        let d = self
+            .devices_loaded()
+            .map_err(Rejoin::Gone)?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| Rejoin::Gone(msg::machine_left_table(&channel)))?;
+        let answer = self
+            .ask_on(
+                ep,
+                &d,
+                &Request::Reach {
+                    session: session.0.clone(),
+                },
+            )
+            .await
+            .map_err(Rejoin::Unreached)?;
         let (port, cookie) = match answer {
             Response::Reached { port, cookie } => (port, cookie),
             Response::Refused { why } => return Err(Rejoin::Gone(why)),
@@ -1418,119 +1551,144 @@ impl Node {
         Ok((addr, cookie))
     }
 
-    /// Resolve a machine name to a live connection on `ep`. The recipe
-    /// every request-reply verb repeats — resolved twice on purpose, the
-    /// second time against the table, because two reads can straddle a
-    /// removal.
+    /// **The wire to a machine for `proto`**: the one held, or one
+    /// dialled now and held from here on (`crate::wires` has the
+    /// lifecycle). Dials to one machine are one at a time — a second
+    /// asker waits for the first dial instead of racing it — and an asker
+    /// for another machine never waits on this one at all.
     ///
-    /// **The connection is the one already open when there is one**
-    /// (`Node::wires` carries the reasoning and the cost).
-    ///
-    /// Every caller of this is the same shape: dial, send one request,
-    /// read one answer, walk away. That shape is what makes holding the
-    /// connection safe — nobody here owns it past their own stream, and
-    /// QUIC carries the next stream over the same pipe.
-    ///
-    /// **The dial happens outside the lock.** Two asks that arrive
-    /// together may each dial and the second will replace the first in
-    /// the map; the replaced one stays alive as long as its own asker
-    /// holds it (the type is a handle, not the socket), so the cost of
-    /// that race is one extra handshake, never a request cut off. The
-    /// alternative — holding the map locked across a dial — would make
-    /// one unreachable machine stall every ask to every other one.
-    async fn dial_named(
+    /// 按机器暂停 (SHELL.md 第五轮 第 3 条) reaches a wire that was
+    /// already held too: a pause that only stopped *new* dials would keep
+    /// talking to the machine on the old one.
+    pub(crate) async fn line_to(
         &self,
         ep: &iroh::Endpoint,
-        channel: &str,
-    ) -> Result<iroh::endpoint::Connection, String> {
-        if let Some(open) = self.held_wire(channel).await {
-            // 按机器暂停 (SHELL.md 第五轮 第 3 条) reaches a pipe that was
-            // already open too: a pause that only stopped *new* dials
-            // would keep talking to the machine on the old one.
-            if crate::pause::peer_on(self.root(), &open.remote_id().to_string()) {
-                self.wires.lock().await.remove(channel);
-                open.close(0u32.into(), b"paused");
-                return Err(msg::cant_reach_named(channel, msg::peer_paused_refusal()));
-            }
-            return Ok(open);
+        d: &DeviceInfo,
+        proto: wires::Proto,
+    ) -> Result<Line, DialFailure> {
+        if crate::pause::peer_on(self.root(), &d.id) {
+            self.wires.retire_peer(&d.id, wires::Retired::Paused);
+            return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
         }
-        let target = self
-            .devices_loaded()?
-            .doc
-            .by_name(channel)
-            .ok_or_else(|| msg::machine_left_table(channel))?;
-        let conn = self
-            .dial(ep, &target.id, &target.addrs, ALPN)
-            .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::machine_unreachable_timeout(channel),
-                DialFailure::Refused(why) => msg::cant_reach_named(channel, why),
-            })?;
-        self.wires
-            .lock()
-            .await
-            .insert(channel.to_owned(), conn.clone());
-        Ok(conn)
+        let line = |conn| Line {
+            id: d.id.clone(),
+            name: d.name.clone(),
+            proto,
+            conn,
+        };
+        if let Some(conn) = self.wires.live(&d.id, proto) {
+            return Ok(line(conn));
+        }
+        let lock = self.wires.dial_lock(&d.id, proto);
+        let _one = lock.lock().await;
+        if let Some(conn) = self.wires.live(&d.id, proto) {
+            return Ok(line(conn));
+        }
+        match self.dial(ep, &d.id, &d.addrs, proto.alpn()).await {
+            Ok(conn) => {
+                self.wires.adopt(&d.id, proto, conn.clone());
+                Ok(line(conn))
+            }
+            Err(e) => {
+                self.wires.failed(&d.id, proto);
+                Err(e)
+            }
+        }
     }
 
-    /// A look at the connections this node is holding — for tests and
-    /// for whatever diagnostic verb wants it later. Taken **before**
-    /// `serve` consumes the node: the map is shared, so a watch made
-    /// here still sees what the serve does with it.
+    /// A look at the wires this node is holding — for tests and for
+    /// whatever diagnostic verb wants it later. Taken **before** `serve`
+    /// consumes the node: the registry is shared, so a watch made here
+    /// still sees what the serve does with it.
     pub fn wire_watch(&self) -> crate::WireWatch {
-        crate::WireWatch::of(&self.wires)
+        let names = self
+            .devices()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|d| (d.id, d.name))
+            .collect();
+        crate::WireWatch::of(&self.wires, names)
     }
 
-    /// One request to a named machine, on the pipe already open to it
-    /// when there is one.
+    /// One request on a held wire, watched for life (`exchange`): what
+    /// it hears keeps the wire's liveness, and a wire that never
+    /// answered is retired — **also when the caller stops waiting
+    /// first** (an ipc deadline cancelling the op; `RetireUnheard`).
+    /// That second half is audit/net.md F7: a cancelled ask used to
+    /// skip the retirement, so a dead wire was handed out again for
+    /// 100 s of 29.5 s hangs.
+    pub(crate) async fn exchange_on(&self, line: &Line, req: &Request) -> Result<Response, Miss> {
+        let mut guard = RetireUnheard::new(&self.wires, line);
+        let out = exchange(&line.conn, &line.name, req, req.budget()).await;
+        guard.disarm();
+        match &out {
+            Ok(_) => self.wires.heard(&line.id, line.proto, &line.conn),
+            Err(Miss::Unreached(_)) => {
+                let why = if line.conn.close_reason().is_some() {
+                    wires::Retired::Closed
+                } else {
+                    wires::Retired::Unanswered
+                };
+                self.wires.retire(&line.id, line.proto, &line.conn, why);
+            }
+            Err(Miss::Late(_)) => {
+                self.wires
+                    .counts
+                    .answers_late
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            Err(Miss::Garbled(_)) => {}
+        }
+        out
+    }
+
+    /// **One request to a machine, on the wire held to it.**
     ///
-    /// **A failure retires the pipe.** `close_reason` catches a
-    /// connection that was closed, and that is not the same as a
-    /// connection whose far end is *gone*: kill a serve and its QUIC
-    /// connection stays unclosed here until an idle timeout nobody
-    /// wants to sit through — the stream opens, the answer never
-    /// comes, and the card says 读不到应答 about a machine that came
-    /// back seconds ago. Measured, the first time turing was upgraded
-    /// under an open card. So the ask that fails is also the ask that
-    /// tells this map its entry is stale.
-    ///
-    /// **It does not retry**, and that is the point of leaving it to
-    /// the caller: `Open` on a fresh pipe after a timeout would be a
-    /// second session on a machine that may well have started the
-    /// first. Only a caller that knows its request is a *reading*
-    /// (`load_on_with`) asks twice.
+    /// A reading whose wire turns out dead is asked once more on a fresh
+    /// one, so a machine that restarted under a held wire costs the
+    /// person one [`crate::wires::ACK_WITHIN`], not an error. Anything
+    /// else is not asked twice: `Open` on a fresh wire after a death
+    /// could be a second session on a machine that may well have started
+    /// the first ([`Request::is_reading`]).
+    pub(crate) async fn ask_on(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        req: &Request,
+    ) -> Result<Response, String> {
+        let line = self
+            .line_to(ep, d, wires::Proto::Main)
+            .await
+            .map_err(|e| unreached_words(&d.name, e))?;
+        match self.exchange_on(&line, req).await {
+            Err(Miss::Unreached(_)) if req.is_reading() => {
+                self.wires
+                    .counts
+                    .reads_retried
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let line = self
+                    .line_to(ep, d, wires::Proto::Main)
+                    .await
+                    .map_err(|e| unreached_words(&d.name, e))?;
+                self.exchange_on(&line, req).await.map_err(Miss::words)
+            }
+            other => other.map_err(Miss::words),
+        }
+    }
+
+    /// [`Self::ask_on`] by the name a person typed.
     async fn ask(
         &self,
         ep: &iroh::Endpoint,
         channel: &str,
         req: &Request,
     ) -> Result<Response, String> {
-        let conn = self.dial_named(ep, channel).await?;
-        let out = request(&conn, req).await;
-        if out.is_err() {
-            self.wires.lock().await.remove(channel);
-        }
-        out
-    }
-
-    /// The held connection to that machine, if one is held **and is
-    /// still up**.
-    ///
-    /// A closed connection is dropped here rather than handed back: a
-    /// pipe that reports a `close_reason` will fail every stream opened
-    /// on it, and handing it out would turn one dead connection into an
-    /// endless run of "machine unreachable" for a machine that is right
-    /// there.
-    async fn held_wire(&self, channel: &str) -> Option<iroh::endpoint::Connection> {
-        let mut held = self.wires.lock().await;
-        match held.get(channel) {
-            Some(conn) if conn.close_reason().is_none() => Some(conn.clone()),
-            Some(_) => {
-                held.remove(channel);
-                None
-            }
-            None => None,
-        }
+        let d = self
+            .devices_loaded()?
+            .doc
+            .by_name(channel)
+            .ok_or_else(|| msg::machine_left_table(channel))?;
+        self.ask_on(ep, &d, req).await
     }
 
     /// Routes an op to the resident serve when one holds this key.
@@ -1575,12 +1733,24 @@ impl Node {
         Ok(())
     }
 
+    /// Answers the requests a far machine sends on one connection —
+    /// **each stream in its own task**, at most [`STREAMS_AT_ONCE`] at a
+    /// time, and the next one waits for a seat rather than for the one in
+    /// front of it.
+    ///
+    /// ⚠️ 墓碑 (2026-10-03, audit/net.md F5): this answered one stream at
+    /// a time, and since every ask from one machine rides one wire, a
+    /// five-second search held a `git status` behind it for 4.7 s (alone:
+    /// 2–13 ms). Nothing here relies on order: a sync round is sequential
+    /// on the asking side, each request carries all it needs, and the
+    /// gate (`admit`) and pause are asked per request.
     async fn handle(
-        &self,
+        self: std::sync::Arc<Self>,
         conn: iroh::endpoint::Connection,
-        ep: &iroh::Endpoint,
+        ep: std::sync::Arc<iroh::Endpoint>,
     ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
+        let seats = std::sync::Arc::new(tokio::sync::Semaphore::new(STREAMS_AT_ONCE));
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             // 按机器暂停 (SHELL.md 第五轮 第 3 条): a machine this one has
             // paused gets no answer — the connection is closed, the way
@@ -1591,18 +1761,26 @@ impl Node {
                 conn.close(0u32.into(), b"paused");
                 return Ok(());
             }
-            let bytes = recv
-                .read_to_end(MAX_FRAME)
-                .await
-                .map_err(msg::request_unreadable)?;
-            let resp = match proto::decode::<Request>(&bytes) {
-                Ok(req) => self.dispatch(&remote, req, ep).await,
-                Err(e) => Response::Refused { why: e },
+            let Ok(seat) = seats.clone().acquire_owned().await else {
+                return Ok(());
             };
-            send.write_all(&proto::encode(&resp)?)
-                .await
-                .map_err(msg::cant_write_reply)?;
-            send.finish().map_err(msg::cant_close_stream)?;
+            let (node, ep, remote) = (self.clone(), ep.clone(), remote.clone());
+            tokio::spawn(async move {
+                let _seat = seat;
+                let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
+                    return;
+                };
+                let resp = match proto::decode::<Request>(&bytes) {
+                    Ok(req) => node.dispatch(&remote, req, &ep).await,
+                    Err(e) => Response::Refused { why: e },
+                };
+                let Ok(frame) = proto::encode(&resp) else {
+                    return;
+                };
+                if send.write_all(&frame).await.is_ok() {
+                    let _ = send.finish();
+                }
+            });
         }
         Ok(())
     }
@@ -2574,14 +2752,31 @@ impl Node {
     /// Dials a borrow lease on an endpoint the caller keeps alive — the
     /// resident serve's own. Same dial as [`tunnel_to`], but the `Borrow`
     /// does not own the endpoint, because the serve outlives it.
+    ///
+    /// **In the resident, the lease is the exit's held tunnel wire**,
+    /// fetched again for every pipe (`tunnel::Borrow::on_wire`): the wire
+    /// is dialled once here, so an exit that cannot be reached is said
+    /// now, and after that a wire retired under the lease is re-opened by
+    /// the next pipe rather than ending it.
     async fn tunnel_on(
         &self,
         ep: &iroh::Endpoint,
         machine: &str,
     ) -> Result<crate::tunnel::Borrow, String> {
-        Ok(crate::tunnel::Borrow::on_shared(
-            self.dial_tunnel(ep, machine).await?,
-        ))
+        let conn = self.dial_tunnel(ep, machine).await?;
+        let Some(me) = self.me() else {
+            return Ok(crate::tunnel::Borrow::on_shared(conn));
+        };
+        let machine = machine.to_owned();
+        Ok(crate::tunnel::Borrow::on_wire(std::sync::Arc::new(move || {
+            let (me, machine) = (me.clone(), machine.clone());
+            Box::pin(async move {
+                let ep = me
+                    .current_ears()
+                    .ok_or_else(|| msg::serve_gone_midway().to_string())?;
+                me.dial_tunnel(&ep, &machine).await
+            })
+        })))
     }
 
     /// Resolves a machine and opens the tunnel connection to it on `ep`.
@@ -2605,12 +2800,10 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::machine_left_table(&channel))?;
-        self.dial(ep, &target.id, &target.addrs, endpoint::TUNNEL_ALPN)
+        self.line_to(ep, &target, wires::Proto::Tunnel)
             .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-                DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
-            })
+            .map(|line| line.conn)
+            .map_err(|e| unreached_words(&channel, e))
     }
 
     /// Starts a borrow the serve hosts: dials the lease on `ep`, binds a
@@ -4828,21 +5021,16 @@ impl Node {
                 .doc
                 .get(&sp)
                 .ok_or_else(|| msg::machine_left_table(&channel))?;
-            let conn = self
-                .dial(ep, &sponsor.id, &sponsor.addrs, ALPN)
-                .await
-                .map_err(|e| match e {
-                    DialFailure::TimedOut => msg::machine_unreachable_timeout(&sponsor.name),
-                    DialFailure::Refused(why) => msg::cant_reach_named(&sponsor.name, why),
-                })?;
-            return match request(
-                &conn,
-                &Request::SatLs {
-                    sat: target.id.clone(),
-                    path: path.to_owned(),
-                },
-            )
-            .await?
+            return match self
+                .ask_on(
+                    ep,
+                    &sponsor,
+                    &Request::SatLs {
+                        sat: target.id.clone(),
+                        path: path.to_owned(),
+                    },
+                )
+                .await?
             {
                 Response::Dir {
                     path,
@@ -4853,20 +5041,15 @@ impl Node {
                 other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
         }
-        let conn = self
-            .dial(ep, &target.id, &target.addrs, ALPN)
-            .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-                DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
-            })?;
-        match request(
-            &conn,
-            &Request::Ls {
-                path: path.to_owned(),
-            },
-        )
-        .await?
+        match self
+            .ask_on(
+                ep,
+                &target,
+                &Request::Ls {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
         {
             Response::Dir {
                 path,
@@ -5004,13 +5187,13 @@ impl Node {
             }
             None => (target, None),
         };
-        let conn = self
-            .dial(ep, &dial_to.id, &dial_to.addrs, ALPN)
+        // The wire first, so a machine that cannot be reached is said
+        // before a partial file is made for it. Each slice is then asked
+        // on its own: a reading, so a wire that dies mid-file costs one
+        // slice asked again on a fresh wire, not the whole pull.
+        self.line_to(ep, &dial_to, wires::Proto::Main)
             .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::machine_unreachable_timeout(&dial_to.name),
-                DialFailure::Refused(why) => msg::cant_reach_named(&dial_to.name, why),
-            })?;
+            .map_err(|e| unreached_words(&dial_to.name, e))?;
         let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
         // The change contract: the first slice's (total, mtime) must
         // hold for every slice after it — two readings that differ are
@@ -5029,7 +5212,7 @@ impl Node {
                     offset,
                 },
             };
-            let resp = request(&conn, &req).await;
+            let resp = self.ask_on(ep, &dial_to, &req).await;
             match resp {
                 Ok(Response::PathSlice {
                     total,
@@ -5093,13 +5276,9 @@ impl Node {
     /// [`DIAL_TIMEOUT`] per device, and a device that reported no roads
     /// is not dialled at all.
     ///
-    /// The round is walked here rather than by [`Self::sync_with_all`]
-    /// for one reason: **it stops at the machine that had the offer.**
-    /// The round is serial, so the case this exists for — the offerer
-    /// is up, it wrote the summary a second ago — must not pay
-    /// `DIAL_TIMEOUT` for every dark machine that happens to sort ahead
-    /// of it. Only a miss walks the whole table, and a miss is
-    /// precisely the case that needs the whole table walked (below).
+    /// The round visits every machine in parallel (`Self::sync_peers`),
+    /// so the offerer that is up answers in its own round's time whatever
+    /// dark machines share the table with it.
     ///
     /// **The outcomes are what separate the two misses**, with evidence
     /// rather than wording: every peer answered and it is still absent —
@@ -5135,19 +5314,13 @@ impl Node {
         if let Ok(found) = self.find_transfer(msg_id) {
             return Ok(found);
         }
-        let mut outcomes: Vec<(String, Result<String, String>)> = Vec::new();
-        {
-            let _g = self.sync_gate.lock().await;
-            for d in self.devices_loaded()?.doc.all() {
-                if d.id == self.device_str() {
-                    continue;
-                }
-                let verdict = self.sync_device(ep, &d).await;
-                outcomes.push((d.name, verdict));
-                if let Ok(found) = self.find_transfer(msg_id) {
-                    return Ok(found);
-                }
-            }
+        // One round with everyone, in parallel — so the case this exists
+        // for (the offerer is up and wrote the summary a second ago) costs
+        // that one machine's round, not a walk past every dark machine
+        // that sorts ahead of it.
+        let outcomes = self.sync_peers(ep, true).await;
+        if let Ok(found) = self.find_transfer(msg_id) {
+            return Ok(found);
         }
         // A mesh of one: there was no round to wait out, so nothing is
         // pending behind this and the plain refusal is the whole truth.
@@ -5191,21 +5364,16 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| msg::recipient_not_in_table(&channel))?;
-        let conn = self
-            .dial(ep, &target.id, &target.addrs, ALPN)
-            .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::machine_unreachable_timeout(&channel),
-                DialFailure::Refused(why) => msg::cant_reach_named(&channel, why),
-            })?;
-        let resp = request(
-            &conn,
-            &Request::Act {
-                session: id.0.clone(),
-                action: "accept".into(),
-            },
-        )
-        .await?;
+        let resp = self
+            .ask_on(
+                ep,
+                &target,
+                &Request::Act {
+                    session: id.0.clone(),
+                    action: "accept".into(),
+                },
+            )
+            .await?;
         match resp {
             Response::Acted { moved, landed } => Ok((moved, landed)),
             Response::Refused { why } => Err(why),
@@ -5247,8 +5415,7 @@ impl Node {
         fs::create_dir_all(dir.join("files")).map_err(msg::cant_make_files_dir)?;
 
         let outcome = async {
-            let conn = self
-                .dial(ep, &home.id, &home.addrs, ALPN)
+            self.line_to(ep, &home, wires::Proto::Main)
                 .await
                 .map_err(|e| match e {
                     DialFailure::TimedOut => msg::offerer_unreachable_timeout().to_string(),
@@ -5269,7 +5436,7 @@ impl Node {
                 let marker = pulling_marker(&dir, f);
                 fs::write(&marker, format!("{}", std::process::id()))
                     .map_err(msg::cant_mark_pulling)?;
-                let pulled = pull_one(&conn, &dir, f).await;
+                let pulled = self.pull_one(ep, &home, &dir, f).await;
                 let _ = fs::remove_file(&marker);
                 moved += pulled?;
                 landed.push(dest.display().to_string());
@@ -5497,6 +5664,7 @@ impl Node {
             })?;
         let resp = request(
             &conn,
+            &t.name,
             &Request::Pair {
                 token: t.token,
                 name: self.name().to_owned(),
@@ -5528,7 +5696,13 @@ impl Node {
                 // anything, one devices round over this same connection.
                 // Best effort — the next sync carries it anyway.
                 if signed {
-                    let _ = self.rounds(&conn, "devices", &mut loaded).await;
+                    let line = Line {
+                        id: t.id.clone(),
+                        name: name.clone(),
+                        proto: wires::Proto::Main,
+                        conn: conn.clone(),
+                    };
+                    let _ = self.rounds(&line, "devices", &mut loaded).await;
                 }
                 Ok(name)
             }
@@ -5634,7 +5808,7 @@ impl Node {
         // visited at all was not told, which is an answer, while a
         // machine missing from this list would be a machine khor said
         // nothing about. And the names come out as `shown()`, one
-        // spelling: `sync_with_all` reports the channel, and on a
+        // spelling: `sync_peers` reports the channel, and on a
         // renamed machine that is a word nobody can see on any screen.
         let mut left = Left::default();
         for d in &others {
@@ -5676,35 +5850,88 @@ impl Node {
         Ok(left)
     }
 
-    /// Which road this machine is using to reach each device it knows.
+    /// **Each machine's link as the resident holds it**: the road its
+    /// wire is on and how long since it was last heard
+    /// (`khor_core::Link`).
     ///
     /// **No fallback to a fresh endpoint, unlike every other verb here.**
     /// `sync_now` binds its own when no resident holds the key, because
     /// syncing from a new endpoint is still syncing. A *reading* taken
-    /// from a new endpoint is not the same reading: it has spoken to
-    /// nobody, so every machine would come back as "nothing flowing" —
-    /// a confident, wrong, and completely plausible answer to the one
-    /// question this exists for. With no resident, the honest answer is
-    /// that khor cannot say, and that is a word (`khor_core::Hop`).
-    pub async fn hops(&self) -> Vec<(String, khor_core::Hop)> {
-        let every = |h: khor_core::Hop| {
-            self.devices()
+    /// from a new endpoint is not the same reading: it holds no wire, so
+    /// every machine would come back not connected — a confident, wrong,
+    /// and completely plausible answer. With no resident the answer is
+    /// [`khor_core::Hop::NoServe`], which has a remedy in it.
+    ///
+    /// **A resident that does not answer in time keeps the last reading**
+    /// (aged by the time since), rather than painting every row with a
+    /// word for "the question failed" (audit/net.md F4: that was half of
+    /// the owner's 「unknown」). Only with no reading at all does this
+    /// say [`RoadsUnread::Unanswered`], and a face then draws no word.
+    pub async fn links(&self) -> Result<Vec<(String, khor_core::Link)>, RoadsUnread> {
+        match self.via_serve(ipc::Op::Hops).await {
+            Some(Ok(ipc::Reply::Hops { by_device })) => {
+                last_links::keep(self.root(), &by_device);
+                Ok(by_device)
+            }
+            None => Ok(self
+                .devices()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|d| (d.id, h))
-                .collect::<Vec<_>>()
-        };
-        match self.via_serve(ipc::Op::Hops).await {
-            Some(Ok(ipc::Reply::Hops { by_device })) => by_device,
-            // **Three silences, not one.** No resident at all is the one
-            // with a remedy in it — nothing here is holding an endpoint,
-            // and starting `khor serve` fixes it. A resident that
-            // answered something else is one too old to know the
-            // question, which is a thing khor genuinely cannot say.
-            // Reporting both as "cannot say" would hide the fixable one
-            // behind the unfixable one.
-            None => every(khor_core::Hop::NoServe),
-            Some(_) => every(khor_core::Hop::Unknown),
+                .filter(|d| d.id != self.device_str())
+                .map(|d| {
+                    (
+                        d.id,
+                        khor_core::Link {
+                            hop: khor_core::Hop::NoServe,
+                            heard_ms: None,
+                        },
+                    )
+                })
+                .collect()),
+            Some(_) => last_links::recall(self.root()).ok_or(RoadsUnread::Unanswered),
+        }
+    }
+
+    /// The resident's own answer to [`Self::links`]: every machine in the
+    /// table but this one, read off the wires.
+    pub(crate) fn links_now(&self) -> Vec<(String, khor_core::Link)> {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.devices()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|d| d.id != self.device_str())
+            .map(|d| {
+                let r = self.wires.link(&d.id);
+                let hop = match r.road {
+                    Some(khor_net::path::PathKind::Direct) => {
+                        self.wires.counts.read_direct.fetch_add(1, Relaxed);
+                        khor_core::Hop::Direct
+                    }
+                    Some(khor_net::path::PathKind::Relay) => {
+                        self.wires.counts.read_relay.fetch_add(1, Relaxed);
+                        khor_core::Hop::Relay
+                    }
+                    _ => {
+                        self.wires.counts.read_idle.fetch_add(1, Relaxed);
+                        khor_core::Hop::Idle
+                    }
+                };
+                let heard_ms = r
+                    .heard
+                    .map(|h| u64::try_from(h.as_millis()).unwrap_or(u64::MAX));
+                (d.id, khor_core::Link { hop, heard_ms })
+            })
+            .collect()
+    }
+
+    /// How the resident's wires have fared since it started
+    /// (`khor_core::WireCounts`), for `khor doctor`. Only the resident
+    /// can answer, for the reason [`Self::links`] gives.
+    pub async fn wire_counts(&self) -> Result<khor_core::WireCounts, RoadsUnread> {
+        match self.via_serve(ipc::Op::Wires).await {
+            Some(Ok(ipc::Reply::Wires { counts })) => Ok(counts),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
         }
     }
 
@@ -5741,31 +5968,53 @@ impl Node {
         let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
             .await
             .map_err(|e| e.to_string())?;
-        let out = self.sync_with_all(&ep).await;
+        let out = self.sync_peers(&ep, true).await;
         ep.close().await;
         Ok(out)
     }
 
-    async fn sync_with_all(&self, ep: &iroh::Endpoint) -> Vec<(String, Result<String, String>)> {
-        let list = self
+    /// **One visit to every machine, in parallel, each on its own wire
+    /// and budget.** A machine already in a round — started by the
+    /// pump's last beat, or by somebody else's 同步 — is joined, not
+    /// visited twice. A machine whose dials keep failing is left alone
+    /// until its backoff is over (`crate::wires`: 5 s doubling to a
+    /// minute) unless `force`, which is a person asking, a wake, or a
+    /// return from the background.
+    ///
+    /// ⚠️ 墓碑 (2026-10-03, audit/net.md F8): the round used to visit the
+    /// machines one after another, each dark one costing its full 10 s
+    /// dial before the next was asked, under one gate an explicit sync
+    /// queued behind — a phone in someone's pocket cost the desk ten
+    /// seconds of every round.
+    pub(crate) async fn sync_peers(
+        &self,
+        ep: &iroh::Endpoint,
+        force: bool,
+    ) -> Vec<(String, Result<String, String>)> {
+        let list: Vec<DeviceInfo> = self
             .devices_loaded()
             .map(|l| l.doc.all())
-            .unwrap_or_default();
-        let mut out = Vec::new();
-        for d in list {
-            if d.id == self.device_str() {
-                continue;
-            }
-            let verdict = self.sync_device(ep, &d).await;
-            out.push((d.name, verdict));
-        }
-        out
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|d| d.id != self.device_str())
+            .collect();
+        let visits = list
+            .iter()
+            .map(|d| async move { (d.name.clone(), self.round_with(ep, d, force).await) })
+            .collect();
+        join_all(visits).await
     }
 
-    async fn sync_device(&self, ep: &iroh::Endpoint, d: &DeviceInfo) -> Result<String, String> {
+    /// One machine's round: skipped with a reason, joined, or run.
+    async fn round_with(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        force: bool,
+    ) -> Result<String, String> {
         // A device that never reported a road (one-shot pairings) cannot
         // be dialed, only dial us — probing it burns a full DIAL_TIMEOUT
-        // per pump for nothing.
+        // for nothing.
         if d.addrs.is_empty() {
             return Err(msg::no_roads_reported().into());
         }
@@ -5775,8 +6024,43 @@ impl Node {
         if !self.standing_of(&d.id).admitted() {
             return Err(msg::peer_not_in_roster().into());
         }
-        let conn = self
-            .dial(ep, &d.id, &d.addrs, ALPN)
+        if !force && let Some(left) = self.wires.backing_off(&d.id) {
+            return Err(msg::peer_backing_off(left.as_secs().max(1)));
+        }
+        let mut joined = {
+            let mut rounds = self.rounds.lock().unwrap_or_else(|p| p.into_inner());
+            match rounds.get(&d.id) {
+                Some(running) if running.borrow().is_none() => Ok(running.clone()),
+                _ => {
+                    let (tx, rx) = tokio::sync::watch::channel(None);
+                    rounds.insert(d.id.clone(), rx);
+                    Err(RoundDone(Some(tx)))
+                }
+            }
+        };
+        match &mut joined {
+            Ok(running) => loop {
+                if let Some(out) = running.borrow().clone() {
+                    return out;
+                }
+                if running.changed().await.is_err() {
+                    return Err(msg::round_cancelled().into());
+                }
+            },
+            Err(done) => {
+                let out = {
+                    let _store = self.store_gate.read().await;
+                    self.sync_device(ep, d).await
+                };
+                done.finish(out.clone());
+                out
+            }
+        }
+    }
+
+    async fn sync_device(&self, ep: &iroh::Endpoint, d: &DeviceInfo) -> Result<String, String> {
+        let line = self
+            .line_to(ep, d, wires::Proto::Main)
             .await
             .map_err(|e| match e {
                 DialFailure::TimedOut => msg::dial_timed_out().to_string(),
@@ -5786,18 +6070,18 @@ impl Node {
         let mut moved = 0usize;
         {
             let mut loaded = self.devices_loaded()?;
-            moved += self.rounds(&conn, "devices", &mut loaded).await?;
+            moved += self.rounds(&line, "devices", &mut loaded).await?;
         }
         {
             let mut loaded = self.seen_loaded()?;
-            moved += self.rounds(&conn, "seen", &mut loaded).await?;
+            moved += self.rounds(&line, "seen", &mut loaded).await?;
         }
         // Pins ride the same pump as the read watermark, and for the same
         // reason: both say something about a session that belongs to the
         // session rather than to the screen looking at it.
         {
             let mut loaded = self.pins_loaded()?;
-            moved += self.rounds(&conn, "pins", &mut loaded).await?;
+            moved += self.rounds(&line, "pins", &mut loaded).await?;
         }
         // What is on the session list (docs/SHELL.md 第八轮): an import
         // on one machine is a row on every machine. Best effort — an
@@ -5806,7 +6090,7 @@ impl Node {
         // showing whatever it found on its own.
         {
             let mut loaded = self.roster_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "roster", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "roster", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5817,7 +6101,7 @@ impl Node {
         // chat rounds behind it — it only means older shortcuts there.
         {
             let mut loaded = self.dirpins_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "dirpins", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "dirpins", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5828,7 +6112,7 @@ impl Node {
         // shorter list over there, never a wrong one.
         {
             let mut loaded = self.workspaces_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "workspaces", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "workspaces", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5837,7 +6121,7 @@ impl Node {
         // must not cost the rounds behind it.
         {
             let mut loaded = self.webpins_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "webpins", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "webpins", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5848,7 +6132,7 @@ impl Node {
         // that phone itself has opened — no wrong answer, a shorter one.
         {
             let mut loaded = self.recents_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "recents", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "recents", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5861,7 +6145,7 @@ impl Node {
         // locally.
         {
             let mut loaded = self.agents_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "agents", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "agents", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5871,7 +6155,7 @@ impl Node {
         // name and the rounds behind it still run.
         {
             let mut loaded = self.accounts_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "accounts", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "accounts", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5881,7 +6165,7 @@ impl Node {
         // chat rounds behind it — it only means older names there.
         {
             let mut loaded = self.titles_loaded()?;
-            if let Ok(n) = self.rounds(&conn, "titles", &mut loaded).await {
+            if let Ok(n) = self.rounds(&line, "titles", &mut loaded).await {
                 moved += n;
             }
         }
@@ -5890,14 +6174,14 @@ impl Node {
                 .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
             let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
             moved += self
-                .rounds(&conn, &format!("chat/{ch}"), &mut loaded)
+                .rounds(&line, &format!("chat/{ch}"), &mut loaded)
                 .await?;
         }
         // Remember what the far side reports about its own sessions:
         // when it goes unreachable, its last word plus the report's age
         // is all the UI may honestly show. Best effort — a failure here
         // only means older information.
-        if let Ok(Response::SessionRows { rows }) = request(&conn, &Request::Sessions).await {
+        if let Ok(Response::SessionRows { rows }) = self.exchange_on(&line, &Request::Sessions).await {
             let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
         }
         // And what it is doing right now, on the same visit. Kept apart
@@ -5907,7 +6191,7 @@ impl Node {
         // timestamp would make a stale reading look as fresh as the rows
         // beside it. Best effort, same as the rows — a peer running a khor
         // that has no such op simply has no reading here.
-        if let Ok(Response::Vitals { vitals }) = request(&conn, &Request::Vitals).await {
+        if let Ok(Response::Vitals { vitals }) = self.exchange_on(&line, &Request::Vitals).await {
             let _ = self.cache_peer_vitals(&d.id, &vitals);
         }
         // Its watched directories, on the same visit and in a record of
@@ -5915,19 +6199,19 @@ impl Node {
         // carried our copy of its `watch` list over, so what comes back
         // is already about that list. An older khor refuses the op and
         // simply has no rows here — never empty ones.
-        if let Ok(Response::Watched { rows }) = request(&conn, &Request::Watched).await {
+        if let Ok(Response::Watched { rows }) = self.exchange_on(&line, &Request::Watched).await {
             let _ = self.cache_peer_watched(&d.id, &rows);
         }
         // Its day, on the same beat as its rows: the strips under a
         // peer's rows are read from this, and a `Refused` from an older
         // khor leaves the last cached day standing, aging like a report.
-        if let Ok(Response::Days { day }) = request(&conn, &Request::Days).await {
+        if let Ok(Response::Days { day }) = self.exchange_on(&line, &Request::Days).await {
             let _ = self.cache_peer_day(&d.id, &day);
         }
         // Its accounts' readings, on the same beat: the 额度 page draws
         // every machine's rings from this, and an older khor's Refused
         // leaves the last carried answer standing, aging like a report.
-        if let Ok(Response::Quotas { readings }) = request(&conn, &Request::Quotas).await {
+        if let Ok(Response::Quotas { readings }) = self.exchange_on(&line, &Request::Quotas).await {
             let _ = self.cache_peer_quotas(&d.id, &readings);
         }
         // …and the readings of every satellite this device sponsors, on
@@ -5942,8 +6226,8 @@ impl Node {
                 .iter()
                 .filter(|s| s.sponsor.as_deref() == Some(d.id.as_str()))
             {
-                if let Ok(Response::SatVitals { vitals, age_ms }) = request(
-                    &conn,
+                if let Ok(Response::SatVitals { vitals, age_ms }) = self.exchange_on(
+                    &line,
                     &Request::SatVitals {
                         sat: sat.id.clone(),
                     },
@@ -5962,7 +6246,7 @@ impl Node {
         // (`crate::usage::Meters::tally` has the figures). Best effort —
         // a peer running a khor with no such op simply has no spending
         // here, which reads as "never asked" rather than as zero.
-        if let Ok(Response::Usage { usage }) = request(&conn, &Request::Usage).await {
+        if let Ok(Response::Usage { usage }) = self.exchange_on(&line, &Request::Usage).await {
             let _ = self.cache_peer_usage(&d.id, &usage);
         }
         Ok(if moved == 0 {
@@ -5976,7 +6260,7 @@ impl Node {
     /// pushes. Returns bytes moved.
     async fn rounds<D: Doc>(
         &self,
-        conn: &iroh::endpoint::Connection,
+        line: &Line,
         doc_name: &str,
         loaded: &mut khor_sync::store::Loaded<D>,
     ) -> Result<usize, String> {
@@ -5984,15 +6268,17 @@ impl Node {
         let mut moved = 0usize;
         for _ in 0..2 {
             let out = peer.outgoing(&loaded.doc)?;
-            let resp = request(
-                conn,
-                &Request::Sync {
-                    doc: doc_name.to_owned(),
-                    have: out.have.clone(),
-                    changes: out.changes.clone(),
-                },
-            )
-            .await?;
+            let resp = self
+                .exchange_on(
+                    line,
+                    &Request::Sync {
+                        doc: doc_name.to_owned(),
+                        have: out.have.clone(),
+                        changes: out.changes.clone(),
+                    },
+                )
+                .await
+                .map_err(Miss::words)?;
             let reply = match resp {
                 Response::Synced {
                     version,
@@ -6170,90 +6456,359 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String>
     f.write_all(bytes).map_err(msg::cant_finish_write)
 }
 
-async fn request(conn: &iroh::endpoint::Connection, req: &Request) -> Result<Response, String> {
-    let (mut send, mut recv) = conn.open_bi().await.map_err(msg::cant_open_stream)?;
-    send.write_all(&proto::encode(req)?)
+/// A machine's round in flight, for a second asker to wait on
+/// (`Node::sync_peers`): `None` while it runs, its outcome once done.
+pub(crate) type RoundWatch = tokio::sync::watch::Receiver<Option<Result<String, String>>>;
+
+/// The running half of a round: says how it ended, and says
+/// "interrupted" if the one running it stopped waiting first, so a
+/// joiner never waits on a round nobody is running.
+struct RoundDone(Option<tokio::sync::watch::Sender<Option<Result<String, String>>>>);
+
+impl RoundDone {
+    fn finish(&mut self, out: Result<String, String>) {
+        if let Some(tx) = self.0.take() {
+            let _ = tx.send(Some(out));
+        }
+    }
+}
+
+impl Drop for RoundDone {
+    fn drop(&mut self) {
+        self.finish(Err(msg::round_cancelled().into()));
+    }
+}
+
+/// Every future to completion, polled together on the caller's task —
+/// the visits of one round borrow the node, so they cannot be spawned.
+pub(crate) async fn join_all<F: std::future::Future>(futs: Vec<F>) -> Vec<F::Output> {
+    let mut futs: Vec<std::pin::Pin<Box<F>>> = futs.into_iter().map(Box::pin).collect();
+    let mut out: Vec<Option<F::Output>> = futs.iter().map(|_| None).collect();
+    std::future::poll_fn(|cx| {
+        let mut waiting = false;
+        for (f, slot) in futs.iter_mut().zip(out.iter_mut()) {
+            if slot.is_none() {
+                match f.as_mut().poll(cx) {
+                    std::task::Poll::Ready(v) => *slot = Some(v),
+                    std::task::Poll::Pending => waiting = true,
+                }
+            }
+        }
+        if waiting {
+            std::task::Poll::Pending
+        } else {
+            std::task::Poll::Ready(())
+        }
+    })
+    .await;
+    out.into_iter().flatten().collect()
+}
+
+/// The last link reading each home's resident gave, and when — what
+/// [`Node::links`] answers with when the resident does not answer in
+/// time. Process-wide because the face opens a node per call.
+mod last_links {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{LazyLock, Mutex};
+    use std::time::Instant;
+
+    type Reading = Vec<(String, khor_core::Link)>;
+
+    static LAST: LazyLock<Mutex<HashMap<PathBuf, (Instant, Reading)>>> =
+        LazyLock::new(Default::default);
+
+    pub(super) fn keep(root: &Path, reading: &Reading) {
+        if let Ok(mut last) = LAST.lock() {
+            last.insert(root.to_path_buf(), (Instant::now(), reading.clone()));
+        }
+    }
+
+    /// The last reading, its ages moved on by the time since it was
+    /// taken: a machine heard 2 s before a reading kept 10 s ago was
+    /// heard 12 s ago.
+    pub(super) fn recall(root: &Path) -> Option<Reading> {
+        let last = LAST.lock().ok()?;
+        let (at, reading) = last.get(root)?;
+        let since = u64::try_from(at.elapsed().as_millis()).unwrap_or(u64::MAX);
+        Some(
+            reading
+                .iter()
+                .map(|(id, l)| {
+                    (
+                        id.clone(),
+                        khor_core::Link {
+                            hop: l.hop,
+                            heard_ms: l.heard_ms.map(|h| h.saturating_add(since)),
+                        },
+                    )
+                })
+                .collect(),
+        )
+    }
+}
+
+/// A held wire to one machine, as a caller holds it: the connection, and
+/// who and what it is to ([`Node::line_to`]).
+pub(crate) struct Line {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) proto: wires::Proto,
+    pub(crate) conn: iroh::endpoint::Connection,
+}
+
+/// Why one exchange produced no answer — three things, because only the
+/// first may be asked again and only the first retires the wire.
+#[derive(Debug)]
+pub(crate) enum Miss {
+    /// The wire is dead, or the far machine never acknowledged the
+    /// request: nothing came back within [`wires::ACK_WITHIN`] of
+    /// sending, or nothing for [`wires::SILENT_AFTER`] after that, or the
+    /// connection closed under it.
+    Unreached(String),
+    /// The far machine is alive and acknowledged, and did not finish
+    /// within the request's budget ([`Request::budget`]). The wire stays.
+    Late(String),
+    /// It answered, and the answer could not be read; or the request
+    /// could not be written down at all.
+    Garbled(String),
+}
+
+impl Miss {
+    pub(crate) fn words(self) -> String {
+        match self {
+            Miss::Unreached(w) | Miss::Late(w) | Miss::Garbled(w) => w,
+        }
+    }
+}
+
+/// How often an exchange looks at whether its wire has been heard.
+const LIVENESS_BEAT: Duration = Duration::from_millis(250);
+
+/// **One request and its answer on one connection, watched for life.**
+///
+/// The far machine's QUIC stack acknowledges what it receives within a
+/// round trip, and iroh's keepalive draws an ack every few seconds
+/// besides, so a live wire is *heard* (`wires::heard_count`) soon after
+/// anything is sent on it and every few seconds after that — whether or
+/// not the answer is ready. That is what tells a dead wire from a slow
+/// answer without a wire-format change:
+///
+/// - nothing heard within [`wires::ACK_WITHIN`] of sending, or nothing
+///   for [`wires::SILENT_AFTER`] at any point after: **unreached** — a
+///   machine that restarted, froze, slept or lost its network;
+/// - heard, but no answer within `budget`: **late** — alive and still
+///   working, and the wire is fine.
+///
+/// ⚠️ 墓碑 (2026-10-03, audit/net.md F6): this had no deadline at all. A
+/// far machine frozen for 20 s held a `git status` for exactly 20 s, and
+/// one restarted under a held wire held every ask until the ipc
+/// deadline cancelled it, 29.5 s, three times running.
+async fn exchange(
+    conn: &iroh::endpoint::Connection,
+    who: &str,
+    req: &Request,
+    budget: Duration,
+) -> Result<Response, Miss> {
+    let frame = proto::encode(req).map_err(Miss::Garbled)?;
+    let sent = tokio::time::Instant::now();
+    let mut count = wires::heard_count(conn);
+    let mut heard: Option<tokio::time::Instant> = None;
+    let lost = |e: String| {
+        if conn.close_reason().is_some() {
+            Miss::Unreached(msg::cant_reach_named(who, e))
+        } else {
+            Miss::Garbled(e)
+        }
+    };
+    let work = async {
+        let (mut send, mut recv) = conn
+            .open_bi()
+            .await
+            .map_err(|e| Miss::Unreached(msg::cant_reach_named(who, msg::cant_open_stream(e))))?;
+        send.write_all(&frame)
+            .await
+            .map_err(|e| lost(msg::cant_send(e)))?;
+        send.finish().map_err(|e| lost(msg::cant_close_stream(e)))?;
+        let bytes = recv
+            .read_to_end(MAX_FRAME)
+            .await
+            .map_err(|e| lost(msg::no_answer(e)))?;
+        proto::decode(&bytes).map_err(Miss::Garbled)
+    };
+    tokio::pin!(work);
+    let mut beat = tokio::time::interval(LIVENESS_BEAT);
+    beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        tokio::select! {
+            out = &mut work => return out,
+            _ = beat.tick() => {
+                let now = tokio::time::Instant::now();
+                let seen = wires::heard_count(conn);
+                if seen != count {
+                    count = seen;
+                    heard = Some(now);
+                }
+                let quiet = match heard {
+                    None => now.duration_since(sent) >= wires::ACK_WITHIN,
+                    Some(at) => now.duration_since(at) >= wires::SILENT_AFTER,
+                };
+                if quiet {
+                    return Err(Miss::Unreached(msg::machine_silent(who)));
+                }
+                if now.duration_since(sent) >= budget {
+                    return Err(Miss::Late(msg::answer_late(who, budget.as_secs())));
+                }
+            }
+        }
+    }
+}
+
+/// [`exchange`] on a connection no wire holds (pairing: the far side is
+/// not in the table yet), failures in words.
+async fn request(
+    conn: &iroh::endpoint::Connection,
+    who: &str,
+    req: &Request,
+) -> Result<Response, String> {
+    exchange(conn, who, req, req.budget())
         .await
-        .map_err(msg::cant_send)?;
-    send.finish().map_err(msg::cant_close_stream)?;
-    let bytes = recv.read_to_end(MAX_FRAME).await.map_err(msg::no_answer)?;
-    proto::decode(&bytes)
+        .map_err(Miss::words)
+}
+
+/// Retires a wire whose request was abandoned before an answer — an ipc
+/// deadline cancelling the op, a face going away — **if nothing at all
+/// was heard on it since the request went out** and that silence has
+/// already lasted [`wires::ACK_WITHIN`]. Shorter than that is no
+/// evidence either way, and the resident's tick catches a wire that
+/// stays silent.
+struct RetireUnheard<'a> {
+    wires: &'a wires::Wires,
+    line: &'a Line,
+    count: u64,
+    at: std::time::Instant,
+    armed: bool,
+}
+
+impl<'a> RetireUnheard<'a> {
+    fn new(wires: &'a wires::Wires, line: &'a Line) -> Self {
+        Self {
+            wires,
+            line,
+            count: wires::heard_count(&line.conn),
+            at: std::time::Instant::now(),
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RetireUnheard<'_> {
+    fn drop(&mut self) {
+        if self.armed
+            && wires::heard_count(&self.line.conn) == self.count
+            && self.at.elapsed() >= wires::ACK_WITHIN
+        {
+            self.wires.retire(
+                &self.line.id,
+                self.line.proto,
+                &self.line.conn,
+                wires::Retired::Unanswered,
+            );
+        }
+    }
+}
+
+/// A dial's failure as the sentence a person reads.
+fn unreached_words(name: &str, e: DialFailure) -> String {
+    match e {
+        DialFailure::TimedOut => msg::machine_unreachable_timeout(name),
+        DialFailure::Refused(why) => msg::cant_reach_named(name, why),
+    }
 }
 
 /// Pulls one payload into its partial, slice by slice, and promotes it to
 /// its real name only after the digest checks out. Returns bytes moved
 /// this run — a resumed pull moves only the missing tail.
-async fn pull_one(
-    conn: &iroh::endpoint::Connection,
-    dir: &std::path::Path,
-    f: &khor_sync::chat::FileRef,
-) -> Result<u64, String> {
-    use std::io::{Read, Write};
+impl Node {
+    async fn pull_one(
+        &self,
+        ep: &iroh::Endpoint,
+        home: &DeviceInfo,
+        dir: &std::path::Path,
+        f: &khor_sync::chat::FileRef,
+    ) -> Result<u64, String> {
+        use std::io::{Read, Write};
 
-    use crate::transfer::{partial_path, payload_path};
-    let partial = partial_path(dir, f);
-    // Resume: the final digest must cover the bytes already on disk, so
-    // they run through the hasher before any new slice does.
-    let mut hasher = blake3::Hasher::new();
-    let mut offset = 0u64;
-    if let Ok(mut existing) = fs::File::open(&partial) {
-        let mut buf = vec![0u8; 1 << 20];
-        loop {
-            let n = existing.read(&mut buf).map_err(msg::cant_read_partial)?;
-            if n == 0 {
-                break;
+        use crate::transfer::{partial_path, payload_path};
+        let partial = partial_path(dir, f);
+        // Resume: the final digest must cover the bytes already on disk, so
+        // they run through the hasher before any new slice does.
+        let mut hasher = blake3::Hasher::new();
+        let mut offset = 0u64;
+        if let Ok(mut existing) = fs::File::open(&partial) {
+            let mut buf = vec![0u8; 1 << 20];
+            loop {
+                let n = existing.read(&mut buf).map_err(msg::cant_read_partial)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+                offset += n as u64;
             }
-            hasher.update(&buf[..n]);
-            offset += n as u64;
         }
-    }
-    let mut out = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&partial)
-        .map_err(msg::cant_open_partial)?;
-    let expect = f.size.max(0) as u64;
-    let mut moved = 0u64;
-    while offset < expect {
-        let resp = request(
-            conn,
-            &Request::Fetch {
-                digest: f.digest.clone(),
-                offset,
-            },
-        )
-        .await?;
-        let (total, bytes) = match resp {
-            Response::Slice { total, bytes } => (total, bytes),
-            Response::Refused { why } => return Err(why),
-            other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        };
-        if total != expect {
-            return Err(msg::size_mismatch(total, expect));
+        let mut out = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&partial)
+            .map_err(msg::cant_open_partial)?;
+        let expect = f.size.max(0) as u64;
+        let mut moved = 0u64;
+        while offset < expect {
+            let resp = self.ask_on(
+                ep,
+                home,
+                &Request::Fetch {
+                    digest: f.digest.clone(),
+                    offset,
+                },
+            )
+            .await?;
+            let (total, bytes) = match resp {
+                Response::Slice { total, bytes } => (total, bytes),
+                Response::Refused { why } => return Err(why),
+                other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            };
+            if total != expect {
+                return Err(msg::size_mismatch(total, expect));
+            }
+            if bytes.is_empty() {
+                return Err(msg::empty_slice().into());
+            }
+            out.write_all(&bytes).map_err(msg::cant_write_slice)?;
+            hasher.update(&bytes);
+            offset += bytes.len() as u64;
+            moved += bytes.len() as u64;
         }
-        if bytes.is_empty() {
-            return Err(msg::empty_slice().into());
+        out.sync_all().map_err(msg::cant_sync_disk)?;
+        drop(out);
+        let got = hasher.finalize().to_hex().to_string();
+        if got != f.digest {
+            // A mismatch poisons the partial — deleted here, at the only
+            // place that knows. Any other failure leaves it: it is the
+            // resume point.
+            let _ = fs::remove_file(&partial);
+            return Err(msg::digest_mismatch(
+                &got[..8],
+                f.digest.chars().take(8).collect::<String>(),
+            ));
         }
-        out.write_all(&bytes).map_err(msg::cant_write_slice)?;
-        hasher.update(&bytes);
-        offset += bytes.len() as u64;
-        moved += bytes.len() as u64;
+        fs::rename(&partial, payload_path(dir, f)).map_err(msg::cant_rename)?;
+        Ok(moved)
     }
-    out.sync_all().map_err(msg::cant_sync_disk)?;
-    drop(out);
-    let got = hasher.finalize().to_hex().to_string();
-    if got != f.digest {
-        // A mismatch poisons the partial — deleted here, at the only
-        // place that knows. Any other failure leaves it: it is the
-        // resume point.
-        let _ = fs::remove_file(&partial);
-        return Err(msg::digest_mismatch(
-            &got[..8],
-            f.digest.chars().take(8).collect::<String>(),
-        ));
-    }
-    fs::rename(&partial, payload_path(dir, f)).map_err(msg::cant_rename)?;
-    Ok(moved)
 }
 
 /// Whether that pid is still a live process.
@@ -6333,7 +6888,7 @@ pub enum RoadsUnread {
 /// Why a dial did not produce a connection. Kept apart from the sentence
 /// a person reads: every caller says who it was trying to reach and what
 /// for, and that is the half worth keeping at the call site.
-enum DialFailure {
+pub(crate) enum DialFailure {
     TimedOut,
     Refused(String),
 }
@@ -6435,108 +6990,6 @@ impl Node {
         alpn: &[u8],
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
         self.dial_with(ep, id, direct, self.relays(), alpn).await
-    }
-}
-
-/// How long the road question may take, for the whole device table.
-///
-/// **Not borrowed from the dial budgets.** The serve's other waits
-/// (`DIAL_TIMEOUT`, the tunnel's `CONNECT_TIMEOUT`, 10 s each) cover a
-/// trip across a network; this one never leaves the process — it asks
-/// iroh's in-memory map, which answered in 20-75 µs across a 40 s
-/// probe on 2026-09-21. The ceiling that matters is the caller's: the
-/// app asks for the device list on a 2 s beat, from a bridge that
-/// serves one request at a time, so a wait anywhere near 2 s stacks the
-/// next poll behind this one. Half a second is four orders over normal
-/// and a quarter of that beat.
-const HOPS_BUDGET: Duration = Duration::from_millis(500);
-
-/// The road question for every device, one answer each, inside one
-/// budget for the lot.
-///
-/// **A machine whose answer is late reads [`khor_core::Hop::Unknown`]
-/// and is named in the second list** — never left out, and never
-/// waited on past the budget. The asks run in order against one
-/// deadline, and each is polled once even when the deadline has
-/// passed, so an answer that is already there still counts: one stuck
-/// machine costs the budget, not every machine after it.
-async fn hops_within<F>(
-    asks: Vec<(String, F)>,
-    budget: Duration,
-) -> (Vec<(String, khor_core::Hop)>, Vec<String>)
-where
-    F: std::future::Future<Output = Option<endpoint::RoadsInUse>>,
-{
-    let deadline = tokio::time::Instant::now() + budget;
-    let mut by_device = Vec::new();
-    let mut late = Vec::new();
-    for (id, ask) in asks {
-        let hop = match tokio::time::timeout_at(deadline, ask).await {
-            Ok(Some(u)) => khor_core::Hop::of(u.direct, u.relay, u.other),
-            Ok(None) => khor_core::Hop::Unknown,
-            Err(_) => {
-                late.push(id.clone());
-                khor_core::Hop::Unknown
-            }
-        };
-        by_device.push((id, hop));
-    }
-    (by_device, late)
-}
-
-#[cfg(test)]
-mod hops {
-    use super::*;
-    use std::future::Future;
-    use std::pin::Pin;
-
-    type Ask = Pin<Box<dyn Future<Output = Option<endpoint::RoadsInUse>> + Send>>;
-
-    fn stuck() -> Ask {
-        Box::pin(std::future::pending())
-    }
-
-    fn direct() -> Ask {
-        Box::pin(std::future::ready(Some(endpoint::RoadsInUse {
-            direct: true,
-            relay: false,
-            other: false,
-        })))
-    }
-
-    /// **A road question that never comes back costs the budget, not the
-    /// caller.** Measured 2026-09-21: iroh's per-remote actor spun in
-    /// `open_path_on_all_conns` (upstream #4390), `remote_info` queued
-    /// behind it, and `Op::Hops` took 52950 ms and then never answered —
-    /// with the bridge's one request thread waiting on it, so the whole
-    /// face froze. The stuck machine reads 说不出 and is named; the one
-    /// after it still gets its real answer.
-    #[tokio::test]
-    async fn a_road_question_that_never_answers_costs_the_budget_not_the_caller() {
-        let asks = vec![("stuck".to_owned(), stuck()), ("fine".to_owned(), direct())];
-        let started = std::time::Instant::now();
-        let Ok((by_device, late)) =
-            tokio::time::timeout(Duration::from_secs(5), hops_within(asks, HOPS_BUDGET)).await
-        else {
-            panic!("the road question hung for 5 s on one machine that never answered");
-        };
-        assert!(
-            started.elapsed() < Duration::from_secs(2),
-            "took {:?} — past the GUI's 2 s poll beat",
-            started.elapsed()
-        );
-        assert_eq!(
-            by_device,
-            vec![
-                ("stuck".to_owned(), khor_core::Hop::Unknown),
-                ("fine".to_owned(), khor_core::Hop::Direct),
-            ]
-        );
-        assert_eq!(
-            late,
-            vec!["stuck".to_owned()],
-            "the late machine is named, not dropped"
-        );
     }
 }
 

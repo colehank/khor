@@ -435,17 +435,13 @@ async fn check_serve(node: &Node) -> (Health, String, Option<String>) {
         );
     }
     // The cheapest op the resident answers, and one this page wants
-    // anyway (the peers row reads the same answer).
-    if node.hops().await.is_empty() {
-        // An empty table is not a refusal — a machine that has paired
-        // with nobody has no rows to answer with.
-        return (Health::Ok, cli::doctor_serve_ok(pid), None);
-    }
-    let answered = node
-        .hops()
-        .await
-        .iter()
-        .any(|(_, h)| *h != khor_core::Hop::NoServe);
+    // anyway (the peers row reads the same answer). An empty table is
+    // not a refusal — a machine that has paired with nobody has no rows
+    // to answer with.
+    let answered = match node.links().await {
+        Ok(links) => links.is_empty() || links.iter().any(|(_, l)| l.hop != khor_core::Hop::NoServe),
+        Err(_) => false,
+    };
     if answered {
         (Health::Ok, cli::doctor_serve_ok(pid), None)
     } else {
@@ -567,7 +563,35 @@ async fn check_roads(node: &Node) -> (Health, String, Option<String>) {
             None,
         );
     }
-    (Health::Ok, said.join(cli::name_separator()), None)
+    let mut said = said.join(cli::name_separator());
+    // How the wires fared, after the per-machine readings: the counts
+    // that trace a word on a screen back to what produced it.
+    if let Ok(c) = node.wire_counts().await {
+        said.push_str(cli::name_separator());
+        said.push_str(&cli::doctor_wires(
+            c.dialed,
+            c.dial_failed,
+            c.answers_late,
+            c.reads_retried,
+        ));
+        said.push_str(cli::name_separator());
+        said.push_str(&cli::doctor_wires_retired(
+            c.retired_silent,
+            c.retired_unanswered,
+            c.retired_closed,
+            c.retired_network,
+            c.retired_new_ears,
+        ));
+        said.push_str(cli::name_separator());
+        said.push_str(&cli::doctor_wires_reads(
+            c.read_direct,
+            c.read_relay,
+            c.read_idle,
+            c.network_changes,
+            c.ops_late,
+        ));
+    }
+    (Health::Ok, said, None)
 }
 
 /// Every paired machine: which road, and which khor.
@@ -579,7 +603,9 @@ async fn check_roads(node: &Node) -> (Health, String, Option<String>) {
 /// gap.
 async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
     let mine = crate::VERSION;
-    let roads = node.hops().await;
+    // A resident that does not answer leaves the road unread on every
+    // row — said in those words, never as a road (`Node::links`).
+    let roads = node.links().await.ok();
     let Ok(devices) = node.devices() else {
         return (
             Health::Unmeasured,
@@ -606,12 +632,17 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
     let mut said = Vec::new();
     let mut worst = Health::Ok;
     for d in &others {
-        let hop = roads
-            .iter()
-            .find(|(id, _)| id == &d.id)
-            .map(|(_, h)| *h)
-            .unwrap_or(khor_core::Hop::Unknown);
-        let road = khor_catalog::hop::word(hop.key());
+        let road = match &roads {
+            Some(roads) => khor_catalog::hop::word(
+                roads
+                    .iter()
+                    .find(|(id, _)| id == &d.id)
+                    .map(|(_, l)| l.hop)
+                    .unwrap_or(khor_core::Hop::Idle)
+                    .key(),
+            ),
+            None => cli::doctor_road_unread(),
+        };
         match node.vitals_of(&d.id).and_then(|(v, _)| v.version) {
             Some(v) if v == mine => said.push(cli::doctor_peer(d.shown(), road, &v)),
             Some(v) => {

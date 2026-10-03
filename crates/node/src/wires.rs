@@ -1,0 +1,653 @@
+//! The wires this machine holds to other machines (docs/NET.md 连接):
+//! **one long-lived QUIC connection per far machine and protocol**,
+//! opened on first need, kept warm by iroh's keepalive, watched for
+//! silence, retired when it stops answering, and opened again with
+//! backoff.
+//!
+//! # Why one long-lived wire
+//!
+//! iroh keeps the hole it punched only while some connection to that
+//! machine is open: when the last one closes it forgets the selected
+//! path, and the next connection sprays its first packet at every known
+//! address, the relay included, and punches again (`vendor/iroh`,
+//! `remote_state.rs`, `handle_connection_close` and
+//! `handle_msg_send_datagram`). Before this module the sync pump dialled
+//! every machine every five seconds and dropped the connection after
+//! the round — measured 13–14 fresh dials a minute per peer — so the
+//! punched path was thrown away twelve times a minute and the row's word
+//! followed the dial cycle (audit/net.md F1–F3).
+//!
+//! # Lifecycle
+//!
+//! - **Owner**: the node's `Wires`, keyed by (device id, protocol). In
+//!   the resident it lives as long as the endpoint; a one-shot verb's
+//!   node holds its wires for the one breath it lives.
+//! - **Opened** by whoever needs it first ([`crate::Node::line_to`]),
+//!   **one dial at a time per key**: a second asker waits for the first
+//!   dial rather than racing it, and an asker for another machine never
+//!   waits at all.
+//! - **Kept** with iroh's own keepalive (a PING every 5 s per path), so
+//!   the NAT mapping and the selected path stay warm while idle.
+//! - **Heard**: every datagram the far side sends on it — answers, and
+//!   the acks of those keepalives — moves `heard`. A healthy wire is
+//!   therefore heard every few seconds without any traffic of ours.
+//! - **Retired** (closed, forgotten) when: nothing has been heard for
+//!   [`SILENT_AFTER`]; a request was sent and nothing at all came back
+//!   within [`ACK_WITHIN`]; QUIC closed it; the network changed and it
+//!   stayed quiet [`AFTER_CHANGE`] past the change; or the endpoint
+//!   under it was replaced. **In-flight requests on a retired wire fail
+//!   at once** with the connection's close — a reading is asked again
+//!   on a fresh wire, anything else reports that the machine was not
+//!   reached and lets the person decide.
+//! - **Backoff**: a dial that fails makes the pump wait 5 s, then 10,
+//!   20, 40, and 60 s at most before it dials that machine again. A
+//!   person's own request is never refused by backoff — only the
+//!   background pump honours it.
+//!
+//! Each side dials its own wire: a connection somebody else opened to
+//! this machine is answered, never borrowed for this machine's own
+//! questions — the far side may be a one-shot verb with nobody serving
+//! its end. Both wires ride the one path state iroh keeps per machine.
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use iroh::endpoint::Connection;
+use khor_net::path::PathKind;
+
+/// How long a request may go without the far side sending **anything at
+/// all** on its wire, from the moment it was sent. A live machine acks
+/// within one round trip (plus QUIC's 25 ms ack delay); four seconds is
+/// a congested cellular relay many times over, and a fraction of the
+/// thirty a stale wire used to cost before anything noticed
+/// (audit/net.md F7: three asks after a restart hung 29.5 s each).
+pub(crate) const ACK_WITHIN: Duration = Duration::from_secs(4);
+
+/// How long a wire may go unheard before it is retired. Three of iroh's
+/// 5 s keepalive intervals, the same margin iroh gives a direct path
+/// (`PATH_MAX_IDLE_TIMEOUT`).
+pub(crate) const SILENT_AFTER: Duration = Duration::from_secs(15);
+
+/// Longer than one of iroh's 5 s keepalive intervals and its ack: a
+/// connection not heard for this long has missed one.
+const KEEPALIVE_MISSED: Duration = Duration::from_secs(6);
+
+/// After a network change (or a wake), how long a wire has to be heard
+/// before it is presumed to have died with the old network. iroh pings
+/// every path on a change, so a live wire answers in one round trip.
+pub(crate) const AFTER_CHANGE: Duration = Duration::from_secs(3);
+
+/// How often the resident looks at its wires: liveness and road.
+pub(crate) const TICK: Duration = Duration::from_secs(1);
+
+/// Samples a new road must hold before the word changes. A path being
+/// re-chosen passes through a moment with none selected or the other one
+/// selected; one sample of that is not a change of road.
+const SETTLE: u8 = 2;
+
+/// The pump's wait after a failed dial, doubling per failure.
+const BACKOFF_FIRST: Duration = Duration::from_secs(5);
+const BACKOFF_MAX: Duration = Duration::from_secs(60);
+
+/// Which protocol a wire speaks: requests, or borrow pipes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum Proto {
+    Main,
+    Tunnel,
+}
+
+impl Proto {
+    pub(crate) fn alpn(self) -> &'static [u8] {
+        match self {
+            Proto::Main => khor_net::endpoint::ALPN,
+            Proto::Tunnel => khor_net::endpoint::TUNNEL_ALPN,
+        }
+    }
+}
+
+/// Why a wire was retired — what the counters say and what the far side
+/// reads as the close reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Retired {
+    Silent,
+    Unanswered,
+    Closed,
+    Network,
+    NewEars,
+    Paused,
+    Suspended,
+}
+
+impl Retired {
+    fn reason(self) -> &'static [u8] {
+        match self {
+            Retired::Silent => b"silent",
+            Retired::Unanswered => b"unanswered",
+            Retired::Closed => b"closed",
+            Retired::Network => b"network changed",
+            Retired::NewEars => b"new endpoint",
+            Retired::Paused => b"paused",
+            Retired::Suspended => b"suspended",
+        }
+    }
+}
+
+#[derive(Default)]
+struct Slot {
+    conn: Option<Connection>,
+    /// Datagrams received on `conn` as last counted.
+    rx: u64,
+    /// When the far side was last heard on any wire this slot held.
+    /// Outlives the wire, so a retired machine's age keeps growing.
+    heard: Option<Instant>,
+    /// The settled road, and a different one being considered.
+    word: Option<PathKind>,
+    leaning: Option<(PathKind, u8)>,
+    failures: u32,
+    retry_at: Option<Instant>,
+}
+
+/// Every wire this node holds, and the counters behind `khor doctor`'s
+/// account of them.
+#[derive(Default)]
+pub(crate) struct Wires {
+    slots: Mutex<HashMap<(String, Proto), Slot>>,
+    dialing: Mutex<HashMap<(String, Proto), DialLock>>,
+    /// A network change not yet judged: wires not heard since it are
+    /// retired once [`AFTER_CHANGE`] has passed.
+    changed: Mutex<Option<Instant>>,
+    /// The connections other machines opened to this one, weakly, and
+    /// when each was last heard ([`Self::serving`]).
+    served: Mutex<Vec<Served>>,
+    pub(crate) counts: Counts,
+}
+
+/// The lock that makes one key's dials one at a time.
+type DialLock = Arc<tokio::sync::Mutex<()>>;
+
+/// A connection another machine opened to this one.
+struct Served {
+    conn: iroh::endpoint::WeakConnectionHandle,
+    id: String,
+    rx: u64,
+    heard: Instant,
+}
+
+/// The counters, as atomics. [`Counts::snapshot`] is what crosses ipc.
+#[derive(Default)]
+pub(crate) struct Counts {
+    pub(crate) dialed: AtomicU64,
+    pub(crate) dial_failed: AtomicU64,
+    pub(crate) retired_silent: AtomicU64,
+    pub(crate) retired_unanswered: AtomicU64,
+    pub(crate) retired_closed: AtomicU64,
+    pub(crate) retired_network: AtomicU64,
+    pub(crate) retired_new_ears: AtomicU64,
+    pub(crate) answers_late: AtomicU64,
+    pub(crate) reads_retried: AtomicU64,
+    pub(crate) read_direct: AtomicU64,
+    pub(crate) read_relay: AtomicU64,
+    pub(crate) read_idle: AtomicU64,
+    pub(crate) network_changes: AtomicU64,
+    pub(crate) ops_late: AtomicU64,
+}
+
+impl Counts {
+    pub(crate) fn snapshot(&self) -> khor_core::WireCounts {
+        khor_core::WireCounts {
+            dialed: self.dialed.load(Relaxed),
+            dial_failed: self.dial_failed.load(Relaxed),
+            retired_silent: self.retired_silent.load(Relaxed),
+            retired_unanswered: self.retired_unanswered.load(Relaxed),
+            retired_closed: self.retired_closed.load(Relaxed),
+            retired_network: self.retired_network.load(Relaxed),
+            retired_new_ears: self.retired_new_ears.load(Relaxed),
+            answers_late: self.answers_late.load(Relaxed),
+            reads_retried: self.reads_retried.load(Relaxed),
+            read_direct: self.read_direct.load(Relaxed),
+            read_relay: self.read_relay.load(Relaxed),
+            read_idle: self.read_idle.load(Relaxed),
+            network_changes: self.network_changes.load(Relaxed),
+            ops_late: self.ops_late.load(Relaxed),
+        }
+    }
+
+    fn retired(&self, why: Retired) {
+        match why {
+            Retired::Silent => &self.retired_silent,
+            Retired::Unanswered => &self.retired_unanswered,
+            Retired::Closed => &self.retired_closed,
+            Retired::Network => &self.retired_network,
+            // A pause and a suspension are asked for, not failures; they
+            // count with the endpoint's own replacement as 「let go on
+            // purpose」.
+            Retired::NewEars | Retired::Paused | Retired::Suspended => &self.retired_new_ears,
+        }
+        .fetch_add(1, Relaxed);
+    }
+}
+
+/// Datagrams the far side has sent on this connection, ever. Moves with
+/// answers and with the acks of iroh's keepalives alike.
+pub(crate) fn heard_count(conn: &Connection) -> u64 {
+    conn.stats().udp_rx.datagrams
+}
+
+/// The road a live connection is on now. `Unknown` while no path is
+/// selected — a moment, mid-upgrade or right after the handshake — and
+/// the settling below never takes that moment for a road.
+fn road_now(conn: &Connection) -> PathKind {
+    khor_net::path::classify(conn)
+}
+
+fn backoff(failures: u32) -> Duration {
+    let doubled = BACKOFF_FIRST.saturating_mul(1u32 << failures.saturating_sub(1).min(8));
+    doubled.min(BACKOFF_MAX)
+}
+
+/// One sample of the road: the first one settles at once, a different
+/// one only after [`SETTLE`] in a row.
+fn settle(slot: &mut Slot, kind: PathKind) {
+    if kind == PathKind::Unknown {
+        return;
+    }
+    match slot.word {
+        None => {
+            slot.word = Some(kind);
+            slot.leaning = None;
+        }
+        Some(w) if w == kind => slot.leaning = None,
+        Some(_) => {
+            let n = match slot.leaning {
+                Some((k, n)) if k == kind => n + 1,
+                _ => 1,
+            };
+            if n >= SETTLE {
+                slot.word = Some(kind);
+                slot.leaning = None;
+            } else {
+                slot.leaning = Some((kind, n));
+            }
+        }
+    }
+}
+
+/// What [`Wires::link`] knows about one machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Reading {
+    /// The settled road of a live wire; `None` when none is live.
+    pub(crate) road: Option<PathKind>,
+    pub(crate) heard: Option<Duration>,
+}
+
+impl Wires {
+    /// The live wire for this key, if there is one.
+    pub(crate) fn live(&self, id: &str, proto: Proto) -> Option<Connection> {
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        slots
+            .get(&(id.to_owned(), proto))
+            .and_then(|s| s.conn.clone())
+            .filter(|c| c.close_reason().is_none())
+    }
+
+    /// The lock that makes a key's dials one at a time.
+    pub(crate) fn dial_lock(&self, id: &str, proto: Proto) -> Arc<tokio::sync::Mutex<()>> {
+        self.dialing
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .entry((id.to_owned(), proto))
+            .or_default()
+            .clone()
+    }
+
+    /// A freshly dialled wire becomes the one this key holds.
+    pub(crate) fn adopt(&self, id: &str, proto: Proto, conn: Connection) {
+        let now = Instant::now();
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let slot = slots.entry((id.to_owned(), proto)).or_default();
+        if let Some(old) = slot.conn.take()
+            && old.stable_id() != conn.stable_id()
+        {
+            old.close(0u32.into(), Retired::NewEars.reason());
+        }
+        slot.rx = heard_count(&conn);
+        slot.heard = Some(now);
+        slot.word = None;
+        slot.leaning = None;
+        settle(slot, road_now(&conn));
+        slot.failures = 0;
+        slot.retry_at = None;
+        slot.conn = Some(conn);
+        self.counts.dialed.fetch_add(1, Relaxed);
+    }
+
+    /// A dial for this key failed: the pump waits before the next one.
+    pub(crate) fn failed(&self, id: &str, proto: Proto) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let slot = slots.entry((id.to_owned(), proto)).or_default();
+        slot.failures = slot.failures.saturating_add(1);
+        slot.retry_at = Some(Instant::now() + backoff(slot.failures));
+        self.counts.dial_failed.fetch_add(1, Relaxed);
+        drop(slots);
+        // A connection that machine opened here and that has missed a
+        // keepalive may be what steered this dial wrong (`Self::serving`):
+        // it goes, and the next dial sprays every road again.
+        let now = Instant::now();
+        let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
+        served.retain(|w| {
+            if w.id != id || now.saturating_duration_since(w.heard) < KEEPALIVE_MISSED {
+                return true;
+            }
+            if let Some(conn) = w.conn.upgrade() {
+                conn.close(0u32.into(), Retired::Silent.reason());
+            }
+            false
+        });
+    }
+
+    /// How long the pump should still leave this machine alone; `None`
+    /// when it may dial now (or holds a live wire already).
+    pub(crate) fn backing_off(&self, id: &str) -> Option<Duration> {
+        if self.live(id, Proto::Main).is_some() {
+            return None;
+        }
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let at = slots.get(&(id.to_owned(), Proto::Main))?.retry_at?;
+        at.checked_duration_since(Instant::now())
+    }
+
+    /// The far side was heard just now (an answer came back).
+    pub(crate) fn heard(&self, id: &str, proto: Proto, conn: &Connection) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
+            && slot
+                .conn
+                .as_ref()
+                .is_some_and(|c| c.stable_id() == conn.stable_id())
+        {
+            slot.rx = heard_count(conn);
+            slot.heard = Some(Instant::now());
+        }
+    }
+
+    /// Retires `conn` if it is still the wire this key holds: closed,
+    /// forgotten, counted. Answers whether it was.
+    pub(crate) fn retire(&self, id: &str, proto: Proto, conn: &Connection, why: Retired) -> bool {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(slot) = slots.get_mut(&(id.to_owned(), proto)) else {
+            return false;
+        };
+        if slot
+            .conn
+            .as_ref()
+            .is_none_or(|c| c.stable_id() != conn.stable_id())
+        {
+            return false;
+        }
+        drop_wire(slot, why);
+        self.counts.retired(why);
+        drop(slots);
+        if matches!(why, Retired::Unanswered | Retired::Silent) {
+            self.let_go_served_by(id, why);
+        }
+        true
+    }
+
+    /// Lets go of every wire to one machine (a pause bites on them).
+    pub(crate) fn retire_peer(&self, id: &str, why: Retired) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        for proto in [Proto::Main, Proto::Tunnel] {
+            if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
+                && slot.conn.is_some()
+            {
+                drop_wire(slot, why);
+                self.counts.retired(why);
+            }
+        }
+    }
+
+    /// Lets go of every wire: the endpoint under them is being replaced,
+    /// or the app is going to the background.
+    pub(crate) fn clear(&self, why: Retired) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        for slot in slots.values_mut() {
+            if slot.conn.is_some() {
+                drop_wire(slot, why);
+                self.counts.retired(why);
+            }
+        }
+    }
+
+    /// A connection another machine opened to this one, being answered.
+    ///
+    /// **Watched for silence like this machine's own wires**, and for a
+    /// reason that is not tidiness: iroh keeps one path state per far
+    /// machine, shared by every connection to it, and while any of them
+    /// is open a new dial sends its first packet **only** down the path
+    /// that one selected (`remote_state.rs`, `handle_msg_send_datagram`).
+    /// A far machine that restarted leaves its old connection to this one
+    /// open here until QUIC's own idle timeout, and every dial back to it
+    /// meanwhile goes to the dead process's port and times out — measured
+    /// in this file's own test, a second write after a restart failing
+    /// after a full 10 s dial.
+    pub(crate) fn serving(&self, conn: &Connection) {
+        let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
+        served.retain(|w| w.conn.upgrade().is_some_and(|c| c.close_reason().is_none()));
+        served.push(Served {
+            conn: conn.weak_handle(),
+            id: conn.remote_id().to_string(),
+            rx: heard_count(conn),
+            heard: Instant::now(),
+        });
+    }
+
+    /// Closes every connection other machines opened to this one: what a
+    /// phone going to the background owes them, so their wires to it end
+    /// now instead of after [`SILENT_AFTER`].
+    pub(crate) fn let_go_served(&self, why: Retired) {
+        let served = std::mem::take(&mut *self.served.lock().unwrap_or_else(|p| p.into_inner()));
+        for conn in served.iter().filter_map(|w| w.conn.upgrade()) {
+            conn.close(0u32.into(), why.reason());
+        }
+    }
+
+    /// Closes the connections one far machine opened to this one: its
+    /// wire here was just found dead, so those are too, and left open
+    /// they would steer the next dial to it down the dead path.
+    fn let_go_served_by(&self, id: &str, why: Retired) {
+        let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
+        served.retain(|w| {
+            if w.id != id {
+                return true;
+            }
+            if let Some(conn) = w.conn.upgrade() {
+                conn.close(0u32.into(), why.reason());
+            }
+            false
+        });
+    }
+
+    /// The network under this machine changed, or it woke from sleep:
+    /// any wire not heard within [`AFTER_CHANGE`] from now is presumed to
+    /// have died with the old network ([`Self::tick`] judges).
+    pub(crate) fn network_changed(&self) {
+        *self.changed.lock().unwrap_or_else(|p| p.into_inner()) = Some(Instant::now());
+        self.counts.network_changes.fetch_add(1, Relaxed);
+    }
+
+    /// One look at every wire: counts what was heard, settles the road,
+    /// and retires the silent. Returns how many it retired, which is the
+    /// pump's cue to visit early.
+    pub(crate) fn tick(&self) -> usize {
+        let now = Instant::now();
+        let change = {
+            let mut changed = self.changed.lock().unwrap_or_else(|p| p.into_inner());
+            match *changed {
+                Some(at) if now >= at + AFTER_CHANGE => changed.take(),
+                _ => None,
+            }
+        };
+        let mut retired = 0;
+        let mut dead: Vec<String> = Vec::new();
+        {
+            let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
+            served.retain_mut(|w| {
+                let Some(conn) = w.conn.upgrade().filter(|c| c.close_reason().is_none()) else {
+                    return false;
+                };
+                let rx = heard_count(&conn);
+                if rx != w.rx {
+                    w.rx = rx;
+                    w.heard = now;
+                }
+                if now.saturating_duration_since(w.heard) >= SILENT_AFTER
+                    || change.is_some_and(|at| w.heard < at)
+                {
+                    conn.close(0u32.into(), Retired::Silent.reason());
+                    return false;
+                }
+                true
+            });
+        }
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        for ((id, _), slot) in slots.iter_mut() {
+            let Some(conn) = slot.conn.clone() else {
+                continue;
+            };
+            if conn.close_reason().is_some() {
+                slot.conn = None;
+                slot.word = None;
+                slot.leaning = None;
+                self.counts.retired_closed.fetch_add(1, Relaxed);
+                retired += 1;
+                continue;
+            }
+            let rx = heard_count(&conn);
+            if rx != slot.rx {
+                slot.rx = rx;
+                slot.heard = Some(now);
+            }
+            let quiet = slot
+                .heard
+                .map_or(Duration::MAX, |h| now.saturating_duration_since(h));
+            let stale_after_change = change.is_some_and(|at| slot.heard.is_none_or(|h| h < at));
+            if quiet >= SILENT_AFTER || stale_after_change {
+                let why = if stale_after_change {
+                    Retired::Network
+                } else {
+                    Retired::Silent
+                };
+                drop_wire(slot, why);
+                self.counts.retired(why);
+                dead.push(id.clone());
+                retired += 1;
+                continue;
+            }
+            settle(slot, road_now(&conn));
+        }
+        drop(slots);
+        for id in dead {
+            self.let_go_served_by(&id, Retired::Silent);
+        }
+        retired
+    }
+
+    /// What this node can say about one machine right now: the settled
+    /// road of its live wire (requests first, a borrow wire otherwise)
+    /// and how long since it was last heard on either.
+    pub(crate) fn link(&self, id: &str) -> Reading {
+        let now = Instant::now();
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let mut road = None;
+        let mut heard: Option<Instant> = None;
+        for proto in [Proto::Main, Proto::Tunnel] {
+            let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
+                continue;
+            };
+            if road.is_none()
+                && slot
+                    .conn
+                    .as_ref()
+                    .is_some_and(|c| c.close_reason().is_none())
+            {
+                road = slot.word;
+            }
+            if let Some(h) = slot.heard {
+                heard = Some(heard.map_or(h, |was| was.max(h)));
+            }
+        }
+        Reading {
+            road,
+            heard: heard.map(|h| now.saturating_duration_since(h)),
+        }
+    }
+
+    /// The machines this node holds a live wire to, for tests and for
+    /// whatever diagnostic wants it — names are the caller's business.
+    pub(crate) fn held(&self) -> Vec<String> {
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let mut ids: Vec<String> = slots
+            .iter()
+            .filter(|(_, s)| s.conn.as_ref().is_some_and(|c| c.close_reason().is_none()))
+            .map(|((id, _), _)| id.clone())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+}
+
+fn drop_wire(slot: &mut Slot, why: Retired) {
+    if let Some(conn) = slot.conn.take() {
+        conn.close(0u32.into(), why.reason());
+    }
+    slot.word = None;
+    slot.leaning = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A different road is taken only after it held for two samples;
+    /// the moment with no path selected is never a road.
+    #[test]
+    fn a_road_settles_after_two_samples_and_a_blank_moment_is_not_one() {
+        let mut s = Slot::default();
+        settle(&mut s, PathKind::Relay);
+        assert_eq!(
+            s.word,
+            Some(PathKind::Relay),
+            "the first reading stands at once"
+        );
+        settle(&mut s, PathKind::Unknown);
+        assert_eq!(
+            s.word,
+            Some(PathKind::Relay),
+            "no path selected is not a change"
+        );
+        settle(&mut s, PathKind::Direct);
+        assert_eq!(
+            s.word,
+            Some(PathKind::Relay),
+            "one sample of direct is a flicker"
+        );
+        settle(&mut s, PathKind::Relay);
+        settle(&mut s, PathKind::Direct);
+        assert_eq!(
+            s.word,
+            Some(PathKind::Relay),
+            "an interrupted lean starts over"
+        );
+        settle(&mut s, PathKind::Direct);
+        assert_eq!(s.word, Some(PathKind::Direct), "two in a row is a change");
+    }
+
+    #[test]
+    fn backoff_doubles_from_five_seconds_to_a_minute() {
+        let secs: Vec<u64> = (1..=7).map(|n| backoff(n).as_secs()).collect();
+        assert_eq!(secs, vec![5, 10, 20, 40, 60, 60, 60]);
+    }
+}
