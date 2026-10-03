@@ -377,6 +377,7 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
                 .build(),
         )
         .proxy_from_env()
+        .transport_config(transport())
         .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
         // **On the builder, not on the bound endpoint — and that is the
         // whole difference between wired up and merely present.**
@@ -411,6 +412,35 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
         builder = builder.clear_ip_transports();
     }
     Ok(builder)
+}
+
+/// **The QUIC transport khor binds with: iroh's own, with BBRv3 in place
+/// of Cubic** (round NET-5). `QuicTransportConfig::builder` starts from
+/// iroh's settings — the 5 s keepalive, path idle, multipath and NAT
+/// traversal its hole punching depends on — and only the controller
+/// changes.
+///
+/// Measured on a simulated road (`tests/congestion.rs`: noq through a
+/// 20 Mbit/s bottleneck with 200 ms of queue): at 300 ms and 2 % random
+/// loss Cubic moves 0.33 Mbit/s — the loss formula's ceiling,
+/// `1.22 · MSS / (RTT · √p)` (Mathis et al. 1997) — and BBRv3 10.1; a
+/// one-byte answer behind a bulk pour takes 469 ms at 300 ms under Cubic
+/// (the queue full) and 314 under BBRv3, 192 against 41 at 20 ms. The
+/// price: on a clean 300 ms road BBRv3 moves about a tenth less (16.4
+/// against 18.2 Mbit/s over a minute); on a 20 ms road the two are level.
+///
+/// ⚠️ 墓碑 (round NET-2, 3727c05): BBRv3 was measured and **not** taken
+/// then. noq 1.3.0 did not tell it when the connection went idle, so it
+/// paced a burst after typing by the trickle typing had shown it — a
+/// screenful 0.72–0.91 s against Cubic's 0.30 at 200 ms. The vendored
+/// noq-proto carries the fix from moq-dev/noq#5 (vendor/noq-proto/KHOR.md),
+/// and the same screenful now takes 0.21 s against Cubic's 0.30.
+pub fn transport() -> iroh::endpoint::QuicTransportConfig {
+    iroh::endpoint::QuicTransportConfig::builder()
+        .congestion_controller_factory(std::sync::Arc::new(
+            noq_proto::congestion::Bbr3Config::default(),
+        ))
+        .build()
 }
 
 /// The map a bind hands iroh: the caller's relays ([`relay_map`]), then

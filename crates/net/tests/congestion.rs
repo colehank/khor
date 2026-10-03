@@ -16,14 +16,16 @@
 //! A second measurement times what a terminal does most: a screenful
 //! after ten seconds of typing, on an otherwise quiet connection.
 //!
-//! **What it decided: khor stays on Cubic.** BBRv3 won under loss (27×
-//! the throughput at 2 %) and under a bulk pour (keystroke answers at
-//! the path's RTT instead of behind a full queue), but it paces a burst
-//! after quiet by the bandwidth it last saw, which typing keeps tiny: a
-//! screenful took 0.72–0.91 s against Cubic's 0.30 at 200 ms, and
-//! 1.1–1.4 s against 0.49 at 300 ms with 2 % loss. Stream priorities
-//! changed little: the queue that delays an answer is the network's,
-//! not the sender's. Numbers in `audit/net-2.md`.
+//! **What it decided.** Round NET-2: khor stays on Cubic. BBRv3 won
+//! under loss (27× the throughput at 2 %) and under a bulk pour, but in
+//! noq 1.3.0 it paced a burst after quiet by the trickle typing had shown
+//! it: a screenful took 0.72–0.91 s against Cubic's 0.30 at 200 ms.
+//! Round NET-5: with moq-dev/noq#5 ported into the vendored noq-proto
+//! (vendor/noq-proto/KHOR.md), the same screenful takes 0.21 s against
+//! Cubic's 0.30 (and 0.61 against 0.61–0.65 at 300 ms with 2 % loss), so
+//! khor binds with BBRv3 (`khor_net::endpoint::transport`). Stream
+//! priorities changed little: the queue is the network's, not the
+//! sender's. Numbers in audit/net-2.md and audit/net-5.md.
 //!
 //! iroh would learn the endpoints' real loopback addresses through its
 //! NAT traversal and go around the road, and iroh 1.2 refuses to turn

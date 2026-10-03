@@ -838,6 +838,12 @@ impl Node {
         // that closed answers `None` at once and forever, so a resumable
         // serve stops asking it until it has a new one.
         let mut hearing = true;
+        // **Gone to the background** (`suspending`) until `resume`: no
+        // pump and no visits. iOS gives an app some seconds before it
+        // freezes it, and a pump left running in them redialled every
+        // machine the suspension had just let go (round NET-5: 2 dials
+        // and 42 KB in 20 s), on wires the freeze then left half-open.
+        let resting = node.resting.clone();
         // A resume in flight, and everyone waiting on it; the bind's
         // result comes back to this loop on `bound`.
         type Waiting = (
@@ -867,8 +873,10 @@ impl Node {
                     // sees what a machine that is not there looks like —
                     // which is the state somebody asked for.
                     if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
+                    if resting.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
                     let e = ep.clone();
+                    let resting = resting.clone();
                     tokio::spawn(async move {
                         let Ok(accepting) = incoming.accept() else { return };
                         // **Early data is taken** (round NET-3): a machine
@@ -899,8 +907,11 @@ impl Node {
                                     .filter(|conn| conn.close_reason().is_none())
                             }
                         };
-                        let once_done = |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
+                        let once_done = move |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
                             n.wires.serving(conn);
+                            if resting.load(std::sync::atomic::Ordering::Relaxed) {
+                                return;
+                            }
                             // **A machine that dials in is back**: one this
                             // node holds no wire to — a phone returning to
                             // the front, a laptop waking — is visited now,
@@ -980,10 +991,14 @@ impl Node {
                         let _ = done.send(());
                     }
                     Wake::Suspend { done } => {
+                        resting.store(true, std::sync::atomic::Ordering::Relaxed);
                         node.wires.clear(wires::Retired::Suspended);
                         node.wires.let_go_served(wires::Retired::Suspended);
                         let _ = done.send(());
                     }
+                    // A network change while backgrounded is the resume's
+                    // to deal with: it gives new ears and a round.
+                    Wake::Network if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
                     Wake::Network => {
                         node.wires.network_changed();
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
@@ -1006,6 +1021,7 @@ impl Node {
                         });
                     }
                     Wake::Resume { ears, synced } => {
+                        resting.store(false, std::sync::atomic::Ordering::Relaxed);
                         // **Off this loop**: binding waits on the network,
                         // and the arms above — the app's own status
                         // questions among them — must not wait behind it.
@@ -1832,6 +1848,20 @@ impl Node {
         d: &DeviceInfo,
         proto: wires::Proto,
     ) -> Result<Line, DialFailure> {
+        self.line_to_by(ep, d, proto, None).await
+    }
+
+    /// [`Node::line_to`], a dial it has to make finished `by` then — what
+    /// a caller with a deadline of its own passes, so the dial's time out
+    /// is said in the dial's words before the caller's deadline says
+    /// something vaguer (`Node::ask_on`).
+    pub(crate) async fn line_to_by(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        proto: wires::Proto,
+        by: Option<std::time::Instant>,
+    ) -> Result<Line, DialFailure> {
         if crate::pause::peer_on(self.root(), &d.id) {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
@@ -1850,7 +1880,7 @@ impl Node {
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
         }
-        match self.dial(ep, &d.id, &d.addrs, proto.alpn()).await {
+        match self.dial(ep, &d.id, &d.addrs, proto.alpn(), by).await {
             Ok(conn) => {
                 self.wires.adopt(&d.id, proto, conn.clone());
                 Ok(line(conn))
@@ -1927,6 +1957,13 @@ impl Node {
         d: &DeviceInfo,
         req: &Request,
     ) -> Result<Response, String> {
+        // **Answer inside the face's own wait** (round NET-5): a face asks
+        // through the resident, which gives up after `ipc::DEADLINE_FAR`
+        // and says only that it stopped waiting. A dead wire's ack wait
+        // plus the redial behind a slow road could run past that (29.5 s
+        // at 600 ms / 5 % loss), so the redial is cut to what is left,
+        // and the face reads 「无法连接」 rather than 「未在 30 秒内完成」.
+        let by = std::time::Instant::now() + ipc::DEADLINE_FAR - Duration::from_secs(2);
         match self.ask_early(ep, d, req).await {
             Early::Answered(resp) => return Ok(resp),
             Early::Failed(e) => return Err(unreached_words(&d.name, e)),
@@ -1943,7 +1980,7 @@ impl Node {
                     .reads_retried
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let line = self
-                    .line_to(ep, d, wires::Proto::Main)
+                    .line_to_by(ep, d, wires::Proto::Main, Some(by))
                     .await
                     .map_err(|e| unreached_words(&d.name, e))?;
                 self.exchange_on(&line, req).await.map_err(Miss::words)
@@ -6866,6 +6903,11 @@ impl Node {
         ep: &iroh::Endpoint,
         force: bool,
     ) -> Vec<(String, Result<String, String>)> {
+        // Backgrounded: a round already under way when the app went
+        // stops here rather than redialling what the suspension let go.
+        if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
+            return Vec::new();
+        }
         let list: Vec<DeviceInfo> = self
             .devices_loaded()
             .map(|l| l.doc.all())
@@ -6896,6 +6938,9 @@ impl Node {
         d: &DeviceInfo,
         force: bool,
     ) -> Result<String, String> {
+        if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(msg::round_cancelled().into());
+        }
         // A device that never reported a road (one-shot pairings) cannot
         // be dialed, only dial us — probing it burns a full DIAL_TIMEOUT
         // for nothing.
@@ -8235,13 +8280,18 @@ impl Node {
         id: &str,
         direct: &[String],
         alpn: &[u8],
+        by: Option<std::time::Instant>,
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
         // A machine last seen behind a slow road is given that road's time
         // to answer a handshake (`wires::Patience`); one never measured, or
-        // a fast one, the budget dials always had.
-        let within = DIAL_TIMEOUT
+        // a fast one, the budget dials always had — and never past the
+        // caller's own deadline, when it has one.
+        let mut within = DIAL_TIMEOUT
             .max(self.wires.last_rtt(id).saturating_mul(12))
             .min(Duration::from_secs(60));
+        if let Some(by) = by {
+            within = within.min(by.saturating_duration_since(std::time::Instant::now()));
+        }
         self.dial_with(ep, id, direct, self.relays(), alpn, within).await
     }
 }

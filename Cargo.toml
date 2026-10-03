@@ -207,3 +207,6 @@ debug = "line-tables-only"
 # and when this block and the directory can go: vendor/iroh/KHOR.md.
 [patch.crates-io]
 iroh = { path = "vendor/iroh" }
+# noq-proto 1.3.0 with BBRv3's app-limited signal ported from
+# moq-dev/noq#5: vendor/noq-proto/KHOR.md.
+noq-proto = { path = "vendor/noq-proto" }

@@ -346,3 +346,41 @@ async fn a_far_terminal_rejoins_after_resume_and_its_replay_has_what_happened_me
     serve_a.abort();
     serve_b.abort();
 }
+
+/// **A backgrounded resident stays still** (round NET-5): after
+/// `suspending`, the pump neither rounds nor redials until `resume` —
+/// iOS gives an app some seconds before freezing it, and a pump left
+/// running in them redialled every machine the suspension had just let
+/// go. Measured over two pump beats by the resident's own dial count;
+/// the control is the round `resume` runs, which dials again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_backgrounded_resident_does_not_redial_until_it_resumes() {
+    let ra = root("rest-a");
+    let rb = root("rest-b");
+    let sa = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let _serve_a = tokio::spawn(async move { sa.serve_resumable().await });
+    let sb = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let _serve_b = tokio::spawn(async move { sb.serve().await });
+    wait_for_endpoint_file(&ra.0).await;
+    wait_for_endpoint_file(&rb.0).await;
+    let a = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let b = Node::open_as(rb.0.clone(), "beta").unwrap();
+    timeout(Duration::from_secs(60), b.pair(&a.invite().unwrap()))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+    timeout(Duration::from_secs(60), a.sync_now())
+        .await
+        .expect("a round must come back")
+        .unwrap();
+
+    assert!(link::suspending(&ra.0).await, "alpha's resident suspends");
+    let before = a.wire_counts().await.unwrap().dialed;
+    tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
+    let during = a.wire_counts().await.unwrap().dialed;
+    assert_eq!(during, before, "a backgrounded resident dialled");
+
+    let out = link::resume(&ra.0).expect("resumable").synced().await.unwrap();
+    assert!(beta_heard(&out), "the resume's round reaches beta: {out:?}");
+    assert!(a.wire_counts().await.unwrap().dialed > during, "and that round dialled");
+}

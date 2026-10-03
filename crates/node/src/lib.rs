@@ -386,6 +386,9 @@ pub struct Node {
     /// The directories faces asked to have watched on other machines,
     /// and what changed in them (round NET-4, `watch::Watches`).
     pub(crate) watches: Arc<watch::Watches>,
+    /// **Gone to the background** (`link::suspending`) until `resume`:
+    /// no pump, no visits, no rounds — see the serve loop.
+    pub(crate) resting: Arc<std::sync::atomic::AtomicBool>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1043,6 +1046,7 @@ impl Node {
             readings_held: Arc::default(),
             days_held: Arc::default(),
             watches: Arc::default(),
+            resting: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
