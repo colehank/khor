@@ -59,6 +59,12 @@ function topScroller(under: HTMLElement): HTMLElement | null {
       if (!(c instanceof HTMLElement)) continue;
       const r = c.getBoundingClientRect();
       if (r.height === 0 || Math.abs(r.top - top) > 1) continue;
+      // A box kept mounted but hidden is not what stands there: a
+      // machine's listing stays under an open file (`MachineFiles`,
+      // invisible), and the band padded that listing and pulled the
+      // whole screen up, so the file's own name slid under the head
+      // (2026-10-03, the owner's phone).
+      if (getComputedStyle(c).visibility === "hidden") continue;
       // Another band's group: its scroller is that band's. A terminal
       // scrolls its own lines (xterm's viewport) and is never padded.
       if (c.querySelector(":scope > [data-band]") || c.matches(TERMINAL)) return null;

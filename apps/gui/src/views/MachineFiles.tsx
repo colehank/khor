@@ -109,8 +109,14 @@ export function MachineFiles({
               <span className="min-w-0 truncate text-body font-title">{file.split("/").pop()}</span>
             </div>
             {/* The line numbers start on the page's left line (N07): the
-                view's gutter pads 8 of its own. */}
-            <div className="min-h-0 flex-1 ps-[calc(var(--page-inset)-0.5rem)]">{view}</div>
+                view's gutter pads 8 of its own. **A flex column**, so the
+                view is held to the screen and its own scroller scrolls
+                (2026-10-03, the owner's phone: 「从机器进入工作区文件不可
+                拖动」). As a block it let the view grow to the whole file's
+                height — 19 336 px for a 605-line lock file — inside a
+                screen that clips, so there was nothing a finger could
+                scroll and the file's name slid under the page head. */}
+            <div className="flex min-h-0 flex-1 flex-col ps-[calc(var(--page-inset)-0.5rem)]">{view}</div>
           </div>
         )}
       </div>
