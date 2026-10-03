@@ -752,7 +752,15 @@ fn account_home() -> Option<PathBuf> {
     let mut buf = vec![0u8; 16 * 1024];
     // SAFETY: getpwuid_r writes into `pw` and `buf`, both owned here and
     // alive for the call; `out` is null or points at `pw`.
-    let rc = unsafe { libc::getpwuid_r(libc::getuid(), &mut pw, buf.as_mut_ptr().cast(), buf.len(), &mut out) };
+    let rc = unsafe {
+        libc::getpwuid_r(
+            libc::getuid(),
+            &mut pw,
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+            &mut out,
+        )
+    };
     if rc != 0 || out.is_null() || pw.pw_dir.is_null() {
         return None;
     }
@@ -793,7 +801,12 @@ mod tests {
         // scratch node is started: it must still not take the scratch
         // dir for the real home.
         let out = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "adaptor::tests::scratch_home_probe", "--nocapture", "--ignored"])
+            .args([
+                "--exact",
+                "adaptor::tests::scratch_home_probe",
+                "--nocapture",
+                "--ignored",
+            ])
             .env("HOME", &scratch)
             .env("KHOR_PROBE_DIR", &scratch)
             .output()
@@ -808,7 +821,10 @@ mod tests {
     #[ignore]
     fn scratch_home_probe() {
         if let Some(dir) = std::env::var_os("KHOR_PROBE_DIR") {
-            println!("probe-real-home={}", is_real_home(std::path::Path::new(&dir)));
+            println!(
+                "probe-real-home={}",
+                is_real_home(std::path::Path::new(&dir))
+            );
         }
     }
 
@@ -858,7 +874,10 @@ mod tests {
     #[test]
     fn a_child_that_called_setsid_left_its_parents_pane() {
         use std::os::unix::process::CommandExt;
-        let mut plain = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let mut plain = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
         let mut away = std::process::Command::new("sleep");
         away.arg("30");
         // SAFETY: setsid is async-signal-safe.
@@ -875,8 +894,14 @@ mod tests {
         let _ = away.kill();
         let _ = plain.wait();
         let _ = away.wait();
-        assert!(held.contains(&plain_pid), "a plain child stays in its parent's session");
-        assert!(!held.contains(&away_pid), "a child in a session of its own is not held");
+        assert!(
+            held.contains(&plain_pid),
+            "a plain child stays in its parent's session"
+        );
+        assert!(
+            !held.contains(&away_pid),
+            "a child in a session of its own is not held"
+        );
     }
 
     fn proc_at(name: &str, started_ms: i64) -> Proc {
