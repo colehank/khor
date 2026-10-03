@@ -137,7 +137,7 @@
 }
 /* **The row is the 24-hour section's heading** (2026-09-28): the
    section's name at the left end, in the board's section-heading style
-   (`group`, tertiary — the name a settings group wears over its card,
+   (`group`, muted — the name a settings group wears over its card,
    and `MachineCard`'s 进程 over its own section), and the two readings
    pushed to the right end of the same row. */
 .dayblk .sw .tt {
@@ -145,7 +145,10 @@
   font-size: var(--text-group);
   line-height: var(--text-group--line-height);
   font-weight: var(--text-group--font-weight);
-  color: var(--tertiary);
+  /* Muted, as 进程's heading under it (`SectionHead`): a heading people
+     read is not tertiary (the audit fix plan F5.1). It was the one
+     section head on the page a step lighter than its neighbour. */
+  color: var(--muted-foreground);
   letter-spacing: 0;
 }
 /* ⚠️ 墓碑 (2026-10-02): the two readings' segmented control was drawn

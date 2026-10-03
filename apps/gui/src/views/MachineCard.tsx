@@ -264,7 +264,7 @@ function Body({
               <RegionState state="loading-never" />
             ) : (
               <>
-                <Readings row={row} day={load?.cpu_day ?? null} top={load?.top ?? []} />
+                <Readings row={row} day={load?.cpu_day ?? null} dayLost={load === null && why !== null} top={load?.top ?? []} />
                 {/* **No process table for a machine that cannot host**
                     (docs/IOS.md 第二步): a phone's app may not see other
                     processes, so its table is always empty — and an empty
@@ -940,10 +940,14 @@ function Hooks({
 function Readings({
   row,
   day,
+  dayLost = false,
   top,
 }: {
   row: DeviceRow;
   day: Load["cpu_day"] | null;
+  /** The day was asked for and the machine did not answer: the slot says
+      so under its heading rather than holding its height empty. */
+  dayLost?: boolean;
   /** The face's own process rows, for the two drawers that have no
       parts to show — see `Drawers`. */
   top: Load["top"];
@@ -1284,7 +1288,26 @@ function Readings({
             the card disagree with the terminal — which reads as a
             broken backend rather than as a closed drawer. */}
         <div data-load-day hidden={open !== ""}>
-          {day && <DayChart day={day} />}
+          {day ? (
+            <DayChart day={day} />
+          ) : (
+            // **Not a box of nothing** (2026-10-03): until the day came, and
+            // for good when the machine did not answer, the slot held its
+            // whole height blank between the dials and 进程, its heading
+            // gone with it. The heading stays; under it the skeleton the
+            // process table wears while it is asked (`RegionState`), or,
+            // once the asking failed, the words an unreachable row wears.
+            <div data-day-lost={dayLost || undefined} className="flex h-full flex-col">
+              <span className="flex h-(--slot-head-h) flex-none items-center text-group text-muted-foreground">
+                {cli.day_title}
+              </span>
+              {dayLost ? (
+                <span className="text-callout text-muted-foreground">{gui.day_unreachable}</span>
+              ) : (
+                <div data-skeleton aria-busy="true" className="min-h-0 flex-1 rounded-md bg-fill" />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </section>
