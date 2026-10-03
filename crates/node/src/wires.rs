@@ -178,6 +178,8 @@ pub(crate) enum Retired {
     NewEars,
     Paused,
     Suspended,
+    /// The relay said the far machine left it (`Wires::departed`).
+    Departed,
 }
 
 impl Retired {
@@ -190,6 +192,7 @@ impl Retired {
             Retired::NewEars => b"new endpoint",
             Retired::Paused => b"paused",
             Retired::Suspended => b"suspended",
+            Retired::Departed => b"departed",
         }
     }
 }
@@ -240,8 +243,14 @@ pub(crate) struct Wires {
     /// The connections other machines opened to this one, weakly, and
     /// when each was last heard ([`Self::serving`]).
     served: Mutex<Vec<Served>>,
+    /// Machines a relay said left it, and when (`Wires::departed`):
+    /// until one is heard from again, a dial to it is given a short time.
+    gone: Mutex<HashMap<String, Instant>>,
     pub(crate) counts: Counts,
 }
+
+/// How long a relay's word that a machine left counts, unheard since.
+const GONE_FOR: Duration = Duration::from_secs(120);
 
 /// The lock that makes one key's dials one at a time.
 type DialLock = Arc<tokio::sync::Mutex<()>>;
@@ -301,7 +310,8 @@ impl Counts {
         match why {
             Retired::Silent => &self.retired_silent,
             Retired::Unanswered => &self.retired_unanswered,
-            Retired::Closed => &self.retired_closed,
+            // Gone from the relay is the far side gone: closed, from there.
+            Retired::Closed | Retired::Departed => &self.retired_closed,
             Retired::Network => &self.retired_network,
             // A pause and a suspension are asked for, not failures; they
             // count with the endpoint's own replacement as 「let go on
@@ -387,6 +397,7 @@ impl Wires {
 
     /// A freshly dialled wire becomes the one this key holds.
     pub(crate) fn adopt(&self, id: &str, proto: Proto, conn: Connection) {
+        self.back(id);
         let now = Instant::now();
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let slot = slots.entry((id.to_owned(), proto)).or_default();
@@ -583,6 +594,7 @@ impl Wires {
     /// in this file's own test, a second write after a restart failing
     /// after a full 10 s dial.
     pub(crate) fn serving(&self, conn: &Connection) {
+        self.back(&conn.remote_id().to_string());
         let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
         served.retain(|w| w.conn.upgrade().is_some_and(|c| c.close_reason().is_none()));
         served.push(Served {
@@ -607,6 +619,59 @@ impl Wires {
     /// Closes the connections one far machine opened to this one: its
     /// wire here was just found dead, so those are too, and left open
     /// they would steer the next dial to it down the dead path.
+    /// **A relay said this machine left it** (`Endpoint::relay_departures`,
+    /// vendor/iroh/KHOR.md patch 4): its relay connection ended, so a wire
+    /// to it through that relay is dead now, not after its silence limit.
+    /// A wire on a direct road is left alone — the relay is not that
+    /// road. Until it is heard again, a dial to it is given a short time
+    /// ([`Wires::gone_lately`]).
+    ///
+    /// Before (round NET-5's probe, 200 ms relay road): a machine whose
+    /// resident stopped kept its word 中继 for 14 s, and the first ask to
+    /// it waited out an ack and a full dial to say so.
+    pub(crate) fn departed(&self, id: &str) {
+        self.gone
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id.to_owned(), Instant::now());
+        let mut any = false;
+        {
+            let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+            for proto in [Proto::Main, Proto::Tunnel] {
+                if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
+                    && slot.conn.is_some()
+                    && slot.word != Some(PathKind::Direct)
+                {
+                    drop_wire(slot, Retired::Departed);
+                    self.counts.retired(Retired::Departed);
+                    any = true;
+                }
+            }
+        }
+        if any {
+            self.let_go_served_by(id, Retired::Departed);
+        }
+    }
+
+    /// Whether a relay said this machine left, and nothing has been heard
+    /// from it since.
+    pub(crate) fn gone_lately(&self, id: &str) -> bool {
+        let mut gone = self.gone.lock().unwrap_or_else(|p| p.into_inner());
+        match gone.get(id) {
+            Some(at) if at.elapsed() < GONE_FOR => true,
+            Some(_) => {
+                gone.remove(id);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// Heard from: whatever a relay said about it is old news.
+    fn back(&self, id: &str) {
+        self.gone.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+    }
+
     fn let_go_served_by(&self, id: &str, why: Retired) {
         let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
         served.retain(|w| {

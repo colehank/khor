@@ -210,6 +210,10 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
     // C: the far machine gone.
     let gone_at = Instant::now();
     drop(far_serve.take());
+    // The words first, asked of nothing: how long the phone keeps saying
+    // the far machine is there with no ask to find out otherwise.
+    let word_alone = until(Duration::from_secs(60), || async { word(&phone, &far_id).await != "中继" }).await;
+    eprintln!("[diag] C far stopped: the phone's word left 中继 on its own after {word_alone:?}");
     let ls_gone = {
         let began = Instant::now();
         let r = phone.ls_of("far", &dir).await;

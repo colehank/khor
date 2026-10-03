@@ -741,6 +741,9 @@ impl ActiveRelayActor {
             }
             RelayToClientMsg::EndpointGone(endpoint_id) => {
                 state.endpoints_present.remove(&endpoint_id);
+                // khor patch 4: told onward, so the application can stop
+                // waiting on a peer the relay just saw leave.
+                let _ = self.my_relay.departed.send(endpoint_id);
             }
             RelayToClientMsg::Ping(data) => state.pong_pending = Some(data),
             RelayToClientMsg::Pong(data) => {
@@ -1070,12 +1073,17 @@ fn auth_denied_reason(error: &RelayConnectionError) -> Option<&str> {
 #[derive(Debug, Clone)]
 pub(crate) struct HomeRelayWatch {
     inner: Watchable<Option<RelayStatus>>,
+    /// khor patch 4 (vendor/iroh/KHOR.md): every `EndpointGone` a relay
+    /// sends — a peer that had been sending to this endpoint through it
+    /// disconnected — told to whoever subscribed (`Endpoint::relay_departures`).
+    pub(crate) departed: tokio::sync::broadcast::Sender<EndpointId>,
 }
 
 impl Default for HomeRelayWatch {
     fn default() -> Self {
         Self {
             inner: Watchable::new(None),
+            departed: tokio::sync::broadcast::channel(64).0,
         }
     }
 }

@@ -359,6 +359,8 @@ pub(crate) struct Socket {
     /// Local addresses
     local_addrs_watch: LocalAddrsWatch,
     home_relay_watch: HomeRelayWatcher,
+    /// khor patch 4: the relays' `EndpointGone`s (`Endpoint::relay_departures`).
+    relay_departed: tokio::sync::broadcast::Sender<EndpointId>,
     /// Currently bound IP addresses of all sockets
     #[cfg(not(wasm_browser))]
     ip_bind_addrs: Vec<SocketAddr>,
@@ -502,6 +504,11 @@ impl Socket {
 
     pub(crate) fn home_relay_status(&self) -> impl Watcher<Value = Vec<RelayStatus>> + use<> {
         self.home_relay_watch.clone()
+    }
+
+    /// khor patch 4: see `Endpoint::relay_departures`.
+    pub(crate) fn relay_departures(&self) -> tokio::sync::broadcast::Receiver<EndpointId> {
+        self.relay_departed.subscribe()
     }
 
     /// Stores a new set of direct addresses.
@@ -916,8 +923,11 @@ impl EndpointInner {
 
         let ipv6_reported = Arc::new(AtomicBool::new(false));
 
+        let my_relay = HomeRelayWatch::default();
+        // khor patch 4: kept here, handed out by `relay_departures`.
+        let relay_departed = my_relay.departed.clone();
         let relay_actor_config = RelayActorConfig {
-            my_relay: HomeRelayWatch::default(),
+            my_relay,
             secret_key: secret_key.clone(),
             #[cfg(not(wasm_browser))]
             dns_resolver: dns_resolver.clone(),
@@ -997,6 +1007,7 @@ impl EndpointInner {
             metrics: metrics.clone(),
             local_addrs_watch: transports.local_addrs_watch(),
             home_relay_watch,
+            relay_departed,
             #[cfg(not(wasm_browser))]
             ip_bind_addrs: transports.ip_bind_addrs(),
             tls_config: tls_config.clone(),
