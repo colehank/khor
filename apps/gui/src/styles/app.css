@@ -1927,6 +1927,14 @@ aside[data-side] {
   outline-offset: calc(-1 * var(--ring-off));
 }
 
+/* **A conversation a file is dragged over wears the same ring** (round
+   CHAT): Finder's drop target, so where the file will go is never in
+   doubt before it is let go. */
+[data-chat-drop] {
+  outline: var(--ring-w) solid var(--ring);
+  outline-offset: calc(-1 * var(--ring-off));
+}
+
 /* **A form on the narrow face is one column** (the audit fix plan F4.5;
    N12): each question's label over its control, every control on the
    same left edge. */

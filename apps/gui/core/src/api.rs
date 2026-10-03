@@ -455,6 +455,15 @@ pub fn answer(
         // The bridge answers one request at a time: a held wait would
         // hold every other call behind it, so it is the poll here.
         "chat_wait" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
+        // Files already on this machine (a drop's or a picker's paths),
+        // put where the conversation's machine keeps files (round CHAT).
+        "chat_put_paths" => {
+            let paths: Vec<String> = match args.get("paths") {
+                Some(serde_json::Value::Array(a)) => a.iter().filter_map(|p| p.as_str().map(str::to_owned)).collect(),
+                _ => return Err("missing list arg: paths".to_owned()),
+            };
+            to_json(&crate::chat::chat_put_paths(root, &arg("id")?, &paths)?)
+        }
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
             // `[mime, base64]` pairs rather than an object so the two

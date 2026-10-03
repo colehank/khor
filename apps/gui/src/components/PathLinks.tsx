@@ -33,17 +33,12 @@
 // ruling (`Markdown`'s `Link`).
 import { useEffect } from "react";
 
+import { pathsIn } from "@/lib/paths";
 import { useLinkHome, underRoot } from "@/views/linkHome";
 import { cn } from "@/lib/utils";
 
-/** What a path looks like in prose. One or more segments with at least
-    one `/`, optionally `./`-led, optionally `:12`-tailed.
-
-    **Deliberately conservative about what a segment may hold**: letters,
-    digits and the four punctuation marks that appear in real file names.
-    A wider class starts eating the sentence around the path — a comma, a
-    closing bracket, the full stop at the end of the line. */
-const PATH = /(?:\.\/)?(?:[\w.@+-]+\/)+[\w.@+-]+(?::\d+)?/g;
+// What a path looks like in prose is `lib/paths`' `pathsIn`, the one
+// detector the conversation's files and these links share.
 
 type Mdast = {
   type: string;
@@ -86,12 +81,10 @@ export function remarkPaths() {
       }
       const text = kid.value;
       let at = 0;
-      let hit: RegExpExecArray | null;
-      PATH.lastIndex = 0;
-      while ((hit = PATH.exec(text)) !== null) {
+      for (const hit of pathsIn(text)) {
         if (hit.index > at) out.push({ type: "text", value: text.slice(at, hit.index) });
-        out.push(pathNode(hit[0]));
-        at = hit.index + hit[0].length;
+        out.push(pathNode(hit.written));
+        at = hit.index + hit.written.length;
       }
       if (at === 0) {
         out.push(kid);

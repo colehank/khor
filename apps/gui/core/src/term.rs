@@ -650,7 +650,7 @@ pub fn shell_quote(path: &str) -> String {
 /// the test was green and nobody looked). Between them they explain how
 /// a race with a written-down repro sat in the ledger for days —
 /// **every road had a brick under it, and the bricks had no names.**
-fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
+pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
     let (root, machine, paths) = (root.to_path_buf(), machine.to_owned(), paths.to_vec());
     std::thread::spawn(move || -> Result<Vec<String>, String> {
         let rt = tokio::runtime::Builder::new_current_thread()

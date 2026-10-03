@@ -2380,6 +2380,44 @@ fn machine_log(id: String) -> Result<khor_gui_core::MachineLog, String> {
     khor_gui_core::machine_log(&Node::root_from_env(), &id)
 }
 
+/// A file for an agent conversation, as bytes (round CHAT): the raw
+/// request body, the conversation and the name in two headers — a photo
+/// is not something to base64 through a JSON envelope. Put on the
+/// machine the conversation runs on; answers the path there.
+#[tauri::command]
+async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("chat_put takes the file's bytes as its body".to_owned());
+    };
+    let header = |k: &str| {
+        request
+            .headers()
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| khor_gui_core::percent_decoded(v).unwrap_or_else(|| v.to_owned()))
+    };
+    let (Some(id), Some(name)) = (header("x-khor-chat"), header("x-khor-name")) else {
+        return Err("chat_put needs the x-khor-chat and x-khor-name headers".to_owned());
+    };
+    let bytes = bytes.clone();
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::chat::chat_put(&Node::root_from_env(), &id, &name, &mut bytes.as_slice())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Files this machine already has (a drop, a picker's paths), put where
+/// the agent conversation's machine keeps files (round CHAT).
+#[tauri::command]
+async fn chat_put_paths(id: String, paths: Vec<String>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::chat::chat_put_paths(&Node::root_from_env(), &id, &paths)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The waiting file message's 收下 — `khor accept`, same core call.
 #[tauri::command]
 async fn accept_transfer(msg: String) -> Result<Vec<String>, String> {
@@ -3537,6 +3575,8 @@ pub fn run() {
             accept_transfer,
             send_path,
             pick_and_send,
+            chat_put,
+            chat_put_paths,
             agents,
             agents_known,
             agents_known_taken,

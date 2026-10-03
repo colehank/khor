@@ -171,6 +171,18 @@ const ONE_SIDED: &[(&str, &str)] = &[
          a browser face has its own <input type=file> and uploads bytes instead (/api/upload), \
          so an HTTP arm for this would be a dialog on a machine nobody is looking at",
     ),
+    // ── round CHAT, 2026-10-03 ────────────────────────────────────
+    //
+    // **Not missing on the web: served there by a route of its own.**
+    // A conversation's file arrives as raw bytes, which `api::answer`'s
+    // JSON arguments cannot carry; the bridge and the web face answer it
+    // beside `upload`, from the request body (`bin/bridge.rs`,
+    // `khor_web`), and both reach the same `chat::chat_put`.
+    (
+        "chat_put",
+        "raw bytes, not JSON: the bridge and the web face serve it as a body route beside /upload \
+         (`chat::chat_put`), so this table's api.rs finder cannot see it",
+    ),
     // ── the menu's five, written down 2026-09-12 ──────────────────
     //
     // **One reason, five commands, and it is a fact about windows.**

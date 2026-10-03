@@ -3850,6 +3850,10 @@ chat-input = "输入消息…"
 # item its menu always has when the agent takes files.
 chat-add = "添加到对话"
 chat-attach = "添加文件…"
+chat-attach-machine = "{0} 上的文件…"
+chat-attach-machine-title = "{0} 上的文件"
+chat-put-failed = "没能放到机器上"
+
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

@@ -78,6 +78,8 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
+import { MachineFilePick, PendingChips, usePendingFiles } from "@/views/chat-files";
+import { withAttachments } from "@/lib/paths";
 import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
@@ -892,9 +894,13 @@ export function ChatView({
   still = false,
   category = null,
   machine = null,
+  home = null,
 }: {
   id: string;
   still?: boolean;
+  /** The machine this conversation runs on, by the name a person reads
+      (`SessionRow::home`) — what a file's caption says it is on. */
+  home?: string | null;
   /** The far machine this conversation lives on — `null` for one held
       here. What a long wait names. */
   machine?: string | null;
@@ -940,13 +946,15 @@ export function ChatView({
   /** What the session can be set to, as the host last told it —
       `null` until a `settings` frame, which most agents never send. */
   const [settings, setSettings] = useState<Settings | null>(null);
-  /** Images attached to the line being written, as `[mime, base64]`.
-      Cleared by sending, like the text beside them. */
-  const [shots, setShots] = useState<[string, string][]>([]);
-  /** Files attached to the line being written, as `[name, text]`. */
-  const [docs, setDocs] = useState<[string, string][]>([]);
-  /** Why the last paste did not attach, if it did not. */
-  const [shotErr, setShotErr] = useState<string | null>(null);
+  /** The files going along with the line being written (round CHAT,
+      `chat-files`): each put on the conversation's machine as it is
+      chosen, cleared by sending like the text beside them. ⚠️ 墓碑:
+      `shots` and `docs` carried pictures as base64 and text files'
+      contents inside the prompt, gated on the agent's capabilities;
+      every file is now a path on the machine, and a picture also rides
+      inline where the agent takes pictures. */
+  const files = usePendingFiles(id);
+  const [pickOpen, setPickOpen] = useState(false);
   /** Which tool lines are open. **Closed by default and per line**: a
       conversation is read for what was said, and twenty shell commands
       unfolded is a transcript of the machine rather than of the work.
@@ -1261,127 +1269,66 @@ export function ChatView({
     setFresh(false);
   };
 
-  /**
-   * How large one attached image may be, in bytes of source data.
-   *
-   * **5 MB, and the limit exists because the transport is a frame, not
-   * a stream.** The picture crosses as base64 inside one msgpack frame
-   * — base64 is 4/3 of the source, so this is ~6.7 MB on the wire —
-   * and a frame is read whole at both ends. A phone screenshot is under
-   * a megabyte; a raw camera photo is not, and the person who pastes
-   * one deserves the number rather than a turn that hangs.
-   */
-  const SHOT_MAX = 5 * 1024 * 1024;
-
-  /**
-   * A pasted image becomes an attachment, when the agent takes images.
-   *
-   * **The gate is here, not at the send.** An affordance that accepts a
-   * picture and then refuses it has already cost the person the paste;
-   * one that never accepts it costs nothing and says the same thing.
-   * `facts` being `null` (the handshake has not landed yet) also
-   * refuses — an unknown capability is not a yes.
-   */
-  /** How large one attached file may be, as source text. */
-  const DOC_MAX = 256 * 1024;
-
-  /** A paste: the files on the clipboard, when the agent takes them. */
-  const takeShot = (e: React.ClipboardEvent) => {
+  /** A paste: the files on the clipboard go along with the line. */
+  const takePaste = (e: React.ClipboardEvent) => {
     const wanted = [...e.clipboardData.items]
       .filter((i) => i.kind === "file")
       .map((i) => i.getAsFile())
       .filter((f): f is File => f !== null);
-    if (takes(wanted).length === 0) return;
+    if (wanted.length === 0) return;
     e.preventDefault();
-    void takeFiles(wanted);
+    files.addFiles(wanted);
   };
-
-  /**
-   * **Two capabilities on one affordance, each gating only its own
-   * kind.** An agent that takes pictures but not files must accept the
-   * picture and leave the file alone — one combined gate would make each
-   * capability answer for the other.
-   */
-  const takes = (all: File[]) =>
-    all.filter((f) => (f.type.startsWith("image/") ? !!facts?.images : !!facts?.embeds && looksTextual(f)));
-
-  /** What a paste and ＋'s picker both feed: pictures as shots, text
-      files as documents, each against its own limit. */
-  const takeFiles = async (all: File[]) => {
-    const wanted = takes(all);
-    const files = wanted.filter((f) => f.type.startsWith("image/"));
-    const texts = wanted.filter((f) => !f.type.startsWith("image/"));
-    for (const f of texts) {
-      if (f.size > DOC_MAX) {
-        setShotErr(
-          gui.chat_file_too_big(
-            f.name,
-            String(Math.round(f.size / 1024)),
-            String(DOC_MAX / 1024),
-          ),
-        );
-        continue;
-      }
-      const body = await f.text();
-      setShotErr(null);
-      setDocs((now) => [...now, [f.name, body]]);
-    }
-    if (files.length === 0) return;
-    for (const f of files) {
-      if (f.size > SHOT_MAX) {
-        setShotErr(
-          gui.chat_image_too_big(
-            (f.size / 1024 / 1024).toFixed(1),
-            String(SHOT_MAX / 1024 / 1024),
-          ),
-        );
-        continue;
-      }
-      const buf = new Uint8Array(await f.arrayBuffer());
-      // Chunked rather than `String.fromCharCode(...buf)`: spreading a
-      // multi-megabyte array into an argument list overflows the call
-      // stack, and it does it at a size that a test image never reaches.
-      let bin = "";
-      for (let i = 0; i < buf.length; i += 0x8000) {
-        bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-      }
-      setShotErr(null);
-      setShots((now) => [...now, [f.type, btoa(bin)]]);
-    }
-  };
-
-  /**
-   * Whether a dropped file is text this face can read.
-   *
-   * **By type, and by a short allow-list of extensions when the type is
-   * empty.** The OS reports no MIME for plenty of ordinary source files
-   * (`.rs`, `.toml`, `.mjs` all come through blank here), so type alone
-   * would refuse exactly the files a coding agent is for. Guessing
-   * *wider* than this is the failure to avoid: reading a binary as text
-   * produces a wall of replacement characters that costs a turn to
-   * discover.
-   */
-  const looksTextual = (f: File): boolean => {
-    if (f.type.startsWith("text/")) return true;
-    if (["application/json", "application/xml", "application/x-yaml"].includes(f.type)) return true;
-    if (f.type !== "") return false;
-    return /\.(rs|ts|tsx|js|mjs|jsx|py|go|java|rb|sh|zsh|toml|yaml|yml|json|md|txt|css|html|sql|c|h|cpp|hpp|swift|kt)$/i.test(
-      f.name,
-    );
-  };
-
-  /** ＋'s picker takes what a paste takes (`takes`): pictures where the
-      agent takes images, readable text where it takes embedded files. */
+  /** ＋'s picker: any file, several at once — on a phone the system's own
+      sheet (photos, the camera, Files), on a Mac the open panel. */
   const picker = useRef<HTMLInputElement>(null);
-  const attachable = !!facts?.images || !!facts?.embeds;
-  const accepts = [
-    facts?.images ? "image/*" : "",
-    facts?.embeds
-      ? "text/*,application/json,application/xml,application/x-yaml,.rs,.ts,.tsx,.js,.mjs,.jsx,.py,.go,.java,.rb,.sh,.zsh,.toml,.yaml,.yml,.json,.md,.txt,.css,.html,.sql,.c,.h,.cpp,.hpp,.swift,.kt"
-      : "",
-  ]
-    .filter(Boolean)
-    .join(",");
+  /** Files can go along while there is somebody to say them to. */
+  const canAttach = !still && !gone;
+  const dropBox = useRef<HTMLDivElement>(null);
+  const [dropping, setDropping] = useState(false);
+  // **In the app a drop is tauri's**, which hands over the real paths
+  // (the HTML5 drop never fires with anything useful there; the terminal
+  // pane's note): files this device has, put on the conversation's
+  // machine like any other (`chat_put_paths`). The position is checked
+  // against this pane's box, the event being the window's.
+  useEffect(() => {
+    if (!inApp || !canAttach) return;
+    let undo: (() => void) | undefined;
+    let stopped = false;
+    void (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const un = await getCurrentWebview().onDragDropEvent((e) => {
+          const box = dropBox.current?.getBoundingClientRect();
+          if (e.payload.type === "leave" || !box) {
+            setDropping(false);
+            return;
+          }
+          // Physical pixels, the page's box is CSS ones.
+          const x = e.payload.position.x / devicePixelRatio;
+          const y = e.payload.position.y / devicePixelRatio;
+          const over = x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+          if (e.payload.type !== "drop") {
+            setDropping(over);
+            return;
+          }
+          setDropping(false);
+          if (over && e.payload.paths.length > 0) files.addLocalPaths(e.payload.paths);
+        });
+        if (stopped) un();
+        else undo = un;
+      } catch {
+        // No tauri here: the HTML5 drop above is the whole of it.
+      }
+    })();
+    return () => {
+      stopped = true;
+      undo?.();
+    };
+    // `files`' adders are fresh closures each render; the subscription
+    // is per conversation, and the adders read only setters and `id`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, canAttach]);
   /** The agent's own settings, in its own words, for ＋'s menu. The
       change is asked of the host and the control follows the answer
       (`settings` frame), never its own press. */
@@ -1451,26 +1398,27 @@ export function ChatView({
 
   const say = () => {
     const line = text.trim();
-    if (!line || inTurn || gone) return;
+    // A line, or files without one; never while a file is still on its
+    // way to the machine (the send seat says busy meanwhile).
+    if ((!line && files.items.length === 0) || inTurn || gone || files.busy) return;
+    const placed = files.items.filter((f) => f.path !== null);
+    const full = withAttachments(line, placed.map((f) => f.path as string));
+    const carried = facts?.images ? placed.flatMap((f) => (f.inline ? [f.inline] : [])) : [];
     setText("");
     setInTurn(true);
-    const carried = shots;
-    const carriedDocs = docs;
-    setShots([]);
-    setDocs([]);
-    setShotErr(null);
+    files.clear();
     // Painted first-hand, at the end of the live half (module head).
     // It used to be pinned to a count of live frames and slotted back
     // in by the fold; appended here it lands in the same place for the
     // same reason — saying happens now, so it goes after everything
     // that has arrived and before everything that has not.
-    setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: line }] }));
+    setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: full }] }));
     // Kept until the host either takes it or refuses it: a refused line
     // was painted here a moment ago as though it had gone, and handing
     // it back is the difference between "it did not go in" and "it did
     // not go in and you get to type it again".
     sent.current = line;
-    chatSay(id, line, carried, carriedDocs).catch(() => setInTurn(false));
+    chatSay(id, full, carried).catch(() => setInTurn(false));
   };
 
   // The "/" menu: the agent's own commands, filtered by what has been
@@ -1520,7 +1468,38 @@ export function ChatView({
   // noise — it is not restating what is already on screen.
   const waiting = inTurn;
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div
+      ref={dropBox}
+      data-chat-drop={dropping || undefined}
+      className="flex min-h-0 flex-1 flex-col"
+      // **Files dropped on the conversation go along with the next line**
+      // (round CHAT): in a browser the drop carries `File`s; in the app
+      // tauri takes the drop first and hands over paths (below).
+      onDragOver={(e) => {
+        if (!canAttach || !e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDropping(false);
+      }}
+      onDrop={(e) => {
+        setDropping(false);
+        if (!canAttach || e.dataTransfer.files.length === 0) return;
+        e.preventDefault();
+        files.addFiles([...e.dataTransfer.files]);
+      }}
+    >
+      {home !== null && (
+        <MachineFilePick
+          open={pickOpen}
+          onOpenChange={setPickOpen}
+          machine={home}
+          shown={home}
+          onPick={(p) => files.addPaths([p])}
+        />
+      )}
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
@@ -1987,50 +1966,7 @@ export function ChatView({
               Each one can be taken back off — the picture is still on
               the clipboard, so this undoes the attaching and not the
               having. */}
-          {(shots.length > 0 || docs.length > 0 || shotErr) && (
-            <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
-              {shots.map(([, data], i) => (
-                <span
-                  key={i}
-                  data-chat-shot
-                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-muted-foreground"
-                >
-                  {gui.chat_image(String(i + 1))}
-                  <button
-                    data-chat-shot-drop
-                    aria-label={gui.remove}
-                    className="min-h-touch min-w-touch px-1 pointer-fine:min-h-0 pointer-fine:min-w-0"
-                    onClick={() => setShots((now) => now.filter((_, k) => k !== i))}
-                  >
-                    ×
-                  </button>
-                  <span className="sr-only">{data.length}</span>
-                </span>
-              ))}
-              {docs.map(([name], i) => (
-                <span
-                  key={`d${i}`}
-                  data-chat-doc
-                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-muted-foreground"
-                >
-                  {gui.chat_file(name)}
-                  <button
-                    data-chat-doc-drop
-                    aria-label={gui.remove}
-                    className="min-h-touch min-w-touch px-1 pointer-fine:min-h-0 pointer-fine:min-w-0"
-                    onClick={() => setDocs((now) => now.filter((_, k) => k !== i))}
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              {shotErr && (
-                <span data-chat-shot-error style={{ color: "var(--state-failed)" }}>
-                  {shotErr}
-                </span>
-              )}
-            </div>
-          )}
+          <PendingChips items={files.items} onRemove={files.remove} />
           <div className="relative flex items-end">
             {/* The agent's own commands, above the box that will carry
                 them. Absolute so opening it does not push the
@@ -2072,24 +2008,31 @@ export function ChatView({
                 ))}
               </div>
             )}
-            {/* ＋'s picker: the kinds a paste takes, into the same path. */}
-            {attachable && (
+            {/* ＋'s picker: any file, into the same path a paste takes. */}
+            {canAttach && (
               <input
                 ref={picker}
                 type="file"
                 multiple
                 hidden
                 data-chat-file-input
-                accept={accepts}
                 onChange={(e) => {
                   const list = [...(e.target.files ?? [])];
                   e.target.value = "";
-                  void takeFiles(list);
+                  files.addFiles(list);
                 }}
               />
             )}
             <Composer
-              lead={<AddSeat onAttach={attachable ? () => picker.current?.click() : undefined} options={addOptions} />}
+              lead={
+                <AddSeat
+                  onAttach={canAttach ? () => picker.current?.click() : undefined}
+                  onAttachMachine={
+                    canAttach && home ? { label: gui.chat_attach_machine(home), pick: () => setPickOpen(true) } : undefined
+                  }
+                  options={addOptions}
+                />
+              }
               // The seat gives way while there is text to send, where the
               // text would otherwise keep too little (a phone with the
               // longest mode word); it is back when the box is empty or a
@@ -2103,7 +2046,9 @@ export function ChatView({
                       agent can take it; during a turn the interrupt
                       stands in its seat. At rest with an empty box,
                       neither: the mode is the capsule's last thing. */}
-                  {!inTurn && text.trim() && <SendSeat onSend={say} />}
+                  {!inTurn && (text.trim() || files.items.length > 0) && (
+                    <SendSeat onSend={say} disabled={files.busy} />
+                  )}
                   {inTurn && (
                     <StopSeat
                       tip={!coarse}
@@ -2127,7 +2072,7 @@ export function ChatView({
             <Textarea
               ref={box}
               data-chat-input
-              onPaste={takeShot}
+              onPaste={takePaste}
               rows={1}
               value={text}
               placeholder={gui.chat_input}
