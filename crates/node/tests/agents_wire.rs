@@ -30,6 +30,8 @@
 //! synchronous, and on a current-thread runtime it freezes tokio's clock
 //! so every timeout in the file silently stretches with it.
 
+mod util;
+
 use std::path::Path;
 use std::time::Duration;
 
@@ -62,6 +64,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-agentwire-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 

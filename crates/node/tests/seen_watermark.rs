@@ -33,6 +33,8 @@
 //! fact about a machine, not about a person. Sending one is therefore
 //! not looking at one, on any seat.
 
+mod util;
+
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -67,6 +69,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-seen-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 

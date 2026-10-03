@@ -69,6 +69,8 @@
 //! worse than none — it explains away the next failure of the same
 //! shape.
 
+mod util;
+
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -102,6 +104,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-xrace-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 

@@ -14,6 +14,8 @@
 //! The proof here is the pair: `state.json` still says 忙碌 while the
 //! strip says 失败, in the same instant, from the same node.
 
+mod util;
+
 use std::fs;
 use std::path::Path;
 
@@ -48,6 +50,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-day-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 

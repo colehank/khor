@@ -4460,6 +4460,7 @@ dependencies = [
  "ignore",
  "io-kit-sys",
  "iroh",
+ "iroh-relay",
  "jiff",
  "khor-acp",
  "khor-catalog",

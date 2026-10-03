@@ -5,6 +5,8 @@
 
 use khor_net::endpoint::{self, ALPN, TUNNEL_ALPN};
 use khor_node::proto::{self, MAX_FRAME, Request, Response};
+use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -68,4 +70,52 @@ pub async fn raw_tunnel(
         .map_err(|e| e.to_string())?;
     ep.close().await;
     Ok(status[0])
+}
+
+/// **The tests' own relay**: iroh-relay's server in plain HTTP on a
+/// loopback port, one per test binary, on a thread and runtime of its own
+/// so it outlives every test's runtime. Its url.
+pub fn loop_relay() -> &'static str {
+    static URL: OnceLock<String> = OnceLock::new();
+    URL.get_or_init(|| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
+                let relay = iroh_relay::server::RelayConfig::new(std::net::SocketAddr::from((
+                    [127, 0, 0, 1],
+                    0,
+                )));
+                let mut cfg = iroh_relay::server::ServerConfig::default();
+                cfg.relay = Some(relay);
+                let server = iroh_relay::server::Server::spawn(cfg)
+                    .await
+                    .expect("the tests' relay starts");
+                let url = format!("http://{}", server.http_addr().expect("it listens"));
+                let _ = tx.send(url);
+                std::future::pending::<()>().await;
+            });
+        });
+        rx.recv().expect("the tests' relay answers with its url")
+    })
+}
+
+/// **A scratch home that touches no real relay** (round NET-2): it binds
+/// with [`loop_relay`] and nothing else — `only_mine`, so neither the
+/// Khor tier nor n0's relays and lookup are in its map (`relays.json`,
+/// the file 设置 → 网络 writes). Call before the home's first node opens.
+pub fn hermetic(root: &Path) {
+    std::fs::create_dir_all(root.join(".khor")).unwrap();
+    std::fs::write(
+        root.join(".khor").join("relays.json"),
+        format!(
+            r#"{{"relays":[{{"url":"{}"}}],"only_mine":true}}"#,
+            loop_relay()
+        ),
+    )
+    .unwrap();
 }
