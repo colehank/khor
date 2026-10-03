@@ -218,6 +218,14 @@ impl Modes {
             .unwrap_or_else(|| TRACKED.iter().any(|&(m, on)| m == mode && on))
     }
 
+    /// Whether the stream stopped part-way through a sequence. A replay
+    /// that started there would print the rest as text — a picture's
+    /// base64, a long clipboard copy — so whoever trims a head keeps
+    /// trimming while this holds (roadmap 3.3).
+    pub fn mid_sequence(&self) -> bool {
+        self.parse != Parse::Ground
+    }
+
     /// A full-screen program is drawing: the alternate screen, or the
     /// mouse taken (roadmap 1.2: "a program is running").
     pub fn program_holds_screen(&self) -> bool {

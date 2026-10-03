@@ -39,6 +39,7 @@ pub mod mcp;
 pub mod merge;
 pub mod modes;
 pub mod pause;
+pub mod pictures;
 pub mod place;
 pub mod preview;
 pub mod proto;
