@@ -5096,18 +5096,7 @@ impl KindSurface for ChatKind {
     fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
         let seen = node.seen_loaded()?;
         let mut out = Vec::new();
-        // **One row per channel** (2026-10-03): the channel is the
-        // machine's name, so two machines that share a name share one
-        // conversation, and listing it once per machine put two rows with
-        // one id on every face (a duplicate React key, and two rows that
-        // open the same thing). Until channels are keyed by something
-        // unique — a format change, the owner's call — the list says the
-        // one conversation there is, once.
-        let mut channels = std::collections::HashSet::new();
         for d in node.devices()? {
-            if !channels.insert(d.name.clone()) {
-                continue;
-            }
             let sid = format!("chat/{}", d.name);
             // ⚠️ **One read per channel, not two** (2026-09-11). This
             // asked for the log here and for the row below, and each of
