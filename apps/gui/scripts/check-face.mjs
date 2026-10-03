@@ -27784,9 +27784,10 @@ try {
       if (latched !== "true" || ctrlC !== "\x03" || after !== "false") {
         fail(`bar f · Ctrl then c sent ${shown(ctrlC)} (want "\\u0003"), the latch said ${latched} → ${after} (want true → false)`);
       }
-      // The cursor pad (2026-10-03, items 9 and 12; `views/CursorPad`):
-      // nothing inside a 12 dead zone, then one arrow per 24 of travel from
-      // the landing along the axis that dominated, and nothing for a tap.
+      // The cursor pad (2026-10-03, items 9 and 12; `views/CursorPad`): a
+      // joystick — nothing inside a 12 dead zone, then exactly one arrow
+      // along the axis that dominated, however far the flick goes, and
+      // nothing for a tap.
       const cursor = async (dx, dy) => {
         const k = page.locator('[data-session-bar] [data-term-key="cursor"]');
         if ((await k.count()) === 0) return fail("bar f · there is no cursor pad in the session bar");
@@ -27801,9 +27802,9 @@ try {
       for (const [what, dx, dy, want] of [
         ["a tap", 0, 0, ""],
         ["10 left (inside the dead zone)", -10, 0, ""],
-        ["20 left (past it, short of a step)", -20, 0, ""],
-        ["75 left", -75, 4, "\x1b[D\x1b[D\x1b[D"],
-        ["50 right", 50, -5, "\x1b[C\x1b[C"],
+        ["20 left", -20, 0, "\x1b[D"],
+        ["75 left", -75, 4, "\x1b[D"],
+        ["50 right", 50, -5, "\x1b[C"],
         ["30 up", 6, -30, "\x1b[A"],
       ]) {
         const got = await sends(() => cursor(dx, dy));
@@ -27812,8 +27813,8 @@ try {
       await key("ctrl");
       const ctrlLeft = await sends(() => cursor(-52, 0));
       const ctrlAfter = await page.locator('[data-term-key="ctrl"]').first().getAttribute("aria-pressed");
-      if (ctrlLeft !== "\x1b[1;5D\x1b[1;5D" || ctrlAfter !== "false") {
-        fail(`bar f · Ctrl then the cursor pad 52 left sent ${shown(ctrlLeft)} (want two ⌃←), the latch said ${ctrlAfter} (want false)`);
+      if (ctrlLeft !== "\x1b[1;5D" || ctrlAfter !== "false") {
+        fail(`bar f · Ctrl then the cursor pad 52 left sent ${shown(ctrlLeft)} (want one ⌃←), the latch said ${ctrlAfter} (want false)`);
       }
       // Application cursor keys (DECCKM), as an editor sets them.
       await program("\x1b[?1h");
