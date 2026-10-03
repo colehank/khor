@@ -971,6 +971,10 @@
   --fade-tabs: 12px;
   /* A terminal key's hit box reaches its neighbour's: no dead gap. */
   --term-key-reach: 6px;
+  /* The width xterm's fit addon takes off for xterm's own scrollbar
+     (`overviewRuler.width`'s default); a finger has no bar, so the
+     screen gives it back (`app.css`, the terminal on a phone). */
+  --term-bar: 14px;
   /* A listing's hairline starts at its names: 16 inset, 20 kind box, 8. */
   --files-hair-start: 44px;
   /* A row's swiped-out actions are at least this wide each. */

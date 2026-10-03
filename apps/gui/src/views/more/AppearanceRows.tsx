@@ -16,7 +16,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
+import { useCoarse } from "@/hooks/use-coarse";
 import { useNarrow } from "@/hooks/use-narrow";
+import { setTapRaisesKeyboard, useTapRaisesKeyboard } from "@/lib/term-tap";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
@@ -62,11 +64,15 @@ export function TypeSizeSection() {
  * name and the two chevrons — opening the one menu: 系统默认, the
  * monospace faces this device has (each name drawn in itself), the
  * fonts added here (a heading only once there is one, each with its
- * 移除), and 添加字体文件…. Per device; terminals only.
+ * 移除), and 添加字体文件…. Per device; terminals only. Under a finger,
+ * one more row: whether a tap in the terminal raises the keyboard
+ * (`lib/term-tap`); a mouse has no soft keyboard, and no such row.
  */
 export function TerminalSection() {
   const t = useTypeSize();
   const f = useTermFont();
+  const coarse = useCoarse();
+  const tapRaises = useTapRaisesKeyboard();
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -193,6 +199,15 @@ export function TerminalSection() {
       >
         {gui.term_size_sample}
       </div>
+      {coarse && (
+        <SwitchRow
+          name="term-tap-keyboard"
+          label={gui.term_tap_keyboard}
+          hint={gui.term_tap_keyboard_note}
+          on={tapRaises}
+          onToggle={() => setTapRaisesKeyboard(!tapRaises)}
+        />
+      )}
     </MoreSection>
   );
 }

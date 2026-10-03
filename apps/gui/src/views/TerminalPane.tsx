@@ -75,6 +75,7 @@ import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
+import { tapRaisesKeyboard } from "@/lib/term-tap";
 import { KeyboardSwitch, TermKeys, ctrlOf } from "@/views/TermKeys";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
@@ -172,17 +173,18 @@ function themeOf(el: HTMLElement) {
 
 /** The pane's font, resolved the same way for the same reason — xterm
     measures its own cells from these, which is the whole of what
-    replaced the hand-measured `wideFit` ratio. */
-function fontOf(el: HTMLElement): { family: string; size: number; line: number } {
+    replaced the hand-measured `wideFit` ratio.
+
+    **No leading** (2026-10-03, the owner's option A): xterm's
+    `lineHeight` multiplies the font's own cell height, which already
+    carries the face's ascent and descent (about 1.2 × the size), not the
+    size. Handing it the token's 20 / 14 made rows 24 at 14 on a phone,
+    some 40% taller than Terminal.app's. The terminal takes 1 — a row is the font's
+    height and follows the size by itself; `--text-term--line-height`
+    is left to the pane's own text and 外观's sample line. */
+function fontOf(el: HTMLElement): { family: string; size: number } {
   const cs = getComputedStyle(el);
-  const size = Number.parseFloat(cs.fontSize) || 13;
-  const lineHeight = Number.parseFloat(cs.lineHeight);
-  return {
-    family: cs.fontFamily,
-    size,
-    // xterm takes a multiplier; the token is a length.
-    line: Number.isFinite(lineHeight) && size > 0 ? lineHeight / size : 1.2,
-  };
+  return { family: cs.fontFamily, size: Number.parseFloat(cs.fontSize) || 13 };
 }
 
 /** Keys that are only modifiers — their keydown is not a character. */
@@ -247,59 +249,201 @@ function keepShiftedCommits(term: Terminal): () => void {
     not a key, so a latched Ctrl lets it through and keeps waiting. */
 const MOUSE_REPORT = /^\x1b\[(<|M)/;
 
+/** How long after a finger lands a focus still counts as that tap's —
+    WebKit synthesizes the mousedown xterm focuses on when the finger
+    lifts. */
+const TAP_MS = 1500;
+
+/**
+ * **A tap raises the keyboard only if the person asked for that**
+ * (2026-10-03, 外观 → 终端 「点击终端时弹出键盘」, `lib/term-tap`).
+ *
+ * xterm focuses its textarea from its own mousedown handler, and WebKit
+ * also focuses the textarea natively when a tap lands on it (it sits at
+ * the cursor, invisible). Both are refused while the setting is off and
+ * the textarea does not already have the focus: the first by this one
+ * field's `focus` (a finger landed in the pane moments ago), the second
+ * by cancelling the tap's end on the field itself. **Already focused is
+ * left alone** — xterm's mousedown keeps the focus where it is, so a tap
+ * with the keyboard up keeps it up. A pointer that is not a finger, and a
+ * focus from anywhere else (the bar's keyboard switch, a key typed on a
+ * Mac), go through as before.
+ */
+function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
+  const field = term.textarea;
+  if (!field) return () => {};
+  let tapping = false;
+  let timer = 0;
+  const refuses = () => tapping && document.activeElement !== field && !tapRaisesKeyboard();
+  const landed = (e: PointerEvent) => {
+    if (e.pointerType !== "touch") return;
+    tapping = true;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => (tapping = false), TAP_MS);
+  };
+  const elsewhere = (e: PointerEvent) => {
+    if (!(e.target instanceof Node) || !box.contains(e.target)) tapping = false;
+  };
+  const lifted = (e: TouchEvent) => {
+    if (e.target === field && refuses()) e.preventDefault();
+  };
+  const own = field.focus.bind(field);
+  field.focus = (options?: FocusOptions) => {
+    if (!refuses()) own(options);
+  };
+  box.addEventListener("pointerdown", landed, true);
+  document.addEventListener("pointerdown", elsewhere, true);
+  box.addEventListener("touchend", lifted, { capture: true, passive: false });
+  return () => {
+    window.clearTimeout(timer);
+    box.removeEventListener("pointerdown", landed, true);
+    document.removeEventListener("pointerdown", elsewhere, true);
+    box.removeEventListener("touchend", lifted, true);
+    delete (field as { focus?: unknown }).focus;
+  };
+}
+
+/** How fast a fling slows: the share of its speed kept per 16 ms. */
+const FLING_KEEP = 0.95;
+/** Below this (px per ms) a fling has stopped. */
+const FLING_STOP = 0.02;
+
 /**
  * **A finger's drag scrolls, whatever the program asked for** (2026-10-02,
- * iOS 第三步 A). xterm scrolls its own history under a drag, but a
- * full-screen program has none: the alternate screen keeps no scrollback,
- * and a program that took the mouse (khor turns tmux's on for its own
- * grouped session, `Tmux::grouped_attach_argv`) wants wheel reports, not a
- * moved viewport. On a desktop the wheel does that — xterm turns it into
- * the report, or into arrow keys on the alternate screen. A finger has no
- * wheel, so in exactly those two cases its vertical drag is turned into
- * the wheel events a trackpad would have sent, at the point under the
- * finger, and xterm encodes them the way it encodes every other wheel.
- * Elsewhere the drag is left to xterm's own touch scrolling.
+ * iOS 第三步 A; the plain case 2026-10-03).
+ *
+ * xterm 6 has no touch scrolling of its own: its viewport is a drawn
+ * scroller that answers the wheel, and the touch gesture code it carries
+ * is registered on nothing — so a finger moved nothing at all in a plain
+ * shell, though the thumb said there was history (the owner:
+ * 「一般终端用户是没有办法通过滑动来滑动窗口内容的。只有 Claude 的可以」).
+ * Two cases, decided per move:
+ *
+ * - **The program wants the wheel**: it took the mouse (khor turns
+ *   tmux's on for its own grouped session, `Tmux::grouped_attach_argv`),
+ *   or it is on the alternate screen, which keeps no history. The drag
+ *   becomes the wheel events a trackpad would have sent, at the point
+ *   under the finger, and xterm encodes them as it encodes every wheel:
+ *   a report, or arrow keys.
+ * - **Otherwise the history scrolls**: a plain shell on the normal
+ *   screen. One line per row of finger travel (`Terminal.scrollLines`,
+ *   xterm's own viewport — never the program's cursor), and a fling
+ *   runs on and slows (`FLING_KEEP`) the way a list does.
+ *
+ * A drag that starts sideways is left alone (the page's edge swipe).
  */
-function dragsAsWheel(term: Terminal, box: HTMLElement): () => void {
+function fingerScrolls(term: Terminal, box: HTMLElement): () => void {
   let lastY: number | null = null;
+  let startX = 0;
+  let startY = 0;
+  let mine = false;
   let target: EventTarget | null = null;
+  // The history case's carry: travel not yet a whole row, and the speed.
+  let carry = 0;
+  let speed = 0;
+  let lastT = 0;
+  let fling = 0;
   const wants = () => term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";
+  const rowPx = () => {
+    const screen = term.element?.querySelector(".xterm-screen");
+    const h = screen ? screen.getBoundingClientRect().height / term.rows : 0;
+    return h > 0 ? h : 16;
+  };
+  /** Moves the history by `dy` px of finger travel; answers whether a
+      line moved (a fling stops at either end). */
+  const scrollBy = (dy: number): boolean => {
+    carry += dy;
+    const row = rowPx();
+    const lines = Math.trunc(carry / row);
+    if (lines === 0) return true;
+    carry -= lines * row;
+    const before = term.buffer.active.viewportY;
+    // A finger moving down brings earlier lines: the viewport goes up.
+    term.scrollLines(-lines);
+    return term.buffer.active.viewportY !== before;
+  };
+  const stopFling = () => {
+    window.cancelAnimationFrame(fling);
+    fling = 0;
+  };
   const start = (e: TouchEvent) => {
+    stopFling();
     lastY = e.touches.length === 1 ? e.touches[0].clientY : null;
+    startX = e.touches.length === 1 ? e.touches[0].clientX : 0;
+    startY = lastY ?? 0;
+    mine = false;
     target = e.target;
+    carry = 0;
+    speed = 0;
+    lastT = e.timeStamp;
   };
   const move = (e: TouchEvent) => {
-    if (lastY === null || e.touches.length !== 1 || !wants()) return;
+    if (lastY === null || e.touches.length !== 1) return;
     const t = e.touches[0];
+    if (!mine) {
+      // Whose drag this is, once it has gone anywhere: up or down is the
+      // terminal's, sideways is the page's.
+      const ax = Math.abs(t.clientX - startX);
+      const ay = Math.abs(t.clientY - startY);
+      if (ax < 4 && ay < 4) return;
+      if (ax > ay) {
+        lastY = null;
+        return;
+      }
+      mine = true;
+    }
     const dy = t.clientY - lastY;
     lastY = t.clientY;
-    // Taken either way: the page has nothing to scroll, and xterm's own
-    // drag would move a viewport that has no history to show.
+    // Taken either way: the page has nothing to scroll here.
     e.preventDefault();
     e.stopPropagation();
     if (dy === 0) return;
-    // Natural scrolling: a finger moving up brings later lines, which is
-    // a wheel turned down.
-    (target ?? box).dispatchEvent(
-      new WheelEvent("wheel", {
-        deltaY: -dy,
-        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-        clientX: t.clientX,
-        clientY: t.clientY,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
+    if (wants()) {
+      // Natural scrolling: a finger moving up brings later lines, which
+      // is a wheel turned down.
+      (target ?? box).dispatchEvent(
+        new WheelEvent("wheel", {
+          deltaY: -dy,
+          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+          clientX: t.clientX,
+          clientY: t.clientY,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      return;
+    }
+    const dt = Math.max(1, e.timeStamp - lastT);
+    lastT = e.timeStamp;
+    speed = 0.8 * (dy / dt) + 0.2 * speed;
+    scrollBy(dy);
   };
-  const end = () => {
+  const end = (e: TouchEvent) => {
+    const flung = mine && !wants() && Math.abs(speed) > FLING_STOP && e.timeStamp - lastT < 100;
     lastY = null;
     target = null;
+    mine = false;
+    if (!flung) return;
+    let v = speed;
+    let then = performance.now();
+    const step = (now: number) => {
+      const dt = now - then;
+      then = now;
+      v *= FLING_KEEP ** (dt / 16);
+      if (Math.abs(v) < FLING_STOP || !scrollBy(v * dt)) {
+        fling = 0;
+        return;
+      }
+      fling = window.requestAnimationFrame(step);
+    };
+    fling = window.requestAnimationFrame(step);
   };
   box.addEventListener("touchstart", start, { passive: true });
   box.addEventListener("touchmove", move, { passive: false });
   box.addEventListener("touchend", end, { passive: true });
   box.addEventListener("touchcancel", end, { passive: true });
   return () => {
+    stopFling();
     box.removeEventListener("touchstart", start);
     box.removeEventListener("touchmove", move);
     box.removeEventListener("touchend", end);
@@ -380,8 +524,14 @@ export function TerminalPane({ id }: { id: string }) {
       scrollback: SCROLLBACK,
       fontFamily: font.family,
       fontSize: font.size,
-      lineHeight: font.line,
+      lineHeight: 1,
       theme: themeOf(box),
+      // **The cursor is the focus** (2026-10-03): a solid block while
+      // the terminal has the keys, a hollow one when it does not. The
+      // pane draws no ring of its own (`app.css`); xterm's defaults,
+      // said here because they are now the only sign.
+      cursorStyle: "block",
+      cursorInactiveStyle: "outline",
       // **⌥-drag is xterm's own selection even when the program asked
       // for the mouse** — iTerm2's gesture. khor turns tmux's mouse on
       // for the tmux sessions it attaches (2026-10-01, so the wheel
@@ -448,6 +598,7 @@ export function TerminalPane({ id }: { id: string }) {
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
     const shifted = keepShiftedCommits(term);
+    const asks = tapsAskFirst(term, box);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -541,7 +692,7 @@ export function TerminalPane({ id }: { id: string }) {
         .then(() => pollNow.current())
         .catch(() => {});
     });
-    const dragged = dragsAsWheel(term, box);
+    const dragged = fingerScrolls(term, box);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
     // in history" in xterm's own coordinates — on the alternate screen
     // (a full-screen program) baseY stays 0 and neither of these can
@@ -609,6 +760,7 @@ export function TerminalPane({ id }: { id: string }) {
       rung.dispose();
       selected.dispose();
       shifted();
+      asks();
       window.clearTimeout(bellTimer.current);
       term.dispose();
       termRef.current = null;

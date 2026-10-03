@@ -2303,6 +2303,10 @@ term-font-added = "添加的字体"
 term-font-add = "添加字体文件…"
 term-font-bad = "无法读取这个字体文件：{0}"
 term-font-too-big = "字体文件不能超过 {0} MB"
+# 外观 → 终端, only under a finger (2026-10-03, the owner): whether a tap
+# in the terminal raises the keyboard; off, only the bar's switch does.
+term-tap-keyboard = "点击终端时弹出键盘"
+term-tap-keyboard-note = "关闭时，键盘只由底栏的键盘按钮控制"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
 # Pull to refresh on a list.
@@ -3355,10 +3359,9 @@ key-tab-name = "Tab 键"
 key-backtab = "⇧Tab"
 key-backtab-name = "Shift-Tab"
 key-paste = "粘贴"
-key-left = "左箭头"
-key-up = "上箭头"
-key-down = "下箭头"
-key-right = "右箭头"
+# The cursor key at the row's end (2026-10-03): one key, dragged like a
+# trackpad, in place of the four arrows.
+key-cursor = "光标"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —
 # same word in English, two different acts, so they get their own.

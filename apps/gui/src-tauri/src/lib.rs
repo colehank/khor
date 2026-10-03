@@ -2720,6 +2720,87 @@ fn wear_on_the_windows(theme: &str) {
     }
 }
 
+/// **No form-assistant bar above the keyboard** (2026-10-03, the owner on
+/// a phone): WKWebView puts ‹ › and a ✓ over the soft keyboard for every
+/// focused field — 44 points that mean nothing over a terminal, whose
+/// own key row already has the keyboard switch. WebKit has no setting
+/// for it. The bar is the `inputAccessoryView` of the web view's content
+/// view (`WKContentView`, the first responder while a field is focused),
+/// so that one object is moved to a subclass of its own class whose
+/// accessory view is nil. One object, not the class: nothing else in the
+/// process changes.
+///
+/// tauri's `with_input_accessory_view_builder` is not this: it overrides
+/// the method on the `WKWebView`, which is never the first responder, so
+/// the content view's bar is untouched by it.
+///
+/// **A future WebKit degrades to the bar, never to a crash**: no subview
+/// whose class is named `WKContentView…`, no `inputAccessoryView` on it,
+/// a subclass that cannot be made — each leaves the view as it was.
+/// Main thread only (`with_webview` runs there).
+#[cfg(target_os = "ios")]
+fn drop_the_form_bar(webview: *mut std::ffi::c_void) {
+    use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
+    use objc2::{msg_send, sel};
+
+    const BARE: &std::ffi::CStr = c"KhorContentViewWithoutBar";
+
+    extern "C-unwind" fn no_bar(_this: &AnyObject, _cmd: Sel) -> *mut AnyObject {
+        std::ptr::null_mut()
+    }
+
+    /// The subclass of `of` without the bar: made once, and only ever
+    /// answered for the class it was made from.
+    fn bare_of(of: &AnyClass) -> Option<&'static AnyClass> {
+        if let Some(made) = AnyClass::get(BARE) {
+            return (made.superclass() == Some(of)).then_some(made);
+        }
+        let mut b = ClassBuilder::new(BARE, of)?;
+        // SAFETY: `inputAccessoryView` takes no argument and returns an
+        // object (`@16@0:8`), which is this signature; nil is a valid
+        // answer (UIResponder's own default).
+        unsafe { b.add_method(sel!(inputAccessoryView), no_bar as extern "C-unwind" fn(_, _) -> _) };
+        Some(b.register())
+    }
+
+    if webview.is_null() {
+        return;
+    }
+    // SAFETY: `webview` is the live WKWebView `with_webview` handed over,
+    // on the main thread. `scrollView` and `subviews` are documented
+    // UIKit; the class swap is to a subclass with no ivars of its own, so
+    // the object's size and layout are its class's (`set_class`).
+    let swapped = std::panic::catch_unwind(|| unsafe {
+        let web = webview as *mut AnyObject;
+        let scroll: *mut AnyObject = msg_send![web, scrollView];
+        if scroll.is_null() {
+            return false;
+        }
+        let subviews: *mut AnyObject = msg_send![scroll, subviews];
+        let count: usize = msg_send![subviews, count];
+        for i in 0..count {
+            let view: *mut AnyObject = msg_send![subviews, objectAtIndex: i];
+            let Some(view) = view.as_ref() else { continue };
+            let class = view.class();
+            if !class.name().to_bytes().starts_with(b"WKContentView") {
+                continue;
+            }
+            if class.instance_method(sel!(inputAccessoryView)).is_none() {
+                return false;
+            }
+            let Some(bare) = bare_of(class) else {
+                return false;
+            };
+            AnyObject::set_class(view, bare);
+            return true;
+        }
+        false
+    });
+    if !matches!(swapped, Ok(true)) {
+        eprintln!("the keyboard's form bar stays: no content view to take it from");
+    }
+}
+
 /// Sets NSApp's appearance **now** — `None` clears it, so the app follows
 /// the desktop. Not tauri's `AppHandle::set_theme`: that posts to the
 /// event loop, and the editor windows read NSApp's appearance right
@@ -3047,7 +3128,11 @@ pub fn run() {
             // desktop window's — size, title bar, material, the three
             // buttons — and a phone's window is the screen.
             #[cfg(not(desktop))]
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default()).build()?;
+            let _phone = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default()).build()?;
+            #[cfg(target_os = "ios")]
+            {
+                let _ = _phone.with_webview(|wv| drop_the_form_bar(wv.inner()));
+            }
             Ok(())
         })
         // **The overlay window has to be closed by hand.** It has a level
