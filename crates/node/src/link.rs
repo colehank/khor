@@ -6175,33 +6175,49 @@ impl Node {
         if !force && let Some(left) = self.wires.backing_off(&d.id) {
             return Err(msg::peer_backing_off(left.as_secs().max(1)));
         }
-        let mut joined = {
-            let mut rounds = self.rounds.lock().unwrap_or_else(|p| p.into_inner());
-            match rounds.get(&d.id) {
-                Some(running) if running.borrow().is_none() => Ok(running.clone()),
-                _ => {
-                    let (tx, rx) = tokio::sync::watch::channel(None);
-                    rounds.insert(d.id.clone(), rx);
-                    Err(RoundDone(Some(tx)))
+        let asked = std::time::Instant::now();
+        loop {
+            let joined = {
+                let mut rounds = self.rounds.lock().unwrap_or_else(|p| p.into_inner());
+                match rounds.get(&d.id) {
+                    Some((began, running)) if running.borrow().is_none() => {
+                        Ok((*began, running.clone()))
+                    }
+                    _ => {
+                        let (tx, rx) = tokio::sync::watch::channel(None);
+                        rounds.insert(d.id.clone(), (std::time::Instant::now(), rx));
+                        Err(RoundDone(Some(tx)))
+                    }
                 }
-            }
-        };
-        match &mut joined {
-            Ok(running) => loop {
-                if let Some(out) = running.borrow().clone() {
+            };
+            match joined {
+                Ok((began, mut running)) => {
+                    let out = loop {
+                        if let Some(out) = running.borrow().clone() {
+                            break out;
+                        }
+                        if running.changed().await.is_err() {
+                            break Err(msg::round_cancelled().into());
+                        }
+                    };
+                    // **A person's 同步 carries what changed before they
+                    // asked.** A round that began earlier may have read
+                    // the store before the change (a machine paired a
+                    // moment ago), so its end is where theirs starts,
+                    // not their answer. The pump joins as before.
+                    if force && began < asked {
+                        continue;
+                    }
                     return out;
                 }
-                if running.changed().await.is_err() {
-                    return Err(msg::round_cancelled().into());
+                Err(mut done) => {
+                    let out = {
+                        let _store = self.store_gate.read().await;
+                        self.sync_device(ep, d).await
+                    };
+                    done.finish(out.clone());
+                    return out;
                 }
-            },
-            Err(done) => {
-                let out = {
-                    let _store = self.store_gate.read().await;
-                    self.sync_device(ep, d).await
-                };
-                done.finish(out.clone());
-                out
             }
         }
     }
@@ -6605,8 +6621,12 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), String>
 }
 
 /// A machine's round in flight, for a second asker to wait on
-/// (`Node::sync_peers`): `None` while it runs, its outcome once done.
-pub(crate) type RoundWatch = tokio::sync::watch::Receiver<Option<Result<String, String>>>;
+/// (`Node::sync_peers`): when it began, and `None` while it runs, its
+/// outcome once done.
+pub(crate) type RoundWatch = (
+    std::time::Instant,
+    tokio::sync::watch::Receiver<Option<Result<String, String>>>,
+);
 
 /// The running half of a round: says how it ended, and says
 /// "interrupted" if the one running it stopped waiting first, so a
