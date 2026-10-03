@@ -525,3 +525,43 @@ fn only_one_compactor_may_run_on_one_home() {
         "no round compacted anything, so nothing above was actually tested"
     );
 }
+
+/// **Two loads open at once in one process keep both their writes**
+/// (round NET-6, the pairing row the term lane lost). A resident answers
+/// requests concurrently, so the `Pair` arm's load of the device table and
+/// any other write to it in the same process can be open at the same
+/// time — and every load used to take the node's one peer. Loro names an
+/// op by (peer, counter), so the two loads minted ops with the same names
+/// and different contents; whichever block merged second was taken for
+/// one already held and dropped, on every read after. The joiner, handed
+/// the `Pair` arm's snapshot, kept the row; a sync could not bring it
+/// back, because by version the desk already had it. That is the row
+/// found only in the joiner's copy.
+#[test]
+fn two_loads_open_at_once_in_one_process_both_keep_their_writes() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, load};
+    let dir = tmpdir("samepeer");
+    // One process, one node peer, two requests in flight.
+    let pairing = load::<DeviceDoc>(&dir, 0xB1).unwrap();
+    let other = load::<DeviceDoc>(&dir, 0xB1).unwrap();
+    pairing.doc.upsert("phone", "phone", &[]).unwrap();
+    other.doc.upsert("desk", "desk", &["10.0.0.1:1".to_owned()]).unwrap();
+    let mut s = pairing.store;
+    s.flush(&pairing.doc).unwrap();
+    // What the joiner is handed.
+    let joiner = DeviceDoc::open(0xC1).unwrap();
+    joiner.merge(&pairing.doc.snapshot().unwrap()).unwrap();
+    let mut s = other.store;
+    s.flush(&other.doc).unwrap();
+    drop((pairing.doc, other.doc));
+
+    let desk = load::<DeviceDoc>(&dir, 0xB2).unwrap();
+    assert!(desk.doc.get("desk").is_some(), "the other write is on disk");
+    assert!(desk.doc.get("phone").is_some(), "the pairing's row is on disk");
+    // And a round with the joiner leaves the two copies alike.
+    desk.doc.merge(&joiner.changes_since(&desk.doc.version()).unwrap()).unwrap();
+    joiner.merge(&desk.doc.changes_since(&joiner.version()).unwrap()).unwrap();
+    assert_eq!(desk.doc.all().len(), joiner.all().len(), "the copies agree after a round");
+    let _ = fs::remove_dir_all(&dir);
+}

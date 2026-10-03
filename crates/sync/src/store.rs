@@ -65,6 +65,80 @@ pub struct Loaded<D> {
     /// a missing slice of data the UI must be able to mention; one bad
     /// block must not kill the whole document either.
     pub broken: Vec<PathBuf>,
+    /// The writer name `doc` holds while it is open ([`Lease`]).
+    lease: Lease,
+}
+
+/// **One writer name per open copy of a document** (round NET-6).
+///
+/// Loro names every op by its writer and a counter, and two copies of one
+/// document writing under the same name at the same time mint the same
+/// names for different ops; on import, an op whose name is already held
+/// is skipped, so whichever block merges second loses its writes on every
+/// read after — and no sync brings them back, because by version vector
+/// every replica already has them. Loro's own rule (`LoroDoc::set_peer_id`,
+/// loro 1.13): "Never reuse the same PeerID across concurrent writers …
+/// Duplicate PeerIDs can produce conflicting OpIDs and corrupt the
+/// document", and no fixed PeerID "without strict single-ownership
+/// locking" — which a lease is.
+///
+/// A process used one name for every copy it opened, and a resident
+/// answers requests concurrently: the `Pair` arm's copy of the device
+/// table and any other write to it in flight lost one or the other. That
+/// is how a pairing's row ended up only in the joiner's copy (the joiner
+/// is handed the `Pair` arm's snapshot). So each open copy borrows a name
+/// nobody else in this process holds for that directory, and gives it
+/// back when it drops. The caller's own name is lent first, and a name
+/// lent before is lent again before a new one is made: one name per
+/// copy at once, not one per load, so the version vectors do not grow a
+/// row for every write. A name lent again reads the blocks its last
+/// holder wrote, so its counter carries on from theirs.
+struct Lease {
+    key: (PathBuf, u64),
+    peer: u64,
+}
+
+/// For each directory and caller's name: every name lent for it, and
+/// whether it is out.
+type Lent = std::collections::BTreeMap<(PathBuf, u64), Vec<(u64, bool)>>;
+static LENT: std::sync::Mutex<Lent> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+impl Lease {
+    fn take(dir: &Path, peer: u64) -> Lease {
+        static MINTED: AtomicU64 = AtomicU64::new(1);
+        let key = (dir.to_path_buf(), peer);
+        let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
+        let names = lent.entry(key.clone()).or_insert_with(|| vec![(peer, false)]);
+        let peer = match names.iter_mut().find(|(_, out)| !out) {
+            Some((name, out)) => {
+                *out = true;
+                *name
+            }
+            None => {
+                // splitmix64 of the caller's name and a count: distinct in
+                // this process, and as unlikely as any fresh name to meet
+                // another process's.
+                let mut z = peer ^ MINTED.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                let name = z ^ (z >> 31);
+                names.push((name, true));
+                name
+            }
+        };
+        Lease { key, peer }
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(names) = lent.get_mut(&self.key)
+            && let Some(slot) = names.iter_mut().find(|(name, _)| *name == self.peer)
+        {
+            slot.1 = false;
+        }
+    }
 }
 
 /// How many documents this process has read back from disk, and how
@@ -122,7 +196,8 @@ pub fn load<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
 }
 
 fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
-    let (loaded, vanished) = read_once(dir, peer)?;
+    let lease = Lease::take(dir, peer);
+    let (loaded, vanished) = read_once(dir, lease)?;
     if !vanished {
         return Ok(loaded);
     }
@@ -144,13 +219,13 @@ fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
     // than a read can finish, and at that point reporting what was found
     // beats spinning — the next read is two seconds away.
     RELISTS.fetch_add(1, Ordering::Relaxed);
-    Ok(read_once(dir, peer)?.0)
+    Ok(read_once(dir, loaded.lease)?.0)
 }
 
 /// One pass over a document's blocks. The flag is 「a block on the
 /// listing was gone by the time we read it」 — see [`load_inner`].
-fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String> {
-    let doc = D::open(peer)?;
+fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), String> {
+    let doc = D::open(lease.peer)?;
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);
     let mut vanished = false;
@@ -200,7 +275,7 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
     if dir.exists() && grew {
         store.save_ledger()?;
     }
-    Ok((Loaded { store, doc, broken }, vanished))
+    Ok((Loaded { store, doc, broken, lease }, vanished))
 }
 
 impl BlockStore {

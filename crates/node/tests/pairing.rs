@@ -412,3 +412,42 @@ fn now_ms() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
+
+/// **A pairing's row is on the inviter's disk before the joiner hears
+/// "paired"** (round NET-6; the term lane found a desk whose table lacked
+/// a phone the phone's own table had). The `Pair` arm writes the joiner's
+/// row and flushes it before it answers, so neither a first round that
+/// fails nor a desk that stops before one can leave the row only in the
+/// joiner's copy — this stops the desk with no round at all and reads its
+/// table back from disk.
+///
+/// Two machines pair **at once**, because that is what lost the row: two
+/// `Pair` arms in one resident each opened the table under the process's
+/// one loro peer, minted ops with the same names, and the second block
+/// to merge was dropped on every read (`khor_sync::store`'s `Lease`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rows_from_two_pairings_at_once_are_both_on_the_inviters_disk() {
+    let ra = root("both-a");
+    let rb = root("both-b");
+    let rc = root("both-c");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let (tb, tc) = (a.invite().unwrap(), a.invite().unwrap());
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    let c = Node::open_as(rc.to_path_buf(), "gamma").unwrap();
+    let (pb, pc) = tokio::join!(
+        timeout(Duration::from_secs(60), b.pair(&tb)),
+        timeout(Duration::from_secs(60), c.pair(&tc)),
+    );
+    pb.expect("beta's pairing must not hang").unwrap();
+    pc.expect("gamma's pairing must not hang").unwrap();
+
+    // The desk stops before any round.
+    serve.abort();
+    let _ = serve.await;
+    let back = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let names: Vec<String> = back.devices().unwrap().into_iter().map(|d| d.name).collect();
+    assert_eq!(names, vec!["alpha", "beta", "gamma"], "alpha's table on disk holds both joiners");
+}
