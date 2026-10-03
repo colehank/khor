@@ -63,7 +63,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
+import { faceNote, inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
@@ -654,9 +654,11 @@ const RESTING: Record<CursorShape, "outline" | "bar" | "underline"> = {
  * **The cursor is the person's until a program asks for its own** (item
  * 16 B). The setting (`lib/term-cursor`) is applied live. A program's
  * DECSCUSR (`CSI n q`: 1–2 block, 3–4 underline, 5–6 bar, odd blinking)
- * wins while it runs, and the setting comes back on `CSI 0 q` — as in
- * iTerm2, kitty and WezTerm, where 0 means "the user's default" (xterm.js
- * reads it as a blinking block) — or when a full-screen program leaves the
+ * sets the shape while it runs, and the blink only if the person's
+ * setting lets the cursor blink (item 18). The setting comes back on
+ * `CSI 0 q` — as in iTerm2, kitty and WezTerm, where 0 means "the user's
+ * default" (xterm.js reads it as a blinking block) — or when a full-screen
+ * program leaves the
  * alternate screen (vim's insert-mode bar does not outlive vim). A
  * program's `CSI ? 12 h` / `l`, which xterm.js turns into its
  * `cursorBlink` option for good, is counted as the same kind of request.
@@ -673,7 +675,10 @@ function cursorFollows(term: Terminal): () => void {
   let blinkSet = term.options.cursorBlink;
   const apply = () => {
     const shape = theirs.shape ?? mine.shape;
-    const blink = theirs.blink ?? mine.blink;
+    // **The person's blink setting wins** (item 18, the owner's rule): a
+    // program may change the shape; it may make the cursor blink only
+    // when the person lets it blink at all.
+    const blink = mine.blink && (theirs.blink ?? true);
     if (term.options.cursorStyle !== shape) term.options.cursorStyle = shape;
     if (term.options.cursorInactiveStyle !== RESTING[shape]) term.options.cursorInactiveStyle = RESTING[shape];
     if (term.options.cursorBlink !== blink) term.options.cursorBlink = blink;
@@ -688,8 +693,10 @@ function cursorFollows(term: Terminal): () => void {
   });
   const parsed = term.onWriteParsed(() => {
     if (term.options.cursorBlink === blinkSet) return;
+    // `CSI ? 12 h` / `l`: a program asking for blinking, honoured only
+    // when the setting allows it (`apply`).
     theirs = { ...theirs, blink: term.options.cursorBlink };
-    blinkSet = term.options.cursorBlink;
+    apply();
   });
   const swapped = term.buffer.onBufferChange((b) => {
     if (b.type !== "normal" || (theirs.shape === undefined && theirs.blink === undefined)) return;
@@ -848,6 +855,86 @@ function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
   term.scrollToLine(to);
 }
 
+/** Output quiet this long ends a frame (ms). */
+const FRAME_QUIET_MS = 8;
+/** The longest a frame is held before it is painted anyway (ms). */
+const FRAME_MAX_MS = 60;
+
+/** `CSI ? 25 l` / `h` and `CSI ? 2026 h` / `l`: where a redraw opens and
+    closes. */
+const OPENS = /\x1b\[\?(25l|2026h)/g;
+const CLOSES = /\x1b\[\?(25h|2026l)/g;
+
+/**
+ * **Paint whole frames** (item 18 B; the owner: the cursor "blinks" only in
+ * Claude Code, and the pinyin preview jumps between the status line, the
+ * input and the output). A TUI redraws by hiding the cursor, moving up,
+ * repainting and parking the cursor back in its input box; a real terminal
+ * shows only the finished frame. Here bytes reached xterm as they arrived —
+ * `term_wait` answers the moment any byte lands, so one redraw came as
+ * several writes — and xterm painted whatever it had at its next animation
+ * frame: the cursor's places mid-redraw were frames on screen, and the
+ * composition preview, drawn at the cursor, went with them.
+ *
+ * So output is held until the frame is whole: until the stream has been
+ * quiet `FRAME_QUIET_MS`, and while a redraw is open — a cursor hidden
+ * (`?25l`) and not yet shown again, or DEC synchronized output (`?2026h`,
+ * which xterm honours by itself once it has the bytes) not yet ended — until
+ * it closes, never past `FRAME_MAX_MS`. kitty and WezTerm coalesce output
+ * the same way (kitty's `input_delay`/`repaint_delay`, a few ms) and treat
+ * mode 2026 as the program's own frame marks.
+ */
+function framesWhole(term: Terminal): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void } {
+  let held: Uint8Array[] = [];
+  let since = 0;
+  let timer = 0;
+  /** A redraw opened and not closed, across the held chunks. */
+  let open = false;
+  const text = new TextDecoder("latin1");
+  const flush = () => {
+    window.clearTimeout(timer);
+    timer = 0;
+    if (held.length === 0) return;
+    const n = held.reduce((a, c) => a + c.length, 0);
+    const all = new Uint8Array(n);
+    let at = 0;
+    for (const c of held) {
+      all.set(c, at);
+      at += c.length;
+    }
+    held = [];
+    since = 0;
+    term.write(all);
+  };
+  const paint = (bytes: Uint8Array) => {
+    // The gates' before-and-after switch: written as it arrives.
+    if ((window as unknown as { __framesOff?: boolean }).__framesOff) return term.write(bytes);
+    held.push(bytes);
+    const now = performance.now();
+    if (!since) since = now;
+    // Which comes last in this chunk, an opening or a closing mark.
+    const s = text.decode(bytes);
+    let lastOpen = -1;
+    let lastClose = -1;
+    for (const m of s.matchAll(OPENS)) lastOpen = m.index;
+    for (const m of s.matchAll(CLOSES)) lastClose = m.index;
+    if (lastOpen > lastClose) open = true;
+    else if (lastClose > lastOpen) open = false;
+    const left = FRAME_MAX_MS - (now - since);
+    if (left <= 0) return flush();
+    window.clearTimeout(timer);
+    timer = window.setTimeout(flush, open ? left : Math.min(FRAME_QUIET_MS, left));
+  };
+  const drop = () => {
+    window.clearTimeout(timer);
+    timer = 0;
+    held = [];
+    since = 0;
+    open = false;
+  };
+  return { paint, flush, drop };
+}
+
 /** Whether a box has a size a terminal can be measured in. */
 const hasSize = (el: HTMLElement) => el.clientWidth > 0 && el.clientHeight > 0;
 
@@ -880,8 +967,13 @@ async function settled(box: HTMLElement, signal: AbortSignal): Promise<void> {
       }
     }
   }
-  await Promise.all(moving);
+  // **Never longer than an entrance** (item 18 A): whatever else runs, the
+  // first fit happens `SETTLE_CAP_MS` after the box has a size.
+  await Promise.race([Promise.all(moving), new Promise((r) => window.setTimeout(r, SETTLE_CAP_MS))]);
 }
+
+/** The longest the first fit waits for an entrance to finish (ms). */
+const SETTLE_CAP_MS = 300;
 
 /** Quiet this long after the last scroll event, a scroll has stopped. */
 const SETTLE_MS = 140;
@@ -926,6 +1018,7 @@ function scrollsNatively(
   screen: HTMLElement,
 ): { sync: () => void; stop: () => void } {
   let row = 0;
+  let kicked = false;
   // The `scrollTop` this code set last, until its scroll event comes back.
   let echo: number | null = null;
   let touching = 0;
@@ -948,7 +1041,21 @@ function scrollsNatively(
     const b = term.buffer.active;
     const inert = programScrolls(term);
     const height = `${(inert ? 0 : b.baseY) * row}px`;
-    if (room.style.height !== height) room.style.height = height;
+    if (room.style.height !== height) {
+      const first = !kicked && !inert && b.baseY > 0;
+      room.style.height = height;
+      // **WebKit on iOS, the first time there is anything to scroll**
+      // (item 18 A, hypothesis 3): a scroller that had nothing to scroll
+      // when its layer was made can keep that answer until something
+      // relays it out — the keyboard's resize was that something. Drop
+      // and restore its overflow once, so the range is read now.
+      if (first) {
+        kicked = true;
+        scroller.style.overflowY = "hidden";
+        void scroller.offsetHeight;
+        scroller.style.overflowY = "";
+      }
+    }
     const line = inert ? 0 : b.viewportY;
     if (Math.round(scroller.scrollTop / row) !== line || inert) {
       const top = line * row;
@@ -1083,6 +1190,7 @@ export function TerminalPane({
   // gives it the history's height (`scrollsNatively`).
   const scrollerRef = useRef<HTMLDivElement>(null);
   const roomRef = useRef<HTMLDivElement>(null);
+  const syncScroller = useRef<() => void>(() => {});
   const termRef = useRef<Terminal | null>(null);
   const [gone, setGone] = useState(false);
   // The reload circle's join in flight (`reopen`): its glyph turns.
@@ -1141,6 +1249,10 @@ export function TerminalPane({
   const [hits, setHits] = useState<{ at: number; of: number } | null>(null);
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
+  // **What is being composed, under a finger** (item 18 B): shown in a
+  // strip of its own at the screen's foot, not at the cursor, which a
+  // redrawing program moves under it.
+  const [composingText, setComposingText] = useState<string | null>(null);
   // A command block's actions (roadmap 2.3), where it was pressed: from a
   // right-click, or a long press on its prompt.
   const [blockMenu, setBlockMenu] = useState<{ x: number; y: number; acts: { name: string; label: string; run: () => void }[] } | null>(null);
@@ -1355,6 +1467,14 @@ export function TerminalPane({
     const shifted = keepShiftedCommits(term);
     const late = keepLateCommits(term);
     const composing = keepCompositionInView(term);
+    const field = term.textarea;
+    const composed = (e: CompositionEvent) => {
+      if (!window.matchMedia("(pointer: coarse)").matches) return;
+      setComposingText(e.type === "compositionend" ? null : e.data || null);
+    };
+    for (const k of ["compositionstart", "compositionupdate", "compositionend"]) {
+      field?.addEventListener(k, composed as EventListener);
+    }
     // The shell's marks on xterm's buffer (roadmap 2.2, 2.3), from the
     // first byte replayed on.
     const marks = trackMarks(term);
@@ -1377,6 +1497,42 @@ export function TerminalPane({
     (box as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
 
     let stopped = false;
+    // **The first second, written down** (item 18 A: on the owner's iPhone
+    // a fresh terminal would not scroll until the keyboard came up, and the
+    // simulator never showed it). Each frame of the first 1.5 s: the grid,
+    // the scroller's range and place; `__termTrace` for the gates and the
+    // Web Inspector, the summary to the app's log (`face_note`).
+    const born = performance.now();
+    const traced: { t: number; what: string; cols: number; rows: number; range: number; top: number; lines: number }[] = [];
+    (box as HTMLDivElement & { __termTrace?: typeof traced }).__termTrace = traced;
+    const trace = (what: string) => {
+      const sc = scrollerRef.current;
+      traced.push({
+        t: Math.round(performance.now() - born),
+        what,
+        cols: term.cols,
+        rows: term.rows,
+        range: sc ? Math.round(sc.scrollHeight - sc.clientHeight) : -1,
+        top: sc ? Math.round(sc.scrollTop) : -1,
+        lines: term.buffer.active.length,
+      });
+    };
+    let tracing = window.requestAnimationFrame(function each() {
+      if (stopped) return;
+      trace("frame");
+      if (performance.now() - born < 1500) tracing = window.requestAnimationFrame(each);
+      else {
+        const first = traced.find((x) => x.what === "fit");
+        const scrollable = traced.find((x) => x.range > 0);
+        faceNote(
+          `term ${id}: fit at ${first?.t ?? "never"} ms (${first?.cols}x${first?.rows}), ` +
+            `range > 0 at ${scrollable?.t ?? "never"} ms, last range ${traced[traced.length - 1]?.range}`,
+        ).catch(() => {});
+      }
+    });
+    let joined = false;
+    // Output painted a whole frame at a time (item 18 B).
+    const frames = framesWhole(term);
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -1399,6 +1555,9 @@ export function TerminalPane({
       replaying += 1;
       term.write(bytes, () => {
         replaying -= 1;
+        // The history just landed: the scroller's range is the buffer's
+        // now, not whenever xterm next scrolls (item 18 A).
+        syncScroller.current();
       });
     };
     /** When the last beat came back: a beat after a long gap (the pane
@@ -1406,22 +1565,39 @@ export function TerminalPane({
     let lastBeat = performance.now();
     const tick = async () => {
       const mine = generation;
+      // **The place this ask was made from.** An ask that left before the
+      // join set `seq` (a poll the page's own focus effect started while
+      // the open was still reaching) comes back with everything since 0 —
+      // the history the join had just replayed — and wrote it a second
+      // time: a far session's whole history twice on the phone, where the
+      // pushed wait holds such an ask open until the ring arrives.
+      const from = seq;
       try {
         // **Pushed in the app while the pane is looked at** (round
         // NET-2): the node answers the moment bytes arrive, so an echo
         // no longer waits for the next beat. Elsewhere, the beat.
         const pushed = inApp && pace.current === LIVE_MS;
         const b = await (pushed ? termWait(id, seq, WAIT_MS) : termStream(id, seq));
-        if (stopped || mine !== generation) return;
+        if (stopped || mine !== generation || from !== seq) return;
         const gap = performance.now() - lastBeat;
         lastBeat = performance.now();
+        if (performance.now() - born < 1500 && (b.bytes || b.reset)) {
+          trace(`chunk ${b.bytes.length} from ${seq} to ${b.seq}${b.reset ? " reset" : ""}${b.rejoining ? " rejoining" : ""}`);
+        }
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
         // writing a stream whose head is missing.
-        if (b.reset) term.reset();
+        // A reset starts over: what was held belongs to the screen that
+        // goes. A catch-up is history: what was held goes first.
+        if (b.reset) {
+          frames.drop();
+          term.reset();
+        }
         if (b.bytes) {
-          if (b.reset || gap > CATCH_UP_MS) replay(b64bytes(b.bytes));
-          else term.write(b64bytes(b.bytes));
+          if (b.reset || gap > CATCH_UP_MS) {
+            frames.flush();
+            replay(b64bytes(b.bytes));
+          } else frames.paint(b64bytes(b.bytes));
         }
         seq = b.seq;
         if (b.gone) setGone(true);
@@ -1436,7 +1612,8 @@ export function TerminalPane({
     // are twice on the screen, so the loop awaits its tick and only
     // then schedules the next.
     const loop = async () => {
-      if (stopped || busy) return;
+      // Nothing to ask before the join has said where the stream starts.
+      if (stopped || busy || !joined) return;
       busy = true;
       try {
         await tick();
@@ -1486,14 +1663,19 @@ export function TerminalPane({
           // terminal is there, so the pane shows it.
           setWhy(null);
           setGone(false);
-          if (again) term.reset();
+          if (again) {
+            frames.drop();
+            term.reset();
+          }
           // Everything the feed holds — it began with the host's ring
           // dump, so the screen arrives *with its history*, the same
           // replay the host gives any attacher. Its old questions get no
           // answers (`replay`).
+          trace(`attach ${a.bytes.length} to ${a.seq}`);
           if (a.bytes) replay(b64bytes(a.bytes));
           lastBeat = performance.now();
           seq = a.seq;
+          joined = true;
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
           resizing ??= term.onResize(({ cols, rows }) => {
@@ -1543,6 +1725,7 @@ export function TerminalPane({
         term.resize(term.cols, term.rows);
         fit.fit();
         native.sync();
+        trace("fit");
         void join(false);
       });
     });
@@ -1660,6 +1843,10 @@ export function TerminalPane({
     const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
     const dragged = fingerWheels(term, box);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
+    syncScroller.current = () => {
+      native.sync();
+      trace("replayed");
+    };
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
     // in history" in xterm's own coordinates — on the alternate screen
     // (a full-screen program) baseY stays 0 and neither of these can
@@ -1723,6 +1910,7 @@ export function TerminalPane({
       deepened();
       fonted();
       stopped = true;
+      frames.drop();
       window.clearTimeout(timer);
       pollNow.current = () => {};
       if (raf) window.cancelAnimationFrame(raf);
@@ -1741,6 +1929,9 @@ export function TerminalPane({
       shifted();
       late();
       composing();
+      for (const k of ["compositionstart", "compositionupdate", "compositionend"]) {
+        field?.removeEventListener(k, composed as EventListener);
+      }
       asks();
       marks.dispose();
       shown();
@@ -1749,6 +1940,7 @@ export function TerminalPane({
       reopenRef.current = null;
       if (reopeners.get(id) === reopenHere) reopeners.delete(id);
       entering.abort();
+      window.cancelAnimationFrame(tracing);
       window.cancelAnimationFrame(firstFrame);
       osc52.dispose();
       cursor();
@@ -1975,6 +2167,16 @@ export function TerminalPane({
         </div>
         <div data-term-room ref={roomRef} aria-hidden />
       </div>
+      {composingText && (
+        <div
+          data-term-composing
+          aria-hidden
+          className="glass pointer-events-none absolute inset-x-2 bottom-2 z-10 truncate rounded-md px-3 py-1 text-[length:var(--text-term)]"
+          style={{ fontFamily: "var(--font-term)" }}
+        >
+          {composingText}
+        </div>
+      )}
       {blockMenu && (
         <div
           data-term-block-menu

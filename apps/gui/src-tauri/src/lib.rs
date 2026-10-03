@@ -781,6 +781,15 @@ fn notify_finished(app: tauri::AppHandle, title: String, body: String) -> Result
     n.builder().title(title).body(body).show().map_err(|e| e.to_string())
 }
 
+/// **A line from the page into the app's log** (item 18 A): the app's
+/// stderr, which a phone's console keeps and a Mac's launch log collects.
+/// What a terminal saw in its first second on a device the simulator
+/// never reproduces.
+#[tauri::command]
+fn face_note(line: String) {
+    eprintln!("face: {}", line.chars().take(400).collect::<String>());
+}
+
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
@@ -3552,6 +3561,7 @@ pub fn run() {
             term_attach,
             term_stream,
             term_wait,
+            face_note,
             notify_finished,
             term_key,
             term_drop,

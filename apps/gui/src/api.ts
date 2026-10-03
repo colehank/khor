@@ -1613,6 +1613,9 @@ export const termWait = (id: string, since: number, ms: number) =>
 /** Keystrokes as the bytes a terminal sends — xterm encodes every key,
     modifier, mouse report and paste; the backend stays a pipe. */
 export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });
+/** A line from the face into the app's own log (its stderr, which the
+    device's console keeps): what a page saw that only a device shows. */
+export const faceNote = (line: string) => call<null>("face_note", { line });
 /** A finished command, said by the system (roadmap 2.4, `lib/finished`). */
 export const notifyFinished = (title: string, body: string) => call<null>("notify_finished", { title, body });
 /** Files dropped on a terminal. The paths go over as they are and the

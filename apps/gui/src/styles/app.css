@@ -2078,6 +2078,14 @@ aside[data-side] {
   display: none;
 }
 @media (pointer: coarse) {
+  /* **The pinyin being composed is not drawn at the cursor** under a
+     finger (item 18 B): a redrawing program moves the cursor, and the
+     preview jumped with it. The pane shows it in a strip of its own at
+     the screen's foot (`data-term-composing`); xterm still takes the
+     composition and commits it at the cursor. */
+  [data-terminal] .composition-view {
+    visibility: hidden;
+  }
   /* **The keys' field stays in the corner** (2026-10-03, the owner:
      「输入到屏幕边的时候整个页面会拉长」). xterm moves its hidden textarea
      to the cursor and widens it to what is being composed; at the right
