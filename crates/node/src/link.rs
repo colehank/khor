@@ -462,9 +462,14 @@ impl Node {
     /// Also what [`Self::fresh_ears`] binds again.
     async fn bind_ears(&self) -> Result<std::sync::Arc<iroh::Endpoint>, String> {
         Ok(std::sync::Arc::new(
-            endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
-                .await
-                .map_err(|e| e.to_string())?,
+            endpoint::bind_preferring(
+                self.secret_key().clone(),
+                self.relay_map(),
+                self.relays_n0(),
+                self.preferred_relay().as_deref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?,
         ))
     }
 
@@ -1082,6 +1087,9 @@ impl Node {
             ipc::Op::Wires => ipc::Reply::Wires {
                 counts: self.wires.counts_now(),
             },
+            ipc::Op::Connections => ipc::Reply::Connections {
+                view: self.connections_now(ep).await,
+            },
             // **Never queues behind a pump already running**: a machine
             // in a round is joined, not visited twice, and every other
             // machine is visited now, in parallel, the backed-off ones
@@ -1626,7 +1634,11 @@ impl Node {
                 Ok(line(conn))
             }
             Err(e) => {
-                self.wires.failed(&d.id, proto);
+                let words = match &e {
+                    DialFailure::TimedOut => msg::machine_unreachable_timeout(&d.name),
+                    DialFailure::Refused(why) => msg::cant_reach_named(&d.name, why),
+                };
+                self.wires.failed(&d.id, proto, words);
                 Err(e)
             }
         }
@@ -5968,6 +5980,64 @@ impl Node {
                 (d.id, khor_core::Link { hop, heard_ms })
             })
             .collect()
+    }
+
+    /// **This machine's connections, as the 网络 page shows them**
+    /// (`khor_core::ConnectionsView`). Only the resident can answer — the
+    /// wires and the home relay are its.
+    pub async fn connections(&self) -> Result<khor_core::ConnectionsView, RoadsUnread> {
+        match self.via_serve(ipc::Op::Connections).await {
+            Some(Ok(ipc::Reply::Connections { view })) => Ok(view),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
+        }
+    }
+
+    /// The resident's own answer to [`Self::connections`].
+    async fn connections_now(&self, ep: &iroh::Endpoint) -> khor_core::ConnectionsView {
+        use iroh::Watcher;
+        let home = ep.home_relay_status().get().into_iter().next();
+        let urls = self.relays().to_vec();
+        let measured = join_all(
+            urls.iter()
+                .map(|u| async move { crate::doctor::relay_round_trip(u).await })
+                .collect(),
+        )
+        .await;
+        let relays = urls
+            .into_iter()
+            .zip(measured)
+            .map(|(url, rtt_ms)| khor_core::RelayReading { url, rtt_ms })
+            .collect();
+        let links = self.links_now();
+        let peers = links
+            .into_iter()
+            .map(|(id, link)| {
+                let (rtt, failure, failed, unanswered) = self.wires.peer_view(&id);
+                let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
+                khor_core::PeerConnection {
+                    id,
+                    hop: link.hop,
+                    heard_ms: link.heard_ms,
+                    rtt_ms: rtt.filter(|r| !r.is_zero()).map(ms),
+                    failure_ago_ms: failure.as_ref().map(|(_, ago)| ms(*ago)),
+                    last_failure: failure.map(|(w, _)| w),
+                    failed,
+                    unanswered,
+                }
+            })
+            .collect();
+        khor_core::ConnectionsView {
+            home_connected: home.as_ref().is_some_and(|h| h.is_connected()),
+            home_error: home
+                .as_ref()
+                .and_then(|h| h.last_error())
+                .map(|e| e.to_string()),
+            home_relay: home.map(|h| h.url().to_string()),
+            preferred_relay: self.preferred_relay(),
+            relays,
+            peers,
+        }
     }
 
     /// How the resident's wires have fared since it started

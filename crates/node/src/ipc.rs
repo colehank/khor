@@ -268,6 +268,11 @@ pub enum Op {
     /// (`khor_core::WireCounts`) — `khor doctor`'s account of where a
     /// word on a screen came from. Tail-appended.
     Wires,
+    /// This machine's connections for the 网络 page
+    /// (`khor_core::ConnectionsView`): home relay, relay round trips, and
+    /// per machine its road, age, round trip and last failure.
+    /// Tail-appended.
+    Connections,
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -324,6 +329,7 @@ impl Op {
             Op::Hops => ("Hops", DEADLINE_LOCAL),
             Op::Roads => ("Roads", DEADLINE_LOCAL),
             Op::Wires => ("Wires", DEADLINE_LOCAL),
+            Op::Connections => ("Connections", DEADLINE_LOCAL),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -527,6 +533,10 @@ pub enum Reply {
     /// Tail-appended with [`Op::Wires`].
     Wires {
         counts: khor_core::WireCounts,
+    },
+    /// Tail-appended with [`Op::Connections`].
+    Connections {
+        view: khor_core::ConnectionsView,
     },
 }
 

@@ -11,6 +11,7 @@ import { gui, msg } from "./gen/catalog";
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
+import type { Connections } from "./gen/bindings/Connections";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -94,6 +95,7 @@ export type {
   RelayChoices,
   RelayWant,
   RoadShare,
+  Connections,
   HooksState,
   Ticket,
   LeaveOutcome,
@@ -873,6 +875,11 @@ export const setRelays = (relays: RelayWant[], onlyMine: boolean) =>
 /** 直连占比: of the resident's recent dials that settled, how many went
     direct. `unread` says why there is no reading when there is none. */
 export const fetchRoadShare = () => call<RoadShare>("road_share");
+/** The 网络 page's 连接 group: home relay, relay round trips, and per
+    machine its road, round trip, age and last failure (round NET-2). */
+export const fetchConnections = () => call<Connections>("connections");
+/** 首选中继, or `null` for the nearest. */
+export const setPreferredRelay = (url: string | null) => call<null>("set_preferred_relay", { url });
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to

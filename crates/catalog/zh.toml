@@ -1265,6 +1265,7 @@ no-local-lookup = "局域网发现无法启动"
 # 的组合:它把机器留在没有任何中继的状态,只有打洞成了才连得上。拒绝,
 # 而不是悄悄把开关拨回去——一个会自己关掉的开关,是屏幕在谎报状态。
 relays-only-mine-needs-one = "需要先添加自己的中继，才能只使用自己的中继"
+preferred-not-a-relay = "{0} 不在这台机器用的中继里——先在「中继」里添加它"
 
 # ── 打开密码 (docs/MORE.md 安全) ──────────────────────────────────
 # **PIN 是每张脸都有的那把钥匙**,所以没有 PIN 就开不了锁:手机打开的
@@ -1429,6 +1430,9 @@ cant-reach-named = "无法连接 {0}：{1}"
 cant-reach-plain = "无法连接：{0}"
 machine-silent = "{0} 没有响应"
 answer-late = "{0} 在 {1} 秒内没有答完"
+wire-unanswered = "请求无回应，连接已收回"
+wire-went-silent = "连接静默，已收回"
+wire-network-changed = "网络变了，旧连接已收回"
 peer-backing-off = "上次没连上，{0} 秒后再试"
 dial-timed-out = "连接超时"
 inviter-unreachable-timeout = "无法连接出票的机器（超时）"
@@ -2258,6 +2262,20 @@ mcp-closed = "session 已关闭"
 mcp-told = "留言已送达"
 
 [gui]
+# 网络页的「连接」组（round NET-2）：本机住在哪台中继、到每台中继的往返、每台机器走哪条路、
+# 往返多久、多久前听到、上次出了什么错——doctor 的连接诊断，做成可以截图的一页。
+conn-home = "家中继"
+conn-home-ok = "{0} · 已连接"
+conn-home-down = "{0} · 连接不上：{1}"
+conn-home-none = "还没有住进任何中继"
+conn-relay-ms = "{0} 毫秒"
+conn-relay-quiet = "测不到往返"
+conn-peer-rtt = "往返 {0} 毫秒"
+conn-peer-failed = "上次出错（{0}前）：{1}"
+conn-unanswered = "常驻没有回答"
+relays-preferred = "首选中继"
+relays-preferred-auto = "自动（最近的）"
+relays-preferred-note = "连得上时住在这台；下次重连起生效"
 # 等远端机器回应时的三档（round NET-FIX）：不到 1 秒只有骨架；1 秒起骨架下多一个
 # 转圈；8 秒起说清在等哪台、等了多久，并给「停止等待」「重试」。
 waiting-on = "仍在等待 {0} 回应 · {1}"

@@ -303,7 +303,30 @@ pub async fn bind_with(
     relays: &[Relay],
     n0: bool,
 ) -> Result<iroh::Endpoint> {
-    Ok(builder(secret, relays, n0)?.bind().await?)
+    bind_preferring(secret, relays, n0, None).await
+}
+
+/// [`bind_with`], **homing on `preferred` whenever it is reachable** —
+/// the person's 首选中继 (设置 → 网络). iroh otherwise homes on the relay
+/// with the lowest recent latency, and switches only when another is a
+/// third faster (`net_report.rs`); the preference is a vendored patch
+/// (`vendor/iroh/KHOR.md`, patch 3) because iroh 1.2 has no knob for it.
+/// Unreachable, it is ignored and iroh chooses as before: a preference is
+/// never a reason to have no home.
+pub async fn bind_preferring(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    n0: bool,
+    preferred: Option<&str>,
+) -> Result<iroh::Endpoint> {
+    let mut b = builder(secret, relays, n0)?;
+    if let Some(url) = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok()) {
+        // `NetReportConfig` is non-exhaustive: built, then set.
+        let mut config = iroh::endpoint::NetReportConfig::default();
+        config.preferred_relay = Some(url);
+        b = b.net_report_config(config);
+    }
+    Ok(b.bind().await?)
 }
 
 /// Everything [`bind`] configures, short of binding — split out so the

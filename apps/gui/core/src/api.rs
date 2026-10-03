@@ -402,6 +402,12 @@ pub fn answer(
         }
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
+        "connections" => to_json(&rt.block_on(crate::connections(root))?),
+        "set_preferred_relay" => {
+            let url = args.get("url").and_then(|v| v.as_str()).map(str::to_owned);
+            crate::set_preferred_relay(root, url)?;
+            Ok("null".to_owned())
+        }
         "set_relays" => {
             // Read by position and refused by name, the same as `paths`
             // above and for a sharper version of the same reason: a

@@ -91,3 +91,93 @@ async fn a_slow_lossy_relay_retires_nothing_and_reads_relay_throughout() {
         "the word left 中继 on a road that never broke"
     );
 }
+
+/// **首选中继 wins whenever it is reachable** (round NET-2, item 3): a
+/// node with two relays homes on the nearer by itself; told to prefer the
+/// farther one, it homes there — and with the preferred one gone, it
+/// homes on the other rather than on nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_preferred_relay_is_home_while_it_answers() {
+    let (rn, rf, home) = (
+        scratch("pref-near"),
+        scratch("pref-far"),
+        scratch("pref-node"),
+    );
+    let (_near, near) = local_relay(&rn.0);
+    let (far_relay, far_direct) = local_relay(&rf.0);
+    let to: std::net::SocketAddr = far_direct
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let (at, _road) = slow_road(
+        to,
+        Impair {
+            rtt: Duration::from_millis(400),
+            loss_pct: 0,
+            stall: Duration::ZERO,
+        },
+    )
+    .await;
+    let far = format!("http://{at}");
+    let write = |preferred: Option<&str>| {
+        std::fs::create_dir_all(home.0.join(".khor")).unwrap();
+        std::fs::write(
+            home.0.join(".khor").join("relays.json"),
+            serde_json::json!({
+                "relays": [{ "url": near }, { "url": far }],
+                "only_mine": true,
+                "preferred": preferred,
+            })
+            .to_string(),
+        )
+        .unwrap();
+    };
+    let home_after = |label: &'static str| {
+        let root = home.0.clone();
+        async move {
+            let s = serve(&root, "solo");
+            stood_up(&[&root]).await;
+            let n = khor_node::Node::open_as(root.clone(), "solo").unwrap();
+            let began = Instant::now();
+            let mut home = None;
+            while began.elapsed() < Duration::from_secs(40) {
+                if let Ok(c) = n.connections().await
+                    && c.home_connected
+                {
+                    home = c.home_relay;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            drop(s);
+            let _ = std::fs::remove_file(root.join(".khor/endpoint.json"));
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            eprintln!("[pref] {label}: home {home:?}");
+            home
+        }
+    };
+    let same = |a: &Option<String>, b: &str| {
+        a.as_deref().map(|u| u.trim_end_matches('/')) == Some(b.trim_end_matches('/'))
+    };
+
+    write(None);
+    let by_itself = home_after("no preference").await;
+    write(Some(&far));
+    let preferring = home_after("prefers the far one").await;
+    drop(far_relay);
+    let far_gone = home_after("the far one gone").await;
+
+    assert!(
+        same(&by_itself, &near),
+        "by itself it homes on the nearer: {by_itself:?}"
+    );
+    assert!(
+        same(&preferring, &far),
+        "a reachable preference is home: {preferring:?}"
+    );
+    assert!(
+        same(&far_gone, &near),
+        "an unreachable preference is not: {far_gone:?}"
+    );
+}

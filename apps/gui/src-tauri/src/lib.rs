@@ -410,6 +410,19 @@ async fn road_share() -> Result<khor_gui_core::RoadShare, String> {
     khor_gui_core::road_share(&Node::root_from_env()).await
 }
 
+/// The 网络 page's 连接 group (`khor_gui_core::connections`).
+#[tauri::command]
+async fn connections() -> Result<khor_gui_core::Connections, String> {
+    khor_gui_core::connections(&Node::root_from_env()).await
+}
+
+/// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
+/// it writes a file.
+#[tauri::command]
+async fn set_preferred_relay(url: Option<String>) -> Result<(), String> {
+    off_main(move || khor_gui_core::set_preferred_relay(&Node::root_from_env(), url)).await
+}
+
 #[tauri::command]
 fn tell(machine: String, text: String) -> Result<(), String> {
     khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
@@ -3458,6 +3471,8 @@ pub fn run() {
             relays,
             set_relays,
             road_share,
+            connections,
+            set_preferred_relay,
             tell,
             pin_session,
             pin_device,

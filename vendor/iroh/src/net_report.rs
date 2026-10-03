@@ -108,6 +108,11 @@ pub struct NetReportConfig {
     /// When we have detected that we are behind a captive portal, we try to contact
     /// the relay servers more frequently in case the captive portal status changes.
     pub captive_portal_check: bool,
+
+    /// khor patch 3 (vendor/iroh/KHOR.md): a relay to home on whenever the
+    /// current report reached it at all, whatever its latency against the
+    /// others. `None` keeps iroh's own choice (lowest recent latency).
+    pub preferred_relay: Option<RelayUrl>,
 }
 
 impl NetReportConfig {
@@ -116,6 +121,7 @@ impl NetReportConfig {
         Self {
             https_probes: false,
             captive_portal_check: false,
+            preferred_relay: None,
         }
     }
 }
@@ -125,6 +131,7 @@ impl Default for NetReportConfig {
         Self {
             https_probes: true,
             captive_portal_check: true,
+            preferred_relay: None,
         }
     }
 }
@@ -146,6 +153,8 @@ pub(crate) struct Client {
     tls_config: rustls::ClientConfig,
     /// Whether to check for captive portals.
     captive_portal_check: bool,
+    /// khor patch 3: the relay to home on when reachable.
+    preferred_relay: Option<RelayUrl>,
     /// A collection of previously generated reports.
     ///
     /// Sometimes it is useful to look at past reports to decide what to do.
@@ -287,6 +296,7 @@ impl Client {
             #[cfg(not(wasm_browser))]
             tls_config: opts.tls_config,
             captive_portal_check: opts.user_config.captive_portal_check,
+            preferred_relay: opts.user_config.preferred_relay.clone(),
         }
     }
 
@@ -815,6 +825,14 @@ impl Client {
             {
                 r.preferred_relay = prev_relay;
             }
+        }
+
+        // khor patch 3: a relay the person chose wins whenever this report
+        // reached it — reachability, not latency, is the only test.
+        if let Some(chosen) = &self.preferred_relay
+            && r.relay_latency.get(chosen).is_some()
+        {
+            r.preferred_relay = Some(chosen.clone());
         }
 
         self.reports.prev.insert(now, r.clone());

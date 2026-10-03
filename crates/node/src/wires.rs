@@ -214,6 +214,8 @@ struct Slot {
     /// The last round trip measured on this key's wire, kept after the
     /// wire goes: the next dial to that machine is given time for it.
     rtt: Duration,
+    /// The last thing that went wrong with this key, in words, and when.
+    last_failure: Option<(String, Instant)>,
 }
 
 /// Every wire this node holds, and the counters behind `khor doctor`'s
@@ -397,9 +399,10 @@ impl Wires {
     }
 
     /// A dial for this key failed: the pump waits before the next one.
-    pub(crate) fn failed(&self, id: &str, proto: Proto) {
+    pub(crate) fn failed(&self, id: &str, proto: Proto, why: String) {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let slot = slots.entry((id.to_owned(), proto)).or_default();
+        slot.last_failure = Some((why, Instant::now()));
         slot.failures = slot.failures.saturating_add(1);
         slot.failed_total += 1;
         slot.retry_at = Some(Instant::now() + backoff(slot.failures));
@@ -466,6 +469,7 @@ impl Wires {
         drop_wire(slot, why);
         if why == Retired::Unanswered {
             slot.unanswered_total += 1;
+            slot.last_failure = Some((khor_catalog::msg::wire_unanswered().to_owned(), Instant::now()));
         }
         self.counts.retired(why);
         drop(slots);
@@ -672,6 +676,15 @@ impl Wires {
                     Retired::Silent
                 };
                 drop_wire(slot, why);
+                slot.last_failure = Some((
+                    if why == Retired::Network {
+                        khor_catalog::msg::wire_network_changed()
+                    } else {
+                        khor_catalog::msg::wire_went_silent()
+                    }
+                    .to_owned(),
+                    now,
+                ));
                 self.counts.retired(why);
                 dead.push(id.clone());
                 retired += 1;
@@ -730,6 +743,29 @@ impl Wires {
         }
         c.by_peer = by.into_iter().map(|(id, (f, u))| (id, f, u)).collect();
         c
+    }
+
+    /// One machine as the connections page shows it: the held wire's
+    /// round trip, and the last failure on either protocol with its age.
+    pub(crate) fn peer_view(&self, id: &str) -> (Option<Duration>, Option<(String, Duration)>, u64, u64) {
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let (mut rtt, mut failure, mut failed, mut unanswered) = (None, None::<(String, Instant)>, 0, 0);
+        for proto in [Proto::Main, Proto::Tunnel] {
+            let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
+                continue;
+            };
+            if slot.conn.as_ref().is_some_and(|c| c.close_reason().is_none()) && rtt.is_none() {
+                rtt = Some(slot.rtt);
+            }
+            if let Some((why, at)) = &slot.last_failure
+                && failure.as_ref().is_none_or(|(_, was)| at > was)
+            {
+                failure = Some((why.clone(), *at));
+            }
+            failed += slot.failed_total;
+            unanswered += slot.unanswered_total;
+        }
+        (rtt, failure.map(|(w, at)| (w, at.elapsed())), failed, unanswered)
     }
 
     /// The machines this node holds a live wire to, for tests and for
