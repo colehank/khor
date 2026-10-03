@@ -28,7 +28,10 @@ const FILES: &[(&str, &str)] = &[
     ("zsh/.zshenv", include_str!("../shell/zsh/.zshenv")),
     ("khor.zsh", include_str!("../shell/khor.zsh")),
     ("khor.bash", include_str!("../shell/khor.bash")),
-    ("fish-data/fish/vendor_conf.d/khor.fish", include_str!("../shell/khor.fish")),
+    (
+        "fish-data/fish/vendor_conf.d/khor.fish",
+        include_str!("../shell/khor.fish"),
+    ),
     ("khor.ps1", include_str!("../shell/khor.ps1")),
     ("khor.cmd", include_str!("../shell/khor.cmd")),
 ];
@@ -82,7 +85,10 @@ pub fn plan(dir: &Path, cmd: &[String], getenv: impl Fn(&str) -> Option<String>)
             args: args.to_vec(),
             env: vec![
                 ("ZDOTDIR".into(), format!("{d}/zsh")),
-                ("KHOR_ORIG_ZDOTDIR".into(), getenv("ZDOTDIR").unwrap_or_default()),
+                (
+                    "KHOR_ORIG_ZDOTDIR".into(),
+                    getenv("ZDOTDIR").unwrap_or_default(),
+                ),
                 ("KHOR_SHELL_DIR".into(), d),
             ],
         }),
@@ -92,7 +98,9 @@ pub fn plan(dir: &Path, cmd: &[String], getenv: impl Fn(&str) -> Option<String>)
         }),
         "fish" | "-fish" => {
             let orig = getenv("XDG_DATA_DIRS");
-            let rest = orig.clone().unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+            let rest = orig
+                .clone()
+                .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
             Some(Plan {
                 args: args.to_vec(),
                 env: vec![
@@ -110,7 +118,10 @@ mod tests {
     use super::*;
 
     fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
-        let pairs: Vec<(String, String)> = pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+        let pairs: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
         move |k| pairs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone())
     }
 
@@ -119,14 +130,30 @@ mod tests {
         let d = Path::new("/k/shell");
         let zsh = plan(d, &["/bin/zsh".into()], env(&[("ZDOTDIR", "/me/z")])).unwrap();
         assert!(zsh.env.contains(&("ZDOTDIR".into(), "/k/shell/zsh".into())));
-        assert!(zsh.env.contains(&("KHOR_ORIG_ZDOTDIR".into(), "/me/z".into())));
+        assert!(
+            zsh.env
+                .contains(&("KHOR_ORIG_ZDOTDIR".into(), "/me/z".into()))
+        );
         let bash = plan(d, &["/bin/bash".into()], env(&[])).unwrap();
         assert_eq!(bash.args, vec!["--init-file", "/k/shell/khor.bash"]);
-        assert_eq!(plan(d, &["/bin/bash".into(), "-c".into(), "x".into()], env(&[])), None);
+        assert_eq!(
+            plan(d, &["/bin/bash".into(), "-c".into(), "x".into()], env(&[])),
+            None
+        );
         let fish = plan(d, &["/opt/homebrew/bin/fish".into()], env(&[])).unwrap();
-        assert!(fish.env.contains(&("XDG_DATA_DIRS".into(), "/k/shell/fish-data:/usr/local/share:/usr/share".into())));
+        assert!(fish.env.contains(&(
+            "XDG_DATA_DIRS".into(),
+            "/k/shell/fish-data:/usr/local/share:/usr/share".into()
+        )));
         assert_eq!(plan(d, &["/usr/bin/vim".into()], env(&[])), None);
-        assert_eq!(plan(d, &["/bin/zsh".into()], env(&[("KHOR_SHELL_INTEGRATION", "0")])), None);
+        assert_eq!(
+            plan(
+                d,
+                &["/bin/zsh".into()],
+                env(&[("KHOR_SHELL_INTEGRATION", "0")])
+            ),
+            None
+        );
     }
 
     #[test]
@@ -138,7 +165,11 @@ mod tests {
         let before = std::fs::metadata(&zshenv).unwrap().modified().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(20));
         write_scripts(&d).unwrap();
-        assert_eq!(std::fs::metadata(&zshenv).unwrap().modified().unwrap(), before, "unchanged files are not rewritten");
+        assert_eq!(
+            std::fs::metadata(&zshenv).unwrap().modified().unwrap(),
+            before,
+            "unchanged files are not rewritten"
+        );
         assert!(d.join("fish-data/fish/vendor_conf.d/khor.fish").exists());
         let _ = std::fs::remove_dir_all(&d);
     }

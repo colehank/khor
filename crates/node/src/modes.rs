@@ -209,6 +209,21 @@ impl Modes {
         }
     }
 
+    /// Whether the stream left DEC private mode `mode` set (a mode never
+    /// mentioned reads as its reset value).
+    pub fn is_set(&self, mode: u16) -> bool {
+        self.set
+            .get(&mode)
+            .copied()
+            .unwrap_or_else(|| TRACKED.iter().any(|&(m, on)| m == mode && on))
+    }
+
+    /// A full-screen program is drawing: the alternate screen, or the
+    /// mouse taken (roadmap 1.2: "a program is running").
+    pub fn program_holds_screen(&self) -> bool {
+        [47, 1047, 1049, 1000, 1002, 1003].iter().any(|&m| self.is_set(m))
+    }
+
     /// The bytes that put a freshly reset terminal into the modes the
     /// stream had reached — empty when every tracked mode is at its
     /// default, so an untrimmed replay is unchanged.

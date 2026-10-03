@@ -1,0 +1,25 @@
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+]7;file://fixture-host/private/tmp]133;A[?1034h/private/tmp $ ]133;Becho one
+]633;E;echo one]133;Cone
+]133;D;0]7;file://fixture-host/private/tmp]133;A/private/tmp $ ]133;Bfalse
+]633;E;false]133;C]133;D;1]7;file://fixture-host/private/tmp]133;A/private/tmp $ ]133;Bcd /tmp
+]633;E;cd /tmp]133;C]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Bvim -u NONE -N
+]633;E;vim -u NONE -N]133;C[?1049h[>4;2m[?1h=[?2004h[?1004h[1;24r[?12h[?12l[22;2t[22;1t[27m[23m[29m[m[H[2J[2;1H▽[6n[2;1H  [3;1HPzz\[0%m[6n[3;1H           [1;1H[>c[?25l[2;1H[94m~                                                                               [3;1H~                                                                               [4;1H~                                                                               [5;1H~                                                                               [6;1H~                                                                               [7;1H~                                                                               [8;1H~                                                                               [9;1H~                                                                               [10;1H~                                                                               [11;1H~                                                                               [12;1H~                                                                               [13;1H~                                                                               [14;1H~                                                                               [15;1H~                                                                               [16;1H~                                                                               [17;1H~                                                                               [18;1H~                                                                               [19;1H~                                                                               [20;1H~                                                                               [21;1H~                                                                               [22;1H~                                                                               [23;1H~                                                                               [m[7;32HVIM - Vi IMproved[9;33Hversion 9.1.1752[10;29Hby Bram Moolenaar et al.[11;19HVim is open source and freely distributable[13;26HHelp poor children in Uganda![14;18Htype  :help iccf[34m<Enter>[m       for information [16;18Htype  :q[34m<Enter>[m               to exit         [17;18Htype  :help[34m<Enter>[m  or  [34m<F1>[m  for on-line help[18;18Htype  :help version9[34m<Enter>[m   for version info[1;1H[?25h[?4m[?25l[24;1H:q![?2004l[>4;m[23;2t[23;1t[24;1H[K[24;1H[?1004l[?2004l[?1l>[?1049l[?25h[>4;m]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Bls /
+]633;E;ls /]133;CApplications	Volumes		etc		sbin
+Library		bin		home		tmp
+System		cores		opt		usr
+Users		dev		private		var
+]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Btrue && echo two
+]633;E;true && echo two]133;Ctwo
+]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Bprintf "x\\n" | wc -l
+]633;E;printf "x\\\\n" | wc -l]133;C       1
+]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Bsleep 1
+]633;E;sleep 1]133;C]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Bfor i in 1 2; do
+> echo $i; done
+]633;E;for i in 1 2\x3b do echo $i\x3b done]133;C1
+2
+]133;D;0]7;file://fixture-host/tmp]133;A/tmp $ ]133;Bsh -c 'exit 3'
+]633;E;sh -c 'exit 3']133;C]133;D;3]7;file://fixture-host/tmp]133;A/tmp $ ]133;B

@@ -1190,6 +1190,7 @@ impl LiveKind {
                 term: false,
                 place: place_of(sighting.cwd.as_deref()),
                 mux: false,
+                doing: None,
             });
             let seat = out.len() - 1;
             for &p in &pids {
@@ -1326,6 +1327,7 @@ impl LiveKind {
                 term: false,
                 place: n.place.clone(),
                 mux: false,
+                doing: None,
             });
         }
         // Which host each running row sits in. A pid on record for a
@@ -1508,6 +1510,7 @@ impl LiveKind {
                         term: true,
                         place: place_of(sighting.cwd.as_deref()),
                         mux: true,
+                        doing: None,
                     });
                     let k = out.len() - 1;
                     if let Some(w) = wear {
@@ -1794,6 +1797,9 @@ impl LiveKind {
                     term: host.is_some() || lens,
                     place: place_of(meta.place.as_deref()),
                     mux: false,
+                    // The host's command ledger (`crate::commands`),
+                    // when its shell marks commands.
+                    doing: crate::commands::read_doing(&e.path()),
                 },
                 pid: meta.pid,
             });

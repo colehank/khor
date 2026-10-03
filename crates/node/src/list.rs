@@ -215,6 +215,7 @@ mod tests {
                 unread: 0,
                 place: None,
                 mux: false,
+                doing: None,
                 category: category.map(str::to_owned),
                 last: None,
                 via: None,

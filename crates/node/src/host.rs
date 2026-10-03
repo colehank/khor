@@ -957,6 +957,14 @@ fn host_serving(
         });
     }
 
+    // **The command ledger** (roadmap 1.2, `crate::commands`): fed the
+    // same bytes as the ring, written beside the session when something a
+    // reader sees changed, and every finished command added to the
+    // machine's history. A tmux client's PTY is not read for it: its
+    // marks belong to whichever pane tmux shows.
+    let commands = (!mux_client).then(|| Arc::new(Mutex::new(crate::commands::Ledger::default())));
+    let history = khor.join("history.jsonl");
+
     // A screen to match patterns against, for an agent TUI khor can
     // name. None for a shell (the process group answers better), and
     // none for a command whose basename is not a vendor in the table.
@@ -973,6 +981,9 @@ fn host_serving(
         let screen = screen.clone();
         let last_dir = dir.clone();
         let ledger = ledger.clone();
+        let commands = commands.clone();
+        let history = history.clone();
+        let session = id.0.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             // The preview line (`last.txt`): derived after every read,
@@ -998,6 +1009,22 @@ fn host_serving(
                 // Before anyone can see it: a question is pending before
                 // a face can answer it.
                 ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
+                // Its own lock, never held with another.
+                let marked = commands.as_ref().and_then(|c| {
+                    let mut c = c.lock().unwrap();
+                    c.feed(&buf[..n], crate::live::now_ms().max(0) as u64);
+                    let done = c.take_finished();
+                    c.take_changes().then(|| (c.saved(), done))
+                });
+                if let Some((saved, done)) = &marked {
+                    crate::commands::write_saved(&last_dir, saved);
+                    crate::commands::append_history(&history, &session, done);
+                }
+                let integrated = commands.as_ref().is_some_and(|c| c.lock().unwrap().marked);
+                if integrated && last_written.is_some() {
+                    let _ = std::fs::remove_file(last_dir.join("last.txt"));
+                    last_written = None;
+                }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
@@ -1009,8 +1036,10 @@ fn host_serving(
                 drop(ring);
                 // Never for a tmux client (`mux_client`): its bottom
                 // line is tmux's status bar, which is true of the
-                // screen and a lie about the session.
-                if !mux_client {
+                // screen and a lie about the session. Nor for a shell
+                // that marks its commands: its row says what it runs
+                // (`Session::doing`), never the prompt's own glyphs.
+                if !mux_client && !integrated {
                     // The screen's reading beats the byte tail — it is
                     // what is actually on the terminal; the strip is the
                     // screenless (plain shell) approximation.
