@@ -2346,6 +2346,17 @@ term-font-too-big = "字体文件不能超过 {0} MB"
 # in the terminal raises the keyboard; off, only the bar's switch does.
 term-tap-keyboard = "点击终端时弹出键盘"
 term-tap-keyboard-note = "关闭时，键盘只由底栏的键盘按钮控制"
+# Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
+# program's own cursor request still wins while it runs.
+term-cursor = "光标样式"
+term-cursor-block = "块"
+term-cursor-bar = "竖线"
+term-cursor-underline = "下划线"
+term-cursor-blink = "光标闪烁"
+# Appearance → Terminal (item 17): how many lines of history a terminal
+# keeps, and what that costs in memory for each open terminal.
+term-history = "历史行数"
+term-history-note = "约 {0} MB 每个终端"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
 # Pull to refresh on a list.

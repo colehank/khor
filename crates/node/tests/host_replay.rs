@@ -17,11 +17,11 @@ use std::time::{Duration, Instant};
 use khor_core::{DeviceId, SessionId};
 use khor_node::live::LiveKind;
 
-/// ~450 KiB of lines after the modes — the ring is 256 KiB.
+/// ~1.15 MiB of lines after the modes — past the ring (`host::RING`, 1 MiB).
 const PROGRAM: &str = r#"#!/bin/sh
 printf '\033[?1049h\033[?1h\033=\033[?2004h'
 i=0
-while [ $i -lt 4000 ]; do
+while [ $i -lt 10000 ]; do
   printf 'flood-%06d 0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789\n' $i
   i=$((i+1))
 done

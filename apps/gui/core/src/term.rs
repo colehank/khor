@@ -49,7 +49,8 @@ use ts_rs::TS;
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
-/// How many raw bytes the feed keeps, per attachment.
+/// How many raw bytes the feed keeps, per attachment: twice the host's
+/// ring (`khor_node::host::RING`, item 17), as it was at 512 KiB to 256.
 ///
 /// Enough for a full-screen repaint many times over and for the ring
 /// the host pours on attach; past it the head is trimmed, and a client
@@ -57,7 +58,7 @@ const B64: base64::engine::general_purpose::GeneralPurpose =
 /// ([`TermChunk::reset`]) rather than handed a stream with a hole —
 /// these bytes are a grammar, and a splice mid-escape is garbage on
 /// screen.
-pub const FEED_CAP: usize = 512 * 1024;
+pub const FEED_CAP: usize = 2 * khor_node::host::RING;
 
 /// The bytes the feed holds, and the modes the bytes it trimmed had set
 /// (`khor_node::modes`): a replay of a trimmed feed opens with them, or
@@ -68,6 +69,12 @@ pub const FEED_CAP: usize = 512 * 1024;
 struct Feed {
     bytes: VecDeque<u8>,
     head: Modes,
+    /// The modes at the feed's end: what a face that starts over from
+    /// the screen ([`take_since`]) is put into before the screen is drawn.
+    tail: Modes,
+    /// Where this attachment's life began on the cursor ([`restart_feed`]):
+    /// a cursor before it is another life's.
+    life: u64,
 }
 
 impl Feed {
@@ -104,8 +111,9 @@ pub struct TermChunk {
     pub gone: bool,
     /// `since` fell off the feed's trimmed head, or names a life this
     /// `Term` never lived (a re-made attachment counts from zero
-    /// again): `bytes` is the whole feed — reset the emulator and
-    /// replay, never splice.
+    /// again): reset the emulator and replay `bytes`, never splice. For
+    /// a face that fell behind in this life, `bytes` is the screen as it
+    /// stands; for another life's cursor, the whole feed.
     pub reset: bool,
     /// The pipe to a far machine's host ended and is being asked for
     /// again (`crate::rejoin`): what is on screen is the last thing that
@@ -408,7 +416,8 @@ fn restart_feed(feed: &Mutex<Feed>, fed: &AtomicU64) {
     let mut g = plock(feed);
     g.bytes.clear();
     g.head = Modes::default();
-    fed.fetch_add(1, Ordering::Relaxed);
+    g.tail = Modes::default();
+    g.life = fed.fetch_add(1, Ordering::Relaxed) + 1;
 }
 
 /// **The one path bytes take from the socket onward** — through the
@@ -435,6 +444,11 @@ fn paint(
     // translation so the mode oracle and the picture can never disagree
     // about one stream. Taken and released before any other lock.
     let bytes = plock(acs).filter(bytes).into_owned();
+    // **The parser's lock spans both consumers**, so the screen and the
+    // feed's end always describe the same byte: a face that starts over
+    // from the screen ([`take_since`]) then tails from exactly there.
+    // Lock order: parser, then feed — everywhere.
+    let mut g = plock(parser);
     // The feed first: a parser corner-case panic must not cost the face
     // its bytes — the heal below repaints the parser, and the stream
     // has to stay whole either way.
@@ -445,7 +459,6 @@ fn paint(
     // the same size and a same-size resize is sent, which is a
     // SIGWINCH: the program repaints the whole frame into the fresh
     // screen (mandala's self-heal trick).
-    let mut g = plock(parser);
     if catch_unwind(AssertUnwindSafe(|| g.process(&bytes))).is_err() {
         let (rows, cols) = g.screen().size();
         *g = vt100::Parser::new(rows, cols, 0);
@@ -459,6 +472,7 @@ fn paint(
 fn push_feed(feed: &Mutex<Feed>, fed: &AtomicU64, bytes: &[u8]) {
     let mut g = plock(feed);
     g.bytes.extend(bytes.iter().copied());
+    g.tail.feed(bytes);
     let over = g.bytes.len().saturating_sub(FEED_CAP);
     if over > 0 {
         let gone: Vec<u8> = g.bytes.drain(..over).collect();
@@ -475,14 +489,37 @@ fn take_all(feed: &Mutex<Feed>, fed: &AtomicU64) -> (Vec<u8>, u64) {
     (g.replay(), fed.load(Ordering::Relaxed))
 }
 
-/// The bytes from `since` to the end — or, when `since` is off the
-/// trimmed head or from another life (a re-made `Term` counts from
-/// zero again, so a stale cursor can be *bigger* than anything this
-/// feed ever counted), the whole feed with `reset` raised.
-fn take_since(feed: &Mutex<Feed>, fed: &AtomicU64, since: u64) -> (Vec<u8>, u64, bool) {
+/// The bytes from `since` to the end — or, with `reset` raised:
+///
+/// - **`since` fell off the trimmed head in this life** (a face that
+///   could not keep up with a burst): the screen as it stands — the
+///   feed end's modes, then the screen drawn (`vt100`'s formatted
+///   contents, cursor included), a few KB — and the face tails from
+///   the end. Terminal audit T-12: it was handed the whole feed, 512 KiB
+///   to parse while the burst ran on, so it fell behind again and was
+///   reset again (7 times in a 4 MB `yes`), each replay carrying old
+///   queries with it. Lost: scrollback past one screen, for the stretch
+///   the face could not read anyway.
+/// - **`since` is another life's, or beyond the end** (a re-made `Term`
+///   counts from zero again, so a stale cursor can be *bigger* than
+///   anything this feed ever counted): the whole feed, the new life's
+///   history.
+fn take_since(
+    parser: &Mutex<vt100::Parser>,
+    feed: &Mutex<Feed>,
+    fed: &AtomicU64,
+    since: u64,
+) -> (Vec<u8>, u64, bool) {
+    let screen = plock(parser);
     let g = plock(feed);
     let end = fed.load(Ordering::Relaxed);
     let start = end - g.bytes.len() as u64;
+    if since < start && since >= g.life {
+        let mut out = g.tail.preamble();
+        out.extend(screen.screen().contents_formatted());
+        return (out, end, true);
+    }
+    drop(screen);
     if since < start || since > end {
         return (g.replay(), end, true);
     }
@@ -515,7 +552,7 @@ pub fn term_attach(id: &str) -> Result<TermStart, String> {
 /// The bytes since `since` — see [`TermChunk`] for the two flags.
 pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
     let term = term_of(id)?;
-    let (bytes, seq, reset) = take_since(&term.feed, &term.fed, since);
+    let (bytes, seq, reset) = take_since(&term.parser, &term.feed, &term.fed, since);
     Ok(TermChunk {
         bytes: B64.encode(bytes),
         seq,
@@ -550,7 +587,23 @@ pub async fn term_wait(id: &str, since: u64, longest: std::time::Duration) -> Re
 pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
     let term = term_of(id)?;
     let mut conn = plock(&term.conn);
-    write_frame(&mut *conn, &ClientOp::Input(bytes))
+    write_input(&mut *conn, &bytes)
+}
+
+/// The most input bytes one frame to the host carries (T-16, the terminal
+/// audit). The host takes at most 1 MiB a frame (`host::MAX_OP`) and skips
+/// a bigger one whole, so a paste of 1.2 MB once arrived as nothing.
+const INPUT_FRAME: usize = 64 * 1024;
+
+/// Input in frames of at most [`INPUT_FRAME`], in order, under the one
+/// connection lock the caller holds — so no other keystroke lands between
+/// two pieces of a paste. A cut may fall inside a UTF-8 character: the pty
+/// reads one byte stream, and the pieces join again there.
+fn write_input(conn: &mut (impl std::io::Write + ?Sized), bytes: &[u8]) -> Result<(), String> {
+    for piece in bytes.chunks(INPUT_FRAME) {
+        write_frame(conn, &ClientOp::Input(piece.to_vec()))?;
+    }
+    Ok(())
 }
 
 /// A paste, wrapped the way the program in there asked for it to be.
@@ -591,7 +644,7 @@ fn term_paste(id: &str, text: &str) -> Result<(), String> {
         bytes.extend_from_slice(b"\x1b[201~");
     }
     let mut conn = plock(&term.conn);
-    write_frame(&mut *conn, &ClientOp::Input(bytes))
+    write_input(&mut *conn, &bytes)
 }
 
 /// One path, written so a POSIX shell reads back exactly that path.
@@ -746,6 +799,31 @@ pub fn term_leave(id: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// T-16's second half: a paste of 3 MiB goes as frames the host
+    /// takes (at most 64 KiB each, under its 1 MiB `MAX_OP`), in order,
+    /// and together they are the paste.
+    #[test]
+    fn a_big_input_goes_as_frames_the_host_takes() {
+        let paste: Vec<u8> = (0..3 * 1024 * 1024 + 7).map(|i| (i % 251) as u8).collect();
+        let mut wire = Vec::new();
+        write_input(&mut wire, &paste).unwrap();
+        let mut read = std::io::Cursor::new(wire);
+        let mut back = Vec::new();
+        let mut frames = 0;
+        while (read.position() as usize) < read.get_ref().len() {
+            match khor_node::host::read_frame::<ClientOp>(&mut read).unwrap() {
+                ClientOp::Input(piece) => {
+                    assert!(piece.len() <= INPUT_FRAME, "a frame of {} bytes", piece.len());
+                    back.extend_from_slice(&piece);
+                }
+                ClientOp::Resize { .. } => panic!("only input was written"),
+            }
+            frames += 1;
+        }
+        assert_eq!(frames, 49);
+        assert!(back == paste, "the frames join back into the paste");
+    }
+
     /// The mechanism the live crash cascaded through: a thread panicking
     /// while holding a lock poisons it, and an `unwrap` on the next lock
     /// re-panics. `plock` must answer with the data instead — the flag
@@ -823,16 +901,17 @@ mod tests {
     /// face's 50ms beat costs a lock and nothing else.
     #[test]
     fn attach_then_stream_is_seamless_and_idle_is_empty() {
+        let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
         let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         push_feed(&feed, &fed, b"hello ");
         let (first, at) = take_all(&feed, &fed);
         push_feed(&feed, &fed, b"world");
-        let (rest, end, reset) = take_since(&feed, &fed, at);
+        let (rest, end, reset) = take_since(&parser, &feed, &fed, at);
         assert!(!reset, "a cursor still on the feed never resets");
         assert_eq!([first, rest].concat(), b"hello world");
         assert_eq!(end, 11);
-        let (idle, still, reset) = take_since(&feed, &fed, end);
+        let (idle, still, reset) = take_since(&parser, &feed, &fed, end);
         assert!(
             idle.is_empty() && still == end && !reset,
             "idle is empty at the same cursor"
@@ -840,31 +919,41 @@ mod tests {
     }
 
     /// Past the cap the head is trimmed, and a cursor that fell off it
-    /// — or one from a previous life, bigger than anything this feed
-    /// ever counted — answers reset-with-everything, never a splice
-    /// with a hole mid-escape.
+    /// answers reset-with-the-screen (T-12: a few KB to draw, not the
+    /// 512 KiB a face that is already behind cannot read in time), never
+    /// a splice with a hole mid-escape; a cursor from a previous life,
+    /// bigger than anything this feed ever counted, is a restart too.
     #[test]
-    fn a_cursor_off_the_trimmed_head_gets_a_reset_not_a_splice() {
+    fn a_cursor_off_the_trimmed_head_gets_the_screen_not_a_splice() {
+        let acs = Mutex::new(crate::acs::Acs::default());
+        let parser = Mutex::new(vt100::Parser::new(24, 80, 0));
         let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
-        let chunk = vec![7u8; 200 * 1024];
-        push_feed(&feed, &fed, &chunk);
-        let (_, held) = take_all(&feed, &fed);
-        push_feed(&feed, &fed, &chunk);
-        push_feed(&feed, &fed, &chunk);
+        // Three of these are 1.2 caps: the feed trims past its head.
+        let chunk = b"line of output\r\n".repeat(FEED_CAP * 2 / 5 / 16);
+        paint(&acs, &parser, &feed, &fed, &chunk);
+        paint(&acs, &parser, &feed, &fed, &chunk);
+        paint(&acs, &parser, &feed, &fed, b"\x1b[?1hthe last line");
+        paint(&acs, &parser, &feed, &fed, &chunk);
+        paint(&acs, &parser, &feed, &fed, b"the very last");
         assert_eq!(plock(&feed).bytes.len(), FEED_CAP, "the feed is capped");
-        let (bytes, end, reset) = take_since(&feed, &fed, 0);
+        let (bytes, end, reset) = take_since(&parser, &feed, &fed, 0);
         assert!(reset, "cursor 0 fell off the trimmed head");
+        assert!(bytes.len() < 8 * 1024, "the screen, not the feed: {} bytes", bytes.len());
+        assert!(bytes.starts_with(b"\x1b[?1h"), "in the modes the stream had reached");
+        let mut face = vt100::Parser::new(24, 80, 0);
+        face.process(&bytes);
         assert_eq!(
-            bytes.len(),
-            FEED_CAP,
-            "…and the answer is everything still held"
+            face.screen().contents(),
+            plock(&parser).screen().contents(),
+            "…and drawn, it is the screen the program left"
         );
-        assert_eq!(end, 600 * 1024);
-        let (tail, _, reset) = take_since(&feed, &fed, held);
+        assert_eq!(face.screen().cursor_position(), plock(&parser).screen().cursor_position());
+        assert_eq!(end, fed.load(Ordering::Relaxed), "the face tails from the end");
+        let (tail, _, reset) = take_since(&parser, &feed, &fed, end - 13);
         assert!(!reset, "a cursor still on the feed streams on");
-        assert_eq!(tail.len(), 400 * 1024);
-        let (_, _, reset) = take_since(&feed, &fed, end + 1);
+        assert_eq!(tail, b"the very last");
+        let (_, _, reset) = take_since(&parser, &feed, &fed, end + 1);
         assert!(
             reset,
             "another life's cursor is a restart, not a backwards stream"
@@ -878,18 +967,19 @@ mod tests {
     /// whole ring twice) — and the new life then streams on as usual.
     #[test]
     fn a_rejoined_feed_resets_every_face_to_the_new_life() {
+        let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
         let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         push_feed(&feed, &fed, b"\x1b[?1049hold screen");
         let (_, caught_up) = take_all(&feed, &fed);
         restart_feed(&feed, &fed);
-        let (bytes, end, reset) = take_since(&feed, &fed, caught_up);
+        let (bytes, end, reset) = take_since(&parser, &feed, &fed, caught_up);
         assert!(reset, "a face that had read everything is told to start over");
         assert!(bytes.is_empty(), "with nothing of the old life: {bytes:?}");
         push_feed(&feed, &fed, b"ring again");
-        let (bytes, _, reset) = take_since(&feed, &fed, caught_up);
+        let (bytes, _, reset) = take_since(&parser, &feed, &fed, caught_up);
         assert!(reset && bytes == b"ring again", "a face still in the old life gets the new one whole");
-        let (bytes, _, reset) = take_since(&feed, &fed, end);
+        let (bytes, _, reset) = take_since(&parser, &feed, &fed, end);
         assert!(!reset && bytes == b"ring again", "a face already in the new life streams on");
         let (all, _) = take_all(&feed, &fed);
         assert_eq!(all, b"ring again", "and the old modes are not the new life's");
@@ -897,10 +987,12 @@ mod tests {
 
     /// **A replay of a trimmed feed opens in the modes its head set** —
     /// the same rule as the host's ring, for a face that attaches (or
-    /// starts over) after the first [`FEED_CAP`] of a tmux client. Both
-    /// doors that hand out the whole feed: attach, and a reset.
+    /// starts over) after the first [`FEED_CAP`] of a tmux client: attach
+    /// hands out the whole feed behind them, and a reset the screen,
+    /// in the same modes.
     #[test]
     fn a_trimmed_feed_replays_into_the_modes_its_head_set() {
+        let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
         let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
         push_feed(&feed, &fed, b"\x1b[?1049h\x1b[?1h\x1b=");
@@ -909,7 +1001,8 @@ mod tests {
             .chain(b"\n")
             .copied()
             .collect::<Vec<u8>>();
-        for _ in 0..600 {
+        // A little past the cap, in lines of 1 KiB.
+        for _ in 0..FEED_CAP / 1024 + 88 {
             push_feed(&feed, &fed, &line);
         }
         let (all, end) = take_all(&feed, &fed);
@@ -919,9 +1012,12 @@ mod tests {
             String::from_utf8_lossy(&all[..all.len().min(24)])
         );
         assert_eq!(all.len(), FEED_CAP + 15, "the modes, then every byte held");
-        let (again, _, reset) = take_since(&feed, &fed, 0);
-        assert!(reset && again == all, "a reset hands out the same replay");
-        let (tail, _, reset) = take_since(&feed, &fed, end - 4);
+        let (again, _, reset) = take_since(&parser, &feed, &fed, 0);
+        assert!(
+            reset && again.starts_with(b"\x1b[?1049h\x1b[?1h\x1b="),
+            "a reset opens in the same modes"
+        );
+        let (tail, _, reset) = take_since(&parser, &feed, &fed, end - 4);
         assert!(
             !reset && tail.len() == 4,
             "a tail is the stream alone, no modes spliced in"
@@ -1109,5 +1205,94 @@ mod quoting_tests {
             String::from_utf8_lossy(&out.stdout),
             "[/tmp/a b.txt][/tmp/c.txt]"
         );
+    }
+}
+
+#[cfg(test)]
+mod burst_tests {
+    use super::*;
+
+    /// **A burst a face cannot keep up with** (terminal audit T-12): 4 MB
+    /// of `yes` through the reader's own path while a face reads the
+    /// stream and spends time on what it got, at the rate xterm parses
+    /// (`BURST_FACE_MBPS`, default 20). Every time the
+    /// face falls past `FEED_CAP` it is handed a reset; counted here are
+    /// the resets, the bytes the face had to parse, and how long after
+    /// the burst ended the face had the last screen.
+    #[test]
+    fn a_face_that_falls_behind_a_burst_starts_over_from_the_screen() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let term = Arc::new(Term {
+            conn: Mutex::new(conn),
+            parser: Mutex::new(vt100::Parser::new(24, 80, 0)),
+            acs: Mutex::new(crate::acs::Acs::default()),
+            gone: AtomicBool::new(false),
+            rejoining: AtomicBool::new(false),
+            arrived: tokio::sync::Notify::new(),
+            holds: AtomicUsize::new(1),
+            left: AtomicBool::new(false),
+            feed: Mutex::new(Feed::default()),
+            fed: AtomicU64::new(0),
+        });
+        let id = format!("tui/burst-{}", std::process::id());
+        plock(terms()).insert(id.clone(), term.clone());
+
+        let producer = term.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let finished = done.clone();
+        let burst = std::thread::spawn(move || {
+            let chunk = b"y\r\n".repeat(8192 / 3);
+            let mut sent = 0;
+            while sent < 4 << 20 {
+                paint(&producer.acs, &producer.parser, &producer.feed, &producer.fed, &chunk);
+                sent += chunk.len();
+            }
+            paint(&producer.acs, &producer.parser, &producer.feed, &producer.fed, b"\x1b[1mDONE\x1b[m\r\n$ ");
+            finished.store(true, Ordering::SeqCst);
+            std::time::Instant::now()
+        });
+
+        let face_rate = std::env::var("BURST_FACE_MBPS")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(20.0)
+            * 1e6;
+        let (mut since, mut resets, mut parsed) = (0u64, 0u32, 0usize);
+        let mut screen = vt100::Parser::new(24, 80, 0);
+        loop {
+            let chunk = term_stream(&id, since).unwrap();
+            let bytes = B64.decode(chunk.bytes.as_bytes()).unwrap();
+            if chunk.reset {
+                resets += 1;
+                screen = vt100::Parser::new(24, 80, 0);
+            }
+            screen.process(&bytes);
+            parsed += bytes.len();
+            since = chunk.seq;
+            // The face's own time on what it got: xterm at `BURST_FACE_MBPS`
+            // (default 20, about the audit's Mac; a phone is slower).
+            std::thread::sleep(std::time::Duration::from_secs_f64(bytes.len() as f64 / face_rate));
+            if done.load(Ordering::SeqCst) && since == term.fed.load(Ordering::SeqCst) {
+                break;
+            }
+            if bytes.is_empty() {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+        let caught_up = std::time::Instant::now();
+        let ended = burst.join().unwrap();
+        plock(terms()).remove(&id);
+        eprintln!(
+            "[burst] 4 MiB of yes: {resets} resets, the face parsed {:.1} MiB, last screen {:?} after the burst ended",
+            parsed as f64 / (1 << 20) as f64,
+            caught_up.duration_since(ended)
+        );
+        assert_eq!(
+            screen.screen().contents(),
+            plock(&term.parser).screen().contents(),
+            "the face ends on the screen the program drew"
+        );
+        assert!(screen.screen().contents().contains("DONE"));
     }
 }

@@ -565,6 +565,25 @@ pub enum Request {
     ///
     /// A new variant for [`Request::SatLs`]'s reason.
     SatCheckout { sat: String, path: String },
+    /// **A round's opening question: what differs?** (round NET-3.) Each
+    /// document the asker syncs, with a digest of its version
+    /// (`khor_sync::wire::version_canonical`, blake3, 16 bytes); each
+    /// reading it keeps of the answering machine (`sessions`, `vitals`,
+    /// `watched`, `days`, `quotas`, `usage`, `sat/<id>`), with a digest
+    /// of the answer it last got (empty: none). The day reading is asked
+    /// as `days@<minute>`, the last minute of the asker's copy, so the
+    /// answer can be the minutes since ([`Response::DaySince`]).
+    /// Answered as [`Response::Versions`].
+    ///
+    /// **A new variant, the request changing words** (this file's first
+    /// rule): a khor that predates it refuses the frame, and the asker
+    /// then syncs the way it always did — every document in two
+    /// exchanges, every reading asked — so an older peer shows exactly
+    /// what it showed before, at the old price.
+    Versions {
+        docs: Vec<(String, serde_bytes::ByteBuf)>,
+        readings: Vec<(String, serde_bytes::ByteBuf)>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -819,6 +838,34 @@ pub enum Response {
     Checkout {
         yes: bool,
     },
+    /// [`Request::Versions`]'s answer: only what differs.
+    ///
+    /// - `docs`: each asked document whose version is not the asker's,
+    ///   with this machine's version (`khor_sync::wire::version_b64`) —
+    ///   the asker syncs those alone, each in one exchange
+    ///   (`khor_sync::wire::Peer::knowing`). A document at the same
+    ///   version is not named; a name this khor does not know is not
+    ///   named either (it would refuse the sync).
+    /// - `readings`: each asked reading whose answer is not the one the
+    ///   asker holds, as that whole answer's frame (`proto::encode` of
+    ///   the [`Response`] the reading's own request gets) — or, for a
+    ///   `days@<minute>` kind, a [`Response::DaySince`] when the minute
+    ///   is inside the record; empty bytes for a reading this machine
+    ///   refused. A reading not named is the one the asker already holds.
+    Versions {
+        docs: Vec<(String, String)>,
+        readings: Vec<(String, serde_bytes::ByteBuf)>,
+    },
+    /// A day reading as the minutes since the asker's copy ended
+    /// (`crate::day::DaySince`), in [`Response::Versions`]'s `readings`
+    /// for a `days@<minute>` kind; `full` is the digest the whole
+    /// [`Response::Days`] frame would have had, which the asker checks
+    /// its rebuilt copy against. Only ever inside a `Versions` answer, so
+    /// no older khor meets it.
+    DaySince {
+        since: crate::day::DaySince,
+        full: serde_bytes::ByteBuf,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -908,6 +955,46 @@ impl Request {
                 | Request::SatSearch { .. }
                 | Request::Checkout { .. }
                 | Request::SatCheckout { .. }
+                | Request::Versions { .. }
+        )
+    }
+
+    /// **Whether this may ride 0-RTT** (round NET-3): sent inside the
+    /// handshake of a redial and answered before that handshake is done.
+    /// Early data can be replayed by anyone who captured it (RFC 9001
+    /// §9.2, RFC 8446 §8), so only what changes nothing over there and
+    /// costs little to answer twice: a reading of memory, one directory,
+    /// one file slice, one `git` or `stat`. Not a sync (it merges), not a
+    /// payload slice (it marks the offer started), not a reach (it hands
+    /// out a session's cookie), not a search (a tree walk is a replay
+    /// worth making). Everything else waits for the handshake on both
+    /// ends: the asker sends it after, and an answering machine that sees
+    /// one arrive early holds it until the handshake completes.
+    pub fn rides_early(&self) -> bool {
+        matches!(
+            self,
+            Request::Sessions
+                | Request::Usage
+                | Request::Vitals
+                | Request::Ls { .. }
+                | Request::FetchPath { .. }
+                | Request::SatVitals { .. }
+                | Request::SatLs { .. }
+                | Request::Watched
+                | Request::SatFetchPath { .. }
+                | Request::SatTouched { .. }
+                | Request::SatGitStatus { .. }
+                | Request::SatGitDiff { .. }
+                | Request::Days
+                | Request::Places
+                | Request::Quotas
+                | Request::Load { .. }
+                | Request::Touched { .. }
+                | Request::GitStatus { .. }
+                | Request::GitDiff { .. }
+                | Request::Checkout { .. }
+                | Request::SatCheckout { .. }
+                | Request::Versions { .. }
         )
     }
 

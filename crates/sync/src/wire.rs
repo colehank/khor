@@ -34,6 +34,28 @@ pub fn version_b64<D: Doc>(doc: &D) -> String {
     B64.encode(doc.version().encode())
 }
 
+/// **The version, spelled the same on every machine** — what a digest of
+/// it is taken over (round NET-3: two machines whose documents are at
+/// the same version skip the document). loro's own encoding walks a hash
+/// map, whose order follows each map's own insertion history, so two
+/// equal versions can encode differently; this is every (peer, counter)
+/// in peer order, empty peers left out.
+pub fn version_canonical<D: Doc>(doc: &D) -> Vec<u8> {
+    let vv = doc.version();
+    let mut entries: Vec<(u64, i32)> = vv
+        .iter()
+        .filter(|(_, c)| **c > 0)
+        .map(|(p, c)| (*p, *c))
+        .collect();
+    entries.sort_unstable();
+    let mut out = Vec::with_capacity(entries.len() * 12);
+    for (peer, counter) in entries {
+        out.extend_from_slice(&peer.to_le_bytes());
+        out.extend_from_slice(&counter.to_le_bytes());
+    }
+    out
+}
+
 /// What I have beyond the far side's reported version. `theirs` empty =
 /// from the beginning — a freshly paired device's situation, and the trip
 /// most likely to hit the cap.
@@ -117,6 +139,13 @@ pub struct Peer {
 impl Peer {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A peer whose version was just told (round NET-3: the versions
+    /// exchange that opens a round hands it over), so the first round
+    /// already pushes — one exchange instead of a pull-only one first.
+    pub fn knowing(their: String) -> Self {
+        Self { their }
     }
 
     /// Where the far side is (base64). Empty = never met.

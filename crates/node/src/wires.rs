@@ -216,6 +216,16 @@ struct Slot {
     rtt: Duration,
     /// The last thing that went wrong with this key, in words, and when.
     last_failure: Option<(String, Instant)>,
+    /// UDP bytes sent and received on the wires this slot held before
+    /// the one it holds now (round NET-3: what a sync round costs).
+    bytes_past: (u64, u64),
+}
+
+/// UDP bytes a wire has sent and received, as QUIC counts them —
+/// handshake, acks and keepalives included, so what the road carried.
+fn bytes_of(conn: &Connection) -> (u64, u64) {
+    let s = conn.stats();
+    (s.udp_tx.bytes, s.udp_rx.bytes)
 }
 
 /// Every wire this node holds, and the counters behind `khor doctor`'s
@@ -282,6 +292,8 @@ impl Counts {
             network_changes: self.network_changes.load(Relaxed),
             ops_late: self.ops_late.load(Relaxed),
             by_peer: Vec::new(),
+            sent_bytes: 0,
+            received_bytes: 0,
         }
     }
 
@@ -381,6 +393,9 @@ impl Wires {
         if let Some(old) = slot.conn.take()
             && old.stable_id() != conn.stable_id()
         {
+            let (tx, rx) = bytes_of(&old);
+            slot.bytes_past.0 += tx;
+            slot.bytes_past.1 += rx;
             old.close(0u32.into(), Retired::NewEars.reason());
         }
         slot.rx = heard_count(&conn);
@@ -530,6 +545,21 @@ impl Wires {
 
     /// Lets go of every wire: the endpoint under them is being replaced,
     /// or the app is going to the background.
+    /// Retires this machine's wires, both protocols, on request — the
+    /// next ask dials afresh. What `ipc::Op::LetGo` does: a diagnostic,
+    /// and the measurement of what a redial costs (round NET-3).
+    pub(crate) fn let_go(&self, id: &str) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        for proto in [Proto::Main, Proto::Tunnel] {
+            if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
+                && slot.conn.is_some()
+            {
+                drop_wire(slot, Retired::NewEars);
+                self.counts.retired(Retired::NewEars);
+            }
+        }
+    }
+
     pub(crate) fn clear(&self, why: Retired) {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         for slot in slots.values_mut() {
@@ -735,6 +765,9 @@ impl Wires {
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let mut by: std::collections::BTreeMap<String, (u64, u64)> = Default::default();
         for ((id, _), slot) in slots.iter() {
+            let (tx, rx) = slot.conn.as_ref().map(bytes_of).unwrap_or_default();
+            c.sent_bytes += slot.bytes_past.0 + tx;
+            c.received_bytes += slot.bytes_past.1 + rx;
             if slot.failed_total + slot.unanswered_total > 0 {
                 let e = by.entry(id.clone()).or_default();
                 e.0 += slot.failed_total;
@@ -785,6 +818,9 @@ impl Wires {
 
 fn drop_wire(slot: &mut Slot, why: Retired) {
     if let Some(conn) = slot.conn.take() {
+        let (tx, rx) = bytes_of(&conn);
+        slot.bytes_past.0 += tx;
+        slot.bytes_past.1 += rx;
         conn.close(0u32.into(), why.reason());
     }
     slot.word = None;
