@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { doctorFix, fetchDoctor, type DoctorRow } from "@/api";
+import { Waiting } from "@/components/RegionState";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { cli } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -84,6 +85,9 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
   /** When the checks on screen were answered — R0's second line, the
       page's 更新于 the way a machine's reading has one. */
   const [answeredAt, setAnsweredAt] = useState<number | null>(null);
+  /** When the first asking began: until it answers the page is loading,
+      and says so the way every page does (`Waiting`). */
+  const [since] = useState(() => Date.now());
 
   const ask = useCallback(() => {
     setAsking(true);
@@ -171,6 +175,11 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
           onPress={ask}
           mark={{ "data-doctor-again": "" }}
         />
+        {/* **Loading until the first answer** (the owner's rule, 2026-10-04:
+            before anything is known the state is loading — the skeleton,
+            the spinner after a second). A check takes seconds (the relay's
+            three), and the page sat as an empty verdict over nothing. */}
+        {rows === null && error === null && <Waiting since={since} />}
         {/* One row per problem: its name and its word on the title line,
             the machine's own sentence under it, and 修复 where khor can
             mend it — on the spot, so no ellipsis. A check khor cannot
