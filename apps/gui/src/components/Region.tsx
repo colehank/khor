@@ -38,6 +38,7 @@ import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@
 import { IconClose } from "@/components/icons";
 import { WINDOW_DRAG } from "@/components/shell";
 import { gui } from "@/gen/catalog";
+import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 
 /**
@@ -353,6 +354,10 @@ export function Region({
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
         data-region-head
+        // The page's head is a band: the board's scroller passes under it
+        // on glass (`lib/scroll-edge`, round HEADS).
+        ref={band}
+        data-band
         // R0 is one of the window's three handles, marked by the shell
         // (`shell.ts`): its blank moves the window, and what is pressable
         // inside it keeps its press by tauri's own rule.

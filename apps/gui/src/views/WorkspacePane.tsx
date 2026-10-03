@@ -62,6 +62,7 @@ import {
   sessionOptions,
   storedWords,
 } from "@/lib/session-filter";
+import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 import { basename } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -1532,7 +1533,12 @@ export function WorkspacePane({
               // In to the page's left line, where the tree's first mark
               // stands (F2.7; W08) — the field's edge is the line.
               data-search-glass
-              className="flex min-h-pane-head flex-none items-center gap-in border-b px-page"
+              // **A band** (`lib/scroll-edge`, round HEADS): the tree passes
+              // under it on glass, and its hairline is the band's — drawn
+              // only while a row is under it.
+              ref={band}
+              data-band
+              className="flex min-h-pane-head flex-none items-center gap-in px-page"
             >
               <div data-search-wrap className="relative min-w-0 flex-1">
                 <IconSearch className="pointer-events-none absolute top-1/2 left-2 z-10 -translate-y-1/2 text-tertiary" />
@@ -1829,6 +1835,7 @@ export function WorkspacePane({
               // has to learn twice.
               <>
                 <PaneBar
+                  band
                   searchLabel={gui.search_sessions}
                   query={query}
                   onQuery={setQuery}

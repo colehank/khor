@@ -84,6 +84,7 @@ import {
 } from "@/lib/session-filter";
 import { draftCount, watchDrafts } from "@/lib/drafts";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
+import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
@@ -2334,8 +2335,20 @@ export default function App() {
   // shell once (`components/shell.ts`, 第十五轮 第 3 条) — on the row's
   // container, so whatever a landing seats in it (its search box, its
   // 「+」) keeps its press and the blank around them moves the window.
+  //
+  // **Narrow, it is the screen's band** (`lib/scroll-edge`, round HEADS):
+  // the screen under it scrolls beneath it on glass, which reaches up
+  // under the status bar. Wide, it is the second half of the left
+  // column's band (`[data-wide-band]`).
   const sideHead = (
-    <div data-side-l0 {...WINDOW_DRAG} className="flex min-w-0 flex-none flex-col">
+    <div
+      data-side-l0
+      {...WINDOW_DRAG}
+      ref={narrow ? band : undefined}
+      data-band={narrow || undefined}
+      data-band-reach={narrow || undefined}
+      className="flex min-w-0 flex-none flex-col"
+    >
       <SideHead
         narrow={narrow}
         bare={false}
@@ -2559,23 +2572,28 @@ export default function App() {
             className="flex flex-none flex-col border-r bg-side"
             style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
           >
-            <div
-              data-wide-top
-              {...WINDOW_DRAG}
-              // **Right-aligned with the title row under it** (the owner,
-              // 2026-10-02: 「这要右对齐」): the window buttons' room at the
-              // left, then the strip pushed to the right edge — 更多 over the
-              // search circle, the capsule's end over 筛选 / ＋'s — on the
-              // same inset (`pe-row`, the title row's) and the same gap.
-              className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
-            >
-              <span className="flex-1" />
-              {/* Folded, the strip stands in the content's lead
-                  (`foldedLead`) and only there: a second copy in the
-                  hidden column was a second set of the same buttons. */}
-              {!folded && strip}
+            {/* **The window's top row and the title row are one band**
+                over the column's rows (`lib/scroll-edge`, round HEADS):
+                the list passes under both on one glass. */}
+            <div ref={band} data-band data-wide-band className="flex flex-none flex-col">
+              <div
+                data-wide-top
+                {...WINDOW_DRAG}
+                // **Right-aligned with the title row under it** (the owner,
+                // 2026-10-02: 「这要右对齐」): the window buttons' room at the
+                // left, then the strip pushed to the right edge — 更多 over the
+                // search circle, the capsule's end over 筛选 / ＋'s — on the
+                // same inset (`pe-row`, the title row's) and the same gap.
+                className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
+              >
+                <span className="flex-1" />
+                {/* Folded, the strip stands in the content's lead
+                    (`foldedLead`) and only there: a second copy in the
+                    hidden column was a second set of the same buttons. */}
+                {!folded && strip}
+              </div>
+              {sideHead}
             </div>
-            {sideHead}
             <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
               {morePage !== null && moreList}
             </div>
