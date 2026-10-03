@@ -3861,6 +3861,8 @@ chat-put-failed = "没能放到机器上"
 chat-file-open = "在文件视图中打开"
 chat-file-reveal = "在访达中显示"
 chat-file-share = "分享"
+# 智能体写了或改了一个文件,卡片上说的那个动作。
+chat-file-wrote = "已写入"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

@@ -50,7 +50,7 @@
 //   cost more than the walls of source did, the way back is this one
 //   element — the fold and the frames are unchanged, which is why the
 //   change is reversible and this note can be short.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   launchOn,
@@ -1747,9 +1747,17 @@ export function ChatView({
               const more =
                 item.diff !== null || item.out !== null || item.raw !== null;
               const shown = open.has(item.id);
+              // **A file the agent wrote is a card under the line** (round
+              // CHAT item 4), once the write is done: the file as it is
+              // now, one press from its preview. The line keeps the
+              // before and after it carried.
+              const wrote =
+                item.kind === "edit" && item.status === "completed"
+                  ? [item.diff?.path, ...item.where].find((p): p is string => !!p && p.startsWith("/")) ?? null
+                  : null;
               return (
+                <Fragment key={i}>
                 <div
-                  key={i}
                   data-chat-tool
                   data-tool-status={item.status}
                   data-tool-kind={item.kind}
@@ -1830,6 +1838,17 @@ export function ChatView({
                     </div>
                   )}
                 </div>
+                {wrote !== null && (
+                  <FileCard
+                    machine={home ?? ""}
+                    shown={home ?? ""}
+                    path={wrote}
+                    note={gui.chat_file_wrote}
+                    stamp={item.id}
+                    onOpen={() => openFile(wrote)}
+                  />
+                )}
+                </Fragment>
               );
             })()
           ) : item.who === "ask" ? (
