@@ -17,9 +17,7 @@ import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
-import { useCoarse } from "@/hooks/use-coarse";
 import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, Tip, useGrowingText } from "@/views/Composer";
-import { KeyboardSwitch } from "@/views/TermKeys";
 import { imeKey } from "@/lib/ime";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
@@ -65,7 +63,6 @@ export function MachineChat({ id }: { id: string }) {
   const box = useRef<HTMLTextAreaElement | null>(null);
   // As tall as its lines, up to the capsule's ceiling (V05).
   useGrowingText(box, draft);
-  const coarse = useCoarse();
 
   const refresh = useCallback(() => {
     machineLog(id).then(
@@ -268,11 +265,9 @@ export function MachineChat({ id }: { id: string }) {
       </div>
       </div>
       </BarSeat>
-      {coarse && (
-        <BarSeat at="trail">
-          <KeyboardSwitch field={box} />
-        </BarSeat>
-      )}
+      {/* ⚠️ 墓碑 (round UX-3): the keyboard switch in the bar. The box raises
+          the keyboard and a drag down over the content lowers it
+          (`SessionScreen`); a third way was a second door. */}
     </div>
   );
 }

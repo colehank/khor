@@ -83,7 +83,6 @@ import { FileCard, FilePreview, MachineFilePick, PendingChips, usePendingFiles }
 import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
 import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
-import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
@@ -2222,13 +2221,9 @@ export function ChatView({
       </div>
       )}
       </BarSeat>
-      {/* The keyboard's switch, under a finger, where there is a box to
-          type in (`TermKeys`): row 1's right end of the session bar. */}
-      {coarse && !still && !gone && (
-        <BarSeat at="trail">
-          <KeyboardSwitch field={box} />
-        </BarSeat>
-      )}
+      {/* ⚠️ 墓碑 (round UX-3): the keyboard switch in the bar. The box raises
+          the keyboard and a drag down over the content lowers it
+          (`SessionScreen`); a third way was a second door. */}
       <FilePreview
         machine={home ?? ""}
         shown={home ?? ""}

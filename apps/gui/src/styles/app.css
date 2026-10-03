@@ -2143,3 +2143,25 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
   scroll-padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
 }
+
+/* **The deck steps aside while the keyboard is up** (round UX-3): the row
+   under it — the terminal's keys, a conversation's box, the address being
+   edited — rides the keyboard alone, and comes back with it down. */
+:root[data-keyboard] [data-session-deck] {
+  display: none;
+}
+
+/* **The pill's own controls are not glass on glass** (round UX-3): what a
+   view seats at the pill's ends (the reconnect, a page's reload and its
+   ← →) is drawn as the pill's items, on the pill's own glass. */
+[data-deck-pill] [data-glass-circle]::before {
+  content: none;
+}
+[data-deck-pill] [data-glass-circle] {
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  width: var(--glass-item-h, 2rem);
+  height: var(--glass-item-h, 2rem);
+}

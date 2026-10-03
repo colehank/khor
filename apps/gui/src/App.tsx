@@ -2070,8 +2070,8 @@ export default function App() {
       }}
       // Once the strip scrolls, its count opens the switcher — the
       // narrow shell's own screen, with its 「‹」 back to this one.
-      onSwitch={() => setSwitchingTabs(true)}
-      switching={switchingTabs}
+      onNew={() => openNewSession()}
+      newLabel={gui.new_session}
       onBack={() => setScreen("list")}
       caption={stale ? gui.backend_unreachable : undefined}
     >
