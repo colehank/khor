@@ -66,7 +66,9 @@ function wear(t: TypeSize) {
   const scale = t.followSystem ? systemScale() : UI_STEPS[t.uiStep] / UI_BASE;
   root.setProperty("--ui-scale", String(scale));
   root.setProperty("--text-term", `${t.term}px`);
-  // The terminal's leading keeps the token's ratio (20 over 14).
+  // The leading keeps the token's ratio (20 over 14) for the pane's own
+  // text and 外观's sample line; xterm's rows take no leading
+  // (`TerminalPane`'s `fontOf`).
   root.setProperty("--text-term--line-height", `${Math.round(t.term * (20 / 14))}px`);
 }
 
