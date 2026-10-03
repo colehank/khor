@@ -70,6 +70,7 @@ import { usePinch } from "@/hooks/use-pinch";
 import { peekOf, type Peek } from "@/lib/term-peek";
 import { predictEcho, type Predict } from "@/lib/term-predict";
 import { termPredict } from "@/lib/term-predict-setting";
+import { rememberTermSize } from "@/lib/term-size-hint";
 import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
@@ -1817,7 +1818,10 @@ export function TerminalPane({
     const composeOff = () => (composingNow = false);
     term.textarea?.addEventListener("compositionstart", composeOn);
     term.textarea?.addEventListener("compositionend", composeOff);
-    const predictResized = term.onResize(() => predict.clear());
+    const predictResized = term.onResize(({ cols, rows }) => {
+      predict.clear();
+      rememberTermSize(cols, rows);
+    });
     // Output painted a whole frame at a time (item 18 B).
     const frames = framesWhole(term, predict.output);
     let seq = 0;

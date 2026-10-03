@@ -51,6 +51,7 @@ import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
+import { termSizeHint } from "./lib/term-size-hint";
 import type { HistoryRow } from "./gen/bindings/HistoryRow";
 import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { RecentRow } from "./gen/bindings/RecentRow";
@@ -861,7 +862,9 @@ export const openSession = (
     after the shell; `cwd` empty is the home, and `~` is expanded on
     the machine it names. Answers the new row's id. */
 export const openTermOn = (machine: string, title = "", cwd = "") =>
-  call<string>("open_on", { machine, title, cwd });
+  // At this device's terminal size, so the first prompt is written for
+  // the width it will be shown at (`lib/term-size-hint`).
+  call<string>("open_on", { machine, title, cwd, ...termSizeHint() });
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the

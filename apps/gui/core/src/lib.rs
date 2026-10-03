@@ -2156,12 +2156,24 @@ pub async fn accept_transfer(root: &Path, msg: &str) -> Result<Vec<String>, Stri
 /// one (`Request::Open`'s handler), the same rule `start_session` keeps
 /// for agents: a path is expanded on the disk it names. An empty
 /// `machine` is this one, `open_session`'s reading of the same blank.
+///
+/// `size` is the terminal the face will show it in, when it knows: the
+/// shell's first prompt is written for that width before any face has
+/// attached, and zsh's prompt mark (`PROMPT_SP`: the reverse-video `%`
+/// plus a line of spaces, erased by the prompt only when it fits) wraps
+/// into a line of its own in a narrower face — the `%` above a fresh
+/// shell's first prompt on the phone. `None` is the 80×24 of every
+/// terminal that has not been told.
 pub async fn open_term_on(
     root: &Path,
     machine: &str,
     title: &str,
     cwd: &str,
+    size: Option<(u16, u16)>,
 ) -> Result<String, String> {
+    let size = size
+        .map(|(c, r)| (c.clamp(20, 500), r.clamp(5, 200)))
+        .unwrap_or((80, 24));
     let n = open(root)?;
     if machine.is_empty() || machine == n.name() {
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
@@ -2176,7 +2188,7 @@ pub async fn open_term_on(
         };
         let cwd = cwd.trim();
         if cwd.is_empty() {
-            let id = n.open_persistent(khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
+            let id = n.open_persistent(khor_node::kind::SHELL, &title, &[shell], size)?;
             return Ok(id.0);
         }
         let home = std::env::home_dir();
@@ -2190,7 +2202,7 @@ pub async fn open_term_on(
         if !path.is_dir() {
             return Err(khor_catalog::msg::no_such_dir(path.display().to_string()));
         }
-        let id = n.open_persistent_at(&path, khor_node::kind::SHELL, &title, &[shell], (80, 24))?;
+        let id = n.open_persistent_at(&path, khor_node::kind::SHELL, &title, &[shell], size)?;
         return Ok(id.0);
     }
     let title = if title.trim().is_empty() {
@@ -2205,7 +2217,7 @@ pub async fn open_term_on(
             title,
             cwd.trim(),
             &[],
-            (80, 24),
+            size,
         )
         .await?;
     Ok(id.0)
