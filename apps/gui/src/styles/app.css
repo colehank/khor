@@ -94,8 +94,13 @@ svg [data-body] {
    redesign, 2026-10-02): its foot keeps the capsule's room, so the last
    row can be brought up clear of the glass. A page's own scroller that
    the navigation floats over says so with `data-nav-clear`. */
-[data-nav-host] :is([data-pane-body], [data-nav-clear], [data-machine-files] [data-files-list]) {
+[data-nav-shown] :is([data-pane-body], [data-nav-clear], [data-machine-files] [data-files-list]) {
   padding-bottom: var(--nav-room);
+}
+/* …and a page a landing opens has no bar over it (`navShown`, 2026-10-03):
+   its scroller keeps only the home indicator's room and a breath. */
+[data-nav-host]:not([data-nav-shown]) :is([data-pane-body], [data-nav-clear], [data-machine-files] [data-files-list]) {
+  padding-bottom: calc(var(--safe-bottom) + var(--gap-base));
 }
 
 /* **A kind mark painted on a face is one density** (类型标记「浮现」,

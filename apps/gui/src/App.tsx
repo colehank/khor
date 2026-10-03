@@ -2431,7 +2431,22 @@ export default function App() {
       on top has none (a session, full screen) — elsewhere the one on
       screen is already the list's, and stays put. Never under the
       switcher, whose page is a session. */
-  const underNav = !switchingTabs && fullScreen;
+  const underNav = !switchingTabs;
+  /** **The landings' bar belongs to the landings** (2026-10-03, the owner
+      on a phone: the capsule sat over a file's text). It floats over a
+      landing's own list — 机器, 会话, 额度, 更多's list and the landings
+      inside 更多 — and over nothing reached from one: a machine, a
+      workspace and the file open in it, an 额度 account, a 「…」 page, a
+      session, a browsing page. Those are a step in, with 「‹」 (and the
+      edge) as their way out, the way an iPhone app pushes a page over
+      its tab bar. The bar comes back under the finger as the page is
+      swiped away: the page under is the list, and it draws its own
+      (`underNav`). */
+  const onLanding =
+    morePage !== null || quotas || browses
+      ? screen !== "detail"
+      : !(switchingTabs && openTabs.length > 0) && !(screen === "detail" && detail);
+  const navShown = !switchingTabs && onLanding;
 
   return (
     <SettingsProvider value={settings.rows}>
@@ -2455,7 +2470,7 @@ export default function App() {
         // status bar sits on the first row's colour, both themes. Zero
         // high wherever there is no status bar (`--safe-top` is 0 off a
         // phone).
-        <div data-nav-host={!fullScreen || undefined} className={cn("relative flex h-full flex-col", !fullScreen && "bg-side pt-safe-top")}>
+        <div data-nav-host={!fullScreen || undefined} data-nav-shown={navShown || undefined} className={cn("relative flex h-full flex-col", !fullScreen && "bg-side pt-safe-top")}>
           {under && (
             <div
               data-screen-under
@@ -2545,10 +2560,10 @@ export default function App() {
                       : list}
           </div>
           </div>
-          {/* The navigation floats over every screen but a session's,
-              whose foot is its own bar (the owner, 2026-10-02: 「会话里不
-              显示」), and the tab switcher, which is a step of it. */}
-          {!fullScreen && !switchingTabs && nav}
+          {/* The navigation floats over the landings and nothing else
+              (`navShown`; the owner, 2026-10-02: 「会话里不显示」, and
+              2026-10-03: not over a file either). */}
+          {navShown && nav}
           {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
