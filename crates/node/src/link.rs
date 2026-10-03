@@ -1510,6 +1510,15 @@ impl Node {
             .doc
             .by_name(&channel)
             .ok_or_else(|| Rejoin::Gone(msg::machine_left_table(&channel)))?;
+        // **A face asking again starts on fresh wires** where the held ones
+        // have gone quiet: its pipe just ended, or a person pressed reload
+        // because the screen stopped moving — either way a wire that missed
+        // a keepalive is the likely cause, and the new attachment should not
+        // spend the ack wait finding that out.
+        if again {
+            self.wires.retire_if_quiet(&d.id, wires::Proto::Main);
+            self.wires.retire_if_quiet(&d.id, wires::Proto::Tunnel);
+        }
         let answer = self
             .ask_on(
                 ep,

@@ -395,6 +395,30 @@ impl Wires {
         true
     }
 
+    /// Retires this key's wire if it has missed a keepalive — what a face
+    /// asking to attach again (a pipe that ended, a manual reload) does
+    /// first, so the new attachment goes out on a fresh wire rather than
+    /// waiting out [`ACK_WITHIN`] on a dead one. A wire heard within the
+    /// keepalive interval is kept: it is alive, and redialling it would
+    /// only cost a handshake.
+    pub(crate) fn retire_if_quiet(&self, id: &str, proto: Proto) -> bool {
+        let quiet = {
+            let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+            match slots.get(&(id.to_owned(), proto)) {
+                Some(slot) if slot.conn.is_some() => slot
+                    .heard
+                    .is_none_or(|h| h.elapsed() >= KEEPALIVE_MISSED)
+                    .then(|| slot.conn.clone())
+                    .flatten(),
+                _ => None,
+            }
+        };
+        match quiet {
+            Some(conn) => self.retire(id, proto, &conn, Retired::Silent),
+            None => false,
+        }
+    }
+
     /// Lets go of every wire to one machine (a pause bites on them).
     pub(crate) fn retire_peer(&self, id: &str, why: Retired) {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
