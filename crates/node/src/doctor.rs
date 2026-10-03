@@ -590,6 +590,17 @@ async fn check_roads(node: &Node) -> (Health, String, Option<String>) {
             c.network_changes,
             c.ops_late,
         ));
+        // Whose the failures are: by name, so 「失败 18」 is somebody's.
+        let devices = node.devices().unwrap_or_default();
+        for (id, failed, unanswered) in &c.by_peer {
+            let who = devices
+                .iter()
+                .find(|d| d.id == *id)
+                .map(|d| d.shown().to_owned())
+                .unwrap_or_else(|| id.chars().take(8).collect());
+            said.push_str(cli::name_separator());
+            said.push_str(&cli::doctor_wires_peer(who, failed, unanswered));
+        }
     }
     (Health::Ok, said, None)
 }

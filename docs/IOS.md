@@ -116,6 +116,7 @@ a 不画；b 用话拒绝；c 坏了或说了假话。第二步之后没有 c。
 - **插件**：Tauri 官方 `tauri-plugin-barcode-scanner`，MIT OR Apache-2.0，Rust 与 JS 都钉在 **2.4 线**（2.5 要 tauri 2.12，这棵树在 2.11，为扫码换整个壳不值）。只在 iOS / Android 编（`#![cfg(mobile)]`）。授权 `src-tauri/capabilities/scan.json`，只给 iOS / Android、只给 `main` 窗口，五个命令：查权限、要权限、扫、取消、打开设置——不给震动，不用插件的 `default` 全集。
 - **扫的样子**：用插件的 **windowed** 模式——相机在 webview 后面、webview 变透明。插件的全屏模式**没有退出的路**（只有我们调 `cancel` 才收），所以不用。扫的时候页面给根打上 `data-scanning`：底变透明，`body` 里除了扫码那一层都隐藏（对话框、遮罩一起），那一层上面一句「对准另一台机器「邀请设备」里的二维码」，中间一个取景框，下面「取消」。墨是不随主题变的 `mark-ink-light` 压在 `mark-veil-dark` 上（下面是相机，不是纸）。只认 QR 码。
 - **被拒**：相机权限被拒时不扫，说「khor 没有使用相机的权限。在「设置」里允许后再扫，或者粘贴配对票」，下面一颗「打开设置」（系统的设置页）。第一次问、被拒，同一句。
+- **局域网那句**（`NSLocalNetworkUsageDescription`，2026-10-03 NET-FIX 轮补上）：没有这个键，iOS 不弹窗、直接丢掉发往局域网地址的 UDP，同一个 Wi-Fi 下的手机连 Mac 也只能走中继。抄语料库 `local-network-usage`，Mac 的 `src-tauri/Info.plist` 也带一份，`npm run mobile` 比对。允没允许：手机「设置 → khor → 本地网络」开关；拒过一次要在那里打开。mDNS 不靠它也不靠 Bonjour：直连候选（本机各网卡地址）由 iroh 在连接里交换，手机不需要多播权限。
 - **相机用途那句**（iOS 第一次问权限时的系统弹窗）：`gen/apple/khor-gui_iOS/Info.plist` 的 `NSCameraUsageDescription`，抄的是语料库 `camera-usage`，`npm run mobile` 比对两处一字不差。只有中文一份：英文系统的手机看到的也是中文（要按语言分，得给 Xcode 工程加 `InfoPlist.strings`，没做）。
 - **真机才看得见的**：相机真的读码（模拟器没有相机）；**深色主题下的码**——邀请对话框在深色里画浅墨深底（反色），AVFoundation 的 `AVCaptureMetadataOutput` 认不认反色码没有量过，扫不出就请对方切浅色或拷票；对焦距离、屏幕反光；扫码层在刘海与底部横条下的留白。
 

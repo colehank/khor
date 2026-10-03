@@ -147,6 +147,10 @@ struct Slot {
     leaning: Option<(PathKind, u8)>,
     failures: u32,
     retry_at: Option<Instant>,
+    /// Since this resident started: dials that failed, and wires retired
+    /// unanswered — the per-machine half of [`Counts`].
+    failed_total: u64,
+    unanswered_total: u64,
 }
 
 /// Every wire this node holds, and the counters behind `khor doctor`'s
@@ -211,6 +215,7 @@ impl Counts {
             read_idle: self.read_idle.load(Relaxed),
             network_changes: self.network_changes.load(Relaxed),
             ops_late: self.ops_late.load(Relaxed),
+            by_peer: Vec::new(),
         }
     }
 
@@ -328,6 +333,7 @@ impl Wires {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let slot = slots.entry((id.to_owned(), proto)).or_default();
         slot.failures = slot.failures.saturating_add(1);
+        slot.failed_total += 1;
         slot.retry_at = Some(Instant::now() + backoff(slot.failures));
         self.counts.dial_failed.fetch_add(1, Relaxed);
         drop(slots);
@@ -387,6 +393,9 @@ impl Wires {
             return false;
         }
         drop_wire(slot, why);
+        if why == Retired::Unanswered {
+            slot.unanswered_total += 1;
+        }
         self.counts.retired(why);
         drop(slots);
         if matches!(why, Retired::Unanswered | Retired::Silent) {
@@ -606,6 +615,22 @@ impl Wires {
             road,
             heard: heard.map(|h| now.saturating_duration_since(h)),
         }
+    }
+
+    /// The counters, with the per-machine failures filled in.
+    pub(crate) fn counts_now(&self) -> khor_core::WireCounts {
+        let mut c = self.counts.snapshot();
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let mut by: std::collections::BTreeMap<String, (u64, u64)> = Default::default();
+        for ((id, _), slot) in slots.iter() {
+            if slot.failed_total + slot.unanswered_total > 0 {
+                let e = by.entry(id.clone()).or_default();
+                e.0 += slot.failed_total;
+                e.1 += slot.unanswered_total;
+            }
+        }
+        c.by_peer = by.into_iter().map(|(id, (f, u))| (id, f, u)).collect();
+        c
     }
 
     /// The machines this node holds a live wire to, for tests and for

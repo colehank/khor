@@ -100,6 +100,29 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
   }
 }
 
+// ── 3b) the local network's sentence ───────────────────────────────
+// **Without `NSLocalNetworkUsageDescription` iOS never asks** — it drops
+// UDP to a LAN address without a word, so a phone on the same Wi-Fi as
+// the Mac reached it only through a relay, for ever (the owner,
+// 2026-10-03). The key must be there, and it must be the catalog's
+// `local-network-usage`, word for word (the Mac's Info.plist too).
+{
+  const zh = readFileSync(join(repo, "crates", "catalog", "zh.toml"), "utf8");
+  const owned = /^local-network-usage = "([^"]*)"$/m.exec(zh)?.[1];
+  if (owned === undefined) {
+    probeDead("crates/catalog/zh.toml has no `local-network-usage` — the sentence the Info.plists must carry");
+  }
+  for (const rel of [["gen", "apple", "khor-gui_iOS", "Info.plist"], ["Info.plist"]]) {
+    const plist = readFileSync(join(gui, "src-tauri", ...rel), "utf8");
+    const said = /<key>NSLocalNetworkUsageDescription<\/key>\s*<string>([^<]*)<\/string>/.exec(plist)?.[1];
+    if (said === undefined) {
+      fail(`src-tauri/${rel.join("/")} has no NSLocalNetworkUsageDescription — LAN packets are dropped and every machine on the same Wi-Fi reads 中继`);
+    } else if (owned !== undefined && said !== owned) {
+      fail(`src-tauri/${rel.join("/")}'s NSLocalNetworkUsageDescription is 「${said}」, the catalog's local-network-usage 「${owned}」`);
+    }
+  }
+}
+
 // ── 4) nothing that waits runs on the main thread ──────────────────
 // **The phone froze when a machine dropped off** (2026-10-02, the owner
 // on a real iPhone). Tauri runs a command declared without `async` on
@@ -220,6 +243,6 @@ if (!dead) {
 
 if (bad) process.exit(1);
 console.log(
-  `mobile: khor-gui type-checks for ${TARGET}, run is the mobile entry point, the camera's sentence is the catalog's, ` +
+  `mobile: khor-gui type-checks for ${TARGET}, run is the mobile entry point, the camera's and the local network's sentences are the catalog's, ` +
     "every sync command is a quick one (nothing that waits runs on the main thread), and the iOS windows wear the app's theme",
 );

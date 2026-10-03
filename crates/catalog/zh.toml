@@ -548,6 +548,7 @@ doctor-road-unread = "连接未读"
 doctor-wires = "长连接：拨号 {0} 次（失败 {1}），答得晚 {2}，读取重试 {3}"
 doctor-wires-retired = "收回 静默 {0}、无响应 {1}、已关闭 {2}、换网 {3}、换端点 {4}"
 doctor-wires-reads = "读数 直连 {0}、中继 {1}、未连接 {2}；网络变化 {3}；状态查询超时 {4}"
+doctor-wires-peer = "{0}：拨号失败 {1}、无响应 {2}"
 doctor-hooks-ok = "claude 的钩子均已安装"
 doctor-hooks-part = "{0} 个事件的钩子未安装，或指向另一个 khor"
 doctor-hooks-unread = "无法读取 claude 的设置"
@@ -3814,6 +3815,11 @@ scan-camera-denied = "khor 没有使用相机的权限。在「设置」里允�
 scan-open-settings = "打开设置"
 scan-no-camera = "无法打开相机。粘贴配对票也能加入"
 camera-usage = "扫描另一台机器上的配对二维码，加入它的网络"
+# iOS 第一次往局域网地址发包时系统弹窗里那句（NSLocalNetworkUsageDescription）。
+# 没有这个键，系统不问、直接丢掉发往 192.168.x.x 的 UDP——同一个 Wi-Fi 下的手机和 Mac
+# 永远只走中继（2026-10-03 负责人真机报）。`gen/apple` 的 Info.plist 和 Mac 的 Info.plist
+# 抄的都是它，`npm run mobile` 比对。
+local-network-usage = "让 khor 直接连到同一个网络里的你的其他机器，不必绕道中继"
 join = "加入"
 close = "关闭"
 # The chat input's hint. Not a label: the box is the pane's only
