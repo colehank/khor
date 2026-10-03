@@ -18,17 +18,29 @@
 // Each file is put on the machine as soon as it is chosen, so sending
 // waits on nothing that could have happened earlier; its chip says so
 // while it travels (busy), and says why when it could not.
+//
+// # Looking at one
+//
+// A pressed file opens in `FilePreview`, which is the workspace's own
+// `FileView` in a window — pictures, PDFs, markdown, code, and the same
+// sentences for what it will not draw — read only, with the three things
+// a person does next: open it where it lives, copy its path, and hand it
+// on (Finder on the Mac, the system's share sheet on a phone).
 import { useEffect, useRef, useState } from "react";
 
-import { chatPut, chatPutPaths } from "@/api";
+import { chatPut, chatPutPaths, fetchFileText, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import { FileKindIcon } from "@/components/FileKindIcon";
+import { PathCut } from "@/components/PathCut";
 import { PathField } from "@/components/PathField";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
-import { baseName } from "@/lib/paths";
+import { useNarrow } from "@/hooks/use-narrow";
+import { baseName, shownName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
+import { FileView, kindOf, rendererOf } from "@/views/FileView";
+import { useShowFile } from "@/views/linkHome";
 
 /** One file going along with the line being written. */
 export type Pending = {
@@ -236,6 +248,167 @@ export function MachineFilePick({
             {gui.watch_add}
           </Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Whether Finder can show this machine's files, asked once a page. */
+let revealing: Promise<boolean> | null = null;
+const revealHere = () => (revealing ??= fetchRevealHere().catch(() => false));
+
+/** The file's bytes for the share sheet, from the reads the preview
+    already makes: a picture or a PDF as the preview carries it, text as
+    text. `null` for anything else, which is not offered. */
+async function bytesOf(machine: string, path: string): Promise<File | null> {
+  const name = shownName(path);
+  const kind = kindOf(path);
+  if (kind === "text") {
+    const f = await fetchFileText(machine, path);
+    return f.binary ? null : new File([f.text], name, { type: "text/plain" });
+  }
+  if (kind === "doc") return null;
+  const look = await fetchPreview(machine, path);
+  if (look.data === "" || look.cut) return null;
+  const raw = atob(look.data);
+  const buf = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
+  return new File([buf], name, { type: look.media });
+}
+
+/** The system's share sheet takes files here (a phone's WebKit; a desktop
+    browser may take only links). */
+const shares = () =>
+  typeof navigator.share === "function" &&
+  typeof navigator.canShare === "function" &&
+  navigator.canShare({ files: [new File([""], "x.txt", { type: "text/plain" })] });
+
+/** One file of a conversation, looked at (round CHAT item 3). */
+export function FilePreview({
+  machine,
+  shown,
+  path,
+  here,
+  onClose,
+}: {
+  /** The API's spelling of the conversation's machine. */
+  machine: string;
+  /** That machine is this one: its files are already on this disk. */
+  here: boolean;
+  /** Its name as a person reads it; empty draws no name. */
+  shown: string;
+  /** Absolute on that machine; `null` is closed. */
+  path: string | null;
+  onClose: () => void;
+}) {
+  const narrow = useNarrow();
+  const show = useShowFile();
+  const [finder, setFinder] = useState(false);
+  const [said, setSaid] = useState<"copied" | "failed" | string | null>(null);
+  useEffect(() => {
+    void revealHere().then(setFinder);
+  }, []);
+  useEffect(() => setSaid(null), [path]);
+  const kind = path === null ? "text" : kindOf(path);
+  const sharing = path !== null && kind !== "doc" && shares();
+  const copy = () => {
+    if (path === null) return;
+    navigator.clipboard.writeText(path).then(
+      () => setSaid("copied"),
+      () => setSaid("failed"),
+    );
+  };
+  // A far machine's file is taken to this Mac first (the downloads,
+  // `pullFile`) and that copy is the one Finder shows.
+  const toFinder = () => {
+    if (path === null) return;
+    const local = here ? Promise.resolve(path) : pullFile(machine, path);
+    void local
+      .then((p) => reveal(p)).catch((e: unknown) => setSaid(String((e as Error)?.message ?? e)));
+  };
+  const share = () => {
+    if (path === null) return;
+    void bytesOf(machine, path)
+      .then((f) => (f ? navigator.share({ files: [f] }) : undefined))
+      .catch(() => {
+        // Dismissing the sheet rejects too; nothing to say about it.
+      });
+  };
+  return (
+    <Dialog open={path !== null} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent
+        data-file-preview={path ?? undefined}
+        // The phone's sheet (grabber, pulled down to put away); a window
+        // over the scrim elsewhere, closed by a press outside or Esc.
+        form={narrow}
+        // Important, all four: the dialog's own `p-pane`, `gap-row` and
+        // `w-dialog` are tokens tailwind-merge cannot tell are a padding,
+        // a gap and a width, so it keeps both and theirs wins.
+        className={cn(
+          "flex flex-col overflow-hidden !gap-0 !p-0",
+          narrow ? "h-[calc(100dvh-var(--safe-top)-3rem)] !w-[calc(100%-1rem)]" : "h-[80vh] !w-[min(56rem,calc(100%-2rem))]",
+        )}
+      >
+        {path !== null && (
+          <>
+            <div data-file-preview-head className="flex flex-none flex-col gap-in px-pane pt-pane pb-row">
+              <div className="flex min-w-0 items-center gap-row">
+                <DialogTitle className="min-w-0 flex-1 truncate">{shownName(path)}</DialogTitle>
+                <Button size="sm" data-file-preview-close onClick={onClose}>
+                  {gui.close}
+                </Button>
+              </div>
+              <div className="flex min-w-0 text-caption text-muted-foreground">
+                {shown && <span className="flex-none">{shown}&nbsp;·&nbsp;</span>}
+                <PathCut text={path} className="min-w-0 flex-1" />
+              </div>
+              <div className="flex flex-wrap items-center gap-in">
+                {show && (
+                  <Button
+                    size="sm"
+                    data-file-preview-open
+                    onClick={() => {
+                      onClose();
+                      show(machine, path);
+                    }}
+                  >
+                    {gui.chat_file_open}
+                  </Button>
+                )}
+                <Button size="sm" data-file-preview-copy onClick={copy}>
+                  {gui.tab_copy_path}
+                </Button>
+                {finder && (
+                  <Button size="sm" data-file-preview-reveal onClick={toFinder}>
+                    {gui.chat_file_reveal}
+                  </Button>
+                )}
+                {!finder && sharing && (
+                  <Button size="sm" data-file-preview-share onClick={share}>
+                    {gui.chat_file_share}
+                  </Button>
+                )}
+                {said !== null && (
+                  <span data-file-preview-said className="text-callout text-muted-foreground">
+                    {said === "copied" ? gui.copied : said === "failed" ? gui.copy_failed : said}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div data-file-preview-body className="flex min-h-0 flex-1 flex-col border-t">
+              {/* The workspace's own view of a file, read only: editing is
+                  the file view's, one press away above. */}
+              <FileView
+                key={`${machine} ${path}`}
+                machine={machine}
+                path={path}
+                git={false}
+                face={rendererOf(path) ? "preview" : "source"}
+                reading
+              />
+            </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

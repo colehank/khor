@@ -709,6 +709,18 @@ fn trash_here() -> bool {
     khor_gui_core::files::trash_here()
 }
 
+/// Whether this machine shows a file in Finder (`files::reveal_here`).
+#[tauri::command]
+fn reveal_here() -> bool {
+    khor_gui_core::files::reveal_here()
+}
+
+/// Finder, with that file of this machine selected (`files::reveal`).
+#[tauri::command]
+fn reveal(path: String) -> Result<(), String> {
+    khor_gui_core::files::reveal(&path)
+}
+
 /// Whether this browser draws PDFs itself (`files::pdf_here`).
 #[tauri::command]
 fn pdf_here() -> bool {
@@ -3489,6 +3501,8 @@ pub fn run() {
             search,
             open_code_window,
             trash_here,
+            reveal_here,
+            reveal,
             pdf_here,
             read_text,
             git_status,

@@ -42,6 +42,7 @@ import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFileLines } from "@/lib/highlight";
 import { useHereHosts } from "@/lib/here";
+import { usePinch } from "@/hooks/use-pinch";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
@@ -309,6 +310,8 @@ export function FileView({
       the offset is arithmetic on the line height, which this view knows
       exactly. */
   const box = useRef<HTMLDivElement>(null);
+  /** A picture zooms under two fingers (`usePinch`). */
+  const pinch = usePinch();
   /** Bumped to ask the diff again. **A counter rather than a boolean**:
       two saves in a row have to be two questions, and a flag that was
       already true would answer the second one with the first one's
@@ -915,8 +918,9 @@ export function FileView({
       // sanitiser. An image element renders the same drawing and runs
       // nothing — the browser's own rule, not khor's.
       return (
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
           <img
+            ref={pinch}
             data-look={look.kind}
             src={`data:${look.media};base64,${look.data}`}
             alt=""

@@ -32,9 +32,15 @@ export function MachineFiles({
   machine,
   here,
   onOpenFile,
+  start = null,
 }: {
   machine: string;
   here: boolean;
+  /** A file to open, from outside the page (a conversation's
+      「在文件视图中打开」, round CHAT): the listing goes to its directory
+      and the file opens. Stamped, so the same file asked twice opens
+      twice. */
+  start?: { path: string; at: number } | null;
   /** **One back button** (the audit fix plan F4.2; N07): while a file is
       open on the narrow face, the page head's ‹ leaves the file rather
       than the page — handed up as the way out, `null` when there is no
@@ -43,8 +49,13 @@ export function MachineFiles({
 }) {
   const narrow = useNarrow();
   // `""` is the machine's home, the listing's own contract.
-  const [at, setAt] = useState("");
-  const [file, setFile] = useState<string | null>(null);
+  const [at, setAt] = useState(() => (start ? start.path.slice(0, start.path.lastIndexOf("/")) || "/" : ""));
+  const [file, setFile] = useState<string | null>(start?.path ?? null);
+  useEffect(() => {
+    if (start === null) return;
+    setAt(start.path.slice(0, start.path.lastIndexOf("/")) || "/");
+    setFile(start.path);
+  }, [start]);
   // What was typed into a file and not saved, kept when another file is
   // opened — the workspace pane's rule (`FileView`'s `draft`).
   const [drafts, setDrafts] = useState<Map<string, NonNullable<Draft>>>(() => new Map());

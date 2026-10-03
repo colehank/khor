@@ -78,7 +78,8 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { MachineFilePick, PendingChips, usePendingFiles } from "@/views/chat-files";
+import { FilePreview, MachineFilePick, PendingChips, usePendingFiles } from "@/views/chat-files";
+import { LinkHomeProvider, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { withAttachments } from "@/lib/paths";
 import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
@@ -1284,6 +1285,17 @@ export function ChatView({
   const picker = useRef<HTMLInputElement>(null);
   /** Files can go along while there is somebody to say them to. */
   const canAttach = !still && !gone;
+  /** The file a press asked to look at (round CHAT): a file card, or a
+      path in the agent's words. */
+  const [preview, setPreview] = useState<string | null>(null);
+  // **A path in the prose opens the preview first**, outside a workspace;
+  // its 「在文件视图中打开」 is where the press used to go. Beside a tree
+  // the press keeps going straight to the middle column (`beside`).
+  const outer = useLinkHome();
+  const chatHome = useMemo<LinkHome | null>(
+    () => (outer === null || outer.beside ? outer : { ...outer, open: (abs) => setPreview(abs) }),
+    [outer],
+  );
   const dropBox = useRef<HTMLDivElement>(null);
   const [dropping, setDropping] = useState(false);
   // **In the app a drop is tauri's**, which hands over the real paths
@@ -1468,6 +1480,7 @@ export function ChatView({
   // noise — it is not restating what is already on screen.
   const waiting = inTurn;
   return (
+    <LinkHomeProvider value={chatHome}>
     <div
       ref={dropBox}
       data-chat-drop={dropping || undefined}
@@ -2144,6 +2157,14 @@ export function ChatView({
           <KeyboardSwitch field={box} />
         </BarSeat>
       )}
+      <FilePreview
+        machine={home ?? ""}
+        shown={home ?? ""}
+        path={preview}
+        here={machine === null}
+        onClose={() => setPreview(null)}
+      />
     </div>
+    </LinkHomeProvider>
   );
 }

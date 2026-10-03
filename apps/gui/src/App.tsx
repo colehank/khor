@@ -88,7 +88,7 @@ import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
-import { holding, LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
+import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
@@ -485,7 +485,22 @@ export default function App() {
       one: the head's ‹ takes it first (`MachineFiles`). */
   const [fileBack, setFileBackState] = useState<{ go: () => void } | null>(null);
   const setFileBack = useCallback((back: (() => void) | null) => setFileBackState(back ? { go: back } : null), []);
-  useEffect(() => setMachineBody("dashboard"), [selectedDevice]);
+  /** What the machine page opens on when the next machine opens, where
+      something asked for more than its dashboard (a conversation's
+      「在文件视图中打开」, round CHAT): read once by the reset below. */
+  const bodyNext = useRef<"files" | null>(null);
+  useEffect(() => {
+    setMachineBody(bodyNext.current ?? "dashboard");
+    bodyNext.current = null;
+  }, [selectedDevice]);
+  /** A file the machine page's files should open, stamped so asking for
+      the same file twice opens it twice (`MachineFiles`' `start`). */
+  const [fileStart, setFileStart] = useState<{ path: string; at: number } | null>(null);
+  // Spent once the page shows something else, so the files opened by
+  // hand later start from the home as they always did.
+  useEffect(() => {
+    if (machineBody !== "files") setFileStart(null);
+  }, [machineBody]);
   // …and which workspace is open. **A path and not a row**, because
   // the two ways in do not agree on what they have: the list hands over
   // a checkout it already knows about, and the machine card's 看它的
@@ -1702,6 +1717,33 @@ export default function App() {
       />
     ) : undefined;
 
+  /** 「在文件视图中打开」 from a conversation's file (round CHAT): the
+      workspace that holds it, asked of the local table at the press the
+      way a path in prose is (ruling 54); else that machine's files, in
+      place on its page, opened at the file. */
+  const showFile: ShowFile = (machine, abs) => {
+    const device = devices.find((d) => d.name === machine) ?? null;
+    const onPage = () => {
+      if (device === null) return;
+      setMorePage(null);
+      setLanding("devices");
+      if (device.id === selectedDevice) setMachineBody("files");
+      else bodyNext.current = "files";
+      setSelectedDevice(device.id);
+      setFileStart({ path: abs, at: Date.now() });
+      setScreen("detail");
+    };
+    void fetchWorkspaces().then((list) => {
+      const ws = device === null ? null : holding(list, device.id, abs);
+      if (ws === null) return onPage();
+      setMorePage(null);
+      setLanding("workspaces");
+      setOpenWs({ device: ws.device, machine: ws.machine || ws.device, path: ws.path });
+      setReveal({ path: abs, line: null, at: Date.now() });
+      setScreen("detail");
+    }, onPage);
+  };
+
   const detail = sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
@@ -1709,6 +1751,7 @@ export default function App() {
     // `linkHome`'s own default and leaves every path as the prose it
     // already was.
     <LinkHomeProvider value={sessionHome}>
+    <ShowFileProvider value={showFile}>
     <DetailPane
       row={selectedRow}
       narrow={narrow}
@@ -1741,6 +1784,7 @@ export default function App() {
         />
       }
     />
+    </ShowFileProvider>
     </LinkHomeProvider>
   ) : landing === "workspaces" ? (
     // One workspace's files. **`FilesPane` unchanged from when it was a
@@ -1857,7 +1901,7 @@ export default function App() {
         !openDevice ? undefined : machineBody === "web" ? (
           <MachineWeb key={openDevice.id} machine={openDevice} devices={devices} />
         ) : machineBody === "files" ? (
-          <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} onOpenFile={setFileBack} />
+          <MachineFiles key={openDevice.id} machine={openDevice.name} here={openDevice.me} onOpenFile={setFileBack} start={fileStart} />
         ) : machineBody === "sessions" ? (
           // The rows' hairlines end on the page's right line (W-V5): the
           // list's own 8 and its row's 12 inside, the rest here.

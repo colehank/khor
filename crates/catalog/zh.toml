@@ -3854,6 +3854,13 @@ chat-attach-machine = "{0} 上的文件…"
 chat-attach-machine-title = "{0} 上的文件"
 chat-put-failed = "没能放到机器上"
 
+# 对话里一个文件的预览(round CHAT)。「在文件视图中打开」去的是放着它的
+# 工作区,不在任何工作区里就是那台机器页上的文件;「在访达中显示」只在 Mac
+# 上画,别的平台同一个按钮会说错自己做了什么(`store-open` 的理由);「分享」
+# 是手机系统自己的分享面板。复制路径借 `tab-copy-path`。
+chat-file-open = "在文件视图中打开"
+chat-file-reveal = "在访达中显示"
+chat-file-share = "分享"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

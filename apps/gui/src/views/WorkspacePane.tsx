@@ -1046,6 +1046,7 @@ export function WorkspacePane({
       launch: (abs) => {
         void launchOn(machine, abs).catch(() => {});
       },
+      beside: true,
     }),
     [machine, root, fileKnown, seeFile, open],
   );

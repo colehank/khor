@@ -604,6 +604,12 @@ pub fn answer(
         // Whether this machine has a bin at all — asked rather than
         // guessed from the browser (`files::trash_here`).
         "trash_here" => to_json(&crate::files::trash_here()),
+        // Finder with the file selected, this machine only (round CHAT).
+        "reveal_here" => to_json(&crate::files::reveal_here()),
+        "reveal" => {
+            crate::files::reveal(&arg("path")?)?;
+            to_json(&())
+        }
         // Whether this browser draws PDFs itself — asked for
         // `trash_here`'s reason, never read off `navigator`.
         "pdf_here" => to_json(&crate::files::pdf_here()),

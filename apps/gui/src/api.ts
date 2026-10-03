@@ -1265,6 +1265,15 @@ export const searchIn = (machine: string, dir: string, query: string) =>
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
 export const fetchTrashHere = () => call<boolean>("trash_here");
+/** Whether Finder can show a file of this machine with it selected
+    (`khor_gui_core::files::reveal_here`) — **and whether that Finder is
+    in front of the person**: the app, or the dev bridge beside it. A
+    web face may be a phone looking at a desktop's node, and a window
+    opened on that desktop is one nobody is looking at. */
+export const fetchRevealHere = async (): Promise<boolean> =>
+  (inApp || bridge !== null) && (await call<boolean>("reveal_here"));
+/** Finder, with that file of this machine selected. */
+export const reveal = (path: string) => call<null>("reveal", { path });
 /** Every pinned directory, machine names already looked up. */
 /**
  * Where this person has been, of one kind ("dir" | "page"), most recent
