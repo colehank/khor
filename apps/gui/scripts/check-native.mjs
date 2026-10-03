@@ -545,6 +545,28 @@ try {
     await step("dark", "switched back");
     setTheme("auto");
     await step("auto", "follows the desktop");
+    // **Resized from outside** (UX-4, measured on a scratch app: the trio's
+    // centre at 15.5 after an accessibility resize, until 1f8289b6). The
+    // green button and tiling set the size the same way, and AppKit lays
+    // the title bar out again; narrow and back, the trio must stand on
+    // the first row each time. Only the buttons are judged — the narrow
+    // face has no left block to sample.
+    for (const [rw, how] of [[560, "resized narrow"], [w, "resized back"]]) {
+      if (run("resize", String(child.pid), String(rw), String(h)).trim() !== "0") {
+        fail(`${how}: accessibility refused to resize the scratch window (System Settings › Privacy › Accessibility for the terminal)`);
+        break;
+      }
+      await wait(1500);
+      const png = join(scratch, `resize-${rw}.png`);
+      execFileSync("screencapture", ["-x", "-o", "-l", String(id), png]);
+      const m = JSON.parse(run("measure", png, String(rw)));
+      const centre = m.close ? (m.close[2] + m.close[3]) / 2 : null;
+      console.log(`${how} (${rw}): close button centre y ${centre === null ? "—" : centre.toFixed(1)}`);
+      if (centre === null) fail(`${how}: no close button found in the window's corner`);
+      else if (Math.abs(centre - HEAD / 2) > 1.5) {
+        fail(`${how}: the window buttons are centred at y ${centre.toFixed(1)}, not the first row's ${HEAD / 2} — AppKit put them back after a resize (traffic::place on Resized)`);
+      }
+    }
     // **Launched against the desktop** (2026-10-01, the owner's bug lane:
     // two lanes saw the scratch app light with the left block dark — dark
     // material, dark ink). The switches above all start from a window
