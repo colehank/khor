@@ -396,8 +396,10 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
   let startX = 0;
   let startY = 0;
   let still = false;
+  let downAt = 0;
   const began = (e: TouchEvent) => {
     still = e.touches.length === 1;
+    downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
   };
@@ -406,6 +408,8 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
     if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
   const lifted = () => {
+    // A long press is a selection (`pressSelects`), not a tap.
+    if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
     if (still && tapRaisesKeyboard() && !keyboardUp(field)) raiseKeyboard(field);
     still = false;
   };
@@ -427,6 +431,107 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
     box.removeEventListener("touchmove", moved);
     box.removeEventListener("touchend", lifted);
     field.removeEventListener("focusout", left);
+  };
+}
+
+/** A finger held this long without moving starts a selection. */
+const LONG_PRESS_MS = 450;
+/** …and this much travel before then makes it a drag instead. */
+const PRESS_SLOP = 8;
+
+/**
+ * **A long press selects, a drag after it extends, the lift copies**
+ * (T-20, the terminal audit: no touch selection at all, so a phone could
+ * copy nothing a program did not offer). xterm 6 has no touch code
+ * (xterm.js #5961 is open); iSH and Blink select with native handles.
+ * This is the plainer half of that — the same gesture iOS uses for text
+ * (press and hold on a word, drag to extend) — drawn in xterm's own
+ * selection, so the copy-on-select already wired keeps working, and the
+ * lift writes the selection to the clipboard inside the gesture (iOS's
+ * clipboard wants one). Ahead of `fingerScrolls` (capture): while a
+ * selection is being drawn the drag is the selection's, not a scroll;
+ * before the press is long, a drag scrolls as ever.
+ */
+function pressSelects(term: Terminal, box: HTMLElement): () => void {
+  let timer = 0;
+  let x0 = 0;
+  let y0 = 0;
+  let selecting = false;
+  let anchor: { col: number; row: number } | null = null;
+  const cellAt = (x: number, y: number) => {
+    const screen = term.element?.querySelector(".xterm-screen");
+    if (!screen) return null;
+    const r = screen.getBoundingClientRect();
+    const col = Math.max(0, Math.min(term.cols - 1, Math.floor(((x - r.left) / r.width) * term.cols)));
+    const inView = Math.max(0, Math.min(term.rows - 1, Math.floor(((y - r.top) / r.height) * term.rows)));
+    return { col, row: term.buffer.active.viewportY + inView };
+  };
+  const blank = (row: number, col: number) => {
+    const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
+    return ch === "" || ch === " ";
+  };
+  const selectWord = (at: { col: number; row: number }) => {
+    let from = at.col;
+    let to = at.col;
+    if (!blank(at.row, at.col)) {
+      while (from > 0 && !blank(at.row, from - 1)) from -= 1;
+      while (to < term.cols - 1 && !blank(at.row, to + 1)) to += 1;
+    }
+    term.select(from, at.row, to - from + 1);
+    anchor = { col: from, row: at.row };
+  };
+  const extend = (to: { col: number; row: number }) => {
+    if (!anchor) return;
+    const a = anchor.row * term.cols + anchor.col;
+    const b = to.row * term.cols + to.col;
+    const first = Math.min(a, b);
+    term.select(first % term.cols, Math.floor(first / term.cols), Math.abs(b - a) + 1);
+  };
+  const start = (e: TouchEvent) => {
+    window.clearTimeout(timer);
+    selecting = false;
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+    timer = window.setTimeout(() => {
+      const at = cellAt(x0, y0);
+      if (!at) return;
+      selecting = true;
+      selectWord(at);
+    }, LONG_PRESS_MS);
+  };
+  const move = (e: TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    if (!selecting) {
+      if (Math.hypot(t.clientX - x0, t.clientY - y0) > PRESS_SLOP) window.clearTimeout(timer);
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const at = cellAt(t.clientX, t.clientY);
+    if (at) extend(at);
+  };
+  const end = (e: TouchEvent) => {
+    window.clearTimeout(timer);
+    if (!selecting) return;
+    selecting = false;
+    // No synthesized mousedown after it: that would clear the selection.
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const text = term.getSelection();
+    if (text) navigator.clipboard?.writeText(text).catch(() => {});
+  };
+  box.addEventListener("touchstart", start, { capture: true, passive: true });
+  box.addEventListener("touchmove", move, { capture: true, passive: false });
+  box.addEventListener("touchend", end, { capture: true, passive: false });
+  box.addEventListener("touchcancel", end, { capture: true, passive: false });
+  return () => {
+    window.clearTimeout(timer);
+    box.removeEventListener("touchstart", start, true);
+    box.removeEventListener("touchmove", move, true);
+    box.removeEventListener("touchend", end, true);
+    box.removeEventListener("touchcancel", end, true);
   };
 }
 
@@ -1032,6 +1137,7 @@ export function TerminalPane({
       }
       send(out);
     });
+    const selects = pressSelects(term, box);
     const dragged = fingerScrolls(term, box);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
     // in history" in xterm's own coordinates — on the alternate screen
@@ -1094,6 +1200,7 @@ export function TerminalPane({
       observer.disconnect();
       data.dispose();
       dragged();
+      selects();
       scrolled.dispose();
       wrote.dispose();
       found.dispose();
