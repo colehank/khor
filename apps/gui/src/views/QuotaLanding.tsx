@@ -1359,14 +1359,10 @@ export function QuotaLanding({
         rows.length > 0 ? (
           <span data-quota-none>{gui.no_matches}</span>
         ) : narrow ? (
-          <>
-            <span data-quota-empty>{gui.accounts_empty}</span>
-            <span data-quota-empty-how className="mt-xxs block text-callout">
-              {gui.accounts_empty_how}
-            </span>
-          </>
+          <span data-quota-empty>{gui.accounts_empty}</span>
         ) : null
       }
+      emptyHow={rows.length === 0 && narrow ? <span data-quota-empty-how>{gui.accounts_empty_how}</span> : undefined}
       none={<span data-quota-none>{gui.no_matches}</span>}
     />
   );

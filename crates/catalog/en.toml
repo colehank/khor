@@ -1824,6 +1824,7 @@ mesh-map = "Machines in the mesh"
 # on a phone). The second line is the preview alone.
 pick-a-session = "Pick a session"
 empty-sessions = "No sessions yet"
+empty-sessions-how = "Use the ＋ above to start one"
 waiting-on-you = "Waiting on you"
 none-waiting = "Nothing waiting on you"
 today = "Today"

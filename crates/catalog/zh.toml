@@ -3508,6 +3508,7 @@ mesh-map = "网里的机器"
 # on a phone). The second line is the preview alone.
 pick-a-session = "选择一个会话"
 empty-sessions = "还没有会话"
+empty-sessions-how = "点击上方的 ＋，开一个会话"
 # The big canvas behind no selection: the network's now — **two**
 # headings and what stands under each. 等你的事 is the blocked rows —
 # the word's own definition (docs/SESSION.md 待批: an approval this

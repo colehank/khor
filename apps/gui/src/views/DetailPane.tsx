@@ -9,6 +9,7 @@ import { IconBack, IconChevronDown } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { NarrowHead } from "@/components/SideHead";
 import { useInBar } from "@/components/SessionBar";
+import { EmptyState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
@@ -542,21 +543,19 @@ export function DetailPane({
             // Not a dead end: the sentence says what this pane is
             // waiting for, and the button underneath is the other way
             // to satisfy it — the same act the pane bar's "+" offers,
-            // where a first-time screen has no session to pick yet.
-            <div className="flex flex-col items-center gap-2">
-              <div>{gui.pick_a_session}</div>
-              {onNew && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  data-empty-new
-                  className="min-h-touch"
-                  onClick={onNew}
-                >
-                  {gui.new_session_ask}
-                </Button>
-              )}
-            </div>
+            // where a first-time screen has no session to pick yet. The
+            // one empty state every pane draws (UX-4, `EmptyState`).
+            <EmptyState
+              action={
+                onNew && (
+                  <Button size="sm" variant="secondary" data-empty-new className="min-h-touch" onClick={onNew}>
+                    {gui.new_session_ask}
+                  </Button>
+                )
+              }
+            >
+              {gui.pick_a_session}
+            </EmptyState>
           )}
         </div>
       )}

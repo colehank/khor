@@ -485,12 +485,8 @@ export function BrowseLanding({
         // made for an empty landing any more, `useBrowseTabs`): one quiet
         // sentence, and where the way to start is — the ＋ above, as the
         // sessions' and the workspaces' columns say it.
-        empty={
-          <div data-page-none className="flex flex-col items-center gap-xxs">
-            <span>{gui.page_none}</span>
-            <span className="text-callout">{gui.page_none_how}</span>
-          </div>
-        }
+        empty={<span data-page-none>{gui.page_none}</span>}
+        emptyHow={gui.page_none_how}
         none={gui.no_matches}
       />
     </div>

@@ -418,6 +418,7 @@ export function SessionsList({
       // 「Nothing here」 and 「nothing matched」 are different facts.
       // A tick that left nothing is 「nothing matched」 too.
       empty={rows.length === 0 ? gui.empty_sessions : gui.no_matches}
+      emptyHow={gui.empty_sessions_how}
       none={gui.no_matches}
       rest={gui.group_recent}
       old={{ more: (n) => gui.old_sessions(n), less: gui.collapse_old }}
