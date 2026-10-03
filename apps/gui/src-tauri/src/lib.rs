@@ -3585,6 +3585,24 @@ pub fn run() {
                             menu::follow_lang(window.app_handle());
                         }
                     }
+                    // **A resize lays the title bar out again too** (UX-4):
+                    // a window resized from outside — the green button,
+                    // tiling, accessibility — came back with the three
+                    // buttons at AppKit's default, 10 above the first
+                    // row's centre, and tao's `drawRect:` inset never ran
+                    // to fix it. Queued, so AppKit's own layout is done
+                    // first; the same move a theme change makes.
+                    #[cfg(target_os = "macos")]
+                    tauri::WindowEvent::Resized(_) => {
+                        let handle = window.app_handle().clone();
+                        let _ = window.app_handle().run_on_main_thread(move || {
+                            if let Some(w) = handle.get_window("main")
+                                && let Ok(win) = w.ns_window()
+                            {
+                                traffic::place(win);
+                            }
+                        });
+                    }
                     _ => {}
                 }
             }
