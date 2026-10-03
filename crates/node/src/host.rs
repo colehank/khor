@@ -813,6 +813,24 @@ fn host_serving(
         clients: Mutex::new(Vec::new()),
     });
     let output_done = Arc::new(AtomicBool::new(false));
+    // The questions the program asked its terminal, and which answers
+    // may reach it (`answers`, T-4/T-5). Locked alone, never with Shared's.
+    let ledger = Arc::new(Mutex::new(crate::answers::Ledger::default()));
+    {
+        let ledger = ledger.clone();
+        let writer = writer.clone();
+        let output_done = output_done.clone();
+        std::thread::spawn(move || {
+            while !output_done.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let own = ledger.lock().unwrap().fallback(std::time::Instant::now());
+                if !own.is_empty() {
+                    let mut w = writer.lock().unwrap();
+                    let _ = w.write_all(&own).and_then(|()| w.flush());
+                }
+            }
+        });
+    }
 
     // A screen to match patterns against, for an agent TUI khor can
     // name. None for a shell (the process group answers better), and
@@ -829,6 +847,7 @@ fn host_serving(
         let output_done = output_done.clone();
         let screen = screen.clone();
         let last_dir = dir.clone();
+        let ledger = ledger.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             // The preview line (`last.txt`): derived after every read,
@@ -851,6 +870,9 @@ fn host_serving(
                 if let Some(screen) = &screen {
                     screen.lock().unwrap().feed(&buf[..n]);
                 }
+                // Before anyone can see it: a question is pending before
+                // a face can answer it.
+                ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
@@ -970,6 +992,7 @@ fn host_serving(
     // Attachers.
     {
         let shared = shared.clone();
+        let ledger = ledger.clone();
         let master = master.clone();
         let writer = writer.clone();
         std::thread::spawn(move || {
@@ -1026,12 +1049,19 @@ fn host_serving(
                     drop(ring);
                     let master = master.clone();
                     let writer = writer.clone();
+                    let ledger = ledger.clone();
                     std::thread::spawn(move || {
                         let mut readable = readable;
                         while let Ok(op) = read_client_frame::<ClientOp>(&mut readable) {
                             let Some(op) = op else { continue };
                             match op {
                                 ClientOp::Input(bytes) => {
+                                    // An answer only while its question waits
+                                    // (`answers`); keys whole.
+                                    let bytes = ledger.lock().unwrap().take_input(&bytes, std::time::Instant::now());
+                                    if bytes.is_empty() {
+                                        continue;
+                                    }
                                     let mut w = writer.lock().unwrap();
                                     if w.write_all(&bytes).and_then(|()| w.flush()).is_err() {
                                         break;
