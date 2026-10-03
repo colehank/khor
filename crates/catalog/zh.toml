@@ -2272,7 +2272,7 @@ mcp-told = "留言已送达"
 # 往返多久、多久前听到、上次出了什么错——doctor 的连接诊断，做成可以截图的一页。
 conn-home = "家中继"
 conn-home-ok = "{0} · 已连接"
-conn-home-down = "{0} · 连接不上：{1}"
+conn-home-down = "{0} · 连接不上"
 conn-home-none = "还没有住进任何中继"
 conn-relay-ms = "{0} 毫秒"
 conn-relay-quiet = "测不到往返"

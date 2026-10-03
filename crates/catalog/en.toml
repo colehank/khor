@@ -1344,7 +1344,7 @@ mcp-told = "Message delivered"
 [gui]
 conn-home = "Home relay"
 conn-home-ok = "{0} · connected"
-conn-home-down = "{0} · can't connect: {1}"
+conn-home-down = "{0} · can't connect"
 conn-home-none = "Not on any relay yet"
 conn-relay-ms = "{0} ms"
 conn-relay-quiet = "No round trip measured"

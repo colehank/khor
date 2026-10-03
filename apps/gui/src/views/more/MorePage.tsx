@@ -332,21 +332,42 @@ export function MoreFact({
   name,
   label,
   children,
+  note,
 }: {
   name: string;
   label: string;
   children: ReactNode;
+  /** **A sentence about the row, on its own line under the label**
+      (UX-4, decided): left-aligned and muted, like a session row's second
+      line. A long one (a connection's last error) beside the value wrapped
+      into a ragged right column. */
+  note?: ReactNode;
 }) {
-  return (
-    // `data-more-row`: a row of a settings card like the four kinds —
-    // their height, their trailing edge (app.css, `check-face` 4I).
-    <div data-more-row className="flex min-w-0 items-center gap-row text-body">
+  const row = (
+    <>
       {/* The label keeps its line: a long value (a store path on a phone,
           docs/IOS.md) wraps beside it instead of squeezing it to one
           character a line. */}
       <span className="flex-1 whitespace-nowrap">{label}</span>
       <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 [overflow-wrap:anywhere] text-right text-muted-foreground">
         {children}
+      </span>
+    </>
+  );
+  if (!note) {
+    return (
+      // `data-more-row`: a row of a settings card like the four kinds —
+      // their height, their trailing edge (app.css, `check-face` 4I).
+      <div data-more-row className="flex min-w-0 items-center gap-row text-body">
+        {row}
+      </div>
+    );
+  }
+  return (
+    <div data-more-row className="flex min-w-0 flex-col justify-center text-body">
+      <div className="flex min-w-0 items-center gap-row">{row}</div>
+      <span data-more-note={name} data-selectable className="min-w-0 text-left text-callout text-muted-foreground [overflow-wrap:anywhere]">
+        {note}
       </span>
     </div>
   );
