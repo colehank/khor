@@ -297,6 +297,23 @@ async fn git_diff(machine: String, path: String) -> Result<khor_gui_core::git::G
     khor_gui_core::git::diff(&Node::root_from_env(), &machine, &path).await
 }
 
+/// One file's history (round UX-4, `khor_gui_core::git`): its log, its
+/// blame, and a revision of it.
+#[tauri::command]
+async fn git_log(machine: String, path: String) -> Result<khor_gui_core::git::GitLog, String> {
+    khor_gui_core::git::log(&Node::root_from_env(), &machine, &path).await
+}
+
+#[tauri::command]
+async fn git_blame(machine: String, path: String) -> Result<khor_gui_core::git::GitBlame, String> {
+    khor_gui_core::git::blame(&Node::root_from_env(), &machine, &path).await
+}
+
+#[tauri::command]
+async fn git_show(machine: String, path: String, rev: String) -> Result<khor_gui_core::git::GitShow, String> {
+    khor_gui_core::git::show(&Node::root_from_env(), &machine, &path, &rev).await
+}
+
 #[tauri::command]
 async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
     khor_gui_core::quota_board(&Node::root_from_env()).await
@@ -3679,6 +3696,9 @@ pub fn run() {
             git_status,
             checkout,
             git_diff,
+            git_log,
+            git_blame,
+            git_show,
             write_text,
             merge_text,
             preview,

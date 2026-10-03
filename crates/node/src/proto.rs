@@ -619,6 +619,12 @@ pub enum Request {
     /// words**: a khor that predates it refuses the frame, which the asker
     /// reads as "that machine keeps no history".
     History { ask: crate::commands::HistoryAsk },
+    /// One file's history (round UX-4, the file page's git 历史): its
+    /// log, its blame, or a revision of it (`crate::git::GitAsk`).
+    /// Answered as [`Response::Git`]. **One new word for the three
+    /// questions**, so an older khor refuses it once, which the asker
+    /// says as `msg::git_predates()`.
+    Git { ask: crate::git::GitAsk },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -925,6 +931,8 @@ pub enum Response {
     History {
         hits: Vec<crate::commands::HistoryHit>,
     },
+    /// The answer to [`Request::Git`], variant for variant.
+    Git { answer: crate::git::GitAnswer },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1018,6 +1026,7 @@ impl Request {
                 | Request::LoadSince { .. }
                 | Request::Stat { .. }
                 | Request::History { .. }
+                | Request::Git { .. }
         )
     }
 
@@ -2361,6 +2370,42 @@ mod tests {
         let bytes = encode(&Response::History { hits: vec![hit.clone()] }).unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::History { hits } => assert_eq!(hits, [hit]),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+    }
+
+    /// UX-4's one word for a file's history crosses whole, the question
+    /// and each answer under their own names.
+    #[test]
+    fn a_git_history_question_and_answer_round_trip() {
+        let ask = crate::git::GitAsk::Show {
+            path: "/w/khor/Cargo.toml".into(),
+            rev: "0".repeat(40),
+        };
+        let bytes = encode(&Request::Git { ask: ask.clone() }).unwrap();
+        assert!(bytes.windows(4).any(|w| w == b"Show"), "the question's name is on the wire");
+        match decode::<Request>(&bytes).unwrap() {
+            Request::Git { ask: got } => assert_eq!(got, ask),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+        let commit = crate::git::Commit {
+            id: "a".repeat(40),
+            author: "colehank".into(),
+            when_ms: 1,
+            subject: "One line".into(),
+        };
+        let answer = crate::git::GitAnswer::Blame {
+            commits: vec![commit.clone()],
+            runs: vec![crate::git::BlameRun { start: 0, len: 3, commit: 0 }],
+        };
+        let bytes = encode(&Response::Git { answer }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::Git {
+                answer: crate::git::GitAnswer::Blame { commits, runs },
+            } => {
+                assert_eq!(commits, [commit]);
+                assert_eq!(runs.len(), 1);
+            }
             other => panic!("decoded wrong: {other:?}"),
         }
     }

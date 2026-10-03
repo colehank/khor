@@ -297,6 +297,12 @@ pub enum Op {
         machine: String,
         ask: crate::commands::HistoryAsk,
     },
+    /// One file's history on a machine (round UX-4); answered with
+    /// [`Reply::Git`]. Tail-appended.
+    GitOn {
+        machine: String,
+        ask: crate::git::GitAsk,
+    },
 }
 
 /// How long a [`Op::WatchOn`] is held when nothing changes: under
@@ -386,6 +392,7 @@ impl Op {
             Op::CodeStopOn { .. } => ("CodeStopOn", DEADLINE_FAR),
             Op::SearchOn { .. } => ("SearchOn", DEADLINE_SLOW),
             Op::HistoryOn { .. } => ("HistoryOn", DEADLINE_FAR),
+            Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -583,6 +590,8 @@ pub enum Reply {
     History {
         hits: Vec<crate::commands::HistoryHit>,
     },
+    /// Tail-appended with [`Op::GitOn`].
+    Git { answer: crate::git::GitAnswer },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

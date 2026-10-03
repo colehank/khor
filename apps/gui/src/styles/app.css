@@ -2181,6 +2181,13 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
   scroll-padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
 }
+/* A revision compared with the file (round UX-4, git 历史) is the diff
+   view, whose two halves scroll on their own: the view as a whole clears
+   the name and the circles instead. */
+[data-file-page] [data-diff-tab] {
+  padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+  padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
+}
 
 /* **The deck steps aside while the keyboard is up** (round UX-3): the row
    under it — the terminal's keys, a conversation's box, the address being

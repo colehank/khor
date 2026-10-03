@@ -207,6 +207,19 @@ pub fn answer(
         "git_diff" => {
             to_json(&rt.block_on(crate::git::diff(root, &arg("machine")?, &arg("path")?))?)
         }
+        // One file's history (round UX-4): its log, its blame, a revision.
+        "git_log" => {
+            to_json(&rt.block_on(crate::git::log(root, &arg("machine")?, &arg("path")?))?)
+        }
+        "git_blame" => {
+            to_json(&rt.block_on(crate::git::blame(root, &arg("machine")?, &arg("path")?))?)
+        }
+        "git_show" => to_json(&rt.block_on(crate::git::show(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+            &arg("rev")?,
+        ))?),
         // Saving an edit. **`was` is required even when empty** — same
         // shape and the same reason as `rename_session`'s `title`
         // above: an empty one is a real claim (「there should be no

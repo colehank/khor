@@ -30,7 +30,7 @@ import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import type { CodeWindow } from "@/components/CodeWindow";
 import { GlassCircle } from "@/components/Glass";
-import { IconBack, IconCheck, IconMore, IconPencil, IconShare } from "@/components/icons";
+import { IconBack, IconBranch, IconCheck, IconMore, IconPencil, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -43,11 +43,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useCoarse } from "@/hooks/use-coarse";
+import { useBlameShown } from "@/lib/blame";
 import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
 import { baseName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
+import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
 import { useRemoveFlow } from "@/views/fileRow";
 import { beginEditing, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
@@ -131,6 +134,8 @@ function useFileVerbs({
   code,
   onGone,
   onMoved,
+  history = false,
+  onRevision,
 }: {
   machine: string;
   path: string;
@@ -138,12 +143,18 @@ function useFileVerbs({
   code?: CodeWindow | null;
   onGone: (path: string) => void;
   onMoved: (from: string, to: string) => void;
+  /** The file is in a checkout: git 历史 and blame are offered (round UX-4). */
+  history?: boolean;
+  /** A revision picked from git 历史, to show where the file is. */
+  onRevision?: (c: GitCommit) => void;
 }) {
   const coarse = useCoarse();
   const [finder, setFinder] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const size = useFileSize();
+  const blame = useBlameShown();
+  const [historyOpen, setHistoryOpen] = useState(false);
   useEffect(() => {
     void revealHere().then(setFinder);
   }, []);
@@ -170,6 +181,11 @@ function useFileVerbs({
       run: () => void navigator.clipboard.writeText(path).then(() => setSaid(gui.copied), () => setSaid(gui.copy_failed)),
     },
     { key: "rename", label: gui.rename_ask, run: () => setRenaming(true) },
+    ...(history && onRevision ? [{ key: "history", label: gui.file_history, run: () => setHistoryOpen(true) }] : []),
+    // Blame is a column beside the numbers, which a phone has no room for.
+    ...(history && !coarse
+      ? [{ key: "blame", label: blame.on ? gui.blame_hide : gui.blame_show, run: () => blame.set(!blame.on) }]
+      : []),
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
     ...removal.actions(path, false).map((a) => ({ key: a.key, label: a.label, run: () => void a.run(), destructive: true })),
   ];
@@ -254,6 +270,9 @@ function useFileVerbs({
   const dialogs = (
     <>
       <RemoveDialog {...removal.dialog} />
+      {history && onRevision && (
+        <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} machine={machine} path={path} onPick={onRevision} />
+      )}
       <RenameDialog
         open={renaming}
         name={baseName(path)}
@@ -354,7 +373,10 @@ export function FilePage({
   onGone,
   onMoved,
   code = null,
+  history = false,
 }: {
+  /** The file is in a checkout: git 历史 is offered (round UX-4). */
+  history?: boolean;
   machine: string;
   /** Absolute, on that machine. */
   path: string;
@@ -390,10 +412,28 @@ export function FilePage({
   /** A save this page asked for, and what follows it: back to reading, or
       leaving the page (the draft question's 保存). */
   const saving = useRef<"read" | "leave" | null>(null);
-  const verbs = useFileVerbs({ machine, path, here, code, onGone, onMoved });
+  /** **A revision from git 历史, shown where the file was** (round UX-4):
+      read-only, the bottom row's ‹ going back to the file as it is, and
+      the compare circle putting it beside the current file. */
+  const [rev, setRev] = useState<GitCommit | null>(null);
+  const [compare, setCompare] = useState(false);
+  const verbs = useFileVerbs({
+    machine,
+    path,
+    here,
+    code,
+    onGone,
+    onMoved,
+    history,
+    onRevision: (c) => {
+      setRev(c);
+      setCompare(false);
+    },
+  });
   useEffect(() => {
     setWriting(false);
     saving.current = null;
+    setRev(null);
   }, [path]);
 
   const previewable = rendererOf(path) !== null;
@@ -464,6 +504,9 @@ export function FilePage({
         onScrollCapture={moved}
         onPointerUp={() => setRest(true)}
       >
+        {rev !== null ? (
+          <RevisionView machine={machine} path={path} rev={rev} compare={compare} narrow />
+        ) : (
         <FileView
           key={`${machine} ${path}`}
           machine={machine}
@@ -482,6 +525,7 @@ export function FilePage({
           draft={draft}
           onDraft={onDraft}
         />
+        )}
       </div>
       {/* The name, at the top centre, over the text. */}
       <div
@@ -495,7 +539,7 @@ export function FilePage({
         )}
       >
         <span className="glass max-w-full truncate rounded-full px-row py-1 text-callout font-title text-foreground">
-          {baseName(path)}
+          {rev === null ? baseName(path) : `${baseName(path)} · ${shortId(rev)}`}
         </span>
       </div>
       {/* The bottom row: ‹ at the left; 分享, 「…」 and 编辑 at the right. */}
@@ -503,9 +547,27 @@ export function FilePage({
         data-file-deck
         className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+var(--gap-in))] flex items-end justify-between px-page"
       >
-        <GlassCircle aria-label={gui.back} data-file-back tip={!coarse && gui.back} onClick={leave} className="pointer-events-auto">
+        <GlassCircle
+          aria-label={rev === null ? gui.back : gui.file_rev_back}
+          data-file-back
+          tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
+          onClick={rev === null ? leave : () => setRev(null)}
+          className="pointer-events-auto"
+        >
           <IconBack />
         </GlassCircle>
+        {rev !== null ? (
+          <GlassCircle
+            aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare}
+            aria-pressed={compare}
+            data-file-rev-compare
+            tip={!coarse && (compare ? gui.file_rev_alone : gui.file_rev_compare)}
+            onClick={() => setCompare(!compare)}
+            className={cn("pointer-events-auto", compare && "glass-sel text-[var(--rail-on-ink)]")}
+          >
+            <IconBranch />
+          </GlassCircle>
+        ) : (
         <div className="pointer-events-auto flex items-center gap-in">
           {verbs.said && (
             <span data-file-said className="glass rounded-full px-row py-1 text-callout text-muted-foreground">
@@ -526,6 +588,7 @@ export function FilePage({
             </GlassCircle>
           )}
         </div>
+        )}
       </div>
       {verbs.dialogs}
       <CloseDraftDialog

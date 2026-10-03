@@ -1579,6 +1579,10 @@ impl Node {
                 Ok(found) => ipc::Reply::Found { found },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::GitOn { machine, ask } => match self.git_with(ep, &machine, &ask).await {
+                Ok(answer) => ipc::Reply::Git { answer },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::HistoryOn { machine, ask } => match self.history_with(ep, &machine, &ask).await {
                 Ok(hits) => ipc::Reply::History { hits },
                 Err(why) => ipc::Reply::Refused { why },
@@ -2396,6 +2400,14 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Launched)
+            }
+            Request::Git { ask } => {
+                // Off the reactor: a log walks up to `git::WALK` commits
+                // and a blame diffs the file's whole history.
+                let answer = tokio::task::spawn_blocking(move || crate::git::answer(&ask))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::Git { answer })
             }
             Request::History { ask } => {
                 // Off the reactor: up to `HISTORY_MAX` of lines read and
@@ -4383,6 +4395,64 @@ impl Node {
             Response::History { hits } => Ok(hits),
             // Older than the question: no history kept there.
             Response::Refused { .. } => Ok(Vec::new()),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// **One file's history on any machine** (round UX-4): its log, its
+    /// blame, or a revision of it (`crate::git::answer`), asked of the
+    /// machine holding the file — as [`Node::git_diff_on`] is.
+    pub async fn git_on(&self, machine: &str, ask: &crate::git::GitAsk) -> Result<crate::git::GitAnswer, String> {
+        if machine.is_empty() || machine == self.name() {
+            let ask = ask.clone();
+            return tokio::task::spawn_blocking(move || crate::git::answer(&ask))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::GitOn {
+                machine: machine.to_owned(),
+                ask: ask.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Git { answer } => Ok(answer),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.git_with(&ep, machine, ask).await;
+        ep.close().await;
+        out
+    }
+
+    async fn git_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        ask: &crate::git::GitAsk,
+    ) -> Result<crate::git::GitAnswer, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            let ask = ask.clone();
+            return tokio::task::spawn_blocking(move || crate::git::answer(&ask))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        // A satellite's git is read over ssh by its sponsor, a road only
+        // the status and the gutter have; its history is said to be out
+        // of reach rather than looking empty.
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Err(msg::git_history_satellite().into());
+        }
+        match self.ask(ep, &channel, &Request::Git { ask: ask.clone() }).await? {
+            Response::Git { answer } => Ok(answer),
+            Response::Refused { why } if why.trim().is_empty() => Err(msg::git_predates().into()),
+            Response::Refused { why } => Err(msg::git_refused(why)),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
