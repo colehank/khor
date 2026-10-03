@@ -4,6 +4,7 @@
 // our tokens; and it is the one kind of window a press opens — centred,
 // over the scrim — since the R0 sheet was retired (2026-09-30).
 import * as React from "react";
+import { keyboardCover } from "@/lib/viewport";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { cn } from "@/lib/utils";
@@ -175,8 +176,9 @@ function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
     const vv = window.visualViewport;
     const ride = () => {
       if (!vv) return;
-      const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      el.style.setProperty("--sheet-kb", `${kb}px`);
+      // The same measure the shell rides on (`lib/viewport`): against
+      // the layout viewport's bottom, never `innerHeight`.
+      el.style.setProperty("--sheet-kb", `${keyboardCover()}px`);
     };
     ride();
     vv?.addEventListener("resize", ride);
