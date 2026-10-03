@@ -76,6 +76,7 @@ import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
+import { onTermHistory, termHistory } from "@/lib/term-history";
 import { tapRaisesKeyboard } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
@@ -107,11 +108,6 @@ const CATCH_UP_MS = 2_000;
     (T-16). */
 const CHUNK_CHARS = 16 * 1024;
 
-/** The scrollback xterm keeps (item 15 C: was tmux's default of 2000).
-    The parser in `khor_gui_core::term` keeps none any more, so this is the
-    only history a face has; after a re-attach it holds what the host's
-    ring (`RING` in `host.rs`) still has, not more. */
-const SCROLLBACK = 10_000;
 
 /** How long the frame lights for a bell (BEL). iTerm2's visual bell is
     a flash; a flash that stays is a border, and a border says nothing. */
@@ -1067,7 +1063,11 @@ export function TerminalPane({
       // yazi asks 16 t for its cell size). Reports only — nothing here
       // lets a program move, resize or retitle the window.
       windowOptions: { getWinSizePixels: true, getCellSizePixels: true, getWinSizeChars: true },
-      scrollback: SCROLLBACK,
+      // The history this face keeps (`lib/term-history`, item 17; item 15
+      // C raised it from tmux's 2000). The parser in `khor_gui_core::term`
+      // keeps none, so this is the only history a face has; after a
+      // re-attach it holds what the host's ring still has, not more.
+      scrollback: termHistory(),
       fontFamily: font.family,
       fontSize: font.size,
       lineHeight: 1,
@@ -1504,6 +1504,13 @@ export function TerminalPane({
     });
     // **A new font is measured and fitted in place** (F7.6): open
     // terminals take it without reopening.
+    // Scrollback lines (item 17): a new depth reaches the open terminal at once;
+    // a smaller one drops the oldest lines, and the scroller's range
+    // follows.
+    const deepened = onTermHistory((lines) => {
+      term.options.scrollback = lines;
+      native.sync();
+    });
     const fonted = onTermFont((stack) => {
       term.options.fontFamily = stack;
       fit.fit();
@@ -1518,6 +1525,7 @@ export function TerminalPane({
 
     return () => {
       sized();
+      deepened();
       fonted();
       stopped = true;
       window.clearTimeout(timer);

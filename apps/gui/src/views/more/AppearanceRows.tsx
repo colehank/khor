@@ -20,6 +20,7 @@ import { gui } from "@/gen/catalog";
 import { useCoarse } from "@/hooks/use-coarse";
 import { useNarrow } from "@/hooks/use-narrow";
 import { setTermCursor, useTermCursor, type CursorShape } from "@/lib/term-cursor";
+import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/term-history";
 import { setTapRaisesKeyboard, useTapRaisesKeyboard } from "@/lib/term-tap";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
@@ -77,6 +78,7 @@ export function TerminalSection() {
   const coarse = useCoarse();
   const tapRaises = useTapRaisesKeyboard();
   const cursor = useTermCursor();
+  const history = useTermHistory();
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
@@ -221,6 +223,14 @@ export function TerminalSection() {
         label={gui.term_cursor_blink}
         on={cursor.blink}
         onToggle={() => setTermCursor({ ...cursor, blink: !cursor.blink })}
+      />
+      <PopupRow
+        name="term-history"
+        label={gui.term_history}
+        hint={gui.term_history_note(((history * lineKb()) / 1024).toFixed(1))}
+        value={String(history)}
+        choices={HISTORY_CHOICES.map((n) => ({ value: String(n), label: n.toLocaleString() }))}
+        onPick={(n) => setTermHistory(Number(n))}
       />
       {coarse && (
         <SwitchRow

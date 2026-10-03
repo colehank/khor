@@ -2353,6 +2353,10 @@ term-cursor-block = "块"
 term-cursor-bar = "竖线"
 term-cursor-underline = "下划线"
 term-cursor-blink = "光标闪烁"
+# Appearance → Terminal (item 17): how many lines of history a terminal
+# keeps, and what that costs in memory for each open terminal.
+term-history = "历史行数"
+term-history-note = "约 {0} MB 每个终端"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
 # Pull to refresh on a list.
