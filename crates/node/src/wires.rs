@@ -32,10 +32,11 @@
 //!   the acks of those keepalives — moves `heard`. A healthy wire is
 //!   therefore heard every few seconds without any traffic of ours.
 //! - **Retired** (closed, forgotten) when: nothing has been heard for
-//!   [`SILENT_AFTER`]; a request was sent and nothing at all came back
-//!   within [`ACK_WITHIN`]; QUIC closed it; the network changed and it
-//!   stayed quiet [`AFTER_CHANGE`] past the change; or the endpoint
-//!   under it was replaced. **In-flight requests on a retired wire fail
+//!   its silence limit; a request was sent and nothing at all came back
+//!   within its ack limit; QUIC closed it; the network changed and it
+//!   stayed quiet past its limit after the change; or the endpoint under
+//!   it was replaced. **Every limit scales with that wire's own round
+//!   trip** ([`Patience`]): a slow road that answers is never a dead one. **In-flight requests on a retired wire fail
 //!   at once** with the connection's close — a reading is asked again
 //!   on a fresh wire, anything else reports that the machine was not
 //!   reached and lets the person decide.
@@ -57,27 +58,86 @@ use std::time::{Duration, Instant};
 use iroh::endpoint::Connection;
 use khor_net::path::PathKind;
 
-/// How long a request may go without the far side sending **anything at
-/// all** on its wire, from the moment it was sent. A live machine acks
-/// within one round trip (plus QUIC's 25 ms ack delay); four seconds is
-/// a congested cellular relay many times over, and a fraction of the
-/// thirty a stale wire used to cost before anything noticed
-/// (audit/net.md F7: three asks after a restart hung 29.5 s each).
-pub(crate) const ACK_WITHIN: Duration = Duration::from_secs(4);
+/// **How long to wait for a wire, measured from its own round trip.**
+///
+/// ⚠️ 墓碑 (round NET-2): these were constants — 4 s for a request's
+/// first ack, 15 s of silence, 3 s after a network change — chosen on
+/// loopback. Measured through a relay with 3 s of added round trip and
+/// 2 % stalls (`crates/cli/tests/slow_relay.rs`), they retired four live
+/// wires a minute and every listing failed; the owner's Mac measured its
+/// Hong Kong relay at 2040 ms, which is the same regime.
+///
+/// Now each limit is a floor (the old constant, still right for a fast
+/// path) or a multiple of the wire's smoothed RTT, whichever is longer,
+/// under a ceiling. The multiple follows QUIC's own loss detection (RFC
+/// 9002 §6.2): a probe timeout is `smoothed_rtt + max(4·rttvar, 1 ms) +
+/// max_ack_delay`, about three RTTs when the variance is half the RTT,
+/// and QUIC declares persistent congestion only after three of those —
+/// so nine RTTs of hearing nothing is the point where QUIC itself would
+/// give up on the path, and anything sooner is khor being less patient
+/// than its transport.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Patience {
+    /// A request sent and nothing at all heard back.
+    pub(crate) ack: Duration,
+    /// Nothing heard on a wire, request or not.
+    pub(crate) silent: Duration,
+    /// After a network change or a wake, how long a wire has to be heard
+    /// before it is presumed to have died with the old network (iroh
+    /// pings every path on a change).
+    pub(crate) after_change: Duration,
+    /// Long enough that a wire not heard for this long missed one of
+    /// iroh's 5 s keepalives.
+    pub(crate) keepalive_missed: Duration,
+}
 
-/// How long a wire may go unheard before it is retired. Three of iroh's
-/// 5 s keepalive intervals, the same margin iroh gives a direct path
-/// (`PATH_MAX_IDLE_TIMEOUT`).
-pub(crate) const SILENT_AFTER: Duration = Duration::from_secs(15);
+/// RTTs of hearing nothing before a wire is judged dead (three probe
+/// timeouts; see [`Patience`]).
+const RTTS: u32 = 9;
 
-/// Longer than one of iroh's 5 s keepalive intervals and its ack: a
-/// connection not heard for this long has missed one.
-const KEEPALIVE_MISSED: Duration = Duration::from_secs(6);
+impl Patience {
+    pub(crate) fn for_rtt(rtt: Duration) -> Patience {
+        let k = rtt.saturating_mul(RTTS);
+        Patience {
+            ack: Duration::from_secs(4).max(k).min(Duration::from_secs(60)),
+            silent: (Duration::from_secs(15) + k).min(Duration::from_secs(90)),
+            after_change: Duration::from_secs(3).max(k).min(Duration::from_secs(30)),
+            keepalive_missed: (Duration::from_secs(6) + k).min(Duration::from_secs(60)),
+        }
+    }
 
-/// After a network change (or a wake), how long a wire has to be heard
-/// before it is presumed to have died with the old network. iroh pings
-/// every path on a change, so a live wire answers in one round trip.
-pub(crate) const AFTER_CHANGE: Duration = Duration::from_secs(3);
+    /// For this connection, now.
+    pub(crate) fn of(conn: &Connection) -> Patience {
+        Patience::for_rtt(rtt_of(conn))
+    }
+}
+
+/// The round trip QUIC has smoothed for the path carrying this wire's
+/// bytes (`PathStats::rtt` via `Connection::paths`): the selected path's,
+/// or the longest of the open ones while none is selected. Zero when the
+/// connection has no path to say — the floors then apply.
+pub(crate) fn rtt_of(conn: &Connection) -> Duration {
+    let paths = conn.paths();
+    let mut longest = Duration::ZERO;
+    for p in paths.iter() {
+        if p.is_selected() {
+            return p.rtt();
+        }
+        longest = longest.max(p.rtt());
+    }
+    longest
+}
+
+/// How long a far session's open is given on top of the request's own
+/// budget for the road it travels: the same nine RTTs.
+pub(crate) fn budget_for(base: Duration, conn: &Connection) -> Duration {
+    base + rtt_of(conn)
+        .saturating_mul(RTTS)
+        .min(Duration::from_secs(120))
+}
+
+/// The longest any wire waits after a change before its verdict.
+const CHANGE_JUDGED_WITHIN: Duration = Duration::from_secs(30);
 
 /// How often the resident looks at its wires: liveness and road.
 pub(crate) const TICK: Duration = Duration::from_secs(1);
@@ -151,6 +211,9 @@ struct Slot {
     /// unanswered — the per-machine half of [`Counts`].
     failed_total: u64,
     unanswered_total: u64,
+    /// The last round trip measured on this key's wire, kept after the
+    /// wire goes: the next dial to that machine is given time for it.
+    rtt: Duration,
 }
 
 /// Every wire this node holds, and the counters behind `khor doctor`'s
@@ -160,7 +223,7 @@ pub(crate) struct Wires {
     slots: Mutex<HashMap<(String, Proto), Slot>>,
     dialing: Mutex<HashMap<(String, Proto), DialLock>>,
     /// A network change not yet judged: wires not heard since it are
-    /// retired once [`AFTER_CHANGE`] has passed.
+    /// retired once their [`Patience::after_change`] has passed.
     changed: Mutex<Option<Instant>>,
     /// The connections other machines opened to this one, weakly, and
     /// when each was last heard ([`Self::serving`]).
@@ -177,6 +240,7 @@ struct Served {
     id: String,
     rx: u64,
     heard: Instant,
+    rtt: Duration,
 }
 
 /// The counters, as atomics. [`Counts::snapshot`] is what crosses ipc.
@@ -319,6 +383,10 @@ impl Wires {
         }
         slot.rx = heard_count(&conn);
         slot.heard = Some(now);
+        let rtt = rtt_of(&conn);
+        if !rtt.is_zero() {
+            slot.rtt = rtt;
+        }
         slot.word = None;
         slot.leaning = None;
         settle(slot, road_now(&conn));
@@ -343,7 +411,10 @@ impl Wires {
         let now = Instant::now();
         let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
         served.retain(|w| {
-            if w.id != id || now.saturating_duration_since(w.heard) < KEEPALIVE_MISSED {
+            if w.id != id
+                || now.saturating_duration_since(w.heard)
+                    < Patience::for_rtt(w.rtt).keepalive_missed
+            {
                 return true;
             }
             if let Some(conn) = w.conn.upgrade() {
@@ -407,7 +478,7 @@ impl Wires {
     /// Retires this key's wire if it has missed a keepalive — what a face
     /// asking to attach again (a pipe that ended, a manual reload) does
     /// first, so the new attachment goes out on a fresh wire rather than
-    /// waiting out [`ACK_WITHIN`] on a dead one. A wire heard within the
+    /// waiting out its ack limit on a dead one. A wire heard within the
     /// keepalive interval is kept: it is alive, and redialling it would
     /// only cost a handshake.
     pub(crate) fn retire_if_quiet(&self, id: &str, proto: Proto) -> bool {
@@ -416,7 +487,7 @@ impl Wires {
             match slots.get(&(id.to_owned(), proto)) {
                 Some(slot) if slot.conn.is_some() => slot
                     .heard
-                    .is_none_or(|h| h.elapsed() >= KEEPALIVE_MISSED)
+                    .is_none_or(|h| h.elapsed() >= Patience::for_rtt(slot.rtt).keepalive_missed)
                     .then(|| slot.conn.clone())
                     .flatten(),
                 _ => None,
@@ -426,6 +497,18 @@ impl Wires {
             Some(conn) => self.retire(id, proto, &conn, Retired::Silent),
             None => false,
         }
+    }
+
+    /// The last round trip measured to this machine on any wire, for the
+    /// next dial's budget. Zero when none was ever measured.
+    pub(crate) fn last_rtt(&self, id: &str) -> Duration {
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        [Proto::Main, Proto::Tunnel]
+            .iter()
+            .filter_map(|p| slots.get(&(id.to_owned(), *p)))
+            .map(|s| s.rtt)
+            .max()
+            .unwrap_or_default()
     }
 
     /// Lets go of every wire to one machine (a pause bites on them).
@@ -473,12 +556,13 @@ impl Wires {
             id: conn.remote_id().to_string(),
             rx: heard_count(conn),
             heard: Instant::now(),
+            rtt: rtt_of(conn),
         });
     }
 
     /// Closes every connection other machines opened to this one: what a
     /// phone going to the background owes them, so their wires to it end
-    /// now instead of after [`SILENT_AFTER`].
+    /// now instead of after their silence limit.
     pub(crate) fn let_go_served(&self, why: Retired) {
         let served = std::mem::take(&mut *self.served.lock().unwrap_or_else(|p| p.into_inner()));
         for conn in served.iter().filter_map(|w| w.conn.upgrade()) {
@@ -503,8 +587,8 @@ impl Wires {
     }
 
     /// The network under this machine changed, or it woke from sleep:
-    /// any wire not heard within [`AFTER_CHANGE`] from now is presumed to
-    /// have died with the old network ([`Self::tick`] judges).
+    /// any wire not heard within its [`Patience::after_change`] from now is
+    /// presumed to have died with the old network ([`Self::tick`] judges).
     pub(crate) fn network_changed(&self) {
         *self.changed.lock().unwrap_or_else(|p| p.into_inner()) = Some(Instant::now());
         self.counts.network_changes.fetch_add(1, Relaxed);
@@ -515,12 +599,19 @@ impl Wires {
     /// pump's cue to visit early.
     pub(crate) fn tick(&self) -> usize {
         let now = Instant::now();
+        // A change is judged per wire, each on its own patience; it stays
+        // pending until the slowest could have answered.
         let change = {
             let mut changed = self.changed.lock().unwrap_or_else(|p| p.into_inner());
             match *changed {
-                Some(at) if now >= at + AFTER_CHANGE => changed.take(),
-                _ => None,
+                Some(at) if now >= at + CHANGE_JUDGED_WITHIN => changed.take(),
+                other => other,
             }
+        };
+        let gone_with_change = |heard: Option<Instant>, rtt: Duration| {
+            change.is_some_and(|at| {
+                heard.is_none_or(|h| h < at) && now >= at + Patience::for_rtt(rtt).after_change
+            })
         };
         let mut retired = 0;
         let mut dead: Vec<String> = Vec::new();
@@ -535,8 +626,12 @@ impl Wires {
                     w.rx = rx;
                     w.heard = now;
                 }
-                if now.saturating_duration_since(w.heard) >= SILENT_AFTER
-                    || change.is_some_and(|at| w.heard < at)
+                let rtt = rtt_of(&conn);
+                if !rtt.is_zero() {
+                    w.rtt = rtt;
+                }
+                if now.saturating_duration_since(w.heard) >= Patience::for_rtt(w.rtt).silent
+                    || gone_with_change(Some(w.heard), w.rtt)
                 {
                     conn.close(0u32.into(), Retired::Silent.reason());
                     return false;
@@ -562,11 +657,15 @@ impl Wires {
                 slot.rx = rx;
                 slot.heard = Some(now);
             }
+            let rtt = rtt_of(&conn);
+            if !rtt.is_zero() {
+                slot.rtt = rtt;
+            }
             let quiet = slot
                 .heard
                 .map_or(Duration::MAX, |h| now.saturating_duration_since(h));
-            let stale_after_change = change.is_some_and(|at| slot.heard.is_none_or(|h| h < at));
-            if quiet >= SILENT_AFTER || stale_after_change {
+            let stale_after_change = gone_with_change(slot.heard, slot.rtt);
+            if quiet >= Patience::for_rtt(slot.rtt).silent || stale_after_change {
                 let why = if stale_after_change {
                     Retired::Network
                 } else {

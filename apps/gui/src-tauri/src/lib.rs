@@ -3051,7 +3051,7 @@ fn watch_for_wake() {
 #[cfg(target_os = "ios")]
 fn watch_the_path() {
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::Ordering;
     #[link(name = "Network", kind = "framework")]
     unsafe extern "C" {
         fn nw_path_monitor_create() -> *mut c_void;
@@ -3061,15 +3061,34 @@ fn watch_the_path() {
         );
         fn nw_path_monitor_set_queue(monitor: *mut c_void, queue: *mut c_void);
         fn nw_path_monitor_start(monitor: *mut c_void);
+        fn nw_path_get_status(path: *mut c_void) -> i32;
+        fn nw_path_uses_interface_type(path: *mut c_void, kind: i32) -> bool;
     }
     unsafe extern "C" {
         fn dispatch_get_global_queue(identifier: isize, flags: usize) -> *mut c_void;
     }
-    // The monitor reports the current path once as it starts; that is
-    // not a change.
-    let first = AtomicBool::new(true);
-    let changed = block2::RcBlock::new(move |_path: *mut c_void| {
-        if first.swap(false, Ordering::Relaxed) {
+    // **Only a change of road is a change** (round NET-2): the monitor
+    // also reports a path whose cost or constraint flags moved, or one
+    // re-evaluated on the same interface, and each `network_changed` puts
+    // every wire on trial. The path's status and which of Wi-Fi /
+    // cellular / wired it uses are what decide whether the old wires can
+    // still be alive; the first report, at start, is the baseline.
+    // `nw_interface_type_t`: wifi 1, cellular 2, wired 3.
+    let last = std::sync::atomic::AtomicU32::new(u32::MAX);
+    let changed = block2::RcBlock::new(move |path: *mut c_void| {
+        // SAFETY: `path` is the monitor's for the length of this call.
+        let now = unsafe {
+            let status = nw_path_get_status(path).clamp(0, 255) as u32;
+            let mut kinds = 0u32;
+            for (bit, kind) in [(1u32, 1i32), (2, 2), (4, 3)] {
+                if nw_path_uses_interface_type(path, kind) {
+                    kinds |= bit;
+                }
+            }
+            status << 8 | kinds
+        };
+        let was = last.swap(now, Ordering::Relaxed);
+        if was == u32::MAX || was == now {
             return;
         }
         khor_node::link::network_changed(&Node::root_from_env());

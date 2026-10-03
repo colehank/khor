@@ -803,7 +803,9 @@ impl Node {
                             // answered, and the rest are retired: a visit
                             // to everyone, the backed-off included — the
                             // network they failed on is not this one.
-                            tokio::time::sleep(wires::AFTER_CHANGE + wires::TICK).await;
+                            // The judging is per wire on its own patience;
+                            // the floor is when the fast ones are known.
+                            tokio::time::sleep(wires::Patience::for_rtt(Duration::ZERO).after_change + wires::TICK).await;
                             let out = n.sync_peers(&e, true).await;
                             let heard = if n.self_admitted() { out.as_slice() } else { &[] };
                             let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
@@ -1653,7 +1655,8 @@ impl Node {
     /// 100 s of 29.5 s hangs.
     pub(crate) async fn exchange_on(&self, line: &Line, req: &Request) -> Result<Response, Miss> {
         let mut guard = RetireUnheard::new(&self.wires, line);
-        let out = exchange(&line.conn, &line.name, req, req.budget()).await;
+        let budget = wires::budget_for(req.budget(), &line.conn);
+        let out = exchange(&line.conn, &line.name, req, budget).await;
         guard.disarm();
         match &out {
             Ok(_) => self.wires.heard(&line.id, line.proto, &line.conn),
@@ -5699,7 +5702,7 @@ impl Node {
         let mut relays = t.relays.clone();
         relays.extend(self.relays().iter().cloned());
         let conn = self
-            .dial_with(ep, &t.id, &t.direct, &relays, ALPN)
+            .dial_with(ep, &t.id, &t.direct, &relays, ALPN, DIAL_TIMEOUT)
             .await
             .map_err(|e| match e {
                 DialFailure::TimedOut => msg::inviter_unreachable_timeout().to_string(),
@@ -6701,9 +6704,12 @@ async fn exchange(
                     count = seen;
                     heard = Some(now);
                 }
+                // The road's own patience, read each beat: QUIC refines its
+                // round trip as the answers come (`wires::Patience`).
+                let patience = wires::Patience::of(conn);
                 let quiet = match heard {
-                    None => now.duration_since(sent) >= wires::ACK_WITHIN,
-                    Some(at) => now.duration_since(at) >= wires::SILENT_AFTER,
+                    None => now.duration_since(sent) >= patience.ack,
+                    Some(at) => now.duration_since(at) >= patience.silent,
                 };
                 if quiet {
                     return Err(Miss::Unreached(msg::machine_silent(who)));
@@ -6762,7 +6768,7 @@ impl Drop for RetireUnheard<'_> {
     fn drop(&mut self) {
         if self.armed
             && wires::heard_count(&self.line.conn) == self.count
-            && self.at.elapsed() >= wires::ACK_WITHIN
+            && self.at.elapsed() >= wires::Patience::of(&self.line.conn).ack
         {
             self.wires.retire(
                 &self.line.id,
@@ -6978,6 +6984,7 @@ impl Node {
         direct: &[String],
         relays: &[String],
         alpn: &[u8],
+        within: Duration,
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
         // 按机器暂停: not dialled at all, and said so — the sync tick,
         // every verb and every tunnel come through here.
@@ -7007,7 +7014,7 @@ impl Node {
             });
         }
 
-        let deadline = tokio::time::sleep(DIAL_TIMEOUT);
+        let deadline = tokio::time::sleep(within);
         tokio::pin!(deadline);
         // First road home wins; a road that fails only counts if every
         // other one does too, so one dead direct address cannot decide
@@ -7041,7 +7048,13 @@ impl Node {
         direct: &[String],
         alpn: &[u8],
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
-        self.dial_with(ep, id, direct, self.relays(), alpn).await
+        // A machine last seen behind a slow road is given that road's time
+        // to answer a handshake (`wires::Patience`); one never measured, or
+        // a fast one, the budget dials always had.
+        let within = DIAL_TIMEOUT
+            .max(self.wires.last_rtt(id).saturating_mul(12))
+            .min(Duration::from_secs(60));
+        self.dial_with(ep, id, direct, self.relays(), alpn, within).await
     }
 }
 

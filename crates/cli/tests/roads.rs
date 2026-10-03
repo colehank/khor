@@ -85,13 +85,13 @@ fn local_relay(dir: &Path) -> (Reaped, String) {
         .stderr(std::fs::File::create(dir.join("relay.log")).unwrap())
         .spawn()
         .unwrap();
-    let first = std::io::BufReader::new(child.stdout.take().unwrap())
-        .lines()
-        .next()
-        .expect("a banner line")
-        .unwrap();
+    let mut lines = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
+    let first = lines.next().expect("a banner line").unwrap();
     let at = first.find("http://").expect("a url on the first line");
     let url = first[at..].split_whitespace().next().unwrap().to_string();
+    // Keep reading: a relay printing into a closed pipe resets every
+    // connection after its banner (`scratch::local_relay` has the story).
+    std::thread::spawn(move || for _ in lines.map_while(Result::ok) {});
     (Reaped(child), url)
 }
 
