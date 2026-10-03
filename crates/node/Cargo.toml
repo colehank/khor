@@ -72,6 +72,16 @@ harness = false
 # checked before use, not after.
 [target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 trash = { version = "5.2.9", default-features = false, features = ["coinit_apartmentthreaded"] }
+# The far side of a pushed directory tree (round NET-4, `crate::watch`):
+# FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW on Windows,
+# one API. The machines that answer a tree are desktops; a phone answers
+# none, so it does not carry this. The de-facto crate for it (rust-analyzer,
+# cargo-watch, deno, zed use it).
+# License: CC0-1.0. Its new neighbours in the lock: notify-types (MIT OR
+# Apache-2.0), fsevent-sys (MIT) on macOS, inotify and inotify-sys (ISC)
+# on Linux, kqueue and kqueue-sys (MIT) listed for the BSDs and built for
+# none of khor's targets — checked before use.
+notify = "8.2"
 
 # The GPU reading is the one part of vitals with no cross-platform API
 # behind it, so each platform brings its own and no other platform pays

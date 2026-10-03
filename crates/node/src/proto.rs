@@ -584,6 +584,35 @@ pub enum Request {
         docs: Vec<(String, serde_bytes::ByteBuf)>,
         readings: Vec<(String, serde_bytes::ByteBuf)>,
     },
+    /// [`Request::Load`], **with the stamp of the day the asker already
+    /// holds** (round NET-4; 0: none). The table is answered every time
+    /// — it is what moves — and the day only when its stamp differs
+    /// (`history::CpuHistory::stamp`, which changes once a minute at
+    /// most): a machine card open on a far machine asked for the whole
+    /// day, five series of 288 buckets, every five seconds. Answered as
+    /// [`Response::LoadSince`]. A new variant for this file's first rule:
+    /// a khor that predates it refuses the frame, and the asker asks
+    /// [`Request::Load`] instead.
+    LoadSince {
+        top: u32,
+        by: khor_core::TopBy,
+        desc: bool,
+        day: u64,
+    },
+    /// What a file is now, without its bytes (`crate::files::stat`):
+    /// asked by a face coming back to a window with the file open, which
+    /// re-reads it only when the answer differs from what it holds
+    /// (round NET-4). Answered as [`Response::Stat`]; a khor that
+    /// predates it refuses, and the face reads the file as before.
+    Stat { path: String },
+    /// **Watch these directories and say when one changes** (round
+    /// NET-4, `crate::watch`): asked on a stream of its own, which stays
+    /// open — answered first with [`Response::Watching`] and then one
+    /// [`Response::Changed`] per burst of changes, each as a length-
+    /// prefixed frame, until the asker lets the stream go. A khor that
+    /// predates it refuses, and so does one that cannot watch; the
+    /// asker's faces then ask `Ls`, as before.
+    Watch { dirs: Vec<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -866,6 +895,26 @@ pub enum Response {
         since: crate::day::DaySince,
         full: serde_bytes::ByteBuf,
     },
+    /// [`Request::LoadSince`]'s answer: the table, the day's stamp, and
+    /// the day itself only when that stamp is not the one asked with.
+    LoadSince {
+        top: Vec<khor_core::TopRow>,
+        day: u64,
+        cpu_day: Option<khor_core::CpuDay>,
+    },
+    /// [`Request::Stat`]'s answer: size, mtime, and the digest of the
+    /// bytes when the file fits one slice (empty otherwise).
+    Stat {
+        total: u64,
+        at_ms: u64,
+        digest: String,
+    },
+    /// [`Request::Watch`]'s first frame: the directories it is watching
+    /// (one that is gone, or not a directory, is left out).
+    Watching { dirs: Vec<String> },
+    /// One burst of changes on a [`Request::Watch`] stream: the watched
+    /// directories whose listings changed.
+    Changed { dirs: Vec<String> },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -956,6 +1005,8 @@ impl Request {
                 | Request::Checkout { .. }
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
+                | Request::LoadSince { .. }
+                | Request::Stat { .. }
         )
     }
 
@@ -995,6 +1046,8 @@ impl Request {
                 | Request::Checkout { .. }
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
+                | Request::LoadSince { .. }
+                | Request::Stat { .. }
         )
     }
 
@@ -1319,6 +1372,29 @@ mod tests {
                 },
                 &b"SatWrite"[..],
             ),
+            (
+                Request::Versions {
+                    docs: Vec::new(),
+                    readings: Vec::new(),
+                },
+                &b"Versions"[..],
+            ),
+            (
+                Request::LoadSince {
+                    top: 8,
+                    by: khor_core::TopBy::Busiest,
+                    desc: false,
+                    day: 0,
+                },
+                &b"LoadSince"[..],
+            ),
+            (
+                Request::Stat {
+                    path: String::new(),
+                },
+                &b"Stat"[..],
+            ),
+            (Request::Watch { dirs: Vec::new() }, &b"Watch"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(
