@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
+import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { useHereHosts } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
@@ -3618,6 +3619,11 @@ function sortRows(rows: Load["top"], sort: Sort): Load["top"] {
  * every five seconds.
  */
 function useLoad(row: DeviceRow | null, sort: Sort) {
+  // **Over the wire every beat**, so a window nobody is looking at asks
+  // at the hidden beat (round NET-2, piece 6): a phone in a pocket was
+  // still asking a far machine for its top every five seconds. Coming
+  // back restarts the beat, which asks at once.
+  const hidden = useHidden();
   // **Kept per machine across the card's unmount** (`lib/kept`,
   // docs/SHELL.md 第十六轮): coming back to the machine page draws the
   // last answer in the first frame and asks again in place. Before, the
@@ -3701,7 +3707,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
     // this is read, below.
     let pressed = true;
     const ask = async () => {
-      let wait = LOAD_MS;
+      let wait = hidden ? HIDDEN_MS : LOAD_MS;
       const reorder = pressed;
       pressed = false;
       try {
@@ -3772,7 +3778,7 @@ function useLoad(row: DeviceRow | null, sort: Sort) {
       stopped = true;
       window.clearTimeout(timer);
     };
-  }, [id, me, name, sort?.col, sort?.dir]);
+  }, [id, me, name, sort?.col, sort?.dir, hidden]);
   // `asking` is the column somebody pressed whose answer has not landed
   // yet — the head wears it, and nothing else moves until the rows do.
   const asking = shown === null || shown.col !== sort.col || shown.dir !== sort.dir ? sort.col : null;

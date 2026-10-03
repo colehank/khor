@@ -8,10 +8,12 @@
 // Hong Kong relay — and per machine its road, its round trip, how long
 // ago it was last heard and the last thing that went wrong, in khor's
 // own words. Asked on arrival and every few seconds while the page is
-// up; nothing here is a control.
+// up (each ask times a round trip to every relay, so a hidden window
+// asks at the hidden beat); nothing here is a control.
 import { useEffect, useState } from "react";
 
 import { fetchConnections, type Connections } from "@/api";
+import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
 import { ago, hopWord, linkWord } from "@/words";
@@ -30,6 +32,7 @@ const hostOf = (url: string) => {
 
 export function ConnectionsSection() {
   const [conn, setConn] = useState<Connections | null>(null);
+  const hidden = useHidden();
   useEffect(() => {
     let alive = true;
     let asking = false;
@@ -48,12 +51,12 @@ export function ConnectionsSection() {
         });
     };
     ask();
-    const t = window.setInterval(ask, AGAIN_MS);
+    const t = window.setInterval(ask, hidden ? HIDDEN_MS : AGAIN_MS);
     return () => {
       alive = false;
       window.clearInterval(t);
     };
-  }, []);
+  }, [hidden]);
   if (!conn) return null;
   if (conn.unread) {
     return (
