@@ -1712,6 +1712,7 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
+      openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
       onNew={() => openNewSession()}

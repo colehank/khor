@@ -319,6 +319,10 @@ export function useShortcuts(acts: ShellActs) {
           acts.lock();
           return true;
         case "find":
+          // **⌘K in a terminal clears it** (T-17, iTerm2's and Terminal's
+          // ⌘K): left to the terminal (`TerminalPane`), not the app's
+          // find, while the terminal has the keys.
+          if (IS_MAC && document.activeElement?.classList.contains("xterm-helper-textarea")) return false;
           acts.find();
           return true;
         case "import":
@@ -349,7 +353,7 @@ export function useShortcuts(acts: ShellActs) {
           // Not under a finger: there the circle is the way.
           if (window.matchMedia("(pointer: coarse)").matches) return false;
           const box = document.querySelector<HTMLElement & { __reopen?: () => Promise<void> }>(
-            "[data-detail-pane] [data-terminal]",
+            "[data-detail-pane] [data-kept-terminal][data-active] [data-terminal]",
           );
           if (!box?.__reopen) return false;
           void box.__reopen();

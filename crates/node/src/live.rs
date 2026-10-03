@@ -641,14 +641,29 @@ impl LiveKind {
                 let _ = fs::remove_file(crate::host::view_file_path(&dir));
             }
             if let Ok(hf) = crate::host::read_host_file(&dir) {
-                if crate::link::pid_alive(hf.host_pid) && !self.held_in_mux(id) {
-                    return Ok(Seat::Host);
+                if crate::link::pid_alive(hf.host_pid) {
+                    // A live host is the row's own terminal (T-34, the
+                    // terminal audit), and its marker is never removed:
+                    // it is the only way back to that process. Asking the
+                    // panes first once seated a khor-started shell inside
+                    // the tmux pane its bridge descended from, deleted
+                    // the live host's marker, and sent the shell's keys
+                    // into that pane. Only a conversation ghost whose
+                    // agent was resumed in a pane goes on to the viewer
+                    // below, its host left standing for the chat.
+                    let shell = self
+                        .on_record(id)
+                        .is_some_and(|(kind, _)| kind == khor_core::kind::SHELL);
+                    if shell || !self.held_in_mux(id) {
+                        return Ok(Seat::Host);
+                    }
+                } else {
+                    // A host that died without cleaning up (killed
+                    // hard): the marker points at nothing, so clear it
+                    // and stand a fresh one up rather than answering
+                    // "attached" about a corpse.
+                    let _ = fs::remove_file(crate::host::host_file_path(&dir));
                 }
-                // A host that died without cleaning up (killed hard):
-                // the marker points at nothing, so clear it and stand a
-                // fresh one up rather than answering "attached" about a
-                // corpse.
-                let _ = fs::remove_file(crate::host::host_file_path(&dir));
             }
         }
         let tmux = self
