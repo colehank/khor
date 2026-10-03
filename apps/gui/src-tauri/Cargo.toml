@@ -13,6 +13,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 khor-gui-core = { path = "../core" }
+# `say_signals`: one line on stderr naming a terminating signal and its
+# sender. **Already in the tree** (the workspace's own).
+libc = "0.2"
+# The time on those lines and on the exit lines (`run`). **Already in the
+# tree** (the workspace's own).
+jiff.workspace = true
 khor-node.workspace = true
 # The browser face, started beside the embedded serve. The app is the
 # resident on a desktop that has one, and a face that only `khor serve`

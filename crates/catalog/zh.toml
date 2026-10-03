@@ -1699,6 +1699,7 @@ swap-no-answer = "跑得起来但没答版本"
 # "stopped something".
 quit-serve-stopped = "serve 已停止"
 quit-no-serve = "serve 本来就未运行"
+quit-app-resident = "这台机器的常驻在 khor 应用里（pid {0}）——从应用里退出它，khor quit 不会去停一个应用"
 quit-hosts = "已停止 {0} 个 session 宿主"
 # The serve's own hearing test (批23): a long-lived endpoint can go
 # bidirectionally unreachable while its process looks perfectly healthy.

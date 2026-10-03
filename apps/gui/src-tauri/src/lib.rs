@@ -3106,6 +3106,10 @@ pub fn run() {
     // moves outright; `Node::open` only rescues a process that is
     // already adrift.
     khor_node::cwd::pin();
+    // **Never a silent end** (round NET-FIX): a signal from outside says
+    // who sent it on stderr — the app log — before it takes effect.
+    #[cfg(all(unix, desktop))]
+    say_signals();
     // 语言, before anything is drawn or printed (docs/MORE.md 语言).
     // The face resolves its own (`src/lang.ts`, from the same key); this
     // is the Rust half — every sentence that crosses back as text, a
@@ -3168,8 +3172,10 @@ pub fn run() {
             match Node::open(Node::root_from_env()) {
                 Ok(n) => {
                     let served = n.serve_resumable().await;
-                    if let Err(e) = served {
-                        eprintln!("serve ended: {e}");
+                    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                    match served {
+                        Err(e) => eprintln!("[{stamp}] serve ended: {e}"),
+                        Ok(()) => eprintln!("[{stamp}] serve ended"),
                     }
                 }
                 Err(e) => eprintln!("serve did not start: {e}"),
@@ -3264,6 +3270,8 @@ pub fn run() {
                     // this, closing khor's window would leave the process
                     // alive with nothing on screen.
                     tauri::WindowEvent::CloseRequested { .. } => {
+                        let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                        eprintln!("[{stamp}] khor app: the main window was closed");
                         if let Some(menu) = menu() {
                             let _ = menu.close();
                         }
@@ -3521,8 +3529,101 @@ pub fn run() {
             set_paused,
             set_machine_paused
         ])
-        .run(tauri::generate_context!())
-        .expect("tauri run");
+        .build(tauri::generate_context!())
+        .expect("tauri build")
+        // **Every way out is said in the log** (round NET-FIX): a window
+        // closed or ⌘Q is the person's, and the line names it so a
+        // missing app is never a mystery again.
+        .run(|_app, event| {
+            if let tauri::RunEvent::ExitRequested { code, .. } = &event {
+                let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                match code {
+                    Some(code) => eprintln!("[{stamp}] khor app: exit requested by the app (code {code})"),
+                    None => eprintln!("[{stamp}] khor app: exit requested — the last window closed or Quit was chosen"),
+                }
+            }
+            if let tauri::RunEvent::Exit = event {
+                let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                eprintln!("[{stamp}] khor app: exiting");
+            }
+        });
+}
+
+/// Writes one line naming a terminating signal and who sent it, then
+/// lets the signal do what it would have done.
+///
+/// **Why at all**: the app's resident lives in this process, so when it
+/// goes every machine reads 未连接 — and a TERM from another process
+/// (a `khor quit` from an older build, a script stopping a pid it
+/// thought was a serve, logout) ends it with no crash report and nothing
+/// in the log. Async-signal-safe: a fixed buffer, `write(2)`, `time(3)`,
+/// then the default action re-raised.
+#[cfg(all(unix, desktop))]
+fn say_signals() {
+    extern "C" fn said(sig: libc::c_int, info: *mut libc::siginfo_t, _ctx: *mut libc::c_void) {
+        fn put(buf: &mut [u8; 160], at: &mut usize, bytes: &[u8]) {
+            for &b in bytes {
+                if *at < buf.len() {
+                    buf[*at] = b;
+                    *at += 1;
+                }
+            }
+        }
+        fn num(buf: &mut [u8; 160], at: &mut usize, mut n: i64) {
+            if n < 0 {
+                put(buf, at, b"-");
+                n = -n;
+            }
+            let mut digits = [0u8; 20];
+            let mut k = 0;
+            loop {
+                digits[k] = b'0' + (n % 10) as u8;
+                k += 1;
+                n /= 10;
+                if n == 0 {
+                    break;
+                }
+            }
+            while k > 0 {
+                k -= 1;
+                put(buf, at, &[digits[k]]);
+            }
+        }
+        let mut buf = [0u8; 160];
+        let mut at = 0;
+        // SAFETY: `info` is the kernel's for this delivery (SA_SIGINFO);
+        // every call below is async-signal-safe.
+        unsafe {
+            put(&mut buf, &mut at, b"[epoch ");
+            num(&mut buf, &mut at, libc::time(std::ptr::null_mut()) as i64);
+            put(&mut buf, &mut at, b"] khor app: signal ");
+            num(&mut buf, &mut at, sig as i64);
+            put(&mut buf, &mut at, b" from pid ");
+            num(&mut buf, &mut at, (*info).si_pid as i64);
+            put(&mut buf, &mut at, b" - exiting\n");
+            libc::write(2, buf.as_ptr().cast(), at);
+            libc::signal(sig, libc::SIG_DFL);
+            libc::raise(sig);
+        }
+    }
+    // SAFETY: installing a handler at startup, before any thread that
+    // could race it; the handler only touches its own stack.
+    unsafe {
+        for sig in [libc::SIGTERM, libc::SIGINT, libc::SIGQUIT, libc::SIGHUP] {
+            // A signal the launcher set to be ignored (`nohup`'s SIGHUP)
+            // stays ignored: that was somebody's decision.
+            let mut was: libc::sigaction = std::mem::zeroed();
+            libc::sigaction(sig, std::ptr::null(), &mut was);
+            if was.sa_sigaction == libc::SIG_IGN {
+                continue;
+            }
+            let mut act: libc::sigaction = std::mem::zeroed();
+            act.sa_sigaction = said as *const () as usize;
+            act.sa_flags = libc::SA_SIGINFO;
+            libc::sigemptyset(&mut act.sa_mask);
+            libc::sigaction(sig, &act, std::ptr::null_mut());
+        }
+    }
 }
 
 #[cfg(desktop)]

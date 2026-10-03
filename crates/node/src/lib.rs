@@ -424,6 +424,9 @@ pub struct Node {
     /// ears. What a long-lived task reads instead of an endpoint it
     /// captured, which may since have been closed.
     pub(crate) ears: Mutex<Option<Arc<iroh::Endpoint>>>,
+    /// Whether this node's resident is an app's (`serve_resumable`) —
+    /// written into `endpoint.json` so `khor quit` leaves it alone.
+    pub(crate) app_resident: std::sync::atomic::AtomicBool,
     /// Whether opening this node made the network's root key — the one
     /// moment a person must be told to write its words down
     /// (`trust::Node::bootstrap_trust`).
@@ -1014,6 +1017,7 @@ impl Node {
             wires: Arc::default(),
             me: std::sync::OnceLock::new(),
             ears: Mutex::new(None),
+            app_resident: std::sync::atomic::AtomicBool::new(false),
             root_born: false,
             roads: Arc::default(),
             hosts,

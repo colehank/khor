@@ -4390,10 +4390,12 @@ version = "0.1.14"
 dependencies = [
  "block2",
  "embed_plist",
+ "jiff",
  "khor-catalog",
  "khor-gui-core",
  "khor-node",
  "khor-web",
+ "libc",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

@@ -397,6 +397,11 @@ struct EndpointFile {
     ipc_port: u16,
     #[serde(default)]
     ipc_cookie: String,
+    /// The resident is an app (a resumable serve — the desktop app or the
+    /// phone), not a kept `khor serve`. `khor quit` stops a kept serve; it
+    /// never signals an app, whose window a person closes themselves.
+    #[serde(default)]
+    app: bool,
 }
 
 /// How a [`Node::leave`] ended, per machine that was in the table.
@@ -509,6 +514,7 @@ impl Node {
             relays: self.relays().to_vec(),
             ipc_port: handoffs.local_addr().map_err(|e| e.to_string())?.port(),
             ipc_cookie: cookie.to_owned(),
+            app: self.app_resident.load(std::sync::atomic::Ordering::Relaxed),
         };
         write_private(
             &self.root().join(".khor").join("endpoint.json"),
@@ -548,6 +554,8 @@ impl Node {
     }
 
     async fn serve_as(self, resumable: bool) -> Result<(), String> {
+        self.app_resident
+            .store(resumable, std::sync::atomic::Ordering::Relaxed);
         let mut ep = self.bind_ears().await?;
         let addrs = self.publish_roads(&ep)?;
         let mut handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
@@ -892,7 +900,13 @@ impl Node {
                     // every path converges on "the shop stands empty
                     // for the next keeper". Kept serves only: a GUI or
                     // foreground serve is init's child by design.
-                    if crate::keeper::is_inner() && unsafe { libc::getppid() } == 1 {
+                    // ⚠️ **Never in an app** (round NET-FIX): an app run
+                    // from a shell inside a khor terminal inherits the
+                    // kept serve's marker, and once that shell went away
+                    // its parent was launchd — so the window exited on
+                    // its own, with the sentence on a terminal nobody
+                    // had any more.
+                    if !resumable && crate::keeper::is_inner() && unsafe { libc::getppid() } == 1 {
                         let stamp =
                             jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("{}", msg::serve_orphaned(&stamp));
@@ -5489,7 +5503,16 @@ impl Node {
             .ok()
             .and_then(|s| s.trim().parse::<u32>().ok())
             .filter(|&p| pid_running(p));
-        let inner = self.endpoint_file()?.map(|e| e.pid);
+        let endpoint = self.endpoint_file()?;
+        // **An app is not this verb's to stop.** Its resident is the app
+        // process itself: a TERM here was the whole window going, with
+        // nothing on it to say why (round NET-FIX). The person closes it.
+        if keeper.is_none()
+            && let Some(e) = endpoint.as_ref().filter(|e| e.app && pid_running(e.pid))
+        {
+            return Err(msg::quit_app_resident(e.pid));
+        }
+        let inner = endpoint.map(|e| e.pid);
         let served = keeper.is_some() || inner.is_some();
         if let Some(pid) = keeper {
             unsafe {
