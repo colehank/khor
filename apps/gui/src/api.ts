@@ -1134,6 +1134,10 @@ export const chatSetOption = (id: string, option: string, value: string | boolea
   call<null>("chat_set_option", { id, option, value });
 export const chatPoll = (id: string, since: number) =>
   call<ChatBatch>("chat_poll", { id, since });
+/** `chatPoll`, held open until a frame lands past `since` (or `ms`
+    passes) — `termWait`'s twin, and the app's only for its reason. */
+export const chatWait = (id: string, since: number, ms: number) =>
+  call<ChatBatch>("chat_wait", { id, since, ms });
 /** One user turn. `images` are `[mime, base64]` pairs and are only ever
     non-empty when the agent said it takes them (`ChatFrame::Agent`'s
     `images`) — the host puts them on a different op (`GuiOp::SayWith`),

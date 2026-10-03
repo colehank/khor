@@ -452,6 +452,9 @@ pub fn answer(
                 .unwrap_or(0),
         )?),
         "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
+        // The bridge answers one request at a time: a held wait would
+        // hold every other call behind it, so it is the poll here.
+        "chat_wait" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
             // `[mime, base64]` pairs rather than an object so the two

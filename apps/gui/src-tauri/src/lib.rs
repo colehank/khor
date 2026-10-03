@@ -502,6 +502,13 @@ fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, S
     khor_gui_core::chat::chat_poll(&id, since)
 }
 
+/// The conversation, pushed: held open until a frame lands
+/// (`chat::chat_wait`). Async, for `term_wait`'s reason.
+#[tauri::command]
+async fn chat_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
+    khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+}
+
 #[tauri::command]
 fn chat_say(id: String, text: String) -> Result<(), String> {
     khor_gui_core::chat::chat_say(&id, &text)
@@ -3486,6 +3493,7 @@ pub fn run() {
             uninstall_hooks,
             chat_open,
             chat_poll,
+            chat_wait,
             chat_say,
             chat_answer,
             chat_stop,
