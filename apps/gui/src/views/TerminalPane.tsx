@@ -903,6 +903,29 @@ export function TerminalPane({
     // character typed on the soft keyboard becomes its control form (C →
     // 0x03) and, for Alt, gets an ESC before it — and let go; a mouse
     // report passes and leaves them waiting.
+    // **One send at a time, in the order xterm handed them out** (T-3,
+    // the terminal audit: on the web face 17 of 51 two-answer asks reached
+    // the pty sentinel-first, and fast typing arrived swapped — one HTTP
+    // POST per `onData`, nothing ordering them). Everything typed or
+    // answered while a send is in flight is coalesced into the next one,
+    // so a burst costs one round trip, not one per key. Tauri's own IPC
+    // was already ordered; a browser's fetches are not.
+    let outbox = "";
+    let sending = false;
+    const send = (bytes: string) => {
+      outbox += bytes;
+      if (sending) return;
+      sending = true;
+      void (async () => {
+        while (outbox && !stopped) {
+          const next = outbox;
+          outbox = "";
+          await termKey(id, next).catch(() => {});
+        }
+        sending = false;
+        pollNow.current();
+      })();
+    };
     const data = term.onData((d) => {
       const reply = isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
@@ -914,9 +937,7 @@ export function TerminalPane({
         out = d.length === 1 ? typed(d, m) : d;
         latch({ ctrl: false, alt: false });
       }
-      termKey(id, out)
-        .then(() => pollNow.current())
-        .catch(() => {});
+      send(out);
     });
     const dragged = fingerScrolls(term, box);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
