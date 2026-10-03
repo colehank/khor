@@ -278,6 +278,12 @@ pub enum Op {
     /// `crates/cli/tests/redial.rs` measures a redial with (round NET-3).
     /// Tail-appended.
     LetGo { machine: String },
+    /// A machine's commands, searched (roadmap 2.6); answered with
+    /// [`Reply::History`]. Tail-appended.
+    HistoryOn {
+        machine: String,
+        ask: crate::commands::HistoryAsk,
+    },
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -360,6 +366,7 @@ impl Op {
             Op::CloseOn { .. } => ("CloseOn", DEADLINE_FAR),
             Op::CodeStopOn { .. } => ("CodeStopOn", DEADLINE_FAR),
             Op::SearchOn { .. } => ("SearchOn", DEADLINE_SLOW),
+            Op::HistoryOn { .. } => ("HistoryOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -543,6 +550,10 @@ pub enum Reply {
     /// Tail-appended with [`Op::Connections`].
     Connections {
         view: khor_core::ConnectionsView,
+    },
+    /// Tail-appended with [`Op::HistoryOn`].
+    History {
+        hits: Vec<crate::commands::HistoryHit>,
     },
 }
 

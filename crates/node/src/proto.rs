@@ -584,6 +584,12 @@ pub enum Request {
         docs: Vec<(String, serde_bytes::ByteBuf)>,
         readings: Vec<(String, serde_bytes::ByteBuf)>,
     },
+    /// The commands run on that machine, searched (roadmap 2.6,
+    /// `crate::commands::search_history`). Answered as
+    /// [`Response::History`]. **A new variant, the request changing
+    /// words**: a khor that predates it refuses the frame, which the asker
+    /// reads as "that machine keeps no history".
+    History { ask: crate::commands::HistoryAsk },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -866,6 +872,10 @@ pub enum Response {
         since: crate::day::DaySince,
         full: serde_bytes::ByteBuf,
     },
+    /// The answer to [`Request::History`], newest first.
+    History {
+        hits: Vec<crate::commands::HistoryHit>,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -956,6 +966,7 @@ impl Request {
                 | Request::Checkout { .. }
                 | Request::SatCheckout { .. }
                 | Request::Versions { .. }
+                | Request::History { .. }
         )
     }
 
@@ -2243,6 +2254,37 @@ mod tests {
         .unwrap();
         match decode::<Response>(&bytes).unwrap() {
             Response::Vitals { vitals } => assert_eq!(vitals, sent),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+    }
+    /// Roadmap 2.6's question and answer cross the wire whole, under
+    /// their own name — an older khor sees a word it does not know and
+    /// refuses, never a neighbour's shape.
+    #[test]
+    fn a_history_question_and_answer_round_trip() {
+        let ask = crate::commands::HistoryAsk {
+            text: "cargo test".into(),
+            dir: "/w/khor".into(),
+            failed: true,
+        };
+        let bytes = encode(&Request::History { ask: ask.clone() }).unwrap();
+        assert!(bytes.windows(7).any(|w| w == b"History"), "the name is on the wire");
+        match decode::<Request>(&bytes).unwrap() {
+            Request::History { ask: got } => assert_eq!(got, ask),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+        let hit = crate::commands::HistoryHit {
+            session: "shell/a".into(),
+            text: "cargo test".into(),
+            cwd: Some("/w/khor".into()),
+            started_ms: 1,
+            ended_ms: Some(2),
+            exit: Some(101),
+            runs: 3,
+        };
+        let bytes = encode(&Response::History { hits: vec![hit.clone()] }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::History { hits } => assert_eq!(hits, [hit]),
             other => panic!("decoded wrong: {other:?}"),
         }
     }

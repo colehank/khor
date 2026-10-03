@@ -546,6 +546,90 @@ pub fn append_history(file: &Path, session: &str, done: &[Command]) {
     }
 }
 
+/// Where a khor root keeps its machine's history.
+pub fn history_file(root: &Path) -> PathBuf {
+    root.join(".khor").join("history.jsonl")
+}
+
+/// What a history search asks (roadmap 2.6). Every condition given must
+/// hold. Positional on the wire (`proto::Request::History`): a field is
+/// only ever added at the end, with `#[serde(default)]`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryAsk {
+    /// Words the command line holds, in any case and any order.
+    pub text: String,
+    /// Ran in this directory or under it; empty is anywhere.
+    pub dir: String,
+    /// Only the commands that failed (an exit other than 0).
+    pub failed: bool,
+}
+
+/// One command line found, as the wire and the faces carry it: the
+/// newest run of it, and how many times it ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryHit {
+    pub session: String,
+    pub text: String,
+    pub cwd: Option<String>,
+    pub started_ms: u64,
+    pub ended_ms: Option<u64>,
+    pub exit: Option<i32>,
+    pub runs: u32,
+}
+
+/// The most lines a search answers: a list to pick from, not an export.
+pub const HISTORY_HITS: usize = 200;
+
+/// **The machine's commands, searched** (roadmap 2.6): newest first, one
+/// row per command line with its run count — iTerm2's command history and
+/// atuin's search show the same. Fed by every session's ledger
+/// ([`append_history`]), so it spans sessions.
+pub fn search_history(file: &Path, ask: &HistoryAsk) -> Vec<HistoryHit> {
+    let words: Vec<String> = ask
+        .text
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect();
+    let dir = ask.dir.trim_end_matches('/');
+    let mut out: Vec<HistoryHit> = Vec::new();
+    let mut seen = std::collections::HashMap::<String, usize>::new();
+    for line in read_history(file).into_iter().rev() {
+        let c = line.command;
+        let Some(text) = c.text.clone() else { continue };
+        if ask.failed && !matches!(c.exit, Some(e) if e != 0) {
+            continue;
+        }
+        if !dir.is_empty() {
+            let Some(cwd) = c.cwd.as_deref() else { continue };
+            if cwd != dir && !cwd.starts_with(&format!("{dir}/")) {
+                continue;
+            }
+        }
+        let lower = text.to_lowercase();
+        if !words.iter().all(|w| lower.contains(w.as_str())) {
+            continue;
+        }
+        if let Some(&i) = seen.get(&text) {
+            out[i].runs += 1;
+            continue;
+        }
+        if out.len() >= HISTORY_HITS {
+            continue;
+        }
+        seen.insert(text.clone(), out.len());
+        out.push(HistoryHit {
+            session: line.session,
+            text,
+            cwd: c.cwd,
+            started_ms: c.started_ms,
+            ended_ms: c.ended_ms,
+            exit: c.exit,
+            runs: 1,
+        });
+    }
+    out
+}
+
 /// The machine's history, newest last.
 pub fn read_history(file: &Path) -> Vec<Line> {
     std::fs::read_to_string(file)
@@ -629,6 +713,50 @@ mod tests {
             l.feed(chunk, 1000 + i as u64);
         }
         l
+    }
+
+    /// **The machine's history, searched** (roadmap 2.6): across
+    /// sessions, newest first, one row per line with its count, by words,
+    /// by directory (and under it, not a sibling sharing a prefix), by
+    /// failure.
+    #[test]
+    fn history_is_searched_by_words_directory_and_failure() {
+        let dir = std::env::temp_dir().join(format!("khor-history-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("history.jsonl");
+        let c = |n: u64, text: &str, cwd: &str, exit: i32| Command {
+            n,
+            text: Some(text.to_owned()),
+            cwd: Some(cwd.to_owned()),
+            started_ms: n * 1000,
+            ended_ms: Some(n * 1000 + 5),
+            exit: Some(exit),
+            at: 0,
+            end_at: None,
+        };
+        append_history(&file, "shell/a", &[c(1, "cargo test -p khor-node", "/w/khor", 0), c(2, "git status", "/w/khor", 0)]);
+        append_history(&file, "shell/b", &[c(3, "cargo build", "/w/khor-net", 101), c(4, "Cargo Test -p khor-node", "/w/khor/crates", 1)]);
+        append_history(&file, "shell/a", &[c(5, "cargo test -p khor-node", "/w/khor", 0)]);
+        let ask = |text: &str, dir: &str, failed: bool| {
+            search_history(&file, &HistoryAsk { text: text.into(), dir: dir.into(), failed })
+                .into_iter()
+                .map(|h| (h.text, h.runs))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            ask("", "", false),
+            [("cargo test -p khor-node".into(), 2), ("Cargo Test -p khor-node".into(), 1), ("cargo build".into(), 1), ("git status".into(), 1)]
+        );
+        assert_eq!(ask("TEST node", "", false).len(), 2, "words in any case and order");
+        assert_eq!(
+            ask("cargo", "/w/khor", false),
+            [("cargo test -p khor-node".into(), 2), ("Cargo Test -p khor-node".into(), 1)],
+            "under the directory, not khor-net beside it"
+        );
+        assert_eq!(ask("", "", true), [("Cargo Test -p khor-node".into(), 1), ("cargo build".into(), 1)]);
+        assert!(search_history(&dir.join("none.jsonl"), &HistoryAsk::default()).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn texts(l: &Ledger) -> Vec<(Option<String>, Option<i32>)> {

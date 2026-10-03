@@ -1530,6 +1530,10 @@ impl Node {
                 Ok(found) => ipc::Reply::Found { found },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::HistoryOn { machine, ask } => match self.history_with(ep, &machine, &ask).await {
+                Ok(hits) => ipc::Reply::History { hits },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -2316,6 +2320,15 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Launched)
+            }
+            Request::History { ask } => {
+                // Off the reactor: up to `HISTORY_MAX` of lines read and
+                // matched.
+                let file = crate::commands::history_file(self.root());
+                let hits = tokio::task::spawn_blocking(move || crate::commands::search_history(&file, &ask))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::History { hits })
             }
             Request::Search { dir, query } => {
                 // Off the reactor with `Touched` below, for its reason
@@ -4186,6 +4199,60 @@ impl Node {
         match self.ask(ep, &channel, &req).await? {
             Response::Found { found } => Ok(found),
             Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// **The commands run on a machine, searched** (roadmap 2.6): read
+    /// where the history is, as the search above, and only the hits cross
+    /// the wire. A satellite keeps none (its shells are not khor's hosts),
+    /// and a khor that predates the question answers that it has none.
+    pub async fn history(
+        &self,
+        machine: &str,
+        ask: &crate::commands::HistoryAsk,
+    ) -> Result<Vec<crate::commands::HistoryHit>, String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::HistoryOn {
+                machine: machine.to_owned(),
+                ask: ask.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::History { hits } => Ok(hits),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.history_with(&ep, machine, ask).await;
+        ep.close().await;
+        out
+    }
+
+    async fn history_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        ask: &crate::commands::HistoryAsk,
+    ) -> Result<Vec<crate::commands::HistoryHit>, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let (file, ask) = (crate::commands::history_file(self.root()), ask.clone());
+            return tokio::task::spawn_blocking(move || crate::commands::search_history(&file, &ask))
+                .await
+                .map_err(|e| e.to_string());
+        }
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Ok(Vec::new());
+        }
+        match self.ask(ep, &channel, &Request::History { ask: ask.clone() }).await? {
+            Response::History { hits } => Ok(hits),
+            // Older than the question: no history kept there.
+            Response::Refused { .. } => Ok(Vec::new()),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
