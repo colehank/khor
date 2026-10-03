@@ -67,6 +67,8 @@ import "@xterm/xterm/css/xterm.css";
 import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
+import { peekOf, type Peek } from "@/lib/term-peek";
+import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
@@ -1387,8 +1389,10 @@ export function TerminalPane({
   const [composingText, setComposingText] = useState<string | null>(null);
   // A picture the program drew, opened whole (roadmap 3.3).
   const [peek, setPeek] = useState<string | null>(null);
-  const peekRef = useRef(peek);
-  peekRef.current = peek;
+  // A block's output read as data, opened (roadmap 3.4).
+  const [data, setData] = useState<{ command: string; peek: Peek } | null>(null);
+  const peekRef = useRef(false);
+  peekRef.current = !!peek || !!data;
   const pinch = usePinch();
   // **A question the pane asks before acting** (roadmap 4.3): a paste of
   // several lines, or a program wanting to read the clipboard.
@@ -1641,9 +1645,13 @@ export function TerminalPane({
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
     // nor falls through to the page's own find. Everything else passes.
     term.attachCustomKeyEventHandler((ev) => {
-      // An open picture is closed by Esc; the program never sees it.
+      // An open picture or table is closed by Esc; the program never
+      // sees it.
       if (peekRef.current && ev.key === "Escape") {
-        if (ev.type === "keydown") setPeek(null);
+        if (ev.type === "keydown") {
+          setPeek(null);
+          setData(null);
+        }
         return false;
       }
       if (ev.type === "keydown" && asksToFind(ev)) {
@@ -2079,6 +2087,9 @@ export function TerminalPane({
           acts.push({ name: "rerun", label: gui.block_rerun, run: () => send(`\x15${command}\r`) });
         }
       }
+      // **Output that is data** (roadmap 3.4): JSON or a table.
+      const read = b.output ? peekOf(outputOf(term, b)) : null;
+      if (read) acts.push({ name: "peek", label: gui.block_peek, run: () => setData({ command, peek: read }) });
       if (b.output) {
         acts.push({
           name: "to-agent",
@@ -2500,9 +2511,36 @@ export function TerminalPane({
           onClick={(e) => {
             if (e.target === e.currentTarget) setPeek(null);
           }}
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            e.stopPropagation();
+            setPeek(null);
+            termRef.current?.focus();
+          }}
         >
           <img ref={pinch} src={peek} alt="" className="h-full w-full object-contain" />
           <GlassCircle aria-label={gui.close} data-term-picture-close className="absolute bottom-2 right-2" onClick={() => setPeek(null)}>
+            <IconClose />
+          </GlassCircle>
+        </div>
+      )}
+      {data && (
+        <div
+          data-term-data
+          role="dialog"
+          aria-label={data.command || gui.block_peek}
+          className="absolute inset-0 z-30 flex flex-col bg-background"
+          // Esc with the focus in here (a column's name was clicked);
+          // with it on the terminal, the key handler above closes it.
+          onKeyDown={(e) => {
+            if (e.key !== "Escape") return;
+            e.stopPropagation();
+            setData(null);
+            termRef.current?.focus();
+          }}
+        >
+          <TermPeek peek={data.peek} />
+          <GlassCircle aria-label={gui.close} data-term-data-close className="absolute bottom-2 right-2" onClick={() => setData(null)}>
             <IconClose />
           </GlassCircle>
         </div>
