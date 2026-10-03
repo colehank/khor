@@ -41,13 +41,26 @@ export function basename(path: string): string {
  * (`khor_core::Hop`), from the key the node sent.
  *
  * Its own lookup rather than a second use of `word` above: the keys are
- * deliberately not shared with the state table — `quiet` and `unsure`
- * exist here and nowhere else — precisely so that reading one in the
+ * deliberately not shared with the state table — `quiet` exists here and
+ * nowhere else — precisely so that reading one in the
  * wrong table echoes the key instead of quietly finding a real word and
  * painting it. Sharing a lookup would give that mistake back.
  */
 export function hopWord(key: string): string {
   return (hop as Record<string, string>)[key] ?? key;
+}
+
+/**
+ * The road word with its liveness beside it, when that says something
+ * (`khor_core::Link`): a machine **not connected** that was heard before
+ * reads 「未连接 · 上次 3 分钟前」. A connected one is heard every few
+ * seconds by keepalive alone, so its age would only ever say "now" —
+ * it is left off, the way `ageIfOld` leaves off a fresh reading.
+ */
+export function linkWord(key: string, heardMs: number | null | undefined): string {
+  const road = hopWord(key);
+  if (key !== "quiet" || heardMs == null) return road;
+  return gui.link_last_heard(road, span(heardMs));
 }
 
 /**
@@ -65,7 +78,13 @@ export function hopWord(key: string): string {
  * its sponsor speaks for it; otherwise the road (`hopWord`). `null` when
  * khor cannot name the road yet — absent beats a blank.
  */
-export function connectionWord(row: { me: boolean; sponsor: string | null; hop: string | null }): string | null {
+export function connectionWord(row: {
+  me: boolean;
+  sponsor: string | null;
+  hop: string | null;
+  heard_ms?: number | null;
+}): string | null {
+  if (!row.me && !row.sponsor && row.hop) return linkWord(row.hop, row.heard_ms);
   return connectionKeyWord(connectionKey(row));
 }
 
