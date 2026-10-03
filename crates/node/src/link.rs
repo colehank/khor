@@ -308,6 +308,14 @@ pub fn dial_budget_seconds() -> u64 {
     DIAL_TIMEOUT.as_secs()
 }
 
+/// **Slices asked at once** when a file is pulled whole — a transfer, a
+/// preview (round NET-2, piece 6). One at a time, a pull moved one
+/// `SLICE` per round trip: 256 KiB per 300 ms is 0.85 MB/s however wide
+/// the road. Eight is 2 MiB in flight, about one round trip's worth of a
+/// 50 Mbit/s road at 300 ms, and well inside the 32 streams a far
+/// machine answers at once (`STREAMS_AT_ONCE`).
+const PULL_AHEAD: u64 = 8;
+
 /// How long the direct roads get to themselves before the relay road is
 /// opened alongside them (`Node::dial_with`).
 ///
@@ -2716,9 +2724,15 @@ impl Node {
         let want = (offer.size - offset).min(proto::SLICE) as usize;
         let mut buf = vec![0u8; want];
         f.read_exact(&mut buf).map_err(msg::cant_read_slice)?;
-        offer.started = true;
-        offer.done = offset + want as u64 >= offer.size;
-        crate::transfer::save_offer(self.root(), digest, &offer)?;
+        // Written only when it changes: slices are asked several at once
+        // (`PULL_AHEAD`), and a middle slice rewriting what it loaded
+        // could undo the last slice's `done`.
+        let last = offset + want as u64 >= offer.size;
+        if !offer.started || (last && !offer.done) {
+            offer.started = true;
+            offer.done |= last;
+            crate::transfer::save_offer(self.root(), digest, &offer)?;
+        }
         Ok(Response::Slice {
             total: offer.size,
             bytes: serde_bytes::ByteBuf::from(buf),
@@ -4836,19 +4850,35 @@ impl Node {
             bytes.truncate(want as usize);
             return Ok((total, at_ms, bytes, total > cap));
         }
+        // Up to `PULL_AHEAD` slices asked at once, appended in order.
         while (bytes.len() as u64) < want {
-            let (now_total, now_ms, more) = self.read_at(machine, path, bytes.len() as u64).await?;
-            if now_total != total || now_ms != at_ms {
-                return Err(msg::file_moved_while_reading(path));
+            let from = bytes.len() as u64;
+            let offsets: Vec<u64> = (0..PULL_AHEAD)
+                .map(|k| from + k * proto::SLICE)
+                .take_while(|o| *o < want)
+                .collect();
+            let asks = offsets
+                .iter()
+                .map(|&at| self.read_at(machine, path, at))
+                .collect();
+            for (at, answer) in offsets.iter().zip(join_all(asks).await) {
+                // A short slice: what was asked beyond it is asked again.
+                if *at != bytes.len() as u64 {
+                    break;
+                }
+                let (now_total, now_ms, more) = answer?;
+                if now_total != total || now_ms != at_ms {
+                    return Err(msg::file_moved_while_reading(path));
+                }
+                if more.is_empty() {
+                    // The far side answered nothing while claiming there
+                    // is more. Refused rather than looped: a loop that
+                    // cannot make progress is the one failure a reader
+                    // must not turn into a hang.
+                    return Err(msg::file_moved_while_reading(path));
+                }
+                bytes.extend_from_slice(&more);
             }
-            if more.is_empty() {
-                // The far side answered nothing while claiming there is
-                // more. Refused rather than looped: a loop that cannot
-                // make progress is the one failure a reader must not
-                // turn into a hang.
-                return Err(msg::file_moved_while_reading(path));
-            }
-            bytes.extend_from_slice(&more);
         }
         bytes.truncate(want as usize);
         Ok((total, at_ms, bytes, total > cap))
@@ -6938,31 +6968,46 @@ impl Node {
             .map_err(msg::cant_open_partial)?;
         let expect = f.size.max(0) as u64;
         let mut moved = 0u64;
+        // The first slice alone (it is the one that marks the offer
+        // started over there), then up to `PULL_AHEAD` asked at once and
+        // written in order.
+        let mut ahead = 1;
         while offset < expect {
-            let resp = self.ask_on(
-                ep,
-                home,
-                &Request::Fetch {
+            let offsets: Vec<u64> = (0..ahead)
+                .map(|k| offset + k * proto::SLICE)
+                .take_while(|o| *o < expect)
+                .collect();
+            let fetches: Vec<Request> = offsets
+                .iter()
+                .map(|&at| Request::Fetch {
                     digest: f.digest.clone(),
-                    offset,
-                },
-            )
-            .await?;
-            let (total, bytes) = match resp {
-                Response::Slice { total, bytes } => (total, bytes),
-                Response::Refused { why } => return Err(why),
-                other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
-            };
-            if total != expect {
-                return Err(msg::size_mismatch(total, expect));
+                    offset: at,
+                })
+                .collect();
+            let asks = fetches.iter().map(|r| self.ask_on(ep, home, r)).collect();
+            for (at, resp) in offsets.iter().zip(join_all(asks).await) {
+                // A short slice moved the offset: what was asked beyond
+                // it is asked again from there.
+                if *at != offset {
+                    break;
+                }
+                let (total, bytes) = match resp? {
+                    Response::Slice { total, bytes } => (total, bytes),
+                    Response::Refused { why } => return Err(why),
+                    other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
+                };
+                if total != expect {
+                    return Err(msg::size_mismatch(total, expect));
+                }
+                if bytes.is_empty() {
+                    return Err(msg::empty_slice().into());
+                }
+                out.write_all(&bytes).map_err(msg::cant_write_slice)?;
+                hasher.update(&bytes);
+                offset += bytes.len() as u64;
+                moved += bytes.len() as u64;
             }
-            if bytes.is_empty() {
-                return Err(msg::empty_slice().into());
-            }
-            out.write_all(&bytes).map_err(msg::cant_write_slice)?;
-            hasher.update(&bytes);
-            offset += bytes.len() as u64;
-            moved += bytes.len() as u64;
+            ahead = PULL_AHEAD;
         }
         out.sync_all().map_err(msg::cant_sync_disk)?;
         drop(out);
