@@ -1,0 +1,644 @@
+//! **The command ledger** (roadmap 1.2): what the shell in a hosted
+//! terminal ran, where, and how it ended — read by the host off the same
+//! bytes it already reads for the ring, from the marks the shell
+//! integration writes (`crate::integration`).
+//!
+//! # The marks
+//!
+//! FinalTerm's, which iTerm2, Kitty, WezTerm, Ghostty, Windows Terminal and
+//! VS Code all speak (iTerm2's "Shell Integration" escape codes; Kitty's
+//! shell-integration docs; VS Code's `terminal/shellIntegration`):
+//!
+//! - `OSC 133 ; A` a prompt starts, `B` the input starts, `C` the command
+//!   runs, `D [; status]` it finished. `C` may carry the command line
+//!   itself as Kitty's `cmdline=` (escaped) or `cmdline_url=` (fish 4).
+//! - `OSC 633 ; E ; line` VS Code's explicit command line (`\\` for a
+//!   backslash, `\xNN` for `;` and control characters); also `633 ; P ;
+//!   Cwd=…`. Without either, the text typed between `B` and `C` is kept,
+//!   with its escape sequences dropped.
+//! - `OSC 7 ; file://host/path` the directory; `OSC 0 / 2` the title.
+//! - tmux's passthrough (`ESC P tmux; … ESC \`, inner `ESC` doubled) is
+//!   opened, for a shell that wrapped its marks with no tmux in between.
+//!
+//! Marks can arrive twice (two integrations, or a first prompt marked by
+//! both the deferred install and its hook): a second `A` with nothing in
+//! between, or a `C` while one is running, changes nothing.
+//!
+//! # What is kept
+//!
+//! The running command and the last [`RECENT`] finished ones, in this
+//! process (so a face that re-attaches finds them unchanged) and in
+//! `commands.json` beside the session (so the node can read them for the
+//! row without asking the host), plus every finished command appended to
+//! the machine's `history.jsonl` (roadmap 2.6), trimmed to its newest half
+//! past [`HISTORY_MAX`]. A full-screen program (the alternate screen, the
+//! mouse taken) is read off the same bytes (`crate::modes`).
+
+use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
+
+use khor_core::Doing;
+use serde::{Deserialize, Serialize};
+
+use crate::modes::Modes;
+
+/// How many finished commands a session keeps.
+pub const RECENT: usize = 50;
+/// How long a string mark may be before it is dropped unread.
+const MARK_MAX: usize = 8 * 1024;
+/// How much typed text between `B` and `C` is kept for a command line
+/// when the shell names none.
+const TYPED_MAX: usize = 4 * 1024;
+/// The machine's history file is cut to its newest half past this.
+pub const HISTORY_MAX: u64 = 4 << 20;
+
+/// One command, as the ledger knows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Command {
+    /// Counts from 1 in this session.
+    pub n: u64,
+    pub text: Option<String>,
+    pub cwd: Option<String>,
+    pub started_ms: u64,
+    pub ended_ms: Option<u64>,
+    pub exit: Option<i32>,
+    /// Where in the session's byte stream it started and ended (the
+    /// stream the ring keeps the tail of).
+    pub at: u64,
+    pub end_at: Option<u64>,
+}
+
+/// `commands.json`: what the node and the faces read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Saved {
+    pub doing: Doing,
+    pub recent: Vec<Command>,
+}
+
+/// One line of the machine's `history.jsonl`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Line {
+    pub session: String,
+    #[serde(flatten)]
+    pub command: Command,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Scan {
+    #[default]
+    Ground,
+    Esc,
+    /// Inside an OSC.
+    Osc,
+    OscEsc,
+    /// Inside a DCS (only a tmux passthrough is read).
+    Dcs,
+    DcsEsc,
+    /// Inside a CSI: skipped, the modes have their own reader.
+    Csi,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum Phase {
+    #[default]
+    Unknown,
+    Prompt,
+    Input,
+    Running,
+}
+
+/// See the module head.
+#[derive(Debug, Default)]
+pub struct Ledger {
+    scan: Scan,
+    buf: Vec<u8>,
+    modes: Modes,
+    phase: Phase,
+    /// Text typed after `B`, for a shell that names no command line.
+    typed: Vec<u8>,
+    /// A command line that came before its `C` (VS Code's order).
+    named: Option<String>,
+    running: Option<Command>,
+    recent: VecDeque<Command>,
+    cwd: Option<String>,
+    title: Option<String>,
+    next: u64,
+    offset: u64,
+    /// Any mark seen at all: the shell has an integration.
+    pub marked: bool,
+    /// Something a reader would see changed since [`Ledger::take_changes`].
+    changed: bool,
+    /// Commands finished since [`Ledger::take_finished`].
+    finished: Vec<Command>,
+}
+
+impl Ledger {
+    /// Eats the session's output in stream order; sequences may be split
+    /// anywhere across calls. `now_ms` stamps what starts or ends here.
+    pub fn feed(&mut self, bytes: &[u8], now_ms: u64) {
+        let full = self.modes.program_holds_screen();
+        self.modes.feed(bytes);
+        if self.modes.program_holds_screen() != full {
+            self.changed = true;
+        }
+        for &b in bytes {
+            self.byte(b, now_ms);
+            self.offset += 1;
+        }
+    }
+
+    fn byte(&mut self, b: u8, now: u64) {
+        match self.scan {
+            Scan::Ground => {
+                if b == 0x1b {
+                    self.scan = Scan::Esc;
+                } else if self.phase == Phase::Input {
+                    self.typed_byte(b);
+                }
+            }
+            Scan::Esc => {
+                self.buf.clear();
+                self.scan = match b {
+                    b']' => Scan::Osc,
+                    b'P' => Scan::Dcs,
+                    b'[' => Scan::Csi,
+                    _ => Scan::Ground,
+                };
+            }
+            Scan::Csi => {
+                if (0x40..=0x7e).contains(&b) {
+                    self.scan = Scan::Ground;
+                }
+            }
+            Scan::Osc => match b {
+                0x07 => {
+                    self.scan = Scan::Ground;
+                    self.osc(now);
+                }
+                0x1b => self.scan = Scan::OscEsc,
+                0x18 | 0x1a => self.scan = Scan::Ground,
+                _ => self.push(b),
+            },
+            Scan::OscEsc => {
+                if b == b'\\' {
+                    self.scan = Scan::Ground;
+                    self.osc(now);
+                } else {
+                    // Not a terminator: the string ended unterminated.
+                    self.scan = Scan::Ground;
+                }
+            }
+            Scan::Dcs => match b {
+                0x1b => self.scan = Scan::DcsEsc,
+                0x18 | 0x1a => self.scan = Scan::Ground,
+                _ => self.push(b),
+            },
+            Scan::DcsEsc => {
+                if b == b'\\' {
+                    self.scan = Scan::Ground;
+                    self.dcs(now);
+                } else {
+                    // tmux doubles every ESC inside its passthrough: two
+                    // are one.
+                    self.push(0x1b);
+                    if b != 0x1b {
+                        self.push(b);
+                    }
+                    self.scan = Scan::Dcs;
+                }
+            }
+        }
+    }
+
+    fn push(&mut self, b: u8) {
+        if self.buf.len() < MARK_MAX {
+            self.buf.push(b);
+        }
+    }
+
+    /// What is typed at a prompt, roughly: printable text, with a
+    /// backspace taking the last character back. Escape sequences never
+    /// reach here (the scan takes them).
+    fn typed_byte(&mut self, b: u8) {
+        match b {
+            0x08 | 0x7f => {
+                while let Some(last) = self.typed.pop() {
+                    // Back to the start of the UTF-8 character.
+                    if last & 0xc0 != 0x80 {
+                        break;
+                    }
+                }
+            }
+            b'\r' | b'\n' => {}
+            _ if b >= 0x20 && self.typed.len() < TYPED_MAX => self.typed.push(b),
+            _ => {}
+        }
+    }
+
+    fn dcs(&mut self, now: u64) {
+        let Some(inner) = self.buf.strip_prefix(b"tmux;").map(<[u8]>::to_vec) else {
+            return;
+        };
+        // The inner bytes are a whole sequence of their own.
+        let saved = std::mem::take(&mut self.buf);
+        let scan = std::mem::take(&mut self.scan);
+        for b in inner {
+            self.byte(b, now);
+        }
+        self.scan = scan;
+        self.buf = saved;
+        self.buf.clear();
+    }
+
+    fn osc(&mut self, now: u64) {
+        let text = String::from_utf8_lossy(&self.buf).into_owned();
+        let (code, rest) = text.split_once(';').unwrap_or((text.as_str(), ""));
+        match code {
+            "133" => {
+                self.marked = true;
+                let mut parts = rest.split(';');
+                let kind = parts.next().unwrap_or("");
+                let params: Vec<&str> = parts.collect();
+                self.mark(kind, &params, now);
+            }
+            "633" => {
+                self.marked = true;
+                let mut parts = rest.splitn(2, ';');
+                match parts.next() {
+                    Some("E") => {
+                        let line = parts.next().unwrap_or("");
+                        // A trailing `;nonce` (VS Code's) is not the line.
+                        let line = line.split(';').next().unwrap_or("");
+                        self.name(unescape(line));
+                    }
+                    Some("P") => {
+                        if let Some(cwd) = parts.next().and_then(|p| p.strip_prefix("Cwd=")) {
+                            self.set_cwd(unescape(cwd));
+                        }
+                    }
+                    Some(kind @ ("A" | "B" | "C" | "D")) => {
+                        let params: Vec<&str> = parts
+                            .next()
+                            .map(|p| p.split(';').collect())
+                            .unwrap_or_default();
+                        self.mark(kind, &params, now);
+                    }
+                    _ => {}
+                }
+            }
+            "7" => {
+                if let Some(path) = file_url_path(rest) {
+                    self.set_cwd(path);
+                }
+            }
+            "0" | "2" => {
+                let t = rest.trim();
+                let t = (!t.is_empty()).then(|| t.to_owned());
+                if t != self.title {
+                    self.title = t;
+                    self.changed = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn mark(&mut self, kind: &str, params: &[&str], now: u64) {
+        match kind {
+            "A" => {
+                // A prompt over a command never marked as ended: the
+                // shell was interrupted, or its integration has no D.
+                if self.running.is_some() {
+                    self.end(None, now);
+                }
+                self.phase = Phase::Prompt;
+            }
+            "B" => {
+                self.phase = Phase::Input;
+                self.typed.clear();
+            }
+            "C" => {
+                if self.running.is_some() {
+                    return;
+                }
+                let mut text = self.named.take();
+                for p in params {
+                    if let Some(v) = p.strip_prefix("cmdline_url=") {
+                        text = Some(percent_decode(v));
+                    } else if let Some(v) = p.strip_prefix("cmdline=") {
+                        text = Some(unescape(v));
+                    }
+                }
+                if text.is_none() && !self.typed.is_empty() {
+                    text = Some(String::from_utf8_lossy(&self.typed).trim().to_owned());
+                }
+                self.typed.clear();
+                self.next += 1;
+                self.running = Some(Command {
+                    n: self.next,
+                    text: text.filter(|t| !t.is_empty()),
+                    cwd: self.cwd.clone(),
+                    started_ms: now,
+                    ended_ms: None,
+                    exit: None,
+                    at: self.offset,
+                    end_at: None,
+                });
+                self.phase = Phase::Running;
+                self.changed = true;
+            }
+            "D" => {
+                let exit = params.first().and_then(|p| p.trim().parse::<i32>().ok());
+                self.end(exit, now);
+            }
+            _ => {}
+        }
+    }
+
+    fn name(&mut self, line: String) {
+        let line = line.trim().to_owned();
+        if line.is_empty() {
+            return;
+        }
+        match &mut self.running {
+            // fish 4 says C first, then this.
+            Some(c) => {
+                c.text = Some(line);
+                self.changed = true;
+            }
+            None => self.named = Some(line),
+        }
+    }
+
+    fn end(&mut self, exit: Option<i32>, now: u64) {
+        let Some(mut c) = self.running.take() else {
+            return;
+        };
+        c.ended_ms = Some(now);
+        c.exit = exit;
+        c.end_at = Some(self.offset);
+        self.recent.push_back(c.clone());
+        while self.recent.len() > RECENT {
+            self.recent.pop_front();
+        }
+        self.finished.push(c);
+        self.phase = Phase::Unknown;
+        self.changed = true;
+    }
+
+    fn set_cwd(&mut self, cwd: String) {
+        if self.cwd.as_deref() != Some(cwd.as_str()) {
+            self.cwd = Some(cwd);
+            self.changed = true;
+        }
+    }
+
+    /// The row's reading: the running command, else the last one.
+    pub fn doing(&self) -> Doing {
+        let c = self.running.as_ref().or(self.recent.back());
+        Doing {
+            command: c.and_then(|c| c.text.as_ref()).map(|t| one_line(t)),
+            running: self.running.is_some(),
+            started_ms: c.map_or(0, |c| c.started_ms),
+            ended_ms: c.and_then(|c| c.ended_ms),
+            exit: c.and_then(|c| c.exit),
+            cwd: self.cwd.clone(),
+            title: self.title.clone(),
+            full_screen: self.modes.program_holds_screen(),
+        }
+    }
+
+    pub fn saved(&self) -> Saved {
+        Saved {
+            doing: self.doing(),
+            recent: self.recent.iter().cloned().collect(),
+        }
+    }
+
+    /// Whether anything a reader sees changed since the last ask.
+    pub fn take_changes(&mut self) -> bool {
+        std::mem::take(&mut self.changed)
+    }
+
+    /// The commands that finished since the last ask.
+    pub fn take_finished(&mut self) -> Vec<Command> {
+        std::mem::take(&mut self.finished)
+    }
+}
+
+/// `commands.json` beside a session.
+pub fn saved_path(dir: &Path) -> PathBuf {
+    dir.join("commands.json")
+}
+
+/// The ledger's file, written whole (a reader never sees half of it).
+pub fn write_saved(dir: &Path, saved: &Saved) {
+    let Ok(bytes) = serde_json::to_vec(saved) else {
+        return;
+    };
+    let tmp = dir.join("commands.json.tmp");
+    if std::fs::write(&tmp, bytes).is_ok() {
+        let _ = std::fs::rename(&tmp, saved_path(dir));
+    }
+}
+
+/// What the session's shell is doing, from its ledger's file — `None`
+/// for a session whose shell never marked anything.
+pub fn read_doing(dir: &Path) -> Option<Doing> {
+    let bytes = std::fs::read(saved_path(dir)).ok()?;
+    serde_json::from_slice::<Saved>(&bytes)
+        .ok()
+        .map(|s| s.doing)
+}
+
+/// Appends finished commands to the machine's history, cutting the file
+/// to its newest half when it passes [`HISTORY_MAX`].
+pub fn append_history(file: &Path, session: &str, done: &[Command]) {
+    use std::io::Write;
+    if done.is_empty() {
+        return;
+    }
+    let mut out = Vec::new();
+    for c in done.iter().filter(|c| c.text.is_some()) {
+        if let Ok(line) = serde_json::to_vec(&Line {
+            session: session.to_owned(),
+            command: c.clone(),
+        }) {
+            out.extend_from_slice(&line);
+            out.push(b'\n');
+        }
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+    {
+        let _ = f.write_all(&out);
+    }
+    if std::fs::metadata(file).map(|m| m.len()).unwrap_or(0) > HISTORY_MAX
+        && let Ok(all) = std::fs::read(file)
+    {
+        let half = all.len() / 2;
+        let from = all[half..]
+            .iter()
+            .position(|&b| b == b'\n')
+            .map_or(all.len(), |i| half + i + 1);
+        let tmp = file.with_extension("jsonl.tmp");
+        if std::fs::write(&tmp, &all[from..]).is_ok() {
+            let _ = std::fs::rename(&tmp, file);
+        }
+    }
+}
+
+/// The machine's history, newest last.
+pub fn read_history(file: &Path) -> Vec<Line> {
+    std::fs::read_to_string(file)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect()
+}
+
+/// A multi-line command for one line of a row.
+fn one_line(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ⏎ ")
+}
+
+/// VS Code's escaping, undone: `\\` and `\xNN`.
+fn unescape(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && i + 1 < b.len() {
+            if b[i + 1] == b'\\' {
+                out.push(b'\\');
+                i += 2;
+                continue;
+            }
+            if b[i + 1] == b'x'
+                && i + 3 < b.len()
+                && let Ok(v) = u8::from_str_radix(&s[i + 2..i + 4], 16)
+            {
+                out.push(v);
+                i += 4;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// The path of a `file://host/path` URL (the host is not checked: OSC 7
+/// from this session's shell is about this session's machine).
+fn file_url_path(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("file://")?;
+    let slash = rest.find('/')?;
+    Some(percent_decode(&rest[slash..]))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fed(bytes: &[u8]) -> Ledger {
+        let mut l = Ledger::default();
+        // Fed in uneven pieces: a mark split anywhere must still read.
+        for (i, chunk) in bytes.chunks(7).enumerate() {
+            l.feed(chunk, 1000 + i as u64);
+        }
+        l
+    }
+
+    fn texts(l: &Ledger) -> Vec<(Option<String>, Option<i32>)> {
+        l.recent.iter().map(|c| (c.text.clone(), c.exit)).collect()
+    }
+
+    #[test]
+    fn the_marks_make_commands_with_their_ends() {
+        let s = b"\x1b]7;file://h/home/me\x07\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\
+            \x1b]633;E;ls -la\x07\x1b]133;C\x07a b\r\n\x1b]133;D;0\x07\
+            \x1b]133;A\x07$ \x1b]133;B\x07\x1b]633;E;false\x07\x1b]133;C\x07\x1b]133;D;1\x07\
+            \x1b]133;A\x07";
+        let l = fed(s);
+        assert_eq!(
+            texts(&l),
+            vec![
+                (Some("ls -la".into()), Some(0)),
+                (Some("false".into()), Some(1))
+            ]
+        );
+        assert_eq!(l.recent[0].cwd.as_deref(), Some("/home/me"));
+        let d = l.doing();
+        assert!(!d.running);
+        assert_eq!(d.command.as_deref(), Some("false"));
+        assert_eq!(d.exit, Some(1));
+    }
+
+    #[test]
+    fn a_command_named_after_its_start_is_named_and_a_tmux_wrap_is_opened() {
+        // fish 4: C with `cmdline_url`, then VS Code's E; and a mark
+        // wrapped for tmux with nothing to unwrap it.
+        let s = b"\x1b]133;A;click_events=1\x1b\\\x1b]133;B\x1b\\\
+            \x1b]133;C;cmdline_url=echo%20hi\x1b\\\x1b]633;E;echo hi\x07\
+            \x1bPtmux;\x1b\x1b]133;D;0\x07\x1b\\";
+        let l = fed(s);
+        assert_eq!(texts(&l), vec![(Some("echo hi".into()), Some(0))]);
+    }
+
+    #[test]
+    fn doubled_marks_count_once_and_typed_text_stands_in_for_a_name() {
+        let s = b"\x1b]133;A\x07\x1b]133;A\x07% \x1b]133;B\x07git sx\x08tatus\r\n\
+            \x1b]133;C\x07\x1b]133;C\x07out\r\n\x1b]133;D;0\x07\x1b]133;D;0\x07";
+        let l = fed(s);
+        assert_eq!(texts(&l), vec![(Some("git status".into()), Some(0))]);
+    }
+
+    #[test]
+    fn a_full_screen_program_and_the_title_are_read() {
+        let mut l = fed(b"\x1b]0;build\x07\x1b]133;C\x07\x1b[?1049h");
+        assert!(l.doing().full_screen && l.doing().running);
+        assert_eq!(l.doing().title.as_deref(), Some("build"));
+        l.feed(b"\x1b[?1049l\x1b]133;D;0\x07", 2000);
+        assert!(!l.doing().full_screen && !l.doing().running);
+    }
+
+    #[test]
+    fn the_escapes_come_undone() {
+        assert_eq!(
+            unescape(r"for i in 1 2\x3b do\x0aecho $i\x3b done"),
+            "for i in 1 2; do\necho $i; done"
+        );
+        assert_eq!(unescape(r"a\\b"), r"a\b");
+        assert_eq!(
+            file_url_path("file://host/a%20b/c").as_deref(),
+            Some("/a b/c")
+        );
+        assert_eq!(one_line("a\n  b"), "a ⏎ b");
+    }
+}

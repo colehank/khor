@@ -1151,6 +1151,7 @@ fn only_dead_seen_and_old_rows_are_stale() {
         unread,
         place: None,
         mux: false,
+        doing: None,
         dead,
         unbacked: false,
         category: None,

@@ -6,6 +6,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
+import { DoingLine, hereActs } from "@/components/DoingLine";
 import { EditableName } from "@/components/EditableName";
 import { IconDevices } from "@/components/icons";
 import { gui } from "@/gen/catalog";
@@ -251,6 +252,8 @@ export function SessionsList({
       },
     },
     ...turnInto(r),
+    // Where the shell stands (roadmap 2.5).
+    ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
     {
       // The id is paste material, not reading material. The menu
       // closing is the success face; a clipboard refusal rejects, so
@@ -319,6 +322,10 @@ export function SessionsList({
       <span data-row-far className="block min-w-0 truncate">
         {gui.row_unreachable(gui.card_age(ago(Date.now() - away.age)))}
       </span>
+    ) : r.doing?.command ? (
+      // A terminal whose shell marks its commands says what it runs
+      // (roadmap 2.1), not what its prompt looks like.
+      <DoingLine doing={r.doing} />
     ) : r.last && /[\p{L}\p{N}]/u.test(r.last) ? (
       // A line with something to read: a prompt's frame (「╰─ ─╯」) is
       // no preview (F2.3; the node skips it too, `says_something`).

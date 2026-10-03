@@ -146,6 +146,7 @@ impl ChatKind {
             // somebody forgot.
             place: None,
             mux: false,
+            doing: None,
         }
     }
 

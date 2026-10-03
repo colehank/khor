@@ -709,19 +709,28 @@ export function TabStrip({
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
                 {f.rename ? (
-                  <EditableName
-                    kind={f.rename.kind}
-                    id={f.rename.id}
-                    title={f.label}
-                    className={cn("min-w-0 flex-1", glass ? "text-tab" : "text-body")}
-                    inputClassName="w-full text-callout"
-                    nested
-                    // The hook the width gate measures, kept on the box
-                    // that clips rather than on a wrapper around it
-                    // (`boxData` says why that distinction is not a
-                    // detail).
-                    boxData={{ "data-tab-label": "" }}
-                  />
+                  <span className="flex min-w-0 flex-1 flex-col justify-center">
+                    <EditableName
+                      kind={f.rename.kind}
+                      id={f.rename.id}
+                      title={f.label}
+                      className={cn("min-w-0 flex-1", glass ? "text-tab" : "text-body", f.sub && "leading-tight")}
+                      inputClassName="w-full text-callout"
+                      nested
+                      // The hook the width gate measures, kept on the box
+                      // that clips rather than on a wrapper around it
+                      // (`boxData` says why that distinction is not a
+                      // detail).
+                      boxData={{ "data-tab-label": "" }}
+                    />
+                    {/* A terminal's directory under its name (roadmap
+                        2.5): the second line file tabs already wear. */}
+                    {f.sub && (
+                      <span data-tab-sub className="truncate text-caption leading-tight text-muted-foreground">
+                        {f.sub}
+                      </span>
+                    )}
+                  </span>
                 ) : f.sub ? (
                   // **Two lines, and the second one is the way to tell
                   // two tabs apart** (工作区批⑧). Four files called

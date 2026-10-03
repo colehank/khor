@@ -46,7 +46,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// The acts the page runs, by the ids their items carry. The same names
 /// as `Act` in `src/lib/shortcuts.ts`.
-const ACTS: [&str; 14] = [
+const ACTS: [&str; 17] = [
     "landing-1",
     "landing-2",
     "landing-3",
@@ -61,6 +61,11 @@ const ACTS: [&str; 14] = [
     "next-tab",
     "prev-tab",
     "toggle-list",
+    // Clicked in the menu rather than pressed: the page runs these too
+    // (the reload circle's act, 2026-10-03; roadmap 2.3's jumps).
+    "reload-term",
+    "prev-command",
+    "next-command",
 ];
 
 /// The five landings by the keys the page's strip orders them by
@@ -235,6 +240,10 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     // ⌘R: the terminal in front joined again (2026-10-03, the reload
     // circle's act); the page answers it only while a terminal is open.
     let reload_term = item("reload-term", m::reload_term(), Some("CmdOrCtrl+R"))?;
+    // ⌘↑ ⌘↓: the terminal in front to its previous or next prompt
+    // (roadmap 2.3; VS Code's terminal binds the same keys to the same).
+    let prev_command = item("prev-command", m::prev_command(), Some("CmdOrCtrl+Up"))?;
+    let next_command = item("next-command", m::next_command(), Some("CmdOrCtrl+Down"))?;
     // ⌃⌘S, the sidebar's key in Notes and Finder (F6.7).
     let sidebar = item("toggle-list", m::hide_sidebar(), Some("Ctrl+Cmd+S"))?;
     let view = Submenu::with_items(
@@ -251,6 +260,8 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &sidebar,
             &find,
             &reload_term,
+            &prev_command,
+            &next_command,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, Some(m::fullscreen()))?,
         ],

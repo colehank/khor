@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import { shortDir } from "@/components/DoingLine";
 import { type SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
@@ -429,6 +430,12 @@ export function DetailPane({
                 />
               ) : (
                 <span className="min-w-0 truncate font-title" />
+              )}
+              {/* Where the shell stands (roadmap 2.5, OSC 7). */}
+              {row?.doing?.cwd && (
+                <span data-head-cwd title={row.doing.cwd} className="min-w-0 truncate text-caption text-tertiary">
+                  {shortDir(row.doing.cwd)}
+                </span>
               )}
             </>
           )}

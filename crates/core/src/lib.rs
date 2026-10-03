@@ -2502,6 +2502,39 @@ pub struct Session {
     /// read as not multiplexed, which is exactly what that peer knew.
     #[serde(default)]
     pub mux: bool,
+    /// What the session's shell is doing, from the marks its shell
+    /// integration writes (roadmap 1.2, `khor_node::commands`), or for a
+    /// tmux row from tmux's own `pane_current_command` and
+    /// `pane_current_path`. `None` when nothing knows.
+    ///
+    /// Wire: appended at the tail with a serde default, like `mux`.
+    #[serde(default)]
+    pub doing: Option<Doing>,
+}
+
+/// **What a terminal session is doing** (roadmap 1.2 and 2.1): the command
+/// that runs or last ran, where, how it ended — the row's second line and
+/// the tab's name are made from it, never from the prompt's own glyphs.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Doing {
+    /// The command line as typed, one line (a multi-line one is joined).
+    pub command: Option<String>,
+    /// It is running now (its end has not been marked).
+    pub running: bool,
+    /// When it started and ended, ms since the epoch; 0 when unknown.
+    #[ts(type = "number")]
+    pub started_ms: u64,
+    #[ts(type = "number | null")]
+    pub ended_ms: Option<u64>,
+    /// How it ended, when the shell said.
+    pub exit: Option<i32>,
+    /// The shell's working directory (OSC 7), a path on the home machine.
+    pub cwd: Option<String>,
+    /// The terminal's title (OSC 0 / 2), when a program set one.
+    pub title: Option<String>,
+    /// A full-screen program holds the screen (the alternate buffer or
+    /// the mouse taken).
+    pub full_screen: bool,
 }
 
 #[cfg(test)]
@@ -2606,6 +2639,7 @@ mod tests {
             unread: 3,
             place: None,
             mux: false,
+            doing: None,
             category: Some("claude".to_owned()),
             last: Some("last said".to_owned()),
             via: None,
@@ -2678,22 +2712,24 @@ mod tests {
         bool,
         Option<String>,
         bool,
+        Option<Doing>,
     );
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_fourteen() {
+    fn the_session_frame_is_a_fixed_order_array_of_fifteen() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x9e = msgpack fixarray of 14. Adding, removing, or reordering a
+        // 0x9f = msgpack fixarray of 15. Adding, removing, or reordering a
         // field must land here first, consciously. Six → seven appended
         // `category`; seven → nine appended `last` and `via` together
         // (会话行改版批); nine → ten appended `term` (会话身份批);
         // ten → eleven appended `dead` (退场批); eleven → twelve appended
         // `unbacked` (词的保鲜期批); twelve → thirteen appended `place`
-        // (工作区批); thirteen → fourteen appended `mux` (面跟宿主批) —
+        // (工作区批); thirteen → fourteen appended `mux` (面跟宿主批);
+        // fourteen → fifteen appended `doing` (roadmap 1.2) —
         // always at the tail, never in the middle: a mid-frame optional
         // desyncs the array on every older end.
-        assert_eq!(bytes[0], 0x9e);
+        assert_eq!(bytes[0], 0x9f);
         let (
             id,
             kind,
@@ -2709,6 +2745,7 @@ mod tests {
             unbacked,
             place,
             mux,
+            _doing,
         ): SessionFrame = rmp_serde::from_slice(&bytes).unwrap();
         // Field by field rather than as one tuple comparison: std stops
         // deriving `PartialEq` at twelve, and this frame is thirteen.

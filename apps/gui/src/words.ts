@@ -298,6 +298,12 @@ export function valueOf(key: string, axes: readonly string[] = AXES): string {
   return a ? key.slice(a.length) : key;
 }
 
+/** How long something lasted, in the catalog's units (a bare duration
+    off the same ladder `ago` uses). */
+export function lasted(ms: number): string {
+  return span(ms);
+}
+
 /** How long ago, in the catalog's units. */
 export function ago(ms: number): string {
   return span(Date.now() - ms);

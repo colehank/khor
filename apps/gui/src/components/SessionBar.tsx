@@ -72,6 +72,7 @@ import { TabAvatar, type TabFace } from "@/browse/TabStrip";
 import { IconBack, IconClose, IconPlus } from "@/components/icons";
 import { PathCut } from "@/components/PathCut";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { terminalKeyboard } from "@/lib/soft-keyboard";
 import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
@@ -173,14 +174,16 @@ export function SessionScreen({
   /** **A drag down over the content while the keyboard is up lowers it**
       (round UX-3 3a, every mode; the Messages and Mail manner). The page
       cannot hand the keyboard to the finger, so it is lowered once the
-      drag is plainly downward and the system finishes the motion. A
-      field kept focused for its keys (the terminal's, `inputmode`) is
-      lowered by its mode; any other is let go. */
+      drag is plainly downward and the system finishes the motion. */
   const drag = useRef<number | null>(null);
   const lower = () => {
     const el = document.activeElement;
     if (!(el instanceof HTMLElement) || !document.documentElement.hasAttribute("data-keyboard")) return;
-    if (el.hasAttribute("inputmode")) el.setAttribute("inputmode", "none");
+    // The terminal's field keeps its focus for its keys and is lowered by
+    // its own road (`terminalKeyboard`, the terminal lane's 2.2, which
+    // also lowers on its own swipe; both are the same act); any other
+    // field is let go.
+    if (el.hasAttribute("inputmode")) terminalKeyboard.lower();
     else el.blur();
   };
   return (

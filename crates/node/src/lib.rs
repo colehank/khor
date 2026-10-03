@@ -9,6 +9,8 @@
 
 pub mod accounts;
 pub mod answers;
+pub mod commands;
+pub mod integration;
 pub mod adaptor;
 pub mod backup;
 pub mod cagent;

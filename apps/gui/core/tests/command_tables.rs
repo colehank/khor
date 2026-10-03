@@ -285,6 +285,18 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "opens the editor in a second native window; a browser face opens a named tab with \
          `window.open` and never asks khor for a window",
     ),
+    // ── a line into the app's log (item 18 A) ─────
+    (
+        "face_note",
+        "writes a line to the app's own stderr for the device console; a browser face has its \
+         own console and no app log",
+    ),
+    // ── a finished command, said by the system (roadmap 2.4) ─────
+    (
+        "notify_finished",
+        "posts a notification through the operating system's notification centre; a page in \
+         a browser is not an app the system notifies for, and `lib/finished` catches the miss",
+    ),
 ];
 
 /// **Both tables name the same commands.**

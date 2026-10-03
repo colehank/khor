@@ -50,6 +50,15 @@ tauri = { version = "2", features = ["unstable", "macos-private-api"] }
 # (`DialogExt` inside the command): the frontend never invokes the
 # plugin directly, so no JS package and no capability grant is added.
 tauri-plugin-dialog = "2"
+# **A finished command, said by the system** (roadmap 2.4): the official v2
+# notification plugin (notify-rust and mac-notification-sys underneath on
+# a desktop, UNUserNotificationCenter on a phone) — Apache-2.0 OR MIT.
+# Rust-side API only, like the dialog (`notify_finished`): the face never
+# invokes the plugin, so no JS package and no capability grant is added.
+# A phone says it when the app comes back (its page sleeps in the
+# background); a notification pushed to a sleeping phone is a later net
+# item.
+tauri-plugin-notification = "2"
 
 # macos-proxy is Apple-only (it compiles for macOS 14+ alone), so the
 # feature is enabled only there — enabling it everywhere would break the

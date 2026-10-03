@@ -181,6 +181,10 @@ pub struct Multiplexed {
     /// Every live pid inside this session — its panes and everything
     /// descended from them.
     pub holds: Vec<u32>,
+    /// What a pane is running, by tmux's own `pane_current_command`, when
+    /// it is not the pane's shell (roadmap 2.1: a tmux row's activity when
+    /// no shell integration marks reach khor).
+    pub running: Option<String>,
 }
 
 /// What one sweep of every vendor found, each row already attributed.

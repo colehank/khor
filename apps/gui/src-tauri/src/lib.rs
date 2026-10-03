@@ -509,9 +509,31 @@ async fn chat_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::cha
     khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
+/// One turn, with what it carries: `images` as `[mime, base64]` and
+/// `files` as `[name, text]` pairs. **Async, off the main thread**: a
+/// turn carrying photos to a far machine takes as long as the road does
+/// (2026-10-04: two phone photos held the interface for minutes), and
+/// it goes in slices with its progress on the poll (`chat::chat_say_with`).
+///
+/// ⚠️ 墓碑: this command took `id` and `text` only, so a picture or a
+/// file attached in the app never left it — the web face's bridge was
+/// the one door that carried them.
 #[tauri::command]
-fn chat_say(id: String, text: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_say(&id, &text)
+async fn chat_say(
+    id: String,
+    text: String,
+    images: Option<Vec<(String, String)>>,
+    files: Option<Vec<(String, String)>>,
+) -> Result<(), String> {
+    off_main(move || {
+        khor_gui_core::chat::chat_say_with(
+            &id,
+            &text,
+            images.unwrap_or_default(),
+            files.unwrap_or_default(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]
@@ -760,6 +782,31 @@ fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk,
 #[tauri::command]
 async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+}
+
+/// **A command that finished while nobody was looking, said by the system**
+/// (roadmap 2.4): the face decides when (`lib/finished`), this only shows
+/// it. The first one asks for the permission where the system wants that
+/// asked (a phone); a refusal is the system's answer and costs nothing.
+#[tauri::command]
+fn notify_finished(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    use tauri_plugin_notification::{NotificationExt, PermissionState};
+    let n = app.notification();
+    if n.permission_state().map_err(|e| e.to_string())? != PermissionState::Granted
+        && n.request_permission().map_err(|e| e.to_string())? != PermissionState::Granted
+    {
+        return Ok(());
+    }
+    n.builder().title(title).body(body).show().map_err(|e| e.to_string())
+}
+
+/// **A line from the page into the app's log** (item 18 A): the app's
+/// stderr, which a phone's console keeps and a Mac's launch log collects.
+/// What a terminal saw in its first second on a device the simulator
+/// never reproduces.
+#[tauri::command]
+fn face_note(line: String) {
+    eprintln!("face: {}", line.chars().take(400).collect::<String>());
 }
 
 #[tauri::command]
@@ -3314,6 +3361,8 @@ pub fn run() {
     // whether the face draws the entry at all is `scanner_here`.
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    // A finished command, said by the system (roadmap 2.4, `notify_finished`).
+    let builder = builder.plugin(tauri_plugin_notification::init());
     // **khor's own menu bar** (`menu.rs`), so tauri's default is not
     // built first: its ⌘W was 「Close Window」, and on khor's one window
     // that stops the node. A picked item goes back to the page as the act
@@ -3572,6 +3621,8 @@ pub fn run() {
             term_attach,
             term_stream,
             term_wait,
+            face_note,
+            notify_finished,
             term_key,
             term_drop,
             term_resize,

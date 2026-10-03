@@ -725,6 +725,7 @@ pub fn host_main(
 ) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
+    let khor = root.join(".khor");
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
     let dir = live
         .dir_of(&id)
@@ -734,7 +735,7 @@ pub fn host_main(
     // until now every reason it had for dying went nowhere and the
     // opener had one sentence for all of them — a timeout
     // (`HOST_NEVER_READY`). See `host_error_path` for what that cost.
-    let served = host_serving(&live, &dir, &id, size, &cmd);
+    let served = host_serving(&live, &dir, &khor, &id, size, &cmd);
     if let Err(why) = &served {
         let _ = std::fs::write(host_error_path(&dir), why);
     }
@@ -744,6 +745,7 @@ pub fn host_main(
 fn host_serving(
     live: &LiveKind,
     dir: &Path,
+    khor: &Path,
     id: &SessionId,
     size: (u16, u16),
     cmd: &[String],
@@ -795,7 +797,26 @@ fn host_serving(
     let found = crate::find_program(&cmd[0], &path)
         .ok_or_else(|| msg::command_not_found(&cmd[0], &path))?;
     let mut builder = CommandBuilder::new(&found);
-    builder.args(&cmd[1..]);
+    // **The shell is taught to mark its commands** (roadmap 1.1,
+    // `crate::integration`): a shell this host starts for a shell row,
+    // never a viewer's tmux client or a program. A script that cannot be
+    // written leaves the shell as it was.
+    let integrated = (kind == khor_core::kind::SHELL && viewer.is_none() && !mux_client)
+        .then(|| {
+            let scripts = crate::integration::dir(khor);
+            crate::integration::write_scripts(&scripts).ok()?;
+            crate::integration::plan(&scripts, &cmd, |k| std::env::var(k).ok())
+        })
+        .flatten();
+    match &integrated {
+        Some(plan) => {
+            builder.args(&plan.args);
+            for (name, value) in &plan.env {
+                builder.env(name, value);
+            }
+        }
+        None => builder.args(&cmd[1..]),
+    }
     builder.env("PATH", &path);
     // **The person's own locale, when this process has none.**
     // launchd's environment has no `LANG`, and a tmux client without a
@@ -936,6 +957,14 @@ fn host_serving(
         });
     }
 
+    // **The command ledger** (roadmap 1.2, `crate::commands`): fed the
+    // same bytes as the ring, written beside the session when something a
+    // reader sees changed, and every finished command added to the
+    // machine's history. A tmux client's PTY is not read for it: its
+    // marks belong to whichever pane tmux shows.
+    let commands = (!mux_client).then(|| Arc::new(Mutex::new(crate::commands::Ledger::default())));
+    let history = khor.join("history.jsonl");
+
     // A screen to match patterns against, for an agent TUI khor can
     // name. None for a shell (the process group answers better), and
     // none for a command whose basename is not a vendor in the table.
@@ -952,8 +981,15 @@ fn host_serving(
         let screen = screen.clone();
         let last_dir = dir.clone();
         let ledger = ledger.clone();
+        let commands = commands.clone();
+        let history = history.clone();
+        let session = id.0.clone();
         std::thread::spawn(move || {
-            let mut buf = [0u8; 8192];
+            // **One read is one chunk on every face, up to 64 KiB** (item
+            // 18 B): a program's redraw that the PTY hands over in one
+            // read reaches the face whole, not cut at 8 KiB into two
+            // chunks a face could paint apart.
+            let mut buf = vec![0u8; 64 * 1024];
             // The preview line (`last.txt`): derived after every read,
             // written only when it changed. Not throttled — a throttle
             // here has no trailing edge, and the one update that matters
@@ -977,6 +1013,22 @@ fn host_serving(
                 // Before anyone can see it: a question is pending before
                 // a face can answer it.
                 ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
+                // Its own lock, never held with another.
+                let marked = commands.as_ref().and_then(|c| {
+                    let mut c = c.lock().unwrap();
+                    c.feed(&buf[..n], crate::live::now_ms().max(0) as u64);
+                    let done = c.take_finished();
+                    c.take_changes().then(|| (c.saved(), done))
+                });
+                if let Some((saved, done)) = &marked {
+                    crate::commands::write_saved(&last_dir, saved);
+                    crate::commands::append_history(&history, &session, done);
+                }
+                let integrated = commands.as_ref().is_some_and(|c| c.lock().unwrap().marked);
+                if integrated && last_written.is_some() {
+                    let _ = std::fs::remove_file(last_dir.join("last.txt"));
+                    last_written = None;
+                }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
@@ -988,8 +1040,10 @@ fn host_serving(
                 drop(ring);
                 // Never for a tmux client (`mux_client`): its bottom
                 // line is tmux's status bar, which is true of the
-                // screen and a lie about the session.
-                if !mux_client {
+                // screen and a lie about the session. Nor for a shell
+                // that marks its commands: its row says what it runs
+                // (`Session::doing`), never the prompt's own glyphs.
+                if !mux_client && !integrated {
                     // The screen's reading beats the byte tail — it is
                     // what is actually on the terminal; the strip is the
                     // screenless (plain shell) approximation.

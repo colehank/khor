@@ -156,7 +156,7 @@ const QUICK = new Set([
   "hooks_state", "install_hooks", "uninstall_hooks", "lock_state", "set_lock", "set_lock_pin",
   "set_lock_timeout", "unlock", "doctor_fix",
   // An attachment already open: memory, and a write to its socket.
-  "chat_poll", "chat_say", "chat_answer", "chat_stop", "chat_set_mode", "chat_set_option",
+  "chat_poll", "chat_answer", "chat_stop", "chat_set_mode", "chat_set_option",
   "chat_replay", "chat_leave", "term_attach", "term_stream", "term_key", "term_resize", "term_leave",
   // Answers the build knows, or plain memory.
   "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
@@ -171,6 +171,10 @@ const QUICK = new Set([
 const WAITS = [
   "term_open", "chat_open", "term_drop", "close_session", "usage", "agent_ask",
   "takeover", "takeover_term", "resume_session",
+  // 2026-10-04: a turn carrying photos to a far machine held the main
+  // thread for minutes — a write to its socket is quick only while the
+  // road keeps up.
+  "chat_say",
 ];
 {
   const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;

@@ -16,10 +16,10 @@
 use std::collections::HashMap;
 use std::net::TcpStream;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use khor_node::gui_host::{Choice, GuiNote, GuiOp};
+use khor_node::gui_host::{Choice, GuiNote, GuiOp, write_op};
 use khor_node::host::{connect, read_frame, write_frame};
 use khor_node::{Node, SessionId};
 use serde::Serialize;
@@ -112,6 +112,15 @@ pub struct ChatBatch {
     /// not the whole of what was missed. A face that sees this must ask
     /// for history rather than trust its own paint — see [`FRAME_CAP`].
     pub lost: bool,
+    /// A turn with attachments on its way to the host: bytes sent so far
+    /// and in all (`chat_say_with`, which sends a big turn in slices);
+    /// `sending_of` is 0 when nothing is on its way. What lets a face say
+    /// 正在发送 while a phone's photos cross a slow road, instead of a
+    /// box that looks like nothing happened.
+    #[ts(type = "number")]
+    pub sending: u64,
+    #[ts(type = "number")]
+    pub sending_of: u64,
 }
 
 /// How many frames one attachment keeps.
@@ -220,6 +229,12 @@ struct Chat {
     /// Woken whenever a frame lands, the attachment is made again or
     /// ends: what a held [`chat_wait`] waits on.
     arrived: tokio::sync::Notify,
+    /// One turn on its way at a time ([`chat_say_with`]): its slices
+    /// must not interleave with another turn's. Ops that are not turns
+    /// take `conn` alone and go between the slices.
+    saying: Mutex<()>,
+    /// Bytes of the turn on its way sent so far, and in all (0: none).
+    sending: (AtomicU64, AtomicU64),
     /// How many opens hold this attachment. React mounts an effect,
     /// cleans it up, and mounts again — two holders of one id, in an
     /// order the wire does not preserve; without the count, whichever
@@ -339,6 +354,8 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
         arrived: tokio::sync::Notify::new(),
+        saying: Mutex::new(()),
+        sending: (AtomicU64::new(0), AtomicU64::new(0)),
         holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
     });
@@ -444,6 +461,8 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
         next: frames.dropped + frames.held.len() as u64,
         gone: chat.gone.load(Ordering::Relaxed),
         lost,
+        sending: chat.sending.0.load(Ordering::Relaxed),
+        sending_of: chat.sending.1.load(Ordering::Relaxed),
     })
 }
 
@@ -490,6 +509,14 @@ pub fn chat_say(id: &str, text: &str) -> Result<(), String> {
 /// images (`Facts::images`, carried to the face as `ChatFrame::Agent`).
 /// The gate is up in the face rather than here because refusing after
 /// the picture has crossed the wire is a refusal nobody can act on.
+///
+/// **It can take as long as the road does**, so no caller runs it on a
+/// thread that draws (the app's command is `async`; the bridge hands it
+/// to a thread). A turn too big for one frame goes in slices
+/// (`khor_node::gui_host::write_op`), each taking the connection alone,
+/// so a stop pressed meanwhile goes between them; the batch's `sending`
+/// says how far it has got. When it cannot go, the face is told the way
+/// a host refusal tells it — a `Refused` frame — and gets its words back.
 pub fn chat_say_with(
     id: &str,
     text: &str,
@@ -497,15 +524,27 @@ pub fn chat_say_with(
     files: Vec<(String, String)>,
 ) -> Result<(), String> {
     let chat = chat_of(id)?;
-    let mut conn = chat.conn.lock().unwrap();
-    write_frame(
-        &mut *conn,
-        &GuiOp::SayWith {
-            text: text.to_owned(),
-            images,
-            files,
-        },
-    )
+    let _one = chat.saying.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let op = GuiOp::SayWith {
+        text: text.to_owned(),
+        images,
+        files,
+    };
+    let sent = write_op(&chat.conn, &op, |sent, all| {
+        chat.sending.1.store(all as u64, Ordering::Relaxed);
+        chat.sending.0.store(sent as u64, Ordering::Relaxed);
+        chat.arrived.notify_waiters();
+    });
+    chat.sending.0.store(0, Ordering::Relaxed);
+    chat.sending.1.store(0, Ordering::Relaxed);
+    if let Err(why) = &sent {
+        chat.frames
+            .lock()
+            .unwrap()
+            .push(ChatFrame::Refused { why: why.clone() });
+    }
+    chat.arrived.notify_waiters();
+    sent
 }
 
 /// The answer to an [`ChatFrame::Ask`]: the chosen option id, or `None`
@@ -900,6 +939,8 @@ mod wait_tests {
             frames: Mutex::new(Frames::default()),
             gone: AtomicBool::new(false),
             arrived: tokio::sync::Notify::new(),
+            saying: Mutex::new(()),
+            sending: (AtomicU64::new(0), AtomicU64::new(0)),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
         });

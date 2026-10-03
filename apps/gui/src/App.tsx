@@ -1,9 +1,13 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { hereActs, shortDir, termName } from "@/components/DoingLine";
+import { FinishedWatch, type Finished } from "@/lib/finished";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT } from "@/lib/composer-handoff";
 import {
   fetchDevices,
   fetchHooks,
   fetchSessions,
+  notifyFinished,
   syncNow,
   fetchWorkspaces,
   installHooks,
@@ -59,6 +63,7 @@ import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
+import { lasted } from "@/words";
 import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -437,6 +442,39 @@ export default function App() {
     landings().some((l) => l.key === place.landing) ? (place.landing as Landing) : "sessions",
   );
   const [rows, setRows] = useState<SessionRow[]>([]);
+  // **Long commands that finished out of sight** (roadmap 2.4,
+  // `lib/finished`), said by the system. On screen = this window shown,
+  // the sessions page up, and that session's tab the one in front.
+  const finished = useRef(new FinishedWatch());
+  const onScreen = useRef<(id: string) => boolean>(() => false);
+  const announceFinished = useCallback((now: SessionRow[]) => {
+    const done = finished.current.see(now, (id) => onScreen.current(id));
+    // For the gates, as `__xterm` is: what was announced, in order.
+    const said = window as unknown as { __finished?: Finished[] };
+    if (done.length) said.__finished = [...(said.__finished ?? []), ...done];
+    for (const f of done) {
+      const took = lasted(f.ms);
+      const body =
+        f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took);
+      notifyFinished(f.title, body).catch(() => {});
+      // The system's notice brings the app forward when it is pressed,
+      // and says nothing more to it; so the window that comes forward
+      // within a minute of a notice posted while it was in the back
+      // opens that session.
+      if (!document.hasFocus()) noticed.current = { id: f.id, at: Date.now() };
+    }
+  }, []);
+  const noticed = useRef<{ id: string; at: number } | null>(null);
+  const openNoticed = useRef<(id: string) => void>(() => {});
+  useEffect(() => {
+    const back = () => {
+      const n = noticed.current;
+      noticed.current = null;
+      if (n && Date.now() - n.at < 60_000) openNoticed.current(n.id);
+    };
+    window.addEventListener("focus", back);
+    return () => window.removeEventListener("focus", back);
+  }, []);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   /** Whether this machine can host — `false` on a phone, said by its own
       row (`lib/here`, docs/IOS.md 第二步). Handed down as a context; read
@@ -463,6 +501,8 @@ export default function App() {
   const sessionTabs = useSessionTabs(tabsLimit, (id) => pinnedRows.current.has(id));
   const { tabs: openTabs, drop: dropTabs } = sessionTabs;
   const selected = sessionTabs.active;
+  onScreen.current = (id) =>
+    document.visibilityState === "visible" && landing === "sessions" && selected === id && (!narrow || screen === "detail");
   // Whether the open tabs are up as a list to pick from (`TabSwitcher`)
   // instead of the front tab's content. The narrow face's only way to
   // another tab — a phone has no strip — and the wide face's answer
@@ -576,6 +616,16 @@ export default function App() {
     setNewSessionInPlace(inPlace);
     setDialog("new");
   }, []);
+  // A terminal block's "Send to Agent" (roadmap 2.3, `lib/composer-handoff`):
+  // the wizard on that machine, in that directory.
+  useEffect(() => {
+    const asked = (e: Event) => {
+      const { machine, dir } = (e as CustomEvent<{ machine: string; dir: string }>).detail;
+      openNewSession(machine, dir);
+    };
+    window.addEventListener(NEW_SESSION_EVENT, asked);
+    return () => window.removeEventListener(NEW_SESSION_EVENT, asked);
+  }, [openNewSession]);
   /** Whether the open wizard was started from a workspace's own column,
       and the id it left there. **Two pieces of state and not one**: the
       first is true while the dialog is up and the second outlives it,
@@ -657,6 +707,7 @@ export default function App() {
         .then((rows) => {
           if (!live) return;
           setRows(rows);
+          announceFinished(rows);
           setRowsRead(true);
           setStale(false);
         })
@@ -776,6 +827,13 @@ export default function App() {
     // `open` is a stable callback; the object around it is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionTabs.open]);
+
+  openNoticed.current = (id) => {
+    const row = rows.find((r) => r.id === id);
+    if (!row) return;
+    setLanding("sessions");
+    onSelect(row);
+  };
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
     setSelectedDevice(row.id);
@@ -1464,9 +1522,15 @@ export default function App() {
         return r
           ? {
               id,
-              label: r.title,
+              // An unnamed shell's tab follows what runs in it (roadmap
+              // 2.5, `termName`); a name somebody gave stays.
+              label: termName(r),
               face: r.face,
-              path: r.place ?? "",
+              path: r.doing?.cwd ?? r.place ?? "",
+              // Where the shell stands, under the name (roadmap 2.5).
+              sub: r.doing?.cwd ? shortDir(r.doing.cwd) : undefined,
+              // Where the shell stands, and its two acts (roadmap 2.5).
+              menu: r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : undefined,
               session: { word: r.word, kind: r.kind, category: r.category },
               // A session tab's name is the row's title, which is a
               // name somebody gave it — so double-click renames it
@@ -1523,6 +1587,23 @@ export default function App() {
     setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
     setScreen("detail");
   };
+  // A terminal's 「open enclosing folder」 (roadmap 2.5): that machine's
+  // files at that path.
+  const openDirRef = useRef<(machine: string, path: string) => void>(() => {});
+  openDirRef.current = (machine, path) => {
+    const d = devices.find((x) => x.name === machine);
+    if (!d) return;
+    setLanding("workspaces");
+    openWorkspace({ device: d.id, machine, path } as WorkspaceRow);
+  };
+  useEffect(() => {
+    const asked = (e: Event) => {
+      const { machine, path } = (e as CustomEvent<{ machine: string; path: string }>).detail;
+      openDirRef.current(machine, path);
+    };
+    window.addEventListener(OPEN_DIR_EVENT, asked);
+    return () => window.removeEventListener(OPEN_DIR_EVENT, asked);
+  }, []);
 
   const list = (
     <ListPane

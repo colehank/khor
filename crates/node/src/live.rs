@@ -1190,6 +1190,7 @@ impl LiveKind {
                 term: false,
                 place: place_of(sighting.cwd.as_deref()),
                 mux: false,
+                doing: None,
             });
             let seat = out.len() - 1;
             for &p in &pids {
@@ -1259,6 +1260,7 @@ impl LiveKind {
                     holds: procs.subtree(&[child]),
                     own: Some(i),
                     tmux: None,
+                    running: None,
                 });
             }
         }
@@ -1290,6 +1292,7 @@ impl LiveKind {
                 holds: held.holds,
                 own,
                 tmux: Some(held.found),
+                running: held.running,
             });
         }
         // **An agent nobody registered, gone from a host that is still
@@ -1326,6 +1329,7 @@ impl LiveKind {
                 term: false,
                 place: n.place.clone(),
                 mux: false,
+                doing: None,
             });
         }
         // Which host each running row sits in. A pid on record for a
@@ -1508,6 +1512,16 @@ impl LiveKind {
                         term: true,
                         place: place_of(sighting.cwd.as_deref()),
                         mux: true,
+                        // No marks cross from a person's tmux pane, so
+                        // tmux's own reading (roadmap 2.1): the pane's
+                        // program when it is not the shell, and where
+                        // the session stands.
+                        doing: Some(khor_core::Doing {
+                            running: host.running.is_some(),
+                            command: host.running.clone(),
+                            cwd: sighting.cwd.clone(),
+                            ..Default::default()
+                        }),
                     });
                     let k = out.len() - 1;
                     if let Some(w) = wear {
@@ -1794,6 +1808,9 @@ impl LiveKind {
                     term: host.is_some() || lens,
                     place: place_of(meta.place.as_deref()),
                     mux: false,
+                    // The host's command ledger (`crate::commands`),
+                    // when its shell marks commands.
+                    doing: crate::commands::read_doing(&e.path()),
                 },
                 pid: meta.pid,
             });
@@ -1851,6 +1868,8 @@ struct Host {
     own: Option<usize>,
     /// The tmux session as the sweep found it; `None` for khor's pty.
     tmux: Option<crate::adaptor::Found>,
+    /// What tmux says a pane runs, when it is not the shell.
+    running: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

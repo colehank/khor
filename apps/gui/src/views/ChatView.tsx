@@ -50,6 +50,7 @@
 //   cost more than the walls of source did, the way back is this one
 //   element — the fold and the frames are unchanged, which is why the
 //   change is reversible and this note can be short.
+import { takeHandOff } from "@/lib/composer-handoff";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -950,12 +951,21 @@ export function ChatView({
   /** The files going along with the line being written (round CHAT,
       `chat-files`): each put on the conversation's machine as it is
       chosen, cleared by sending like the text beside them. ⚠️ 墓碑:
-      `shots` and `docs` carried pictures as base64 and text files'
-      contents inside the prompt, gated on the agent's capabilities;
-      every file is now a path on the machine, and a picture also rides
-      inline where the agent takes pictures. */
+      `shots` carried pictures as base64 inside the prompt, gated on the
+      agent's capabilities; every file is now a path on the machine, and
+      a picture also rides inline where the agent takes pictures. */
   const files = usePendingFiles(id);
   const [pickOpen, setPickOpen] = useState(false);
+  /** A terminal block handed to the next conversation (roadmap 2.3), as
+      `[name, text]`: it rides as the prompt's own text, there being no
+      file on any machine to point at. Cleared by sending. */
+  const [docs, setDocs] = useState<[string, string][]>(() => {
+    const handed = takeHandOff();
+    return handed ? [handed] : [];
+  });
+  /** A turn with attachments on its way: bytes sent and in all, from the
+      poll (`ChatBatch.sending`); `null` when nothing is crossing. */
+  const [sending, setSending] = useState<[number, number] | null>(null);
   /** Which tool lines are open. **Closed by default and per line**: a
       conversation is read for what was said, and twenty shell commands
       unfolded is a transcript of the machine rather than of the work.
@@ -1090,6 +1100,7 @@ export function ChatView({
         .then((batch) => {
           if (stopped) return;
           cursor = batch.next;
+          setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
           // **The past this face was holding is no longer backed by
           // anything.** The attachment's frame list is capped
           // (`khor_gui_core::chat::FRAME_CAP`), and this says the trim
@@ -1445,13 +1456,16 @@ export function ChatView({
     const line = text.trim();
     // A line, or files without one; never while a file is still on its
     // way to the machine (the send seat says busy meanwhile).
-    if ((!line && files.items.length === 0) || inTurn || gone || files.busy) return;
+    if ((!line && files.items.length === 0 && docs.length === 0) || inTurn || gone || files.busy) return;
     const placed = files.items.filter((f) => f.path !== null);
     const full = withAttachments(line, placed.map((f) => f.path as string));
     const carried = facts?.images ? placed.flatMap((f) => (f.inline ? [f.inline] : [])) : [];
+    // A handed-off terminal block rides as text (roadmap 2.3).
+    const carriedDocs = docs;
     setText("");
     setInTurn(true);
     files.clear();
+    setDocs([]);
     // Painted first-hand, at the end of the live half (module head).
     // It used to be pinned to a count of live frames and slotted back
     // in by the fold; appended here it lands in the same place for the
@@ -1463,7 +1477,7 @@ export function ChatView({
     // it back is the difference between "it did not go in" and "it did
     // not go in and you get to type it again".
     sent.current = line;
-    chatSay(id, full, carried).catch(() => setInTurn(false));
+    chatSay(id, full, carried, carriedDocs).catch(() => setInTurn(false));
   };
 
   // The "/" menu: the agent's own commands, filtered by what has been
@@ -2050,7 +2064,33 @@ export function ChatView({
               Each one can be taken back off — the picture is still on
               the clipboard, so this undoes the attaching and not the
               having. */}
+          {sending && (
+            <div data-chat-sending className="px-2 pb-1 text-caption tabular-nums text-muted-foreground">
+              {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}
+            </div>
+          )}
           <PendingChips items={files.items} onRemove={files.remove} />
+          {docs.length > 0 && (
+            <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
+              {docs.map(([name], i) => (
+                <span
+                  key={`d${i}`}
+                  data-chat-doc
+                  className="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-muted-foreground"
+                >
+                  {gui.chat_file(name)}
+                  <button
+                    data-chat-doc-drop
+                    aria-label={gui.remove}
+                    className="min-h-touch min-w-touch px-1 pointer-fine:min-h-0 pointer-fine:min-w-0"
+                    onClick={() => setDocs((now) => now.filter((_, k) => k !== i))}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="relative flex items-end">
             {/* The agent's own commands, above the box that will carry
                 them. Absolute so opening it does not push the

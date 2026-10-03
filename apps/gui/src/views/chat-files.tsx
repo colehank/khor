@@ -58,14 +58,13 @@ export type Pending = {
   error: string | null;
 };
 
-/** How large a picture still rides inline beside its path: base64
-    inside the one frame the line travels in.
-    **1 MiB, not the 5 the old picture-only road allowed** (`ChatView`'s
-    `SHOT_MAX`): the agent has the path now, so inline is a convenience,
-    and two phone photos at 5 each made one 8.5 MB frame that held the
-    dev bridge's only request loop for minutes on its way to a far host
-    (round CHAT, simulator). */
-const INLINE_MAX = 1024 * 1024;
+/** How large a picture still rides inline beside its path: 5 MB, the
+    old picture road's limit again. A turn with pictures goes in slices,
+    off the main thread, with its progress shown (`chat_say_with`, the
+    net lane's c85d45d; the host takes 64 MB a turn) — ⚠️ 墓碑: 1 MiB
+    while one 8.5 MB frame could hold the dev bridge's only request loop
+    for minutes (round CHAT). */
+const INLINE_MAX = 5 * 1024 * 1024;
 /** How large a picture still gets a thumbnail on its chip. */
 const THUMB_MAX = 1024 * 1024;
 
