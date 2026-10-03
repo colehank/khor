@@ -725,6 +725,7 @@ pub fn host_main(
 ) -> Result<(), String> {
     let key = khor_net::identity::load_or_create(&root.join(".khor").join("identity.key"))
         .map_err(|e| e.to_string())?;
+    let khor = root.join(".khor");
     let live = LiveKind::new(root, khor_core::DeviceId(*key.public().as_bytes()));
     let dir = live
         .dir_of(&id)
@@ -734,7 +735,7 @@ pub fn host_main(
     // until now every reason it had for dying went nowhere and the
     // opener had one sentence for all of them — a timeout
     // (`HOST_NEVER_READY`). See `host_error_path` for what that cost.
-    let served = host_serving(&live, &dir, &id, size, &cmd);
+    let served = host_serving(&live, &dir, &khor, &id, size, &cmd);
     if let Err(why) = &served {
         let _ = std::fs::write(host_error_path(&dir), why);
     }
@@ -744,6 +745,7 @@ pub fn host_main(
 fn host_serving(
     live: &LiveKind,
     dir: &Path,
+    khor: &Path,
     id: &SessionId,
     size: (u16, u16),
     cmd: &[String],
@@ -795,7 +797,26 @@ fn host_serving(
     let found = crate::find_program(&cmd[0], &path)
         .ok_or_else(|| msg::command_not_found(&cmd[0], &path))?;
     let mut builder = CommandBuilder::new(&found);
-    builder.args(&cmd[1..]);
+    // **The shell is taught to mark its commands** (roadmap 1.1,
+    // `crate::integration`): a shell this host starts for a shell row,
+    // never a viewer's tmux client or a program. A script that cannot be
+    // written leaves the shell as it was.
+    let integrated = (kind == khor_core::kind::SHELL && viewer.is_none() && !mux_client)
+        .then(|| {
+            let scripts = crate::integration::dir(khor);
+            crate::integration::write_scripts(&scripts).ok()?;
+            crate::integration::plan(&scripts, &cmd, |k| std::env::var(k).ok())
+        })
+        .flatten();
+    match &integrated {
+        Some(plan) => {
+            builder.args(&plan.args);
+            for (name, value) in &plan.env {
+                builder.env(name, value);
+            }
+        }
+        None => builder.args(&cmd[1..]),
+    }
     builder.env("PATH", &path);
     // **The person's own locale, when this process has none.**
     // launchd's environment has no `LANG`, and a tmux client without a

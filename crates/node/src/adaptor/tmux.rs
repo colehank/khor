@@ -311,6 +311,17 @@ impl Tmux {
             "destroy-unattached",
             "on",
             ";",
+            // **Marks pass through** (roadmap 1.1): a shell in the pane
+            // that wraps its command marks in tmux's passthrough reaches
+            // khor's host only with this on. A window option, so it is
+            // the one thing written on the window the person shares with
+            // khor's grouped session; `-q` for a tmux older than 3.3.
+            "set-option",
+            "-w",
+            "-q",
+            "allow-passthrough",
+            "on",
+            ";",
             "set-option",
             "-q",
             "mouse",
