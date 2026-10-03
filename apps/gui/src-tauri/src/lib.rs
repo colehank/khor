@@ -2190,58 +2190,104 @@ async fn open_code_window(machine: String, url: String, title: String) -> Result
     Err(khor_catalog::msg::window_needs_desktop().into())
 }
 
-// **The mobile halves are refusals, and unlike the last one that stood
-// here they are true.** `add_child` is gated `all(desktop, feature =
-// "unstable")` and there is no mobile equivalent: a page on a phone needs a
-// native plugin adding a WKWebView or a WebView by hand (定形 单元 3/4).
-// The one this file used to carry refused Linux and Windows for a thing
-// they could already do; this one refuses a thing that genuinely is not
-// there yet.
+// ⚠️ Tombstone (2026-10-03): the mobile halves were refusals
+// (`page-needs-desktop`) — tauri has no child webview on a phone. They
+// are `phone_page` now: a `WKWebView` built by hand beside khor's own, on
+// iOS. Another phone platform keeps the refusal.
 #[cfg(not(desktop))]
 #[tauri::command]
 async fn open_page(
+    app: tauri::AppHandle,
     tab: String,
     machine: String,
     url: String,
     at: PageBox,
     agent: String,
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
-    let _ = (tab, machine, url, at, agent);
-    Err(khor_catalog::msg::page_needs_desktop().into())
+    #[cfg(target_os = "ios")]
+    {
+        let direct = machine.is_empty();
+        let borrow = if direct {
+            khor_gui_core::web::WebBorrow {
+                session: String::new(),
+                addr: String::new(),
+            }
+        } else {
+            khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?
+        };
+        let wiring = phone_page::Wiring {
+            proxy: (!direct).then(|| borrow.addr.clone()),
+            agent: if direct { None } else { as_a_browser(&agent) },
+        };
+        let face = phone_page::face(&app).ok_or("no face")?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let handle = app.clone();
+        face.with_webview(move |pw| {
+            let wk = pw.inner() as *mut objc2::runtime::AnyObject;
+            let _ = tx.send(phone_page::open(&handle, wk, &tab, &machine, &url, at, wiring));
+        })
+        .map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())??;
+        Ok(borrow)
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, tab, machine, url, at, agent);
+        Err(khor_catalog::msg::page_needs_desktop().into())
+    }
 }
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn move_page(tab: String, at: PageBox) -> Result<(), String> {
-    let _ = (tab, at);
+fn move_page(app: tauri::AppHandle, tab: String, at: PageBox) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    if let Some(face) = phone_page::face(&app) {
+        let _ = face.with_webview(move |pw| {
+            phone_page::place(pw.inner() as *mut objc2::runtime::AnyObject, &tab, at)
+        });
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab, at);
     Ok(())
 }
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn hide_page(tab: String) -> Result<(), String> {
-    let _ = tab;
+fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    let _ = app.run_on_main_thread(move || phone_page::hide(&tab, true));
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab);
     Ok(())
 }
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn close_page(tab: String) -> Result<(), String> {
-    let _ = tab;
+fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    let _ = app.run_on_main_thread(move || phone_page::close(&tab));
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab);
     Ok(())
 }
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn show_page(tab: String) -> Result<(), String> {
-    let _ = tab;
+fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    let _ = app.run_on_main_thread(move || phone_page::hide(&tab, false));
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab);
     Ok(())
 }
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn page_step(tab: String, way: String) -> Result<(), String> {
-    let _ = (tab, way);
+fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    let _ = app.run_on_main_thread(move || phone_page::step(&tab, &way));
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab, way);
     Ok(())
 }
 
@@ -3276,6 +3322,8 @@ pub fn run() {
 
 #[cfg(desktop)]
 mod menu;
+#[cfg(target_os = "ios")]
+mod phone_page;
 #[cfg(desktop)]
 mod traffic;
 
