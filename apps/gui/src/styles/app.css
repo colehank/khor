@@ -2027,7 +2027,9 @@ aside[data-side] {
    screen is also made `--term-bar` wider, past the pane's right padding
    where the pane clips it, and the columns come out of the full width —
    the grid ends 8 from the edge, the same as it starts. The viewport pair
-   stays for an engine bar on the viewport itself. */
+   stays for an engine bar on the viewport itself; the native scroller the
+   history scrolls in (`scrollsNatively`, item 15) hides its bar the same
+   way. */
 [data-terminal] {
   padding-inline: var(--gap-in);
 }
@@ -2037,10 +2039,12 @@ aside[data-side] {
 [data-terminal] [data-term-screen] {
   width: calc(100% + var(--term-bar));
 }
-[data-terminal] .xterm-viewport {
+[data-terminal] .xterm-viewport,
+[data-term-scroller] {
   scrollbar-width: none;
 }
-[data-terminal] .xterm-viewport::-webkit-scrollbar {
+[data-terminal] .xterm-viewport::-webkit-scrollbar,
+[data-term-scroller]::-webkit-scrollbar {
   display: none;
 }
 @media (pointer: coarse) {

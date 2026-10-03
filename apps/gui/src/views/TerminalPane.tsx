@@ -449,9 +449,10 @@ const PRESS_SLOP = 8;
  * (press and hold on a word, drag to extend) — drawn in xterm's own
  * selection, so the copy-on-select already wired keeps working, and the
  * lift writes the selection to the clipboard inside the gesture (iOS's
- * clipboard wants one). Ahead of `fingerScrolls` (capture): while a
- * selection is being drawn the drag is the selection's, not a scroll;
- * before the press is long, a drag scrolls as ever.
+ * clipboard wants one). Ahead of everything else (capture): while a
+ * selection is being drawn the drag is the selection's — its moves are
+ * cancelled, so the native scroller never starts — and before the press
+ * is long, a drag scrolls as ever.
  */
 function pressSelects(term: Terminal, box: HTMLElement): () => void {
   let timer = 0;
@@ -536,82 +537,42 @@ function pressSelects(term: Terminal, box: HTMLElement): () => void {
   };
 }
 
-/** How fast a fling slows: the share of its speed kept per 16 ms. */
-const FLING_KEEP = 0.95;
-/** Below this (px per ms) a fling has stopped. */
-const FLING_STOP = 0.02;
+/**
+ * Whether the program, not the history, gets the scroll: it took the
+ * mouse (khor turns tmux's on for its own grouped session,
+ * `Tmux::grouped_attach_argv`), or it is on the alternate screen, which
+ * keeps no history. A wheel then goes to xterm, which encodes it as a
+ * report or as arrow keys; the native scroller below is inert.
+ */
+function programScrolls(term: Terminal): boolean {
+  return term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";
+}
 
 /**
- * **A finger's drag scrolls, whatever the program asked for** (2026-10-02,
- * iOS 第三步 A; the plain case 2026-10-03).
- *
- * xterm 6 has no touch scrolling of its own: its viewport is a drawn
- * scroller that answers the wheel, and the touch gesture code it carries
- * is registered on nothing — so a finger moved nothing at all in a plain
- * shell, though the thumb said there was history (the owner:
- * 「一般终端用户是没有办法通过滑动来滑动窗口内容的。只有 Claude 的可以」).
- * Two cases, decided per move:
- *
- * - **The program wants the wheel**: it took the mouse (khor turns
- *   tmux's on for its own grouped session, `Tmux::grouped_attach_argv`),
- *   or it is on the alternate screen, which keeps no history. The drag
- *   becomes the wheel events a trackpad would have sent, at the point
- *   under the finger, and xterm encodes them as it encodes every wheel:
- *   a report, or arrow keys.
- * - **Otherwise the history scrolls**: a plain shell on the normal
- *   screen. One line per row of finger travel (`Terminal.scrollLines`,
- *   xterm's own viewport — never the program's cursor), and a fling
- *   runs on and slows (`FLING_KEEP`) the way a list does.
- *
- * A drag that starts sideways is left alone (the page's edge swipe).
+ * **A finger's drag is the wheel when the program scrolls** (2026-10-02,
+ * iOS 第三步 A). xterm 6 has no touch code of its own (xterm.js #5489,
+ * fixed for 7.0 by #5563), so on a full-screen program or under tmux's
+ * mouse a drag becomes the wheel events a trackpad would have sent, at the
+ * point under the finger, and xterm encodes them as it encodes every
+ * wheel. A plain shell's history is not scrolled here: that is the native
+ * scroller's (`scrollsNatively`). A drag that starts sideways is left
+ * alone (the page's edge swipe).
  */
-function fingerScrolls(term: Terminal, box: HTMLElement): () => void {
+function fingerWheels(term: Terminal, box: HTMLElement): () => void {
   let lastY: number | null = null;
   let startX = 0;
   let startY = 0;
   let mine = false;
   let target: EventTarget | null = null;
-  // The history case's carry: travel not yet a whole row, and the speed.
-  let carry = 0;
-  let speed = 0;
-  let lastT = 0;
-  let fling = 0;
-  const wants = () => term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";
-  const rowPx = () => {
-    const screen = term.element?.querySelector(".xterm-screen");
-    const h = screen ? screen.getBoundingClientRect().height / term.rows : 0;
-    return h > 0 ? h : 16;
-  };
-  /** Moves the history by `dy` px of finger travel; answers whether a
-      line moved (a fling stops at either end). */
-  const scrollBy = (dy: number): boolean => {
-    carry += dy;
-    const row = rowPx();
-    const lines = Math.trunc(carry / row);
-    if (lines === 0) return true;
-    carry -= lines * row;
-    const before = term.buffer.active.viewportY;
-    // A finger moving down brings earlier lines: the viewport goes up.
-    term.scrollLines(-lines);
-    return term.buffer.active.viewportY !== before;
-  };
-  const stopFling = () => {
-    window.cancelAnimationFrame(fling);
-    fling = 0;
-  };
   const start = (e: TouchEvent) => {
-    stopFling();
     lastY = e.touches.length === 1 ? e.touches[0].clientY : null;
     startX = e.touches.length === 1 ? e.touches[0].clientX : 0;
     startY = lastY ?? 0;
     mine = false;
     target = e.target;
-    carry = 0;
-    speed = 0;
-    lastT = e.timeStamp;
   };
   const move = (e: TouchEvent) => {
-    if (lastY === null || e.touches.length !== 1) return;
+    if (lastY === null || e.touches.length !== 1 || !programScrolls(term)) return;
     const t = e.touches[0];
     if (!mine) {
       // Whose drag this is, once it has gone anywhere: up or down is the
@@ -627,60 +588,199 @@ function fingerScrolls(term: Terminal, box: HTMLElement): () => void {
     }
     const dy = t.clientY - lastY;
     lastY = t.clientY;
-    // Taken either way: the page has nothing to scroll here.
     e.preventDefault();
     e.stopPropagation();
     if (dy === 0) return;
-    if (wants()) {
-      // Natural scrolling: a finger moving up brings later lines, which
-      // is a wheel turned down.
-      (target ?? box).dispatchEvent(
-        new WheelEvent("wheel", {
-          deltaY: -dy,
-          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-          clientX: t.clientX,
-          clientY: t.clientY,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-      return;
-    }
-    const dt = Math.max(1, e.timeStamp - lastT);
-    lastT = e.timeStamp;
-    speed = 0.8 * (dy / dt) + 0.2 * speed;
-    scrollBy(dy);
+    // Natural scrolling: a finger moving up brings later lines, which
+    // is a wheel turned down.
+    (target ?? box).dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: -dy,
+        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        clientX: t.clientX,
+        clientY: t.clientY,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
   };
-  const end = (e: TouchEvent) => {
-    const flung = mine && !wants() && Math.abs(speed) > FLING_STOP && e.timeStamp - lastT < 100;
+  const end = () => {
     lastY = null;
     target = null;
     mine = false;
-    if (!flung) return;
-    let v = speed;
-    let then = performance.now();
-    const step = (now: number) => {
-      const dt = now - then;
-      then = now;
-      v *= FLING_KEEP ** (dt / 16);
-      if (Math.abs(v) < FLING_STOP || !scrollBy(v * dt)) {
-        fling = 0;
-        return;
-      }
-      fling = window.requestAnimationFrame(step);
-    };
-    fling = window.requestAnimationFrame(step);
   };
   box.addEventListener("touchstart", start, { passive: true });
   box.addEventListener("touchmove", move, { passive: false });
   box.addEventListener("touchend", end, { passive: true });
   box.addEventListener("touchcancel", end, { passive: true });
   return () => {
-    stopFling();
     box.removeEventListener("touchstart", start);
     box.removeEventListener("touchmove", move);
     box.removeEventListener("touchend", end);
     box.removeEventListener("touchcancel", end);
+  };
+}
+
+/** Quiet this long after the last scroll event, a scroll has stopped. */
+const SETTLE_MS = 140;
+
+/**
+ * **The history scrolls the way a page does** (2026-10-03, item 15 B; the
+ * owner: 「滚动很卡顿，范围也很小，没有那种浏览网页的拖动感」).
+ *
+ * xterm 6 replaced its native scroller with VS Code's drawn one
+ * (`SmoothScrollableElement`), which answers the wheel by itself and a
+ * finger not at all, so the finger scroll this pane had was synthetic:
+ * a line per row of travel and an imitated fling. Here the scrolling is
+ * the engine's again, the way xterm 5's `.xterm-viewport` and hterm's
+ * `ScrollPort` (Blink Shell's renderer) do it: `scroller` scrolls
+ * natively (momentum, the edge's bounce, the trackpad's own curve), and
+ * `room`, after the terminal in it, is sized to the history above the
+ * screen — so its range is the buffer's. The terminal itself is
+ * `position: sticky` at the scroller's top, so every touch and click
+ * still lands on xterm (selection, taps, links), and a drag or a wheel
+ * that xterm does not take scrolls the scroller around it.
+ *
+ * - **scroller → xterm**: the line under the scroller's top is
+ *   `scrollTop / row`; xterm is moved there (`scrollToLine`), and the
+ *   screen is shifted by the part of a row left over, so the content
+ *   follows the finger by the pixel, not by the line. A scroll that
+ *   stops between two rows is carried to the nearer one.
+ * - **xterm → scroller**: output, a key that scrolls, a resize — any
+ *   change of xterm's line — sets `scrollTop` once; the scroll event
+ *   that answers it is recognised and ignored, so the two never chase.
+ * - **The wheel**: a wheel the scroller takes never reaches xterm's own
+ *   scroller (stopped on the way down), so a Mac's wheel and trackpad are
+ *   the system's too. When the program scrolls (`programScrolls`) the
+ *   scroller has no range and the wheel goes on to xterm, as before.
+ *
+ * VS Code's terminal keeps xterm's drawn scroller (it has no touch
+ * case); Hyper keeps xterm's too. Termius and Blink draw natively.
+ */
+function scrollsNatively(
+  term: Terminal,
+  scroller: HTMLElement,
+  room: HTMLElement,
+  screen: HTMLElement,
+): { sync: () => void; stop: () => void } {
+  let row = 0;
+  // The `scrollTop` this code set last, until its scroll event comes back.
+  let echo: number | null = null;
+  let touching = 0;
+  let settle = 0;
+  let frame = 0;
+  const measure = () => {
+    const el = term.element?.querySelector(".xterm-screen");
+    const h = el ? el.getBoundingClientRect().height / term.rows : 0;
+    if (h > 0) row = h;
+    return row;
+  };
+  const shift = (px: number) => {
+    const v = px === 0 ? "" : `translateY(${px}px)`;
+    if (screen.style.transform !== v) screen.style.transform = v;
+  };
+  /** xterm's own line → the scroller's range and place. */
+  const sync = () => {
+    frame = 0;
+    if (!measure()) return;
+    const b = term.buffer.active;
+    const inert = programScrolls(term);
+    const height = `${(inert ? 0 : b.baseY) * row}px`;
+    if (room.style.height !== height) room.style.height = height;
+    const line = inert ? 0 : b.viewportY;
+    if (Math.round(scroller.scrollTop / row) !== line || inert) {
+      const top = line * row;
+      if (Math.abs(scroller.scrollTop - top) >= 0.5) {
+        echo = top;
+        scroller.scrollTop = top;
+      }
+      shift(0);
+    }
+  };
+  const syncSoon = () => {
+    if (!frame) frame = window.requestAnimationFrame(sync);
+  };
+  /** The scroller's place → xterm's line. */
+  const scrolled = () => {
+    const top = scroller.scrollTop;
+    if (echo !== null && Math.abs(top - echo) < 1) {
+      echo = null;
+      return;
+    }
+    echo = null;
+    if (programScrolls(term) || !row) return;
+    const b = term.buffer.active;
+    const line = Math.max(0, Math.min(b.baseY, Math.round(top / row)));
+    if (line !== b.viewportY) {
+      term.scrollToLine(line);
+      // xterm's own scroller can hold a stale range — it does not
+      // re-measure when its renderer's size changes without the buffer's
+      // (xterm.js #6117, #6172) — and then refuses the line; bring it up
+      // to date and ask again.
+      if (term.buffer.active.viewportY !== line) {
+        (term as unknown as { _core?: { _viewport?: { _sync?: () => void } } })._core?._viewport?._sync?.();
+        term.scrollToLine(line);
+      }
+    }
+    // Between two rows: the screen follows by the pixel. Not past either
+    // end, where the engine's own bounce moves everything already.
+    const max = b.baseY * row;
+    shift(top < 0 || top > max ? 0 : Math.max(-row, Math.min(row, line * row - top)));
+    window.clearTimeout(settle);
+    settle = window.setTimeout(rest, SETTLE_MS);
+  };
+  /** A scroll that stopped between two rows goes to the nearer one. */
+  const rest = () => {
+    if (touching > 0) return;
+    const top = scroller.scrollTop;
+    const to = Math.round(top / row) * row;
+    if (Math.abs(top - to) < 0.5) return shift(0);
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scroller.scrollTo({ top: to, behavior: still ? "auto" : "smooth" });
+  };
+  const down = () => {
+    touching += 1;
+    window.clearTimeout(settle);
+  };
+  const up = (e: TouchEvent) => {
+    touching = e.touches.length;
+    window.clearTimeout(settle);
+    settle = window.setTimeout(rest, SETTLE_MS);
+  };
+  // Capture, on the way down: a wheel the scroller will take must not
+  // reach xterm's scroller, which would take it first and cancel it.
+  const wheel = (e: WheelEvent) => {
+    if (!programScrolls(term)) e.stopPropagation();
+  };
+  scroller.addEventListener("scroll", scrolled, { passive: true });
+  scroller.addEventListener("wheel", wheel, { capture: true, passive: true });
+  scroller.addEventListener("touchstart", down, { passive: true });
+  scroller.addEventListener("touchend", up, { passive: true });
+  scroller.addEventListener("touchcancel", up, { passive: true });
+  const moved = term.onScroll(syncSoon);
+  const wrote = term.onWriteParsed(syncSoon);
+  const sized = term.onResize(syncSoon);
+  const swapped = term.buffer.onBufferChange(syncSoon);
+  const rendered = term.onRender(() => {
+    // The first frame drawn knows the row's height.
+    if (!row) syncSoon();
+  });
+  return {
+    sync,
+    stop: () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
+      scroller.removeEventListener("scroll", scrolled);
+      scroller.removeEventListener("wheel", wheel, true);
+      scroller.removeEventListener("touchstart", down);
+      scroller.removeEventListener("touchend", up);
+      scroller.removeEventListener("touchcancel", up);
+      moved.dispose();
+      wrote.dispose();
+      sized.dispose();
+      swapped.dispose();
+      rendered.dispose();
+    },
   };
 }
 
@@ -717,6 +817,10 @@ export function TerminalPane({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
+  // The native scroller around the terminal, and the room after it that
+  // gives it the history's height (`scrollsNatively`).
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const roomRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [gone, setGone] = useState(false);
   // The reload circle's join in flight (`reopen`): its glyph turns.
@@ -1186,7 +1290,8 @@ export function TerminalPane({
       send(out);
     });
     const selects = pressSelects(term, box);
-    const dragged = fingerScrolls(term, box);
+    const dragged = fingerWheels(term, box);
+    const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
     // in history" in xterm's own coordinates — on the alternate screen
     // (a full-screen program) baseY stays 0 and neither of these can
@@ -1248,6 +1353,7 @@ export function TerminalPane({
       observer.disconnect();
       data.dispose();
       dragged();
+      native.stop();
       selects();
       scrolled.dispose();
       wrote.dispose();
@@ -1476,13 +1582,18 @@ export function TerminalPane({
     >
       {/* xterm's mount. Everything inside is the renderer's own — the
           gates read the buffer through `__xterm`, not this subtree. */}
-      <div
-        data-term-screen
-        ref={mountRef}
-        // Held back while the pipe is being asked for again: the last
-        // screen that arrived, not a live one.
-        className={cn("h-full w-full transition-opacity", rejoining && "opacity-50")}
-      />
+      <div data-term-scroller ref={scrollerRef} className="h-full w-full overflow-x-hidden overflow-y-auto">
+        <div data-term-stick className="sticky top-0 h-full w-full overflow-hidden">
+          <div
+            data-term-screen
+            ref={mountRef}
+            // Held back while the pipe is being asked for again: the last
+            // screen that arrived, not a live one.
+            className={cn("h-full w-full transition-opacity", rejoining && "opacity-50")}
+          />
+        </div>
+        <div data-term-room ref={roomRef} aria-hidden />
+      </div>
       {/* The way back down, and the only sign that anything arrived
           while the reader was up in history. Two sentences on one
           control: "something came in" and "you are simply not at the
