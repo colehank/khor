@@ -38,6 +38,21 @@ const TERMINAL = "[data-terminal], .xterm";
 
 const owner = new WeakMap<HTMLElement, Band>();
 
+/** Every band on screen, by its `find`. */
+const live = new Set<() => void>();
+
+/**
+ * Brings every band up to date now: its height, its scroller, the
+ * scroller's padding, its scrolled state. For a caller that is about to
+ * set a scroller's position in a layout effect (the per-place scroll
+ * memory, `useKeptScroll`): a position set before the padding exists is
+ * moved by it when it arrives, which is the list that came back shifted
+ * by the band's height.
+ */
+export function settleBands(): void {
+  for (const find of live) find();
+}
+
 function scrolls(el: HTMLElement): boolean {
   const y = getComputedStyle(el).overflowY;
   return y === "auto" || y === "scroll";
@@ -93,9 +108,17 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
       if (on !== head.hasAttribute("data-scrolled")) head.toggleAttribute("data-scrolled", on);
     },
   };
-  const size = new ResizeObserver(() => {
-    parent.style.setProperty("--band-h", `${head.offsetHeight}px`);
-  });
+  // **The band's height is on its parent before the first paint**
+  // (2026-10-03, the owner's phone: a page opened with its facts row under
+  // the head and no ground, then settled). Read here, during the commit
+  // that attaches the head, and again by every `find`; the observer only
+  // follows later changes (a font, folded verbs).
+  const measure = () => {
+    const h = `${head.offsetHeight}px`;
+    if (parent.style.getPropertyValue("--band-h") !== h) parent.style.setProperty("--band-h", h);
+  };
+  measure();
+  const size = new ResizeObserver(measure);
   size.observe(head);
 
   const release = (el: HTMLElement) => {
@@ -104,6 +127,7 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
     if (owner.get(el) === b) owner.delete(el);
   };
   const find = () => {
+    measure();
     const under = head.nextElementSibling;
     const found = under instanceof HTMLElement ? topScroller(under) : null;
     if (found !== b.scroller) {
@@ -120,22 +144,25 @@ export function band(head: HTMLElement | null): (() => void) | undefined {
     b.sync();
   };
   // Screens come and go under a head (a list's swap, a page opened):
-  // look again a little after the tree under the parent changes.
-  let timer = 0;
-  const later = () => {
-    if (timer) return;
-    timer = window.setTimeout(() => {
-      timer = 0;
-      find();
-    }, 60);
-  };
-  const tree = new MutationObserver(later);
+  // look again **in the same frame**. A mutation observer answers in the
+  // microtask after React's commit, before the browser paints, so the new
+  // screen's scroller has its padding in its first frame. ⚠️ 墓碑: this
+  // looked again 60 ms later, so every page opened and every list came
+  // back for three or four frames without the band's padding — content
+  // under the head on the way in, a list shifted up by the band's height
+  // on the way back. Changes inside a terminal are none of a band's
+  // business and are skipped (xterm rewrites its rows all the time).
+  const tree = new MutationObserver((records) => {
+    if (records.every((r) => r.target instanceof Element && r.target.closest(TERMINAL))) return;
+    find();
+  });
   tree.observe(parent, { childList: true, subtree: true });
   find();
+  live.add(find);
   return () => {
+    live.delete(find);
     size.disconnect();
     tree.disconnect();
-    window.clearTimeout(timer);
     if (b.scroller) release(b.scroller);
     parent.removeAttribute("data-band-over");
     parent.style.removeProperty("--band-h");

@@ -12,6 +12,8 @@
 // tall enough to hold its old position.
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import { settleBands } from "@/lib/scroll-edge";
+
 /** What counts as a place's scroller: the list body, a page's own
     scroller, a listing, and any board that scrolls. Terminals keep their
     own scrollback and are never touched. */
@@ -53,6 +55,9 @@ export function useKeptScroll(key: string) {
     let raf = 0;
     const held = new Set<HTMLElement>();
     const put = () => {
+      // The band's padding first, in this same frame (`settleBands`):
+      // a position put back before the padding exists is pushed by it.
+      settleBands();
       const got = scrollers();
       let done = got.length >= want.length;
       want.forEach((w, i) => {
@@ -66,6 +71,9 @@ export function useKeptScroll(key: string) {
         if (ready && s.scrollHeight - s.clientHeight >= w.top) s.scrollTop = w.top;
         else done = false;
       });
+      // …and the band's material from the position just put back, in
+      // the same frame: no scrolled-then-not flash.
+      settleBands();
       if (!done && ++frames < 60) raf = requestAnimationFrame(put);
       else for (const s of held) s.style.overflowAnchor = "";
     };
