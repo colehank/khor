@@ -572,7 +572,42 @@ export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by
     (docs/UX.md 状态呈现). */
 export const fetchDayStrips = (cells: number) =>
   call<Record<string, DayRun[]>>("day_strips", { cells });
-export const fetchDevices = () => call<DeviceRow[]>("devices");
+/** Every machine, **with a road this face can stand behind** (2026-10-04,
+    the owner on a phone: 「进入页面显示无法获取，应该是加载中才对」).
+
+    The node's 「not connected」 (`hop` `quiet`) is *no live wire right
+    now* — true, too, of a machine nobody has tried yet. Entering a page
+    in the first moments after the node came up, every machine it had
+    not dialled yet read 未连接, and every row on one dimmed with 无法获取,
+    a result before any answer. So one rule, here, for every face that
+    reads machines (the shell's poll, the new-session picker, the
+    directory picker):
+
+    - **unknown**: `quiet`, never heard since the resident started
+      (`heard_ms` null), and this face has been reading machines for less
+      than a dial's budget (`DIAL_TIMEOUT` in `khor_node::link`, 10 s).
+      The road is `null`, the shape every surface already draws as 「not
+      named yet」: no 未连接, no 无法获取, no dimming; what is asked of the
+      machine itself wears its skeleton or `Waiting` meanwhile;
+    - **unreachable**: `quiet` after that, or `quiet` with a time it was
+      last heard — it was there and is gone: said at once (P6);
+    - **reachable**: a road.
+
+    The clock is this page's first answer, not the node's start, which no
+    face is told: a face opened long after its node waits the budget once
+    before saying a machine is away. */
+export const fetchDevices = () =>
+  call<DeviceRow[]>("devices").then((rows) => {
+    const now = Date.now();
+    devicesFirstRead ??= now;
+    if (now - devicesFirstRead >= DIAL_BUDGET_MS) return rows;
+    return rows.map((d) => (d.hop === "quiet" && d.heard_ms == null ? { ...d, hop: null } : d));
+  });
+/** When this page first read the machines (`fetchDevices`). */
+let devicesFirstRead: number | null = null;
+/** How long a dial may take before the node gives up on a machine
+    (`khor_node::link::DIAL_TIMEOUT`). */
+const DIAL_BUDGET_MS = 10_000;
 /** What a machine is busy with — its `top` hungriest processes now and
     the CPU day its serve recorded (`Node::load_on`; `machine` is a
     name, empty for this one). **Asked only while its card is open**,
