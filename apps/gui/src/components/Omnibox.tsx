@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { useCoarse } from "@/hooks/use-coarse";
 import { cn } from "@/lib/utils";
+import { imeKey } from "@/lib/ime";
 
 // **The rows live with the rows.** A menu is drawn in two places now — in
 // this page, and in a small window of the app's own when a browsing tab's
@@ -378,7 +379,7 @@ export function Omnibox({
           onKeyDown={(e) => {
             // First, before every branch: mid-composition these keys are
             // the IME's (`ChatView`'s "/" menu, same reason).
-            if (e.nativeEvent.isComposing) return;
+            if (imeKey(e)) return;
             // Second, and before the "nothing to choose from" return
             // below: Escape has to mean something in both cases. With a
             // menu up it puts the menu away; with none it is the way out

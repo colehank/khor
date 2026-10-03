@@ -164,7 +164,18 @@ export function PlusSeat(props: React.ComponentProps<"button">) {
 }
 
 /** Send: the brand's one solid circle. */
-export function SendSeat({ onSend, disabled }: { onSend: () => void; disabled?: boolean }) {
+export function SendSeat({
+  onSend,
+  disabled,
+  keepFocus = false,
+}: {
+  onSend: () => void;
+  disabled?: boolean;
+  /** The press leaves the focus in the text, so the keyboard stays up
+      for the next line (a 留言, P7: Messages' way). Without it the press
+      takes the focus, as a button does, and the keyboard goes down. */
+  keepFocus?: boolean;
+}) {
   return (
     <button
       type="button"
@@ -172,6 +183,7 @@ export function SendSeat({ onSend, disabled }: { onSend: () => void; disabled?: 
       data-chat-send
       aria-label={gui.send_it}
       disabled={disabled}
+      onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined}
       onClick={onSend}
       aria-busy={disabled || undefined}
       className={cn(SEAT, "bg-brand-strong text-on-brand aria-busy:animate-pulse motion-reduce:aria-busy:animate-none")}

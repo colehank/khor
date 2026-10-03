@@ -144,7 +144,19 @@ export function FileView({
   goLine = null,
   onNote,
   git = true,
+  reading = false,
+  onCanEdit,
 }: {
+  /** **Read first, under a finger** (2026-10-03, the owner's ruling on
+      P1: 「像备忘录」). True while a phone shows this file to be read: no
+      editor over the text, so a tap selects, scrolls or does nothing and
+      never raises the keyboard. Whoever holds the file's head offers
+      「编辑」, which clears it (`beginEditing`), and 「保存」, which saves
+      and sets it again. A mouse never reads first: a click edits. */
+  reading?: boolean;
+  /** Whether this file can be edited at all (the whole of it is here),
+      for the head's 「编辑」: not drawn for a file that cannot be. */
+  onCanEdit?: (can: boolean) => void;
   /** Whether to ask git for the gutter. A machine's disk (`MachineFiles`)
       is not a checkout, and asking there is a refusal per file. */
   git?: boolean;
@@ -425,6 +437,7 @@ export function FileView({
       One fact, one place. */
   const canEdit = (edit?.was ?? "") !== "";
   const dirty = file !== null && edit !== null && edit.text !== file.text;
+  useEffect(() => onCanEdit?.(canEdit), [canEdit, onCanEdit]);
 
   // **「a draft」means「the buffer differs from the disk」, and it is
   // reported from one place** (工作区批⑧). Until this batch every
@@ -1306,7 +1319,7 @@ export function FileView({
               // has no bar to press in the first place. What is given up
               // is starting to type *while* looking at what HEAD had —
               // one Esc away, and the buffer is untouched throughout.
-              edit={canEdit}
+              edit={canEdit && !reading}
               onText={(t) => {
                 setClashes(null);
                 setEdit((e) => (e === null ? e : { ...e, text: t }));
@@ -1981,4 +1994,27 @@ function Ruler({
         })}
     </div>
   );
+}
+
+/**
+ * **Into the text, where the reader was** (P1, 2026-10-03): focuses the
+ * editor inside `box` with the caret at the start of the first line the
+ * scroller shows, without moving it. Called from the press on 「编辑」,
+ * in the same gesture — WebKit raises the soft keyboard only for a focus
+ * a touch asked for — so the caller renders the editor first
+ * (`flushSync`) and then calls this.
+ */
+export function beginEditing(box: HTMLElement | null): void {
+  const ed = box?.querySelector<HTMLTextAreaElement>("textarea[data-edit]");
+  const scroller = box?.querySelector<HTMLElement>("[data-file-scroll]");
+  if (!ed || !scroller) return;
+  const top = scroller.getBoundingClientRect().top;
+  const first = [...scroller.querySelectorAll<HTMLElement>("[data-line]")].find(
+    (l) => l.getBoundingClientRect().bottom > top,
+  );
+  const line = Number(first?.dataset.line ?? "1");
+  const before = ed.value.split("\n").slice(0, line - 1);
+  const at = before.reduce((n, l) => n + l.length + 1, 0);
+  ed.focus({ preventScroll: true });
+  ed.setSelectionRange(at, at);
 }

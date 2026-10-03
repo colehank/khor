@@ -23,6 +23,7 @@ import { fetchLs, type DirListing } from "@/api";
 import { OmniMenu } from "@/components/OmniMenu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { imeKey } from "@/lib/ime";
 
 /** How many completions hang under the box. A handful: this is Tab in a
     shell, not a directory listing, and the next character narrows it. */
@@ -177,7 +178,7 @@ export function PathField({
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return;
+          if (imeKey(e)) return;
           if (open && e.key === "ArrowDown") {
             e.preventDefault();
             setAt((n) => (n + 1) % names.length);

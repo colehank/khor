@@ -80,6 +80,7 @@ import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
+import { imeKey } from "@/lib/ime";
 
 /**
  * How often to ask for frames, while a turn runs and while none does.
@@ -2121,6 +2122,10 @@ export function ChatView({
               rows={1}
               value={text}
               placeholder={gui.chat_input}
+              // The soft keyboard's return key says what Enter does here:
+              // it sends (Shift+Enter, on a keyboard that has one, breaks
+              // the line).
+              enterKeyHint="send"
               onChange={(e) => {
                 setText(e.target.value);
                 setPick(0);
@@ -2129,10 +2134,10 @@ export function ChatView({
                 // Composition first, and before every branch below: mid-
                 // 组词 the Enter that picks a candidate is the IME's, and
                 // a face that read it would send a half-typed word and
-                // eat the choice. `isComposing` rather than keyCode 229
-                // because the menu's arrows need the same guard and only
-                // Enter ever carried that code.
-                if (e.nativeEvent.isComposing) return;
+                // eat the choice. `imeKey`: `isComposing` **or** keyCode
+                // 229, because WebKit hands the input method's keys over
+                // with 229 while `isComposing` is still false (`lib/ime`).
+                if (imeKey(e)) return;
                 if (menu.length > 0) {
                   // While the menu is open the keys belong to it: Enter
                   // chooses rather than sends, because a half-typed
