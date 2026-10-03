@@ -124,7 +124,18 @@ function norm(v) {
   return t.replace(/-?\d*\.?\d+/g, (n) => String(parseFloat(n)));
 }
 
-const px = (v) => (v === null || v === undefined ? null : /px$/.test(String(v).trim()) ? parseFloat(v) : null);
+/** A length in px. **The interface sizes scale since the redesign**
+    (字号, 2026-10-02: `--fs-*: calc(13px * var(--ui-scale))`, the scale
+    the person sets or the system gives), so a `calc()` of one px value
+    and the scale reads as that value at scale 1 — what tokens.json
+    decides. */
+const px = (v) => {
+  if (v === null || v === undefined) return null;
+  const t = String(v).trim();
+  const scaled = t.match(/^calc\(\s*(-?[\d.]+)px\s*\*\s*var\(--ui-scale\)\s*\)$/);
+  if (scaled) return parseFloat(scaled[1]);
+  return /px$/.test(t) ? parseFloat(t) : null;
+};
 
 /** Every disagreement between tokens.json and tokens.css, and the
     exceptions that were met. */
