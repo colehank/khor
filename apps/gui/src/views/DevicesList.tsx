@@ -323,7 +323,11 @@ export function DevicesList({
       onOpen: onOpen ? () => onOpen(d) : undefined,
       // Grey, the way SideList greys a row (`dim`) — the machine is still
       // in the table and still openable; this machine is not talking to it.
-      dim: d.paused,
+      // **And a machine it cannot reach** (the redesign's 下拉刷新 ruling:
+      // 「够不到的机器的行灰显并注明无法获取和上次的时间」, UX-5): 未连接, its
+      // second line already says when it was last heard (`linkWord`); the
+      // sessions list greys its far rows the same way.
+      dim: d.paused || d.hop === "quiet",
       rowData: {
         "data-device": d.name,
         "data-row": d.id,
