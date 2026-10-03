@@ -40,12 +40,15 @@
 //     keyboard user tabs onto the one button whose colour matches it;
 //   - the tokens being right while nothing wears them: a real button on
 //     a real screen is read back and compared against the tokens;
-//   - (2026-09-30, 板是纸底是框) the paper stopping being the theme's
-//     extreme ground, the frame drifting back to within a glance of it,
-//     the left block or what floats losing its step off either; any ink
-//     falling under its floor on any of the four grounds; the terminal
-//     painting a ground other than the paper its tab joins; a picked row
-//     in a floating list keeping a second ink on its block.
+//   - (2026-10-02, 一张底加灰线) a second ground coming back — the list
+//     column, the content or the terminal on a colour other than the one
+//     ground; what floats losing its step off the ground; the glass not
+//     reading as glass on it, or its chosen piece not going the way the
+//     owner set (lighter in light, the ground's black in dark); the
+//     hairline that now does every separating vanishing into the ground;
+//     the selected row's grey block not standing off it; any ink falling
+//     under its floor on the ground, a float, the glass or the chosen
+//     glass; a picked row in a floating list keeping a second ink.
 //
 // Run: `npm run palette` (boots its own vite, needs system Chrome). No
 // backend: the join dialog reaches a primary button with no mesh behind
@@ -63,31 +66,27 @@ const TEXT_FLOOR = 4.5;
 /** A focus ring is a graphic. */
 const GRAPHIC_FLOOR = 3.0;
 
-/**
- * **The board is paper, the ground is its frame** (2026-09-30, the owner:
- * 「用灰色背景，黑色内容怎么样」「浅色也类似的去做。这是抽象的更改，要作用到
- * 整个 app 上」). The paper (`--card`) is the most extreme ground a theme
- * has — the whitest in light, the blackest in dark — and the frame
- * (`--background`) stands at least this far from it in L*, so that it
- * reads as a frame at a glance.
- *
- * 6, because the step it replaced did not read: #f4f4ef round a #fcfcfa
- * board is 2.85, and the owner saw no frame. macOS's own chrome sits 6.6
- * under its white content and 9.5 over its dark content; this palette's
- * two frames measure 7.10 and 9.84. On the old values this is red twice:
- * 2.85 in light, and in dark the paper (#191917) was not the extreme —
- * the ground (#0f0f0e) was blacker than the board.
+/*
+ * ⚠️ 墓碑 (UX-5): FRAME_STEP (6 L* between 「the paper」 and 「the frame」)
+ * and SIDE_STEP (3 L* between the left block and each) measured the
+ * three grounds of 2026-09-30 「板是纸底是框」. The redesign has one ground
+ * (2026-10-02, memory `khor-one-ground-redesign`), so there is no step
+ * between grounds left to measure; what separates things now is the
+ * hairline, the glass and the selected row's grey, measured below.
  */
-const FRAME_STEP = 6;
 /**
- * The left block's ground stands between the paper and the frame, and a
- * step a person sees from each (L*): that step is what makes the block
- * read as one piece of furniture rather than as the frame or the board
- * under another name. Measured 3.93 / 3.17 light, 4.40 / 5.44 dark (from
- * the paper / from the frame); the old dark block sat 2.42 off its
- * ground.
+ * **The hairline has to be seen on the ground** (contrast, not L*: it is
+ * a line against what it lies on). It carries no meaning, so not 3:1;
+ * 1.2 is under both themes' 1.27 / 1.31 and over a line nobody sees.
  */
-const SIDE_STEP = 3;
+const HAIR_FLOOR = 1.2;
+/**
+ * **The selected row's block and the glass stand off the ground** (L*).
+ * The row's grey measures 7.7 light, 14.5 dark; the glass over the
+ * ground 6.1 / 10.6. 4 is the float's own step: a surface a person sees
+ * as a surface.
+ */
+const SURFACE_STEP = 4;
 /**
  * What floats lands on the paper and on the frame, and has to be told
  * from both. On the frame by lightness in both themes; on the paper by
@@ -369,6 +368,11 @@ try {
         lq3: g("--lq3"),
         accent: g("--accent"),
         fillStrong: g("--fill-strong"),
+        // The one ground's separating line, and the glass (the
+        // redesign): the glass controls' fill and the chosen piece.
+        border: g("--border"),
+        glass: g("--glass"),
+        glassSel: g("--glass-sel"),
         words: Object.fromEntries(
           ["busy", "blocked", "done", "errored", "failed", "idle"].map((w) => [
             w,
@@ -380,82 +384,70 @@ try {
     });
     if (!t.primary || !t.ring || !t.lq3) throw new Error(`probe dead in ${scheme}: tokens did not resolve`);
 
-    // ── the left block's ground (docs/SHELL.md 第十三轮 第 1 条) ────
+    // ── one ground, and what stands on it (the redesign, 2026-10-02) ──
     //
-    // 「竖栏和列表一种底色」 — a third ground beside the page's and the
-    // card's, and everything a list row says is read on it: the title
-    // in `--foreground`, the second line in `--muted-foreground`, both
-    // also on the selected row's `--accent` tint over it. Text, so the
-    // text floor; and it has to *be* a third ground, not one of the two
-    // under another name.
-    if (!t.side) {
-      fail(`${scheme}: --side does not resolve — the left block has no ground of its own (src/styles/tokens.css)`);
-    } else {
-      const sideRgb = flatten(parse(t.side), rgb(t.bg));
-      // The picked row's block (app.css: `--fill-strong`, a grey block
-      // since 2026-09-27); it was the `--accent` tint before.
-      const tinted = flatten(parse(t.fillStrong), sideRgb);
-      const onSide = {
-        title: contrast(flatten(parse(t.ink), sideRgb), sideRgb),
-        sub: contrast(flatten(parse(t.inkMuted), sideRgb), sideRgb),
-        titleOn: contrast(flatten(parse(t.ink), tinted), tinted),
-        subOn: contrast(flatten(parse(t.inkMuted), tinted), tinted),
-      };
-      console.log(`${scheme}: on --side ${t.side}: title ${say(onSide.title)}, sub ${say(onSide.sub)}; selected: title ${say(onSide.titleOn)}, sub ${say(onSide.subOn)}`);
-      for (const [what, ratio] of Object.entries(onSide)) {
-        if (ratio < TEXT_FLOOR) fail(`${scheme}: a row's ${what} reads ${say(ratio)} on the left block's ground, under ${TEXT_FLOOR}`);
-      }
-      // ⚠️ Until the redesign this asked the block to be a ground of its
-      // own (第十三轮). One ground since 2026-10-02 (memory
-      // `khor-one-ground-redesign`): the list column stands on the page's
-      // own ground, and a second colour there is the thing to catch.
-      if (!same(t.side, t.bg)) {
-        fail(`${scheme}: --side is ${t.side}, not --background ${t.bg} — the list column stands on the one ground`);
-      }
-    }
-
-    // ── one ground (the redesign, 2026-10-02) ─────────────────────
-    //
-    // ⚠️ This block held 「板是纸底是框」 (2026-09-30): the board's paper
-    // at the end of the range, the frame a step in, the left block
-    // between. The redesign decided one ground (memory
-    // `khor-one-ground-redesign`): the paper, the frame and the left
-    // block are the same colour, and that is what is held now. What
-    // floats keeps its rule as it stood for the paper: told from the
-    // ground by lightness in the dark (a black shadow on black is a
-    // darkening nobody sees), lifted by `--shadow-float` in the light,
-    // where it must still not be darker than the ground.
+    // ⚠️ 墓碑: this held 「板是纸底是框」 (2026-09-30) — the paper at the end
+    // of the range, the frame a step in, the left block between, each a
+    // step off the others — and before that the left block's own third
+    // ground (第十三轮). The redesign decided one ground: the list column,
+    // the content and the paper are one colour, and what is held now is
+    // that they stay one, and that the things that separate them on it
+    // can be seen: the hairline, the glass, the chosen glass, the
+    // selected row's grey, and what floats.
     {
+      const ground = rgb(t.bg);
       const L = {
-        paper: lstar(rgb(t.card)),
-        side: lstar(flatten(parse(t.side), rgb(t.bg))),
-        frame: lstar(rgb(t.bg)),
+        ground: lstar(ground),
         float: lstar(rgb(t.popover)),
+        glass: lstar(flatten(parse(t.glass), ground)),
+        chosen: lstar(flatten(parse(t.glassSel), ground)),
+        row: lstar(flatten(parse(t.fillStrong), ground)),
       };
+      const hair = contrast(flatten(parse(t.border), ground), ground);
       console.log(
-        `${scheme}: L* paper ${say(L.paper)}, side ${say(L.side)}, frame ${say(L.frame)}, float ${say(L.float)} — ` +
-          `float ${say(Math.abs(L.float - L.frame))} off the ground`,
+        `${scheme}: L* ground ${say(L.ground)}, float ${say(L.float)}, glass ${say(L.glass)}, chosen glass ${say(L.chosen)}, ` +
+          `selected row ${say(L.row)}; hairline ${say(hair)} on the ground`,
       );
-      if (!same(t.card, t.bg) || Math.abs(L.side - L.frame) > 0.01) {
-        fail(`${scheme}: --card ${t.card}, --background ${t.bg} and --side ${t.side} are not one ground`);
+      if (!same(t.card, t.bg) || !same(t.side, t.bg)) {
+        fail(`${scheme}: --card ${t.card}, --side ${t.side} and --background ${t.bg} are not one ground`);
       }
-      const lift = scheme === "dark" ? L.float - L.frame : L.float - L.frame;
-      if (scheme === "dark" && lift < FLOAT_STEP) {
-        fail(`dark: --popover ${t.popover} is ${say(lift)} L* over the ground ${t.bg} — the lightest thing in a dark window is what floats, ${FLOAT_STEP} over it`);
+      if (scheme === "dark" && L.float - L.ground < FLOAT_STEP) {
+        fail(`dark: --popover ${t.popover} is ${say(L.float - L.ground)} L* over the ground ${t.bg} — the lightest thing in a dark window is what floats, ${FLOAT_STEP} over it`);
       }
-      if (scheme === "light" && lift < 0) {
+      if (scheme === "light" && L.float < L.ground) {
         fail(`light: --popover ${t.popover} is darker than the ground ${t.bg} — what floats is lifted, never sunk`);
+      }
+      if (hair < HAIR_FLOOR) fail(`${scheme}: the hairline --border reads ${say(hair)} on the ground, under ${HAIR_FLOOR} — the one thing that separates`);
+      if (Math.abs(L.row - L.ground) < SURFACE_STEP) {
+        fail(`${scheme}: the selected row's grey (--fill-strong) is ${say(Math.abs(L.row - L.ground))} L* off the ground, under ${SURFACE_STEP}`);
+      }
+      if (Math.abs(L.glass - L.ground) < SURFACE_STEP) {
+        fail(`${scheme}: the glass (--glass) is ${say(Math.abs(L.glass - L.ground))} L* off the ground, under ${SURFACE_STEP}`);
+      }
+      // **The chosen piece of glass** (the owner, 2026-10-02): in light it
+      // turns white and lifts, brighter than the glass; in dark it is the
+      // content's black showing through, darker than the glass.
+      if (scheme === "light" ? L.chosen <= L.glass : L.chosen >= L.glass) {
+        fail(`${scheme}: the chosen glass (--glass-sel ${t.glassSel}) is not ${scheme === "light" ? "lighter" : "darker"} than the glass — the owner's rule for which way a choice goes`);
       }
     }
 
     // ── every ink on every ground ─────────────────────────────────
     //
     // The design system's pairs (README 颜色「可访问性例外」), measured on
-    // the four grounds a word can stand on. Text answers to 4.5, the
-    // ring to 3.0; `tertiary` is printed and not held — it is the one
-    // written exception, and its lowest reading is what the README says.
+    // what a word can stand on since the redesign: the ground, a float,
+    // the glass (the nav's words, the pill's title) and the chosen glass.
+    // Text answers to 4.5, the ring to 3.0; `tertiary` is printed and not
+    // held — it is the one written exception, and its lowest reading is
+    // what the README says. A selected row's words are its own section.
     {
-      const grounds = { side: flatten(parse(t.side), rgb(t.bg)), frame: rgb(t.bg), paper: rgb(t.card), float: rgb(t.popover) };
+      const ground = rgb(t.bg);
+      const grounds = {
+        ground,
+        float: rgb(t.popover),
+        glass: flatten(parse(t.glass), ground),
+        "chosen glass": flatten(parse(t.glassSel), ground),
+      };
       const inks = { ink: t.ink, secondary: t.inkMuted, destructive: t.destructive, tertiary: t.tertiary, ring: t.ring };
       for (const [name, ink] of Object.entries(inks)) {
         const got = Object.entries(grounds).map(([g, under]) => [g, contrast(flatten(parse(ink), under), under)]);
@@ -1340,7 +1332,7 @@ try {
   }
 
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
-  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, the paper, the frame and the list column are one ground, every ink reads on all four grounds, a row reads on the left block's ground, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
+  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, one ground under the list, the content and the terminal, the hairline, the glass and the selected row's grey stand off it, every ink reads on the ground, a float, the glass and the chosen glass, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
 } catch (e) {
   fail(String(e));
 } finally {
