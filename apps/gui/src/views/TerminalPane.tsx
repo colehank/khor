@@ -690,11 +690,45 @@ export function TerminalPane({
     // The fastest renderer the webview has; a machine without WebGL
     // silently keeps xterm's DOM renderer. Nothing to install either
     // way — this is a build-time library, not a user dependency.
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      /* DOM renderer stands */
-    }
+    //
+    // **A lost context falls back, then comes back** (T-23, the terminal
+    // audit: losing the WebGL context left the terminal blank, still
+    // taking keys, until the context was restored). The addon's own advice
+    // (addon-webgl README; WebglRenderer.ts waits 3 s, then only fires
+    // the event): dispose it on `onContextLoss`, which puts xterm's DOM
+    // renderer back at once, and try WebGL again the next time the page
+    // is shown. iOS drops contexts of pages in the background (WebKit
+    // bug 261331); a Mac's GPU switch does too.
+    let webgl: WebglAddon | null = null;
+    const useWebgl = () => {
+      if (webgl || stoppedWebgl) return;
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          if (webgl === addon) webgl = null;
+          addon.dispose();
+        });
+        term.loadAddon(addon);
+        webgl = addon;
+      } catch {
+        /* DOM renderer stands */
+      }
+    };
+    let stoppedWebgl = false;
+    const shownAgain = () => {
+      if (document.visibilityState === "visible") useWebgl();
+    };
+    useWebgl();
+    document.addEventListener("visibilitychange", shownAgain);
+    // …and at once: the addon itself waits 3 s for a restore before it
+    // says so, three seconds of a blank terminal. The canvas's own event
+    // is heard here first (capture), and the DOM renderer paints now.
+    const lost = () => {
+      const gone = webgl;
+      webgl = null;
+      gone?.dispose();
+    };
+    term.element?.addEventListener("webglcontextlost", lost, true);
     // The search paints its matches as decorations, which is the one
     // proposed API this file leans on besides unicode11.
     const search = new SearchAddon();
@@ -1026,6 +1060,9 @@ export function TerminalPane({
       resizing?.dispose();
       reopenRef.current = null;
       if (reopeners.get(id) === reopenHere) reopeners.delete(id);
+      stoppedWebgl = true;
+      document.removeEventListener("visibilitychange", shownAgain);
+      term.element?.removeEventListener("webglcontextlost", lost, true);
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
