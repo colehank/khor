@@ -1096,6 +1096,7 @@ serve-swap-refused = "[{0}] khor on disk changed but can't answer its own versio
 swap-no-answer = "runs, but didn't answer version"
 quit-serve-stopped = "serve stopped"
 quit-no-serve = "serve wasn't running"
+quit-app-resident = "this machine's resident is the khor app (pid {0}) — quit it from the app; khor quit does not stop an app"
 quit-hosts = "collected {0} session hosts"
 serve-gone-deaf = "[{0}] unreachable by anyone for {1}s — its ears are probably broken, stepping down for a new pair (keeper will restart it)"
 serve-orphaned = "[{0}] keeper is gone — an orphaned serve just blocks its successor, stepping aside"
