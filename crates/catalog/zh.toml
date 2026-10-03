@@ -2382,6 +2382,13 @@ clip-read-deny = "不允许"
 # The terminal's way back down when output arrived while scrolled up
 # (roadmap 4.4); a conversation keeps new-below.
 term-new-output = "新输出"
+command-history = "历史命令"
+command-history-search = "搜索命令"
+command-history-here = "这个目录"
+command-history-failed = "失败的"
+command-history-none = "没有找到命令"
+command-history-exit = "退出 {0}"
+command-history-runs = "{0} 次"
 term-picture = "图片"
 # Appearance → Terminal: whether a terminal's bell is shown or felt
 # (roadmap 4.2).
@@ -4526,6 +4533,7 @@ find = "搜索"
 reload-term = "刷新终端"
 prev-command = "跳到上一条命令"
 next-command = "跳到下一条命令"
+command-history = "历史命令…"
 fullscreen = "进入全屏幕"
 # ⌃⌘S (显示 › 隐藏边栏, the audit fix plan F6.7): the word says what
 # pressing it does, so it follows the list — hidden, it offers to show.

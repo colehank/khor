@@ -117,5 +117,6 @@ fn main() {
     khor_gui_core::tabs::TabRow::export_all_to(&dir).expect("export TabRow");
     khor_gui_core::term::TermStart::export_all_to(&dir).expect("export TermStart");
     khor_gui_core::term::TermChunk::export_all_to(&dir).expect("export TermChunk");
+    khor_gui_core::term::HistoryRow::export_all_to(&dir).expect("export HistoryRow");
     println!("bindings -> {}", dir.display());
 }

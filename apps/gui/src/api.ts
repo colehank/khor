@@ -49,6 +49,7 @@ import type { ChatBatch } from "./gen/bindings/ChatBatch";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
+import type { HistoryRow } from "./gen/bindings/HistoryRow";
 import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { RecentRow } from "./gen/bindings/RecentRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
@@ -1300,6 +1301,11 @@ export const launchOn = (machine: string, target: string) =>
     is honoured on the machine's own road. */
 export const searchIn = (machine: string, dir: string, query: string) =>
   call<Found>("search", { machine, dir, query });
+/** A machine's commands, searched (roadmap 2.6): words in the line, the
+    directory it ran in or under (empty: anywhere), only the failed. Asked
+    of the machine that ran them; newest first. */
+export const fetchCommandHistory = (machine: string, text: string, dir: string, failed: boolean) =>
+  call<HistoryRow[]>("term_history", { machine, text, dir, failed });
 /** Whether the machine khor's backend runs on has a recycle bin. Asked
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */

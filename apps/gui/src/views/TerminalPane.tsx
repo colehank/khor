@@ -70,6 +70,7 @@ import { usePinch } from "@/hooks/use-pinch";
 import { peekOf, type Peek } from "@/lib/term-peek";
 import { predictEcho, type Predict } from "@/lib/term-predict";
 import { termPredict } from "@/lib/term-predict-setting";
+import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
@@ -1402,6 +1403,9 @@ export function TerminalPane({
   const [peek, setPeek] = useState<string | null>(null);
   // A block's output read as data, opened (roadmap 3.4).
   const [data, setData] = useState<{ command: string; peek: Peek } | null>(null);
+  // The machine's commands, searched (roadmap 2.6), and where the shell
+  // stands when it opened.
+  const [history, setHistory] = useState<{ cwd: string | undefined; atPrompt: boolean } | null>(null);
   const peekRef = useRef(false);
   peekRef.current = !!peek || !!data;
   const pinch = usePinch();
@@ -2146,6 +2150,11 @@ export function TerminalPane({
     };
     box.addEventListener("contextmenu", rightClick);
     (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => jumpToPrompt(term, marks, dir);
+    // The menu's ⌘⇧; and the key sheet's 历史命令 (roadmap 2.6).
+    (box as HTMLDivElement & { __history?: () => void }).__history = () => {
+      const at = marks.current();
+      setHistory({ cwd: marks.cwd(), atPrompt: !marks.running() && !!at?.input && !at.output });
+    };
     const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
     const dragged = fingerWheels(term, box);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
@@ -2554,6 +2563,25 @@ export function TerminalPane({
             <IconClose />
           </GlassCircle>
         </div>
+      )}
+      {history && (
+        <TermHistory
+          machine={machine ?? ""}
+          cwd={history.cwd}
+          onClose={() => {
+            setHistory(null);
+            termRef.current?.focus();
+          }}
+          onPick={(text) => {
+            // At a prompt the line is replaced by it, not run (⌃U, then
+            // the text — 重新运行's way without its Enter); while a
+            // program runs it is copied instead.
+            if (history.atPrompt) termRef.current?.input(`\x15${text}`, true);
+            else void navigator.clipboard?.writeText(text).catch(() => {});
+            setHistory(null);
+            termRef.current?.focus();
+          }}
+        />
       )}
       {data && (
         <div

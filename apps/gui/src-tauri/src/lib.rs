@@ -779,6 +779,17 @@ fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk,
 
 /// The stream, pushed: held open until the feed grows (`term::term_wait`).
 /// Async, so the wait is on tokio's threads and never on the main one.
+/// A machine's commands, searched (roadmap 2.6, `term::history`).
+#[tauri::command]
+async fn term_history(
+    machine: Option<String>,
+    text: String,
+    dir: String,
+    failed: bool,
+) -> Result<Vec<khor_gui_core::term::HistoryRow>, String> {
+    khor_gui_core::term::history(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &text, &dir, failed).await
+}
+
 #[tauri::command]
 async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
@@ -3644,6 +3655,7 @@ pub fn run() {
             term_open,
             term_attach,
             term_stream,
+            term_history,
             term_wait,
             bell_haptic,
             face_note,

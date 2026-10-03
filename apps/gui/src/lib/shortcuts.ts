@@ -97,7 +97,8 @@ export type Act =
   | "toggle-list"
   | "reload-term"
   | "prev-command"
-  | "next-command";
+  | "next-command"
+  | "command-history";
 
 /** One way to press an act. `mod` is ⌘ on a Mac and Ctrl elsewhere;
     `ctrl` is the Control key itself on every platform. Matched on `code`
@@ -141,6 +142,8 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
   // 2.3; VS Code's terminal: scroll to previous / next command).
   { act: "prev-command", chords: [{ key: "ArrowUp", mod: true }], web: true },
   { act: "next-command", chords: [{ key: "ArrowDown", mod: true }], web: true },
+  // iTerm2's Command History key (roadmap 2.6).
+  { act: "command-history", chords: [{ code: "Semicolon", mod: true, shift: true }], web: true },
   // The list's one Tab stop, from anywhere — a terminal included, which
   // keeps Tab for its shell (the audit fix plan F3.8; W25). ⌥⌘S, the
   // sidebar's key in Notes.
@@ -375,6 +378,14 @@ export function useShortcuts(acts: ShellActs) {
           if (!box?.__jump) return false;
           if (at instanceof HTMLInputElement || (at instanceof HTMLTextAreaElement && !box.contains(at))) return false;
           box.__jump(act === "prev-command" ? -1 : 1);
+          return true;
+        }
+        case "command-history": {
+          const box = document.querySelector<HTMLElement & { __history?: () => void }>(
+            "[data-detail-pane] [data-kept-terminal][data-active] [data-terminal]",
+          );
+          if (!box?.__history) return false;
+          box.__history();
           return true;
         }
         case "next-tab":

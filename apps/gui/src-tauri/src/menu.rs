@@ -244,6 +244,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     // (roadmap 2.3; VS Code's terminal binds the same keys to the same).
     let prev_command = item("prev-command", m::prev_command(), Some("CmdOrCtrl+Up"))?;
     let next_command = item("next-command", m::next_command(), Some("CmdOrCtrl+Down"))?;
+    // ⌘⇧;: the machine's commands, searched (roadmap 2.6) — iTerm2's key
+    // for its Command History.
+    let command_history = item("command-history", m::command_history(), Some("CmdOrCtrl+Shift+Semicolon"))?;
     // ⌃⌘S, the sidebar's key in Notes and Finder (F6.7).
     let sidebar = item("toggle-list", m::hide_sidebar(), Some("Ctrl+Cmd+S"))?;
     let view = Submenu::with_items(
@@ -262,6 +265,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &reload_term,
             &prev_command,
             &next_command,
+            &command_history,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, Some(m::fullscreen()))?,
         ],

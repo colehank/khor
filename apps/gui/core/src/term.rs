@@ -556,6 +556,47 @@ pub fn term_attach(id: &str) -> Result<TermStart, String> {
     })
 }
 
+/// One command line from a machine's history (roadmap 2.6): its newest
+/// run, and how many times it ran.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct HistoryRow {
+    pub session: String,
+    pub text: String,
+    pub cwd: Option<String>,
+    #[ts(type = "number")]
+    pub started_ms: u64,
+    #[ts(type = "number | null")]
+    pub ended_ms: Option<u64>,
+    pub exit: Option<i32>,
+    pub runs: u32,
+}
+
+/// **A machine's commands, searched** (roadmap 2.6): words in the line,
+/// the directory it ran in or under, only the failed ones — asked of the
+/// machine that keeps them (`khor_node::Node::history`), newest first.
+pub async fn history(root: &Path, machine: &str, text: &str, dir: &str, failed: bool) -> Result<Vec<HistoryRow>, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let ask = khor_node::commands::HistoryAsk {
+        text: text.to_owned(),
+        dir: dir.to_owned(),
+        failed,
+    };
+    Ok(n
+        .history(machine, &ask)
+        .await?
+        .into_iter()
+        .map(|h| HistoryRow {
+            session: h.session,
+            text: h.text,
+            cwd: h.cwd,
+            started_ms: h.started_ms,
+            ended_ms: h.ended_ms,
+            exit: h.exit,
+            runs: h.runs,
+        })
+        .collect())
+}
+
 /// The bytes since `since` — see [`TermChunk`] for the two flags.
 pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
     let term = term_of(id)?;

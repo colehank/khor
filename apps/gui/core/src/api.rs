@@ -631,6 +631,14 @@ pub fn answer(
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
         "term_stream" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
+        // A machine's commands, searched (roadmap 2.6). A read.
+        "term_history" => to_json(&rt.block_on(crate::term::history(
+            root,
+            &opt_str("machine")?.unwrap_or_default(),
+            &arg("text")?,
+            &arg("dir")?,
+            flag("failed")?,
+        ))?),
         // The bridge answers one request at a time, so it never holds one
         // open: here a wait is the stream's answer as it stands.
         "term_wait" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
