@@ -160,8 +160,9 @@ const QUICK = new Set([
   "chat_replay", "chat_leave", "term_attach", "term_stream", "term_key", "term_resize", "term_leave",
   // Answers the build knows, or plain memory.
   "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
+  "reveal_here",
   // The system's: windows, menus, the theme, a link handed to the OS.
-  "set_window_theme", "menu_state", "open_link", "show_menu", "size_menu", "menu_pick",
+  "set_window_theme", "menu_state", "open_link", "reveal", "show_menu", "size_menu", "menu_pick",
   "hide_menu", "widen", "move_page", "hide_page", "show_page", "close_page", "page_step",
   "window_minimize", "window_maximize_toggle", "window_close",
 ]);
