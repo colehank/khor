@@ -93,6 +93,32 @@ export function placeAt(box: HTMLElement | null, line: number): void {
   s.scrollTop += mark.getBoundingClientRect().top - s.getBoundingClientRect().top - pad;
 }
 
+/** **The place holds while the keyboard comes up** (round UX-3, measured
+    in the simulator): WebKit on iOS reveals the focused field as the
+    keyboard rises, and the file's editor is the whole sheet, so it was
+    revealed from its top — the source placed at line 30 was at line 1
+    185 ms later, intermittently, as the keyboard came in or did not. For
+    a moment after 编辑, a jump back to the top and every resize of the
+    visible area put the line back. */
+function holdWhileKeyboardRises(box: HTMLElement | null, line: number): void {
+  const s = box?.querySelector<HTMLElement>("[data-file-scroll]");
+  if (!s || line <= 1) return;
+  const vv = window.visualViewport;
+  const put = () => placeAt(box, line);
+  const jumped = () => {
+    if (s.scrollTop < 1) put();
+  };
+  s.addEventListener("scroll", jumped);
+  vv?.addEventListener("resize", put);
+  window.setTimeout(() => {
+    s.removeEventListener("scroll", jumped);
+    vv?.removeEventListener("resize", put);
+  }, HOLD_MS);
+}
+
+/** How long the place is held after 编辑: the keyboard's rise, with room. */
+const HOLD_MS = 900;
+
 // ── the verbs, for the page's circles and the wide strip ──────────
 
 /** 分享 and 「…」: what one file offers besides reading it. Drawn as two
@@ -389,6 +415,7 @@ export function FilePage({
     // Placed already by the layout effect; focus at that line, in the
     // press's own gesture so a phone raises its keyboard.
     beginEditing(box.current);
+    holdWhileKeyboardRises(box.current, line);
   };
   const read = () => {
     restore.current = topLine(box.current);
