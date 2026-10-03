@@ -57,6 +57,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { ImageAddon } from "@xterm/addon-image";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -65,6 +66,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
+import { usePinch } from "@/hooks/use-pinch";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
@@ -118,6 +120,14 @@ const CHUNK_CHARS = 16 * 1024;
 /** How long the frame lights for a bell (BEL). iTerm2's visual bell is
     a flash; a flash that stays is a border, and a border says nothing. */
 const BELL_MS = 160;
+
+/** A pane's picture store (MB, oldest out first) and the largest picture
+    it decodes (pixels). The addon's defaults are 128 MB and 4096²; a pane
+    takes half the store on a Mac, and a quarter of each on a phone. */
+const PICTURES_MB = 64;
+const PICTURES_MB_FINGER = 32;
+const PICTURE_PX = 4096 * 4096;
+const PICTURE_PX_FINGER = 2048 * 2048;
 
 /** Where the search paints what it found: **the accent's tint**, thin
     for every match and strong under the one the search stands on (the
@@ -423,8 +433,9 @@ function tapsAskFirst(
   term: Terminal,
   box: HTMLElement,
   marks: Marks,
-  /** A tap on a cell, first: a link there opens (roadmap 3.2). */
-  tapped: (row: number, col: number) => void,
+  /** A tap on a cell, first: a picture or a link there opens (roadmap
+      3.2, 3.3); true when it took the tap, and the keyboard is left be. */
+  tapped: (row: number, col: number) => boolean,
 ): () => void {
   const field = term.textarea;
   if (!field) return () => {};
@@ -466,7 +477,10 @@ function tapsAskFirst(
     if (still) {
       const wake = termWake();
       const at = cellAt(term, startX, startY);
-      if (at) tapped(at.row, at.col);
+      if (at && tapped(at.row, at.col)) {
+        still = false;
+        return;
+      }
       const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
       if (here && !keyboardUp(field)) raiseKeyboard(field);
       else if (!here && wake === "auto" && keyboardUp(field)) lowerKeyboard(field);
@@ -1371,6 +1385,11 @@ export function TerminalPane({
   // strip of its own at the screen's foot, not at the cursor, which a
   // redrawing program moves under it.
   const [composingText, setComposingText] = useState<string | null>(null);
+  // A picture the program drew, opened whole (roadmap 3.3).
+  const [peek, setPeek] = useState<string | null>(null);
+  const peekRef = useRef(peek);
+  peekRef.current = peek;
+  const pinch = usePinch();
   // **A question the pane asks before acting** (roadmap 4.3): a paste of
   // several lines, or a program wanting to read the clipboard.
   const [asking, setAsking] = useState<{ text: string; detail?: string; yes: string; no: string; go: () => void; stop: () => void } | null>(null);
@@ -1589,9 +1608,44 @@ export function TerminalPane({
         if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
       }),
     );
+    // **Pictures in place** (roadmap 3.3): sixel and iTerm2's inline
+    // images, through the xterm.js team's own addon (@xterm/addon-image,
+    // MIT) — what `imgcat`, `chafa`, `timg` and matplotlib's terminal
+    // backends draw. Its store is bounded per pane and lets the oldest go
+    // first (`storageLimit`), smaller under a finger, as is the largest
+    // picture it will decode; a replay's pictures come from the host's
+    // own store (`khor_node::pictures`), not from the text ring.
+    const small = window.matchMedia("(pointer: coarse)").matches;
+    const pictures = new ImageAddon({
+      storageLimit: small ? PICTURES_MB_FINGER : PICTURES_MB,
+      pixelLimit: small ? PICTURE_PX_FINGER : PICTURE_PX,
+    });
+    term.loadAddon(pictures);
+    (box as HTMLDivElement & { __pictures?: ImageAddon }).__pictures = pictures;
+    const picture =(row: number, col: number) => {
+      const canvas = pictures.getImageAtBufferCell(col, row);
+      if (!canvas) return false;
+      setPeek(canvas.toDataURL());
+      return true;
+    };
+    // Under a mouse a ⌘-click opens one, the gesture links use.
+    const pictureClick = (ev: MouseEvent) => {
+      if (!(ev.metaKey || ev.ctrlKey) || ev.button !== 0) return;
+      const at = cellAt(term, ev.clientX, ev.clientY);
+      if (at && picture(at.row, at.col)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    box.addEventListener("mousedown", pictureClick, true);
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
     // nor falls through to the page's own find. Everything else passes.
     term.attachCustomKeyEventHandler((ev) => {
+      // An open picture is closed by Esc; the program never sees it.
+      if (peekRef.current && ev.key === "Escape") {
+        if (ev.type === "keydown") setPeek(null);
+        return false;
+      }
       if (ev.type === "keydown" && asksToFind(ev)) {
         ev.preventDefault();
         setFinding(true);
@@ -1652,12 +1706,17 @@ export function TerminalPane({
       askOpenPath(here, t.path, t.dir, t.line);
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
     const tapped = (row: number, col: number) => {
+      if (picture(row, col)) return true;
       const url = urlAt(term, row, col);
-      if (url) return follow(url, machine);
+      if (url) {
+        follow(url, machine);
+        return true;
+      }
       void pathsOn(term, here, cwdAt, row).then((found) => {
         const hit = found.find((f) => col + 1 >= f.x0 && col + 1 <= f.x1);
         if (hit) openPath(hit.target);
       });
+      return false;
     };
     const asks = tapsAskFirst(term, box, marks, tapped);
     const gestures = phoneGestures(term, box);
@@ -2144,6 +2203,7 @@ export function TerminalPane({
       asks();
       gestures();
       linked.dispose();
+      box.removeEventListener("mousedown", pictureClick, true);
       marks.dispose();
       shown();
       window.clearTimeout(bellTimer.current);
@@ -2426,6 +2486,25 @@ export function TerminalPane({
           style={{ fontFamily: "var(--font-term)" }}
         >
           {composingText}
+        </div>
+      )}
+      {peek && (
+        // **A picture, opened whole** (roadmap 3.3): over the pane, fitted,
+        // two fingers to look closer (`usePinch`, the conversation's own).
+        // The ground around it, ×, or Esc closes it.
+        <div
+          data-term-picture
+          role="dialog"
+          aria-label={gui.term_picture}
+          className="absolute inset-0 z-30 flex items-center justify-center bg-background p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPeek(null);
+          }}
+        >
+          <img ref={pinch} src={peek} alt="" className="h-full w-full object-contain" />
+          <GlassCircle aria-label={gui.close} data-term-picture-close className="absolute bottom-2 right-2" onClick={() => setPeek(null)}>
+            <IconClose />
+          </GlassCircle>
         </div>
       )}
       {blockMenu && (

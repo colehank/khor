@@ -2381,6 +2381,7 @@ clip-read-deny = "不允许"
 # The terminal's way back down when output arrived while scrolled up
 # (roadmap 4.4); a conversation keeps new-below.
 term-new-output = "新输出"
+term-picture = "图片"
 # Appearance → Terminal: whether a terminal's bell is shown or felt
 # (roadmap 4.2).
 term-bell = "响铃"
