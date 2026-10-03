@@ -658,12 +658,49 @@ pub fn vendor_home(root: &Path) -> PathBuf {
 /// trailing slash) — and getting that wrong in the false direction is
 /// the loud failure, not the quiet one: khor would simply not list the
 /// user's terminals.
+///
+/// **The account's home is the user database's, not `$HOME`** (T-35, the
+/// terminal audit and the TERM lane's own incident, 2026-10-03): a scratch
+/// node is started with `HOME` pointed at its scratch directory as often
+/// as with `KHOR_HOME`, and then `$HOME` *was* the vendor home — the
+/// scratch node took itself for the account's own and watched the
+/// owner's default tmux server, which let it seat a session on his pane.
+/// What the system says the account's home is cannot be moved by an
+/// environment variable, so a node rooted anywhere else — however its
+/// `HOME` is set — watches no default server; `KHOR_TMUX_SOCKET` is the
+/// one way to give it a server of its own.
 fn is_real_home(path: &Path) -> bool {
-    let Some(home) = std::env::home_dir() else {
+    let Some(home) = account_home() else {
         return false;
     };
     let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     real(path) == real(&home)
+}
+
+/// The account's home directory as the user database records it
+/// (`getpwuid_r`), never `$HOME`. Off unix, `$HOME`'s answer.
+#[cfg(unix)]
+fn account_home() -> Option<PathBuf> {
+    use std::ffi::CStr;
+    use std::os::unix::ffi::OsStrExt;
+    let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut out: *mut libc::passwd = std::ptr::null_mut();
+    let mut buf = vec![0u8; 16 * 1024];
+    // SAFETY: getpwuid_r writes into `pw` and `buf`, both owned here and
+    // alive for the call; `out` is null or points at `pw`.
+    let rc = unsafe { libc::getpwuid_r(libc::getuid(), &mut pw, buf.as_mut_ptr().cast(), buf.len(), &mut out) };
+    if rc != 0 || out.is_null() || pw.pw_dir.is_null() {
+        return None;
+    }
+    // SAFETY: a non-null pw_dir from getpwuid_r is a NUL-terminated
+    // string inside `buf`.
+    let dir = unsafe { CStr::from_ptr(pw.pw_dir) };
+    Some(PathBuf::from(std::ffi::OsStr::from_bytes(dir.to_bytes())))
+}
+
+#[cfg(not(unix))]
+fn account_home() -> Option<PathBuf> {
+    std::env::home_dir()
 }
 
 /// Reads a whole file, or nothing. Every adaptor reads vendor files that
@@ -676,6 +713,40 @@ pub(crate) fn read_text(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T-35: the account's home is the user database's. A directory that
+    /// is not it is never the real home — whatever `$HOME` says, which a
+    /// scratch node sets to its scratch directory — and the account's own
+    /// is.
+    #[cfg(unix)]
+    #[test]
+    fn the_real_home_is_the_accounts_not_whatever_home_says() {
+        let scratch = std::env::temp_dir().join("khor-not-a-home");
+        assert!(!is_real_home(&scratch));
+        let own = account_home().expect("the user database names a home");
+        assert!(is_real_home(&own));
+        // Run in a child with HOME pointed at the scratch dir, the way a
+        // scratch node is started: it must still not take the scratch
+        // dir for the real home.
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "adaptor::tests::scratch_home_probe", "--nocapture", "--ignored"])
+            .env("HOME", &scratch)
+            .env("KHOR_PROBE_DIR", &scratch)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains("probe-real-home=false"), "{text}");
+    }
+
+    /// The child half of the test above.
+    #[cfg(unix)]
+    #[test]
+    #[ignore]
+    fn scratch_home_probe() {
+        if let Some(dir) = std::env::var_os("KHOR_PROBE_DIR") {
+            println!("probe-real-home={}", is_real_home(std::path::Path::new(&dir)));
+        }
+    }
 
     fn proc_at(name: &str, started_ms: i64) -> Proc {
         Proc {
