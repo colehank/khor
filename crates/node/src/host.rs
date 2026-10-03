@@ -762,6 +762,29 @@ fn host_serving(
     ] {
         builder.env_remove(marker);
     }
+    // **And the terminal's own name is khor's** (T-26, the terminal
+    // audit: a hosted shell got `TERM_PROGRAM=tmux`, `TERM_SESSION_ID`,
+    // `LC_TERMINAL=iTerm2` and `TERM_FEATURES` from whatever launched
+    // khor, and no `COLORTERM` under launchd). Programs branch on these —
+    // Claude Code and neovim on `TERM_PROGRAM` — and the terminal they
+    // talk to is khor's xterm, not the opener's. `COLORTERM=truecolor`
+    // is what xterm.js draws (its 24-bit SGR), as iTerm2, kitty and
+    // WezTerm set it.
+    builder.env("TERM_PROGRAM", "khor");
+    builder.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+    builder.env("COLORTERM", "truecolor");
+    for (name, _) in std::env::vars_os() {
+        let Some(name) = name.to_str() else { continue };
+        // `TMUX` and `TMUX_PANE` say "you are inside that tmux"; the
+        // person's own `TMUX_TMPDIR` says where their tmux lives, and
+        // stays.
+        if matches!(name, "TERM_SESSION_ID" | "TERM_FEATURES" | "TMUX" | "TMUX_PANE")
+            || name.starts_with("LC_TERMINAL")
+            || name.starts_with("ITERM_")
+        {
+            builder.env_remove(name);
+        }
+    }
     // Where the person was standing when they started this process, not
     // where the process stands now — opening a node pins that to a
     // directory nothing can delete (第十四轮 第 4 条), and a shell born
