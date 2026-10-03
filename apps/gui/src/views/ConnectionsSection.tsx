@@ -13,6 +13,7 @@
 import { useEffect, useState } from "react";
 
 import { fetchConnections, type Connections } from "@/api";
+import { Waiting } from "@/components/RegionState";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
@@ -32,6 +33,8 @@ const hostOf = (url: string) => {
 
 export function ConnectionsSection() {
   const [conn, setConn] = useState<Connections | null>(null);
+  /** When the first asking began (`Waiting`, below). */
+  const [since] = useState(() => Date.now());
   const hidden = useHidden();
   useEffect(() => {
     let alive = true;
@@ -57,7 +60,16 @@ export function ConnectionsSection() {
       window.clearInterval(t);
     };
   }, [hidden]);
-  if (!conn) return null;
+  // **Loading until the first answer, under its own heading** (UX-4; the
+  // owner's rule of 2026-10-04): the probes take seconds, and a section
+  // that appeared only then pushed the page down under the reader.
+  if (!conn) {
+    return (
+      <MoreSection name="connections" label={gui.card_connection}>
+        <Waiting since={since} />
+      </MoreSection>
+    );
+  }
   if (conn.unread) {
     return (
       <MoreSection name="connections" label={gui.card_connection}>
