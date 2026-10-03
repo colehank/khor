@@ -96,6 +96,7 @@ import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
 import { moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
+import { rememberPlace, storedPlace } from "@/lib/place";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { NetworkPage } from "@/views/more/NetworkPage";
@@ -422,7 +423,11 @@ export default function App() {
     "[data-ws-tree]",
     roomBeside("[data-ws-tree]"),
   );
-  const [landing, setLanding] = useState<Landing>("sessions");
+  /** Where the face was when it last ran (P3, `lib/place`), read once. */
+  const [place] = useState(storedPlace);
+  const [landing, setLanding] = useState<Landing>(() =>
+    landings().some((l) => l.key === place.landing) ? (place.landing as Landing) : "sessions",
+  );
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   /** Whether this machine can host — `false` on a phone, said by its own
@@ -468,7 +473,7 @@ export default function App() {
   // reason each pane keeps its own query: they are two selections in two
   // places, and one variable would have opening a machine close the
   // session you were reading.
-  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<string | null>(() => place.device ?? null);
   /** Whether the open machine's page shows its sessions rather than its
       dashboard — the head's 会话 switch (the redesign, 2026-10-02). Back
       to the dashboard whenever another machine opens. */
@@ -495,7 +500,7 @@ export default function App() {
     device: string;
     machine: string;
     path: string;
-  } | null>(null);
+  } | null>(() => place.ws ?? null);
   // …and the browser landing's own tabs. **A second strip, not a
   // second mechanism** (浏览器接壳批): both browsing landings are the
   // same shell with a different kind, and the two stores are kept apart
@@ -506,7 +511,7 @@ export default function App() {
   // terminal has to show up in the column without anybody reloading.
   const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser");
   // Narrow face only: which single screen is up. Wide ignores it.
-  const [screen, setScreen] = useState<"list" | "detail">("list");
+  const [screen, setScreen] = useState<"list" | "detail">(() => place.screen ?? "list");
   const [stale, setStale] = useState(false);
   // One query per pane: switching landings is not a way of clearing a
   // search, and a search that follows you across panes filters the wrong
@@ -569,7 +574,14 @@ export default function App() {
    * pages behind one menu is what replaced it (「点击...,显示设置、安全、
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
-  const [morePage, setMorePage] = useState<MorePage | null>(null);
+  const [morePage, setMorePage] = useState<MorePage | null>(() =>
+    (morePageOrder as readonly string[]).includes(place.more ?? "") ? (place.more as MorePage) : null,
+  );
+  // …and written back whenever it changes, for the next start.
+  useEffect(
+    () => rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs }),
+    [landing, morePage, screen, selectedDevice, openWs],
+  );
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
   // there has ever been, eighteen seconds for the first pass on the
@@ -1700,6 +1712,7 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
+      openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
       onNew={() => openNewSession()}

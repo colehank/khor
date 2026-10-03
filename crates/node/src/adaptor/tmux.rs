@@ -353,7 +353,7 @@ impl Tmux {
             let Ok(pid) = pid.trim().parse::<u32>() else {
                 continue;
             };
-            if procs.subtree(&[pid]).iter().any(|p| wanted.contains(p)) {
+            if procs.held_by(&[pid]).iter().any(|p| wanted.contains(p)) {
                 return Some(window.to_owned());
             }
         }
@@ -610,7 +610,7 @@ impl Gathering {
                     cwd: (!self.cwd.is_empty()).then_some(self.cwd),
                 },
             },
-            holds: procs.subtree(&self.pane_pids),
+            holds: procs.held_by(&self.pane_pids),
         }
     }
 }

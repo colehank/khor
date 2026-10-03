@@ -238,6 +238,29 @@ pub fn write_frame<T: Serialize>(s: &mut (impl Write + ?Sized), t: &T) -> Result
     s.write_all(&frame).map_err(msg::handoff_failed)
 }
 
+/// A client's frame, or `None` for one over `MAX_OP` that was read past
+/// and dropped: **an oversize frame costs that frame, not the client**
+/// (T-16, the terminal audit: a 1.2 MB paste errored `read_frame`, the
+/// per-client input loop exited, and every key after it was lost until a
+/// reload, while output kept flowing). The length prefix says exactly how
+/// much to skip, so the stream stays in step.
+fn read_client_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<Option<T>, String> {
+    let mut len = [0u8; 4];
+    s.read_exact(&mut len).map_err(msg::no_frame)?;
+    let len = u32::from_be_bytes(len) as usize;
+    if len > MAX_OP {
+        eprintln!("{}", msg::frame_too_big(len));
+        let skipped = std::io::copy(&mut s.take(len as u64), &mut std::io::sink()).map_err(msg::half_a_frame)?;
+        if skipped as usize != len {
+            return Err(msg::half_a_frame(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)));
+        }
+        return Ok(None);
+    }
+    let mut bytes = vec![0u8; len];
+    s.read_exact(&mut bytes).map_err(msg::half_a_frame)?;
+    proto::decode(&bytes).map(Some)
+}
+
 pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<T, String> {
     let mut len = [0u8; 4];
     s.read_exact(&mut len).map_err(msg::no_frame)?;
@@ -802,6 +825,29 @@ fn host_serving(
     ] {
         builder.env_remove(marker);
     }
+    // **And the terminal's own name is khor's** (T-26, the terminal
+    // audit: a hosted shell got `TERM_PROGRAM=tmux`, `TERM_SESSION_ID`,
+    // `LC_TERMINAL=iTerm2` and `TERM_FEATURES` from whatever launched
+    // khor, and no `COLORTERM` under launchd). Programs branch on these —
+    // Claude Code and neovim on `TERM_PROGRAM` — and the terminal they
+    // talk to is khor's xterm, not the opener's. `COLORTERM=truecolor`
+    // is what xterm.js draws (its 24-bit SGR), as iTerm2, kitty and
+    // WezTerm set it.
+    builder.env("TERM_PROGRAM", "khor");
+    builder.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+    builder.env("COLORTERM", "truecolor");
+    for (name, _) in std::env::vars_os() {
+        let Some(name) = name.to_str() else { continue };
+        // `TMUX` and `TMUX_PANE` say "you are inside that tmux"; the
+        // person's own `TMUX_TMPDIR` says where their tmux lives, and
+        // stays.
+        if matches!(name, "TERM_SESSION_ID" | "TERM_FEATURES" | "TMUX" | "TMUX_PANE")
+            || name.starts_with("LC_TERMINAL")
+            || name.starts_with("ITERM_")
+        {
+            builder.env_remove(name);
+        }
+    }
     // Where the person was standing when they started this process, not
     // where the process stands now — opening a node pins that to a
     // directory nothing can delete (第十四轮 第 4 条), and a shell born
@@ -853,6 +899,24 @@ fn host_serving(
         clients: Mutex::new(Vec::new()),
     });
     let output_done = Arc::new(AtomicBool::new(false));
+    // The questions the program asked its terminal, and which answers
+    // may reach it (`answers`, T-4/T-5). Locked alone, never with Shared's.
+    let ledger = Arc::new(Mutex::new(crate::answers::Ledger::default()));
+    {
+        let ledger = ledger.clone();
+        let writer = writer.clone();
+        let output_done = output_done.clone();
+        std::thread::spawn(move || {
+            while !output_done.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                let own = ledger.lock().unwrap().fallback(std::time::Instant::now());
+                if !own.is_empty() {
+                    let mut w = writer.lock().unwrap();
+                    let _ = w.write_all(&own).and_then(|()| w.flush());
+                }
+            }
+        });
+    }
 
     // A screen to match patterns against, for an agent TUI khor can
     // name. None for a shell (the process group answers better), and
@@ -869,6 +933,7 @@ fn host_serving(
         let output_done = output_done.clone();
         let screen = screen.clone();
         let last_dir = dir.clone();
+        let ledger = ledger.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 8192];
             // The preview line (`last.txt`): derived after every read,
@@ -891,6 +956,9 @@ fn host_serving(
                 if let Some(screen) = &screen {
                     screen.lock().unwrap().feed(&buf[..n]);
                 }
+                // Before anyone can see it: a question is pending before
+                // a face can answer it.
+                ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
@@ -1026,6 +1094,7 @@ fn host_serving(
     // Attachers.
     {
         let shared = shared.clone();
+        let ledger = ledger.clone();
         let master = master.clone();
         let writer = writer.clone();
         std::thread::spawn(move || {
@@ -1090,11 +1159,19 @@ fn host_serving(
                     drop(ring);
                     let master = master.clone();
                     let writer = writer.clone();
+                    let ledger = ledger.clone();
                     std::thread::spawn(move || {
                         let mut readable = readable;
-                        while let Ok(op) = read_frame::<ClientOp>(&mut readable) {
+                        while let Ok(op) = read_client_frame::<ClientOp>(&mut readable) {
+                            let Some(op) = op else { continue };
                             match op {
                                 ClientOp::Input(bytes) => {
+                                    // An answer only while its question waits
+                                    // (`answers`); keys whole.
+                                    let bytes = ledger.lock().unwrap().take_input(&bytes, std::time::Instant::now());
+                                    if bytes.is_empty() {
+                                        continue;
+                                    }
                                     let mut w = writer.lock().unwrap();
                                     if w.write_all(&bytes).and_then(|()| w.flush()).is_err() {
                                         break;
@@ -1147,6 +1224,21 @@ fn host_serving(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T-16: a frame over `MAX_OP` is skipped and the next one still
+    /// arrives — the client's input loop does not end on it.
+    #[test]
+    fn an_oversize_frame_costs_that_frame_not_the_client() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, &ClientOp::Input(vec![b'x'; MAX_OP + 1])).unwrap();
+        write_frame(&mut wire, &ClientOp::Input(b"after".to_vec())).unwrap();
+        let mut r = std::io::Cursor::new(wire);
+        assert!(read_client_frame::<ClientOp>(&mut r).unwrap().is_none());
+        match read_client_frame::<ClientOp>(&mut r).unwrap() {
+            Some(ClientOp::Input(b)) => assert_eq!(b, b"after"),
+            _ => panic!("the frame after the oversize one was lost"),
+        }
+    }
 
     /// A path is fine; the basename is what is compared.
     #[test]

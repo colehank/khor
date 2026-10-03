@@ -2016,34 +2016,34 @@ aside[data-side] {
   -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-head));
   mask-image: linear-gradient(to bottom, transparent, #000 var(--fade-head));
 }
-/* The terminal on a phone: even margins of 8, and no scrollbar taking a
-   width on the right (F4.10; N18) — a finger scrolls it.
+/* The terminal: even margins of 8, and no scrollbar (F4.10; N18; on every
+   platform since 2026-10-03, the owner: 「宽屏怎么没有把拖动条给删了？」) —
+   a finger drags it, a wheel or trackpad scrolls it, as in iTerm with its
+   bar hidden.
    **The bar is xterm's own, not the engine's** (xterm 6): a drawn
    slider in `.xterm-scrollable-element`, 14 wide, which the fit addon
    takes off the width before it counts columns (`overviewRuler.width`,
    default 14, and 0 reads as the default). So hiding it is half: the
    screen is also made `--term-bar` wider, past the pane's right padding
    where the pane clips it, and the columns come out of the full width —
-   the grid ends 8 from the edge, the same as it starts. A mouse keeps xterm's
-   bar: it shows while scrolling or under the pointer and fades, the
-   overlay behaviour the system's own bar has. The viewport pair stays
-   for an engine bar on the viewport itself. */
+   the grid ends 8 from the edge, the same as it starts. The viewport pair
+   stays for an engine bar on the viewport itself. */
+[data-terminal] {
+  padding-inline: var(--gap-in);
+}
+[data-terminal] .xterm-scrollable-element > .scrollbar {
+  display: none;
+}
+[data-terminal] [data-term-screen] {
+  width: calc(100% + var(--term-bar));
+}
+[data-terminal] .xterm-viewport {
+  scrollbar-width: none;
+}
+[data-terminal] .xterm-viewport::-webkit-scrollbar {
+  display: none;
+}
 @media (pointer: coarse) {
-  [data-terminal] {
-    padding-inline: var(--gap-in);
-  }
-  [data-terminal] .xterm-scrollable-element > .scrollbar {
-    display: none;
-  }
-  [data-terminal] [data-term-screen] {
-    width: calc(100% + var(--term-bar));
-  }
-  [data-terminal] .xterm-viewport {
-    scrollbar-width: none;
-  }
-  [data-terminal] .xterm-viewport::-webkit-scrollbar {
-    display: none;
-  }
   /* **The keys' field stays in the corner** (2026-10-03, the owner:
      「输入到屏幕边的时候整个页面会拉长」). xterm moves its hidden textarea
      to the cursor and widens it to what is being composed; at the right

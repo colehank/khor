@@ -44,6 +44,7 @@ import type { Avatar } from "@/gen/bindings/Avatar";
 import { EditableName, useSinglePress } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
 import { fontOf, measurer } from "@/components/PathCut";
+import type { EditItem } from "@/hooks/use-read-first";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { FaceMark, type KindMark } from "@/components/FaceMark";
@@ -138,6 +139,11 @@ export type TabFace = {
    * a close, and a second mark on each of them would be a row of
    * controls aimed at files nobody is looking at. */
   look?: { on: boolean; label: string; onToggle: () => void };
+  /** 「编辑」 / 「保存」 on a file's front tab under a finger (P1,
+      `hooks/use-read-first`): the file reads first, and this is the way
+      into typing and back out. Absent under a mouse and for a file that
+      cannot be edited. */
+  edit?: EditItem | null;
   /**
    * What pressing this tab **again** does — while it is already in front
    * — and what hovering it then says (2026-09-29, the owner, of the
@@ -788,6 +794,16 @@ export function TabStrip({
                 >
                   <IconEye className="size-affordance" />
                 </Button>
+              )}
+              {on && f.edit && (
+                <button
+                  type="button"
+                  data-file-edit={f.edit.writing ? "save" : "edit"}
+                  onClick={f.edit.onPress}
+                  className="min-h-touch flex-none rounded-full px-in text-callout font-title text-foreground"
+                >
+                  {f.edit.label}
+                </button>
               )}
               <Tooltip>
               <TooltipTrigger asChild>

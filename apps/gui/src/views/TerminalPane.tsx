@@ -12,7 +12,7 @@
 // beside iTerm2 (「这是你渲染的终端…这是iterm渲染的」) and 「我们是
 // 全功能的终端」. Re-implementing a terminal is the wrong place to
 // spend scars: xterm.js is the renderer VS Code ships, and it does all
-// of it — grid metrics, wide chars (unicode11), IME composition, every
+// of it — grid metrics, wide chars (unicode), IME composition, every
 // key/modifier encoding, mouse protocols, alt-screen wheel, selection.
 //
 // So the split is now:
@@ -57,7 +57,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -79,6 +79,7 @@ import { tapRaisesKeyboard } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { typed, type Mods } from "@/lib/term-keys";
+import { isFocusReport, isReply } from "@/lib/term-replies";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -94,8 +95,16 @@ const ANSI16 = [
     the round trip, not this number. */
 const LIVE_MS = 50;
 /** How long one pushed wait is held open with nothing new (`termWait`).
-    Short enough that a pane torn down mid-wait frees its question soon. */
+    Short enough that a pane torn down mid-wait frees its question soon,
+    and well under `CATCH_UP_MS`: a wait that ran its whole length is a
+    quiet screen, not a catch-up. */
 const WAIT_MS = 1000;
+/** A beat this long after the last one is a catch-up: what it carries
+    was asked while nobody was looking, and is replayed (`replay`). */
+const CATCH_UP_MS = 2_000;
+/** The most characters one `term_key` carries: 64 KiB once UTF-8 encoded
+    (T-16). */
+const CHUNK_CHARS = 16 * 1024;
 
 /** The scrollback xterm keeps, matched to the parser's own
     (`khor_gui_core::term::SCROLLBACK`) so the two authorities never
@@ -126,6 +135,36 @@ function found() {
     ⌃F is a byte a shell wants (readline's forward-char) and stealing
     it would be the app taking a key the program had. */
 const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent);
+/**
+ * **A Mac's editing keys say what a Mac terminal says** (T-17, the
+ * terminal audit: ⌥←/→ went out as `ESC [ 1 ; 3 D`/`C`, which zsh does not
+ * bind; ⌘←/→ and ⌘⌫ sent nothing; ⌥⌫ a bare ESC). The bytes are iTerm2's
+ * "Natural Text Editing" key preset (iterm2.com, Profiles › Keys): word
+ * left and right are the meta forms `ESC b`/`ESC f` every readline and
+ * zsh binds, ⌥⌫ is ^W (delete the word before), ⌘← ⌘→ are ^A/^E (line
+ * start and end), ⌘⌫ is ^U (delete to line start).
+ * `null` for any other key.
+ */
+function macEditing(ev: KeyboardEvent): string | null {
+  if (!IS_MAC || ev.type !== "keydown" || ev.shiftKey || ev.ctrlKey) return null;
+  if (ev.altKey && !ev.metaKey) {
+    if (ev.key === "ArrowLeft") return "\x1bb";
+    if (ev.key === "ArrowRight") return "\x1bf";
+    if (ev.key === "Backspace") return "\x17";
+  }
+  if (ev.metaKey && !ev.altKey) {
+    if (ev.key === "ArrowLeft") return "\x01";
+    if (ev.key === "ArrowRight") return "\x05";
+    if (ev.key === "Backspace") return "\x15";
+  }
+  return null;
+}
+
+/** ⌘K, which clears a Mac terminal (iTerm2, Terminal: Clear Buffer). */
+function asksToClear(ev: KeyboardEvent): boolean {
+  return IS_MAC && ev.type === "keydown" && ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === "k";
+}
+
 function asksToFind(ev: KeyboardEvent): boolean {
   if (ev.key.toLowerCase() !== "f" || ev.altKey) return false;
   return IS_MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && ev.shiftKey;
@@ -362,8 +401,10 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
   let startX = 0;
   let startY = 0;
   let still = false;
+  let downAt = 0;
   const began = (e: TouchEvent) => {
     still = e.touches.length === 1;
+    downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
   };
@@ -372,6 +413,8 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
     if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
   const lifted = () => {
+    // A long press is a selection (`pressSelects`), not a tap.
+    if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
     if (still && tapRaisesKeyboard() && !keyboardUp(field)) raiseKeyboard(field);
     still = false;
   };
@@ -393,6 +436,107 @@ function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
     box.removeEventListener("touchmove", moved);
     box.removeEventListener("touchend", lifted);
     field.removeEventListener("focusout", left);
+  };
+}
+
+/** A finger held this long without moving starts a selection. */
+const LONG_PRESS_MS = 450;
+/** …and this much travel before then makes it a drag instead. */
+const PRESS_SLOP = 8;
+
+/**
+ * **A long press selects, a drag after it extends, the lift copies**
+ * (T-20, the terminal audit: no touch selection at all, so a phone could
+ * copy nothing a program did not offer). xterm 6 has no touch code
+ * (xterm.js #5961 is open); iSH and Blink select with native handles.
+ * This is the plainer half of that — the same gesture iOS uses for text
+ * (press and hold on a word, drag to extend) — drawn in xterm's own
+ * selection, so the copy-on-select already wired keeps working, and the
+ * lift writes the selection to the clipboard inside the gesture (iOS's
+ * clipboard wants one). Ahead of `fingerScrolls` (capture): while a
+ * selection is being drawn the drag is the selection's, not a scroll;
+ * before the press is long, a drag scrolls as ever.
+ */
+function pressSelects(term: Terminal, box: HTMLElement): () => void {
+  let timer = 0;
+  let x0 = 0;
+  let y0 = 0;
+  let selecting = false;
+  let anchor: { col: number; row: number } | null = null;
+  const cellAt = (x: number, y: number) => {
+    const screen = term.element?.querySelector(".xterm-screen");
+    if (!screen) return null;
+    const r = screen.getBoundingClientRect();
+    const col = Math.max(0, Math.min(term.cols - 1, Math.floor(((x - r.left) / r.width) * term.cols)));
+    const inView = Math.max(0, Math.min(term.rows - 1, Math.floor(((y - r.top) / r.height) * term.rows)));
+    return { col, row: term.buffer.active.viewportY + inView };
+  };
+  const blank = (row: number, col: number) => {
+    const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
+    return ch === "" || ch === " ";
+  };
+  const selectWord = (at: { col: number; row: number }) => {
+    let from = at.col;
+    let to = at.col;
+    if (!blank(at.row, at.col)) {
+      while (from > 0 && !blank(at.row, from - 1)) from -= 1;
+      while (to < term.cols - 1 && !blank(at.row, to + 1)) to += 1;
+    }
+    term.select(from, at.row, to - from + 1);
+    anchor = { col: from, row: at.row };
+  };
+  const extend = (to: { col: number; row: number }) => {
+    if (!anchor) return;
+    const a = anchor.row * term.cols + anchor.col;
+    const b = to.row * term.cols + to.col;
+    const first = Math.min(a, b);
+    term.select(first % term.cols, Math.floor(first / term.cols), Math.abs(b - a) + 1);
+  };
+  const start = (e: TouchEvent) => {
+    window.clearTimeout(timer);
+    selecting = false;
+    if (e.touches.length !== 1) return;
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+    timer = window.setTimeout(() => {
+      const at = cellAt(x0, y0);
+      if (!at) return;
+      selecting = true;
+      selectWord(at);
+    }, LONG_PRESS_MS);
+  };
+  const move = (e: TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    if (!selecting) {
+      if (Math.hypot(t.clientX - x0, t.clientY - y0) > PRESS_SLOP) window.clearTimeout(timer);
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const at = cellAt(t.clientX, t.clientY);
+    if (at) extend(at);
+  };
+  const end = (e: TouchEvent) => {
+    window.clearTimeout(timer);
+    if (!selecting) return;
+    selecting = false;
+    // No synthesized mousedown after it: that would clear the selection.
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const text = term.getSelection();
+    if (text) navigator.clipboard?.writeText(text).catch(() => {});
+  };
+  box.addEventListener("touchstart", start, { capture: true, passive: true });
+  box.addEventListener("touchmove", move, { capture: true, passive: false });
+  box.addEventListener("touchend", end, { capture: true, passive: false });
+  box.addEventListener("touchcancel", end, { capture: true, passive: false });
+  return () => {
+    window.clearTimeout(timer);
+    box.removeEventListener("touchstart", start, true);
+    box.removeEventListener("touchmove", move, true);
+    box.removeEventListener("touchend", end, true);
+    box.removeEventListener("touchcancel", end, true);
   };
 }
 
@@ -564,8 +708,13 @@ export async function reopenTerminal(id: string): Promise<boolean> {
 export function TerminalPane({
   id,
   machine,
+  active = true,
 }: {
   id: string;
+  /** Whether this is the tab on screen. A kept tab that is not
+      (`DetailPane`, T-11) stays attached at the hidden pace and draws
+      nothing in the bar. */
+  active?: boolean;
   /** The far machine this terminal lives on, by the name people read —
       `null` for one hosted here. What a wait and a reconnect name. */
   machine?: string | null;
@@ -613,7 +762,7 @@ export function TerminalPane({
   // the hand-rolled composition guards this file used to carry
   // (keyCode 229, compositionend, the parked caret) live there.
   const keysRef = useRef<HTMLTextAreaElement | null>(null);
-  useKeysTo(keysRef, true);
+  useKeysTo(keysRef, active);
   // Whether the reader is up in history, and whether output arrived
   // while they were — the two sentences the way-back-down control
   // carries. Survived the pivot on purpose: xterm holds the reader's
@@ -649,8 +798,23 @@ export function TerminalPane({
     if (!box || !mount) return;
     const font = fontOf(box);
     const term = new Terminal({
-      // unicode11 is a proposed API; without this flag the addon throws.
+      // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
+      // **OSC 8 links go where every other link goes** (T-24, the
+      // terminal audit: they went to xterm's default `confirm()` and
+      // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
+      // 114). The same gesture as a plain URL (⌘-click, iTerm2's), and
+      // the same road (`follow`).
+      linkHandler: {
+        activate: (ev, uri) => {
+          if (ev.metaKey || ev.ctrlKey) follow(uri);
+        },
+      },
+      // **The size reports programs ask for** (T-1: CSI 14 t, 16 t, 18 t
+      // went unanswered because `windowOptions` defaults to none;
+      // yazi asks 16 t for its cell size). Reports only — nothing here
+      // lets a program move, resize or retitle the window.
+      windowOptions: { getWinSizePixels: true, getCellSizePixels: true, getWinSizeChars: true },
       scrollback: SCROLLBACK,
       fontFamily: font.family,
       fontSize: font.size,
@@ -679,20 +843,77 @@ export function TerminalPane({
     term.loadAddon(fit);
     // Real east-asian widths — the measured `wideFit` scale hack this
     // replaces existed because the DOM painter had to guess what a
-    // renderer that owns its glyph atlas simply knows.
-    term.loadAddon(new Unicode11Addon());
-    term.unicode.activeVersion = "11";
+    // renderer that owns its glyph atlas simply knows. **Unicode 15 with
+    // grapheme clusters** (T-22, the terminal audit: unicode11 drew ❤️
+    // one cell wide, 🇨🇳 as two boxes, 👍🏽 four cells and 👨‍👩‍👧 six),
+    // so an emoji sequence is one character of two cells, as in kitty,
+    // WezTerm and Ghostty. The addon's README says only to load it; its
+    // `activate` registers "15" and "15-graphemes" and selects the
+    // latter (0.4.0), so no `activeVersion` is set here.
+    term.loadAddon(new UnicodeGraphemesAddon());
     term.open(mount);
+    // **OSC 52: a program may write the clipboard, never read it** (T-8,
+    // the terminal audit: neither direction was handled). The field's
+    // defaults: kitty, Alacritty, WezTerm and Windows Terminal allow the
+    // write and refuse (or ask about) the read. The read form (`?`) is
+    // answered with nothing, so a program waiting for it times out as it
+    // would on any terminal that refuses.
+    const osc52 = term.parser.registerOscHandler(52, (data) => {
+      const semi = data.indexOf(";");
+      const payload = semi >= 0 ? data.slice(semi + 1) : "";
+      if (payload === "?" || payload === "") return true;
+      try {
+        const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+        void navigator.clipboard?.writeText(new TextDecoder().decode(bytes)).catch(() => {});
+      } catch {
+        /* not base64: nothing to write */
+      }
+      return true;
+    });
     // The fastest renderer the webview has; a machine without WebGL
     // silently keeps xterm's DOM renderer. Nothing to install either
     // way — this is a build-time library, not a user dependency.
-    try {
-      term.loadAddon(new WebglAddon());
-    } catch {
-      /* DOM renderer stands */
-    }
+    //
+    // **A lost context falls back, then comes back** (T-23, the terminal
+    // audit: losing the WebGL context left the terminal blank, still
+    // taking keys, until the context was restored). The addon's own advice
+    // (addon-webgl README; WebglRenderer.ts waits 3 s, then only fires
+    // the event): dispose it on `onContextLoss`, which puts xterm's DOM
+    // renderer back at once, and try WebGL again the next time the page
+    // is shown. iOS drops contexts of pages in the background (WebKit
+    // bug 261331); a Mac's GPU switch does too.
+    let webgl: WebglAddon | null = null;
+    const useWebgl = () => {
+      if (webgl || stoppedWebgl) return;
+      try {
+        const addon = new WebglAddon();
+        addon.onContextLoss(() => {
+          if (webgl === addon) webgl = null;
+          addon.dispose();
+        });
+        term.loadAddon(addon);
+        webgl = addon;
+      } catch {
+        /* DOM renderer stands */
+      }
+    };
+    let stoppedWebgl = false;
+    const shownAgain = () => {
+      if (document.visibilityState === "visible") useWebgl();
+    };
+    useWebgl();
+    document.addEventListener("visibilitychange", shownAgain);
+    // …and at once: the addon itself waits 3 s for a restore before it
+    // says so, three seconds of a blank terminal. The canvas's own event
+    // is heard here first (capture), and the DOM renderer paints now.
+    const lost = () => {
+      const gone = webgl;
+      webgl = null;
+      gone?.dispose();
+    };
+    term.element?.addEventListener("webglcontextlost", lost, true);
     // The search paints its matches as decorations, which is the one
-    // proposed API this file leans on besides unicode11.
+    // proposed API this file leans on besides the unicode addon.
     const search = new SearchAddon();
     term.loadAddon(search);
     searchRef.current = search;
@@ -711,6 +932,19 @@ export function TerminalPane({
       if (ev.type === "keydown" && asksToFind(ev)) {
         ev.preventDefault();
         setFinding(true);
+        return false;
+      }
+      const editing = macEditing(ev);
+      if (editing) {
+        ev.preventDefault();
+        term.input(editing, true);
+        return false;
+      }
+      if (asksToClear(ev)) {
+        ev.preventDefault();
+        // The scrollback and the screen, the prompt line kept: what
+        // iTerm2's Clear Buffer leaves. The program is not told.
+        term.clear();
         return false;
       }
       return true;
@@ -753,6 +987,27 @@ export function TerminalPane({
     // Which join the screen belongs to (`reopen`): a beat that was in
     // flight across a re-join writes nothing.
     let generation = 0;
+    // **Replayed questions answer into nothing** (2026-10-03, the owner's
+    // phone: 「11;rgb:…1;2c1$r2 q…」 typed at a prompt). History written into
+    // xterm — the attach's ring dump, a reset beat, the catch-up after a
+    // long gap — holds the queries programs asked back then, and xterm
+    // answers them again. While such bytes are being parsed (until
+    // `write`'s callback, which xterm calls once the parser has consumed
+    // them), `onData` drops what has the shape of an answer
+    // (`lib/term-replies`); keys still go. The xterm.js maintainers' own
+    // advice is to replay before wiring the pty (discussions #4869); the
+    // pane is wired first so that early keys are not lost, and this is
+    // the same thing done at the one place where answers leave.
+    let replaying = 0;
+    const replay = (bytes: Uint8Array) => {
+      replaying += 1;
+      term.write(bytes, () => {
+        replaying -= 1;
+      });
+    };
+    /** When the last beat came back: a beat after a long gap (the pane
+        was hidden, the app was suspended) is a catch-up, not live. */
+    let lastBeat = performance.now();
     const tick = async () => {
       const mine = generation;
       try {
@@ -762,11 +1017,16 @@ export function TerminalPane({
         const pushed = inApp && pace.current === LIVE_MS;
         const b = await (pushed ? termWait(id, seq, WAIT_MS) : termStream(id, seq));
         if (stopped || mine !== generation) return;
+        const gap = performance.now() - lastBeat;
+        lastBeat = performance.now();
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
         // writing a stream whose head is missing.
         if (b.reset) term.reset();
-        if (b.bytes) term.write(b64bytes(b.bytes));
+        if (b.bytes) {
+          if (b.reset || gap > CATCH_UP_MS) replay(b64bytes(b.bytes));
+          else term.write(b64bytes(b.bytes));
+        }
         seq = b.seq;
         if (b.gone) setGone(true);
         setRejoining(b.rejoining && !b.gone);
@@ -833,8 +1093,10 @@ export function TerminalPane({
           if (again) term.reset();
           // Everything the feed holds — it began with the host's ring
           // dump, so the screen arrives *with its history*, the same
-          // replay the host gives any attacher.
-          if (a.bytes) term.write(b64bytes(a.bytes));
+          // replay the host gives any attacher. Its old questions get no
+          // answers (`replay`).
+          if (a.bytes) replay(b64bytes(a.bytes));
+          lastBeat = performance.now();
           seq = a.seq;
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
@@ -866,7 +1128,16 @@ export function TerminalPane({
     reopeners.set(id, reopenHere);
 
     setOpening(true);
-    void join(false);
+    // **Opened at the size it will have** (T-27, the terminal audit: the
+    // pty got 114×40 at open and 114×46 two seconds later — two SIGWINCHs,
+    // the first wrong — because the first fit ran before the pane's final
+    // layout). The open waits for the next frame, when the layout this
+    // mount started has been done, and fits once more first.
+    const firstFrame = window.requestAnimationFrame(() => {
+      if (stopped) return;
+      fit.fit();
+      void join(false);
+    });
 
     // Keys travel whole: xterm encodes every key, modifier, mouse
     // report and (bracketed, when the program asked) paste into the
@@ -878,17 +1149,51 @@ export function TerminalPane({
     // character typed on the soft keyboard becomes its control form (C →
     // 0x03) and, for Alt, gets an ESC before it — and let go; a mouse
     // report passes and leaves them waiting.
+    // **One send at a time, in the order xterm handed them out** (T-3,
+    // the terminal audit: on the web face 17 of 51 two-answer asks reached
+    // the pty sentinel-first, and fast typing arrived swapped — one HTTP
+    // POST per `onData`, nothing ordering them). Everything typed or
+    // answered while a send is in flight is coalesced into the next one,
+    // so a burst costs one round trip, not one per key. Tauri's own IPC
+    // was already ordered; a browser's fetches are not.
+    //
+    // **And no frame over 64 KiB** (T-16): the host takes at most 1 MiB a
+    // frame, and a paste bigger than that used to go as one. A chunk is
+    // 16 Ki characters — 64 KiB at most once UTF-8 encoded — and the
+    // chunks keep their order like everything else here.
+    let outbox = "";
+    let sending = false;
+    const send = (bytes: string) => {
+      outbox += bytes;
+      if (sending) return;
+      sending = true;
+      void (async () => {
+        while (outbox && !stopped) {
+          // Never split a surrogate pair across two frames.
+          let cut = Math.min(outbox.length, CHUNK_CHARS);
+          if (cut < outbox.length && /[\ud800-\udbff]/.test(outbox[cut - 1])) cut -= 1;
+          const next = outbox.slice(0, cut);
+          outbox = outbox.slice(cut);
+          await termKey(id, next).catch(() => {});
+        }
+        sending = false;
+        pollNow.current();
+      })();
+    };
     const data = term.onData((d) => {
+      const reply = isReply(d);
+      if (replaying > 0 && (reply || isFocusReport(d))) return;
       let out = d;
       const m = modsRef.current;
-      if ((m.ctrl || m.alt) && !MOUSE_REPORT.test(d)) {
+      // An answer to a live question is not a key: it neither takes a
+      // latch nor waits for one.
+      if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? typed(d, m) : d;
         latch({ ctrl: false, alt: false });
       }
-      termKey(id, out)
-        .then(() => pollNow.current())
-        .catch(() => {});
+      send(out);
     });
+    const selects = pressSelects(term, box);
     const dragged = fingerScrolls(term, box);
     // The way-back-down pair. `viewportY < baseY` is "the reader is up
     // in history" in xterm's own coordinates — on the alternate screen
@@ -951,6 +1256,7 @@ export function TerminalPane({
       observer.disconnect();
       data.dispose();
       dragged();
+      selects();
       scrolled.dispose();
       wrote.dispose();
       found.dispose();
@@ -965,6 +1271,11 @@ export function TerminalPane({
       resizing?.dispose();
       reopenRef.current = null;
       if (reopeners.get(id) === reopenHere) reopeners.delete(id);
+      window.cancelAnimationFrame(firstFrame);
+      osc52.dispose();
+      stoppedWebgl = true;
+      document.removeEventListener("visibilitychange", shownAgain);
+      term.element?.removeEventListener("webglcontextlost", lost, true);
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
@@ -978,11 +1289,19 @@ export function TerminalPane({
   // screen ten seconds stale on return is the wrong thing to come back
   // to), a longer one waits out the beat already in flight.
   useEffect(() => {
-    const next = hidden ? HIDDEN_MS : LIVE_MS;
+    const next = hidden || !active ? HIDDEN_MS : LIVE_MS;
     const shorter = next < pace.current;
     pace.current = next;
     if (shorter) pollNow.current();
-  }, [hidden]);
+  }, [hidden, active]);
+  // **Chosen again: the terminal has the keys, the screen is current**
+  // (`lib/soft-keyboard`, item 11) — without leaving or re-attaching.
+  useEffect(() => {
+    if (!active) return;
+    const field = termRef.current?.textarea;
+    if (field) holdFocus(field, window.matchMedia("(pointer: coarse)").matches);
+    pollNow.current();
+  }, [active]);
 
   // The theme can flip while a terminal is up, and xterm holds colours,
   // not tokens — so the tokens are re-resolved when the OS scheme or
@@ -1267,6 +1586,7 @@ export function TerminalPane({
         session again from scratch (`reopen`). On the wide face it stands
         at the end of the tab strip, among the page's verbs. While it
         joins the glyph turns and nothing else changes; it stays pressable. */}
+    {active && (
     <BarSeat at="lead">
       <GlassCircle
         data-term-reload
@@ -1278,7 +1598,8 @@ export function TerminalPane({
         <IconReload className={cn(joining && "animate-spin motion-reduce:animate-none")} />
       </GlassCircle>
     </BarSeat>
-    {coarse && (
+    )}
+    {coarse && active && (
       <>
         <BarSeat at="trail">
           <KeyboardSwitch field={keysRef} />

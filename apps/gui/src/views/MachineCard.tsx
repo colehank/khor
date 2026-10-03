@@ -35,7 +35,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cli, gui } from "@/gen/catalog";
+import { cli, gui, msg } from "@/gen/catalog";
+import { fontOf, measurer } from "@/components/PathCut";
 import { tickSet } from "@/lib/ruler";
 import { useKept } from "@/lib/kept";
 import { useTravel } from "@/lib/travel";
@@ -123,7 +124,7 @@ export function MachineCard({
           {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
           <span data-head-name className="flex min-w-0 flex-1 flex-col">
             <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
-            {row && <HeadModel row={row} />}
+            {row && <HeadModel row={row} yields />}
           </span>
           {actions}
         </header>
@@ -198,13 +199,33 @@ export function MachineCard({
 /** The head's second line: **the model alone**, and nothing when the
     machine did not report one (the owner, 2026-10-01: 「第二行型号就行
     了」). The khor version and the reading's age are the facts band's. */
-function HeadModel({ row }: { row: DeviceRow }) {
+function HeadModel({ row, yields = false }: { row: DeviceRow; yields?: boolean }) {
   const model = row.vitals?.vitals.model?.name;
+  const [box, setBox] = useState<HTMLSpanElement | null>(null);
+  const [gone, setGone] = useState(false);
+  // **On the narrow head the model yields first** (P2, 2026-10-03, the
+  // owner's ruling): where the line cannot be said whole it is not said
+  // at all, rather than cut to 「Mac mini (2…」, and the name keeps the
+  // row's room; the name then truncates to its floor, and only then do
+  // the verbs fold (`MachineVerbs`). Measured against the name's column
+  // (the parent), so a line that fits again comes back.
+  useLayoutEffect(() => {
+    if (!yields || !box || !model) return;
+    const column = box.parentElement;
+    if (!column) return;
+    const fit = () => setGone(measurer(fontOf(box))(model) > column.clientWidth + 0.5);
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(column);
+    return () => watch.disconnect();
+  }, [yields, box, model]);
   if (!model) return null;
   return (
     <span
+      ref={setBox}
       data-machine-head-sub
-      className="min-w-0 truncate text-callout text-muted-foreground"
+      data-yielded={gone || undefined}
+      className={cn("min-w-0 truncate text-callout text-muted-foreground", gone && "invisible h-0")}
     >
       {model}
     </span>
@@ -254,7 +275,21 @@ function Body({
   // with the device row and the process table from `useKept`, so a
   // machine seen before draws its last content on the first frame and
   // never this — the fast gate's second claim.
-  const answered = load !== null || why !== null;
+  // **A machine known to be out of reach is said so at once** (P6,
+  // 2026-10-03): the device table already says 「未连接」, so the page
+  // does not wait out the node's deadline behind skeletons. The asking
+  // goes on quietly underneath (`useLoad` retries), and the first answer
+  // that lands replaces the sentence.
+  const far = isFar(row) && load === null;
+  /** What the process table says when there is nothing to show: the
+      machine by name, in the words a person reads, when the trouble is
+      that it cannot be reached — the node's own sentence (its timeout and
+      the paths it tried) is the hover's. Any other refusal (an older
+      khor declining a column) is said as the node said it. */
+  const unreachable =
+    far || (why !== null && [row.name, row.shown].some((n) => why === msg.machine_unreachable_timeout(n)));
+  const lost = unreachable ? gui.machine_cant_reach(row.shown) : why;
+  const answered = load !== null || lost !== null;
   const never = !row.vitals && !answered;
   return (
         <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-page py-4">
@@ -265,7 +300,7 @@ function Body({
               <RegionState state="loading-never" />
             ) : (
               <>
-                <Readings row={row} day={load?.cpu_day ?? null} dayLost={load === null && why !== null} top={load?.top ?? []} />
+                <Readings row={row} day={load?.cpu_day ?? null} dayLost={load === null && lost !== null} top={load?.top ?? []} />
                 {/* **No process table for a machine that cannot host**
                     (docs/IOS.md 第二步): a phone's app may not see other
                     processes, so its table is always empty — and an empty
@@ -274,7 +309,8 @@ function Body({
                 {!row.hosts ? null : answered ? (
                   <Busy
                     load={load}
-                    why={why}
+                    why={lost}
+                    whyDetail={why}
                     sort={shown ?? sort}
                     asking={asking}
                     onSort={setSort}
@@ -389,7 +425,14 @@ function Body({
  * top of the board went to the facts read least, pushing the dials down.
  * Before that (09-27 → 09-30) it was `Head`, one line of `callout` facts.
  */
+/** This machine cannot be reached now (`hop` 「quiet」): what the page
+    shows of it is its last reading, said so (P5, P6). */
+function isFar(row: DeviceRow): boolean {
+  return !row.me && row.hop === "quiet";
+}
+
 function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
+  const far = isFar(row);
   const v = row.vitals?.vitals ?? null;
   const age = row.vitals?.age_ms ?? 0;
   // **This machine's open faces** — the one fact on the strip only the
@@ -451,7 +494,13 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
     facts.push([
       "reading",
       gui.card_reading,
-      !row.me && age > 0 ? (
+      far ? (
+        // 「无法获取 · 上次 HH:MM」 (P5): what the row says, with the clock
+        // of the last reading rather than an age that keeps growing.
+        <span data-vitals-age data-far className="tabular-nums">
+          {gui.reading_unreachable(clock(Date.now() - age))}
+        </span>
+      ) : !row.me && age > 0 ? (
         <span data-vitals-age className="tabular-nums">
           {gui.card_age(ago(Date.now() - age))}
         </span>
@@ -953,6 +1002,7 @@ function Readings({
       parts to show — see `Drawers`. */
   top: Load["top"];
 }) {
+  const far = isFar(row);
   // **Nothing is open on arrival, and the slot below the dials shows
   // the day.** It used to open the leftmost dial, because the slot had
   // nothing else to hold and an empty box under four dials is a space
@@ -1145,7 +1195,12 @@ function Readings({
         ref={vitalsBox}
         data-vitals
         data-vitals-cols={cols}
-        className="grid gap-group"
+        // **An unreachable machine's dials are its last reading, greyed**
+        // (P5, 2026-10-03): a data state, the way the list greys the
+        // row of a machine it cannot reach (`SideList` `dim`), so the
+        // numbers do not read as live. The facts say since when.
+        data-far={far || undefined}
+        className={cn("grid gap-group", far && "opacity-55")}
         //   **Content-sized columns pushed to the two edges**, so the
         //   row's spare width lands *between* the dials and the outer
         //   two sit flush. `gap-group` stays as the floor the spare
@@ -2104,6 +2159,7 @@ const cpuClock = (ms: number) => {
 function Busy({
   load,
   why,
+  whyDetail = null,
   sort,
   asking,
   onSort,
@@ -2111,6 +2167,8 @@ function Busy({
 }: {
   load: Load | null;
   why: string | null;
+  /** The node's own sentence behind `why`, for the hover. */
+  whyDetail?: string | null;
   /** Which optional columns any row on this machine has ever filled.
       **Latched 「seen」 facts, not properties of the hardware or of the
       far khor's version**, and together they decide which columns the
@@ -2141,7 +2199,7 @@ function Busy({
   if (why) {
     return (
       <TopSection>
-        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} seen={seen} hot={null} />
+        <Top rows={load?.top ?? []} sort={sort} asking={asking} onSort={onSort} why={why} whyDetail={whyDetail} seen={seen} hot={null} />
       </TopSection>
     );
   }
@@ -2294,6 +2352,7 @@ function Top({
   asking,
   onSort,
   why,
+  whyDetail = null,
   seen,
   hot,
 }: {
@@ -2307,6 +2366,8 @@ function Top({
   /** Why the machine did not answer this ask. Set means: draw the heads
       and this sentence, and no rows — see `Busy`. */
   why?: string | null;
+  /** The node's own sentence behind `why`, for the hover. */
+  whyDetail?: string | null;
   /** **Which columns this table has, decided by the machine and not by
       the rows in front of you** — see `Seen`.
 
@@ -2498,7 +2559,12 @@ function Top({
           ))}
         </div>
         {why ? (
-          <div data-load-why className="py-row text-callout text-muted-foreground" style={{ gridColumn: `span ${cells}` }}>
+          <div
+            data-load-why
+            title={whyDetail && whyDetail !== why ? whyDetail : undefined}
+            className="py-row text-callout text-muted-foreground"
+            style={{ gridColumn: `span ${cells}` }}
+          >
             {why}
           </div>
         ) : (
@@ -4056,6 +4122,7 @@ function Dial({
               fraction={unknown ? null : fraction}
               strain={strain}
               pips={pips}
+              joinPips
               unknown={unknown}
               size={size}
               stroke={stroke}

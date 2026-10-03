@@ -202,6 +202,7 @@ export function DetailPane({
   onNew,
   empty,
   tabs,
+  openIds,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -230,8 +231,35 @@ export function DetailPane({
       a browser keeps it; absent on wide, where the strip above this
       pane already shows every tab. */
   tabs?: ReactNode;
+  /** The session tabs still open: a terminal shown once stays attached
+      while its tab is (`kept` below). Absent where there are no tabs — a
+      workspace's session column — and then only the shown one lives. */
+  openIds?: string[];
 }) {
   const shown = useDayShown();
+  // **A terminal tab keeps its terminal while it is open** (T-11, the
+  // terminal audit: each tab switch left, re-attached and replayed —
+  // 68–217 ms to paint, the scroll place lost, old answers replayed —
+  // because only the shown pane was mounted). Every terminal shown here
+  // stays mounted, attached and at its scroll place while its tab is
+  // open; the others are drawn but hidden at the same size (no resize
+  // reaches their pty) and poll at the hidden pace. **And it keeps its
+  // screen when its host ends** (T-15): the row turning into 失败 no
+  // longer swaps the pane for the row's facts — the terminal stays, with
+  // its own 这个终端结束了.
+  const [kept, setKept] = useState<{ id: string; machine: string | null }[]>([]);
+  const isTerminal = (r: SessionRow) => r.kind !== "chat" && (r.mux || (r.kind !== "gui" && r.attachable));
+  useEffect(() => {
+    if (!row || !isTerminal(row)) return;
+    const machine = row.source ? row.home : null;
+    setKept((k) => (k.some((t) => t.id === row.id) ? k : [...k, { id: row.id, machine }]));
+  }, [row]);
+  useEffect(() => {
+    if (!openIds) return;
+    setKept((k) => (k.every((t) => openIds.includes(t.id)) ? k : k.filter((t) => openIds.includes(t.id))));
+  }, [openIds]);
+  const keptHere = openIds ? kept : kept.filter((t) => t.id === row?.id);
+  const terminalShown = row !== null && (isTerminal(row) || keptHere.some((t) => t.id === row.id));
   /** Whether this pane is the narrow session page's content, with its
       tabs in the bar under it (`components/SessionBar`, 2026-10-02): no
       head then — the bar's tab is this session's face, name and switch,
@@ -450,7 +478,8 @@ export function DetailPane({
           </div>
         </div>
       )}
-      {row && row.kind === "chat" ? (
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      {terminalShown ? null : row && row.kind === "chat" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills. Keyed so switching machines
         // drops the draft and the scroll with the conversation they
@@ -464,7 +493,7 @@ export function DetailPane({
         // resumes it in a terminal (`claude -r`): one session, two
         // hosts, and the one they are typing into wins. The row menu's
         // 转为 GUI 显示 is the other way round, on purpose.
-        <TerminalPane key={row.id} id={row.id} machine={row.source ? row.home : null} />
+        null
       ) : row && row.kind === "gui" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
@@ -478,7 +507,7 @@ export function DetailPane({
         // not the kind — a `khor run` shares the kind but has no host
         // and no bridge. Remote hosted sessions are on the ledger (their
         // host is elsewhere), and fall through to the facts below.
-        <TerminalPane key={row.id} id={row.id} machine={row.source ? row.home : null} />
+        null
       ) : row && row.category === "claude" ? (
         // A discovered claude session: its recorded past, read from
         // the vendor's own transcript. Claude only, this batch — the
@@ -524,6 +553,31 @@ export function DetailPane({
           )}
         </div>
       )}
+      {/* The kept terminals: the shown one in place, the rest hidden over
+          it at the same size. */}
+      {/* The shown one first in the document, so whatever finds "the
+          terminal" by `[data-terminal]` finds the one on screen. */}
+      {(row && isTerminal(row) && !keptHere.some((t) => t.id === row.id)
+        ? [...keptHere, { id: row.id, machine: row.source ? row.home : null }]
+        : keptHere
+      )
+        .slice()
+        .sort((a, b) => Number(b.id === row?.id) - Number(a.id === row?.id))
+        .map((t) => {
+        const on = terminalShown && t.id === row?.id;
+        return (
+          <div
+            key={t.id}
+            data-kept-terminal={t.id}
+            data-active={on || undefined}
+            className={on ? "contents" : "pointer-events-none invisible absolute inset-0 flex flex-col"}
+            aria-hidden={on ? undefined : true}
+          >
+            <TerminalPane id={t.id} machine={t.machine} active={on} />
+          </div>
+        );
+      })}
+      </div>
       {/* **In the bar's screen the day hangs at the foot** (2026-10-02):
           the tab that opens it is under the session there, so the band
           floats over the session's last lines, fading upward out of the

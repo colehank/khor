@@ -20,6 +20,7 @@ import { BarSeat } from "@/components/SessionBar";
 import { useCoarse } from "@/hooks/use-coarse";
 import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, Tip, useGrowingText } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
+import { imeKey } from "@/lib/ime";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
     list reads, and two different clocks would show two conversations. */
@@ -216,7 +217,10 @@ export function MachineChat({ id }: { id: string }) {
           trail={
             // Drawn only once there is something to send (progressive
             // disclosure: never a dimmed control).
-            draft.trim() ? <SendSeat onSend={send} disabled={sending} /> : null
+            // **The keyboard stays up after a note** (P7, 2026-10-03, the
+            // owner's ruling): the press does not take the focus from the
+            // text, so the next line is typed at once, as in Messages.
+            draft.trim() ? <SendSeat onSend={send} disabled={sending} keepFocus /> : null
           }
         >
         {/* The browser forms' picker: a real <input type=file>, hidden —
@@ -241,11 +245,14 @@ export function MachineChat({ id }: { id: string }) {
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).
           placeholder={gui.chat_input}
+          // Return sends, and the soft keyboard's key says so (Shift+Enter
+          // on a hardware keyboard breaks the line).
+          enterKeyHint="send"
           value={draft}
           rows={1}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
+            if (imeKey(e)) return;
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
