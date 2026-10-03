@@ -440,6 +440,13 @@ async fn road_share() -> Result<khor_gui_core::RoadShare, String> {
     khor_gui_core::road_share(&Node::root_from_env()).await
 }
 
+/// A face is on screen, or stopped being (`khor_gui_core::face_here`):
+/// what paces the resident's pump. Async: it is a question to the resident.
+#[tauri::command]
+async fn face_here(visible: bool) -> Result<(), String> {
+    khor_gui_core::face_here(&Node::root_from_env(), visible).await
+}
+
 /// The 网络 page's 连接 group (`khor_gui_core::connections`).
 #[tauri::command]
 async fn connections() -> Result<khor_gui_core::Connections, String> {
@@ -3715,6 +3722,7 @@ pub fn run() {
             set_relays,
             road_share,
             connections,
+            face_here,
             set_preferred_relay,
             tell,
             pin_session,

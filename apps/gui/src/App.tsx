@@ -4,6 +4,7 @@ import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLi
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
+  faceHere,
   fetchDevices,
   fetchHooks,
   fetchSessions,
@@ -198,6 +199,10 @@ const HOOKS_MS = 60_000;
 /** How long a pull waits for its sync round before it reads the rows
     anyway (`refresh`). */
 const SYNC_WAIT_MS = 6_000;
+/** How often a face on screen says so again: a third of the resident's
+    patience (`ipc::FACE_BEAT` × 3), so one lost beat never drops the
+    pump to its quiet pace. */
+const FACE_BEAT_MS = 10_000;
 
 /** Each landing's stored ticks, one entry per pane (`lib/session-filter`)
     — sessions, machines, workspaces and 额度 each tick their own axes.
@@ -681,6 +686,21 @@ export default function App() {
   // the rows and the machines ask again at once, the way `hidden` makes
   // them (`use-woken`).
   const woken = useWoken();
+
+  // **Telling the resident a face is on screen** (round NET-6): its pump
+  // syncs every 5 s while one is and every 30 s while none is, and a face
+  // arriving gets a round at once — so a person coming back never reads
+  // rows half a minute old. Said on arrival, again every FACE_BEAT_MS
+  // while on screen, and once more on the way out.
+  useEffect(() => {
+    if (hidden) {
+      faceHere(false).catch(() => {});
+      return;
+    }
+    faceHere(true).catch(() => {});
+    const t = window.setInterval(() => faceHere(true).catch(() => {}), FACE_BEAT_MS);
+    return () => window.clearInterval(t);
+  }, [hidden]);
 
   /* ⚠️ **Tombstone: these were one effect until 2026-09-11** — one
      `Promise.all` of three calls on the 2 s beat, under a comment that

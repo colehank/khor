@@ -156,6 +156,16 @@ pub(crate) struct HeldReading {
 /// stop covering the tick the day this changes.
 pub const SYNC_EVERY: Duration = Duration::from_secs(5);
 
+/// **The pump's beat while no face is on screen** (round NET-6, the
+/// owner's ruling through the lead): a round every 30 s instead of every
+/// [`SYNC_EVERY`]. Rounds are what keep other machines' rows fresh for a
+/// person looking, and while nobody looks a quiet round still cost about
+/// 1 KB per machine every 5 s (audit/net-5.md). A face coming on screen
+/// gets a round at once (`ipc::Op::FaceHere`), and a pull to refresh is a
+/// round at once already (`sync_now`), so a returning face never reads
+/// rows thirty seconds old.
+pub const QUIET_PACE: Duration = Duration::from_secs(30);
+
 /// How long every road-having device must have kept failing before the
 /// serve concludes its own ears are broken. Wall clock, not rounds: a
 /// round is not a fixed [`SYNC_EVERY`] — when everyone is unreachable
@@ -845,6 +855,8 @@ impl Node {
             });
         }
         let mut ticker = tokio::time::interval(SYNC_EVERY);
+        // When the pump last ran a round, for the quiet pace.
+        let mut last_round: Option<std::time::Instant> = None;
         // One pump on the way back from a stop, not one per five seconds
         // away (the pause beat above has the reason).
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1147,6 +1159,15 @@ impl Node {
                     // over. The local handoff arm stays open: a paused
                     // machine is still a machine its own faces talk to.
                     if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
+                    // **No face on screen: a round every QUIET_PACE**
+                    // (round NET-6). The tidying below still runs every
+                    // beat; only the visits wait.
+                    let round = node.face_here()
+                        || last_round.is_none_or(|at| at.elapsed() >= QUIET_PACE - SYNC_EVERY / 2);
+                    if round {
+                        last_round = Some(std::time::Instant::now());
+                        node.wires.counts.pump_rounds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
                     let n = node.clone();
                     let e = ep.clone();
                     let deaf = deaf.clone();
@@ -1187,6 +1208,7 @@ impl Node {
                                 );
                             }
                         }
+                        if !round { return }
                         // Every machine at once, each on its own wire and
                         // budget; one still in a round from an earlier
                         // beat is joined rather than visited twice, and
@@ -1306,6 +1328,23 @@ impl Node {
             ipc::Op::Wires => ipc::Reply::Wires {
                 counts: self.wires.counts_now(),
             },
+            ipc::Op::FaceHere { visible } => {
+                let was = self.face_here();
+                *self.face_seen.lock().unwrap_or_else(|p| p.into_inner()) =
+                    visible.then(std::time::Instant::now);
+                // A face arriving gets the round it would otherwise wait up
+                // to QUIET_PACE for.
+                if visible && !was {
+                    let (n, e) = (self.me(), ep.clone());
+                    if let Some(n) = n {
+                        tokio::spawn(async move {
+                            n.wires.counts.pump_rounds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let _ = n.sync_peers(&e, false).await;
+                        });
+                    }
+                }
+                ipc::Reply::Noted
+            }
             ipc::Op::LetGo { machine } => match self.resolve(&machine) {
                 Ok((_, home)) => {
                     self.wires.let_go(&home.hex());
@@ -6842,9 +6881,25 @@ impl Node {
         }
     }
 
-    /// How the resident's wires have fared since it started
-    /// (`khor_core::WireCounts`), for `khor doctor`. Only the resident
-    /// can answer, for the reason [`Self::links`] gives.
+    /// **Whether a face is on screen** (`ipc::Op::FaceHere`): one said so
+    /// within three of its beats.
+    pub(crate) fn face_here(&self) -> bool {
+        self.face_seen
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .is_some_and(|at| at.elapsed() < ipc::FACE_BEAT * 3)
+    }
+
+    /// A face says it is on screen, or stopped being (`ipc::Op::FaceHere`).
+    /// Nothing to tell without a resident.
+    pub async fn face_is_here(&self, visible: bool) -> Result<(), RoadsUnread> {
+        match self.via_serve(ipc::Op::FaceHere { visible }).await {
+            Some(Ok(ipc::Reply::Noted)) => Ok(()),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
+        }
+    }
+
     /// Retires the resident's wires to `machine` (`ipc::Op::LetGo`).
     pub async fn let_go_of(&self, machine: &str) -> Result<khor_core::WireCounts, RoadsUnread> {
         match self
@@ -6859,6 +6914,9 @@ impl Node {
         }
     }
 
+    /// How the resident's wires have fared since it started
+    /// (`khor_core::WireCounts`), for `khor doctor`. Only the resident
+    /// can answer, for the reason [`Self::links`] gives.
     pub async fn wire_counts(&self) -> Result<khor_core::WireCounts, RoadsUnread> {
         match self.via_serve(ipc::Op::Wires).await {
             Some(Ok(ipc::Reply::Wires { counts })) => Ok(counts),

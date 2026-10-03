@@ -264,6 +264,19 @@ pub struct PeerRow {
     pub unanswered: u64,
 }
 
+/// A face is on screen, or stopped being (`Node::face_is_here`): the
+/// resident's pump beats every 5 s while one is and every 30 s while none
+/// is, and gives a face that arrives a round at once (round NET-6). With
+/// no resident there is nobody to tell, and that is not an error.
+pub async fn face_here(root: &Path, visible: bool) -> Result<(), String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    let _ = n.face_is_here(visible).await;
+    Ok(())
+}
+
 /// The connections, read off the resident (`Node::connections`).
 pub async fn connections(root: &Path) -> Result<Connections, String> {
     let at = root.to_path_buf();

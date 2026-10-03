@@ -389,6 +389,9 @@ pub struct Node {
     /// **Gone to the background** (`link::suspending`) until `resume`:
     /// no pump, no visits, no rounds — see the serve loop.
     pub(crate) resting: Arc<std::sync::atomic::AtomicBool>,
+    /// When a face last said it is on screen (`ipc::Op::FaceHere`), or
+    /// `None` since one said it left: what paces the pump (round NET-6).
+    pub(crate) face_seen: Arc<Mutex<Option<std::time::Instant>>>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1047,6 +1050,7 @@ impl Node {
             days_held: Arc::default(),
             watches: Arc::default(),
             resting: Arc::default(),
+            face_seen: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

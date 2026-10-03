@@ -926,6 +926,9 @@ export const fetchRoadShare = () => call<RoadShare>("road_share");
 /** The 网络 page's 连接 group: home relay, relay round trips, and per
     machine its road, round trip, age and last failure (round NET-2). */
 export const fetchConnections = () => call<Connections>("connections");
+/** This face is on screen, or stopped being: what paces the resident's
+    pump (`khor_gui_core::face_here`, round NET-6). */
+export const faceHere = (visible: boolean) => call<null>("face_here", { visible });
 /** 首选中继, or `null` for the nearest. */
 export const setPreferredRelay = (url: string | null) => call<null>("set_preferred_relay", { url });
 /** Whether claude on **this** machine is set up to tell khor what it is
