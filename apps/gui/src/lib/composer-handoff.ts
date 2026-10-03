@@ -21,6 +21,18 @@ export function takeHandOff(): [string, string] | null {
   return w && Date.now() - w.at < WAITS_MS ? [w.name, w.text] : null;
 }
 
+/** The name of the file waiting, if one is, without taking it: what the
+    wizard shows it will attach. */
+export function peekHandOff(): string | null {
+  return waiting && Date.now() - waiting.at < WAITS_MS ? waiting.name : null;
+}
+
+/** The wizard closed without starting a conversation: the file is not
+    for whichever conversation opens next. */
+export function dropHandOff() {
+  waiting = null;
+}
+
 /** Asks the app to open the new-session wizard (`App`'s listener). */
 export const NEW_SESSION_EVENT = "khor:new-session";
 export function askNewSession(machine: string, dir: string) {

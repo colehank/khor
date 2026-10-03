@@ -66,7 +66,7 @@
 // sentences and its 问一次 — stood here. It moved to 导入 whole
 // (`ImportDialog`): continuing a conversation that exists is bringing
 // something in, not starting something, and one act has one place.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   agentAsk,
@@ -96,6 +96,7 @@ import { PopupButton } from "@/components/ui/popup-button";
 import { SEGMENTS_MAX, SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
+import { dropHandOff, peekHandOff } from "@/lib/composer-handoff";
 import { useHereHosts } from "@/lib/here";
 import { useSetting } from "@/settings";
 import { connectionWord } from "@/words";
@@ -172,6 +173,11 @@ export function NewSessionDialog({
   const [taken, setTaken] = useState<[string, number, number] | null>(null);
   const [query, setQuery] = useState("");
   const [attaching, setAttaching] = useState<string | null>(null);
+  /** A terminal block handed over by 发给智能体 (roadmap 2.3): shown under
+      智能体, attached to the conversation this opens, and let go if the
+      dialog closes any other way. */
+  const [handed, setHanded] = useState<string | null>(null);
+  const startedAgent = useRef(false);
 
   // Reopening must not inherit a stale attempt (TellDialog's rule), and
   // the registry is re-read each time: it syncs from other machines, so
@@ -208,6 +214,8 @@ export function NewSessionDialog({
     setBrowsing(false);
     setQuery("");
     setAttaching(null);
+    setHanded(peekHandOff());
+    startedAgent.current = false;
     let live = true;
     // The machine table, read once per opening like the registry: it
     // syncs from other machines, and a paired machine that arrived
@@ -230,6 +238,20 @@ export function NewSessionDialog({
       live = false;
     };
   }, [open, picked, at]);
+
+  // **Named by id or by name**: a terminal's 发给智能体 and 在这里新开会话
+  // name the session's machine as its row does, by device id, and every
+  // choice here is a name — read as one once the table is in, or the
+  // picker shows no machine and the kinds are judged on nothing.
+  useEffect(() => {
+    const d = machines.find((m) => m.id === machine);
+    if (d) setMachine(d.name);
+  }, [machines, machine]);
+  // A handed-over block is for the conversation this dialog starts and
+  // no other: closed any other way, it is let go.
+  useEffect(() => {
+    if (!open && !startedAgent.current) dropHandOff();
+  }, [open]);
 
   const registered = (name: string) => known.some((a) => a.name === name);
   /** Every agent this dialog offers, khor's own two first. */
@@ -326,6 +348,7 @@ export function NewSessionDialog({
     setError(null);
     (kind === "shell" ? openTermOn(target, title, settledPath(dir)) : openSession(settledPath(dir), title, form, agent, chosen))
       .then((id) => {
+        startedAgent.current = kind === "agent";
         onOpenChange(false);
         onOpened(id);
       })
@@ -467,6 +490,14 @@ export function NewSessionDialog({
                   as loose buttons, not as two more questions. The label
                   is `new-session-agent-pick` rather than 智能体 again,
                   which was the original objection and still stands. */}
+              {handed && (
+                <>
+                  <FormLabel mark={{ "data-new-session-label": "handed" }}>{gui.new_session_handed}</FormLabel>
+                  <span data-new-session-handed className="min-w-0 truncate text-body" style={{ fontFamily: "var(--font-term)" }}>
+                    {handed}
+                  </span>
+                </>
+              )}
               <FormLabel mark={{ "data-new-session-label": "agent" }}>{gui.new_session_agent_pick}</FormLabel>
               <div data-new-session-agents className="flex min-w-0 flex-wrap items-center gap-in">
                 {/* Vendor names are proper nouns with no catalog entry

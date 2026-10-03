@@ -1553,6 +1553,7 @@ new-session-agent = "Agent"
 # from "Type" preserves that separation in English.
 new-session-kind = "Kind"
 new-session-agent-pick = "Run with"
+new-session-handed = "Attached"
 new-session-form = "Open as"
 new-session-kind-shell = "Shell"
 new-session-more-agents = "Connect other agents with khor agents add."

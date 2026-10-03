@@ -2803,6 +2803,7 @@ new-session-kind = "会话类型"
 # 「新会话默认打开方式」), so the default and the per-session choice are
 # one idea in one wording.
 new-session-agent-pick = "使用的智能体"
+new-session-handed = "附上"
 new-session-form = "打开方式"
 new-session-kind-shell = "命令行"
 # Said under the 智能体 buttons **only when nothing is registered and
