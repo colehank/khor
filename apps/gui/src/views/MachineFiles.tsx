@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { useNarrow } from "@/hooks/use-narrow";
+import { useReadFirst } from "@/hooks/use-read-first";
 import { FilesPane } from "@/views/FilesPane";
 import { FileView } from "@/views/FileView";
 
@@ -47,6 +48,9 @@ export function MachineFiles({
   // What was typed into a file and not saved, kept when another file is
   // opened — the workspace pane's rule (`FileView`'s `draft`).
   const [drafts, setDrafts] = useState<Map<string, NonNullable<Draft>>>(() => new Map());
+  const [saveAt, setSaveAt] = useState(0);
+  /** Read first under a finger, 「编辑」 / 「保存」 in the file's head (P1). */
+  const readFirst = useReadFirst(file, file !== null && drafts.has(file), () => setSaveAt((n) => n + 1));
   useEffect(() => {
     if (!narrow) return;
     onOpenFile?.(file !== null ? () => setFile(null) : null);
@@ -70,6 +74,12 @@ export function MachineFiles({
       machine={machine}
       path={file}
       git={false}
+      saveAt={saveAt}
+      onSaved={readFirst.saved}
+      // Only where the head that offers 「编辑」 is drawn (the narrow
+      // screen's name row); the wide listing beside the file has none.
+      reading={narrow && readFirst.reading}
+      onCanEdit={readFirst.onCanEdit}
       draft={drafts.get(file)}
       onDraft={(d) =>
         setDrafts((was) => {
@@ -103,10 +113,21 @@ export function MachineFiles({
         {file !== null && (
           // Only the file moves under a back swipe; the head both share
           // stays put.
-          <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
-            {/* The file's name; the way back is the page head's ‹. */}
-            <div data-machine-file-head className="flex flex-none items-center px-page pb-in">
-              <span className="min-w-0 truncate text-body font-title">{file.split("/").pop()}</span>
+          <div ref={readFirst.box} data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
+            {/* The file's name, and under a finger 「编辑」 / 「保存」 at
+                its end (P1); the way back is the page head's ‹. */}
+            <div data-machine-file-head className="flex flex-none items-center gap-row px-page pb-in">
+              <span className="min-w-0 flex-1 truncate text-body font-title">{file.split("/").pop()}</span>
+              {readFirst.item && (
+                <button
+                  type="button"
+                  data-file-edit={readFirst.item.writing ? "save" : "edit"}
+                  onClick={readFirst.item.onPress}
+                  className="-my-2 min-h-touch flex-none rounded-full px-in text-callout font-title text-foreground"
+                >
+                  {readFirst.item.label}
+                </button>
+              )}
             </div>
             {/* The line numbers start on the page's left line (N07): the
                 view's gutter pads 8 of its own. **A flex column**, so the

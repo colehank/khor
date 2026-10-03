@@ -54,6 +54,7 @@ import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { reportDrafts } from "@/lib/drafts";
+import { useReadFirst } from "@/hooks/use-read-first";
 import { useTabHost } from "@/lib/shortcuts";
 import {
   rememberWords,
@@ -298,6 +299,9 @@ export function WorkspacePane({
       with no warning; now walking away and back finds it where it was,
       and the head says how many are waiting. */
   const [drafts, setDrafts] = useState<Map<string, Draft>>(new Map());
+  /** The open file reads first under a finger, 「编辑」 / 「保存」 on its
+      tab (P1, `hooks/use-read-first`). */
+  const readFirst = useReadFirst(file, file !== null && drafts.has(file), () => setSaveAt((n) => n + 1));
   /* ⚠️ **Tombstone: `undos` held what each file looked like before the
      last save made from this face** (工作区批4 收尾 → 2026-09-16). It
      was up here rather than in the view for the drafts' reason — the
@@ -1127,11 +1131,12 @@ export function WorkspacePane({
                 onToggle: () => setFace((f) => (f === "preview" ? "source" : "preview")),
               }
             : undefined,
+        edit: !isDiff && key === file ? readFirst.item : null,
         menu: tabMenu(key),
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tabs, machine, root, drafts, preview, shut, face, file, fileNote],
+    [tabs, machine, root, drafts, preview, shut, face, file, fileNote, readFirst.item?.label, readFirst.item === null],
   );
 
   /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
@@ -1682,6 +1687,7 @@ export function WorkspacePane({
               a count until the third round — the wiring each seat did for
               itself, forgotten in one of them, which is why it lives in
               one place now. */}
+          <div ref={readFirst.box} className="contents">
           <Tabs
             faces={tabFaces}
             active={file === null ? "" : `${machine}:${file}`}
@@ -1721,7 +1727,12 @@ export function WorkspacePane({
               // guessed at: one edit can move a file from M to nothing,
               // and a mark this pane patched by hand would be a second
               // opinion about a fact git already has.
-              onSaved={() => setGitAt((n) => n + 1)}
+              onSaved={() => {
+                setGitAt((n) => n + 1);
+                readFirst.saved();
+              }}
+              reading={readFirst.reading}
+              onCanEdit={readFirst.onCanEdit}
               // The one sentence that outlived the rows under the strip
               // (第十四轮 第 2 条), worn by this file's own tab.
               onNote={setFileNote}
@@ -1761,6 +1772,7 @@ export function WorkspacePane({
             />
           )}
           </Tabs>
+          </div>
         </div>
         )}
         {(narrow ? screen === "sessions" : sessions) && (
