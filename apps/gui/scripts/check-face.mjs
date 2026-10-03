@@ -27784,9 +27784,9 @@ try {
       if (latched !== "true" || ctrlC !== "\x03" || after !== "false") {
         fail(`bar f · Ctrl then c sent ${shown(ctrlC)} (want "\\u0003"), the latch said ${latched} → ${after} (want true → false)`);
       }
-      // The cursor pad (2026-10-03, item 9): nothing inside a 10 dead
-      // zone, then one arrow per 16 of travel from the landing along the
-      // axis that dominated, and nothing for a tap.
+      // The cursor pad (2026-10-03, items 9 and 12; `views/CursorPad`):
+      // nothing inside a 12 dead zone, then one arrow per 24 of travel from
+      // the landing along the axis that dominated, and nothing for a tap.
       const cursor = async (dx, dy) => {
         const k = page.locator('[data-session-bar] [data-term-key="cursor"]');
         if ((await k.count()) === 0) return fail("bar f · there is no cursor pad in the session bar");
@@ -27800,24 +27800,24 @@ try {
       };
       for (const [what, dx, dy, want] of [
         ["a tap", 0, 0, ""],
-        ["8 left (inside the dead zone)", -8, 0, ""],
-        ["50 left", -50, 4, "\x1b[D\x1b[D\x1b[D"],
-        ["40 right", 40, -5, "\x1b[C\x1b[C"],
-        ["35 up", 6, -35, "\x1b[A\x1b[A"],
-        ["20 down", 0, 20, "\x1b[B"],
+        ["10 left (inside the dead zone)", -10, 0, ""],
+        ["20 left (past it, short of a step)", -20, 0, ""],
+        ["75 left", -75, 4, "\x1b[D\x1b[D\x1b[D"],
+        ["50 right", 50, -5, "\x1b[C\x1b[C"],
+        ["30 up", 6, -30, "\x1b[A"],
       ]) {
         const got = await sends(() => cursor(dx, dy));
         if (got !== want) fail(`bar f · the cursor pad dragged ${what} sent ${shown(got)}, want ${shown(want)}`);
       }
       await key("ctrl");
-      const ctrlLeft = await sends(() => cursor(-36, 0));
+      const ctrlLeft = await sends(() => cursor(-52, 0));
       const ctrlAfter = await page.locator('[data-term-key="ctrl"]').first().getAttribute("aria-pressed");
       if (ctrlLeft !== "\x1b[1;5D\x1b[1;5D" || ctrlAfter !== "false") {
-        fail(`bar f · Ctrl then the cursor pad 36 left sent ${shown(ctrlLeft)} (want two ⌃←), the latch said ${ctrlAfter} (want false)`);
+        fail(`bar f · Ctrl then the cursor pad 52 left sent ${shown(ctrlLeft)} (want two ⌃←), the latch said ${ctrlAfter} (want false)`);
       }
       // Application cursor keys (DECCKM), as an editor sets them.
       await program("\x1b[?1h");
-      const appUp = await sends(() => cursor(0, -20));
+      const appUp = await sends(() => cursor(0, -30));
       if (appUp !== "\x1bOA") fail(`bar f · ↑ under application cursor keys sent ${shown(appUp)}, want "\\u001bOA"`);
       await program("\x1b[?1l");
       // Paste: the clipboard, typed — and bracketed once the program asked.

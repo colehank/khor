@@ -11,7 +11,7 @@
 //
 // **Three parts.** The caps a person chose (`lib/term-keys`, default the
 // row of 2026-10-02) scroll sideways; after them, pinned, the cursor pad
-// (`CursorKey`) and 「…」, a sheet with every key and the row's editor
+// (`views/CursorPad`) and 「…」, a sheet with every key and the row's editor
 // (`KeySheet`, `KeyRowEditor`).
 //
 // **Real bytes, the terminal's own road.** A key here is handed to xterm
@@ -37,14 +37,15 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
-import { IconArrow, IconGrip, IconKeyboard, IconMore, IconMove } from "@/components/icons";
+import { IconGrip, IconKeyboard, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
-import { GROUPS, KEYS, KEY_BY_NAME, cursorKey, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
+import { GROUPS, KEYS, KEY_BY_NAME, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { cn } from "@/lib/utils";
+import { CursorKey } from "@/views/CursorPad";
 
 const NO_MODS: Mods = { ctrl: false, alt: false };
 
@@ -144,175 +145,6 @@ export function TermKeys({
       <CursorKey term={term} mods={mods} onMods={onMods} />
       <KeySheet term={term} mods={mods} onMods={onMods} />
     </div>
-  );
-}
-
-type Way = "left" | "right" | "up" | "down";
-const LETTER: Record<Way, "A" | "B" | "C" | "D"> = { up: "A", down: "B", right: "C", left: "D" };
-
-/** Travel before anything happens: a tap, or a finger settling. */
-export const PAD_DEAD = 10;
-/** Travel per arrow, on either axis. */
-export const PAD_STEP = 16;
-/** A deflected finger at rest this long starts the repeat. */
-export const PAD_HOLD_MS = 300;
-/** Arrows per second while it repeats. */
-export const PAD_RATE = 12;
-/** Movement below this is a resting finger's tremor, not a move. */
-const PAD_STILL = 3;
-
-/** One gesture on the pad, from the finger's landing. */
-type Gesture = {
-  pointer: number;
-  /** Where the finger landed: deflection is measured from here. */
-  x0: number;
-  y0: number;
-  /** Where the step count starts — the landing, or the point the finger
-      rested at before it moved on from a repeat. */
-  base: number;
-  axis: "x" | "y" | null;
-  /** Steps sent since `base`, signed: coming back takes them back. */
-  sent: number;
-  /** Where the finger last was, for the rest timer. */
-  still: number;
-  rest: number;
-  repeat: number;
-  /** The latches as they were at the landing: the whole gesture uses them. */
-  mods: Mods;
-  freed: boolean;
-};
-
-/**
- * **The cursor pad: drag for steps, hold for repeat** (2026-10-03, the
- * owner on item 7's one-per-cell trackpad: 「触控板有点太灵敏了，而且位置有点
- * 不好按」). Pinned second from the right, so there is room to drag both
- * ways. A finger lands on it and the whole screen is its pad until it
- * lifts (pointer capture).
- *
- * - Nothing until the finger has travelled `PAD_DEAD`; a tap sends
- *   nothing (it is the most reachable spot on the row, and → would accept
- *   a shell's suggestion).
- * - Then the axis that dominates is the gesture's until the finger lifts.
- * - Along it, one arrow per `PAD_STEP` of travel from the landing, both
- *   axes the same; coming back sends the opposite arrow.
- * - A finger deflected past the dead zone and still for `PAD_HOLD_MS`
- *   repeats the arrow of its deflection at `PAD_RATE` a second until it
- *   moves (steps then count from where it rested) or lifts.
- *
- * Arrows go through `cursorKey`, so an editor's application mode and a
- * latched Ctrl or Alt (word jumps) hold; the latches let go at the first
- * arrow, as on every key. While a gesture is locked the cap shows that
- * way's arrow in the held grey; repeating, the arrow wears the accent.
- */
-function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
-  const g = useRef<Gesture | null>(null);
-  const [way, setWay] = useState<Way | null>(null);
-  const [repeating, setRepeating] = useState(false);
-  const stopTimers = (s: Gesture) => {
-    window.clearTimeout(s.rest);
-    window.clearInterval(s.repeat);
-    s.repeat = 0;
-  };
-  const end = () => {
-    if (g.current) stopTimers(g.current);
-    g.current = null;
-    setWay(null);
-    setRepeating(false);
-  };
-  useEffect(() => end, []);
-  const send = (s: Gesture, w: Way) => {
-    const t = term.current;
-    if (!t) return;
-    setWay(w);
-    if (!s.freed && (s.mods.ctrl || s.mods.alt)) {
-      s.freed = true;
-      onMods(NO_MODS);
-    }
-    t.input(cursorKey(t, LETTER[w], s.mods), true);
-  };
-  const wayOf = (axis: "x" | "y", sign: number): Way =>
-    axis === "x" ? (sign > 0 ? "right" : "left") : sign > 0 ? "down" : "up";
-  const down = (e: PointerEvent<HTMLButtonElement>) => {
-    if (!term.current) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    g.current = {
-      pointer: e.pointerId,
-      x0: e.clientX,
-      y0: e.clientY,
-      base: 0,
-      axis: null,
-      sent: 0,
-      still: 0,
-      rest: 0,
-      repeat: 0,
-      mods,
-      freed: false,
-    };
-  };
-  const move = (e: PointerEvent<HTMLButtonElement>) => {
-    const s = g.current;
-    if (!s || e.pointerId !== s.pointer) return;
-    const dx = e.clientX - s.x0;
-    const dy = e.clientY - s.y0;
-    if (!s.axis) {
-      if (Math.hypot(dx, dy) < PAD_DEAD) return;
-      s.axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
-      s.still = s.axis === "x" ? dx : dy;
-      setWay(wayOf(s.axis, s.still));
-    }
-    const at = s.axis === "x" ? dx : dy;
-    if (Math.abs(at - s.still) < PAD_STILL && (s.rest || s.repeat)) return;
-    // It moved: a repeat ends and the steps count from where it rested.
-    if (s.repeat) {
-      stopTimers(s);
-      setRepeating(false);
-      s.base = s.still;
-      s.sent = 0;
-    }
-    s.still = at;
-    const want = Math.trunc((at - s.base) / PAD_STEP);
-    while (s.sent !== want) {
-      const forward = want > s.sent;
-      s.sent += forward ? 1 : -1;
-      send(s, wayOf(s.axis, forward ? 1 : -1));
-    }
-    window.clearTimeout(s.rest);
-    s.rest = window.setTimeout(() => {
-      s.rest = 0;
-      if (g.current !== s || !s.axis || Math.abs(s.still) < PAD_DEAD) return;
-      const w = wayOf(s.axis, Math.sign(s.still));
-      setRepeating(true);
-      send(s, w);
-      s.repeat = window.setInterval(() => send(s, w), 1000 / PAD_RATE);
-    }, PAD_HOLD_MS);
-  };
-  return (
-    <button
-      type="button"
-      data-term-key="cursor"
-      data-way={way ?? undefined}
-      data-repeating={repeating || undefined}
-      aria-label={gui.key_cursor}
-      onMouseDown={(e) => e.preventDefault()}
-      onPointerDown={down}
-      onPointerMove={move}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onLostPointerCapture={end}
-      // A pad, not a cap: wider, the same fill. The finger owns it: no
-      // page scroll, no sideways scroll of the row under it.
-      className="flex h-key-cap w-key-pad-w flex-none touch-none items-stretch outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-ring"
-    >
-      <span
-        className={cn(
-          "flex flex-1 items-center justify-center rounded-lg",
-          way ? "bg-fill-strong" : "bg-fill",
-          repeating ? "text-[var(--rail-on-ink)]" : "text-foreground",
-        )}
-      >
-        {way ? <IconArrow to={way} className="size-5" /> : <IconMove className="size-5" />}
-      </span>
-    </button>
   );
 }
 
