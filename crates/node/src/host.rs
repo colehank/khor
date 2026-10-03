@@ -70,8 +70,26 @@ pub enum ClientOp {
 
 /// Above any sane keystroke burst, far below anything hostile-sized.
 const MAX_OP: usize = 1 << 20;
-/// Replay budget: enough to hold the last full repaint of anything.
-const RING: usize = 256 * 1024;
+/// **Replay budget: what a re-attach gets back** (item 17). 1 MiB holds the
+/// last full repaint of anything and, measured, about 13 000–26 000 lines
+/// of ordinary output (42–80 bytes a line: source 42, `git log` 56–57,
+/// `ls -la` in colour 80), so a face keeping 10 000 lines of history
+/// (`lib/term-history`) gets them back after a re-attach. It was 256 KiB
+/// (3 300–6 500 lines).
+///
+/// What follows from it, kept in step: each client may fall
+/// [`CLIENT_BEHIND`] (2 × RING) behind before it is let go; the app's feed
+/// per attachment is `khor_gui_core::term::FEED_CAP` (2 × RING), which is
+/// also where a face that falls behind is handed the screen instead (T-12);
+/// a live session holds one ring, so 1 MiB a session in its host process.
+/// The replay crosses a relay as the first thing a far face reads: at the
+/// net lane's measured worst road (300 ms, 2 % loss, 0.33 Mbit/s) 1 MiB
+/// takes about 25 s against 6 s for 256 KiB, on the measured ordinary
+/// relay (1.4 MB/s) 0.7 s. Nothing waits for it to finish — the face draws
+/// what has come and the rest streams on — but on a road that bad the
+/// history fills in for that long; replaying the tail by lines (the last
+/// N lines the face keeps) is the way to cut it if that matters.
+pub const RING: usize = 1 << 20;
 
 pub fn host_file_path(dir: &Path) -> PathBuf {
     dir.join("host.json")
@@ -1144,7 +1162,7 @@ fn host_serving(
                     // the ring's lock so nothing the reader broadcasts is
                     // missed or doubled — and queued, not written, so a
                     // slow far viewer attaching does not stall the program
-                    // while 256 KiB cross a relay.
+                    // while the ring crosses a relay.
                     let ring = shared.ring.lock().unwrap();
                     let Ok(readable) = conn.try_clone() else {
                         continue;

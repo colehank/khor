@@ -49,7 +49,8 @@ use ts_rs::TS;
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
 
-/// How many raw bytes the feed keeps, per attachment.
+/// How many raw bytes the feed keeps, per attachment: twice the host's
+/// ring (`khor_node::host::RING`, item 17), as it was at 512 KiB to 256.
 ///
 /// Enough for a full-screen repaint many times over and for the ring
 /// the host pours on attach; past it the head is trimmed, and a client
@@ -57,7 +58,7 @@ const B64: base64::engine::general_purpose::GeneralPurpose =
 /// ([`TermChunk::reset`]) rather than handed a stream with a hole —
 /// these bytes are a grammar, and a splice mid-escape is garbage on
 /// screen.
-pub const FEED_CAP: usize = 512 * 1024;
+pub const FEED_CAP: usize = 2 * khor_node::host::RING;
 
 /// The bytes the feed holds, and the modes the bytes it trimmed had set
 /// (`khor_node::modes`): a replay of a trimmed feed opens with them, or
@@ -928,7 +929,8 @@ mod tests {
         let parser = Mutex::new(vt100::Parser::new(24, 80, 0));
         let feed = Mutex::new(Feed::default());
         let fed = AtomicU64::new(0);
-        let chunk = b"line of output\r\n".repeat(200 * 1024 / 16);
+        // Three of these are 1.2 caps: the feed trims past its head.
+        let chunk = b"line of output\r\n".repeat(FEED_CAP * 2 / 5 / 16);
         paint(&acs, &parser, &feed, &fed, &chunk);
         paint(&acs, &parser, &feed, &fed, &chunk);
         paint(&acs, &parser, &feed, &fed, b"\x1b[?1hthe last line");
@@ -999,7 +1001,8 @@ mod tests {
             .chain(b"\n")
             .copied()
             .collect::<Vec<u8>>();
-        for _ in 0..600 {
+        // A little past the cap, in lines of 1 KiB.
+        for _ in 0..FEED_CAP / 1024 + 88 {
             push_feed(&feed, &fed, &line);
         }
         let (all, end) = take_all(&feed, &fed);
