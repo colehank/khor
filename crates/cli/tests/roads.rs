@@ -206,8 +206,20 @@ async fn the_dialling_resident_reports_first_reply_time_and_where_its_dials_sett
     // The reading itself, for whoever runs this with --nocapture.
     eprintln!("beta -> alpha: {tally:?}; pairing took {pairing_took:?}; doctor: {said}");
     assert_eq!(row["state"], "ok", "{row}");
+    // The resident's pump may settle another dial between the two reads
+    // (it syncs the machine it just paired with), so the count the doctor
+    // printed is one of those seen before and after it.
+    let after = b
+        .road_tallies()
+        .await
+        .expect("beta's resident answers")
+        .iter()
+        .find(|(id, _)| *id == alpha_id)
+        .map(|(_, t)| t.direct)
+        .unwrap_or(tally.direct);
     assert!(
-        said.contains("alpha") && said.contains(&format!("{}/", tally.direct)),
+        said.contains("alpha")
+            && (tally.direct..=after.max(tally.direct)).any(|n| said.contains(&format!("{n}/"))),
         "the doctor names alpha and its direct count: {said}"
     );
 }

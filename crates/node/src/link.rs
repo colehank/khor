@@ -18,6 +18,96 @@ use khor_sync::{chat, wire};
 use crate::proto::{self, MAX_FRAME, Request, Response};
 use crate::{Node, ipc, wires};
 
+/// **Every synced document by its wire name**, loaded, bound to
+/// `$loaded` (a `&mut khor_sync::store::Loaded<_>`) for `$body` — one
+/// list for the arms that answer a sync, compare versions and run a
+/// round, so a document added to one is added to all. An unknown name is
+/// `msg::unknown_doc`. In a function returning `Result<_, String>`.
+macro_rules! with_doc {
+    ($node:expr, $name:expr, |$loaded:ident| $body:expr) => {{
+        let name: &str = $name;
+        match name {
+            "devices" => { let mut l = $node.devices_loaded()?; let $loaded = &mut l; $body }
+            "seen" => { let mut l = $node.seen_loaded()?; let $loaded = &mut l; $body }
+            "pins" => { let mut l = $node.pins_loaded()?; let $loaded = &mut l; $body }
+            "roster" => { let mut l = $node.roster_loaded()?; let $loaded = &mut l; $body }
+            "dirpins" => { let mut l = $node.dirpins_loaded()?; let $loaded = &mut l; $body }
+            "workspaces" => { let mut l = $node.workspaces_loaded()?; let $loaded = &mut l; $body }
+            "webpins" => { let mut l = $node.webpins_loaded()?; let $loaded = &mut l; $body }
+            "recents" => { let mut l = $node.recents_loaded()?; let $loaded = &mut l; $body }
+            "agents" => { let mut l = $node.agents_loaded()?; let $loaded = &mut l; $body }
+            "accounts" => { let mut l = $node.accounts_loaded()?; let $loaded = &mut l; $body }
+            "titles" => { let mut l = $node.titles_loaded()?; let $loaded = &mut l; $body }
+            _ => match name.strip_prefix("chat/") {
+                Some(ch) => {
+                    let dir = chat::channel_dir($node.root(), ch)
+                        .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
+                    let mut l = chat::open_channel(&dir, $node.writer_peer())?;
+                    let $loaded = &mut l;
+                    $body
+                }
+                None => Err(msg::unknown_doc(name)),
+            },
+        }
+    }};
+}
+
+/// The documents a round syncs, in the order it syncs them; chat
+/// channels follow (`Node::known_channels`). The first three and every
+/// channel must sync for the round to count; the rest are best effort —
+/// a peer that predates a table refuses it by name, and that must not
+/// cost the rounds behind it.
+const ROUND_DOCS: [&str; 11] = [
+    "devices", "seen", "pins", "roster", "dirpins", "workspaces", "webpins", "recents",
+    "agents", "accounts", "titles",
+];
+
+/// Whether a failed sync of this document fails the round
+/// (`ROUND_DOCS`).
+fn doc_must_sync(name: &str) -> bool {
+    matches!(name, "devices" | "seen" | "pins") || name.starts_with("chat/")
+}
+
+/// A document's version, as a [`Request::Versions`] digest: blake3 of
+/// its canonical spelling, 16 bytes.
+fn version_digest<D: Doc>(doc: &D) -> Vec<u8> {
+    blake3::hash(&wire::version_canonical(doc)).as_bytes()[..16].to_vec()
+}
+
+/// A reading's answer frame, as a [`Request::Versions`] digest.
+fn reading_digest(frame: &[u8]) -> Vec<u8> {
+    blake3::hash(frame).as_bytes()[..16].to_vec()
+}
+
+/// The request a reading's kind stands for in [`Request::Versions`].
+fn reading_request(kind: &str) -> Option<Request> {
+    Some(match kind {
+        "sessions" => Request::Sessions,
+        "vitals" => Request::Vitals,
+        "watched" => Request::Watched,
+        "days" => Request::Days,
+        _ if kind.starts_with("days@") => Request::Days,
+        "quotas" => Request::Quotas,
+        "usage" => Request::Usage,
+        _ => Request::SatVitals {
+            sat: kind.strip_prefix("sat/")?.to_owned(),
+        },
+    })
+}
+
+/// What a [`Response::Versions`] carries: the documents whose versions
+/// differ, with the far version, and the readings that changed.
+type VersionsAnswer = (Vec<(String, String)>, Vec<(String, serde_bytes::ByteBuf)>);
+
+/// A reading last got from a machine: its frame's digest, and the answer
+/// itself, written into the cache again on a round that says it has not
+/// changed — so its age is the last round's, as before.
+#[derive(Clone)]
+pub(crate) struct HeldReading {
+    digest: Vec<u8>,
+    answer: Response,
+}
+
 /// How often the serve loop syncs with everyone — and, on the same beat,
 /// reaps borrows whose rows are gone.
 ///
@@ -741,8 +831,37 @@ impl Node {
                     let n = node.clone();
                     let e = ep.clone();
                     tokio::spawn(async move {
-                        if let Ok(conn) = incoming.await {
-                            n.wires.serving(&conn);
+                        let Ok(accepting) = incoming.accept() else { return };
+                        // **Early data is taken** (round NET-3): a machine
+                        // redialling with a ticket from an earlier wire
+                        // sends its first request inside the handshake,
+                        // and a reading is answered at once — one round
+                        // trip instead of two. What may not ride early is
+                        // held until the handshake completes
+                        // (`Request::rides_early`, in `handle`).
+                        let early = accepting.into_0rtt();
+                        let (done_tx, done) = tokio::sync::watch::channel(None::<bool>);
+                        // **Completed means open.** iroh's
+                        // `handshake_completed` on an incoming early
+                        // connection also resolves `Ok` when the connection
+                        // is lost before the handshake ever finished (it
+                        // drops noq's accepted flag) — measured: a client
+                        // that never finished resolved it the moment the
+                        // connection closed. So a connection already closed
+                        // when it resolves did not complete, and what waits
+                        // for the handshake is dropped.
+                        let completed = {
+                            let early = early.clone();
+                            async move {
+                                early
+                                    .handshake_completed()
+                                    .await
+                                    .ok()
+                                    .filter(|conn| conn.close_reason().is_none())
+                            }
+                        };
+                        let once_done = |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
+                            n.wires.serving(conn);
                             // **A machine that dials in is back**: one this
                             // node holds no wire to — a phone returning to
                             // the front, a laptop waking — is visited now,
@@ -751,15 +870,38 @@ impl Node {
                             if conn.alpn() == endpoint::ALPN
                                 && n.wires.live(&remote, wires::Proto::Main).is_none()
                             {
-                                let (n, e) = (n.clone(), e.clone());
                                 tokio::spawn(async move { n.visit_now(&e, &remote).await });
                             }
+                        };
+                        let early_from = early
+                            .remote_id()
+                            .ok()
+                            .filter(|_| early.alpn().as_deref() == Some(endpoint::ALPN));
+                        let Some(remote) = early_from else {
+                            // A tunnel, or a machine not known until the
+                            // handshake says who it is: after it, as before.
+                            let Some(conn) = completed.await else { return };
+                            once_done(n.clone(), e.clone(), &conn);
+                            let remote = conn.remote_id().to_string();
+                            let _ = done_tx.send(Some(true));
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
                                 let _ = n.serve_tunnel(conn).await;
                             } else {
-                                let _ = n.handle(conn, e).await;
+                                let _ = n.handle(conn, remote, e, done).await;
                             }
+                            return;
+                        };
+                        {
+                            let (n, e) = (n.clone(), e.clone());
+                            tokio::spawn(async move {
+                                let conn = completed.await;
+                                let _ = done_tx.send(Some(conn.is_some()));
+                                if let Some(conn) = conn {
+                                    once_done(n, e, &conn);
+                                }
+                            });
                         }
+                        let _ = n.handle(early, remote.to_string(), e, done).await;
                     });
                 }
                 accepted = handoffs.accept() => {
@@ -1094,6 +1236,15 @@ impl Node {
             },
             ipc::Op::Wires => ipc::Reply::Wires {
                 counts: self.wires.counts_now(),
+            },
+            ipc::Op::LetGo { machine } => match self.resolve(&machine) {
+                Ok((_, home)) => {
+                    self.wires.let_go(&home.hex());
+                    ipc::Reply::Wires {
+                        counts: self.wires.counts_now(),
+                    }
+                }
+                Err(why) => ipc::Reply::Refused { why },
             },
             ipc::Op::Connections => ipc::Reply::Connections {
                 view: self.connections_now(ep).await,
@@ -1713,6 +1864,11 @@ impl Node {
         d: &DeviceInfo,
         req: &Request,
     ) -> Result<Response, String> {
+        match self.ask_early(ep, d, req).await {
+            Early::Answered(resp) => return Ok(resp),
+            Early::Failed(e) => return Err(unreached_words(&d.name, e)),
+            Early::NotTaken => {}
+        }
         let line = self
             .line_to(ep, d, wires::Proto::Main)
             .await
@@ -1730,6 +1886,120 @@ impl Node {
                 self.exchange_on(&line, req).await.map_err(Miss::words)
             }
             other => other.map_err(Miss::words),
+        }
+    }
+
+    /// **A redial that carries its first question** (round NET-3): with
+    /// no wire held to `d` and a request that may ride early data
+    /// (`Request::rides_early`), the dial resumes the TLS session of an
+    /// earlier wire and sends the request inside the handshake — the
+    /// answer comes back in one round trip instead of the handshake's
+    /// plus the request's. The wire is then held as any other.
+    ///
+    /// `NotTaken` when there is a wire, the request may not ride early,
+    /// or there is no session to resume (a first dial to that machine
+    /// since this resident started, or the far side rejected the early
+    /// data); the wire this made, if any, is held, and the ask goes on
+    /// as usual over it.
+    async fn ask_early(&self, ep: &iroh::Endpoint, d: &DeviceInfo, req: &Request) -> Early {
+        if !req.rides_early()
+            || crate::pause::peer_on(self.root(), &d.id)
+            || self.wires.live(&d.id, wires::Proto::Main).is_some()
+        {
+            return Early::NotTaken;
+        }
+        let lock = self.wires.dial_lock(&d.id, wires::Proto::Main);
+        let _one = lock.lock().await;
+        if self.wires.live(&d.id, wires::Proto::Main).is_some() {
+            return Early::NotTaken;
+        }
+        let Ok(addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
+            return Early::NotTaken;
+        };
+        let Ok(frame) = proto::encode(req) else {
+            return Early::NotTaken;
+        };
+        let within = DIAL_TIMEOUT
+            .max(self.wires.last_rtt(&d.id).saturating_mul(12))
+            .min(Duration::from_secs(60));
+        let started = std::time::Instant::now();
+        let attempt = async {
+            let connecting = ep
+                .connect_with_opts(addr, ALPN, Default::default())
+                .await
+                .map_err(|e| DialFailure::Refused(e.to_string()))?;
+            let early = match connecting.into_0rtt() {
+                Ok(early) => early,
+                // Nothing to resume: an ordinary handshake, then the ask
+                // as usual on the wire it made.
+                Err(connecting) => {
+                    let conn = connecting
+                        .await
+                        .map_err(|e| DialFailure::Refused(e.to_string()))?;
+                    return Ok((conn, None));
+                }
+            };
+            // The question goes out with the handshake; its answer is
+            // waited for apart, so the wire is handed to every other ask
+            // the moment the handshake is done, not when this answer is.
+            let asked = {
+                let (early, frame, budget) = (early.clone(), frame.clone(), req.budget());
+                tokio::spawn(async move {
+                    let (mut send, mut recv) = early.open_bi().await.ok()?;
+                    send.write_all(&frame).await.ok()?;
+                    send.finish().ok()?;
+                    let bytes = tokio::time::timeout(budget, recv.read_to_end(MAX_FRAME))
+                        .await
+                        .ok()?
+                        .ok()?;
+                    proto::decode::<Response>(&bytes).ok()
+                })
+            };
+            match early
+                .handshake_completed()
+                .await
+                .map_err(|e| DialFailure::Refused(e.to_string()))?
+            {
+                iroh::endpoint::ZeroRttStatus::Accepted(conn) => Ok((conn, Some(asked))),
+                // Rejected: the far side kept nothing of it; asked again
+                // on the wire, which is up.
+                iroh::endpoint::ZeroRttStatus::Rejected(conn) => {
+                    asked.abort();
+                    Ok((conn, None))
+                }
+            }
+        };
+        match tokio::time::timeout(within, attempt).await {
+            Ok(Ok((conn, asked))) => {
+                crate::roads::replied(&self.roads, &d.id, started.elapsed());
+                crate::roads::watch(&self.roads, &d.id, &conn);
+                self.wires.adopt(&d.id, wires::Proto::Main, conn.clone());
+                drop(_one);
+                match asked {
+                    Some(asked) => match asked.await.ok().flatten() {
+                        Some(resp) => {
+                            self.wires.heard(&d.id, wires::Proto::Main, &conn);
+                            Early::Answered(resp)
+                        }
+                        // No answer to the early question: asked again on
+                        // the wire, which is up — a reading, so twice is
+                        // the same as once.
+                        None => Early::NotTaken,
+                    },
+                    None => Early::NotTaken,
+                }
+            }
+            Ok(Err(e)) => {
+                self.wires.failed(&d.id, wires::Proto::Main, msg::cant_reach_named(&d.name, match &e {
+                    DialFailure::Refused(why) => why,
+                    DialFailure::TimedOut => "",
+                }));
+                Early::Failed(e)
+            }
+            Err(_) => {
+                self.wires.failed(&d.id, wires::Proto::Main, msg::machine_unreachable_timeout(&d.name));
+                Early::Failed(DialFailure::TimedOut)
+            }
         }
     }
 
@@ -1801,12 +2071,19 @@ impl Node {
     /// 2–13 ms). Nothing here relies on order: a sync round is sequential
     /// on the asking side, each request carries all it needs, and the
     /// gate (`admit`) and pause are asked per request.
-    async fn handle(
+    ///
+    /// `done` says whether the handshake has completed (`Some(true)`), or
+    /// failed: a request that arrived as early data and may not ride it
+    /// (`Request::rides_early`) waits for `Some(true)` and is dropped on
+    /// anything else — a replay of captured early data never completes a
+    /// handshake, so it never reaches anything that changes something.
+    async fn handle<T: iroh::endpoint::ConnectionState>(
         self: std::sync::Arc<Self>,
-        conn: iroh::endpoint::Connection,
+        conn: iroh::endpoint::Connection<T>,
+        remote: String,
         ep: std::sync::Arc<iroh::Endpoint>,
+        done: tokio::sync::watch::Receiver<Option<bool>>,
     ) -> Result<(), String> {
-        let remote = conn.remote_id().to_string();
         let seats = std::sync::Arc::new(tokio::sync::Semaphore::new(STREAMS_AT_ONCE));
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             // 按机器暂停 (SHELL.md 第五轮 第 3 条): a machine this one has
@@ -1821,14 +2098,27 @@ impl Node {
             let Ok(seat) = seats.clone().acquire_owned().await else {
                 return Ok(());
             };
-            let (node, ep, remote) = (self.clone(), ep.clone(), remote.clone());
+            let (node, ep, remote, mut done) = (self.clone(), ep.clone(), remote.clone(), done.clone());
             tokio::spawn(async move {
                 let _seat = seat;
+                let early = recv.is_0rtt();
                 let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
                     return;
                 };
                 let resp = match proto::decode::<Request>(&bytes) {
-                    Ok(req) => node.dispatch(&remote, req, &ep).await,
+                    Ok(req) => {
+                        if early && !req.rides_early() {
+                            while done.borrow().is_none() {
+                                if done.changed().await.is_err() {
+                                    return;
+                                }
+                            }
+                            if *done.borrow() != Some(true) {
+                                return;
+                            }
+                        }
+                        node.dispatch(&remote, req, &ep).await
+                    }
                     Err(e) => Response::Refused { why: e },
                 };
                 let Ok(frame) = proto::encode(&resp) else {
@@ -1918,47 +2208,12 @@ impl Node {
                 })
             }
             Request::Sync { doc, have, changes } => {
-                let reply = if doc == "devices" {
-                    let mut loaded = self.devices_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "seen" {
-                    let mut loaded = self.seen_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "pins" {
-                    let mut loaded = self.pins_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "roster" {
-                    let mut loaded = self.roster_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "dirpins" {
-                    let mut loaded = self.dirpins_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "workspaces" {
-                    let mut loaded = self.workspaces_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "webpins" {
-                    let mut loaded = self.webpins_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "recents" {
-                    let mut loaded = self.recents_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "agents" {
-                    let mut loaded = self.agents_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "accounts" {
-                    let mut loaded = self.accounts_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if doc == "titles" {
-                    let mut loaded = self.titles_loaded()?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else if let Some(ch) = doc.strip_prefix("chat/") {
-                    let dir = chat::channel_dir(self.root(), ch)
-                        .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
-                    let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
-                    wire::answer(&mut loaded.store, &loaded.doc, &have, &changes)?
-                } else {
-                    return Err(msg::unknown_doc(doc));
-                };
+                let reply = with_doc!(self, doc.as_str(), |loaded| wire::answer(
+                    &mut loaded.store,
+                    &loaded.doc,
+                    &have,
+                    &changes
+                ))?;
                 Ok(Response::Synced {
                     version: reply.version,
                     changes: reply.changes,
@@ -1967,6 +2222,9 @@ impl Node {
             }
             Request::Fetch { digest, offset } => {
                 self.serve_slice(&digest, offset)
+            }
+            Request::Versions { docs, readings } => {
+                self.answer_versions(remote, docs, readings, ep).await
             }
             Request::Sessions => {
                 Ok(Response::SessionRows {
@@ -6096,6 +6354,20 @@ impl Node {
     /// How the resident's wires have fared since it started
     /// (`khor_core::WireCounts`), for `khor doctor`. Only the resident
     /// can answer, for the reason [`Self::links`] gives.
+    /// Retires the resident's wires to `machine` (`ipc::Op::LetGo`).
+    pub async fn let_go_of(&self, machine: &str) -> Result<khor_core::WireCounts, RoadsUnread> {
+        match self
+            .via_serve(ipc::Op::LetGo {
+                machine: machine.to_owned(),
+            })
+            .await
+        {
+            Some(Ok(ipc::Reply::Wires { counts })) => Ok(counts),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
+        }
+    }
+
     pub async fn wire_counts(&self) -> Result<khor_core::WireCounts, RoadsUnread> {
         match self.via_serve(ipc::Op::Wires).await {
             Some(Ok(ipc::Reply::Wires { counts })) => Ok(counts),
@@ -6260,22 +6532,310 @@ impl Node {
                 DialFailure::TimedOut => msg::dial_timed_out().to_string(),
                 DialFailure::Refused(why) => msg::cant_reach_plain(why),
             })?;
+        let moved = match self.sync_what_changed(&line, d).await? {
+            Some(moved) => moved,
+            None => self.sync_everything(&line, d).await?,
+        };
+        Ok(if moved == 0 {
+            msg::nothing_to_move().into()
+        } else {
+            msg::moved_bytes(moved)
+        })
+    }
 
+    /// **A round by what changed** (round NET-3). One exchange first,
+    /// [`Request::Versions`]: a digest of every document's version and
+    /// of every reading this node holds of that machine. Then only the
+    /// documents whose versions differ, one exchange each (the far
+    /// version is known, so the first exchange already pushes), and the
+    /// readings that changed came back in the answer itself. A quiet
+    /// round is the one exchange.
+    ///
+    /// The shape is the one CouchDB (`_revs_diff`), Syncthing (index id
+    /// and max sequence before an index update) and Automerge (heads
+    /// before changes) share: say where you are, then send only the
+    /// difference. Unlike theirs, nothing here is remembered between
+    /// rounds — a version is a digest of the document itself, so a
+    /// restart, a rejoin or a second asker cannot leave a stale marker
+    /// that under-sends.
+    ///
+    /// `None` when that machine's khor predates the question: the round
+    /// is then [`Node::sync_everything`], as before.
+    async fn sync_what_changed(&self, line: &Line, d: &DeviceInfo) -> Result<Option<usize>, String> {
+        let mut names: Vec<String> = ROUND_DOCS.iter().map(|n| (*n).to_owned()).collect();
+        names.extend(self.known_channels()?.into_iter().map(|ch| format!("chat/{ch}")));
+        let mut docs = Vec::with_capacity(names.len());
+        for name in &names {
+            let digest = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(version_digest(
+                &loaded.doc
+            )))?;
+            docs.push((name.clone(), serde_bytes::ByteBuf::from(digest)));
+        }
+        let mut kinds: Vec<String> = ["sessions", "vitals", "watched", "days", "quotas", "usage"]
+            .iter()
+            .map(|k| (*k).to_owned())
+            .collect();
+        if let Ok(devs) = self.devices() {
+            kinds.extend(
+                devs.iter()
+                    .filter(|s| s.sponsor.as_deref() == Some(d.id.as_str()))
+                    .map(|s| format!("sat/{}", s.id)),
+            );
+        }
+        let Some((differ, changed)) = self.ask_versions(line, d, &kinds, docs).await? else {
+            return Ok(None);
+        };
+        self.take_readings(line, d, &kinds, changed).await;
+
+        let mut moved = 0usize;
+        for (name, theirs) in differ {
+            let synced = with_doc!(self, name.as_str(), |loaded| self
+                .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
+                .await);
+            match synced {
+                Ok(n) => moved += n,
+                Err(why) if doc_must_sync(&name) => return Err(why),
+                Err(_) => {}
+            }
+        }
+        // **Readings that the documents just moved can change are asked
+        // again.** Over there a row's word is derived from documents this
+        // round carries — a watermark this machine just pushed is what
+        // turns 完成 into 空闲 — and the readings above were taken before
+        // it arrived. Only after a round that moved something: a quiet
+        // round stays the one exchange.
+        if moved > 0
+            && let Some((_, changed)) = self.ask_versions(line, d, &kinds, Vec::new()).await?
+        {
+            self.take_readings(line, d, &kinds, changed).await;
+        }
+        Ok(Some(moved))
+    }
+
+    /// One [`Request::Versions`]: these documents' digests and the
+    /// digests of the readings held of `d`. `None` when its khor predates
+    /// the question.
+    async fn ask_versions(
+        &self,
+        line: &Line,
+        d: &DeviceInfo,
+        kinds: &[String],
+        docs: Vec<(String, serde_bytes::ByteBuf)>,
+    ) -> Result<Option<VersionsAnswer>, String> {
+        let readings = {
+            let all = self.readings_held.lock().unwrap_or_else(|p| p.into_inner());
+            kinds
+                .iter()
+                .map(|k| {
+                    let held = all.get(&(d.id.clone(), k.clone()));
+                    let digest = held.map(|h| h.digest.clone()).unwrap_or_default();
+                    // The day is asked as the minutes since the copy held.
+                    let asked = match held.map(|h| &h.answer) {
+                        Some(Response::Days { day }) => match crate::day::Day::end_of_wire(day) {
+                            Some(end) => format!("days@{end}"),
+                            None => k.clone(),
+                        },
+                        _ => k.clone(),
+                    };
+                    (asked, serde_bytes::ByteBuf::from(digest))
+                })
+                .collect()
+        };
+        match self
+            .exchange_on(line, &Request::Versions { docs, readings })
+            .await
+            .map_err(Miss::words)?
+        {
+            Response::Versions { docs, readings } => Ok(Some((docs, readings))),
+            // A khor that predates the question refuses the frame whole.
+            Response::Refused { .. } => Ok(None),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// The readings a [`Request::Versions`] answer carried, into the
+    /// caches and the held set; every reading it did not name is the one
+    /// already held, written again so its age is this round's.
+    async fn take_readings(
+        &self,
+        line: &Line,
+        d: &DeviceInfo,
+        kinds: &[String],
+        changed: Vec<(String, serde_bytes::ByteBuf)>,
+    ) {
+        let held: std::collections::HashMap<String, HeldReading> = {
+            let all = self.readings_held.lock().unwrap_or_else(|p| p.into_inner());
+            kinds
+                .iter()
+                .filter_map(|k| all.get(&(d.id.clone(), k.clone())).map(|h| (k.clone(), h.clone())))
+                .collect()
+        };
+        let mut fresh: std::collections::HashMap<String, Option<HeldReading>> = Default::default();
+        for (asked, frame) in changed {
+            let kind = asked.split('@').next().unwrap_or_default().to_owned();
+            if frame.is_empty() {
+                fresh.insert(kind, None);
+                continue;
+            }
+            let reading = match proto::decode::<Response>(&frame) {
+                Ok(Response::DaySince { since, full }) => {
+                    // Rebuilt from the copy held, and checked against the
+                    // whole answer's digest; asked whole when they differ.
+                    let rebuilt = match held.get(&kind).map(|h| &h.answer) {
+                        Some(Response::Days { day }) => crate::day::apply_since(day, &since),
+                        _ => None,
+                    }
+                    .map(|day| Response::Days { day })
+                    .and_then(|answer| {
+                        let digest = reading_digest(&proto::encode(&answer).ok()?);
+                        (digest[..] == full[..]).then_some(HeldReading { digest, answer })
+                    });
+                    match rebuilt {
+                        Some(reading) => Some(reading),
+                        None => match self.exchange_on(line, &Request::Days).await {
+                            Ok(answer @ Response::Days { .. }) => {
+                                proto::encode(&answer).ok().map(|frame| HeldReading {
+                                    digest: reading_digest(&frame),
+                                    answer,
+                                })
+                            }
+                            _ => None,
+                        },
+                    }
+                }
+                Ok(answer) => Some(HeldReading {
+                    digest: reading_digest(&frame),
+                    answer,
+                }),
+                Err(_) => None,
+            };
+            fresh.insert(kind, reading);
+        }
+        for kind in kinds {
+            let now = match fresh.remove(kind) {
+                Some(now) => now,
+                // Not named: unchanged, the one already held.
+                None => held.get(kind).cloned(),
+            };
+            let key = (d.id.clone(), kind.clone());
+            let mut all = self.readings_held.lock().unwrap_or_else(|p| p.into_inner());
+            match now {
+                Some(reading) => {
+                    self.keep_reading(d, kind, &reading.answer);
+                    all.insert(key, reading);
+                }
+                None => {
+                    all.remove(&key);
+                }
+            }
+        }
+    }
+
+    /// One reading of a machine, into the cache its kind is read from —
+    /// what [`Node::sync_everything`] does with each answer, one place.
+    fn keep_reading(&self, d: &DeviceInfo, kind: &str, answer: &Response) {
+        match answer {
+            Response::SessionRows { rows } => {
+                let _ = self.cache_peer_rows(&d.id, &d.name, rows);
+            }
+            Response::Vitals { vitals } => {
+                let _ = self.cache_peer_vitals(&d.id, vitals);
+            }
+            Response::Watched { rows } => {
+                let _ = self.cache_peer_watched(&d.id, rows);
+            }
+            Response::Days { day } => {
+                let _ = self.cache_peer_day(&d.id, day);
+            }
+            Response::Quotas { readings } => {
+                let _ = self.cache_peer_quotas(&d.id, readings);
+            }
+            Response::Usage { usage } => {
+                let _ = self.cache_peer_usage(&d.id, usage);
+            }
+            Response::SatVitals { vitals, age_ms } => {
+                if let Some(sat) = kind.strip_prefix("sat/") {
+                    let _ = self.cache_peer_vitals_aged(sat, vitals, *age_ms);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// [`Request::Versions`], answered: only what differs.
+    async fn answer_versions(
+        &self,
+        remote: &str,
+        docs: Vec<(String, serde_bytes::ByteBuf)>,
+        readings: Vec<(String, serde_bytes::ByteBuf)>,
+        ep: &iroh::Endpoint,
+    ) -> Result<Response, String> {
+        let mut differ = Vec::new();
+        for (name, theirs) in docs {
+            let Ok((mine, version)) = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>((
+                version_digest(&loaded.doc),
+                wire::version_b64(&loaded.doc)
+            ))) else {
+                continue;
+            };
+            if mine[..] != theirs[..] {
+                differ.push((name, version));
+            }
+        }
+        let mut changed = Vec::new();
+        for (kind, held) in readings {
+            let Some(req) = reading_request(&kind) else {
+                continue;
+            };
+            let answer = Box::pin(self.dispatch(remote, req, ep)).await;
+            let frame = match &answer {
+                Response::Refused { .. } => Vec::new(),
+                answer => proto::encode(answer)?,
+            };
+            if !frame.is_empty() && reading_digest(&frame)[..] == held[..] {
+                continue;
+            }
+            // The day, as the minutes since the asker's copy, when it
+            // holds one this record still overlaps (`crate::day::DaySince`).
+            let frame = match (&answer, kind.strip_prefix("days@").and_then(|m| m.parse().ok())) {
+                (Response::Days { day }, Some(held_end)) => {
+                    match crate::day::Day::from_wire(day, crate::live::now_ms()).and_then(|d| d.since(held_end)) {
+                        Some(since) => proto::encode(&Response::DaySince {
+                            since,
+                            full: serde_bytes::ByteBuf::from(reading_digest(&frame)),
+                        })?,
+                        None => frame,
+                    }
+                }
+                _ => frame,
+            };
+            changed.push((kind, serde_bytes::ByteBuf::from(frame)));
+        }
+        Ok(Response::Versions {
+            docs: differ,
+            readings: changed,
+        })
+    }
+
+    /// **A round the way it ran before round NET-3**: every document in
+    /// two exchanges, every reading asked. For a machine whose khor does
+    /// not know [`Request::Versions`].
+    async fn sync_everything(&self, line: &Line, d: &DeviceInfo) -> Result<usize, String> {
         let mut moved = 0usize;
         {
             let mut loaded = self.devices_loaded()?;
-            moved += self.rounds(&line, "devices", &mut loaded).await?;
+            moved += self.rounds(line, "devices", &mut loaded).await?;
         }
         {
             let mut loaded = self.seen_loaded()?;
-            moved += self.rounds(&line, "seen", &mut loaded).await?;
+            moved += self.rounds(line, "seen", &mut loaded).await?;
         }
         // Pins ride the same pump as the read watermark, and for the same
         // reason: both say something about a session that belongs to the
         // session rather than to the screen looking at it.
         {
             let mut loaded = self.pins_loaded()?;
-            moved += self.rounds(&line, "pins", &mut loaded).await?;
+            moved += self.rounds(line, "pins", &mut loaded).await?;
         }
         // What is on the session list (docs/SHELL.md 第八轮): an import
         // on one machine is a row on every machine. Best effort — an
@@ -6284,7 +6844,7 @@ impl Node {
         // showing whatever it found on its own.
         {
             let mut loaded = self.roster_loaded()?;
-            if let Ok(n) = self.rounds(&line, "roster", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "roster", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6295,7 +6855,7 @@ impl Node {
         // chat rounds behind it — it only means older shortcuts there.
         {
             let mut loaded = self.dirpins_loaded()?;
-            if let Ok(n) = self.rounds(&line, "dirpins", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "dirpins", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6306,7 +6866,7 @@ impl Node {
         // shorter list over there, never a wrong one.
         {
             let mut loaded = self.workspaces_loaded()?;
-            if let Ok(n) = self.rounds(&line, "workspaces", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "workspaces", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6315,7 +6875,7 @@ impl Node {
         // must not cost the rounds behind it.
         {
             let mut loaded = self.webpins_loaded()?;
-            if let Ok(n) = self.rounds(&line, "webpins", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "webpins", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6326,7 +6886,7 @@ impl Node {
         // that phone itself has opened — no wrong answer, a shorter one.
         {
             let mut loaded = self.recents_loaded()?;
-            if let Ok(n) = self.rounds(&line, "recents", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "recents", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6339,7 +6899,7 @@ impl Node {
         // locally.
         {
             let mut loaded = self.agents_loaded()?;
-            if let Ok(n) = self.rounds(&line, "agents", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "agents", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6349,7 +6909,7 @@ impl Node {
         // name and the rounds behind it still run.
         {
             let mut loaded = self.accounts_loaded()?;
-            if let Ok(n) = self.rounds(&line, "accounts", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "accounts", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6359,7 +6919,7 @@ impl Node {
         // chat rounds behind it — it only means older names there.
         {
             let mut loaded = self.titles_loaded()?;
-            if let Ok(n) = self.rounds(&line, "titles", &mut loaded).await {
+            if let Ok(n) = self.rounds(line, "titles", &mut loaded).await {
                 moved += n;
             }
         }
@@ -6368,14 +6928,14 @@ impl Node {
                 .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
             let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
             moved += self
-                .rounds(&line, &format!("chat/{ch}"), &mut loaded)
+                .rounds(line, &format!("chat/{ch}"), &mut loaded)
                 .await?;
         }
         // Remember what the far side reports about its own sessions:
         // when it goes unreachable, its last word plus the report's age
         // is all the UI may honestly show. Best effort — a failure here
         // only means older information.
-        if let Ok(Response::SessionRows { rows }) = self.exchange_on(&line, &Request::Sessions).await {
+        if let Ok(Response::SessionRows { rows }) = self.exchange_on(line, &Request::Sessions).await {
             let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
         }
         // And what it is doing right now, on the same visit. Kept apart
@@ -6385,7 +6945,7 @@ impl Node {
         // timestamp would make a stale reading look as fresh as the rows
         // beside it. Best effort, same as the rows — a peer running a khor
         // that has no such op simply has no reading here.
-        if let Ok(Response::Vitals { vitals }) = self.exchange_on(&line, &Request::Vitals).await {
+        if let Ok(Response::Vitals { vitals }) = self.exchange_on(line, &Request::Vitals).await {
             let _ = self.cache_peer_vitals(&d.id, &vitals);
         }
         // Its watched directories, on the same visit and in a record of
@@ -6393,19 +6953,19 @@ impl Node {
         // carried our copy of its `watch` list over, so what comes back
         // is already about that list. An older khor refuses the op and
         // simply has no rows here — never empty ones.
-        if let Ok(Response::Watched { rows }) = self.exchange_on(&line, &Request::Watched).await {
+        if let Ok(Response::Watched { rows }) = self.exchange_on(line, &Request::Watched).await {
             let _ = self.cache_peer_watched(&d.id, &rows);
         }
         // Its day, on the same beat as its rows: the strips under a
         // peer's rows are read from this, and a `Refused` from an older
         // khor leaves the last cached day standing, aging like a report.
-        if let Ok(Response::Days { day }) = self.exchange_on(&line, &Request::Days).await {
+        if let Ok(Response::Days { day }) = self.exchange_on(line, &Request::Days).await {
             let _ = self.cache_peer_day(&d.id, &day);
         }
         // Its accounts' readings, on the same beat: the 额度 page draws
         // every machine's rings from this, and an older khor's Refused
         // leaves the last carried answer standing, aging like a report.
-        if let Ok(Response::Quotas { readings }) = self.exchange_on(&line, &Request::Quotas).await {
+        if let Ok(Response::Quotas { readings }) = self.exchange_on(line, &Request::Quotas).await {
             let _ = self.cache_peer_quotas(&d.id, &readings);
         }
         // …and the readings of every satellite this device sponsors, on
@@ -6421,7 +6981,7 @@ impl Node {
                 .filter(|s| s.sponsor.as_deref() == Some(d.id.as_str()))
             {
                 if let Ok(Response::SatVitals { vitals, age_ms }) = self.exchange_on(
-                    &line,
+                    line,
                     &Request::SatVitals {
                         sat: sat.id.clone(),
                     },
@@ -6440,14 +7000,10 @@ impl Node {
         // (`crate::usage::Meters::tally` has the figures). Best effort —
         // a peer running a khor with no such op simply has no spending
         // here, which reads as "never asked" rather than as zero.
-        if let Ok(Response::Usage { usage }) = self.exchange_on(&line, &Request::Usage).await {
+        if let Ok(Response::Usage { usage }) = self.exchange_on(line, &Request::Usage).await {
             let _ = self.cache_peer_usage(&d.id, &usage);
         }
-        Ok(if moved == 0 {
-            msg::nothing_to_move().into()
-        } else {
-            msg::moved_bytes(moved)
-        })
+        Ok(moved)
     }
 
     /// Two wire rounds: the first is pull-only by design, the second
@@ -6458,9 +7014,22 @@ impl Node {
         doc_name: &str,
         loaded: &mut khor_sync::store::Loaded<D>,
     ) -> Result<usize, String> {
-        let mut peer = wire::Peer::new();
+        self.rounds_from(line, doc_name, loaded, wire::Peer::new(), 2).await
+    }
+
+    /// `times` wire rounds from what `peer` knows of the far side: two
+    /// from nothing ([`Node::rounds`]), one from a version just told
+    /// ([`Node::sync_what_changed`]). Returns bytes moved.
+    async fn rounds_from<D: Doc>(
+        &self,
+        line: &Line,
+        doc_name: &str,
+        loaded: &mut khor_sync::store::Loaded<D>,
+        mut peer: wire::Peer,
+        times: usize,
+    ) -> Result<usize, String> {
         let mut moved = 0usize;
-        for _ in 0..2 {
+        for _ in 0..times {
             let out = peer.outgoing(&loaded.doc)?;
             let resp = self
                 .exchange_on(
@@ -6753,6 +7322,16 @@ pub(crate) struct Line {
     pub(crate) name: String,
     pub(crate) proto: wires::Proto,
     pub(crate) conn: iroh::endpoint::Connection,
+}
+
+/// What [`Node::ask_early`] came to.
+enum Early {
+    /// Answered inside the redial's handshake.
+    Answered(Response),
+    /// The redial itself failed: the far machine was not reached.
+    Failed(DialFailure),
+    /// Not tried, or tried without an answer: ask as usual.
+    NotTaken,
 }
 
 /// Why one exchange produced no answer — three things, because only the
