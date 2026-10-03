@@ -215,7 +215,10 @@ fn rename_account(id: String, name: String) -> Result<(), String> {
 /// 编辑一个账号 (`khor_gui_core::update_account`). `key` absent means
 /// leave the stored one alone — an edit of the name must not make
 /// somebody paste a secret again.
-#[tauri::command]
+/// Its arguments are named as the face and the bridge name them
+/// (`snake_case`): tauri reads a command's arguments as camelCase unless
+/// told otherwise, and this one's multi-word argument then never arrived.
+#[tauri::command(rename_all = "snake_case")]
 fn update_account(
     id: String,
     name: String,
@@ -302,7 +305,10 @@ async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
     khor_gui_core::quota_board(&Node::root_from_env()).await
 }
 
-#[tauri::command]
+/// Its arguments are named as the face and the bridge name them
+/// (`snake_case`): tauri reads a command's arguments as camelCase unless
+/// told otherwise, and this one's multi-word argument then never arrived.
+#[tauri::command(rename_all = "snake_case")]
 fn register_account(
     name: String,
     provider: String,
@@ -418,7 +424,10 @@ fn relays() -> Result<khor_gui_core::RelayChoices, String> {
     khor_gui_core::relays(&Node::root_from_env())
 }
 
-#[tauri::command]
+/// Its arguments are named as the face and the bridge name them
+/// (`snake_case`): tauri reads a command's arguments as camelCase unless
+/// told otherwise, and this one's multi-word argument then never arrived.
+#[tauri::command(rename_all = "snake_case")]
 fn set_relays(
     relays: Vec<khor_gui_core::RelayWant>,
     only_mine: bool,
