@@ -81,6 +81,11 @@ block2 = "0.6"
 # (`src/main.rs`: the app menu's name, AppKit's languages). **Already in
 # the tree under tauri**, which uses it for dev builds — no new package.
 embed_plist = "1"
+# `NSWorkspaceDidWakeNotification` (`watch_for_wake`): the Mac woke, and
+# the resident is told. **Already in the tree under tao and muda** — no
+# new package; only the one class is compiled here. MIT OR Apache-2.0
+# OR Zlib.
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSWorkspace"] }
 
 # The phone's opener (docs/IOS.md 第二步): a link is handed to the system
 # with `UIApplication.openURL`, which opens it in the person's browser —
@@ -103,6 +108,9 @@ tauri-plugin-barcode-scanner = "~2.4"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSDictionary", "NSGeometry", "objc2-core-foundation"] }
 objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "block2", "UIApplication", "UIResponder"] }
+# The handler `nw_path_monitor` calls on a path change (`watch_the_path`)
+# is a block. **Already in the tree** under objc2-ui-kit's `block2`.
+block2 = "0.6"
 
 [features]
 # **On by default, and that is the whole fix for the white window.**

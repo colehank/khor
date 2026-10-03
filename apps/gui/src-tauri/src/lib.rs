@@ -2986,6 +2986,109 @@ fn resume_the_node(app: tauri::AppHandle) {
     });
 }
 
+/// The phone is leaving the front (`WindowEvent::Suspended`): the
+/// resident lets every wire go (`link::suspending`). Off the main thread,
+/// bounded: UIKit waits on this handler.
+#[cfg(not(desktop))]
+fn suspend_the_node() {
+    std::thread::spawn(|| {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+            return;
+        };
+        let root = Node::root_from_env();
+        let _ = rt.block_on(async {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                khor_node::link::suspending(&root),
+            )
+            .await
+        });
+    });
+}
+
+/// **The Mac woke from sleep** (`NSWorkspaceDidWakeNotification`): the
+/// resident is told the network may have changed under it
+/// (`link::network_changed` — iroh re-probes, every wire has three
+/// seconds to be heard, the rest are let go, then a round), and every far
+/// terminal waiting to attach again asks now (`rejoin::kick`).
+///
+/// The resident would notice on its own within a second — its wall clock
+/// runs ahead of its monotonic one across a sleep — and this is the
+/// system saying so first, without depending on that arithmetic.
+#[cfg(target_os = "macos")]
+fn watch_for_wake() {
+    use objc2_app_kit::{NSWorkspace, NSWorkspaceDidWakeNotification};
+    use objc2_foundation::NSNotification;
+    let woke = block2::RcBlock::new(|_note: std::ptr::NonNull<NSNotification>| {
+        khor_node::link::network_changed(&Node::root_from_env());
+        khor_gui_core::rejoin::kick();
+    });
+    // SAFETY: the shared workspace's own centre, observed for the life of
+    // the process; the block only sends on a channel and bumps a counter.
+    unsafe {
+        let centre = NSWorkspace::sharedWorkspace().notificationCenter();
+        let token = centre.addObserverForName_object_queue_usingBlock(
+            Some(NSWorkspaceDidWakeNotification),
+            None,
+            None,
+            &woke,
+        );
+        // Kept for the life of the app: dropping the token would not stop
+        // the observer, and there is no moment to stop it at.
+        std::mem::forget(token);
+    }
+}
+
+/// **The phone's network path changed** — Wi-Fi to cellular, out of
+/// range, back — watched with Network.framework's `nw_path_monitor`, the
+/// system's own signal (iroh watches the routing table too, but on a
+/// phone the path monitor is what the system promises to keep current).
+/// Each change after the first report is a `link::network_changed`, the
+/// same door the Mac's wake uses.
+///
+/// Through the C API directly rather than a binding crate: four calls,
+/// and `block2` is already in the tree under the shell.
+#[cfg(target_os = "ios")]
+fn watch_the_path() {
+    use std::ffi::c_void;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    #[link(name = "Network", kind = "framework")]
+    unsafe extern "C" {
+        fn nw_path_monitor_create() -> *mut c_void;
+        fn nw_path_monitor_set_update_handler(
+            monitor: *mut c_void,
+            handler: &block2::DynBlock<dyn Fn(*mut c_void)>,
+        );
+        fn nw_path_monitor_set_queue(monitor: *mut c_void, queue: *mut c_void);
+        fn nw_path_monitor_start(monitor: *mut c_void);
+    }
+    unsafe extern "C" {
+        fn dispatch_get_global_queue(identifier: isize, flags: usize) -> *mut c_void;
+    }
+    // The monitor reports the current path once as it starts; that is
+    // not a change.
+    let first = AtomicBool::new(true);
+    let changed = block2::RcBlock::new(move |_path: *mut c_void| {
+        if first.swap(false, Ordering::Relaxed) {
+            return;
+        }
+        khor_node::link::network_changed(&Node::root_from_env());
+        khor_gui_core::rejoin::kick();
+    });
+    // SAFETY: Network.framework copies the handler block; the monitor is
+    // created here and kept for the life of the process (never
+    // cancelled, so never released), on a global dispatch queue.
+    unsafe {
+        let monitor = nw_path_monitor_create();
+        if monitor.is_null() {
+            return;
+        }
+        nw_path_monitor_set_update_handler(monitor, &changed);
+        nw_path_monitor_set_queue(monitor, dispatch_get_global_queue(0, 0));
+        nw_path_monitor_start(monitor);
+    }
+}
+
 /// The app. On a phone the system starts it through this same function:
 /// `mobile_entry_point` exports the `start_app` symbol the Xcode project
 /// in `gen/apple` calls — without it the iOS library links and nothing
@@ -3046,16 +3149,24 @@ pub fn run() {
     // terminal or conversation whose pipe ends attaches again rather than
     // ending (`khor_gui_core::rejoin`). A desktop's serve and faces are
     // exactly what they were.
-    #[cfg(mobile)]
+    //
+    // **And on a desktop too, since round NET-FIX.** The resident there
+    // used to exit when it concluded it had gone deaf — taking the app's
+    // window with it, since the serve runs in this process — and a far
+    // terminal whose pipe ended ended with it. A Mac sleeps and wakes and
+    // changes networks the way a phone goes to the background; the cure
+    // is the same new ears in place (`link::network_changed` on a wake,
+    // the serve's own deaf watch), and the same asking again.
     khor_gui_core::rejoin::set_on(true);
+    #[cfg(target_os = "macos")]
+    watch_for_wake();
+    #[cfg(target_os = "ios")]
+    watch_the_path();
     std::thread::spawn(|| {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         rt.block_on(async {
             match Node::open(Node::root_from_env()) {
                 Ok(n) => {
-                    #[cfg(desktop)]
-                    let served = n.serve().await;
-                    #[cfg(not(desktop))]
                     let served = n.serve_resumable().await;
                     if let Err(e) = served {
                         eprintln!("serve ended: {e}");
@@ -3250,6 +3361,15 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Resumed) {
                 use tauri::Manager;
                 resume_the_node(window.app_handle().clone());
+            }
+            // **On the way to the background**, the other half: every
+            // wire let go, closed, so the machines on the other end read
+            // 未连接 now rather than after their silence limit, and
+            // nothing is left half-open for the system to reclaim. iOS
+            // gives an app seconds here; letting go is a close per wire.
+            #[cfg(not(desktop))]
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Suspended) {
+                suspend_the_node();
             }
         })
         .invoke_handler(tauri::generate_handler![

@@ -4395,6 +4395,7 @@ dependencies = [
  "khor-node",
  "khor-web",
  "objc2",
+ "objc2-app-kit",
  "objc2-foundation",
  "objc2-ui-kit",
  "serde",
