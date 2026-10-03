@@ -52,6 +52,7 @@ pub fn reap_hosts(home: &Path) {
 }
 
 pub fn scratch(tag: &str) -> Scratch {
+    own_tmux();
     let p = std::env::temp_dir().join(format!("khor-net-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
@@ -91,10 +92,45 @@ impl Drop for Reaped {
     }
 }
 
+/// **This test process's own tmux, never the person's.** A scratch node
+/// on the default socket can list, and attach to, the real sessions on
+/// this machine (2026-10-03: a probe line was typed into the owner's own
+/// pane that way). Every process the harness starts, and this one, talk
+/// to a server under a directory of their own (`TMUX_TMPDIR`) on a
+/// socket of their own (`KHOR_TMUX_SOCKET`), and are not told they sit
+/// inside a tmux (`TMUX`, `TMUX_PANE`). The directory is short: a
+/// socket path past ~104 bytes cannot be bound.
+pub fn own_tmux() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        // One fixed directory for every test run rather than one per
+        // process: nothing accumulates, and no test here starts a tmux
+        // server on it, only asks it.
+        let dir = std::env::temp_dir().join("khor-test-tmux");
+        std::fs::create_dir_all(&dir).unwrap();
+        // SAFETY: once per test binary, before any session is opened
+        // from it; the values only ever point at this process's own.
+        unsafe {
+            std::env::set_var("TMUX_TMPDIR", &dir);
+            std::env::set_var("KHOR_TMUX_SOCKET", TMUX_SOCKET);
+            std::env::remove_var("TMUX");
+            std::env::remove_var("TMUX_PANE");
+        }
+        dir
+    })
+}
+
+/// The scratch tmux socket's name (`own_tmux`).
+pub const TMUX_SOCKET: &str = "khor-scratch";
+
 pub fn khor(home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_khor"));
     cmd.env("KHOR_HOME", home)
         .env("KHOR_WEB_PORT", "0")
+        .env("TMUX_TMPDIR", own_tmux())
+        .env("KHOR_TMUX_SOCKET", TMUX_SOCKET)
+        .env_remove("TMUX")
+        .env_remove("TMUX_PANE")
         .env_remove("KHOR_RELAY")
         .env_remove("KHOR_SESSION");
     for k in PROXY_VARS {

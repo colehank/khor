@@ -109,6 +109,7 @@ pub fn loop_relay() -> &'static str {
 /// Khor tier nor n0's relays and lookup are in its map (`relays.json`,
 /// the file 设置 → 网络 writes). Call before the home's first node opens.
 pub fn hermetic(root: &Path) {
+    own_tmux();
     std::fs::create_dir_all(root.join(".khor")).unwrap();
     std::fs::write(
         root.join(".khor").join("relays.json"),
@@ -118,4 +119,28 @@ pub fn hermetic(root: &Path) {
         ),
     )
     .unwrap();
+}
+
+/// **This test process's own tmux, never the person's** (the CLI
+/// harness's `own_tmux`, for the same incident): every session a test
+/// here opens, and every sweep, talks to a server under a directory of
+/// this binary's own on a socket of its own, and nothing it starts is
+/// told it sits inside a tmux. Short, for the socket path's limit.
+pub fn own_tmux() {
+    static DONE: OnceLock<()> = OnceLock::new();
+    DONE.get_or_init(|| {
+        // One fixed directory for every test run rather than one per
+        // process: nothing accumulates, and no test here starts a tmux
+        // server on it, only asks it.
+        let dir = std::env::temp_dir().join("khor-test-tmux");
+        std::fs::create_dir_all(&dir).unwrap();
+        // SAFETY: once per test binary, before its first node opens; the
+        // values only ever point at this process's own.
+        unsafe {
+            std::env::set_var("TMUX_TMPDIR", &dir);
+            std::env::set_var("KHOR_TMUX_SOCKET", "khor-scratch");
+            std::env::remove_var("TMUX");
+            std::env::remove_var("TMUX_PANE");
+        }
+    });
 }
