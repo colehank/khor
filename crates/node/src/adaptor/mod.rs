@@ -297,6 +297,20 @@ pub struct Proc {
 #[derive(Debug, Default, Clone)]
 pub struct Procs {
     by_pid: BTreeMap<u32, Proc>,
+    sessions: Sessions,
+}
+
+/// Where a process's POSIX session id comes from (see [`Procs::held_by`]).
+#[derive(Debug, Default, Clone)]
+enum Sessions {
+    /// A hand-built table with no session ids: nothing is known, so
+    /// nothing is excluded for its session.
+    #[default]
+    Unknown,
+    /// The live process table: ask the OS at the moment of the question.
+    Os,
+    /// A hand-built table that names them.
+    Given(BTreeMap<u32, i32>),
 }
 
 /// How many process-table scans this process has done. Read by the cost
@@ -418,13 +432,40 @@ impl Procs {
                 }
             }
         }
-        Procs { by_pid }
+        Procs {
+            by_pid,
+            sessions: Sessions::Os,
+        }
     }
 
     /// A hand-built table, for tests and for the fixture trees.
     pub fn of(procs: impl IntoIterator<Item = (u32, Proc)>) -> Procs {
         Procs {
             by_pid: procs.into_iter().collect(),
+            sessions: Sessions::Unknown,
+        }
+    }
+
+    /// The same table with the POSIX session id of some of its pids, for
+    /// fixtures that exercise [`Procs::held_by`].
+    pub fn with_sessions(mut self, sids: impl IntoIterator<Item = (u32, i32)>) -> Procs {
+        self.sessions = Sessions::Given(sids.into_iter().collect());
+        self
+    }
+
+    /// `pid`'s POSIX session id, when it can be read.
+    fn session_of(&self, pid: u32) -> Option<i32> {
+        match &self.sessions {
+            Sessions::Unknown => None,
+            Sessions::Given(sids) => sids.get(&pid).copied(),
+            #[cfg(unix)]
+            Sessions::Os => {
+                // SAFETY: getsid only reads the process table.
+                let sid = unsafe { libc::getsid(pid as libc::pid_t) };
+                (sid > 0).then_some(sid)
+            }
+            #[cfg(not(unix))]
+            Sessions::Os => None,
         }
     }
 
@@ -480,6 +521,29 @@ impl Procs {
             }
         }
         out.sort_unstable();
+        out
+    }
+
+    /// **What a multiplexer's panes hold**: the [`Procs::subtree`] of the
+    /// pane processes, less every process that left their POSIX session.
+    ///
+    /// Descent alone says too much (T-34, the terminal audit). A khor
+    /// host started by a serve, bridge or app that itself runs in a pane
+    /// descends from that pane, yet sits on a pty of its own; seated *in*
+    /// the pane, its keys went into the pane. A process is in a pane when
+    /// it shares the session of the pane's own process, whose controlling
+    /// terminal is the pane's tty; one that called `setsid` (every khor
+    /// host, every daemon) has left it, and so has everything it starts.
+    /// This is the field's line: tmux names a pane's program by the pane
+    /// tty's foreground group (`pane_current_command`, `tcgetpgrp` on
+    /// `pane_tty`), never by descent. A pid whose session cannot be read
+    /// (a fixture's, another user's) is kept, as descent alone would.
+    pub fn held_by(&self, roots: &[u32]) -> Vec<u32> {
+        let theirs: Vec<i32> = roots.iter().filter_map(|&p| self.session_of(p)).collect();
+        let mut out = self.subtree(roots);
+        if !theirs.is_empty() {
+            out.retain(|&p| self.session_of(p).is_none_or(|s| theirs.contains(&s)));
+        }
         out
     }
 
@@ -746,6 +810,73 @@ mod tests {
         if let Some(dir) = std::env::var_os("KHOR_PROBE_DIR") {
             println!("probe-real-home={}", is_real_home(std::path::Path::new(&dir)));
         }
+    }
+
+    /// **The ancestry case (T-34).** A bridge started in a tmux pane
+    /// stands up a khor host, which calls `setsid` and runs a shell on a
+    /// pty of its own. Both descend from the pane; only what stayed in
+    /// the pane's session is in the pane. Before, `holds` was the whole
+    /// subtree, the host's shell was seated in the pane, and its keys
+    /// went there.
+    #[test]
+    fn a_pane_holds_its_session_not_everything_descended_from_it() {
+        let child = |name: &str, ppid: u32| Proc {
+            name: name.into(),
+            started_ms: 0,
+            cwd: None,
+            ppid: Some(ppid),
+        };
+        let procs = Procs::of([
+            (100, child("zsh", 1)),
+            (101, child("khor-gui", 100)),
+            (102, child("khor-gui", 101)),
+            (103, child("zsh", 102)),
+            (104, child("claude", 100)),
+            (105, child("ssh", 100)),
+        ])
+        // 102 is the host: it left the pane's session, and its shell 103
+        // is in the host's. 105's session cannot be read.
+        .with_sessions([(100, 100), (101, 100), (102, 102), (103, 102), (104, 100)]);
+
+        assert_eq!(procs.subtree(&[100]), vec![100, 101, 102, 103, 104, 105]);
+        assert_eq!(
+            procs.held_by(&[100]),
+            vec![100, 101, 104, 105],
+            "the host and its shell left the pane; an unreadable session is kept"
+        );
+        assert_eq!(
+            Procs::of([(100, child("zsh", 1)), (102, child("khor-gui", 100))]).held_by(&[100]),
+            vec![100, 102],
+            "with no session ids known, descent alone decides, as before"
+        );
+    }
+
+    /// The same, on the real process table: a child that calls `setsid`
+    /// (as every khor host does) is no longer held by this process,
+    /// while a plain child still is.
+    #[cfg(unix)]
+    #[test]
+    fn a_child_that_called_setsid_left_its_parents_pane() {
+        use std::os::unix::process::CommandExt;
+        let mut plain = std::process::Command::new("sleep").arg("30").spawn().unwrap();
+        let mut away = std::process::Command::new("sleep");
+        away.arg("30");
+        // SAFETY: setsid is async-signal-safe.
+        unsafe {
+            away.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+        let mut away = away.spawn().unwrap();
+        let held = Procs::snapshot().held_by(&[std::process::id()]);
+        let (plain_pid, away_pid) = (plain.id(), away.id());
+        let _ = plain.kill();
+        let _ = away.kill();
+        let _ = plain.wait();
+        let _ = away.wait();
+        assert!(held.contains(&plain_pid), "a plain child stays in its parent's session");
+        assert!(!held.contains(&away_pid), "a child in a session of its own is not held");
     }
 
     fn proc_at(name: &str, started_ms: i64) -> Proc {
