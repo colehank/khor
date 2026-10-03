@@ -790,6 +790,30 @@ fn face_note(line: String) {
     eprintln!("face: {}", line.chars().take(400).collect::<String>());
 }
 
+/// **A terminal's bell, felt** (roadmap 4.2): a light tap of the phone's
+/// haptic engine (`UIImpactFeedbackGenerator`, through the UIKit bindings
+/// the phone build already carries — no plugin), on UIKit's thread. A Mac
+/// flashes the pane's edge instead, in the page.
+#[tauri::command]
+fn bell_haptic(app: tauri::AppHandle) {
+    #[cfg(target_os = "ios")]
+    {
+        let _ = app.run_on_main_thread(|| {
+            use objc2::{MainThreadMarker, MainThreadOnly as _};
+            use objc2_ui_kit::{UIImpactFeedbackGenerator, UIImpactFeedbackStyle};
+            if let Some(mtm) = MainThreadMarker::new() {
+                let g = UIImpactFeedbackGenerator::initWithStyle(
+                    UIImpactFeedbackGenerator::alloc(mtm),
+                    UIImpactFeedbackStyle::Light,
+                );
+                g.impactOccurred();
+            }
+        });
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
+}
+
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
@@ -3561,6 +3585,7 @@ pub fn run() {
             term_attach,
             term_stream,
             term_wait,
+            bell_haptic,
             face_note,
             notify_finished,
             term_key,

@@ -63,7 +63,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
@@ -80,6 +80,7 @@ import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
+import { termBell } from "@/lib/term-bell";
 import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import { termWake } from "@/lib/term-tap";
@@ -1609,6 +1610,10 @@ export function TerminalPane({
       return true;
     });
     const rung = term.onBell(() => {
+      // The person's bell setting (roadmap 4.2): off is silent; under a
+      // finger it is felt as well as seen.
+      if (!termBell()) return;
+      if (window.matchMedia("(pointer: coarse)").matches) bellHaptic().catch(() => {});
       setRang(true);
       window.clearTimeout(bellTimer.current);
       bellTimer.current = window.setTimeout(() => setRang(false), BELL_MS);

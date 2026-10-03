@@ -2381,6 +2381,10 @@ clip-read-deny = "不允许"
 # The terminal's way back down when output arrived while scrolled up
 # (roadmap 4.4); a conversation keeps new-below.
 term-new-output = "新输出"
+# Appearance → Terminal: whether a terminal's bell is shown or felt
+# (roadmap 4.2).
+term-bell = "响铃"
+term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"
