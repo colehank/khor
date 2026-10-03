@@ -75,6 +75,7 @@ import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
+import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { tapRaisesKeyboard } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
@@ -626,6 +627,117 @@ function fingerWheels(term: Terminal, box: HTMLElement): () => void {
   };
 }
 
+/** What each cursor shape looks like when the terminal does not have the
+    keys: the block hollow, the bar and the underline as they are. */
+const RESTING: Record<CursorShape, "outline" | "bar" | "underline"> = {
+  block: "outline",
+  bar: "bar",
+  underline: "underline",
+};
+
+/**
+ * **The cursor is the person's until a program asks for its own** (item
+ * 16 B). The setting (`lib/term-cursor`) is applied live. A program's
+ * DECSCUSR (`CSI n q`: 1–2 block, 3–4 underline, 5–6 bar, odd blinking)
+ * wins while it runs, and the setting comes back on `CSI 0 q` — as in
+ * iTerm2, kitty and WezTerm, where 0 means "the user's default" (xterm.js
+ * reads it as a blinking block) — or when a full-screen program leaves the
+ * alternate screen (vim's insert-mode bar does not outlive vim). A
+ * program's `CSI ? 12 h` / `l`, which xterm.js turns into its
+ * `cursorBlink` option for good, is counted as the same kind of request.
+ *
+ * Handled here rather than by xterm because xterm.js keeps DECSCUSR in its
+ * own private modes, which its WebGL renderer reads only when an option
+ * changes, so a program's blinking cursor appeared at some later moment
+ * (the next theme or font change, the next WebGL reload) rather than when
+ * asked.
+ */
+function cursorFollows(term: Terminal): () => void {
+  let mine = termCursor();
+  let theirs: { shape?: CursorShape; blink?: boolean } = {};
+  let blinkSet = term.options.cursorBlink;
+  const apply = () => {
+    const shape = theirs.shape ?? mine.shape;
+    const blink = theirs.blink ?? mine.blink;
+    if (term.options.cursorStyle !== shape) term.options.cursorStyle = shape;
+    if (term.options.cursorInactiveStyle !== RESTING[shape]) term.options.cursorInactiveStyle = RESTING[shape];
+    if (term.options.cursorBlink !== blink) term.options.cursorBlink = blink;
+    blinkSet = blink;
+  };
+  const decscusr = term.parser.registerCsiHandler({ intermediates: " ", final: "q" }, (params) => {
+    const n = typeof params[0] === "number" ? params[0] : 0;
+    if (n === 0) theirs = {};
+    else if (n <= 6) theirs = { shape: n <= 2 ? "block" : n <= 4 ? "underline" : "bar", blink: n % 2 === 1 };
+    apply();
+    return true;
+  });
+  const parsed = term.onWriteParsed(() => {
+    if (term.options.cursorBlink === blinkSet) return;
+    theirs = { ...theirs, blink: term.options.cursorBlink };
+    blinkSet = term.options.cursorBlink;
+  });
+  const swapped = term.buffer.onBufferChange((b) => {
+    if (b.type !== "normal" || (theirs.shape === undefined && theirs.blink === undefined)) return;
+    theirs = {};
+    apply();
+  });
+  const chosen = onTermCursor((c) => {
+    mine = c;
+    apply();
+  });
+  return () => {
+    decscusr.dispose();
+    parsed.dispose();
+    swapped.dispose();
+    chosen();
+  };
+}
+
+/** Prototypes of xterm renderers already taught `blinksOnInput`'s rule. */
+const quieted = new WeakSet<object>();
+
+/**
+ * **The blink restarts on a key, not on output** (item 16 A). xterm.js's
+ * WebGL renderer restarts its blink phase on every cursor move
+ * (`WebglRenderer.handleCursorMove` → `CursorBlinkStateManager.
+ * restartBlinkAnimation`): a progress line rewritten every 300 ms gave
+ * phases of 16 to 1885 ms instead of 600 (measured, item 16). Terminal.app
+ * and iTerm2 hold the cursor up while one types and otherwise keep the
+ * beat. So the renderer's cursor-move path is run without its restart, and
+ * the pane restarts the phase itself when a key goes out (`typed`).
+ * Focus still restarts it (xterm's `resume`), as it does in those
+ * terminals. xterm's DOM renderer, the fallback after a lost WebGL context
+ * (T-23), blinks by a CSS animation of its own and is not changed.
+ */
+function blinksOnInput(term: Terminal): { quiet: () => void; typed: () => void } {
+  type Manager = { restartBlinkAnimation?: () => void };
+  type Renderer = { handleCursorMove?: () => void; _cursorBlinkStateManager?: { value?: Manager } };
+  const renderer = () =>
+    (term as unknown as { _core?: { _renderService?: { _renderer?: { value?: Renderer } } } })._core?._renderService
+      ?._renderer?.value;
+  return {
+    quiet: () => {
+      const r = renderer();
+      if (!r || !("_cursorBlinkStateManager" in r) || typeof r.handleCursorMove !== "function") return;
+      const proto = Object.getPrototypeOf(r) as Renderer;
+      if (quieted.has(proto) || typeof proto.handleCursorMove !== "function") return;
+      const moved = proto.handleCursorMove;
+      proto.handleCursorMove = function (this: Renderer) {
+        const m = this._cursorBlinkStateManager?.value;
+        if (!m) return moved.call(this);
+        m.restartBlinkAnimation = () => {};
+        try {
+          moved.call(this);
+        } finally {
+          delete m.restartBlinkAnimation;
+        }
+      };
+      quieted.add(proto);
+    },
+    typed: () => renderer()?._cursorBlinkStateManager?.value?.restartBlinkAnimation?.(),
+  };
+}
+
 /** Whether a box has a size a terminal can be measured in. */
 const hasSize = (el: HTMLElement) => el.clientWidth > 0 && el.clientHeight > 0;
 
@@ -960,12 +1072,13 @@ export function TerminalPane({
       fontSize: font.size,
       lineHeight: 1,
       theme: themeOf(box),
-      // **The cursor is the focus** (2026-10-03): a solid block while
-      // the terminal has the keys, a hollow one when it does not. The
-      // pane draws no ring of its own (`app.css`); xterm's defaults,
-      // said here because they are now the only sign.
-      cursorStyle: "block",
-      cursorInactiveStyle: "outline",
+      // **The cursor is the focus** (2026-10-03): the chosen shape while
+      // the terminal has the keys, its hollow or thin form when it does
+      // not. The pane draws no ring of its own (`app.css`). The shape and
+      // the blink are the person's (`lib/term-cursor`, `cursorFollows`).
+      cursorStyle: termCursor().shape,
+      cursorInactiveStyle: RESTING[termCursor().shape],
+      cursorBlink: termCursor().blink,
       // **⌥-drag is xterm's own selection even when the program asked
       // for the mouse** — iTerm2's gesture. khor turns tmux's mouse on
       // for the tmux sessions it attaches (2026-10-01, so the wheel
@@ -1022,6 +1135,8 @@ export function TerminalPane({
     // renderer back at once, and try WebGL again the next time the page
     // is shown. iOS drops contexts of pages in the background (WebKit
     // bug 261331); a Mac's GPU switch does too.
+    const blink = blinksOnInput(term);
+    const cursor = cursorFollows(term);
     let webgl: WebglAddon | null = null;
     const useWebgl = () => {
       if (webgl || stoppedWebgl) return;
@@ -1033,6 +1148,7 @@ export function TerminalPane({
         });
         term.loadAddon(addon);
         webgl = addon;
+        blink.quiet();
       } catch {
         /* DOM renderer stands */
       }
@@ -1339,6 +1455,7 @@ export function TerminalPane({
       const m = modsRef.current;
       // An answer to a live question is not a key: it neither takes a
       // latch nor waits for one.
+      if (!reply && !MOUSE_REPORT.test(d)) blink.typed();
       if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? typed(d, m) : d;
         latch({ ctrl: false, alt: false });
@@ -1428,6 +1545,7 @@ export function TerminalPane({
       entering.abort();
       window.cancelAnimationFrame(firstFrame);
       osc52.dispose();
+      cursor();
       stoppedWebgl = true;
       document.removeEventListener("visibilitychange", shownAgain);
       term.element?.removeEventListener("webglcontextlost", lost, true);

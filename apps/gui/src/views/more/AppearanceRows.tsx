@@ -14,10 +14,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
 import { useCoarse } from "@/hooks/use-coarse";
 import { useNarrow } from "@/hooks/use-narrow";
+import { setTermCursor, useTermCursor, type CursorShape } from "@/lib/term-cursor";
 import { setTapRaisesKeyboard, useTapRaisesKeyboard } from "@/lib/term-tap";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
@@ -74,6 +76,7 @@ export function TerminalSection() {
   const f = useTermFont();
   const coarse = useCoarse();
   const tapRaises = useTapRaisesKeyboard();
+  const cursor = useTermCursor();
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
@@ -201,6 +204,24 @@ export function TerminalSection() {
       >
         {gui.term_size_sample}
       </div>
+      <PopupRow
+        name="term-cursor"
+        label={gui.term_cursor}
+        value={cursor.shape}
+        choices={[
+          { value: "block", label: gui.term_cursor_block },
+          { value: "bar", label: gui.term_cursor_bar },
+          { value: "underline", label: gui.term_cursor_underline },
+        ]}
+        onPick={(shape) => setTermCursor({ ...cursor, shape: shape as CursorShape })}
+        preview={<CursorSample shape={cursor.shape} />}
+      />
+      <SwitchRow
+        name="term-cursor-blink"
+        label={gui.term_cursor_blink}
+        on={cursor.blink}
+        onToggle={() => setTermCursor({ ...cursor, blink: !cursor.blink })}
+      />
       {coarse && (
         <SwitchRow
           name="term-tap-keyboard"
@@ -228,6 +249,26 @@ export function TerminalSection() {
         </>
       )}
     </MoreSection>
+  );
+}
+
+/** The chosen cursor drawn on one cell of the terminal's own type: a
+    setting that changes a drawing shows the drawing (`PopupRow`). */
+function CursorSample({ shape }: { shape: CursorShape }) {
+  return (
+    <span
+      data-term-cursor-sample={shape}
+      className="relative inline-block h-[1.2em] w-[0.6em] font-term text-body"
+    >
+      <span
+        className={cn(
+          "absolute bg-foreground",
+          shape === "block" && "inset-0",
+          shape === "bar" && "inset-y-0 left-0 w-0.5",
+          shape === "underline" && "inset-x-0 bottom-0 h-0.5",
+        )}
+      />
+    </span>
   );
 }
 
