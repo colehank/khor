@@ -621,6 +621,41 @@ function fingerWheels(term: Terminal, box: HTMLElement): () => void {
   };
 }
 
+/** Whether a box has a size a terminal can be measured in. */
+const hasSize = (el: HTMLElement) => el.clientWidth > 0 && el.clientHeight > 0;
+
+/**
+ * **Resolves once `box` can be measured for good** (item 15 A): it has a
+ * size (xterm's `open` and the fit addon both measure the DOM, and xterm
+ * says the element "must be visible (have dimensions)"), and no ancestor
+ * is still running a finite animation or transition — the screen's
+ * entrance (`screen-in-from-right`), the edge swipe's settle. An endless
+ * one (a spinner) is not waited for.
+ */
+async function settled(box: HTMLElement, signal: AbortSignal): Promise<void> {
+  if (!hasSize(box)) {
+    await new Promise<void>((done) => {
+      const observer = new ResizeObserver(() => {
+        if (!hasSize(box)) return;
+        observer.disconnect();
+        done();
+      });
+      observer.observe(box);
+      signal.addEventListener("abort", () => observer.disconnect());
+    });
+  }
+  const moving: Promise<unknown>[] = [];
+  for (let el: Element | null = box; el; el = el.parentElement) {
+    for (const a of el.getAnimations?.() ?? []) {
+      const end = a.effect?.getComputedTiming().endTime;
+      if (a.playState === "running" && typeof end === "number" && Number.isFinite(end)) {
+        moving.push(a.finished.catch(() => {}));
+      }
+    }
+  }
+  await Promise.all(moving);
+}
+
 /** Quiet this long after the last scroll event, a scroll has stopped. */
 const SETTLE_MS = 140;
 
@@ -1226,13 +1261,25 @@ export function TerminalPane({
     setOpening(true);
     // **Opened at the size it will have** (T-27, the terminal audit: the
     // pty got 114×40 at open and 114×46 two seconds later — two SIGWINCHs,
-    // the first wrong — because the first fit ran before the pane's final
-    // layout). The open waits for the next frame, when the layout this
-    // mount started has been done, and fits once more first.
-    const firstFrame = window.requestAnimationFrame(() => {
+    // the first wrong; item 15 A, the owner's phone and Mac: no scrolling
+    // after the first entry until the keyboard or a window resize fitted
+    // again). The first fit and the pty's first size wait until the box
+    // has a size and the screen's entrance has finished (`settled`), then
+    // for the frame after; a char size xterm could not measure at `open`
+    // is measured now (`resize` to the same size does that, xterm.js #785).
+    // Every later change of the box's size fits again (the observer below:
+    // the keyboard, the band's padding, a window drag).
+    const entering = new AbortController();
+    let firstFrame = 0;
+    void settled(box, entering.signal).then(() => {
       if (stopped) return;
-      fit.fit();
-      void join(false);
+      firstFrame = window.requestAnimationFrame(() => {
+        if (stopped) return;
+        term.resize(term.cols, term.rows);
+        fit.fit();
+        native.sync();
+        void join(false);
+      });
     });
 
     // Keys travel whole: xterm encodes every key, modifier, mouse
@@ -1369,6 +1416,7 @@ export function TerminalPane({
       resizing?.dispose();
       reopenRef.current = null;
       if (reopeners.get(id) === reopenHere) reopeners.delete(id);
+      entering.abort();
       window.cancelAnimationFrame(firstFrame);
       osc52.dispose();
       stoppedWebgl = true;
