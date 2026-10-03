@@ -4526,6 +4526,7 @@ dependencies = [
  "khor-catalog",
  "n0-future",
  "noq",
+ "noq-proto",
  "postcard",
  "rcgen",
  "serde",
