@@ -1215,6 +1215,25 @@ export function FileView({
         // one wheel; WebKit, which the desktop app runs in, has none,
         // which is why the ruling was made at all.
         className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
+        // **A finger outside the text puts the keyboard away** (2026-10-03,
+        // the owner's iPhone: the keyboard came up over a file and stayed).
+        // The editor is the text itself, so a tap on it places the caret
+        // and raises the keyboard; a phone has no Esc and this page no
+        // keyboard switch, and WebKit keeps the focus when the blank under
+        // the last line is tapped. A touch anywhere in the view but the
+        // text ends the editing, as it does in Notes.
+        onPointerDown={(e) => {
+          const ed = document.activeElement;
+          if (
+            e.pointerType === "touch" &&
+            ed instanceof HTMLTextAreaElement &&
+            ed.dataset.edit !== undefined &&
+            e.target !== ed &&
+            box.current?.contains(ed)
+          ) {
+            ed.blur();
+          }
+        }}
       >
         <div className="flex min-w-full items-start py-2">
           {/* **One block per number, as tall as the line it names**
